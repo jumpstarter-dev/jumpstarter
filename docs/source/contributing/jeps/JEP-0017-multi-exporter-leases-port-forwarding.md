@@ -934,6 +934,17 @@ fast path is an *optimization*, not a requirement: a bench that works over
 the router works everywhere, and `mode: router` makes the slow path explicit
 for tests that need reproducible timing.
 
+How much of an optimization is now measured, for one workload. Carrying a
+CVD's HCI port between two Pods (DD-9, third pass), the router added
+**0.65 ms** to a round-trip — 0.70 ms through the forward against 0.05 ms
+direct to the same endpoint — while an HCI command took **~45 ms either
+way**, because rootcanal answers on its own schedule. For simulated
+Bluetooth the fast path has nothing to optimize, and `mode: router` is the
+honest default. The fast path is therefore justified by the workloads where
+the medium is *not* the bottleneck — physical controllers, projection
+throughput, and the Phase 4 frame bridge — which is also where the
+*Latency characterization* test should point next.
+
 ### DD-5: Router changes — none
 
 **Alternatives considered:**
@@ -1661,6 +1672,20 @@ Three consequences follow, and they are why this JEP can be as small as it is:
   behind NAT are exactly why the router path is the default and why pure
   peer-to-peer was rejected.
 
+A second invariant is narrower, and cost a verification session before it
+was noticed, so it is stated rather than assumed:
+
+> **Each exporter identity is served by exactly one process.**
+
+Two processes sharing one identity both register and both look healthy; the
+controller hands a lease to one of them, and connections that the router
+routes to the other are answered with a `KeyError` on a driver UUID that
+process has never heard of, closing the stream with no useful error on
+either side. The symptom presents as a flaky forward, not as a
+misconfiguration. A member exporter therefore runs one replica, and a second
+registration under a live identity is worth detecting and refusing rather
+than tolerating.
+
 The exception to watch is host networking. The `jumpstarter-driver-cuttlefish`
 container recipe currently documents `--network=host` (so that netsim and
 rootcanal are reachable from outside the container), which places every
@@ -1792,6 +1817,22 @@ Establishment then reuses the existing port-forward primitives:
    a weaker trust boundary. `mode: direct` fails rather than falling back;
    `mode: router` never attempts it.
 
+**Reconnection belongs to the endpoint.** A forward outlives any single
+stream: an ingress reload, a router restart, or a node's network blip cuts
+the peer stream, and in a cluster whose proxy reloads on every unrelated
+`Ingress` change that is a routine event, not an incident (DD-9, third
+pass). The `requires` side therefore re-dials with backoff and re-splices
+accepted connections without tearing down its listener, and the first
+attempt immediately after a cut is expected to fail and be retried. The
+alternative — surfacing the reset to the driver — does not work, because the
+drivers this JEP is for open their transport once at start: `bt-peer` dials
+its HCI port when the peer is created, and after a silent cut the bench
+still reports `Ready` while the simulated device is off the air. Drivers
+that must know still learn of it: a reconnect is an event on the forward
+(*Observability*), which is how the head unit server of DD-10 gets its
+mandatory restart. Forward state comes from the splice, never from probing
+the far end (DD-9, second pass).
+
 **Failure modes and handling:**
 
 | Failure | Behavior |
@@ -1907,9 +1948,12 @@ two-object design would face does not arise.
 JEP-0013 telemetry gains `lease.member` as a span attribute wherever
 `lease.name` already appears, so per-role activity is separable within one
 lease, plus per-forward counters (bytes each direction, reconnects, mode
-actually used, direct-dial fallback rate). Time-to-bench (lease create →
-`Ready`) is the headline metric; it is the existing lease-acquisition metric
-extended to record the member count.
+actually used, direct-dial fallback rate). Reconnects are also an *event* on
+the forward, not only a counter: an endpoint driver that must re-establish
+protocol state after a cut (DD-10's head unit server) subscribes to it, and
+a bench whose forward is re-dialing is visibly degraded rather than quietly
+deaf. Time-to-bench (lease create → `Ready`) is the headline metric; it is
+the existing lease-acquisition metric extended to record the member count.
 
 For simulated media there is a stronger signal available than byte counters.
 `jumpstarter-driver-netsim` exposes netsim's pcap capture (start, stop,
@@ -1998,6 +2042,14 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
 - **Latency characterization**: HCI round-trip through a router forward vs. a
   direct forward vs. host-local rootcanal, reported as a distribution. Its
   result determines whether A2DP-class workloads are in scope for router mode.
+  The by-hand version (DD-9, third pass) found the simulator, not the
+  transport, to be the cost on a single node; the test exists to find where
+  that inverts — cross-node, sustained A2DP, and physical controllers.
+- **Forward resilience**: cut the peer stream of a live bench (restart the
+  router, or reload the ingress in front of it) and assert the forward
+  re-establishes, the reconnect is counted and emitted, and a driver that
+  dialed its transport once at start is still talking to the far end
+  afterwards. Runs in the same CI tier as the Bluetooth bench.
 
 ### Manual Verification
 
@@ -2049,6 +2101,12 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
       on the rootcanal port plus a forward
 - [ ] A Bumble-based shared controller exists as a driver exposing a
       `provides` port, for benches outside Cuttlefish and for N-way media
+- [ ] A forward survives a cut peer stream: the endpoint re-dials and
+      re-splices with no driver involvement, the reconnect is counted and
+      emitted as an event, and a driver that dialed once at start keeps
+      working
+- [ ] A second exporter process registering under a live identity is
+      detected and refused rather than silently splitting connections
 - [ ] Byte fidelity and reset semantics verified by the `EchoNetwork`
       integration test
 
@@ -2059,7 +2117,10 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
       forwarded rootcanal port (link-layer federation, or a shared HCI
       instance), in CI. *Demonstrated by hand for both variants on
       2026-09-01 with two Pods on one node and a stand-in relay (DD-9);
-      the router path and the multi-node case remain.*
+      on 2026-09-02 the router path itself carried a bench — a CVD's
+      rootcanal to a `bt-peer` Pod through `RouterService.Stream`, pairing
+      and profiles included. CVD ↔ CVD over the router and the multi-node
+      case remain.*
 - [ ] **Phase 2 — Virtual projection**: a GMS phone CVD and a `dhu` head
       unit in separate Pods complete an Android Auto session to the
       launcher over one forwarded port, in CI, with no lab hardware.
@@ -2075,7 +2136,9 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
       Bluetooth → Wi-Fi handover end to end
 - [ ] Measured HCI round-trip latency through a router forward is published,
       with a documented statement of which workloads it does and does not
-      support
+      support. *First data point, 2026-09-02: 0.65 ms of router against a
+      ~45 ms rootcanal command round-trip, single node (DD-9, third pass);
+      cross-node and A2DP-class throughput remain.*
 
 ## Graduation Criteria
 
@@ -2218,6 +2281,19 @@ risk in one field, handled by DD-2.
   driver keeps the test channel private, never probes, watches its
   controller and reports `Degraded`, and owns `cvd restart` as the recovery
   action; the abort itself is an upstream fix worth contributing.
+- **The cluster data path is less stable than a bench assumes.** Long-lived
+  streams do not survive ordinary cluster events: an nginx ingress reloads
+  on any `Ingress` change and drains its workers on a timer, cutting every
+  gRPC stream through it — measured on the verification cluster as a reload
+  at 04:00:13 and the exporter's controller stream cut at 04:04:13, with
+  the forwarded HCI splice going down 40 s later (DD-9, third pass). A
+  multi-hour bench will meet this repeatedly. Mitigation: reconnection is
+  the forward endpoint's responsibility, reconnects are observable, and the
+  HIL suite includes a bench that survives a deliberate stream cut. A
+  related hazard is version skew across a splice — a newer client-side
+  network driver against an older exporter closed every forwarded
+  connection at the first byte with no error — which is an argument for the
+  endpoint being the exporter's own code, as specified.
 - **The namespace invariant may be violated in the field.** Fixed `listen`
   addresses and lease-scoped control-plane blast radius both assume one
   exporter per network namespace. A host-networked deployment silently
@@ -2389,12 +2465,18 @@ To resolve during implementation:
 
 - Exact `ListenResponse` variant shape for forward setup instructions.
 - Whether the fast path should race the router dial or attempt direct first
-  with a short timeout — a measurable question.
+  with a short timeout — a measurable question, and one whose stakes are now
+  bounded for simulated media: the router costs ~0.65 ms where the simulator
+  costs ~45 ms (DD-4).
 - Whether forward reconnect should preserve the medium's logical state or
-  force a fresh pairing; likely protocol-specific. The projection experiment
-  gives one data point: Android Auto's head unit server must be restarted
-  after a dropped session, so at minimum the reconnect has to be visible to
-  the endpoint drivers.
+  force a fresh pairing; likely protocol-specific. Two data points so far:
+  Android Auto's head unit server must be restarted after a dropped session,
+  so the reconnect has to be visible to the endpoint drivers; and a Bumble
+  peer whose transport is cut loses its in-memory bonds, so the DUT's stored
+  link key is stale and pairing has to be redone unless the driver persists
+  its keystore for the life of the lease. The Bluetooth answer may simply be
+  "persist the keystore and re-attach", which would make reconnect
+  invisible for that medium.
 - How Phase 2's CI obtains the GMS GSI, the Desktop Head Unit and the
   Android Auto APK without redistributing them (see Risks).
 - How `jmp get leases` renders N exporters in a table column readably.
@@ -2495,6 +2577,11 @@ Not part of this proposal:
   Media, a ringing call into AAOS Telecom). Router overhead measured at
   0.65 ms against ~45 ms of rootcanal; proxy-reload stream loss, duplicate
   registration and version skew recorded as forward-endpoint duties
+- 2026-09-02: those findings made normative — DD-4's fast path reframed as
+  an optimization with a measured price, a single-process invariant per
+  exporter identity, reconnection assigned to the forward endpoint with
+  reconnects as events, a cluster-data-path Risk, a *Forward resilience*
+  HIL test, and two acceptance criteria
 
 ## References
 
