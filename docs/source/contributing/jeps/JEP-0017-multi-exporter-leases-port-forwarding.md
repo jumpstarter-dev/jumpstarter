@@ -117,7 +117,7 @@ layer should provide:
 The last point is the hard one, and it is what makes this more than an
 ergonomics change.
 
-### The virtual case: what nobody has shipped yet
+### The virtual case: host-local by construction
 
 For virtual devices the connectivity problem is sharper. Cuttlefish and the
 Android emulator can already pair virtual devices to each other — but only
@@ -129,19 +129,22 @@ to "all running instances on the same host machine", and container wrappers
 publish each container's ports while keeping radio simulation inside the
 container group.
 
-So the state of the art for virtual multi-device testing is: *both devices
-must live on one machine*. That is exactly the constraint a cluster-scheduled
-pool of one-device-per-Pod exporters (JEP-0016) breaks, and why its DD-8
-deferred multi-device groups pending "a cross-Pod virtual-radio story… real
-upstream-facing work."
+The common thread in the tooling we surveyed is that virtual multi-device
+testing assumes *both devices live on one machine*. That is exactly the
+assumption a cluster-scheduled pool of one-device-per-Pod exporters
+(JEP-0016) breaks, and why its DD-8 deferred multi-device groups pending "a
+cross-Pod virtual-radio story… real upstream-facing work." If someone has
+solved the cross-host case in a way this survey missed, that is worth raising
+in review — it would change the build-or-adopt calculation.
 
 The encouraging part is that these simulators are reached over ordinary
 sockets: rootcanal accepts HCI on TCP — which is why
 `jumpstarter-driver-bt-peer` can already attach a `bumble` peer with
 `transport: "tcp-client:127.0.0.1:7300"` — netsim accepts virtual chips over
 a bidirectional gRPC stream, and `wmediumd` speaks over a frame socket.
-Nothing about "same host" is fundamental; it is an artifact of nobody having
-forwarded those sockets between machines under a common lease.
+Nothing about "same host" looks fundamental to these interfaces; it appears
+to be an artifact of where the sockets are reachable from, rather than a
+property of the simulators themselves.
 
 ### Prior art's ceiling
 
@@ -1892,7 +1895,7 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
   reaches the launcher and a screenshot matches. Same CI tier; the two
   compose into one bench once Phases 1 and 2 are green.
 - **Physical ↔ physical**: a physical phone and head unit on two exporters
-  **on different lab hosts** — the allocation no existing framework will
+  **on different lab hosts** — the allocation the surveyed frameworks do not
   make. Requires lab hardware; runs on a labeled runner.
 - **Latency characterization**: HCI round-trip through a router forward, a
   direct forward and host-local rootcanal, reported as a distribution, which
@@ -2060,8 +2063,9 @@ risk in one field, handled by DD-2.
   structural, not engineered: all of a lease's claims are one object written
   once, so there is no partial-hold state, no acquisition timeout, no
   release-and-retry and no gang scheduler.
-- **A bench can span hosts** — the allocation existing frameworks refuse, and
-  the reason multi-device testing is capped at one lab machine today.
+- **A bench can span hosts** — the allocation the frameworks surveyed here
+  decline to make, and the usual reason multi-device testing stays on one lab
+  machine.
 - **The data plane is existing code**: `TemporaryTcpListener` +
   `forward_stream` with a router peer stream substituted for a client stream.
   `router.proto` is untouched and no driver changes.
@@ -2071,8 +2075,8 @@ risk in one field, handled by DD-2.
   can be built from `jmp get exporter` output rather than tribal knowledge.
 - Phone projection and Bluetooth pairing become expressible for any protocol
   and any head unit OS, and in virtual-to-virtual form expressible *in CI
-  without a lab* — cross-host virtual device pairing, which no shipping tool
-  does, reduces to forwarding a socket.
+  without a lab* — cross-host virtual device pairing reduces to forwarding a
+  socket.
 - Nothing here is Android-specific: CAN cross-connects, serial cross-overs
   and SOME/IP peer benches are all ports and forwards. The exporter = DUT
   invariant survives, and JEP-0016 DD-8's option 1 becomes available.
