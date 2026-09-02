@@ -36,8 +36,9 @@ def test_session_unbinds_exporter_log_context():
 
     clear_log_context()
     driver = SimpleDriver()
-    with Session(uuid=driver.uuid, labels=driver.labels, root_device=driver) as session:
-        assert structlog.contextvars.get_contextvars().get("exporter") == session.name
+    with Session(uuid=driver.uuid, root_device=driver, exporter_name="test-exporter") as session:
+        assert session.exporter_name == "test-exporter"
+        assert structlog.contextvars.get_contextvars().get("exporter") == "test-exporter"
     assert "exporter" not in structlog.contextvars.get_contextvars()
 
 
