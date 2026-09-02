@@ -19,6 +19,7 @@ package jumpstarter
 import (
 	"context"
 	"fmt"
+	"time"
 
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -37,12 +38,13 @@ import (
 )
 
 const (
-	telemetryPort         = 9093
-	telemetryCertSuffix   = "-telemetry-tls"
-	telemetryServiceName  = "jumpstarter-telemetry"
-	telemetryComponentApp = "jumpstarter-telemetry"
-	telemetrySASuffix     = "-telemetry"
-	grpcPortName          = "grpc"
+	telemetryPort              = 9093
+	telemetryCertSuffix        = "-telemetry-tls"
+	telemetryServiceName       = "jumpstarter-telemetry"
+	telemetryComponentApp      = "jumpstarter-telemetry"
+	telemetrySASuffix          = "-telemetry"
+	grpcPortName               = "grpc"
+	telemetryCARequeueInterval = 30 * time.Second
 )
 
 // reconcileTelemetryDeploymentStage reconciles only the telemetry Deployment (and cleanup).
@@ -127,10 +129,38 @@ func (r *JumpstarterReconciler) cleanupTelemetryService(ctx context.Context, jum
 	return nil
 }
 
+// telemetryTLSSecretName returns the TLS secret name for telemetry.
+// Returns the cert-manager managed secret if enabled, otherwise the manual CertSecret.
+// An empty string means no TLS secret is configured.
+func telemetryTLSSecretName(jumpstarter *operatorv1alpha1.Jumpstarter) string {
+	if jumpstarter.Spec.CertManager.Enabled {
+		return GetTelemetryCertSecretName(jumpstarter)
+	}
+	if jumpstarter.Spec.Telemetry != nil {
+		return jumpstarter.Spec.Telemetry.GRPC.TLS.CertSecret
+	}
+	return ""
+}
+
+// getTelemetryTLSSecretHash resolves the telemetry TLS secret name and returns its data hash.
+// This ensures that when cert-manager renews a certificate (or a manual secret changes),
+// the hash changes and triggers a rolling restart so the pod picks up the new cert.
+func (r *JumpstarterReconciler) getTelemetryTLSSecretHash(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) (string, error) {
+	tlsSecretName := telemetryTLSSecretName(jumpstarter)
+	return r.getTLSSecretHash(ctx, jumpstarter.Namespace, tlsSecretName)
+}
+
 // reconcileTelemetryDeployment creates or updates the telemetry Deployment.
 func (r *JumpstarterReconciler) reconcileTelemetryDeployment(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
-	desiredDeployment := createTelemetryDeployment(jumpstarter)
+
+	tlsSecretHash, err := r.getTelemetryTLSSecretHash(ctx, jumpstarter)
+	if err != nil {
+		log.Error(err, "Failed to compute telemetry TLS secret hash")
+		return err
+	}
+
+	desiredDeployment := createTelemetryDeployment(jumpstarter, tlsSecretHash)
 
 	existingDeployment := &appsv1.Deployment{}
 	existingDeployment.Name = desiredDeployment.Name
@@ -264,13 +294,65 @@ func (r *JumpstarterReconciler) reconcileTelemetryService(ctx context.Context, j
 }
 
 // createTelemetryDeployment builds the desired Deployment for the telemetry service.
-func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter) *appsv1.Deployment {
+// tlsSecretHash is included as a pod annotation to trigger rolling restarts on cert renewal.
+func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSecretHash string) *appsv1.Deployment {
 	t := jumpstarter.Spec.Telemetry
 	labels := telemetryLabels(jumpstarter)
 
 	replicas := int32(1)
 	if t.Replicas != nil {
 		replicas = *t.Replicas
+	}
+
+	// Build pod annotations for TLS hash (triggers rolling restart on cert renewal)
+	var podAnnotations map[string]string
+	if tlsSecretHash != "" {
+		podAnnotations = map[string]string{
+			"jumpstarter.dev/tls-secret-sha256": tlsSecretHash,
+		}
+	}
+
+	// Base environment variables - CONTROLLER_KEY is always required for token validation
+	envVars := []corev1.EnvVar{
+		{
+			Name: "CONTROLLER_KEY",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: "jumpstarter-controller-secret",
+					},
+					Key: "key",
+				},
+			},
+		},
+	}
+
+	var volumeMounts []corev1.VolumeMount
+	var volumes []corev1.Volume
+
+	// Add TLS certificate mount when TLS is configured (cert-manager or manual)
+	tlsSecretName := telemetryTLSSecretName(jumpstarter)
+	if tlsSecretName != "" {
+		envVars = append(envVars,
+			corev1.EnvVar{Name: "EXTERNAL_CERT_PEM", Value: "/tls/tls.crt"},
+			corev1.EnvVar{Name: "EXTERNAL_KEY_PEM", Value: "/tls/tls.key"},
+		)
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "tls-certs",
+			MountPath: "/tls",
+			ReadOnly:  true,
+		})
+		// Set DefaultMode explicitly to avoid reconciliation loop
+		defaultMode := int32(420)
+		volumes = append(volumes, corev1.Volume{
+			Name: "tls-certs",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  tlsSecretName,
+					DefaultMode: &defaultMode,
+				},
+			},
+		})
 	}
 
 	return &appsv1.Deployment{
@@ -295,7 +377,8 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter) *appsv
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
+					Labels:      labels,
+					Annotations: podAnnotations,
 				},
 				Spec: corev1.PodSpec{
 					RestartPolicy:                 corev1.RestartPolicyAlways,
@@ -310,19 +393,8 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter) *appsv
 							Args: []string{
 								fmt.Sprintf("--grpc-bind=:%d", telemetryPort),
 							},
-							Env: []corev1.EnvVar{
-								{
-									Name: "CONTROLLER_KEY",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: "jumpstarter-controller-secret",
-											},
-											Key: "key",
-										},
-									},
-								},
-							},
+							Env:          envVars,
+							VolumeMounts: volumeMounts,
 							Ports: []corev1.ContainerPort{
 								{
 									ContainerPort: int32(telemetryPort),
@@ -365,6 +437,7 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter) *appsv
 							},
 						},
 					},
+					Volumes: volumes,
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: ptr.To(true),
 						SeccompProfile: &corev1.SeccompProfile{
@@ -396,7 +469,7 @@ func (r *JumpstarterReconciler) cleanupTelemetry(ctx context.Context, jumpstarte
 			"Telemetry deployment deleted: name=%s", deploymentName)
 	}
 
-	certName := getTelemetryCertSecretName(jumpstarter)
+	certName := GetTelemetryCertSecretName(jumpstarter)
 	cert := &certmanagerv1.Certificate{}
 	cert.Name = certName
 	cert.Namespace = jumpstarter.Namespace
@@ -419,8 +492,8 @@ func (r *JumpstarterReconciler) cleanupTelemetry(ctx context.Context, jumpstarte
 	return nil
 }
 
-// getTelemetryCertSecretName returns the name of the telemetry TLS secret.
-func getTelemetryCertSecretName(js *operatorv1alpha1.Jumpstarter) string {
+// GetTelemetryCertSecretName returns the name of the telemetry TLS secret.
+func GetTelemetryCertSecretName(js *operatorv1alpha1.Jumpstarter) string {
 	return js.Name + telemetryCertSuffix
 }
 
@@ -445,6 +518,21 @@ func (r *JumpstarterReconciler) resolveTelemetryCA(ctx context.Context, jumpstar
 		return string(cert), nil
 	}
 	return "", fmt.Errorf("CA secret %s missing tls.crt", caSecretName)
+}
+
+// telemetryCANeedsRequeue reports whether reconciliation should be requeued soon
+// because the telemetry CA certificate is not yet available for the controller
+// ConfigMap. External issuers without a CABundle intentionally have no inlined CA
+// (exporters use the system trust store), so they never need a short requeue.
+func (r *JumpstarterReconciler) telemetryCANeedsRequeue(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) bool {
+	if jumpstarter.Spec.Telemetry == nil || !jumpstarter.Spec.Telemetry.Enabled {
+		return false
+	}
+	if !jumpstarter.Spec.CertManager.Enabled || isExternalIssuer(jumpstarter) {
+		return false
+	}
+	caCert, err := r.resolveTelemetryCA(ctx, jumpstarter)
+	return err != nil || caCert == ""
 }
 
 // telemetryEndpointFor returns the in-cluster gRPC endpoint for the telemetry service.

@@ -11,7 +11,7 @@ from google.protobuf import duration_pb2, field_mask_pb2, json_format, timestamp
 from grpc import ChannelConnectivity
 from grpc.aio import Channel
 from jumpstarter_protocol import client_pb2, client_pb2_grpc, jumpstarter_pb2_grpc, kubernetes_pb2, router_pb2_grpc
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer
 
 from jumpstarter.client.selectors import extract_match_labels_filter, selector_contains
 from jumpstarter.common import ExporterStatus
@@ -101,6 +101,11 @@ class Exporter(BaseModel):
     enabled: bool = True
     lease: Lease | None = None
     deprecated_labels: dict[str, str] = Field(default_factory=dict)
+
+    @field_serializer("status", when_used="json")
+    def serialize_status(self, status: ExporterStatus | None):
+        # emit the status name instead of the raw protobuf integer
+        return status.name if status is not None else None
 
     @classmethod
     def from_protobuf(cls, data: client_pb2.Exporter) -> Exporter:
@@ -282,6 +287,12 @@ class Lease(BaseModel):
 
     def rich_add_names(self, names):
         names.append(self.name)
+
+    @computed_field  # ty: ignore[invalid-argument-type]
+    @property
+    def status(self) -> str:
+        """Derived lease status, also included in serialized output"""
+        return self.get_status()
 
     def get_status(self) -> str:
         """Get the lease status based on conditions"""

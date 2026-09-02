@@ -25,7 +25,10 @@ fi
 INSTALL_DIR="${INSTALL_DIR:-${HOME}/.local/jumpstarter}"
 VENV_DIR="${VENV_DIR:-${INSTALL_DIR}/venv}"
 SET_SCRIPT="${INSTALL_DIR}/set"
-DEFAULT_SOURCE="release-0.8"
+
+INSTALL_SOURCE_FILE="${INSTALL_DIR}/install_source"
+DEFAULT_SOURCE="release-0.9"
+
 
 # Function to print colored output
 print_info() {
@@ -52,9 +55,9 @@ Jumpstarter Installer
 Usage: $0 [OPTIONS]
 
 OPTIONS:
-    -s, --source SOURCE    Installation source (default: release-0.8)
+    -s, --source SOURCE    Installation source (default: release-0.9)
                           Available sources:
-                          - release-0.8: Stable release 0.8 (recommended)
+                          - release-0.9: Stable release (recommended)
                           - latest: Latest stable release (when available)
                           - rc: Latest release candidate (when available)
                           - main: Latest development version
@@ -62,7 +65,7 @@ OPTIONS:
     -h, --help            Show this help message
 
 EXAMPLES:
-    $0                    # Install stable release 0.8 (recommended)
+    $0                    # Install stable release 0.9 (recommended)
     $0 -s release-0.8    # Install stable release 0.8
     $0 -s main           # Install latest development version
     $0 -s rc             # Install latest release candidate (when available)
@@ -179,6 +182,7 @@ create_venv() {
     print_success "Virtual environment created"
 }
 
+
 # Function to install jumpstarter-all
 install_jumpstarter() {
     local source="$1"
@@ -207,6 +211,10 @@ install_jumpstarter() {
         print_error "This might be due to network issues or the package not being available"
         exit 1
     fi
+
+    cat > "${INSTALL_SOURCE_FILE}" << EOF
+${source}
+EOF
 
     print_success "jumpstarter-all==${version} installed successfully"
 }
@@ -288,6 +296,7 @@ while [[ $# -gt 0 ]]; do
             INSTALL_DIR="$2"
             VENV_DIR="${INSTALL_DIR}/venv"
             SET_SCRIPT="${INSTALL_DIR}/set"
+            INSTALL_SOURCE_FILE="${INSTALL_DIR}/install_source"
             shift 2
             ;;
         -h|--help)
@@ -302,6 +311,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Set cached source from file
+if [[ -z "${SOURCE}" && -f "${INSTALL_SOURCE_FILE}" ]]; then
+    SOURCE=$(<"${INSTALL_SOURCE_FILE}")
+fi
 # Set default source if not specified
 SOURCE="${SOURCE:-${DEFAULT_SOURCE}}"
 

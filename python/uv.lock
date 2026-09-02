@@ -3,14 +3,14 @@ revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 
 [manifest]
@@ -290,8 +290,8 @@ version = "21.2.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "cffi", marker = "python_full_version >= '3.14'" },
@@ -316,8 +316,8 @@ version = "25.1.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "cffi", marker = "python_full_version >= '3.12' and python_full_version < '3.14'" },
@@ -352,8 +352,8 @@ version = "3.8.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/29/38/b3395cc9ad1b56d2ddac9970bc8f4141312dbaec28bc7c218b0dfafd0f42/asgiref-3.8.1.tar.gz", hash = "sha256:c343bd80a0bec947a9860adb4c432ffa7db769836c64238fc34bdc3fec84d590", size = 35186, upload-time = "2024-03-22T14:39:36.863Z" }
 wheels = [
@@ -366,11 +366,11 @@ version = "3.10.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/46/08/4dfec9b90758a59acc6be32ac82e98d1fbfc321cb5cfa410436dbacf821c/asgiref-3.10.0.tar.gz", hash = "sha256:d89f2d8cd8b56dada7d52fa7dc8075baa08fb836560710d38c292a7a3f78c04e", size = 37483, upload-time = "2025-10-05T09:15:06.557Z" }
 wheels = [
@@ -503,8 +503,8 @@ version = "4.3.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/bb/5d/6d7433e0f3cd46ce0b43cd65e1db465ea024dbb8216fb2404e919c2ad77b/bcrypt-4.3.0.tar.gz", hash = "sha256:3a3fd2204178b6d2adcf09cb4f6426ffef54762577a7c9b54c159008cb288c18", size = 25697, upload-time = "2025-02-28T01:24:09.174Z" }
 wheels = [
@@ -562,11 +562,11 @@ version = "5.0.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d4/36/3329e2518d70ad8e2e5817d5a4cac6bba05a47767ec416c7d020a965f408/bcrypt-5.0.0.tar.gz", hash = "sha256:f748f7c2d6fd375cc93d3fba7ef4a9e3a092421b8dbf34d8d4dc06be9492dfdd", size = 25386, upload-time = "2025-09-25T19:50:47.829Z" }
 wheels = [
@@ -780,8 +780,8 @@ version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/2f/c2/f9e977608bdf958650638c3f1e28f85a1b075f075ebbe77db8555463787b/Brotli-1.1.0.tar.gz", hash = "sha256:81de08ac11bcb85841e440c13611c00b67d3bf82698314928d0b676362546724", size = 7372270, upload-time = "2023-09-07T14:05:41.643Z" }
 wheels = [
@@ -839,11 +839,11 @@ version = "1.2.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f7/16/c92ca344d646e71a43b8bb353f0a6490d7f6e06210f8554c8f874e454285/brotli-1.2.0.tar.gz", hash = "sha256:e310f77e41941c13340a95976fe66a8a95b01e783d430eeaf7a2f87e0a57dd0a", size = 7388632, upload-time = "2025-11-05T18:39:42.86Z" }
 wheels = [
@@ -891,18 +891,15 @@ wheels = [
 
 [[package]]
 name = "bumble"
-version = "0.0.233"
+version = "0.0.234"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "aiohttp", marker = "sys_platform != 'emscripten'" },
     { name = "click", marker = "sys_platform != 'emscripten'" },
     { name = "cryptography", version = "44.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "cryptography", version = "45.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "humanize", marker = "sys_platform != 'emscripten'" },
     { name = "libusb-package", marker = "sys_platform != 'android' and sys_platform != 'emscripten'" },
     { name = "libusb1", marker = "sys_platform != 'emscripten'" },
     { name = "platformdirs", marker = "sys_platform != 'emscripten'" },
-    { name = "prettytable", marker = "sys_platform != 'emscripten'" },
     { name = "prompt-toolkit", marker = "sys_platform != 'emscripten'" },
     { name = "pyee", version = "13.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "pyee", version = "14.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -911,9 +908,9 @@ dependencies = [
     { name = "pyusb", marker = "sys_platform != 'emscripten'" },
     { name = "websockets", marker = "sys_platform != 'emscripten'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7a/f6/cdf94a381181a712ee6959c0cba5973744410b19886ecb994977dcb2be4c/bumble-0.0.233.tar.gz", hash = "sha256:0883e2dc744f0b8228f5095f54bdf8df7f74e47d92bc5fd97ebfc2ee48630f54", size = 2406210, upload-time = "2026-07-15T10:16:26.202Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/37/86/4bafa5c641d5f557e5f28a1f3e0a37f0b851937ac4d205988aef89b1d416/bumble-0.0.234.tar.gz", hash = "sha256:b208a088fd75ac737bc99da79b25935aace48f500e0ea5a24f8621a69baa10dc", size = 2403898, upload-time = "2026-08-31T12:11:26.729Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e8/c1/92d2ff77a857134a99b84f4c551ebd65b268dd357a8a2e5dc834c3e84699/bumble-0.0.233-py3-none-any.whl", hash = "sha256:dbeda4370507a0d55cf0fdf0c3b4b565f9793600454e24852e51baddd44c63f1", size = 700852, upload-time = "2026-07-15T10:16:24.797Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/28/d27b8c18dc1e76b3d35a4c23ad21d883b9253fdcc6ce9296d6c617677235/bumble-0.0.234-py3-none-any.whl", hash = "sha256:08c1d8dc65af70baf377d1a593438e736ab8f8e9ff7b7cfdf54dd9c629a5dd82", size = 682467, upload-time = "2026-08-31T12:11:25.084Z" },
 ]
 
 [[package]]
@@ -1162,8 +1159,8 @@ version = "44.0.3"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "cffi", marker = "python_full_version < '3.12' and platform_python_implementation != 'PyPy'" },
@@ -1208,11 +1205,11 @@ version = "45.0.4"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "cffi", marker = "python_full_version >= '3.12' and platform_python_implementation != 'PyPy'" },
@@ -1440,8 +1437,8 @@ version = "3.1.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "blinker", marker = "python_full_version < '3.12'" },
@@ -1461,11 +1458,11 @@ version = "3.1.2"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "blinker", marker = "python_full_version >= '3.12'" },
@@ -1699,8 +1696,8 @@ version = "0.14.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f5/38/3af3d3633a34a3316095b39c8e8fb4853a28a536e55d347bd8d8e9a14b03/h11-0.14.0.tar.gz", hash = "sha256:8f19fbbe99e72420ff35c00b27a34cb9937e902a8b810e2c88300c6f0a3b699d", size = 100418, upload-time = "2022-09-25T15:40:01.519Z" }
 wheels = [
@@ -1713,11 +1710,11 @@ version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/01/ee/02a2c011bdab74c6fb3c75474d40b3052059d95df7e73351460c8588d963/h11-0.16.0.tar.gz", hash = "sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1", size = 101250, upload-time = "2025-04-24T03:35:25.427Z" }
 wheels = [
@@ -1730,8 +1727,8 @@ version = "4.1.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "hpack", marker = "python_full_version < '3.12'" },
@@ -1748,11 +1745,11 @@ version = "4.3.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "hpack", marker = "python_full_version >= '3.12'" },
@@ -1833,8 +1830,8 @@ version = "1.0.8"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "certifi", marker = "python_full_version < '3.12'" },
@@ -1851,11 +1848,11 @@ version = "1.0.9"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "certifi", marker = "python_full_version >= '3.12'" },
@@ -1892,22 +1889,13 @@ wheels = [
 ]
 
 [[package]]
-name = "humanize"
-version = "4.16.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/0a/ea/13a1ef3c12d12662905801495283530251918b70d62d368f1d2e0272c70d/humanize-4.16.0.tar.gz", hash = "sha256:7dc2244a2f84a4bfb1d36c37bac80cd78e35cdc5c119206d87b018e1445f3a3f", size = 89515, upload-time = "2026-06-30T16:17:29.859Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b0/aa/0b7365d30fed43e7a3449aba1fe20a0a7174d9cf13e282af4e69ac825441/humanize-4.16.0-py3-none-any.whl", hash = "sha256:353eb2f34c09d098b2880eee8bef21832eae6d174f48c5762fff7e5fcb74d01d", size = 137209, upload-time = "2026-06-30T16:17:28.36Z" },
-]
-
-[[package]]
 name = "hyperframe"
 version = "6.0.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/5a/2a/4747bff0a17f7281abe73e955d60d80aae537a5d203f417fa1c2e7578ebb/hyperframe-6.0.1.tar.gz", hash = "sha256:ae510046231dc8e9ecb1a6586f63d2347bf4c8905914aa84ba585ae85f28a914", size = 25008, upload-time = "2021-04-17T12:11:22.757Z" }
 wheels = [
@@ -1920,11 +1908,11 @@ version = "6.1.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/02/e7/94f8232d4a74cc99514c13a9f995811485a6903d48e5d952771ef6322e30/hyperframe-6.1.0.tar.gz", hash = "sha256:f630908a00854a7adeabd6382b43923a4c4cd4b821fcb527e6ab9e15382a3b08", size = 26566, upload-time = "2025-01-22T21:41:49.302Z" }
 wheels = [
@@ -3459,7 +3447,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.1.8" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
-    { name = "pysnmp", specifier = "==7.1.28" },
+    { name = "pysnmp", specifier = "==7.1.29" },
 ]
 
 [package.metadata.requires-dev]
@@ -4238,8 +4226,8 @@ version = "0.10"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/54/04/dd60b9cb65d580ef6cb6eaee975ad1bdd22d46a3f51b07a1e0606710ea88/kaitaistruct-0.10.tar.gz", hash = "sha256:a044dee29173d6afbacf27bcac39daf89b654dd418cfa009ab82d9178a9ae52a", size = 7061, upload-time = "2022-07-09T00:34:06.729Z" }
 wheels = [
@@ -4252,11 +4240,11 @@ version = "0.11"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/27/b8/ca7319556912f68832daa4b81425314857ec08dfccd8dbc8c0f65c992108/kaitaistruct-0.11.tar.gz", hash = "sha256:053ee764288e78b8e53acf748e9733268acbd579b8d82a427b1805453625d74b", size = 11519, upload-time = "2025-09-08T15:46:25.037Z" }
 wheels = [
@@ -4539,8 +4527,8 @@ version = "11.0.2"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "aioquic", marker = "python_full_version < '3.12'" },
@@ -4579,11 +4567,11 @@ version = "12.2.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "aioquic", marker = "python_full_version >= '3.12'" },
@@ -4657,8 +4645,8 @@ version = "0.10.7"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "mitmproxy-macos", version = "0.10.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' and sys_platform == 'darwin'" },
@@ -4678,11 +4666,11 @@ version = "0.12.9"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "mitmproxy-linux", marker = "python_full_version >= '3.12' and sys_platform == 'linux'" },
@@ -4703,8 +4691,8 @@ version = "0.10.7"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d6/1b/8519d7ffe246b32387012d738a7ce024de83120040e8400c325122870571/mitmproxy_windows-0.10.7-py3-none-any.whl", hash = "sha256:be2eb85980d69dcc5159bbbcd673f3a6966b6e3b34419eed6d5bfb36ed4cf9a3", size = 474415, upload-time = "2024-10-28T11:56:37.868Z" },
@@ -4716,11 +4704,11 @@ version = "0.12.9"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/29/83/2712af146c5f6a59a7f4658c02356b241c40ba19cb2b16db94235e95b699/mitmproxy_windows-0.12.9-py3-none-any.whl", hash = "sha256:fdec21fb66a5ba237d9106bfdc09d9428f315551bf4b41ba06b261e7beb56417", size = 464363, upload-time = "2026-01-30T14:54:12.531Z" },
@@ -4732,8 +4720,8 @@ version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/cb/d0/7555686ae7ff5731205df1012ede15dd9d927f6227ea151e901c7406af4f/msgpack-1.1.0.tar.gz", hash = "sha256:dd432ccc2c72b914e4cb77afce64aab761c1137cc698be3984eee260bcb2896e", size = 167260, upload-time = "2024-09-10T04:25:52.197Z" }
 wheels = [
@@ -4778,11 +4766,11 @@ version = "1.1.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/45/b1/ea4f68038a18c77c9467400d166d74c4ffa536f34761f7983a104357e614/msgpack-1.1.1.tar.gz", hash = "sha256:77b79ce34a2bdab2594f490c8e80dd62a02d650b91a75159a63ec413b8d104cd", size = 173555, upload-time = "2025-06-13T06:52:51.324Z" }
 wheels = [
@@ -5252,18 +5240,6 @@ wheels = [
 ]
 
 [[package]]
-name = "prettytable"
-version = "3.18.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "wcwidth", marker = "sys_platform != 'emscripten'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/81/74/ba08d81e668ccfe8658d7520a307e63c19862c08eb4ccb26f356c5239a7a/prettytable-3.18.0.tar.gz", hash = "sha256:439217116152244369caf3d9f1caf2f9fe29b03bd79e88d2928c8e718c95d680", size = 76373, upload-time = "2026-06-22T16:07:50.174Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/fe/be/2e6798ace5cc036f5d05d36b7b2fd85346f1a708c87060890b070d0ec607/prettytable-3.18.0-py3-none-any.whl", hash = "sha256:b3346e0e6f79180833aebaac088ae926340586cf6d7d991b9eb125b65f72313a", size = 37357, upload-time = "2026-06-22T16:07:48.595Z" },
-]
-
-[[package]]
 name = "prometheus-client"
 version = "0.26.0"
 source = { registry = "https://pypi.org/simple" }
@@ -5528,8 +5504,8 @@ version = "13.0.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "typing-extensions", marker = "python_full_version < '3.12'" },
@@ -5545,11 +5521,11 @@ version = "14.0.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "typing-extensions", marker = "python_full_version >= '3.12'" },
@@ -5708,8 +5684,8 @@ version = "24.3.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "cryptography", version = "44.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
@@ -5725,11 +5701,11 @@ version = "25.1.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "cryptography", version = "45.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -5746,8 +5722,8 @@ version = "3.2.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/8c/d5/e5aeee5387091148a19e1145f63606619cb5f20b83fccb63efae6474e7b2/pyparsing-3.2.0.tar.gz", hash = "sha256:cbf74e27246d595d9a74b186b810f6fbb86726dbf3b9532efb343f6d7294fe9c", size = 920984, upload-time = "2024-10-13T10:01:16.046Z" }
 wheels = [
@@ -5760,11 +5736,11 @@ version = "3.2.5"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f2/a5/181488fc2b9d093e3972d2a472855aae8a03f000592dbfce716a512b3359/pyparsing-3.2.5.tar.gz", hash = "sha256:2df8d5b7b2802ef88e8d016a2eb9c7aeaa923529cd251ed0fe4608275d4105b6", size = 1099274, upload-time = "2025-09-21T04:11:06.277Z" }
 wheels = [
@@ -5777,8 +5753,8 @@ version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/30/23/2f0a3efc4d6a32f3b63cdff36cd398d9701d26cda58e3ab97ac79fb5e60d/pyperclip-1.9.0.tar.gz", hash = "sha256:b7de0142ddc81bfc5c7507eea19da920b92252b548b96186caf94a5e2527d310", size = 20961, upload-time = "2024-06-18T20:38:48.401Z" }
 
@@ -5788,11 +5764,11 @@ version = "1.11.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e8/52/d87eba7cb129b81563019d1679026e7a112ef76855d6159d24754dbd2a51/pyperclip-1.11.0.tar.gz", hash = "sha256:244035963e4428530d9e3a6101a1ef97209c6825edab1567beac148ccc1db1b6", size = 12185, upload-time = "2025-09-26T14:40:37.245Z" }
 wheels = [
@@ -5822,14 +5798,14 @@ wheels = [
 
 [[package]]
 name = "pysnmp"
-version = "7.1.28"
+version = "7.1.29"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyasn1" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ee/c3/6e7a0e32d6ac94c1465a93dd4826be526a12f26928eed5ee590abfb207d8/pysnmp-7.1.28.tar.gz", hash = "sha256:6b837f1e90a9abb01ea21a1bbf222e6ba67199e6d1bdc4f7083a333a053ed1fc", size = 268283, upload-time = "2026-07-31T13:34:07.082Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/41/29/57f468577d8362986719590a9fbfde4056e4934cf6d711f9a8bac8a60250/pysnmp-7.1.29.tar.gz", hash = "sha256:d0da6726c4d35b1e57027c98e2065928656b0cc5d3ce5a60b3535e1825cc60ee", size = 268583, upload-time = "2026-08-21T03:57:23.32Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0b/14/79d0c4d338fef4a0911f4d3d3eb9fe9b027ebe4399cc4e41dc3e001c3245/pysnmp-7.1.28-py3-none-any.whl", hash = "sha256:417559de9e35e283882c80913897489554e98a388b2a77b6e1014ea8257cfe1b", size = 355211, upload-time = "2026-07-31T13:34:05.742Z" },
+    { url = "https://files.pythonhosted.org/packages/a5/75/ee4c64b903786caa9294382bae895ccddb0b05c6f89ea0c8d21bce6dd9b1/pysnmp-7.1.29-py3-none-any.whl", hash = "sha256:6d08124574c474853870f20d728b54335b42fb1e68068bbb486ec077b3d052cf", size = 355548, upload-time = "2026-08-21T03:57:21.091Z" },
 ]
 
 [[package]]
@@ -6409,8 +6385,8 @@ version = "0.18.6"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "ruamel-yaml-clib", marker = "python_full_version < '3.12' and platform_python_implementation == 'CPython'" },
@@ -6426,11 +6402,11 @@ version = "0.18.16"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "ruamel-yaml-clib", marker = "python_full_version >= '3.12' and python_full_version < '3.14' and platform_python_implementation == 'CPython'" },
@@ -6945,8 +6921,8 @@ version = "6.4.2"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/59/45/a0daf161f7d6f36c3ea5fc0c2de619746cc3dd4c76402e9db545bd920f63/tornado-6.4.2.tar.gz", hash = "sha256:92bad5b4746e9879fd7bf1eb21dce4e3fc5128d71601f80005afa39237ad620b", size = 501135, upload-time = "2024-11-22T03:06:38.036Z" }
 wheels = [
@@ -6968,11 +6944,11 @@ version = "6.5.2"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/09/ce/1eb500eae19f4648281bb2186927bb062d2438c2e5093d1360391afd2f90/tornado-6.5.2.tar.gz", hash = "sha256:ab53c8f9a0fa351e2c0741284e06c7a45da86afb544133201c5cc8578eb076a0", size = 510821, upload-time = "2025-08-08T18:27:00.78Z" }
 wheels = [
@@ -7157,8 +7133,8 @@ version = "2.6.16"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "typing-extensions", marker = "python_full_version < '3.12'" },
@@ -7175,11 +7151,11 @@ version = "3.0.3"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "wcwidth", marker = "python_full_version >= '3.12'" },
@@ -7720,8 +7696,8 @@ version = "0.23.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'android'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform == 'android'",
 ]
 dependencies = [
     { name = "cffi", marker = "python_full_version < '3.12' and platform_python_implementation == 'PyPy'" },
@@ -7784,11 +7760,11 @@ version = "0.25.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'android'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/fd/aa/3e0508d5a5dd96529cdc5a97011299056e14c6505b678fd58938792794b1/zstandard-0.25.0.tar.gz", hash = "sha256:7713e1179d162cf5c7906da876ec2ccb9c3a9dcbdffef0cc7f70c3667a205f0b", size = 711513, upload-time = "2025-09-14T22:15:54.002Z" }
 wheels = [

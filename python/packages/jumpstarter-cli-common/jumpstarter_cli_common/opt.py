@@ -5,6 +5,7 @@ from typing import Literal, Optional
 
 import click
 from rich import traceback
+from rich.console import Console
 from rich.logging import RichHandler
 
 
@@ -28,6 +29,49 @@ class SourcePrefixFormatter(logging.Formatter):
         return super().format(record)
 
 
+def _handler_stream(handler: logging.Handler):
+    """The stream a handler writes to, or None when it cannot be determined."""
+    stream = getattr(handler, "stream", None)
+    if stream is not None:
+        return stream
+    # RichHandler writes through a Console rather than holding a stream.
+    console = getattr(handler, "console", None)
+    return getattr(console, "file", None)
+
+
+def _detach_stdout_handlers(root: logging.Logger) -> None:
+    """Remove root handlers that write to stdout.
+
+    basicConfig does nothing at all when the root logger already has handlers,
+    so configuring ours is not enough: a handler installed before the CLI ran
+    would keep writing log lines into the payload that -o json/yaml puts on
+    stdout. Only stdout writers are detached — anything else on the root
+    logger belongs to whoever put it there.
+    """
+    for handler in list(root.handlers):
+        if _handler_stream(handler) is sys.stdout:
+            root.removeHandler(handler)
+
+
+class _CliLogHandler(RichHandler):
+    """The handler the CLI installs, tagged so it is only ever added once."""
+
+
+def _ensure_cli_handler(root: logging.Logger) -> None:
+    """Attach the CLI's stderr handler if it is not already there.
+
+    logging.basicConfig would do this, but only when the root logger has no
+    handlers at all. A handler left by whatever embedded the CLI would
+    therefore mean no output on stderr and no log level applied either, which
+    is a confusing way for --log-level to do nothing.
+    """
+    if any(isinstance(handler, _CliLogHandler) for handler in root.handlers):
+        return
+    handler = _CliLogHandler(console=Console(stderr=True), show_path=False)
+    handler.setFormatter(SourcePrefixFormatter())
+    root.addHandler(handler)
+
+
 def _opt_log_level_callback(ctx, param, value):
     traceback.install()
     # there is no way to determine if the command is invoked for jmp run or something else at this
@@ -39,14 +83,12 @@ def _opt_log_level_callback(ctx, param, value):
         level = logging.getLevelName(value.upper()) if value else logging.INFO
         setup_logging(component="exporter", log_format=_log_format_value, level=level)
     else:
-        handler = RichHandler(show_path=False)
-        handler.setFormatter(SourcePrefixFormatter())
-        basicConfig = partial(logging.basicConfig, handlers=[handler])
-
-        if value:
-            basicConfig(level=value.upper())
-        else:
-            basicConfig(level=logging.INFO)
+        # Logs go to stderr so they never interleave with the machine-readable
+        # payload that -o json/yaml writes to stdout.
+        root = logging.getLogger()
+        _detach_stdout_handlers(root)
+        _ensure_cli_handler(root)
+        root.setLevel(value.upper() if value else logging.INFO)
 
 
 opt_log_level = click.option(
@@ -155,6 +197,16 @@ opt_output_all = click.option(
     type=click.Choice([OutputMode.JSON, OutputMode.YAML, OutputMode.NAME]),
     default=None,
     help='Output mode. Use "-o name" for shorter output (resource/name).',
+)
+
+DataOutputType = Optional[Literal["json", "yaml"]]
+
+opt_output_json_yaml = click.option(
+    "-o",
+    "--output",
+    type=click.Choice([OutputMode.JSON, OutputMode.YAML]),
+    default=None,
+    help='Output mode. Use "-o json" or "-o yaml" for machine-readable output.',
 )
 
 NameOutputType = Optional[Literal["name"]]

@@ -83,6 +83,57 @@ class TestAuthStatus:
         assert result.exit_code == 0
         assert "Refresh token stored: yes" in result.output
 
+    def test_status_invalid_token(self):
+        config = _mock_config(token="not-a-jwt")
+        with _patch_config(config):
+            result = self.runner.invoke(auth, ["status"])
+        assert result.exit_code == 0
+        assert "Failed to decode token" in result.output
+
+    def test_status_valid_token_json(self):
+        token = _make_jwt(exp_offset_seconds=7200)
+        config = _mock_config(token=token, refresh_token="fake-refresh")
+        with _patch_config(config):
+            result = self.runner.invoke(auth, ["status", "-o", "json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["kind"] == "AuthStatus"
+        assert data["status"] == "valid"
+        assert data["subject"] == "test-subject"
+        assert data["issuer"] == "https://localhost:8085"
+        assert data["refreshTokenStored"] is True
+        assert data["remainingSeconds"] > 3600
+        assert data["expiresAt"] is not None
+        assert token not in result.output
+
+    def test_status_expired_token_json(self):
+        token = _make_expired_jwt()
+        config = _mock_config(token=token)
+        with _patch_config(config):
+            result = self.runner.invoke(auth, ["status", "-o", "json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["status"] == "expired"
+        assert data["remainingSeconds"] < 0
+
+    def test_status_no_token_json(self):
+        config = _mock_config(token=None)
+        with _patch_config(config):
+            result = self.runner.invoke(auth, ["status", "-o", "json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["status"] == "no-token"
+        assert data["expiresAt"] is None
+
+    def test_status_invalid_token_json(self):
+        config = _mock_config(token="not-a-jwt")
+        with _patch_config(config):
+            result = self.runner.invoke(auth, ["status", "-o", "json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["status"] == "invalid-token"
+        assert data["error"]
+
 
 class TestAuthRotate:
     def setup_method(self):

@@ -308,6 +308,21 @@ type TelemetryConfig struct {
 
 	// Logging configuration for the telemetry log ingestion path.
 	Logging TelemetryLoggingConfig `json:"logging,omitempty"`
+
+	// gRPC configuration for the telemetry service.
+	// Use this to configure TLS when not using cert-manager.
+	GRPC TelemetryGRPCConfig `json:"grpc,omitempty"`
+}
+
+// TelemetryGRPCConfig defines gRPC configuration for the telemetry service.
+// This is a simplified version of GRPCConfig since telemetry is internal-only
+// (ClusterIP) and doesn't need external endpoints or keepalive settings.
+type TelemetryGRPCConfig struct {
+	// TLS configuration for secure gRPC communication with the telemetry service.
+	// When spec.certManager.enabled is true, this is ignored and certificates are
+	// automatically managed by cert-manager.
+	// When spec.certManager.enabled is false, you can provide your own TLS secret here.
+	TLS TLSConfig `json:"tls,omitempty"`
 }
 
 // TelemetryLoggingConfig configures the log push path to the telemetry service.

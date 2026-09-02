@@ -9,7 +9,7 @@ QEMU_RUNTIME_IMG ?= quay.io/jumpstarter-dev/virtual/qemu-runtime:latest
 EXPORTER_IMG ?= quay.io/jumpstarter-dev/jumpstarter:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 # renovate: datasource=github-releases depName=kubernetes-sigs/controller-tools extractVersion=^envtest-v(?<version>.+)$
-ENVTEST_K8S_VERSION = 1.30.0
+ENVTEST_K8S_VERSION = 1.37.0
 
 # Version information
 GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "unknown")
@@ -298,16 +298,16 @@ GRPCURL = $(LOCALBIN)/grpcurl
 
 ## Tool Versions
 # renovate: datasource=github-releases depName=kubernetes-sigs/kustomize extractVersion=^kustomize/(?<version>v\d+\.\d+\.\d+)$
-KUSTOMIZE_VERSION ?= v5.6.0
+KUSTOMIZE_VERSION ?= v5.8.1
 # renovate: datasource=github-releases depName=kubernetes-sigs/controller-tools extractVersion=^(?<version>v\d+\.\d+\.\d+)$
-CONTROLLER_TOOLS_VERSION ?= v0.18.0
+CONTROLLER_TOOLS_VERSION ?= v0.21.0
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 # renovate: datasource=github-releases depName=golangci/golangci-lint
-GOLANGCI_LINT_VERSION ?= v2.13.1
+GOLANGCI_LINT_VERSION ?= v2.13.2
 # renovate: datasource=github-releases depName=kubernetes-sigs/kind
-KIND_VERSION ?= v0.27.0
+KIND_VERSION ?= v0.33.0
 # renovate: datasource=github-releases depName=fullstorydev/grpcurl
-GRPCURL_VERSION ?= v1.9.2
+GRPCURL_VERSION ?= v1.9.4
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
