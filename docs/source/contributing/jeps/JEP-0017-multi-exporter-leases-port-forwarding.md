@@ -508,7 +508,10 @@ First, the **data plane** — ports that a forward carries:
 | `jumpstarter-driver-bt-peer` | `controller` | requires | A Bumble `Device` dialing an external controller |
 | rootcanal HCI (Cuttlefish, emulator) | `rootcanal` | provides | HCI on TCP (`7300 + rootcanal_instance_num`); hosts attach to it |
 | rootcanal link layer | `rootcanal-link` | provides | Controller-to-controller federation (`7400`, `7600` BLE); standalone rootcanal only, not netsim |
-| `wmediumd` / `mac80211_hwsim` | `hwsim` | provides | Frame socket |
+| `wmediumd` / `mac80211_hwsim` | `hwsim` | provides | vhost-user, not a byte stream — reached through a frame bridge (DD-10) |
+| Android Auto head unit server (phone, developer mode) | `aa-hu`, `aa-hu-wifi` | provides | Same service, via `adb forward` (USB-like) or the guest's Wi-Fi address (wireless-like); the head unit dials it |
+| Android Auto receiver (Desktop Head Unit) | `phone` | requires | Google's public receiver; dials the phone's port (DD-10) |
+| Android Auto wireless receiver (GAS head unit) | `aa-wireless` | provides | TCP 5288 on the head unit; the phone dials it after the Bluetooth handover — physical head units only |
 | `socketcand` / CAN-over-TCP bridge | `can` | provides | A CAN segment reachable as a socket |
 | Serial bridge (pty or TCP) | `console` | requires/provides | Cross-over between a DUT and a companion |
 
@@ -541,6 +544,46 @@ air: real devices in RF range pair without any forward at all, and forwards
 carry only the *wired* media of such a bench — a CAN segment, a serial
 cross-over. The lease plane is what physical benches need most, because it is
 what lets their two exporters live on different hosts.
+
+### A projection bench, concretely
+
+The Android Auto bench in the reference implementation has one shape that
+was verified end to end (DD-10) and one that follows from it.
+
+**Virtual.** The phone is a Cuttlefish exporter booting Google's GMS GSI —
+the phone stack Google ships, not an AOSP approximation — with Android Auto
+installed and its developer-mode head unit server started by the driver. The
+head unit is *not* an AAOS CVD, which cannot receive projection because the
+receiver is part of GAS; it is Google's Desktop Head Unit, run by a `dhu`
+driver as a process inside the head-unit exporter. The DHU is a TCP client,
+so it is the `requires` side, and the phone `provides` the port it dials:
+
+```yaml
+spec:
+  members:
+    - name: phone
+      selector: { matchLabels: { device-type: android-phone, gms: "true" } }
+    - name: headunit
+      selector: { matchLabels: { device-type: aa-headunit } }
+  forwards:
+    - name: projection
+      between:
+        - { member: phone,    port: aa-hu-wifi }
+        - { member: headunit, port: phone }
+```
+
+`aa-hu-wifi` reaches the head unit server through the guest's Wi-Fi
+interface — the phone's side of a wireless session — where `aa-hu` would
+reach it through `adb forward`, the shape of a USB session. The forward is
+the same either way; the port name is the test's statement of which cable it
+is pretending to be (DD-13).
+
+**Physical.** A GAS head unit on one exporter and a phone on another, on
+different hosts. The radios are the air, so the handover needs no forward;
+the lease plane is what this bench needs, and its forwards carry only wired
+media — a CAN segment feeding the head unit's VHAL, a serial console. A
+`dhu` member can stand in for the head unit here too, which gives a
+physical phone a hardware-free receiver.
 
 ### API / Protocol Changes
 
@@ -730,7 +773,12 @@ message DialPeerResponse {
   direct fast path exists.
 - **Wi-Fi frame forwarding is the most latency-sensitive path.** `wmediumd`
   models RSSI-based delivery and expects medium-like timing; a TCP substrate
-  introduces head-of-line blocking a real air interface does not have (DD-10).
+  introduces head-of-line blocking a real air interface does not have, and
+  its vhost-user transport needs a frame bridge on each side before any
+  forward is involved (DD-10).
+- **No head unit hardware is needed to project.** Google's Desktop Head
+  Unit is the receiver for virtual benches and can stand in for one on a
+  physical phone's bench (see *A projection bench, concretely*).
 - **Listener addresses.** A `requires` port binds a fixed local address,
   which is safe because each exporter owns its network namespace (see
   *Deployment assumptions*). The one configuration that breaks this is a
@@ -1171,7 +1219,7 @@ changes the decision — option 2 stays the Phase 1 default on its symmetry —
 but the address and join findings above are why the Phase 1 driver work is
 "a rootcanal control hook", not "nothing".
 
-### DD-10: Wi-Fi medium forwarding
+### DD-10: Wi-Fi and projection — what a forward carries
 
 **Alternatives considered:**
 
@@ -1179,34 +1227,68 @@ but the address and join findings above are why the Phase 1 driver work is
    share one simulated medium.
 2. **Attach at netsim's 802.11 MAC chip** — Wi-Fi as another chip kind on the
    `PacketStreamer` port.
-3. **Forward the projection socket at L4** — skip radio simulation and carry
-   the projection session's TCP connection directly.
+3. **Forward the projection session at L4** — carry the projection's own TCP
+   connection, over the guest's real Wi-Fi NIC, and simulate no radio.
 
-**Decision:** Option 1 as the target, with option 2 taken first where
-netsim's Wi-Fi support covers the configuration; option 3 rejected as a
-fidelity failure but retained as a diagnostic.
+**Decision:** Option 3 is the standard projection path and a Phase 2
+deliverable: the session is an ordinary `provides`/`requires` pair and needs
+nothing this JEP does not already build. Options 1 and 2 remain the target
+for **medium** fidelity — association, RSSI, and the Bluetooth→Wi-Fi
+handover — with option 2 first where netsim covers it, and option 1 now
+understood to need a frame-bridge component on each exporter rather than
+the byte forward. That is Phase 4.
 
-**Rationale:** Wireless phone projection's defining behavior is the
-*handover*: pair over Bluetooth, then move the session to a peer-to-peer
-Wi-Fi link. This holds for Android Auto and CarPlay alike, and it is the
-reason the medium cannot be skipped. A
-test that forwards the projection socket at L4 never exercises the handover,
-the Wi-Fi Direct negotiation, or the failure modes that matter — it verifies
-that a TCP proxy works. So the medium has to be simulated.
+**Rationale:** An earlier draft rejected option 3 as a fidelity failure —
+"it verifies that a TCP proxy works" — and kept it only as a diagnostic.
+Running it changed that judgment. With the two Pods of the DD-9 experiment,
+a GMS phone image and Google's own receiver projected a live Android Auto
+session across a single forwarded port (the verification below). Version
+negotiation, the TLS authentication between GMS and the receiver library,
+service discovery, the phone-side first-run flow, and the rendered launcher
+with video, audio and input all ran unchanged. That is not a proxy check;
+it is the whole projection stack running on two exporters.
+
+What option 3 does not exercise is precisely bounded: the **handover** —
+the credential exchange over Bluetooth, the phone joining the head unit's
+Wi-Fi Direct group — and the radio-layer failure modes (RSSI, roaming,
+channel loss). Those are the reasons the medium must eventually be
+simulated, and they are all that Phase 4 is for. Everything downstream of
+the handover runs over the forward, so a lab gets a real projection
+workload on day one, in CI, on hardware-free nodes, and Phase 4 arrives as
+a fidelity upgrade rather than as the first time anything projects.
+
+Two facts from the same experiment shape how the medium options are built:
+
+- **The Cuttlefish Wi-Fi medium is not a byte stream.** The guest's
+  `virtio_mac80211_hwsim` feeds a per-environment `wmediumd` over a
+  **vhost-user** Unix socket (shared memory plus fd passing), with an
+  OpenWrt VM as the access point. `--vhost_user_mac80211_hwsim` is
+  Cuttlefish's documented way to share one medium between instances, but
+  only on one host. Across hosts, option 1 is therefore a *bridge* — a
+  component on each exporter that terminates vhost-user locally and
+  exchanges 802.11 frames with its peer — and the forward is only the pipe
+  between the two bridges. This is why option 1 is the general answer and
+  also the one that needs new code and datagram semantics (Future
+  Possibilities).
+- **The guest's Wi-Fi is already IP-reachable.** Each CVD's guest joins its
+  own OpenWrt AP and reaches the exporter's network through the AP's WAN
+  link; with one host route and one forwarding rule on the AP, the exporter
+  reaches the guest's Wi-Fi address in turn. So a Cuttlefish driver can
+  expose a guest-side port two ways: through `adb forward`, which models
+  the USB cable, or through the guest's `wlan0` address, which models the
+  Wi-Fi link. The projection session was run both ways with the same
+  result. They are two `provides` ports, not two mechanisms, and which one
+  a test forwards is a topology choice DD-13 leaves to the test.
 
 Between 1 and 2, option 2 is far cheaper when it applies, because it reuses
-the same forward machinery as Bluetooth. Option 1 is the general answer,
-because `--vhost_user_mac80211_hwsim` is the mechanism Cuttlefish documents
-for sharing a Wi-Fi medium between separately-launched instances, and
-`wmediumd` is where RSSI and delivery modeling live. Option 1 is also the
-hardest thing in this JEP and the most likely to need upstream work — it is
-scheduled last (Phase 3) and its risk is called out explicitly.
+the same forward machinery as Bluetooth and netsim already owns the frames.
+Option 1 is the general answer, because `wmediumd` is where RSSI and
+delivery modeling live. Option 1 is also the hardest thing in this JEP and
+the most likely to need upstream work — it is scheduled last and its risk
+is called out explicitly.
 
-**Verified against real CVDs (2026-09-01): option 3 works, and it is worth
-more than a diagnostic.** With the same two Pods as the DD-9 experiment, a
-real Android Auto session was projected from the phone exporter to the head
-unit exporter over nothing but one forwarded TCP port. The pieces, all
-public:
+**Verified against real CVDs (2026-09-01).** Same two Pods, same stand-in
+relays, same Direct-mode caveat as DD-9. The pieces, all public:
 
 - *Phone.* Google's GSI with GMS for x86-64 (`gsi_gms_x86_64`, Android 17,
   a `user` build) dropped into the Cuttlefish AOSP image set: `super.img`
@@ -1214,62 +1296,32 @@ public:
   GSI `vbmeta.img` (verification disabled) in place of Cuttlefish's. Being a
   `user` build it boots with `adbd` stopped; enabling it meant editing the
   ext4 `system.img` in place (`persist.sys.usb.config=adb` in `build.prop`,
-  the exporter's public key in `/adb_keys`), which is the kind of image
-  preparation a `cuttlefish` driver would own. Android Auto 17.4 (x86-64
-  split APKs) was then sideloaded, and its developer-mode *head unit
-  server* started on port 5277 — the port the phone `provides`.
+  the exporter's public key in `/adb_keys`). Android Auto 17.4 (x86-64
+  split APKs) was then sideloaded and its developer-mode *head unit server*
+  started on port 5277 — the port the phone `provides`.
 - *Head unit.* Google's Desktop Head Unit 2.1 in the AAOS Pod, under Xvfb,
   in its `--adb=5277` mode, which is a plain TCP client. This is the only
   publicly available Android Auto receiver: the AAOS CVD cannot receive
-  projection because the receiver is part of GAS, so for projection the
-  "virtual head unit" is a process inside the head-unit exporter that
-  `requires` the phone's port. Direction falls out of DD-13 as expected.
-- *Forward.* The same stand-in relays as DD-9: DHU → `127.0.0.1:5277` in
-  Pod A → Pod B → `adb forward tcp:5277` → the phone.
+  projection because the receiver ships with GAS, so for a virtual bench
+  the head unit's projection endpoint is a process inside the head-unit
+  exporter that `requires` the phone's port (see *A projection bench,
+  concretely*). Direction falls out of DD-13 as expected.
+- *Forward.* DHU → `127.0.0.1:5277` in Pod A → Pod B → the phone, first via
+  `adb forward tcp:5277` and then via the guest's `wlan0` address through
+  the OpenWrt AP.
 
 The session negotiated protocol 1.7, completed TLS 1.2
-(ECDHE-RSA-AES128-GCM-SHA256 — the receiver-lib and GMS authenticate each
-other across the forward, so any relay must be byte-transparent), ran
+(ECDHE-RSA-AES128-GCM-SHA256 — the relay must be byte-transparent), ran
 service discovery, walked the phone-side first-run flow (consent, car
 authorization, notification access — each driven by `uiautomator`), and
-rendered the full Coolwalk launcher on the DHU with Maps, YouTube Music and
-the phone app live. Video is phone→head-unit and was about 0.6 MB for three
-minutes of a mostly static screen, so the L4 path is not bandwidth-limited
-in Direct mode. Two operational findings: the DHU quits on stdin EOF (it has
-an interactive console, which is a feature — HU-side input can be scripted
-through it), and Android Auto's head unit server does not survive an
-aborted handoff (`IllegalStateException: Already connected`), so a forward
-that drops mid-session needs the server restarted, not just the client.
-
-What this does and does not change: DD-10's decision stands — the
-Bluetooth→Wi-Fi handover is still not exercised, so this is not Phase 3.
-But it is the app-level half of Phase 2 done virtually: the whole
-GMS/gearhead/receiver-lib stack is shown to run across two exporters with a
-single `forwards[]` entry, which means the physical Phase 2 gate is about
-transport and radios, not about whether projection tolerates a proxy. It
-also gives Phase 1 and Phase 3 a real workload to sit under rather than a
-synthetic one.
-
-**Wi-Fi, same setup, two more facts.** First, the stock Cuttlefish Wi-Fi is
-`virtio_mac80211_hwsim` into a per-environment `wmediumd` over a vhost-user
-Unix socket, with an OpenWrt VM as the access point. vhost-user is shared
-memory and fd passing, not a byte stream, so option 1's "forward the frame
-socket" cannot reuse the L4 forward across hosts: it needs a frame-level
-bridge between two `wmediumd` instances (or a datagram forward under a
-future substrate). That sharpens the Phase 3 risk rather than changing the
-decision. Second, the guests' Wi-Fi is nonetheless IP-reachable. Both
-guests joined their local OpenWrt AP — the GSI phone only after its
-Ethernet network was cut, because Android never asks Wi-Fi to connect while
-a validated Ethernet default exists, which a phone-CVD driver has to handle
-— and the projection session above was re-run with the phone end on `wlan0`
-instead of ADB: DHU → forward → OpenWrt WAN (one host route and one
-`wan→wifi0` forwarding rule on the AP) → phone `wlan0:5277`. Same
-handshake, same launcher, session established on the phone's Wi-Fi
-address. That is still option 3 — no shared medium, no handover — but it is
-carried over the guest's real Wi-Fi NIC, which is what a physical Phase 2
-bench looks like at L3, and it shows the per-instance OpenWrt AP is a
-workable stand-in for the head unit's Wi-Fi Direct group when the medium
-is not simulated.
+rendered the full launcher with Maps, YouTube Music and the phone app live.
+Video is phone→head-unit and was about 0.6 MB for three minutes of a mostly
+static screen, so the L4 path is not bandwidth-limited in Direct mode.
+Three operational findings are folded into *Reference drivers for
+projection* under Design Details: the DHU quits on stdin EOF and needs a
+display; Android Auto's head unit server does not survive an aborted
+session (`IllegalStateException: Already connected`); and the GSI phone
+would not join Wi-Fi at all while it held a validated Ethernet network.
 
 ### DD-11: Mixed physical/virtual benches — deferred
 
@@ -1376,9 +1428,11 @@ therefore not a convenience but a correctness improvement, and it costs
 nothing — the controller already checks the reported roles, so option 1 uses
 that check to *assign* rather than merely to *reject*.
 
-Topology is a **property of the test**. DD-10 settled this: the same two
-exporters are a Bluetooth bench in one test and two independent devices in
-another, so the wiring belongs to whoever wrote the test. Option 2 makes it a
+Topology is a **property of the test**. DD-10 makes this concrete: the
+same phone exporter is a USB-attached phone when a test forwards `aa-hu`
+and a wireless one when it forwards `aa-hu-wifi`, and two exporters are a
+bench in one test and independent devices in another, so the wiring belongs
+to whoever wrote the test. Option 2 makes it a
 property of whatever drivers happen to be configured on whichever exporters
 the selectors happened to bind, which fails in three ways:
 
@@ -1590,6 +1644,39 @@ Establishment then reuses the existing port-forward primitives:
 | A member's exporter disappears | Peer's stream resets; lease `Degraded` naming the role (DD-3) |
 | Client releases the lease | Forwards torn down first, then the lease ends normally |
 
+### Reference drivers for projection
+
+Nothing in the projection bench needs new forward machinery, but the
+verification (DD-10) showed that the two reference drivers own real work,
+of the same kind as DD-9's rootcanal control hook:
+
+- **`cuttlefish` (phone).** A GMS GSI is a `user` build: `adbd` is off and
+  stays off, so the image the driver boots must carry
+  `persist.sys.usb.config=adb` and the exporter's ADB public key in
+  `/adb_keys`. That is an image-preparation step the driver documents and
+  JEP-0016's provisioner can run once per image, not a per-lease action.
+  For `aa-hu-wifi` the driver brings the guest onto the instance's OpenWrt
+  AP, adds the host route to the AP's LAN and the `wan→wifi` forwarding
+  rule on the AP — and cuts the guest's Ethernet first, because Android
+  never asks Wi-Fi to connect while it holds a validated Ethernet default.
+  The head unit server is started on request and **restarted whenever the
+  forward resets**: Android Auto does not survive an aborted session, so a
+  forward reconnect must reach the driver as an event, not be hidden in the
+  splice.
+- **`dhu` (head unit).** Runs the Desktop Head Unit as a process: an X
+  display (Xvfb), a dummy audio driver, stdin held open — the DHU exits on
+  stdin EOF because stdin is its interactive console, which is also the
+  head-unit-side stimulus API (key presses, day/night, microphone) the
+  driver exposes. Screenshots come from the display. The DHU dials the
+  instant it starts, so the driver starts it only on a client call, after
+  the forward is Ready, which is the same ordering rule `bt-peer` already
+  follows.
+
+Both drivers are the reference `requires`/`provides` pair for projection.
+What they must not do is know about each other: the phone driver exposes
+ports and the head unit driver dials `127.0.0.1:5277`, and the lease is the
+only place the two are joined.
+
 ### Concurrency and ordering
 
 Reconciliation is single-writer per lease (standard controller-runtime work
@@ -1702,11 +1789,16 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
 
 - **Virtual ↔ virtual**: two `jumpstarter-driver-cuttlefish` exporters in
   separate Pods (JEP-0016 `ExporterSet`), joined by a forwarded rootcanal
-  port (DD-9). Assert BT discovery and pairing, and — Phase 3 — Wi-Fi
+  port (DD-9). Assert BT discovery and pairing, and — Phase 4 — Wi-Fi
   association. `jumpstarter-driver-netsim` supplies the pcap capture used to
   evidence what actually crossed the air.
   Runnable in CI on KVM-capable nodes with no lab hardware. This is the
   headline result and should run on every merge once it exists.
+- **Virtual projection**: a GMS-GSI phone CVD and a `dhu` exporter in
+  separate Pods, joined by the `projection` forward over `aa-hu-wifi`
+  (DD-10). Assert the receiver reaches the launcher and a screenshot of the
+  head-unit display matches. Same CI tier as the Bluetooth test; the two
+  compose into one bench once Phase 1 and Phase 2 are both green.
 - **Physical ↔ physical**: a physical phone and head unit on two exporters
   **on different lab hosts** — the allocation ATS's `SimpleScheduler`
   refuses. Requires lab hardware; runs on a labeled runner.
@@ -1775,16 +1867,19 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
       instance), in CI. *Demonstrated by hand for both variants on
       2026-09-01 with two Pods on one node and a stand-in relay (DD-9);
       the router path and the multi-node case remain.*
-- [ ] **Phase 2 — Physical ↔ physical across hosts**: a phone and head unit
+- [ ] **Phase 2 — Virtual projection**: a GMS phone CVD and a `dhu` head
+      unit in separate Pods complete an Android Auto session to the
+      launcher over one forwarded port, in CI, with no lab hardware.
+      *Demonstrated by hand on 2026-09-01 over both `aa-hu` and
+      `aa-hu-wifi` with a stand-in relay (DD-10); the drivers, the router
+      path and CI remain.*
+- [ ] **Phase 3 — Physical ↔ physical across hosts**: a phone and head unit
       on exporters on different lab hosts complete a phone projection
-      session (Android Auto in the reference implementation). *The
-      projection half was demonstrated virtually on 2026-09-01: a GMS GSI
-      phone CVD projected a live Android Auto session to the Desktop Head
-      Unit in the other Pod over one forwarded port (DD-10); the physical
-      transport and radios remain.*
-- [ ] **Phase 3 — Virtual Wi-Fi**: two CVDs in separate Pods associate over a
-      forwarded `mac80211_hwsim`/`wmediumd` medium, and a projection
-      session completes the Bluetooth → Wi-Fi handover end to end
+      session (Android Auto in the reference implementation)
+- [ ] **Phase 4 — Virtual Wi-Fi medium**: two CVDs in separate Pods
+      associate over a bridged `mac80211_hwsim`/`wmediumd` medium or a
+      shared netsim 802.11 chip, and a projection session completes the
+      Bluetooth → Wi-Fi handover end to end
 - [ ] Measured HCI round-trip latency through a router forward is published,
       with a documented statement of which workloads it does and does not
       support
@@ -1794,7 +1889,7 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
 ### Experimental
 
 `members`, `forwards`, and port reporting ship behind a controller feature
-gate, with Phases 1–2 complete. Signals sought: do real benches stay at two
+gate, with Phases 1–3 complete. Signals sought: do real benches stay at two
 members or grow; how often does the direct fast path apply; does anyone hit
 `MaxItems=8`; how often do `listen` collisions occur on physical hosts; does
 the nil-`status.exporterRef` convention (DD-2) surprise any consumer; is
@@ -1803,7 +1898,7 @@ JEP-0015 dependency.
 
 ### Stable
 
-- Phases 1–3 complete, with Phase 3 green in CI for 30 consecutive days
+- Phases 1–4 complete, with Phase 4 green in CI for 30 consecutive days
 - At least two `requires`-side drivers outside this JEP's reference set
   (evidence the port model generalizes)
 - No API changes to `members` / `forwards` / `PortReport` for one release
@@ -1899,7 +1994,7 @@ risk in one field, handled by DD-2.
   optional direct fast-path listener.
 - **Latency is a first-class risk**, not a footnote, and some timing-sensitive
   protocols may not work in router mode.
-- **Phase 3 depends on upstream behavior** we do not control.
+- **Phase 4 depends on upstream behavior** we do not control.
 
 ### Risks
 
@@ -1908,8 +2003,18 @@ risk in one field, handled by DD-2.
   make association flaky or impossible except on the direct fast path. Its
   transport is also vhost-user (shared memory), so a cross-host medium needs
   a frame bridge first, not just a forward (DD-10).
-  Mitigation: Phase 3 is last, may conclude "direct mode only", and the
-  datagram work in Future Possibilities is the escalation path.
+  Mitigation: Phase 4 is last, may conclude "direct mode only", and the
+  datagram work in Future Possibilities is the escalation path; Phase 2
+  already delivers a real projection workload without it.
+- **The projection bench depends on Google artifacts this project cannot
+  ship.** The GMS GSI and the Desktop Head Unit are published by Google
+  under their own terms; the Android Auto APK is not published outside
+  Google Play, and the verification sideloaded a mirror copy. A lab must
+  supply these itself, and CI for Phase 2 needs an artifact path that does
+  not redistribute them. Mitigation: the drivers take image and APK
+  locations as configuration, the reference documents where each artifact
+  comes from, and the Bluetooth phase carries the CI headline on AOSP-only
+  images.
 - **Bluetooth timing may be tighter than measured** — pairing may work while
   A2DP streaming does not. Mitigation: latency characterization is an
   acceptance criterion whose answer is published, not assumed.
@@ -1974,8 +2079,10 @@ risk in one field, handled by DD-2.
   exporter and a cluster Pod are not mutually routable.
 - **A peer-specific RPC in `router.proto`** — DD-5.
 - **Guest-side Bluetooth/Wi-Fi shims** — DD-9. Changes the device under test.
-- **L4 forwarding of the projection session's socket** — DD-10. Skips the
-  handover, which is the thing under test. Kept as a diagnostic.
+- **L4 projection forwarding *as the whole answer*** — DD-10. It is the
+  Phase 2 deliverable and runs the full projection stack, but it skips the
+  Bluetooth → Wi-Fi handover, which is why medium simulation stays on the
+  roadmap as Phase 4.
 - **N independently-leased devices behind one exporter.** Ruled out by
   JEP-0016's exporter = DUT invariant. A group as a single composite DUT
   (JEP-0016 DD-8 option 2) remains legitimate and orthogonal.
@@ -2082,7 +2189,12 @@ To resolve during implementation:
 - Whether the fast path should race the router dial or attempt direct first
   with a short timeout — a measurable question.
 - Whether forward reconnect should preserve the medium's logical state or
-  force a fresh pairing; likely protocol-specific.
+  force a fresh pairing; likely protocol-specific. The projection experiment
+  gives one data point: Android Auto's head unit server must be restarted
+  after a dropped session, so at minimum the reconnect has to be visible to
+  the endpoint drivers.
+- How Phase 2's CI obtains the GMS GSI, the Desktop Head Unit and the
+  Android Auto APK without redistributing them (see Risks).
 - How `jmp get leases` renders N exporters in a table column readably.
 
 ## Future Possibilities
@@ -2120,7 +2232,9 @@ Not part of this proposal:
   datagram semantics with real boundaries and no head-of-line blocking; the
   additive `FRAME_TYPE_DATAGRAM` extension to `RouterService.Stream` (and,
   further out, QUIC unreliable datagrams) is a separate protocol JEP, for
-  which Phase 3 is the most compelling justification.
+  which Phase 4 is the most compelling justification. The frame bridge
+  DD-10 describes is the consumer: it terminates vhost-user on each
+  exporter and needs a datagram pipe between the two halves.
 - **Vehicle-bus counterparty integration.** The restbus pattern described in
   DD-9 has mature tooling behind it, and a broker that exposes CAN, LIN,
   FlexRay, and Automotive Ethernet over a gRPC socket is already a `provides`
@@ -2159,7 +2273,11 @@ Not part of this proposal:
 - 2026-09-01: DD-10 option 3 verified by hand: Android Auto 17.4 on a GMS
   GSI phone CVD projected to the Desktop Head Unit in the other Pod over a
   single forwarded port, then again with the phone end on its Wi-Fi NIC via
-  the per-instance OpenWrt AP; findings recorded in DD-10, Phase 2 and Risks
+  the per-instance OpenWrt AP
+- 2026-09-01: DD-10 decision revised on that evidence — L4 projection
+  promoted from diagnostic to the Phase 2 deliverable, the Wi-Fi medium
+  reframed as a frame bridge; projection bench, `aa-hu`/`aa-hu-wifi` ports,
+  `dhu` driver and phase renumbering (1–4) added
 
 ## References
 
