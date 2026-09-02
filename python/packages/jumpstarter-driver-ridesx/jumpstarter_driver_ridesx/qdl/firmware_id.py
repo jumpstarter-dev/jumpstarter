@@ -125,7 +125,7 @@ def _validate_main_version(key: str, value: str) -> bool:
     return True
 
 
-def extract_sail_version(sail, timeout=30, log_buffer=None) -> dict[str, str]:
+def extract_sail_version(sail, timeout=60, log_buffer=None) -> dict[str, str]:
     return _scan_serial_patterns(
         sail,
         patterns=[
@@ -143,7 +143,7 @@ def extract_sail_version(sail, timeout=30, log_buffer=None) -> dict[str, str]:
     )
 
 
-def extract_main_version(serial, timeout=30, log_buffer=None) -> dict[str, str]:
+def extract_main_version(serial, timeout=60, log_buffer=None) -> dict[str, str]:
     return _scan_serial_patterns(
         serial,
         patterns=[
@@ -164,7 +164,7 @@ def extract_main_version(serial, timeout=30, log_buffer=None) -> dict[str, str]:
             (r"Hypervisor.*?(perf|debug|prod)", "hypervisor", 1),
         ],
         timeout=timeout,
-        min_found=3,
+        min_found=8,
         log_buffer=log_buffer,
         label="main version",
         validate=_validate_main_version,
@@ -209,8 +209,15 @@ def collect_version_info(serial, sail, power_cycle_callable, *, verbose=False, c
             power_cycle_callable()
             if verbose:
                 logger.info("Collecting version information...")
-            result.sail_versions = extract_sail_version(sail, timeout=30, log_buffer=sail_capture)
-            result.main_versions = extract_main_version(serial, timeout=30, log_buffer=main_capture)
+            # Run both scans concurrently: SAIL output appears early in
+            # boot while main serial output spans SBL1 through UEFI/ABL.
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                sail_future = pool.submit(extract_sail_version, sail, timeout=60, log_buffer=sail_capture)
+                main_future = pool.submit(extract_main_version, serial, timeout=60, log_buffer=main_capture)
+                result.sail_versions = sail_future.result()
+                result.main_versions = main_future.result()
             if "hypervisor" in result.sail_versions and "hypervisor" not in result.main_versions:
                 result.main_versions["hypervisor"] = result.sail_versions["hypervisor"]
             qc_image_version = result.main_versions.get("qc_image_version")
