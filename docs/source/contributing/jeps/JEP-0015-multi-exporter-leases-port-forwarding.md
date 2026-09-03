@@ -2414,8 +2414,8 @@ Not part of this proposal:
   — `jumpstarter-driver-bt-peer` (merged); the reference `requires`-side
   endpoint
 - [jumpstarter-dev/jumpstarter#980](https://github.com/jumpstarter-dev/jumpstarter/pull/980)
-  — `jumpstarter-driver-netsim` (open); the control-plane companion, incl.
-  pcap capture
+  — `jumpstarter-driver-netsim` (merged); the control-plane companion,
+  incl. pcap capture
 - [netsim (`platform/tools/netsim`)](https://android.googlesource.com/platform/tools/netsim/) —
   `proto/netsim/packet_streamer.proto`
 - [google/android-cuttlefish](https://github.com/google/android-cuttlefish)
