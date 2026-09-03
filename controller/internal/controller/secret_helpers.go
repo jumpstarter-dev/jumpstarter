@@ -2,10 +2,13 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"time"
 
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -16,6 +19,12 @@ import (
 
 const TokenKey string = "token"
 
+const AuthenticatedTokenHashAnnotation = "jumpstarter.dev/authenticated-token-hash"
+
+const PreviousTokenHashAnnotation = "jumpstarter.dev/previous-token-hash"
+
+const expiredTokenAnnotation = "jumpstarter.dev/expired-token-at"
+
 func ensureSecret(
 	ctx context.Context,
 	key client.ObjectKey,
@@ -24,6 +33,7 @@ func ensureSecret(
 	signer *oidc.Signer,
 	subject string,
 	owner metav1.Object,
+	onRegenerate func(secret *corev1.Secret, replaced []byte),
 ) (*corev1.Secret, time.Time, error) {
 	logger := log.FromContext(ctx).WithName("ensureSecret")
 	var secret corev1.Secret
@@ -60,7 +70,8 @@ func ensureSecret(
 		expiry, _ := signer.TokenExpiry(token)
 		return &secret, expiry, nil
 	} else {
-		original := client.MergeFrom(secret.DeepCopy())
+		before := secret.DeepCopy()
+		original := client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{})
 		if err := controllerutil.SetControllerReference(owner, &secret, scheme); err != nil {
 			logger.Error(err, "failed to set controller reference")
 			return nil, time.Time{}, err
@@ -74,16 +85,31 @@ func ensureSecret(
 				logger.Error(err, "failed to sign token")
 				return nil, time.Time{}, err
 			}
+			// A regenerated credential starts a new rotation lineage.
+			delete(secret.Annotations, PreviousTokenHashAnnotation)
+			if onRegenerate != nil {
+				onRegenerate(&secret, token)
+			}
 			secret.Data = map[string][]byte{
 				TokenKey: []byte(newToken),
 			}
 			token = []byte(newToken)
 		}
-		if err = kclient.Patch(ctx, &secret, original); err != nil {
-			logger.Error(err, "failed to update secret")
-			return nil, time.Time{}, err
+		// The optimistic lock would turn every no-op patch from a stale cache into a conflict.
+		if !equality.Semantic.DeepEqual(before, &secret) {
+			if err = kclient.Patch(ctx, &secret, original); err != nil {
+				if !errors.IsConflict(err) {
+					logger.Error(err, "failed to update secret")
+				}
+				return nil, time.Time{}, err
+			}
 		}
 		expiry, _ := signer.TokenExpiry(string(token))
 		return &secret, expiry, nil
 	}
+}
+
+func TokenHash(token string) string {
+	digest := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(digest[:])
 }

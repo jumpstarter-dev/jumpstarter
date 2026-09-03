@@ -20,6 +20,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -63,6 +64,7 @@ import (
 	k8suuid "k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -85,12 +87,15 @@ type ControllerService struct {
 	LeasePolicy      *config.LeasePolicy
 	HiddenLabels     *config.HiddenLabels
 	DeprecatedLabels *config.DeprecatedLabels
+	Recorder         record.EventRecorder
 	Signer           *oidc.Signer
 	TelemetryConfig  *config.Telemetry
-	listenQueues     sync.Map
-	leaseLocks       sync.Map
-	authOnce         sync.Once
-	auth             *auth.Auth
+	// StatusHeartbeatInterval defaults to 10 seconds.
+	StatusHeartbeatInterval time.Duration
+	listenQueues            sync.Map
+	leaseLocks              sync.Map
+	authOnce                sync.Once
+	auth                    *auth.Auth
 }
 
 type listenQueue struct {
@@ -252,11 +257,37 @@ func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstar
 	return s.getAuth().VerifyExporter(ctx)
 }
 
+// Record credentials only on fresh authentication, never on stream heartbeats.
+func (s *ControllerService) recordExporterCredential(ctx context.Context, exporter *jumpstarterdevv1alpha1.Exporter) error {
+	credential, err := authentication.BearerTokenFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	hash := controller.TokenHash(credential)
+	if exporter.Annotations[controller.AuthenticatedTokenHashAnnotation] == hash {
+		return nil
+	}
+	original := client.MergeFrom(exporter.DeepCopy())
+	if exporter.Annotations == nil {
+		exporter.Annotations = map[string]string{}
+	}
+	exporter.Annotations[controller.AuthenticatedTokenHashAnnotation] = hash
+	if err := s.Client.Patch(ctx, exporter, original); err != nil {
+		log.FromContext(ctx).Error(err, "unable to record exporter credential", "exporter", exporter.Name, "namespace", exporter.Namespace)
+		return status.Errorf(codes.Internal, "unable to record exporter credential: %s", err)
+	}
+	return nil
+}
+
 func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
 	logger := log.FromContext(ctx)
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := s.recordExporterCredential(ctx, exporter); err != nil {
 		return nil, err
 	}
 
@@ -355,6 +386,27 @@ func (s *ControllerService) RotateToken(
 		return nil, err
 	}
 
+	logger := log.FromContext(ctx).WithValues(
+		"exporter", exporter.Name,
+		"namespace", exporter.Namespace,
+		"operation", "rotate_token",
+	)
+	resp, err := s.rotateExporterToken(ctx, exporter)
+	switch code := status.Code(err); code {
+	case codes.OK:
+		logger.Info("token rotated", "result", "success")
+	case codes.PermissionDenied, codes.Aborted:
+		logger.Info("token rotation rejected", "result", "rejected", "code", code.String(), "reason", status.Convert(err).Message())
+	default:
+		logger.Error(err, "token rotation failed", "result", "error", "code", code.String())
+	}
+	return resp, err
+}
+
+func (s *ControllerService) rotateExporterToken(
+	ctx context.Context,
+	exporter *jumpstarterdevv1alpha1.Exporter,
+) (*pb.RotateTokenResponse, error) {
 	if s.Signer == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "token signer not configured")
 	}
@@ -368,14 +420,16 @@ func (s *ControllerService) RotateToken(
 		return nil, status.Error(codes.PermissionDenied, "only internal exporter tokens can be rotated")
 	}
 
-	token, expiry, err := auth.RotateCredential(ctx, s.Client, s.Signer, client.ObjectKey{
+	token, expiry, err := auth.RotateExporterCredential(ctx, s.Client, s.Signer, client.ObjectKey{
 		Namespace: exporter.Namespace,
-		Name:      exporter.Name + "-exporter",
-	}, exporter.InternalSubject())
+		Name:      exporter.CredentialSecretName(),
+	}, exporter.InternalSubject(), credential)
 	if err != nil {
+		if errors.Is(err, auth.ErrExporterTokenLineage) && s.Recorder != nil {
+			s.Recorder.Event(exporter, corev1.EventTypeWarning, "RotationDenied", "Token rotation denied: credential is outside the current or previous token lineage")
+		}
 		return nil, err
 	}
-	log.FromContext(ctx).Info("token rotated", "exporter", exporter.Name, "namespace", exporter.Namespace)
 
 	return &pb.RotateTokenResponse{
 		Token:  token,
@@ -723,6 +777,10 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 		return err
 	}
 
+	if err := s.recordExporterCredential(ctx, exporter); err != nil {
+		return err
+	}
+
 	logger = logger.WithValues("exporter", types.NamespacedName{
 		Namespace: exporter.Namespace,
 		Name:      exporter.Name,
@@ -739,7 +797,7 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 
 	defer watcher.Stop()
 
-	ticker := time.NewTicker(time.Second * 10)
+	ticker := time.NewTicker(cmp.Or(s.StatusHeartbeatInterval, 10*time.Second))
 
 	defer ticker.Stop()
 

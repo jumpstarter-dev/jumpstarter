@@ -663,7 +663,7 @@ func (s *ClientService) RotateToken(ctx context.Context, req *cpb.RotateTokenReq
 
 	token, expiry, err := auth.RotateCredential(ctx, s.Client, s.Signer, kclient.ObjectKey{
 		Namespace: namespace,
-		Name:      jclient.Name + "-client",
+		Name:      jclient.CredentialSecretName(),
 	}, jclient.InternalSubject())
 	if err != nil {
 		return nil, err
