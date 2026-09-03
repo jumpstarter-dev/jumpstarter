@@ -8,6 +8,7 @@ is the same ``generate_latest()`` bytes as a local scrape.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
 import grpc
@@ -42,7 +43,7 @@ class MetricsStreamClient:
         stub: telemetry_pb2_grpc.TelemetryServiceStub,
         *,
         identity: str,
-        token: str = "",
+        token: str | Callable[[], str] = "",
         registry: MetricsRegistry | None = None,
         backoff_base: float = _BACKOFF_BASE,
         backoff_cap: float = _BACKOFF_CAP,
@@ -58,8 +59,10 @@ class MetricsStreamClient:
         return self._registry if self._registry is not None else get_registry()
 
     def _call_kwargs(self) -> dict[str, Any]:
-        if self.token:
-            return {"metadata": [("authorization", f"Bearer {self.token}")]}
+        # Resolve per session so a reconnect uses the exporter's current token.
+        token = self.token() if callable(self.token) else self.token
+        if token:
+            return {"metadata": [("authorization", f"Bearer {token}")]}
         return {}
 
     async def run(self) -> None:
