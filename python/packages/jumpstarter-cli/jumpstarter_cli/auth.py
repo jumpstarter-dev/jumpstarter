@@ -150,12 +150,12 @@ def token_status(config, verbose: bool, output: DataOutputType):
         click.echo(click.style(f"Failed to decode token: {e}", fg="red"))
         return
 
+    exp = payload.get("exp")
     remaining = get_token_remaining_seconds(token_str)
-    if remaining is None:
+    if exp is None or remaining is None:
         click.echo(click.style("Token has no expiry claim", fg="yellow"))
         return
 
-    exp = payload.get("exp")
     exp_dt = datetime.fromtimestamp(exp, tz=UTC)
     click.echo(f"Token expiry: {exp_dt.strftime('%Y-%m-%d %H:%M:%S %Z')}")
 

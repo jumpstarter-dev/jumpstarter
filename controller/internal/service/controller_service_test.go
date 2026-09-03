@@ -32,18 +32,22 @@ import (
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/config"
 	jlog "github.com/jumpstarter-dev/jumpstarter/controller/internal/log"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	grpcpeer "google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -2376,4 +2380,129 @@ func TestStatusResponseIncludesLeaseContext(t *testing.T) {
 			t.Fatalf("expected nil context when not leased, got %v", response.Context)
 		}
 	})
+}
+
+func TestControllerServiceRotateToken(t *testing.T) {
+	scheme := k8sruntime.NewScheme()
+	if err := jumpstarterdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	signer, err := oidc.NewSignerFromSeed([]byte("internal"), "https://controller.example.com", "dummy")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name              string
+		issuer            string
+		audience          string
+		subject           string
+		wrongKey          bool
+		expired           bool
+		missingSigner     bool
+		missingSecret     bool
+		missingCredential bool
+		want              codes.Code
+	}{
+		{name: "successful rotation", want: codes.OK},
+		{name: "external issuer", issuer: "https://idp.example.com", want: codes.PermissionDenied},
+		{name: "external signature with internal issuer", wrongKey: true, want: codes.PermissionDenied},
+		{name: "different exporter UID", subject: "exporter:default:test-exporter:other-uid", want: codes.PermissionDenied},
+		{name: "wrong audience", audience: "other", want: codes.PermissionDenied},
+		{name: "expired credential", expired: true, want: codes.PermissionDenied},
+		{name: "missing credential", missingCredential: true, want: codes.InvalidArgument},
+		{name: "missing signer", missingSigner: true, want: codes.FailedPrecondition},
+		{name: "missing secret", missingSecret: true, want: codes.Internal},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			exporter := &jumpstarterdevv1alpha1.Exporter{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-exporter", Namespace: "default", UID: "uid"},
+			}
+			issuer, audience, subject := tc.issuer, tc.audience, tc.subject
+			if issuer == "" {
+				issuer = signer.Issuer()
+			}
+			if audience == "" {
+				audience = signer.Audience()
+			}
+			if subject == "" {
+				subject = exporter.InternalSubject()
+			}
+			seed := []byte("internal")
+			if tc.wrongKey {
+				seed = []byte("external")
+			}
+			credentialSigner, err := oidc.NewSignerFromSeed(seed, issuer, audience)
+			if err != nil {
+				t.Fatal(err)
+			}
+			credentialSigner.SetTokenLifetime(48 * time.Hour)
+			if tc.expired {
+				credentialSigner.SetTokenLifetime(-time.Hour)
+			}
+			credential, err := credentialSigner.Token(subject)
+			if err != nil {
+				t.Fatal(err)
+			}
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-exporter-exporter", Namespace: "default"},
+				Data:       map[string][]byte{"token": []byte(credential)},
+			}
+			objects := []client.Object{exporter}
+			if !tc.missingSecret {
+				objects = append(objects, secret)
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+			svc := &ControllerService{
+				Client: fakeClient,
+				Authn:  &passingAuthenticator{userName: "test-user"},
+				Authz:  passingAuthorizer{},
+				Attr:   &exporterAttributesGetter{namespace: "default", name: "test-exporter"},
+				Signer: signer,
+			}
+			if tc.missingSigner {
+				svc.Signer = nil
+			}
+			ctx := context.Background()
+			if !tc.missingCredential {
+				ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("authorization", "Bearer "+credential))
+			}
+			resp, err := svc.RotateToken(ctx, &pb.RotateTokenRequest{})
+			if status.Code(err) != tc.want {
+				t.Fatalf("got %v, want %v: %v", status.Code(err), tc.want, err)
+			}
+			if tc.missingSecret {
+				return
+			}
+			var updatedSecret corev1.Secret
+			if err := fakeClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: secret.Name}, &updatedSecret); err != nil {
+				t.Fatal(err)
+			}
+			if tc.want != codes.OK {
+				if string(updatedSecret.Data["token"]) != credential {
+					t.Fatal("rejected rotation changed credential")
+				}
+				return
+			}
+			if resp.Token == "" || resp.Token == credential {
+				t.Fatal("expected a new token")
+			}
+			if err := signer.Validate(resp.Token); err != nil {
+				t.Fatalf("invalid rotated token: %v", err)
+			}
+			expiry, err := signer.TokenExpiry(resp.Token)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resp.Expiry == nil || !resp.Expiry.AsTime().Equal(expiry) {
+				t.Fatal("expiry does not match rotated token")
+			}
+			if string(updatedSecret.Data["token"]) != resp.Token {
+				t.Fatal("secret does not contain rotated token")
+			}
+		})
+	}
 }
