@@ -1,7 +1,15 @@
 """Tests for the exporter run module, specifically rapid failure detection."""
 
+import multiprocessing
+import os
+import signal
+import threading
+import types
+from contextlib import contextmanager
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import coverage
 import pytest
 from click.testing import CliRunner
 
@@ -48,7 +56,7 @@ class TestServeWithExcHandlingRapidFailures:
         with (
             patch.object(run_mod, "_handle_parent", side_effect=mock_handle_parent),
             patch("os.fork", side_effect=mock_fork),
-            patch("time.monotonic", side_effect=lambda: next(time_iter)),
+            patch.object(run_mod, "time", types.SimpleNamespace(monotonic=lambda: next(time_iter))),
         ):
             exit_code = run_mod._serve_with_exc_handling(config)
 
@@ -94,7 +102,7 @@ class TestServeWithExcHandlingRapidFailures:
         with (
             patch.object(run_mod, "_handle_parent", side_effect=mock_handle_parent),
             patch("os.fork", side_effect=mock_fork),
-            patch("time.monotonic", side_effect=lambda: next(time_iter)),
+            patch.object(run_mod, "time", types.SimpleNamespace(monotonic=lambda: next(time_iter))),
         ):
             exit_code = run_mod._serve_with_exc_handling(config)
 
@@ -118,7 +126,7 @@ class TestServeWithExcHandlingRapidFailures:
         with (
             patch.object(run_mod, "_handle_parent", side_effect=mock_handle_parent),
             patch("os.fork", side_effect=mock_fork),
-            patch("time.monotonic", return_value=0.0),
+            patch.object(run_mod, "time", types.SimpleNamespace(monotonic=lambda: 0.0)),
         ):
             exit_code = run_mod._serve_with_exc_handling(config)
 
@@ -145,7 +153,7 @@ class TestServeWithExcHandlingRapidFailures:
         with (
             patch.object(run_mod, "_handle_parent", side_effect=mock_handle_parent),
             patch("os.fork", side_effect=mock_fork),
-            patch("time.monotonic", side_effect=lambda: next(time_iter)),
+            patch.object(run_mod, "time", types.SimpleNamespace(monotonic=lambda: next(time_iter))),
         ):
             exit_code = run_mod._serve_with_exc_handling(config)
 
@@ -175,7 +183,7 @@ class TestServeWithExcHandlingRapidFailures:
         with (
             patch.object(run_mod, "_handle_parent", side_effect=mock_handle_parent),
             patch("os.fork", side_effect=mock_fork),
-            patch("time.monotonic", side_effect=lambda: next(time_iter)),
+            patch.object(run_mod, "time", types.SimpleNamespace(monotonic=lambda: next(time_iter))),
         ):
             exit_code = run_mod._serve_with_exc_handling(config)
 
@@ -199,7 +207,7 @@ class TestExitOnLeaseEnd:
         with (
             patch.object(run_mod, "_handle_parent", side_effect=mock_handle_parent),
             patch("os.fork", side_effect=mock_fork),
-            patch("time.monotonic", return_value=0.0),
+            patch.object(run_mod, "time", types.SimpleNamespace(monotonic=lambda: 0.0)),
         ):
             exit_code = run_mod._serve_with_exc_handling(config)
 
@@ -218,7 +226,7 @@ class TestExitOnLeaseEnd:
         with (
             patch.object(run_mod, "_handle_parent", side_effect=mock_handle_parent),
             patch("os.fork", side_effect=mock_fork),
-            patch("time.monotonic", return_value=0.0),
+            patch.object(run_mod, "time", types.SimpleNamespace(monotonic=lambda: 0.0)),
         ):
             exit_code = run_mod._serve_with_exc_handling(config)
 
@@ -236,3 +244,126 @@ def test_run_uses_supervisor_exit_code(monkeypatch, tmp_path, supervisor_code):
 
     result = CliRunner().invoke(run_mod.run, ["--exporter-config", str(config)])
     assert result.exit_code == supervisor_code, result.output
+
+
+class _RestartExporter:
+    counter_path: Path
+    seen_path: Path
+    fail_serve = False
+
+    def __init__(self, **kwargs):
+        self.token = kwargs["token"]
+        self.on_token_rotated = kwargs["on_token_rotated"]
+        self.exit_code = None
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        pass
+
+    def stop(self, **kwargs):
+        pass
+
+    async def serve(self):
+        first_run = not self.counter_path.exists()
+        self.counter_path.touch()
+        if first_run:
+            await self.on_token_rotated("rotated-token")
+            if self.fail_serve:
+                raise RuntimeError("restart after serving failed")
+        else:
+            self.seen_path.write_text(self.token)
+            self.exit_code = 3
+
+
+@contextmanager
+def _restore_signal_handlers():
+    saved = {sig: signal.getsignal(sig) for sig in
+             (signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT, signal.SIGCHLD)}
+    try:
+        yield
+    finally:
+        for sig, handler in saved.items():
+            signal.signal(sig, handler)
+
+
+@pytest.mark.parametrize("storage", ["writable", "read-only", "memory-only"])
+@pytest.mark.parametrize("fail_serve", [False, True])
+def test_rotated_token_survives_child_restart(tmp_path, monkeypatch, storage, fail_serve):
+    import jumpstarter.exporter as exporter_pkg
+    from jumpstarter.config.common import ObjectMeta
+    from jumpstarter.config.exporter import ExporterConfigV1Alpha1
+    from jumpstarter.config.tls import TLSConfigV1Alpha1
+
+    config_file = tmp_path / "exporter.yaml"
+    cfg = ExporterConfigV1Alpha1(
+        metadata=ObjectMeta(name="probe", namespace="default"),
+        endpoint="localhost:1",
+        token="startup-token",
+        tls=TLSConfigV1Alpha1(insecure=True),
+    )
+    ExporterConfigV1Alpha1.save(cfg, path=str(config_file))
+    config = ExporterConfigV1Alpha1.load_path(config_file)
+    if storage == "memory-only":
+        config.path = None
+    elif storage == "read-only":
+        def deny_save(*args):
+            raise PermissionError("read-only config")
+        monkeypatch.setattr(ExporterConfigV1Alpha1, "_save_rotated_token", deny_save)
+
+    _RestartExporter.counter_path = tmp_path / "runs"
+    _RestartExporter.seen_path = tmp_path / "seen"
+    _RestartExporter.fail_serve = fail_serve
+    monkeypatch.setattr(exporter_pkg, "Exporter", _RestartExporter)
+    monkeypatch.setattr(run_mod, "start_metrics_server", lambda _addr: ("probe", None))
+    handle_child = run_mod._handle_child
+
+    def exit_child(*args, **kwargs):
+        exit_code = 1
+        try:
+            # The inherited Python 3.14 tracer cannot safely trace except* after fork.
+            # Keep collecting in the parent while exercising the real child path.
+            if (collector := coverage.Coverage.current()) is not None:
+                collector.stop()
+            handle_child(*args, **kwargs)
+        except SystemExit as exc:
+            exit_code = (exc.code or 0) if isinstance(exc.code, (int, type(None))) else 1
+        finally:
+            # Unexpected exceptions must never unwind into the parent's pytest run.
+            os._exit(exit_code)
+
+    monkeypatch.setattr(run_mod, "_handle_child", exit_child)
+
+    with _restore_signal_handlers():
+        exit_code = run_mod._serve_with_exc_handling(config)
+
+    assert exit_code == 3
+    assert config.token == "rotated-token"
+    assert (tmp_path / "seen").read_text() == "rotated-token"
+    expected = "rotated-token" if storage == "writable" else "startup-token"
+    assert ExporterConfigV1Alpha1.load_path(config_file).token == expected
+
+
+def test_drains_pending_token_after_child_exit(monkeypatch):
+    config = types.SimpleNamespace(token="startup-token")
+    reader, writer = multiprocessing.Pipe(duplex=False)
+    result = {}
+
+    def child_exit(_pid):
+        writer.send("last-rotated-token")
+        return 75
+
+    monkeypatch.setattr(run_mod, "_handle_parent", child_exit)
+    # The writer stays open, as if a grandchild inherited it, so only the stop signal ends the receiver.
+    supervisor = threading.Thread(
+        target=lambda: result.update(code=run_mod._handle_parent_with_token_updates(123, config, reader)),
+        daemon=True,
+    )
+    supervisor.start()
+    supervisor.join(5)
+    writer.close()
+
+    assert not supervisor.is_alive()
+    assert result["code"] == 75
+    assert config.token == "last-rotated-token"

@@ -73,6 +73,8 @@ class ControllerServiceStub:
     controller has stored it as running. Returns FAILED_PRECONDITION for a
     transition the record does not allow (for example a stale lease).
     """
+    RotateToken: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.RotateTokenRequest, _jumpstarter_pb2.RotateTokenResponse]
+    """Rotate the authentication token for the exporter."""
 
 @_typing.type_check_only
 class ControllerServiceAsyncStub(ControllerServiceStub):
@@ -118,6 +120,8 @@ class ControllerServiceAsyncStub(ControllerServiceStub):
     controller has stored it as running. Returns FAILED_PRECONDITION for a
     transition the record does not allow (for example a stale lease).
     """
+    RotateToken: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.RotateTokenRequest, _jumpstarter_pb2.RotateTokenResponse]  # type: ignore[assignment]
+    """Rotate the authentication token for the exporter."""
 
 class ControllerServiceServicer:
     """A service where an exporter can connect to make itself available."""
@@ -220,6 +224,13 @@ class ControllerServiceServicer:
         controller has stored it as running. Returns FAILED_PRECONDITION for a
         transition the record does not allow (for example a stale lease).
         """
+
+    def RotateToken(
+        self,
+        request: _jumpstarter_pb2.RotateTokenRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_jumpstarter_pb2.RotateTokenResponse, _abc.Awaitable[_jumpstarter_pb2.RotateTokenResponse]]:
+        """Rotate the authentication token for the exporter."""
 
 def add_ControllerServiceServicer_to_server(servicer: ControllerServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
 
