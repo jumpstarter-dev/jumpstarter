@@ -37,6 +37,10 @@ func (e *Exporter) InternalSubject() string {
 	return strings.Join([]string{"exporter", namespace, e.Name, uid}, ":")
 }
 
+func (e *Exporter) CredentialSecretName() string {
+	return e.Name + "-exporter"
+}
+
 func (e *Exporter) Usernames(prefix string) []string {
 	usernames := []string{prefix + e.InternalSubject()}
 

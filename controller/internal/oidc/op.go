@@ -122,15 +122,34 @@ func (k *Signer) ParseSubject(token string) (string, error) {
 }
 
 func (k *Signer) TokenExpiry(tokenString string) (time.Time, error) {
-	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
-	claims := &jwt.RegisteredClaims{}
-	if _, _, err := parser.ParseUnverified(tokenString, claims); err != nil {
+	claims, err := tokenClaims(tokenString)
+	if err != nil {
 		return time.Time{}, err
 	}
 	if claims.ExpiresAt == nil {
 		return time.Time{}, nil
 	}
 	return claims.ExpiresAt.Time, nil
+}
+
+func (k *Signer) TokenLifetime(tokenString string) (time.Duration, error) {
+	claims, err := tokenClaims(tokenString)
+	if err != nil {
+		return 0, err
+	}
+	if claims.IssuedAt == nil || claims.ExpiresAt == nil {
+		return 0, nil
+	}
+	return claims.ExpiresAt.Sub(claims.IssuedAt.Time), nil
+}
+
+func tokenClaims(tokenString string) (*jwt.RegisteredClaims, error) {
+	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
+	claims := &jwt.RegisteredClaims{}
+	if _, _, err := parser.ParseUnverified(tokenString, claims); err != nil {
+		return nil, err
+	}
+	return claims, nil
 }
 
 func (k *Signer) Token(

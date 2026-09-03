@@ -19,6 +19,9 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"fmt"
 	"math"
 	"os"
@@ -51,6 +54,7 @@ import (
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -2798,6 +2802,12 @@ func leaseHooksService(
 	return svc, fakeClient
 }
 
+// exporterRPCContext carries the bearer token a real exporter sends, which
+// Register and Status record after the fake authenticator accepts it.
+func exporterRPCContext(parent context.Context) context.Context {
+	return metadata.NewIncomingContext(parent, metadata.Pairs("authorization", "Bearer exporter-token"))
+}
+
 // TestUpdateLeaseHooks covers the transitions the controller accepts for an
 // exporter's lease hook record. The record is what lets a restarted exporter
 // resume a lease without repeating setup and still run owed cleanup, so it
@@ -3020,7 +3030,7 @@ func TestLateAvailableReportKeepsLeaseHookHold(t *testing.T) {
 	svc, c := leaseHooksService(t, jumpstarterdevv1alpha1.ExporterStatus{
 		LeaseRef: &corev1.LocalObjectReference{Name: "a"},
 	}, lease)
-	ctx := context.Background()
+	ctx := exporterRPCContext(context.Background())
 	exporterStatus := func() jumpstarterdevv1alpha1.ExporterStatus {
 		t.Helper()
 		var exporter jumpstarterdevv1alpha1.Exporter
@@ -3134,7 +3144,7 @@ func TestStatusStreamSendsLeaseHooks(t *testing.T) {
 				LeaseRef: &corev1.LocalObjectReference{Name: "a"}, LeaseHooks: tc.recorded,
 			}, lease)
 
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(exporterRPCContext(context.Background()))
 			defer cancel()
 			stream := &capturingStatusStream{ctx: ctx, sent: make(chan *pb.StatusResponse, 1)}
 			done := make(chan error, 1)
@@ -3205,7 +3215,7 @@ func TestLeaseHooksIgnoreStaleLeaseReference(t *testing.T) {
 					},
 				},
 			}, objects...)
-			streamCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			streamCtx, cancel := context.WithTimeout(exporterRPCContext(context.Background()), 5*time.Second)
 			defer cancel()
 			stream := &capturingStatusStream{ctx: streamCtx, sent: make(chan *pb.StatusResponse, 1)}
 			done := make(chan error, 1)
@@ -3307,6 +3317,20 @@ func TestSettleLeaseHookStartAfterLostReply(t *testing.T) {
 	}
 }
 
+func assertRotationDeniedEvent(t *testing.T, recorder *record.FakeRecorder, denied bool) {
+	t.Helper()
+	select {
+	case event := <-recorder.Events:
+		if !denied || !strings.Contains(event, "Warning RotationDenied") {
+			t.Fatalf("unexpected event: %s", event)
+		}
+	default:
+		if denied {
+			t.Fatal("lineage denial did not emit a warning")
+		}
+	}
+}
+
 func TestControllerServiceRotateToken(t *testing.T) {
 	scheme := k8sruntime.NewScheme()
 	if err := jumpstarterdevv1alpha1.AddToScheme(scheme); err != nil {
@@ -3315,11 +3339,12 @@ func TestControllerServiceRotateToken(t *testing.T) {
 	if err := corev1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	signer, err := oidc.NewSignerFromSeed([]byte("internal"), "https://controller.example.com", "dummy")
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	signer := oidc.NewSigner(key, "https://controller.example.com", "dummy")
 	for _, tc := range []struct {
 		name              string
 		issuer            string
@@ -3327,12 +3352,16 @@ func TestControllerServiceRotateToken(t *testing.T) {
 		subject           string
 		wrongKey          bool
 		expired           bool
+		early             bool
+		wrongStoredToken  bool
 		missingSigner     bool
 		missingSecret     bool
 		missingCredential bool
 		want              codes.Code
 	}{
 		{name: "successful rotation", want: codes.OK},
+		{name: "outside renewal window", early: true, want: codes.PermissionDenied},
+		{name: "unknown token lineage", wrongStoredToken: true, want: codes.PermissionDenied},
 		{name: "external issuer", issuer: "https://idp.example.com", want: codes.PermissionDenied},
 		{name: "external signature with internal issuer", wrongKey: true, want: codes.PermissionDenied},
 		{name: "different exporter UID", subject: "exporter:default:test-exporter:other-uid", want: codes.PermissionDenied},
@@ -3356,19 +3385,25 @@ func TestControllerServiceRotateToken(t *testing.T) {
 			if subject == "" {
 				subject = exporter.InternalSubject()
 			}
-			seed := []byte("internal")
+			credentialKey := key
 			if tc.wrongKey {
-				seed = []byte("external")
+				credentialKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
-			credentialSigner, err := oidc.NewSignerFromSeed(seed, issuer, audience)
-			if err != nil {
-				t.Fatal(err)
-			}
-			credentialSigner.SetTokenLifetime(48 * time.Hour)
+			now := time.Now()
+			issuedAt, expiresAt := now.Add(-24*time.Hour), now.Add(time.Hour)
 			if tc.expired {
-				credentialSigner.SetTokenLifetime(-time.Hour)
+				expiresAt = now.Add(-time.Hour)
 			}
-			credential, err := credentialSigner.Token(subject)
+			if tc.early {
+				issuedAt, expiresAt = now, now.Add(48*time.Hour)
+			}
+			credential, err := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.RegisteredClaims{
+				Issuer: issuer, Audience: []string{audience}, Subject: subject,
+				IssuedAt: jwt.NewNumericDate(issuedAt), ExpiresAt: jwt.NewNumericDate(expiresAt),
+			}).SignedString(credentialKey)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -3376,17 +3411,22 @@ func TestControllerServiceRotateToken(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "test-exporter-exporter", Namespace: "default"},
 				Data:       map[string][]byte{"token": []byte(credential)},
 			}
+			if tc.wrongStoredToken {
+				secret.Data["token"] = []byte("different-token")
+			}
 			objects := []client.Object{exporter}
 			if !tc.missingSecret {
 				objects = append(objects, secret)
 			}
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+			recorder := record.NewFakeRecorder(10)
 			svc := &ControllerService{
-				Client: fakeClient,
-				Authn:  &passingAuthenticator{userName: "test-user"},
-				Authz:  passingAuthorizer{},
-				Attr:   &exporterAttributesGetter{namespace: "default", name: "test-exporter"},
-				Signer: signer,
+				Recorder: recorder,
+				Client:   fakeClient,
+				Authn:    &passingAuthenticator{userName: "test-user"},
+				Authz:    passingAuthorizer{},
+				Attr:     &exporterAttributesGetter{namespace: "default", name: "test-exporter"},
+				Signer:   signer,
 			}
 			if tc.missingSigner {
 				svc.Signer = nil
@@ -3406,8 +3446,9 @@ func TestControllerServiceRotateToken(t *testing.T) {
 			if err := fakeClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: secret.Name}, &updatedSecret); err != nil {
 				t.Fatal(err)
 			}
+			assertRotationDeniedEvent(t, recorder, tc.wrongStoredToken)
 			if tc.want != codes.OK {
-				if string(updatedSecret.Data["token"]) != credential {
+				if string(updatedSecret.Data["token"]) != string(secret.Data["token"]) {
 					t.Fatal("rejected rotation changed credential")
 				}
 				return
