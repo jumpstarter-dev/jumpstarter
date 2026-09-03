@@ -1,14 +1,14 @@
-# JEP-0017: Multi-Exporter Leases and Inter-Exporter Port Forwarding
+# JEP-0015: Multi-Exporter Leases and Inter-Exporter Port Forwarding
 
 | Field             | Value                                                    |
 | ----------------- | -------------------------------------------------------- |
-| **JEP**           | 0017                                                     |
+| **JEP**           | 0015                                                     |
 | **Title**         | Multi-Exporter Leases and Inter-Exporter Port Forwarding |
 | **Author(s)**     | @kirkbrauer (Kirk Brauer)                                |
 | **Status**        | Draft                                                    |
 | **Type**          | Standards Track                                          |
 | **Created**       | 2026-09-01                                               |
-| **Updated**       | 2026-09-01                                               |
+| **Updated**       | 2026-09-03                                               |
 | **Discussion**    | *TBD (PR link)*                                          |
 | **Requires**      | JEP-0014                                                 |
 | **Supersedes**    |                                                          |
@@ -1395,7 +1395,7 @@ physical device, and it cannot find bugs in the physical device's stack.
 3. **A bench-shaped policy CRD** with rules over lease shape, size, and count.
 
 **Decision:** Option 1 for v1; option 2 recorded as a follow-on that depends
-on JEP-0015; option 3 deferred.
+on JEP-0017; option 3 deferred.
 
 **Rationale:** Per-member evaluation is the least surprising and most secure
 default: a multi-member lease can never reach an exporter its client could
@@ -1419,7 +1419,7 @@ Option 2 is strictly better and worth doing: it would make a bench whose
 ports cannot be satisfied report `Unsatisfiable` **without holding
 anything**, consistent with DD-1's all-or-nothing property. It requires
 reported device information to be reconciled into selectable exporter labels,
-which is precisely the mechanism proposed in JEP-0015. Hand-maintained CR
+which is precisely the mechanism proposed in JEP-0017. Hand-maintained CR
 labels are a stopgap but drift from reality, so this JEP does not depend on
 them.
 
@@ -2010,7 +2010,7 @@ often does a same-zone pair fall back; does anyone hit
 `MaxItems=8`; how often do `listen` collisions occur on physical hosts; does
 the nil-`status.exporterRef` convention (DD-2) surprise any consumer; is
 bind-time port validation (DD-12) painful enough to justify accelerating the
-JEP-0015 dependency.
+JEP-0017 dependency.
 
 ### Stable
 
@@ -2019,7 +2019,7 @@ JEP-0015 dependency.
   (evidence the port model generalizes)
 - No API changes to `members` / `forwards` / `PortReport` for one release
   cycle
-- Selection-time port validation either shipped on JEP-0015 or explicitly
+- Selection-time port validation either shipped on JEP-0017 or explicitly
   deferred with a rationale
 
 ## Backward Compatibility
@@ -2094,7 +2094,7 @@ risk in one field, handled by DD-2.
 - **Protocol mismatch can fail late** when neither port declares `protocol`
   (DD-8) — a deliberate retreat from admission-time validation.
 - **Port validation happens after binding** (DD-12), so an unsatisfiable
-  forward holds devices while reporting `Invalid`, until JEP-0015 makes ports
+  forward holds devices while reporting `Invalid`, until JEP-0017 makes ports
   selectable.
 - **No per-member early release.** A client finished with one device cannot
   hand it back without ending the lease.
@@ -2321,7 +2321,7 @@ Not part of this proposal:
   needs is lab hardware and a decision on how to model a shared RF resource —
   as its own member, schedulable and auditable but making a two-device bench
   three, or as an attribute of the physical member's exporter.
-- **Selection-time port validation** via JEP-0015 dynamic labels, so a bench
+- **Selection-time port validation** via JEP-0017 dynamic labels, so a bench
   whose ports cannot be satisfied reports `Unsatisfiable` without holding
   anything (DD-12).
 - **A global lease scheduler**, which the controller already carries a `TODO`
@@ -2397,10 +2397,10 @@ Not part of this proposal:
 - [JEP-0014: Virtual Scalable Exporters](JEP-0014-virtual-scalable-exporters.md)
   — "Composite leases — multiple exporters linked into one logical lease"
   (Future Possibilities), which this JEP realizes
-- JEP-0015: Dynamic Exporter Labels — the mechanism selection-time port
-  validation depends on (DD-12)
-- JEP-0016: Cuttlefish Kubernetes-Native Orchestration — DD-8, whose option 1
-  this JEP implements
+- JEP-0016: Cuttlefish Kubernetes-Native Orchestration (draft, not yet
+  submitted) — DD-8, whose option 1 this JEP implements
+- JEP-0017: Dynamic Exporter Labels (draft, not yet submitted) — the
+  mechanism selection-time port validation depends on (DD-12)
 - [JEP-0013: Metrics, Tracing, and Log Observability](JEP-0013-observability-telemetry-logs.md)
 - [JEP-0011: Protobuf Introspection and Interface Generation](JEP-0011-protobuf-introspection-interface-generation.md)
   — the introspection direction port reporting extends
