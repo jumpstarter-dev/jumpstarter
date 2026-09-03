@@ -1,6 +1,12 @@
 from .base import DriverClient
 from .client import client_from_path
-from .flasher import FlasherClient, FlasherClientInterface
+from .flasher import (
+    FlasherClient,
+    FlasherClientInterface,
+    FlashStatus,
+    StreamingFlasherClient,
+    StreamingFlasherClientInterface,
+)
 from .introspect import (
     describe_client,
     describe_devices,
@@ -13,8 +19,11 @@ from .lease import DirectLease, Lease
 __all__ = [
     "DriverClient",
     "DirectLease",
+    "FlashStatus",
     "FlasherClient",
     "FlasherClientInterface",
+    "StreamingFlasherClient",
+    "StreamingFlasherClientInterface",
     "client_from_path",
     "Lease",
     "describe_client",
