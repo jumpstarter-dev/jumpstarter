@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
@@ -31,7 +30,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -651,43 +649,14 @@ func (s *ClientService) RotateToken(ctx context.Context, req *cpb.RotateTokenReq
 		return nil, err
 	}
 
-	token, err := s.Signer.Token(jclient.InternalSubject())
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to sign token: %s", err)
-	}
-
-	secretName := jclient.Name + "-client"
-	var secret corev1.Secret
-	if err := s.Get(ctx, types.NamespacedName{
+	token, expiry, err := auth.RotateCredential(ctx, s.Client, s.Signer, kclient.ObjectKey{
 		Namespace: namespace,
-		Name:      secretName,
-	}, &secret); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get credential secret: %s", err)
+		Name:      jclient.Name + "-client",
+	}, jclient.InternalSubject())
+	if err != nil {
+		return nil, err
 	}
-
-	original := kclient.MergeFrom(secret.DeepCopy())
-	if secret.Data == nil {
-		secret.Data = map[string][]byte{}
-	}
-	secret.Data["token"] = []byte(token)
-	if err := s.Patch(ctx, &secret, original); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to update credential secret: %s", err)
-	}
-
 	log.FromContext(ctx).Info("token rotated", "client", jclient.Name, "namespace", namespace)
-
-	claims := &struct {
-		jwt.RegisteredClaims
-	}{}
-	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
-	if _, _, err := parser.ParseUnverified(token, claims); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to parse token claims: %s", err)
-	}
-
-	var expiry *timestamppb.Timestamp
-	if claims.ExpiresAt != nil {
-		expiry = timestamppb.New(claims.ExpiresAt.Time)
-	}
 
 	return &cpb.RotateTokenResponse{
 		Token:  token,

@@ -68,6 +68,9 @@ class ControllerServiceStub:
     Older controllers return UNIMPLEMENTED; callers must treat that as an empty list.
     """
 
+    RotateToken: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.RotateTokenRequest, _jumpstarter_pb2.RotateTokenResponse]
+    """Rotate the authentication token for the exporter."""
+
 @_typing.type_check_only
 class ControllerServiceAsyncStub(ControllerServiceStub):
     """A service where an exporter can connect to make itself available."""
@@ -106,6 +109,9 @@ class ControllerServiceAsyncStub(ControllerServiceStub):
     Returns an empty list when no optional services are deployed.
     Older controllers return UNIMPLEMENTED; callers must treat that as an empty list.
     """
+
+    RotateToken: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.RotateTokenRequest, _jumpstarter_pb2.RotateTokenResponse]  # type: ignore[assignment]
+    """Rotate the authentication token for the exporter."""
 
 class ControllerServiceServicer:
     """A service where an exporter can connect to make itself available."""
@@ -197,6 +203,13 @@ class ControllerServiceServicer:
         Returns an empty list when no optional services are deployed.
         Older controllers return UNIMPLEMENTED; callers must treat that as an empty list.
         """
+
+    def RotateToken(
+        self,
+        request: _jumpstarter_pb2.RotateTokenRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_jumpstarter_pb2.RotateTokenResponse, _abc.Awaitable[_jumpstarter_pb2.RotateTokenResponse]]:
+        """Rotate the authentication token for the exporter."""
 
 def add_ControllerServiceServicer_to_server(servicer: ControllerServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
 
