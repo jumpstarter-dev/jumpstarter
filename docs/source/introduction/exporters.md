@@ -60,6 +60,40 @@ Note that the `grpcConfig` section supports all options documented in the [gRPC
 argument keys
 documentation](https://grpc.github.io/grpc/core/group__grpc__arg__keys.html).
 
+### Token renewal
+
+Exporters automatically renew internal controller credentials before they expire.
+The default year-long token is renewed with 31 days remaining. Shorter tokens are
+renewed with 20% of their lifetime remaining, with a minimum lead of 60 seconds
+and a cap of half their lifetime. The controller warns when renewal has been
+missed: in the final 10% of the lifetime, capped at 30 days. External OIDC
+credentials must be renewed through their identity provider; the controller
+does not exchange them for internal exporter tokens.
+
+After rotation, the exporter updates its in-memory credential and replaces only
+the token value in the current YAML configuration. Other configuration values,
+file permissions, and symlinks are preserved; comments and custom formatting
+are removed. Config-management tools should allow the exporter to manage the
+token value. The new token survives internal child-process restarts even when
+the file cannot be written. In that case, the exporter logs the persistence
+failure. If the config is read-only, update its saved credential before the
+original token expires. The whole `jmp run` process can exit automatically after
+a prolonged controller outage or a stream authentication failure. A service
+manager restart then loads the credential from the file, losing the in-memory
+replacement.
+
+Rotation never extends a superseded token's original expiry. Only the current
+credential in the controller Secret can mint a replacement, and only when at
+most half its issued lifetime remains. The immediately previous credential can
+recover that same replacement until it expires, without minting another token
+or rewriting the Secret. Older credentials are denied rotation, and lineage
+denials emit a `RotationDenied` warning event on the Exporter.
+
+Recovery returns a bearer credential: someone who obtains the current token
+can use it and later renew it under the same rules. To revoke a compromised
+internal exporter credential, delete and recreate the Exporter resource so its
+UID changes, then replace the exporter config with the new credential.
+
 ## Running an Exporter
 
 To run an Exporter on a {term}`host` system, you must have Python {{requires_python}}

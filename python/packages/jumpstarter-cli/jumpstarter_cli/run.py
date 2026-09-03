@@ -1,7 +1,9 @@
 import logging
+import multiprocessing
 import os
 import signal
 import sys
+import threading
 import time
 
 import anyio
@@ -84,6 +86,7 @@ def _handle_child(  # noqa: C901
     tls_cert=None,
     tls_key=None,
     passphrase=None,
+    token_rotated_callback=None,
 ):
     """Handle child process with graceful shutdown."""
     async def serve_with_graceful_shutdown():  # noqa: C901
@@ -149,7 +152,7 @@ def _handle_child(  # noqa: C901
                 else:
                     # Create exporter and run it (controller mode)
                     exporter_exit_code = None
-                    async with config.create_exporter() as exporter:
+                    async with config.create_exporter(on_token_rotated=token_rotated_callback) as exporter:
                         try:
                             await exporter.serve()
                         except* Exception as excgroup:  # noqa: BLE001
@@ -224,6 +227,27 @@ def _handle_parent(pid):
         return 128 + child_exit_signal
 
 
+def _handle_parent_with_token_updates(pid, config, token_reader):
+    stopped = threading.Event()
+
+    def receive_tokens():
+        try:
+            while not stopped.is_set() or token_reader.poll():
+                if token_reader.poll(0.1):
+                    config.token = token_reader.recv()
+        except EOFError:
+            pass
+
+    # Drain while the child runs so repeated rotations cannot fill the pipe.
+    receiver = threading.Thread(target=receive_tokens)
+    receiver.start()
+    try:
+        return _handle_parent(pid)
+    finally:
+        stopped.set()
+        receiver.join()
+
+
 def _serve_with_exc_handling(
     config,
     parsed_bind=None,
@@ -238,56 +262,64 @@ def _serve_with_exc_handling(
     rapid_failure_count = 0
     while True:
         child_start_time = time.monotonic()
-        pid = os.fork()
+        token_reader, token_writer = multiprocessing.Pipe(duplex=False)
+        try:
+            pid = os.fork()
 
-        if pid > 0:
-            if (exit_code := _handle_parent(pid)) is not None:
-                return exit_code
+            if pid > 0:
+                token_writer.close()
+                if (exit_code := _handle_parent_with_token_updates(pid, config, token_reader)) is not None:
+                    return exit_code
 
-            if config.exit_on_lease_end:
-                return 0
+                if config.exit_on_lease_end:
+                    return 0
 
-            # Child exited with code 0 (restart requested).
-            # Check if it failed too quickly, indicating a persistent error
-            # (e.g., DNS resolution failure) that won't resolve by restarting.
-            elapsed = time.monotonic() - child_start_time
-            if elapsed < rapid_failure_window:
-                rapid_failure_count += 1
-                logger.warning(
-                    "Child process exited after %.1fs (<%ds), rapid failure %d/%d",
-                    elapsed,
-                    rapid_failure_window,
-                    rapid_failure_count,
-                    max_rapid_failures,
-                )
-                if rapid_failure_count >= max_rapid_failures:
-                    click.echo(
-                        f"Exporter child process failed {rapid_failure_count} times "
-                        f"within {rapid_failure_window}s each. Exiting to allow "
-                        f"container/service restart.",
-                        err=True,
-                    )
-                    return 1
-            else:
-                # Child ran long enough; reset the counter
-                if rapid_failure_count > 0:
-                    logger.info(
-                        "Child ran for %.1fs (>=%ds), resetting rapid failure counter",
+                # Child exited with code 0 (restart requested).
+                # Check if it failed too quickly, indicating a persistent error
+                # (e.g., DNS resolution failure) that won't resolve by restarting.
+                elapsed = time.monotonic() - child_start_time
+                if elapsed < rapid_failure_window:
+                    rapid_failure_count += 1
+                    logger.warning(
+                        "Child process exited after %.1fs (<%ds), rapid failure %d/%d",
                         elapsed,
                         rapid_failure_window,
+                        rapid_failure_count,
+                        max_rapid_failures,
                     )
-                rapid_failure_count = 0
-        else:
-            os.setsid() # Become group leader so all spawned subprocesses are reached by parent's signals
-            _handle_child(
-                config,
-                parsed_bind,
-                tls_insecure,
-                tls_cert,
-                tls_key,
-                passphrase,
-            )
-            sys.exit(1) # should never happen
+                    if rapid_failure_count >= max_rapid_failures:
+                        click.echo(
+                            f"Exporter child process failed {rapid_failure_count} times "
+                            f"within {rapid_failure_window}s each. Exiting to allow "
+                            f"container/service restart.",
+                            err=True,
+                        )
+                        return 1
+                else:
+                    # Child ran long enough; reset the counter
+                    if rapid_failure_count > 0:
+                        logger.info(
+                            "Child ran for %.1fs (>=%ds), resetting rapid failure counter",
+                            elapsed,
+                            rapid_failure_window,
+                        )
+                    rapid_failure_count = 0
+            else:
+                token_reader.close()
+                os.setsid() # Become group leader so all spawned subprocesses are reached by parent's signals
+                _handle_child(
+                    config,
+                    parsed_bind,
+                    tls_insecure,
+                    tls_cert,
+                    tls_key,
+                    passphrase,
+                    token_rotated_callback=token_writer.send,
+                )
+                sys.exit(1) # should never happen
+        finally:
+            token_reader.close()
+            token_writer.close()
 
 
 @click.command("run")
