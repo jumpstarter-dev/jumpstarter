@@ -20,6 +20,25 @@ func reconcileTokenExpiry(
 	generation int64,
 	conditionType string,
 ) {
+	reconcileTokenExpiryWithThreshold(conditions, tokenExpiresAt, expiryTime, generation, conditionType, tokenExpiryWarningThreshold)
+	// Keep the established client condition reasons used by existing alerts.
+	if condition := meta.FindStatusCondition(*conditions, conditionType); !expiryTime.IsZero() && condition != nil && condition.Reason == "ExpiringSoon" {
+		if time.Until(expiryTime) <= 7*24*time.Hour {
+			condition.Reason = "ExpiresWithin7Days"
+		} else {
+			condition.Reason = "ExpiresWithin30Days"
+		}
+	}
+}
+
+func reconcileTokenExpiryWithThreshold(
+	conditions *[]metav1.Condition,
+	tokenExpiresAt **metav1.Time,
+	expiryTime time.Time,
+	generation int64,
+	conditionType string,
+	warningThreshold time.Duration,
+) {
 	if expiryTime.IsZero() {
 		return
 	}
@@ -37,20 +56,12 @@ func reconcileTokenExpiry(
 			Reason:             "Expired",
 			Message:            fmt.Sprintf("Token expired on %s", expiryTime.UTC().Format(time.RFC3339)),
 		})
-	} else if remaining <= 7*24*time.Hour {
+	} else if remaining <= warningThreshold {
 		meta.SetStatusCondition(conditions, metav1.Condition{
 			Type:               conditionType,
 			Status:             metav1.ConditionTrue,
 			ObservedGeneration: generation,
-			Reason:             "ExpiresWithin7Days",
-			Message:            fmt.Sprintf("Token expires on %s (%d days remaining)", expiryTime.UTC().Format(time.RFC3339), int(remaining.Hours()/24)),
-		})
-	} else if remaining <= tokenExpiryWarningThreshold {
-		meta.SetStatusCondition(conditions, metav1.Condition{
-			Type:               conditionType,
-			Status:             metav1.ConditionTrue,
-			ObservedGeneration: generation,
-			Reason:             "ExpiresWithin30Days",
+			Reason:             "ExpiringSoon",
 			Message:            fmt.Sprintf("Token expires on %s (%d days remaining)", expiryTime.UTC().Format(time.RFC3339), int(remaining.Hours()/24)),
 		})
 	} else {

@@ -27,13 +27,9 @@ func RotateCredential(
 	if err != nil {
 		return "", nil, status.Errorf(codes.Internal, "failed to sign token: %s", err)
 	}
-	expiresAt, err := signer.TokenExpiry(token)
+	expiry, err := credentialExpiry(signer, token)
 	if err != nil {
-		return "", nil, status.Errorf(codes.Internal, "failed to parse token claims: %s", err)
-	}
-	var expiry *timestamppb.Timestamp
-	if !expiresAt.IsZero() {
-		expiry = timestamppb.New(expiresAt)
+		return "", nil, err
 	}
 	var secret corev1.Secret
 	if err := kclient.Get(ctx, key, &secret); err != nil {
@@ -48,4 +44,15 @@ func RotateCredential(
 		return "", nil, status.Errorf(codes.Internal, "failed to update credential secret: %s", err)
 	}
 	return token, expiry, nil
+}
+
+func credentialExpiry(signer *oidc.Signer, token string) (*timestamppb.Timestamp, error) {
+	expiresAt, err := signer.TokenExpiry(token)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to parse token claims: %s", err)
+	}
+	if expiresAt.IsZero() {
+		return nil, nil
+	}
+	return timestamppb.New(expiresAt), nil
 }
