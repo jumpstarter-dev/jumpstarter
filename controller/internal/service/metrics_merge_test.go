@@ -201,7 +201,7 @@ func TestMergeSnapshots_ReportsOpenMetricsExemplarParseError(t *testing.T) {
 	})
 	for _, f := range families {
 		if strings.HasPrefix(f.GetName(), "jumpstarter_operation_duration_seconds") {
-			t.Fatalf("unparseable snapshot must be omitted, got family %s", f.GetName())
+			t.Fatalf("unparsable snapshot must be omitted, got family %s", f.GetName())
 		}
 	}
 	if gotExporter != "sidekick" {

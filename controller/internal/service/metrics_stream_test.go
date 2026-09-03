@@ -444,7 +444,7 @@ func TestFanout_UnparseableSnapshotIncrementsParseErrorsOnSameResponse(t *testin
 		t.Fatalf("GET /metrics status=%d body=%s", code, body)
 	}
 	if strings.Contains(body, "jumpstarter_operation_duration_seconds") {
-		t.Errorf("unparseable exporter snapshot must be omitted, body:\n%s", body)
+		t.Errorf("unparsable exporter snapshot must be omitted, body:\n%s", body)
 	}
 	if !strings.Contains(body, metricsParseErrorsMetric) || !strings.Contains(body, `exporter="sidekick"`) {
 		t.Errorf("parse-error counter missing from same /metrics response:\n%s", body)
