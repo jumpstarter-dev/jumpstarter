@@ -1,3 +1,4 @@
+import ast
 import json
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -125,6 +126,25 @@ class TestWalkClickTree:
         assert result["subcommands"]["sub2"]["params"][0]["name"] == "count"
         assert result["subcommands"]["sub2"]["params"][0]["default"] == 5
 
+    @pytest.mark.parametrize("parameter", [
+        click.Argument(["help"], required=True),
+        click.Option(["--help"], required=True, help="An explicitly declared input"),
+    ])
+    def test_declared_parameter_named_help_is_preserved(self, parameter):
+        command = click.Command("cmd", params=[parameter], add_help_option=False)
+        params = walk_click_tree(command)["params"]
+        assert len(params) == 1
+        assert params[0]["name"] == "help"
+        assert params[0]["kind"] == parameter.param_type_name
+        assert params[0]["required"] is True
+        assert params[0]["opts"] == parameter.opts
+
+    def test_automatic_help_is_not_a_declared_parameter(self):
+        command = click.Command("cmd")
+        with click.Context(command) as context:
+            assert command.get_help_option(context) is not None
+        assert walk_click_tree(command)["params"] == []
+
     def test_hidden_params_excluded(self):
         @click.command("cmd")
         @click.option("--visible", help="shown")
@@ -190,6 +210,14 @@ class TestGetDriverMethods:
         cycle = next(m for m in result["methods"] if m["name"] == "cycle")
         assert "client.power.cycle(" in cycle["call_example"]
         assert 'children["power"]' not in cycle["call_example"]
+        ast.parse(cycle["call_example"])
+
+    def test_root_driver_example_is_valid_python(self):
+        result = get_driver_methods(FakePowerClient(), [])
+        cycle = next(m for m in result["methods"] if m["name"] == "cycle")
+        assert "client.cycle(wait=...)" in cycle["call_example"]
+        assert "client.." not in cycle["call_example"]
+        ast.parse(cycle["call_example"])
 
     def test_invalid_path_raises(self):
         client = FakeCompositeClient()
