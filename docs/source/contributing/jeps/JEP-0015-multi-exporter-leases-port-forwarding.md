@@ -4,11 +4,11 @@
 | ----------------- | -------------------------------------------------------- |
 | **JEP**           | 0015                                                     |
 | **Title**         | Multi-Exporter Leases and Inter-Exporter Port Forwarding |
-| **Author(s)**     | @kirkbrauer (Kirk Brauer)                                |
+| **Author(s)**     | @kirkbrauer (Kirk Brauer, kbrauer@hatci.com)             |
 | **Status**        | Discussion                                               |
 | **Type**          | Standards Track                                          |
 | **Created**       | 2026-09-01                                               |
-| **Updated**       | 2026-09-04                                               |
+| **Updated**       | 2026-09-05                                               |
 | **Discussion**    | [PR #1069](https://github.com/jumpstarter-dev/jumpstarter/pull/1069) |
 | **Requires**      | JEP-0014                                                 |
 | **Supersedes**    |                                                          |
@@ -23,8 +23,8 @@ traffic between their named driver ports. Optional `spec.members[]` assigns
 roles to exporters, and `spec.forwards[]` declares connections between them
 without exposing local addresses. All member claims are committed in one
 status update, and the members share a lease lifetime. Forwards reuse the
-existing port-forwarding primitives and router, with authenticated direct
-connections preferred within a network zone. The examples focus on phone
+existing port-forwarding primitives and router, with mutually authenticated,
+encrypted direct connections preferred within a network zone. The examples focus on phone
 projection, but the same model supports CAN, serial, and other socket-based
 connections.
 
@@ -178,7 +178,11 @@ Each member uses the existing `selector` or `exporterRef` fields with a role
 name. The scalar lease form remains supported (DD-2).
 
 A member marked `optional: true` may be omitted at binding; its role then
-resolves to `None` on the client.
+resolves to `None` on the client. A forward that references an omitted
+optional member is `Disabled`, with a status message naming that member. It
+is not established and does not prevent the rest of the lease from becoming
+`Ready`. If the optional member binds, every forward that references it is
+required to connect normally.
 
 #### CAN example
 
@@ -240,8 +244,11 @@ bt     headunit.rootcanal    phone.controller    direct   connected   1.2 MiB   
 ```
 
 In Python, the existing `lease()` context manager grows `members` and
-`forwards`, and a multi-member lease yields a mapping of roles to the same
-client objects a single-exporter lease yields directly:
+`forwards`, and a lease requested through `members` yields a bench whose
+`members` mapping contains the same client objects a scalar lease yields
+directly. Roles are deliberately not installed as arbitrary object
+attributes: mapping access safely supports names such as `head-unit` without
+allowing a role such as `__class__` or `forwards` to shadow client state:
 
 ```python
 from jumpstarter.config.client import ClientConfigV1Alpha1
@@ -254,8 +261,8 @@ with config.lease(
     duration=timedelta(minutes=45),
 ) as lease:
     with lease.connect() as bench:
-        phone = bench.phone
-        headunit = bench.headunit
+        phone = bench.members["phone"]
+        headunit = bench.members["headunit"]
 
         headunit.power.on()
         phone.adb.wait_for_device()
@@ -268,8 +275,10 @@ with config.lease(
         assert phone.adb.shell("dumpsys bluetooth_manager | grep -c Connected") == "1"
 ```
 
-`config.lease(selector=...)` keeps its existing behavior, with `connect()`
-yielding a single driver client (DD-2).
+`config.lease(selector=...)` keeps its existing scalar behavior, with
+`connect()` yielding a single driver client. Explicit `members`, including a
+list with exactly one entry, always uses `status.members` and yields the bench
+shape with a role mapping (DD-2).
 
 `JumpstarterTest` grows `members` and `forwards` class variables next to
 `selector`, so existing pytest suites extend without a second base class.
@@ -296,13 +305,15 @@ The exporter reuses `TemporaryTcpListener` and `forward_stream()` from
 1. After binding, the controller validates the ports and sends setup
    instructions over each exporter's existing `Listen` stream.
 2. Each exporter calls `DialPeer` for connection details and credentials.
-3. For a direct-eligible pair, the `requires` side first attempts an
-   authenticated direct connection with a bounded timeout. Otherwise, or if
-   that attempt fails in `Auto` mode, both endpoints call
-   `RouterService.Stream` with tokens sharing one `stream` claim (DD-4, DD-5).
+3. For a direct-eligible pair, the `requires` side first establishes mTLS
+   with a bounded timeout. Both peers validate their controller-issued,
+   per-forward certificate identities; only then does the requiring side send
+   `peer_token` inside the encrypted channel. Otherwise, or if that attempt
+   fails in `Auto` mode, both endpoints call `RouterService.Stream` with
+   tokens sharing one unique per-forward subject (DD-4, DD-5).
 4. The `provides` side dials its local service. The `requires` side listens
-   on its configured address. Both splice local connections to the peer
-   stream using `forward_stream()`.
+   on its configured address. Both splice each accepted local connection to
+   that connection's peer stream using `forward_stream()`.
 
 ```{mermaid}
 flowchart TD
@@ -409,17 +420,26 @@ enum PortDirection {
 }
 ```
 
-The `listen` address of a `requires` port is deliberately **absent**: it is
-local to the exporter and no other component needs it (DD-6).
+Port names are unique across all `DriverInstanceReport` entries from one
+exporter, not merely within one driver instance. The exporter validates this
+before registration, and the controller rejects a registration containing a
+duplicate with `INVALID_ARGUMENT`. A `(member, port)` therefore resolves to
+exactly one driver UUID; the resolved UUID is included in setup instructions
+so the exporter never selects a local endpoint by name alone. The `listen`
+address of a `requires` port is deliberately **absent**: it is local to the
+exporter and no other component needs it (DD-6).
 
 **`LeaseSpec`** gains two optional lists:
 
 ```go
+// Member and forward names must each be unique before binding or token creation.
+// +kubebuilder:validation:XValidation:rule="self.members.all(m, self.members.filter(x, x.name == m.name).size() == 1)",message="member names must be unique"
+// +kubebuilder:validation:XValidation:rule="self.forwards.all(f, self.forwards.filter(x, x.name == f.name).size() == 1)",message="forward names must be unique"
 type LeaseSpec struct {
     // ... all existing fields unchanged ...
 
-    // Members of a multi-exporter lease. When empty, the lease binds a
-    // single exporter using Selector/ExporterRef exactly as before.
+    // Members of a member-form lease. When empty, the lease binds a single
+    // exporter using the top-level Selector/ExporterRef exactly as before.
     // +kubebuilder:validation:MaxItems=8
     Members []LeaseMember `json:"members,omitempty"`
 
@@ -427,7 +447,14 @@ type LeaseSpec struct {
     Forwards []LeaseForward `json:"forwards,omitempty"`
 }
 
+// Exactly one non-empty selection source is required for every member.
+// +kubebuilder:validation:XValidation:rule="((((has(self.selector.matchLabels) && size(self.selector.matchLabels) > 0) || (has(self.selector.matchExpressions) && size(self.selector.matchExpressions) > 0)) ? 1 : 0) + ((has(self.exporterRef) && has(self.exporterRef.name) && size(self.exporterRef.name) > 0) ? 1 : 0)) == 1",message="exactly one of selector or exporterRef.name is required"
+// +kubebuilder:validation:XValidation:rule="self.name != 'forward' && self.name != 'forwards'",message="member name is reserved"
 type LeaseMember struct {
+    // DNS-label syntax keeps names usable in the CLI and generated formats.
+    // Python accesses them only through bench.members[name].
+    // +kubebuilder:validation:MaxLength=63
+    // +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
     Name          string                       `json:"name"`
     Selector      metav1.LabelSelector         `json:"selector,omitempty"`
     ExporterRef   *corev1.LocalObjectReference `json:"exporterRef,omitempty"`
@@ -459,7 +486,7 @@ type LeaseForward struct {
 
 type ForwardEndpoint struct {
     Member string `json:"member"`
-    Port   string `json:"port"`
+    Port   string `json:"port"` // exporter-wide unique port name
 }
 ```
 
@@ -468,8 +495,8 @@ type ForwardEndpoint struct {
 ```go
 type LeaseStatus struct {
     // ... all existing fields unchanged ...
-    // ExporterRef stays authoritative for single-exporter leases and is
-    // left nil for multi-member leases (DD-2).
+    // ExporterRef stays authoritative for scalar leases and is left nil for
+    // every lease requested through Members, including one-member lists.
 
     Members  []LeaseMemberStatus  `json:"members,omitempty"`
     Forwards []LeaseForwardStatus `json:"forwards,omitempty"`
@@ -484,8 +511,8 @@ type LeaseMemberStatus struct {
 
 type LeaseForwardStatus struct {
     Name    string `json:"name"`
-    State   string `json:"state"`             // Pending|Connecting|Connected|Reconnecting|Failed
-    Mode    string `json:"mode,omitempty"`    // transport actually in use
+    State   string `json:"state"` // Pending|Disabled|Connecting|Connected|Reconnecting|Failed
+    Mode    string `json:"mode,omitempty"`
     Message string `json:"message,omitempty"`
 }
 ```
@@ -503,31 +530,136 @@ optional fields used only to decide direct eligibility:
     NetworkZone  string `json:"networkZone,omitempty"`
 ```
 
-The existing CEL rules are extended, not replaced — the current
-"one of selector or exporterRef is required" rule gains a `members` arm, plus
-new rules for mutual exclusion, unique role names, forwards referencing
-declared members, member immutability (mirroring `tags` and `context`), and
-exactly one of `between` or `from`+`to` per forward.
+The existing CEL rules are extended, not replaced. The current top-level
+"one of selector or exporterRef is required" rule gains a `members` arm and
+mutual exclusion. Per-member CEL requires exactly one *non-empty* `selector`
+or `exporterRef.name`; both set and both unset are rejected. Additional rules
+enforce unique and immutable member names, unique forward names, forwards
+referencing declared members, member immutability (mirroring `tags` and
+`context`), and exactly one of `between` or `from`+`to` per forward. Duplicate
+forward names are thus rejected before the controller derives stream subjects
+or creates status maps.
 
-**Protocol** — additions to existing messages and one new RPC:
+**Protocol** — additions to existing messages and one new RPC. These are the
+wire definitions; the similarly named Go structs above describe the CRD only:
 
 ```protobuf
+enum LeaseForwardMode {
+  LEASE_FORWARD_MODE_UNSPECIFIED = 0; // Auto
+  LEASE_FORWARD_MODE_AUTO = 1;
+  LEASE_FORWARD_MODE_ROUTER = 2;
+  LEASE_FORWARD_MODE_DIRECT = 3;
+  LEASE_FORWARD_MODE_CLIENT_RELAY = 4;
+}
+
+enum LeaseForwardState {
+  LEASE_FORWARD_STATE_UNSPECIFIED = 0;
+  LEASE_FORWARD_STATE_PENDING = 1;
+  LEASE_FORWARD_STATE_DISABLED = 2;
+  LEASE_FORWARD_STATE_CONNECTING = 3;
+  LEASE_FORWARD_STATE_CONNECTED = 4;
+  LEASE_FORWARD_STATE_RECONNECTING = 5;
+  LEASE_FORWARD_STATE_FAILED = 6;
+}
+
+enum ForwardSide {
+  FORWARD_SIDE_UNSPECIFIED = 0;
+  FORWARD_SIDE_PROVIDES = 1;
+  FORWARD_SIDE_REQUIRES = 2;
+}
+
+message LeaseMember {
+  string name = 1;
+  oneof selection {
+    LabelSelector selector = 2;
+    string exporter_name = 3;
+  }
+  bool optional = 4;
+  bool allow_disabled = 5;
+}
+
+message ForwardEndpoint {
+  string member_name = 1;
+  string port_name = 2; // Unique within the member exporter.
+}
+
+message LeaseForwardBetween {
+  repeated ForwardEndpoint endpoints = 1; // Exactly two.
+}
+
+message LeaseForwardDirected {
+  ForwardEndpoint from = 1; // Must resolve to PROVIDES.
+  ForwardEndpoint to = 2;   // Must resolve to REQUIRES.
+}
+
+message LeaseForward {
+  string name = 1;
+  oneof topology {
+    LeaseForwardBetween between = 2;
+    LeaseForwardDirected directed = 3;
+  }
+  LeaseForwardMode mode = 4;
+}
+
+message LeaseMemberStatus {
+  string name = 1;
+  optional string exporter_uuid = 2; // Absent when an optional member is omitted.
+  int32 priority = 3;
+  bool spot_access = 4;
+}
+
+message LeaseForwardStatus {
+  string name = 1;
+  LeaseForwardState state = 2;
+  LeaseForwardMode mode = 3; // Transport actually in use when connected.
+  optional string message = 4;
+}
+
 message RequestLeaseRequest {
-  google.protobuf.Duration duration = 1;  // unchanged
-  LabelSelector selector = 2;             // unchanged
-  repeated LeaseMember members = 3;       // NEW
-  repeated LeaseForward forwards = 4;     // NEW
+  google.protobuf.Duration duration = 1; // unchanged
+  LabelSelector selector = 2;            // unchanged; scalar form only
+  repeated LeaseMember members = 3;      // NEW
+  repeated LeaseForward forwards = 4;    // NEW
 }
 
 message GetLeaseResponse {
-  // ... fields 1-6 unchanged; exporter_uuid set only when single-member ...
+  // ... fields 1-6 unchanged; exporter_uuid set only for scalar leases ...
   repeated LeaseMemberStatus members = 7;   // NEW
   repeated LeaseForwardStatus forwards = 8; // NEW
 }
 
 message DialRequest {
-  string lease_name = 1;                // unchanged
-  optional string member_name = 2;      // NEW: required for multi-member leases
+  string lease_name = 1;             // unchanged
+  optional string member_name = 2;   // NEW: required for member-form leases
+}
+
+// Listen is a server stream from the controller to an authenticated exporter.
+// Fields 1 and 2 retain the existing client-connection instruction. Exactly
+// one instruction is populated. Forward setup is idempotent by
+// (lease_uid, forward_name, member_name).
+message ListenResponse {
+  string router_endpoint = 1;                // unchanged
+  string router_token = 2;                   // unchanged
+  optional ForwardSetup forward_setup = 3;   // NEW
+  optional ForwardTeardown forward_teardown = 4; // NEW
+}
+
+message ForwardSetup {
+  string lease_name = 1;
+  string lease_uid = 2;
+  string forward_name = 3;
+  string member_name = 4;
+  string peer_member_name = 5;
+  ForwardSide side = 6;
+  string local_driver_uuid = 7; // Resolved from the exporter-wide unique port.
+  string local_port_name = 8;
+  string peer_port_name = 9;
+  LeaseForwardMode mode = 10;
+}
+
+message ForwardTeardown {
+  string lease_uid = 1;
+  string forward_name = 2;
 }
 
 service ControllerService {
@@ -541,17 +673,38 @@ message DialPeerRequest {
   string member_name = 3;
 }
 
+message DirectPeerParameters {
+  string endpoint = 1; // Dial target for REQUIRES; empty for PROVIDES.
+  bytes ca_certificate = 2; // Trust root for the opposite endpoint.
+  bytes certificate = 3;    // This endpoint's short-lived certificate.
+  bytes private_key = 4;    // This endpoint's short-lived private key.
+  string expected_peer_identity = 5;
+}
+
 message DialPeerResponse {
   string router_endpoint = 1;
-  string router_token = 2;              // `stream` claim shared by both ends
-  optional string peer_endpoint = 3;    // set when the pair is direct-eligible
-  optional string peer_token = 4;       // authenticates a direct dial
-  bool prefer_direct = 5;               // Auto resolved to direct-first
+  string router_token = 2;
+  optional DirectPeerParameters direct = 3;
+  optional string peer_token = 4;
+  bool prefer_direct = 5;
 }
 ```
 
-`ReleaseLeaseRequest`, `ListLeasesRequest`, `RouterService`, and
-`router.proto` are untouched.
+Forward credentials are not carried on `Listen`. After receiving
+`ForwardSetup`, each exporter calls authenticated `DialPeer`; the controller
+returns side-specific, short-lived router and (when eligible) per-forward mTLS
+credentials. The provider uses them for its configured peer listener, and the
+requiring side uses them to dial and verify that listener. Private keys remain
+inside the authenticated controller channel.
+
+For an ordinary client connection, fields 1 and 2 are both populated and
+fields 3 and 4 are absent. For setup or teardown, only the corresponding
+optional message is populated. An old exporter reports no ports, so it cannot
+be selected for a forward and never receives fields 3 or 4 of
+`ListenResponse`. A new exporter checks those fields before treating fields 1
+and 2 as a client connection. Unknown fields remain safe under proto3. `ReleaseLeaseRequest` and `ListLeasesRequest` are
+untouched. `RouterService.Stream` and its protobuf remain unchanged, but its
+token validation changes as described in DD-5.
 
 **CLI surface** — existing commands, new flags:
 
@@ -622,25 +775,28 @@ work, as noted in the controller's existing TODO.
 **Alternatives considered:**
 
 1. **Keep the scalar, add a parallel list.** `status.exporterRef` stays
-   authoritative for single-exporter leases and is left **nil** for
-   multi-member leases, which populate `status.members[]` instead.
+   authoritative for scalar-form leases and is left **nil** for every
+   member-form lease, which populates `status.members[]` instead.
 2. **Promote the scalar to a list** and migrate every reader.
 3. **Always populate both**, setting `status.exporterRef` to the first member.
 
 **Decision:** Option 1.
 
-**Rationale:** Existing consumers retain the scalar field for single-exporter leases.
-For multi-member leases, an old reader sees nil and treats the lease as
-unbound, rather than selecting an arbitrary member. Populating the scalar
-with the first member would misroute consumers such as the JEP-0016 Host
-Orchestrator façade. Replacing it with a list would require every consumer
-to migrate.
+**Rationale:** Existing consumers retain the scalar field for leases requested
+through the top-level selector or exporter reference. For a lease requested
+through `members`, even when the list contains exactly one entry, an old
+reader sees nil and treats the lease as unbound rather than selecting an
+arbitrary role. Populating the scalar with the first member would misroute
+consumers such as the JEP-0016 Host Orchestrator façade. Replacing it with a
+list would require every consumer to migrate.
 
-`GetLeaseResponse.exporter_uuid` follows the same convention. The client
-returns a driver client for a single-member lease and a role mapping for a
-multi-member lease.
+`GetLeaseResponse.exporter_uuid` follows the same convention. A scalar-form
+lease returns a bare driver client. An explicit one-member or multi-member
+lease returns a bench with `members[role]` and member status. The request
+form, rather than the number of bound exporters, therefore determines a
+stable response shape.
 
-`DialRequest.member_name` selects a role. Omitting it for a multi-member
+`DialRequest.member_name` selects a role. Omitting it for any member-form
 lease returns `INVALID_ARGUMENT` listing the available roles.
 
 ### DD-3: Partial-bench behavior when a member is lost mid-lease
@@ -688,20 +844,34 @@ rootcanal HCI commands took about 45 ms either way (DD-9). These measurements
 do not establish cross-node or sustained-throughput limits. Phase 4's Wi-Fi
 frame bridge requires separate latency testing.
 
-### DD-5: Router changes — none
+### DD-5: Keep the router protobuf; bind pairing to forward claims
 
 **Alternatives considered:**
 
-1. **Reuse `RouterService.Stream` unchanged**, issuing both endpoints a token
-   bearing the same `stream` claim.
+1. **Reuse the `RouterService.Stream` RPC and forwarding path**, while
+   strengthening its JWT validation for peer-pair claims.
 2. **Add a peer-specific RPC** to `router.proto` with explicit A/B roles.
+3. **Reuse the current shared exporter subject unchanged**, relying only on
+   controller-side token issuance.
 
-**Decision:** Option 1 — no `router.proto` change.
+**Decision:** Option 1 — no `router.proto` change, with authorization changes
+inside `RouterService.Stream`.
 
-**Rationale:** `RouterService.Stream` pairs callers with the same stream claim and
-already accepts exporter identities. Peer-specific authorization belongs in
-the controller's token issuance. A second router RPC would duplicate the
-stream path without changing its behavior.
+**Rationale:** The current router uses the JWT `sub` as its pending-stream key;
+a shared subject such as `jumpstarter exporter` would allow unrelated
+forwards to collide. For each forward, the controller instead sets `sub` to
+the stable UUIDv5 derived from `(lease UID, forward name)`. Each signed token
+also carries `lease_uid`, `forward_name`, `source_exporter`, `target_exporter`,
+`source_member`, `target_member`, and `side` (`provides` or `requires`).
+
+The router parses these claims, keys pending streams by the unique subject,
+and pairs only two tokens whose exporter/member fields are reciprocal and
+whose sides are complementary. A duplicate token from the same side is
+rejected rather than paired. `DialPeer` has already authenticated the caller
+as the bound source exporter before issuing its token, and token expiry is
+bounded by the lease. This preserves the existing byte-forwarding RPC while
+preventing cross-forward and same-side pairing. A second RPC would duplicate
+the stream path without improving these checks.
 
 ### DD-6: Named ports with direction, not addresses
 
@@ -749,8 +919,10 @@ needs. A structured field represents both without synthetic driver entries
 or separate label conventions.
 
 An absent `ports` field defaults to an empty list, so old exporters continue
-to register and serve ordinary leases. The local `listen` address stays in
-exporter configuration and is not reported.
+to register and serve ordinary leases. Reported names are exporter-wide
+unique; duplicate names across driver instances reject registration, making a
+lease endpoint unambiguous. The local `listen` address stays in exporter
+configuration and is not reported.
 
 ### DD-8: No protocol taxonomy; direction plus an optional tag
 
@@ -1067,10 +1239,11 @@ flowchart TD
 
 Conditions reuse the existing `LeaseConditionType` values — `Pending`,
 `Ready`, `Unsatisfiable`, `Invalid` — with `ForwardsReady` and `Degraded`
-added. `Ready` for a multi-member lease requires all required members bound
-*and* all declared forwards connected. Expiry, `status.ended`, the
-`jumpstarter.dev/lease-ended` label, and `spec.release` retain their existing
-behavior.
+added. `Ready` for a member-form lease requires all required members bound and every
+non-disabled forward connected. A forward whose optional endpoint was omitted
+has explicit `Disabled` status and does not gate readiness. Expiry,
+`status.ended`, the `jumpstarter.dev/lease-ended` label, and `spec.release`
+retain their existing behavior.
 
 ### Forward validation and establishment
 
@@ -1080,8 +1253,11 @@ exists belongs to a bound exporter, not to a selector (DD-12). For each
 `ExporterStatus.Devices[].Ports`:
 
 1. Every endpoint names a declared member — enforced by CEL at admission,
-   before this point.
-2. Both named ports exist on the respective bound exporters.
+   before this point. If either role is an omitted optional member, validation
+   stops for that entry and records `Disabled` with the omitted role named.
+2. Both named ports exist on the respective bound exporters, and each port
+   resolves to one driver UUID because report registration enforces
+   exporter-wide unique names.
 3. **Direction resolves.** For a `between` forward, exactly one endpoint must
    report `PROVIDES` and the other `REQUIRES`; the controller assigns the
    roles accordingly (DD-13). For an explicit `from`/`to` forward, the stated
@@ -1089,18 +1265,23 @@ exists belongs to a bound exporter, not to a selector (DD-12). For each
 4. If both ports declare `protocol`, the values are equal (DD-8).
 
 A failure sets `Invalid`, names the forward and reason, and leaves members
-bound for inspection.
+bound for inspection. A disabled optional-member forward is not a validation
+failure and receives no setup instruction or token.
 
-Setup follows *How a forward comes up*. The controller derives the router
-`stream` claim from `(lease UID, forward name)` using UUIDv5 in a fixed
-namespace, keeping it stable across reconciles. Both tokens use
-`aud: jumpstarter router`, `sub: jumpstarter exporter`, and an expiry bounded
-by the lease end time.
+Setup follows *How a forward comes up*. The controller derives a router
+subject from `(lease UID, forward name)` using UUIDv5 in a fixed namespace,
+keeping it stable across reconciles. Both tokens use that value as `sub`, use
+`aud: https://jumpstarter.dev/router`, carry reciprocal member, exporter, and
+side claims, and expire no later than the lease. `RouterService.Stream`
+validates those claims as described in DD-5.
 
 The direct attempt has a short, bounded timeout and is not raced with a
-router connection. The peer listener authenticates `peer_token`. `Direct`
-fails without fallback; `Router` skips the direct attempt. Status records the
-transport used and the reason for any fallback.
+router connection. Direct mode requires controller-issued per-forward mTLS:
+both sides validate the peer certificate identity before the requiring side
+transmits `peer_token` inside the encrypted channel. A plaintext or
+server-authentication-only connection is rejected. `Direct` fails without
+fallback; `Router` skips the direct attempt. Status records the transport
+used and the reason for any fallback.
 
 **Direct eligibility.** Both members must report the same non-empty
 `NetworkZone`, and the `provides` side must report a `PeerEndpoint`. The zone
@@ -1109,11 +1290,14 @@ per cluster network. The controller does not infer reachability from IP
 addresses. An unreachable peer falls back to the router in `Auto` mode.
 
 **Reconnection.** The `requires` endpoint keeps its listener open and
-reconnects the peer stream with backoff after a network interruption, router
-restart, or ingress reload. Forward state comes from the stream, without
-probing the service. Reconnect events notify drivers that must restore
-protocol state, such as restarting a projection server. Protocol-specific
-recovery remains necessary where a new stream cannot preserve the session.
+re-establishes the peer path with backoff after a network interruption, router
+restart, or ingress reload. One accepted local TCP connection and one peer
+stream form a single splice: if the peer stream closes, the exporter closes
+that local connection and never attaches a replacement stream to it. A driver
+that reconnects gets a fresh splice. Reconnect events invoke an explicit
+endpoint-driver recovery hook for protocols that dial only once or must
+restore state, such as restarting a projection server. Forward state comes
+from the stream, without probing the service.
 
 **Failure modes and handling:**
 
@@ -1125,6 +1309,8 @@ recovery remains necessary where a new stream cannot preserve the session.
 | Declared protocols disagree | Lease `Invalid` (DD-8) |
 | Protocols differ and at least one tag is absent | Validation passes; protocol errors may occur when data is exchanged (DD-8) |
 | Forward references an undeclared member | Rejected by CEL at admission; lease never created |
+| Forward references an omitted optional member | Forward `Disabled` naming the role; no setup or token; lease may become `Ready` |
+| Duplicate port names in one exporter's reports | Exporter registration rejected with `INVALID_ARGUMENT` |
 | `listen` address already bound on the exporter | Lease `Invalid` naming the port and address |
 | Router stream drops mid-lease | Re-dial with backoff; `Reconnecting`; `Degraded` after a grace period |
 | Ingress/proxy reload cuts the peer stream | Reconnect with backoff and notify endpoint drivers |
@@ -1179,11 +1365,14 @@ Provisioner ordering remains an unresolved question.
 - **Port exposure:** only declared ports can participate in forwards. A
   `requires` listener uses an exporter-configured address and exists only
   while leased.
-- **Direct authentication:** the optional peer listener is disabled by
-  default and requires `peer_token`. It is separate from device ports.
-  Network policies should allow the authenticated peer port while blocking
-  peer access to unauthenticated simulator ports. JEP-0016 is expected to
-  supply this policy with exporter Pods.
+- **Direct authentication and confidentiality:** the optional peer listener
+  is disabled by default and accepts only controller-issued, short-lived
+  per-forward mTLS credentials. Both sides verify the expected exporter and
+  member identity from the certificate before `peer_token` is sent inside
+  the encrypted channel. It is separate from device ports. Network policies
+  should allow the authenticated peer port while blocking peer access to
+  unauthenticated simulator ports. JEP-0016 is expected to supply this policy
+  with exporter Pods.
 - **Membership:** `members` is immutable after creation.
 - **Physical RF:** devices in a shared lab are audible to others in range;
   lease authorization does not isolate radio traffic.
@@ -1214,31 +1403,42 @@ captures can be attached to test results alongside forward metrics.
 
 ### Unit Tests
 
-- `LeaseSpec` CEL validation: extended one-of rule, members/scalar mutual
-  exclusion, role-name uniqueness, forwards referencing declared members,
-  member immutability.
+- `LeaseSpec` CEL validation: extended top-level one-of rule,
+  members/scalar mutual exclusion, per-member rejection when both or neither
+  of `selector` and `exporterRef` are usable, DNS-label and reserved role-name
+  checks, unique member and forward names, forwards referencing declared
+  members, and member immutability.
 - Member selection: all-or-nothing binding, no self-collision, correct
   `Unsatisfiable` role naming, and — the property DD-1 rests on — that a
   reconcile which cannot satisfy every member writes **no** member claims.
-- Single-exporter regression: existing lease controller tests pass
-  unmodified, and a one-member lease produces the same `status.exporterRef`
-  as the equivalent scalar lease.
+- Scalar-form regression: existing lease controller tests pass unmodified
+  and retain `status.exporterRef`. An explicit one-member lease instead
+  populates one `status.members` entry and leaves `status.exporterRef` nil.
 - Aggregation: priority = min(member priorities), duration clamped to
   min(member `maximumDuration`).
 - Port report round-trip: driver-declared ports reach
   `ExporterStatus.Devices[].Ports`; an exporter reporting none is treated as
-  non-forwardable; a report with no `ports` field is accepted unchanged.
+  non-forwardable; a report with no `ports` field is accepted unchanged; and
+  duplicate names across two driver reports reject registration.
 - Forward validation: missing port, `provides→provides`,
   `requires→requires`, protocol disagreement, and `listen` collision each
-  produce `Invalid` with the offending forward named.
-- `Dial` without `member_name` on a multi-member lease returns
+  produce `Invalid` with the offending forward named. A forward with an
+  omitted optional endpoint instead becomes `Disabled` and does not gate
+  lease readiness.
+- `Dial` without `member_name` on any member-form lease returns
   `INVALID_ARGUMENT` listing roles; with a valid role, routes correctly.
-- `DialPeer` token issuance: identical `stream` claim for both ends,
-  stability across reconciles, expiry clamped to lease end, rejection when
-  the caller is not bound to the named member.
-- Python client: role attribute access, `connect()` returning a bare client
-  for single-member and a role mapping for multi-member,
-  `bench.forwards[...]` state, raising on a `Degraded` role.
+- `DialPeer` token issuance: identical unique `sub` for both ends, reciprocal
+  member/exporter and complementary side claims, stability across reconciles,
+  expiry clamped to lease end, and rejection when the caller is not bound to
+  the named member. Router tests reject unrelated or same-side tokens that
+  carry the same subject.
+- `ListenResponse`: forward setup and teardown decode alongside the unchanged
+  client-connection fields; setup carries the resolved local driver UUID;
+  old exporters never receive forward instructions.
+- Python client: scalar `connect()` returns a bare client; explicit one-member
+  and multi-member requests both return a bench with `members[...]`; arbitrary
+  role attributes are not exposed; `bench.forwards[...]` reports state; and
+  calls into a `Degraded` role raise.
 
 ### Integration Tests
 
@@ -1252,9 +1452,10 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
 - Lease expiry, explicit release, and client disconnect; assert no leaked
   router streams, no exporters left claimed, and no listeners left bound.
 - Router-mode vs. direct-mode selection: `Auto` picks direct for two
-  same-zone exporters, falls back to the router when the peer dial is
-  blocked, records the mode actually used, and never falls back under
-  `mode: direct`.
+  same-zone exporters only after mutual TLS identity verification, never
+  sends `peer_token` before the encrypted handshake, falls back to the router
+  when the peer dial is blocked, records the mode actually used, and never
+  falls back under `mode: direct`.
 - `jmp get lease -o mobly` output validated against Mobly's testbed schema.
 - **Compatibility**: an N-1 client against an N controller for the full
   single-exporter workflow; an N client issuing a single-exporter lease
@@ -1279,8 +1480,10 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
   host-local paths. Include cross-node, sustained A2DP, and physical-controller
   tests to establish supported workloads.
 - **Forward resilience:** cut a live stream through a router restart or
-  ingress reload. Assert reconnection, metrics and events, and recovery of
-  communication for a driver that opened its transport at startup.
+  ingress reload. Assert that the affected local TCP connection closes, a
+  later local connection receives a new peer stream, metrics and events are
+  emitted, and an endpoint-driver recovery hook restores protocols that do
+  not reconnect themselves.
 
 ### Manual Verification
 
@@ -1308,23 +1511,37 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
       cannot reach an exporter its client could not lease directly
 - [ ] Lease priority = min(member priorities); duration clamped to
       min(member `maximumDuration`)
-- [ ] `status.exporterRef` unchanged for single-exporter leases and nil for
-      multi-member ones; existing lease controller tests pass unmodified
-- [ ] `Dial` without `member_name` on a multi-member lease returns
+- [ ] `status.exporterRef` unchanged for scalar-form leases and nil for every
+      member-form lease, including an explicit one-member list; existing
+      scalar controller tests pass unmodified
+- [ ] Scalar Python connections return a bare client; explicit one-member and
+      multi-member connections return `bench.members[...]`
+- [ ] `Dial` without `member_name` on a member-form lease returns
       `INVALID_ARGUMENT` naming the roles
 
 **Ports and forwards**
 
 - [ ] `PortReport` is optional on `DriverInstanceReport`; exporters reporting
       no ports register and operate unchanged
+- [ ] Port names are exporter-wide unique; duplicate names across driver
+      instances reject registration, and setup names the resolved driver UUID
 - [ ] Declared ports appear in `ExporterStatus.Devices[].Ports` and in
       `jmp get exporter` output
 - [ ] `listen` addresses never appear in any report, CR status, or lease spec
+- [ ] Admission rejects duplicate forward names before deriving router
+      subjects, and rejects member selection with both/neither source set
 - [ ] Forward validation rejects missing ports, `provides→provides`,
       `requires→requires`, and declared-protocol mismatch, naming the forward
-- [ ] Forwards establish over `RouterService` with no `router.proto` change
-- [ ] Direct fast path is authenticated, falls back automatically, and is
-      observable (mode + fallback-rate metrics)
+- [ ] A forward whose optional endpoint is omitted is `Disabled`, receives no
+      credentials, and does not prevent lease readiness
+- [ ] Additive `ListenResponse` setup and teardown instructions identify the
+      lease, forward, side, local driver UUID, and ports; credentials are
+      returned only by authenticated `DialPeer`; old exporters receive neither
+- [ ] Forwards establish over `RouterService` with no `router.proto` change;
+      its authorization pairs only reciprocal claims under a unique subject
+- [ ] Direct fast path uses per-forward mTLS, verifies peer identity before
+      sending `peer_token`, falls back automatically, and is observable
+      (mode + fallback-rate metrics)
 - [ ] `Auto` resolves to a direct peer connection for two same-zone
       in-cluster exporters with peer listeners; router fallback is recorded
 - [ ] `bt-peer` participates as a `requires` endpoint with **no Python
@@ -1334,10 +1551,11 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
       join, address assignment, and recovery handled by endpoint drivers (DD-9)
 - [ ] A Bumble-based shared controller exists as a driver exposing a
       `provides` port, for benches outside Cuttlefish and for N-way media
-- [ ] A forward survives a cut peer stream: the endpoint re-dials and
-      re-splices with no driver involvement, the reconnect is counted and
-      emitted as an event, and a driver that dialed once at start keeps
-      working
+- [ ] After a peer-stream cut, the endpoint closes the associated local TCP
+      connection and re-establishes the peer path with backoff; a reconnecting
+      driver obtains a new splice, while protocols without reconnect behavior
+      recover through an explicit endpoint-driver hook. No replacement stream
+      is attached to an existing local TCP connection
 - [ ] A second exporter process registering under a live identity is
       detected and refused
 - [ ] Byte fidelity and reset semantics verified by the `EchoNetwork`
@@ -1392,10 +1610,10 @@ for `status.exporterRef`.
   `ExporterAccessPolicy`, `ExporterSet`, and `VirtualTargetClass` are
   otherwise untouched. Every lease that exists today validates unchanged.
 - **`status.exporterRef`**: unchanged for every lease that does not pass
-  `members`. Multi-member leases leave it nil, which existing consumers
-  already read as "not bound yet" (DD-2), so the JEP-0016 façade,
-  `jmp get leases`, `Dial` and JEP-0013 telemetry keep working; they change
-  only to *support* benches.
+  `members`. Every member-form lease, including an explicit one-member list,
+  leaves it nil, which existing consumers already read as "not bound yet"
+  (DD-2), so the JEP-0016 façade, `jmp get leases`, `Dial` and JEP-0013
+  telemetry keep working; they change only to *support* benches.
 - **Driver report and drivers**: `ports` is a new optional repeated field, so
   an exporter built before this JEP reports none and is treated as
   unable to participate in forwards. Ports are declared in exporter
@@ -1408,9 +1626,9 @@ for `status.exporterRef`.
   (or a controller version) and fails with a clear message rather than
   acquiring a one-device lease it will misuse.
 - **Operator upgrade**: a CRD schema addition, a standard bundle bump with no
-  conversion webhook. Multi-member leases must be removed before rollback;
-  single-exporter leases remain compatible.
-- **Coexistence**: single- and multi-member leases share one exporter pool,
+  conversion webhook. Member-form leases must be removed before rollback;
+  scalar leases remain compatible.
+- **Coexistence**: scalar- and member-form leases share one exporter pool,
   one scheduler, and one selection implementation.
 
 ## Consequences
@@ -1522,12 +1740,6 @@ To resolve during review:
 - **Readiness:** distinguish a forward listener being available from an
   application connection being established. Client-started drivers need
   the former before they can create the latter.
-- **Single-member form:** clarify whether explicit `members` with one entry
-  uses scalar status and a bare client or member status and a role mapping.
-- **Optional members:** define forward behavior when an optional endpoint's
-  member is omitted at binding.
-- **Scalar/member exclusion:** retain mutual exclusion or allow a top-level
-  selector to act as a default for members without their own selector.
 - **Listener allocation:** keep fixed addresses with collision validation,
   or allocate ephemeral ports and pass the address to the driver.
 - **Synchronization:** determine whether client-side barriers are sufficient
@@ -1537,7 +1749,6 @@ To resolve during review:
 
 To resolve during implementation:
 
-- The `ListenResponse` variant for forward setup instructions.
 - The direct-dial timeout before router fallback.
 - How deployments supply and validate `NetworkZone`; the proposed default
   is deployment configuration.
@@ -1584,6 +1795,10 @@ These are outside the initial scope:
   implementation requirements, and remaining verification.
 - 2026-09-04: Submitted for discussion in
   [PR #1069](https://github.com/jumpstarter-dev/jumpstarter/pull/1069).
+- 2026-09-05: Resolved review questions around optional endpoints, explicit
+  one-member response shape, port and name uniqueness, protobuf setup
+  messages, router claim binding, direct-path encryption, and reconnect
+  semantics.
 
 ## References
 
