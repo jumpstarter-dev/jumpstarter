@@ -354,9 +354,7 @@ async def test_get_exporter_config_without_ca_bundle():
     api.core_api.read_namespaced_secret = AsyncMock(return_value=mock_secret)
 
     # Mock ConfigMap not found
-    api.core_api.read_namespaced_config_map = AsyncMock(
-        side_effect=ApiException(status=404, reason="Not Found")
-    )
+    api.core_api.read_namespaced_config_map = AsyncMock(side_effect=ApiException(status=404, reason="Not Found"))
 
     config = await api.get_exporter_config("test-exporter")
 
@@ -364,3 +362,25 @@ async def test_get_exporter_config_without_ca_bundle():
     assert config.tls.ca == ""
     assert config.endpoint == "https://test-endpoint:8082"
     assert config.token == token
+
+
+def test_exporter_from_dict_keeps_labels():
+    """Labels are what an exporter is selected by, so from_dict must keep them"""
+    exporter = V1Alpha1Exporter.from_dict(
+        {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Exporter",
+            "metadata": {
+                "creationTimestamp": "2021-10-01T00:00:00Z",
+                "generation": 1,
+                "labels": {"board": "rpi4"},
+                "name": "test-exporter",
+                "namespace": "default",
+                "resourceVersion": "1",
+                "uid": "7a25eb81-6443-47ec-a62f-50165bffede8",
+            },
+            "status": {"credential": {"name": "c"}, "devices": [], "endpoint": "https://e"},
+        }
+    )
+    assert exporter.metadata.labels == {"board": "rpi4"}
+    assert '"board": "rpi4"' in exporter.dump_json()

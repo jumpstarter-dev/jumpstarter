@@ -198,6 +198,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
     # Public Configuration Fields
 
+    exporter_name: str = "unknown"
+
     channel_factory: Callable[[], Awaitable[grpc.aio.Channel]]
     """Factory function for creating gRPC channels to communicate with the controller.
 
@@ -941,6 +943,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         with Session(
             uuid=self.uuid,
             labels=self.labels,
+            exporter_name=self.exporter_name,
             root_device=self.device_factory(),
             motd=self.motd,
         ) as session:
@@ -977,6 +980,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         with Session(
             uuid=self.uuid,
             labels=self.labels,
+            exporter_name=self.exporter_name,
             root_device=self.device_factory(),
             motd=self.motd,
         ) as session:
@@ -1244,7 +1248,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         """Serve the exporter, handling leases until stopped."""
         # Set exporter identity before anything else so every log line (including
         # registration and telemetry setup) carries the correct exporter name.
-        set_log_context(exporter=self.name)
+        set_log_context(exporter=self.exporter_name)
         async with self.session():
             pass
         # Unbounded on purpose. The control-plane loop is the sole receiver AND,
@@ -1368,7 +1372,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         Extracted so tests can verify context propagation without duplicating
         this logic separately from _on_lease_acquired.
         """
-        log_ctx: dict[str, str] = {"lease_id": status.lease_name, "exporter": self.name}
+        log_ctx: dict[str, str] = {"lease_id": status.lease_name, "exporter": self.exporter_name}
         if status.context:
             log_ctx.update(status.context)
         return log_ctx
@@ -1441,7 +1445,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         # what actually drops the lease's log fields — a clear in handle_lease's
         # task would not reach the loop.
         clear_log_context()
-        set_log_context(exporter=self.name)
+        set_log_context(exporter=self.exporter_name)
         logger.debug("Ready for next lease")
 
         # Now that the slot is free, replay a stashed reassignment so the loop
@@ -1538,13 +1542,14 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         self._standalone = True
         lease_scope = LeaseContext(lease_name="standalone", before_lease_hook=Event())
         self._lease_context = lease_scope
-        set_log_context(exporter=self.name, lease_id="standalone")
+        set_log_context(exporter=self.exporter_name, lease_id="standalone")
 
         with TemporarySocket() as hook_path:
             hook_path_str = str(hook_path)
             with Session(
                 uuid=self.uuid,
                 labels=self.labels,
+                exporter_name=self.exporter_name,
                 root_device=self.device_factory(),
                 motd=self.motd,
             ) as session:

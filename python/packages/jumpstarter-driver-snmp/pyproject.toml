@@ -11,7 +11,7 @@ dependencies = [
     "click>=8.1.8",
     "jumpstarter",
     "jumpstarter-driver-power",
-    "pysnmp==7.1.28",
+    "pysnmp==7.1.29",
 ]
 
 [project.entry-points."jumpstarter.drivers"]

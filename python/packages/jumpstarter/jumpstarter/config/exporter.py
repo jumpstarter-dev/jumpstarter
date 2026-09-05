@@ -383,7 +383,7 @@ class ExporterConfigV1Alpha1(BaseModel):
         try:
             exporter = Exporter(
                 token=self.token or "",
-                labels={"jumpstarter.dev/name": self.metadata.name},
+                exporter_name=self.metadata.name,
                 channel_factory=dummy_channel_factory if standalone else channel_factory,
                 device_factory=ExporterConfigV1Alpha1DriverInstance(
                     type="jumpstarter_driver_composite.driver.Composite",

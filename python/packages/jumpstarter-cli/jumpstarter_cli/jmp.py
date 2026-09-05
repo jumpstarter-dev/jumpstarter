@@ -14,6 +14,7 @@ from .describe import describe
 from .get import get
 from .login import login
 from .run import run
+from .self import self
 from .shell import shell
 from .update import update
 
@@ -39,6 +40,7 @@ jmp.add_command(config)
 
 jmp.add_command(driver)
 jmp.add_command(admin)
+jmp.add_command(self)
 jmp.add_command(version)
 
 try:

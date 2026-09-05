@@ -255,9 +255,7 @@ async def test_get_ca_bundle_with_ca_cert():
     # Verify it's base64-encoded
     expected = base64.b64encode(ca_cert_pem.encode("utf-8")).decode("utf-8")
     assert result == expected
-    api.core_api.read_namespaced_config_map.assert_called_once_with(
-        "jumpstarter-service-ca-cert", "test-namespace"
-    )
+    api.core_api.read_namespaced_config_map.assert_called_once_with("jumpstarter-service-ca-cert", "test-namespace")
 
 
 @pytest.mark.asyncio
@@ -297,9 +295,7 @@ async def test_get_ca_bundle_configmap_not_found():
     api.core_api = AsyncMock()
 
     # Mock 404 error
-    api.core_api.read_namespaced_config_map = AsyncMock(
-        side_effect=ApiException(status=404, reason="Not Found")
-    )
+    api.core_api.read_namespaced_config_map = AsyncMock(side_effect=ApiException(status=404, reason="Not Found"))
 
     result = await api.get_ca_bundle()
 
@@ -313,9 +309,7 @@ async def test_get_ca_bundle_other_api_error():
     api.core_api = AsyncMock()
 
     # Mock 403 error
-    api.core_api.read_namespaced_config_map = AsyncMock(
-        side_effect=ApiException(status=403, reason="Forbidden")
-    )
+    api.core_api.read_namespaced_config_map = AsyncMock(side_effect=ApiException(status=403, reason="Forbidden"))
 
     with pytest.raises(ApiException) as exc_info:
         await api.get_ca_bundle()
@@ -400,9 +394,7 @@ async def test_get_client_config_without_ca_bundle():
     api.core_api.read_namespaced_secret = AsyncMock(return_value=mock_secret)
 
     # Mock ConfigMap not found
-    api.core_api.read_namespaced_config_map = AsyncMock(
-        side_effect=ApiException(status=404, reason="Not Found")
-    )
+    api.core_api.read_namespaced_config_map = AsyncMock(side_effect=ApiException(status=404, reason="Not Found"))
 
     config = await api.get_client_config("test-client", allow=[], unsafe=False)
 
@@ -410,3 +402,25 @@ async def test_get_client_config_without_ca_bundle():
     assert config.tls.ca == ""
     assert config.endpoint == "https://test-endpoint:8082"
     assert config.token == token
+
+
+def test_client_from_dict_keeps_labels():
+    """Labels are how clients are grouped, so from_dict must not drop them"""
+    client = V1Alpha1Client.from_dict(
+        {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Client",
+            "metadata": {
+                "creationTimestamp": "2021-10-01T00:00:00Z",
+                "generation": 1,
+                "labels": {"team": "platform"},
+                "name": "test-client",
+                "namespace": "default",
+                "resourceVersion": "1",
+                "uid": "7a25eb81-6443-47ec-a62f-50165bffede8",
+            },
+            "status": {"endpoint": "https://test-client"},
+        }
+    )
+    assert client.metadata.labels == {"team": "platform"}
+    assert '"team": "platform"' in client.dump_json()

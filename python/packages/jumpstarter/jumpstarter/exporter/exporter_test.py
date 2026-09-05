@@ -63,7 +63,8 @@ def _make_base_exporter(**overrides):
         "_release_lease_unsupported": False,
         "hook_executor": None,
         "exit_on_lease_end": False,
-        "labels": {"jumpstarter.dev/name": "test-exporter"},
+        "labels": {},
+        "exporter_name": "test-exporter",
         "_last_completed_lease": None,
         "_pending_lease_status": None,
         "_control_tx": None,
@@ -1384,7 +1385,6 @@ class TestHandleLeaseConnections:
 
         lease_ctx = make_lease_context(lease_name="conn-lease")
         exporter = make_exporter(lease_ctx)
-        exporter.labels = {"jumpstarter.dev/name": "test-exporter"}
         exporter.tls = None
         exporter.grpc_options = []
         exporter._started = True
@@ -1445,7 +1445,6 @@ class TestHandleLeaseConnections:
 
         lease_ctx = make_lease_context(lease_name="fallback-lease")
         exporter = make_exporter(lease_ctx)
-        exporter.labels = {"jumpstarter.dev/name": "test-exporter"}
         exporter.tls = None
         exporter.grpc_options = []
         exporter._started = True
@@ -1647,7 +1646,6 @@ class TestHandleLeaseConnections:
 
         lease_ctx = make_lease_context(lease_name="stale-setup")
         exporter = make_exporter(lease_ctx)
-        exporter.labels = {"jumpstarter.dev/name": "test-exporter"}
         exporter.tls = None
         exporter.grpc_options = []
         exporter._started = True
@@ -2123,7 +2121,8 @@ class TestContextPropagation:
         exporter._standalone = False
         exporter._started = False
         exporter.hook_executor = None
-        exporter.labels = {"jumpstarter.dev/name": "lab-exporter-01"}
+        exporter.labels = {}
+        exporter.exporter_name = "lab-exporter-01"
         exporter._report_status = AsyncMock()
         exporter._request_lease_release = AsyncMock()
 

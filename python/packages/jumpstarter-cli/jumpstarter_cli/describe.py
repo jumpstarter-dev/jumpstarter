@@ -82,6 +82,19 @@ def describe():
     """
 
 
+def _holding_lease(config, exporter: str):
+    """The lease currently holding an exporter, if any.
+
+    GetExporter answers with the exporter on its own, so the lease has to be
+    looked up separately — without it, describing a busy exporter could not say
+    who has it, which is the main reason to ask.
+    """
+    for lease in config.list_leases(only_active=True).leases:
+        if lease.exporter == exporter:
+            return lease
+    return None
+
+
 @describe.command(name="exporter")
 @opt_config(exporter=False)
 @click.argument("name")
@@ -93,6 +106,7 @@ def describe_exporter(config, name: str, output: OutputType):
     """
 
     exporter = config.get_exporter(name)
+    exporter = exporter.model_copy(update={"lease": _holding_lease(config, name)})
 
     if output:
         model_print(exporter, output)

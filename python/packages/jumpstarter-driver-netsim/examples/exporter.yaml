@@ -1,0 +1,11 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: netsim-local
+export:
+  netsim:
+    type: jumpstarter_driver_netsim.driver.Netsim
+    config:
+      host: localhost
+      port: 7681
