@@ -1,5 +1,6 @@
 import json
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import click
@@ -14,6 +15,18 @@ from jumpstarter.client.introspect import (
     list_drivers,
     walk_click_tree,
 )
+
+
+def test_description_helpers_are_public_package_exports():
+    import jumpstarter.client as client
+
+    for name, helper in (
+        ("describe_client", describe_client),
+        ("describe_devices", describe_devices),
+        ("describe_devices_async", describe_devices_async),
+    ):
+        assert name in client.__all__
+        assert getattr(client, name) is helper
 
 
 class FakePowerClient:
@@ -328,6 +341,9 @@ class TestDescribeDevices:
         assert kwargs["lease_name"] == "existing-lease"
         assert kwargs["selector"] is None
         assert kwargs["exporter_name"] is None
+        # lease_async requires a duration argument, but attaching by name never
+        # sends it to the controller. Keep the placeholder explicitly neutral.
+        assert kwargs["duration"] == timedelta(0)
         paths = [d["path"] for d in result["drivers"]]
         assert "client.power" in paths
         assert result["cli_tree"]["name"] == "j"
