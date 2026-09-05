@@ -2,6 +2,8 @@ import ast
 import json
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from pathlib import Path
+from types import MappingProxyType
 from unittest.mock import MagicMock, patch
 
 import click
@@ -392,6 +394,21 @@ class TestDescribeDevices:
 
 
 class TestParamDescription:
+    @pytest.mark.parametrize("mapping_type", [dict, MappingProxyType])
+    def test_mapping_defaults_remain_structured(self, mapping_type):
+        """Preserve nested mappings while coercing keys and non-JSON leaves."""
+        default = mapping_type({
+            "nested": mapping_type({1: (Path("image.bin"), None, True)}),
+            "items": [mapping_type({"count": 2})],
+        })
+        command = click.Command("cmd", params=[click.Option(["--config"], default=default)])
+        tree = walk_click_tree(command)
+        assert tree["params"][0]["default"] == {
+            "nested": {"1": ["image.bin", None, True]},
+            "items": [{"count": 2}],
+        }
+        assert json.loads(json.dumps(tree)) == tree
+
     def test_describes_arguments_and_options(self):
         @click.group()
         def root():

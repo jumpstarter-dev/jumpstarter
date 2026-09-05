@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+from collections.abc import Mapping
 from contextlib import ExitStack, asynccontextmanager
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
@@ -28,6 +29,8 @@ def _json_safe(value: Any) -> Any:
         return value
     if isinstance(value, (list, tuple)):
         return [_json_safe(v) for v in value]
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe(item) for key, item in value.items()}
     return str(value)
 
 
