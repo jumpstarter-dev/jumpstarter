@@ -1,5 +1,7 @@
 import dataclasses
 import inspect
+import sys
+from contextlib import redirect_stdout
 from importlib.metadata import entry_points
 from typing import Any
 
@@ -121,6 +123,8 @@ def _fields_without_schema(cls: type, base_fields: set[str]) -> tuple[dict[str, 
     """
     properties: dict[str, Any] = {}
     required: list[str] = []
+    if not dataclasses.is_dataclass(cls):
+        return properties, required
     for field in dataclasses.fields(cls):
         if field.name in base_fields or not field.init:
             continue
@@ -158,9 +162,15 @@ def _schema_for_entry_point(entry_point, base_fields: set[str]) -> DriverSchema:
             entry.properties, entry.required = _fields_without_schema(cls, base_fields)
         return entry
 
-    entry.properties = {k: v for k, v in schema.get("properties", {}).items() if k not in base_fields}
-    entry.required = [r for r in schema.get("required", []) if r not in base_fields]
     entry.defs = schema.get("$defs", {})
+    # Recursive dataclasses can put the root object in $defs as well.
+    if schema.get("$ref", "").startswith("#/$defs/"):
+        schema = entry.defs[schema["$ref"].removeprefix("#/$defs/")]
+    excluded_fields = set(base_fields)
+    if dataclasses.is_dataclass(cls):
+        excluded_fields.update(field.name for field in dataclasses.fields(cls) if not field.init)
+    entry.properties = {k: v for k, v in schema.get("properties", {}).items() if k not in excluded_fields}
+    entry.required = [r for r in schema.get("required", []) if r not in excluded_fields]
     return entry
 
 
@@ -174,16 +184,23 @@ def driver_schema(names: tuple[str, ...], output: OutputType):
     from the driver class itself, for the `config:` block of an exporter
     config. NAMES filters by driver name or by full type path.
     """
-    base_fields = _base_field_names()
     wanted = set(names)
-    drivers = [
-        _schema_for_entry_point(entry_point, base_fields)
-        for entry_point in entry_points(group="jumpstarter.drivers")
-        if not wanted or entry_point.name in wanted or entry_point.value.replace(":", ".") in wanted
-    ]
+    installed = sorted(entry_points(group="jumpstarter.drivers"), key=lambda ep: (ep.name, ep.value))
+    known = {name for ep in installed for name in (ep.name, ep.value.replace(":", "."))}
+    missing = wanted - known
+    if missing:
+        raise click.ClickException(f"No installed driver matches: {', '.join(sorted(missing))}")
 
-    if wanted and not drivers:
-        raise click.ClickException(f"No installed driver matches: {', '.join(sorted(wanted))}")
+    # Imports (and driver schema hooks) can print. Keep Python-level output on
+    # stderr so stdout remains a single machine-readable document. Loading a
+    # driver executes local package code; this is not a sandbox.
+    with redirect_stdout(sys.stderr):
+        base_fields = _base_field_names()
+        drivers = [
+            _schema_for_entry_point(entry_point, base_fields)
+            for entry_point in installed
+            if not wanted or entry_point.name in wanted or entry_point.value.replace(":", ".") in wanted
+        ]
 
     if not drivers and output is None:
         click.echo("No drivers found.")
