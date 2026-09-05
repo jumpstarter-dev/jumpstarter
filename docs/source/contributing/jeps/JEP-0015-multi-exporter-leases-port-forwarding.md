@@ -1373,6 +1373,15 @@ Provisioner ordering remains an unresolved question.
   should allow the authenticated peer port while blocking peer access to
   unauthenticated simulator ports. JEP-0016 is expected to supply this policy
   with exporter Pods.
+- **Broader exporter authentication:** mTLS is also a stronger future
+  authentication mechanism for exporter-to-controller and exporter-to-router
+  connections. Unlike the current bearer token, it proves possession of a
+  private key while protecting the channel and can bind the certificate
+  identity to one `Exporter`. Lease and forward authorization still apply;
+  possession of an exporter certificate alone never grants access to a port.
+  Kubernetes Pod Certificates are one possible source of this workload
+  identity, while physical and non-Kubernetes exporters require an equivalent
+  issuer and enrollment path.
 - **Membership:** `members` is immutable after creation.
 - **Physical RF:** devices in a shared lab are audible to others in range;
   lease authorization does not isolate radio traffic.
@@ -1773,6 +1782,16 @@ These are outside the initial scope:
   namespaces are supported later.
 - **Bench policy and quota:** add limits across members and support individual
   member release if needed.
+- **Kubernetes-native mTLS identity:** Kubernetes 1.37 graduates Pod
+  Certificates and ClusterTrustBundles to Stable. Exporter Pods could mount a
+  signer-issued, automatically rotated X.509 identity and trust bundle for
+  direct peer, controller, and router mTLS. This would keep the workload
+  private key generated and managed by the kubelet instead of returning a
+  private key from `DialPeer`; the per-forward token would remain as
+  lease-scoped authorization after workload authentication. Adoption requires
+  a configured signer (Kubernetes 1.37 does not ship a production signer in
+  core), live certificate reload, an identity-to-`Exporter` binding, and a
+  platform-neutral fallback for exporters outside Kubernetes.
 - **Datagram transport:** define a separate protocol extension for framed
   traffic, avoiding TCP head-of-line blocking in the Phase 4 bridge.
 - **Vehicle-bus simulation:** integrate a restbus simulator as a provided
@@ -1798,7 +1817,8 @@ These are outside the initial scope:
 - 2026-09-05: Resolved review questions around optional endpoints, explicit
   one-member response shape, port and name uniqueness, protobuf setup
   messages, router claim binding, direct-path encryption, and reconnect
-  semantics.
+  semantics. Recorded Kubernetes Pod Certificates and broader exporter mTLS
+  authentication as future paths.
 
 ## References
 
@@ -1827,6 +1847,9 @@ These are outside the initial scope:
 - [netsim (`platform/tools/netsim`)](https://android.googlesource.com/platform/tools/netsim/) —
   `proto/netsim/packet_streamer.proto`
 - [google/android-cuttlefish](https://github.com/google/android-cuttlefish)
+- [Kubernetes 1.37: Pod Certificates and Cluster Trust Bundles](https://kubernetes.io/blog/2026/08/28/kubernetes-v1-37-pod-certificates-and-cluster-trust-bundles/)
+  — Stable projected workload certificates and trust anchors (KEP-4317 and
+  KEP-3257)
 - [Test Multi-Device Interactions with the Android Emulator](https://android-developers.googleblog.com/2026/04/Test-Multi-Device-Interactions-with-the-Android-Emulator.html)
 - [LAVA MultiNode](https://docs.lavasoftware.org/lava/multinode.html)
 
