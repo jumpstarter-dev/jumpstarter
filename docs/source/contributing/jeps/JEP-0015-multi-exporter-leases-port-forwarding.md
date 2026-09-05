@@ -9,7 +9,7 @@
 | **Type**          | Standards Track                                          |
 | **Created**       | 2026-09-01                                               |
 | **Updated**       | 2026-09-04                                               |
-| **Discussion**    | *TBD (PR link)*                                          |
+| **Discussion**    | [PR #1069](https://github.com/jumpstarter-dev/jumpstarter/pull/1069) |
 | **Requires**      | JEP-0014                                                 |
 | **Supersedes**    |                                                          |
 | **Superseded-By** |                                                          |
@@ -1582,6 +1582,8 @@ These are outside the initial scope:
   Updated `Auto` to prefer direct connections for same-zone peers.
 - 2026-09-04: Consolidated rationale and prototype notes; clarified scope,
   implementation requirements, and remaining verification.
+- 2026-09-04: Submitted for discussion in
+  [PR #1069](https://github.com/jumpstarter-dev/jumpstarter/pull/1069).
 
 ## References
 
