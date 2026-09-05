@@ -69,7 +69,7 @@ def walk_click_tree(cmd: click.core.BaseCommand, path: list[str] | None = None) 
         "name": cmd.name,
         "help": cmd.help,
         "params": [
-            _describe_param(p) for p in cmd.params if not getattr(p, "hidden", False) and p.name != "help"
+            _describe_param(p) for p in cmd.params if not getattr(p, "hidden", False)
         ],
     }
     if isinstance(cmd, click.Group):
@@ -189,7 +189,8 @@ def _inspect_method(name: str, method: Any, driver_path: list[str]) -> dict[str,
 
     attr_path = ".".join(driver_path)
     call_args = ", ".join(f"{p['name']}=..." for p in params)
-    method_call = f"client.{attr_path}.{name}({call_args})"
+    receiver = f"client.{attr_path}" if attr_path else "client"
+    method_call = f"{receiver}.{name}({call_args})"
 
     return {
         "name": name,
