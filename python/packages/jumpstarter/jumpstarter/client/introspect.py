@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import inspect
 import logging
-from contextlib import ExitStack
+from contextlib import ExitStack, asynccontextmanager
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 import click
 import click.core
+from anyio import to_thread
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 
 from .base import StubDriverClient
@@ -30,6 +31,33 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
+def _describe_param(param: click.Parameter) -> dict[str, Any]:
+    """Describe one Click parameter well enough to prompt for it.
+
+    Beyond name and help, a caller building a command line needs to know
+    whether the parameter is positional or an option (and which flag spells
+    it), whether it is a boolean flag that takes no value, whether it repeats,
+    and the values it accepts when it is a choice.
+    """
+    described: dict[str, Any] = {
+        "name": param.name,
+        "kind": param.param_type_name,
+        # Click's own type name ("integer", "path", "choice"); str() on some
+        # types renders an object repr, which is no use in a prompt.
+        "type": getattr(param.type, "name", None) or str(param.type),
+        "help": getattr(param, "help", None),
+        "required": getattr(param, "required", False),
+        "default": _json_safe(param.default) if param.default is not None else None,
+        "opts": list(param.opts),
+        "is_flag": bool(getattr(param, "is_flag", False)),
+        "multiple": bool(getattr(param, "multiple", False)),
+        "nargs": param.nargs,
+    }
+    if isinstance(param.type, click.Choice):
+        described["choices"] = [str(choice) for choice in param.type.choices]
+    return described
+
+
 def walk_click_tree(cmd: click.core.BaseCommand, path: list[str] | None = None) -> dict[str, Any]:  # ty: ignore[unresolved-attribute]
     """Recursively walk a Click command tree and return structured JSON.
 
@@ -41,15 +69,7 @@ def walk_click_tree(cmd: click.core.BaseCommand, path: list[str] | None = None) 
         "name": cmd.name,
         "help": cmd.help,
         "params": [
-            {
-                "name": p.name,
-                "type": str(p.type),
-                "help": getattr(p, "help", None),
-                "required": getattr(p, "required", False),
-                "default": _json_safe(p.default) if p.default is not None else None,
-            }
-            for p in cmd.params
-            if not getattr(p, "hidden", False) and p.name != "help"
+            _describe_param(p) for p in cmd.params if not getattr(p, "hidden", False) and p.name != "help"
         ],
     }
     if isinstance(cmd, click.Group):
@@ -232,20 +252,56 @@ def describe_client(client: Any) -> dict[str, Any]:
     (including when the root client itself is a stub).
     """
     cli_tree = None
+    # Inherited counts: QemuFlasherClient, for one, defines no cli of its own and
+    # gets a real one from FlasherClientInterface, so looking only at
+    # type(client).__dict__ would drop the CLI of every such driver.
     if not isinstance(client, StubDriverClient) and getattr(type(client), "cli", None) is not None:
-        cli_tree = walk_click_tree(client.cli())
+        try:
+            cli_tree = walk_click_tree(client.cli())
+        except Exception:
+            # A driver whose cli() is broken should cost us its CLI tree, not the
+            # whole description — the driver listing below is still worth having.
+            logger.warning("could not build the CLI tree for %s", type(client).__name__, exc_info=True)
     return {
         "drivers": list_drivers(client),
         "cli_tree": cli_tree,
     }
 
 
-async def describe_drivers_async(config: ClientConfigV1Alpha1, lease_name: str) -> dict[str, Any]:
+@asynccontextmanager
+async def _connect_lease(config: ClientConfigV1Alpha1, lease_name: str, portal: BlockingPortal):
+    """Attach to an existing lease and yield its root driver client.
+
+    Passing lease_name into lease_async attaches to that lease rather than
+    creating one, and leaves it unreleased on exit.
+    """
+    async with config.lease_async(
+        selector=None,
+        exporter_name=None,
+        lease_name=lease_name,
+        # Attaching by name never reaches Lease._create, and with selector None
+        # the "selector changed, make a new one" branch cannot fire either, so
+        # no duration is ever sent to the controller. Naming 30 minutes here
+        # only suggested this call could extend a lease that it cannot.
+        duration=timedelta(0),
+        portal=portal,
+    ) as lease:
+        async with lease.serve_unix_async() as path:
+            with ExitStack() as stack:
+                async with client_from_path(
+                    path, portal, stack, allow=lease.allow, unsafe=lease.unsafe
+                ) as client:
+                    yield client
+
+
+def describe_drivers(config: ClientConfigV1Alpha1, lease_name: str) -> dict[str, Any]:
     """Attach to an existing lease and describe its driver clients and CLI tree.
 
-    Attaches to the lease named lease_name without creating a new lease and
-    without releasing it on exit, builds the root driver client, and returns
-    a plain-serializable dict with drivers and cli_tree keys.
+    Returns a plain-serializable dict with drivers and cli_tree keys.
+
+    Driver clients are synchronous facades over a blocking portal, so the
+    portal has to run its event loop in its own thread and be driven from
+    this one — introspection therefore happens outside the loop.
 
     :raises ValueError: if lease_name is empty
     :raises jumpstarter.client.exceptions.LeaseError: if the lease has ended
@@ -256,26 +312,21 @@ async def describe_drivers_async(config: ClientConfigV1Alpha1, lease_name: str) 
     if not lease_name:
         raise ValueError("lease_name must be a non-empty existing lease name")
 
-    async with BlockingPortal() as portal:
-        async with config.lease_async(
-            selector=None,
-            exporter_name=None,
-            lease_name=lease_name,
-            duration=timedelta(minutes=30),
-            portal=portal,
-        ) as lease:
-            async with lease.serve_unix_async() as path:
-                with ExitStack() as stack:
-                    async with client_from_path(
-                        path, portal, stack, allow=lease.allow, unsafe=lease.unsafe
-                    ) as client:
-                        return describe_client(client)
-
-
-def describe_drivers(config: ClientConfigV1Alpha1, lease_name: str) -> dict[str, Any]:
-    """Blocking convenience wrapper around describe_drivers_async."""
     with start_blocking_portal() as portal:
-        return portal.call(describe_drivers_async, config, lease_name)
+        with portal.wrap_async_context_manager(_connect_lease(config, lease_name, portal)) as client:
+            return describe_client(client)
+
+
+async def describe_drivers_async(config: ClientConfigV1Alpha1, lease_name: str) -> dict[str, Any]:
+    """Async wrapper around describe_drivers, run in a worker thread.
+
+    The driver clients cannot be driven from an event loop thread, so the
+    whole attach-and-introspect flow runs off-loop.
+    """
+    if not lease_name:
+        raise ValueError("lease_name must be a non-empty existing lease name")
+
+    return await to_thread.run_sync(describe_drivers, config, lease_name)
 
 
 # Compatibility for consumers of the initial introspection-library branch.

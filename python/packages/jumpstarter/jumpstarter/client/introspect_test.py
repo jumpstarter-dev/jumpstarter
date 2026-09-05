@@ -1,5 +1,6 @@
 import json
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import click
@@ -14,6 +15,20 @@ from jumpstarter.client.introspect import (
     list_drivers,
     walk_click_tree,
 )
+
+
+def test_description_helpers_are_public_package_exports():
+    import jumpstarter.client as client
+
+    for name, helper in (
+        ("describe_client", describe_client),
+        ("describe_devices", describe_drivers),
+        ("describe_devices_async", describe_drivers_async),
+        ("describe_drivers", describe_drivers),
+        ("describe_drivers_async", describe_drivers_async),
+    ):
+        assert name in client.__all__
+        assert getattr(client, name) is helper
 
 
 class FakePowerClient:
@@ -212,6 +227,32 @@ class TestDescribeClient:
         assert result["cli_tree"] is None
         assert result["drivers"][0]["path"] == "client"
 
+    def test_an_inherited_cli_still_counts(self):
+        """A driver client is free to inherit its CLI rather than define one.
+
+        QemuFlasherClient is a real example: it has no cli of its own and takes
+        one from FlasherClientInterface. Looking only at type(client).__dict__
+        would drop the CLI tree for every such driver.
+        """
+
+        class InheritsCli(FakeCompositeClient):
+            pass
+
+        assert "cli" not in InheritsCli.__dict__
+        result = describe_client(InheritsCli())
+        assert result["cli_tree"]["name"] == "j"
+
+    def test_a_broken_cli_costs_only_the_cli_tree(self):
+        """The driver listing is worth having even when cli() raises."""
+
+        class BrokenCli(FakeCompositeClient):
+            def cli(self):
+                raise RuntimeError("this driver's cli is broken")
+
+        result = describe_client(BrokenCli())
+        assert result["cli_tree"] is None
+        assert [d["path"] for d in result["drivers"]] != []
+
     def test_composite_client_e2e(self):
         from jumpstarter_driver_composite.driver import Composite
         from jumpstarter_driver_power.driver import MockPower
@@ -308,6 +349,9 @@ class TestDescribeDrivers:
         assert kwargs["lease_name"] == "existing-lease"
         assert kwargs["selector"] is None
         assert kwargs["exporter_name"] is None
+        # lease_async requires a duration argument, but attaching by name never
+        # sends it to the controller. Keep the placeholder explicitly neutral.
+        assert kwargs["duration"] == timedelta(0)
         paths = [d["path"] for d in result["drivers"]]
         assert "client.power" in paths
         assert result["cli_tree"]["name"] == "j"
@@ -325,3 +369,48 @@ class TestDescribeDrivers:
         kwargs = mock_config.lease_async.call_args.kwargs
         assert kwargs["lease_name"] == "existing-lease"
         assert result["cli_tree"]["name"] == "j"
+
+
+class TestParamDescription:
+    def test_describes_arguments_and_options(self):
+        @click.group()
+        def root():
+            pass
+
+        @root.command()
+        @click.argument("port", type=int)
+        @click.option("--address", help="Local address to bind")
+        @click.option("--verbose", is_flag=True)
+        @click.option("--mode", type=click.Choice(["fast", "slow"]), default="fast")
+        @click.option("--tag", multiple=True)
+        def forward(port, address, verbose, mode, tag):
+            """Forward a port."""
+
+        tree = walk_click_tree(root)
+        params = {p["name"]: p for p in tree["subcommands"]["forward"]["params"]}
+
+        # A positional argument is spelled by name and an option by its flag,
+        # so a caller building a command line has to tell them apart.
+        assert params["port"]["kind"] == "argument"
+        assert params["port"]["required"] is True
+        assert params["port"]["type"] == "integer"
+        assert params["address"]["kind"] == "option"
+        assert params["address"]["opts"] == ["--address"]
+        assert params["address"]["help"] == "Local address to bind"
+        assert params["verbose"]["is_flag"] is True
+        assert params["mode"]["choices"] == ["fast", "slow"]
+        assert params["tag"]["multiple"] is True
+
+    def test_type_name_is_readable(self):
+        @click.group()
+        def root():
+            pass
+
+        @root.command()
+        @click.argument("path", type=click.Path())
+        def send(path):
+            pass
+
+        params = walk_click_tree(root)["subcommands"]["send"]["params"]
+        # str(click.Path()) is an object repr, which is useless in a prompt.
+        assert params[0]["type"] == "path"
