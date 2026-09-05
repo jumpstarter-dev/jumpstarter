@@ -240,7 +240,7 @@ def describe_client(client: Any) -> dict[str, Any]:
     }
 
 
-async def describe_devices_async(config: ClientConfigV1Alpha1, lease_name: str) -> dict[str, Any]:
+async def describe_drivers_async(config: ClientConfigV1Alpha1, lease_name: str) -> dict[str, Any]:
     """Attach to an existing lease and describe its driver clients and CLI tree.
 
     Attaches to the lease named lease_name without creating a new lease and
@@ -272,7 +272,13 @@ async def describe_devices_async(config: ClientConfigV1Alpha1, lease_name: str) 
                         return describe_client(client)
 
 
-def describe_devices(config: ClientConfigV1Alpha1, lease_name: str) -> dict[str, Any]:
-    """Blocking convenience wrapper around describe_devices_async."""
+def describe_drivers(config: ClientConfigV1Alpha1, lease_name: str) -> dict[str, Any]:
+    """Blocking convenience wrapper around describe_drivers_async."""
     with start_blocking_portal() as portal:
-        return portal.call(describe_devices_async, config, lease_name)
+        return portal.call(describe_drivers_async, config, lease_name)
+
+
+# Compatibility for consumers of the initial introspection-library branch.
+# These describe driver clients, not a physical device inventory.
+describe_devices_async = describe_drivers_async
+describe_devices = describe_drivers

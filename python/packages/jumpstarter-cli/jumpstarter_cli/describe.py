@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .login import relogin_client
 from jumpstarter.client.grpc import Lease
-from jumpstarter.client.introspect import describe_devices
+from jumpstarter.client.introspect import describe_drivers
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.user import UserConfigV1Alpha1
 
@@ -148,7 +148,7 @@ def describe_exporter(config, name: str, output: OutputType):
 
 class LeaseDescription(BaseModel):
     lease: Lease
-    devices: dict
+    driver_tree: dict
 
 
 def _walk_commands(tree: dict, path: list[str]) -> list[tuple[str, str]]:
@@ -174,9 +174,9 @@ def _print_table(label: str, headers: list[str], rows: list[list[str]]) -> None:
         click.echo("  " + "  ".join(cell.ljust(width) for cell, width in zip(cells, widths, strict=True)).rstrip())
 
 
-def _print_devices(devices: dict) -> None:
+def _print_drivers(driver_tree: dict) -> None:
     _print_table(
-        "Devices",
+        "Drivers",
         ["Path", "Class", "Methods"],
         [
             [
@@ -184,10 +184,10 @@ def _print_devices(devices: dict) -> None:
                 driver["class"],
                 ", ".join(driver["methods"]),
             ]
-            for driver in devices["drivers"]
+            for driver in driver_tree["drivers"]
         ],
     )
-    commands = _walk_commands(devices["cli_tree"], ["j"]) if devices.get("cli_tree") else []
+    commands = _walk_commands(driver_tree["cli_tree"], ["j"]) if driver_tree.get("cli_tree") else []
     _print_table("Commands", ["Command", "Description"], [[command, help] for command, help in commands])
 
 
@@ -195,25 +195,25 @@ def _print_devices(devices: dict) -> None:
 @opt_config(exporter=False)
 @click.argument("name")
 @click.option(
-    "--devices",
-    "show_devices",
+    "--drivers",
+    "show_drivers",
     is_flag=True,
     default=False,
-    help="Connect to the leased exporter and include its device tree and driver commands.",
+    help="Connect to the leased exporter and include its driver tree and driver commands.",
 )
 @opt_output
 @handle_exceptions_with_reauthentication(relogin_client)
-def describe_lease(config, name: str, show_devices: bool, output: OutputType):
+def describe_lease(config, name: str, show_drivers: bool, output: OutputType):
     """
     Show details of a specific lease
     """
 
     lease = config.get_lease(name=name)
-    devices = describe_devices(config, name) if show_devices else None
+    driver_tree = describe_drivers(config, name) if show_drivers else None
 
     if output:
-        if devices is not None:
-            model_print(LeaseDescription(lease=lease, devices=devices), output)
+        if driver_tree is not None:
+            model_print(LeaseDescription(lease=lease, driver_tree=driver_tree), output)
         else:
             model_print(lease, output)
         return
@@ -234,8 +234,8 @@ def describe_lease(config, name: str, show_devices: bool, output: OutputType):
     _print_mapping("Tags", lease.tags)
     _print_mapping("Context", lease.context)
     _print_conditions(lease.conditions)
-    if devices is not None:
-        _print_devices(devices)
+    if driver_tree is not None:
+        _print_drivers(driver_tree)
 
 
 class ClientDescription(BaseModel):

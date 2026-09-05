@@ -8,8 +8,8 @@ import pytest
 from jumpstarter.client.introspect import (
     _get_public_method_names,
     describe_client,
-    describe_devices,
-    describe_devices_async,
+    describe_drivers,
+    describe_drivers_async,
     get_driver_methods,
     list_drivers,
     walk_click_tree,
@@ -264,7 +264,13 @@ class TestDescribeClient:
         assert result["drivers"][0]["class"].endswith("StubDriverClient")
 
 
-class TestDescribeDevices:
+class TestDescribeDrivers:
+    def test_legacy_names_remain_compatible(self):
+        from jumpstarter.client.introspect import describe_devices, describe_devices_async
+
+        assert describe_devices is describe_drivers
+        assert describe_devices_async is describe_drivers_async
+
     @pytest.fixture()
     def mock_config(self):
         fake_lease = MagicMock()
@@ -296,7 +302,7 @@ class TestDescribeDevices:
 
     @pytest.mark.anyio
     async def test_attaches_to_named_lease(self, mock_config, mock_client_from_path):
-        result = await describe_devices_async(mock_config, "existing-lease")
+        result = await describe_drivers_async(mock_config, "existing-lease")
 
         kwargs = mock_config.lease_async.call_args.kwargs
         assert kwargs["lease_name"] == "existing-lease"
@@ -310,11 +316,11 @@ class TestDescribeDevices:
     @pytest.mark.anyio
     async def test_empty_lease_name_raises(self, mock_config):
         with pytest.raises(ValueError, match="non-empty"):
-            await describe_devices_async(mock_config, "")
+            await describe_drivers_async(mock_config, "")
         mock_config.lease_async.assert_not_called()
 
     def test_blocking_wrapper(self, mock_config, mock_client_from_path):
-        result = describe_devices(mock_config, "existing-lease")
+        result = describe_drivers(mock_config, "existing-lease")
 
         kwargs = mock_config.lease_async.call_args.kwargs
         assert kwargs["lease_name"] == "existing-lease"

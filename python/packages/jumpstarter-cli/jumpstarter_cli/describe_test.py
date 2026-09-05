@@ -362,7 +362,7 @@ class TestDescribeGroup:
         assert jmp.get_command(ctx, "desc") is describe
 
 
-_DEVICES = {
+_DRIVER_TREE = {
     "drivers": [
         {
             "path": "client",
@@ -398,101 +398,107 @@ _DEVICES = {
 }
 
 
-class TestDescribeLeaseDevices:
+class TestDescribeLeaseDrivers:
     def setup_method(self):
         self.runner = CliRunner()
 
-    def test_pretty_output_devices(self):
+    def test_devices_is_not_an_alias_for_driver_introspection(self):
+        result = self.runner.invoke(describe, ["lease", "lease-1", "--devices"])
+        assert result.exit_code == 2
+        assert "No such option: --devices" in result.output
+
+    def test_pretty_output_drivers(self):
         config = MagicMock()
         config.get_lease.return_value = _make_lease()
         with (
             _patch_remote_config(config),
-            patch("jumpstarter_cli.describe.describe_devices", return_value=_DEVICES) as mock_devices,
+            patch("jumpstarter_cli.describe.describe_drivers", return_value=_DRIVER_TREE) as mock_drivers,
         ):
-            result = self.runner.invoke(describe, ["lease", "lease-1", "--client", "test", "--devices"])
+            result = self.runner.invoke(describe, ["lease", "lease-1", "--client", "test", "--drivers"])
         assert result.exit_code == 0, result.output
-        assert "Devices:" in result.output
+        assert "Drivers:" in result.output
         assert "(root)" in result.output
         assert "jumpstarter_driver_power.client.PowerClient" in result.output
         assert "cycle, off, on" in result.output
         assert "Commands:" in result.output
         assert "j power on" in result.output
         assert "Turn power on" in result.output
-        mock_devices.assert_called_once_with(config, "lease-1")
+        mock_drivers.assert_called_once_with(config, "lease-1")
 
-    def test_pretty_output_no_devices_flag(self):
+    def test_pretty_output_no_drivers_flag(self):
         config = MagicMock()
         config.get_lease.return_value = _make_lease()
         with (
             _patch_remote_config(config),
-            patch("jumpstarter_cli.describe.describe_devices", return_value=_DEVICES) as mock_devices,
+            patch("jumpstarter_cli.describe.describe_drivers", return_value=_DRIVER_TREE) as mock_drivers,
         ):
             result = self.runner.invoke(describe, ["lease", "lease-1", "--client", "test"])
         assert result.exit_code == 0, result.output
-        assert "Devices:" not in result.output
-        mock_devices.assert_not_called()
+        assert "Drivers:" not in result.output
+        mock_drivers.assert_not_called()
 
-    def test_json_output_devices(self):
+    def test_json_output_drivers(self):
         config = MagicMock()
         config.get_lease.return_value = _make_lease()
         with (
             _patch_remote_config(config),
-            patch("jumpstarter_cli.describe.describe_devices", return_value=_DEVICES),
+            patch("jumpstarter_cli.describe.describe_drivers", return_value=_DRIVER_TREE),
         ):
-            result = self.runner.invoke(describe, ["lease", "lease-1", "--client", "test", "--devices", "-o", "json"])
+            result = self.runner.invoke(describe, ["lease", "lease-1", "--client", "test", "--drivers", "-o", "json"])
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
         assert data["lease"]["name"] == "lease-1"
-        assert data["devices"]["drivers"][1]["class"] == "jumpstarter_driver_power.client.PowerClient"
-        assert data["devices"]["cli_tree"]["subcommands"]["power"]["subcommands"]["on"]["help"] == "Turn power on"
+        assert data["driver_tree"]["drivers"][1]["class"] == "jumpstarter_driver_power.client.PowerClient"
+        assert data["driver_tree"]["cli_tree"]["subcommands"]["power"]["subcommands"]["on"]["help"] == "Turn power on"
 
-    def test_yaml_output_devices(self):
+    def test_yaml_output_drivers(self):
         config = MagicMock()
         config.get_lease.return_value = _make_lease()
         with (
             _patch_remote_config(config),
-            patch("jumpstarter_cli.describe.describe_devices", return_value=_DEVICES),
+            patch("jumpstarter_cli.describe.describe_drivers", return_value=_DRIVER_TREE),
         ):
-            result = self.runner.invoke(describe, ["lease", "lease-1", "--client", "test", "--devices", "-o", "yaml"])
+            result = self.runner.invoke(describe, ["lease", "lease-1", "--client", "test", "--drivers", "-o", "yaml"])
         assert result.exit_code == 0, result.output
         data = yaml.safe_load(result.output)
         assert data["lease"]["name"] == "lease-1"
-        assert data["devices"] == _DEVICES
+        assert data["driver_tree"] == _DRIVER_TREE
+        assert "devices" not in data
 
-    def test_json_without_devices_preserves_the_lease_shape(self):
+    def test_json_without_drivers_preserves_the_lease_shape(self):
         config = MagicMock()
         config.get_lease.return_value = _make_lease()
         with (
             _patch_remote_config(config),
-            patch("jumpstarter_cli.describe.describe_devices") as mock_devices,
+            patch("jumpstarter_cli.describe.describe_drivers") as mock_drivers,
         ):
             result = self.runner.invoke(describe, ["lease", "lease-1", "--client", "test", "-o", "json"])
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
         assert data["name"] == "lease-1"
         assert "lease" not in data
-        assert "devices" not in data
-        mock_devices.assert_not_called()
+        assert "driver_tree" not in data
+        mock_drivers.assert_not_called()
 
-    def test_device_connection_failure_is_reported(self):
+    def test_driver_connection_failure_is_reported(self):
         config = MagicMock()
         config.get_lease.return_value = _make_lease()
         with (
             _patch_remote_config(config),
-            patch("jumpstarter_cli.describe.describe_devices", side_effect=ConnectionError("exporter unreachable")),
+            patch("jumpstarter_cli.describe.describe_drivers", side_effect=ConnectionError("exporter unreachable")),
         ):
-            result = self.runner.invoke(describe, ["lease", "lease-1", "--client", "test", "--devices", "-o", "json"])
+            result = self.runner.invoke(describe, ["lease", "lease-1", "--client", "test", "--drivers", "-o", "json"])
         assert result.exit_code != 0
         assert "exporter unreachable" in result.output
 
     def test_stub_root_cli_tree_none(self):
         config = MagicMock()
         config.get_lease.return_value = _make_lease()
-        devices = {"drivers": _DEVICES["drivers"], "cli_tree": None}
+        driver_tree = {"drivers": _DRIVER_TREE["drivers"], "cli_tree": None}
         with (
             _patch_remote_config(config),
-            patch("jumpstarter_cli.describe.describe_devices", return_value=devices),
+            patch("jumpstarter_cli.describe.describe_drivers", return_value=driver_tree),
         ):
-            result = self.runner.invoke(describe, ["lease", "lease-1", "--client", "test", "--devices"])
+            result = self.runner.invoke(describe, ["lease", "lease-1", "--client", "test", "--drivers"])
         assert result.exit_code == 0, result.output
         assert "Commands:  <none>" in result.output
