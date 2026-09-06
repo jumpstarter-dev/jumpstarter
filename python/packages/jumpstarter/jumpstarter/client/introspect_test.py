@@ -409,6 +409,17 @@ class TestParamDescription:
         }
         assert json.loads(json.dumps(tree)) == tree
 
+    @pytest.mark.parametrize("default", [
+        {1: "numeric", "1": "string"},
+        {"1": "string", 1: "numeric"},
+        {"nested": [MappingProxyType({1: "numeric", "1": "string"})]},
+    ])
+    def test_mapping_key_collisions_are_rejected(self, default):
+        """Never report a default with values lost to stringified key collisions."""
+        command = click.Command("cmd", params=[click.Option(["--config"], default=default)])
+        with pytest.raises(ValueError, match="Mapping keys collide after stringification: '1'"):
+            walk_click_tree(command)
+
     def test_describes_arguments_and_options(self):
         @click.group()
         def root():
