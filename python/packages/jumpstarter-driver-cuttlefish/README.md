@@ -6,8 +6,11 @@ virtual devices through the
 [Host Orchestrator](https://github.com/google/android-cuttlefish) REST API.
 It provides full CVD (Cuttlefish Virtual Device) lifecycle management through
 standard Jumpstarter interfaces: `VirtualPowerInterface` for on/off/cycle,
-plus cuttlefish-specific operations
-(snapshot, powerwash, restart).
+plus cuttlefish-specific operations (powerwash and restart).
+
+For managed Kubernetes exporters, see the [Cuttlefish ExporterSet deployment guide](https://github.com/jumpstarter-dev/jumpstarter/blob/main/controller/internal/exporterset/provisioners/cuttlefish/README.md)
+for service accounts/SCCs, network isolation, resource budgets, pinned images,
+private VSOCK, storage access modes, and failure recovery.
 
 ## Installation
 
@@ -114,11 +117,10 @@ are preserved.
 
 ### Teardown
 
-Delete CVDs and snapshots when done to avoid accumulation:
+Delete CVDs when done to avoid accumulation:
 
 ```bash
 j power off --destroy          # deletes the CVD
-j cuttlefish snapshot delete <id>  # remove specific snapshots
 ```
 
 ## Configuration
@@ -137,11 +139,8 @@ export:
         instances:
           - disk:
               default_build: /home/vsoc-01/fetch
-            vm:
-              enable_virtiofs: false   # required for snapshot support
         common:
           host_package: /home/vsoc-01/fetch
-          gpu_mode: guest_swiftshader  # required for snapshot support
   netsim:
     type: jumpstarter_driver_netsim.driver.Netsim
     config:
@@ -220,10 +219,6 @@ j cuttlefish powerbtn
 # List running operations
 j cuttlefish ops
 
-# Snapshot management
-# Requires: x86_64 host, enable_virtiofs: false, gpu_mode: guest_swiftshader
-j cuttlefish snapshot create --id my-snapshot
-j cuttlefish snapshot delete <snapshot_id>
 ```
 
 ### Python API
@@ -250,9 +245,6 @@ with serve(driver) as client:
     # List CVDs
     cvds = client.list_cvds()
     print(cvds)
-
-    # Snapshots
-    client.create_snapshot(snapshot_id="baseline")
 
     # Cleanup
     client.power.off(destroy=True)
