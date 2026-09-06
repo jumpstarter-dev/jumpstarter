@@ -30,7 +30,13 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_json_safe(v) for v in value]
     if isinstance(value, Mapping):
-        return {str(key): _json_safe(item) for key, item in value.items()}
+        result: dict[str, Any] = {}
+        for key, item in value.items():
+            json_key = str(key)
+            if json_key in result:
+                raise ValueError(f"Mapping keys collide after stringification: {json_key!r}")
+            result[json_key] = _json_safe(item)
+        return result
     return str(value)
 
 
