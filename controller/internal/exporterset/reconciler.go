@@ -40,6 +40,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -88,6 +89,7 @@ type ExporterSetReconciler struct {
 	LastScaleDownAction map[types.NamespacedName]time.Time
 }
 
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=exportersets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=exportersets/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=exportersets/finalizers,verbs=update
@@ -171,6 +173,10 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Only reconcile ExporterSets whose class matches our provisioner
 	if vtc.Spec.Provisioner != r.Provisioner.Name() {
 		return ctrl.Result{}, nil
+	}
+
+	if err := r.syncNetworkPolicy(ctx, &exporterSet); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	logger.Info("reconciling ExporterSet",
@@ -286,6 +292,34 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	r.emitConditionEvents(&exporterSet, prevAvailable, prevProgressing, prevDegraded, prevScalingLimited)
 
 	return result, nil
+}
+
+// NetworkPolicyProvisioner isolates backend listeners before any workload Pod is created.
+type NetworkPolicyProvisioner interface {
+	RenderNetworkPolicy(*virtualtargetv1alpha1.ExporterSet) *networkingv1.NetworkPolicy
+}
+
+func (r *ExporterSetReconciler) syncNetworkPolicy(ctx context.Context, es *virtualtargetv1alpha1.ExporterSet) error {
+	provisioner, ok := r.Provisioner.(NetworkPolicyProvisioner)
+	if !ok {
+		return nil
+	}
+	desired := provisioner.RenderNetworkPolicy(es)
+	policy := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: desired.Name, Namespace: desired.Namespace}}
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, policy, func() error {
+		if !policy.CreationTimestamp.IsZero() && !metav1.IsControlledBy(policy, es) {
+			return fmt.Errorf("network policy %s is not owned by ExporterSet", policy.Name)
+		}
+		if err := ctrl.SetControllerReference(es, policy, r.Scheme); err != nil {
+			return err
+		}
+		policy.Spec = *desired.Spec.DeepCopy()
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("ensure runtime network isolation: %w", err)
+	}
+	return nil
 }
 
 type poolState struct {
@@ -1267,7 +1301,7 @@ func filterOwnedExporters(
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ExporterSetReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&virtualtargetv1alpha1.ExporterSet{}).
 		Owns(&jumpstarterdevv1alpha1.Exporter{}).
 		Watches(
@@ -1282,8 +1316,11 @@ func (r *ExporterSetReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&jumpstarterdevv1alpha1.Lease{},
 			handler.EnqueueRequestsFromMapFunc(r.findExporterSetsForLease),
 		).
-		Named("exporterset").
-		Complete(r)
+		Named("exporterset")
+	if _, ok := r.Provisioner.(NetworkPolicyProvisioner); ok {
+		builder = builder.Owns(&networkingv1.NetworkPolicy{})
+	}
+	return builder.Complete(r)
 }
 
 // findExporterSetForPod bridges the ExporterSet→Exporter→Pod grandchild gap via label.
