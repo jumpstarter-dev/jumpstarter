@@ -28,6 +28,7 @@ jumpstarter-driver-ridesx = { workspace = true }
 jumpstarter-driver-netsim = { workspace = true }
 jumpstarter-driver-network = { workspace = true }
 jumpstarter-driver-obd = { workspace = true }
+jumpstarter-driver-nanokvm-usb = { workspace = true }
 jumpstarter-driver-opendal = { workspace = true }
 jumpstarter-driver-power = { workspace = true }
 jumpstarter-driver-pi-pico = { workspace = true }
