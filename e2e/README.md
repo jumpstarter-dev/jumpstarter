@@ -140,6 +140,18 @@ offering the `dut-network` driver (nftables NAT/masquerade + DHCP/DNS). CI insta
 | should not reach a VLAN-only peer without public_gateway | create `jmp-vext.101` with `10.101.0.1/24` in ext ns; `add-address 192.168.200.52 --vlan-id 101`; add DUT IP; ping VLAN-only `10.101.0.1` and untagged `10.99.0.1` | ping to `10.101.0.1` fails; ping to `10.99.0.1` succeeds (`Eventually`) |
 | should masquerade unregistered DUT alongside VLAN-registered DUT | register `192.168.200.50` with VLAN 100 + PBR; verify VLAN TCP echo works; add unregistered `192.168.200.60` on DUT bridge (no `add-address`); ping external `10.99.0.1` from unregistered IP | VLAN DUT gets "E2E_OK"; unregistered DUT ping succeeds via upstream masquerade |
 
+### Filter sub-lane (`exporter-dut-network-filter.yaml`)
+
+Same netns topology, separate exporter on port 19092 with an egress filter
+(`policy: drop`, one `accept` rule for TCP port 9997 to `10.99.0.1/32`).
+
+| Test Name | Steps | Pass Check |
+|---|---|---|
+| should show filter rules in nftables output | `j dut-network nat-rules` | output contains "drop" and `dport 9997` |
+| should allow TCP to the permitted port | TCP server on allowed port 9997, client connects from DUT ns | client receives "FILTER_OK" |
+| should block TCP to a non-allowed port | TCP server on blocked port 9998, client connects from DUT ns | connection fails (timeout/reset) |
+| should block ICMP ping when egress policy is drop | ping from DUT ns to ext IP | ping fails (`Consistently`) |
+
 ---
 
 ## Lane: `exit-on-lease-end` (`exit_on_lease_end_test.go`)
