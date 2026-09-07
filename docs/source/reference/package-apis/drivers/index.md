@@ -57,7 +57,7 @@ Drivers that handle media streams:
 
 - {doc}`uStreamer <ustreamer>` (`jumpstarter-driver-ustreamer`) - Video streaming
 - {doc}`Video <video>` (`jumpstarter-driver-video`) - Video interface and HTTP/MJPEG camera sources
-
+- {doc}`NanoKVM-USB <nanokvm-usb>` (`jumpstarter-driver-nanokvm-usb`) - NanoKVM-USB KVM over local USB serial and UVC
 ### Automotive Diagnostics
 
 Drivers for automotive diagnostic protocols:
@@ -122,6 +122,7 @@ iscsi.md
 mitmproxy.md
 netsim.md
 network.md
+nanokvm-usb.md
 noyito-relay.md
 obd.md
 opendal.md
