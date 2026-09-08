@@ -381,13 +381,6 @@ var _ = Describe("Jumpstarter Controller — JWT CA resolution", func() {
 	})
 })
 
-// strPtr is a helper to create a pointer to a string literal.
-//
-//go:fix inline
-func strPtr(s string) *string {
-	return new(s)
-}
-
 var _ = Describe("ExporterSet Controller Lifecycle", func() {
 	const crName = "test-exporterset"
 	var crNamespace string

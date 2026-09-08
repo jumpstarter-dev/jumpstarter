@@ -2020,8 +2020,6 @@ dSignatureRotatedSignatureRotatedSignatureRotatedSignatureRotatedSig==
 -----END CERTIFICATE-----
 `
 
-		strPtr := func(s string) *string { return &s }
-
 		BeforeAll(func() {
 			jwtCATestNamespace = CreateTestNamespace()
 		})
@@ -2088,7 +2086,7 @@ dSignatureRotatedSignatureRotatedSignatureRotatedSignatureRotatedSig==
 									ClaimMappings: apiserverv1beta1.ClaimMappings{
 										Username: apiserverv1beta1.PrefixedClaimOrExpression{
 											Claim:  "preferred_username",
-											Prefix: strPtr("oidc:"),
+											Prefix: new("oidc:"),
 										},
 									},
 								},
