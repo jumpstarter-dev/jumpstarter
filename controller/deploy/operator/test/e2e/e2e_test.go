@@ -494,7 +494,7 @@ provisioning:
 				actualRouter := cm.Data["router"]
 
 				// Unmarshal and compare as map[string]interface{} for robustness to field ordering
-				var actualConfigObj, expectedConfigObj map[string]interface{}
+				var actualConfigObj, expectedConfigObj map[string]any
 				err = yaml.Unmarshal([]byte(actualConfig), &actualConfigObj)
 				g.Expect(err).NotTo(HaveOccurred())
 
@@ -502,7 +502,7 @@ provisioning:
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(actualConfigObj).To(Equal(expectedConfigObj), "config map 'config' entry did not match expected")
 
-				var actualRouterObj, expectedRouterObj map[string]interface{}
+				var actualRouterObj, expectedRouterObj map[string]any
 				err = yaml.Unmarshal([]byte(actualRouter), &actualRouterObj)
 				g.Expect(err).NotTo(HaveOccurred())
 
@@ -920,11 +920,11 @@ provisioning:
 				}, configmap)
 				g.Expect(err).NotTo(HaveOccurred())
 
-				var configObj map[string]interface{}
+				var configObj map[string]any
 				err = yaml.Unmarshal([]byte(configmap.Data["config"]), &configObj)
 				g.Expect(err).NotTo(HaveOccurred())
 
-				provisioning, ok := configObj["provisioning"].(map[string]interface{})
+				provisioning, ok := configObj["provisioning"].(map[string]any)
 				g.Expect(ok).To(BeTrue())
 				g.Expect(provisioning["enabled"]).To(BeTrue())
 			}, 1*time.Minute).Should(Succeed())

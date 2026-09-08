@@ -25,6 +25,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"hash"
+	"maps"
 	"net"
 	"sort"
 	"strings"
@@ -40,7 +41,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	apiserverv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -270,7 +270,7 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 }
 
 // emitEventf emits a Kubernetes event on the Jumpstarter object.
-func (r *JumpstarterReconciler) emitEventf(js *operatorv1alpha1.Jumpstarter, eventType, reason, msgFmt string, args ...interface{}) {
+func (r *JumpstarterReconciler) emitEventf(js *operatorv1alpha1.Jumpstarter, eventType, reason, msgFmt string, args ...any) {
 	if r.Recorder == nil {
 		return
 	}
@@ -876,7 +876,7 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 						Name: GetCAConfigMapName(jumpstarter),
 					},
 					Key:      "ca.crt",
-					Optional: boolPtr(!jumpstarter.Spec.CertManager.Enabled),
+					Optional: new(!jumpstarter.Spec.CertManager.Enabled),
 				},
 			},
 		},
@@ -924,8 +924,8 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas:                &jumpstarter.Spec.Controller.Replicas,
-			ProgressDeadlineSeconds: ptr.To(int32(600)),
-			RevisionHistoryLimit:    ptr.To(int32(10)),
+			ProgressDeadlineSeconds: new(int32(600)),
+			RevisionHistoryLimit:    new(int32(10)),
 			Strategy: appsv1.DeploymentStrategy{
 				Type: appsv1.RollingUpdateDeploymentStrategyType,
 				RollingUpdate: &appsv1.RollingUpdateDeployment{
@@ -944,7 +944,7 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 				Spec: corev1.PodSpec{
 					RestartPolicy:                 corev1.RestartPolicyAlways,
 					DNSPolicy:                     corev1.DNSClusterFirst,
-					TerminationGracePeriodSeconds: ptr.To(int64(30)),
+					TerminationGracePeriodSeconds: new(int64(30)),
 					Containers: []corev1.Container{
 						{
 							Name:            "manager",
@@ -1011,7 +1011,7 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 							TerminationMessagePath:   "/dev/termination-log",
 							TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 							SecurityContext: &corev1.SecurityContext{
-								AllowPrivilegeEscalation: boolPtr(false),
+								AllowPrivilegeEscalation: new(false),
 								Capabilities: &corev1.Capabilities{
 									Drop: []corev1.Capability{"ALL"},
 								},
@@ -1020,7 +1020,7 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 					},
 					Volumes: volumes,
 					SecurityContext: &corev1.PodSecurityContext{
-						RunAsNonRoot: boolPtr(true),
+						RunAsNonRoot: new(true),
 						SeccompProfile: &corev1.SeccompProfile{
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
@@ -1032,17 +1032,11 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 	}
 }
 
-func boolPtr(b bool) *bool {
-	return &b
-}
-
 // buildControllerPodAnnotations builds the pod template annotations for the controller deployment.
 // Includes config/TLS hashes for rolling restart on changes, plus any user-provided pod annotations.
 func (r *JumpstarterReconciler) buildControllerPodAnnotations(jumpstarter *operatorv1alpha1.Jumpstarter, configMapHash, tlsSecretHash string) map[string]string {
 	annotations := make(map[string]string)
-	for k, v := range jumpstarter.Spec.Controller.PodAnnotations {
-		annotations[k] = v
-	}
+	maps.Copy(annotations, jumpstarter.Spec.Controller.PodAnnotations)
 	annotations["jumpstarter.dev/configmap-sha256"] = configMapHash
 	if tlsSecretHash != "" {
 		annotations["jumpstarter.dev/tls-secret-sha256"] = tlsSecretHash
@@ -1054,9 +1048,7 @@ func (r *JumpstarterReconciler) buildControllerPodAnnotations(jumpstarter *opera
 // Includes TLS hash for rolling restart on cert renewal, plus any user-provided pod annotations.
 func (r *JumpstarterReconciler) buildRouterPodAnnotations(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSecretHash string) map[string]string {
 	annotations := make(map[string]string)
-	for k, v := range jumpstarter.Spec.Routers.PodAnnotations {
-		annotations[k] = v
-	}
+	maps.Copy(annotations, jumpstarter.Spec.Routers.PodAnnotations)
 	if tlsSecretHash != "" {
 		annotations["jumpstarter.dev/tls-secret-sha256"] = tlsSecretHash
 	}
@@ -1147,9 +1139,9 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 			Labels:    labels,
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas:                ptr.To(int32(1)), // Each deployment for the router needs to have exactly 1 replica
-			ProgressDeadlineSeconds: ptr.To(int32(600)),
-			RevisionHistoryLimit:    ptr.To(int32(10)),
+			Replicas:                new(int32(1)), // Each deployment for the router needs to have exactly 1 replica
+			ProgressDeadlineSeconds: new(int32(600)),
+			RevisionHistoryLimit:    new(int32(10)),
 			Strategy: appsv1.DeploymentStrategy{
 				Type: appsv1.RollingUpdateDeploymentStrategyType,
 				RollingUpdate: &appsv1.RollingUpdateDeployment{
@@ -1168,7 +1160,7 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 				Spec: corev1.PodSpec{
 					RestartPolicy:                 corev1.RestartPolicyAlways,
 					DNSPolicy:                     corev1.DNSClusterFirst,
-					TerminationGracePeriodSeconds: ptr.To(int64(30)),
+					TerminationGracePeriodSeconds: new(int64(30)),
 					Containers: []corev1.Container{
 						{
 							Name:            "router",
@@ -1201,7 +1193,7 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 							TerminationMessagePath:   "/dev/termination-log",
 							TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 							SecurityContext: &corev1.SecurityContext{
-								AllowPrivilegeEscalation: boolPtr(false),
+								AllowPrivilegeEscalation: new(false),
 								Capabilities: &corev1.Capabilities{
 									Drop: []corev1.Capability{"ALL"},
 								},
@@ -1210,7 +1202,7 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 					},
 					Volumes: volumes,
 					SecurityContext: &corev1.PodSecurityContext{
-						RunAsNonRoot: boolPtr(true),
+						RunAsNonRoot: new(true),
 						SeccompProfile: &corev1.SeccompProfile{
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
@@ -1600,7 +1592,7 @@ func (r *JumpstarterReconciler) cleanupExcessRouterServices(ctx context.Context,
 		foundAny := false
 
 		// Try to delete services for all endpoints and service types for this replica
-		for endpointIdx := 0; endpointIdx < 10; endpointIdx++ { // reasonable upper bound for endpoints
+		for endpointIdx := range 10 { // reasonable upper bound for endpoints
 			for _, suffix := range suffixes {
 				var serviceName string
 				if endpointIdx == 0 {

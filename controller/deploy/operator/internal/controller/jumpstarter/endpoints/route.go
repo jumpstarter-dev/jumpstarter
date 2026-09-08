@@ -25,7 +25,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -133,7 +132,7 @@ func (r *Reconciler) createRouteForEndpoint(ctx context.Context, owner metav1.Ob
 			To: routev1.RouteTargetReference{
 				Kind:   "Service",
 				Name:   serviceName,
-				Weight: ptr.To(int32(100)),
+				Weight: new(int32(100)),
 			},
 			TLS: &routev1.TLSConfig{
 				Termination:                   tlsTermination,
@@ -215,7 +214,7 @@ func (r *Reconciler) createRouteForLoginEndpoint(ctx context.Context, owner meta
 			To: routev1.RouteTargetReference{
 				Kind:   "Service",
 				Name:   serviceName,
-				Weight: ptr.To(int32(100)),
+				Weight: new(int32(100)),
 			},
 			TLS:            tlsConfig,
 			WildcardPolicy: routev1.WildcardPolicyNone,

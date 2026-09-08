@@ -61,6 +61,7 @@ jobs:
         working-directory: controller
         run: |
           go fix ./...
+          (cd deploy/operator && go fix ./...)
           git diff --exit-code
 
       - name: Run go linter
