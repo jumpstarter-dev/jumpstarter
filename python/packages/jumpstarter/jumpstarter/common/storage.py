@@ -7,6 +7,8 @@ from anyio import fail_after, sleep
 from anyio.abc import AnyByteStream
 from anyio.streams.file import FileReadStream, FileWriteStream
 
+from jumpstarter.streams.encoding import AutoDecompressIterator
+
 
 async def wait_for_storage_device(  # noqa: C901
     storage_device: str | os.PathLike,
@@ -68,7 +70,9 @@ async def write_to_storage_device(
         async with FileWriteStream(file) as stream:
             total_bytes = 0
             next_print = 0
-            async for chunk in resource:
+            # gzip/xz/bz2/zstd images are detected by file signature and
+            # decompressed transparently; uncompressed data passes through
+            async for chunk in AutoDecompressIterator(source=resource):
                 await stream.send(chunk)
                 if logger:
                     total_bytes += len(chunk)

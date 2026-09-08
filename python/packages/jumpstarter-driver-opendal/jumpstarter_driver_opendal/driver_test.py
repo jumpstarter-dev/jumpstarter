@@ -1,5 +1,9 @@
+import bz2
+import gzip
 import hashlib
+import lzma
 import os
+import sys
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -10,6 +14,11 @@ from unittest import mock
 
 import pytest
 from opendal import Operator
+
+if sys.version_info >= (3, 14):
+    from compression import zstd
+else:
+    from backports import zstd
 
 from .common import PresignedRequest
 from .driver import MockFlasher, MockStorageMux, MockStorageMuxFlasher, Opendal
@@ -175,6 +184,58 @@ def test_driver_mock_storage_mux_flasher(tmp_path):
             ]
 
             assert (tmp_path / "dump.img").read_bytes() == b"hello"
+
+
+@pytest.mark.parametrize(
+    "compress",
+    [gzip.compress, lambda data: lzma.compress(data, format=lzma.FORMAT_XZ), bz2.compress, zstd.compress],
+    ids=["gzip", "xz", "bz2", "zstd"],
+)
+def test_driver_mock_storage_mux_flasher_auto_decompress(tmp_path, compress):
+    original = b"hello compressed world" * 1024
+    with serve(MockStorageMuxFlasher()) as flasher:
+        (tmp_path / "disk.img").write_bytes(compress(original))
+
+        flasher.flash(tmp_path / "disk.img")
+        flasher.dump(tmp_path / "dump.img")
+
+        assert (tmp_path / "dump.img").read_bytes() == original
+
+
+def test_driver_mock_storage_mux_flasher_http_auto_decompress(tmp_path):
+    """Flashing a compressed image from a direct HTTP URL must auto-decompress (issue #54)."""
+    original = b"hello compressed world" * 1024
+    compressed = lzma.compress(original, format=lzma.FORMAT_XZ)
+
+    class CompressedHandler(BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header("content-length", str(len(compressed)))
+            self.end_headers()
+
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("content-length", str(len(compressed)))
+            self.end_headers()
+            self.wfile.write(compressed)
+
+        def log_message(self, format, *args):
+            pass
+
+    with serve(MockStorageMuxFlasher()) as flasher:
+        server = HTTPServer(("127.0.0.1", 0), CompressedHandler)
+        port = server.server_address[1]
+        server_thread = Thread(target=server.serve_forever)
+        server_thread.daemon = True
+        server_thread.start()
+        try:
+            flasher.flash(f"http://127.0.0.1:{port}/image.raw.xz")
+            flasher.dump(tmp_path / "dump.img")
+
+            assert (tmp_path / "dump.img").read_bytes() == original
+        finally:
+            server.shutdown()
+            server.server_close()
 
 
 def test_drivers_mock_storage_mux_fs(monkeypatch: pytest.MonkeyPatch):

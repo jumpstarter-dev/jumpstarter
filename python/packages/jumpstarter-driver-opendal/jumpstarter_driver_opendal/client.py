@@ -786,7 +786,11 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
         operator: Operator | None = None,
         compression: Compression | None = None,
     ):
-        """Flash image to DUT"""
+        """Flash image to DUT
+
+        gzip, xz, bz2 and zstd compressed images are detected from their
+        file signature and decompressed transparently on the exporter.
+        """
         if target is not None:
             raise ArgumentError(f"target is not supported for StorageMuxFlasherClient, {target} provided")
 
