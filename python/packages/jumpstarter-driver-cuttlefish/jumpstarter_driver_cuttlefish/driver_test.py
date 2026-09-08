@@ -464,6 +464,52 @@ def test_cvd_power_on_stale_cleanup_failure(requests_mock, drv):
         power.on()
 
 
+def test_cvd_power_on_auto_reset_retries_once(requests_mock, drv):
+    """auto_reset calls reset_host() and retries after a stale-state failure, then succeeds."""
+    drv.children["adb"] = MagicMock()
+    drv.boot_timeout = 0
+    drv.auto_reset = True
+    power = drv.children["power"]
+    requests_mock.get(
+        f"{BASE}/cvds",
+        [
+            {"json": {"cvds": [{"name": "d1", "group": "cvd_1"}, {"name": "d2", "group": "cvd_1"}]}},
+            {"json": {"cvds": []}},
+        ],
+    )
+    requests_mock.delete(f"{BASE}/cvds/cvd_1/d1", status_code=500, json={"error": "busy"})
+    requests_mock.delete(f"{BASE}/cvds/cvd_1/d2", json={"name": "op-d2", "done": False})
+    requests_mock.post(f"{BASE}/operations/op-d2/:wait", json={"name": "op-d2", "done": True})
+    requests_mock.post(f"{BASE}/reset", json={"name": "op-reset", "done": False})
+    requests_mock.post(f"{BASE}/operations/op-reset/:wait", json={"name": "op-reset", "done": True})
+    requests_mock.post(f"{BASE}/cvds", json={"name": "op-c", "done": False})
+    requests_mock.post(
+        f"{BASE}/operations/op-c/:wait",
+        json={"name": "op-c", "done": True, "cvds": [{"group": "cvd_1", "name": "dev1", "adb_port": 6520}]},
+    )
+    power.on()
+    assert any(r.method == "POST" and r.path == "/reset" for r in requests_mock.request_history)
+    assert drv._cvd_group == "cvd_1"
+    assert drv._cvd_name == "dev1"
+
+
+def test_cvd_power_on_auto_reset_disabled_raises_immediately(requests_mock, drv):
+    """Without auto_reset, a stale-state failure raises without touching /reset."""
+    drv.children["adb"] = MagicMock()
+    drv.boot_timeout = 0
+    power = drv.children["power"]
+    requests_mock.get(
+        f"{BASE}/cvds",
+        json={"cvds": [{"name": "d1", "group": "cvd_1"}, {"name": "d2", "group": "cvd_1"}]},
+    )
+    requests_mock.delete(f"{BASE}/cvds/cvd_1/d1", status_code=500, json={"error": "busy"})
+    requests_mock.delete(f"{BASE}/cvds/cvd_1/d2", json={"name": "op-d2", "done": False})
+    requests_mock.post(f"{BASE}/operations/op-d2/:wait", json={"name": "op-d2", "done": True})
+    with pytest.raises(CuttlefishError, match="failed to delete stale CVDs"):
+        power.on()
+    assert not any(r.method == "POST" and r.path == "/reset" for r in requests_mock.request_history)
+
+
 def test_cvd_power_on_port_mismatch(requests_mock, drv):
     drv.children["adb"] = MagicMock()
     drv.boot_timeout = 0
