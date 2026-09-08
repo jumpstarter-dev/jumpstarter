@@ -225,7 +225,7 @@ var _ = Describe("Jumpstarter Controller — JWT CA resolution", func() {
 					ClaimMappings: apiserverv1beta1.ClaimMappings{
 						Username: apiserverv1beta1.PrefixedClaimOrExpression{
 							Claim:  "preferred_username",
-							Prefix: strPtr("oidc:"),
+							Prefix: new("oidc:"),
 						},
 					},
 				},
@@ -266,7 +266,7 @@ var _ = Describe("Jumpstarter Controller — JWT CA resolution", func() {
 					ClaimMappings: apiserverv1beta1.ClaimMappings{
 						Username: apiserverv1beta1.PrefixedClaimOrExpression{
 							Claim:  "preferred_username",
-							Prefix: strPtr("oidc:"),
+							Prefix: new("oidc:"),
 						},
 					},
 				},
@@ -301,7 +301,7 @@ var _ = Describe("Jumpstarter Controller — JWT CA resolution", func() {
 					ClaimMappings: apiserverv1beta1.ClaimMappings{
 						Username: apiserverv1beta1.PrefixedClaimOrExpression{
 							Claim:  "preferred_username",
-							Prefix: strPtr("oidc:"),
+							Prefix: new("oidc:"),
 						},
 					},
 				},
@@ -349,7 +349,7 @@ var _ = Describe("Jumpstarter Controller — JWT CA resolution", func() {
 					ClaimMappings: apiserverv1beta1.ClaimMappings{
 						Username: apiserverv1beta1.PrefixedClaimOrExpression{
 							Claim:  "preferred_username",
-							Prefix: strPtr("oidc:"),
+							Prefix: new("oidc:"),
 						},
 					},
 				},
@@ -380,11 +380,6 @@ var _ = Describe("Jumpstarter Controller — JWT CA resolution", func() {
 		Expect(secondConfig).NotTo(Equal(firstConfig))
 	})
 })
-
-// strPtr is a helper to create a pointer to a string literal.
-func strPtr(s string) *string {
-	return &s
-}
 
 var _ = Describe("ExporterSet Controller Lifecycle", func() {
 	const crName = "test-exporterset"

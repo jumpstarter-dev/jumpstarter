@@ -17,12 +17,13 @@ limitations under the License.
 package jumpstarter
 
 import (
+	"slices"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
 )
@@ -264,23 +265,23 @@ var _ = Describe("hasEnabledProvisioners", func() {
 
 	It("should return true when Enabled is explicitly true", func() {
 		provs := []operatorv1alpha1.ProvisionerConfig{
-			{Name: "qemu.jumpstarter.dev", Enabled: ptr.To(true)},
+			{Name: "qemu.jumpstarter.dev", Enabled: new(true)},
 		}
 		Expect(hasEnabledProvisioners(provs)).To(BeTrue())
 	})
 
 	It("should return false when all provisioners are disabled", func() {
 		provs := []operatorv1alpha1.ProvisionerConfig{
-			{Name: "qemu.jumpstarter.dev", Enabled: ptr.To(false)},
-			{Name: "corellium.jumpstarter.dev", Enabled: ptr.To(false)},
+			{Name: "qemu.jumpstarter.dev", Enabled: new(false)},
+			{Name: "corellium.jumpstarter.dev", Enabled: new(false)},
 		}
 		Expect(hasEnabledProvisioners(provs)).To(BeFalse())
 	})
 
 	It("should return true when at least one provisioner is enabled among disabled ones", func() {
 		provs := []operatorv1alpha1.ProvisionerConfig{
-			{Name: "qemu.jumpstarter.dev", Enabled: ptr.To(false)},
-			{Name: "corellium.jumpstarter.dev", Enabled: ptr.To(true)},
+			{Name: "qemu.jumpstarter.dev", Enabled: new(false)},
+			{Name: "corellium.jumpstarter.dev", Enabled: new(true)},
 		}
 		Expect(hasEnabledProvisioners(provs)).To(BeTrue())
 	})
@@ -491,7 +492,7 @@ var _ = Describe("createExporterSetDeployment", func() {
 	It("should use per-provisioner replicas override", func() {
 		dep := r.createExporterSetDeployment(js, operatorv1alpha1.ProvisionerConfig{
 			Name:     "qemu.jumpstarter.dev",
-			Replicas: ptr.To(int32(3)),
+			Replicas: new(int32(3)),
 		})
 
 		Expect(*dep.Spec.Replicas).To(Equal(int32(3)))
@@ -620,10 +621,5 @@ var _ = Describe("createExporterSetDeployment", func() {
 })
 
 func containsString(slice []string, s string) bool {
-	for _, v := range slice {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, s)
 }

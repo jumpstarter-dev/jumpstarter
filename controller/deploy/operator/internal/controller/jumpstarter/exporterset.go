@@ -29,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -380,8 +379,8 @@ func (r *JumpstarterReconciler) createExporterSetDeployment(jumpstarter *operato
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas:                &replicas,
-			ProgressDeadlineSeconds: ptr.To(int32(600)),
-			RevisionHistoryLimit:    ptr.To(int32(10)),
+			ProgressDeadlineSeconds: new(int32(600)),
+			RevisionHistoryLimit:    new(int32(10)),
 			Strategy: appsv1.DeploymentStrategy{
 				Type: appsv1.RollingUpdateDeploymentStrategyType,
 				RollingUpdate: &appsv1.RollingUpdateDeployment{
@@ -399,7 +398,7 @@ func (r *JumpstarterReconciler) createExporterSetDeployment(jumpstarter *operato
 				Spec: corev1.PodSpec{
 					RestartPolicy:                 corev1.RestartPolicyAlways,
 					DNSPolicy:                     corev1.DNSClusterFirst,
-					TerminationGracePeriodSeconds: ptr.To(int64(30)),
+					TerminationGracePeriodSeconds: new(int64(30)),
 					Containers: []corev1.Container{
 						{
 							Name:            "manager",
@@ -462,7 +461,7 @@ func (r *JumpstarterReconciler) createExporterSetDeployment(jumpstarter *operato
 							TerminationMessagePath:   "/dev/termination-log",
 							TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 							SecurityContext: &corev1.SecurityContext{
-								AllowPrivilegeEscalation: boolPtr(false),
+								AllowPrivilegeEscalation: new(false),
 								Capabilities: &corev1.Capabilities{
 									Drop: []corev1.Capability{"ALL"},
 								},
@@ -470,7 +469,7 @@ func (r *JumpstarterReconciler) createExporterSetDeployment(jumpstarter *operato
 						},
 					},
 					SecurityContext: &corev1.PodSecurityContext{
-						RunAsNonRoot: boolPtr(true),
+						RunAsNonRoot: new(true),
 						SeccompProfile: &corev1.SeccompProfile{
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
