@@ -8,6 +8,7 @@ import pytest
 from .client import (
     ADB_CONNECT_TIMEOUT,
     ADB_DISCONNECT_TIMEOUT,
+    AdbClient,
     AdbDeviceClient,
     _adb_connect,
     _wait_for_interrupt,
@@ -238,3 +239,149 @@ def test_ctrl_c_during_attach_still_detaches():
             _wait_for_interrupt(client)  # returns, as a real Ctrl+C would
             assert target == TARGET
     assert ["adb", "disconnect", TARGET] in [c.args[0] for c in run.call_args_list]
+
+
+# ------------------------------------------------------------------ CLI surface
+#
+# The CLI is the user-facing contract documented in the README, so it is worth
+# pinning: which commands exist, that they run the adb calls they claim to, and that
+# `endpoint` runs none.
+
+
+def _cli_device_client():
+    """A device client whose transport is stubbed, for driving its CLI."""
+    client = MagicMock(spec=AdbDeviceClient)
+    client.endpoint = lambda **kwargs: _fake_endpoint(client, **kwargs)
+    client.attach = lambda **kwargs: AdbDeviceClient.attach(client, **kwargs)
+    client.info = lambda: {"transport": "usb", "selector": "usb:1-4.2", "present": "yes"}
+    client.logger = MagicMock()
+    client.portal = _Portal(KeyboardInterrupt())
+    return client
+
+
+def test_device_cli_exposes_only_attach_endpoint_info():
+    """No `shell`, `install`, `logcat` — Jumpstarter does not wrap the adb CLI."""
+    group = AdbDeviceClient.cli(_cli_device_client())
+    assert sorted(group.commands) == ["attach", "endpoint", "info"]
+
+
+def test_device_cli_info_prints_the_fields():
+    from click.testing import CliRunner
+
+    group = AdbDeviceClient.cli(_cli_device_client())
+    result = CliRunner().invoke(group, ["info"])
+    assert result.exit_code == 0, result.output
+    assert "transport: usb" in result.output
+    assert "selector: usb:1-4.2" in result.output
+
+
+def test_device_cli_attach_connects_and_tells_you_how_to_use_it():
+    from click.testing import CliRunner
+
+    client = _cli_device_client()
+    with patch("subprocess.run", return_value=_completed("connected to " + TARGET)) as run:
+        result = CliRunner().invoke(group := AdbDeviceClient.cli(client), ["attach"])
+    assert group is not None
+    assert result.exit_code == 0, result.output
+    assert TARGET in result.output
+    # It must tell the user to drive their own adb, since we no longer proxy it.
+    assert f"adb -s {TARGET} shell" in result.output
+    assert "detached" in result.output
+    argvs = [c.args[0] for c in run.call_args_list]
+    assert argvs == [["adb", "connect", TARGET], ["adb", "disconnect", TARGET]]
+
+
+def test_device_cli_endpoint_prints_the_address_and_runs_no_adb():
+    from click.testing import CliRunner
+
+    client = _cli_device_client()
+    with patch("subprocess.run", side_effect=AssertionError("endpoint must not run adb")):
+        result = CliRunner().invoke(AdbDeviceClient.cli(client), ["endpoint"])
+    assert result.exit_code == 0, result.output
+    assert result.output.splitlines()[0] == TARGET
+    assert f"adb connect {TARGET}" in result.output
+
+
+def _cli_server_client():
+    """A server client with its tunnel stubbed, for driving its CLI."""
+    client = MagicMock(spec=AdbClient)
+    client.list_devices = lambda: "List of devices attached\nHVA1234567\tdevice usb:1-4.2\n"
+    client.forward_adb = MagicMock()
+    client.forward_adb.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 54321))
+    client.forward_adb.return_value.__exit__ = MagicMock(return_value=False)
+    client.portal = _Portal(KeyboardInterrupt())
+    return client
+
+
+def test_server_cli_exposes_only_devices_and_tunnel():
+    group = AdbClient.cli(_cli_server_client())
+    assert sorted(group.commands) == ["devices", "tunnel"]
+
+
+def test_server_cli_devices_lists_them():
+    from click.testing import CliRunner
+
+    result = CliRunner().invoke(AdbClient.cli(_cli_server_client()), ["devices"])
+    assert result.exit_code == 0, result.output
+    assert "HVA1234567" in result.output
+
+
+def test_server_cli_tunnel_prints_the_env_vars_to_export():
+    """The tunnel's whole purpose: hand the user variables for their own tooling."""
+    from click.testing import CliRunner
+
+    client = _cli_server_client()
+    result = CliRunner().invoke(AdbClient.cli(client), ["tunnel"])
+    assert result.exit_code == 0, result.output
+    assert "ANDROID_ADB_SERVER_ADDRESS=127.0.0.1" in result.output
+    assert "ANDROID_ADB_SERVER_PORT=54321" in result.output
+
+
+# --------------------------------------------------------- AdbClient call wiring
+
+
+def test_server_client_methods_map_to_driver_calls():
+    """Thin wrappers, but cuttlefish and androidemulator depend on these names."""
+    client = MagicMock(spec=AdbClient)
+    client.call = MagicMock(return_value="ok")
+
+    assert AdbClient.start_server(client) == "ok"
+    assert AdbClient.kill_server(client) == "ok"
+    assert AdbClient.connect_device(client, "10.0.0.5:5555") == "ok"
+    assert AdbClient.disconnect_device(client, "10.0.0.5:5555") == "ok"
+    assert AdbClient.list_devices(client) == "ok"
+
+    assert [c.args for c in client.call.call_args_list] == [
+        ("start_server",),
+        ("kill_server",),
+        ("connect_device", "10.0.0.5:5555"),
+        ("disconnect_device", "10.0.0.5:5555"),
+        ("list_devices",),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("output", "expected"),
+    [
+        ("List of devices attached\nA\tdevice\nB\toffline\n", ["A"]),
+        ("List of devices attached\nA\tunauthorized\n", []),
+        ("List of devices attached\n", []),
+        ("* daemon started *\nList of devices attached\nA\tdevice usb:1-1\n", ["A"]),
+        ("", []),
+    ],
+)
+def test_only_forwardable_devices_are_listed(output, expected):
+    """`offline`/`unauthorized` cannot be forwarded, and adb's noise lines are not devices."""
+    client = MagicMock(spec=AdbClient)
+    client.list_devices = lambda: output
+    assert AdbClient.devices(client) == expected
+
+
+def test_forward_adb_yields_the_local_listener():
+    client = MagicMock(spec=AdbClient)
+    forwarded = MagicMock()
+    forwarded.__enter__ = MagicMock(return_value=("127.0.0.1", 54321))
+    forwarded.__exit__ = MagicMock(return_value=False)
+    with patch("jumpstarter_driver_adb.client.TcpPortforwardAdapter", return_value=forwarded):
+        with AdbClient.forward_adb(client, port=0) as addr:
+            assert addr == ("127.0.0.1", 54321)
