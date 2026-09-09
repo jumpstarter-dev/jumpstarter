@@ -686,3 +686,179 @@ func TestEnrichExporterExportBackends(t *testing.T) {
 		t.Fatalf("exec backend must force the provisioner's launcher socket: %v %v", config["launcher_socket"], err)
 	}
 }
+
+func TestRenderPod_webrtcDisabledByDefault(t *testing.T) {
+	pod := renderTestPod(t, map[string]any{"fetch_images": true})
+	for _, container := range pod.Spec.InitContainers {
+		if container.Name == turnContainerName {
+			t.Fatal("TURN relay must be opt-in")
+		}
+		if container.Name == runtimeContainerName && strings.Contains(container.Command[2], webrtcNginxPath) {
+			t.Fatal("display vhost must be opt-in")
+		}
+	}
+	result, err := New("dev").EnrichExporterExport(
+		[]virtualtargetv1alpha1.DriverConfig{{Name: "cuttlefish", Type: cuttlefishDriverType}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := configFor(t, result[0])
+	if _, exists := config["turn_port"]; exists {
+		t.Fatal("driver must not advertise a display that does not exist")
+	}
+}
+
+func TestRenderPod_webrtcTurn(t *testing.T) {
+	pod := renderTestPod(t, map[string]any{"fetch_images": true, "webrtc_turn": true})
+	indexes := map[string]int{}
+	for i, container := range pod.Spec.InitContainers {
+		indexes[container.Name] = i
+	}
+	if indexes[runtimeContainerName] >= indexes[turnContainerName] || indexes[turnContainerName] >= indexes[gateContainerName] {
+		t.Fatalf("native sidecars must start before the readiness gate: %#v", indexes)
+	}
+	turn := initContainer(t, pod, turnContainerName)
+	if turn.Image != DefaultTurnImage || turn.RestartPolicy == nil {
+		t.Fatalf("TURN relay must run as a pinned sidecar: %#v", turn)
+	}
+	command := strings.Join(turn.Command, " ")
+	// Reachable only from inside the Pod, so the lease stays the sole way in.
+	for _, required := range []string{
+		"--listening-ip=127.0.0.1",
+		"--relay-ip=127.0.0.1",
+		fmt.Sprintf("--listening-port=%d", turnPortDefault),
+		fmt.Sprintf("--user=%s:%s", turnUser, turnSecretDefault),
+		"--lt-cred-mech",
+		"--allow-loopback-peers",
+		"--denied-peer-ip=0.0.0.0-255.255.255.255",
+		"--denied-peer-ip=::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+		"--allowed-peer-ip=127.0.0.1",
+	} {
+		if !strings.Contains(command, required) {
+			t.Fatalf("TURN relay missing %q: %q", required, command)
+		}
+	}
+	// The streamer gathers 15550-15599; a relay allocation landing there would
+	// collide with the very media it relays.
+	if turnRelayMin <= 15599 && turnRelayMax >= 15550 {
+		t.Fatalf("relay range %d-%d overlaps the streamer's UDP candidates", turnRelayMin, turnRelayMax)
+	}
+
+	script := initContainer(t, pod, runtimeContainerName).Command[2]
+	if !strings.Contains(script, "cat > "+webrtcNginxPath) {
+		t.Fatalf("display vhost must be written into the runtime container: %q", script)
+	}
+	if strings.Index(script, webrtcNginxPath) > strings.Index(script, "run_services.sh") {
+		t.Fatal("vhost must exist before nginx starts")
+	}
+	if !strings.Contains(script, fmt.Sprintf("turn:127.0.0.1:%d?transport=tcp", turnPortDefault)) {
+		t.Fatalf("/infra_config must advertise the Pod-local relay: %q", script)
+	}
+	if strings.Contains(script, "stun:") {
+		t.Fatal("public STUN must not survive the override")
+	}
+	if !strings.Contains(script, fmt.Sprintf("proxy_pass http://127.0.0.1:%d;", hostOrchestratorPort)) {
+		t.Fatalf("vhost must proxy Host Orchestrator: %q", script)
+	}
+	// Loopback only, like the relay, so the lease stays the sole way in.
+	if !strings.Contains(script, fmt.Sprintf("listen 127.0.0.1:%d;", webUIPortDefault)) || strings.Contains(script, "[::]") {
+		t.Fatalf("display vhost must bind loopback only: %q", script)
+	}
+	// The stock vhost answers the signalling WebSocket with 400 and the client
+	// falls back to polling; ours upgrades it.
+	if !strings.Contains(script, "(adb|connect)$") || !strings.Contains(script, `proxy_set_header Connection "Upgrade"`) {
+		t.Fatalf("signalling WebSocket must be upgraded: %q", script)
+	}
+}
+
+func TestEnrichExporterExport_webrtcPorts(t *testing.T) {
+	parameters := map[string]any{"webrtc_turn": true}
+	result, err := New("dev").EnrichExporterExport(
+		[]virtualtargetv1alpha1.DriverConfig{{Name: "cuttlefish", Type: cuttlefishDriverType}}, parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := configFor(t, result[0])
+	if config["turn_port"] != float64(turnPortDefault) || config["webui_port"] != float64(webUIPortDefault) {
+		t.Fatalf("driver must learn the display ports: %#v", config)
+	}
+	ports, ok := config["health_ports"].([]any)
+	if !ok || !slices.Contains(ports, any(float64(turnPortDefault))) || !slices.Contains(ports, any(float64(webUIPortDefault))) {
+		t.Fatalf("a dead relay or vhost must fail the health probe: %#v", config["health_ports"])
+	}
+
+	preset := virtualtargetv1alpha1.DriverConfig{
+		Name: "cuttlefish", Type: cuttlefishDriverType,
+		Config: mustJSON(map[string]any{"turn_port": 1234}),
+	}
+	if _, err := New("dev").EnrichExporterExport([]virtualtargetv1alpha1.DriverConfig{preset}, parameters); err == nil {
+		t.Fatal("template-provided display ports must be rejected")
+	}
+}
+
+func TestWebRTCValidation(t *testing.T) {
+	for _, key := range []string{"turn_port", "webui_port"} {
+		for _, port := range []int{15550, 15560, 15561, 15599} {
+			if _, err := resolveWebRTCConfig(map[string]any{"webrtc_turn": true, key: port}); err == nil {
+				t.Errorf("%s=%d overlaps streamer candidates", key, port)
+			}
+		}
+		for _, port := range []int{15549, 15600} {
+			if _, err := resolveWebRTCConfig(map[string]any{"webrtc_turn": true, key: port}); err != nil {
+				t.Errorf("%s=%d outside streamer range: %v", key, port, err)
+			}
+		}
+	}
+	for name, parameters := range map[string]map[string]any{
+		"host orchestrator": {"webrtc_turn": true, "webui_port": hostOrchestratorPort},
+		"image vhost":       {"webrtc_turn": true, "webui_port": 2080},
+		"netsim":            {"webrtc_turn": true, "turn_port": netsimPort},
+		"hci":               {"webrtc_turn": true, "turn_port": hciPort},
+		"identical ports":   {"webrtc_turn": true, "turn_port": webUIPortDefault},
+		"operator port":     {"webrtc_turn": true, "webui_port": 1080},
+		"relay range":       {"webrtc_turn": true, "turn_port": turnRelayMin},
+		"quoted secret":     {"webrtc_turn": true, "turn_secret": "it's"},
+		"nginx variable":    {"webrtc_turn": true, "turn_secret": "pa$s"},
+		"out of range":      {"webrtc_turn": true, "turn_port": 70000},
+	} {
+		if _, err := resolveWebRTCConfig(parameters); err == nil {
+			t.Fatalf("%s must be rejected", name)
+		}
+	}
+	if config, err := resolveWebRTCConfig(nil); err != nil || config.enabled {
+		t.Fatalf("display must default off: %+v %v", config, err)
+	}
+}
+
+func TestRenderPod_execWebRTC(t *testing.T) {
+	parameters := map[string]any{"backend": "exec", "webrtc_turn": true, "fetch_images": true}
+	pod := renderTestPod(t, parameters)
+	script := initContainer(t, pod, runtimeContainerName).Command[2]
+	for _, required := range []string{
+		"proxy_pass http://127.0.0.1:1080;",
+		"listen 127.0.0.1:2090;",
+		"http { include " + webrtcNginxPath + "; }",
+		"nginx -c /tmp/jumpstarter-nginx.conf",
+		"service cuttlefish-operator start",
+		"exec /shared/jumpstarter-exec serve",
+	} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("exec display missing %q: %s", required, script)
+		}
+	}
+	for _, forbidden := range []string{"run_services.sh", "service nginx start", "host_orchestrator", "sites-enabled/*"} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("exec display must not start public control listeners: %s", script)
+		}
+	}
+	initContainer(t, pod, turnContainerName)
+	result, err := New("dev").EnrichExporterExport(
+		[]virtualtargetv1alpha1.DriverConfig{{Name: "cuttlefish", Type: cuttlefishDriverType}}, parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := configFor(t, result[0])
+	if config["launcher_socket"] != launcherSocketPath || config["turn_port"] != float64(turnPortDefault) || config["webui_port"] != float64(webUIPortDefault) {
+		t.Fatalf("exec display configuration: %#v", config)
+	}
+}
