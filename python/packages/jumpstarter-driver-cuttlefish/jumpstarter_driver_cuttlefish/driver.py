@@ -11,9 +11,10 @@ from typing import ClassVar
 
 import requests
 from jumpstarter_driver_adb.driver import AdbServer
+from jumpstarter_driver_network.driver import TcpNetwork
 from jumpstarter_driver_power.driver import PowerReading, VirtualPowerInterface
 
-from .cvdcli import cvd_argv, exec_binary, fleet_to_cvds, group_to_cvds, stderr_tail
+from .cvdcli import cvd_argv, exec_binary, fleet_to_cvds, stderr_tail
 from jumpstarter.driver import Driver, export
 from jumpstarter.driver.flasher import FlasherInterface
 
@@ -189,7 +190,7 @@ class CvdCliBackend:
     def fleet(self) -> list[dict]:
         try:
             return fleet_to_cvds(self._cvd(["fleet"], self.fleet_timeout))
-        except ValueError as e:
+        except (ValueError, TypeError) as e:
             raise CuttlefishError(str(e)) from e
 
     def status(self) -> None:
@@ -223,19 +224,15 @@ class CvdCliBackend:
         config_path = self.work_dir / "env_config.json"
         config_path.write_text(json.dumps(env_config, indent=1))
         config_path.chmod(0o644)  # written by the exporter uid, read by the cvd user
-        output = self._cvd(["load", str(config_path)], timeout)
-        try:
-            cvds = group_to_cvds(json.loads(output))
-        except ValueError as e:
-            raise CuttlefishError(f"cvd load returned an unexpected document: {output[:200]!r}") from e
-        return {"done": True, "cvds": cvds}
+        self._cvd(["load", str(config_path)], timeout)
+        return {"done": True, "cvds": self.fleet()}
 
 
 @dataclass(kw_only=True)
 class Cuttlefish(Driver):
     """Cuttlefish Host Orchestrator driver for managing Android virtual devices.
 
-    Composite driver with children: power, storage, adb.
+    Composite driver with children: power, storage, adb, and optional webui/turn.
     """
 
     driver_type = "composite"
@@ -250,6 +247,12 @@ class Cuttlefish(Driver):
     boot_timeout: int = 300
     env_config: dict = field(default_factory=dict)
     webrtc_url: str = ""
+    # WebRTC display over the lease. ``webui_port`` is the in-Pod nginx port
+    # serving the client page with a TURN-aware /infra_config, ``turn_port`` the
+    # coturn listener relaying media. Both are Pod-local and only reachable
+    # through the lease; the ExporterSet provisioner injects them.
+    webui_port: int = 0
+    turn_port: int = 0
     managed: bool = False
     # Exec backend: jumpstarter-exec launcher socket shared with the runtime
     # container. When set, every lifecycle action runs ``cvd`` there instead of
@@ -267,6 +270,8 @@ class Cuttlefish(Driver):
     _cvd_name: str | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
+        if self.launcher_socket and not self.managed:
+            raise CuttlefishError("launcher_socket requires managed Cuttlefish")
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
         self._backend = CvdCliBackend(self) if self.launcher_socket else HostOrchestratorBackend(self)
@@ -281,6 +286,12 @@ class Cuttlefish(Driver):
         self.children["power"] = CvdPower(parent=self)
         self.children["storage"] = CvdFlasher(parent=self)
         self.children["adb"] = AdbServer(host="127.0.0.1", port=self.adb_server_port)
+        # Forwarding these two is what lets a client see the display without any
+        # ingress to the Pod: the UI and the TURN relay both ride the lease.
+        if self.webui_port:
+            self.children["webui"] = TcpNetwork(host="127.0.0.1", port=self.webui_port)
+        if self.turn_port:
+            self.children["turn"] = TcpNetwork(host="127.0.0.1", port=self.turn_port)
 
     def _validate_managed_config(self):
         instances = self.env_config.get("instances", [])
@@ -481,6 +492,38 @@ class Cuttlefish(Driver):
             return self.webrtc_url
         return f"{self.scheme}://{self.host}:1080"
 
+    def _webrtc_device_id(self) -> str:
+        """Device id the operator registered the CVD under.
+
+        Read from inventory: Host Orchestrator derives it from the
+        group it actually assigned, which is not always the configured one.
+        """
+        group, name = self._cvd_group or self.group, self._cvd_name or self.name
+        inventory = self._backend.get_cvd(group, name)
+        cvds = inventory.get("cvds") if isinstance(inventory, dict) else None
+        if isinstance(cvds, list):
+            for cvd in cvds:
+                device_id = cvd.get("webrtc_device_id") if isinstance(cvd, dict) else None
+                if isinstance(device_id, str) and device_id:
+                    return device_id
+        raise CuttlefishError(f"no WebRTC device ID in inventory for {group}/{name}; power on the CVD first")
+
+    @export
+    def get_webrtc_config(self) -> str:
+        """Ports a client forwards to reach the display, plus the device id.
+
+        ``turn_port`` is both the Pod-side listener and the local port the client
+        must bind: the ICE server URL baked into /infra_config names that exact
+        port, and the browser has no way to learn a different one.
+        """
+        return json.dumps(
+            {
+                "webui_port": self.webui_port,
+                "turn_port": self.turn_port,
+                "device_id": self._webrtc_device_id(),
+            }
+        )
+
     @export
     def list_cvds(self) -> str:
         return self._fmt(self._backend.list_cvds())
@@ -516,7 +559,7 @@ class Cuttlefish(Driver):
             config = json.loads(config_json)
         except json.JSONDecodeError as e:
             raise CuttlefishError(f"invalid JSON: {e}") from e
-        return self._fmt(self._do_operation("create", config, timeout=600))
+        return self._fmt(self._do_operation("create", config, timeout=max(600, self.boot_timeout)))
 
     @export
     def start_cvd(self) -> str:
@@ -644,7 +687,10 @@ class CvdPower(VirtualPowerInterface, Driver):
     def _create(self) -> None:
         self.logger.info("Creating CVD from env_config")
         try:
-            result = self.parent._do_operation("create", {"env_config": self.parent.env_config}, timeout=600)
+            # cvd load waits for Android boot as well as creating the instance.
+            result = self.parent._do_operation(
+                "create", {"env_config": self.parent.env_config}, timeout=max(600, self.parent.boot_timeout),
+            )
         except CuttlefishError as e:
             msg = str(e)
             if "in use" in msg or "already running" in msg or "ValidateTapDevices" in msg:

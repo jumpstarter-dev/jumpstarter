@@ -1,5 +1,6 @@
 import asyncio
 import subprocess
+from concurrent.futures import CancelledError
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
@@ -234,14 +235,15 @@ def test_an_interrupt_ends_the_wait_without_propagating(exc):
     _wait_for_interrupt(client)  # must return, so teardown can run
 
 
-def test_anyio_cancellation_ends_the_wait():
+@pytest.mark.parametrize("cancelled", [asyncio.CancelledError, CancelledError])
+def test_anyio_cancellation_ends_the_wait(cancelled):
     """Cancellation is a BaseException, not an Exception, so it needs its own arm.
 
     Deliberately synchronous and with no event loop: these waits run in a worker
     thread, and `get_cancelled_exc_class()` in the except arm used to raise
     NoEventLoopError there, masking the cancellation it was meant to detect.
     """
-    client = MagicMock(portal=_Portal(asyncio.CancelledError()))
+    client = MagicMock(portal=_Portal(cancelled()))
     _wait_for_interrupt(client)
 
 

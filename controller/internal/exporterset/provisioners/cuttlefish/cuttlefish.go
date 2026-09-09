@@ -76,13 +76,13 @@ const (
 
 	runtimeContainerName = "cuttlefish"
 	gateContainerName    = "wait-for-cuttlefish"
+	turnContainerName    = "cuttlefish-turn"
 
 	// Runtime backends. "http" drives Host Orchestrator inside the Pod. "exec"
 	// runs cvd in the runtime container through jumpstarter-exec, the
 	// launcher-socket pattern the QEMU provisioner uses and the in-Pod
 	// equivalent of Podcvd's `podman exec ... cvd`. Exec mode does not start
-	// Host Orchestrator or nginx at all; only host resources and the WebRTC
-	// operator run next to the launcher.
+	// Host Orchestrator; an optional loopback-only nginx proxy serves WebRTC.
 	backendHTTP = "http"
 	backendExec = "exec"
 
@@ -99,6 +99,20 @@ const (
 	// cvd keeps its instance database per uid. httpcvd owns the state
 	// directories, so guest processes stay non-root inside the privileged container.
 	defaultCvdUser = "httpcvd"
+
+	// WebRTC display over the lease. The TURN listener is loopback-only, but
+	// its UDP relay binds the Pod IP so the streamer's Pod-IP ICE candidates
+	// can exchange packets with it. The relay range stays clear of the
+	// streamer's own 15550-15599 UDP candidates.
+	DefaultTurnImage = "docker.io/coturn/coturn:4.7.0"
+	turnPortDefault  = 3478
+	webUIPortDefault = 2090
+	turnRealm        = "cuttlefish.jumpstarter.dev"
+	turnUser         = "cvd"
+	turnCredential   = "cuttlefish"
+	turnRelayMin     = 49160
+	turnRelayMax     = 49200
+	webrtcNginxPath  = "/etc/nginx/sites-enabled/jumpstarter-webrtc.conf"
 )
 
 var userNamePattern = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
@@ -122,6 +136,18 @@ type storageConfig struct {
 // guestSpec is the effective guest size after template values override parameters.
 type guestSpec struct {
 	cpus, memoryMB int
+}
+
+func resolveGuestSpec(parameters map[string]any) (guestSpec, error) {
+	var guest guestSpec
+	var err error
+	if guest.cpus, err = positiveInt(parameters, "vm_cpus", defaultVMCPUs); err != nil {
+		return guest, err
+	}
+	if guest.memoryMB, err = positiveInt(parameters, "vm_memory_mb", defaultVMMemoryMB); err != nil {
+		return guest, err
+	}
+	return guest, nil
 }
 
 type runtimeConfig struct {
@@ -163,8 +189,201 @@ func resolveBackend(parameters map[string]any) (runtimeConfig, error) {
 }
 
 type images struct {
-	exporter, runtime         string
-	exporterPull, runtimePull corev1.PullPolicy
+	exporter, runtime, turn             string
+	exporterPull, runtimePull, turnPull corev1.PullPolicy
+}
+
+// webrtcConfig describes the in-Pod TURN relay and the nginx vhost that
+// advertises it to the browser.
+type webrtcConfig struct {
+	enabled          bool
+	turnPort, uiPort int
+}
+
+// resolveWebRTCConfig reads the opt-in WebRTC display parameters. Disabled by
+// default: it adds a container, and exporters driven only over adb do not need it.
+func resolveWebRTCConfig(parameters map[string]any) (webrtcConfig, error) {
+	config := webrtcConfig{}
+	rawEnabled, exists := parameters["webrtc_turn"]
+	if !exists {
+		return config, nil
+	}
+	enabled, ok := rawEnabled.(bool)
+	if !ok {
+		return config, fmt.Errorf("webrtc_turn must be a boolean")
+	}
+	if !enabled {
+		return config, nil
+	}
+	config.enabled = true
+	var err error
+	if config.turnPort, err = positiveInt(parameters, "turn_port", turnPortDefault); err != nil {
+		return config, err
+	}
+	if config.uiPort, err = positiveInt(parameters, "webui_port", webUIPortDefault); err != nil {
+		return config, err
+	}
+	for key, port := range map[string]int{"turn_port": config.turnPort, "webui_port": config.uiPort} {
+		if port > 65535 || runtimePortReserved(port) {
+			return config, fmt.Errorf("%s must be an integer port in 1..65535 that does not conflict with a runtime service", key)
+		}
+	}
+	if config.turnPort < 1024 {
+		return config, fmt.Errorf("turn_port must be at least 1024 for the non-root TURN relay")
+	}
+	if config.turnPort == config.uiPort {
+		return config, fmt.Errorf("turn_port and webui_port must differ")
+	}
+	return config, nil
+}
+
+// applyWebRTCConfig validates the provisioner-owned display settings, pins the
+// effective ports into the driver config, and returns the listeners that must
+// participate in the runtime health check.
+func applyWebRTCConfig(config map[string]any, parameters map[string]any) ([]int, error) {
+	webrtc, err := resolveWebRTCConfig(parameters)
+	if err != nil {
+		return nil, err
+	}
+	for _, key := range []string{"webui_port", "turn_port"} {
+		if _, exists := config[key]; exists {
+			return nil, fmt.Errorf("%s is managed by the provisioner; set parameters.webrtc_turn=true", key)
+		}
+	}
+	ports := append([]int(nil), healthPorts...)
+	if webrtc.enabled {
+		config["webui_port"] = webrtc.uiPort
+		config["turn_port"] = webrtc.turnPort
+		// A dead relay or vhost means no display, which the probe should catch
+		// rather than leaving a lease holder staring at a blank page.
+		ports = append(ports, webrtc.uiPort, webrtc.turnPort)
+	}
+	return ports, nil
+}
+
+// runtimePortReserved reports whether a port is taken by a service in the
+// orchestration image or by the TURN relay range, so no configurable listener
+// can be placed on top of one.
+func runtimePortReserved(port int) bool {
+	switch port {
+	case 80, 443, 1080, 1443, 2080, hostOrchestratorPort, 2443, hciPort, 7301, 7302, 7303, netsimPort, 15037, 19531:
+		return true
+	}
+	return (port >= 6520 && port <= 6620) || (port >= 15550 && port <= 15599) || (port >= turnRelayMin && port <= turnRelayMax)
+}
+
+// webrtcNginxCommand writes the display vhost before nginx starts. It proxies
+// Host Orchestrator in HTTP mode or the operator in exec mode, and overrides
+// /infra_config so the browser is handed the Pod-local TURN relay instead of the
+// public STUN server compiled into the operator binary, and upgrades the
+// signalling WebSocket that the stock vhost answers with 400 (the client then
+// degrades to HTTP polling).
+func webrtcNginxCommand(webrtc webrtcConfig, upstreamPort int) string {
+	// json.Marshal cannot fail on this literal; the fixed credential contains
+	// no characters nginx would interpret inside its quoted return value.
+	iceServers, _ := json.Marshal(map[string]any{
+		"message_type": "config",
+		"ice_servers": []map[string]any{{
+			"urls":       []string{fmt.Sprintf("turn:127.0.0.1:%d?transport=tcp", webrtc.turnPort)},
+			"username":   turnUser,
+			"credential": turnCredential,
+		}},
+	})
+	// Like the TURN TCP listener, loopback only: the lease is the sole way in, and binding
+	// no [::] keeps nginx starting on Pods without IPv6.
+	return fmt.Sprintf(`cat > %s <<'NGINX'
+server {
+    listen 127.0.0.1:%d;
+
+    # The local forward is a browser endpoint for an unauthenticated control
+    # API. Reject DNS rebinding and requests initiated by another page.
+    if ($host !~ ^(127\.0\.0\.1|localhost)$) { return 403; }
+    if ($http_sec_fetch_site ~* ^(cross-site|same-site)$) { return 403; }
+    set $origin_ok 0;
+    if ($http_origin = "") { set $origin_ok 1; }
+    if ($http_origin = "http://$http_host") { set $origin_ok 1; }
+    if ($origin_ok = 0) { return 403; }
+
+    location = /infra_config {
+        default_type application/json;
+        return 200 '%s';
+    }
+
+    location / {
+        location ~* ^/.*/(adb|connect)$ {
+            proxy_pass http://127.0.0.1:%d;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "Upgrade";
+            proxy_set_header Host $host;
+        }
+
+        proxy_pass http://127.0.0.1:%d;
+        client_max_body_size 20G;
+    }
+}
+NGINX
+`, webrtcNginxPath, webrtc.uiPort, iceServers, upstreamPort, upstreamPort)
+}
+
+// turnContainer relays WebRTC media between the browser, which reaches it over
+// the lease, and the streamer, which reaches its relay address at the Pod IP.
+func turnContainer(webrtc webrtcConfig, img images) corev1.Container {
+	restartAlways := corev1.ContainerRestartPolicyAlways
+	return corev1.Container{
+		SecurityContext: &corev1.SecurityContext{
+			RunAsUser: new(exporterNonRootUID), RunAsNonRoot: new(true),
+			AllowPrivilegeEscalation: new(false),
+			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+		},
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("16Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("500m"),
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+		},
+		Name:            turnContainerName,
+		Image:           img.turn,
+		ImagePullPolicy: img.turnPull,
+		RestartPolicy:   &restartAlways,
+		Env: []corev1.EnvVar{{Name: "POD_IP", ValueFrom: &corev1.EnvVarSource{
+			FieldRef: &corev1.ObjectFieldSelector{FieldPath: "status.podIP"},
+		}}},
+		Command: []string{
+			// The upstream image marks turnserver with CAP_NET_BIND_SERVICE.
+			// Executing that file with an empty capability bounding set fails
+			// with EPERM. A plain copy drops its xattrs; our ports need no caps.
+			"sh", "-ec", `cp "$(command -v turnserver)" /tmp/jumpstarter-turnserver; exec /tmp/jumpstarter-turnserver "$@"`,
+			"turnserver",
+			"-n",
+			"--log-file=stdout",
+			"--pidfile=/tmp/turnserver.pid",
+			"--listening-ip=127.0.0.1",
+			fmt.Sprintf("--listening-port=%d", webrtc.turnPort),
+			"--relay-ip=$(POD_IP)",
+			fmt.Sprintf("--min-port=%d", turnRelayMin),
+			fmt.Sprintf("--max-port=%d", turnRelayMax),
+			"--realm=" + turnRealm,
+			fmt.Sprintf("--user=%s:%s", turnUser, turnCredential),
+			"--lt-cred-mech",
+			"--no-tls",
+			"--no-dtls",
+			"--no-cli",
+			"--cli-password=" + turnCredential,
+			// Limit TURN peers to the streamer's Pod-IP and loopback candidates.
+			// The browser still reaches only the loopback listener over the lease.
+			"--allow-loopback-peers",
+			"--no-multicast-peers",
+			"--denied-peer-ip=0.0.0.0-255.255.255.255",
+			"--denied-peer-ip=::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+			"--allowed-peer-ip=127.0.0.1",
+			"--allowed-peer-ip=$(POD_IP)",
+		},
+	}
 }
 
 func New(version string) *Provisioner {
@@ -201,13 +420,14 @@ func (p *Provisioner) resolveImageSpec(spec *virtualtargetv1alpha1.ImageSpec, de
 }
 
 func (p *Provisioner) resolveImages(overrides *virtualtargetv1alpha1.ImageOverrides) images {
-	var exporterSpec, runtimeSpec *virtualtargetv1alpha1.ImageSpec
+	var exporterSpec, runtimeSpec, turnSpec *virtualtargetv1alpha1.ImageSpec
 	if overrides != nil {
-		exporterSpec, runtimeSpec = overrides.Exporter, overrides.Runtime
+		exporterSpec, runtimeSpec, turnSpec = overrides.Exporter, overrides.Runtime, overrides.Turn
 	}
 	img := images{}
 	img.exporter, img.exporterPull = p.resolveImageSpec(exporterSpec, DefaultExporterImage)
 	img.runtime, img.runtimePull = p.resolveImageSpec(runtimeSpec, DefaultRuntimeImage)
+	img.turn, img.turnPull = p.resolveImageSpec(turnSpec, DefaultTurnImage)
 	return img
 }
 
@@ -297,6 +517,10 @@ func (p *Provisioner) RenderPod(
 	if rt.exec() {
 		storage.budget.Add(resource.MustParse(sharedVolumeSizeLimit))
 	}
+	webrtc, err := resolveWebRTCConfig(mergedParameters)
+	if err != nil {
+		return nil, err
+	}
 	// The reconciler persists the enriched drivers itself; rendering needs the
 	// validation and the effective guest size for the runtime budget.
 	_, guest, err := enrichDrivers(exporterSet.Spec.Template.Spec.Drivers, mergedParameters)
@@ -319,7 +543,7 @@ func (p *Provisioner) RenderPod(
 			RestartPolicy:                corev1.RestartPolicyNever,
 			ServiceAccountName:           serviceAccount,
 			AutomountServiceAccountToken: new(false),
-			InitContainers:               initContainers(img, storage, resources, rt, exporter),
+			InitContainers:               initContainers(img, storage, resources, rt, webrtc, exporter),
 			Containers:                   []corev1.Container{exporterContainer(img, rt)},
 			Volumes:                      volumes(storage, rt),
 		},
@@ -429,16 +653,52 @@ func sharedMount() corev1.VolumeMount {
 	return corev1.VolumeMount{Name: sharedVolumeName, MountPath: sharedMountPath}
 }
 
+// launcherLogsCommand follows files created after the runtime starts. Removing
+// a CVD stops its tail process; name-following also handles log rotation.
+func launcherLogsCommand(statePath string) string {
+	// ${$} is Bash's PID too, but avoids kubelet's $$ escape processing.
+	return `stream_launcher_logs() {
+    local state_dir="$1" interval="${2:-1}" path index found
+    local -a paths=() pids=()
+    trap 'for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || :; done; wait' EXIT
+    trap 'exit 0' TERM INT
+    while true; do
+        for index in "${!paths[@]}"; do
+            if [[ ! -f "${paths[index]}" ]] || ! kill -0 "${pids[index]}" 2>/dev/null; then
+                kill "${pids[index]}" 2>/dev/null || :
+                wait "${pids[index]}" 2>/dev/null || :
+                unset 'paths[index]' 'pids[index]'
+            fi
+        done
+        while IFS= read -r -d '' path; do
+            found=false
+            for index in "${!paths[@]}"; do
+                if [[ "${paths[index]}" == "$path" ]]; then found=true; break; fi
+            done
+            if [[ "$found" == false ]]; then
+                tail -n +1 -F --sleep-interval="$interval" --max-unchanged-stats=1 --pid="${$}" "$path" &
+                paths+=("$path")
+                pids+=("$!")
+            fi
+        done < <(find "$state_dir" -type f -name launcher.log -print0)
+        sleep "$interval"
+    done
+}
+stream_launcher_logs ` + fmt.Sprintf("%q", statePath) + ` &
+`
+}
+
 // runtimeCommand is PID 1 of the runtime container. Both variants write the
 // per-start marker the exporter and probe use to detect a sidecar restart.
 func runtimeCommand(rt runtimeConfig) string {
 	marker := "cat /proc/sys/kernel/random/uuid > " + cvdStatePath + "/runtime-id\n" +
-		"chmod 644 " + cvdStatePath + "/runtime-id\n"
+		"chmod 644 " + cvdStatePath + "/runtime-id\n" + launcherLogsCommand(cvdStatePath)
 	if !rt.exec() {
 		return marker + "exec /root/run_services.sh"
 	}
-	// Host Orchestrator and nginx are not started: cvd is driven over the
-	// launcher, which leaves no unauthenticated control listener in the Pod.
+	// Host Orchestrator and stock nginx are not started: cvd is driven over
+	// the launcher. When WebRTC is enabled, initContainers starts a private
+	// loopback nginx instance proxying the operator on 1080.
 	// The operator stays for WebRTC. Start system services as root, then run
 	// the launcher as the same non-root user that owns the CVD state. The
 	// launcher accepts arbitrary commands from the exporter over its socket.
@@ -449,9 +709,9 @@ func runtimeCommand(rt runtimeConfig) string {
 		"exec runuser -u " + rt.cvdUser + " -- " + sharedMountPath + "/jumpstarter-exec serve --socket " + launcherSocketPath
 }
 
-// initContainers stages images, fixes ownership, starts the runtime as a
-// native sidecar and gates the exporter on runtime readiness.
-func initContainers(img images, storage storageConfig, runtime corev1.ResourceRequirements, rt runtimeConfig, exporter *jumpstarterdevv1alpha1.Exporter) []corev1.Container {
+// initContainers stages images, fixes ownership, starts the runtime as a native
+// sidecar (plus the TURN relay when enabled), and gates the exporter on runtime readiness.
+func initContainers(img images, storage storageConfig, runtime corev1.ResourceRequirements, rt runtimeConfig, webrtc webrtcConfig, exporter *jumpstarterdevv1alpha1.Exporter) []corev1.Container {
 	stateMounts := []corev1.VolumeMount{
 		{Name: "cvd-images", MountPath: fetchPath},
 		{Name: "cvd-state", MountPath: cvdStatePath},
@@ -506,6 +766,18 @@ func initContainers(img images, storage storageConfig, runtime corev1.ResourceRe
 			}}
 		}
 	}
+	runtimeScript := runtimeCommand(rt)
+	if webrtc.enabled {
+		upstreamPort := hostOrchestratorPort
+		startProxy := ""
+		if rt.exec() {
+			upstreamPort = 1080
+			// Do not load the image's public listeners or Host Orchestrator proxy.
+			startProxy = "printf 'events {}\\nhttp { include " + webrtcNginxPath + "; }\\n' > /tmp/jumpstarter-nginx.conf\n" +
+				"nginx -c /tmp/jumpstarter-nginx.conf\n"
+		}
+		runtimeScript = webrtcNginxCommand(webrtc, upstreamPort) + startProxy + runtimeScript
+	}
 	permissionsCommand := "mkdir -p " + cvdStatePath + " " + androidTmpPath +
 		" && chown -R " + rt.cvdUser + ":" + rt.cvdUser + " " + cvdStatePath + " " + androidTmpPath + " " + fetchPath
 	permissionsMounts := stateMounts
@@ -516,7 +788,7 @@ func initContainers(img images, storage storageConfig, runtime corev1.ResourceRe
 			" && chmod 1777 " + sharedMountPath
 		permissionsMounts = append(append([]corev1.VolumeMount(nil), stateMounts...), sharedMount())
 	}
-	return append(containers,
+	containers = append(containers,
 		corev1.Container{
 			Name: "fix-cuttlefish-permissions", Image: img.runtime, ImagePullPolicy: img.runtimePull,
 			Command: []string{"bash", "-c", permissionsCommand},
@@ -527,20 +799,24 @@ func initContainers(img images, storage storageConfig, runtime corev1.ResourceRe
 		corev1.Container{
 			Name: runtimeContainerName, Image: img.runtime, ImagePullPolicy: img.runtimePull,
 			RestartPolicy:   &restartAlways,
-			Command:         []string{"bash", "-ec", runtimeCommand(rt)},
+			Command:         []string{"bash", "-ec", runtimeScript},
 			Env:             runtimeEnv,
 			Resources:       runtime,
 			SecurityContext: &corev1.SecurityContext{Privileged: new(true), RunAsUser: &root},
 			VolumeMounts:    runtimeMounts,
 		},
-		corev1.Container{
-			// Runs in the exporter image so the check shares the network namespace and Python runtime with jmp.
-			Name: gateContainerName, Image: img.exporter, ImagePullPolicy: img.exporterPull,
-			Command:         []string{"python3", "-m", "jumpstarter_driver_cuttlefish.health", "--wait", rt.endpoint()},
-			SecurityContext: exporterSecurityContext(),
-			VolumeMounts:    gateMounts,
-		},
 	)
+	if webrtc.enabled {
+		containers = append(containers, turnContainer(webrtc, img))
+	}
+	containers = append(containers, corev1.Container{
+		// Runs in the exporter image so the check shares the network namespace and Python runtime with jmp.
+		Name: gateContainerName, Image: img.exporter, ImagePullPolicy: img.exporterPull,
+		Command:         []string{"python3", "-m", "jumpstarter_driver_cuttlefish.health", "--wait", rt.endpoint()},
+		SecurityContext: exporterSecurityContext(),
+		VolumeMounts:    gateMounts,
+	})
+	return containers
 }
 
 func volumes(storage storageConfig, rt runtimeConfig) []corev1.Volume {
@@ -610,12 +886,8 @@ func enrichDrivers(drivers []virtualtargetv1alpha1.DriverConfig, parameters map[
 }
 
 func enrichCuttlefishDriver(driver virtualtargetv1alpha1.DriverConfig, parameters map[string]any) (virtualtargetv1alpha1.DriverConfig, guestSpec, error) {
-	var guest guestSpec
-	var err error
-	if guest.cpus, err = positiveInt(parameters, "vm_cpus", defaultVMCPUs); err != nil {
-		return driver, guest, err
-	}
-	if guest.memoryMB, err = positiveInt(parameters, "vm_memory_mb", defaultVMMemoryMB); err != nil {
+	guest, err := resolveGuestSpec(parameters)
+	if err != nil {
 		return driver, guest, err
 	}
 	config, err := decodeConfig(driver, "Cuttlefish")
@@ -634,10 +906,15 @@ func enrichCuttlefishDriver(driver virtualtargetv1alpha1.DriverConfig, parameter
 		config["cvd_user"] = rt.cvdUser
 	}
 
+	ports, err := applyWebRTCConfig(config, parameters)
+	if err != nil {
+		return driver, guest, err
+	}
+
 	config["managed"] = true
 	config["health_state_path"] = healthStatePath
 	config["runtime_id_path"] = runtimeIDPath
-	config["health_ports"] = healthPorts
+	config["health_ports"] = ports
 	// Any other endpoint would bypass the managed runtime in this Pod.
 	for key, value := range map[string]any{"scheme": "http", "host": "127.0.0.1", "port": hostOrchestratorPort, "instance_num": 1} {
 		if err := pin(config, key, value); err != nil {

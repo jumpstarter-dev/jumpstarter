@@ -10,6 +10,7 @@ import pytest
 from .cvdcli import cvd_argv
 from .driver import Cuttlefish, CuttlefishError, CuttlefishTimeout, CvdCliBackend
 from .driver_test import _ADB_PATCHES
+from .health import initialize
 
 GROUP = {
     "group_name": "cvd_1",
@@ -25,6 +26,7 @@ class FakeCvd:
         self.calls: list[list[str]] = []
         self.groups: list[dict] = []
         self.failures: dict[str, str] = {}
+        self.load_output = ""
 
     def __call__(self, argv, **kwargs):
         if "cvd" not in argv:  # adb start-server and friends
@@ -38,7 +40,7 @@ class FakeCvd:
             return subprocess.CompletedProcess(argv, 0, stdout=json.dumps({"groups": self.groups}), stderr=BANNER)
         if subcommand == "load":
             self.groups.append(GROUP)
-            return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(GROUP), stderr=BANNER)
+            return subprocess.CompletedProcess(argv, 0, stdout=self.load_output, stderr=BANNER)
         if subcommand == "remove":
             self.groups.clear()
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr=BANNER)
@@ -59,7 +61,15 @@ def drv(tmp_path):
     for p in _ADB_PATCHES:
         p.start()
     try:
-        yield Cuttlefish(launcher_socket=str(shared / "launcher.sock"), cvd_user="httpcvd", group="cvd_1", name="1")
+        runtime_id = tmp_path / "runtime-id"
+        runtime_id.write_text("runtime-1")
+        state_path = tmp_path / "health.json"
+        initialize(str(state_path), str(runtime_id), f"exec://httpcvd@{shared}/launcher.sock")
+        yield Cuttlefish(
+            launcher_socket=str(shared / "launcher.sock"), cvd_user="httpcvd", group="cvd_1", name="1",
+            managed=True, runtime_id_path=str(runtime_id), health_state_path=str(state_path),
+            env_config={"instances": [{"vm": {"cpus": 2}}]},
+        )
     finally:
         for p in _ADB_PATCHES:
             p.stop()
@@ -94,13 +104,15 @@ def test_get_cvd_and_adb_port_filter_fleet(cvd, drv):
     assert drv.get_adb_port() == "6520"
 
 
-def test_create_writes_env_config_and_loads_it(cvd, drv):
+@pytest.mark.parametrize("load_output", ["", "CVD started successfully\n"])
+def test_create_writes_env_config_and_loads_it(cvd, drv, load_output):
+    cvd.load_output = load_output
     env_config = {"instances": [{"vm": {"cpus": 2}}]}
     result = json.loads(drv.create_cvd(json.dumps({"env_config": env_config})))
     config_path = Path(drv.launcher_socket).parent / "env_config.json"
     assert json.loads(config_path.read_text()) == env_config
     assert config_path.stat().st_mode & 0o777 == 0o644
-    assert cvd.calls == [["load", str(config_path)]]
+    assert cvd.calls == [["fleet"], ["load", str(config_path)], ["fleet"]]
     assert result["done"] is True
     assert result["cvds"][0] == {
         "group": "cvd_1", "name": "1", "status": "Running", "displays": [],
@@ -109,9 +121,22 @@ def test_create_writes_env_config_and_loads_it(cvd, drv):
 
 
 def test_create_requires_env_config(cvd, drv):
-    with pytest.raises(CuttlefishError, match="env_config"):
+    with pytest.raises(CuttlefishError, match="configured env_config"):
         drv.create_cvd(json.dumps({"cvd": {}}))
     assert cvd.calls == []
+
+
+@pytest.mark.parametrize("boot_timeout,expected", [(0, 600), (1200, 1200)])
+@pytest.mark.parametrize("via_power", [False, True])
+def test_create_allows_configured_slow_boot(cvd, drv, boot_timeout, expected, via_power):
+    drv.boot_timeout = boot_timeout
+    with patch("jumpstarter_driver_cuttlefish.driver.subprocess.run", side_effect=cvd) as run:
+        if via_power:
+            drv.children["power"]._create()
+        else:
+            drv.create_cvd(json.dumps({"env_config": drv.env_config}))
+    load_call = next(call for call in run.call_args_list if "load" in call.args[0])
+    assert load_call.kwargs["timeout"] == expected
 
 
 @pytest.mark.parametrize("operation,expected", [
@@ -159,7 +184,7 @@ def test_power_on_creates_then_tracks_group(cvd, drv):
     drv.children["adb"] = MagicMock()
     drv.boot_timeout = 0
     drv.children["power"].on()
-    assert [call[-1] if call[0] != "load" else "load" for call in cvd.calls] == ["fleet", "load"]
+    assert [call[-1] if call[0] != "load" else "load" for call in cvd.calls] == ["fleet", "fleet", "load", "fleet"]
     assert (drv._cvd_group, drv._cvd_name) == ("cvd_1", "1")
     drv.children["power"].off(destroy=True)
     assert cvd.calls[-1] == ["--group_name=cvd_1", "remove"]
@@ -174,15 +199,16 @@ def test_power_on_starts_stopped_instance(cvd, drv):
     assert cvd.calls[-1][2] == "start"
 
 
-def test_power_on_removes_stale_group_once(cvd, drv):
+def test_power_on_rejects_multiple_instances(cvd, drv):
     drv.children["adb"] = MagicMock()
     drv.boot_timeout = 0
     cvd.groups.append({
         "group_name": "cvd_1",
         "instances": [{"instance_name": "1"}, {"instance_name": "2"}],
     })
-    drv.children["power"].on()
-    assert sum(call[-1] == "remove" for call in cvd.calls) == 1
+    with pytest.raises(CuttlefishError, match="multiple CVDs"):
+        drv.children["power"].on()
+    assert cvd.calls == [["fleet"]]
 
 
 def test_managed_exec_records_backend_in_health(cvd, drv, tmp_path):
@@ -209,3 +235,26 @@ def test_managed_exec_records_backend_in_health(cvd, drv, tmp_path):
     with pytest.raises(CuttlefishError, match="already has a CVD"):
         managed.create_cvd(json.dumps({"env_config": managed.env_config}))
     managed.close()
+
+
+def test_unmanaged_exec_is_rejected():
+    with pytest.raises(CuttlefishError, match="launcher_socket requires managed"):
+        Cuttlefish(launcher_socket="/shared/launcher.sock")
+
+
+@pytest.mark.parametrize("output", ["null", "{}", '{"groups": [null]}',
+                                   '{"groups": [{"instances": [null]}]}'])
+def test_malformed_fleet_is_a_driver_error(drv, output):
+    with patch("jumpstarter_driver_cuttlefish.driver.subprocess.run",
+               return_value=subprocess.CompletedProcess([], 0, stdout=output, stderr="")):
+        for operation in (drv.list_cvds, drv.get_webrtc_config):
+            with pytest.raises(CuttlefishError, match="unexpected cvd"):
+                operation()
+
+
+def test_managed_create_refuses_another_group(cvd, drv):
+    cvd.groups.append({"group_name": "other", "instances": [{"instance_name": "1"}]})
+    with pytest.raises(CuttlefishError, match="already has a CVD"):
+        drv.children["power"].on()
+    assert cvd.calls == [["fleet"], ["fleet"]]
+    assert cvd.groups[0]["group_name"] == "other"
