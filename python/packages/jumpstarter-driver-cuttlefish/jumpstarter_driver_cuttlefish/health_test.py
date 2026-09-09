@@ -44,10 +44,11 @@ def test_guest_failure(health_state, cvds):
         run_check(health_state, cvds=cvds)
 
 
-@pytest.mark.parametrize("missing", [7681, 7300])
+@pytest.mark.parametrize("missing", [7681, 7300, 2090, 3478])
 def test_simulator_listener_failure(health_state, missing):
+    health_state[1]["ports"] += [2090, 3478]
     ports = set(health_state[1]["ports"]) - {missing}
-    with pytest.raises(RuntimeError, match="listener is missing"):
+    with pytest.raises(RuntimeError, match=f"listeners are missing on ports: {missing}$"):
         run_check(health_state, ports=ports)
 
 
