@@ -24,12 +24,14 @@ import (
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/cuttlefish"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/qemu"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -2016,5 +2018,80 @@ func TestMergeImages_esOverridesVtc(t *testing.T) {
 	}
 	if got.Runtime == nil || got.Runtime.Image != "es-runtime:2" {
 		t.Errorf("runtime should be overridden by es, got %v", got.Runtime)
+	}
+}
+
+func TestMergeImages_turn(t *testing.T) {
+	vtc := &virtualtargetv1alpha1.ImageOverrides{
+		Turn: &virtualtargetv1alpha1.ImageSpec{Image: "class-turn:1", ImagePullPolicy: corev1.PullAlways},
+	}
+	es := &virtualtargetv1alpha1.ImageOverrides{
+		Turn: &virtualtargetv1alpha1.ImageSpec{Image: "set-turn:2", ImagePullPolicy: corev1.PullNever},
+	}
+	for _, tc := range []struct {
+		name string
+		set  *virtualtargetv1alpha1.ImageOverrides
+		want *virtualtargetv1alpha1.ImageSpec
+	}{
+		{"inherited", &virtualtargetv1alpha1.ImageOverrides{}, vtc.Turn},
+		{"overridden", es, es.Turn},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mergeImages(vtc, tc.set)
+			if got.Turn == nil || *got.Turn != *tc.want {
+				t.Fatalf("TURN merge = %#v", got.Turn)
+			}
+			got.Turn.Image = "changed"
+			if vtc.Turn.Image != "class-turn:1" || es.Turn.Image != "set-turn:2" {
+				t.Fatal("merge aliased its input")
+			}
+		})
+	}
+}
+
+func TestCuttlefishValidationEvents(t *testing.T) {
+	for _, phase := range []string{"config", "pod"} {
+		t.Run(phase, func(t *testing.T) {
+			es := makeExporterSet()
+			es.Spec.Template.Spec.Drivers = []virtualtargetv1alpha1.DriverConfig{{
+				Name: "cuttlefish", Type: "jumpstarter_driver_cuttlefish.driver.Cuttlefish",
+			}}
+			exp := makeExporter("invalid-display", false, false, true)
+			credential := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "credentials", Namespace: nsDefault},
+				Data:       map[string][]byte{"token": []byte("test-token")},
+			}
+			exp.Status.Credential = &corev1.LocalObjectReference{Name: credential.Name}
+			r, c := newReconciler(t, credential)
+			r.Provisioner = cuttlefish.New("dev")
+			recorder := record.NewFakeRecorder(1)
+			r.Recorder = recorder
+			parameters := map[string]any{
+				"webrtc_turn": "true", "fetch_images": true,
+				"runtime_privileged": true, "service_account_name": "cuttlefish-runtime",
+			}
+			var err error
+			reason := "ExporterConfigFailed"
+			if phase == "config" {
+				err = r.syncConfigSecret(context.Background(), es, exp, "", parameters)
+			} else {
+				reason = "PodRenderFailed"
+				err = r.createExporterPod(context.Background(), es, makeVTC(), parameters, nil, exp)
+			}
+			if err == nil || !strings.Contains(err.Error(), "webrtc_turn must be a boolean") {
+				t.Fatalf("validation error = %v", err)
+			}
+			select {
+			case event := <-recorder.Events:
+				if !strings.Contains(event, "Warning "+reason) || !strings.Contains(event, "webrtc_turn must be a boolean") {
+					t.Fatalf("validation event = %q", event)
+				}
+			default:
+				t.Fatal("validation failure emitted no event")
+			}
+			if len(listPods(t, c)) != 0 {
+				t.Fatal("invalid configuration created a Pod")
+			}
+		})
 	}
 }
