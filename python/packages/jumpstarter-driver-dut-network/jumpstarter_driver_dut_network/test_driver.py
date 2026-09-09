@@ -720,6 +720,116 @@ class TestVlanSetup1to1:
         assert mappings == [{"private_ip": "192.168.100.10", "public_ip": "10.0.0.50"}]
 
 
+class TestVlanCreationRollback:
+    """VLAN interface is deleted if post-creation setup fails."""
+
+    def test_sysctl_failure_rolls_back_vlan(self, tmp_path: Path):
+        """set_interface_forwarding raises on VLAN iface -> VLAN deleted."""
+        addrs = [{
+            "ip": "192.168.100.125",
+            "vlan_id": 905,
+            "public_ip": "203.0.113.1",
+            "public_gateway": "203.0.113.254",
+        }]
+
+        from .driver import DutNetwork
+
+        # Allow the first two calls (eth-dut, eth-up) but fail on the
+        # third call which targets the VLAN sub-interface.
+        fwd_call_count = 0
+        def _fwd_side_effect(iface, enabled):
+            nonlocal fwd_call_count
+            fwd_call_count += 1
+            if fwd_call_count >= 3:
+                raise RuntimeError("sysctl boom")
+
+        with patch(f"{_DRIVER_MODULE}.sys") as mock_sys, \
+             patch(f"{_DRIVER_MODULE}.shutil") as mock_shutil, \
+             patch(f"{_DRIVER_MODULE}.iproute") as mock_ip, \
+             patch(f"{_DRIVER_MODULE}.nftables") as mock_nft, \
+             patch(f"{_DRIVER_MODULE}.dnsmasq") as mock_dns:
+            mock_sys.platform = "linux"
+            mock_shutil.which.return_value = "/usr/bin/fake"
+            mock_dns.state_dir_for_interface.return_value = tmp_path
+            mock_dns.start.return_value = MagicMock()
+            mock_ip.detect_upstream_interface.return_value = "eth-up"
+            mock_ip.interface_exists.return_value = False
+            mock_ip.get_interface_addresses.return_value = []
+            mock_ip.get_interface_forwarding.return_value = "0"
+            mock_ip.get_interface_prefix_len.return_value = 24
+            mock_nft.ensure_filter_forward.return_value = []
+            mock_nft.list_rules.return_value = ""
+            mock_nft._table_name_for.return_value = "jumpstarter_eth_dut"
+            mock_ip.set_interface_forwarding.side_effect = _fwd_side_effect
+
+            with pytest.raises(RuntimeError, match="sysctl boom"):
+                DutNetwork(
+                    interface="eth-dut",
+                    subnet="192.168.100.0/24",
+                    gateway_ip="192.168.100.1",
+                    upstream_interface="eth-up",
+                    nat_mode="masquerade",
+                    dhcp_enabled=True,
+                    dhcp_range_start="192.168.100.100",
+                    dhcp_range_end="192.168.100.200",
+                    addresses=addrs,
+                    dns_servers=["8.8.8.8"],
+                    state_dir=str(tmp_path),
+                )
+
+            mock_ip.create_vlan_interface.assert_called_once_with("eth-up", 905)
+            mock_ip.delete_vlan_interface.assert_called_once_with("eth-up.905")
+
+    def test_alias_failure_rolls_back_vlan_and_bookkeeping(self, tmp_path: Path):
+        """add_ip_alias raises -> VLAN deleted and alias bookkeeping undone."""
+        addrs = [{
+            "ip": "192.168.100.125",
+            "vlan_id": 905,
+            "public_ip": "203.0.113.1",
+            "public_gateway": "203.0.113.254",
+        }]
+
+        from .driver import DutNetwork
+
+        with patch(f"{_DRIVER_MODULE}.sys") as mock_sys, \
+             patch(f"{_DRIVER_MODULE}.shutil") as mock_shutil, \
+             patch(f"{_DRIVER_MODULE}.iproute") as mock_ip, \
+             patch(f"{_DRIVER_MODULE}.nftables") as mock_nft, \
+             patch(f"{_DRIVER_MODULE}.dnsmasq") as mock_dns:
+            mock_sys.platform = "linux"
+            mock_shutil.which.return_value = "/usr/bin/fake"
+            mock_dns.state_dir_for_interface.return_value = tmp_path
+            mock_dns.start.return_value = MagicMock()
+            mock_ip.detect_upstream_interface.return_value = "eth-up"
+            mock_ip.interface_exists.return_value = False
+            mock_ip.get_interface_addresses.return_value = []
+            mock_ip.get_interface_forwarding.return_value = "0"
+            mock_ip.get_interface_prefix_len.return_value = 24
+            mock_nft.ensure_filter_forward.return_value = []
+            mock_nft.list_rules.return_value = ""
+            mock_nft._table_name_for.return_value = "jumpstarter_eth_dut"
+            mock_ip.add_ip_alias.side_effect = RuntimeError("alias boom")
+
+            with pytest.raises(RuntimeError, match="alias boom"):
+                DutNetwork(
+                    interface="eth-dut",
+                    subnet="192.168.100.0/24",
+                    gateway_ip="192.168.100.1",
+                    upstream_interface="eth-up",
+                    nat_mode="masquerade",
+                    dhcp_enabled=True,
+                    dhcp_range_start="192.168.100.100",
+                    dhcp_range_end="192.168.100.200",
+                    addresses=addrs,
+                    dns_servers=["8.8.8.8"],
+                    state_dir=str(tmp_path),
+                )
+
+            mock_ip.create_vlan_interface.assert_called_once_with("eth-up", 905)
+            mock_ip.set_interface_forwarding.assert_called()
+            mock_ip.delete_vlan_interface.assert_called_once_with("eth-up.905")
+
+
 class TestVlanCleanup:
     def test_cleanup_reverses_vlan_and_pbr(self, tmp_path: Path):
         addrs = [{
