@@ -90,8 +90,8 @@ def _adb_connect(adb: str, target: str, *, timeout: float = ADB_CONNECT_TIMEOUT)
     Args:
         adb: path to the local adb binary.
         target: the local ``host:port`` to connect to.
-        timeout: seconds to allow. See :data:`ADB_CONNECT_TIMEOUT` for why this is a
-            client-side setting rather than the driver's ``connect_timeout``.
+        timeout: seconds to allow. Defaults to ``ADB_CONNECT_TIMEOUT``, a client-side
+        setting rather than the driver's ``connect_timeout``.
 
     Returns:
         adb's own message, for logging.
@@ -262,11 +262,11 @@ class AdbDeviceClient(DriverClient):
             adb: path to your local adb binary.
             host: local bind address.
             port: local port to bind; 0 lets the OS choose. The device's address is
-                whatever this resolves to — deliberately not something this driver
-                invents, since ADB owns device addressing.
-            timeout: seconds to allow the local ``adb connect``. This is a client-side
-                timeout, distinct from the exporter's ``connect_timeout`` — see
-                :data:`ADB_CONNECT_TIMEOUT`.
+            whatever this resolves to — deliberately not something this driver
+            invents, since ADB owns device addressing.
+            timeout: seconds to allow the local ``adb connect``. A client-side
+            timeout, distinct from the exporter's ``connect_timeout``, because it
+            bounds a command on your machine against a local port-forward.
 
         Yields:
             The ``host:port`` the device was attached as.
