@@ -9,9 +9,10 @@ from pathlib import Path
 
 import requests
 from jumpstarter_driver_adb.driver import AdbServer
+from jumpstarter_driver_network.driver import TcpNetwork
 from jumpstarter_driver_power.driver import PowerReading, VirtualPowerInterface
 
-from .cvdcli import cvd_argv, exec_binary, fleet_to_cvds, group_to_cvds, stderr_tail
+from .cvdcli import cvd_argv, exec_binary, fleet_to_cvds, stderr_tail
 from jumpstarter.driver import Driver, export
 from jumpstarter.driver.flasher import FlasherInterface
 
@@ -221,12 +222,8 @@ class CvdCliBackend:
         config_path = self.work_dir / "env_config.json"
         config_path.write_text(json.dumps(env_config, indent=1))
         config_path.chmod(0o644)  # written by the exporter uid, read by the cvd user
-        output = self._cvd(["load", str(config_path)], timeout)
-        try:
-            cvds = group_to_cvds(json.loads(output))
-        except ValueError as e:
-            raise CuttlefishError(f"cvd load returned an unexpected document: {output[:200]!r}") from e
-        return {"done": True, "cvds": cvds}
+        self._cvd(["load", str(config_path)], timeout)
+        return {"done": True, "cvds": self.fleet()}
 
 
 @dataclass(kw_only=True)
@@ -248,6 +245,12 @@ class Cuttlefish(Driver):
     boot_timeout: int = 300
     env_config: dict = field(default_factory=dict)
     webrtc_url: str = ""
+    # WebRTC display over the lease. ``webui_port`` is the in-Pod nginx port
+    # serving the client page with a TURN-aware /infra_config, ``turn_port`` the
+    # coturn listener relaying media. Both are Pod-local and only reachable
+    # through the lease; the ExporterSet provisioner injects them.
+    webui_port: int = 0
+    turn_port: int = 0
     managed: bool = False
     # Exec backend: jumpstarter-exec launcher socket shared with the runtime
     # container. When set, every lifecycle action runs ``cvd`` there instead of
@@ -279,6 +282,12 @@ class Cuttlefish(Driver):
         self.children["power"] = CvdPower(parent=self)
         self.children["storage"] = CvdFlasher(parent=self)
         self.children["adb"] = AdbServer(host="127.0.0.1", port=self.adb_server_port)
+        # Forwarding these two is what lets a client see the display without any
+        # ingress to the Pod: the UI and the TURN relay both ride the lease.
+        if self.webui_port:
+            self.children["webui"] = TcpNetwork(host="127.0.0.1", port=self.webui_port)
+        if self.turn_port:
+            self.children["turn"] = TcpNetwork(host="127.0.0.1", port=self.turn_port)
 
     def _validate_managed_config(self):
         instances = self.env_config.get("instances", [])
@@ -477,6 +486,41 @@ class Cuttlefish(Driver):
         if self.webrtc_url:
             return self.webrtc_url
         return f"{self.scheme}://{self.host}:1080"
+
+    def _webrtc_device_id(self) -> str:
+        """Device id the operator registered the CVD under.
+
+        Read from inventory when available: Host Orchestrator derives it from the
+        group it actually assigned, which is not always the configured one.
+        """
+        try:
+            inventory = self._backend.get_cvd(
+                self._cvd_group or self.group,
+                self._cvd_name or self.name,
+            )
+        except CuttlefishError:
+            inventory = None
+        cvds = inventory.get("cvds", []) if isinstance(inventory, dict) else []
+        for cvd in cvds:
+            if isinstance(cvd, dict) and cvd.get("webrtc_device_id"):
+                return str(cvd["webrtc_device_id"])
+        return f"{self._cvd_group or self.group}-{self._cvd_name or self.name}-{self.instance_num}"
+
+    @export
+    def get_webrtc_config(self) -> str:
+        """Ports a client forwards to reach the display, plus the device id.
+
+        ``turn_port`` is both the Pod-side listener and the local port the client
+        must bind: the ICE server URL baked into /infra_config names that exact
+        port, and the browser has no way to learn a different one.
+        """
+        return json.dumps(
+            {
+                "webui_port": self.webui_port,
+                "turn_port": self.turn_port,
+                "device_id": self._webrtc_device_id(),
+            }
+        )
 
     @export
     def list_cvds(self) -> str:

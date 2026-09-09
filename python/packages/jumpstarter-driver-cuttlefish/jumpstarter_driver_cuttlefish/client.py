@@ -1,9 +1,12 @@
 import json
 import threading
 import time
+from contextlib import ExitStack
 
+import anyio
 import click
 from jumpstarter_driver_composite.client import CompositeClient
+from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 from jumpstarter_driver_power.client import VirtualPowerClient
 
 from jumpstarter.client.base import StubDriverClient
@@ -21,6 +24,11 @@ def _echo(obj) -> None:
         click.echo(json.dumps(obj, indent=2))
     else:
         click.echo(obj)
+
+
+def _client_url(address: tuple[str, int], device_id: str) -> str:
+    """URL of the operator's WebRTC client page behind a local forward."""
+    return f"http://{address[0]}:{address[1]}/devices/{device_id}/files/client.html"
 
 
 def _run_with_progress(label: str, fn):
@@ -100,6 +108,10 @@ class CuttlefishClient(CompositeClient):
     def get_webrtc_url(self) -> str:
         return self.call("get_webrtc_url")
 
+    def get_webrtc_config(self) -> dict:
+        parsed = _parse(self.call("get_webrtc_config"))
+        return parsed if isinstance(parsed, dict) else {}
+
     def status(self) -> str:
         return self.call("status")
 
@@ -168,9 +180,60 @@ class CuttlefishClient(CompositeClient):
             _echo(_run_with_progress("Resetting", lambda: self.reset_host()))
 
         @cuttlefish.command("webrtc")
-        def webrtc_cmd():
+        @click.option(
+            "--forward",
+            is_flag=True,
+            help="Forward the display and TURN relay through the lease and print a local URL",
+        )
+        @click.option(
+            "--ui-port",
+            type=int,
+            default=0,
+            show_default=True,
+            help="Local port for the display UI (0=auto)",
+        )
+        def webrtc_cmd(forward: bool, ui_port: int):
             """Print the WebRTC display URL."""
-            click.echo(self.get_webrtc_url())
+            if not forward:
+                click.echo(self.get_webrtc_url())
+                return
+            config = self.get_webrtc_config()
+            webui, turn = self.children.get("webui"), self.children.get("turn")
+            if not config.get("webui_port") or not config.get("turn_port") or webui is None or turn is None:
+                raise click.ClickException(
+                    "this exporter does not expose the WebRTC display; "
+                    "set parameters.webrtc_turn=true on the ExporterSet"
+                )
+            # The TURN port is not negotiable: /infra_config advertises
+            # turn:127.0.0.1:<turn_port>, so the local listener has to answer on
+            # the same number or the browser dials a port nothing is on. Without
+            # reuse_port=False another forward could share the port and the
+            # kernel would split the browser's connections between exporters.
+            turn_port = int(config["turn_port"])
+            bind_error = None
+            with ExitStack() as forwards:
+                try:
+                    turn_address = forwards.enter_context(
+                        TcpPortforwardAdapter(client=turn, local_port=turn_port, reuse_port=False)
+                    )
+                except OSError as e:
+                    bind_error = click.ClickException(
+                        f"cannot bind local TURN port {turn_port} (required by the advertised ICE server): {e}"
+                    )
+                if bind_error is None:
+                    try:
+                        ui_address = forwards.enter_context(
+                            TcpPortforwardAdapter(client=webui, local_port=ui_port, reuse_port=False)
+                        )
+                    except OSError as e:
+                        bind_error = click.ClickException(f"cannot bind local WebRTC UI port {ui_port}: {e}")
+                if bind_error is None:
+                    click.echo(f"WebRTC display: {_client_url(ui_address, config['device_id'])}")
+                    click.echo(f"TURN relay:     {turn_address[0]}:{turn_address[1]}")
+                    click.echo("Press Ctrl+C to stop")
+                    self.portal.call(anyio.sleep_forever)
+            if bind_error is not None:
+                raise bind_error
 
         for k, v in self.children.items():
             if isinstance(v, StubDriverClient):

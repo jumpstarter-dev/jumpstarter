@@ -308,6 +308,54 @@ only the provisioner-approved `env_config`. Host Orchestrator operations
 synchronous. Inventory documents are normalized to the Host Orchestrator shape,
 so clients see the same fields from both backends.
 
+## WebRTC display over the lease
+
+Set `parameters.webrtc_turn: true` to make the CVD's screen viewable by whoever
+holds the lease. It is off by default: it adds a container, and exporters driven
+over adb alone do not need it.
+
+The isolation policy denies all ingress to the runtime Pod, and WebRTC media is
+UDP addressed to the Pod's own interfaces - the streamer offers candidates like
+`192.168.190.172:15550`. Opening ingress for those ports would defeat the policy
+and still only serve viewers that can route to Pod IPs. A relay in the same Pod
+solves the addressing instead, so the provisioner adds:
+
+- **`cuttlefish-turn`**, a coturn sidecar listening on `127.0.0.1:3478/tcp`.
+  Its UDP relay binds the Pod IP and accepts only the Pod IP or loopback as ICE
+  peers. The browser allocates a relay over the forwarded TCP connection.
+  The expected selected pair is the browser's Pod-IP relay candidate (for
+  example `192.168.190.172:49160`) and the streamer's Pod-IP host candidate
+  (for example `192.168.190.172:15550`). The streamer sends UDP to the relay
+  in its own network namespace; coturn passes media back over the TCP forward.
+- **a second nginx vhost**, written to `sites-enabled` before the image's services
+  start. It proxies Host Orchestrator like the stock 2080 vhost, but overrides
+  `/infra_config` - whose ICE server list is otherwise a public STUN server
+  compiled into the operator binary - and upgrades the signalling WebSocket that
+  the stock vhost answers with 400.
+
+The TURN TCP listener and display vhost are loopback-only; the UDP relay binds
+the Pod IP for local streamer traffic. Both listeners join `health_ports` so a
+dead relay or vhost fails the probe. On the client side this is
+`j cuttlefish webrtc --forward`. In Chrome's `chrome://webrtc-internals`, inspect
+the selected candidate pair to confirm `relay` (browser) to `host` (streamer).
+The vhost rejects non-local Host headers, cross-site browser requests, and
+Origins that differ from the forwarded UI URL. The local forward is still
+accessible to native processes on the same computer.
+
+| Parameter | Description | Default |
+| --- | --- | --- |
+| `webrtc_turn` | Enable the in-Pod TURN relay and display vhost | `false` |
+| `turn_image` | coturn image | `docker.io/coturn/coturn:4.7.0` |
+| `turn_port` | coturn TCP listener, and the local port the client binds | `3478` |
+| `webui_port` | nginx vhost serving the TURN-aware client page | `2090` |
+| `turn_secret` | Long-term credential for the relay | `cuttlefish` |
+
+`turn_secret` is not an access boundary: the relay is unreachable except through
+the lease, like Host Orchestrator and netsim, which have no authentication at
+all. Media crosses the lease over TCP (the relay-to-streamer leg is UDP on the
+Pod's loopback), so a lossy link degrades into stutter rather than WebRTC's
+usual frame dropping.
+
 ## Failure and recovery behavior
 
 The exporter liveness probe reads state written atomically by the managed driver.

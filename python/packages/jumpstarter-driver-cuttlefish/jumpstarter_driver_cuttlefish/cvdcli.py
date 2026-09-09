@@ -75,10 +75,14 @@ def fleet_to_cvds(output: str) -> list[dict]:
         data = json.loads(output)
     except ValueError as e:
         raise ValueError(f"cvd fleet returned invalid JSON: {output[:200]!r}") from e
-    if not isinstance(data, dict) or not isinstance(data.get("groups"), list):
+    if isinstance(data, list):
+        groups = data
+    elif isinstance(data, dict) and isinstance(data.get("groups"), list):
+        groups = data["groups"]
+    else:
         raise ValueError(f"unexpected cvd fleet document: {output[:200]!r}")
     cvds = []
-    for group in data["groups"]:
+    for group in groups:
         cvds.extend(group_to_cvds(group))
     return cvds
 

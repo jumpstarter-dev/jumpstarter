@@ -25,6 +25,7 @@ class FakeCvd:
         self.calls: list[list[str]] = []
         self.groups: list[dict] = []
         self.failures: dict[str, str] = {}
+        self.load_output = ""
 
     def __call__(self, argv, **kwargs):
         if "cvd" not in argv:  # adb start-server and friends
@@ -38,7 +39,7 @@ class FakeCvd:
             return subprocess.CompletedProcess(argv, 0, stdout=json.dumps({"groups": self.groups}), stderr=BANNER)
         if subcommand == "load":
             self.groups.append(GROUP)
-            return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(GROUP), stderr=BANNER)
+            return subprocess.CompletedProcess(argv, 0, stdout=self.load_output, stderr=BANNER)
         if subcommand == "remove":
             self.groups.clear()
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr=BANNER)
@@ -94,13 +95,15 @@ def test_get_cvd_and_adb_port_filter_fleet(cvd, drv):
     assert drv.get_adb_port() == "6520"
 
 
-def test_create_writes_env_config_and_loads_it(cvd, drv):
+@pytest.mark.parametrize("load_output", ["", "CVD started successfully\n"])
+def test_create_writes_env_config_and_loads_it(cvd, drv, load_output):
+    cvd.load_output = load_output
     env_config = {"instances": [{"vm": {"cpus": 2}}]}
     result = json.loads(drv.create_cvd(json.dumps({"env_config": env_config})))
     config_path = Path(drv.launcher_socket).parent / "env_config.json"
     assert json.loads(config_path.read_text()) == env_config
     assert config_path.stat().st_mode & 0o777 == 0o644
-    assert cvd.calls == [["load", str(config_path)]]
+    assert cvd.calls == [["load", str(config_path)], ["fleet"]]
     assert result["done"] is True
     assert result["cvds"][0] == {
         "group": "cvd_1", "name": "1", "status": "Running", "displays": [],
@@ -160,7 +163,7 @@ def test_power_on_creates_then_tracks_group(cvd, drv):
     drv.children["adb"] = MagicMock()
     drv.boot_timeout = 0
     drv.children["power"].on()
-    assert [call[-1] if call[0] != "load" else "load" for call in cvd.calls] == ["fleet", "load"]
+    assert [call[-1] if call[0] != "load" else "load" for call in cvd.calls] == ["fleet", "load", "fleet"]
     assert (drv._cvd_group, drv._cvd_name) == ("cvd_1", "1")
     drv.children["power"].off(destroy=True)
     assert cvd.calls[-1] == ["--group_name=cvd_1", "remove"]
