@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 	"testing"
 
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
@@ -430,5 +432,125 @@ func testExporterSet() *virtualtargetv1alpha1.ExporterSet {
 	return &virtualtargetv1alpha1.ExporterSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "cuttlefish", Namespace: "default", UID: "test-uid"},
 		Spec:       virtualtargetv1alpha1.ExporterSetSpec{Template: virtualtargetv1alpha1.ExporterSetTemplate{Spec: virtualtargetv1alpha1.ExporterTemplateSpec{Drivers: []virtualtargetv1alpha1.DriverConfig{{Name: "cuttlefish", Type: cuttlefishDriverType}}}}},
+	}
+}
+
+func TestRenderPod_webrtcDisabledByDefault(t *testing.T) {
+	pod := renderTestPod(t, map[string]interface{}{"fetch_images": true})
+	for _, container := range pod.Spec.InitContainers {
+		if container.Name == turnContainerName {
+			t.Fatal("TURN relay must be opt-in")
+		}
+		if container.Name == runtimeContainerName && strings.Contains(container.Command[2], webrtcNginxPath) {
+			t.Fatal("display vhost must be opt-in")
+		}
+	}
+	result, err := New("dev").EnrichExporterExport(
+		[]virtualtargetv1alpha1.DriverConfig{{Name: "cuttlefish", Type: cuttlefishDriverType}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := configFor(t, result[0])
+	if _, exists := config["turn_port"]; exists {
+		t.Fatal("driver must not advertise a display that does not exist")
+	}
+}
+
+func TestRenderPod_webrtcTurn(t *testing.T) {
+	pod := renderTestPod(t, map[string]interface{}{"fetch_images": true, "webrtc_turn": true})
+	turn := initContainer(t, pod, turnContainerName)
+	if turn.Image != DefaultTurnImage || turn.RestartPolicy == nil {
+		t.Fatalf("TURN relay must run as a pinned sidecar: %#v", turn)
+	}
+	command := strings.Join(turn.Command, " ")
+	// Reachable only from inside the Pod, so the lease stays the sole way in.
+	for _, required := range []string{
+		"--listening-ip=127.0.0.1",
+		"--relay-ip=127.0.0.1",
+		fmt.Sprintf("--listening-port=%d", turnPortDefault),
+		fmt.Sprintf("--user=%s:%s", turnUser, turnSecretDefault),
+		"--lt-cred-mech",
+	} {
+		if !strings.Contains(command, required) {
+			t.Fatalf("TURN relay missing %q: %q", required, command)
+		}
+	}
+	// The streamer gathers 15550-15599; a relay allocation landing there would
+	// collide with the very media it relays.
+	if turnRelayMin <= 15599 && turnRelayMax >= 15550 {
+		t.Fatalf("relay range %d-%d overlaps the streamer's UDP candidates", turnRelayMin, turnRelayMax)
+	}
+
+	script := initContainer(t, pod, runtimeContainerName).Command[2]
+	if !strings.Contains(script, "cat > "+webrtcNginxPath) {
+		t.Fatalf("display vhost must be written into the runtime container: %q", script)
+	}
+	if strings.Index(script, webrtcNginxPath) > strings.Index(script, "run_services.sh") {
+		t.Fatal("vhost must exist before nginx starts")
+	}
+	if !strings.Contains(script, fmt.Sprintf("turn:127.0.0.1:%d?transport=tcp", turnPortDefault)) {
+		t.Fatalf("/infra_config must advertise the Pod-local relay: %q", script)
+	}
+	if strings.Contains(script, "stun:") {
+		t.Fatal("public STUN must not survive the override")
+	}
+	if !strings.Contains(script, fmt.Sprintf("proxy_pass http://127.0.0.1:%d;", hostOrchestratorPort)) {
+		t.Fatalf("vhost must proxy Host Orchestrator: %q", script)
+	}
+	// Loopback only, like the relay, so the lease stays the sole way in.
+	if !strings.Contains(script, fmt.Sprintf("listen 127.0.0.1:%d;", webUIPortDefault)) || strings.Contains(script, "[::]") {
+		t.Fatalf("display vhost must bind loopback only: %q", script)
+	}
+	// The stock vhost answers the signalling WebSocket with 400 and the client
+	// falls back to polling; ours upgrades it.
+	if !strings.Contains(script, "(adb|connect)$") || !strings.Contains(script, `proxy_set_header Connection "Upgrade"`) {
+		t.Fatalf("signalling WebSocket must be upgraded: %q", script)
+	}
+}
+
+func TestEnrichExporterExport_webrtcPorts(t *testing.T) {
+	parameters := map[string]interface{}{"webrtc_turn": true}
+	result, err := New("dev").EnrichExporterExport(
+		[]virtualtargetv1alpha1.DriverConfig{{Name: "cuttlefish", Type: cuttlefishDriverType}}, parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := configFor(t, result[0])
+	if config["turn_port"] != float64(turnPortDefault) || config["webui_port"] != float64(webUIPortDefault) {
+		t.Fatalf("driver must learn the display ports: %#v", config)
+	}
+	ports, ok := config["health_ports"].([]interface{})
+	if !ok || !slices.Contains(ports, any(float64(turnPortDefault))) || !slices.Contains(ports, any(float64(webUIPortDefault))) {
+		t.Fatalf("a dead relay or vhost must fail the health probe: %#v", config["health_ports"])
+	}
+
+	preset := virtualtargetv1alpha1.DriverConfig{
+		Name: "cuttlefish", Type: cuttlefishDriverType,
+		Config: mustJSON(map[string]interface{}{"turn_port": 1234}),
+	}
+	if _, err := New("dev").EnrichExporterExport([]virtualtargetv1alpha1.DriverConfig{preset}, parameters); err == nil {
+		t.Fatal("template-provided display ports must be rejected")
+	}
+}
+
+func TestWebRTCValidation(t *testing.T) {
+	for name, parameters := range map[string]map[string]interface{}{
+		"host orchestrator": {"webrtc_turn": true, "webui_port": hostOrchestratorPort},
+		"image vhost":       {"webrtc_turn": true, "webui_port": 2080},
+		"netsim":            {"webrtc_turn": true, "turn_port": netsimPort},
+		"hci":               {"webrtc_turn": true, "turn_port": hciPort},
+		"identical ports":   {"webrtc_turn": true, "turn_port": webUIPortDefault},
+		"operator port":     {"webrtc_turn": true, "webui_port": 1080},
+		"relay range":       {"webrtc_turn": true, "turn_port": turnRelayMin},
+		"quoted secret":     {"webrtc_turn": true, "turn_secret": "it's"},
+		"nginx variable":    {"webrtc_turn": true, "turn_secret": "pa$s"},
+		"out of range":      {"webrtc_turn": true, "turn_port": 70000},
+	} {
+		if _, err := resolveWebRTCConfig(parameters); err == nil {
+			t.Fatalf("%s must be rejected", name)
+		}
+	}
+	if config, err := resolveWebRTCConfig(nil); err != nil || config.enabled {
+		t.Fatalf("display must default off: %+v %v", config, err)
 	}
 }

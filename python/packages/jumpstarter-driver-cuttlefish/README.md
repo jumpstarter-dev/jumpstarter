@@ -169,6 +169,8 @@ export:
 | adb_server_port | ADB server port on the exporter     | int  | no       | 15037       |
 | boot_timeout    | Seconds to wait for boot on power on| int  | no       | 300         |
 | env_config      | Default env_config for CVD creation | dict | no       | {}          |
+| webui_port      | Port of the in-Pod nginx vhost serving the WebRTC client page with a TURN-aware `/infra_config`. Creates a `webui` child when set. Injected by the ExporterSet provisioner with `webrtc_turn: true`. | int | no | 0 |
+| turn_port       | Port of the in-Pod TURN relay carrying WebRTC media. Creates a `turn` child when set, and is also the local port `j cuttlefish webrtc --forward` binds. | int | no | 0 |
 
 This is a **composite driver** with three children:
 - **power** — `VirtualPowerInterface`: `j power on`, `j power off [--destroy]`, `j power cycle`
@@ -180,6 +182,29 @@ The exporter config also typically includes sibling drivers:
 - **bt_peer** (`jumpstarter-driver-bt-peer`) — Bluetooth peer device via bumble + rootcanal HCI
 
 Use `ref:` entries in the exporter config to expose children at the top level.
+
+### WebRTC display
+
+`j cuttlefish webrtc` prints the display URL. With `--forward` it makes that URL
+usable from wherever the client runs, without any ingress to the exporter Pod:
+
+```bash
+j cuttlefish webrtc --forward
+# WebRTC display: http://127.0.0.1:41235/devices/cvd_1-1-1/files/client.html
+# TURN relay:     127.0.0.1:3478
+# Press Ctrl+C to stop
+```
+
+Both the UI and a TURN relay are forwarded over the lease. WebRTC media is UDP
+addressed to the Pod's own interfaces, so a browser elsewhere cannot reach it
+directly; the relay lives beside the CVD, receives media in the same network
+namespace, and hands it to the browser over the forwarded TCP connection. The
+TURN port cannot be remapped - `/infra_config` advertises
+`turn:127.0.0.1:<turn_port>` and the browser has no way to learn a different one -
+so the command fails if that local port is taken.
+
+This requires `webrtc_turn: true` on the ExporterSet; without it the driver has
+no `webui`/`turn` children and the command says so.
 
 ## Usage
 

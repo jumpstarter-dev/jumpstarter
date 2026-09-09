@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from jumpstarter_driver_network.driver import TcpNetwork
 
 from .driver import Cuttlefish, CuttlefishError, CuttlefishTimeout
 
@@ -619,3 +620,37 @@ def test_managed_initialization_preserves_startup_runtime_id(drv, tmp_path):
     runtime_id.write_text("runtime-2")
     with pytest.raises(CuttlefishError, match="restarted"):
         Cuttlefish(**config)
+
+
+# --- WebRTC display over the lease ---
+
+
+def test_webrtc_children_are_opt_in(drv):
+    assert "webui" not in drv.children and "turn" not in drv.children
+
+
+def test_webrtc_children_stay_pod_local():
+    for p in _ADB_PATCHES:
+        p.start()
+    try:
+        driver = Cuttlefish(group="cvd_1", name="dev1", webui_port=2090, turn_port=3478)
+    finally:
+        for p in _ADB_PATCHES:
+            p.stop()
+    # Both are loopback in the runtime Pod: reachable only by forwarding them
+    # through the lease, never by connecting to the Pod.
+    for name, port in (("webui", 2090), ("turn", 3478)):
+        child = driver.children[name]
+        assert isinstance(child, TcpNetwork)
+        assert (child.host, child.port) == ("127.0.0.1", port)
+
+
+def test_webrtc_config_reports_inventory_device_id(requests_mock, drv):
+    requests_mock.get(f"{BASE}/cvds/cvd_1/dev1", json={"cvds": [{"webrtc_device_id": "cvd_9-1-1"}]})
+    assert json.loads(drv.get_webrtc_config())["device_id"] == "cvd_9-1-1"
+
+
+def test_webrtc_config_falls_back_without_inventory(requests_mock, drv):
+    # Host Orchestrator renames groups, so the constructed id is a last resort.
+    requests_mock.get(f"{BASE}/cvds/cvd_1/dev1", exc=requests.ConnectionError)
+    assert json.loads(drv.get_webrtc_config())["device_id"] == "cvd_1-dev1-1"

@@ -163,6 +163,46 @@ spec:
 Record both the resolved runtime image digest and the guest `fetcher_config.json`
 with validation results. A prewarmed PVC needs the same build provenance.
 
+## WebRTC display over the lease
+
+Set `parameters.webrtc_turn: true` to make the CVD's screen viewable by whoever
+holds the lease. It is off by default: it adds a container, and exporters driven
+over adb alone do not need it.
+
+The isolation policy denies all ingress to the runtime Pod, and WebRTC media is
+UDP addressed to the Pod's own interfaces - the streamer offers candidates like
+`192.168.190.172:15550`. Opening ingress for those ports would defeat the policy
+and still only serve viewers that can route to Pod IPs. A relay the Pod can reach
+locally solves the addressing instead, so the provisioner adds:
+
+- **`cuttlefish-turn`**, a coturn sidecar on `127.0.0.1:3478/tcp` whose relay
+  range is loopback as well. The browser allocates a relay through it over the
+  forwarded TCP connection, the streamer sends media to that relay inside its own
+  network namespace, and coturn passes it back.
+- **a second nginx vhost**, written to `sites-enabled` before the image's services
+  start. It proxies Host Orchestrator like the stock 2080 vhost, but overrides
+  `/infra_config` - whose ICE server list is otherwise a public STUN server
+  compiled into the operator binary - and upgrades the signalling WebSocket that
+  the stock vhost answers with 400.
+
+Both listeners are loopback-only, so the lease remains the only way in, and both
+join `health_ports` so a dead relay or vhost fails the probe. On the client side
+this is `j cuttlefish webrtc --forward`.
+
+| Parameter | Description | Default |
+| --- | --- | --- |
+| `webrtc_turn` | Enable the in-Pod TURN relay and display vhost | `false` |
+| `turn_image` | coturn image | `docker.io/coturn/coturn:4.7.0` |
+| `turn_port` | coturn TCP listener, and the local port the client binds | `3478` |
+| `webui_port` | nginx vhost serving the TURN-aware client page | `2090` |
+| `turn_secret` | Long-term credential for the relay | `cuttlefish` |
+
+`turn_secret` is not an access boundary: the relay is unreachable except through
+the lease, like Host Orchestrator and netsim, which have no authentication at
+all. Media crosses the lease over TCP (the relay-to-streamer leg is UDP on the
+Pod's loopback), so a lossy link degrades into stutter rather than WebRTC's
+usual frame dropping.
+
 ## Failure and recovery behavior
 
 The exporter liveness probe reads state written atomically by the managed driver.
