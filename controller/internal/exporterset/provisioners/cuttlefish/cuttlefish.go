@@ -19,6 +19,7 @@ limitations under the License.
 package cuttlefish
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -42,7 +43,6 @@ const (
 
 	DefaultExporterImage = "quay.io/jumpstarter-dev/jumpstarter:latest"
 	DefaultRuntimeImage  = "us-docker.pkg.dev/android-cuttlefish-artifacts/cuttlefish-orchestration/cuttlefish-orchestration:stable"
-	DefaultRelayImage    = "docker.io/alpine/socat:latest"
 
 	exporterConfigPath       = "/etc/jumpstarter/exporters/config.yaml"
 	exporterNonRootUID int64 = 65532
@@ -51,39 +51,56 @@ const (
 	netsimDriverType     = "jumpstarter_driver_netsim.driver.Netsim"
 	btPeerDriverType     = "jumpstarter_driver_bt_peer.driver.BtPeer"
 
-	// The orchestration image reserves 2080 for nginx when running in a Pod;
-	// Host Orchestrator consequently listens on 2081. Keep this configurable.
+	// All containers share the Pod network namespace, so the exporter reaches
+	// Host Orchestrator and the simulators on loopback. The orchestration image
+	// reserves 2080 for nginx inside a Pod, so Host Orchestrator listens on 2081.
 	hostOrchestratorPort = 2081
-	netsimRelayPort      = 17681
-	hciRelayPort         = 17300
-	defaultGPUMode       = "guest_swiftshader"
-	defaultVMCPUs        = 4
-	defaultVMMemoryMB    = 8192
-	isolationLabel       = "cuttlefish.jumpstarter.dev/exporter-set"
-	healthStatePath      = "/tmp/jumpstarter-cuttlefish-health.json"
-	runtimeIDPath        = "/run/cuttlefish-runtime/runtime-id"
+	hostOrchestratorURL  = "http://127.0.0.1:2081"
+	netsimPort           = 7681
+	hciPort              = 7300
 
-	fetchPath      = "/home/vsoc-01/fetch"
-	cvdStatePath   = "/var/tmp/cvd"
-	androidTmpPath = "/tmp/android"
+	defaultGPUMode    = "guest_swiftshader"
+	defaultVMCPUs     = 4
+	defaultVMMemoryMB = 8192
+	defaultOverheadMB = 2048
+	isolationLabel    = "cuttlefish.jumpstarter.dev/exporter-set"
+	healthStatePath   = "/tmp/jumpstarter-cuttlefish-health.json"
+	runtimeIDMount    = "/run/cuttlefish-runtime"
+	runtimeIDPath     = runtimeIDMount + "/runtime-id"
+
+	fetchPath       = "/home/vsoc-01/fetch"
+	cvdStatePath    = "/var/tmp/cvd"
+	androidTmpPath  = "/tmp/android"
+	imageSourcePath = "/image-source"
+
+	runtimeContainerName = "cuttlefish"
+	gateContainerName    = "wait-for-cuttlefish"
 )
+
+// healthPorts are the simulator listeners the liveness probe expects while a guest runs.
+var healthPorts = []int{netsimPort, hciPort}
 
 type Provisioner struct {
 	Version string
 }
 
 type storageConfig struct {
-	imageClaim                            string
-	fetchImages                           bool
-	imageSize, stateSize, tmpSize, budget resource.Quantity
-	build                                 string
+	imageClaim                    string
+	fetchImages                   bool
+	build                         string
+	imageSize, stateSize, tmpSize resource.Quantity
+	// budget is the ephemeral storage every container touching the volumes must reserve.
+	budget resource.Quantity
 }
 
-type runtimeConfig struct {
-	relayImage          string
-	netsimPort, hciPort int
-	privileged          bool
-	serviceAccount      string
+// guestSpec is the effective guest size after template values override parameters.
+type guestSpec struct {
+	cpus, memoryMB int
+}
+
+type images struct {
+	exporter, runtime         string
+	exporterPull, runtimePull corev1.PullPolicy
 }
 
 func New(version string) *Provisioner {
@@ -119,8 +136,23 @@ func (p *Provisioner) resolveImageSpec(spec *virtualtargetv1alpha1.ImageSpec, de
 	return image, pullPolicy
 }
 
+func (p *Provisioner) resolveImages(overrides *virtualtargetv1alpha1.ImageOverrides) images {
+	var exporterSpec, runtimeSpec *virtualtargetv1alpha1.ImageSpec
+	if overrides != nil {
+		exporterSpec, runtimeSpec = overrides.Exporter, overrides.Runtime
+	}
+	img := images{}
+	img.exporter, img.exporterPull = p.resolveImageSpec(exporterSpec, DefaultExporterImage)
+	img.runtime, img.runtimePull = p.resolveImageSpec(runtimeSpec, DefaultRuntimeImage)
+	return img
+}
+
 func resolveStorageConfig(parameters map[string]interface{}) (storageConfig, error) {
-	config := storageConfig{}
+	config := storageConfig{
+		imageSize: resource.MustParse("20Gi"),
+		stateSize: resource.MustParse("20Gi"),
+		tmpSize:   resource.MustParse("4Gi"),
+	}
 	config.imageClaim, _ = parameters["image_volume_claim"].(string)
 	config.fetchImages, _ = parameters["fetch_images"].(bool)
 	if config.imageClaim != "" && config.fetchImages {
@@ -129,47 +161,49 @@ func resolveStorageConfig(parameters map[string]interface{}) (storageConfig, err
 	if config.imageClaim == "" && !config.fetchImages {
 		return config, fmt.Errorf("cuttlefish requires image_volume_claim or fetch_images=true")
 	}
-	if readOnly, _ := parameters["image_volume_read_only"].(bool); readOnly && config.imageClaim == "" {
-		return config, fmt.Errorf("image_volume_read_only requires image_volume_claim")
+	if config.fetchImages {
+		config.build = "aosp-android-latest-release/aosp_cf_x86_64_auto-userdebug"
+		if value, ok := parameters["default_build"].(string); ok && value != "" {
+			config.build = value
+		}
 	}
 
-	var err error
-	config.imageSize, config.stateSize, config.tmpSize, err = storageSizes(parameters)
-	if err != nil {
-		return config, err
+	if raw, exists := parameters["storage"]; exists {
+		storage, ok := raw.(map[string]interface{})
+		if !ok {
+			return config, fmt.Errorf("parameters.storage must be an object")
+		}
+		for key, target := range map[string]*resource.Quantity{
+			"imageSize": &config.imageSize, "stateSize": &config.stateSize, "tmpSize": &config.tmpSize,
+		} {
+			value, exists := storage[key]
+			if !exists {
+				continue
+			}
+			text, ok := value.(string)
+			quantity, err := resource.ParseQuantity(text)
+			if !ok || err != nil || quantity.Sign() <= 0 {
+				return config, fmt.Errorf("parameters.storage.%s must be a positive storage quantity", key)
+			}
+			*target = quantity
+		}
 	}
 	config.budget = config.imageSize.DeepCopy()
 	config.budget.Add(config.stateSize)
 	config.budget.Add(config.tmpSize)
 	config.budget.Add(resource.MustParse("1Gi")) // Container layers and logs need space beyond the volume budgets.
-	if config.fetchImages {
-		config.build = resolveDefaultBuild(parameters)
-	}
 	return config, nil
 }
 
-func resolveRuntimeConfig(parameters map[string]interface{}) (runtimeConfig, error) {
-	config := runtimeConfig{relayImage: DefaultRelayImage}
-	if value, ok := parameters["relay_image"].(string); ok && value != "" {
-		config.relayImage = value
+func resolveServiceAccount(parameters map[string]interface{}) (string, error) {
+	if privileged, _ := parameters["runtime_privileged"].(bool); !privileged {
+		return "", fmt.Errorf("cuttlefish requires runtime_privileged=true; unprivileged device access is not supported")
 	}
-
-	var err error
-	config.netsimPort, config.hciPort, err = relayPorts(parameters)
-	if err != nil {
-		return config, err
+	name, _ := parameters["service_account_name"].(string)
+	if name == "" || name == "default" || len(validation.IsDNS1123Subdomain(name)) != 0 {
+		return "", fmt.Errorf("service_account_name must name a dedicated workload service account")
 	}
-	configured := false
-	config.privileged, configured = parameterBool(parameters, "runtime_privileged")
-	if !configured || !config.privileged {
-		return config, fmt.Errorf("cuttlefish requires runtime_privileged=true; unprivileged device access is not supported")
-	}
-
-	config.serviceAccount, _ = parameters["service_account_name"].(string)
-	if config.serviceAccount == "" || config.serviceAccount == "default" || len(validation.IsDNS1123Subdomain(config.serviceAccount)) != 0 {
-		return config, fmt.Errorf("service_account_name must name a dedicated workload service account")
-	}
-	return config, nil
+	return name, nil
 }
 
 func (p *Provisioner) RenderPod(
@@ -177,173 +211,48 @@ func (p *Provisioner) RenderPod(
 	exporterSet *virtualtargetv1alpha1.ExporterSet,
 	vtc *virtualtargetv1alpha1.VirtualTargetClass,
 	mergedParameters map[string]interface{},
-	images *virtualtargetv1alpha1.ImageOverrides,
+	overrides *virtualtargetv1alpha1.ImageOverrides,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) (*corev1.Pod, error) {
 	_ = ctx
 	if exporterSet.Spec.RecycleStrategy == virtualtargetv1alpha1.RecycleStrategyInPlaceReuse {
 		return nil, fmt.Errorf("managed Cuttlefish requires ExitAndReplace recycling")
 	}
-
-	var exporterSpec, runtimeSpec *virtualtargetv1alpha1.ImageSpec
-	if images != nil {
-		exporterSpec = images.Exporter
-		runtimeSpec = images.Runtime
-	}
-	exporterImage, exporterPullPolicy := p.resolveImageSpec(exporterSpec, DefaultExporterImage)
-	runtimeImage, runtimePullPolicy := p.resolveImageSpec(runtimeSpec, DefaultRuntimeImage)
 	storage, err := resolveStorageConfig(mergedParameters)
 	if err != nil {
 		return nil, err
 	}
-	runtime, err := resolveRuntimeConfig(mergedParameters)
+	serviceAccount, err := resolveServiceAccount(mergedParameters)
 	if err != nil {
 		return nil, err
 	}
-	drivers, err := p.EnrichExporterExport(exporterSet.Spec.Template.Spec.Drivers, mergedParameters)
+	// The reconciler persists the enriched drivers itself; rendering needs the
+	// validation and the effective guest size for the runtime budget.
+	_, guest, err := enrichDrivers(exporterSet.Spec.Template.Spec.Drivers, mergedParameters)
 	if err != nil {
 		return nil, err
 	}
-	runtimeResources := corev1.ResourceRequirements{}
-	if vtc.Spec.Scheduling != nil && vtc.Spec.Scheduling.Resources != nil {
-		runtimeResources = *vtc.Spec.Scheduling.Resources.DeepCopy()
-	}
-	if err := reserveRuntimeResources(&runtimeResources, drivers, mergedParameters); err != nil {
+	resources, err := runtimeResources(vtc, guest, mergedParameters)
+	if err != nil {
 		return nil, err
 	}
-
-	podMeta := metav1.ObjectMeta{
-		Namespace:   exporterSet.Namespace,
-		Labels:      maps.Clone(exporterSet.Spec.Template.Metadata.Labels),
-		Annotations: maps.Clone(exporterSet.Spec.Template.Metadata.Annotations),
+	if err := reserveStorage(&resources, storage.budget); err != nil {
+		return nil, err
 	}
-	if exporter != nil {
-		podMeta.Name = exporter.Name
-	} else {
-		podMeta.GenerateName = fmt.Sprintf("%s-", exporterSet.Name)
-	}
-
-	if podMeta.Labels == nil {
-		podMeta.Labels = map[string]string{}
-	}
-	podMeta.Labels[isolationLabel] = string(exporterSet.UID)
-
-	runtimeRestart := corev1.ContainerRestartPolicyAlways
-	runAsRoot := int64(0)
-	runAsExporter := exporterNonRootUID
-	runAsNonRoot := true
-
-	volumeMounts := []corev1.VolumeMount{
-		{Name: "cvd-images", MountPath: fetchPath, ReadOnly: false},
-		{Name: "cvd-state", MountPath: cvdStatePath},
-		{Name: "android-tmp", MountPath: androidTmpPath},
-	}
-	deviceMounts := []corev1.VolumeMount{
-		{Name: "kvm", MountPath: "/dev/kvm"},
-		{Name: "vhost-net", MountPath: "/dev/vhost-net"},
-		{Name: "tun", MountPath: "/dev/net/tun"},
-	}
-
-	exporterContainer := corev1.Container{
-		Name:            "exporter",
-		VolumeMounts:    []corev1.VolumeMount{{Name: "cvd-state", MountPath: "/run/cuttlefish-runtime", ReadOnly: true}},
-		Image:           exporterImage,
-		ImagePullPolicy: exporterPullPolicy,
-		Command: []string{"python3", "-m", "jumpstarter_driver_cuttlefish.health", "--run-exporter",
-			healthStatePath, runtimeIDPath, "http://127.0.0.1:2081", exporterConfigPath},
-		Env: []corev1.EnvVar{{
-			Name:  "HOME",
-			Value: "/tmp",
-		}},
-		SecurityContext: &corev1.SecurityContext{
-			RunAsUser:    &runAsExporter,
-			RunAsNonRoot: &runAsNonRoot,
-		},
-	}
-	if exporter != nil {
-		exporterContainer.Env = append(exporterContainer.Env, corev1.EnvVar{
-			Name:  "JUMPSTARTER_EXEC_LOG_FIELDS",
-			Value: fmt.Sprintf("component=exporter,exporter=%s,namespace=%s", exporter.Name, exporter.Namespace),
-		})
-	}
-
-	imageVolume := corev1.Volume{Name: "cvd-images", VolumeSource: corev1.VolumeSource{
-		EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: &storage.imageSize},
-	}}
-	permissionCommand := "mkdir -p /var/tmp/cvd /tmp/android && chown -R httpcvd:httpcvd /var/tmp/cvd /tmp/android /home/vsoc-01/fetch"
-
-	initContainers := make([]corev1.Container, 0, 4)
-	if storage.fetchImages {
-		initContainers = append(initContainers, corev1.Container{
-			Name:            "fetch-images",
-			Image:           runtimeImage,
-			ImagePullPolicy: runtimePullPolicy,
-			Command:         []string{"cvd", "fetch", "--default_build=" + storage.build, "--target_directory=" + fetchPath},
-			VolumeMounts:    []corev1.VolumeMount{{Name: "cvd-images", MountPath: fetchPath, ReadOnly: false}},
-		})
-	}
-	initContainers = append(initContainers,
-		corev1.Container{
-			Name:            "fix-cuttlefish-permissions",
-			Image:           runtimeImage,
-			ImagePullPolicy: runtimePullPolicy,
-			Command: []string{
-				"bash", "-c", permissionCommand,
-			},
-			VolumeMounts: volumeMounts,
-		},
-		corev1.Container{
-			Name:            "cuttlefish",
-			Image:           runtimeImage,
-			ImagePullPolicy: runtimePullPolicy,
-			RestartPolicy:   &runtimeRestart,
-			Command: []string{"bash", "-ec", `cat /proc/sys/kernel/random/uuid > /var/tmp/cvd/runtime-id
-chmod 644 /var/tmp/cvd/runtime-id
-exec /root/run_services.sh`},
-			Resources:       runtimeResources,
-			SecurityContext: &corev1.SecurityContext{Privileged: boolPtr(runtime.privileged), RunAsUser: &runAsRoot},
-			VolumeMounts:    slices.Concat(volumeMounts, deviceMounts),
-		},
-		corev1.Container{
-			Name:            "cuttlefish-relay",
-			Image:           runtime.relayImage,
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			RestartPolicy:   &runtimeRestart,
-			Command: []string{
-				"sh", "-c",
-				fmt.Sprintf(
-					`socat TCP-LISTEN:%d,bind=127.0.0.1,fork,reuseaddr TCP:127.0.0.1:7681 &
-first=$!
-socat TCP-LISTEN:%d,bind=127.0.0.1,fork,reuseaddr TCP:127.0.0.1:7300 &
-second=$!
-trap 'kill $first $second 2>/dev/null || true' EXIT
-while kill -0 $first && kill -0 $second; do sleep 1; done
-exit 1`,
-					runtime.netsimPort, runtime.hciPort,
-				),
-			},
-		},
-	)
+	img := p.resolveImages(overrides)
 
 	pod := &corev1.Pod{
-		ObjectMeta: podMeta,
+		ObjectMeta: podMeta(exporterSet, exporter),
 		Spec: corev1.PodSpec{
+			// Never: ExitAndReplace relies on the exporter (main) exit completing the Pod.
 			RestartPolicy:                corev1.RestartPolicyNever,
-			ServiceAccountName:           runtime.serviceAccount,
+			ServiceAccountName:           serviceAccount,
 			AutomountServiceAccountToken: boolPtr(false),
-			InitContainers:               initContainers,
-			Containers:                   []corev1.Container{exporterContainer},
-			Volumes: []corev1.Volume{
-				imageVolume,
-				{Name: "cvd-state", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: &storage.stateSize}}},
-				{Name: "android-tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: &storage.tmpSize}}},
-				deviceVolume("kvm", "/dev/kvm"),
-				deviceVolume("vhost-net", "/dev/vhost-net"),
-				deviceVolume("tun", "/dev/net/tun"),
-			},
+			InitContainers:               initContainers(img, storage, resources),
+			Containers:                   []corev1.Container{exporterContainer(img)},
+			Volumes:                      volumes(storage),
 		},
 	}
-
 	if vtc.Spec.Scheduling != nil {
 		if vtc.Spec.Scheduling.NodeSelector != nil {
 			pod.Spec.NodeSelector = maps.Clone(vtc.Spec.Scheduling.NodeSelector)
@@ -352,205 +261,298 @@ exit 1`,
 			pod.Spec.Tolerations = append([]corev1.Toleration(nil), vtc.Spec.Scheduling.Tolerations...)
 		}
 	}
+	return pod, nil
+}
 
+func podMeta(exporterSet *virtualtargetv1alpha1.ExporterSet, exporter *jumpstarterdevv1alpha1.Exporter) metav1.ObjectMeta {
+	meta := metav1.ObjectMeta{
+		Namespace:   exporterSet.Namespace,
+		Labels:      maps.Clone(exporterSet.Spec.Template.Metadata.Labels),
+		Annotations: maps.Clone(exporterSet.Spec.Template.Metadata.Annotations),
+	}
+	if exporter != nil {
+		meta.Name = exporter.Name
+	} else {
+		meta.GenerateName = exporterSet.Name + "-"
+	}
+	if meta.Labels == nil {
+		meta.Labels = map[string]string{}
+	}
+	meta.Labels[isolationLabel] = string(exporterSet.UID)
+	return meta
+}
+
+func exporterSecurityContext() *corev1.SecurityContext {
+	uid := exporterNonRootUID
+	return &corev1.SecurityContext{RunAsUser: &uid, RunAsNonRoot: boolPtr(true)}
+}
+
+// exporterContainer runs jmp behind the health wrapper, which records the
+// runtime marker before the exporter registers and backs the liveness probe.
+func exporterContainer(img images) corev1.Container {
+	return corev1.Container{
+		Name:            "exporter",
+		Image:           img.exporter,
+		ImagePullPolicy: img.exporterPull,
+		Command: []string{"python3", "-m", "jumpstarter_driver_cuttlefish.health", "--run-exporter",
+			healthStatePath, runtimeIDPath, hostOrchestratorURL, exporterConfigPath},
+		Env:             []corev1.EnvVar{{Name: "HOME", Value: "/tmp"}},
+		SecurityContext: exporterSecurityContext(),
+		VolumeMounts:    []corev1.VolumeMount{{Name: "cvd-state", MountPath: runtimeIDMount, ReadOnly: true}},
+		// With restartPolicy Never, a failed liveness check ends the exporter and lets ExitAndReplace recycle the Pod.
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{
+				Command: []string{"python3", "-m", "jumpstarter_driver_cuttlefish.health", healthStatePath},
+			}},
+			PeriodSeconds: 10, TimeoutSeconds: 10, FailureThreshold: 6,
+		},
+	}
+}
+
+// initContainers stages images, fixes ownership, starts the runtime as a
+// native sidecar and gates the exporter on Host Orchestrator readiness.
+func initContainers(img images, storage storageConfig, runtime corev1.ResourceRequirements) []corev1.Container {
+	stateMounts := []corev1.VolumeMount{
+		{Name: "cvd-images", MountPath: fetchPath},
+		{Name: "cvd-state", MountPath: cvdStatePath},
+		{Name: "android-tmp", MountPath: androidTmpPath},
+	}
+	deviceMounts := []corev1.VolumeMount{
+		{Name: "kvm", MountPath: "/dev/kvm"},
+		{Name: "vhost-net", MountPath: "/dev/vhost-net"},
+		{Name: "tun", MountPath: "/dev/net/tun"},
+	}
+	restartAlways := corev1.ContainerRestartPolicyAlways
+	root := int64(0)
+
+	var containers []corev1.Container
 	if storage.imageClaim != "" {
-		pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{Name: "image-source", VolumeSource: corev1.VolumeSource{
-			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: storage.imageClaim, ReadOnly: true},
-		}})
-		copyImages := corev1.Container{
-			Name: "copy-images", Image: runtimeImage, ImagePullPolicy: runtimePullPolicy,
-			Command: []string{"bash", "-ec", "cp -a --reflink=auto /image-source/. /home/vsoc-01/fetch/"},
+		containers = append(containers, corev1.Container{
+			Name: "copy-images", Image: img.runtime, ImagePullPolicy: img.runtimePull,
+			Command:   []string{"bash", "-ec", "cp -a --reflink=auto " + imageSourcePath + "/. " + fetchPath + "/"},
+			Resources: storageReservation(storage.budget),
 			VolumeMounts: []corev1.VolumeMount{
-				{Name: "image-source", MountPath: "/image-source", ReadOnly: true},
+				{Name: "image-source", MountPath: imageSourcePath, ReadOnly: true},
 				{Name: "cvd-images", MountPath: fetchPath},
 			},
-		}
-		pod.Spec.InitContainers = append([]corev1.Container{copyImages}, pod.Spec.InitContainers...)
+		})
 	}
-	for i := range pod.Spec.InitContainers {
-		container := &pod.Spec.InitContainers[i]
-		if container.Name == "cuttlefish" || container.Name == "fetch-images" || container.Name == "copy-images" {
-			if err := reserveStorage(&container.Resources, storage.budget); err != nil {
-				return nil, err
-			}
-		}
+	if storage.fetchImages {
+		containers = append(containers, corev1.Container{
+			Name: "fetch-images", Image: img.runtime, ImagePullPolicy: img.runtimePull,
+			Command:      []string{"cvd", "fetch", "--default_build=" + storage.build, "--target_directory=" + fetchPath},
+			Resources:    storageReservation(storage.budget),
+			VolumeMounts: []corev1.VolumeMount{{Name: "cvd-images", MountPath: fetchPath}},
+		})
 	}
-	// Run in the exporter image so the check uses the same network namespace and Python runtime as jmp.
-	healthURL := fmt.Sprintf("http://127.0.0.1:%d/_debug/statusz", parameterInt(mergedParameters, "host_orchestrator_port", hostOrchestratorPort))
-	healthCheck := "import urllib.request; urllib.request.urlopen(" + fmt.Sprintf("%q", healthURL) + ", timeout=3).close()"
-	pod.Spec.InitContainers = append(pod.Spec.InitContainers, corev1.Container{
-		Name: "wait-for-cuttlefish", Image: exporterImage, ImagePullPolicy: exporterPullPolicy,
-		SecurityContext: exporterContainer.SecurityContext.DeepCopy(),
-		Command:         []string{"python3", "-c", "import time, urllib.request\nfor attempt in range(60):\n try:\n  " + healthCheck + "\n  break\n except Exception:\n  time.sleep(5)\nelse:\n raise SystemExit('Host Orchestrator did not become ready')"},
-	})
-	// With restartPolicy Never, a failed liveness check ends the exporter and lets ExitAndReplace recycle the Pod.
-	pod.Spec.Containers[0].LivenessProbe = &corev1.Probe{
-		ProbeHandler:  corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{"python3", "-m", "jumpstarter_driver_cuttlefish.health", healthStatePath}}},
-		PeriodSeconds: 10, TimeoutSeconds: 10, FailureThreshold: 6,
-	}
+	return append(containers,
+		corev1.Container{
+			Name: "fix-cuttlefish-permissions", Image: img.runtime, ImagePullPolicy: img.runtimePull,
+			Command: []string{"bash", "-c", "mkdir -p " + cvdStatePath + " " + androidTmpPath +
+				" && chown -R httpcvd:httpcvd " + cvdStatePath + " " + androidTmpPath + " " + fetchPath},
+			// chown needs UID 0 regardless of the runtime image's default user.
+			SecurityContext: &corev1.SecurityContext{RunAsUser: &root},
+			VolumeMounts:    stateMounts,
+		},
+		corev1.Container{
+			Name: runtimeContainerName, Image: img.runtime, ImagePullPolicy: img.runtimePull,
+			RestartPolicy: &restartAlways,
+			// The marker lets the exporter and probe detect a sidecar restart that lost runtime state.
+			Command: []string{"bash", "-ec", "cat /proc/sys/kernel/random/uuid > " + cvdStatePath + "/runtime-id\n" +
+				"chmod 644 " + cvdStatePath + "/runtime-id\nexec /root/run_services.sh"},
+			Resources:       runtime,
+			SecurityContext: &corev1.SecurityContext{Privileged: boolPtr(true), RunAsUser: &root},
+			VolumeMounts:    append(stateMounts, deviceMounts...),
+		},
+		corev1.Container{
+			// Runs in the exporter image so the check shares the network namespace and Python runtime with jmp.
+			Name: gateContainerName, Image: img.exporter, ImagePullPolicy: img.exporterPull,
+			Command:         []string{"python3", "-m", "jumpstarter_driver_cuttlefish.health", "--wait", hostOrchestratorURL},
+			SecurityContext: exporterSecurityContext(),
+		},
+	)
+}
 
-	return pod, nil
+func volumes(storage storageConfig) []corev1.Volume {
+	emptyDir := func(name string, size *resource.Quantity) corev1.Volume {
+		return corev1.Volume{Name: name, VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: size},
+		}}
+	}
+	result := []corev1.Volume{
+		emptyDir("cvd-images", &storage.imageSize),
+		emptyDir("cvd-state", &storage.stateSize),
+		emptyDir("android-tmp", &storage.tmpSize),
+		deviceVolume("kvm", "/dev/kvm"),
+		deviceVolume("vhost-net", "/dev/vhost-net"),
+		deviceVolume("tun", "/dev/net/tun"),
+	}
+	if storage.imageClaim != "" {
+		// The claim is only ever read; each Pod copies it into its private image volume.
+		result = append(result, corev1.Volume{Name: "image-source", VolumeSource: corev1.VolumeSource{
+			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: storage.imageClaim, ReadOnly: true},
+		}})
+	}
+	return result
 }
 
 func (p *Provisioner) EnrichExporterExport(
 	drivers []virtualtargetv1alpha1.DriverConfig,
 	mergedParameters map[string]interface{},
 ) ([]virtualtargetv1alpha1.DriverConfig, error) {
-	netsimPort, hciPort, err := relayPorts(mergedParameters)
-	if err != nil {
-		return nil, err
-	}
-	count := 0
-	for _, driver := range drivers {
-		if driver.Type == cuttlefishDriverType {
-			count++
-		}
-	}
-	if count != 1 {
-		return nil, fmt.Errorf("cuttlefish requires exactly one Cuttlefish driver per Pod, got %d", count)
-	}
+	enriched, _, err := enrichDrivers(drivers, mergedParameters)
+	return enriched, err
+}
+
+// enrichDrivers pins every driver to the in-Pod runtime and returns the
+// effective guest size the runtime container must budget for.
+func enrichDrivers(drivers []virtualtargetv1alpha1.DriverConfig, parameters map[string]interface{}) ([]virtualtargetv1alpha1.DriverConfig, guestSpec, error) {
+	var guest guestSpec
+	found := 0
 	result := make([]virtualtargetv1alpha1.DriverConfig, 0, len(drivers))
 	for _, driver := range drivers {
 		var err error
 		switch driver.Type {
 		case cuttlefishDriverType:
-			driver, err = enrichCuttlefishDriver(driver, mergedParameters)
+			found++
+			driver, guest, err = enrichCuttlefishDriver(driver, parameters)
 		case netsimDriverType:
-			driver, err = enrichDriverConfig(driver, map[string]interface{}{
-				"host": "127.0.0.1",
-				"port": netsimPort,
-			}, "netsim")
+			driver, err = pinDriverConfig(driver, map[string]interface{}{"host": "127.0.0.1", "port": netsimPort}, "netsim")
 		case btPeerDriverType:
-			driver, err = enrichDriverConfig(driver, map[string]interface{}{
-				"transport": fmt.Sprintf("tcp-client:127.0.0.1:%d", hciPort),
-			}, "bt_peer")
+			driver, err = pinDriverConfig(driver, map[string]interface{}{"transport": fmt.Sprintf("tcp-client:127.0.0.1:%d", hciPort)}, "bt_peer")
 		}
 		if err != nil {
-			return nil, err
+			return nil, guest, err
 		}
 		result = append(result, driver)
 	}
-	return result, nil
+	if found != 1 {
+		return nil, guest, fmt.Errorf("cuttlefish requires exactly one Cuttlefish driver per Pod, got %d", found)
+	}
+	return result, guest, nil
 }
 
-func enrichCuttlefishDriver(driver virtualtargetv1alpha1.DriverConfig, parameters map[string]interface{}) (virtualtargetv1alpha1.DriverConfig, error) {
-	for _, item := range []struct {
-		key      string
-		fallback int
-	}{{"vm_cpus", defaultVMCPUs}, {"vm_memory_mb", defaultVMMemoryMB}} {
-		if _, err := positiveInt(parameters, item.key, item.fallback); err != nil {
-			return driver, err
-		}
+func enrichCuttlefishDriver(driver virtualtargetv1alpha1.DriverConfig, parameters map[string]interface{}) (virtualtargetv1alpha1.DriverConfig, guestSpec, error) {
+	var guest guestSpec
+	var err error
+	if guest.cpus, err = positiveInt(parameters, "vm_cpus", defaultVMCPUs); err != nil {
+		return driver, guest, err
+	}
+	if guest.memoryMB, err = positiveInt(parameters, "vm_memory_mb", defaultVMMemoryMB); err != nil {
+		return driver, guest, err
 	}
 	config, err := decodeConfig(driver, "Cuttlefish")
 	if err != nil {
-		return driver, err
+		return driver, guest, err
 	}
 
 	config["managed"] = true
 	config["health_state_path"] = healthStatePath
 	config["runtime_id_path"] = runtimeIDPath
-	config["health_ports"] = []int{7681, 7300, parameterInt(parameters, "netsim_relay_port", netsimRelayPort), parameterInt(parameters, "hci_relay_port", hciRelayPort)}
-	setDefault(config, "scheme", "http")
-	setDefault(config, "host", "127.0.0.1")
-	setDefault(config, "port", parameterInt(parameters, "host_orchestrator_port", hostOrchestratorPort))
+	config["health_ports"] = healthPorts
+	// Any other endpoint would bypass the managed runtime in this Pod.
+	for key, value := range map[string]interface{}{"scheme": "http", "host": "127.0.0.1", "port": hostOrchestratorPort, "instance_num": 1} {
+		if err := pin(config, key, value); err != nil {
+			return driver, guest, err
+		}
+	}
 	setDefault(config, "group", "cvd")
 	setDefault(config, "name", "1")
-	setDefault(config, "instance_num", 1)
 	setDefault(config, "boot_timeout", 300)
-	if err := validateManagedEndpoint(config); err != nil {
-		return driver, err
-	}
 
 	envConfig, err := configObject(config, "env_config")
 	if err != nil {
-		return driver, err
+		return driver, guest, err
 	}
 	common, err := configObject(envConfig, "common")
 	if err != nil {
-		return driver, err
+		return driver, guest, err
 	}
 	setDefault(common, "host_package", fetchPath)
 	envConfig["common"] = common
+	// Standalone RootCanal does not propagate the userspace VSOCK flag.
+	if err := pin(envConfig, "netsim_bt", true); err != nil {
+		return driver, guest, fmt.Errorf("%w; standalone RootCanal is not supported", err)
+	}
+
 	instances, ok := envConfig["instances"].([]interface{})
 	if raw, exists := envConfig["instances"]; exists && (!ok || len(instances) != 1) {
-		return driver, fmt.Errorf("env_config.instances must contain exactly one instance, got %v", raw)
+		return driver, guest, fmt.Errorf("env_config.instances must contain exactly one instance, got %v", raw)
 	}
 	if len(instances) == 0 {
 		instances = []interface{}{map[string]interface{}{}}
 	}
 	instance, ok := instances[0].(map[string]interface{})
 	if !ok || instance == nil {
-		return driver, fmt.Errorf("env_config.instances[0] must be an object")
+		return driver, guest, fmt.Errorf("env_config.instances[0] must be an object")
 	}
 	disk, err := configObject(instance, "disk")
 	if err != nil {
-		return driver, err
+		return driver, guest, err
 	}
 	setDefault(disk, "default_build", fetchPath)
 	instance["disk"] = disk
 	graphics, err := configObject(instance, "graphics")
 	if err != nil {
-		return driver, err
+		return driver, guest, err
 	}
 	gpuMode := defaultGPUMode
-	if configuredGPU, ok := parameters["gpu_mode"].(string); ok && configuredGPU != "" {
-		gpuMode = configuredGPU
+	if configured, ok := parameters["gpu_mode"].(string); ok && configured != "" {
+		gpuMode = configured
 	}
 	setDefault(graphics, "gpu_mode", gpuMode)
 	instance["graphics"] = graphics
+
 	vm, err := configObject(instance, "vm")
 	if err != nil {
-		return driver, err
+		return driver, guest, err
 	}
-	if _, exists := vm["qemu"]; exists {
-		return driver, fmt.Errorf("managed Cuttlefish requires crosvm with private userspace VSOCK")
-	}
-	if _, exists := vm["gem5"]; exists {
-		return driver, fmt.Errorf("managed Cuttlefish requires crosvm with private userspace VSOCK")
+	for _, other := range []string{"qemu", "gem5"} {
+		if _, exists := vm[other]; exists {
+			return driver, guest, fmt.Errorf("managed Cuttlefish requires crosvm with private userspace VSOCK, got vm.%s", other)
+		}
 	}
 	crosvm, err := configObject(vm, "crosvm")
 	if err != nil {
-		return driver, err
+		return driver, guest, err
 	}
-	if value, exists := crosvm["vhost_user_vsock"]; exists && value != "true" {
-		return driver, fmt.Errorf("vm.crosvm.vhost_user_vsock must be the string true")
+	// The upstream schema wants the string "true" here; two Pods on one node share guest CIDs otherwise.
+	if err := pin(crosvm, "vhost_user_vsock", "true"); err != nil {
+		return driver, guest, err
 	}
-	crosvm["vhost_user_vsock"] = "true"
 	vm["crosvm"] = crosvm
-	if value, exists := envConfig["netsim_bt"]; exists && value != true {
-		return driver, fmt.Errorf("managed Cuttlefish requires netsim_bt=true; standalone RootCanal is not supported")
+	// Template guest values take precedence over the class parameters.
+	setDefault(vm, "cpus", guest.cpus)
+	setDefault(vm, "memory_mb", guest.memoryMB)
+	if guest.cpus, err = positiveInt(vm, "cpus", guest.cpus); err != nil {
+		return driver, guest, err
 	}
-	envConfig["netsim_bt"] = true
-	setDefault(vm, "cpus", parameterInt(parameters, "vm_cpus", defaultVMCPUs))
-	setDefault(vm, "memory_mb", parameterInt(parameters, "vm_memory_mb", defaultVMMemoryMB))
-	if _, err := positiveInt(vm, "cpus", defaultVMCPUs); err != nil {
-		return driver, err
-	}
-	if _, err := positiveInt(vm, "memory_mb", defaultVMMemoryMB); err != nil {
-		return driver, err
+	if guest.memoryMB, err = positiveInt(vm, "memory_mb", guest.memoryMB); err != nil {
+		return driver, guest, err
 	}
 	instance["vm"] = vm
 	instances[0] = instance
 	envConfig["instances"] = instances
 	config["env_config"] = envConfig
 
-	return encodeConfig(driver, config)
+	driver, err = encodeConfig(driver, config)
+	return driver, guest, err
 }
 
-func validateManagedEndpoint(config map[string]interface{}) error {
-	for key, required := range map[string]interface{}{"scheme": "http", "host": "127.0.0.1"} {
-		if config[key] != required {
-			return fmt.Errorf("managed Cuttlefish requires %s=%v", key, required)
-		}
+// pin sets config[key] to value and rejects a template value that differs.
+// Values are compared through their JSON encoding so 2081 matches 2081.0.
+func pin(config map[string]interface{}, key string, value interface{}) error {
+	if current, exists := config[key]; exists && !jsonEqual(current, value) {
+		return fmt.Errorf("managed Cuttlefish requires %s=%v, got %v", key, value, current)
 	}
-	if port, err := positiveInt(config, "port", hostOrchestratorPort); err != nil || port != hostOrchestratorPort {
-		return fmt.Errorf("managed Cuttlefish requires port=%d", hostOrchestratorPort)
-	}
-	if instanceNum, err := positiveInt(config, "instance_num", 1); err != nil || instanceNum != 1 {
-		return fmt.Errorf("managed Cuttlefish requires instance_num=1")
-	}
+	config[key] = value
 	return nil
+}
+
+func jsonEqual(a, b interface{}) bool {
+	rawA, errA := json.Marshal(a)
+	rawB, errB := json.Marshal(b)
+	return errA == nil && errB == nil && bytes.Equal(rawA, rawB)
 }
 
 func configObject(parent map[string]interface{}, key string) (map[string]interface{}, error) {
@@ -565,13 +567,19 @@ func configObject(parent map[string]interface{}, key string) (map[string]interfa
 	return value, nil
 }
 
-func enrichDriverConfig(driver virtualtargetv1alpha1.DriverConfig, defaults map[string]interface{}, name string) (virtualtargetv1alpha1.DriverConfig, error) {
+// pinDriverConfig pins a sidecar driver to the simulator endpoints this Pod
+// runs; a template value that differs points the driver outside the Pod and is
+// rejected, while a matching one is preserved. Keys are applied in sorted order
+// so a conflicting template yields a stable error.
+func pinDriverConfig(driver virtualtargetv1alpha1.DriverConfig, managed map[string]interface{}, name string) (virtualtargetv1alpha1.DriverConfig, error) {
 	config, err := decodeConfig(driver, name)
 	if err != nil {
 		return driver, err
 	}
-	for key, value := range defaults {
-		setDefault(config, key, value)
+	for _, key := range slices.Sorted(maps.Keys(managed)) {
+		if err := pin(config, key, managed[key]); err != nil {
+			return driver, fmt.Errorf("%s driver: %w", name, err)
+		}
 	}
 	return encodeConfig(driver, config)
 }
@@ -598,33 +606,6 @@ func encodeConfig(driver virtualtargetv1alpha1.DriverConfig, config map[string]i
 	return driver, nil
 }
 
-func resolveDefaultBuild(parameters map[string]interface{}) string {
-	if value, ok := parameters["default_build"].(string); ok && value != "" {
-		return value
-	}
-	return "aosp-android-latest-release/aosp_cf_x86_64_auto-userdebug"
-}
-
-func relayPorts(parameters map[string]interface{}) (int, int, error) {
-	ports := []int{netsimRelayPort, hciRelayPort}
-	reserved := map[int]bool{
-		80: true, 443: true, 1080: true, 1443: true, 2080: true, 2081: true, 2443: true,
-		7300: true, 7301: true, 7302: true, 7303: true, 7681: true, 15037: true, 19531: true,
-	}
-	if port, err := positiveInt(parameters, "host_orchestrator_port", hostOrchestratorPort); err != nil || port != hostOrchestratorPort {
-		return 0, 0, fmt.Errorf("host_orchestrator_port must be %d for the orchestration image", hostOrchestratorPort)
-	}
-	for i, key := range []string{"netsim_relay_port", "hci_relay_port"} {
-		port, err := positiveInt(parameters, key, ports[i])
-		if err != nil || port > 65535 || reserved[port] || (port >= 6520 && port <= 6620) || (port >= 15550 && port <= 15560) {
-			return 0, 0, fmt.Errorf("%s must be an integer port in 1..65535 that does not conflict with a runtime service", key)
-		}
-		ports[i] = port
-		reserved[port] = true
-	}
-	return ports[0], ports[1], nil
-}
-
 func positiveInt(values map[string]interface{}, key string, fallback int) (int, error) {
 	raw, exists := values[key]
 	if !exists {
@@ -649,58 +630,78 @@ func positiveInt(values map[string]interface{}, key string, fallback int) (int, 
 	return int(value), nil
 }
 
-func reserveRuntimeResources(resources *corev1.ResourceRequirements, drivers []virtualtargetv1alpha1.DriverConfig, parameters map[string]interface{}) error {
-	var vm map[string]interface{}
-	for _, driver := range drivers {
-		if driver.Type != cuttlefishDriverType {
-			continue
-		}
-		config, err := decodeConfig(driver, "Cuttlefish")
-		if err != nil {
-			return err
-		}
-		vm = config["env_config"].(map[string]interface{})["instances"].([]interface{})[0].(map[string]interface{})["vm"].(map[string]interface{})
+// runtimeResources starts from the class scheduling resources and guarantees
+// the runtime container requests the guest memory plus runtime overhead.
+func runtimeResources(vtc *virtualtargetv1alpha1.VirtualTargetClass, guest guestSpec, parameters map[string]interface{}) (corev1.ResourceRequirements, error) {
+	resources := corev1.ResourceRequirements{}
+	if vtc.Spec.Scheduling != nil && vtc.Spec.Scheduling.Resources != nil {
+		resources = *vtc.Spec.Scheduling.Resources.DeepCopy()
 	}
-	memory, err := positiveInt(vm, "memory_mb", defaultVMMemoryMB)
+	overhead, err := positiveInt(parameters, "runtime_memory_overhead_mb", defaultOverheadMB)
 	if err != nil {
-		return err
+		return resources, err
 	}
-	cpus, err := positiveInt(vm, "cpus", defaultVMCPUs)
-	if err != nil {
-		return err
-	}
-	overhead, err := positiveInt(parameters, "runtime_memory_overhead_mb", 2048)
-	if err != nil {
-		return err
-	}
-	budget := *resource.NewQuantity((int64(memory)+int64(overhead))*1024*1024, resource.BinarySI)
+	budget := *resource.NewQuantity(int64(guest.memoryMB+overhead)*1024*1024, resource.BinarySI)
 	if resources.Requests == nil {
 		resources.Requests = corev1.ResourceList{}
 	}
 	for _, values := range []corev1.ResourceList{resources.Requests, resources.Limits} {
 		if value, exists := values[corev1.ResourceMemory]; exists && value.Cmp(budget) < 0 {
-			return fmt.Errorf("runtime memory must be at least %s for guest plus overhead", budget.String())
+			return resources, fmt.Errorf("runtime memory must be at least %s for guest plus overhead", budget.String())
 		}
 	}
 	if _, exists := resources.Requests[corev1.ResourceMemory]; !exists {
 		resources.Requests[corev1.ResourceMemory] = budget
 	}
 	if limit, exists := resources.Limits[corev1.ResourceMemory]; exists && resources.Requests.Memory().Cmp(limit) > 0 {
-		return fmt.Errorf("runtime memory request exceeds limit")
+		return resources, fmt.Errorf("runtime memory request exceeds limit")
 	}
 	if _, exists := resources.Requests[corev1.ResourceCPU]; !exists {
 		if limit, exists := resources.Limits[corev1.ResourceCPU]; exists {
 			resources.Requests[corev1.ResourceCPU] = limit.DeepCopy()
 		} else {
-			resources.Requests[corev1.ResourceCPU] = *resource.NewQuantity(int64(cpus), resource.DecimalSI)
+			resources.Requests[corev1.ResourceCPU] = *resource.NewQuantity(int64(guest.cpus), resource.DecimalSI)
 		}
 	}
-
 	if resources.Requests.Cpu().Sign() <= 0 {
-		return fmt.Errorf("runtime CPU request must be positive")
+		return resources, fmt.Errorf("runtime CPU request must be positive")
 	}
 	if limit, exists := resources.Limits[corev1.ResourceCPU]; exists && resources.Requests.Cpu().Cmp(limit) > 0 {
-		return fmt.Errorf("runtime CPU request exceeds limit")
+		return resources, fmt.Errorf("runtime CPU request exceeds limit")
+	}
+	return resources, nil
+}
+
+// storageReservation is the ephemeral storage for containers that only touch the volumes.
+func storageReservation(budget resource.Quantity) corev1.ResourceRequirements {
+	return corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceEphemeralStorage: budget.DeepCopy()},
+		Limits:   corev1.ResourceList{corev1.ResourceEphemeralStorage: budget.DeepCopy()},
+	}
+}
+
+// reserveStorage adds the ephemeral storage budget to class-provided resources.
+func reserveStorage(resources *corev1.ResourceRequirements, budget resource.Quantity) error {
+	if resources.Requests == nil {
+		resources.Requests = corev1.ResourceList{}
+	}
+	if resources.Limits == nil {
+		resources.Limits = corev1.ResourceList{}
+	}
+	for _, values := range []corev1.ResourceList{resources.Requests, resources.Limits} {
+		if value, exists := values[corev1.ResourceEphemeralStorage]; exists && value.Cmp(budget) < 0 {
+			return fmt.Errorf("ephemeral-storage must be at least %s for Cuttlefish volume budgets and overhead", budget.String())
+		}
+	}
+	if _, exists := resources.Requests[corev1.ResourceEphemeralStorage]; !exists {
+		resources.Requests[corev1.ResourceEphemeralStorage] = budget.DeepCopy()
+	}
+	if _, exists := resources.Limits[corev1.ResourceEphemeralStorage]; !exists {
+		resources.Limits[corev1.ResourceEphemeralStorage] = resources.Requests[corev1.ResourceEphemeralStorage].DeepCopy()
+	}
+	request := resources.Requests[corev1.ResourceEphemeralStorage]
+	if request.Cmp(resources.Limits[corev1.ResourceEphemeralStorage]) > 0 {
+		return fmt.Errorf("ephemeral-storage request exceeds limit")
 	}
 	return nil
 }
@@ -713,26 +714,6 @@ func (p *Provisioner) RenderNetworkPolicy(es *virtualtargetv1alpha1.ExporterSet)
 			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
 		},
 	}
-}
-
-func parameterInt(parameters map[string]interface{}, key string, fallback int) int {
-	switch value := parameters[key].(type) {
-	case int:
-		return value
-	case int32:
-		return int(value)
-	case int64:
-		return int(value)
-	case float64:
-		return int(value)
-	default:
-		return fallback
-	}
-}
-
-func parameterBool(parameters map[string]interface{}, key string) (bool, bool) {
-	value, ok := parameters[key].(bool)
-	return value, ok
 }
 
 func setDefault(config map[string]interface{}, key string, value interface{}) {
@@ -765,53 +746,5 @@ func (p *Provisioner) Cleanup(
 	// the Pod-owned emptyDir volumes, while a claimed image tree is external
 	// and must outlive the exporter, so there is nothing for the provisioner
 	// to clean up here.
-	return nil
-}
-
-func storageSizes(parameters map[string]interface{}) (resource.Quantity, resource.Quantity, resource.Quantity, error) {
-	sizes := []resource.Quantity{resource.MustParse("20Gi"), resource.MustParse("20Gi"), resource.MustParse("4Gi")}
-	raw, exists := parameters["storage"]
-	if !exists {
-		return sizes[0], sizes[1], sizes[2], nil
-	}
-	storage, ok := raw.(map[string]interface{})
-	if !ok {
-		return sizes[0], sizes[1], sizes[2], fmt.Errorf("parameters.storage must be an object")
-	}
-	for i, key := range []string{"imageSize", "stateSize", "tmpSize"} {
-		if value, exists := storage[key]; exists {
-			valueString, ok := value.(string)
-			quantity, err := resource.ParseQuantity(valueString)
-			if !ok || err != nil || quantity.Sign() <= 0 {
-				return sizes[0], sizes[1], sizes[2], fmt.Errorf("parameters.storage.%s must be a positive storage quantity", key)
-			}
-			sizes[i] = quantity
-		}
-	}
-	return sizes[0], sizes[1], sizes[2], nil
-}
-
-func reserveStorage(resources *corev1.ResourceRequirements, budget resource.Quantity) error {
-	if resources.Requests == nil {
-		resources.Requests = corev1.ResourceList{}
-	}
-	if resources.Limits == nil {
-		resources.Limits = corev1.ResourceList{}
-	}
-	for _, values := range []corev1.ResourceList{resources.Requests, resources.Limits} {
-		if value, exists := values[corev1.ResourceEphemeralStorage]; exists && value.Cmp(budget) < 0 {
-			return fmt.Errorf("ephemeral-storage must be at least %s for Cuttlefish volume budgets and overhead", budget.String())
-		}
-	}
-	if _, exists := resources.Requests[corev1.ResourceEphemeralStorage]; !exists {
-		resources.Requests[corev1.ResourceEphemeralStorage] = budget.DeepCopy()
-	}
-	if _, exists := resources.Limits[corev1.ResourceEphemeralStorage]; !exists {
-		resources.Limits[corev1.ResourceEphemeralStorage] = resources.Requests[corev1.ResourceEphemeralStorage].DeepCopy()
-	}
-	request := resources.Requests[corev1.ResourceEphemeralStorage]
-	if request.Cmp(resources.Limits[corev1.ResourceEphemeralStorage]) > 0 {
-		return fmt.Errorf("ephemeral-storage request exceeds limit")
-	}
 	return nil
 }
