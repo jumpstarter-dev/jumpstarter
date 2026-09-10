@@ -758,11 +758,10 @@ class TestVlanCreationRollback:
 
         # Allow the first two calls (eth-dut, eth-up) but fail on the
         # third call which targets the VLAN sub-interface.
-        fwd_call_count = 0
+        _fwd_calls: list[int] = [0]
         def _fwd_side_effect(iface, enabled):
-            nonlocal fwd_call_count
-            fwd_call_count += 1
-            if fwd_call_count >= 3:
+            _fwd_calls[0] += 1
+            if _fwd_calls[0] >= 3:
                 raise RuntimeError("sysctl boom")
 
         with patch(f"{_DRIVER_MODULE}.sys") as mock_sys, \

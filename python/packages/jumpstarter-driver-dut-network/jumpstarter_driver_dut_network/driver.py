@@ -451,6 +451,39 @@ class DutNetwork(Driver):
                     result.append(name)
         return result
 
+    def _setup_vlan_interface(self, parent: str, entry: "AddressEntry", name: str) -> None:
+        """Create a single VLAN sub-interface with sysctls, alias, and warnings."""
+        assert entry.vlan_id is not None
+        iproute.create_vlan_interface(parent, entry.vlan_id)
+        self._created_vlans.add(name)
+        try:
+            iproute.set_interface_forwarding(name, True)
+            iproute.set_interface_rp_filter(name, 2)
+            if entry.public_ip:
+                resolved = self._resolve_ip(entry.public_ip)
+                iproute.add_ip_alias(name, resolved, self._upstream_prefix_len)
+                self._added_aliases.add(resolved)
+                self._alias_ifaces[resolved] = name
+            if entry.public_gateway is None:
+                self.logger.warning(
+                    "Address %s has vlan_id=%s but no public_gateway; "
+                    "VLAN interface %s is configured without policy-based "
+                    "routing, so DUT traffic may not egress via the VLAN",
+                    entry.ip,
+                    entry.vlan_id,
+                    name,
+                )
+        except Exception:
+            # Roll back: undo alias bookkeeping and delete the VLAN
+            # interface (deleting it also removes any addresses on it).
+            for alias_ip in list(self._added_aliases):
+                if self._alias_ifaces.get(alias_ip) == name:
+                    self._added_aliases.discard(alias_ip)
+                    self._alias_ifaces.pop(alias_ip, None)
+            self._created_vlans.discard(name)
+            iproute.delete_vlan_interface(name)
+            raise
+
     def _setup_vlans_and_pbr(self) -> None:
         """Create VLAN sub-interfaces, sysctls, IP aliases, and PBR rules."""
         parent = self._vlan_parent()
@@ -459,37 +492,8 @@ class DutNetwork(Driver):
         for entry in self.addresses:
             nat_if = self._nat_iface_for(entry)
             if entry.vlan_id is not None:
-                name = nat_if
-                iproute.create_vlan_interface(parent, entry.vlan_id)
-                self._created_vlans.add(name)
-                try:
-                    iproute.set_interface_forwarding(name, True)
-                    iproute.set_interface_rp_filter(name, 2)
-                    nat_if = name
-                    if entry.public_ip:
-                        resolved = self._resolve_ip(entry.public_ip)
-                        iproute.add_ip_alias(name, resolved, self._upstream_prefix_len)
-                        self._added_aliases.add(resolved)
-                        self._alias_ifaces[resolved] = name
-                    if entry.public_gateway is None:
-                        self.logger.warning(
-                            "Address %s has vlan_id=%s but no public_gateway; "
-                            "VLAN interface %s is configured without policy-based "
-                            "routing, so DUT traffic may not egress via the VLAN",
-                            entry.ip,
-                            entry.vlan_id,
-                            name,
-                        )
-                except Exception:
-                    # Roll back: undo alias bookkeeping and delete the VLAN
-                    # interface (deleting it also removes any addresses on it).
-                    for alias_ip in list(self._added_aliases):
-                        if self._alias_ifaces.get(alias_ip) == name:
-                            self._added_aliases.discard(alias_ip)
-                            self._alias_ifaces.pop(alias_ip, None)
-                    self._created_vlans.discard(name)
-                    iproute.delete_vlan_interface(name)
-                    raise
+                nat_if = nat_if
+                self._setup_vlan_interface(parent, entry, nat_if)
             if entry.public_gateway:
                 gateway = self._resolve_ip(entry.public_gateway)
                 table = self._pbr_table_id(entry)
