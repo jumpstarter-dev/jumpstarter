@@ -39,7 +39,18 @@ def check(state_path: str) -> None:
     if cvds[0].get("status") != "Running":
         raise RuntimeError("CVD stopped unexpectedly")
     if not set(state["ports"]).issubset(listening_ports()):
-        raise RuntimeError("Cuttlefish simulator or relay listener is missing")
+        raise RuntimeError("Cuttlefish simulator listener is missing")
+
+
+def wait_ready(url: str, attempts: int = 60, interval: float = 5) -> None:
+    """Startup gate: block until Host Orchestrator answers, so the exporter never registers early."""
+    for _ in range(attempts):
+        try:
+            with urllib.request.urlopen(f"{url}/_debug/statusz", timeout=3):
+                return
+        except Exception:
+            time.sleep(interval)
+    raise RuntimeError(f"Host Orchestrator at {url} did not become ready")
 
 
 def listening_ports() -> set[int]:
@@ -59,6 +70,8 @@ if __name__ == "__main__":
         if sys.argv[1] == "--run-exporter":
             initialize(sys.argv[2], sys.argv[3], sys.argv[4])
             os.execvp("jmp", ["jmp", "run", "--exporter-config", sys.argv[5]])
+        elif sys.argv[1] == "--wait":
+            wait_ready(sys.argv[2])
         else:
             check(sys.argv[1])
     except Exception as exc:

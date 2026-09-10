@@ -16,7 +16,7 @@ def health_state(tmp_path):
     return tmp_path / "health.json", {
         "runtime_id_path": str(runtime_id), "runtime_id": "runtime-1",
         "url": "http://127.0.0.1:2081", "state": "running",
-        "group": "cvd", "name": "1", "ports": [7681, 7300, 17681, 17300],
+        "group": "cvd", "name": "1", "ports": [7681, 7300],
     }
 
 
@@ -44,8 +44,8 @@ def test_guest_failure(health_state, cvds):
         run_check(health_state, cvds=cvds)
 
 
-@pytest.mark.parametrize("missing", [7681, 7300, 17681, 17300])
-def test_simulator_or_relay_failure(health_state, missing):
+@pytest.mark.parametrize("missing", [7681, 7300])
+def test_simulator_listener_failure(health_state, missing):
     ports = set(health_state[1]["ports"]) - {missing}
     with pytest.raises(RuntimeError, match="listener is missing"):
         run_check(health_state, ports=ports)
@@ -97,3 +97,16 @@ def test_warm_exporter_before_first_lease(tmp_path):
     runtime_id.write_text("runtime-2")
     with pytest.raises(RuntimeError, match="runtime restarted"):
         check(str(state_path))
+
+
+def test_wait_ready_gate():
+    from .health import wait_ready
+
+    with patch("jumpstarter_driver_cuttlefish.health.urllib.request.urlopen", return_value=io.BytesIO()) as urlopen:
+        wait_ready("http://127.0.0.1:2081", attempts=1, interval=0)
+    assert urlopen.call_args.args[0] == "http://127.0.0.1:2081/_debug/statusz"
+    with patch("jumpstarter_driver_cuttlefish.health.urllib.request.urlopen", side_effect=OSError("refused")), \
+         patch("jumpstarter_driver_cuttlefish.health.time.sleep") as sleep:
+        with pytest.raises(RuntimeError, match="did not become ready"):
+            wait_ready("http://127.0.0.1:2081", attempts=3, interval=5)
+    assert sleep.call_count == 3
