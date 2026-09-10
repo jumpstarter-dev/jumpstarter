@@ -3755,7 +3755,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.1.7.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-cli-common", editable = "packages/jumpstarter-cli-common" },
-    { name = "mcp", specifier = ">=1.0.0" },
+    { name = "mcp", specifier = ">=1.0.0,<2.0.0" },
 ]
 
 [package.metadata.requires-dev]
