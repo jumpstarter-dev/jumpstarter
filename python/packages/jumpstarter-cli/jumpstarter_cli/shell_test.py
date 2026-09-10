@@ -10,6 +10,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import anyio
 import click
+import grpc
+import grpc.aio
 import pytest
 from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentication
 
@@ -938,6 +940,75 @@ class TestRunShellWithLeaseAsync:
 
         assert exit_code == 0
         client.end_session_async.assert_called_once()
+
+    async def test_unreachable_after_shell_exit_returns_exit_code(self):
+        """An exporter lost while the user is at the prompt must not trigger a reconnect.
+
+        The failure surfaces from the listener task group, but the shell runs in
+        a thread that cannot be cancelled, so it only lands once the user exits.
+        By then the session is over and the exit code is the right answer.
+        """
+        monitor = _FakeStatusMonitor()
+        client = _build_fake_client(monitor, get_status_return=ExporterStatus.LEASE_READY)
+        lease = _make_shell_lease(release=True, lease_ended=False)
+        cancel_scope = Mock(cancel_called=False)
+
+        @asynccontextmanager
+        async def serve_unix_async():
+            # Mirrors TemporaryUnixListener: a connection handler that raises
+            # cancels the body and surfaces as a group at teardown.
+            async with anyio.create_task_group() as tg:
+
+                async def failing_handler():
+                    await anyio.sleep(0.05)
+                    raise ExporterUnreachableError("Per-connection Dial failed for test-exporter")
+
+                tg.start_soon(failing_handler)
+                yield "/tmp/fake.sock"
+
+        lease.serve_unix_async = serve_unix_async
+
+        def slow_shell(*_a, **_kw):
+            time.sleep(0.3)
+            return 42
+
+        @asynccontextmanager
+        async def fake_client_from_path(*_a, **_kw):
+            yield client
+
+        with (
+            patch("jumpstarter_cli.shell.client_from_path", side_effect=fake_client_from_path),
+            patch("jumpstarter_cli.shell._run_shell_only", side_effect=slow_shell),
+        ):
+            exit_code = await _run_shell_with_lease_async(lease, False, None, (), cancel_scope)
+
+        assert exit_code == 42
+
+    async def test_unreachable_before_shell_starts_propagates(self):
+        """An exporter that never answers must still reach the caller's retry loop."""
+        monitor = _FakeStatusMonitor()
+        client = _build_fake_client(monitor)
+        client.get_status_async.side_effect = grpc.aio.AioRpcError(
+            code=grpc.StatusCode.UNAVAILABLE,
+            initial_metadata=None,
+            trailing_metadata=None,
+            details="exporter offline",
+        )
+        lease = _make_shell_lease(release=True, lease_ended=False)
+        cancel_scope = Mock(cancel_called=False)
+
+        @asynccontextmanager
+        async def fake_client_from_path(*_a, **_kw):
+            yield client
+
+        with (
+            patch("jumpstarter_cli.shell.client_from_path", side_effect=fake_client_from_path),
+            patch("jumpstarter_cli.shell._run_shell_only", return_value=0) as run_shell,
+        ):
+            with pytest.raises(ExporterUnreachableError):
+                await _run_shell_with_lease_async(lease, False, None, (), cancel_scope)
+
+        run_shell.assert_not_called()
 
     async def test_available_status_probe_with_lease_ended_race(self):
         """When lease expires during the probe (race condition), AVAILABLE
