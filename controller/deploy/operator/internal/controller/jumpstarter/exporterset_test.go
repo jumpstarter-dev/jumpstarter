@@ -192,6 +192,21 @@ var _ = Describe("exporterSetPolicyRules", func() {
 		Fail("no rule found granting full CRUD on exporters")
 	})
 
+	It("should grant update on exporters/finalizers", func() {
+		// The config Secret and the exporter Pod are both owned by their Exporter
+		// via SetControllerReference, which sets blockOwnerDeletion; the API server
+		// refuses that ownerReference unless the writer may update the owner's
+		// finalizers. Without this rule the controller creates neither object.
+		for _, rule := range rules {
+			if containsString(rule.APIGroups, "jumpstarter.dev") &&
+				containsString(rule.Resources, "exporters/finalizers") {
+				Expect(rule.Verbs).To(ContainElement("update"))
+				return
+			}
+		}
+		Fail("no rule found granting update on exporters/finalizers")
+	})
+
 	It("should grant read-only access on jumpstarter leases", func() {
 		for _, rule := range rules {
 			if containsString(rule.APIGroups, "jumpstarter.dev") &&
