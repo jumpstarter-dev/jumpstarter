@@ -2,8 +2,9 @@
 
 `jumpstarter-driver-cuttlefish` manages
 [Android Cuttlefish](https://source.android.com/docs/devices/cuttlefish)
-virtual devices through the
-[Host Orchestrator](https://github.com/google/android-cuttlefish) REST API.
+virtual devices through either the
+[Host Orchestrator](https://github.com/google/android-cuttlefish) REST API or
+the `cvd` CLI over a `jumpstarter-exec` launcher socket.
 It provides full CVD (Cuttlefish Virtual Device) lifecycle management through
 standard Jumpstarter interfaces: `VirtualPowerInterface` for on/off/cycle,
 plus cuttlefish-specific operations (powerwash and restart).
@@ -21,7 +22,10 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-cuttlefish
 
 ### Prerequisites
 
-- A running Cuttlefish Host Orchestrator (port 2080 by default)
+- Host Orchestrator backend: a running Host Orchestrator (port 2080 by default)
+- Exec backend: `cvd` in the runtime container and a reachable
+  `jumpstarter-exec` launcher socket. The managed ExporterSet provisioner
+  supplies the launcher.
 
 ## Host Setup
 
@@ -169,6 +173,8 @@ export:
 | adb_server_port | ADB server port on the exporter     | int  | no       | 15037       |
 | boot_timeout    | Seconds to wait for boot on power on| int  | no       | 300         |
 | env_config      | Default env_config for CVD creation | dict | no       | {}          |
+| launcher_socket | Exec backend: `jumpstarter-exec` launcher socket shared with the Cuttlefish runtime container. When set, every operation runs `cvd` there instead of calling Host Orchestrator. Injected by the ExporterSet provisioner with `backend: exec`. | str | no | "" |
+| cvd_user        | Exec backend: non-root user that runs `jumpstarter-exec serve` and its `cvd` children in the runtime container. Must match the owner of CVD state; Host Orchestrator uses `httpcvd`. | str | no | "" |
 
 This is a **composite driver** with three children:
 - **power** — `VirtualPowerInterface`: `j power on`, `j power off [--destroy]`, `j power cycle`
@@ -180,6 +186,25 @@ The exporter config also typically includes sibling drivers:
 - **bt_peer** (`jumpstarter-driver-bt-peer`) — Bluetooth peer device via bumble + rootcanal HCI
 
 Use `ref:` entries in the exporter config to expose children at the top level.
+
+### Backends
+
+The driver has two interchangeable backends behind the same exported methods:
+
+- **Host Orchestrator (HTTP)**: the default. Operations are REST actions that
+  return asynchronous operations; the driver waits on them. Works against any
+  host running the orchestration image, in or outside the cluster.
+- **cvd CLI over jumpstarter-exec**: selected when `launcher_socket` is set.
+  Operations map one-to-one onto `cvd` subcommands run in the runtime container:
+  `cvd load <env_config>` creates, `cvd fleet` lists, and `start`, `stop`,
+  `restart`, `powerwash`, `powerbtn`, `remove` and `reset -y` do the rest.
+  Inventory documents are normalized to the Host Orchestrator shape, so clients
+  see the same `group`, `name`, `status` and `adb_port` fields. `list_operations`
+  is unavailable because `cvd` runs synchronously.
+
+The exec backend is only meaningful inside a managed Pod, where the ExporterSet
+provisioner stages `jumpstarter-exec` and the socket on a shared volume and does
+not start Host Orchestrator at all; see the deployment guide linked above.
 
 ## Usage
 

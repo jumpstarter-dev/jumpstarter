@@ -2,20 +2,59 @@
 
 import json
 import os
+import subprocess
 import sys
 import time
 import urllib.request
 from pathlib import Path
 
+from .cvdcli import cvd_argv, exec_binary, fleet_to_cvds, parse_endpoint, stderr_tail
 
-def initialize(state_path: str, runtime_id_path: str, url: str) -> None:
+PROBE_TIMEOUT = 8
+
+
+def initialize(state_path: str, runtime_id_path: str, endpoint: str) -> None:
     runtime_id = Path(runtime_id_path).read_text().strip()
     if not runtime_id:
         raise RuntimeError("Cuttlefish runtime ID is empty")
-    Path(state_path).write_text(json.dumps({
-        "runtime_id_path": runtime_id_path, "runtime_id": runtime_id,
-        "url": url, "ports": [], "state": "off",
-    }))
+    state = {"runtime_id_path": runtime_id_path, "runtime_id": runtime_id, "ports": [], "state": "off"}
+    state.update(parse_endpoint(endpoint))
+    Path(state_path).write_text(json.dumps(state))
+
+
+def exec_inventory(state: dict) -> list[dict]:
+    """List CVDs through the cvd CLI; failure means the launcher or cvd is down."""
+    argv = cvd_argv(state["socket"], ["fleet"])
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=PROBE_TIMEOUT)
+    except OSError as exc:
+        raise RuntimeError(f"cannot run jumpstarter-exec: {exc}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("cvd fleet timed out") from exc
+    if proc.returncode != 0:
+        raise RuntimeError(f"cvd fleet failed ({proc.returncode}): {stderr_tail(proc.stderr)}")
+    return fleet_to_cvds(proc.stdout)
+
+
+def exec_reachable(state: dict) -> None:
+    """Check that the launcher accepts commands without contending on cvd."""
+    argv = [str(exec_binary(state["socket"])), "exec", "--socket", state["socket"], "--", "/bin/true"]
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=2)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"launcher is unavailable: {exc}") from exc
+    if proc.returncode != 0:
+        raise RuntimeError(f"launcher check failed ({proc.returncode}): {stderr_tail(proc.stderr)}")
+
+
+def http_reachable(state: dict) -> None:
+    with urllib.request.urlopen(f"{state['url']}/_debug/statusz", timeout=2):
+        pass
+
+
+def http_inventory(state: dict) -> list[dict]:
+    with urllib.request.urlopen(f"{state['url']}/cvds", timeout=2) as response:
+        return json.load(response)["cvds"]
 
 
 def check(state_path: str) -> None:
@@ -23,17 +62,22 @@ def check(state_path: str) -> None:
     runtime_id = Path(state["runtime_id_path"]).read_text().strip()
     if not runtime_id or runtime_id != state["runtime_id"]:
         raise RuntimeError("Cuttlefish runtime restarted; release the lease to replace this Pod")
-    url = state["url"]
-    with urllib.request.urlopen(f"{url}/_debug/statusz", timeout=2):
-        pass
+    # Reachability is checked in every state. In exec mode, cvd fleet may wait
+    # behind cvd load for minutes, so only run it after the transition ends.
+    if state.get("backend") == "exec":
+        exec_reachable(state)
+        cvds = None
+    else:
+        http_reachable(state)
+        cvds = None
     if state["state"] == "off":
         return
     if state["state"] == "transition" and time.monotonic() < state["deadline"]:
         return
     if state["state"] != "running":
         raise RuntimeError("Cuttlefish operation failed or timed out")
-    with urllib.request.urlopen(f"{url}/cvds", timeout=2) as response:
-        cvds = json.load(response)["cvds"]
+    if cvds is None:
+        cvds = exec_inventory(state) if state.get("backend") == "exec" else http_inventory(state)
     if len(cvds) != 1 or any(cvds[0].get(key) != state[key] for key in ("group", "name")):
         raise RuntimeError("Cuttlefish inventory no longer matches this exporter")
     if cvds[0].get("status") != "Running":
@@ -42,15 +86,19 @@ def check(state_path: str) -> None:
         raise RuntimeError("Cuttlefish simulator listener is missing")
 
 
-def wait_ready(url: str, attempts: int = 60, interval: float = 5) -> None:
-    """Startup gate: block until Host Orchestrator answers, so the exporter never registers early."""
+def wait_ready(endpoint: str, attempts: int = 60, interval: float = 5) -> None:
+    """Startup gate: block until the runtime answers, so the exporter never registers early."""
+    state = parse_endpoint(endpoint)
     for _ in range(attempts):
         try:
-            with urllib.request.urlopen(f"{url}/_debug/statusz", timeout=3):
-                return
+            if state["backend"] == "exec":
+                exec_reachable(state)
+            else:
+                http_reachable(state)
+            return
         except Exception:
             time.sleep(interval)
-    raise RuntimeError(f"Host Orchestrator at {url} did not become ready")
+    raise RuntimeError(f"Cuttlefish runtime at {endpoint} did not become ready")
 
 
 def listening_ports() -> set[int]:
