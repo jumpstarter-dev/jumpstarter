@@ -432,32 +432,24 @@ class DutNetwork(Driver):
     def _outbound_interfaces(self) -> list[str]:
         """NAT interfaces used for masquerade/forward rules.
 
-        Untagged-only (or empty addresses) returns the original upstream so
-        existing behaviour is unchanged.  VLAN-only returns just the VLAN
-        sub-interfaces — the untagged upstream is omitted because no DUT
-        traffic should egress there.  Mixed configurations include both.
+        The upstream (untagged) interface is **always** included so that
+        unexpected or unregistered DUT hosts whose traffic arrives on the
+        bridge are still masqueraded via the default upstream — matching
+        the behaviour of ``apply_1to1_rules`` which keeps the upstream
+        for unmapped-DUT fallback.  VLAN sub-interfaces are appended when
+        at least one address entry carries a ``vlan_id``.
+
         Runtime ``add_address`` / ``remove_address`` trigger a full rebuild
         via ``_sync_nat``, so the list stays consistent.
         """
         parent = self._upstream or ""
-        vlan_ifaces: list[str] = []
-        has_untagged = False
+        result: list[str] = [parent] if parent else []
         for entry in self.addresses:
             if entry.vlan_id is not None:
                 name = self._vlan_name(entry.vlan_id)
-                if name not in vlan_ifaces:
-                    vlan_ifaces.append(name)
-            else:
-                has_untagged = True
-        if not vlan_ifaces:
-            return [parent] if parent else []
-        if has_untagged:
-            result = [parent] if parent else []
-            for name in vlan_ifaces:
                 if name not in result:
                     result.append(name)
-            return result
-        return vlan_ifaces
+        return result
 
     def _setup_vlans_and_pbr(self) -> None:
         """Create VLAN sub-interfaces, sysctls, IP aliases, and PBR rules."""

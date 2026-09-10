@@ -630,7 +630,9 @@ class TestVlanSetupMasquerade:
         mock_ip.add_policy_route.assert_called_once_with("203.0.113.254", "eth-up.905", 905)
         mock_ip.add_ip_rule.assert_called_once_with("192.168.100.125", 905, priority=100)
         call_kwargs = mock_nft.apply_masquerade_rules.call_args[1]
-        assert call_kwargs["nat_interfaces"] == ["eth-up.905"]
+        # Upstream is always included so unexpected/unregistered DUTs are
+        # still masqueraded via the default upstream interface.
+        assert call_kwargs["nat_interfaces"] == ["eth-up", "eth-up.905"]
 
     def test_no_vlan_does_not_pass_nat_interfaces(self, tmp_path: Path):
         _, _, mock_nft, _ = _make_driver(tmp_path, nat_mode="masquerade")
@@ -639,6 +641,26 @@ class TestVlanSetupMasquerade:
             table_name="jumpstarter_eth_dut",
             filter_config=None,
         )
+
+    def test_vlan_only_still_includes_upstream_for_unexpected_duts(self, tmp_path: Path):
+        """Even when all addresses carry a vlan_id, the upstream interface
+        must be in _outbound_interfaces() so that unexpected / unregistered
+        DUTs on the bridge are still masqueraded via the default upstream.
+        """
+        addrs = [
+            {"ip": "192.168.100.125", "vlan_id": 905,
+             "public_ip": "203.0.113.1", "public_gateway": "203.0.113.254"},
+            {"ip": "192.168.100.126", "vlan_id": 906,
+             "public_ip": "203.0.113.2", "public_gateway": "203.0.113.254"},
+        ]
+        driver, _, mock_nft, _ = _make_driver(
+            tmp_path, nat_mode="masquerade", addresses=addrs,
+        )
+        call_kwargs = mock_nft.apply_masquerade_rules.call_args[1]
+        outbound = call_kwargs["nat_interfaces"]
+        assert "eth-up" in outbound, "upstream must be present for unexpected DUTs"
+        assert "eth-up.905" in outbound
+        assert "eth-up.906" in outbound
 
     def test_ensure_filter_forward_includes_vlan(self, tmp_path: Path):
         addrs = [{"ip": "192.168.100.125", "vlan_id": 905}]

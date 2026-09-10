@@ -78,9 +78,10 @@ var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, Continu
 		vlanPubIP  = "10.100.0.50"
 		vlanExtIP  = "10.100.0.1"
 		pbrDutIP   = "192.168.200.51"
-		noPbrVlan  = 101
-		noPbrDutIP = "192.168.200.52"
-		noPbrExtIP = "10.101.0.1"
+		noPbrVlan       = 101
+		noPbrDutIP      = "192.168.200.52"
+		noPbrExtIP      = "10.101.0.1"
+		unregisteredIP  = "192.168.200.60"
 	)
 
 	setupNetworkNamespaces := func() {
@@ -324,6 +325,36 @@ var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, Continu
 			Expect(pingNS(dutNs, noPbrDutIP, noPbrExtIP)).To(HaveOccurred(),
 				"DUT should not reach VLAN-only %s without public_gateway/PBR", noPbrExtIP)
 			expectPingNS(dutNs, noPbrDutIP, extIP)
+		})
+
+		It("should masquerade unregistered DUT alongside VLAN-registered DUT", func() {
+			// Register one address with a VLAN — this creates a VLAN-only
+			// outbound config.  Then verify that an *unregistered* DUT IP
+			// (never added via add-address) still reaches the external
+			// network through the default upstream masquerade.
+			extVlan := setupExtVLAN(vlanID, vlanExtIP+"/24")
+			defer deleteLinkInNs(extNs, extVlan)
+
+			out, err := jmpShell("j", "dut-network", "add-address",
+				vlanDutIP, "--public-ip", vlanPubIP,
+				"--vlan-id", fmt.Sprintf("%d", vlanID), "--public-gateway", vlanExtIP)
+			Expect(err).NotTo(HaveOccurred(), out)
+
+			addDutAddr(vlanDutIP)
+			defer func() {
+				delDutAddr(vlanDutIP)
+				_, _ = jmpShell("j", "dut-network", "remove-address", vlanDutIP)
+			}()
+
+			// The registered VLAN DUT should work through PBR.
+			expectTCPEcho(dutNs, extNs, vlanDutIP, vlanExtIP, 9998)
+
+			// An unregistered DUT IP on the same bridge — never added via
+			// add-address — should still reach external via upstream masquerade.
+			addDutAddr(unregisteredIP)
+			defer delDutAddr(unregisteredIP)
+
+			expectPingNS(dutNs, unregisteredIP, extIP)
 		})
 	})
 })
