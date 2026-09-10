@@ -122,21 +122,21 @@ def test_wait_timeout(mock_sleep, requests_mock, drv):
     """Operation that never completes should raise CuttlefishTimeout."""
     requests_mock.post(f"{BASE}/operations/op-1/:wait", exc=requests.Timeout)
     with pytest.raises(CuttlefishTimeout, match="timed out"):
-        drv._wait_for_operation("op-1", timeout=0.1)
+        drv._backend.wait_for_operation("op-1", timeout=0.1)
 
 
 def test_wait_connection_lost(requests_mock, drv):
     """Connection drop during polling should raise."""
     requests_mock.post(f"{BASE}/operations/op-1/:wait", exc=requests.ConnectionError)
     with pytest.raises(CuttlefishError, match="lost connection"):
-        drv._wait_for_operation("op-1")
+        drv._backend.wait_for_operation("op-1")
 
 
 def test_wait_unexpected_http_error(requests_mock, drv):
     """Non-500/503/504 error should raise."""
     requests_mock.post(f"{BASE}/operations/op-1/:wait", status_code=403, text="forbidden")
     with pytest.raises(CuttlefishError, match="failed"):
-        drv._wait_for_operation("op-1")
+        drv._backend.wait_for_operation("op-1")
 
 
 def _mock_op(requests_mock, method, path, op_name="op-1"):
@@ -572,8 +572,8 @@ def test_managed_serializes_creation(managed_drv):
         except CuttlefishError:
             return False
 
-    with patch.object(managed_drv, "_request", side_effect=lambda *args: {"cvds": inventory}), \
-         patch.object(managed_drv, "_perform_operation", side_effect=create), ThreadPoolExecutor(2) as pool:
+    with patch.object(managed_drv._backend, "list_cvds", side_effect=lambda: {"cvds": inventory}), \
+         patch.object(managed_drv._backend, "operate", side_effect=create), ThreadPoolExecutor(2) as pool:
         assert sorted(pool.map(lambda _: attempt(), range(2))) == [False, True]
     assert len(inventory) == 1
 
@@ -589,15 +589,17 @@ def test_managed_records_power_intent(managed_drv, operation, expected):
         assert json.loads(Path(managed_drv.health_state_path).read_text())["state"] == "transition"
         return {}
 
-    with patch.object(managed_drv, "_perform_operation", side_effect=perform):
+    with patch.object(managed_drv._backend, "operate", side_effect=perform):
         getattr(managed_drv, operation)()
-    assert json.loads(Path(managed_drv.health_state_path).read_text())["state"] == expected
+    state = json.loads(Path(managed_drv.health_state_path).read_text())
+    assert state["state"] == expected
+    assert "deadline" not in state
 
 
 def test_managed_records_failed_operation(managed_drv):
     from pathlib import Path
 
-    with patch.object(managed_drv, "_perform_operation", side_effect=CuttlefishError("runtime died")):
+    with patch.object(managed_drv._backend, "operate", side_effect=CuttlefishError("runtime died")):
         with pytest.raises(CuttlefishError):
             managed_drv.start_cvd()
     assert json.loads(Path(managed_drv.health_state_path).read_text())["state"] == "failed"

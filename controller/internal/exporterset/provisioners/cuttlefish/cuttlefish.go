@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"regexp"
 	"strings"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
@@ -74,7 +75,32 @@ const (
 
 	runtimeContainerName = "cuttlefish"
 	gateContainerName    = "wait-for-cuttlefish"
+
+	// Runtime backends. "http" drives Host Orchestrator inside the Pod. "exec"
+	// runs cvd in the runtime container through jumpstarter-exec, the
+	// launcher-socket pattern the QEMU provisioner uses and the in-Pod
+	// equivalent of Podcvd's `podman exec ... cvd`. Exec mode does not start
+	// Host Orchestrator or nginx at all; only host resources and the WebRTC
+	// operator run next to the launcher.
+	backendHTTP = "http"
+	backendExec = "exec"
+
+	// Shared emptyDir carrying jumpstarter-exec, the launcher socket and the
+	// env_config handed to `cvd load`. Only used by the exec backend.
+	sharedVolumeName      = "shared"
+	sharedMountPath       = "/shared"
+	sharedVolumeSizeLimit = "100Mi"
+	jmpExecBinaryPath     = "/jumpstarter/bin/jumpstarter-exec"
+	launcherSocketPath    = sharedMountPath + "/launcher.sock"
+	// Children inherit the launcher's working directory, and cvd aborts when it
+	// cannot read it as cvd_user; the image's /root WORKDIR is 0700.
+	launcherWorkDir = "/"
+	// cvd keeps its instance database per uid. httpcvd owns the state
+	// directories, so guest processes stay non-root inside the privileged container.
+	defaultCvdUser = "httpcvd"
 )
+
+var userNamePattern = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 
 // healthPorts are the simulator listeners the liveness probe expects while a guest runs.
 var healthPorts = []int{netsimPort, hciPort}
@@ -95,6 +121,41 @@ type storageConfig struct {
 // guestSpec is the effective guest size after template values override parameters.
 type guestSpec struct {
 	cpus, memoryMB int
+}
+
+type runtimeConfig struct {
+	backend, cvdUser string
+}
+
+func (r runtimeConfig) exec() bool {
+	return r.backend == backendExec
+}
+
+// endpoint is how the exporter and probes reach the runtime.
+func (r runtimeConfig) endpoint() string {
+	if r.exec() {
+		return fmt.Sprintf("exec://%s@%s", r.cvdUser, launcherSocketPath)
+	}
+	return hostOrchestratorURL
+}
+
+func resolveBackend(parameters map[string]interface{}) (runtimeConfig, error) {
+	config := runtimeConfig{backend: backendHTTP, cvdUser: defaultCvdUser}
+	if raw, exists := parameters["backend"]; exists {
+		value, ok := raw.(string)
+		if !ok || (value != backendHTTP && value != backendExec) {
+			return config, fmt.Errorf("backend must be %q or %q", backendHTTP, backendExec)
+		}
+		config.backend = value
+	}
+	if raw, exists := parameters["cvd_user"]; exists {
+		value, ok := raw.(string)
+		if !ok || !userNamePattern.MatchString(value) {
+			return config, fmt.Errorf("cvd_user must be a valid container user name")
+		}
+		config.cvdUser = value
+	}
+	return config, nil
 }
 
 type images struct {
@@ -225,6 +286,13 @@ func (p *Provisioner) RenderPod(
 	if err != nil {
 		return nil, err
 	}
+	rt, err := resolveBackend(mergedParameters)
+	if err != nil {
+		return nil, err
+	}
+	if rt.exec() {
+		storage.budget.Add(resource.MustParse(sharedVolumeSizeLimit))
+	}
 	// The reconciler persists the enriched drivers itself; rendering needs the
 	// validation and the effective guest size for the runtime budget.
 	_, guest, err := enrichDrivers(exporterSet.Spec.Template.Spec.Drivers, mergedParameters)
@@ -247,9 +315,9 @@ func (p *Provisioner) RenderPod(
 			RestartPolicy:                corev1.RestartPolicyNever,
 			ServiceAccountName:           serviceAccount,
 			AutomountServiceAccountToken: boolPtr(false),
-			InitContainers:               initContainers(img, storage, resources),
-			Containers:                   []corev1.Container{exporterContainer(img)},
-			Volumes:                      volumes(storage),
+			InitContainers:               initContainers(img, storage, resources, rt, exporter),
+			Containers:                   []corev1.Container{exporterContainer(img, rt)},
+			Volumes:                      volumes(storage, rt),
 		},
 	}
 	if vtc.Spec.Scheduling != nil {
@@ -288,13 +356,13 @@ func exporterSecurityContext() *corev1.SecurityContext {
 
 // exporterContainer runs jmp behind the health wrapper, which records the
 // runtime marker before the exporter registers and backs the liveness probe.
-func exporterContainer(img images) corev1.Container {
-	return corev1.Container{
+func exporterContainer(img images, rt runtimeConfig) corev1.Container {
+	container := corev1.Container{
 		Name:            "exporter",
 		Image:           img.exporter,
 		ImagePullPolicy: img.exporterPull,
 		Command: []string{"python3", "-m", "jumpstarter_driver_cuttlefish.health", "--run-exporter",
-			healthStatePath, runtimeIDPath, hostOrchestratorURL, exporterConfigPath},
+			healthStatePath, runtimeIDPath, rt.endpoint(), exporterConfigPath},
 		Env:             []corev1.EnvVar{{Name: "HOME", Value: "/tmp"}},
 		SecurityContext: exporterSecurityContext(),
 		VolumeMounts:    []corev1.VolumeMount{{Name: "cvd-state", MountPath: runtimeIDMount, ReadOnly: true}},
@@ -306,11 +374,40 @@ func exporterContainer(img images) corev1.Container {
 			PeriodSeconds: 10, TimeoutSeconds: 10, FailureThreshold: 6,
 		},
 	}
+	if rt.exec() {
+		// The exporter's lease-end path calls `jumpstarter-exec shutdown` on this socket.
+		container.VolumeMounts = append(container.VolumeMounts, sharedMount())
+		container.Env = append(container.Env, corev1.EnvVar{Name: "JUMPSTARTER_LAUNCHER_SOCKET", Value: launcherSocketPath})
+	}
+	return container
+}
+
+func sharedMount() corev1.VolumeMount {
+	return corev1.VolumeMount{Name: sharedVolumeName, MountPath: sharedMountPath}
+}
+
+// runtimeCommand is PID 1 of the runtime container. Both variants write the
+// per-start marker the exporter and probe use to detect a sidecar restart.
+func runtimeCommand(rt runtimeConfig) string {
+	marker := "cat /proc/sys/kernel/random/uuid > " + cvdStatePath + "/runtime-id\n" +
+		"chmod 644 " + cvdStatePath + "/runtime-id\n"
+	if !rt.exec() {
+		return marker + "exec /root/run_services.sh"
+	}
+	// Host Orchestrator and nginx are not started: cvd is driven over the
+	// launcher, which leaves no unauthenticated control listener in the Pod.
+	// The operator stays for WebRTC. jumpstarter-exec serve is PID 1, so
+	// `jumpstarter-exec shutdown` from the exporter ends the container.
+	return marker +
+		"service cuttlefish-host-resources start\n" +
+		"service cuttlefish-operator start\n" +
+		"cd " + launcherWorkDir + "\n" +
+		"exec " + sharedMountPath + "/jumpstarter-exec serve --socket " + launcherSocketPath
 }
 
 // initContainers stages images, fixes ownership, starts the runtime as a
-// native sidecar and gates the exporter on Host Orchestrator readiness.
-func initContainers(img images, storage storageConfig, runtime corev1.ResourceRequirements) []corev1.Container {
+// native sidecar and gates the exporter on runtime readiness.
+func initContainers(img images, storage storageConfig, runtime corev1.ResourceRequirements, rt runtimeConfig, exporter *jumpstarterdevv1alpha1.Exporter) []corev1.Container {
 	stateMounts := []corev1.VolumeMount{
 		{Name: "cvd-images", MountPath: fetchPath},
 		{Name: "cvd-state", MountPath: cvdStatePath},
@@ -325,6 +422,13 @@ func initContainers(img images, storage storageConfig, runtime corev1.ResourceRe
 	root := int64(0)
 
 	var containers []corev1.Container
+	if rt.exec() {
+		containers = append(containers, corev1.Container{
+			Name: "copy-jumpstarter-exec", Image: img.exporter, ImagePullPolicy: img.exporterPull,
+			Command:      []string{"cp", jmpExecBinaryPath, sharedMountPath + "/jumpstarter-exec"},
+			VolumeMounts: []corev1.VolumeMount{sharedMount()},
+		})
+	}
 	if storage.imageClaim != "" {
 		containers = append(containers, corev1.Container{
 			Name: "copy-images", Image: img.runtime, ImagePullPolicy: img.runtimePull,
@@ -344,6 +448,20 @@ func initContainers(img images, storage storageConfig, runtime corev1.ResourceRe
 			VolumeMounts: []corev1.VolumeMount{{Name: "cvd-images", MountPath: fetchPath}},
 		})
 	}
+	runtimeMounts := append(stateMounts, deviceMounts...)
+	var runtimeEnv []corev1.EnvVar
+	var gateMounts []corev1.VolumeMount
+	if rt.exec() {
+		runtimeMounts = append(runtimeMounts, sharedMount())
+		gateMounts = []corev1.VolumeMount{sharedMount()}
+		if exporter != nil {
+			// JEP-0013 persistent log context on every jumpstarter-exec serve line.
+			runtimeEnv = []corev1.EnvVar{{
+				Name:  "JUMPSTARTER_EXEC_LOG_FIELDS",
+				Value: fmt.Sprintf("component=exporter,exporter=%s,namespace=%s", exporter.Name, exporter.Namespace),
+			}}
+		}
+	}
 	return append(containers,
 		corev1.Container{
 			Name: "fix-cuttlefish-permissions", Image: img.runtime, ImagePullPolicy: img.runtimePull,
@@ -353,24 +471,24 @@ func initContainers(img images, storage storageConfig, runtime corev1.ResourceRe
 		},
 		corev1.Container{
 			Name: runtimeContainerName, Image: img.runtime, ImagePullPolicy: img.runtimePull,
-			RestartPolicy: &restartAlways,
-			// The marker lets the exporter and probe detect a sidecar restart that lost runtime state.
-			Command: []string{"bash", "-ec", "cat /proc/sys/kernel/random/uuid > " + cvdStatePath + "/runtime-id\n" +
-				"chmod 644 " + cvdStatePath + "/runtime-id\nexec /root/run_services.sh"},
+			RestartPolicy:   &restartAlways,
+			Command:         []string{"bash", "-ec", runtimeCommand(rt)},
+			Env:             runtimeEnv,
 			Resources:       runtime,
 			SecurityContext: &corev1.SecurityContext{Privileged: boolPtr(true), RunAsUser: &root},
-			VolumeMounts:    append(stateMounts, deviceMounts...),
+			VolumeMounts:    runtimeMounts,
 		},
 		corev1.Container{
 			// Runs in the exporter image so the check shares the network namespace and Python runtime with jmp.
 			Name: gateContainerName, Image: img.exporter, ImagePullPolicy: img.exporterPull,
-			Command:         []string{"python3", "-m", "jumpstarter_driver_cuttlefish.health", "--wait", hostOrchestratorURL},
+			Command:         []string{"python3", "-m", "jumpstarter_driver_cuttlefish.health", "--wait", rt.endpoint()},
 			SecurityContext: exporterSecurityContext(),
+			VolumeMounts:    gateMounts,
 		},
 	)
 }
 
-func volumes(storage storageConfig) []corev1.Volume {
+func volumes(storage storageConfig, rt runtimeConfig) []corev1.Volume {
 	emptyDir := func(name string, size *resource.Quantity) corev1.Volume {
 		return corev1.Volume{Name: name, VolumeSource: corev1.VolumeSource{
 			EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: size},
@@ -383,6 +501,10 @@ func volumes(storage storageConfig) []corev1.Volume {
 		deviceVolume("kvm", "/dev/kvm"),
 		deviceVolume("vhost-net", "/dev/vhost-net"),
 		deviceVolume("tun", "/dev/net/tun"),
+	}
+	if rt.exec() {
+		size := resource.MustParse(sharedVolumeSizeLimit)
+		result = append(result, emptyDir(sharedVolumeName, &size))
 	}
 	if storage.imageClaim != "" {
 		// The claim is only ever read; each Pod copies it into its private image volume.
@@ -441,6 +563,17 @@ func enrichCuttlefishDriver(driver virtualtargetv1alpha1.DriverConfig, parameter
 	config, err := decodeConfig(driver, "Cuttlefish")
 	if err != nil {
 		return driver, guest, err
+	}
+	rt, err := resolveBackend(parameters)
+	if err != nil {
+		return driver, guest, err
+	}
+	if _, exists := config["launcher_socket"]; exists && !rt.exec() {
+		return driver, guest, fmt.Errorf("launcher_socket is managed by the provisioner; set parameters.backend=%q", backendExec)
+	}
+	if rt.exec() {
+		config["launcher_socket"] = launcherSocketPath
+		config["cvd_user"] = rt.cvdUser
 	}
 
 	config["managed"] = true

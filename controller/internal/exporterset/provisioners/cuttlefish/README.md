@@ -3,7 +3,7 @@
 Each exporter owns one CVD. The managed backend uses Host Orchestrator over
 HTTP inside the Pod, crosvm with private userspace VSOCK, and netsim Bluetooth.
 The standalone Python driver continues to support externally managed HTTP hosts.
-An exec backend is a separate follow-up.
+`parameters.backend: exec` selects the cvd CLI backend described below.
 
 ## Workload admission and networking
 
@@ -163,10 +163,48 @@ spec:
 Record both the resolved runtime image digest and the guest `fetcher_config.json`
 with validation results. A prewarmed PVC needs the same build provenance.
 
+## Runtime backends
+
+`parameters.backend` selects how the exporter controls the runtime. `http`
+(default) drives Host Orchestrator at `http://127.0.0.1:2081`. `exec` follows
+the QEMU provisioner's launcher-socket pattern and Podcvd's control model: the
+exporter runs `cvd` inside the runtime container through `jumpstarter-exec`, and
+Host Orchestrator and nginx are not started at all, so the Pod has no
+unauthenticated control listener. Only `cuttlefish-host-resources` and the
+WebRTC operator (1080/1443) run next to the launcher. Both backends share image
+preparation, scheduling, storage budgets, the NetworkPolicy and the health
+state file.
+
+In exec mode the provisioner adds a bounded `shared` emptyDir, a
+`copy-jumpstarter-exec` init container that stages the binary from the exporter
+image, a `JUMPSTARTER_LAUNCHER_SOCKET` variable on the exporter so lease teardown
+calls `jumpstarter-exec shutdown`, and it injects `launcher_socket` and `cvd_user`
+into the Cuttlefish driver. Template-provided `launcher_socket` values are
+rejected unless `backend: exec` is set. The runtime container starts the two
+services synchronously and then runs `jumpstarter-exec serve` as PID 1 from `/`,
+so the container exits when the exporter shuts the launcher down. Serving from
+`/` matters: every command inherits the launcher's working directory, and `cvd`
+aborts when it cannot read that directory as `cvd_user`; the image's `/root`
+WORKDIR is `0700`. The startup gate and the liveness probe run `cvd fleet`
+through the launcher; a failing launcher is unhealthy even while the guest is
+intentionally off. On a clean lease end the runtime container exits 0 within
+seconds; kubelet may restart that native sidecar once before the ExporterSet
+controller deletes the completed Pod, which is harmless.
+
+`cvd` keeps its instance database per uid. `cvd_user` defaults to `httpcvd`,
+the owner of the state directories, so guest processes stay non-root inside the
+privileged container. The exporter writes `env_config` to
+`/shared/env_config.json` for `cvd load`; `create_cvd` therefore still accepts
+only the provisioner-approved `env_config`. Host Orchestrator operations
+(`list_operations`) do not exist in exec mode because every `cvd` call is
+synchronous. Inventory documents are normalized to the Host Orchestrator shape,
+so clients see the same fields from both backends.
+
 ## Failure and recovery behavior
 
 The exporter liveness probe reads state written atomically by the managed driver.
-It always checks Host Orchestrator availability and a per-start runtime ID.
+It always checks runtime availability (Host Orchestrator or the launcher) and a
+per-start runtime ID.
 When the guest is expected to run, it also checks the CVD inventory/status and
 simulator TCP listeners in the shared network namespace. It inspects
 listeners instead of opening HCI connections that could disturb Bluetooth peers.

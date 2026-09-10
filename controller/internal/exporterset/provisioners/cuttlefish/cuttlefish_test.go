@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
+	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -430,5 +432,158 @@ func testExporterSet() *virtualtargetv1alpha1.ExporterSet {
 	return &virtualtargetv1alpha1.ExporterSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "cuttlefish", Namespace: "default", UID: "test-uid"},
 		Spec:       virtualtargetv1alpha1.ExporterSetSpec{Template: virtualtargetv1alpha1.ExporterSetTemplate{Spec: virtualtargetv1alpha1.ExporterTemplateSpec{Drivers: []virtualtargetv1alpha1.DriverConfig{{Name: "cuttlefish", Type: cuttlefishDriverType}}}}},
+	}
+}
+
+func TestRenderPod_execBackend(t *testing.T) {
+	pod := renderTestPod(t, map[string]interface{}{"fetch_images": true, "backend": "exec"})
+	endpoint := "exec://httpcvd@" + launcherSocketPath
+
+	copyExec := pod.Spec.InitContainers[0]
+	if copyExec.Name != "copy-jumpstarter-exec" || copyExec.Command[1] != jmpExecBinaryPath ||
+		copyExec.Command[2] != sharedMountPath+"/jumpstarter-exec" || copyExec.Image != pod.Spec.Containers[0].Image {
+		t.Fatalf("jumpstarter-exec must be staged from the exporter image: %#v", copyExec)
+	}
+	runtime := initContainer(t, pod, runtimeContainerName)
+	script := runtime.Command[2]
+	for _, want := range []string{"runtime-id", "service cuttlefish-host-resources start\n", "service cuttlefish-operator start\n", "\ncd " + launcherWorkDir + "\n"} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("runtime script lacks %q: %q", want, script)
+		}
+	}
+	if strings.Contains(script, "run_services") || strings.Contains(script, "host_orchestrator") || strings.Contains(script, "nginx") {
+		t.Fatalf("exec mode must not start Host Orchestrator or nginx: %q", script)
+	}
+	if !strings.HasSuffix(script, "exec "+sharedMountPath+"/jumpstarter-exec serve --socket "+launcherSocketPath) {
+		t.Fatalf("launcher must be PID 1: %q", script)
+	}
+	if !hasMount(runtime.VolumeMounts, sharedVolumeName, sharedMountPath) {
+		t.Fatalf("runtime lacks the shared volume: %#v", runtime.VolumeMounts)
+	}
+	gate := initContainer(t, pod, gateContainerName)
+	if gate.Command[3] != "--wait" || gate.Command[4] != endpoint || !hasMount(gate.VolumeMounts, sharedVolumeName, sharedMountPath) {
+		t.Fatalf("startup gate must wait on the launcher: %#v", gate)
+	}
+
+	exporter := pod.Spec.Containers[0]
+	if exporter.Command[6] != endpoint {
+		t.Fatalf("exporter endpoint = %q, want %q", exporter.Command[6], endpoint)
+	}
+	if !hasEnv(exporter.Env, "JUMPSTARTER_LAUNCHER_SOCKET", launcherSocketPath) || !hasMount(exporter.VolumeMounts, sharedVolumeName, sharedMountPath) {
+		t.Fatalf("exporter must reach the launcher for shutdown: %#v", exporter)
+	}
+
+	total := resource.MustParse("1Gi")
+	sharedFound := false
+	for _, volume := range pod.Spec.Volumes {
+		if volume.Name == sharedVolumeName {
+			sharedFound = true
+			if volume.EmptyDir == nil || volume.EmptyDir.SizeLimit == nil || volume.EmptyDir.SizeLimit.String() != sharedVolumeSizeLimit {
+				t.Fatalf("shared volume must be a bounded emptyDir: %#v", volume)
+			}
+		}
+		if volume.EmptyDir != nil {
+			total.Add(*volume.EmptyDir.SizeLimit)
+		}
+	}
+	if !sharedFound {
+		t.Fatal("shared volume missing")
+	}
+	if request := runtime.Resources.Requests[corev1.ResourceEphemeralStorage]; request.Cmp(total) != 0 {
+		t.Fatalf("storage budget %s does not include the shared volume (%s)", request.String(), total.String())
+	}
+}
+
+func TestRenderPod_execBackendLogContext(t *testing.T) {
+	exporter := &jumpstarterdevv1alpha1.Exporter{ObjectMeta: metav1.ObjectMeta{Name: "cf-1", Namespace: "lab"}}
+	pod, err := New("dev").RenderPod(context.Background(), testExporterSet(), &virtualtargetv1alpha1.VirtualTargetClass{}, map[string]interface{}{
+		"fetch_images": true, "backend": "exec", "runtime_privileged": true, "service_account_name": "cuttlefish-runtime",
+	}, nil, exporter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pod.Name != "cf-1" {
+		t.Fatalf("pod name = %q", pod.Name)
+	}
+	runtime := initContainer(t, pod, runtimeContainerName)
+	if !hasEnv(runtime.Env, "JUMPSTARTER_EXEC_LOG_FIELDS", "component=exporter,exporter=cf-1,namespace=lab") {
+		t.Fatalf("launcher log context missing: %#v", runtime.Env)
+	}
+}
+
+func TestRenderPod_httpBackendHasNoLauncher(t *testing.T) {
+	for _, params := range []map[string]interface{}{{"fetch_images": true}, {"fetch_images": true, "backend": "http"}} {
+		pod := renderTestPod(t, params)
+		for _, volume := range pod.Spec.Volumes {
+			if volume.Name == sharedVolumeName {
+				t.Fatal("http backend must not add the shared volume")
+			}
+		}
+		exporter := pod.Spec.Containers[0]
+		if exporter.Command[6] != hostOrchestratorURL || hasEnv(exporter.Env, "JUMPSTARTER_LAUNCHER_SOCKET", launcherSocketPath) {
+			t.Fatalf("http backend must talk to Host Orchestrator only: %#v", exporter)
+		}
+		if pod.Spec.InitContainers[0].Name == "copy-jumpstarter-exec" {
+			t.Fatal("http backend must not stage jumpstarter-exec")
+		}
+		if !strings.HasSuffix(initContainer(t, pod, runtimeContainerName).Command[2], "exec /root/run_services.sh") {
+			t.Fatal("http backend must run the image services")
+		}
+	}
+}
+
+func TestBackendValidation(t *testing.T) {
+	for _, params := range []map[string]interface{}{
+		{"backend": "grpc"}, {"backend": 1}, {"backend": ""},
+		{"backend": "exec", "cvd_user": ""}, {"backend": "exec", "cvd_user": "Bad User"}, {"backend": "exec", "cvd_user": 101},
+	} {
+		params["fetch_images"] = true
+		params["runtime_privileged"] = true
+		params["service_account_name"] = "cuttlefish-runtime"
+		if _, err := New("dev").RenderPod(context.Background(), testExporterSet(), &virtualtargetv1alpha1.VirtualTargetClass{}, params, nil, nil); err == nil {
+			t.Errorf("accepted %v", params)
+		}
+	}
+}
+
+func TestEnrichExporterExportBackends(t *testing.T) {
+	driver := virtualtargetv1alpha1.DriverConfig{Name: "cuttlefish", Type: cuttlefishDriverType}
+	enrich := func(d virtualtargetv1alpha1.DriverConfig, params map[string]interface{}) (map[string]interface{}, error) {
+		result, err := New("dev").EnrichExporterExport([]virtualtargetv1alpha1.DriverConfig{d}, params)
+		if err != nil {
+			return nil, err
+		}
+		return configFor(t, result[0]), nil
+	}
+
+	config, err := enrich(driver, map[string]interface{}{"backend": "exec"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config["launcher_socket"] != launcherSocketPath || config["cvd_user"] != defaultCvdUser || config["managed"] != true {
+		t.Fatalf("exec backend config = %#v", config)
+	}
+	if config["host"] != "127.0.0.1" || config["scheme"] != "http" {
+		t.Fatalf("exec backend must keep the in-Pod endpoint for WebRTC: %#v", config)
+	}
+	config, err = enrich(driver, map[string]interface{}{"backend": "exec", "cvd_user": "root"})
+	if err != nil || config["cvd_user"] != "root" {
+		t.Fatalf("cvd_user override not applied: %v %v", config["cvd_user"], err)
+	}
+	config, err = enrich(driver, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := config["launcher_socket"]; exists {
+		t.Fatal("http backend must not inject launcher_socket")
+	}
+
+	preset := virtualtargetv1alpha1.DriverConfig{Name: "cuttlefish", Type: cuttlefishDriverType, Config: mustJSON(map[string]interface{}{"launcher_socket": "/tmp/x.sock"})}
+	if _, err := enrich(preset, nil); err == nil {
+		t.Fatal("template-provided launcher_socket must be rejected outside the exec backend")
+	}
+	config, err = enrich(preset, map[string]interface{}{"backend": "exec"})
+	if err != nil || config["launcher_socket"] != launcherSocketPath {
+		t.Fatalf("exec backend must force the provisioner's launcher socket: %v %v", config["launcher_socket"], err)
 	}
 }

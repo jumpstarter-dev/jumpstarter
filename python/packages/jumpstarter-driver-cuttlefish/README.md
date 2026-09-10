@@ -169,6 +169,8 @@ export:
 | adb_server_port | ADB server port on the exporter     | int  | no       | 15037       |
 | boot_timeout    | Seconds to wait for boot on power on| int  | no       | 300         |
 | env_config      | Default env_config for CVD creation | dict | no       | {}          |
+| launcher_socket | Exec backend: `jumpstarter-exec` launcher socket shared with the Cuttlefish runtime container. When set, every operation runs `cvd` there instead of calling Host Orchestrator. Injected by the ExporterSet provisioner with `backend: exec`. | str | no | "" |
+| cvd_user        | Exec backend: user `cvd` runs as inside the runtime container (via `runuser`). Must match other `cvd` callers there, because `cvd` keeps one instance database per uid; Host Orchestrator uses `httpcvd`. | str | no | "" |
 
 This is a **composite driver** with three children:
 - **power** — `VirtualPowerInterface`: `j power on`, `j power off [--destroy]`, `j power cycle`
@@ -180,6 +182,25 @@ The exporter config also typically includes sibling drivers:
 - **bt_peer** (`jumpstarter-driver-bt-peer`) — Bluetooth peer device via bumble + rootcanal HCI
 
 Use `ref:` entries in the exporter config to expose children at the top level.
+
+### Backends
+
+The driver has two interchangeable backends behind the same exported methods:
+
+- **Host Orchestrator (HTTP)**: the default. Operations are REST actions that
+  return asynchronous operations; the driver waits on them. Works against any
+  host running the orchestration image, in or outside the cluster.
+- **cvd CLI over jumpstarter-exec**: selected when `launcher_socket` is set.
+  Operations map one-to-one onto `cvd` subcommands run in the runtime container:
+  `cvd load <env_config>` creates, `cvd fleet` lists, and `start`, `stop`,
+  `restart`, `powerwash`, `powerbtn`, `remove` and `reset -y` do the rest.
+  Inventory documents are normalized to the Host Orchestrator shape, so clients
+  see the same `group`, `name`, `status` and `adb_port` fields. `list_operations`
+  is unavailable because `cvd` runs synchronously.
+
+The exec backend is only meaningful inside a managed Pod, where the ExporterSet
+provisioner stages `jumpstarter-exec` and the socket on a shared volume and does
+not start Host Orchestrator at all; see the deployment guide linked above.
 
 ## Usage
 
