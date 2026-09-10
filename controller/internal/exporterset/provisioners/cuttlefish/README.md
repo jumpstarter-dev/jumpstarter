@@ -7,6 +7,13 @@ An exec backend is a separate follow-up.
 
 ## Workload admission and networking
 
+The ExporterSet controller watches only the namespace of its Jumpstarter
+installation. Install a dedicated Jumpstarter instance in `cuttlefish-lab`
+and enable its `cuttlefish.jumpstarter.dev` provisioner before applying the
+examples below. The VirtualTargetClass, ExporterSet, workload service account
+and any image PVC must all be in that installation namespace. Creating a
+separate workload namespace alone does not make the controller watch it.
+
 Create a dedicated service account in the ExporterSet namespace and set
 `parameters.service_account_name` to its name. `default` is rejected. The Pod
 does not mount a Kubernetes API token. `runtime_privileged: true` is required;
@@ -24,13 +31,47 @@ kubectl -n cuttlefish-lab create serviceaccount cuttlefish-runtime
 ```
 
 This namespace setting permits privileged workloads for every account in that
-namespace, so restrict who can create workloads there. Other admission policies
+namespace, including the Jumpstarter controller, routers and telemetry. Use a
+dedicated installation for Cuttlefish pools and restrict who can create workloads
+there. Other admission policies
 must also allow the Pod's privileged containers, hostPath devices and container
 UIDs. The workload account needs no Kubernetes API permissions. Nodes must expose
 the required KVM and networking devices; VM-based nodes need nested virtualization.
 The cluster must support native sidecar containers: the runtime init containers
 use `restartPolicy: Always`.
 See [Kubernetes Pod Security Admission](https://kubernetes.io/docs/concepts/security/pod-security-admission/).
+
+Select prepared nodes explicitly: the runtime image and Android build target
+must match `kubernetes.io/arch` (`amd64` for the x86_64 example below).
+Label prepared nodes `jumpstarter.dev/cuttlefish=true` and reserve them with
+the `jumpstarter.dev/kvm:NoSchedule` taint. Both the selector and toleration
+are required for this placement scheme: a toleration alone does not select a
+node. HostPath character-device checks happen after scheduling and cannot
+redirect a Pod to a node with working devices.
+
+By default, the runtime binds the node's KVM, vhost-net and tun devices using
+hostPath. The runtime's host-resource service can change device ownership on
+those host inodes; use dedicated nodes for this mode. When a device plugin
+supplies a device, set `parameters.device_resources` for that device and request
+its advertised extended resource in `scheduling.resources.limits`. For example,
+with a plugin advertising `devices.kubevirt.io/kvm`:
+
+```yaml
+parameters:
+  device_resources:
+    kvm: devices.kubevirt.io/kvm
+scheduling:
+  resources:
+    limits:
+      devices.kubevirt.io/kvm: "1"
+```
+
+This removes only the KVM hostPath volume and mount; `tun` and `vhost-net`
+remain hostPath unless also mapped to resources supplied by your plugin.
+Merge these entries into the complete example below. Map all three devices
+to omit all device hostPath binds. Verify that the plugin injects each device
+at the expected path and that the chosen container runtime does not bind the
+host inode; declaring a resource alone is not proof of device isolation.
 
 On OpenShift, a cluster administrator must grant that workload account access
 to an SCC permitting privileged containers, hostPath devices, and the UIDs used
@@ -65,10 +106,12 @@ service account, runtime marker and managed driver configuration.
 ## Configuration and resource allocation
 
 The provisioner requires exactly one Cuttlefish driver and one
-`env_config.instances` entry. It fixes the managed endpoint to
-`http://127.0.0.1:2081` and `instance_num` to 1. A different
-`host_orchestrator_port` is rejected because the upstream image fixes its service
-and nginx upstream configuration to 2081.
+`env_config.instances` entry. It pins the managed endpoint to
+`http://127.0.0.1:2081` and `instance_num` to 1; a template that sets different
+values is rejected. The upstream image fixes Host Orchestrator to 2081 behind
+nginx on 2080, and all containers share the Pod network namespace, so the netsim
+and bt_peer drivers are pointed directly at the simulators on loopback ports
+7681 and 7300.
 
 Guest defaults are 4 CPUs and 8192 MiB. Runtime memory requests default to the
 **effective** guest memory plus `runtime_memory_overhead_mb` (2048 MiB by default).
@@ -76,10 +119,6 @@ Explicit requests and limits must cover that budget. Increase the overhead for
 larger simulator workloads. Guest values in driver `env_config` take precedence
 over `vm_cpus` and `vm_memory_mb` when calculating the budget. CPU requests default
 to guest CPUs, or to an explicit CPU limit; CPU overcommit remains configurable.
-
-Relay ports must be distinct integers in 1..65535 and must not collide with the
-managed runtime's service ports. Defaults are 17681 (netsim) and 17300 (HCI).
-The relay supervisor exits if either listener process dies.
 
 `create_cvd()` in managed mode accepts only the exact configured `env_config`,
 checks the entire Host Orchestrator inventory, and serializes creation with other
@@ -118,6 +157,23 @@ tests cannot establish compatibility of a mutable image tag or guest build.
 
 ## Image PVCs and reproducibility
 
+Exactly one image source is required: set either `fetch_images: true` or
+`image_volume_claim`. Setting both, or neither, is rejected. Fetching downloads
+`default_build` into each Pod; a claim provisions from a prewarmed PVC:
+
+```yaml
+# Fetch per Pod.
+parameters:
+  fetch_images: true
+  default_build: "<android-build-id>/aosp_cf_x86_64_auto-userdebug"
+```
+
+```yaml
+# Prewarmed PVC. default_build is unused; the images come from the claim.
+parameters:
+  image_volume_claim: cuttlefish-images
+```
+
 A prewarmed image PVC is mounted read-only, then copied into a private writable
 `emptyDir`. It remains a Pod volume after the init container exits. Read-only
 mounting does **not** change the PVC's access mode or remove attachment constraints.
@@ -127,7 +183,7 @@ with the required topology. For ReadWriteOnce, keep readers on one compatible
 node; ReadWriteOncePod permits only one Pod. Alternatively fetch images per Pod.
 See [Kubernetes access modes](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes).
 
-Use an immutable runtime manifest digest, relay digest and Android build ID for
+Use an immutable runtime manifest digest and Android build ID for
 repeatable replacements. This example is a template: substitute verified values
 from a tested pair; the placeholders are not a published compatibility claim.
 Pin the exporter image built with this provisioner/driver change too.
@@ -145,7 +201,6 @@ spec:
     runtime_privileged: true
     fetch_images: true
     default_build: "<android-build-id>/aosp_cf_x86_64_auto-userdebug"
-    relay_image: "docker.io/alpine/socat@sha256:<relay-manifest-digest>"
     vm_cpus: 4
     vm_memory_mb: 8192
     runtime_memory_overhead_mb: 2048
@@ -155,12 +210,59 @@ spec:
     exporter:
       image: "quay.io/jumpstarter-dev/jumpstarter@sha256:<exporter-manifest-digest>"
   scheduling:
+    nodeSelector:
+      kubernetes.io/arch: amd64
+      jumpstarter.dev/cuttlefish: "true"
+    tolerations:
+      - key: jumpstarter.dev/kvm
+        operator: Exists
+        effect: NoSchedule
     resources:
       requests:
         cpu: "4"
         memory: 10Gi
       limits:
         memory: 10Gi
+```
+
+The class carries the provisioner parameters and images; the drivers live in the
+ExporterSet template. Use `ExitAndReplace`, and keep `env_config.instances` to a
+single entry. The provisioner fills in the managed endpoints, so the driver
+configuration below only needs what it overrides:
+
+```yaml
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
+kind: ExporterSet
+metadata:
+  name: cuttlefish
+  namespace: cuttlefish-lab
+spec:
+  minReplicas: 0
+  maxReplicas: 4
+  minAvailableReplicas: 1
+  recycleStrategy: ExitAndReplace
+  virtualTargetClassName: cuttlefish
+  selector:
+    matchLabels:
+      device: cuttlefish
+  template:
+    metadata:
+      labels:
+        device: cuttlefish
+    spec:
+      drivers:
+        - name: cuttlefish
+          type: jumpstarter_driver_cuttlefish.driver.Cuttlefish
+          config:
+            env_config:
+              instances:
+                - vm:
+                    cpus: 4
+                    memory_mb: 8192
+        - name: netsim
+          type: jumpstarter_driver_netsim.driver.Netsim
+        - name: bt_peer
+          type: jumpstarter_driver_bt_peer.driver.BtPeer
 ```
 
 Record both the resolved runtime image digest and the guest `fetcher_config.json`
@@ -171,7 +273,7 @@ with validation results. A prewarmed PVC needs the same build provenance.
 The exporter liveness probe reads state written atomically by the managed driver.
 It always checks Host Orchestrator availability and a per-start runtime ID.
 When the guest is expected to run, it also checks the CVD inventory/status and
-simulator/relay TCP listeners in the shared network namespace. It inspects
+simulator TCP listeners in the shared network namespace. It inspects
 listeners instead of opening HCI connections that could disturb Bluetooth peers.
 A listening socket alone does not prove simulator protocol correctness.
 
@@ -186,8 +288,8 @@ lease. Release that lease to let the controller delete and replace the Pod;
 reacquire a lease for a fresh device. Automatic replacement during an active
 lease is not attempted. Use `ExitAndReplace` for managed Cuttlefish pools.
 
-Validate recovery on disposable leased Pods by terminating the VMM, netsim, each
-relay, and then the runtime sidecar in separate trials. A component may recover
+Validate recovery on disposable leased Pods by terminating the VMM, netsim, and
+then the runtime sidecar in separate trials. A component may recover
 within the probe failure window; verify guest and simulator functionality after
 recovery. For unrecovered failures and runtime sidecar restarts, confirm liveness
 failure, client disconnect, retention while leased, and replacement after release. Also
