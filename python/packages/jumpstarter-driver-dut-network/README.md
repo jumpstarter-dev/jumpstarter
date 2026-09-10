@@ -152,12 +152,14 @@ with `public_gateway` because those routing-table IDs are reserved by the kernel
 
 #### Mixed VLAN and untagged addresses
 
-Tagged and untagged entries can coexist on the same exporter.  The driver
-builds NAT and forwarding rules only for the interfaces actually in use:
-VLAN-only configs omit the untagged upstream; untagged-only configs ignore
-VLANs; mixed configs include both.  Adding or removing addresses at runtime
-(via `add-address` / `remove-address`) triggers a full rebuild, so the rule
-set always matches the current address list.
+Tagged and untagged entries can coexist on the same exporter.  The
+upstream (untagged) interface is **always** included in the masquerade
+and forwarding rules so that unexpected or unregistered DUT hosts on
+the bridge are still NATed via the default upstream.  VLAN
+sub-interfaces are added when at least one address entry carries a
+`vlan_id`.  Adding or removing addresses at runtime (via `add-address`
+/ `remove-address`) triggers a full rebuild, so the rule set always
+matches the current address list.
 
 
 ### Disabled NAT (DHCP only)
@@ -389,5 +391,60 @@ verify with:
 ```shell
 sysctl net.ipv4.conf.<interface>.forwarding
 sysctl net.ipv4.conf.<upstream>.forwarding
+```
+
+## Host System Side Effects
+
+```{warning}
+The DUT network driver modifies host networking state. It is designed for
+dedicated exporter hosts or containers, **not** shared workstations or
+laptops. Running it on a multi-purpose machine may interfere with other
+network configurations.
+```
+
+The driver creates and removes several types of host-level networking
+resources. Under normal operation these are cleaned up when the exporter
+shuts down, but an unclean exit (crash, `kill -9`, power loss) will leave
+them behind. Re-starting the exporter recreates the resources from
+scratch, so orphaned state from a previous run is overwritten — but if
+the exporter is never restarted, manual cleanup may be necessary.
+
+### What the driver creates on the host
+
+| Resource | Created when | Cleaned up on shutdown | Survives a crash |
+|----------|-------------|----------------------|------------------|
+| **VLAN sub-interfaces** (e.g. `eth0.905`) | Address entry has `vlan_id` | Yes — deleted by `cleanup()` | Yes |
+| **nftables table** (`jumpstarter_<iface>`) | NAT mode is not `disabled` | Yes — flushed on cleanup | Yes |
+| **FORWARD chain accept rules** (in `ip filter`) | Docker sets FORWARD policy to `drop` | Yes — removed by handle | Yes |
+| **IP forwarding sysctls** (`net.ipv4.conf.<iface>.forwarding`) | NAT mode is not `disabled` | Yes — restored to previous value | Yes |
+| **IP aliases** (e.g. `203.0.113.1/24` on upstream) | 1:1 NAT with `public_ip` | Yes — removed on cleanup | Yes |
+| **Policy routes and IP rules** | `public_gateway` is set | Yes — flushed on cleanup | Yes |
+| **dnsmasq process** | DHCP is enabled | Yes — stopped on cleanup | No (orphan process) |
+
+### Cleaning up after a crash
+
+If the exporter crashes, the simplest recovery is to restart it — the
+driver recreates all resources idempotently. To clean up manually:
+
+```shell
+# Remove orphan VLAN interfaces
+sudo ip link del eth0.905
+
+# Flush the driver's nftables table
+sudo nft delete table ip jumpstarter_eth2
+
+# Remove stale FORWARD chain rules (find handles first)
+sudo nft -a list chain ip filter FORWARD | grep jmp
+sudo nft delete rule ip filter FORWARD handle <N>
+
+# Remove IP aliases
+sudo ip addr del 203.0.113.1/24 dev eth0
+
+# Flush policy routing tables
+sudo ip route flush table 905
+sudo ip rule del from 192.168.100.125 table 905
+
+# Kill orphan dnsmasq
+sudo pkill -f "dnsmasq.*jumpstarter"
 ```
 

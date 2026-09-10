@@ -78,6 +78,7 @@ var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, Continu
 		vlanPubIP  = "10.100.0.50"
 		vlanExtIP  = "10.100.0.1"
 		pbrDutIP   = "192.168.200.51"
+		pbrOnlyIP       = "10.99.1.1"
 		noPbrVlan       = 101
 		noPbrDutIP      = "192.168.200.52"
 		noPbrExtIP      = "10.101.0.1"
@@ -295,6 +296,15 @@ var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, Continu
 		})
 
 		It("should allow TCP from DUT via untagged source-IP PBR", func() {
+			// Add a destination reachable ONLY through PBR.
+			// 10.99.1.1 is added to the ext-ns loopback — the host's
+			// main routing table has no route to 10.99.1.0/24, so only
+			// the PBR table (default via 10.99.0.1) can reach it.
+			runInNs(extNs, "ip", "addr", "add", pbrOnlyIP+"/32", "dev", "lo")
+			defer func() {
+				_, _ = runInNsCapture(extNs, "ip", "addr", "del", pbrOnlyIP+"/32", "dev", "lo")
+			}()
+
 			out, err := jmpShell("j", "dut-network", "add-address",
 				pbrDutIP, "--public-gateway", extIP)
 			Expect(err).NotTo(HaveOccurred(), out)
@@ -305,7 +315,15 @@ var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, Continu
 				_, _ = jmpShell("j", "dut-network", "remove-address", pbrDutIP)
 			}()
 
-			expectTCPEcho(dutNs, extNs, pbrDutIP, extIP, 9998)
+			// PBR source: traffic from pbrDutIP uses the PBR table
+			// whose default route goes via extIP (10.99.0.1) — the
+			// ext namespace delivers 10.99.1.1 locally on its loopback.
+			expectTCPEcho(dutNs, extNs, pbrDutIP, pbrOnlyIP, 9998)
+
+			// Non-PBR source: the main DUT IP has no PBR rule, so
+			// 10.99.1.1 is unreachable through the main routing table.
+			Expect(pingNS(dutNs, dutIP, pbrOnlyIP)).To(HaveOccurred(),
+				"main DUT IP should NOT reach %s without PBR", pbrOnlyIP)
 		})
 
 		It("should not reach a VLAN-only peer without public_gateway", func() {
