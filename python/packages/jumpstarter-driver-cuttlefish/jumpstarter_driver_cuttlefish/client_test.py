@@ -1,9 +1,10 @@
+import socket
 import subprocess
 
 import pytest
 from click.testing import CliRunner
 
-from .client import _echo, _parse
+from .client import _client_url, _echo, _parse
 from .driver import Cuttlefish
 from jumpstarter.common.utils import serve
 
@@ -221,3 +222,41 @@ def test_run_with_progress_error():
 
     with pytest.raises(ValueError, match="kaboom"):
         _run_with_progress("Testing", boom)
+
+
+# --- WebRTC display ---
+
+
+def test_client_url():
+    assert _client_url(("127.0.0.1", 8080), "cvd_1-1-1") == "http://127.0.0.1:8080/devices/cvd_1-1-1/files/client.html"
+
+
+def test_cli_webrtc_prints_url():
+    with serve(Cuttlefish(webrtc_url="http://cf:1080")) as client:
+        r = CliRunner().invoke(client.cli(), ["webrtc"])
+        assert r.exit_code == 0
+        assert "http://cf:1080" in r.output
+
+
+def test_cli_webrtc_forward_requires_provisioned_display(requests_mock):
+    requests_mock.get(f"{BASE}/cvds/cvd/1", json={"cvds": [{"webrtc_device_id": "cvd-1-1"}]})
+    with serve(Cuttlefish()) as client:
+        r = CliRunner().invoke(client.cli(), ["webrtc", "--forward"])
+        assert r.exit_code != 0
+        assert "webrtc_turn" in r.output
+
+
+def test_cli_webrtc_forward_refuses_shared_turn_port(requests_mock):
+    requests_mock.get(f"{BASE}/cvds/cvd/1", json={"cvds": [{"webrtc_device_id": "cvd-1-1"}]})
+    # Another jumpstarter forward holds the port with SO_REUSEPORT. Sharing it
+    # would split the browser's TURN connections between exporters, so the
+    # pinned listener must refuse rather than join.
+    with socket.socket() as holder:
+        holder.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        holder.bind(("127.0.0.1", 0))
+        holder.listen()
+        port = holder.getsockname()[1]
+        with serve(Cuttlefish(webui_port=2090, turn_port=port)) as client:
+            r = CliRunner().invoke(client.cli(), ["webrtc", "--forward"])
+    assert r.exit_code != 0
+    assert f"cannot bind local TURN port {port}" in r.output

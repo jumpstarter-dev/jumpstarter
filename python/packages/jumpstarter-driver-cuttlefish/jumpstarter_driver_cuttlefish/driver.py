@@ -1,11 +1,15 @@
 import json
+import os
 import subprocess
+import threading
 import time
 from collections.abc import Generator
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import requests
 from jumpstarter_driver_adb.driver import AdbServer
+from jumpstarter_driver_network.driver import TcpNetwork
 from jumpstarter_driver_power.driver import PowerReading, VirtualPowerInterface
 
 from jumpstarter.driver import Driver, export
@@ -39,15 +43,55 @@ class Cuttlefish(Driver):
     boot_timeout: int = 300
     env_config: dict = field(default_factory=dict)
     webrtc_url: str = ""
+    # WebRTC display over the lease. ``webui_port`` is the in-Pod nginx port
+    # serving the client page with a TURN-aware /infra_config, ``turn_port`` the
+    # coturn listener relaying media. Both are Pod-local and only reachable
+    # through the lease; the ExporterSet provisioner injects them.
+    webui_port: int = 0
+    turn_port: int = 0
+    managed: bool = False
+    health_state_path: str = ""
+    runtime_id_path: str = ""
+    health_ports: list[int] = field(default_factory=list)
+    _operation_lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
+    _health: dict = field(default_factory=dict, init=False, repr=False)
     _cvd_group: str | None = field(default=None, init=False, repr=False)
     _cvd_name: str | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
+        if self.managed:
+            self._validate_managed_config()
+            self._health = json.loads(Path(self.health_state_path).read_text())
+            if self._health["runtime_id"] != Path(self.runtime_id_path).read_text().strip():
+                raise CuttlefishError("Cuttlefish runtime restarted before driver initialization")
+            self._health.update(url=self._base_url, ports=self.health_ports)
+            self._write_health()
+
         self.children["power"] = CvdPower(parent=self)
         self.children["storage"] = CvdFlasher(parent=self)
         self.children["adb"] = AdbServer(host="127.0.0.1", port=self.adb_server_port)
+        # Forwarding these two is what lets a client see the display without any
+        # ingress to the Pod: the UI and the TURN relay both ride the lease.
+        if self.webui_port:
+            self.children["webui"] = TcpNetwork(host="127.0.0.1", port=self.webui_port)
+        if self.turn_port:
+            self.children["turn"] = TcpNetwork(host="127.0.0.1", port=self.turn_port)
+
+    def _validate_managed_config(self):
+        instances = self.env_config.get("instances", [])
+        if len(instances) != 1 or not isinstance(instances[0], dict):
+            raise CuttlefishError("managed Cuttlefish requires exactly one instance")
+        if not self.health_state_path or not self.runtime_id_path:
+            raise CuttlefishError("managed Cuttlefish requires health and runtime ID paths")
+
+    def _write_health(self):
+        if not self.managed:
+            return
+        temporary = Path(self.health_state_path + ".tmp")
+        temporary.write_text(json.dumps(self._health))
+        os.replace(temporary, self.health_state_path)
 
     @classmethod
     def client(cls) -> str:
@@ -125,7 +169,51 @@ class Cuttlefish(Driver):
             return r.json()
         raise CuttlefishTimeout(f"operation {op_name} timed out after {timeout}s")
 
-    def _do_operation(
+    def _validate_creation(self, data):
+        # Accept only the budgeted, provisioner-approved configuration. Alternate
+        # HO creation forms and additional groups would bypass the Pod contract.
+        if data != {"env_config": self.env_config}:
+            raise CuttlefishError("managed create_cvd requires the configured env_config")
+        existing = self._request("GET", "/cvds")
+        if not isinstance(existing, dict) or not isinstance(existing.get("cvds"), list):
+            raise CuttlefishError("invalid CVD inventory; refusing creation")
+        if existing["cvds"]:
+            raise CuttlefishError("managed Cuttlefish already has a CVD; destroy it before creating another")
+
+    def _do_operation(self, method: str, path: str, data: dict | None = None, timeout: float = 300):
+        if not self.managed:
+            return self._perform_operation(method, path, data, timeout)
+        with self._operation_lock:
+            if method == "POST" and path == "/cvds":
+                self._validate_creation(data)
+            state = self._health.get("state", "off")
+            target_state = state
+            if path == "/reset" or method == "DELETE" or path.endswith("/:stop"):
+                target_state = "off"
+            elif path == "/cvds" or path.endswith(("/:start", "/:restart", "/:powerwash")):
+                target_state = "running"
+            # Probes allow bounded transitions, then fail closed if the operation
+            # hangs or leaves the target's state unknown.
+            self._health.update(state="transition", deadline=time.monotonic() + timeout + 30)
+            self._write_health()
+            try:
+                result = self._perform_operation(method, path, data, timeout)
+            except Exception:
+                self._health["state"] = "failed"
+                self._write_health()
+                raise
+            if isinstance(result, dict) and path == "/cvds":
+                cvds = result.get("cvds", [])
+                if len(cvds) == 1:
+                    self._cvd_group = cvds[0].get("group")
+                    self._cvd_name = cvds[0].get("name")
+            self._health.update(
+                state=target_state, group=self._cvd_group or self.group, name=self._cvd_name or self.name,
+            )
+            self._write_health()
+            return result
+
+    def _perform_operation(
         self,
         method: str,
         path: str,
@@ -256,6 +344,38 @@ class Cuttlefish(Driver):
             return self.webrtc_url
         return f"{self.scheme}://{self.host}:1080"
 
+    def _webrtc_device_id(self) -> str:
+        """Device id the operator registered the CVD under.
+
+        Read from inventory when available: Host Orchestrator derives it from the
+        group it actually assigned, which is not always the configured one.
+        """
+        try:
+            inventory = self._request("GET", self._cvd_path)
+        except CuttlefishError:
+            inventory = None
+        cvds = inventory.get("cvds", []) if isinstance(inventory, dict) else []
+        for cvd in cvds:
+            if isinstance(cvd, dict) and cvd.get("webrtc_device_id"):
+                return str(cvd["webrtc_device_id"])
+        return f"{self._cvd_group or self.group}-{self._cvd_name or self.name}-{self.instance_num}"
+
+    @export
+    def get_webrtc_config(self) -> str:
+        """Ports a client forwards to reach the display, plus the device id.
+
+        ``turn_port`` is both the Pod-side listener and the local port the client
+        must bind: the ICE server URL baked into /infra_config names that exact
+        port, and the browser has no way to learn a different one.
+        """
+        return json.dumps(
+            {
+                "webui_port": self.webui_port,
+                "turn_port": self.turn_port,
+                "device_id": self._webrtc_device_id(),
+            }
+        )
+
     @export
     def list_cvds(self) -> str:
         return self._fmt(self._request("GET", "/cvds"))
@@ -295,7 +415,7 @@ class Cuttlefish(Driver):
 
     @export
     def start_cvd(self) -> str:
-        return self._fmt(self._do_operation("POST", f"{self._cvd_path}/:start"))
+        return self._fmt(self._do_operation("POST", f"{self._cvd_path}/:start", {}))
 
     @export
     def stop_cvd(self) -> str:
@@ -358,8 +478,15 @@ class CvdPower(VirtualPowerInterface, Driver):
         return "jumpstarter_driver_cuttlefish.client.CvdPowerClient"
 
     @export
-    def on(self) -> None:  # noqa: C901
+    def on(self) -> None:
+        with self.parent._operation_lock:
+            self._on()
+
+    def _on(self) -> None:  # noqa: C901
         existing = self.parent._get_existing_cvds()
+
+        if self.parent.managed and len(existing) > 1:
+            raise CuttlefishError("managed Cuttlefish inventory has multiple CVDs")
 
         if len(existing) > 1:
             self.logger.warning(
@@ -392,7 +519,7 @@ class CvdPower(VirtualPowerInterface, Driver):
                 cvd.get("status"),
             )
             if cvd.get("status") != "Running":
-                self.parent._do_operation("POST", f"{self.parent._cvd_path}/:start")
+                self.parent.start_cvd()
         else:
             self.logger.info("Creating CVD from env_config")
             try:
@@ -426,12 +553,21 @@ class CvdPower(VirtualPowerInterface, Driver):
                         )
                     break
 
+        if self.parent.managed:
+            with self.parent._operation_lock:
+                self.parent._health.update(state="running", group=self.parent._cvd_group or self.parent.group,
+                                           name=self.parent._cvd_name or self.parent.name)
+                self.parent._write_health()
         self.parent._auto_connect_adb()
         if self.parent.boot_timeout:
             self.parent._wait_boot(self.parent.boot_timeout)
 
     @export
     def off(self, destroy: bool = False) -> None:
+        with self.parent._operation_lock:
+            self._off(destroy)
+
+    def _off(self, destroy: bool) -> None:
         p = self.parent
         cvd_id = f"{p._cvd_group or p.group}/{p._cvd_name or p.name}"
         if destroy:

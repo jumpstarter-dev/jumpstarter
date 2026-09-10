@@ -2187,6 +2187,7 @@ dependencies = [
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-adb" },
     { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power" },
     { name = "requests" },
 ]
@@ -2205,6 +2206,7 @@ requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-adb", editable = "packages/jumpstarter-driver-adb" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
     { name = "requests", specifier = ">=2.28.0" },
 ]
