@@ -411,13 +411,15 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         await self._dial_with_retry()
 
         async def _tunnel_handler(stream):
+            # Retry transient failures: a single controller blip here would
+            # otherwise tear down the whole session, because this handler runs in
+            # the listener's task group. Only a persistently unreachable exporter
+            # should propagate and trigger the shell's reconnect path.
             try:
-                response = await self.controller.Dial(
-                    jumpstarter_pb2.DialRequest(lease_name=self.name)
-                )
-            except AioRpcError as e:
+                response = await self._dial_with_retry()
+            except ExporterUnreachableError as e:
                 raise ExporterUnreachableError(
-                    f"Per-connection Dial failed for {self.exporter_name}: {e.details()}"
+                    f"Per-connection Dial failed for {self.exporter_name}: {e}"
                 ) from e
             async with connect_router_stream(
                 response.router_endpoint,

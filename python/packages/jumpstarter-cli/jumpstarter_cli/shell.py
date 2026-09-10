@@ -291,7 +291,35 @@ async def _cancel_if_connection_lost(monitor, coro):
     return result
 
 
-async def _run_shell_with_lease_async(lease, exporter_logs, config, command, cancel_scope):  # noqa: C901
+async def _run_shell_with_lease_async(lease, exporter_logs, config, command, cancel_scope):
+    """Run an interactive session, ignoring exporter loss that arrives after the shell exits.
+
+    The shell runs in a worker thread that anyio cannot cancel. If a
+    per-connection Dial fails while the user is at the prompt, the listener's
+    task group cancels the session, but the cancellation only lands once the
+    shell returns - discarding its exit code and making the caller's retry loop
+    reconnect the user into a fresh shell. Once the shell has exited the user
+    is done, so report its exit code instead.
+    """
+    exit_code = None  # recorded from inside the shell thread once it returns
+
+    def record_exit(code):
+        nonlocal exit_code
+        exit_code = code
+
+    try:
+        return await _run_shell_session(lease, exporter_logs, config, command, cancel_scope, record_exit)
+    except (BaseExceptionGroup, ExporterUnreachableError) as exc:
+        unreachable = (
+            find_exception_in_group(exc, ExporterUnreachableError) if isinstance(exc, BaseExceptionGroup) else exc
+        )
+        if unreachable is None or exit_code is None:
+            raise
+        logger.debug("Exporter unreachable after shell exit, not reconnecting: %s", unreachable)
+        return exit_code
+
+
+async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope, on_shell_exit):  # noqa: C901
     """Run shell with lease context managers and wait for afterLease hook if logs enabled.
 
     When exporter_logs is enabled, this function will:
@@ -371,10 +399,16 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                 except Exception:
                                     logger.debug("Failed to fetch motd, continuing without it")
 
-                            # Run the shell command
-                            exit_code = await anyio.to_thread.run_sync(
-                                _run_shell_only, lease, config, command, path, motd
-                            )
+                            # Run the shell command. The exit code is reported from
+                            # inside the thread: run_sync is not cancellable, so if the
+                            # enclosing task group is already unwinding, the await below
+                            # raises instead of returning and the value would be lost.
+                            def _run_and_record():
+                                code = _run_shell_only(lease, config, command, path, motd)
+                                on_shell_exit(code)
+                                return code
+
+                            exit_code = await anyio.to_thread.run_sync(_run_and_record)
 
                             # Shell has exited. For auto-created leases (release=True), call
                             # EndSession to trigger afterLease hook while keeping log stream

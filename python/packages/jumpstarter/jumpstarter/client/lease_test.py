@@ -832,22 +832,13 @@ class TestServeUnixAsync:
         lease.grpc_options = {}
         lease.controller = Mock()
 
-        # Mock the readiness check
-        readiness_check_called = False
+        # Both the readiness check and the per-connection dial go through _dial_with_retry
+        dial_calls = 0
 
         async def mock_dial_with_retry():
-            nonlocal readiness_check_called
-            readiness_check_called = True
-
-        # Mock per-connection Dial
-        dial_call_count = 0
-
-        async def mock_dial(request):
-            nonlocal dial_call_count
-            dial_call_count += 1
+            nonlocal dial_calls
+            dial_calls += 1
             return Mock(router_endpoint="test-endpoint", router_token="test-token")
-
-        lease.controller.Dial = mock_dial
 
         # Mock connect_router_stream
         router_stream_calls = []
@@ -861,7 +852,7 @@ class TestServeUnixAsync:
             with patch("jumpstarter.client.lease.connect_router_stream", side_effect=mock_connect_router_stream):
                 async with lease.serve_unix_async() as socket_path:
                     # Readiness check should have been called
-                    assert readiness_check_called
+                    assert dial_calls == 1
 
                     # Connect to the Unix socket
                     async with await anyio.connect_unix(socket_path):
@@ -869,7 +860,7 @@ class TestServeUnixAsync:
                         await anyio.sleep(0.1)
 
         # Verify per-connection Dial was called
-        assert dial_call_count == 1
+        assert dial_calls == 2
 
         # Verify connect_router_stream was called with correct args
         assert len(router_stream_calls) == 1
@@ -881,7 +872,7 @@ class TestServeUnixAsync:
 
     @pytest.mark.anyio
     async def test_serve_unix_async_per_connection_dial_failure_wrapped(self):
-        """Per-connection Dial failure raises ExporterUnreachableError instead of raw AioRpcError."""
+        """A per-connection Dial that keeps failing raises ExporterUnreachableError."""
         from grpc import StatusCode
 
         lease = object.__new__(Lease)
@@ -890,13 +881,15 @@ class TestServeUnixAsync:
         lease.tls_config = Mock()
         lease.grpc_options = {}
         lease.controller = Mock()
+        lease.dial_timeout = 0.1
 
-        # Mock the readiness check
-        async def mock_dial_with_retry():
-            pass
+        # Readiness check succeeds, every per-connection Dial after it fails
+        calls = {"count": 0}
 
-        # Mock per-connection Dial to raise AioRpcError
-        async def mock_dial_failure(request):
+        async def mock_dial(request):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return Mock(router_endpoint="test-endpoint", router_token="test-token")
             raise AioRpcError(
                 code=StatusCode.UNAVAILABLE,
                 initial_metadata=None,
@@ -904,17 +897,62 @@ class TestServeUnixAsync:
                 details="exporter offline",
             )
 
-        lease.controller.Dial = mock_dial_failure
+        lease.controller.Dial = mock_dial
 
         # The ExceptionGroup surfaces when the TemporaryUnixListener task group
         # tears down, so pytest.raises must wrap the entire serve_unix_async block.
-        with patch.object(lease, "_dial_with_retry", side_effect=mock_dial_with_retry):
-            with pytest.raises(BaseExceptionGroup) as exc_info:
-                async with lease.serve_unix_async() as socket_path:
-                    async with await anyio.connect_unix(socket_path):
-                        await anyio.sleep(0.1)
+        with pytest.raises(BaseExceptionGroup) as exc_info:
+            async with lease.serve_unix_async() as socket_path:
+                async with await anyio.connect_unix(socket_path):
+                    await anyio.sleep(1)
 
-            exceptions = exc_info.value.exceptions
-            assert len(exceptions) == 1
-            assert isinstance(exceptions[0], ExporterUnreachableError)
-            assert "Per-connection Dial failed" in str(exceptions[0])
+        exceptions = exc_info.value.exceptions
+        assert len(exceptions) == 1
+        assert isinstance(exceptions[0], ExporterUnreachableError)
+        assert "Per-connection Dial failed" in str(exceptions[0])
+        # It retried rather than giving up on the first failure
+        assert calls["count"] > 2
+
+    @pytest.mark.anyio
+    async def test_serve_unix_async_per_connection_dial_survives_transient_failure(self):
+        """A per-connection Dial blip is retried instead of tearing down the session."""
+        from grpc import StatusCode
+
+        lease = object.__new__(Lease)
+        lease.name = "test-lease"
+        lease.exporter_name = "test-exporter"
+        lease.tls_config = Mock()
+        lease.grpc_options = {}
+        lease.controller = Mock()
+        lease.dial_timeout = 5.0
+
+        calls = {"count": 0}
+
+        async def mock_dial(request):
+            calls["count"] += 1
+            # readiness check, then one blip, then success
+            if calls["count"] == 2:
+                raise AioRpcError(
+                    code=StatusCode.UNAVAILABLE,
+                    initial_metadata=None,
+                    trailing_metadata=None,
+                    details="transient",
+                )
+            return Mock(router_endpoint="test-endpoint", router_token="test-token")
+
+        lease.controller.Dial = mock_dial
+
+        router_stream_calls = []
+
+        @asynccontextmanager
+        async def mock_connect_router_stream(endpoint, token, stream, tls_config, grpc_options):
+            router_stream_calls.append(endpoint)
+            yield
+
+        with patch("jumpstarter.client.lease.connect_router_stream", side_effect=mock_connect_router_stream):
+            async with lease.serve_unix_async() as socket_path:
+                async with await anyio.connect_unix(socket_path):
+                    await anyio.sleep(1)
+
+        # The connection was served despite the blip
+        assert router_stream_calls == ["test-endpoint"]
