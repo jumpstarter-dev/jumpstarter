@@ -65,10 +65,12 @@ service account, runtime marker and managed driver configuration.
 ## Configuration and resource allocation
 
 The provisioner requires exactly one Cuttlefish driver and one
-`env_config.instances` entry. It fixes the managed endpoint to
-`http://127.0.0.1:2081` and `instance_num` to 1. A different
-`host_orchestrator_port` is rejected because the upstream image fixes its service
-and nginx upstream configuration to 2081.
+`env_config.instances` entry. It pins the managed endpoint to
+`http://127.0.0.1:2081` and `instance_num` to 1; a template that sets different
+values is rejected. The upstream image fixes Host Orchestrator to 2081 behind
+nginx on 2080, and all containers share the Pod network namespace, so the netsim
+and bt_peer drivers are pointed directly at the simulators on loopback ports
+7681 and 7300.
 
 Guest defaults are 4 CPUs and 8192 MiB. Runtime memory requests default to the
 **effective** guest memory plus `runtime_memory_overhead_mb` (2048 MiB by default).
@@ -76,10 +78,6 @@ Explicit requests and limits must cover that budget. Increase the overhead for
 larger simulator workloads. Guest values in driver `env_config` take precedence
 over `vm_cpus` and `vm_memory_mb` when calculating the budget. CPU requests default
 to guest CPUs, or to an explicit CPU limit; CPU overcommit remains configurable.
-
-Relay ports must be distinct integers in 1..65535 and must not collide with the
-managed runtime's service ports. Defaults are 17681 (netsim) and 17300 (HCI).
-The relay supervisor exits if either listener process dies.
 
 `create_cvd()` in managed mode accepts only the exact configured `env_config`,
 checks the entire Host Orchestrator inventory, and serializes creation with other
@@ -127,7 +125,7 @@ with the required topology. For ReadWriteOnce, keep readers on one compatible
 node; ReadWriteOncePod permits only one Pod. Alternatively fetch images per Pod.
 See [Kubernetes access modes](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes).
 
-Use an immutable runtime manifest digest, relay digest and Android build ID for
+Use an immutable runtime manifest digest and Android build ID for
 repeatable replacements. This example is a template: substitute verified values
 from a tested pair; the placeholders are not a published compatibility claim.
 Pin the exporter image built with this provisioner/driver change too.
@@ -145,7 +143,6 @@ spec:
     runtime_privileged: true
     fetch_images: true
     default_build: "<android-build-id>/aosp_cf_x86_64_auto-userdebug"
-    relay_image: "docker.io/alpine/socat@sha256:<relay-manifest-digest>"
     vm_cpus: 4
     vm_memory_mb: 8192
     runtime_memory_overhead_mb: 2048
@@ -171,7 +168,7 @@ with validation results. A prewarmed PVC needs the same build provenance.
 The exporter liveness probe reads state written atomically by the managed driver.
 It always checks Host Orchestrator availability and a per-start runtime ID.
 When the guest is expected to run, it also checks the CVD inventory/status and
-simulator/relay TCP listeners in the shared network namespace. It inspects
+simulator TCP listeners in the shared network namespace. It inspects
 listeners instead of opening HCI connections that could disturb Bluetooth peers.
 A listening socket alone does not prove simulator protocol correctness.
 
@@ -186,8 +183,8 @@ lease. Release that lease to let the controller delete and replace the Pod;
 reacquire a lease for a fresh device. Automatic replacement during an active
 lease is not attempted. Use `ExitAndReplace` for managed Cuttlefish pools.
 
-Validate recovery on disposable leased Pods by terminating the VMM, netsim, each
-relay, and then the runtime sidecar in separate trials. A component may recover
+Validate recovery on disposable leased Pods by terminating the VMM, netsim, and
+then the runtime sidecar in separate trials. A component may recover
 within the probe failure window; verify guest and simulator functionality after
 recovery. For unrecovered failures and runtime sidecar restarts, confirm liveness
 failure, client disconnect, retention while leased, and replacement after release. Also

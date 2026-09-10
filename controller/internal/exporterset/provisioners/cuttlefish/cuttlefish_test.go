@@ -4,12 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 	"testing"
-	"time"
 
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -25,41 +20,34 @@ func TestProvisionerName(t *testing.T) {
 }
 
 func TestRenderPod(t *testing.T) {
-	exporterSet := testExporterSet()
-	vtc := &virtualtargetv1alpha1.VirtualTargetClass{
-		Spec: virtualtargetv1alpha1.VirtualTargetClassSpec{Provisioner: ProvisionerName},
+	pod := renderTestPod(t, map[string]interface{}{"fetch_images": true})
+	names := make([]string, 0, len(pod.Spec.InitContainers))
+	for _, container := range pod.Spec.InitContainers {
+		names = append(names, container.Name)
 	}
-
-	pod, err := New("dev").RenderPod(context.Background(), exporterSet, vtc, map[string]interface{}{
-		"fetch_images":         true,
-		"runtime_privileged":   true,
-		"service_account_name": "cuttlefish-runtime",
-	}, nil, nil)
-	if err != nil {
-		t.Fatal(err)
+	want := []string{"fetch-images", "fix-cuttlefish-permissions", runtimeContainerName, gateContainerName}
+	if fmt.Sprint(names) != fmt.Sprint(want) {
+		t.Fatalf("init containers = %v, want %v", names, want)
 	}
-	if len(pod.Spec.InitContainers) != 5 {
-		t.Fatalf("init container count = %d, want 5", len(pod.Spec.InitContainers))
+	runtime := initContainer(t, pod, runtimeContainerName)
+	if runtime.RestartPolicy == nil || *runtime.RestartPolicy != corev1.ContainerRestartPolicyAlways {
+		t.Fatal("runtime must be a native sidecar")
 	}
-	if pod.Spec.InitContainers[0].Name != "fetch-images" {
-		t.Errorf("first init container = %q", pod.Spec.InitContainers[0].Name)
-	}
-	if pod.Spec.InitContainers[2].Name != "cuttlefish" || pod.Spec.InitContainers[2].RestartPolicy == nil {
-		t.Errorf("runtime sidecar = %#v", pod.Spec.InitContainers[2])
-	}
-	if pod.Spec.InitContainers[2].SecurityContext == nil ||
-		pod.Spec.InitContainers[2].SecurityContext.Privileged == nil ||
-		!*pod.Spec.InitContainers[2].SecurityContext.Privileged {
+	if runtime.SecurityContext == nil || runtime.SecurityContext.Privileged == nil || !*runtime.SecurityContext.Privileged {
 		t.Fatal("Cuttlefish runtime must be privileged")
-	}
-	if pod.Spec.InitContainers[3].Name != "cuttlefish-relay" {
-		t.Errorf("relay container = %q", pod.Spec.InitContainers[3].Name)
 	}
 	if len(pod.Spec.Containers) != 1 || pod.Spec.Containers[0].Name != "exporter" {
 		t.Fatalf("containers = %#v", pod.Spec.Containers)
 	}
-	if pod.Spec.Containers[0].Env[0].Name != "HOME" || pod.Spec.Containers[0].Env[0].Value != "/tmp" {
-		t.Errorf("exporter HOME = %#v, want /tmp", pod.Spec.Containers[0].Env[0])
+	exporter := pod.Spec.Containers[0]
+	if !hasEnv(exporter.Env, "HOME", "/tmp") {
+		t.Errorf("exporter HOME = %#v, want /tmp", exporter.Env)
+	}
+	if exporter.Command[6] != hostOrchestratorURL {
+		t.Errorf("exporter endpoint = %q", exporter.Command[6])
+	}
+	if pod.Spec.RestartPolicy != corev1.RestartPolicyNever {
+		t.Error("Pod must not restart the exporter in place")
 	}
 	if !hasVolume(pod.Spec.Volumes, "kvm", "/dev/kvm") || !hasVolume(pod.Spec.Volumes, "tun", "/dev/net/tun") {
 		t.Fatalf("device volumes missing: %#v", pod.Spec.Volumes)
@@ -67,10 +55,7 @@ func TestRenderPod(t *testing.T) {
 }
 
 func TestRenderPod_rejectsFetchingIntoClaim(t *testing.T) {
-	exporterSet := testExporterSet()
-	vtc := &virtualtargetv1alpha1.VirtualTargetClass{}
-
-	_, err := New("dev").RenderPod(context.Background(), exporterSet, vtc, map[string]interface{}{
+	_, err := New("dev").RenderPod(context.Background(), testExporterSet(), &virtualtargetv1alpha1.VirtualTargetClass{}, map[string]interface{}{
 		"fetch_images":         true,
 		"image_volume_claim":   "cuttlefish-images",
 		"runtime_privileged":   true,
@@ -81,56 +66,44 @@ func TestRenderPod_rejectsFetchingIntoClaim(t *testing.T) {
 	}
 }
 
-func renderTestPod(t *testing.T, params map[string]interface{}) *corev1.Pod {
-	t.Helper()
-	params["runtime_privileged"] = true
-	params["service_account_name"] = "cuttlefish-runtime"
-	pod, err := New("dev").RenderPod(context.Background(), testExporterSet(), &virtualtargetv1alpha1.VirtualTargetClass{}, params, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return pod
-}
-
 func TestRenderPod_privateImageCopy(t *testing.T) {
-	for _, readOnly := range []bool{true, false} {
-		pod := renderTestPod(t, map[string]interface{}{"image_volume_claim": "images", "image_volume_read_only": readOnly})
-		for _, volume := range pod.Spec.Volumes {
-			if volume.PersistentVolumeClaim != nil && !volume.PersistentVolumeClaim.ReadOnly {
-				t.Fatal("source claim is writable")
-			}
-			if volume.Name == "cvd-images" && volume.EmptyDir == nil {
-				t.Fatal("missing private image volume")
-			}
+	pod := renderTestPod(t, map[string]interface{}{"image_volume_claim": "images"})
+	for _, volume := range pod.Spec.Volumes {
+		if volume.PersistentVolumeClaim != nil && !volume.PersistentVolumeClaim.ReadOnly {
+			t.Fatal("source claim is writable")
 		}
-		copy := pod.Spec.InitContainers[0]
-		if copy.Name != "copy-images" || !copy.VolumeMounts[0].ReadOnly || copy.VolumeMounts[1].ReadOnly {
-			t.Fatal("invalid copy mounts")
+		if volume.Name == "cvd-images" && volume.EmptyDir == nil {
+			t.Fatal("missing private image volume")
 		}
-		for _, container := range pod.Spec.InitContainers[1:] {
-			for _, mount := range container.VolumeMounts {
-				if mount.Name == "image-source" {
-					t.Fatalf("%s can access shared source", container.Name)
-				}
+	}
+	copy := pod.Spec.InitContainers[0]
+	if copy.Name != "copy-images" || !copy.VolumeMounts[0].ReadOnly || copy.VolumeMounts[1].ReadOnly {
+		t.Fatal("invalid copy mounts")
+	}
+	for _, container := range pod.Spec.InitContainers[1:] {
+		for _, mount := range container.VolumeMounts {
+			if mount.Name == "image-source" {
+				t.Fatalf("%s can access shared source", container.Name)
 			}
 		}
 	}
 }
 
-func TestRenderPod_healthAndRelayIsolation(t *testing.T) {
+func TestRenderPod_healthGate(t *testing.T) {
 	pod := renderTestPod(t, map[string]interface{}{"fetch_images": true})
 	gate := pod.Spec.InitContainers[len(pod.Spec.InitContainers)-1]
-	if gate.Name != "wait-for-cuttlefish" || !strings.Contains(gate.Command[2], "127.0.0.1:2081/_debug/statusz") {
-		t.Fatal("missing API startup gate")
+	if gate.Name != gateContainerName || gate.Command[3] != "--wait" || gate.Command[4] != hostOrchestratorURL {
+		t.Fatalf("missing API startup gate: %#v", gate.Command)
+	}
+	if gate.Image != pod.Spec.Containers[0].Image {
+		t.Fatal("gate must run in the exporter image")
 	}
 	probe := pod.Spec.Containers[0].LivenessProbe
-	if probe == nil || probe.Exec.Command[2] != "jumpstarter_driver_cuttlefish.health" {
+	if probe == nil || probe.Exec.Command[2] != "jumpstarter_driver_cuttlefish.health" || probe.Exec.Command[3] != healthStatePath {
 		t.Fatal("missing runtime failure detection")
 	}
-	for _, container := range pod.Spec.InitContainers {
-		if container.Name == "cuttlefish-relay" && strings.Count(container.Command[2], "bind=127.0.0.1") != 2 {
-			t.Fatal("relay exposed outside Pod")
-		}
+	if !hasMount(pod.Spec.Containers[0].VolumeMounts, "cvd-state", runtimeIDMount) {
+		t.Fatal("exporter cannot read the runtime marker")
 	}
 }
 
@@ -145,23 +118,28 @@ func TestRenderPod_storageBudgets(t *testing.T) {
 			total.Add(*volume.EmptyDir.SizeLimit)
 		}
 	}
-	for _, container := range pod.Spec.InitContainers {
-		if container.Name == "fetch-images" || container.Name == "cuttlefish" {
-			request := container.Resources.Requests[corev1.ResourceEphemeralStorage]
-			limit := container.Resources.Limits[corev1.ResourceEphemeralStorage]
-			if request.Cmp(total) != 0 || limit.Cmp(total) != 0 {
-				t.Fatalf("%s storage does not cover volumes: %v", container.Name, container.Resources)
-			}
+	if total.Cmp(resource.MustParse("15Gi")) != 0 {
+		t.Fatalf("volume total = %s", total.String())
+	}
+	for _, name := range []string{"fetch-images", runtimeContainerName} {
+		container := initContainer(t, pod, name)
+		request := container.Resources.Requests[corev1.ResourceEphemeralStorage]
+		limit := container.Resources.Limits[corev1.ResourceEphemeralStorage]
+		if request.Cmp(total) != 0 || limit.Cmp(total) != 0 {
+			t.Fatalf("%s storage does not cover volumes: %v", name, container.Resources)
 		}
 	}
 }
 
 func TestStorageValidation(t *testing.T) {
 	for _, value := range []interface{}{"", "0", "-1Gi", "invalid", 42} {
-		_, _, _, err := storageSizes(map[string]interface{}{"storage": map[string]interface{}{"imageSize": value}})
+		_, err := resolveStorageConfig(map[string]interface{}{"fetch_images": true, "storage": map[string]interface{}{"imageSize": value}})
 		if err == nil {
 			t.Fatalf("accepted invalid size %v", value)
 		}
+	}
+	if _, err := resolveStorageConfig(map[string]interface{}{"fetch_images": true, "storage": "invalid"}); err == nil {
+		t.Fatal("accepted non-object storage")
 	}
 	budget := resource.MustParse("10Gi")
 	for _, resources := range []corev1.ResourceRequirements{
@@ -190,12 +168,14 @@ func TestEnrichExporterExport(t *testing.T) {
 	}
 
 	cuttlefish := configFor(t, result[0])
-	if cuttlefish["host"] != "127.0.0.1" || cuttlefish["port"] != float64(hostOrchestratorPort) {
+	if cuttlefish["host"] != "127.0.0.1" || cuttlefish["port"] != float64(hostOrchestratorPort) || cuttlefish["scheme"] != "http" {
 		t.Errorf("Cuttlefish endpoint = %#v", cuttlefish)
 	}
+	if fmt.Sprint(cuttlefish["health_ports"]) != fmt.Sprint([]interface{}{float64(netsimPort), float64(hciPort)}) {
+		t.Errorf("health_ports = %v", cuttlefish["health_ports"])
+	}
 	envConfig := cuttlefish["env_config"].(map[string]interface{})
-	instances := envConfig["instances"].([]interface{})
-	instance := instances[0].(map[string]interface{})
+	instance := envConfig["instances"].([]interface{})[0].(map[string]interface{})
 	graphics := instance["graphics"].(map[string]interface{})
 	if graphics["gpu_mode"] != "none" {
 		t.Errorf("gpu_mode = %v", graphics["gpu_mode"])
@@ -206,14 +186,11 @@ func TestEnrichExporterExport(t *testing.T) {
 	}
 
 	netsim := configFor(t, result[1])
-	if netsim["host"] != "127.0.0.1" || netsim["port"] != float64(netsimRelayPort) {
+	if netsim["host"] != "127.0.0.1" || netsim["port"] != float64(netsimPort) {
 		t.Errorf("netsim config = %#v", netsim)
 	}
-	if _, exists := netsim["transport"]; exists {
-		t.Error("netsim driver does not accept transport")
-	}
 	btPeer := configFor(t, result[2])
-	if btPeer["transport"] != fmt.Sprintf("tcp-client:127.0.0.1:%d", hciRelayPort) {
+	if btPeer["transport"] != fmt.Sprintf("tcp-client:127.0.0.1:%d", hciPort) {
 		t.Errorf("bt_peer config = %#v", btPeer)
 	}
 }
@@ -225,7 +202,6 @@ func TestEnrichExporterExportDefaultsPodSafeGraphicsAndVM(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	config := configFor(t, result[0])
 	envConfig := config["env_config"].(map[string]interface{})
 	instance := envConfig["instances"].([]interface{})[0].(map[string]interface{})
@@ -242,55 +218,12 @@ func TestEnrichExporterExportRejectsExternalEndpoints(t *testing.T) {
 			t.Errorf("accepted external endpoint %v", config)
 		}
 	}
-}
-
-func configFor(t *testing.T, driver virtualtargetv1alpha1.DriverConfig) map[string]interface{} {
-	t.Helper()
-	var config map[string]interface{}
-	if err := json.Unmarshal(driver.Config.Raw, &config); err != nil {
+	// Restating the pinned values is fine, including as JSON numbers.
+	driver := virtualtargetv1alpha1.DriverConfig{Name: "cuttlefish", Type: cuttlefishDriverType, Config: mustJSON(map[string]interface{}{
+		"host": "127.0.0.1", "port": 2081.0, "instance_num": 1, "scheme": "http",
+	})}
+	if _, err := New("dev").EnrichExporterExport([]virtualtargetv1alpha1.DriverConfig{driver}, nil); err != nil {
 		t.Fatal(err)
-	}
-	return config
-}
-
-func hasVolume(volumes []corev1.Volume, name, path string) bool {
-	for _, volume := range volumes {
-		if volume.Name == name && volume.HostPath != nil && volume.HostPath.Path == path {
-			return true
-		}
-	}
-	return false
-}
-
-func mustJSON(value interface{}) *apiextensionsv1.JSON {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		panic(err)
-	}
-	return &apiextensionsv1.JSON{Raw: raw}
-}
-
-func testExporterSet() *virtualtargetv1alpha1.ExporterSet {
-	return &virtualtargetv1alpha1.ExporterSet{
-		ObjectMeta: metav1.ObjectMeta{Name: "cuttlefish", Namespace: "default", UID: "test-uid"},
-		Spec:       virtualtargetv1alpha1.ExporterSetSpec{Template: virtualtargetv1alpha1.ExporterSetTemplate{Spec: virtualtargetv1alpha1.ExporterTemplateSpec{Drivers: []virtualtargetv1alpha1.DriverConfig{{Name: "cuttlefish", Type: cuttlefishDriverType}}}}},
-	}
-}
-
-func TestRelayPortValidation(t *testing.T) {
-	for _, params := range []map[string]interface{}{
-		{"hci_relay_port": 17681}, {"netsim_relay_port": 7681}, {"hci_relay_port": 7300},
-		{"netsim_relay_port": 0}, {"netsim_relay_port": -1}, {"netsim_relay_port": 65536},
-		{"netsim_relay_port": 1234.5}, {"netsim_relay_port": "1234"}, {"netsim_relay_port": true},
-		{"netsim_relay_port": 80}, {"netsim_relay_port": 19531}, {"hci_relay_port": 6521},
-		{"host_orchestrator_port": 9999}, {"netsim_relay_port": 2081}, {"netsim_relay_port": 15550},
-	} {
-		if _, _, err := relayPorts(params); err == nil {
-			t.Errorf("accepted %v", params)
-		}
-	}
-	if n, h, err := relayPorts(map[string]interface{}{"netsim_relay_port": float64(27681), "hci_relay_port": 27300}); err != nil || n != 27681 || h != 27300 {
-		t.Fatalf("valid ports: %d %d %v", n, h, err)
 	}
 }
 
@@ -320,17 +253,33 @@ func TestManagedContract(t *testing.T) {
 	if _, err := New("dev").EnrichExporterExport(append(drivers, drivers[0]), nil); err == nil {
 		t.Fatal("accepted multiple Cuttlefish drivers")
 	}
-	if _, err := New("dev").EnrichExporterExport(drivers, map[string]interface{}{"vm_memory_mb": 12.5}); err == nil {
-		t.Fatal("accepted fractional VM memory")
+	for _, params := range []map[string]interface{}{{"vm_memory_mb": 12.5}, {"vm_cpus": "4"}, {"vm_cpus": 0}} {
+		if _, err := New("dev").EnrichExporterExport(drivers, params); err == nil {
+			t.Fatalf("accepted guest parameters %v", params)
+		}
 	}
 	enriched, err := New("dev").EnrichExporterExport(drivers, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	config := configFor(t, enriched[0])
-	vm := config["env_config"].(map[string]interface{})["instances"].([]interface{})[0].(map[string]interface{})["vm"].(map[string]interface{})
-	if config["managed"] != true || vm["crosvm"].(map[string]interface{})["vhost_user_vsock"] != "true" {
+	envConfig := config["env_config"].(map[string]interface{})
+	vm := envConfig["instances"].([]interface{})[0].(map[string]interface{})["vm"].(map[string]interface{})
+	if config["managed"] != true || envConfig["netsim_bt"] != true || vm["crosvm"].(map[string]interface{})["vhost_user_vsock"] != "true" {
 		t.Fatalf("missing managed isolation: %v", config)
+	}
+}
+
+func TestGuestSpecPrefersTemplateValues(t *testing.T) {
+	driver := virtualtargetv1alpha1.DriverConfig{Name: "cuttlefish", Type: cuttlefishDriverType, Config: mustJSON(map[string]interface{}{
+		"env_config": map[string]interface{}{"instances": []interface{}{map[string]interface{}{"vm": map[string]interface{}{"cpus": 2}}}},
+	})}
+	_, guest, err := enrichDrivers([]virtualtargetv1alpha1.DriverConfig{driver}, map[string]interface{}{"vm_cpus": 8, "vm_memory_mb": 4096})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if guest != (guestSpec{cpus: 2, memoryMB: 4096}) {
+		t.Fatalf("guest = %+v", guest)
 	}
 }
 
@@ -369,10 +318,9 @@ func TestRuntimeMemory(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, c := range pod.Spec.InitContainers {
-				if c.Name == "cuttlefish" && c.Resources.Requests.Memory().Cmp(resource.MustParse(tc.want)) != 0 {
-					t.Fatalf("memory = %s, want %s", c.Resources.Requests.Memory(), tc.want)
-				}
+			runtime := initContainer(t, pod, runtimeContainerName)
+			if runtime.Resources.Requests.Memory().Cmp(resource.MustParse(tc.want)) != 0 {
+				t.Fatalf("memory = %s, want %s", runtime.Resources.Requests.Memory(), tc.want)
 			}
 		})
 	}
@@ -395,6 +343,7 @@ func TestPodIsolation(t *testing.T) {
 	}
 	for _, params := range []map[string]interface{}{
 		{"fetch_images": true, "service_account_name": "cuttlefish-runtime", "runtime_privileged": false},
+		{"fetch_images": true, "service_account_name": "cuttlefish-runtime"},
 		{"fetch_images": true, "runtime_privileged": true},
 		{"fetch_images": true, "runtime_privileged": true, "service_account_name": "default"},
 		{"fetch_images": true, "runtime_privileged": true, "service_account_name": "Invalid_Name"},
@@ -403,32 +352,83 @@ func TestPodIsolation(t *testing.T) {
 			t.Fatalf("accepted %v", params)
 		}
 	}
+	es.Spec.RecycleStrategy = virtualtargetv1alpha1.RecycleStrategyInPlaceReuse
+	if _, err := New("dev").RenderPod(context.Background(), es, &virtualtargetv1alpha1.VirtualTargetClass{}, map[string]interface{}{
+		"fetch_images": true, "runtime_privileged": true, "service_account_name": "cuttlefish-runtime",
+	}, nil, nil); err == nil {
+		t.Fatal("accepted InPlaceReuse")
+	}
 }
 
-func TestRelaySupervisorExitsWhenEitherRelayFails(t *testing.T) {
-	pod := renderTestPod(t, map[string]interface{}{"fetch_images": true})
-	var command []string
-	for _, c := range pod.Spec.InitContainers {
-		if c.Name == "cuttlefish-relay" {
-			command = c.Command
+func renderTestPod(t *testing.T, params map[string]interface{}) *corev1.Pod {
+	t.Helper()
+	params["runtime_privileged"] = true
+	params["service_account_name"] = "cuttlefish-runtime"
+	pod, err := New("dev").RenderPod(context.Background(), testExporterSet(), &virtualtargetv1alpha1.VirtualTargetClass{}, params, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pod
+}
+
+func initContainer(t *testing.T, pod *corev1.Pod, name string) corev1.Container {
+	t.Helper()
+	for _, container := range pod.Spec.InitContainers {
+		if container.Name == name {
+			return container
 		}
 	}
-	for _, failingPort := range []int{netsimRelayPort, hciRelayPort} {
-		t.Run(fmt.Sprint(failingPort), func(t *testing.T) {
-			dir := t.TempDir()
-			script := fmt.Sprintf("#!/bin/sh\ncase \"$1\" in TCP-LISTEN:%d,*) exit 1;; esac\nexec sleep 30\n", failingPort)
-			if err := os.WriteFile(filepath.Join(dir, "socat"), []byte(script), 0755); err != nil {
-				t.Fatal(err)
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			cmd := exec.CommandContext(ctx, command[0], command[1:]...)
-			cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"))
-			cmd.WaitDelay = time.Second
-			err := cmd.Run()
-			if err == nil || ctx.Err() != nil {
-				t.Fatalf("supervisor did not promptly fail: %v, %v", err, ctx.Err())
-			}
-		})
+	t.Fatalf("init container %q missing", name)
+	return corev1.Container{}
+}
+
+func configFor(t *testing.T, driver virtualtargetv1alpha1.DriverConfig) map[string]interface{} {
+	t.Helper()
+	var config map[string]interface{}
+	if err := json.Unmarshal(driver.Config.Raw, &config); err != nil {
+		t.Fatal(err)
+	}
+	return config
+}
+
+func hasVolume(volumes []corev1.Volume, name, path string) bool {
+	for _, volume := range volumes {
+		if volume.Name == name && volume.HostPath != nil && volume.HostPath.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
+func hasMount(mounts []corev1.VolumeMount, name, path string) bool {
+	for _, mount := range mounts {
+		if mount.Name == name && mount.MountPath == path {
+			return true
+		}
+	}
+	return false
+}
+
+func hasEnv(env []corev1.EnvVar, name, value string) bool {
+	for _, variable := range env {
+		if variable.Name == name && variable.Value == value {
+			return true
+		}
+	}
+	return false
+}
+
+func mustJSON(value interface{}) *apiextensionsv1.JSON {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return &apiextensionsv1.JSON{Raw: raw}
+}
+
+func testExporterSet() *virtualtargetv1alpha1.ExporterSet {
+	return &virtualtargetv1alpha1.ExporterSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "cuttlefish", Namespace: "default", UID: "test-uid"},
+		Spec:       virtualtargetv1alpha1.ExporterSetSpec{Template: virtualtargetv1alpha1.ExporterSetTemplate{Spec: virtualtargetv1alpha1.ExporterTemplateSpec{Drivers: []virtualtargetv1alpha1.DriverConfig{{Name: "cuttlefish", Type: cuttlefishDriverType}}}}},
 	}
 }
