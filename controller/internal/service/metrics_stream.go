@@ -40,8 +40,12 @@ const scrapeFlightKey = "metricsstream-fanout"
 type metricsConn struct {
 	id       exporterIdentity
 	scrapeMu sync.Mutex
-	mu       sync.Mutex
-	send     func(*pb.MetricsStreamResponse) error
+	// sendMu is held for the lifetime of one stream.Send. A scrape that
+	// times out while Send is blocked must not start another Send: gRPC
+	// streams are not concurrent-safe for Send.
+	sendMu sync.Mutex
+	mu     sync.Mutex
+	send   func(*pb.MetricsStreamResponse) error
 	// pending is non-nil only while a scrape is waiting for a response.
 	pending chan *pb.MetricsScrapeResponse
 	done    <-chan struct{}
@@ -166,6 +170,13 @@ func (c *metricsConn) scrape(ctx context.Context, timeout time.Duration) (*pb.Me
 	c.scrapeMu.Lock()
 	defer c.scrapeMu.Unlock()
 
+	// stream.Send has no context and can block indefinitely if the exporter
+	// is not reading. Run it in the background so timeout, ctx, and conn
+	// teardown can still finish the scrape.
+	if !c.sendMu.TryLock() {
+		return nil, errScrapeTimeout
+	}
+
 	reply := make(chan *pb.MetricsScrapeResponse, 1)
 	c.mu.Lock()
 	c.pending = reply
@@ -178,29 +189,37 @@ func (c *metricsConn) scrape(ctx context.Context, timeout time.Duration) (*pb.Me
 		c.mu.Unlock()
 	}()
 
-	err := c.send(&pb.MetricsStreamResponse{
-		Msg: &pb.MetricsStreamResponse_ScrapeRequest{
-			ScrapeRequest: &pb.MetricsScrapeRequest{},
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
+	sendErr := make(chan error, 1)
+	go func() {
+		defer c.sendMu.Unlock()
+		sendErr <- c.send(&pb.MetricsStreamResponse{
+			Msg: &pb.MetricsStreamResponse_ScrapeRequest{
+				ScrapeRequest: &pb.MetricsScrapeRequest{},
+			},
+		})
+	}()
 
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
-	select {
-	case resp := <-reply:
-		if resp == nil {
+	for {
+		select {
+		case err := <-sendErr:
+			if err != nil {
+				return nil, err
+			}
+			// Request was written; keep waiting for the scrape response.
+		case resp := <-reply:
+			if resp == nil {
+				return nil, errScrapeTimeout
+			}
+			return resp, nil
+		case <-timer.C:
 			return nil, errScrapeTimeout
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-c.done:
+			return nil, context.Canceled
 		}
-		return resp, nil
-	case <-timer.C:
-		return nil, errScrapeTimeout
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-c.done:
-		return nil, context.Canceled
 	}
 }
 
