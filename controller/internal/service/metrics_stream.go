@@ -239,7 +239,9 @@ func (s *TelemetryService) doFanoutScrapes() []exporterSnapshot {
 			resp, err := c.scrape(ctx, timeout)
 			if err != nil {
 				if errors.Is(err, errScrapeTimeout) || errors.Is(err, context.DeadlineExceeded) {
-					s.scrapeTimeouts.Inc()
+					if s.scrapeTimeouts != nil {
+						s.scrapeTimeouts.WithLabelValues(c.id.name).Inc()
+					}
 				}
 				log.FromContext(ctx).WithName("telemetry").V(1).Info("exporter scrape omitted",
 					"exporter", c.id.name,

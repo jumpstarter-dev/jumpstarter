@@ -299,6 +299,20 @@ func TestMergeSnapshots_LaterExtraFamilyReplacesEarlier(t *testing.T) {
 	}
 }
 
+func TestDropHubMetricFamilies_RemovesReservedNames(t *testing.T) {
+	timeout := scrapeTimeoutsMetric
+	ops := "jumpstarter_operations_total"
+	metricType := dto.MetricType_COUNTER
+	one := 1.0
+	kept := dropHubMetricFamilies([]*dto.MetricFamily{
+		{Name: &timeout, Type: &metricType, Metric: []*dto.Metric{{Counter: &dto.Counter{Value: &one}}}},
+		{Name: &ops, Type: &metricType, Metric: []*dto.Metric{{Counter: &dto.Counter{Value: &one}}}},
+	})
+	if len(kept) != 1 || kept[0].GetName() != ops {
+		t.Fatalf("kept %+v, want only %s", kept, ops)
+	}
+}
+
 func TestMergeConfigFor_EmptyAllowlistsUseDefaults(t *testing.T) {
 	svc := &TelemetryService{}
 	cfg := svc.mergeConfigFor("sidekick")

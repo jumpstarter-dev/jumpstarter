@@ -337,18 +337,9 @@ func TestFanout_TimeoutIncrementsCounterWithoutGRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Gather: %v", err)
 	}
-	var value float64
-	var found bool
-	for _, mf := range mfs {
-		if mf.GetName() == scrapeTimeoutsMetric || mf.GetName()+"_total" == scrapeTimeoutsMetric {
-			found = true
-			if len(mf.Metric) > 0 {
-				value = mf.Metric[0].GetCounter().GetValue()
-			}
-		}
-	}
-	if !found || value < 1 {
-		t.Fatalf("scrape timeout counter = %v found=%v, want >= 1", value, found)
+	value := labeledCounterValue(t, mfs, scrapeTimeoutsMetric, labelExporter, "slow")
+	if value != 1 {
+		t.Fatalf("%s{exporter=slow} = %v, want 1", scrapeTimeoutsMetric, value)
 	}
 }
 
@@ -383,22 +374,16 @@ func TestFanout_TimeoutOmitsExporterAndIncrementsCounter(t *testing.T) {
 	if strings.Contains(body, "jumpstarter_operations_total") {
 		t.Errorf("timed-out exporter metrics must be omitted, body:\n%s", body)
 	}
+	if !strings.Contains(body, `jumpstarter_scrape_timeouts_total{exporter="slow"}`) {
+		t.Errorf("hub timeout counter missing exporter label:\n%s", body)
+	}
 	mfs, err := svc.metricsRegistry.Gather()
 	if err != nil {
 		t.Fatalf("Gather: %v", err)
 	}
-	var value float64
-	var found bool
-	for _, mf := range mfs {
-		if mf.GetName() == scrapeTimeoutsMetric || mf.GetName()+"_total" == scrapeTimeoutsMetric {
-			found = true
-			if len(mf.Metric) > 0 {
-				value = mf.Metric[0].GetCounter().GetValue()
-			}
-		}
-	}
-	if !found || value < 1 {
-		t.Fatalf("scrape timeout counter = %v found=%v body:\n%s", value, found, body)
+	value := labeledCounterValue(t, mfs, scrapeTimeoutsMetric, labelExporter, "slow")
+	if value != 1 {
+		t.Fatalf("%s{exporter=slow} = %v, want 1 body:\n%s", scrapeTimeoutsMetric, value, body)
 	}
 }
 
@@ -524,9 +509,6 @@ jumpstarter_operations_total{operation="on",result="success",driver_type="power"
 	}
 	if strings.Contains(body, "spoofed by exporter") {
 		t.Errorf("exporter HELP text overwrote hub metric:\n%s", body)
-	}
-	if !strings.Contains(body, scrapeTimeoutsMetric) {
-		t.Errorf("hub scrape-timeout metric missing:\n%s", body)
 	}
 
 	select {

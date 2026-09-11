@@ -99,7 +99,7 @@ type TelemetryService struct {
 
 	stateMu         sync.Mutex
 	conns           map[string]*metricsConn
-	scrapeTimeouts  prometheus.Counter
+	scrapeTimeouts  *prometheus.CounterVec
 	parseErrors     *prometheus.CounterVec
 	metricsRegistry *prometheus.Registry
 	metricsAddr     string

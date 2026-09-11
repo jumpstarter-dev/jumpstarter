@@ -35,10 +35,10 @@ func (s *TelemetryService) initScrapeTimeouts() {
 		return
 	}
 	s.metricsRegistry = prometheus.NewRegistry()
-	s.scrapeTimeouts = prometheus.NewCounter(prometheus.CounterOpts{
+	s.scrapeTimeouts = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: scrapeTimeoutsMetric,
 		Help: "Exporter MetricsStream scrapes that exceeded scrapeTimeout.",
-	})
+	}, []string{labelExporter})
 	s.parseErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: metricsParseErrorsMetric,
 		Help: "Exporter MetricsStream snapshots omitted because OpenMetrics parse failed.",
@@ -130,9 +130,10 @@ func (s *TelemetryService) handleMetrics(w http.ResponseWriter, r *http.Request)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		// Hub families last: mergeSnapshots last-wins on extra, so exporters
-		// cannot replace scrape_timeouts / parse_errors (or any other hub series).
-		families = mergeSnapshots(nil, append(families, gathered...), s.mergeConfigFor, nil)
+		// Drop reserved hub names from exporter snapshots, then append gathered
+		// hub families last. CounterVec series are omitted until first Inc, so
+		// last-wins alone cannot protect unused hub names from spoofing.
+		families = mergeSnapshots(nil, append(dropHubMetricFamilies(families), gathered...), s.mergeConfigFor, nil)
 	}
 
 	var buf bytes.Buffer
