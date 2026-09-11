@@ -467,3 +467,95 @@ func TestFanout_UnparseableSnapshotIncrementsParseErrorsOnSameResponse(t *testin
 	default:
 	}
 }
+
+func TestFanout_StructuredFamiliesKeepHistogramExemplars(t *testing.T) {
+	svc, client, addr := startTestHub(t, time.Second)
+	ctx := exporterStreamCtx(t, svc, "exporter:jumpstarter:sidekick:uid1")
+	stream, err := client.MetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("MetricsStream: %v", err)
+	}
+	if err := stream.Send(&pb.MetricsStreamRequest{
+		Msg: &pb.MetricsStreamRequest_Register{
+			Register: &pb.MetricsRegister{Identity: "sidekick"},
+		},
+	}); err != nil {
+		t.Fatalf("Send register: %v", err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		for {
+			msg, err := stream.Recv()
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if msg.GetScrapeRequest() == nil {
+				continue
+			}
+			if err := stream.Send(&pb.MetricsStreamRequest{
+				Msg: &pb.MetricsStreamRequest_ScrapeResponse{
+					ScrapeResponse: &pb.MetricsScrapeResponse{
+						MetricsText: []byte(pythonOpenMetricsWithExemplar),
+						Families: []*pb.MetricsFamily{{
+							Name: "jumpstarter_operation_duration_seconds",
+							Help: "Duration of each operation.",
+							Type: pb.MetricsType_METRICS_TYPE_HISTOGRAM,
+							Samples: []*pb.MetricsSample{
+								{
+									Name:   "jumpstarter_operation_duration_seconds_bucket",
+									Labels: pbL("le", "0.005", "operation", "on", "result", "success", "driver_type", "power"),
+									Value:  1,
+									Exemplar: &pb.MetricsExemplar{
+										Labels: pbL("lease_id", "lease-1"),
+										Value:  0.00262,
+									},
+								},
+								{
+									Name:   "jumpstarter_operation_duration_seconds_sum",
+									Labels: pbL("operation", "on", "result", "success", "driver_type", "power"),
+									Value:  0.00262,
+								},
+								{
+									Name:   "jumpstarter_operation_duration_seconds_count",
+									Labels: pbL("operation", "on", "result", "success", "driver_type", "power"),
+									Value:  1,
+								},
+							},
+						}},
+					},
+				},
+			}); err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+	waitRegistered(t, svc, 1)
+
+	code, body := httpGet(t, "http://"+addr+"/metrics")
+	if code != http.StatusOK {
+		t.Fatalf("GET /metrics status=%d body=%s", code, body)
+	}
+	if !strings.Contains(body, "jumpstarter_operation_duration_seconds") {
+		t.Errorf("structured histogram missing from /metrics:\n%s", body)
+	}
+	if !strings.Contains(body, `exporter="sidekick"`) {
+		t.Errorf("authenticated exporter label missing:\n%s", body)
+	}
+	if !strings.Contains(body, `lease_id="lease-1"`) {
+		t.Errorf("histogram exemplar missing from merged /metrics:\n%s", body)
+	}
+	if strings.Contains(body, `jumpstarter_metrics_parse_errors_total{exporter="sidekick"}`) {
+		t.Errorf("parse-error counter must not increment when families sidecar is used:\n%s", body)
+	}
+
+	select {
+	case err := <-errCh:
+		if err != nil && err != io.EOF && status.Code(err) != codes.Canceled && status.Code(err) != codes.Unavailable {
+			t.Fatalf("stream goroutine: %v", err)
+		}
+	default:
+	}
+}

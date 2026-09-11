@@ -159,7 +159,7 @@ func (s *TelemetryService) MetricsStream(stream pb.TelemetryService_MetricsStrea
 	}
 }
 
-func (c *metricsConn) scrape(ctx context.Context, timeout time.Duration) ([]byte, error) {
+func (c *metricsConn) scrape(ctx context.Context, timeout time.Duration) (*pb.MetricsScrapeResponse, error) {
 	c.scrapeMu.Lock()
 	defer c.scrapeMu.Unlock()
 
@@ -191,7 +191,7 @@ func (c *metricsConn) scrape(ctx context.Context, timeout time.Duration) ([]byte
 		if resp == nil {
 			return nil, errScrapeTimeout
 		}
-		return resp.GetMetricsText(), nil
+		return resp, nil
 	case <-timer.C:
 		return nil, errScrapeTimeout
 	case <-ctx.Done():
@@ -220,7 +220,7 @@ func (s *TelemetryService) fanoutScrapes(ctx context.Context) []exporterSnapshot
 		wg.Add(1)
 		go func(c *metricsConn) {
 			defer wg.Done()
-			text, err := c.scrape(ctx, timeout)
+			resp, err := c.scrape(ctx, timeout)
 			if err != nil {
 				if errors.Is(err, errScrapeTimeout) || errors.Is(err, context.DeadlineExceeded) {
 					s.scrapeTimeouts.Inc()
@@ -232,7 +232,11 @@ func (s *TelemetryService) fanoutScrapes(ctx context.Context) []exporterSnapshot
 				return
 			}
 			mu.Lock()
-			snaps = append(snaps, exporterSnapshot{name: c.id.name, text: text})
+			snaps = append(snaps, exporterSnapshot{
+				name:     c.id.name,
+				text:     resp.GetMetricsText(),
+				families: resp.GetFamilies(),
+			})
 			mu.Unlock()
 		}(c)
 	}

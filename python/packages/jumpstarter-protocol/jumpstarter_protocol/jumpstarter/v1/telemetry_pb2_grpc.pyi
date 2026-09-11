@@ -88,7 +88,7 @@ class TelemetryServiceStub(typing.Generic[_TelemetryServiceMetricsStreamType, _T
 
     MetricsStream: _TelemetryServiceMetricsStreamType
     """Persistent bidirectional stream: telemetry sends scrape requests,
-    exporter responds with full metric snapshots (OpenMetrics text).
+    exporter responds with metric snapshots (structured families plus optional OpenMetrics text).
     """
 
     PushLogs: _TelemetryServicePushLogsType
@@ -117,7 +117,7 @@ class TelemetryServiceServicer(metaclass=abc.ABCMeta):
         context: _ServicerContext,
     ) -> typing.Union[collections.abc.Iterator[jumpstarter.v1.telemetry_pb2.MetricsStreamResponse], collections.abc.AsyncIterator[jumpstarter.v1.telemetry_pb2.MetricsStreamResponse]]:
         """Persistent bidirectional stream: telemetry sends scrape requests,
-        exporter responds with full metric snapshots (OpenMetrics text).
+        exporter responds with metric snapshots (structured families plus optional OpenMetrics text).
         """
 
     @abc.abstractmethod

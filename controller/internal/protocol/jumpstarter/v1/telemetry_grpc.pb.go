@@ -33,7 +33,7 @@ const (
 // Implemented by jumpstarter-telemetry; not part of the controller.
 type TelemetryServiceClient interface {
 	// Persistent bidirectional stream: telemetry sends scrape requests,
-	// exporter responds with full metric snapshots (OpenMetrics text).
+	// exporter responds with metric snapshots (structured families plus optional OpenMetrics text).
 	MetricsStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[MetricsStreamRequest, MetricsStreamResponse], error)
 	// Push structured log entries to the telemetry service for Loki ingest.
 	PushLogs(ctx context.Context, in *PushLogsRequest, opts ...grpc.CallOption) (*PushLogsResponse, error)
@@ -78,7 +78,7 @@ func (c *telemetryServiceClient) PushLogs(ctx context.Context, in *PushLogsReque
 // Implemented by jumpstarter-telemetry; not part of the controller.
 type TelemetryServiceServer interface {
 	// Persistent bidirectional stream: telemetry sends scrape requests,
-	// exporter responds with full metric snapshots (OpenMetrics text).
+	// exporter responds with metric snapshots (structured families plus optional OpenMetrics text).
 	MetricsStream(grpc.BidiStreamingServer[MetricsStreamRequest, MetricsStreamResponse]) error
 	// Push structured log entries to the telemetry service for Loki ingest.
 	PushLogs(context.Context, *PushLogsRequest) (*PushLogsResponse, error)

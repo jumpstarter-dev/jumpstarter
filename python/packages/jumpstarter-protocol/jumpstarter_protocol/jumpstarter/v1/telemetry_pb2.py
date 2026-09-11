@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1ejumpstarter/v1/telemetry.proto\x12\x0ejumpstarter.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xae\x01\n\x14MetricsStreamRequest\x12=\n\x08register\x18\x01 \x01(\x0b\x32\x1f.jumpstarter.v1.MetricsRegisterH\x00R\x08register\x12P\n\x0fscrape_response\x18\x02 \x01(\x0b\x32%.jumpstarter.v1.MetricsScrapeResponseH\x00R\x0escrapeResponseB\x05\n\x03msg\"-\n\x0fMetricsRegister\x12\x1a\n\x08identity\x18\x01 \x01(\tR\x08identity\"t\n\x15MetricsScrapeResponse\x12!\n\x0cmetrics_text\x18\x01 \x01(\x0cR\x0bmetricsText\x12\x38\n\ttimestamp\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.TimestampR\ttimestamp\"m\n\x15MetricsStreamResponse\x12M\n\x0escrape_request\x18\x01 \x01(\x0b\x32$.jumpstarter.v1.MetricsScrapeRequestH\x00R\rscrapeRequestB\x05\n\x03msg\"\x16\n\x14MetricsScrapeRequest\"E\n\x0fPushLogsRequest\x12\x32\n\x07\x65ntries\x18\x01 \x03(\x0b\x32\x18.jumpstarter.v1.LogEntryR\x07\x65ntries\"H\n\x10PushLogsResponse\x12\x1a\n\x08\x61\x63\x63\x65pted\x18\x01 \x01(\rR\x08\x61\x63\x63\x65pted\x12\x18\n\x07\x64ropped\x18\x02 \x01(\rR\x07\x64ropped\"\xe5\x03\n\x08LogEntry\x12\x38\n\ttimestamp\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.TimestampR\ttimestamp\x12\x1a\n\x08severity\x18\x02 \x01(\tR\x08severity\x12\x18\n\x07message\x18\x03 \x01(\tR\x07message\x12\x1c\n\tcomponent\x18\x04 \x01(\tR\tcomponent\x12\x1a\n\x08\x65xporter\x18\x05 \x01(\tR\x08\x65xporter\x12\x14\n\x05lease\x18\x06 \x01(\tR\x05lease\x12\x16\n\x06\x63lient\x18\x07 \x01(\tR\x06\x63lient\x12\x1c\n\toperation\x18\x08 \x01(\tR\toperation\x12\x16\n\x06result\x18\t \x01(\tR\x06result\x12\x1f\n\x0b\x64river_type\x18\n \x01(\tR\ndriverType\x12L\n\x0c\x65xtra_fields\x18\x0b \x03(\x0b\x32).jumpstarter.v1.LogEntry.ExtraFieldsEntryR\x0b\x65xtraFields\x12\x1c\n\tnamespace\x18\x0c \x01(\tR\tnamespace\x1a>\n\x10\x45xtraFieldsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01\x32\xc3\x01\n\x10TelemetryService\x12`\n\rMetricsStream\x12$.jumpstarter.v1.MetricsStreamRequest\x1a%.jumpstarter.v1.MetricsStreamResponse(\x01\x30\x01\x12M\n\x08PushLogs\x12\x1f.jumpstarter.v1.PushLogsRequest\x1a .jumpstarter.v1.PushLogsResponseB}\n\x12\x63om.jumpstarter.v1B\x0eTelemetryProtoP\x01\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1ejumpstarter/v1/telemetry.proto\x12\x0ejumpstarter.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xae\x01\n\x14MetricsStreamRequest\x12=\n\x08register\x18\x01 \x01(\x0b\x32\x1f.jumpstarter.v1.MetricsRegisterH\x00R\x08register\x12P\n\x0fscrape_response\x18\x02 \x01(\x0b\x32%.jumpstarter.v1.MetricsScrapeResponseH\x00R\x0escrapeResponseB\x05\n\x03msg\"-\n\x0fMetricsRegister\x12\x1a\n\x08identity\x18\x01 \x01(\tR\x08identity\"\xaf\x01\n\x15MetricsScrapeResponse\x12!\n\x0cmetrics_text\x18\x01 \x01(\x0cR\x0bmetricsText\x12\x38\n\ttimestamp\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.TimestampR\ttimestamp\x12\x39\n\x08\x66\x61milies\x18\x03 \x03(\x0b\x32\x1d.jumpstarter.v1.MetricsFamilyR\x08\x66\x61milies\"8\n\x0cMetricsLabel\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value\"\x97\x01\n\x0fMetricsExemplar\x12\x34\n\x06labels\x18\x01 \x03(\x0b\x32\x1c.jumpstarter.v1.MetricsLabelR\x06labels\x12\x14\n\x05value\x18\x02 \x01(\x01R\x05value\x12\x38\n\ttimestamp\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.TimestampR\ttimestamp\"\xac\x01\n\rMetricsSample\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\x12\x34\n\x06labels\x18\x02 \x03(\x0b\x32\x1c.jumpstarter.v1.MetricsLabelR\x06labels\x12\x14\n\x05value\x18\x03 \x01(\x01R\x05value\x12;\n\x08\x65xemplar\x18\x04 \x01(\x0b\x32\x1f.jumpstarter.v1.MetricsExemplarR\x08\x65xemplar\"\xa1\x01\n\rMetricsFamily\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n\x04help\x18\x02 \x01(\tR\x04help\x12/\n\x04type\x18\x03 \x01(\x0e\x32\x1b.jumpstarter.v1.MetricsTypeR\x04type\x12\x37\n\x07samples\x18\x04 \x03(\x0b\x32\x1d.jumpstarter.v1.MetricsSampleR\x07samples\"m\n\x15MetricsStreamResponse\x12M\n\x0escrape_request\x18\x01 \x01(\x0b\x32$.jumpstarter.v1.MetricsScrapeRequestH\x00R\rscrapeRequestB\x05\n\x03msg\"\x16\n\x14MetricsScrapeRequest\"E\n\x0fPushLogsRequest\x12\x32\n\x07\x65ntries\x18\x01 \x03(\x0b\x32\x18.jumpstarter.v1.LogEntryR\x07\x65ntries\"H\n\x10PushLogsResponse\x12\x1a\n\x08\x61\x63\x63\x65pted\x18\x01 \x01(\rR\x08\x61\x63\x63\x65pted\x12\x18\n\x07\x64ropped\x18\x02 \x01(\rR\x07\x64ropped\"\xe5\x03\n\x08LogEntry\x12\x38\n\ttimestamp\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.TimestampR\ttimestamp\x12\x1a\n\x08severity\x18\x02 \x01(\tR\x08severity\x12\x18\n\x07message\x18\x03 \x01(\tR\x07message\x12\x1c\n\tcomponent\x18\x04 \x01(\tR\tcomponent\x12\x1a\n\x08\x65xporter\x18\x05 \x01(\tR\x08\x65xporter\x12\x14\n\x05lease\x18\x06 \x01(\tR\x05lease\x12\x16\n\x06\x63lient\x18\x07 \x01(\tR\x06\x63lient\x12\x1c\n\toperation\x18\x08 \x01(\tR\toperation\x12\x16\n\x06result\x18\t \x01(\tR\x06result\x12\x1f\n\x0b\x64river_type\x18\n \x01(\tR\ndriverType\x12L\n\x0c\x65xtra_fields\x18\x0b \x03(\x0b\x32).jumpstarter.v1.LogEntry.ExtraFieldsEntryR\x0b\x65xtraFields\x12\x1c\n\tnamespace\x18\x0c \x01(\tR\tnamespace\x1a>\n\x10\x45xtraFieldsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01*\xad\x01\n\x0bMetricsType\x12\x1c\n\x18METRICS_TYPE_UNSPECIFIED\x10\x00\x12\x18\n\x14METRICS_TYPE_COUNTER\x10\x01\x12\x16\n\x12METRICS_TYPE_GAUGE\x10\x02\x12\x1a\n\x16METRICS_TYPE_HISTOGRAM\x10\x03\x12\x18\n\x14METRICS_TYPE_SUMMARY\x10\x04\x12\x18\n\x14METRICS_TYPE_UNTYPED\x10\x05\x32\xc3\x01\n\x10TelemetryService\x12`\n\rMetricsStream\x12$.jumpstarter.v1.MetricsStreamRequest\x1a%.jumpstarter.v1.MetricsStreamResponse(\x01\x30\x01\x12M\n\x08PushLogs\x12\x1f.jumpstarter.v1.PushLogsRequest\x1a .jumpstarter.v1.PushLogsResponseB}\n\x12\x63om.jumpstarter.v1B\x0eTelemetryProtoP\x01\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -35,24 +35,34 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._serialized_options = b'\n\022com.jumpstarter.v1B\016TelemetryProtoP\001\242\002\003JXX\252\002\016Jumpstarter.V1\312\002\016Jumpstarter\\V1\342\002\032Jumpstarter\\V1\\GPBMetadata\352\002\017Jumpstarter::V1'
   _globals['_LOGENTRY_EXTRAFIELDSENTRY']._loaded_options = None
   _globals['_LOGENTRY_EXTRAFIELDSENTRY']._serialized_options = b'8\001'
+  _globals['_METRICSTYPE']._serialized_start=1805
+  _globals['_METRICSTYPE']._serialized_end=1978
   _globals['_METRICSSTREAMREQUEST']._serialized_start=84
   _globals['_METRICSSTREAMREQUEST']._serialized_end=258
   _globals['_METRICSREGISTER']._serialized_start=260
   _globals['_METRICSREGISTER']._serialized_end=305
-  _globals['_METRICSSCRAPERESPONSE']._serialized_start=307
-  _globals['_METRICSSCRAPERESPONSE']._serialized_end=423
-  _globals['_METRICSSTREAMRESPONSE']._serialized_start=425
-  _globals['_METRICSSTREAMRESPONSE']._serialized_end=534
-  _globals['_METRICSSCRAPEREQUEST']._serialized_start=536
-  _globals['_METRICSSCRAPEREQUEST']._serialized_end=558
-  _globals['_PUSHLOGSREQUEST']._serialized_start=560
-  _globals['_PUSHLOGSREQUEST']._serialized_end=629
-  _globals['_PUSHLOGSRESPONSE']._serialized_start=631
-  _globals['_PUSHLOGSRESPONSE']._serialized_end=703
-  _globals['_LOGENTRY']._serialized_start=706
-  _globals['_LOGENTRY']._serialized_end=1191
-  _globals['_LOGENTRY_EXTRAFIELDSENTRY']._serialized_start=1129
-  _globals['_LOGENTRY_EXTRAFIELDSENTRY']._serialized_end=1191
-  _globals['_TELEMETRYSERVICE']._serialized_start=1194
-  _globals['_TELEMETRYSERVICE']._serialized_end=1389
+  _globals['_METRICSSCRAPERESPONSE']._serialized_start=308
+  _globals['_METRICSSCRAPERESPONSE']._serialized_end=483
+  _globals['_METRICSLABEL']._serialized_start=485
+  _globals['_METRICSLABEL']._serialized_end=541
+  _globals['_METRICSEXEMPLAR']._serialized_start=544
+  _globals['_METRICSEXEMPLAR']._serialized_end=695
+  _globals['_METRICSSAMPLE']._serialized_start=698
+  _globals['_METRICSSAMPLE']._serialized_end=870
+  _globals['_METRICSFAMILY']._serialized_start=873
+  _globals['_METRICSFAMILY']._serialized_end=1034
+  _globals['_METRICSSTREAMRESPONSE']._serialized_start=1036
+  _globals['_METRICSSTREAMRESPONSE']._serialized_end=1145
+  _globals['_METRICSSCRAPEREQUEST']._serialized_start=1147
+  _globals['_METRICSSCRAPEREQUEST']._serialized_end=1169
+  _globals['_PUSHLOGSREQUEST']._serialized_start=1171
+  _globals['_PUSHLOGSREQUEST']._serialized_end=1240
+  _globals['_PUSHLOGSRESPONSE']._serialized_start=1242
+  _globals['_PUSHLOGSRESPONSE']._serialized_end=1314
+  _globals['_LOGENTRY']._serialized_start=1317
+  _globals['_LOGENTRY']._serialized_end=1802
+  _globals['_LOGENTRY_EXTRAFIELDSENTRY']._serialized_start=1740
+  _globals['_LOGENTRY_EXTRAFIELDSENTRY']._serialized_end=1802
+  _globals['_TELEMETRYSERVICE']._serialized_start=1981
+  _globals['_TELEMETRYSERVICE']._serialized_end=2176
 # @@protoc_insertion_point(module_scope)

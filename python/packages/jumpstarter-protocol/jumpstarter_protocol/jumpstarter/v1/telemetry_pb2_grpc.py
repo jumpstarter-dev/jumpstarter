@@ -35,7 +35,7 @@ class TelemetryServiceServicer:
 
     def MetricsStream(self, request_iterator, context):
         """Persistent bidirectional stream: telemetry sends scrape requests,
-        exporter responds with full metric snapshots (OpenMetrics text).
+        exporter responds with metric snapshots (structured families plus optional OpenMetrics text).
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')

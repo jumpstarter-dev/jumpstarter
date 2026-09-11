@@ -23,6 +23,7 @@ import (
 	"sort"
 	"strings"
 
+	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 )
@@ -56,8 +57,9 @@ type mergeConfig struct {
 }
 
 type exporterSnapshot struct {
-	name string
-	text []byte
+	name     string
+	text     []byte
+	families []*pb.MetricsFamily
 }
 
 func setToMap(values []string) map[string]struct{} {
@@ -103,6 +105,16 @@ func parseMetricFamilies(text []byte) ([]*dto.MetricFamily, error) {
 	}
 }
 
+func familiesFromSnapshot(snap exporterSnapshot) ([]*dto.MetricFamily, error) {
+	if len(snap.families) > 0 {
+		return dtoFromProtoFamilies(snap.families)
+	}
+	if len(snap.text) == 0 {
+		return nil, nil
+	}
+	return parseMetricFamilies(snap.text)
+}
+
 func encodeMetricFamilies(w io.Writer, families []*dto.MetricFamily) error {
 	sorted := append([]*dto.MetricFamily(nil), families...)
 	sort.Slice(sorted, func(i, j int) bool {
@@ -132,14 +144,14 @@ func mergeSnapshots(snapshots []exporterSnapshot, extra []*dto.MetricFamily, cfg
 		byName[f.GetName()] = f
 	}
 	for _, snap := range snapshots {
-		if len(snap.text) == 0 {
-			continue
-		}
-		families, err := parseMetricFamilies(snap.text)
+		families, err := familiesFromSnapshot(snap)
 		if err != nil {
 			if onParseError != nil {
 				onParseError(snap.name, err)
 			}
+			continue
+		}
+		if len(families) == 0 {
 			continue
 		}
 		cfg := cfgFor(snap.name)
