@@ -23,6 +23,8 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -557,5 +559,154 @@ func TestFanout_StructuredFamiliesKeepHistogramExemplars(t *testing.T) {
 			t.Fatalf("stream goroutine: %v", err)
 		}
 	default:
+	}
+}
+
+func TestFanout_CoalescesConcurrentHTTPScrapes(t *testing.T) {
+	svc, client, addr := startTestHub(t, 2*time.Second)
+	ctx := exporterStreamCtx(t, svc, "exporter:jumpstarter:sidekick:uid1")
+	stream, err := client.MetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("MetricsStream: %v", err)
+	}
+	if err := stream.Send(&pb.MetricsStreamRequest{
+		Msg: &pb.MetricsStreamRequest_Register{
+			Register: &pb.MetricsRegister{Identity: "sidekick"},
+		},
+	}); err != nil {
+		t.Fatalf("Send register: %v", err)
+	}
+
+	var scrapes atomic.Int32
+	release := make(chan struct{})
+	errCh := make(chan error, 1)
+	go func() {
+		for {
+			msg, err := stream.Recv()
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if msg.GetScrapeRequest() == nil {
+				continue
+			}
+			scrapes.Add(1)
+			<-release
+			if err := stream.Send(&pb.MetricsStreamRequest{
+				Msg: &pb.MetricsStreamRequest_ScrapeResponse{
+					ScrapeResponse: &pb.MetricsScrapeResponse{
+						MetricsText: []byte(`# TYPE jumpstarter_active_sessions gauge
+jumpstarter_active_sessions{exporter="sidekick"} 1
+# EOF
+`),
+					},
+				},
+			}); err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+	waitRegistered(t, svc, 1)
+
+	const n = 8
+	var wg sync.WaitGroup
+	codes := make([]int, n)
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			client := &http.Client{Timeout: 5 * time.Second}
+			resp, err := client.Get("http://" + addr + "/metrics")
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+			codes[i] = resp.StatusCode
+		}(i)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for scrapes.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if scrapes.Load() == 0 {
+		t.Fatal("expected a reverse-scrape to start")
+	}
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	wg.Wait()
+
+	if got := scrapes.Load(); got != 1 {
+		t.Fatalf("scrape requests = %d, want 1 coalesced fan-out", got)
+	}
+	for i := 0; i < n; i++ {
+		if errs[i] != nil {
+			t.Errorf("GET %d: %v", i, errs[i])
+			continue
+		}
+		if codes[i] != http.StatusOK {
+			t.Errorf("GET %d status=%d, want 200", i, codes[i])
+		}
+	}
+}
+
+func TestStopGRPCServer_IdleCompletesQuickly(t *testing.T) {
+	lis := bufconn.Listen(bufconnSize)
+	gs := grpc.NewServer()
+	go func() { _ = gs.Serve(lis) }()
+	t.Cleanup(func() { gs.Stop(); _ = lis.Close() })
+
+	start := time.Now()
+	stopGRPCServer(gs, time.Second)
+	if elapsed := time.Since(start); elapsed > 300*time.Millisecond {
+		t.Fatalf("idle GracefulStop took %v", elapsed)
+	}
+}
+
+func TestStopGRPCServer_UnblocksStuckMetricsStream(t *testing.T) {
+	svc := &TelemetryService{Signer: testSigner(t)}
+	lis := bufconn.Listen(bufconnSize)
+	gs := grpc.NewServer()
+	pb.RegisterTelemetryServiceServer(gs, svc)
+	go func() { _ = gs.Serve(lis) }()
+
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return lis.DialContext(ctx)
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("grpc.NewClient: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	client := pb.NewTelemetryServiceClient(conn)
+	stream, err := client.MetricsStream(exporterStreamCtx(t, svc, "exporter:jumpstarter:sidekick:uid1"))
+	if err != nil {
+		t.Fatalf("MetricsStream: %v", err)
+	}
+	if err := stream.Send(&pb.MetricsStreamRequest{
+		Msg: &pb.MetricsStreamRequest_Register{
+			Register: &pb.MetricsRegister{Identity: "sidekick"},
+		},
+	}); err != nil {
+		t.Fatalf("Send register: %v", err)
+	}
+	waitRegistered(t, svc, 1)
+
+	const grace = 150 * time.Millisecond
+	start := time.Now()
+	stopGRPCServer(gs, grace)
+	elapsed := time.Since(start)
+	if elapsed < grace/2 {
+		t.Fatalf("stop returned in %v; stuck stream should wait for the grace deadline", elapsed)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("stopGRPCServer hung for %v", elapsed)
 	}
 }

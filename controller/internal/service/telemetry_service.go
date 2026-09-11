@@ -30,6 +30,7 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
@@ -45,6 +46,10 @@ const (
 )
 
 const maxEntriesPerBatch = 500
+
+// grpcGracefulStopTimeout bounds GracefulStop so a stuck MetricsStream cannot
+// hang process shutdown (HTTP metrics shutdown uses the same 5s budget).
+const grpcGracefulStopTimeout = 5 * time.Second
 
 // logFieldExporter is the structured log field key carrying the exporter name.
 const logFieldExporter = "exporter"
@@ -99,6 +104,8 @@ type TelemetryService struct {
 	metricsRegistry *prometheus.Registry
 	metricsAddr     string
 	grpcReady       atomic.Bool
+	// scrapeGroup coalesces overlapping /metrics reverse-scrapes.
+	scrapeGroup singleflight.Group
 }
 
 // PushLogs receives a batch of structured log entries and writes them via the
@@ -300,7 +307,7 @@ func (s *TelemetryService) Start(ctx context.Context) error {
 			defer cancel()
 			_ = httpShutdown(shutdownCtx)
 		}
-		srv.GracefulStop()
+		stopGRPCServer(srv, grpcGracefulStopTimeout)
 		if err := <-errCh; err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			return err
 		}
@@ -314,5 +321,30 @@ func (s *TelemetryService) Start(ctx context.Context) error {
 		}
 		srv.Stop()
 		return err
+	}
+}
+
+// stopGRPCServer runs GracefulStop with a deadline, then Stop, so long-lived
+// MetricsStream RPCs cannot block process termination.
+func stopGRPCServer(srv *grpc.Server, timeout time.Duration) {
+	if srv == nil {
+		return
+	}
+	if timeout <= 0 {
+		srv.Stop()
+		return
+	}
+	done := make(chan struct{})
+	go func() {
+		srv.GracefulStop()
+		close(done)
+	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+		srv.Stop()
+		<-done
 	}
 }

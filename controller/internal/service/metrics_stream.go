@@ -32,6 +32,9 @@ var errScrapeTimeout = errors.New("metrics scrape timeout")
 
 const defaultScrapeTimeout = 7 * time.Second
 
+// scrapeFlightKey is the singleflight key for overlapping /metrics fan-outs.
+const scrapeFlightKey = "metricsstream-fanout"
+
 // metricsConn is one authenticated MetricsStream. Scrapes are serialized
 // because MetricsScrapeRequest has no scrape id (JEP-0013).
 type metricsConn struct {
@@ -202,6 +205,19 @@ func (c *metricsConn) scrape(ctx context.Context, timeout time.Duration) (*pb.Me
 }
 
 func (s *TelemetryService) fanoutScrapes(ctx context.Context) []exporterSnapshot {
+	ch := s.scrapeGroup.DoChan(scrapeFlightKey, func() (any, error) {
+		return s.doFanoutScrapes(), nil
+	})
+	select {
+	case r := <-ch:
+		snaps, _ := r.Val.([]exporterSnapshot)
+		return snaps
+	case <-ctx.Done():
+		return nil
+	}
+}
+
+func (s *TelemetryService) doFanoutScrapes() []exporterSnapshot {
 	s.initMetricsState()
 	s.initScrapeTimeouts()
 	timeout := s.scrapeTimeoutDuration()
@@ -210,7 +226,7 @@ func (s *TelemetryService) fanoutScrapes(ctx context.Context) []exporterSnapshot
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	var mu sync.Mutex
