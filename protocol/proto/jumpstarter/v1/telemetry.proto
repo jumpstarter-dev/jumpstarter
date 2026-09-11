@@ -10,7 +10,7 @@ import "google/protobuf/timestamp.proto";
 // Implemented by jumpstarter-telemetry; not part of the controller.
 service TelemetryService {
   // Persistent bidirectional stream: telemetry sends scrape requests,
-  // exporter responds with full metric snapshots (OpenMetrics text).
+  // exporter responds with metric snapshots (structured families plus optional OpenMetrics text).
   rpc MetricsStream(stream MetricsStreamRequest) returns (stream MetricsStreamResponse);
 
   // Push structured log entries to the telemetry service for Loki ingest.
@@ -30,8 +30,50 @@ message MetricsRegister {
 }
 
 message MetricsScrapeResponse {
-  bytes metrics_text = 1;                // generate_latest() OpenMetrics output.
-  google.protobuf.Timestamp timestamp = 2;
+  bytes metrics_text = 1;                // Optional generate_latest() OpenMetrics text (legacy / debug).
+  google.protobuf.Timestamp timestamp = 2; // When the snapshot was taken.
+  // DD-3 sidecar: in-memory registry dump so the hub can merge and filter
+  // exemplars without parsing OpenMetrics text (prometheus/common cannot).
+  repeated MetricsFamily families = 3;
+}
+
+// Prometheus metric type for a MetricsFamily.
+enum MetricsType {
+  METRICS_TYPE_UNSPECIFIED = 0; // Unknown or unset type.
+  METRICS_TYPE_COUNTER = 1;     // Monotonic counter.
+  METRICS_TYPE_GAUGE = 2;       // Gauge.
+  METRICS_TYPE_HISTOGRAM = 3;   // Histogram (bucket / sum / count samples).
+  METRICS_TYPE_SUMMARY = 4;     // Summary.
+  METRICS_TYPE_UNTYPED = 5;     // Untyped / unknown.
+}
+
+// One label name/value pair on a sample or exemplar.
+message MetricsLabel {
+  string name = 1;  // Label name.
+  string value = 2; // Label value.
+}
+
+// OpenMetrics exemplar attached to a sample (JEP-0013 allowlist applied on the hub).
+message MetricsExemplar {
+  repeated MetricsLabel labels = 1;        // Exemplar labels (client, lease_id, …).
+  double value = 2;                        // Exemplar observation value.
+  google.protobuf.Timestamp timestamp = 3; // Optional exemplar timestamp.
+}
+
+// One collected sample from prometheus_client (including histogram _bucket/_sum/_count).
+message MetricsSample {
+  string name = 1;                  // Sample name (may include _bucket, _sum, _count).
+  repeated MetricsLabel labels = 2; // Sample labels (histogram buckets include le).
+  double value = 3;                 // Sample value.
+  MetricsExemplar exemplar = 4;     // Optional exemplar for this sample.
+}
+
+// One metric family from CollectorRegistry.collect().
+message MetricsFamily {
+  string name = 1;                 // Family name (counters include _total; no _bucket/_sum/_count).
+  string help = 2;                 // Help text.
+  MetricsType type = 3;            // Family type.
+  repeated MetricsSample samples = 4; // Collected samples, including exemplars.
 }
 
 // Telemetry → Exporter

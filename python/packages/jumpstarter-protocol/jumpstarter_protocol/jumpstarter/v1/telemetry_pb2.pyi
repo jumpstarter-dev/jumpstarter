@@ -7,6 +7,7 @@ import builtins
 import collections.abc
 import google.protobuf.descriptor
 import google.protobuf.internal.containers
+import google.protobuf.internal.enum_type_wrapper
 import google.protobuf.message
 import google.protobuf.timestamp_pb2
 import sys
@@ -18,6 +19,42 @@ else:
     import typing_extensions
 
 DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
+
+class _MetricsType:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: typing_extensions.TypeAlias = ValueType
+
+class _MetricsTypeEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_MetricsType.ValueType], builtins.type):
+    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+    METRICS_TYPE_UNSPECIFIED: _MetricsType.ValueType  # 0
+    """Unknown or unset type."""
+    METRICS_TYPE_COUNTER: _MetricsType.ValueType  # 1
+    """Monotonic counter."""
+    METRICS_TYPE_GAUGE: _MetricsType.ValueType  # 2
+    """Gauge."""
+    METRICS_TYPE_HISTOGRAM: _MetricsType.ValueType  # 3
+    """Histogram (bucket / sum / count samples)."""
+    METRICS_TYPE_SUMMARY: _MetricsType.ValueType  # 4
+    """Summary."""
+    METRICS_TYPE_UNTYPED: _MetricsType.ValueType  # 5
+    """Untyped / unknown."""
+
+class MetricsType(_MetricsType, metaclass=_MetricsTypeEnumTypeWrapper):
+    """Prometheus metric type for a MetricsFamily."""
+
+METRICS_TYPE_UNSPECIFIED: MetricsType.ValueType  # 0
+"""Unknown or unset type."""
+METRICS_TYPE_COUNTER: MetricsType.ValueType  # 1
+"""Monotonic counter."""
+METRICS_TYPE_GAUGE: MetricsType.ValueType  # 2
+"""Gauge."""
+METRICS_TYPE_HISTOGRAM: MetricsType.ValueType  # 3
+"""Histogram (bucket / sum / count samples)."""
+METRICS_TYPE_SUMMARY: MetricsType.ValueType  # 4
+"""Summary."""
+METRICS_TYPE_UNTYPED: MetricsType.ValueType  # 5
+"""Untyped / unknown."""
+Global___MetricsType: typing_extensions.TypeAlias = MetricsType
 
 @typing.final
 class MetricsStreamRequest(google.protobuf.message.Message):
@@ -69,20 +106,150 @@ class MetricsScrapeResponse(google.protobuf.message.Message):
 
     METRICS_TEXT_FIELD_NUMBER: builtins.int
     TIMESTAMP_FIELD_NUMBER: builtins.int
+    FAMILIES_FIELD_NUMBER: builtins.int
     metrics_text: builtins.bytes
-    """generate_latest() OpenMetrics output."""
+    """Optional generate_latest() OpenMetrics text (legacy / debug)."""
     @property
-    def timestamp(self) -> google.protobuf.timestamp_pb2.Timestamp: ...
+    def timestamp(self) -> google.protobuf.timestamp_pb2.Timestamp:
+        """When the snapshot was taken."""
+
+    @property
+    def families(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___MetricsFamily]:
+        """DD-3 sidecar: in-memory registry dump so the hub can merge and filter
+        exemplars without parsing OpenMetrics text (prometheus/common cannot).
+        """
+
     def __init__(
         self,
         *,
         metrics_text: builtins.bytes = ...,
         timestamp: google.protobuf.timestamp_pb2.Timestamp | None = ...,
+        families: collections.abc.Iterable[Global___MetricsFamily] | None = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["timestamp", b"timestamp"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["metrics_text", b"metrics_text", "timestamp", b"timestamp"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["families", b"families", "metrics_text", b"metrics_text", "timestamp", b"timestamp"]) -> None: ...
 
 Global___MetricsScrapeResponse: typing_extensions.TypeAlias = MetricsScrapeResponse
+
+@typing.final
+class MetricsLabel(google.protobuf.message.Message):
+    """One label name/value pair on a sample or exemplar."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    NAME_FIELD_NUMBER: builtins.int
+    VALUE_FIELD_NUMBER: builtins.int
+    name: builtins.str
+    """Label name."""
+    value: builtins.str
+    """Label value."""
+    def __init__(
+        self,
+        *,
+        name: builtins.str = ...,
+        value: builtins.str = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["name", b"name", "value", b"value"]) -> None: ...
+
+Global___MetricsLabel: typing_extensions.TypeAlias = MetricsLabel
+
+@typing.final
+class MetricsExemplar(google.protobuf.message.Message):
+    """OpenMetrics exemplar attached to a sample (JEP-0013 allowlist applied on the hub)."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    LABELS_FIELD_NUMBER: builtins.int
+    VALUE_FIELD_NUMBER: builtins.int
+    TIMESTAMP_FIELD_NUMBER: builtins.int
+    value: builtins.float
+    """Exemplar observation value."""
+    @property
+    def labels(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___MetricsLabel]:
+        """Exemplar labels (client, lease_id, …)."""
+
+    @property
+    def timestamp(self) -> google.protobuf.timestamp_pb2.Timestamp:
+        """Optional exemplar timestamp."""
+
+    def __init__(
+        self,
+        *,
+        labels: collections.abc.Iterable[Global___MetricsLabel] | None = ...,
+        value: builtins.float = ...,
+        timestamp: google.protobuf.timestamp_pb2.Timestamp | None = ...,
+    ) -> None: ...
+    def HasField(self, field_name: typing.Literal["timestamp", b"timestamp"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["labels", b"labels", "timestamp", b"timestamp", "value", b"value"]) -> None: ...
+
+Global___MetricsExemplar: typing_extensions.TypeAlias = MetricsExemplar
+
+@typing.final
+class MetricsSample(google.protobuf.message.Message):
+    """One collected sample from prometheus_client (including histogram _bucket/_sum/_count)."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    NAME_FIELD_NUMBER: builtins.int
+    LABELS_FIELD_NUMBER: builtins.int
+    VALUE_FIELD_NUMBER: builtins.int
+    EXEMPLAR_FIELD_NUMBER: builtins.int
+    name: builtins.str
+    """Sample name (may include _bucket, _sum, _count)."""
+    value: builtins.float
+    """Sample value."""
+    @property
+    def labels(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___MetricsLabel]:
+        """Sample labels (histogram buckets include le)."""
+
+    @property
+    def exemplar(self) -> Global___MetricsExemplar:
+        """Optional exemplar for this sample."""
+
+    def __init__(
+        self,
+        *,
+        name: builtins.str = ...,
+        labels: collections.abc.Iterable[Global___MetricsLabel] | None = ...,
+        value: builtins.float = ...,
+        exemplar: Global___MetricsExemplar | None = ...,
+    ) -> None: ...
+    def HasField(self, field_name: typing.Literal["exemplar", b"exemplar"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["exemplar", b"exemplar", "labels", b"labels", "name", b"name", "value", b"value"]) -> None: ...
+
+Global___MetricsSample: typing_extensions.TypeAlias = MetricsSample
+
+@typing.final
+class MetricsFamily(google.protobuf.message.Message):
+    """One metric family from CollectorRegistry.collect()."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    NAME_FIELD_NUMBER: builtins.int
+    HELP_FIELD_NUMBER: builtins.int
+    TYPE_FIELD_NUMBER: builtins.int
+    SAMPLES_FIELD_NUMBER: builtins.int
+    name: builtins.str
+    """Family name (counters include _total; no _bucket/_sum/_count)."""
+    help: builtins.str
+    """Help text."""
+    type: Global___MetricsType.ValueType
+    """Family type."""
+    @property
+    def samples(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___MetricsSample]:
+        """Collected samples, including exemplars."""
+
+    def __init__(
+        self,
+        *,
+        name: builtins.str = ...,
+        help: builtins.str = ...,
+        type: Global___MetricsType.ValueType = ...,
+        samples: collections.abc.Iterable[Global___MetricsSample] | None = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["help", b"help", "name", b"name", "samples", b"samples", "type", b"type"]) -> None: ...
+
+Global___MetricsFamily: typing_extensions.TypeAlias = MetricsFamily
 
 @typing.final
 class MetricsStreamResponse(google.protobuf.message.Message):
