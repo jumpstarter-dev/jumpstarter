@@ -681,8 +681,8 @@ func TestFanout_UnparseableSnapshotIncrementsParseErrorsOnSameResponse(t *testin
 		t.Fatalf("Gather: %v", err)
 	}
 	value := labeledCounterValue(t, mfs, metricsParseErrorsMetric, labelExporter, "sidekick")
-	if value < 1 {
-		t.Fatalf("%s{exporter=sidekick} = %v, want >= 1 body:\n%s", metricsParseErrorsMetric, value, body)
+	if value != 1 {
+		t.Fatalf("%s{exporter=sidekick} = %v, want 1 body:\n%s", metricsParseErrorsMetric, value, body)
 	}
 
 	select {
