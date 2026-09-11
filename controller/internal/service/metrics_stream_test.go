@@ -255,6 +255,70 @@ func TestMetricsConn_ScrapeTimeout(t *testing.T) {
 	}
 }
 
+func TestMetricsConn_ScrapeReturnsSendError(t *testing.T) {
+	sentinel := errors.New("send failed")
+	c := &metricsConn{
+		send: func(*pb.MetricsStreamResponse) error { return sentinel },
+		done: make(chan struct{}),
+	}
+	_, err := c.scrape(context.Background(), time.Second)
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("scrape error = %v, want sentinel %v", err, sentinel)
+	}
+}
+
+func TestMetricsConn_ScrapeCancelsWhenDoneClosed(t *testing.T) {
+	started := make(chan struct{})
+	unblockSend := make(chan struct{})
+	done := make(chan struct{})
+	c := &metricsConn{
+		send: func(*pb.MetricsStreamResponse) error {
+			close(started)
+			<-unblockSend
+			return nil
+		},
+		done: done,
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := c.scrape(context.Background(), 5*time.Second)
+		errCh <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scrape did not call send")
+	}
+	close(done)
+	close(unblockSend)
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("scrape error = %v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("scrape did not return after done closed")
+	}
+}
+
+func TestUnregisterConn_DoesNotDropReplacement(t *testing.T) {
+	svc := &TelemetryService{}
+	svc.initMetricsState()
+	id := exporterIdentity{namespace: "jumpstarter", name: "sidekick"}
+	first := &metricsConn{id: id}
+	second := &metricsConn{id: id}
+	svc.registerConn(first)
+	svc.registerConn(second)
+	svc.unregisterConn(first)
+	got := svc.snapshotConns()
+	if len(got) != 1 {
+		t.Fatalf("conns = %d, want 1 remaining replacement", len(got))
+	}
+	if got[0] != second {
+		t.Fatal("unregisterConn dropped the replacement connection")
+	}
+}
+
 func TestFanout_TimeoutIncrementsCounterWithoutGRPC(t *testing.T) {
 	svc := &TelemetryService{ScrapeTimeout: 40 * time.Millisecond}
 	svc.initScrapeTimeouts()
