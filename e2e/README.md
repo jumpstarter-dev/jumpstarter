@@ -134,7 +134,11 @@ offering the `dut-network` driver (nftables NAT/masquerade + DHCP/DNS). CI insta
 | should return error for unknown MAC | `j dut-network get-ip ff:ff:ff:ff:ff:ff` | errors; "No lease found" |
 | should add and remove an address entry via CLI | `add-address 192.168.200.99 --mac 02:00:00:00:00:99` then `remove-address` | "Added" then "Removed" |
 | should add, list, and remove DNS entries via CLI | `add-dns e2e-test.lab.local 10.0.0.42`, `dns-entries`, `remove-dns`, `dns-entries` | entry appears then disappears |
-| should allow TCP connections from DUT to external via NAT | start Python TCP server in ext ns, connect from DUT ns via NAT | client receives "E2E_OK" |
+| should allow TCP connections from DUT to external via NAT | start Python TCP echo in ext ns, connect from DUT ns via NAT | client receives "E2E_OK" |
+| should allow TCP from DUT via VLAN PBR | create `jmp-vext.100` with `10.100.0.1/24` in ext ns; `add-address 192.168.200.50 --vlan-id 100 --public-ip 10.100.0.50 --public-gateway 10.100.0.1`; add DUT IP; TCP from `192.168.200.50` to `10.100.0.1` | client receives "E2E_OK" |
+| should allow TCP from DUT via untagged source-IP PBR | add `10.99.1.1/32` on ext-ns loopback (PBR-only destination); `add-address 192.168.200.51 --public-gateway 10.99.0.1`; add DUT IP; TCP from `192.168.200.51` to `10.99.1.1`; ping from main DUT IP to `10.99.1.1` | TCP succeeds (PBR routes via gateway); ping from non-PBR source fails (proves PBR is required) |
+| should not reach a VLAN-only peer without public_gateway | create `jmp-vext.101` with `10.101.0.1/24` in ext ns; `add-address 192.168.200.52 --vlan-id 101`; add DUT IP; ping VLAN-only `10.101.0.1` and untagged `10.99.0.1` | ping to `10.101.0.1` fails; ping to `10.99.0.1` succeeds (`Eventually`) |
+| should masquerade unregistered DUT alongside VLAN-registered DUT | register `192.168.200.50` with VLAN 100 + PBR; verify VLAN TCP echo works; add unregistered `192.168.200.60` on DUT bridge (no `add-address`); ping external `10.99.0.1` from unregistered IP | VLAN DUT gets "E2E_OK"; unregistered DUT ping succeeds via upstream masquerade |
 
 ---
 

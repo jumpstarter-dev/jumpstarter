@@ -64,16 +64,111 @@ export:
         - mac: "8a:12:4e:25:f4:8e"
           ip: "192.168.100.10"
           hostname: "sa8775p-1"
-          public_ip: "10.26.28.84"
+          public_ip: "198.51.100.84"
         - mac: "8a:12:4e:25:f4:8f"
           ip: "192.168.100.11"
           hostname: "sa8775p-2"
-          public_ip: "10.26.28.85"
+          public_ip: "198.51.100.85"
         # Entry without MAC: 1:1 NAT mapping only, no DHCP static lease
         - ip: "192.168.100.12"
           hostname: "nxp-board-03"
-          public_ip: "10.26.28.86"
+          public_ip: "198.51.100.86"
 ```
+
+### VLAN sub-interfaces and policy-based routing
+
+When an address entry sets `vlan_id`, the driver creates a tagged sub-interface
+on `upstream_interface` (for example `end0.905` when upstream is `end0` and
+the VLAN is 905), assigns `public_ip` to that sub-interface, and generates
+nftables NAT/forward rules against it instead of the untagged parent.
+
+If `public_gateway` is also set, policy-based routing (PBR) forces traffic
+from that DUT's private IP out via the VLAN: a default route in routing table
+`<vlan_id>` and an `ip rule` matching the DUT source address.
+
+`vlan_id` without `public_gateway` still creates the VLAN and NAT rules, but
+logs a warning: without PBR, DUT traffic may not egress via the tagged
+interface.
+
+`public_gateway` without `vlan_id` is supported on the untagged upstream:
+source-IP PBR uses routing table `int(<dut private IPv4>)`.
+
+**Untagged source-IP PBR:**
+
+```yaml
+      addresses:
+        - mac: "8a:12:4e:25:f4:8e"
+          ip: "192.168.100.125"
+          public_gateway: "203.0.113.254"
+```
+
+Omit both fields to keep today's untagged-upstream behaviour.
+
+**1:1 NAT on a VLAN:**
+
+```yaml
+export:
+  dut-network:
+    type: jumpstarter_driver_dut_network.driver.DutNetwork
+    config:
+      interface: "enp1s0u1"
+      subnet: "192.168.100.0/24"
+      gateway_ip: "192.168.100.1"
+      upstream_interface: "end0"
+      nat_mode: "1to1"
+      addresses:
+        - mac: "8a:12:4e:25:f4:8e"
+          ip: "192.168.100.125"
+          hostname: "sa8775p"
+          public_ip: "203.0.113.1"
+          vlan_id: 905
+          public_gateway: "203.0.113.254"
+```
+
+**Masquerade on a VLAN:**
+
+```yaml
+export:
+  dut-network:
+    type: jumpstarter_driver_dut_network.driver.DutNetwork
+    config:
+      interface: "enp1s0u1"
+      subnet: "192.168.100.0/24"
+      gateway_ip: "192.168.100.1"
+      upstream_interface: "end0"
+      nat_mode: "masquerade"
+      addresses:
+        - mac: "8a:12:4e:25:f4:8e"
+          ip: "192.168.100.125"
+          hostname: "sa8775p"
+          public_ip: "203.0.113.1"
+          vlan_id: 905
+          public_gateway: "203.0.113.254"
+```
+
+Linux interface names are limited to 15 characters, so
+`<upstream>.<vlan_id>` must fit that limit.  VLAN IDs 253–255 cannot be used
+with `public_gateway` because those routing-table IDs are reserved by the kernel.
+
+All address entries that share the same `vlan_id` share a single policy
+routing table (keyed by the VLAN ID), so they **must use the same
+`public_gateway`**. Configuring different gateways for entries on the same
+VLAN is rejected at validation time. If different DUTs need different
+gateways, put them on separate VLANs, or use untagged source-IP PBR
+(`public_gateway` without `vlan_id`), which gives each DUT its own routing
+table.
+
+#### Mixed VLAN and untagged addresses
+
+Tagged and untagged entries can coexist on the same exporter.  The
+upstream (untagged) interface is **always** included in the masquerade
+and forwarding rules so that unexpected or unregistered DUT hosts on
+the bridge are still NATed via the default upstream.  VLAN
+sub-interfaces are added when at least one address entry carries a
+`vlan_id`.  Adding or removing addresses at runtime (via `add-address`
+/ `remove-address`) triggers a full rebuild, so the rule set always
+matches the current address list.
+
 
 ### Disabled NAT (DHCP only)
 
@@ -102,9 +197,9 @@ export:
       nat_mode: "masquerade"
       dns_entries:
         - hostname: "controller.lab.local"
-          ip: "10.26.28.1"
+          ip: "198.51.100.1"
         - hostname: "registry.lab.local"
-          ip: "10.26.28.2"
+          ip: "198.51.100.2"
 ```
 
 ### Reference
@@ -118,7 +213,7 @@ export:
 | `dhcp_enabled` | bool | `true` | Whether to run DHCP on the interface |
 | `dhcp_range_start` | str | `192.168.100.100` | DHCP dynamic range start |
 | `dhcp_range_end` | str | `192.168.100.200` | DHCP dynamic range end |
-| `addresses` | list | `[]` | Address entries: `{ip, mac?, hostname?, public_ip?}`. Entries with `mac` generate DHCP static leases; entries without `mac` are used for 1:1 NAT only. |
+| `addresses` | list | `[]` | Address entries: `{ip, mac?, hostname?, public_ip?, vlan_id?, public_gateway?}`. Entries with `mac` generate DHCP static leases; entries without `mac` are used for 1:1 NAT only. |
 | `dns_servers` | list | `[8.8.8.8, 8.8.4.4]` | DNS servers for DHCP clients |
 | `dns_entries` | list | `[]` | Custom DNS records: `{hostname, ip}` |
 | `state_dir` | str | `/var/lib/jumpstarter/dut-network-{interface}/` | Directory for dnsmasq state files |
@@ -132,7 +227,9 @@ export:
 | `ip` | yes | Private IP to assign |
 | `mac` | no | MAC address of the DUT. Required for DHCP static lease; omit for 1:1 NAT-only entries |
 | `hostname` | no | Hostname for DHCP |
-| `public_ip` | no | Public IP for 1:1 NAT (per-entry). At least one entry must have `public_ip` when `nat_mode=1to1` |
+| `public_ip` | no | Public IP for 1:1 NAT (per-entry). At least one entry must have `public_ip` when `nat_mode=1to1`. Also assigned to the VLAN sub-interface when `vlan_id` is set |
+| `vlan_id` | no | 802.1Q VLAN ID (1–4094). When set, NAT uses `<upstream>.<vlan_id>` instead of the untagged upstream. Omit for untagged behaviour |
+| `public_gateway` | no | Gateway for policy-based routing. With `vlan_id`, DUT traffic exits via the VLAN (table ID = VLAN ID). Without `vlan_id`, traffic exits via the untagged upstream (table ID = DUT private IPv4 as an integer) |
 
 ## Usage
 
@@ -153,8 +250,8 @@ j dut-network get-ip 8a:12:4e:25:f4:8e
 # Add an address entry with a MAC (creates a DHCP static lease)
 j dut-network add-address 192.168.100.50 --mac 02:00:00:aa:bb:cc --hostname my-dut
 
-# Add an address entry without MAC (1:1 NAT mapping only, no DHCP lease)
-j dut-network add-address 192.168.100.51 --public-ip 10.26.28.90
+# Add an address entry with VLAN and PBR
+j dut-network add-address 192.168.100.125 --public-ip 203.0.113.1 --vlan-id 905 --public-gateway 203.0.113.254
 
 # Remove an address entry by IP
 j dut-network remove-address 192.168.100.50
@@ -166,7 +263,7 @@ j dut-network nat-rules
 j dut-network dns-entries
 
 # Add a custom DNS entry
-j dut-network add-dns controller.lab.local 10.26.28.1
+j dut-network add-dns controller.lab.local 198.51.100.1
 
 # Remove a DNS entry
 j dut-network remove-dns controller.lab.local
@@ -194,7 +291,14 @@ with env() as client:
     # With MAC: creates a DHCP static lease + optional 1:1 NAT mapping
     client.dut_network.add_address("192.168.100.50", mac="02:00:00:aa:bb:cc", hostname="new-dut")
     # Without MAC: 1:1 NAT mapping only (no DHCP lease)
-    client.dut_network.add_address("192.168.100.51", public_ip="10.26.28.90")
+    client.dut_network.add_address("192.168.100.51", public_ip="198.51.100.90")
+    # VLAN + PBR
+    client.dut_network.add_address(
+        "192.168.100.125",
+        public_ip="203.0.113.1",
+        vlan_id=905,
+        public_gateway="203.0.113.254",
+    )
     client.dut_network.remove_address("192.168.100.50")
 
     # Manage DNS entries at runtime
@@ -266,6 +370,39 @@ The driver uses a dedicated nftables table (named after the interface) that
 does not conflict with firewalld or other nftables users.
 ```
 
+## Known Limitations
+
+```{warning}
+This driver is designed for dedicated exporter hosts, not shared or
+multi-purpose machines. The limitations below stem from that assumption.
+```
+
+- **One driver instance per host.** Running multiple instances of this
+  driver on the same host (for example, multiple exporters sharing one
+  sidekick) is not supported. Each instance assumes it owns any VLAN
+  interfaces, PBR tables/rules, and nftables state matching its
+  configuration, and cleanup does not distinguish between state created by
+  itself versus another instance.
+
+- **Cleanup is unconditional, not ownership-tracked.** On shutdown, the
+  driver deletes every VLAN sub-interface, PBR rule, and nftables rule it is
+  *configured* for — even if that resource already existed before the
+  driver started (e.g. created by another tool or a previous unclean exit).
+  This is intentional: it guarantees idempotent recreation after a crash,
+  but it means the driver should not be pointed at interfaces or routing
+  tables managed by anything else.
+
+- **Same-VLAN entries must share one `public_gateway`.** All address
+  entries with the same `vlan_id` route through a single shared PBR table
+  (keyed by the VLAN ID). Different `public_gateway` values on the same
+  VLAN are rejected at configuration validation. Use separate VLAN IDs, or
+  untagged source-IP PBR, if independent per-DUT gateways are required.
+
+- **Untagged PBR requires an IPv4 DUT address.** `public_gateway` without
+  `vlan_id` derives the routing-table ID from `int(IPv4Address(ip))`, so the
+  DUT's `ip` must be a valid IPv4 address in that case. VLAN-tagged PBR has
+  no such restriction since it keys on `vlan_id` instead.
+
 ## Troubleshooting
 
 ### NAT traffic not forwarding (Docker hosts)
@@ -295,5 +432,60 @@ verify with:
 ```shell
 sysctl net.ipv4.conf.<interface>.forwarding
 sysctl net.ipv4.conf.<upstream>.forwarding
+```
+
+## Host System Side Effects
+
+```{warning}
+The DUT network driver modifies host networking state. It is designed for
+dedicated exporter hosts or containers, **not** shared workstations or
+laptops. Running it on a multi-purpose machine may interfere with other
+network configurations.
+```
+
+The driver creates and removes several types of host-level networking
+resources. Under normal operation these are cleaned up when the exporter
+shuts down, but an unclean exit (crash, `kill -9`, power loss) will leave
+them behind. Re-starting the exporter recreates the resources from
+scratch, so orphaned state from a previous run is overwritten — but if
+the exporter is never restarted, manual cleanup may be necessary.
+
+### What the driver creates on the host
+
+| Resource | Created when | Cleaned up on shutdown | Survives a crash |
+|----------|-------------|----------------------|------------------|
+| **VLAN sub-interfaces** (e.g. `eth0.905`) | Address entry has `vlan_id` | Yes — deleted by `cleanup()` | Yes |
+| **nftables table** (`jumpstarter_<iface>`) | NAT mode is not `disabled` | Yes — flushed on cleanup | Yes |
+| **FORWARD chain accept rules** (in `ip filter`) | Docker sets FORWARD policy to `drop` | Yes — removed by handle | Yes |
+| **IP forwarding sysctls** (`net.ipv4.conf.<iface>.forwarding`) | NAT mode is not `disabled` | Yes — restored to previous value | Yes |
+| **IP aliases** (e.g. `203.0.113.1/24` on upstream) | 1:1 NAT with `public_ip` | Yes — removed on cleanup | Yes |
+| **Policy routes and IP rules** | `public_gateway` is set | Yes — flushed on cleanup | Yes |
+| **dnsmasq process** | DHCP is enabled | Yes — stopped on cleanup | No (orphan process) |
+
+### Cleaning up after a crash
+
+If the exporter crashes, the simplest recovery is to restart it — the
+driver recreates all resources idempotently. To clean up manually:
+
+```shell
+# Remove orphan VLAN interfaces
+sudo ip link del eth0.905
+
+# Flush the driver's nftables table
+sudo nft delete table ip jumpstarter_eth2
+
+# Remove stale FORWARD chain rules (find handles first)
+sudo nft -a list chain ip filter FORWARD | grep jmp
+sudo nft delete rule ip filter FORWARD handle <N>
+
+# Remove IP aliases
+sudo ip addr del 203.0.113.1/24 dev eth0
+
+# Flush policy routing tables
+sudo ip route flush table 905
+sudo ip rule del from 192.168.100.125 table 905
+
+# Kill orphan dnsmasq
+sudo pkill -f "dnsmasq.*jumpstarter"
 ```
 
