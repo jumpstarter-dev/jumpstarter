@@ -42,6 +42,11 @@ const (
 	metricsParseErrorsMetric = "jumpstarter_metrics_parse_errors_total"
 )
 
+// hubMetricNames are reserved telemetry-hub series. Exporter snapshots of the
+// same name are dropped so a CounterVec with no observations yet cannot be
+// replaced by a spoofed family.
+var hubMetricNames = []string{scrapeTimeoutsMetric, metricsParseErrorsMetric}
+
 // DefaultDriverTypeEnum is the JEP-0013 default allowlist for driver_type.
 var DefaultDriverTypeEnum = []string{
 	"power", "storage", "network", "serial", "console", "video", "composite",
@@ -167,6 +172,24 @@ func mergeSnapshots(snapshots []exporterSnapshot, extra []*dto.MetricFamily, cfg
 	}
 	out := make([]*dto.MetricFamily, 0, len(byName))
 	for _, f := range byName {
+		out = append(out, f)
+	}
+	return out
+}
+
+func dropHubMetricFamilies(families []*dto.MetricFamily) []*dto.MetricFamily {
+	if len(families) == 0 {
+		return families
+	}
+	skip := setToMap(hubMetricNames)
+	out := make([]*dto.MetricFamily, 0, len(families))
+	for _, f := range families {
+		if f == nil {
+			continue
+		}
+		if _, reserved := skip[f.GetName()]; reserved {
+			continue
+		}
 		out = append(out, f)
 	}
 	return out
