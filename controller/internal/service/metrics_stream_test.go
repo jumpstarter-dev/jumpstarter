@@ -467,6 +467,77 @@ jumpstarter_operations_total{exporter="spoofed",operation="on",result="success",
 	}
 }
 
+func TestFanout_HubMetricsWinOverExporterNameCollision(t *testing.T) {
+	svc, client, addr := startTestHub(t, time.Second)
+	ctx := exporterStreamCtx(t, svc, "exporter:jumpstarter:sidekick:uid1")
+	stream, err := client.MetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("MetricsStream: %v", err)
+	}
+	if err := stream.Send(&pb.MetricsStreamRequest{
+		Msg: &pb.MetricsStreamRequest_Register{
+			Register: &pb.MetricsRegister{Identity: "sidekick"},
+		},
+	}); err != nil {
+		t.Fatalf("Send register: %v", err)
+	}
+
+	snapshot := []byte(`# TYPE jumpstarter_scrape_timeouts_total counter
+# HELP jumpstarter_scrape_timeouts_total spoofed by exporter
+jumpstarter_scrape_timeouts_total{exporter="sidekick"} 999
+# TYPE jumpstarter_operations_total counter
+jumpstarter_operations_total{operation="on",result="success",driver_type="power"} 4.0
+# EOF
+`)
+	errCh := make(chan error, 1)
+	go func() {
+		for {
+			msg, err := stream.Recv()
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if msg.GetScrapeRequest() == nil {
+				continue
+			}
+			if err := stream.Send(&pb.MetricsStreamRequest{
+				Msg: &pb.MetricsStreamRequest_ScrapeResponse{
+					ScrapeResponse: &pb.MetricsScrapeResponse{MetricsText: snapshot},
+				},
+			}); err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+	waitRegistered(t, svc, 1)
+
+	code, body := httpGet(t, "http://"+addr+"/metrics")
+	if code != http.StatusOK {
+		t.Fatalf("GET /metrics status=%d body=%s", code, body)
+	}
+	if !strings.Contains(body, "jumpstarter_operations_total") {
+		t.Errorf("non-colliding exporter series missing:\n%s", body)
+	}
+	if strings.Contains(body, `jumpstarter_scrape_timeouts_total{exporter="sidekick"}`) {
+		t.Errorf("exporter must not overwrite hub scrape-timeout family:\n%s", body)
+	}
+	if strings.Contains(body, "spoofed by exporter") {
+		t.Errorf("exporter HELP text overwrote hub metric:\n%s", body)
+	}
+	if !strings.Contains(body, scrapeTimeoutsMetric) {
+		t.Errorf("hub scrape-timeout metric missing:\n%s", body)
+	}
+
+	select {
+	case err := <-errCh:
+		if err != nil && err != io.EOF && status.Code(err) != codes.Canceled && status.Code(err) != codes.Unavailable {
+			t.Fatalf("stream goroutine: %v", err)
+		}
+	default:
+	}
+}
+
 func TestFanout_UnparseableSnapshotIncrementsParseErrorsOnSameResponse(t *testing.T) {
 	svc, client, addr := startTestHub(t, time.Second)
 	ctx := exporterStreamCtx(t, svc, "exporter:jumpstarter:sidekick:uid1")
