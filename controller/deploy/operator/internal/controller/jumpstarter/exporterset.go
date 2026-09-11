@@ -513,6 +513,16 @@ func exporterSetPolicyRules() []rbacv1.PolicyRule {
 			Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
 		},
 		{
+			// The per-exporter config Secret and the exporter Pod are both owned by
+			// their Exporter via SetControllerReference, which sets
+			// blockOwnerDeletion. The API server rejects an ownerReference carrying
+			// that flag unless the writer may update the owner's finalizers, so
+			// without this rule neither the Secret nor the Pod can be created.
+			APIGroups: []string{"jumpstarter.dev"},
+			Resources: []string{"exporters/finalizers"},
+			Verbs:     []string{"update"},
+		},
+		{
 			APIGroups: []string{"jumpstarter.dev"},
 			Resources: []string{"leases"},
 			Verbs:     []string{"get", "list", "watch"},
