@@ -261,6 +261,44 @@ func TestEncodeMetricFamilies_WritesOpenMetricsEOF(t *testing.T) {
 	}
 }
 
+func TestMergeSnapshots_LaterExtraFamilyReplacesEarlier(t *testing.T) {
+	name := scrapeTimeoutsMetric
+	helpExp := "spoofed by exporter"
+	helpHub := "Exporter MetricsStream scrapes that exceeded scrapeTimeout."
+	metricType := dto.MetricType_COUNTER
+	expVal, hubVal := 999.0, 1.0
+	exporterFam := &dto.MetricFamily{
+		Name: &name,
+		Help: &helpExp,
+		Type: &metricType,
+		Metric: []*dto.Metric{{
+			Label:   []*dto.LabelPair{labelPair(labelExporter, "sidekick")},
+			Counter: &dto.Counter{Value: &expVal},
+		}},
+	}
+	hubFam := &dto.MetricFamily{
+		Name: &name,
+		Help: &helpHub,
+		Type: &metricType,
+		Metric: []*dto.Metric{{
+			Counter: &dto.Counter{Value: &hubVal},
+		}},
+	}
+	out := mergeSnapshots(nil, append([]*dto.MetricFamily{exporterFam}, hubFam), testMergeCfg, nil)
+	if len(out) != 1 {
+		t.Fatalf("families = %d, want 1", len(out))
+	}
+	if out[0].GetHelp() != helpHub {
+		t.Errorf("help = %q, want hub help", out[0].GetHelp())
+	}
+	if len(out[0].Metric) != 1 || out[0].Metric[0].GetCounter().GetValue() != hubVal {
+		t.Errorf("hub series replaced, got %+v", out[0].Metric)
+	}
+	if _, ok := getLabel(out[0].Metric[0], labelExporter); ok {
+		t.Errorf("exporter label leaked into hub family: %+v", out[0].Metric[0].GetLabel())
+	}
+}
+
 func TestMergeConfigFor_EmptyAllowlistsUseDefaults(t *testing.T) {
 	svc := &TelemetryService{}
 	cfg := svc.mergeConfigFor("sidekick")

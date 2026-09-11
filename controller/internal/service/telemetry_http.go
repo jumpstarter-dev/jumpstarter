@@ -130,7 +130,9 @@ func (s *TelemetryService) handleMetrics(w http.ResponseWriter, r *http.Request)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		families = mergeSnapshots(nil, append(gathered, families...), s.mergeConfigFor, nil)
+		// Hub families last: mergeSnapshots last-wins on extra, so exporters
+		// cannot replace scrape_timeouts / parse_errors (or any other hub series).
+		families = mergeSnapshots(nil, append(families, gathered...), s.mergeConfigFor, nil)
 	}
 
 	var buf bytes.Buffer
