@@ -30,6 +30,9 @@ class NanoKVMUSBDevice:
         video_width: int = 1920,
         video_height: int = 1080,
         video_fps: int = 30,
+        video_format: str = "mjpeg_passthrough",
+        video_jpeg_quality: int = 95,
+        video_discard_stale: int = 1,
         screen_width: int = 1920,
         screen_height: int = 1080,
     ) -> None:
@@ -39,6 +42,9 @@ class NanoKVMUSBDevice:
         self._video_width = video_width
         self._video_height = video_height
         self._video_fps = video_fps
+        self._video_format = video_format
+        self._video_jpeg_quality = video_jpeg_quality
+        self._video_discard_stale = max(0, int(video_discard_stale))
         self.screen_width = screen_width
         self.screen_height = screen_height
 
@@ -68,6 +74,8 @@ class NanoKVMUSBDevice:
                 self._video_width,
                 self._video_height,
                 self._video_fps,
+                video_format=self._video_format,
+                jpeg_quality=self._video_jpeg_quality,
             )
 
         self._connected = True
@@ -176,8 +184,11 @@ class NanoKVMUSBDevice:
         self.release_all_keys()
         self.mouse_reset()
 
-    def capture_frame_jpeg(self, quality: int = 85) -> bytes:
-        return self._video.read_frame_jpeg(quality)
+    def capture_frame_jpeg(self, quality: int | None = None) -> bytes:
+        q = quality if quality is not None else self._video_jpeg_quality
+        if self._video_discard_stale > 0:
+            self._video.discard_stale_frames(self._video_discard_stale)
+        return self._video.read_frame_jpeg(q)
 
     def __enter__(self) -> NanoKVMUSBDevice:
         self.connect()
