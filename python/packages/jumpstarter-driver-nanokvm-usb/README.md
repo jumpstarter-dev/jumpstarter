@@ -49,6 +49,8 @@ export:
       video_width: 1920
       video_height: 1080
       video_fps: 30
+      video_format: mjpeg_passthrough
+      video_jpeg_quality: 98
       screen_width: 1920
       screen_height: 1080
 ```
@@ -63,6 +65,10 @@ export:
 | video_width | Requested capture width | int | no | 1920 |
 | video_height | Requested capture height | int | no | 1080 |
 | video_fps | Requested capture FPS | int | no | 30 |
+| video_format | `mjpeg_passthrough` (native UVC JPEG via `v4l2-ctl`) or `jpeg` (OpenCV re-encode) | str | no | mjpeg_passthrough |
+| video_jpeg_quality | JPEG quality when `video_format=jpeg` (1–100) | int | no | 95 |
+
+Passthrough requires `v4l-utils` (`v4l2-ctl`) on the exporter host.
 | screen_width | Target screen width for relative mouse moves | int | no | 1920 |
 | screen_height | Target screen height for relative mouse moves | int | no | 1080 |
 
@@ -75,18 +81,37 @@ The driver is a composite with two child interfaces:
 
 ## Video streaming
 
-Live video uses Jumpstarter **streams**. Open `video.stream("stream")` and read
-JPEG frames with `stream.receive()`. HID remains available in parallel while the
-stream is open.
+Live video uses Jumpstarter **streams**: each `stream.receive()` returns one JPEG
+frame as raw `bytes`. HID remains available in parallel while the stream is open.
 
-For recording, OCR, deduplication, and preprocessing without blocking
-`jmp shell`, use the external tooling in
-`edge-clearance-delivery/video-receiver/` (`stream-bridge.py` + `video-receiver.py`).
+**Low-level client example** (inside a Jumpstarter lease with the exporter name
+`nanokvm-usb`):
 
 ```python
-with lease.drivers["nanokvm-usb"].video.stream("stream") as stream:
-    frame_jpeg = stream.receive()
+video = lease.drivers["nanokvm-usb"].video
+
+with video.stream("stream") as stream:
+    while True:
+        frame_jpeg = stream.receive()  # bytes
+        ...
 ```
+
+> **⚠️ Experimental — [`edge-clearance-delivery`](https://github.com/mparram/edge-clearance-delivery)**
+> The external pipeline for MP4 recording, OCR,
+> deduplication, and preprocessing (below) is **experimental** and lives outside
+> this package.
+
+Reading frames in the same process as `jmp shell` blocks the interactive session
+while Tesseract or MP4 encoding run. For continuous capture without blocking HID,
+use `stream-bridge.py` in a background process; it opens the same stream and forwards
+frames over TCP to `video-recorder.py` and `ocr-receiver.py`. Inside `jmp shell`:
+
+```bash
+python edge-clearance-delivery/video-receiver/stream-bridge.py --use-env \
+  --connect-mp4 127.0.0.1:8765 --connect-ocr 127.0.0.1:8766 &
+```
+
+See `run-clearance-demo.sh` in that repo for the full pipeline.
 
 ## API reference
 

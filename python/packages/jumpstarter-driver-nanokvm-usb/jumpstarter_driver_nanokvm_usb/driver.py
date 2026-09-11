@@ -9,6 +9,7 @@ from jumpstarter_driver_composite.driver import Composite
 from jumpstarter.driver import Driver, export, exportstream
 
 from .device import NanoKVMUSBDevice
+from .keyboard import resolve_key_code
 from .mouse import MouseButton
 
 __all__ = ["NanoKVMUSBVideo", "NanoKVMUSBHID", "NanoKVMUSB", "MouseButton"]
@@ -24,6 +25,10 @@ class NanoKVMUSBDriverBase(Driver):
     video_width: int = 1920
     video_height: int = 1080
     video_fps: int = 30
+    video_format: str = "mjpeg_passthrough"
+    video_jpeg_quality: int = 95
+    video_discard_stale: int = 1
+    video_stream_buffer_size: int = 32
     screen_width: int = 1920
     screen_height: int = 1080
     device: NanoKVMUSBDevice | None = None
@@ -40,6 +45,9 @@ class NanoKVMUSBDriverBase(Driver):
                 video_width=self.video_width,
                 video_height=self.video_height,
                 video_fps=self.video_fps,
+                video_format=self.video_format,
+                video_jpeg_quality=self.video_jpeg_quality,
+                video_discard_stale=self.video_discard_stale,
                 screen_width=self.screen_width,
                 screen_height=self.screen_height,
             )
@@ -97,14 +105,21 @@ class NanoKVMUSBVideo(NanoKVMUSBDriverBase):
         self.logger.debug("Starting video stream")
         await self._ensure_device()
 
-        send_stream, receive_stream = anyio.create_memory_object_stream(max_buffer_size=10)
+        buffer_size = max(1, int(self.video_stream_buffer_size))
+        send_stream, receive_stream = anyio.create_memory_object_stream(max_buffer_size=buffer_size)
 
         async def stream_video():
             frame_interval = 1.0 / self.video_fps if self.video_fps > 0 else 0.0
             async with send_stream:
                 while True:
-                    data = await to_thread.run_sync(self.device.capture_frame_jpeg)  # type: ignore[union-attr]
-                    await send_stream.send(data)
+                    data = await to_thread.run_sync(
+                        self.device.capture_frame_jpeg,  # type: ignore[union-attr]
+                        self.video_jpeg_quality,
+                    )
+                    try:
+                        await send_stream.send(data)
+                    except anyio.BrokenResourceError:
+                        break
                     if frame_interval > 0:
                         await anyio.sleep(frame_interval)
 
@@ -133,7 +148,12 @@ class NanoKVMUSBHID(NanoKVMUSBDriverBase):
     @export
     async def press_key(self, key: str):
         if len(key) > 2:
-            self.logger.warning(f"press_key should be used with single characters, got: {key}")
+            try:
+                resolve_key_code(key)
+            except ValueError:
+                self.logger.warning(
+                    f"press_key should be used with single characters, got: {key}"
+                )
 
         device = await self._ensure_device()
 
@@ -211,6 +231,10 @@ class NanoKVMUSB(Composite):
     video_width: int = 1920
     video_height: int = 1080
     video_fps: int = 30
+    video_format: str = "mjpeg_passthrough"
+    video_jpeg_quality: int = 95
+    video_discard_stale: int = 1
+    video_stream_buffer_size: int = 32
     screen_width: int = 1920
     screen_height: int = 1080
 
@@ -224,6 +248,9 @@ class NanoKVMUSB(Composite):
             video_width=self.video_width,
             video_height=self.video_height,
             video_fps=self.video_fps,
+            video_format=self.video_format,
+            video_jpeg_quality=self.video_jpeg_quality,
+            video_discard_stale=self.video_discard_stale,
             screen_width=self.screen_width,
             screen_height=self.screen_height,
         )
@@ -236,6 +263,10 @@ class NanoKVMUSB(Composite):
                 video_width=self.video_width,
                 video_height=self.video_height,
                 video_fps=self.video_fps,
+                video_format=self.video_format,
+                video_jpeg_quality=self.video_jpeg_quality,
+                video_discard_stale=self.video_discard_stale,
+                video_stream_buffer_size=self.video_stream_buffer_size,
                 screen_width=self.screen_width,
                 screen_height=self.screen_height,
             ),
