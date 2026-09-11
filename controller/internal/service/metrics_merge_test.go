@@ -260,3 +260,79 @@ func TestEncodeMetricFamilies_WritesOpenMetricsEOF(t *testing.T) {
 		t.Errorf("decoded name = %q", mf.GetName())
 	}
 }
+
+func TestMergeConfigFor_EmptyAllowlistsUseDefaults(t *testing.T) {
+	svc := &TelemetryService{}
+	cfg := svc.mergeConfigFor("sidekick")
+	if cfg.exporterName != "sidekick" {
+		t.Errorf("exporterName = %q, want sidekick", cfg.exporterName)
+	}
+	for _, dt := range DefaultDriverTypeEnum {
+		if _, ok := cfg.driverTypes[dt]; !ok {
+			t.Errorf("default driver type %q missing", dt)
+		}
+	}
+	for _, key := range DefaultExemplarKeys {
+		if _, ok := cfg.exemplarKeys[key]; !ok {
+			t.Errorf("default exemplar key %q missing", key)
+		}
+	}
+
+	m := &dto.Metric{
+		Label: []*dto.LabelPair{labelPair("driver_type", "tuya")},
+		Counter: &dto.Counter{
+			Exemplar: &dto.Exemplar{
+				Label: []*dto.LabelPair{
+					labelPair("client", "ci"),
+					labelPair("trace_id", "drop-me"),
+				},
+			},
+		},
+	}
+	applyMetric(m, cfg)
+	if got, _ := getLabel(m, "driver_type"); got != "other" {
+		t.Errorf("unknown driver_type = %q, want other", got)
+	}
+	ex := m.Counter.GetExemplar()
+	if ex == nil {
+		t.Fatal("allowlisted exemplar dropped")
+	}
+	got := map[string]string{}
+	for _, lp := range ex.GetLabel() {
+		got[lp.GetName()] = lp.GetValue()
+	}
+	if got["client"] != "ci" {
+		t.Errorf("exemplar labels = %v, want client kept", got)
+	}
+	if _, ok := got["trace_id"]; ok {
+		t.Errorf("trace_id should have been filtered, got %v", got)
+	}
+}
+
+func TestMergeConfigFor_EmptyTypesUsesDefaultDriverEnum(t *testing.T) {
+	svc := &TelemetryService{ExemplarKeys: []string{"client"}}
+	cfg := svc.mergeConfigFor("exp-a")
+	if _, ok := cfg.driverTypes["power"]; !ok {
+		t.Fatal("empty DriverTypeEnum should fall back to DefaultDriverTypeEnum")
+	}
+	if _, ok := cfg.exemplarKeys["client"]; !ok {
+		t.Fatal("configured exemplar key client missing")
+	}
+	if _, ok := cfg.exemplarKeys["lease_id"]; ok {
+		t.Fatal("custom ExemplarKeys should not include unset lease_id")
+	}
+}
+
+func TestMergeConfigFor_EmptyKeysUsesDefaultExemplarKeys(t *testing.T) {
+	svc := &TelemetryService{DriverTypeEnum: []string{"power"}}
+	cfg := svc.mergeConfigFor("exp-a")
+	if _, ok := cfg.exemplarKeys["lease_id"]; !ok {
+		t.Fatal("empty ExemplarKeys should fall back to DefaultExemplarKeys")
+	}
+	if _, ok := cfg.driverTypes["power"]; !ok {
+		t.Fatal("configured driver type power missing")
+	}
+	if _, ok := cfg.driverTypes["storage"]; ok {
+		t.Fatal("custom DriverTypeEnum should not include unset storage")
+	}
+}
