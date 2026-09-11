@@ -267,6 +267,113 @@ func TestMetricsConn_ScrapeReturnsSendError(t *testing.T) {
 	}
 }
 
+func TestMetricsConn_ScrapeTimesOutWhenSendBlocks(t *testing.T) {
+	unblock := make(chan struct{})
+	c := &metricsConn{
+		send: func(*pb.MetricsStreamResponse) error {
+			<-unblock
+			return nil
+		},
+		done: make(chan struct{}),
+	}
+	t.Cleanup(func() { close(unblock) })
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := c.scrape(context.Background(), 40*time.Millisecond)
+		errCh <- err
+	}()
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, errScrapeTimeout) {
+			t.Fatalf("scrape error = %v, want errScrapeTimeout", err)
+		}
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("scrape blocked on send past scrapeTimeout")
+	}
+}
+
+func TestMetricsConn_ScrapeCancelsWhenSendBlocks(t *testing.T) {
+	unblock := make(chan struct{})
+	started := make(chan struct{})
+	c := &metricsConn{
+		send: func(*pb.MetricsStreamResponse) error {
+			close(started)
+			<-unblock
+			return nil
+		},
+		done: make(chan struct{}),
+	}
+	t.Cleanup(func() { close(unblock) })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := c.scrape(ctx, 5*time.Second)
+		errCh <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scrape did not call send")
+	}
+	cancel()
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("scrape error = %v, want context.Canceled", err)
+		}
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("scrape blocked on send after ctx cancel")
+	}
+}
+
+func TestMetricsConn_ScrapeDoesNotSendWhilePriorSendBlocked(t *testing.T) {
+	var sends atomic.Int32
+	started := make(chan struct{}, 1)
+	unblock := make(chan struct{})
+	c := &metricsConn{
+		send: func(*pb.MetricsStreamResponse) error {
+			sends.Add(1)
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			<-unblock
+			return nil
+		},
+		done: make(chan struct{}),
+	}
+	t.Cleanup(func() { close(unblock) })
+
+	first := make(chan error, 1)
+	go func() {
+		_, err := c.scrape(context.Background(), 40*time.Millisecond)
+		first <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scrape did not call send")
+	}
+	select {
+	case err := <-first:
+		if !errors.Is(err, errScrapeTimeout) {
+			t.Fatalf("first scrape error = %v, want errScrapeTimeout", err)
+		}
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("first scrape blocked on send past scrapeTimeout")
+	}
+
+	_, err := c.scrape(context.Background(), 40*time.Millisecond)
+	if !errors.Is(err, errScrapeTimeout) {
+		t.Fatalf("second scrape error = %v, want errScrapeTimeout", err)
+	}
+	if n := sends.Load(); n != 1 {
+		t.Fatalf("send calls = %d, want 1 (no concurrent stream.Send)", n)
+	}
+}
+
 func TestMetricsConn_ScrapeCancelsWhenDoneClosed(t *testing.T) {
 	started := make(chan struct{})
 	unblockSend := make(chan struct{})
@@ -290,15 +397,15 @@ func TestMetricsConn_ScrapeCancelsWhenDoneClosed(t *testing.T) {
 		t.Fatal("scrape did not call send")
 	}
 	close(done)
-	close(unblockSend)
 	select {
 	case err := <-errCh:
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("scrape error = %v, want context.Canceled", err)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("scrape did not return after done closed")
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("scrape blocked on send after done closed")
 	}
+	close(unblockSend)
 }
 
 func TestUnregisterConn_DoesNotDropReplacement(t *testing.T) {
