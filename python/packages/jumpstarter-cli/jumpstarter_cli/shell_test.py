@@ -990,8 +990,8 @@ class TestRunShellWithLeaseAsync:
         client = _build_fake_client(monitor)
         client.get_status_async.side_effect = grpc.aio.AioRpcError(
             code=grpc.StatusCode.UNAVAILABLE,
-            initial_metadata=None,
-            trailing_metadata=None,
+            initial_metadata=grpc.aio.Metadata(),
+            trailing_metadata=grpc.aio.Metadata(),
             details="exporter offline",
         )
         lease = _make_shell_lease(release=True, lease_ended=False)
