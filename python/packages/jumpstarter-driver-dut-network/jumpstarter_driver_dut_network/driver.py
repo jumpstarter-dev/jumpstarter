@@ -131,7 +131,24 @@ class AddressEntry:
     vlan_id: int | None = None
     public_gateway: str | None = None
 
+    def _validate_ip_field(self) -> None:
+        """Validate `ip` is a real IP address.
+
+        Guards against unvalidated strings flowing into
+        `iproute.add_ip_rule` / dnsmasq config. Skipped when
+        public_gateway is set without vlan_id: that combination requires
+        `ip` to be a valid IPv4 address specifically, which is checked
+        separately in `__post_init__` with a more precise error message.
+        """
+        if self.vlan_id is None and self.public_gateway is not None:
+            return
+        try:
+            ipaddress.ip_address(self.ip)
+        except ValueError as exc:
+            raise ValueError(f"ip is not a valid IP address: {self.ip!r}") from exc
+
     def __post_init__(self) -> None:
+        self._validate_ip_field()
         if self.vlan_id is not None:
             try:
                 self.vlan_id = int(self.vlan_id)
@@ -174,9 +191,9 @@ class AddressEntry:
             return data
         return cls(**{k: v for k, v in data.items() if k in _ADDRESS_FIELDS})
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, str | int | None]:
         """Return a dict suitable for dnsmasq config and serialization."""
-        result: dict[str, Any] = {"ip": self.ip}
+        result: dict[str, str | int | None] = {"ip": self.ip}
         if self.mac:
             result["mac"] = self.mac
         if self.hostname:
@@ -322,6 +339,24 @@ class DutNetwork(Driver):
 
         # Convert raw dicts to AddressEntry instances (YAML deserialization produces dicts).
         self.addresses = [AddressEntry.from_dict(e) for e in self.addresses]
+
+        # All address entries on the same VLAN share a single routing table
+        # (keyed by vlan_id), so they must agree on the same public_gateway.
+        # A different gateway would silently overwrite the shared table's
+        # default route via `ip route replace`.
+        vlan_gateways: dict[int, str] = {}
+        for entry in self.addresses:
+            if entry.vlan_id is None or entry.public_gateway is None:
+                continue
+            existing = vlan_gateways.get(entry.vlan_id)
+            if existing is None:
+                vlan_gateways[entry.vlan_id] = entry.public_gateway
+            elif existing != entry.public_gateway:
+                raise ValueError(
+                    f"vlan_id {entry.vlan_id} has conflicting public_gateway values "
+                    f"({existing!r} and {entry.public_gateway!r}); all address entries "
+                    "sharing a vlan_id must use the same public_gateway"
+                )
 
         if self.nat_mode == "1to1":
             has_public = any(entry.public_ip for entry in self.addresses)
@@ -492,7 +527,6 @@ class DutNetwork(Driver):
         for entry in self.addresses:
             nat_if = self._nat_iface_for(entry)
             if entry.vlan_id is not None:
-                nat_if = nat_if
                 self._setup_vlan_interface(parent, entry, nat_if)
             if entry.public_gateway:
                 gateway = self._resolve_ip(entry.public_gateway)

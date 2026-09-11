@@ -150,6 +150,14 @@ Linux interface names are limited to 15 characters, so
 `<upstream>.<vlan_id>` must fit that limit.  VLAN IDs 253–255 cannot be used
 with `public_gateway` because those routing-table IDs are reserved by the kernel.
 
+All address entries that share the same `vlan_id` share a single policy
+routing table (keyed by the VLAN ID), so they **must use the same
+`public_gateway`**. Configuring different gateways for entries on the same
+VLAN is rejected at validation time. If different DUTs need different
+gateways, put them on separate VLANs, or use untagged source-IP PBR
+(`public_gateway` without `vlan_id`), which gives each DUT its own routing
+table.
+
 #### Mixed VLAN and untagged addresses
 
 Tagged and untagged entries can coexist on the same exporter.  The
@@ -361,6 +369,39 @@ When NetworkManager is detected, the driver marks managed interfaces as `unmanag
 The driver uses a dedicated nftables table (named after the interface) that
 does not conflict with firewalld or other nftables users.
 ```
+
+## Known Limitations
+
+```{warning}
+This driver is designed for dedicated exporter hosts, not shared or
+multi-purpose machines. The limitations below stem from that assumption.
+```
+
+- **One driver instance per host.** Running multiple instances of this
+  driver on the same host (for example, multiple exporters sharing one
+  sidekick) is not supported. Each instance assumes it owns any VLAN
+  interfaces, PBR tables/rules, and nftables state matching its
+  configuration, and cleanup does not distinguish between state created by
+  itself versus another instance.
+
+- **Cleanup is unconditional, not ownership-tracked.** On shutdown, the
+  driver deletes every VLAN sub-interface, PBR rule, and nftables rule it is
+  *configured* for — even if that resource already existed before the
+  driver started (e.g. created by another tool or a previous unclean exit).
+  This is intentional: it guarantees idempotent recreation after a crash,
+  but it means the driver should not be pointed at interfaces or routing
+  tables managed by anything else.
+
+- **Same-VLAN entries must share one `public_gateway`.** All address
+  entries with the same `vlan_id` route through a single shared PBR table
+  (keyed by the VLAN ID). Different `public_gateway` values on the same
+  VLAN are rejected at configuration validation. Use separate VLAN IDs, or
+  untagged source-IP PBR, if independent per-DUT gateways are required.
+
+- **Untagged PBR requires an IPv4 DUT address.** `public_gateway` without
+  `vlan_id` derives the routing-table ID from `int(IPv4Address(ip))`, so the
+  DUT's `ip` must be a valid IPv4 address in that case. VLAN-tagged PBR has
+  no such restriction since it keys on `vlan_id` instead.
 
 ## Troubleshooting
 

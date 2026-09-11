@@ -612,6 +612,44 @@ class TestAddressEntryValidation:
                 }],
             )
 
+    def test_invalid_ip_with_vlan_and_gateway_rejected(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="ip is not a valid IP address"):
+            _make_driver(
+                tmp_path,
+                addresses=[{
+                    "ip": "not-an-ip",
+                    "vlan_id": 905,
+                    "public_gateway": "203.0.113.254",
+                }],
+            )
+
+    def test_invalid_ip_without_gateway_rejected(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="ip is not a valid IP address"):
+            _make_driver(
+                tmp_path,
+                addresses=[{"ip": "not-an-ip", "mac": "aa:bb:cc:dd:ee:ff"}],
+            )
+
+    def test_same_vlan_conflicting_gateways_rejected(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="conflicting public_gateway"):
+            _make_driver(
+                tmp_path,
+                addresses=[
+                    {"ip": "192.168.100.10", "vlan_id": 905, "public_gateway": "203.0.113.254"},
+                    {"ip": "192.168.100.11", "vlan_id": 905, "public_gateway": "203.0.113.253"},
+                ],
+            )
+
+    def test_same_vlan_same_gateway_allowed(self, tmp_path: Path):
+        driver, _, _, _ = _make_driver(
+            tmp_path,
+            addresses=[
+                {"ip": "192.168.100.10", "vlan_id": 905, "public_gateway": "203.0.113.254"},
+                {"ip": "192.168.100.11", "vlan_id": 905, "public_gateway": "203.0.113.254"},
+            ],
+        )
+        assert len(driver.addresses) == 2
+
 
 class TestVlanSetupMasquerade:
     def test_creates_vlan_and_sysctls(self, tmp_path: Path):
