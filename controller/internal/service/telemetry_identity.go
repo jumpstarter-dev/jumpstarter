@@ -23,6 +23,7 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // exporterIdentity is the exporter CRD namespace/name claimed by a bearer token.
@@ -56,7 +57,11 @@ func (s *TelemetryService) authenticateExporter(ctx context.Context) (exporterId
 	}
 	subject, err := s.Signer.ParseSubject(token)
 	if err != nil {
-		return exporterIdentity{}, status.Errorf(codes.Unauthenticated, "invalid token: %v", err)
+		// Do not wrap the jwt parse error into the gRPC status: clients
+		// would learn why verification failed (expired vs bad signature vs
+		// malformed). RouterService likewise returns a generic client message.
+		log.FromContext(ctx).V(1).Info("telemetry token parse failed", "error", err.Error())
+		return exporterIdentity{}, status.Error(codes.Unauthenticated, "invalid token")
 	}
 	return parseExporterSubject(subject)
 }
