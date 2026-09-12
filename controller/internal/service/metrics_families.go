@@ -189,7 +189,11 @@ func dtoHistogramMetrics(family string, samples []*pb.MetricsSample) ([]*dto.Met
 		}
 		switch {
 		case sname == family+"_count":
-			agg.count = uint64(sample.GetValue())
+			count, err := uint64Count(sample.GetValue())
+			if err != nil {
+				return nil, err
+			}
+			agg.count = count
 		case sname == family+"_sum":
 			agg.sum = sample.GetValue()
 		case isBucket || sname == family+"_bucket":
@@ -197,7 +201,10 @@ func dtoHistogramMetrics(family string, samples []*pb.MetricsSample) ([]*dto.Met
 			if err != nil {
 				return nil, fmt.Errorf("bucket le %q: %w", le, err)
 			}
-			count := uint64(sample.GetValue())
+			count, err := uint64Count(sample.GetValue())
+			if err != nil {
+				return nil, err
+			}
 			agg.buckets = append(agg.buckets, &dto.Bucket{
 				CumulativeCount: &count,
 				UpperBound:      &bound,
@@ -239,7 +246,10 @@ func dtoSummaryMetrics(family string, samples []*pb.MetricsSample) ([]*dto.Metri
 			continue
 		}
 		labels := dtoLabels(sample.GetLabels())
-		base, qv, isQuantile := splitQuantileLabel(labels)
+		base, qv, isQuantile, err := splitQuantileLabel(labels)
+		if err != nil {
+			return nil, err
+		}
 		key := labelsKey(base)
 		agg, ok := grouped[key]
 		if !ok {
@@ -249,7 +259,11 @@ func dtoSummaryMetrics(family string, samples []*pb.MetricsSample) ([]*dto.Metri
 		}
 		switch sample.GetName() {
 		case family + "_count":
-			agg.count = uint64(sample.GetValue())
+			count, err := uint64Count(sample.GetValue())
+			if err != nil {
+				return nil, err
+			}
+			agg.count = count
 		case family + "_sum":
 			agg.sum = sample.GetValue()
 		default:
@@ -288,20 +302,28 @@ func splitLeLabel(labels []*dto.LabelPair) (base []*dto.LabelPair, le string, ok
 	return base, le, ok
 }
 
-func splitQuantileLabel(labels []*dto.LabelPair) (base []*dto.LabelPair, q float64, ok bool) {
+func splitQuantileLabel(labels []*dto.LabelPair) (base []*dto.LabelPair, q float64, ok bool, err error) {
 	base = make([]*dto.LabelPair, 0, len(labels))
 	for _, lp := range labels {
 		if lp.GetName() == "quantile" {
-			v, err := strconv.ParseFloat(lp.GetValue(), 64)
-			if err == nil {
-				q = v
-				ok = true
+			v, perr := strconv.ParseFloat(lp.GetValue(), 64)
+			if perr != nil {
+				return nil, 0, false, fmt.Errorf("quantile %q: %w", lp.GetValue(), perr)
 			}
+			q = v
+			ok = true
 			continue
 		}
 		base = append(base, lp)
 	}
-	return base, q, ok
+	return base, q, ok, nil
+}
+
+func uint64Count(v float64) (uint64, error) {
+	if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v != math.Trunc(v) {
+		return 0, fmt.Errorf("invalid count %v", v)
+	}
+	return uint64(v), nil
 }
 
 func parseLe(le string) (float64, error) {

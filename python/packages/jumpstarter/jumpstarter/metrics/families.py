@@ -18,6 +18,8 @@ _TYPE_MAP = {
     "gauge": telemetry_pb2.METRICS_TYPE_GAUGE,
     "histogram": telemetry_pb2.METRICS_TYPE_HISTOGRAM,
     "gaugehistogram": telemetry_pb2.METRICS_TYPE_HISTOGRAM,
+    "info": telemetry_pb2.METRICS_TYPE_GAUGE,
+    "stateset": telemetry_pb2.METRICS_TYPE_GAUGE,
     "summary": telemetry_pb2.METRICS_TYPE_SUMMARY,
     "untyped": telemetry_pb2.METRICS_TYPE_UNTYPED,
     "unknown": telemetry_pb2.METRICS_TYPE_UNTYPED,
@@ -31,10 +33,15 @@ def _family_name(metric: Any) -> str:
     family name. The hub OpenMetrics encoder treats a counter without that
     suffix as ``unknown``, and text-path snapshots already use the ``_total``
     name, so mixed exporters would otherwise fail to merge.
+
+    ``Info`` collectors use type ``info`` and a family name without ``_info``;
+    OpenMetrics appends that suffix, so the sidecar does the same.
     """
     name = metric.name
     if metric.type == "counter" and not name.endswith("_total"):
         return f"{name}_total"
+    if metric.type == "info" and not name.endswith("_info"):
+        return f"{name}_info"
     return name
 
 
