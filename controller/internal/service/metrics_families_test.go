@@ -18,6 +18,7 @@ package service
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
@@ -246,5 +247,99 @@ func TestMergeSnapshots_PrefersFamiliesOverUnparseableText(t *testing.T) {
 	}
 	if !foundLease {
 		t.Errorf("lease_id missing from filtered exemplar: %v", ex.GetLabel())
+	}
+}
+
+func TestDtoFromProtoFamilies_RejectsMalformedSummaryQuantile(t *testing.T) {
+	_, err := dtoFromProtoFamilies([]*pb.MetricsFamily{{
+		Name: "rpc_latency_seconds",
+		Help: "RPC latency.",
+		Type: pb.MetricsType_METRICS_TYPE_SUMMARY,
+		Samples: []*pb.MetricsSample{
+			{
+				Name:   "rpc_latency_seconds",
+				Labels: pbL("quantile", "not-a-number"),
+				Value:  0.2,
+			},
+			{
+				Name:  "rpc_latency_seconds_count",
+				Value: 10,
+			},
+			{
+				Name:  "rpc_latency_seconds_sum",
+				Value: 1.5,
+			},
+		},
+	}})
+	if err == nil {
+		t.Fatal("expected error for non-numeric quantile label")
+	}
+}
+
+func TestDtoFromProtoFamilies_RejectsInvalidCounts(t *testing.T) {
+	cases := []struct {
+		name    string
+		family  *pb.MetricsFamily
+		wantErr string
+	}{
+		{
+			name: "histogram negative count",
+			family: &pb.MetricsFamily{
+				Name: "op_duration_seconds",
+				Type: pb.MetricsType_METRICS_TYPE_HISTOGRAM,
+				Samples: []*pb.MetricsSample{
+					{Name: "op_duration_seconds_count", Value: -1},
+					{Name: "op_duration_seconds_sum", Value: 0.1},
+				},
+			},
+			wantErr: "count",
+		},
+		{
+			name: "histogram fractional count",
+			family: &pb.MetricsFamily{
+				Name: "op_duration_seconds",
+				Type: pb.MetricsType_METRICS_TYPE_HISTOGRAM,
+				Samples: []*pb.MetricsSample{
+					{Name: "op_duration_seconds_count", Value: 1.5},
+					{Name: "op_duration_seconds_sum", Value: 0.1},
+				},
+			},
+			wantErr: "count",
+		},
+		{
+			name: "histogram nan bucket",
+			family: &pb.MetricsFamily{
+				Name: "op_duration_seconds",
+				Type: pb.MetricsType_METRICS_TYPE_HISTOGRAM,
+				Samples: []*pb.MetricsSample{
+					{Name: "op_duration_seconds_bucket", Labels: pbL("le", "+Inf"), Value: math.NaN()},
+					{Name: "op_duration_seconds_count", Value: 1},
+				},
+			},
+			wantErr: "count",
+		},
+		{
+			name: "summary infinite count",
+			family: &pb.MetricsFamily{
+				Name: "rpc_latency_seconds",
+				Type: pb.MetricsType_METRICS_TYPE_SUMMARY,
+				Samples: []*pb.MetricsSample{
+					{Name: "rpc_latency_seconds_count", Value: math.Inf(1)},
+					{Name: "rpc_latency_seconds_sum", Value: 1},
+				},
+			},
+			wantErr: "count",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := dtoFromProtoFamilies([]*pb.MetricsFamily{tc.family})
+			if err == nil {
+				t.Fatal("expected error for invalid count")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("error %q, want substring %q", err, tc.wantErr)
+			}
+		})
 	}
 }

@@ -243,6 +243,29 @@ def test_scrape_response_families_carry_exemplars_without_text_parse():
     }
 
 
+def test_families_from_collector_normalizes_info_and_enum():
+    from prometheus_client import CollectorRegistry, Enum, Info
+    from jumpstarter_protocol import telemetry_pb2
+
+    from jumpstarter.metrics.families import families_from_collector
+
+    registry = CollectorRegistry()
+    Info("jumpstarter_build", "Build metadata", registry=registry).info({"version": "9"})
+    Enum(
+        "jumpstarter_lease",
+        "Lease state",
+        states=["free", "held"],
+        registry=registry,
+    ).state("held")
+
+    fams = {fam.name: fam for fam in families_from_collector(registry)}
+    build = fams["jumpstarter_build_info"]
+    assert build.type == telemetry_pb2.METRICS_TYPE_GAUGE
+    lease = fams["jumpstarter_lease"]
+    assert lease.type == telemetry_pb2.METRICS_TYPE_GAUGE
+    assert "jumpstarter_lease_state" not in fams
+
+
 def test_metrics_http_endpoint_serves_prometheus_text():
     reg = get_registry()
     reg.set_active_sessions(exporter="lab-01", value=2)
