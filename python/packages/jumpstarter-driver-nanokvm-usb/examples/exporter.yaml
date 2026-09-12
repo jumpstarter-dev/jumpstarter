@@ -1,0 +1,19 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: demo
+endpoint: grpc.jumpstarter.example.com:8082
+token: "<token>"
+export:
+  nanokvm-usb:
+    type: jumpstarter_driver_nanokvm_usb.driver.NanoKVMUSB
+    config:
+      serial_port: "/dev/ttyACM0"
+      baud_rate: 57600
+      video_device: 0
+      video_width: 1920
+      video_height: 1080
+      video_fps: 30
+      screen_width: 1920
+      screen_height: 1080
