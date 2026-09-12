@@ -120,6 +120,16 @@ var _ = Describe("exporterSetPolicyRules", func() {
 		Expect(groups).To(HaveKey("coordination.k8s.io"))
 	})
 
+	It("should reconcile runtime network isolation policies", func() {
+		for _, rule := range rules {
+			if containsString(rule.APIGroups, "networking.k8s.io") && containsString(rule.Resources, "networkpolicies") {
+				Expect(rule.Verbs).To(ContainElements("get", "list", "watch", "create", "update", "patch"))
+				return
+			}
+		}
+		Fail("no rule found for runtime network policies")
+	})
+
 	It("should grant read-only access on exportersets (no create/update/delete)", func() {
 		for _, rule := range rules {
 			if containsString(rule.APIGroups, "virtualtarget.jumpstarter.dev") &&
