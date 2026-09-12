@@ -3,7 +3,7 @@ import os
 from logging import Logger
 from typing import Literal
 
-from anyio import fail_after, sleep
+from anyio import fail_after, sleep, to_thread
 from anyio.abc import AnyByteStream
 from anyio.streams.file import FileReadStream, FileWriteStream
 
@@ -86,7 +86,7 @@ async def write_to_storage_device(
                     try:
                         if logger:
                             logger.info("fsyncing storage device {}, please wait".format(storage_device))
-                        os.fsync(file.fileno())
+                        await to_thread.run_sync(os.fsync, file.fileno())
                     except OSError as e:
                         if e.errno == errno.EIO:
                             await sleep(1)
