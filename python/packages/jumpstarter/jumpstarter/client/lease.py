@@ -102,6 +102,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     )  # Called when lease is ending
     lease_ended: bool = field(default=False, init=False)  # Set when lease expires naturally
     lease_transferred: bool = field(default=False, init=False)  # Set when lease is transferred to another client
+    lease_revoked: bool = field(default=False, init=False)  # Set when this (shared) client loses shared access
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -188,10 +189,11 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
             if existing_lease.effective_end_time:
                 raise LeaseError(f"lease {self.name} has already ended")
             if self.client_name and existing_lease.client != self.client_name:
-                raise LeaseError(
-                    f"lease {self.name} belongs to client '{existing_lease.client}', "
-                    f"not the current client '{self.client_name}'"
-                )
+                if not existing_lease.is_accessible_by(self.client_name):
+                    raise LeaseError(
+                        f"lease {self.name} belongs to client '{existing_lease.client}', "
+                        f"not the current client '{self.client_name}'"
+                    )
             if self.selector is not None and existing_lease.selector != self.selector:
                 logger.warning(
                     "Existing lease from env or flag %s has selector '%s' but requested selector is '%s'. "

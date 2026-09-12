@@ -60,6 +60,12 @@ type LeaseSpec struct {
 	// Immutable after creation. Maximum 8 entries; keys max 32 chars, values max 64 chars.
 	// +kubebuilder:validation:MaxProperties=8
 	Context map[string]string `json:"context,omitempty"`
+	// List of client names that have shared access to this lease.
+	// Only the lease owner can modify this list.
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=10
+	// (keep MaxItems in sync with MaxSharedWithEntries)
+	SharedWith []string `json:"sharedWith,omitempty"`
 }
 
 // LeaseStatus defines the observed state of Lease.
@@ -76,6 +82,11 @@ type LeaseStatus struct {
 	Priority int `json:"priority,omitempty"`
 	// SpotAccess indicates whether this lease was granted with spot (preemptible) access.
 	SpotAccess bool `json:"spotAccess,omitempty"`
+	// SharedWith is the effective set of client names granted shared access to
+	// this lease. It is derived by the controller from Spec.SharedWith after
+	// evaluating exporter access policies; Spec.SharedWith remains the owner's
+	// desired intent and is never mutated by the controller.
+	SharedWith []string `json:"sharedWith,omitempty"`
 	// Conditions represent the latest available observations of the lease state.
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
@@ -96,6 +107,11 @@ const (
 	LeaseLabelEndedValue   string     = "true"
 	LeaseTagMetadataPrefix string     = "metadata.jumpstarter.dev/"
 )
+
+// MaxSharedWithEntries is the maximum number of clients a lease may be shared
+// with. Keep in sync with the +kubebuilder:validation:MaxItems marker on
+// LeaseSpec.SharedWith (marker values cannot reference Go constants).
+const MaxSharedWithEntries = 10
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
