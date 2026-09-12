@@ -200,6 +200,72 @@ def test_exemplars_include_client_and_lease_id():
     )
 
 
+def test_scrape_response_families_carry_exemplars_without_text_parse():
+    from jumpstarter_protocol import telemetry_pb2
+
+    from jumpstarter.metrics.families import scrape_response_from_registry
+
+    reg = get_registry()
+    reg.record_operation(
+        exporter="lab-01",
+        operation="on",
+        result="success",
+        driver_type="power",
+        duration_seconds=0.01,
+        exemplars={"client": "ci-bot", "lease_id": "lease-xyz"},
+    )
+    resp = scrape_response_from_registry(reg, include_text=True)
+    assert resp.metrics_text
+    names = {fam.name: fam for fam in resp.families}
+    assert "jumpstarter_operations_total" in names
+    assert "jumpstarter_operation_duration_seconds" in names
+
+    counter = names["jumpstarter_operations_total"]
+    assert counter.type == telemetry_pb2.METRICS_TYPE_COUNTER
+    assert counter.samples
+    ex_labels = {lp.name: lp.value for lp in counter.samples[0].exemplar.labels}
+    assert ex_labels["client"] == "ci-bot"
+    assert ex_labels["lease_id"] == "lease-xyz"
+
+    hist = names["jumpstarter_operation_duration_seconds"]
+    buckets = [s for s in hist.samples if s.name.endswith("_bucket")]
+    assert buckets
+    bucket_ex = next((s.exemplar for s in buckets if s.HasField("exemplar") and s.exemplar.labels), None)
+    assert bucket_ex is not None
+    assert {lp.name: lp.value for lp in bucket_ex.labels}["lease_id"] == "lease-xyz"
+    assert not any(s.name.endswith("_created") for fam in resp.families for s in fam.samples)
+
+    textless = scrape_response_from_registry(reg, include_text=False)
+    assert not textless.metrics_text
+    assert {fam.name for fam in textless.families} >= {
+        "jumpstarter_operations_total",
+        "jumpstarter_operation_duration_seconds",
+    }
+
+
+def test_families_from_collector_normalizes_info_and_enum():
+    from prometheus_client import CollectorRegistry, Enum, Info
+    from jumpstarter_protocol import telemetry_pb2
+
+    from jumpstarter.metrics.families import families_from_collector
+
+    registry = CollectorRegistry()
+    Info("jumpstarter_build", "Build metadata", registry=registry).info({"version": "9"})
+    Enum(
+        "jumpstarter_lease",
+        "Lease state",
+        states=["free", "held"],
+        registry=registry,
+    ).state("held")
+
+    fams = {fam.name: fam for fam in families_from_collector(registry)}
+    build = fams["jumpstarter_build_info"]
+    assert build.type == telemetry_pb2.METRICS_TYPE_GAUGE
+    lease = fams["jumpstarter_lease"]
+    assert lease.type == telemetry_pb2.METRICS_TYPE_GAUGE
+    assert "jumpstarter_lease_state" not in fams
+
+
 def test_metrics_http_endpoint_serves_prometheus_text():
     reg = get_registry()
     reg.set_active_sessions(exporter="lab-01", value=2)

@@ -1,0 +1,936 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package service
+
+import (
+	"context"
+	"errors"
+	"io"
+	"net"
+	"net/http"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/test/bufconn"
+)
+
+const bufconnSize = 1024 * 1024
+
+func startTestHub(t *testing.T, timeout time.Duration) (*TelemetryService, pb.TelemetryServiceClient, string) {
+	t.Helper()
+	signer := testSigner(t)
+	svc := &TelemetryService{
+		Signer:          signer,
+		MetricsBindAddr: "127.0.0.1:0",
+		ScrapeTimeout:   timeout,
+		DriverTypeEnum:  DefaultDriverTypeEnum,
+		ExemplarKeys:    DefaultExemplarKeys,
+	}
+	svc.grpcReady.Store(true)
+
+	shutdown, err := svc.startMetricsHTTP()
+	if err != nil {
+		t.Fatalf("startMetricsHTTP: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = shutdown(ctx)
+	})
+
+	lis := bufconn.Listen(bufconnSize)
+	gs := grpc.NewServer()
+	pb.RegisterTelemetryServiceServer(gs, svc)
+	go func() { _ = gs.Serve(lis) }()
+	t.Cleanup(func() {
+		gs.Stop()
+		_ = lis.Close()
+	})
+
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return lis.DialContext(ctx)
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("grpc.NewClient: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	return svc, pb.NewTelemetryServiceClient(conn), svc.metricsAddr
+}
+
+func exporterStreamCtx(t *testing.T, svc *TelemetryService, subject string) context.Context {
+	t.Helper()
+	token, err := svc.Signer.Token(subject)
+	if err != nil {
+		t.Fatalf("Token: %v", err)
+	}
+	return metadata.NewOutgoingContext(
+		context.Background(),
+		metadata.Pairs("authorization", "Bearer "+token),
+	)
+}
+
+func waitRegistered(t *testing.T, svc *TelemetryService, n int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		conns := svc.snapshotConns()
+		if len(conns) != n {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		ready := true
+		for _, c := range conns {
+			if c.started == nil {
+				ready = false
+				break
+			}
+			select {
+			case <-c.started:
+			default:
+				ready = false
+			}
+			if !ready {
+				break
+			}
+		}
+		if ready {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %d MetricsStream connections, have %d", n, len(svc.snapshotConns()))
+}
+
+func httpGet(t *testing.T, url string) (int, string) {
+	t.Helper()
+	client := &http.Client{Timeout: 3 * time.Second}
+	var resp *http.Response
+	var lastErr error
+	for i := 0; i < 30; i++ {
+		resp, lastErr = client.Get(url)
+		if lastErr == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if lastErr != nil {
+		t.Fatalf("GET %s: %v", url, lastErr)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	return resp.StatusCode, string(body)
+}
+
+func TestHealthzAndReadyz(t *testing.T) {
+	_, _, addr := startTestHub(t, 200*time.Millisecond)
+	code, body := httpGet(t, "http://"+addr+"/healthz")
+	if code != http.StatusOK || !strings.Contains(body, "ok") {
+		t.Fatalf("healthz status=%d body=%q", code, body)
+	}
+	code, body = httpGet(t, "http://"+addr+"/readyz")
+	if code != http.StatusOK || !strings.Contains(body, "ok") {
+		t.Fatalf("readyz status=%d body=%q", code, body)
+	}
+}
+
+func TestReadyzNotReadyWhenGRPCDown(t *testing.T) {
+	svc := &TelemetryService{MetricsBindAddr: "127.0.0.1:0"}
+	shutdown, err := svc.startMetricsHTTP()
+	if err != nil {
+		t.Fatalf("startMetricsHTTP: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = shutdown(ctx)
+	})
+	code, _ := httpGet(t, "http://"+svc.metricsAddr+"/readyz")
+	if code != http.StatusServiceUnavailable {
+		t.Fatalf("readyz status=%d, want 503", code)
+	}
+}
+
+func TestMetricsStream_RejectsIdentityMismatch(t *testing.T) {
+	svc, client, _ := startTestHub(t, time.Second)
+	ctx := exporterStreamCtx(t, svc, "exporter:jumpstarter:alice:uid1")
+	stream, err := client.MetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("MetricsStream: %v", err)
+	}
+	if err := stream.Send(&pb.MetricsStreamRequest{
+		Msg: &pb.MetricsStreamRequest_Register{
+			Register: &pb.MetricsRegister{Identity: "bob"},
+		},
+	}); err != nil {
+		t.Fatalf("Send register: %v", err)
+	}
+	_, err = stream.Recv()
+	if err == nil {
+		t.Fatal("expected PermissionDenied, got nil")
+	}
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("code = %v, want PermissionDenied (%v)", status.Code(err), err)
+	}
+}
+
+func TestMetricsStream_RejectsNonRegisterFirstMessage(t *testing.T) {
+	svc, client, _ := startTestHub(t, time.Second)
+	ctx := exporterStreamCtx(t, svc, "exporter:jumpstarter:alice:uid1")
+	stream, err := client.MetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("MetricsStream: %v", err)
+	}
+	if err := stream.Send(&pb.MetricsStreamRequest{
+		Msg: &pb.MetricsStreamRequest_ScrapeResponse{
+			ScrapeResponse: &pb.MetricsScrapeResponse{MetricsText: []byte("# EOF\n")},
+		},
+	}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	_, err = stream.Recv()
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("code = %v, want InvalidArgument (%v)", status.Code(err), err)
+	}
+}
+
+func TestMetricsStream_RejectsNonExporterToken(t *testing.T) {
+	svc, client, _ := startTestHub(t, time.Second)
+	ctx := exporterStreamCtx(t, svc, "client:jumpstarter:ci:uid1")
+	stream, err := client.MetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("MetricsStream: %v", err)
+	}
+	if err := stream.Send(&pb.MetricsStreamRequest{
+		Msg: &pb.MetricsStreamRequest_Register{
+			Register: &pb.MetricsRegister{Identity: "ci"},
+		},
+	}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	_, err = stream.Recv()
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("code = %v, want PermissionDenied (%v)", status.Code(err), err)
+	}
+}
+
+func TestMetricsConn_ScrapeTimeout(t *testing.T) {
+	done := make(chan struct{})
+	c := &metricsConn{
+		send: func(*pb.MetricsStreamResponse) error { return nil },
+		done: done,
+	}
+	_, err := c.scrape(context.Background(), 40*time.Millisecond)
+	if !errors.Is(err, errScrapeTimeout) {
+		t.Fatalf("err = %v, want errScrapeTimeout", err)
+	}
+}
+
+func TestMetricsConn_ScrapeReturnsSendError(t *testing.T) {
+	sentinel := errors.New("send failed")
+	c := &metricsConn{
+		send: func(*pb.MetricsStreamResponse) error { return sentinel },
+		done: make(chan struct{}),
+	}
+	_, err := c.scrape(context.Background(), time.Second)
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("scrape error = %v, want sentinel %v", err, sentinel)
+	}
+}
+
+func TestMetricsConn_ScrapeTimesOutWhenSendBlocks(t *testing.T) {
+	unblock := make(chan struct{})
+	c := &metricsConn{
+		send: func(*pb.MetricsStreamResponse) error {
+			<-unblock
+			return nil
+		},
+		done: make(chan struct{}),
+	}
+	t.Cleanup(func() { close(unblock) })
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := c.scrape(context.Background(), 40*time.Millisecond)
+		errCh <- err
+	}()
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, errScrapeTimeout) {
+			t.Fatalf("scrape error = %v, want errScrapeTimeout", err)
+		}
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("scrape blocked on send past scrapeTimeout")
+	}
+}
+
+func TestMetricsConn_ScrapeCancelsWhenSendBlocks(t *testing.T) {
+	unblock := make(chan struct{})
+	started := make(chan struct{})
+	c := &metricsConn{
+		send: func(*pb.MetricsStreamResponse) error {
+			close(started)
+			<-unblock
+			return nil
+		},
+		done: make(chan struct{}),
+	}
+	t.Cleanup(func() { close(unblock) })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := c.scrape(ctx, 5*time.Second)
+		errCh <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scrape did not call send")
+	}
+	cancel()
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("scrape error = %v, want context.Canceled", err)
+		}
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("scrape blocked on send after ctx cancel")
+	}
+}
+
+func TestMetricsConn_ScrapeDoesNotSendWhilePriorSendBlocked(t *testing.T) {
+	var sends atomic.Int32
+	started := make(chan struct{}, 1)
+	unblock := make(chan struct{})
+	c := &metricsConn{
+		send: func(*pb.MetricsStreamResponse) error {
+			sends.Add(1)
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			<-unblock
+			return nil
+		},
+		done: make(chan struct{}),
+	}
+	t.Cleanup(func() { close(unblock) })
+
+	first := make(chan error, 1)
+	go func() {
+		_, err := c.scrape(context.Background(), 40*time.Millisecond)
+		first <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scrape did not call send")
+	}
+	select {
+	case err := <-first:
+		if !errors.Is(err, errScrapeTimeout) {
+			t.Fatalf("first scrape error = %v, want errScrapeTimeout", err)
+		}
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("first scrape blocked on send past scrapeTimeout")
+	}
+
+	_, err := c.scrape(context.Background(), 40*time.Millisecond)
+	if !errors.Is(err, errScrapeTimeout) {
+		t.Fatalf("second scrape error = %v, want errScrapeTimeout", err)
+	}
+	if n := sends.Load(); n != 1 {
+		t.Fatalf("send calls = %d, want 1 (no concurrent stream.Send)", n)
+	}
+}
+
+func TestMetricsConn_ScrapeCancelsWhenDoneClosed(t *testing.T) {
+	started := make(chan struct{})
+	unblockSend := make(chan struct{})
+	done := make(chan struct{})
+	c := &metricsConn{
+		send: func(*pb.MetricsStreamResponse) error {
+			close(started)
+			<-unblockSend
+			return nil
+		},
+		done: done,
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := c.scrape(context.Background(), 5*time.Second)
+		errCh <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scrape did not call send")
+	}
+	close(done)
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("scrape error = %v, want context.Canceled", err)
+		}
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("scrape blocked on send after done closed")
+	}
+	close(unblockSend)
+}
+
+func TestUnregisterConn_DoesNotDropReplacement(t *testing.T) {
+	svc := &TelemetryService{}
+	svc.initMetricsState()
+	id := exporterIdentity{namespace: "jumpstarter", name: "sidekick"}
+	first := &metricsConn{id: id}
+	second := &metricsConn{id: id}
+	svc.registerConn(first)
+	svc.registerConn(second)
+	svc.unregisterConn(first)
+	got := svc.snapshotConns()
+	if len(got) != 1 {
+		t.Fatalf("conns = %d, want 1 remaining replacement", len(got))
+	}
+	if got[0] != second {
+		t.Fatal("unregisterConn dropped the replacement connection")
+	}
+}
+
+func TestFanout_TimeoutIncrementsCounterWithoutGRPC(t *testing.T) {
+	svc := &TelemetryService{ScrapeTimeout: 40 * time.Millisecond}
+	svc.initScrapeTimeouts()
+	done := make(chan struct{})
+	c := &metricsConn{
+		id:   exporterIdentity{namespace: "jumpstarter", name: "slow"},
+		send: func(*pb.MetricsStreamResponse) error { return nil },
+		done: done,
+	}
+	svc.registerConn(c)
+	snaps := svc.fanoutScrapes(context.Background())
+	if len(snaps) != 0 {
+		t.Fatalf("timed-out scrape must be omitted, got %d snapshots", len(snaps))
+	}
+	mfs, err := svc.metricsRegistry.Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	value := labeledCounterValue(t, mfs, scrapeTimeoutsMetric, labelExporter, "slow")
+	if value != 1 {
+		t.Fatalf("%s{exporter=slow} = %v, want 1", scrapeTimeoutsMetric, value)
+	}
+}
+
+func TestFanout_TimeoutOmitsExporterAndIncrementsCounter(t *testing.T) {
+	svc, client, addr := startTestHub(t, 150*time.Millisecond)
+	ctx := exporterStreamCtx(t, svc, "exporter:jumpstarter:slow:uid1")
+	stream, err := client.MetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("MetricsStream: %v", err)
+	}
+	if err := stream.Send(&pb.MetricsStreamRequest{
+		Msg: &pb.MetricsStreamRequest_Register{
+			Register: &pb.MetricsRegister{Identity: "slow"},
+		},
+	}); err != nil {
+		t.Fatalf("Send register: %v", err)
+	}
+	// Drain scrape requests so Send on the server does not block, but never reply.
+	go func() {
+		for {
+			if _, err := stream.Recv(); err != nil {
+				return
+			}
+		}
+	}()
+	waitRegistered(t, svc, 1)
+
+	code, body := httpGet(t, "http://"+addr+"/metrics")
+	if code != http.StatusOK {
+		t.Fatalf("GET /metrics status=%d body=%s", code, body)
+	}
+	if strings.Contains(body, "jumpstarter_operations_total") {
+		t.Errorf("timed-out exporter metrics must be omitted, body:\n%s", body)
+	}
+	if !strings.Contains(body, `jumpstarter_scrape_timeouts_total{exporter="slow"}`) {
+		t.Errorf("hub timeout counter missing exporter label:\n%s", body)
+	}
+	mfs, err := svc.metricsRegistry.Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	value := labeledCounterValue(t, mfs, scrapeTimeoutsMetric, labelExporter, "slow")
+	if value != 1 {
+		t.Fatalf("%s{exporter=slow} = %v, want 1 body:\n%s", scrapeTimeoutsMetric, value, body)
+	}
+}
+
+func TestFanout_MergesOpenMetricsFromConnectedExporter(t *testing.T) {
+	svc, client, addr := startTestHub(t, time.Second)
+	ctx := exporterStreamCtx(t, svc, "exporter:jumpstarter:sidekick:uid1")
+	stream, err := client.MetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("MetricsStream: %v", err)
+	}
+	if err := stream.Send(&pb.MetricsStreamRequest{
+		Msg: &pb.MetricsStreamRequest_Register{
+			Register: &pb.MetricsRegister{Identity: "sidekick"},
+		},
+	}); err != nil {
+		t.Fatalf("Send register: %v", err)
+	}
+
+	snapshot := []byte(`# TYPE jumpstarter_operations_total counter
+# HELP jumpstarter_operations_total Total operations performed.
+jumpstarter_operations_total{exporter="spoofed",operation="on",result="success",driver_type="tuya"} 4.0
+# EOF
+`)
+	errCh := make(chan error, 1)
+	go func() {
+		for {
+			msg, err := stream.Recv()
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if msg.GetScrapeRequest() == nil {
+				continue
+			}
+			if err := stream.Send(&pb.MetricsStreamRequest{
+				Msg: &pb.MetricsStreamRequest_ScrapeResponse{
+					ScrapeResponse: &pb.MetricsScrapeResponse{MetricsText: snapshot},
+				},
+			}); err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+	waitRegistered(t, svc, 1)
+
+	code, body := httpGet(t, "http://"+addr+"/metrics")
+	if code != http.StatusOK {
+		t.Fatalf("GET /metrics status=%d body=%s", code, body)
+	}
+	if !strings.Contains(body, `exporter="sidekick"`) {
+		t.Errorf("authenticated exporter label missing:\n%s", body)
+	}
+	if strings.Contains(body, `exporter="spoofed"`) {
+		t.Errorf("spoofed exporter label must be overwritten:\n%s", body)
+	}
+	if !strings.Contains(body, `driver_type="other"`) {
+		t.Errorf("unknown driver_type must remap to other:\n%s", body)
+	}
+	select {
+	case err := <-errCh:
+		if err != nil && err != io.EOF && status.Code(err) != codes.Canceled && status.Code(err) != codes.Unavailable {
+			t.Fatalf("stream goroutine: %v", err)
+		}
+	default:
+	}
+}
+
+func TestFanout_HubMetricsWinOverExporterNameCollision(t *testing.T) {
+	svc, client, addr := startTestHub(t, time.Second)
+	ctx := exporterStreamCtx(t, svc, "exporter:jumpstarter:sidekick:uid1")
+	stream, err := client.MetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("MetricsStream: %v", err)
+	}
+	if err := stream.Send(&pb.MetricsStreamRequest{
+		Msg: &pb.MetricsStreamRequest_Register{
+			Register: &pb.MetricsRegister{Identity: "sidekick"},
+		},
+	}); err != nil {
+		t.Fatalf("Send register: %v", err)
+	}
+
+	snapshot := []byte(`# TYPE jumpstarter_scrape_timeouts_total counter
+# HELP jumpstarter_scrape_timeouts_total spoofed by exporter
+jumpstarter_scrape_timeouts_total{exporter="sidekick"} 999
+# TYPE jumpstarter_operations_total counter
+jumpstarter_operations_total{operation="on",result="success",driver_type="power"} 4.0
+# EOF
+`)
+	errCh := make(chan error, 1)
+	go func() {
+		for {
+			msg, err := stream.Recv()
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if msg.GetScrapeRequest() == nil {
+				continue
+			}
+			if err := stream.Send(&pb.MetricsStreamRequest{
+				Msg: &pb.MetricsStreamRequest_ScrapeResponse{
+					ScrapeResponse: &pb.MetricsScrapeResponse{MetricsText: snapshot},
+				},
+			}); err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+	waitRegistered(t, svc, 1)
+
+	code, body := httpGet(t, "http://"+addr+"/metrics")
+	if code != http.StatusOK {
+		t.Fatalf("GET /metrics status=%d body=%s", code, body)
+	}
+	if !strings.Contains(body, "jumpstarter_operations_total") {
+		t.Errorf("non-colliding exporter series missing:\n%s", body)
+	}
+	if strings.Contains(body, `jumpstarter_scrape_timeouts_total{exporter="sidekick"}`) {
+		t.Errorf("exporter must not overwrite hub scrape-timeout family:\n%s", body)
+	}
+	if strings.Contains(body, "spoofed by exporter") {
+		t.Errorf("exporter HELP text overwrote hub metric:\n%s", body)
+	}
+
+	select {
+	case err := <-errCh:
+		if err != nil && err != io.EOF && status.Code(err) != codes.Canceled && status.Code(err) != codes.Unavailable {
+			t.Fatalf("stream goroutine: %v", err)
+		}
+	default:
+	}
+}
+
+func TestFanout_UnparseableSnapshotIncrementsParseErrorsOnSameResponse(t *testing.T) {
+	svc, client, addr := startTestHub(t, time.Second)
+	ctx := exporterStreamCtx(t, svc, "exporter:jumpstarter:sidekick:uid1")
+	stream, err := client.MetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("MetricsStream: %v", err)
+	}
+	if err := stream.Send(&pb.MetricsStreamRequest{
+		Msg: &pb.MetricsStreamRequest_Register{
+			Register: &pb.MetricsRegister{Identity: "sidekick"},
+		},
+	}); err != nil {
+		t.Fatalf("Send register: %v", err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		for {
+			msg, err := stream.Recv()
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if msg.GetScrapeRequest() == nil {
+				continue
+			}
+			if err := stream.Send(&pb.MetricsStreamRequest{
+				Msg: &pb.MetricsStreamRequest_ScrapeResponse{
+					ScrapeResponse: &pb.MetricsScrapeResponse{MetricsText: []byte(pythonOpenMetricsWithExemplar)},
+				},
+			}); err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+	waitRegistered(t, svc, 1)
+
+	code, body := httpGet(t, "http://"+addr+"/metrics")
+	if code != http.StatusOK {
+		t.Fatalf("GET /metrics status=%d body=%s", code, body)
+	}
+	if strings.Contains(body, "jumpstarter_operation_duration_seconds") {
+		t.Errorf("unparsable exporter snapshot must be omitted, body:\n%s", body)
+	}
+	if !strings.Contains(body, metricsParseErrorsMetric) || !strings.Contains(body, `exporter="sidekick"`) {
+		t.Errorf("parse-error counter missing from same /metrics response:\n%s", body)
+	}
+
+	mfs, err := svc.metricsRegistry.Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	value := labeledCounterValue(t, mfs, metricsParseErrorsMetric, labelExporter, "sidekick")
+	if value != 1 {
+		t.Fatalf("%s{exporter=sidekick} = %v, want 1 body:\n%s", metricsParseErrorsMetric, value, body)
+	}
+
+	select {
+	case err := <-errCh:
+		if err != nil && err != io.EOF && status.Code(err) != codes.Canceled && status.Code(err) != codes.Unavailable {
+			t.Fatalf("stream goroutine: %v", err)
+		}
+	default:
+	}
+}
+
+func TestFanout_StructuredFamiliesKeepHistogramExemplars(t *testing.T) {
+	svc, client, addr := startTestHub(t, time.Second)
+	ctx := exporterStreamCtx(t, svc, "exporter:jumpstarter:sidekick:uid1")
+	stream, err := client.MetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("MetricsStream: %v", err)
+	}
+	if err := stream.Send(&pb.MetricsStreamRequest{
+		Msg: &pb.MetricsStreamRequest_Register{
+			Register: &pb.MetricsRegister{Identity: "sidekick"},
+		},
+	}); err != nil {
+		t.Fatalf("Send register: %v", err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		for {
+			msg, err := stream.Recv()
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if msg.GetScrapeRequest() == nil {
+				continue
+			}
+			if err := stream.Send(&pb.MetricsStreamRequest{
+				Msg: &pb.MetricsStreamRequest_ScrapeResponse{
+					ScrapeResponse: &pb.MetricsScrapeResponse{
+						MetricsText: []byte(pythonOpenMetricsWithExemplar),
+						Families: []*pb.MetricsFamily{{
+							Name: "jumpstarter_operation_duration_seconds",
+							Help: "Duration of each operation.",
+							Type: pb.MetricsType_METRICS_TYPE_HISTOGRAM,
+							Samples: []*pb.MetricsSample{
+								{
+									Name:   "jumpstarter_operation_duration_seconds_bucket",
+									Labels: pbL("le", "0.005", "operation", "on", "result", "success", "driver_type", "power"),
+									Value:  1,
+									Exemplar: &pb.MetricsExemplar{
+										Labels: pbL("lease_id", "lease-1"),
+										Value:  0.00262,
+									},
+								},
+								{
+									Name:   "jumpstarter_operation_duration_seconds_sum",
+									Labels: pbL("operation", "on", "result", "success", "driver_type", "power"),
+									Value:  0.00262,
+								},
+								{
+									Name:   "jumpstarter_operation_duration_seconds_count",
+									Labels: pbL("operation", "on", "result", "success", "driver_type", "power"),
+									Value:  1,
+								},
+							},
+						}},
+					},
+				},
+			}); err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+	waitRegistered(t, svc, 1)
+
+	code, body := httpGet(t, "http://"+addr+"/metrics")
+	if code != http.StatusOK {
+		t.Fatalf("GET /metrics status=%d body=%s", code, body)
+	}
+	if !strings.Contains(body, "jumpstarter_operation_duration_seconds") {
+		t.Errorf("structured histogram missing from /metrics:\n%s", body)
+	}
+	if !strings.Contains(body, `exporter="sidekick"`) {
+		t.Errorf("authenticated exporter label missing:\n%s", body)
+	}
+	if !strings.Contains(body, `lease_id="lease-1"`) {
+		t.Errorf("histogram exemplar missing from merged /metrics:\n%s", body)
+	}
+	if strings.Contains(body, `jumpstarter_metrics_parse_errors_total{exporter="sidekick"}`) {
+		t.Errorf("parse-error counter must not increment when families sidecar is used:\n%s", body)
+	}
+
+	select {
+	case err := <-errCh:
+		if err != nil && err != io.EOF && status.Code(err) != codes.Canceled && status.Code(err) != codes.Unavailable {
+			t.Fatalf("stream goroutine: %v", err)
+		}
+	default:
+	}
+}
+
+func TestFanout_CoalescesConcurrentHTTPScrapes(t *testing.T) {
+	svc, client, addr := startTestHub(t, 2*time.Second)
+	ctx := exporterStreamCtx(t, svc, "exporter:jumpstarter:sidekick:uid1")
+	stream, err := client.MetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("MetricsStream: %v", err)
+	}
+	if err := stream.Send(&pb.MetricsStreamRequest{
+		Msg: &pb.MetricsStreamRequest_Register{
+			Register: &pb.MetricsRegister{Identity: "sidekick"},
+		},
+	}); err != nil {
+		t.Fatalf("Send register: %v", err)
+	}
+
+	var scrapes atomic.Int32
+	release := make(chan struct{})
+	errCh := make(chan error, 1)
+	go func() {
+		for {
+			msg, err := stream.Recv()
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if msg.GetScrapeRequest() == nil {
+				continue
+			}
+			scrapes.Add(1)
+			<-release
+			if err := stream.Send(&pb.MetricsStreamRequest{
+				Msg: &pb.MetricsStreamRequest_ScrapeResponse{
+					ScrapeResponse: &pb.MetricsScrapeResponse{
+						MetricsText: []byte(`# TYPE jumpstarter_active_sessions gauge
+jumpstarter_active_sessions{exporter="sidekick"} 1
+# EOF
+`),
+					},
+				},
+			}); err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+	waitRegistered(t, svc, 1)
+
+	const n = 8
+	var wg sync.WaitGroup
+	codes := make([]int, n)
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			client := &http.Client{Timeout: 5 * time.Second}
+			resp, err := client.Get("http://" + addr + "/metrics")
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+			codes[i] = resp.StatusCode
+		}(i)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for scrapes.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if scrapes.Load() == 0 {
+		t.Fatal("expected a reverse-scrape to start")
+	}
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	wg.Wait()
+
+	if got := scrapes.Load(); got != 1 {
+		t.Fatalf("scrape requests = %d, want 1 coalesced fan-out", got)
+	}
+	for i := 0; i < n; i++ {
+		if errs[i] != nil {
+			t.Errorf("GET %d: %v", i, errs[i])
+			continue
+		}
+		if codes[i] != http.StatusOK {
+			t.Errorf("GET %d status=%d, want 200", i, codes[i])
+		}
+	}
+}
+
+func TestStopGRPCServer_IdleCompletesQuickly(t *testing.T) {
+	lis := bufconn.Listen(bufconnSize)
+	gs := grpc.NewServer()
+	go func() { _ = gs.Serve(lis) }()
+	t.Cleanup(func() { gs.Stop(); _ = lis.Close() })
+
+	start := time.Now()
+	stopGRPCServer(gs, time.Second)
+	if elapsed := time.Since(start); elapsed > 300*time.Millisecond {
+		t.Fatalf("idle GracefulStop took %v", elapsed)
+	}
+}
+
+func TestStopGRPCServer_UnblocksStuckMetricsStream(t *testing.T) {
+	svc := &TelemetryService{Signer: testSigner(t)}
+	lis := bufconn.Listen(bufconnSize)
+	gs := grpc.NewServer()
+	pb.RegisterTelemetryServiceServer(gs, svc)
+	go func() { _ = gs.Serve(lis) }()
+
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return lis.DialContext(ctx)
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("grpc.NewClient: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	client := pb.NewTelemetryServiceClient(conn)
+	stream, err := client.MetricsStream(exporterStreamCtx(t, svc, "exporter:jumpstarter:sidekick:uid1"))
+	if err != nil {
+		t.Fatalf("MetricsStream: %v", err)
+	}
+	if err := stream.Send(&pb.MetricsStreamRequest{
+		Msg: &pb.MetricsStreamRequest_Register{
+			Register: &pb.MetricsRegister{Identity: "sidekick"},
+		},
+	}); err != nil {
+		t.Fatalf("Send register: %v", err)
+	}
+	waitRegistered(t, svc, 1)
+
+	const grace = 150 * time.Millisecond
+	start := time.Now()
+	stopGRPCServer(gs, grace)
+	elapsed := time.Since(start)
+	if elapsed < grace/2 {
+		t.Fatalf("stop returned in %v; stuck stream should wait for the grace deadline", elapsed)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("stopGRPCServer hung for %v", elapsed)
+	}
+}
