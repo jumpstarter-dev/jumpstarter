@@ -6,8 +6,11 @@ virtual devices through the
 [Host Orchestrator](https://github.com/google/android-cuttlefish) REST API.
 It provides full CVD (Cuttlefish Virtual Device) lifecycle management through
 standard Jumpstarter interfaces: `VirtualPowerInterface` for on/off/cycle,
-plus cuttlefish-specific operations
-(snapshot, powerwash, restart).
+plus cuttlefish-specific operations (powerwash and restart).
+
+For managed Kubernetes exporters, see the [Cuttlefish ExporterSet deployment guide](https://github.com/jumpstarter-dev/jumpstarter/blob/main/controller/internal/exporterset/provisioners/cuttlefish/README.md)
+for service accounts/SCCs, network isolation, resource budgets, pinned images,
+private VSOCK, storage access modes, and failure recovery.
 
 ## Installation
 
@@ -114,11 +117,10 @@ are preserved.
 
 ### Teardown
 
-Delete CVDs and snapshots when done to avoid accumulation:
+Delete CVDs when done to avoid accumulation:
 
 ```bash
 j power off --destroy          # deletes the CVD
-j cuttlefish snapshot delete <id>  # remove specific snapshots
 ```
 
 ## Configuration
@@ -137,11 +139,8 @@ export:
         instances:
           - disk:
               default_build: /home/vsoc-01/fetch
-            vm:
-              enable_virtiofs: false   # required for snapshot support
         common:
           host_package: /home/vsoc-01/fetch
-          gpu_mode: guest_swiftshader  # required for snapshot support
   netsim:
     type: jumpstarter_driver_netsim.driver.Netsim
     config:
@@ -170,6 +169,8 @@ export:
 | adb_server_port | ADB server port on the exporter     | int  | no       | 15037       |
 | boot_timeout    | Seconds to wait for boot on power on| int  | no       | 300         |
 | env_config      | Default env_config for CVD creation | dict | no       | {}          |
+| webui_port      | Port of the in-Pod nginx vhost serving the WebRTC client page with a TURN-aware `/infra_config`. Creates a `webui` child when set. Injected by the ExporterSet provisioner with `webrtc_turn: true`. | int | no | 0 |
+| turn_port       | Port of the in-Pod TURN relay carrying WebRTC media. Creates a `turn` child when set, and is also the local port `j cuttlefish webrtc --forward` binds. | int | no | 0 |
 
 This is a **composite driver** with three children:
 - **power** — `VirtualPowerInterface`: `j power on`, `j power off [--destroy]`, `j power cycle`
@@ -181,6 +182,29 @@ The exporter config also typically includes sibling drivers:
 - **bt_peer** (`jumpstarter-driver-bt-peer`) — Bluetooth peer device via bumble + rootcanal HCI
 
 Use `ref:` entries in the exporter config to expose children at the top level.
+
+### WebRTC display
+
+`j cuttlefish webrtc` prints the display URL. With `--forward` it makes that URL
+usable from wherever the client runs, without any ingress to the exporter Pod:
+
+```bash
+j cuttlefish webrtc --forward
+# WebRTC display: http://127.0.0.1:41235/devices/cvd_1-1-1/files/client.html
+# TURN relay:     127.0.0.1:3478
+# Press Ctrl+C to stop
+```
+
+Both the UI and a TURN relay are forwarded over the lease. WebRTC media is UDP
+addressed to the Pod's own interfaces, so a browser elsewhere cannot reach it
+directly; the relay lives beside the CVD, receives media in the same network
+namespace, and hands it to the browser over the forwarded TCP connection. The
+TURN port cannot be remapped - `/infra_config` advertises
+`turn:127.0.0.1:<turn_port>` and the browser has no way to learn a different one -
+so the command fails if that local port is taken.
+
+This requires `webrtc_turn: true` on the ExporterSet; without it the driver has
+no `webui`/`turn` children and the command says so.
 
 ## Usage
 
@@ -220,10 +244,6 @@ j cuttlefish powerbtn
 # List running operations
 j cuttlefish ops
 
-# Snapshot management
-# Requires: x86_64 host, enable_virtiofs: false, gpu_mode: guest_swiftshader
-j cuttlefish snapshot create --id my-snapshot
-j cuttlefish snapshot delete <snapshot_id>
 ```
 
 ### Python API
@@ -250,9 +270,6 @@ with serve(driver) as client:
     # List CVDs
     cvds = client.list_cvds()
     print(cvds)
-
-    # Snapshots
-    client.create_snapshot(snapshot_id="baseline")
 
     # Cleanup
     client.power.off(destroy=True)
