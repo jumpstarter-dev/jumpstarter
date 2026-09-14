@@ -9,6 +9,7 @@ authors = [{ name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }]
 
 dependencies = [
     "click>=8.1.8",
+    "cryptography>=43.0.3",
     "jumpstarter",
     "jumpstarter-driver-power",
     "pysnmp==7.1.29",
