@@ -120,22 +120,20 @@ var _ = Describe("exporterSetPolicyRules", func() {
 		Expect(groups).To(HaveKey("coordination.k8s.io"))
 	})
 
-	It("should grant read-only access on exportersets (no create/update/delete)", func() {
+	It("should grant read+update+patch access on exportersets (no create/delete)", func() {
 		for _, rule := range rules {
 			if containsString(rule.APIGroups, "virtualtarget.jumpstarter.dev") &&
 				containsString(rule.Resources, "exportersets") &&
 				!containsString(rule.Resources, "exportersets/status") &&
 				!containsString(rule.Resources, "exportersets/scale") &&
 				!containsString(rule.Resources, "exportersets/finalizers") {
-				Expect(rule.Verbs).To(ContainElements("get", "list", "watch"))
+				Expect(rule.Verbs).To(ContainElements("get", "list", "watch", "update", "patch"))
 				Expect(rule.Verbs).NotTo(ContainElement("create"))
-				Expect(rule.Verbs).NotTo(ContainElement("update"))
-				Expect(rule.Verbs).NotTo(ContainElement("patch"))
 				Expect(rule.Verbs).NotTo(ContainElement("delete"))
 				return
 			}
 		}
-		Fail("no rule found granting read-only access on exportersets")
+		Fail("no rule found granting read+update+patch access on exportersets")
 	})
 
 	It("should grant status/scale/finalizer access on exportersets", func() {

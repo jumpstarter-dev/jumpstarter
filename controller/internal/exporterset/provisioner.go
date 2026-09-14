@@ -57,8 +57,11 @@ type Provisioner interface {
 	// default_partitions (firmware), hostfwd, and wrapper drivers.
 	// The returned slice replaces the original drivers list.
 	EnrichExporterExport(
+		ctx context.Context,
+		vtc *virtualtargetv1alpha1.VirtualTargetClass,
 		drivers []virtualtargetv1alpha1.DriverConfig,
 		mergedParameters map[string]interface{},
+		exporter *jumpstarterdevv1alpha1.Exporter,
 	) ([]virtualtargetv1alpha1.DriverConfig, error)
 
 	// Cleanup is called when an exporter instance is being

@@ -490,7 +490,7 @@ func exporterSetPolicyRules() []rbacv1.PolicyRule {
 		{
 			APIGroups: []string{"virtualtarget.jumpstarter.dev"},
 			Resources: []string{"exportersets"},
-			Verbs:     []string{"get", "list", "watch"},
+			Verbs:     []string{"get", "list", "watch", "update", "patch"},
 		},
 		{
 			APIGroups: []string{"virtualtarget.jumpstarter.dev"},

@@ -90,6 +90,7 @@ type exporterConfigDriver struct {
 func (r *ExporterSetReconciler) buildExporterConfigSecret(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
+	vtc *virtualtargetv1alpha1.VirtualTargetClass,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 	caBundle string,
 	mergedParameters map[string]interface{},
@@ -102,7 +103,7 @@ func (r *ExporterSetReconciler) buildExporterConfigSecret(
 	caBase64 := base64.StdEncoding.EncodeToString([]byte(caBundle))
 
 	drivers := es.Spec.Template.Spec.Drivers
-	drivers, err = r.Provisioner.EnrichExporterExport(drivers, mergedParameters)
+	drivers, err = r.Provisioner.EnrichExporterExport(ctx, vtc, drivers, mergedParameters, exporter)
 	if err != nil {
 		return nil, fmt.Errorf("enrich drivers for %s: %w", exporter.Name, err)
 	}
