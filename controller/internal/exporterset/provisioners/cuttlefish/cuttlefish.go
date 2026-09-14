@@ -147,7 +147,7 @@ func (p *Provisioner) resolveImages(overrides *virtualtargetv1alpha1.ImageOverri
 	return img
 }
 
-func resolveStorageConfig(parameters map[string]interface{}) (storageConfig, error) {
+func resolveStorageConfig(parameters map[string]any) (storageConfig, error) {
 	config := storageConfig{
 		imageSize: resource.MustParse("20Gi"),
 		stateSize: resource.MustParse("20Gi"),
@@ -169,7 +169,7 @@ func resolveStorageConfig(parameters map[string]interface{}) (storageConfig, err
 	}
 
 	if raw, exists := parameters["storage"]; exists {
-		storage, ok := raw.(map[string]interface{})
+		storage, ok := raw.(map[string]any)
 		if !ok {
 			return config, fmt.Errorf("parameters.storage must be an object")
 		}
@@ -195,7 +195,7 @@ func resolveStorageConfig(parameters map[string]interface{}) (storageConfig, err
 	return config, nil
 }
 
-func resolveServiceAccount(parameters map[string]interface{}) (string, error) {
+func resolveServiceAccount(parameters map[string]any) (string, error) {
 	if privileged, _ := parameters["runtime_privileged"].(bool); !privileged {
 		return "", fmt.Errorf("cuttlefish requires runtime_privileged=true; unprivileged device access is not supported")
 	}
@@ -210,7 +210,7 @@ func (p *Provisioner) RenderPod(
 	ctx context.Context,
 	exporterSet *virtualtargetv1alpha1.ExporterSet,
 	vtc *virtualtargetv1alpha1.VirtualTargetClass,
-	mergedParameters map[string]interface{},
+	mergedParameters map[string]any,
 	overrides *virtualtargetv1alpha1.ImageOverrides,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) (*corev1.Pod, error) {
@@ -247,7 +247,7 @@ func (p *Provisioner) RenderPod(
 			// Never: ExitAndReplace relies on the exporter (main) exit completing the Pod.
 			RestartPolicy:                corev1.RestartPolicyNever,
 			ServiceAccountName:           serviceAccount,
-			AutomountServiceAccountToken: boolPtr(false),
+			AutomountServiceAccountToken: new(false),
 			InitContainers:               initContainers(img, storage, resources),
 			Containers:                   []corev1.Container{exporterContainer(img)},
 			Volumes:                      volumes(storage),
@@ -284,7 +284,7 @@ func podMeta(exporterSet *virtualtargetv1alpha1.ExporterSet, exporter *jumpstart
 
 func exporterSecurityContext() *corev1.SecurityContext {
 	uid := exporterNonRootUID
-	return &corev1.SecurityContext{RunAsUser: &uid, RunAsNonRoot: boolPtr(true)}
+	return &corev1.SecurityContext{RunAsUser: &uid, RunAsNonRoot: new(true)}
 }
 
 // exporterContainer runs jmp behind the health wrapper, which records the
@@ -361,7 +361,7 @@ func initContainers(img images, storage storageConfig, runtime corev1.ResourceRe
 			Command: []string{"bash", "-ec", "cat /proc/sys/kernel/random/uuid > " + cvdStatePath + "/runtime-id\n" +
 				"chmod 644 " + cvdStatePath + "/runtime-id\nexec /root/run_services.sh"},
 			Resources:       runtime,
-			SecurityContext: &corev1.SecurityContext{Privileged: boolPtr(true), RunAsUser: &root},
+			SecurityContext: &corev1.SecurityContext{Privileged: new(true), RunAsUser: &root},
 			VolumeMounts:    append(stateMounts, deviceMounts...),
 		},
 		corev1.Container{
@@ -398,7 +398,7 @@ func volumes(storage storageConfig) []corev1.Volume {
 
 func (p *Provisioner) EnrichExporterExport(
 	drivers []virtualtargetv1alpha1.DriverConfig,
-	mergedParameters map[string]interface{},
+	mergedParameters map[string]any,
 ) ([]virtualtargetv1alpha1.DriverConfig, error) {
 	enriched, _, err := enrichDrivers(drivers, mergedParameters)
 	return enriched, err
@@ -406,7 +406,7 @@ func (p *Provisioner) EnrichExporterExport(
 
 // enrichDrivers pins every driver to the in-Pod runtime and returns the
 // effective guest size the runtime container must budget for.
-func enrichDrivers(drivers []virtualtargetv1alpha1.DriverConfig, parameters map[string]interface{}) ([]virtualtargetv1alpha1.DriverConfig, guestSpec, error) {
+func enrichDrivers(drivers []virtualtargetv1alpha1.DriverConfig, parameters map[string]any) ([]virtualtargetv1alpha1.DriverConfig, guestSpec, error) {
 	var guest guestSpec
 	found := 0
 	result := make([]virtualtargetv1alpha1.DriverConfig, 0, len(drivers))
@@ -417,9 +417,9 @@ func enrichDrivers(drivers []virtualtargetv1alpha1.DriverConfig, parameters map[
 			found++
 			driver, guest, err = enrichCuttlefishDriver(driver, parameters)
 		case netsimDriverType:
-			driver, err = pinDriverConfig(driver, map[string]interface{}{"host": "127.0.0.1", "port": netsimPort}, "netsim")
+			driver, err = pinDriverConfig(driver, map[string]any{"host": "127.0.0.1", "port": netsimPort}, "netsim")
 		case btPeerDriverType:
-			driver, err = pinDriverConfig(driver, map[string]interface{}{"transport": fmt.Sprintf("tcp-client:127.0.0.1:%d", hciPort)}, "bt_peer")
+			driver, err = pinDriverConfig(driver, map[string]any{"transport": fmt.Sprintf("tcp-client:127.0.0.1:%d", hciPort)}, "bt_peer")
 		}
 		if err != nil {
 			return nil, guest, err
@@ -432,7 +432,7 @@ func enrichDrivers(drivers []virtualtargetv1alpha1.DriverConfig, parameters map[
 	return result, guest, nil
 }
 
-func enrichCuttlefishDriver(driver virtualtargetv1alpha1.DriverConfig, parameters map[string]interface{}) (virtualtargetv1alpha1.DriverConfig, guestSpec, error) {
+func enrichCuttlefishDriver(driver virtualtargetv1alpha1.DriverConfig, parameters map[string]any) (virtualtargetv1alpha1.DriverConfig, guestSpec, error) {
 	var guest guestSpec
 	var err error
 	if guest.cpus, err = positiveInt(parameters, "vm_cpus", defaultVMCPUs); err != nil {
@@ -451,7 +451,7 @@ func enrichCuttlefishDriver(driver virtualtargetv1alpha1.DriverConfig, parameter
 	config["runtime_id_path"] = runtimeIDPath
 	config["health_ports"] = healthPorts
 	// Any other endpoint would bypass the managed runtime in this Pod.
-	for key, value := range map[string]interface{}{"scheme": "http", "host": "127.0.0.1", "port": hostOrchestratorPort, "instance_num": 1} {
+	for key, value := range map[string]any{"scheme": "http", "host": "127.0.0.1", "port": hostOrchestratorPort, "instance_num": 1} {
 		if err := pin(config, key, value); err != nil {
 			return driver, guest, err
 		}
@@ -475,14 +475,14 @@ func enrichCuttlefishDriver(driver virtualtargetv1alpha1.DriverConfig, parameter
 		return driver, guest, fmt.Errorf("%w; standalone RootCanal is not supported", err)
 	}
 
-	instances, ok := envConfig["instances"].([]interface{})
+	instances, ok := envConfig["instances"].([]any)
 	if raw, exists := envConfig["instances"]; exists && (!ok || len(instances) != 1) {
 		return driver, guest, fmt.Errorf("env_config.instances must contain exactly one instance, got %v", raw)
 	}
 	if len(instances) == 0 {
-		instances = []interface{}{map[string]interface{}{}}
+		instances = []any{map[string]any{}}
 	}
-	instance, ok := instances[0].(map[string]interface{})
+	instance, ok := instances[0].(map[string]any)
 	if !ok || instance == nil {
 		return driver, guest, fmt.Errorf("env_config.instances[0] must be an object")
 	}
@@ -541,7 +541,7 @@ func enrichCuttlefishDriver(driver virtualtargetv1alpha1.DriverConfig, parameter
 
 // pin sets config[key] to value and rejects a template value that differs.
 // Values are compared through their JSON encoding so 2081 matches 2081.0.
-func pin(config map[string]interface{}, key string, value interface{}) error {
+func pin(config map[string]any, key string, value any) error {
 	if current, exists := config[key]; exists && !jsonEqual(current, value) {
 		return fmt.Errorf("managed Cuttlefish requires %s=%v, got %v", key, value, current)
 	}
@@ -549,18 +549,18 @@ func pin(config map[string]interface{}, key string, value interface{}) error {
 	return nil
 }
 
-func jsonEqual(a, b interface{}) bool {
+func jsonEqual(a, b any) bool {
 	rawA, errA := json.Marshal(a)
 	rawB, errB := json.Marshal(b)
 	return errA == nil && errB == nil && bytes.Equal(rawA, rawB)
 }
 
-func configObject(parent map[string]interface{}, key string) (map[string]interface{}, error) {
+func configObject(parent map[string]any, key string) (map[string]any, error) {
 	raw, exists := parent[key]
 	if !exists {
-		return map[string]interface{}{}, nil
+		return map[string]any{}, nil
 	}
-	value, ok := raw.(map[string]interface{})
+	value, ok := raw.(map[string]any)
 	if !ok || value == nil {
 		return nil, fmt.Errorf("%s must be an object", key)
 	}
@@ -571,7 +571,7 @@ func configObject(parent map[string]interface{}, key string) (map[string]interfa
 // runs; a template value that differs points the driver outside the Pod and is
 // rejected, while a matching one is preserved. Keys are applied in sorted order
 // so a conflicting template yields a stable error.
-func pinDriverConfig(driver virtualtargetv1alpha1.DriverConfig, managed map[string]interface{}, name string) (virtualtargetv1alpha1.DriverConfig, error) {
+func pinDriverConfig(driver virtualtargetv1alpha1.DriverConfig, managed map[string]any, name string) (virtualtargetv1alpha1.DriverConfig, error) {
 	config, err := decodeConfig(driver, name)
 	if err != nil {
 		return driver, err
@@ -584,8 +584,8 @@ func pinDriverConfig(driver virtualtargetv1alpha1.DriverConfig, managed map[stri
 	return encodeConfig(driver, config)
 }
 
-func decodeConfig(driver virtualtargetv1alpha1.DriverConfig, name string) (map[string]interface{}, error) {
-	config := map[string]interface{}{}
+func decodeConfig(driver virtualtargetv1alpha1.DriverConfig, name string) (map[string]any, error) {
+	config := map[string]any{}
 	if driver.Config != nil && driver.Config.Raw != nil {
 		if err := json.Unmarshal(driver.Config.Raw, &config); err != nil {
 			return nil, fmt.Errorf("unmarshal %s driver config: %w", name, err)
@@ -597,7 +597,7 @@ func decodeConfig(driver virtualtargetv1alpha1.DriverConfig, name string) (map[s
 	return config, nil
 }
 
-func encodeConfig(driver virtualtargetv1alpha1.DriverConfig, config map[string]interface{}) (virtualtargetv1alpha1.DriverConfig, error) {
+func encodeConfig(driver virtualtargetv1alpha1.DriverConfig, config map[string]any) (virtualtargetv1alpha1.DriverConfig, error) {
 	raw, err := json.Marshal(config)
 	if err != nil {
 		return driver, fmt.Errorf("marshal driver config: %w", err)
@@ -606,7 +606,7 @@ func encodeConfig(driver virtualtargetv1alpha1.DriverConfig, config map[string]i
 	return driver, nil
 }
 
-func positiveInt(values map[string]interface{}, key string, fallback int) (int, error) {
+func positiveInt(values map[string]any, key string, fallback int) (int, error) {
 	raw, exists := values[key]
 	if !exists {
 		return fallback, nil
@@ -632,7 +632,7 @@ func positiveInt(values map[string]interface{}, key string, fallback int) (int, 
 
 // runtimeResources starts from the class scheduling resources and guarantees
 // the runtime container requests the guest memory plus runtime overhead.
-func runtimeResources(vtc *virtualtargetv1alpha1.VirtualTargetClass, guest guestSpec, parameters map[string]interface{}) (corev1.ResourceRequirements, error) {
+func runtimeResources(vtc *virtualtargetv1alpha1.VirtualTargetClass, guest guestSpec, parameters map[string]any) (corev1.ResourceRequirements, error) {
 	resources := corev1.ResourceRequirements{}
 	if vtc.Spec.Scheduling != nil && vtc.Spec.Scheduling.Resources != nil {
 		resources = *vtc.Spec.Scheduling.Resources.DeepCopy()
@@ -716,7 +716,7 @@ func (p *Provisioner) RenderNetworkPolicy(es *virtualtargetv1alpha1.ExporterSet)
 	}
 }
 
-func setDefault(config map[string]interface{}, key string, value interface{}) {
+func setDefault(config map[string]any, key string, value any) {
 	if _, exists := config[key]; !exists {
 		config[key] = value
 	}
@@ -731,10 +731,6 @@ func deviceVolume(name, path string) corev1.Volume {
 			Type: &typeCharDevice,
 		}},
 	}
-}
-
-func boolPtr(value bool) *bool {
-	return &value
 }
 
 func (p *Provisioner) Cleanup(
