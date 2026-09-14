@@ -1,7 +1,7 @@
 # Build the manager binary
 # Use --platform=$BUILDPLATFORM to run the Go compiler natively on the build host
 # instead of under QEMU emulation. Go cross-compiles via GOOS/GOARCH (CGO_ENABLED=0).
-FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:1.26.3 AS builder
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:1.26.7@sha256:de00e16138966f9fed6bca2d22d28f6cc0d50b26ef6977398e2d8980d80be75f AS builder
 ARG TARGETOS
 ARG TARGETARCH
 ARG GIT_VERSION=unknown
