@@ -183,6 +183,8 @@ class Lease(google.protobuf.message.Message):
     ALLOW_DISABLED_FIELD_NUMBER: builtins.int
     CONTEXT_FIELD_NUMBER: builtins.int
     DEPRECATED_LABELS_FIELD_NUMBER: builtins.int
+    SHARED_WITH_FIELD_NUMBER: builtins.int
+    EFFECTIVE_SHARED_WITH_FIELD_NUMBER: builtins.int
     name: builtins.str
     """The resource name of the lease."""
     selector: builtins.str
@@ -239,6 +241,18 @@ class Lease(google.protobuf.message.Message):
         Keys are the deprecated label names; values are optional human-readable messages.
         """
 
+    @property
+    def shared_with(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
+        """The requested list of client names to share this lease with (desired intent)."""
+
+    @property
+    def effective_shared_with(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
+        """The server-computed effective set of client names actually granted shared
+        access, after the controller evaluates exporter access policies and client
+        existence. A name present in shared_with but absent here was denied by
+        policy or does not exist. Use this for access decisions and display.
+        """
+
     def __init__(
         self,
         *,
@@ -258,9 +272,11 @@ class Lease(google.protobuf.message.Message):
         allow_disabled: builtins.bool = ...,
         context: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
         deprecated_labels: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
+        shared_with: collections.abc.Iterable[builtins.str] | None = ...,
+        effective_shared_with: collections.abc.Iterable[builtins.str] | None = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "begin_time", b"begin_time", "client", b"client", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "allow_disabled", b"allow_disabled", "begin_time", b"begin_time", "client", b"client", "conditions", b"conditions", "context", b"context", "deprecated_labels", b"deprecated_labels", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name", "name", b"name", "selector", b"selector", "tags", b"tags"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "allow_disabled", b"allow_disabled", "begin_time", b"begin_time", "client", b"client", "conditions", b"conditions", "context", b"context", "deprecated_labels", b"deprecated_labels", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "effective_shared_with", b"effective_shared_with", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name", "name", b"name", "selector", b"selector", "shared_with", b"shared_with", "tags", b"tags"]) -> None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_begin_time", b"_begin_time"]) -> typing.Literal["begin_time"] | None: ...
     @typing.overload
@@ -479,6 +495,8 @@ class UpdateLeaseRequest(google.protobuf.message.Message):
 
     LEASE_FIELD_NUMBER: builtins.int
     UPDATE_MASK_FIELD_NUMBER: builtins.int
+    ADD_SHARED_WITH_FIELD_NUMBER: builtins.int
+    REMOVE_SHARED_WITH_FIELD_NUMBER: builtins.int
     @property
     def lease(self) -> Global___Lease:
         """The lease resource with updated fields."""
@@ -487,14 +505,24 @@ class UpdateLeaseRequest(google.protobuf.message.Message):
     def update_mask(self) -> google.protobuf.field_mask_pb2.FieldMask:
         """The set of fields to update."""
 
+    @property
+    def add_shared_with(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
+        """Client names to add to the lease's shared_with list. Only the lease owner can modify sharing."""
+
+    @property
+    def remove_shared_with(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
+        """Client names to remove from the lease's shared_with list. Only the lease owner can modify sharing."""
+
     def __init__(
         self,
         *,
         lease: Global___Lease | None = ...,
         update_mask: google.protobuf.field_mask_pb2.FieldMask | None = ...,
+        add_shared_with: collections.abc.Iterable[builtins.str] | None = ...,
+        remove_shared_with: collections.abc.Iterable[builtins.str] | None = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["lease", b"lease", "update_mask", b"update_mask"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["lease", b"lease", "update_mask", b"update_mask"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["add_shared_with", b"add_shared_with", "lease", b"lease", "remove_shared_with", b"remove_shared_with", "update_mask", b"update_mask"]) -> None: ...
 
 Global___UpdateLeaseRequest: typing_extensions.TypeAlias = UpdateLeaseRequest
 
