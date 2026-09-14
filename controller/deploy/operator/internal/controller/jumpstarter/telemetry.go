@@ -325,6 +325,8 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSec
 				},
 			},
 		},
+		// Advertised endpoint for self-signed SAN generation (must match controller ConfigMap).
+		{Name: "GRPC_TELEMETRY_ENDPOINT", Value: telemetryEndpointFor(jumpstarter.Namespace)},
 	}
 
 	var volumeMounts []corev1.VolumeMount
@@ -437,13 +439,13 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSec
 							},
 						},
 					},
-					Volumes: volumes,
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: ptr.To(true),
 						SeccompProfile: &corev1.SeccompProfile{
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
 					},
+					Volumes:            volumes,
 					ServiceAccountName: jumpstarter.Name + telemetrySASuffix,
 				},
 			},
@@ -498,14 +500,16 @@ func GetTelemetryCertSecretName(js *operatorv1alpha1.Jumpstarter) string {
 }
 
 // resolveTelemetryCA reads the CA certificate that exporters need to verify the
-// telemetry TLS connection. For self-signed CA mode, the cert is in the CA secret;
-// for external issuers, the user-provided caBundle is used.
+// telemetry TLS connection. For self-signed CA mode, the cert is in the CA secret.
+// For external issuers, the user-provided caBundle is preferred; when absent, ca.crt
+// from the issued telemetry TLS secret is used if present. An empty return with no
+// error means exporters should rely on the system trust store (public CA issuers).
 func (r *JumpstarterReconciler) resolveTelemetryCA(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) (string, error) {
 	if jumpstarter.Spec.CertManager.Server != nil && jumpstarter.Spec.CertManager.Server.IssuerRef != nil {
 		if len(jumpstarter.Spec.CertManager.Server.IssuerRef.CABundle) > 0 {
 			return string(jumpstarter.Spec.CertManager.Server.IssuerRef.CABundle), nil
 		}
-		return "", nil
+		return r.telemetryCAFromCertSecret(ctx, jumpstarter)
 	}
 
 	// Self-signed CA mode — read from the CA secret created by cert-manager
@@ -533,6 +537,27 @@ func (r *JumpstarterReconciler) telemetryCANeedsRequeue(ctx context.Context, jum
 	}
 	caCert, err := r.resolveTelemetryCA(ctx, jumpstarter)
 	return err != nil || caCert == ""
+}
+
+// telemetryCAFromCertSecret returns ca.crt from the issued telemetry TLS secret,
+// when cert-manager includes it. Missing secret or key is not an error: external
+// issuers backed by public CAs may not need an explicit bundle in the controller config.
+func (r *JumpstarterReconciler) telemetryCAFromCertSecret(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) (string, error) {
+	secret := &corev1.Secret{}
+	err := r.Get(ctx, client.ObjectKey{
+		Name:      GetTelemetryCertSecretName(jumpstarter),
+		Namespace: jumpstarter.Namespace,
+	}, secret)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("telemetry TLS secret not found: %w", err)
+	}
+	if ca, ok := secret.Data["ca.crt"]; ok && len(ca) > 0 {
+		return string(ca), nil
+	}
+	return "", nil
 }
 
 // telemetryEndpointFor returns the in-cluster gRPC endpoint for the telemetry service.

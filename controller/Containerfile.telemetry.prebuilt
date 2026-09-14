@@ -1,0 +1,6 @@
+# CI-only runtime image for the jumpstarter-telemetry binary.
+FROM registry.access.redhat.com/ubi9/ubi-micro:9.8-1786321990@sha256:7e7f79ab747bf2b452e3043dd89f388e92be4c7fdcc8b815b58adf6c99c39c95
+WORKDIR /
+COPY telemetry /telemetry
+USER 65532:65532
+ENTRYPOINT ["/telemetry"]

@@ -41,6 +41,12 @@ load_image "${OPERATOR_IMG}" &
 _load_pids+=($!)
 load_image "${EXPORTER_SET_CONTROLLER_IMG}" &
 _load_pids+=($!)
+if container_image_exists "${TELEMETRY_IMG}"; then
+  load_image "${TELEMETRY_IMG}" &
+  _load_pids+=($!)
+else
+  echo -e "${YELLOW}Skipping load of telemetry image (not present locally): ${TELEMETRY_IMG}${NC}"
+fi
 
 if container_image_exists "${EXPORTER_IMG}"; then
   load_image "${EXPORTER_IMG}" &
