@@ -21,7 +21,7 @@ func TestProvisionerName(t *testing.T) {
 }
 
 func TestRenderPod(t *testing.T) {
-	pod := renderTestPod(t, map[string]interface{}{"fetch_images": true})
+	pod := renderTestPod(t, map[string]any{"fetch_images": true})
 	names := make([]string, 0, len(pod.Spec.InitContainers))
 	for _, container := range pod.Spec.InitContainers {
 		names = append(names, container.Name)
@@ -60,7 +60,7 @@ func TestRenderPod(t *testing.T) {
 }
 
 func TestRenderPod_rejectsFetchingIntoClaim(t *testing.T) {
-	_, err := New("dev").RenderPod(context.Background(), testExporterSet(), &virtualtargetv1alpha1.VirtualTargetClass{}, map[string]interface{}{
+	_, err := New("dev").RenderPod(context.Background(), testExporterSet(), &virtualtargetv1alpha1.VirtualTargetClass{}, map[string]any{
 		"fetch_images":         true,
 		"image_volume_claim":   "cuttlefish-images",
 		"runtime_privileged":   true,
@@ -130,7 +130,7 @@ func TestRenderPodRejectsInvalidDeviceResources(t *testing.T) {
 }
 
 func TestRenderPod_privateImageCopy(t *testing.T) {
-	pod := renderTestPod(t, map[string]interface{}{"image_volume_claim": "images"})
+	pod := renderTestPod(t, map[string]any{"image_volume_claim": "images"})
 	for _, volume := range pod.Spec.Volumes {
 		if volume.PersistentVolumeClaim != nil && !volume.PersistentVolumeClaim.ReadOnly {
 			t.Fatal("source claim is writable")
@@ -153,7 +153,7 @@ func TestRenderPod_privateImageCopy(t *testing.T) {
 }
 
 func TestRenderPod_healthGate(t *testing.T) {
-	pod := renderTestPod(t, map[string]interface{}{"fetch_images": true})
+	pod := renderTestPod(t, map[string]any{"fetch_images": true})
 	gate := pod.Spec.InitContainers[len(pod.Spec.InitContainers)-1]
 	if gate.Name != gateContainerName || gate.Command[3] != "--wait" || gate.Command[4] != hostOrchestratorURL {
 		t.Fatalf("missing API startup gate: %#v", gate.Command)
@@ -171,7 +171,7 @@ func TestRenderPod_healthGate(t *testing.T) {
 }
 
 func TestRenderPod_storageBudgets(t *testing.T) {
-	pod := renderTestPod(t, map[string]interface{}{"fetch_images": true, "storage": map[string]interface{}{"imageSize": "8Gi", "stateSize": "4Gi", "tmpSize": "2Gi"}})
+	pod := renderTestPod(t, map[string]any{"fetch_images": true, "storage": map[string]any{"imageSize": "8Gi", "stateSize": "4Gi", "tmpSize": "2Gi"}})
 	total := resource.MustParse("1Gi")
 	for _, volume := range pod.Spec.Volumes {
 		if volume.EmptyDir != nil {
@@ -195,13 +195,13 @@ func TestRenderPod_storageBudgets(t *testing.T) {
 }
 
 func TestStorageValidation(t *testing.T) {
-	for _, value := range []interface{}{"", "0", "-1Gi", "invalid", 42} {
-		_, err := resolveStorageConfig(map[string]interface{}{"fetch_images": true, "storage": map[string]interface{}{"imageSize": value}})
+	for _, value := range []any{"", "0", "-1Gi", "invalid", 42} {
+		_, err := resolveStorageConfig(map[string]any{"fetch_images": true, "storage": map[string]any{"imageSize": value}})
 		if err == nil {
 			t.Fatalf("accepted invalid size %v", value)
 		}
 	}
-	if _, err := resolveStorageConfig(map[string]interface{}{"fetch_images": true, "storage": "invalid"}); err == nil {
+	if _, err := resolveStorageConfig(map[string]any{"fetch_images": true, "storage": "invalid"}); err == nil {
 		t.Fatal("accepted non-object storage")
 	}
 	budget := resource.MustParse("10Gi")
@@ -222,7 +222,7 @@ func TestEnrichExporterExport(t *testing.T) {
 		{Name: "netsim", Type: netsimDriverType},
 		{Name: "bt_peer", Type: btPeerDriverType},
 	}
-	result, err := New("dev").EnrichExporterExport(drivers, map[string]interface{}{
+	result, err := New("dev").EnrichExporterExport(drivers, map[string]any{
 		"default_build": "aosp/test",
 		"gpu_mode":      "none",
 	})
@@ -234,16 +234,16 @@ func TestEnrichExporterExport(t *testing.T) {
 	if cuttlefish["host"] != "127.0.0.1" || cuttlefish["port"] != float64(hostOrchestratorPort) || cuttlefish["scheme"] != "http" {
 		t.Errorf("Cuttlefish endpoint = %#v", cuttlefish)
 	}
-	if fmt.Sprint(cuttlefish["health_ports"]) != fmt.Sprint([]interface{}{float64(netsimPort), float64(hciPort)}) {
+	if fmt.Sprint(cuttlefish["health_ports"]) != fmt.Sprint([]any{float64(netsimPort), float64(hciPort)}) {
 		t.Errorf("health_ports = %v", cuttlefish["health_ports"])
 	}
-	envConfig := cuttlefish["env_config"].(map[string]interface{})
-	instance := envConfig["instances"].([]interface{})[0].(map[string]interface{})
-	graphics := instance["graphics"].(map[string]interface{})
+	envConfig := cuttlefish["env_config"].(map[string]any)
+	instance := envConfig["instances"].([]any)[0].(map[string]any)
+	graphics := instance["graphics"].(map[string]any)
 	if graphics["gpu_mode"] != "none" {
 		t.Errorf("gpu_mode = %v", graphics["gpu_mode"])
 	}
-	vm := instance["vm"].(map[string]interface{})
+	vm := instance["vm"].(map[string]any)
 	if vm["cpus"] != float64(defaultVMCPUs) || vm["memory_mb"] != float64(defaultVMMemoryMB) {
 		t.Errorf("vm config = %#v", vm)
 	}
@@ -266,23 +266,23 @@ func TestEnrichExporterExportDefaultsPodSafeGraphicsAndVM(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := configFor(t, result[0])
-	envConfig := config["env_config"].(map[string]interface{})
-	instance := envConfig["instances"].([]interface{})[0].(map[string]interface{})
-	graphics := instance["graphics"].(map[string]interface{})
+	envConfig := config["env_config"].(map[string]any)
+	instance := envConfig["instances"].([]any)[0].(map[string]any)
+	graphics := instance["graphics"].(map[string]any)
 	if graphics["gpu_mode"] != defaultGPUMode {
 		t.Errorf("gpu_mode = %v, want %q", graphics["gpu_mode"], defaultGPUMode)
 	}
 }
 
 func TestEnrichExporterExportRejectsExternalEndpoints(t *testing.T) {
-	for _, config := range []map[string]interface{}{{"host": "custom-host"}, {"port": 9999}, {"instance_num": 2}, {"scheme": "https"}} {
+	for _, config := range []map[string]any{{"host": "custom-host"}, {"port": 9999}, {"instance_num": 2}, {"scheme": "https"}} {
 		driver := virtualtargetv1alpha1.DriverConfig{Name: "cuttlefish", Type: cuttlefishDriverType, Config: mustJSON(config)}
 		if _, err := New("dev").EnrichExporterExport([]virtualtargetv1alpha1.DriverConfig{driver}, nil); err == nil {
 			t.Errorf("accepted external endpoint %v", config)
 		}
 	}
 	// Restating the pinned values is fine, including as JSON numbers.
-	driver := virtualtargetv1alpha1.DriverConfig{Name: "cuttlefish", Type: cuttlefishDriverType, Config: mustJSON(map[string]interface{}{
+	driver := virtualtargetv1alpha1.DriverConfig{Name: "cuttlefish", Type: cuttlefishDriverType, Config: mustJSON(map[string]any{
 		"host": "127.0.0.1", "port": 2081.0, "instance_num": 1, "scheme": "http",
 	})}
 	if _, err := New("dev").EnrichExporterExport([]virtualtargetv1alpha1.DriverConfig{driver}, nil); err != nil {
@@ -293,9 +293,9 @@ func TestEnrichExporterExportRejectsExternalEndpoints(t *testing.T) {
 func TestEnrichExporterExportPinsSimulatorEndpoints(t *testing.T) {
 	cuttlefish := virtualtargetv1alpha1.DriverConfig{Name: "cuttlefish", Type: cuttlefishDriverType}
 	for _, driver := range []virtualtargetv1alpha1.DriverConfig{
-		{Name: "netsim", Type: netsimDriverType, Config: mustJSON(map[string]interface{}{"host": "netsim.example.com"})},
-		{Name: "netsim", Type: netsimDriverType, Config: mustJSON(map[string]interface{}{"port": 9999})},
-		{Name: "bt_peer", Type: btPeerDriverType, Config: mustJSON(map[string]interface{}{"transport": "tcp-client:10.0.0.1:7300"})},
+		{Name: "netsim", Type: netsimDriverType, Config: mustJSON(map[string]any{"host": "netsim.example.com"})},
+		{Name: "netsim", Type: netsimDriverType, Config: mustJSON(map[string]any{"port": 9999})},
+		{Name: "bt_peer", Type: btPeerDriverType, Config: mustJSON(map[string]any{"transport": "tcp-client:10.0.0.1:7300"})},
 	} {
 		if _, err := New("dev").EnrichExporterExport([]virtualtargetv1alpha1.DriverConfig{cuttlefish, driver}, nil); err == nil {
 			t.Errorf("accepted external %s endpoint", driver.Name)
@@ -304,8 +304,8 @@ func TestEnrichExporterExportPinsSimulatorEndpoints(t *testing.T) {
 	// Restating the in-Pod endpoints, and unrelated keys, stay accepted.
 	drivers := []virtualtargetv1alpha1.DriverConfig{
 		cuttlefish,
-		{Name: "netsim", Type: netsimDriverType, Config: mustJSON(map[string]interface{}{"host": "127.0.0.1", "port": 7681.0})},
-		{Name: "bt_peer", Type: btPeerDriverType, Config: mustJSON(map[string]interface{}{"address": "00:11:22:33:44:55"})},
+		{Name: "netsim", Type: netsimDriverType, Config: mustJSON(map[string]any{"host": "127.0.0.1", "port": 7681.0})},
+		{Name: "bt_peer", Type: btPeerDriverType, Config: mustJSON(map[string]any{"address": "00:11:22:33:44:55"})},
 	}
 	result, err := New("dev").EnrichExporterExport(drivers, nil)
 	if err != nil {
@@ -318,18 +318,18 @@ func TestEnrichExporterExportPinsSimulatorEndpoints(t *testing.T) {
 }
 
 func TestManagedContract(t *testing.T) {
-	for _, config := range []map[string]interface{}{
-		{"env_config": map[string]interface{}{"instances": []interface{}{map[string]interface{}{}, map[string]interface{}{}}}},
-		{"env_config": map[string]interface{}{"instances": "invalid"}},
-		{"env_config": map[string]interface{}{"instances": []interface{}{}}},
-		{"env_config": map[string]interface{}{"instances": []interface{}{nil}}},
+	for _, config := range []map[string]any{
+		{"env_config": map[string]any{"instances": []any{map[string]any{}, map[string]any{}}}},
+		{"env_config": map[string]any{"instances": "invalid"}},
+		{"env_config": map[string]any{"instances": []any{}}},
+		{"env_config": map[string]any{"instances": []any{nil}}},
 		{"env_config": "invalid"},
-		{"env_config": map[string]interface{}{"netsim_bt": false}},
-		{"env_config": map[string]interface{}{"instances": []interface{}{map[string]interface{}{"vm": map[string]interface{}{"memory_mb": -1}}}}},
-		{"env_config": map[string]interface{}{"instances": []interface{}{map[string]interface{}{"vm": map[string]interface{}{"crosvm": map[string]interface{}{"vhost_user_vsock": "false"}}}}}},
-		{"env_config": map[string]interface{}{"instances": []interface{}{map[string]interface{}{"vm": map[string]interface{}{"qemu": map[string]interface{}{}}}}}},
-		{"env_config": map[string]interface{}{"instances": []interface{}{map[string]interface{}{"vm": map[string]interface{}{"gem5": map[string]interface{}{}}}}}},
-		{"env_config": map[string]interface{}{"instances": []interface{}{map[string]interface{}{"vm": map[string]interface{}{"crosvm": map[string]interface{}{"vhost_user_vsock": true}}}}}},
+		{"env_config": map[string]any{"netsim_bt": false}},
+		{"env_config": map[string]any{"instances": []any{map[string]any{"vm": map[string]any{"memory_mb": -1}}}}},
+		{"env_config": map[string]any{"instances": []any{map[string]any{"vm": map[string]any{"crosvm": map[string]any{"vhost_user_vsock": "false"}}}}}},
+		{"env_config": map[string]any{"instances": []any{map[string]any{"vm": map[string]any{"qemu": map[string]any{}}}}}},
+		{"env_config": map[string]any{"instances": []any{map[string]any{"vm": map[string]any{"gem5": map[string]any{}}}}}},
+		{"env_config": map[string]any{"instances": []any{map[string]any{"vm": map[string]any{"crosvm": map[string]any{"vhost_user_vsock": true}}}}}},
 	} {
 		driver := virtualtargetv1alpha1.DriverConfig{Name: "cuttlefish", Type: cuttlefishDriverType, Config: mustJSON(config)}
 		if _, err := New("dev").EnrichExporterExport([]virtualtargetv1alpha1.DriverConfig{driver}, nil); err == nil {
@@ -343,7 +343,7 @@ func TestManagedContract(t *testing.T) {
 	if _, err := New("dev").EnrichExporterExport(append(drivers, drivers[0]), nil); err == nil {
 		t.Fatal("accepted multiple Cuttlefish drivers")
 	}
-	for _, params := range []map[string]interface{}{{"vm_memory_mb": 12.5}, {"vm_cpus": "4"}, {"vm_cpus": 0}} {
+	for _, params := range []map[string]any{{"vm_memory_mb": 12.5}, {"vm_cpus": "4"}, {"vm_cpus": 0}} {
 		if _, err := New("dev").EnrichExporterExport(drivers, params); err == nil {
 			t.Fatalf("accepted guest parameters %v", params)
 		}
@@ -353,18 +353,18 @@ func TestManagedContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := configFor(t, enriched[0])
-	envConfig := config["env_config"].(map[string]interface{})
-	vm := envConfig["instances"].([]interface{})[0].(map[string]interface{})["vm"].(map[string]interface{})
-	if config["managed"] != true || envConfig["netsim_bt"] != true || vm["crosvm"].(map[string]interface{})["vhost_user_vsock"] != "true" {
+	envConfig := config["env_config"].(map[string]any)
+	vm := envConfig["instances"].([]any)[0].(map[string]any)["vm"].(map[string]any)
+	if config["managed"] != true || envConfig["netsim_bt"] != true || vm["crosvm"].(map[string]any)["vhost_user_vsock"] != "true" {
 		t.Fatalf("missing managed isolation: %v", config)
 	}
 }
 
 func TestGuestSpecPrefersTemplateValues(t *testing.T) {
-	driver := virtualtargetv1alpha1.DriverConfig{Name: "cuttlefish", Type: cuttlefishDriverType, Config: mustJSON(map[string]interface{}{
-		"env_config": map[string]interface{}{"instances": []interface{}{map[string]interface{}{"vm": map[string]interface{}{"cpus": 2}}}},
+	driver := virtualtargetv1alpha1.DriverConfig{Name: "cuttlefish", Type: cuttlefishDriverType, Config: mustJSON(map[string]any{
+		"env_config": map[string]any{"instances": []any{map[string]any{"vm": map[string]any{"cpus": 2}}}},
 	})}
-	_, guest, err := enrichDrivers([]virtualtargetv1alpha1.DriverConfig{driver}, map[string]interface{}{"vm_cpus": 8, "vm_memory_mb": 4096})
+	_, guest, err := enrichDrivers([]virtualtargetv1alpha1.DriverConfig{driver}, map[string]any{"vm_cpus": 8, "vm_memory_mb": 4096})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,7 +398,7 @@ func TestRuntimeMemory(t *testing.T) {
 				resources.Limits[corev1.ResourceMemory] = resource.MustParse(tc.limit)
 			}
 			vtc := &virtualtargetv1alpha1.VirtualTargetClass{Spec: virtualtargetv1alpha1.VirtualTargetClassSpec{Scheduling: &virtualtargetv1alpha1.SchedulingSpec{Resources: resources}}}
-			pod, err := New("dev").RenderPod(context.Background(), es, vtc, map[string]interface{}{"runtime_privileged": true, "service_account_name": "cuttlefish-runtime", "fetch_images": true}, nil, nil)
+			pod, err := New("dev").RenderPod(context.Background(), es, vtc, map[string]any{"runtime_privileged": true, "service_account_name": "cuttlefish-runtime", "fetch_images": true}, nil, nil)
 			if tc.invalid {
 				if err == nil {
 					t.Fatal("accepted invalid resources")
@@ -418,7 +418,7 @@ func TestRuntimeMemory(t *testing.T) {
 
 func TestPodIsolation(t *testing.T) {
 	es := testExporterSet()
-	pod := renderTestPod(t, map[string]interface{}{"fetch_images": true})
+	pod := renderTestPod(t, map[string]any{"fetch_images": true})
 	policy := New("dev").RenderNetworkPolicy(es)
 	if policy.Spec.PodSelector.MatchLabels[isolationLabel] != pod.Labels[isolationLabel] || len(policy.Spec.Ingress) != 0 || len(policy.Spec.PolicyTypes) != 1 || policy.Spec.PolicyTypes[0] != "Ingress" {
 		t.Fatalf("incorrect isolation policy: %#v", policy.Spec)
@@ -431,7 +431,7 @@ func TestPodIsolation(t *testing.T) {
 			t.Fatal("kernel VSOCK device mounted")
 		}
 	}
-	for _, params := range []map[string]interface{}{
+	for _, params := range []map[string]any{
 		{"fetch_images": true, "service_account_name": "cuttlefish-runtime", "runtime_privileged": false},
 		{"fetch_images": true, "service_account_name": "cuttlefish-runtime"},
 		{"fetch_images": true, "runtime_privileged": true},
@@ -443,14 +443,14 @@ func TestPodIsolation(t *testing.T) {
 		}
 	}
 	es.Spec.RecycleStrategy = virtualtargetv1alpha1.RecycleStrategyInPlaceReuse
-	if _, err := New("dev").RenderPod(context.Background(), es, &virtualtargetv1alpha1.VirtualTargetClass{}, map[string]interface{}{
+	if _, err := New("dev").RenderPod(context.Background(), es, &virtualtargetv1alpha1.VirtualTargetClass{}, map[string]any{
 		"fetch_images": true, "runtime_privileged": true, "service_account_name": "cuttlefish-runtime",
 	}, nil, nil); err == nil {
 		t.Fatal("accepted InPlaceReuse")
 	}
 }
 
-func renderTestPod(t *testing.T, params map[string]interface{}) *corev1.Pod {
+func renderTestPod(t *testing.T, params map[string]any) *corev1.Pod {
 	t.Helper()
 	params["runtime_privileged"] = true
 	params["service_account_name"] = "cuttlefish-runtime"
@@ -472,9 +472,9 @@ func initContainer(t *testing.T, pod *corev1.Pod, name string) corev1.Container 
 	return corev1.Container{}
 }
 
-func configFor(t *testing.T, driver virtualtargetv1alpha1.DriverConfig) map[string]interface{} {
+func configFor(t *testing.T, driver virtualtargetv1alpha1.DriverConfig) map[string]any {
 	t.Helper()
-	var config map[string]interface{}
+	var config map[string]any
 	if err := json.Unmarshal(driver.Config.Raw, &config); err != nil {
 		t.Fatal(err)
 	}
@@ -508,7 +508,7 @@ func hasEnv(env []corev1.EnvVar, name, value string) bool {
 	return false
 }
 
-func mustJSON(value interface{}) *apiextensionsv1.JSON {
+func mustJSON(value any) *apiextensionsv1.JSON {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		panic(err)
