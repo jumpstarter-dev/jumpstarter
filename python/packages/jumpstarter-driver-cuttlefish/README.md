@@ -6,8 +6,11 @@ virtual devices through the
 [Host Orchestrator](https://github.com/google/android-cuttlefish) REST API.
 It provides full CVD (Cuttlefish Virtual Device) lifecycle management through
 standard Jumpstarter interfaces: `VirtualPowerInterface` for on/off/cycle,
-plus cuttlefish-specific operations
-(snapshot, powerwash, restart).
+plus cuttlefish-specific operations (powerwash and restart).
+
+For managed Kubernetes exporters, see the [Cuttlefish ExporterSet deployment guide](https://github.com/jumpstarter-dev/jumpstarter/blob/main/controller/internal/exporterset/provisioners/cuttlefish/README.md)
+for service accounts/SCCs, network isolation, resource budgets, pinned images,
+private VSOCK, storage access modes, and failure recovery.
 
 ## Installation
 
@@ -114,11 +117,10 @@ are preserved.
 
 ### Teardown
 
-Delete CVDs and snapshots when done to avoid accumulation:
+Delete CVDs when done to avoid accumulation:
 
 ```bash
 j power off --destroy          # deletes the CVD
-j cuttlefish snapshot delete <id>  # remove specific snapshots
 ```
 
 ## Configuration
@@ -137,11 +139,8 @@ export:
         instances:
           - disk:
               default_build: /home/vsoc-01/fetch
-            vm:
-              enable_virtiofs: false   # required for snapshot support
         common:
           host_package: /home/vsoc-01/fetch
-          gpu_mode: guest_swiftshader  # required for snapshot support
   netsim:
     type: jumpstarter_driver_netsim.driver.Netsim
     config:
@@ -170,6 +169,8 @@ export:
 | adb_server_port | ADB server port on the exporter     | int  | no       | 15037       |
 | boot_timeout    | Seconds to wait for boot on power on| int  | no       | 300         |
 | env_config      | Default env_config for CVD creation | dict | no       | {}          |
+| launcher_socket | Exec backend: `jumpstarter-exec` launcher socket shared with the Cuttlefish runtime container. When set, every operation runs `cvd` there instead of calling Host Orchestrator. Injected by the ExporterSet provisioner with `backend: exec`. | str | no | "" |
+| cvd_user        | Exec backend: user `cvd` runs as inside the runtime container (via `runuser`). Must match other `cvd` callers there, because `cvd` keeps one instance database per uid; Host Orchestrator uses `httpcvd`. | str | no | "" |
 
 This is a **composite driver** with three children:
 - **power** — `VirtualPowerInterface`: `j power on`, `j power off [--destroy]`, `j power cycle`
@@ -181,6 +182,25 @@ The exporter config also typically includes sibling drivers:
 - **bt_peer** (`jumpstarter-driver-bt-peer`) — Bluetooth peer device via bumble + rootcanal HCI
 
 Use `ref:` entries in the exporter config to expose children at the top level.
+
+### Backends
+
+The driver has two interchangeable backends behind the same exported methods:
+
+- **Host Orchestrator (HTTP)**: the default. Operations are REST actions that
+  return asynchronous operations; the driver waits on them. Works against any
+  host running the orchestration image, in or outside the cluster.
+- **cvd CLI over jumpstarter-exec**: selected when `launcher_socket` is set.
+  Operations map one-to-one onto `cvd` subcommands run in the runtime container:
+  `cvd load <env_config>` creates, `cvd fleet` lists, and `start`, `stop`,
+  `restart`, `powerwash`, `powerbtn`, `remove` and `reset -y` do the rest.
+  Inventory documents are normalized to the Host Orchestrator shape, so clients
+  see the same `group`, `name`, `status` and `adb_port` fields. `list_operations`
+  is unavailable because `cvd` runs synchronously.
+
+The exec backend is only meaningful inside a managed Pod, where the ExporterSet
+provisioner stages `jumpstarter-exec` and the socket on a shared volume and does
+not start Host Orchestrator at all; see the deployment guide linked above.
 
 ## Usage
 
@@ -220,10 +240,6 @@ j cuttlefish powerbtn
 # List running operations
 j cuttlefish ops
 
-# Snapshot management
-# Requires: x86_64 host, enable_virtiofs: false, gpu_mode: guest_swiftshader
-j cuttlefish snapshot create --id my-snapshot
-j cuttlefish snapshot delete <snapshot_id>
 ```
 
 ### Python API
@@ -250,9 +266,6 @@ with serve(driver) as client:
     # List CVDs
     cvds = client.list_cvds()
     print(cvds)
-
-    # Snapshots
-    client.create_snapshot(snapshot_id="baseline")
 
     # Cleanup
     client.power.off(destroy=True)

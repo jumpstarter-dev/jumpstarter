@@ -122,21 +122,21 @@ def test_wait_timeout(mock_sleep, requests_mock, drv):
     """Operation that never completes should raise CuttlefishTimeout."""
     requests_mock.post(f"{BASE}/operations/op-1/:wait", exc=requests.Timeout)
     with pytest.raises(CuttlefishTimeout, match="timed out"):
-        drv._wait_for_operation("op-1", timeout=0.1)
+        drv._backend.wait_for_operation("op-1", timeout=0.1)
 
 
 def test_wait_connection_lost(requests_mock, drv):
     """Connection drop during polling should raise."""
     requests_mock.post(f"{BASE}/operations/op-1/:wait", exc=requests.ConnectionError)
     with pytest.raises(CuttlefishError, match="lost connection"):
-        drv._wait_for_operation("op-1")
+        drv._backend.wait_for_operation("op-1")
 
 
 def test_wait_unexpected_http_error(requests_mock, drv):
     """Non-500/503/504 error should raise."""
     requests_mock.post(f"{BASE}/operations/op-1/:wait", status_code=403, text="forbidden")
     with pytest.raises(CuttlefishError, match="failed"):
-        drv._wait_for_operation("op-1")
+        drv._backend.wait_for_operation("op-1")
 
 
 def _mock_op(requests_mock, method, path, op_name="op-1"):
@@ -149,6 +149,7 @@ def test_start_cvd(requests_mock, drv):
     _mock_op(requests_mock, "post", "/cvds/cvd_1/dev1/:start")
     result = json.loads(drv.start_cvd())
     assert result["done"] is True
+    assert requests_mock.request_history[0].json() == {}
 
 
 def test_stop_cvd(requests_mock, drv):
@@ -404,6 +405,8 @@ def test_cvd_power_on_existing_stopped(requests_mock, drv):
     requests_mock.post(f"{BASE}/cvds/cvd_1/dev1/:start", json={"name": "op-1", "done": False})
     requests_mock.post(f"{BASE}/operations/op-1/:wait", json={"name": "op-1", "done": True})
     power.on()
+    start_request = next(r for r in requests_mock.request_history if r.url.endswith("/:start"))
+    assert start_request.json() == {}
 
 
 def test_cvd_power_on_create_new(requests_mock, drv):
@@ -517,3 +520,104 @@ def test_cvd_power_on_ignores_other_groups(requests_mock, drv):
     assert drv._cvd_group == "cvd_1"
     assert drv._cvd_name == "dev1"
     assert not any(r.method == "DELETE" for r in requests_mock.request_history)
+
+
+@pytest.fixture
+def managed_drv(drv, tmp_path):
+    runtime_id = tmp_path / "runtime-id"
+    runtime_id.write_text("first-runtime")
+    drv.managed = True
+    drv.runtime_id_path = str(runtime_id)
+    drv.health_state_path = str(tmp_path / "health.json")
+    drv.env_config = {"instances": [{"vm": {"memory_mb": 8192}}]}
+    drv._health = {"state": "off", "runtime_id": "first-runtime", "runtime_id_path": str(runtime_id)}
+    drv._write_health()
+    return drv
+
+
+def test_managed_rejects_alternate_creation(requests_mock, managed_drv):
+    for config in ({}, {"env_config": {"instances": [{}, {}]}}, {"cvd": {}}, {"env_config": {}}):
+        with pytest.raises(CuttlefishError, match="configured env_config"):
+            managed_drv.create_cvd(json.dumps(config))
+    assert requests_mock.call_count == 0
+
+
+def test_managed_creation_checks_all_groups(requests_mock, managed_drv):
+    requests_mock.get(f"{BASE}/cvds", json={"cvds": [{"group": "other", "name": "other"}]})
+    with pytest.raises(CuttlefishError, match="already has a CVD"):
+        managed_drv.create_cvd(json.dumps({"env_config": managed_drv.env_config}))
+    assert all(r.method == "GET" for r in requests_mock.request_history)
+
+
+def test_managed_power_creation_checks_all_groups(requests_mock, managed_drv):
+    requests_mock.get(f"{BASE}/cvds", json={"cvds": [{"group": "other", "name": "other"}]})
+    with pytest.raises(CuttlefishError, match="already has a CVD"):
+        managed_drv.children["power"].on()
+    assert all(r.method == "GET" for r in requests_mock.request_history)
+
+
+def test_managed_serializes_creation(managed_drv):
+    from concurrent.futures import ThreadPoolExecutor
+
+    inventory = []
+
+    def create(*args):
+        inventory.append({"group": "cvd_1", "name": "dev1"})
+        return {"cvds": inventory}
+
+    def attempt():
+        try:
+            managed_drv.create_cvd(json.dumps({"env_config": managed_drv.env_config}))
+            return True
+        except CuttlefishError:
+            return False
+
+    with patch.object(managed_drv._backend, "list_cvds", side_effect=lambda: {"cvds": inventory}), \
+         patch.object(managed_drv._backend, "operate", side_effect=create), ThreadPoolExecutor(2) as pool:
+        assert sorted(pool.map(lambda _: attempt(), range(2))) == [False, True]
+    assert len(inventory) == 1
+
+
+@pytest.mark.parametrize("operation,expected", [
+    ("start_cvd", "running"), ("stop_cvd", "off"), ("delete_cvd", "off"),
+    ("restart_cvd", "running"), ("powerwash_cvd", "running"), ("reset_host", "off"),
+])
+def test_managed_records_power_intent(managed_drv, operation, expected):
+    from pathlib import Path
+
+    def perform(*args):
+        assert json.loads(Path(managed_drv.health_state_path).read_text())["state"] == "transition"
+        return {}
+
+    with patch.object(managed_drv._backend, "operate", side_effect=perform):
+        getattr(managed_drv, operation)()
+    state = json.loads(Path(managed_drv.health_state_path).read_text())
+    assert state["state"] == expected
+    assert "deadline" not in state
+
+
+def test_managed_records_failed_operation(managed_drv):
+    from pathlib import Path
+
+    with patch.object(managed_drv._backend, "operate", side_effect=CuttlefishError("runtime died")):
+        with pytest.raises(CuttlefishError):
+            managed_drv.start_cvd()
+    assert json.loads(Path(managed_drv.health_state_path).read_text())["state"] == "failed"
+
+
+def test_managed_initialization_preserves_startup_runtime_id(drv, tmp_path):
+    from .health import initialize
+
+    runtime_id = tmp_path / "runtime-id"
+    runtime_id.write_text("runtime-1")
+    state_path = tmp_path / "health.json"
+    initialize(str(state_path), str(runtime_id), BASE)
+    config = {"managed": True, "runtime_id_path": str(runtime_id), "health_state_path": str(state_path),
+              "env_config": {"instances": [{}]}, "health_ports": [7681]}
+    instance = Cuttlefish(**config)
+    assert instance._health["runtime_id"] == "runtime-1"
+    assert instance._health["ports"] == [7681]
+    instance.close()
+    runtime_id.write_text("runtime-2")
+    with pytest.raises(CuttlefishError, match="restarted"):
+        Cuttlefish(**config)
