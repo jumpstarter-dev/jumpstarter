@@ -165,7 +165,7 @@ kind_load_image() {
 # Install nginx ingress in kind cluster
 # This function deploys nginx ingress and waits for it to be ready
 # renovate: datasource=github-releases depName=kubernetes/ingress-nginx
-NGINX_INGRESS_VERSION=${NGINX_INGRESS_VERSION:-controller-v1.12.1}
+NGINX_INGRESS_VERSION=${NGINX_INGRESS_VERSION:-controller-v1.15.1}
 
 install_nginx_ingress() {
   echo -e "${GREEN}Deploying nginx ingress in kind ...${NC}"
