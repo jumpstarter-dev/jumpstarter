@@ -130,9 +130,9 @@ def build_qdl_command(step: QdlStep, firmware_root: Path) -> tuple[list[str], Pa
 
 
 def run_qdl_step(step: QdlStep, firmware_root: Path, *, timeout: int) -> subprocess.CompletedProcess[str]:
-    if any("provision_default.xml" in pattern for pattern in step.qdl.files):
-        fix_provision_default_xml(firmware_root / (step.qdl.workdir or step.qdl.storage))
     cmd, workdir = build_qdl_command(step, firmware_root)
+    if any("provision_default.xml" in pattern for pattern in step.qdl.files):
+        fix_provision_default_xml(workdir)
     logger.info("Running QDL: %s (cwd=%s)", " ".join(cmd), workdir)
     result = subprocess.run(
         cmd,
