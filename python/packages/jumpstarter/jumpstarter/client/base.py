@@ -100,7 +100,8 @@ class DriverClient(AsyncDriverClient):
         """
         Close the open stream session without a context manager.
         """
-        self.stack.close()
+        if hasattr(self, "stack"):
+            self.stack.close()
 
     def __del__(self):
         self.close()

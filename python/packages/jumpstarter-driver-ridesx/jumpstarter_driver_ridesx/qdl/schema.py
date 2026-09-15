@@ -88,7 +88,11 @@ def _parse_step(data: object) -> Step:
     if not isinstance(data, dict):
         raise ValidationError.from_exception_data(
             "Step",
-            [{"type": "value_error", "loc": (), "ctx": {"error": ValueError(f"Step must be a mapping, got {type(data).__name__}")}}],
+            [{
+                "type": "value_error",
+                "loc": (),
+                "ctx": {"error": ValueError(f"Step must be a mapping, got {type(data).__name__}")},
+            }],
         )
     if "set_mode" in data:
         return SetModeStep.model_validate(data)

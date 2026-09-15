@@ -17,7 +17,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import aiohttp
 import yaml
+from pydantic import TypeAdapter
 
 from ..tac import send_tac_sequence
 from .executor import execute_manifest, resolve_firmware_root
@@ -35,9 +37,6 @@ from jumpstarter.common.resources import PresignedRequestResource, Resource
 from jumpstarter.driver import Driver, export
 from jumpstarter.driver.flasher import StreamingFlasherInterface
 from jumpstarter.streams.progress import ProgressAttribute
-
-import aiohttp
-from pydantic import TypeAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -296,6 +295,46 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
             raise ValueError(f"invalid source_id: {source_id!r}")
         return candidate
 
+    def _clear_cache(self, work_dir: Path, manifest: FirmwareManifest | None) -> None:
+        """Remove cached firmware for a forced re-download."""
+        if manifest is not None:
+            firmware_root = resolve_firmware_root(work_dir, manifest)
+            if firmware_root.exists():
+                logger.info("Force download: removing cached firmware at %s", firmware_root)
+                shutil.rmtree(firmware_root, ignore_errors=True)
+        else:
+            logger.info("Force download: clearing cache at %s", work_dir)
+            shutil.rmtree(work_dir, ignore_errors=True)
+            work_dir.mkdir(parents=True, exist_ok=True)
+
+    async def _try_cache_hit(
+        self, work_dir: Path, manifest: FirmwareManifest, source: Any, ctx: _FlashContext,
+    ) -> FlashStatus | None:
+        """Return a FlashStatus if the cache is valid and fresh, else None."""
+        firmware_root = resolve_firmware_root(work_dir, manifest)
+        if not self._cache_is_valid(firmware_root):
+            return None
+        if not await self._cache_is_fresh(firmware_root, source):
+            logger.info("Cache stale: removing %s", firmware_root)
+            shutil.rmtree(firmware_root, ignore_errors=True)
+            return None
+        ctx.work_dir = work_dir
+        ctx.firmware_root = firmware_root
+        ctx.manifest = manifest
+        ctx.cache_dir = firmware_root
+        return FlashStatus(phase=FlashPhase.CACHE, message=f"Using cached firmware at {firmware_root}")
+
+    async def _collect_source_metadata(self, source: Any) -> dict[str, str] | None:
+        """Collect HTTP metadata from the source for cache freshness tracking."""
+        source_url = self._extract_source_url(source)
+        if not source_url:
+            return None
+        try:
+            return await self._http_head_metadata(source_url)
+        except Exception:
+            logger.debug("Failed to collect HTTP metadata for cache marker")
+            return None
+
     async def _prepare_cached_flash(
         self,
         source: Any,
@@ -312,38 +351,14 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         manifest = load_firmware_manifest_from_mapping(manifest_data) if manifest_data else None
 
         if force_download:
-            # Remove existing cache to force a fresh download.
-            if manifest is not None:
-                firmware_root = resolve_firmware_root(work_dir, manifest)
-                if firmware_root.exists():
-                    logger.info("Force download: removing cached firmware at %s", firmware_root)
-                    shutil.rmtree(firmware_root, ignore_errors=True)
-            else:
-                # Without a manifest we don't know the folder name, clear the whole work_dir.
-                logger.info("Force download: clearing cache at %s", work_dir)
-                shutil.rmtree(work_dir, ignore_errors=True)
-                work_dir.mkdir(parents=True, exist_ok=True)
+            self._clear_cache(work_dir, manifest)
 
-        # When a manifest is provided we can check the cache immediately.
         if manifest is not None:
-            firmware_root = resolve_firmware_root(work_dir, manifest)
-            if self._cache_is_valid(firmware_root):
-                if await self._cache_is_fresh(firmware_root, source):
-                    ctx.work_dir = work_dir
-                    ctx.firmware_root = firmware_root
-                    ctx.manifest = manifest
-                    ctx.cache_dir = firmware_root
-                    yield FlashStatus(
-                        phase=FlashPhase.CACHE,
-                        message=f"Using cached firmware at {firmware_root}",
-                    )
-                    return
-                else:
-                    logger.info("Cache stale: removing %s", firmware_root)
-                    shutil.rmtree(firmware_root, ignore_errors=True)
+            hit = await self._try_cache_hit(work_dir, manifest, source, ctx)
+            if hit is not None:
+                yield hit
+                return
 
-        # Need to download — either to populate the cache or to discover
-        # the embedded manifest.
         if source is None:
             if manifest is not None:
                 firmware_root = resolve_firmware_root(work_dir, manifest)
@@ -352,23 +367,14 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
                 )
             raise ValueError("firmware source is required when no manifest is provided")
 
-        # Set cache_dir early so the error handler can clean up partial downloads.
         if manifest is not None:
             ctx.cache_dir = resolve_firmware_root(work_dir, manifest)
 
-        # Collect HTTP metadata from the source for the cache marker.
-        source_url = self._extract_source_url(source)
-        http_metadata: dict[str, str] | None = None
-        if source_url:
-            try:
-                http_metadata = await self._http_head_metadata(source_url)
-            except Exception:
-                logger.debug("Failed to collect HTTP metadata for cache marker")
+        http_metadata = await self._collect_source_metadata(source)
 
         async for status in self._download_and_extract(source, work_dir, manifest, source_filename=source_filename):
             yield status
 
-        # If no manifest was provided, discover it from the extracted archive.
         if manifest is None:
             manifest = self._resolve_manifest(None, work_dir)
 
@@ -378,10 +384,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         ctx.firmware_root = firmware_root
         ctx.manifest = manifest
         ctx.cache_dir = firmware_root
-        yield FlashStatus(
-            phase=FlashPhase.CACHE,
-            message=f"Cached firmware at {firmware_root}",
-        )
+        yield FlashStatus(phase=FlashPhase.CACHE, message=f"Cached firmware at {firmware_root}")
 
     async def _prepare_ephemeral_flash(
         self,
@@ -478,6 +481,18 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         except BrokenPipeError:
             return False
 
+    _WRITE_THRESHOLD = 1024 * 1024  # 1 MB
+    _MIN_HEADER_BYTES = 6  # Enough to detect xz, gzip, bzip2, zstd magic.
+
+    async def _flush_tar_buffer(
+        self, tar_proc: subprocess.Popen | None, write_buf: bytearray, extract_root: Path,
+    ) -> subprocess.Popen:
+        """Flush remaining buffer into tar, starting the process if needed."""
+        if tar_proc is None:
+            tar_proc = self._start_tar(bytes(write_buf[:6]), extract_root)
+        await self._write_to_tar(tar_proc, bytes(write_buf))
+        return tar_proc
+
     async def _stream_to_tar(
         self,
         res: Any,
@@ -488,16 +503,14 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         """Pipe a resource stream into tar, detecting compression from magic bytes."""
         tar_proc: subprocess.Popen | None = None
         write_buf = bytearray()
-        WRITE_THRESHOLD = 1024 * 1024  # 1 MB
         last_update = time.monotonic()
-        _MIN_HEADER_BYTES = 6  # Enough to detect xz, gzip, bzip2, zstd magic.
         try:
             async for chunk in res:
                 write_buf.extend(chunk)
                 result.bytes_received += len(chunk)
-                if tar_proc is None and len(write_buf) >= _MIN_HEADER_BYTES:
+                if tar_proc is None and len(write_buf) >= self._MIN_HEADER_BYTES:
                     tar_proc = self._start_tar(bytes(write_buf[:6]), extract_root)
-                if tar_proc is not None and len(write_buf) >= WRITE_THRESHOLD:
+                if tar_proc is not None and len(write_buf) >= self._WRITE_THRESHOLD:
                     if not await self._write_to_tar(tar_proc, bytes(write_buf)):
                         break
                     write_buf.clear()
@@ -510,11 +523,8 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
                         bytes_transferred=result.bytes_received,
                         bytes_total=bytes_total,
                     )
-            # Flush remaining buffer. Start tar if stream was shorter than 6 bytes.
             if write_buf:
-                if tar_proc is None:
-                    tar_proc = self._start_tar(bytes(write_buf[:6]), extract_root)
-                await self._write_to_tar(tar_proc, bytes(write_buf))
+                tar_proc = await self._flush_tar_buffer(tar_proc, write_buf, extract_root)
         finally:
             if tar_proc is not None:
                 try:
@@ -525,7 +535,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         if tar_proc is None:
             raise RuntimeError("No data received from firmware source")
         await asyncio.to_thread(
-            self._finish_tar, tar_proc, result.bytes_received // WRITE_THRESHOLD, result.bytes_received,
+            self._finish_tar, tar_proc, result.bytes_received // self._WRITE_THRESHOLD, result.bytes_received,
         )
 
     async def _download_and_extract(
