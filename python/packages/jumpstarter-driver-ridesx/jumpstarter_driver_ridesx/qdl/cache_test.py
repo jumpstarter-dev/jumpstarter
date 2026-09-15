@@ -22,6 +22,10 @@ def test_cache_is_valid(tmp_path):
 
     firmware_root.mkdir(parents=True)
     (firmware_root / "ufs").mkdir()
+    # Cache is only valid when the marker file is present
+    assert not driver._cache_is_valid(firmware_root)
+
+    (firmware_root / driver._CACHE_MARKER).write_text("{}")
     assert driver._cache_is_valid(firmware_root)
 
 
@@ -31,6 +35,7 @@ def test_cache_is_valid_empty_directory(tmp_path):
     manifest = FirmwareManifest(name="test", data=FirmwareData(folder="empty"), steps=[])
     firmware_root = driver._firmware_root(manifest)
     firmware_root.mkdir(parents=True)
+    # Empty directory without marker is not valid
     assert not driver._cache_is_valid(firmware_root)
 
 

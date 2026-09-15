@@ -24,7 +24,7 @@ def test_load_manifest_source_from_https_url():
     with patch("jumpstarter_driver_ridesx.qdl.client.urlopen", return_value=response) as urlopen:
         manifest = _load_manifest_source("https://example.com/manifests/es22.yaml")
 
-    urlopen.assert_called_once_with("https://example.com/manifests/es22.yaml")
+    urlopen.assert_called_once_with("https://example.com/manifests/es22.yaml", timeout=30)
     assert manifest["name"] == "SA8775P ES22 AWE Firmware"
     assert manifest["data"]["folder"] == "r00002.2a_AWE"
 

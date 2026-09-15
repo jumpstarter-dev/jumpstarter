@@ -34,13 +34,20 @@ def run_fastboot(
 ) -> subprocess.CompletedProcess[str]:
     """Run a fastboot command and return the result.
 
-    Raises ``RuntimeError`` on non-zero exit code.
+    Raises ``RuntimeError`` on non-zero exit code, timeout, or missing binary.
     """
     cmd = _build_cmd(args, device_id=device_id)
     logger.info("Running: %s", " ".join(cmd))
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, check=False, timeout=timeout,
-    )
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            f"timeout while running fastboot {args[0]}"
+        ) from None
+    except FileNotFoundError:
+        raise RuntimeError("fastboot command not found") from None
     if result.returncode != 0:
         raise RuntimeError(
             f"fastboot {args[0]} failed (rc={result.returncode}): "
@@ -91,9 +98,15 @@ def continue_boot(
     """
     cmd = _build_cmd(["continue"], device_id=device_id)
     logger.info("Running: %s", " ".join(cmd))
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, check=False, timeout=timeout,
-    )
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        if raise_on_failure:
+            raise RuntimeError(f"fastboot continue failed: {exc}") from exc
+        logger.warning("fastboot continue failed: %s", exc)
+        return subprocess.CompletedProcess(cmd, returncode=1)
     if result.returncode != 0:
         msg = (
             f"fastboot continue failed (rc={result.returncode}): "

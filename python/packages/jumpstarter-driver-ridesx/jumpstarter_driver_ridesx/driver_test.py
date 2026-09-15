@@ -339,7 +339,7 @@ def test_flash_with_fastboot_flash_failure(temp_storage_dir, ridesx_driver):
             mock_subprocess.side_effect = subprocess.CalledProcessError(1, "fastboot", stderr=b"flash failed")
 
             # When called through client, RuntimeError becomes DriverError
-            with pytest.raises(DriverError, match="Failed to flash"):
+            with pytest.raises(DriverError, match="fastboot flash failed"):
                 client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img"})
 
 
@@ -354,7 +354,7 @@ def test_flash_with_fastboot_flash_timeout(temp_storage_dir, ridesx_driver):
             mock_subprocess.side_effect = subprocess.TimeoutExpired("fastboot", 20 * 60)
 
             # When called through client, RuntimeError becomes DriverError
-            with pytest.raises(DriverError, match="timeout while flashing"):
+            with pytest.raises(DriverError, match="timeout while running fastboot"):
                 client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img"})
 
 
@@ -438,7 +438,7 @@ def test_erase_partition_failure(ridesx_driver):
             error.stderr = "FAILED (remote: Partition not found)"
             mock_subprocess.side_effect = error
 
-            with pytest.raises(DriverError, match="Failed to erase partition"):
+            with pytest.raises(DriverError, match="fastboot erase failed"):
                 client.call("erase_partition", "ABC123", "recoveryinfo")
 
 
@@ -449,7 +449,7 @@ def test_erase_partition_timeout(ridesx_driver):
         with patch("subprocess.run") as mock_subprocess:
             mock_subprocess.side_effect = subprocess.TimeoutExpired("fastboot", 120)
 
-            with pytest.raises(DriverError, match="Timeout while erasing"):
+            with pytest.raises(DriverError, match="timeout while running fastboot"):
                 client.call("erase_partition", "ABC123", "recoveryinfo")
 
 
