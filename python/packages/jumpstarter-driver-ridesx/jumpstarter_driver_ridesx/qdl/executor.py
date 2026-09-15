@@ -9,6 +9,7 @@ import subprocess
 from collections import Counter
 from pathlib import Path
 
+from .. import fastboot as fb
 from ..tac import send_tac_sequence
 from .schema import (
     FastbootFlashOp,
@@ -176,20 +177,9 @@ def _run_fastboot_flash(
         image_path = _validate_contained_path(firmware_root, Path(operation.file), "fastboot.file")
         if not image_path.exists():
             raise FileNotFoundError(f"Fastboot image not found: {image_path}")
-        logger.info("fastboot flash %s %s", operation.partition, image_path.name)
-        result = subprocess.run(
-            ["fastboot", "flash", operation.partition, str(image_path)],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=timeout,
-        )
+        result = fb.flash(operation.partition, image_path, timeout=timeout)
         collected.stdout += result.stdout
         collected.stderr += result.stderr
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"fastboot flash {operation.partition} failed: {result.stderr or result.stdout}"
-            )
 
 
 def run_fastboot_step(
@@ -204,18 +194,9 @@ def run_fastboot_step(
 
     if config.erase:
         for partition in config.erase:
-            logger.info("fastboot erase %s", partition)
-            result = subprocess.run(
-                ["fastboot", "erase", partition],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=timeout,
-            )
+            result = fb.erase(partition, timeout=timeout)
             collected.stdout += result.stdout
             collected.stderr += result.stderr
-            if result.returncode != 0:
-                raise RuntimeError(f"fastboot erase {partition} failed: {result.stderr or result.stdout}")
 
     if config.flash:
         _run_fastboot_flash(
@@ -224,18 +205,9 @@ def run_fastboot_step(
         )
 
     if config.continue_:
-        logger.info("fastboot continue")
-        result = subprocess.run(
-            ["fastboot", "continue"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=timeout,
-        )
+        result = fb.continue_boot(timeout=timeout)
         collected.stdout += result.stdout
         collected.stderr += result.stderr
-        if result.returncode != 0:
-            raise RuntimeError(f"fastboot continue failed: {result.stderr or result.stdout}")
 
     return collected
 

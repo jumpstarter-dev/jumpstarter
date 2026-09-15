@@ -1,14 +1,14 @@
 import asyncio
 import os
 import subprocess
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict
 
 from jumpstarter_driver_opendal.driver import Opendal
 
-from .tac import PROMPT, send_power_commands_sequence
+from . import fastboot as fb
+from .qdl.soc_profiles import SoCType, get_soc_profile
+from .tac import send_power_commands_sequence
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.common.fls import get_fls_binary
 from jumpstarter.driver import Driver, export
@@ -20,6 +20,7 @@ class RideSXDriver(Driver):
 
     driver_type = "automotive"
 
+    soc_type: SoCType = field(default="sa8775p")
     decompression_timeout: int = field(default=15 * 60)  # 15 minutes
     flash_timeout: int = field(default=30 * 60)  # 30 minutes
     continue_timeout: int = field(default=20 * 60)  # 20 minutes
@@ -133,53 +134,14 @@ class RideSXDriver(Driver):
 
     @export
     def detect_fastboot_device(self, max_attempts: int = 5, delay: float = 2.0):
-        max_attempts = int(max_attempts)
-        delay = float(delay)
-
-        self.logger.info("checking for fastboot devices...")
-
-        for attempt in range(max_attempts):
-            try:
-                self.logger.debug(f"running: fastboot devices -l (attempt {attempt + 1}/{max_attempts})")
-                result = subprocess.run(
-                    ["fastboot", "devices", "-l"], capture_output=True, text=True, check=True, timeout=10
-                )
-
-                self.logger.debug(f"fastboot devices output: {result.stdout.strip()}")
-                self.logger.debug(f"fastboot devices return code: {result.returncode}")
-
-                if result.stdout.strip():
-                    device_id = result.stdout.strip().split()[0]
-                    self.logger.info(f"Found fastboot device: {device_id}")
-                    return {"status": "device_found", "device_id": device_id}
-                else:
-                    self.logger.warning(f"No fastboot devices found on attempt {attempt + 1}/{max_attempts}")
-                    if attempt < max_attempts - 1:
-                        time.sleep(delay)
-            except subprocess.TimeoutExpired:
-                self.logger.warning(f"Fastboot command timed out on attempt {attempt + 1}/{max_attempts}")
-                if attempt < max_attempts - 1:
-                    time.sleep(delay)
-            except subprocess.CalledProcessError as e:
-                self.logger.error(f"Fastboot command failed with return code {e.returncode}")
-                raise RuntimeError(f"Fastboot command failed: {e}") from e
-            except FileNotFoundError:
-                raise RuntimeError("fastboot command not found") from None
-
-        self.logger.error("No fastboot devices found after all attempts")
-        try:
-            self.logger.info("Final attempt with verbose fastboot output...")
-            result = subprocess.run(["fastboot", "devices", "-l"], capture_output=True, text=True, timeout=10)
-            self.logger.error(f"Final fastboot stdout: '{result.stdout}'")
-            self.logger.error(f"Final fastboot stderr: '{result.stderr}'")
-        except Exception as e:
-            self.logger.error(f"Final fastboot check failed: {e}")
-
-        return {"status": "no_device_found", "device_id": None}
+        return fb.detect_device(
+            max_attempts=int(max_attempts),
+            delay=float(delay),
+        )
 
     @export
-    def flash_with_fastboot(self, device_id: str, partitions: Dict[str, str]):
-        """Flash partitions using fastboot
+    def flash_with_fastboot(self, device_id: str, partitions: dict[str, str]):
+        """Flash partitions using fastboot.
 
         Args:
             device_id: The fastboot device ID
@@ -198,38 +160,17 @@ class RideSXDriver(Driver):
             if self._needs_decompression(filename):
                 file_path = self._decompress_file(file_path)
 
-            self.logger.info(f"Flashing {partition_name}: {file_path.name}")
+            fb.flash(
+                partition_name, file_path,
+                device_id=device_id, timeout=self.flash_timeout,
+            )
+            self.logger.info(f"Successfully flashed {partition_name}")
 
-            cmd = ["fastboot", "-s", device_id, "flash", partition_name, str(file_path)]
-            self.logger.debug(f"Running command: {' '.join(cmd)}")
-
-            try:
-                result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=self.flash_timeout)
-                self.logger.info(f"Successfully flashed {partition_name}")
-                self.logger.debug(f"Flash stdout: {result.stdout}")
-                if result.stderr:
-                    self.logger.debug(f"Flash stderr: {result.stderr}")
-            except subprocess.CalledProcessError as e:
-                self.logger.error(f"Failed to flash {partition_name} - return code: {e.returncode}")
-                self.logger.error(f"stdout: {e.stdout}")
-                self.logger.error(f"stderr: {e.stderr}")
-                raise RuntimeError(f"Failed to flash {partition_name}: {e}") from e
-            except subprocess.TimeoutExpired:
-                self.logger.error(f"timeout while flashing {partition_name}")
-                raise RuntimeError(f"timeout while flashing {partition_name}") from None
-
-        self.logger.info("Running fastboot continue...")
-        cmd = ["fastboot", "-s", device_id, "continue"]
-        self.logger.debug(f"Running command: {' '.join(cmd)}")
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=self.continue_timeout)
-            self.logger.debug(f"Fastboot continue stdout: {result.stdout}")
-            self.logger.debug(f"Fastboot continue stderr: {result.stderr}")
-            self.logger.info("Fastboot continue completed successfully")
-        except subprocess.CalledProcessError as e:
-            self.logger.warning(f"Fastboot continue failed - return code: {e.returncode}")
-            self.logger.warning(f"stdout: {e.stdout}")
-            self.logger.warning(f"stderr: {e.stderr}")
+        fb.continue_boot(
+            device_id=device_id,
+            timeout=self.continue_timeout,
+            raise_on_failure=False,
+        )
 
     @staticmethod
     def _validate_oci_url(oci_url: str):
@@ -274,7 +215,7 @@ class RideSXDriver(Driver):
     def flash_oci_image(
         self,
         oci_url: str,
-        partitions: Dict[str, str] | None = None,
+        partitions: dict[str, str] | None = None,
         oci_username: str | None = None,
         oci_password: str | None = None,
     ):
@@ -332,7 +273,7 @@ class RideSXDriver(Driver):
 
     @export
     def erase_partition(self, device_id: str, partition: str) -> dict[str, str]:
-        """Erase a partition using fastboot
+        """Erase a partition using fastboot.
 
         Args:
             device_id: The fastboot device ID
@@ -342,66 +283,21 @@ class RideSXDriver(Driver):
             raise ValueError("Partition name cannot be empty")
 
         self.logger.info(f"Erasing partition '{partition}' on device {device_id}")
-
-        cmd = ["fastboot", "-s", device_id, "erase", partition]
-        self.logger.debug(f"Running command: {' '.join(cmd)}")
-
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=self.erase_timeout)
-            self.logger.info(f"Successfully erased partition '{partition}'")
-            self.logger.debug(f"Erase stdout: {result.stdout}")
-            if result.stderr:
-                self.logger.debug(f"Erase stderr: {result.stderr}")
-            return {"status": "success", "partition": partition, "output": result.stdout}
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to erase partition '{partition}' - return code: {e.returncode}")
-            self.logger.error(f"stdout: {e.stdout}")
-            self.logger.error(f"stderr: {e.stderr}")
-            raise RuntimeError(f"Failed to erase partition '{partition}': {e.stderr or e.stdout}") from e
-        except subprocess.TimeoutExpired:
-            self.logger.error(f"Timeout while erasing partition '{partition}'")
-            raise RuntimeError(f"Timeout while erasing partition '{partition}'") from None
-        except FileNotFoundError:
-            raise RuntimeError("fastboot command not found") from None
+        result = fb.erase(partition, device_id=device_id, timeout=self.erase_timeout)
+        self.logger.info(f"Successfully erased partition '{partition}'")
+        return {"status": "success", "partition": partition, "output": result.stdout}
 
     @export
     async def boot_to_fastboot(self):
-        """Boot device to fastboot mode"""
-        self.logger.info("Booting device to fastboot mode")
-        commands = [
-            # power off
-            ("devicePower 0", 0),
-            ("gpio vbusdis1 0", 0),
-            ("usbDevicePower 1", 0),
-            ("ttl outputBit 1 0", 0),
-            ("gpio volup 0", 0),
-            ("ttl outputBit 2 1", 0),
-            ("ttl outputBit 4 0", 0.5),
-            # power on
-            ("devicePower 1", 0.9),
-            ("usbDevicePower 1", 0),
-            ("gpio vbusdis1 0", 0.03),
-            ("ttl outputBit 1 1", 0.8),
-            ("ttl outputBit 1 0", 8),
-            ("ttl outputBit 2 0", 0.5),
-        ]
-        serial = self.children["serial"]
-        async with serial.connect() as stream:
-            for command, delay in commands:
-                self.logger.info(f"Executing {command}")
-                await stream.send(f"{command}\r".encode())
-                data = b""
-                while b"ok" not in data:
-                    chunk = await stream.receive()
-                    data += chunk
-                self.logger.debug(f"Command {command} acknowledged with 'ok'")
-                prompt = PROMPT
-                while prompt not in data:
-                    chunk = await stream.receive()
-                    data += chunk
-                self.logger.debug(f"prompt returned after command: {command}")
-                await asyncio.sleep(delay)
-        self.logger.info("device should now be in fastboot mode")
+        """Boot device to fastboot mode using the configured SoC profile."""
+        profile = get_soc_profile(self.soc_type)
+        self.logger.info("Booting device to fastboot mode (profile: %s)", profile.name)
+        await send_power_commands_sequence(
+            self.children["serial"],
+            self.logger,
+            profile.fastboot_commands,
+        )
+        self.logger.info("Device should now be in fastboot mode")
 
 
 @dataclass(kw_only=True)
