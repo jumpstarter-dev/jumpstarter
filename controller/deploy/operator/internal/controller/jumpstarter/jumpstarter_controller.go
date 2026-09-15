@@ -1315,8 +1315,9 @@ func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *op
 			if t.Logging.Filter.MinSeverity != "" {
 				telemetryCfg.Logging.Filter.MinSeverity = t.Logging.Filter.MinSeverity
 			}
-			// Include CA certificate when cert-manager is enabled so exporters can verify TLS
+			// Include CA certificate so exporters can verify TLS.
 			if jumpstarter.Spec.CertManager.Enabled {
+				// cert-manager path: CA is in the cert-manager-managed CA secret.
 				caCert, err := r.resolveTelemetryCA(ctx, jumpstarter)
 				if err != nil {
 					// Log at default verbosity so operators notice during initial cert-manager setup.
@@ -1326,6 +1327,17 @@ func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *op
 						"error", err)
 				} else if caCert != "" {
 					telemetryCfg.Certificate = caCert
+				}
+			} else if t.GRPC.TLS.CertSecret != "" {
+				// Manual CertSecret path: read ca.crt from the user-provided TLS secret.
+				// The field is optional — if absent the secret uses a system-trusted certificate
+				// and exporters rely on the system CA pool.
+				var tlsSecret corev1.Secret
+				if err := r.Get(ctx, client.ObjectKey{Name: t.GRPC.TLS.CertSecret, Namespace: jumpstarter.Namespace}, &tlsSecret); err != nil {
+					logf.FromContext(ctx).V(1).Info("Could not read manual telemetry TLS secret for CA; exporters will use the system CA pool",
+						"secret", t.GRPC.TLS.CertSecret, "error", err)
+				} else if caCert, ok := tlsSecret.Data["ca.crt"]; ok && len(caCert) > 0 {
+					telemetryCfg.Certificate = string(caCert)
 				}
 			}
 			cfg.Telemetry = telemetryCfg
@@ -1662,8 +1674,16 @@ func (r *JumpstarterReconciler) reconcileSuspendedRouterDeployments(ctx context.
 
 		idx, err := strconv.ParseInt(idxStr, 10, 32)
 		if err != nil {
-			log.Info("Skipping router deployment with invalid router-index during suspension",
+			log.Info("Scaling router deployment with invalid router-index to 0 during suspension",
 				"name", dep.Name, "router-index", idxStr, "error", err)
+			if dep.Spec.Replicas == nil || *dep.Spec.Replicas != 0 {
+				dep.Spec.Replicas = zero
+				if err := r.Update(ctx, dep); err != nil {
+					return fmt.Errorf("failed to suspend router deployment %s with invalid router-index: %w", dep.Name, err)
+				}
+				r.emitEventf(jumpstarter, corev1.EventTypeNormal, "RouterDeploymentSuspended",
+					"Router deployment suspended (invalid router-index label): name=%s namespace=%s", dep.Name, dep.Namespace)
+			}
 			continue
 		}
 

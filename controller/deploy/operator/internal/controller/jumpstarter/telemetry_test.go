@@ -1032,7 +1032,7 @@ var _ = Describe("buildConfig telemetry certificate", func() {
 		Expect(cfg.Telemetry.Certificate).To(Equal(externalCABundle))
 	})
 
-	It("does not include certificate when cert-manager is disabled", func() {
+	It("does not include certificate when cert-manager is disabled and no CertSecret is set", func() {
 		js := &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-cfg-no-tls", Namespace: crNamespace},
 			Spec: operatorv1alpha1.JumpstarterSpec{
@@ -1046,6 +1046,98 @@ var _ = Describe("buildConfig telemetry certificate", func() {
 
 		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		cfg, err := r.buildConfig(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(cfg.Telemetry).NotTo(BeNil())
+		Expect(cfg.Telemetry.Enabled).To(BeTrue())
+		Expect(cfg.Telemetry.Certificate).To(BeEmpty())
+	})
+
+	It("includes ca.crt from manual CertSecret when cert-manager is disabled", func() {
+		By("creating a TLS secret with ca.crt")
+		Expect(k8sClient.Create(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-telemetry-tls", Namespace: crNamespace},
+			Data: map[string][]byte{
+				"tls.crt": []byte("fake-cert"),
+				"tls.key": []byte("fake-key"),
+				"ca.crt":  []byte(testPEM),
+			},
+		})).To(Succeed())
+
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cfg-manual-ca", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled: true,
+					Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+					GRPC: operatorv1alpha1.TelemetryGRPCConfig{
+						TLS: operatorv1alpha1.TLSConfig{CertSecret: "my-telemetry-tls"},
+					},
+				},
+			},
+		}
+
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		cfg, err := r.buildConfig(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(cfg.Telemetry).NotTo(BeNil())
+		Expect(cfg.Telemetry.Enabled).To(BeTrue())
+		Expect(cfg.Telemetry.Certificate).To(ContainSubstring("BEGIN CERTIFICATE"))
+	})
+
+	It("does not include certificate when manual CertSecret has no ca.crt (system-trusted cert)", func() {
+		By("creating a TLS secret without ca.crt")
+		Expect(k8sClient.Create(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-public-tls", Namespace: crNamespace},
+			Data: map[string][]byte{
+				"tls.crt": []byte("fake-cert"),
+				"tls.key": []byte("fake-key"),
+			},
+		})).To(Succeed())
+
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cfg-public-ca", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled: true,
+					Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+					GRPC: operatorv1alpha1.TelemetryGRPCConfig{
+						TLS: operatorv1alpha1.TLSConfig{CertSecret: "my-public-tls"},
+					},
+				},
+			},
+		}
+
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		cfg, err := r.buildConfig(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(cfg.Telemetry).NotTo(BeNil())
+		Expect(cfg.Telemetry.Enabled).To(BeTrue())
+		Expect(cfg.Telemetry.Certificate).To(BeEmpty())
+	})
+
+	It("does not fail when manual CertSecret does not exist (logs at V(1) instead)", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cfg-missing-manual", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled: true,
+					Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+					GRPC: operatorv1alpha1.TelemetryGRPCConfig{
+						TLS: operatorv1alpha1.TLSConfig{CertSecret: "nonexistent-secret"},
+					},
+				},
+			},
+		}
+
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		cfg, err := r.buildConfig(ctx, js)
+		// Should not fail — logs at V(1) and continues without certificate
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(cfg.Telemetry).NotTo(BeNil())
