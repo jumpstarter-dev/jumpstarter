@@ -24,7 +24,10 @@ def _extract_jpegs(buffer: bytearray, chunk: bytes) -> list[bytes]:
     while True:
         start = buffer.find(b"\xff\xd8")
         if start == -1:
-            buffer.clear()
+            if len(buffer) > 0 and buffer[-1] == 0xFF:
+                buffer[:] = buffer[-1:]
+            else:
+                buffer.clear()
             break
         if start > 0:
             del buffer[:start]
@@ -39,7 +42,8 @@ def _extract_jpegs(buffer: bytearray, chunk: bytes) -> list[bytes]:
 class V4L2CtlMjpegCapture:
     """Capture MJPEG frames using ``v4l2-ctl --stream-mmap``."""
 
-    def __init__(self) -> None:
+    def __init__(self, v4l2_ctl_executable: str | None = None) -> None:
+        self._v4l2_ctl_executable = v4l2_ctl_executable
         self._proc: subprocess.Popen[bytes] | None = None
         self._thread: threading.Thread | None = None
         self._queue: queue.Queue[bytes] = queue.Queue(maxsize=32)
@@ -48,13 +52,15 @@ class V4L2CtlMjpegCapture:
         self._device = ""
         self._width = 0
         self._height = 0
+        self._fps = 0
 
     @property
     def is_open(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
     def open(self, device: int | str, width: int, height: int, fps: int) -> None:
-        if shutil.which("v4l2-ctl") is None:
+        executable = self._v4l2_ctl_executable or shutil.which("v4l2-ctl")
+        if executable is None:
             raise OSError("v4l2-ctl not found (install v4l-utils)")
 
         if self.is_open:
@@ -63,6 +69,8 @@ class V4L2CtlMjpegCapture:
         self._device = _device_path(device)
         self._width = width
         self._height = height
+        self._fps = fps
+        self._v4l2_ctl_executable = executable
         self._stop.clear()
 
         self._thread = threading.Thread(target=self._reader_loop, name="v4l2-ctl-mjpeg", daemon=True)
@@ -76,15 +84,22 @@ class V4L2CtlMjpegCapture:
         )
 
     def _start_process(self) -> subprocess.Popen[bytes]:
+        executable = self._v4l2_ctl_executable or "v4l2-ctl"
         cmd = [
-            "v4l2-ctl",
+            executable,
             "-d",
             self._device,
             f"--set-fmt-video=width={self._width},height={self._height},pixelformat=MJPG",
-            "--stream-mmap",
-            "--stream-count=120",
-            "--stream-to=-",
         ]
+        if self._fps > 0:
+            cmd.append(f"--set-parm={self._fps}")
+        cmd.extend(
+            [
+                "--stream-mmap",
+                "--stream-count=120",
+                "--stream-to=-",
+            ]
+        )
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,

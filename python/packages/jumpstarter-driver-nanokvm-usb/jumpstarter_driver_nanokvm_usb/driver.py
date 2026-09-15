@@ -10,7 +10,7 @@ from jumpstarter.driver import Driver, export, exportstream
 
 from .device import NanoKVMUSBDevice
 from .keyboard import resolve_key_code
-from .mouse import MouseButton
+from .mouse import MouseButton, resolve_button
 
 __all__ = ["NanoKVMUSBVideo", "NanoKVMUSBHID", "NanoKVMUSB", "MouseButton"]
 
@@ -29,6 +29,7 @@ class NanoKVMUSBDriverBase(Driver):
     video_jpeg_quality: int = 95
     video_discard_stale: int = 1
     video_stream_buffer_size: int = 32
+    v4l2_ctl_executable: str | None = None
     screen_width: int = 1920
     screen_height: int = 1080
     device: NanoKVMUSBDevice | None = None
@@ -48,6 +49,7 @@ class NanoKVMUSBDriverBase(Driver):
                 video_format=self.video_format,
                 video_jpeg_quality=self.video_jpeg_quality,
                 video_discard_stale=self.video_discard_stale,
+                v4l2_ctl_executable=self.v4l2_ctl_executable,
                 screen_width=self.screen_width,
                 screen_height=self.screen_height,
             )
@@ -64,7 +66,7 @@ class NanoKVMUSBDriverBase(Driver):
     def close(self):
         if self._owns_device and self.device is not None:
             try:
-                anyio.from_thread.run(self.device.close)
+                self.device.close()
             except Exception as exc:
                 self.logger.debug(f"Error closing device: {exc}")
 
@@ -143,7 +145,7 @@ class NanoKVMUSBHID(NanoKVMUSBDriverBase):
     async def paste_text(self, text: str):
         device = await self._ensure_device()
         await to_thread.run_sync(device.type_text, text)
-        self.logger.info(f"Pasted text: {text}")
+        self.logger.info("Pasted HID text (%d characters)", len(text))
 
     @export
     async def press_key(self, key: str):
@@ -198,17 +200,13 @@ class NanoKVMUSBHID(NanoKVMUSBDriverBase):
         x: float | None = None,
         y: float | None = None,
     ):
+        button_label = button if isinstance(button, str) else getattr(button, "name", str(button))
         if isinstance(button, str):
-            button_map = {
-                "left": MouseButton.LEFT,
-                "right": MouseButton.RIGHT,
-                "middle": MouseButton.MIDDLE,
-            }
-            button = button_map.get(button.lower(), MouseButton.LEFT)
+            button = resolve_button(button)
 
         device = await self._ensure_device()
         await to_thread.run_sync(device.mouse_click, button, x, y)
-        self.logger.info(f"Mouse {button.name} clicked")
+        self.logger.info("Mouse %s clicked", button_label)
 
     @export
     async def mouse_scroll(self, dx: int, dy: int):
@@ -235,6 +233,7 @@ class NanoKVMUSB(Composite):
     video_jpeg_quality: int = 95
     video_discard_stale: int = 1
     video_stream_buffer_size: int = 32
+    v4l2_ctl_executable: str | None = None
     screen_width: int = 1920
     screen_height: int = 1080
 
@@ -251,6 +250,7 @@ class NanoKVMUSB(Composite):
             video_format=self.video_format,
             video_jpeg_quality=self.video_jpeg_quality,
             video_discard_stale=self.video_discard_stale,
+            v4l2_ctl_executable=self.v4l2_ctl_executable,
             screen_width=self.screen_width,
             screen_height=self.screen_height,
         )
@@ -290,6 +290,6 @@ class NanoKVMUSB(Composite):
 
     def close(self):
         try:
-            anyio.from_thread.run(self._shared_device.close)
+            self._shared_device.close()
         except Exception as exc:
             self.logger.debug(f"Error closing shared device: {exc}")
