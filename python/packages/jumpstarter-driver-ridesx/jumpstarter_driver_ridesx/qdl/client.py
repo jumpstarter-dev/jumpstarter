@@ -273,10 +273,15 @@ class QualcommFlasherClient(StreamingFlasherClient, CompositeClient):
         compression=None,
     ):
         manifest_data = _manifest_data_from_source(manifest)
-        source_id = hashlib.sha256(str(path).encode()).hexdigest()[:12]
-
         local_path, url = _parse_path(path)
         source_filename = str(path)
+        if url is not None:
+            source_id = hashlib.sha256(str(path).encode()).hexdigest()[:12]
+        else:
+            stat = local_path.stat()
+            source_id = hashlib.sha256(
+                f"{local_path.resolve()}:{stat.st_mtime_ns}:{stat.st_size}".encode(),
+            ).hexdigest()[:12]
         if url is not None:
             with _http_url_adapter(client=self, url=url, mode="rb") as handle:
                 yield from self._iter_flash_status(

@@ -2,7 +2,20 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from jumpstarter_driver_ridesx.tac import send_tac_command
+from jumpstarter_driver_ridesx.tac import PROMPT, send_tac_command
+
+
+@pytest.mark.asyncio
+async def test_send_tac_command_waits_for_prompt():
+    tac = MagicMock()
+    stream = AsyncMock()
+    stream.__aenter__ = AsyncMock(return_value=stream)
+    stream.__aexit__ = AsyncMock(return_value=None)
+    stream.receive = AsyncMock(side_effect=[b"ok\r\n", PROMPT])
+    tac.connect.return_value = stream
+
+    await send_tac_command(tac, "devicePower 0", timeout=1.0)
+    stream.send.assert_called_once_with(b"devicePower 0\r")
 
 
 @pytest.mark.asyncio

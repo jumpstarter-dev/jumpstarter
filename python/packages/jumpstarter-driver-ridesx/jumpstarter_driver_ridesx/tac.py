@@ -10,22 +10,37 @@ PROMPT = b"CMD >> "
 DEFAULT_TAC_COMMAND_TIMEOUT = 10.0
 
 
+async def _receive_until(
+    data: bytes, stream, pattern: bytes, *, deadline: float, error_message: str
+) -> bytes:
+    loop = asyncio.get_running_loop()
+    while pattern not in data:
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            raise TimeoutError(error_message)
+        chunk = await asyncio.wait_for(stream.receive(), timeout=remaining)
+        data += chunk
+    return data
+
+
 async def _send_power_command_on_stream(
     stream, logger, command: str, *, timeout: float
 ) -> None:
     """Send a single power command on an already-open stream and wait for ok."""
     logger.info(f"Executing power command: {command}")
     await stream.send(f"{command}\r".encode())
-    data = b""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
-    while b"ok" not in data:
-        remaining = deadline - loop.time()
-        if remaining <= 0:
-            raise TimeoutError(f"Power command '{command}' timed out after {timeout}s")
-        chunk = await asyncio.wait_for(stream.receive(), timeout=remaining)
-        data += chunk
+    data = await _receive_until(
+        b"", stream, b"ok", deadline=deadline,
+        error_message=f"Power command '{command}' timed out after {timeout}s",
+    )
     logger.debug(f"Command {command} acknowledged with 'ok'")
+    await _receive_until(
+        data, stream, PROMPT, deadline=deadline,
+        error_message=f"Power command '{command}' timed out waiting for prompt after {timeout}s",
+    )
+    logger.debug(f"prompt returned after command: {command}")
 
 
 async def send_power_command(
@@ -50,15 +65,16 @@ async def send_power_commands_sequence(
 async def _send_tac_command_on_stream(stream, command: str, *, timeout: float) -> None:
     """Send a single TAC command on an already-open stream and wait for ok."""
     await stream.send(f"{command}\r".encode())
-    data = b""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
-    while b"ok" not in data:
-        remaining = deadline - loop.time()
-        if remaining <= 0:
-            raise TimeoutError(f"TAC command '{command}' timed out after {timeout}s")
-        chunk = await asyncio.wait_for(stream.receive(), timeout=remaining)
-        data += chunk
+    data = await _receive_until(
+        b"", stream, b"ok", deadline=deadline,
+        error_message=f"TAC command '{command}' timed out after {timeout}s",
+    )
+    await _receive_until(
+        data, stream, PROMPT, deadline=deadline,
+        error_message=f"TAC command '{command}' timed out waiting for prompt after {timeout}s",
+    )
 
 
 async def send_tac_command(tac, command: str, *, timeout: float = DEFAULT_TAC_COMMAND_TIMEOUT) -> None:

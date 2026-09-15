@@ -196,6 +196,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         *,
         source_filename: str | None = None,
         http_metadata: dict[str, str] | None = None,
+        local_metadata: dict[str, str] | None = None,
     ) -> None:
         """Write a completion marker after a successful extraction."""
         marker = firmware_root / self._CACHE_MARKER
@@ -204,6 +205,8 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
             metadata["source_filename"] = source_filename
         if http_metadata:
             metadata["http"] = http_metadata
+        if local_metadata:
+            metadata["local"] = local_metadata
         marker.write_text(json.dumps(metadata), encoding="utf-8")
 
     @staticmethod
@@ -230,30 +233,54 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
                             metadata[key] = value
         return metadata
 
-    async def _cache_is_fresh(self, firmware_root: Path, source: Any) -> bool:
-        """Check whether the cached firmware is still fresh via HTTP HEAD.
+    @staticmethod
+    def _local_file_metadata(path: str) -> dict[str, str] | None:
+        if path.startswith(("http://", "https://")):
+            return None
+        file_path = Path(path)
+        if not file_path.is_file():
+            return None
+        stat = file_path.stat()
+        return {
+            "path": str(file_path.resolve()),
+            "mtime": str(stat.st_mtime_ns),
+            "size": str(stat.st_size),
+        }
 
-        Returns True (fresh) when:
-        - The source is not an HTTP URL (nothing to check against).
-        - The marker has no stored HTTP metadata (first-gen marker, assume fresh).
-        - The HEAD response matches the stored metadata.
+    async def _cache_is_fresh(
+        self, firmware_root: Path, source: Any, source_filename: str | None = None,
+    ) -> bool:
+        """Check whether the cached firmware is still fresh.
 
-        Returns False (stale) when stored metadata differs from the server.
+        For HTTP sources, compares stored HEAD metadata against the server.
+        For local sources, compares stored mtime/size metadata against the file.
         """
         marker_data = self._read_cache_marker(firmware_root)
         if marker_data is None:
             return False
+
+        stored_local = marker_data.get("local")
+        current_local = self._local_file_metadata(source_filename) if source_filename else None
+        if stored_local and current_local:
+            for key in ("mtime", "size"):
+                stored_val = stored_local.get(key)
+                current_val = current_local.get(key)
+                if stored_val and current_val and stored_val != current_val:
+                    logger.info("Cache stale: local %s changed (%s -> %s)", key, stored_val, current_val)
+                    return False
+            return True
+
         stored_http = marker_data.get("http")
         if not stored_http:
-            return True  # No HTTP metadata stored; can't check, assume fresh.
+            return True
         url = self._extract_source_url(source)
         if url is None:
-            return True  # Not an HTTP source; can't check.
+            return True
         try:
             current = await self._http_head_metadata(url)
         except Exception:
             logger.debug("HEAD request failed for cache freshness check; assuming fresh")
-            return True  # Network issue; don't invalidate on transient failures.
+            return True
         for key in ("ETag", "Last-Modified", "Content-Length"):
             stored_val = stored_http.get(key)
             current_val = current.get(key)
@@ -291,14 +318,26 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
             shutil.rmtree(work_dir, ignore_errors=True)
             work_dir.mkdir(parents=True, exist_ok=True)
 
+    def _manifest_from_work_dir(self, work_dir: Path) -> FirmwareManifest | None:
+        embedded = find_embedded_manifest(work_dir)
+        if embedded is None:
+            return None
+        return load_firmware_manifest(embedded)
+
     async def _try_cache_hit(
-        self, work_dir: Path, manifest: FirmwareManifest, source: Any, ctx: _FlashContext,
+        self,
+        work_dir: Path,
+        manifest: FirmwareManifest,
+        source: Any,
+        ctx: _FlashContext,
+        *,
+        source_filename: str | None = None,
     ) -> FlashStatus | None:
         """Return a FlashStatus if the cache is valid and fresh, else None."""
         firmware_root = resolve_firmware_root(work_dir, manifest)
         if not self._cache_is_valid(firmware_root):
             return None
-        if not await self._cache_is_fresh(firmware_root, source):
+        if not await self._cache_is_fresh(firmware_root, source, source_filename=source_filename):
             logger.info("Cache stale: removing %s", firmware_root)
             shutil.rmtree(firmware_root, ignore_errors=True)
             return None
@@ -333,12 +372,16 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         work_dir.mkdir(parents=True, exist_ok=True)
 
         manifest = load_firmware_manifest_from_mapping(manifest_data) if manifest_data else None
+        if manifest is None:
+            manifest = self._manifest_from_work_dir(work_dir)
 
         if force_download:
             self._clear_cache(work_dir, manifest)
 
         if manifest is not None:
-            hit = await self._try_cache_hit(work_dir, manifest, source, ctx)
+            hit = await self._try_cache_hit(
+                work_dir, manifest, source, ctx, source_filename=source_filename,
+            )
             if hit is not None:
                 yield hit
                 return
@@ -355,6 +398,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
             ctx.cache_dir = resolve_firmware_root(work_dir, manifest)
 
         http_metadata = await self._collect_source_metadata(source)
+        local_metadata = self._local_file_metadata(source_filename) if source_filename else None
 
         async for status in self._download_and_extract(source, work_dir, manifest, source_filename=source_filename):
             yield status
@@ -363,7 +407,12 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
             manifest = self._resolve_manifest(None, work_dir)
 
         firmware_root = resolve_firmware_root(work_dir, manifest)
-        self._write_cache_marker(firmware_root, source_filename=source_filename, http_metadata=http_metadata)
+        self._write_cache_marker(
+            firmware_root,
+            source_filename=source_filename,
+            http_metadata=http_metadata,
+            local_metadata=local_metadata,
+        )
         ctx.work_dir = work_dir
         ctx.firmware_root = firmware_root
         ctx.manifest = manifest

@@ -30,6 +30,8 @@ class SleepStep(StepBase):
 
 
 class QdlConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     storage: Literal["ufs", "spinor"]
     programmer: str = Field(..., description="Firehose programmer ELF relative to the storage workdir")
     files: list[str] = Field(..., description="XML or glob patterns relative to the storage workdir")
@@ -44,6 +46,8 @@ class QdlStep(StepBase):
 
 
 class FastbootFlashOp(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     partition: str
     file: str
     revision: str | None = Field(
@@ -54,7 +58,7 @@ class FastbootFlashOp(BaseModel):
 
 
 class FastbootConfig(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     flash: list[FastbootFlashOp] | None = None
     erase: list[str] | None = None
@@ -72,6 +76,8 @@ Step = Annotated[
 
 
 class FirmwareData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     folder: str = Field(..., description="Folder containing the firmware files after extraction")
 
 

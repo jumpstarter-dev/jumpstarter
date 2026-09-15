@@ -2,9 +2,12 @@ from pathlib import Path
 
 import pytest
 
+from pydantic import ValidationError
+
 from jumpstarter_driver_ridesx.qdl.schema import (
     FastbootFlashOp,
     FastbootStep,
+    QdlConfig,
     QdlStep,
     SetModeStep,
     SleepStep,
@@ -85,3 +88,15 @@ def test_normalize_revision_adds_v_prefix():
     assert normalize_revision("V3") == "v3"
     assert normalize_revision("v3") == "v3"
     assert normalize_revision(" v3 ") == "v3"
+
+
+def test_qdl_config_rejects_unknown_fields():
+    with pytest.raises(ValidationError):
+        QdlConfig.model_validate(
+            {
+                "storage": "ufs",
+                "programmer": "prog.elf",
+                "files": ["rawprogram.xml"],
+                "typo_field": True,
+            }
+        )
