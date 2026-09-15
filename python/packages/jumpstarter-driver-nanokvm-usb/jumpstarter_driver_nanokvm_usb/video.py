@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import logging
-import shutil
 import sys
 from typing import Any, Literal
 
@@ -12,7 +11,7 @@ import cv2
 import numpy as np
 from numpy.typing import NDArray
 
-from .v4l2_ctl_mjpeg import V4L2CtlMjpegCapture
+from .v4l2_ctl_mjpeg import V4L2CtlMjpegCapture, resolve_v4l2_ctl_executable
 from .v4l2_mjpeg import V4L2MjpegCapture
 
 logger = logging.getLogger(__name__)
@@ -49,10 +48,10 @@ class VideoCapture:
         self._jpeg_quality = max(1, min(100, int(jpeg_quality)))
 
         if video_format == "mjpeg_passthrough":
-            v4l2_ctl = v4l2_ctl_executable or shutil.which("v4l2-ctl")
-            if v4l2_ctl:
+            resolved_v4l2_ctl = resolve_v4l2_ctl_executable(v4l2_ctl_executable)
+            if resolved_v4l2_ctl:
                 try:
-                    ctl = V4L2CtlMjpegCapture(v4l2_ctl_executable=v4l2_ctl_executable)
+                    ctl = V4L2CtlMjpegCapture(v4l2_ctl_executable=resolved_v4l2_ctl)
                     ctl.open(device, width, height, fps)
                     self._mjpeg = ctl
                     return

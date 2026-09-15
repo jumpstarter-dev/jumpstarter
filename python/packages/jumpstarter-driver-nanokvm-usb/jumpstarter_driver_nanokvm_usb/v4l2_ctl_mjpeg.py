@@ -12,6 +12,11 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def resolve_v4l2_ctl_executable(override: str | None = None) -> str | None:
+    """Return an executable path for v4l2-ctl, or None if not found."""
+    return shutil.which(override or "v4l2-ctl")
+
+
 def _device_path(device: int | str) -> str:
     if isinstance(device, str):
         return device
@@ -59,9 +64,12 @@ class V4L2CtlMjpegCapture:
         return self._thread is not None and self._thread.is_alive()
 
     def open(self, device: int | str, width: int, height: int, fps: int) -> None:
-        executable = self._v4l2_ctl_executable or shutil.which("v4l2-ctl")
+        requested = self._v4l2_ctl_executable or "v4l2-ctl"
+        executable = resolve_v4l2_ctl_executable(self._v4l2_ctl_executable)
         if executable is None:
-            raise OSError("v4l2-ctl not found (install v4l-utils)")
+            raise OSError(
+                f"v4l2-ctl not found: {requested!r} (install v4l-utils or fix v4l2_ctl_executable)"
+            )
 
         if self.is_open:
             self.close()
@@ -84,9 +92,9 @@ class V4L2CtlMjpegCapture:
         )
 
     def _start_process(self) -> subprocess.Popen[bytes]:
-        executable = self._v4l2_ctl_executable or "v4l2-ctl"
+        assert self._v4l2_ctl_executable is not None
         cmd = [
-            executable,
+            self._v4l2_ctl_executable,
             "-d",
             self._device,
             f"--set-fmt-video=width={self._width},height={self._height},pixelformat=MJPG",
