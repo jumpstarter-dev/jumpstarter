@@ -11,7 +11,7 @@ from jumpstarter.common.utils import serve
 from .driver import NanoKVMUSB, NanoKVMUSBHID, NanoKVMUSBVideo
 from .keyboard import KeyboardReport
 from .mouse import MouseButton, resolve_button
-from .v4l2_ctl_mjpeg import _extract_jpegs
+from .v4l2_ctl_mjpeg import V4L2CtlMjpegCapture, _extract_jpegs
 
 
 def _jpeg_bytes(width: int = 640, height: int = 480) -> bytes:
@@ -113,6 +113,13 @@ def test_nanokvm_usb_mouse_click(mock_device):
     with serve(hid) as client:
         client.mouse_click("left")
         mock_device.mouse_click.assert_called_once_with(MouseButton.LEFT, None, None)
+
+
+def test_v4l2_ctl_open_rejects_missing_executable():
+    cap = V4L2CtlMjpegCapture(v4l2_ctl_executable="/nonexistent/v4l2-ctl")
+    with pytest.raises(OSError, match="v4l2-ctl not found"):
+        cap.open(0, 640, 480, 30)
+    assert not cap.is_open
 
 
 def test_extract_jpegs_soi_split_across_chunks():
