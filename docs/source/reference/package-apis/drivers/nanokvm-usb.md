@@ -35,7 +35,8 @@ export:
     config:
       serial_port: "/dev/ttyACM0"
       baud_rate: 57600
-      video_device: 0
+      # Stable UVC path (survives /dev/videoN renumbering); or use an index: 0
+      video_device: "/dev/v4l/by-path/pci-0000:00:14.0-usbv2-0:3.4.3:1.0-video-index0"
       video_width: 1920
       video_height: 1080
       video_fps: 30
@@ -49,12 +50,19 @@ export:
 |-----------|-------------|------|----------|---------|
 | serial_port | Serial device path for HID | str | yes | |
 | baud_rate | Serial baud rate | int | no | 57600 |
-| video_device | OpenCV camera index or device path | int/str | no | 0 |
+| video_device | UVC device index or path (e.g. `/dev/v4l/by-path/...`) | int/str | no | 0 |
 | video_width | Requested capture width | int | no | 1920 |
 | video_height | Requested capture height | int | no | 1080 |
-| video_fps | Capture rate for `stream()` | int | no | 30 |
+| video_fps | Target capture/stream rate (`0` = no stream sleep throttle) | int | no | 30 |
+| video_format | `mjpeg_passthrough` or `jpeg` (OpenCV re-encode) | str | no | mjpeg_passthrough |
+| video_jpeg_quality | JPEG quality when `video_format=jpeg` (1–100) | int | no | 95 |
+| video_discard_stale | Frames to drop before each capture (freshness) | int | no | 1 |
+| video_stream_buffer_size | Max buffered frames in exported `stream()` | int | no | 32 |
+| v4l2_ctl_executable | Path to `v4l2-ctl` for MJPEG passthrough; default: `PATH` lookup | str | no | (auto) |
 | screen_width | Target screen width for relative mouse moves | int | no | 1920 |
 | screen_height | Target screen height for relative mouse moves | int | no | 1080 |
+
+MJPEG passthrough requires `v4l-utils` (`v4l2-ctl`) on the exporter host.
 
 ## Architecture
 

@@ -9,7 +9,9 @@ from PIL import Image
 from jumpstarter.common.utils import serve
 
 from .driver import NanoKVMUSB, NanoKVMUSBHID, NanoKVMUSBVideo
-from .mouse import MouseButton
+from .keyboard import KeyboardReport
+from .mouse import MouseButton, resolve_button
+from .v4l2_ctl_mjpeg import _extract_jpegs
 
 
 def _jpeg_bytes(width: int = 640, height: int = 480) -> bytes:
@@ -111,6 +113,29 @@ def test_nanokvm_usb_mouse_click(mock_device):
     with serve(hid) as client:
         client.mouse_click("left")
         mock_device.mouse_click.assert_called_once_with(MouseButton.LEFT, None, None)
+
+
+def test_extract_jpegs_soi_split_across_chunks():
+    buffer = bytearray()
+    assert _extract_jpegs(buffer, b"\xff") == []
+    assert buffer == bytearray(b"\xff")
+    payload = b"\xd8" + b"\x00" * 4 + b"\xff\xd9"
+    frames = _extract_jpegs(buffer, payload)
+    assert len(frames) == 1
+    assert frames[0].startswith(b"\xff\xd8")
+    assert frames[0].endswith(b"\xff\xd9")
+
+
+def test_bracket_keys_do_not_use_shift():
+    kb = KeyboardReport()
+    for ch in "[]\\":
+        down, _up = kb.char_to_report(ch)
+        assert down[0] == 0, f"unexpected shift modifier for {ch!r}"
+
+
+def test_resolve_button_rejects_unknown():
+    with pytest.raises(ValueError, match="Unknown mouse button"):
+        resolve_button("not-a-button")
 
 
 def test_protocol_packet_roundtrip():

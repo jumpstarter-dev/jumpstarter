@@ -5,7 +5,7 @@ description = "Jumpstarter driver for NanoKVM-USB devices via serial HID and UVC
 readme = "README.md"
 license = "Apache-2.0"
 authors = [
-    { name = "Miguel Angel Ajo", email = "miguelangel@ajo.es" }
+    { name = "Mario Parra", email = "rciots@rciots.com" }
 ]
 requires-python = ">=3.11"
 dependencies = [

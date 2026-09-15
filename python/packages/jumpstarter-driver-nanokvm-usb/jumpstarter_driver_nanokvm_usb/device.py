@@ -33,6 +33,7 @@ class NanoKVMUSBDevice:
         video_format: str = "mjpeg_passthrough",
         video_jpeg_quality: int = 95,
         video_discard_stale: int = 1,
+        v4l2_ctl_executable: str | None = None,
         screen_width: int = 1920,
         screen_height: int = 1080,
     ) -> None:
@@ -45,6 +46,7 @@ class NanoKVMUSBDevice:
         self._video_format = video_format
         self._video_jpeg_quality = video_jpeg_quality
         self._video_discard_stale = max(0, int(video_discard_stale))
+        self._v4l2_ctl_executable = v4l2_ctl_executable
         self.screen_width = screen_width
         self.screen_height = screen_height
 
@@ -64,22 +66,26 @@ class NanoKVMUSBDevice:
         return self._video.is_open
 
     def connect(self) -> InfoPacket | None:
-        info = None
-        self._serial.open(self._serial_port_path, self._baud_rate)
-        info = self.get_info()
+        try:
+            self._serial.open(self._serial_port_path, self._baud_rate)
+            info = self.get_info()
 
-        if self._video_device is not None:
-            self._video.open(
-                self._video_device,
-                self._video_width,
-                self._video_height,
-                self._video_fps,
-                video_format=self._video_format,
-                jpeg_quality=self._video_jpeg_quality,
-            )
+            if self._video_device is not None:
+                self._video.open(
+                    self._video_device,
+                    self._video_width,
+                    self._video_height,
+                    self._video_fps,
+                    video_format=self._video_format,
+                    jpeg_quality=self._video_jpeg_quality,
+                    v4l2_ctl_executable=self._v4l2_ctl_executable,
+                )
 
-        self._connected = True
-        return info
+            self._connected = True
+            return info
+        except Exception:
+            self.close()
+            raise
 
     def close(self) -> None:
         self._serial.close()

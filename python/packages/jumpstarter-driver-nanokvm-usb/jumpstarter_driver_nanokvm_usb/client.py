@@ -10,9 +10,13 @@ from PIL import Image
 from jumpstarter.client import DriverClient
 from jumpstarter.client.decorators import driver_click_group
 
-from .mouse import MouseButton
+from .mouse import MouseButton, resolve_button
 
 __all__ = ["NanoKVMUSBVideoClient", "NanoKVMUSBHIDClient", "NanoKVMUSBClient", "MouseButton"]
+
+
+def _decode_cli_escapes(text: str) -> str:
+    return text.replace(r"\n", "\n").replace(r"\t", "\t")
 
 
 @dataclass(kw_only=True)
@@ -91,7 +95,7 @@ class NanoKVMUSBHIDClient(DriverClient):
         @click.argument("text")
         def paste(text):
             """Paste text via keyboard HID (supports \\n for newline, \\t for tab)"""
-            decoded_text = text.encode().decode("unicode_escape")
+            decoded_text = _decode_cli_escapes(text)
             self.paste_text(decoded_text)
             click.echo(f"Pasted: {repr(decoded_text)}")
 
@@ -99,7 +103,7 @@ class NanoKVMUSBHIDClient(DriverClient):
         @click.argument("key")
         def press(key):
             """Press a single key (supports \\n for Enter, \\t for Tab)"""
-            decoded_key = key.encode().decode("unicode_escape")
+            decoded_key = _decode_cli_escapes(key)
             self.press_key(decoded_key)
             click.echo(f"Pressed: {repr(decoded_key)}")
 
@@ -131,17 +135,17 @@ class NanoKVMUSBHIDClient(DriverClient):
             click.echo(f"Mouse moved by ({dx}, {dy})")
 
         @mouse.command(name="click")
-        @click.option("--button", "-b", default="left", type=click.Choice(["left", "right", "middle"]))
+        @click.option(
+            "--button",
+            "-b",
+            default="left",
+            type=click.Choice(["left", "right", "middle", "back", "forward"]),
+        )
         @click.option("--x", type=float, default=None, help="Optional X coordinate (0.0-1.0)")
         @click.option("--y", type=float, default=None, help="Optional Y coordinate (0.0-1.0)")
         def mouse_click_cmd(button, x, y):
             """Click a mouse button"""
-            button_map = {
-                "left": MouseButton.LEFT,
-                "right": MouseButton.RIGHT,
-                "middle": MouseButton.MIDDLE,
-            }
-            self.mouse_click(button_map[button], x, y)
+            self.mouse_click(resolve_button(button), x, y)
             if x is not None and y is not None:
                 click.echo(f"Clicked {button} button at ({x}, {y})")
             else:

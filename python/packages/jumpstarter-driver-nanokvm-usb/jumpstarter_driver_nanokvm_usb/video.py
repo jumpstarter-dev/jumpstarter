@@ -41,6 +41,7 @@ class VideoCapture:
         *,
         video_format: VideoFormat = "mjpeg_passthrough",
         jpeg_quality: int = 95,
+        v4l2_ctl_executable: str | None = None,
     ) -> None:
         if self.is_open:
             self.close()
@@ -48,9 +49,10 @@ class VideoCapture:
         self._jpeg_quality = max(1, min(100, int(jpeg_quality)))
 
         if video_format == "mjpeg_passthrough":
-            if shutil.which("v4l2-ctl"):
+            v4l2_ctl = v4l2_ctl_executable or shutil.which("v4l2-ctl")
+            if v4l2_ctl:
                 try:
-                    ctl = V4L2CtlMjpegCapture()
+                    ctl = V4L2CtlMjpegCapture(v4l2_ctl_executable=v4l2_ctl_executable)
                     ctl.open(device, width, height, fps)
                     self._mjpeg = ctl
                     return

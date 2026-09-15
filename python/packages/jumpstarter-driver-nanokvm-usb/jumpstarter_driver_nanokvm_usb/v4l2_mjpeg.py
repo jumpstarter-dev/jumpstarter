@@ -138,6 +138,34 @@ class v4l2_buffer(ctypes.Structure):
     ]
 
 
+class v4l2_fract(ctypes.Structure):
+    _fields_ = [("numerator", ctypes.c_uint32), ("denominator", ctypes.c_uint32)]
+
+
+class v4l2_captureparm(ctypes.Structure):
+    _fields_ = [
+        ("capability", ctypes.c_uint32),
+        ("capturemode", ctypes.c_uint32),
+        ("timeperframe", v4l2_fract),
+        ("extendedmode", ctypes.c_uint32),
+        ("readbuffers", ctypes.c_uint32),
+        ("reserved", ctypes.c_uint32 * 4),
+    ]
+
+
+class v4l2_streamparm(ctypes.Structure):
+    class _Parm(ctypes.Union):
+        _fields_ = [
+            ("capture", v4l2_captureparm),
+            ("raw_data", ctypes.c_uint8 * 200),
+        ]
+
+    _fields_ = [
+        ("type", ctypes.c_uint32),
+        ("parm", _Parm),
+    ]
+
+
 VIDIOC_S_FMT = _iowr("V", 5, v4l2_format)
 VIDIOC_REQBUFS = _iowr("V", 8, v4l2_requestbuffers)
 VIDIOC_QUERYBUF = _iowr("V", 9, v4l2_buffer)
@@ -145,6 +173,8 @@ VIDIOC_QBUF = _iowr("V", 15, v4l2_buffer)
 VIDIOC_DQBUF = _iowr("V", 17, v4l2_buffer)
 VIDIOC_STREAMON = _iow("V", 18, ctypes.sizeof(ctypes.c_int))
 VIDIOC_STREAMOFF = _iow("V", 19, ctypes.sizeof(ctypes.c_int))
+VIDIOC_G_PARM = _iowr("V", 21, v4l2_streamparm)
+VIDIOC_S_PARM = _iowr("V", 22, v4l2_streamparm)
 
 
 def _device_path(device: int | str) -> str:
@@ -158,6 +188,26 @@ def _ioctl(fd: int, request: int, arg) -> None:
         fcntl.ioctl(fd, request, arg)
     except OSError as exc:
         raise OSError(exc.errno, f"V4L2 ioctl 0x{request:08x} failed: {exc}") from exc
+
+
+def _try_set_capture_fps(fd: int, fps: int) -> None:
+    if fps <= 0:
+        return
+    try:
+        parm = v4l2_streamparm()
+        parm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE
+        _ioctl(fd, VIDIOC_G_PARM, parm)
+        parm.parm.capture.timeperframe.numerator = 1
+        parm.parm.capture.timeperframe.denominator = int(fps)
+        _ioctl(fd, VIDIOC_S_PARM, parm)
+    except OSError as exc:
+        logger.debug("VIDIOC_S_PARM failed (%s); continuing without hardware FPS limit", exc)
+
+
+def _release_mmap_buffers(buffers: list[dict[str, Any]]) -> None:
+    for entry in buffers:
+        entry["mmap"].close()
+    buffers.clear()
 
 
 class V4L2MjpegCapture:
@@ -178,61 +228,74 @@ class V4L2MjpegCapture:
             self.close()
 
         path = _device_path(device)
-        fd = os.open(path, os.O_RDWR | os.O_NONBLOCK, 0)
-
-        fmt = v4l2_format()
-        fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE
-        fmt.fmt.pix.width = width
-        fmt.fmt.pix.height = height
-        fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG
-        fmt.fmt.pix.field = V4L2_FIELD_ANY
-        _ioctl(fd, VIDIOC_S_FMT, fmt)
-
-        actual_w = int(fmt.fmt.pix.width)
-        actual_h = int(fmt.fmt.pix.height)
-        if actual_w != width or actual_h != height:
-            logger.warning(
-                "V4L2 MJPEG requested %sx%s, device negotiated %sx%s",
-                width,
-                height,
-                actual_w,
-                actual_h,
-            )
-
-        req = v4l2_requestbuffers()
-        req.count = 4
-        req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE
-        req.memory = V4L2_MEMORY_MMAP
-        _ioctl(fd, VIDIOC_REQBUFS, req)
-        if req.count < 1:
-            os.close(fd)
-            raise ConnectionError(f"V4L2 REQBUFS failed for {path}")
-
+        fd: int | None = None
         buffers: list[dict[str, Any]] = []
-        for index in range(req.count):
-            buf = v4l2_buffer()
-            buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE
-            buf.memory = V4L2_MEMORY_MMAP
-            buf.index = index
-            _ioctl(fd, VIDIOC_QUERYBUF, buf)
-            mm = mmap.mmap(
-                fd,
-                buf.length,
-                mmap.MAP_SHARED,
-                mmap.PROT_READ | mmap.PROT_WRITE,
-                offset=buf.m.offset,
+        try:
+            fd = os.open(path, os.O_RDWR | os.O_NONBLOCK, 0)
+
+            fmt = v4l2_format()
+            fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE
+            fmt.fmt.pix.width = width
+            fmt.fmt.pix.height = height
+            fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG
+            fmt.fmt.pix.field = V4L2_FIELD_ANY
+            _ioctl(fd, VIDIOC_S_FMT, fmt)
+
+            actual_w = int(fmt.fmt.pix.width)
+            actual_h = int(fmt.fmt.pix.height)
+            if actual_w != width or actual_h != height:
+                logger.warning(
+                    "V4L2 MJPEG requested %sx%s, device negotiated %sx%s",
+                    width,
+                    height,
+                    actual_w,
+                    actual_h,
+                )
+
+            _try_set_capture_fps(fd, fps)
+
+            req = v4l2_requestbuffers()
+            req.count = 4
+            req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE
+            req.memory = V4L2_MEMORY_MMAP
+            _ioctl(fd, VIDIOC_REQBUFS, req)
+            if req.count < 1:
+                raise ConnectionError(f"V4L2 REQBUFS failed for {path}")
+
+            for index in range(req.count):
+                buf = v4l2_buffer()
+                buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE
+                buf.memory = V4L2_MEMORY_MMAP
+                buf.index = index
+                _ioctl(fd, VIDIOC_QUERYBUF, buf)
+                mm = mmap.mmap(
+                    fd,
+                    buf.length,
+                    mmap.MAP_SHARED,
+                    mmap.PROT_READ | mmap.PROT_WRITE,
+                    offset=buf.m.offset,
+                )
+                buffers.append({"buffer": buf, "mmap": mm})
+                _ioctl(fd, VIDIOC_QBUF, buf)
+
+            buf_type = ctypes.c_int(V4L2_BUF_TYPE_VIDEO_CAPTURE)
+            _ioctl(fd, VIDIOC_STREAMON, buf_type)
+
+            self._fd = fd
+            self._buffers = buffers
+            self._width = actual_w
+            self._height = actual_h
+            logger.info(
+                "V4L2 MJPEG passthrough on %s (%sx%s @ %sfps)", path, actual_w, actual_h, fps
             )
-            buffers.append({"buffer": buf, "mmap": mm})
-            _ioctl(fd, VIDIOC_QBUF, buf)
-
-        buf_type = ctypes.c_int(V4L2_BUF_TYPE_VIDEO_CAPTURE)
-        _ioctl(fd, VIDIOC_STREAMON, buf_type)
-
-        self._fd = fd
-        self._buffers = buffers
-        self._width = actual_w
-        self._height = actual_h
-        logger.info("V4L2 MJPEG passthrough on %s (%sx%s @ %sfps)", path, actual_w, actual_h, fps)
+        except Exception:
+            _release_mmap_buffers(buffers)
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            raise
 
     def get_resolution(self) -> tuple[int, int]:
         return self._width, self._height
