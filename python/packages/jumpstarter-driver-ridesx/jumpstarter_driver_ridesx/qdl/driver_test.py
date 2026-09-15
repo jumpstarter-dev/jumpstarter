@@ -5,13 +5,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from jumpstarter_driver_ridesx.qdl.driver import QualcommFlasher
-from jumpstarter_driver_ridesx.tac import TAC_ACK
 from jumpstarter_driver_ridesx.qdl.executor import execute_manifest
 from jumpstarter_driver_ridesx.qdl.schema import (
     SleepStep,
     load_firmware_manifest,
 )
 from jumpstarter_driver_ridesx.qdl.soc_profiles import SA8775P
+from jumpstarter_driver_ridesx.tac import TAC_ACK
 
 from jumpstarter.client.flasher import FlashPhase
 from jumpstarter.common.exceptions import ConfigurationError

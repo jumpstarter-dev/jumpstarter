@@ -10,6 +10,7 @@ from jumpstarter_driver_ridesx.qdl.schema import (
     find_embedded_manifest,
     load_firmware_manifest,
 )
+
 from jumpstarter.client.flasher import FlashPhase
 
 

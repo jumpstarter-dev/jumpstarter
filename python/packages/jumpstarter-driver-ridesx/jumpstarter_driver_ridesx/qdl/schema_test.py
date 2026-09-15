@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-
 from pydantic import ValidationError
 
 from jumpstarter_driver_ridesx.qdl.schema import (
