@@ -77,7 +77,10 @@ def test_flash_stream_uses_http_adapter_for_firmware_url():
     client._iter_flash_status.assert_called_once()
 
 
-def test_flash_stream_uses_local_adapter_for_file_path():
+def test_flash_stream_uses_local_adapter_for_file_path(tmp_path):
+    firmware = tmp_path / "firmware.tar.xz"
+    firmware.write_bytes(b"firmware")
+
     client = MagicMock()
     client.flash_stream = QualcommFlasherClient.flash_stream.__get__(client, QualcommFlasherClient)
     client._iter_flash_status = MagicMock(return_value=iter([]))
@@ -89,7 +92,7 @@ def test_flash_stream_uses_local_adapter_for_file_path():
         local_adapter.return_value.__enter__.return_value = "local-handle"
         local_adapter.return_value.__exit__.return_value = None
 
-        list(client.flash_stream("./firmware.tar.xz"))
+        list(client.flash_stream(firmware))
 
     local_adapter.assert_called_once()
     http_adapter.assert_not_called()

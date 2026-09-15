@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from jumpstarter_driver_ridesx.qdl.driver import QualcommFlasher
+from jumpstarter_driver_ridesx.tac import TAC_ACK
 from jumpstarter_driver_ridesx.qdl.executor import execute_manifest
 from jumpstarter_driver_ridesx.qdl.schema import (
     SleepStep,
@@ -48,7 +49,7 @@ async def test_qualcomm_flasher_power_cycle(tmp_path):
     stream = AsyncMock()
     stream.__aenter__ = AsyncMock(return_value=stream)
     stream.__aexit__ = AsyncMock(return_value=None)
-    stream.receive = AsyncMock(return_value=b"ok")
+    stream.receive = AsyncMock(return_value=TAC_ACK)
     mock_tac.connect.return_value = stream
 
     driver = QualcommFlasher(children={"tac": mock_tac}, work_dir=str(tmp_path))
@@ -62,7 +63,7 @@ async def test_qualcomm_flasher_boot_to_edl(tmp_path):
     stream = AsyncMock()
     stream.__aenter__ = AsyncMock(return_value=stream)
     stream.__aexit__ = AsyncMock(return_value=None)
-    stream.receive = AsyncMock(return_value=b"ok")
+    stream.receive = AsyncMock(return_value=TAC_ACK)
     mock_tac.connect.return_value = stream
 
     driver = QualcommFlasher(children={"tac": mock_tac}, work_dir=str(tmp_path))

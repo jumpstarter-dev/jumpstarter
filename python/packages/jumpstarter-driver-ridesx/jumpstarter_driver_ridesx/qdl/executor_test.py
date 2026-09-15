@@ -13,6 +13,7 @@ from jumpstarter_driver_ridesx.qdl.executor import (
 from jumpstarter_driver_ridesx.qdl.firmware_id import identify_firmware_variant
 from jumpstarter_driver_ridesx.qdl.schema import FastbootConfig, FastbootFlashOp, FastbootStep, QdlConfig, QdlStep
 from jumpstarter_driver_ridesx.qdl.soc_profiles import SA8775P
+from jumpstarter_driver_ridesx.tac import TAC_ACK
 
 
 def test_identify_firmware_variant_known_es22():
@@ -116,7 +117,7 @@ async def test_set_device_mode_polls_dmesg_until_marker_found():
     stream = AsyncMock()
     stream.__aenter__ = AsyncMock(return_value=stream)
     stream.__aexit__ = AsyncMock(return_value=None)
-    stream.receive = AsyncMock(return_value=b"ok")
+    stream.receive = AsyncMock(return_value=TAC_ACK)
     tac.connect.return_value = stream
 
     call_count = 0
@@ -147,7 +148,7 @@ async def test_set_device_mode_raises_after_timeout():
     stream = AsyncMock()
     stream.__aenter__ = AsyncMock(return_value=stream)
     stream.__aexit__ = AsyncMock(return_value=None)
-    stream.receive = AsyncMock(return_value=b"ok")
+    stream.receive = AsyncMock(return_value=TAC_ACK)
     tac.connect.return_value = stream
 
     with (

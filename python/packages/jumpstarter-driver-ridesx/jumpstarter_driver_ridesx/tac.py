@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 CommandDelay = tuple[str, float]
 PROMPT = b"CMD >> "
+TAC_ACK = b"ok\r\n" + PROMPT
 DEFAULT_TAC_COMMAND_TIMEOUT = 10.0
 
 
