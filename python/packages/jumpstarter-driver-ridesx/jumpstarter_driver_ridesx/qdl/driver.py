@@ -18,13 +18,11 @@ from pathlib import Path
 from typing import Any
 
 import aiohttp
-import yaml
 from pydantic import TypeAdapter
 
 from ..tac import send_tac_sequence
 from .executor import execute_manifest, resolve_firmware_root
 from .schema import (
-    EMBEDDED_MANIFEST_NAMES,
     FirmwareManifest,
     find_embedded_manifest,
     load_firmware_manifest,
@@ -162,20 +160,6 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
             self._safe_extractall(archive, work_dir)
         if manifest:
             self._ensure_firmware_root(work_dir, manifest)
-
-    def _load_manifest_from_archive(self, archive_path: Path) -> FirmwareManifest | None:
-        with tarfile.open(archive_path, mode="r:*") as archive:
-            for filename in EMBEDDED_MANIFEST_NAMES:
-                for member in archive.getmembers():
-                    if not member.isfile() or Path(member.name).name != filename:
-                        continue
-                    extracted = archive.extractfile(member)
-                    if extracted is None:
-                        continue
-                    raw = yaml.safe_load(extracted.read().decode("utf-8"))
-                    if isinstance(raw, dict):
-                        return load_firmware_manifest_from_mapping(raw)
-        return None
 
     def _resolve_manifest(self, manifest_data: dict | None, work_dir: Path) -> FirmwareManifest:
         if manifest_data:

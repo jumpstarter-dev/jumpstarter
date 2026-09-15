@@ -217,7 +217,7 @@ export:
 
 | Parameter            | Description                                          | Type  | Required | Default                        |
 | -------------------- | ---------------------------------------------------- | ----- | -------- | ------------------------------ |
-| soc_type             | SoC profile (`sa8775p`, `sa8540p1`, `sa8540p2`)      | str   | no       | sa8775p                        |
+| soc_type             | SoC profile (`sa8775p`, `sa8650p`, `sa8540p1`, `sa8540p2`) | str   | no       | sa8775p                        |
 | work_dir             | Base directory for firmware extraction                | str   | no       | /var/lib/jumpstarter/qualcomm  |
 | board_revision       | Board revision for CDT image selection (`v1`–`v4`)   | str   | no       |                                |
 | qdl_timeout          | Timeout for QDL subprocess steps (seconds)           | int   | no       | 1800                           |

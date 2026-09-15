@@ -131,6 +131,7 @@ SA8540P2 = SoCProfile(
 
 SOC_PROFILES: dict[SoCType, SoCProfile] = {
     "sa8775p": SA8775P,
+    "sa8650p": SA8775P,
     "sa8540p1": SA8540P1,
     "sa8540p2": SA8540P2,
 }

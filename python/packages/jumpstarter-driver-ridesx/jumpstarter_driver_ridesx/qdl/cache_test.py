@@ -1,5 +1,3 @@
-import io
-import tarfile
 from pathlib import Path
 
 import yaml
@@ -91,21 +89,3 @@ def test_resolve_manifest_from_embedded_jumpstarter_manifest(tmp_path):
     assert resolved.name == "embedded"
 
 
-def test_load_manifest_from_archive_reads_jumpstarter_manifest(tmp_path):
-    manifest = {
-        "name": "archive embedded",
-        "data": {"folder": "r00002.2a_AWE"},
-        "steps": [],
-    }
-    archive_path = tmp_path / "firmware.tar"
-    with tarfile.open(archive_path, "w") as archive:
-        payload = yaml.safe_dump(manifest).encode("utf-8")
-        info = tarfile.TarInfo(name="jumpstarter_manifest.yaml")
-        info.size = len(payload)
-        archive.addfile(info, io.BytesIO(payload))
-
-    driver = QualcommFlasher.__new__(QualcommFlasher)
-    loaded = driver._load_manifest_from_archive(archive_path)
-    assert loaded is not None
-    assert loaded.name == "archive embedded"
-    assert loaded.data.folder == "r00002.2a_AWE"
