@@ -41,7 +41,7 @@ from jumpstarter.client.flasher import (
 
 def _load_manifest_source(source: str) -> dict[str, Any]:
     if source.startswith(("http://", "https://")):
-        with urlopen(source) as response:
+        with urlopen(source, timeout=30) as response:
             raw = yaml.safe_load(response.read().decode("utf-8"))
     else:
         raw = yaml.safe_load(Path(source).read_text(encoding="utf-8"))

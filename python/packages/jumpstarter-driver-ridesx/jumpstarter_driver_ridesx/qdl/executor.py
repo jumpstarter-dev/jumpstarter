@@ -6,6 +6,7 @@ import asyncio
 import dataclasses
 import logging
 import subprocess
+from collections import Counter
 from pathlib import Path
 
 from ..tac import send_tac_sequence
@@ -23,6 +24,18 @@ from .soc_profiles import SoCProfile
 from jumpstarter.client.flasher import FlashPhase, FlashStatus
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_contained_path(base: Path, child: Path, label: str = "path") -> Path:
+    """Ensure *child* resolves to a location inside *base*.
+
+    Rejects absolute paths, ``..`` traversal, and symlink escapes.
+    Returns the resolved path on success.
+    """
+    resolved = (base / child).resolve()
+    if not resolved.is_relative_to(base.resolve()):
+        raise ValueError(f"Unsafe manifest {label}: {child!s} escapes {base}")
+    return resolved
 
 
 @dataclasses.dataclass
@@ -58,9 +71,14 @@ def check_dmesg(expected: str, *, baseline: str | None = None, tail_lines: int =
     """
     output = read_dmesg()
     if baseline is not None:
-        baseline_lines = set(baseline.splitlines())
+        # Use a Counter to preserve duplicate occurrences.  Each baseline
+        # line "consumes" one count; only genuinely new lines are checked.
+        baseline_counts = Counter(baseline.splitlines())
         for line in output.splitlines():
-            if line not in baseline_lines and expected in line:
+            if baseline_counts[line] > 0:
+                baseline_counts[line] -= 1
+                continue
+            if expected in line:
                 return
         raise RuntimeError(f"Expected dmesg marker '{expected}' not found in new kernel log entries")
     tail = "\n".join(output.splitlines()[-tail_lines:])
@@ -91,17 +109,19 @@ def fix_provision_default_xml(workdir: Path) -> None:
 def build_qdl_command(step: QdlStep, firmware_root: Path) -> tuple[list[str], Path]:
     config = step.qdl
     workdir_name = config.workdir or config.storage
-    workdir = firmware_root / workdir_name
-    programmer = workdir / config.programmer
+    workdir = _validate_contained_path(firmware_root, Path(workdir_name), "qdl.workdir")
+    programmer = _validate_contained_path(workdir, Path(config.programmer), "qdl.programmer")
     cmd = ["qdl", "-s", config.storage, str(programmer)]
     for pattern in config.files:
         if any(char in pattern for char in "*?[]"):
             matches = sorted(workdir.glob(pattern))
             if not matches:
                 raise FileNotFoundError(f"No QDL files matched pattern '{pattern}' in {workdir}")
+            for match in matches:
+                _validate_contained_path(firmware_root, match.relative_to(firmware_root), "qdl.files glob result")
             cmd.extend(str(path) for path in matches)
         else:
-            path = workdir / pattern
+            path = _validate_contained_path(workdir, Path(pattern), "qdl.files")
             if not path.exists():
                 raise FileNotFoundError(f"QDL file not found: {path}")
             cmd.append(str(path))
@@ -153,7 +173,7 @@ def _run_fastboot_flash(
                 operation.partition, operation.revision, board_revision,
             )
             continue
-        image_path = firmware_root / operation.file
+        image_path = _validate_contained_path(firmware_root, Path(operation.file), "fastboot.file")
         if not image_path.exists():
             raise FileNotFoundError(f"Fastboot image not found: {image_path}")
         logger.info("fastboot flash %s %s", operation.partition, image_path.name)
@@ -394,4 +414,4 @@ async def execute_manifest(
 
 
 def resolve_firmware_root(work_dir: Path, manifest: FirmwareManifest) -> Path:
-    return work_dir / manifest.data.folder
+    return _validate_contained_path(work_dir, Path(manifest.data.folder), "data.folder")

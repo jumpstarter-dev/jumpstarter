@@ -12,6 +12,8 @@ EMBEDDED_MANIFEST_NAMES = ("jumpstarter_manifest.yaml",)
 
 
 class StepBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str | None = Field(None, description="Optional human-readable name for this step")
     retry_mode: Literal["edl", "fastboot"] | None = Field(
         None, description="Mode to retry in if the step fails"
@@ -82,7 +84,12 @@ class FirmwareManifest(BaseModel):
     steps: list[Step]
 
 
-def _parse_step(data: dict) -> Step:
+def _parse_step(data: object) -> Step:
+    if not isinstance(data, dict):
+        raise ValidationError.from_exception_data(
+            "Step",
+            [{"type": "value_error", "loc": (), "ctx": {"error": ValueError(f"Step must be a mapping, got {type(data).__name__}")}}],
+        )
     if "set_mode" in data:
         return SetModeStep.model_validate(data)
     if "sleep" in data:
@@ -93,7 +100,7 @@ def _parse_step(data: dict) -> Step:
         return FastbootStep.model_validate(data)
     raise ValidationError.from_exception_data(
         "Step",
-        [{"type": "value_error", "loc": (), "msg": f"Unknown step type: {sorted(data)}"}],
+        [{"type": "value_error", "loc": (), "ctx": {"error": ValueError(f"Unknown step type: {sorted(data)}")}}],
     )
 
 
@@ -107,19 +114,21 @@ def load_firmware_manifest(yaml_path: Path) -> FirmwareManifest:
     if not isinstance(raw, dict):
         raise ValidationError.from_exception_data(
             "FirmwareManifest",
-            [{"type": "value_error", "loc": (), "msg": "Manifest root must be a mapping"}],
+            [{"type": "value_error", "loc": (), "ctx": {"error": ValueError("Manifest root must be a mapping")}}],
         )
 
-    steps_raw = raw.get("steps", [])
-    parsed_steps = [_parse_step(step) for step in steps_raw]
-    payload = {**raw, "steps": parsed_steps}
+    payload = dict(raw)
+    if "steps" in payload:
+        parsed_steps = [_parse_step(step) for step in payload["steps"]]
+        payload["steps"] = parsed_steps
     return FirmwareManifest.model_validate(payload)
 
 
 def load_firmware_manifest_from_mapping(data: dict) -> FirmwareManifest:
-    steps_raw = data.get("steps", [])
-    parsed_steps = [_parse_step(step) for step in steps_raw]
-    payload = {**data, "steps": parsed_steps}
+    payload = dict(data)
+    if "steps" in payload:
+        parsed_steps = [_parse_step(step) for step in payload["steps"]]
+        payload["steps"] = parsed_steps
     return FirmwareManifest.model_validate(payload)
 
 

@@ -5,6 +5,7 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from enum import StrEnum
 from os import PathLike
 from pathlib import Path
 from typing import Any, Callable, Literal, Mapping, cast
@@ -24,7 +25,7 @@ from jumpstarter.streams.progress import ProgressAttribute
 PathBuf = str | PathLike
 
 
-class FlashPhase:
+class FlashPhase(StrEnum):
     """Standard phase constants for ``FlashStatus`` updates."""
 
     DOWNLOAD = "download"
