@@ -336,7 +336,9 @@ def test_flash_with_fastboot_flash_failure(temp_storage_dir, ridesx_driver):
         from jumpstarter.client.core import DriverError
 
         with patch("subprocess.run") as mock_subprocess:
-            mock_subprocess.side_effect = subprocess.CalledProcessError(1, "fastboot", stderr=b"flash failed")
+            mock_subprocess.return_value = subprocess.CompletedProcess(
+                args=["fastboot", "flash", "boot"], returncode=1, stdout="", stderr="flash failed",
+            )
 
             # When called through client, RuntimeError becomes DriverError
             with pytest.raises(DriverError, match="fastboot flash failed"):
@@ -433,10 +435,10 @@ def test_erase_partition_failure(ridesx_driver):
         from jumpstarter.client.core import DriverError
 
         with patch("subprocess.run") as mock_subprocess:
-            error = subprocess.CalledProcessError(1, "fastboot")
-            error.stdout = ""
-            error.stderr = "FAILED (remote: Partition not found)"
-            mock_subprocess.side_effect = error
+            mock_subprocess.return_value = subprocess.CompletedProcess(
+                args=["fastboot", "erase", "recoveryinfo"], returncode=1,
+                stdout="", stderr="FAILED (remote: Partition not found)",
+            )
 
             with pytest.raises(DriverError, match="fastboot erase failed"):
                 client.call("erase_partition", "ABC123", "recoveryinfo")
