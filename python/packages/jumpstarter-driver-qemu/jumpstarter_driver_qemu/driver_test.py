@@ -178,6 +178,75 @@ async def test_resize_succeeds(resize_test):
     assert resize_cmd[-1] == str(20 * 1024**3)
 
 
+@pytest.fixture
+def cmdline_test():
+    """Create a Qemu driver with a root disk, cleanup after test."""
+    driver = None
+
+    def _create(**kwargs):
+        nonlocal driver
+        driver = Qemu(**kwargs)
+        root = Path(driver._tmp_dir.name) / "root"
+        root.write_bytes(b"")
+        return driver
+
+    yield _create
+
+    if driver:
+        driver._tmp_dir.cleanup()
+
+
+async def _captured_cmdline(driver):
+    """Power on `driver`, aborting at Popen, and return the cmdline it was given."""
+    with patch("jumpstarter_driver_qemu.driver.run_process", side_effect=_mock_qemu_img_info(0)):
+        with patch("jumpstarter_driver_qemu.driver.Popen", side_effect=RuntimeError("mock popen")) as mock_popen:
+            with pytest.raises(RuntimeError, match="mock popen"):
+                await driver.children["power"].on()
+
+    return mock_popen.call_args.args[0]
+
+
+@pytest.mark.anyio
+async def test_virtio_transport_defaults_to_pci(cmdline_test):
+    """Default transport should keep the existing PCI-attached devices."""
+    cmdline = await _captured_cmdline(cmdline_test())
+
+    assert "virtio-net-pci,netdev=eth0" in cmdline
+    assert "virtio-blk-pci,drive=rootfs,bootindex=1" in cmdline
+    assert "virtio-blk-pci,drive=cidata" in cmdline
+
+
+@pytest.mark.anyio
+async def test_virtio_transport_mmio(cmdline_test):
+    """mmio transport should switch network and disk devices, for firmware
+    (e.g. u-boot booting an aboot image) that can't enumerate PCI early enough
+    to see them."""
+    # mmio images need >=4G (their DTB hardcodes it); see below.
+    cmdline = await _captured_cmdline(cmdline_test(virtio_transport="mmio", mem="4G"))
+
+    assert "virtio-net-device,netdev=eth0" in cmdline
+    assert "virtio-blk-device,drive=rootfs,bootindex=1" in cmdline
+    # No cidata disk in mmio mode: u-boot's aboot bootcmd probes a single virtio
+    # device (devnum=0), and QEMU's reverse virtio-mmio ordering would otherwise
+    # let the GPT-less cidata disk shadow the real boot disk. Matches air --aboot.
+    assert not any("cidata" in str(arg) for arg in cmdline)
+    assert "virtio-net-pci,netdev=eth0" not in cmdline
+    assert "virtio-blk-pci,drive=rootfs,bootindex=1" not in cmdline
+
+
+@pytest.mark.anyio
+async def test_virtio_transport_mmio_requires_4g(cmdline_test):
+    """mmio boots AIB aboot images whose DTB hardcodes a 4G memory layout, so
+    too-little memory must fail loudly instead of silently failing to boot."""
+    driver = cmdline_test(virtio_transport="mmio")  # default mem=512M
+
+    with patch("jumpstarter_driver_qemu.driver.Popen") as mock_popen:
+        with pytest.raises(RuntimeError, match="4G"):
+            await driver.children["power"].on()
+
+    mock_popen.assert_not_called()
+
+
 def test_set_disk_size_valid():
     """Valid size strings should be accepted."""
     driver = Qemu()

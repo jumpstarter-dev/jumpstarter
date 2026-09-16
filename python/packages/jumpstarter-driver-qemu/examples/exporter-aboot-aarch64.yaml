@@ -1,0 +1,47 @@
+# Boot an automotive-image-builder (AIB) "aboot" image under QEMU.
+#
+# AIB's abootqemu / abootqemukvm targets produce aarch64 images that boot via a
+# u-boot firmware (android boot partitions boot_a/boot_b) instead of UEFI/GRUB.
+#
+#   * boot the u-boot firmware with -bios (the "bios" partition below)
+#   * attach disk and network over the MMIO virtio transport, because u-boot on
+#     the `virt` machine can't enumerate PCI early enough to find the boot disk
+#     (virtio_transport: mmio)
+#   * give the guest 4G of RAM — the aboot DTB (qemu-tcg.dtb) hardcodes a 4G
+#     memory layout, and a smaller value silently fails to boot
+#
+# Build the guest image, e.g.:
+#   automotive-image-builder build --target abootqemu \
+#       --export image --mode package manifest.aib.yml aboot.img
+#
+# Then flash it onto the driver's "root" partition:
+#   jmp shell -l board=aboot-aarch64
+#   $$ j qemu flasher flash aboot.img            # root disk
+#   $$ j power on
+#   $$ j console start-console
+---
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: qemu-aboot-aarch64
+endpoint: ""
+token: ""
+export:
+  qemu:
+    type: jumpstarter_driver_qemu.driver.Qemu
+    config:
+      arch: aarch64
+      # MMIO transport is what makes u-boot see the disk/NIC at boot.
+      virtio_transport: mmio
+      # Required for the aboot DTB's hardcoded 4G layout (the driver refuses to
+      # power on with mmio + less than 4G).
+      mem: 4G
+      smp: 2
+      disk_size: 10G
+      # u-boot firmware that supports aboot, booted via -bios. Obtain it from the
+      # autosig-u-boot RPM (bin/air downloads qemu-u-boot-aarch64.bin the same
+      # way) and place it on the exporter host at this path. Use the "-avb"
+      # variant instead if the image uses Android Verified Boot.
+      default_partitions:
+        bios: /var/lib/jumpstarter/qemu/qemu-u-boot-aarch64.bin

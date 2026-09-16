@@ -212,6 +212,15 @@ class QemuPower(PowerInterface, Driver):
             self.logger.warning("already powered on, ignoring request")
             return
 
+        # The mmio transport exists to boot AIB aboot images via u-boot, whose
+        # DTB (e.g. qemu-tcg.dtb) hardcodes a 4G memory layout. A smaller -m
+        # silently fails to boot, so fail loudly instead
+        if self.parent.virtio_transport == "mmio" and self.parent._parse_size(self.parent.mem) < 4 * 1024**3:
+            raise RuntimeError(
+                f"virtio_transport='mmio' boots AIB aboot images whose DTB hardcodes a 4G "
+                f"memory layout; mem={self.parent.mem} is too small — set mem to at least 4G."
+            )
+
         root = self.parent.validate_partition("root", use_default_partitions=True)
         bios = self.parent.validate_partition("bios", use_default_partitions=True)
         ovmf_code = self.parent.validate_partition("OVMF_CODE.fd", use_default_partitions=True)
@@ -274,8 +283,11 @@ class QemuPower(PowerInterface, Driver):
             ),
         ]
 
+        net_device = "virtio-net-device" if self.parent.virtio_transport == "mmio" else "virtio-net-pci"
+        blk_device = "virtio-blk-device" if self.parent.virtio_transport == "mmio" else "virtio-blk-pci"
+
         devices = [
-            "virtio-net-pci,netdev=eth0",
+            f"{net_device},netdev=eth0",
             "virtio-gpu-pci",
         ]
 
@@ -353,17 +365,24 @@ class QemuPower(PowerInterface, Driver):
                 "-blockdev",
                 f"driver={image_driver},node-name=rootfs,file.driver=file,file.filename={root}",
                 "-device",
-                "virtio-blk-pci,drive=rootfs,bootindex=1",
+                f"{blk_device},drive=rootfs,bootindex=1",
             ]
 
-        self._cidata = self.parent.cidata()
+        # aboot images (mmio transport) boot via u-boot, whose bootcmd probes a
+        # single virtio device (devnum=0). QEMU assigns virtio-mmio devices in
+        # reverse command-line order, so a cloud-init CIDATA disk (vvfat, no GPT)
+        # would take virtio 0 and shadow the real boot disk. Skip it, matching
+        # `air --aboot`, which attaches no cidata (aboot images carry their
+        # config baked in from the AIB manifest).
+        if self.parent.virtio_transport != "mmio":
+            self._cidata = self.parent.cidata()
 
-        cmdline += [
-            "-blockdev",
-            f"driver=vvfat,node-name=cidata,read-only=on,dir={self._cidata.name},label=CIDATA",
-            "-device",
-            "virtio-blk-pci,drive=cidata",
-        ]
+            cmdline += [
+                "-blockdev",
+                f"driver=vvfat,node-name=cidata,read-only=on,dir={self._cidata.name},label=CIDATA",
+                "-device",
+                f"{blk_device},drive=cidata",
+            ]
 
         self._process = Popen(self.parent._wrap_command(cmdline), stdin=PIPE)
 
@@ -437,6 +456,13 @@ class Qemu(Driver):
     password: str = "password"
 
     default_partitions: dict[str, Path] = field(default_factory=dict)
+
+    # "pci" matches UEFI/OVMF boot (default). Boards booting a non-UEFI "bios"
+    # firmware (e.g. u-boot for an aboot-partition image, as produced by
+    # automotive-image-builder's abootqemu/abootqemukvm targets) generally can't
+    # enumerate PCI that early, so the disk and network devices need to be
+    # MMIO-attached ("mmio") for that firmware to see them at all.
+    virtio_transport: Literal["pci", "mmio"] = "pci"
 
     hostfwd: dict[str, Hostfwd] = field(default_factory=dict)
 
