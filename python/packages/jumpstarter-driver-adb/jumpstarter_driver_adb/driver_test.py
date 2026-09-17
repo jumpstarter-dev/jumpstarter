@@ -154,6 +154,28 @@ def test_init_missing_adb(_):
         AdbServer()
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [
+        subprocess.TimeoutExpired("adb version", 30.0),
+        OSError("Input/output error"),
+    ],
+    ids=["hangs", "unreadable"],
+)
+@patch("shutil.which", return_value="/usr/bin/adb")
+def test_an_adb_that_cannot_answer_version_is_a_config_error(_, failure):
+    """This probe runs from `__post_init__`, so an unbounded one hangs exporter startup.
+
+    Every other adb call in the driver is bounded by `connect_timeout`; this was the
+    exception. There is nothing to recover from at that point, so expiry has to surface
+    as a configuration failure rather than a wedged exporter.
+    """
+    with patch("subprocess.run", side_effect=failure) as run:
+        with pytest.raises(ConfigurationError, match="not functional"):
+            AdbServer()
+    assert run.call_args.kwargs["timeout"] == 30.0, "the version probe must be bounded"
+
+
 def test_invalid_port_negative():
     with pytest.raises(ConfigurationError):
         AdbServer(port=-1)
