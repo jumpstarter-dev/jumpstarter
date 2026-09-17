@@ -18,10 +18,10 @@ from .client import (
 #
 # `adb connect` exits 0 even when it fails, printing the reason to STDOUT. Verified
 # against adb 1.0.41: a refused port, an unresolvable host and an out-of-range port
-# all return 0. So the exit status cannot be used to tell whether a device attached.
+# all return 0. So the exit status cannot be used to tell whether a device connected.
 #
 # This guards the ONE adb invocation left in the client. Jumpstarter no longer wraps
-# the adb CLI; `attach` runs `adb connect` and nothing else.
+# the adb CLI; `connect` runs `adb connect` and nothing else.
 
 
 def _completed(stdout, returncode=0):
@@ -62,7 +62,7 @@ def test_a_hung_connect_raises_rather_than_blocking():
             _adb_connect("adb", "127.0.0.1:16000")
 
 
-# --------------------------------------------------------- attach and endpoint
+# --------------------------------------------------------- connect and serve
 #
 # The client's whole job: expose the device's adbd locally, and optionally run one
 # `adb connect`. Anything more would be wrapping the adb CLI, which is what this
@@ -72,7 +72,7 @@ TARGET = "127.0.0.1:41000"
 
 
 @contextmanager
-def _fake_endpoint(_client, host="127.0.0.1", port=0):
+def _fake_serve(_client, host="127.0.0.1", port=0):
     """Stand in for the port-forward, yielding a fixed local address."""
     yield TARGET
 
@@ -80,12 +80,12 @@ def _fake_endpoint(_client, host="127.0.0.1", port=0):
 def _device_client():
     """An AdbDeviceClient with its transport stubbed out."""
     client = MagicMock(spec=AdbDeviceClient)
-    client.endpoint = lambda **kwargs: _fake_endpoint(client, **kwargs)
+    client.serve = lambda **kwargs: _fake_serve(client, **kwargs)
     client.logger = MagicMock()
     return client
 
 
-def test_attach_runs_exactly_one_adb_connect_and_one_disconnect():
+def test_connect_runs_exactly_one_adb_connect_and_one_disconnect():
     """A regression here is how the CLI wrapper creeps back in.
 
     Jumpstarter's contribution is the endpoint; the single `adb connect` exists only
@@ -93,7 +93,7 @@ def test_attach_runs_exactly_one_adb_connect_and_one_disconnect():
     """
     client = _device_client()
     with patch("subprocess.run", return_value=_completed("connected to " + TARGET)) as run:
-        with AdbDeviceClient.attach(client) as target:
+        with AdbDeviceClient.connect(client) as target:
             assert target == TARGET
             connects = [c.args[0] for c in run.call_args_list]
             assert connects == [["adb", "connect", TARGET]]
@@ -114,7 +114,7 @@ def test_local_adb_timeouts_are_bounded_and_overridable():
 
     # Default: the documented client-side constant, not the driver's connect_timeout.
     with patch("subprocess.run", return_value=_completed("connected to " + TARGET)) as run:
-        with AdbDeviceClient.attach(client):
+        with AdbDeviceClient.connect(client):
             pass
     defaults = {c.args[0][1]: c.kwargs["timeout"] for c in run.call_args_list}
     assert defaults["connect"] == ADB_CONNECT_TIMEOUT
@@ -122,28 +122,28 @@ def test_local_adb_timeouts_are_bounded_and_overridable():
 
     # ...and overridable per call.
     with patch("subprocess.run", return_value=_completed("connected to " + TARGET)) as run:
-        with AdbDeviceClient.attach(client, timeout=5):
+        with AdbDeviceClient.connect(client, timeout=5):
             pass
     timeouts = {c.args[0][1]: c.kwargs["timeout"] for c in run.call_args_list}
-    assert timeouts["connect"] == 5, "attach(timeout=...) must reach adb connect"
+    assert timeouts["connect"] == 5, "connect(timeout=...) must reach adb connect"
     assert all(t and t > 0 for t in timeouts.values()), timeouts
 
 
-def test_attach_honours_a_custom_adb_path():
+def test_connect_honors_a_custom_adb_path():
     """`--adb` locates the binary for that one call; nothing else shells out."""
     client = _device_client()
     with patch("subprocess.run", return_value=_completed("connected to " + TARGET)) as run:
-        with AdbDeviceClient.attach(client, adb="/opt/sdk/adb"):
+        with AdbDeviceClient.connect(client, adb="/opt/sdk/adb"):
             pass
     assert [c.args[0][0] for c in run.call_args_list] == ["/opt/sdk/adb", "/opt/sdk/adb"]
 
 
-def test_attach_disconnects_even_when_the_body_raises():
+def test_connect_disconnects_even_when_the_body_raises():
     """Otherwise a crash leaves a stale `offline` entry in the developer's server."""
     client = _device_client()
     with patch("subprocess.run", return_value=_completed("connected to " + TARGET)) as run:
         with pytest.raises(ValueError):
-            with AdbDeviceClient.attach(client):
+            with AdbDeviceClient.connect(client):
                 raise ValueError("boom")
     assert ["adb", "disconnect", TARGET] in [c.args[0] for c in run.call_args_list]
 
@@ -158,21 +158,31 @@ def test_a_failed_disconnect_does_not_mask_the_session():
         return _completed("connected to " + TARGET)
 
     with patch("subprocess.run", side_effect=run):
-        with AdbDeviceClient.attach(client) as target:
+        with AdbDeviceClient.connect(client) as target:
             assert target == TARGET
 
 
-def test_attach_does_not_run_adb_when_the_connect_fails():
-    """No disconnect for a device that never attached, and the error propagates."""
+def test_a_failed_connect_is_still_disconnected():
+    """A failed `adb connect` registers the address anyway, as an `offline` entry.
+
+    Observed against hardware: connecting to a forward whose adbd was not listening
+    printed `failed to connect ...` and left `127.0.0.1:54786 offline` in the local
+    server. Teardown has to cover the failure path, or `j adb connect` litters the
+    developer's ADB server every time a device is not ready.
+    """
     client = _device_client()
     with patch("subprocess.run", return_value=_completed("failed to connect to " + TARGET)) as run:
         with pytest.raises(RuntimeError, match="did not connect"):
-            with AdbDeviceClient.attach(client):
+            with AdbDeviceClient.connect(client):
                 pass
-    assert [c.args[0] for c in run.call_args_list] == [["adb", "connect", TARGET]]
+
+    assert [c.args[0] for c in run.call_args_list] == [
+        ["adb", "connect", TARGET],
+        ["adb", "disconnect", TARGET],
+    ]
 
 
-def test_endpoint_runs_no_adb_at_all():
+def test_serve_runs_no_adb_at_all():
     """The honest primitive: Jumpstarter moves bytes, the user drives adb."""
     client = MagicMock(spec=AdbDeviceClient)
     forwarded = MagicMock()
@@ -181,9 +191,9 @@ def test_endpoint_runs_no_adb_at_all():
 
     with (
         patch("jumpstarter_driver_adb.client.TcpPortforwardAdapter", return_value=forwarded),
-        patch("subprocess.run", side_effect=AssertionError("endpoint must not run adb")) as run,
+        patch("subprocess.run", side_effect=AssertionError("serve must not run adb")) as run,
     ):
-        with AdbDeviceClient.endpoint(client) as target:
+        with AdbDeviceClient.serve(client) as target:
             assert target == TARGET
     run.assert_not_called()
 
@@ -229,13 +239,13 @@ def test_an_unexpected_error_is_not_swallowed():
         _wait_for_interrupt(client)
 
 
-def test_ctrl_c_during_attach_still_detaches():
+def test_ctrl_c_during_connect_still_detaches():
     """The end-to-end teardown path: interrupt the hold, and the device is released."""
     client = _device_client()
     client.portal = _Portal(KeyboardInterrupt())
 
     with patch("subprocess.run", return_value=_completed("connected to " + TARGET)) as run:
-        with AdbDeviceClient.attach(client) as target:
+        with AdbDeviceClient.connect(client) as target:
             _wait_for_interrupt(client)  # returns, as a real Ctrl+C would
             assert target == TARGET
     assert ["adb", "disconnect", TARGET] in [c.args[0] for c in run.call_args_list]
@@ -245,24 +255,24 @@ def test_ctrl_c_during_attach_still_detaches():
 #
 # The CLI is the user-facing contract documented in the README, so it is worth
 # pinning: which commands exist, that they run the adb calls they claim to, and that
-# `endpoint` runs none.
+# `serve` runs none.
 
 
 def _cli_device_client():
     """A device client whose transport is stubbed, for driving its CLI."""
     client = MagicMock(spec=AdbDeviceClient)
-    client.endpoint = lambda **kwargs: _fake_endpoint(client, **kwargs)
-    client.attach = lambda **kwargs: AdbDeviceClient.attach(client, **kwargs)
+    client.serve = lambda **kwargs: _fake_serve(client, **kwargs)
+    client.connect = lambda **kwargs: AdbDeviceClient.connect(client, **kwargs)
     client.info = lambda: {"transport": "usb", "selector": "usb:1-4.2", "present": "yes"}
     client.logger = MagicMock()
     client.portal = _Portal(KeyboardInterrupt())
     return client
 
 
-def test_device_cli_exposes_only_attach_endpoint_info():
+def test_device_cli_exposes_only_connect_serve_info():
     """No `shell`, `install`, `logcat` — Jumpstarter does not wrap the adb CLI."""
     group = AdbDeviceClient.cli(_cli_device_client())
-    assert sorted(group.commands) == ["attach", "endpoint", "info"]
+    assert sorted(group.commands) == ["connect", "info", "serve"]
 
 
 def test_device_cli_info_prints_the_fields():
@@ -275,35 +285,35 @@ def test_device_cli_info_prints_the_fields():
     assert "selector: usb:1-4.2" in result.output
 
 
-def test_device_cli_attach_connects_and_tells_you_how_to_use_it():
+def test_device_cli_connect_connects_and_tells_you_how_to_use_it():
     from click.testing import CliRunner
 
     client = _cli_device_client()
     with patch("subprocess.run", return_value=_completed("connected to " + TARGET)) as run:
-        result = CliRunner().invoke(group := AdbDeviceClient.cli(client), ["attach"])
+        result = CliRunner().invoke(group := AdbDeviceClient.cli(client), ["connect"])
     assert group is not None
     assert result.exit_code == 0, result.output
     assert TARGET in result.output
     # It must tell the user to drive their own adb, since we no longer proxy it.
     assert f"adb -s {TARGET} shell" in result.output
-    assert "detached" in result.output
+    assert "disconnected" in result.output
     argvs = [c.args[0] for c in run.call_args_list]
     assert argvs == [["adb", "connect", TARGET], ["adb", "disconnect", TARGET]]
 
 
-def test_device_cli_endpoint_prints_the_address_and_runs_no_adb():
+def test_device_cli_serve_prints_the_address_and_runs_no_adb():
     from click.testing import CliRunner
 
     client = _cli_device_client()
-    with patch("subprocess.run", side_effect=AssertionError("endpoint must not run adb")):
-        result = CliRunner().invoke(AdbDeviceClient.cli(client), ["endpoint"])
+    with patch("subprocess.run", side_effect=AssertionError("serve must not run adb")):
+        result = CliRunner().invoke(AdbDeviceClient.cli(client), ["serve"])
     assert result.exit_code == 0, result.output
     assert result.output.splitlines()[0] == TARGET
     assert f"adb connect {TARGET}" in result.output
 
 
 def _cli_server_client():
-    """A server client with its tunnel stubbed, for driving its CLI."""
+    """A server client with its port-forward stubbed, for driving its CLI."""
     client = MagicMock(spec=AdbClient)
     client.list_devices = lambda: "List of devices attached\nHVA1234567\tdevice usb:1-4.2\n"
     client.forward_adb = MagicMock()
@@ -313,9 +323,9 @@ def _cli_server_client():
     return client
 
 
-def test_server_cli_exposes_only_devices_and_tunnel():
+def test_server_cli_exposes_only_devices_and_serve():
     group = AdbClient.cli(_cli_server_client())
-    assert sorted(group.commands) == ["devices", "tunnel"]
+    assert sorted(group.commands) == ["devices", "serve"]
 
 
 def test_server_cli_devices_lists_them():
@@ -326,12 +336,12 @@ def test_server_cli_devices_lists_them():
     assert "HVA1234567" in result.output
 
 
-def test_server_cli_tunnel_prints_the_env_vars_to_export():
-    """The tunnel's whole purpose: hand the user variables for their own tooling."""
+def test_server_cli_serve_prints_the_env_vars_to_export():
+    """Serving the exporter's ADB server exists to: hand the user variables for their own tooling."""
     from click.testing import CliRunner
 
     client = _cli_server_client()
-    result = CliRunner().invoke(AdbClient.cli(client), ["tunnel"])
+    result = CliRunner().invoke(AdbClient.cli(client), ["serve"])
     assert result.exit_code == 0, result.output
     assert "ANDROID_ADB_SERVER_ADDRESS=127.0.0.1" in result.output
     assert "ANDROID_ADB_SERVER_PORT=54321" in result.output
