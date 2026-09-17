@@ -38,6 +38,11 @@ _UNSUPPORTED_TRANSPORTS = {
     "emulator": "emulators are found by the ADB server itself; use jumpstarter-driver-androidemulator.",
 }
 
+#: adb's own default server port. Deliberately *not* this driver's default (see
+#: ``server_port``), but the port anything else on the host will be using — a desktop
+#: ``adb``, Android Studio, a stray container. Only used to diagnose a blind server.
+DEFAULT_ADB_SERVER_PORT = 5037
+
 
 def _adb_env(port: int) -> dict[str, str]:
     """Environment pointing adb at the ADB server on *port*."""
@@ -45,12 +50,18 @@ def _adb_env(port: int) -> dict[str, str]:
 
 
 def _resolve_adb_path(adb_path: str) -> str:
-    """Resolve ``"adb"`` against PATH, and fail early if it is missing or broken."""
+    """Resolve ``"adb"`` against PATH, and fail early if it is missing or broken.
+
+    Normalized through ``realpath`` so that ``adb``, ``/usr/bin/adb`` and a symlink
+    into a versioned SDK directory are one string. Two drivers naming the same binary
+    differently must not look like two binaries — see ``_acquire_server``.
+    """
     if adb_path == "adb":
         resolved = shutil.which("adb")
         if not resolved:
             raise ConfigurationError("ADB executable not found in PATH")
         adb_path = resolved
+    adb_path = os.path.realpath(adb_path)
 
     try:
         subprocess.run(
@@ -90,7 +101,7 @@ class _SharedServer:
     given device. So two drivers must never each start their own on the same port: the
     second would see an empty device list while `adb start-server` reported success
     (it is silent and exits 0 whether it started a server or found one). Sharing is
-    therefore a correctness requirement, not an optimisation.
+    therefore a correctness requirement, not an optimization.
 
     Reference-counted so the last user tears it down, and only if *we* started it —
     killing a server we merely adopted would drop the device claims of everything else
@@ -197,9 +208,13 @@ class _SharedServer:
             logger.error("`adb kill-server` timed out after %ss", connect_timeout)
 
 
-# One ADB server per (adb_path, port) per exporter process. See `_SharedServer` for
-# why sharing is mandatory rather than merely tidy.
-_SERVERS: dict[tuple[str, int], _SharedServer] = {}
+# One ADB server per port per exporter process. Keyed on the port alone, because that
+# is what identifies the server: only one process can listen on it, and adb reaches it
+# through ANDROID_ADB_SERVER_PORT with no notion of which binary started it. Keying on
+# (adb_path, port) split one real server across two entries, and then either refcount
+# could reach zero and kill a server the other still held. See `_SharedServer` for why
+# a second server on one port is a correctness problem rather than mere waste.
+_SERVERS: dict[int, _SharedServer] = {}
 _SERVERS_LOCK = threading.Lock()
 
 
@@ -213,41 +228,68 @@ def _acquire_server(
 ) -> _SharedServer:
     """Take a reference to the ADB server on *port*, starting or adopting it once.
 
-    The probe and start happen while holding the lock. That serialises concurrent
+    The probe and start happen while holding the lock. That serializes concurrent
     first-acquirers, which is the point: without it two callers could both decide no
     server was running and both start one.
+
+    The first acquirer's ``adb_path`` is the one the server runs as; a later caller
+    naming a different binary shares it rather than starting a second, and is warned,
+    because an adb client whose version differs from the running server kills and
+    restarts it on its first command — which would drop every device claim on the port.
     """
-    key = (adb_path, port)
     with _SERVERS_LOCK:
-        entry = _SERVERS.get(key)
+        entry = _SERVERS.get(port)
         if entry is None:
             entry = _SharedServer(adb_path, port)
-            if adopt_existing_server and entry._is_listening(connect_timeout, logger):
+            already_up = entry._is_listening(connect_timeout, logger)
+            if already_up and adopt_existing_server:
                 logger.info(
                     "adopting the ADB server already listening on port %d; it owns the "
                     "connected devices, and this driver will leave it running",
+                    port,
+                )
+            elif already_up:
+                # `adopt_existing_server: false` asks for a server of our own, and the
+                # port already has one. We cannot have both — and `adb start-server` is
+                # silent and exits 0 either way, so starting would "succeed" and leave us
+                # believing we own a server somebody else runs. `close()` would then kill
+                # it: against Android Studio that drops the device claims and Studio
+                # respawns its server ~1s later (measured), bouncing every device.
+                logger.warning(
+                    "adopt_existing_server is false, but an ADB server is already listening "
+                    "on port %d; using it and leaving ownership with whoever started it. "
+                    "Set a different server_port to get a server of your own.",
                     port,
                 )
             else:
                 entry.start(connect_timeout, logger)
                 entry.owns = True
                 logger.info("ADB server running on port %d", port)
-            _SERVERS[key] = entry
+            _SERVERS[port] = entry
+        elif entry.adb_path != adb_path:
+            logger.warning(
+                "the ADB server on port %d runs as %s; this driver's %s will share it "
+                "rather than start a second. If their versions differ the adb client "
+                "will kill and restart the server, dropping the device claims of every "
+                "other driver on this port — configure one adb_path, or a distinct port.",
+                port,
+                entry.adb_path,
+                adb_path,
+            )
         entry.refs += 1
         return entry
 
 
-def _release_server(adb_path: str, port: int, *, connect_timeout: float, logger) -> None:
+def _release_server(port: int, *, connect_timeout: float, logger) -> None:
     """Drop a reference, killing the server only when it is ours and unused."""
-    key = (adb_path, port)
     with _SERVERS_LOCK:
-        entry = _SERVERS.get(key)
+        entry = _SERVERS.get(port)
         if entry is None:
             return
         entry.refs -= 1
         if entry.refs > 0:
             return
-        del _SERVERS[key]
+        del _SERVERS[port]
         if entry.owns:
             entry.kill(connect_timeout, logger)
         else:
@@ -256,9 +298,9 @@ def _release_server(adb_path: str, port: int, *, connect_timeout: float, logger)
 
 @dataclass(kw_only=True)
 class AdbServer(TcpNetwork):
-    """An ADB server on the exporter, tunnelled to the client.
+    """An ADB server on the exporter, tunneled to the client.
 
-    Point client tooling at *this* server with ``forward_adb``/``j adb tunnel``: the
+    Point client tooling at *this* server with ``forward_adb``/``j adb serve``: the
     client then sees the exporter's devices instead of its own. That is exclusive —
     the client must own its ADB server — so for adding a single remote device to an
     ADB server the client already runs (Android Studio's, say), declare an
@@ -313,12 +355,7 @@ class AdbServer(TcpNetwork):
     def close(self):
         """Release our reference to the shared ADB server."""
         if self._server is not None:
-            _release_server(
-                self.adb_path,
-                self.port,
-                connect_timeout=self.connect_timeout,
-                logger=self.logger,
-            )
+            _release_server(self.port, connect_timeout=self.connect_timeout, logger=self.logger)
             self._server = None
         super().close()
 
@@ -328,19 +365,47 @@ class AdbServer(TcpNetwork):
 
     @export
     def start_server(self) -> int:
-        """Start the ADB server on the exporter. Returns the port number.
+        """Ensure the ADB server on the exporter is up. Returns the port number.
 
-        Note this is silent and succeeds when a server is already listening, so the
-        result does not tell you whether the server is ours — see
-        `adopt_existing_server`.
+        Operates on the shared registry entry rather than a throwaway one, so ownership
+        stays accurate: `adb start-server` is silent and exits 0 whether it started a
+        server or found one, so it cannot tell us. We probe instead, and only claim
+        ownership of a server we actually started — otherwise `close()` would kill a
+        server adopted from another process.
         """
-        _SharedServer(self.adb_path, self.port).start(self.connect_timeout, self.logger)
+        with _SERVERS_LOCK:
+            entry = _SERVERS.get(self.port) or self._server
+            if entry is None:  # pragma: no cover - __post_init__ always sets one
+                return self.port
+            if entry._is_listening(self.connect_timeout, self.logger):
+                self.logger.info("ADB server already listening on port %d", self.port)
+            else:
+                entry.start(self.connect_timeout, self.logger)
+                entry.owns = True
         return self.port
 
     @export
     def kill_server(self) -> int:
-        """Kill the ADB server on the exporter. Returns the port number."""
-        _SharedServer(self.adb_path, self.port).kill(self.connect_timeout, self.logger)
+        """Kill the ADB server on the exporter. Returns the port number.
+
+        Destructive and shared: the server owns the USB device claims of every driver
+        pointed at this port, so any co-located `AdbDevice` loses its forwards. Killing
+        it clears our ownership, so `close()` does not later kill a server that some
+        other process started on the freed port.
+        """
+        with _SERVERS_LOCK:
+            entry = _SERVERS.get(self.port) or self._server
+            if entry is None:  # pragma: no cover - __post_init__ always sets one
+                return self.port
+            if entry.refs > 1:
+                self.logger.warning(
+                    "killing the ADB server on port %d, which %d drivers share; their "
+                    "forwards and device claims go with it",
+                    self.port,
+                    entry.refs,
+                )
+            entry.kill(self.connect_timeout, self.logger)
+            entry.owns = False
         return self.port
 
     @export
@@ -465,6 +530,14 @@ class AdbDevice(Driver):
     _forward_port: int | None = field(default=None, init=False, repr=False)
     _connected: str | None = field(default=None, init=False, repr=False)
 
+    # Forwards and connections live in the *shared* ADB server, so one that was already
+    # there may belong to another driver, another exporter process, or a person at the
+    # bench. Reusing it is right — re-forwarding per stream would churn the server — but
+    # removing it on close is not. These record which side of that line we are on.
+    _owns_forward: bool = field(default=False, init=False, repr=False)
+    _forward_serial: str | None = field(default=None, init=False, repr=False)
+    _owns_connection: bool = field(default=False, init=False, repr=False)
+
     @classmethod
     def client(cls) -> str:
         """Import path of the matching client class."""
@@ -516,9 +589,13 @@ class AdbDevice(Driver):
         """Return *usb_port* in the exact form ``adb devices -l`` reports.
 
         adb prints the devpath as ``usb:<path>`` — on Linux the sysfs bus-port name
-        (``usb:1-4.2``), on the macOS native backend an IOKit location ID in hex
-        (``usb:1A320000``). Config may write it with or without the prefix; matching
-        is exact string equality, so it is normalized once here.
+        (``usb:1-4.2``), on the macOS native backend the IOKit location ID **in decimal
+        with a literal ``X`` suffix** (``usb:538116096X``, verified against adb 1.0.41 on
+        macOS). The ``X`` reads like a hex marker but is not one: usb_osx.cpp formats it
+        ``"usb:%" PRIu32 "X"``, so the number is decimal and the ``X`` is a stray literal.
+        Copy the value from ``adb devices -l`` rather than converting anything. Config may
+        write it with or without the ``usb:`` prefix; matching is exact string equality,
+        so it is normalized once here.
         """
         port = str(usb_port).strip()
         if not port:
@@ -587,7 +664,8 @@ class AdbDevice(Driver):
         if self.serial is not None:
             return self.serial
 
-        for serial, state, devpath in self._visible_devices():
+        visible = self._visible_devices()
+        for serial, state, devpath in visible:
             if devpath != self.usb_port:
                 continue
             if state != "device":
@@ -600,17 +678,89 @@ class AdbDevice(Driver):
             # the reported serial here is correct either way.
             return serial
 
-        raise RuntimeError(
-            f"no device on USB port {self.usb_port}. It may be powered off — "
-            f"turn on its power relay — or plugged into a different port."
+        message = (
+            f"no device on USB port {self.usb_port}. It may be powered off — turn on its "
+            f"power relay — or plugged into a different port."
         )
+        if visible:
+            seen = ", ".join(f"{s} ({p or 'no usb path'})" for s, _, p in visible)
+            raise RuntimeError(f"{message} This server sees: {seen}.")
 
-    def _live_forward_port(self, serial: str) -> int | None:
-        """The local port ADB currently forwards for *serial*, if any.
+        # Our server sees nothing at all. On a bench that is the ordinary case — a
+        # single DUT with its relay off — so the relay stays the leading explanation.
+        # The other cause, another ADB server holding the device claims, is only
+        # mentioned when there is evidence for it, because sending an operator to hunt
+        # a rogue server when their relay is off is worse than not mentioning it.
+        elsewhere = self._devices_reported_elsewhere()
+        if elsewhere:
+            raise RuntimeError(
+                f"{message} This server (port {self.server_port}) sees no devices at all, "
+                f"but one on port {DEFAULT_ADB_SERVER_PORT} reports {', '.join(elsewhere)}. "
+                f"A device is claimed by whichever ADB server finds it first and only one "
+                f"can hold it, so this server is blind to those: set server_port to "
+                f"{DEFAULT_ADB_SERVER_PORT}, or stop that server."
+            )
+        raise RuntimeError(f"{message} This server sees no devices at all.")
 
-        ``adb forward --list`` prints ``<serial> tcp:<local> tcp:<remote>`` and is the
-        single source of truth: forwards live in the ADB server, and they vanish with
-        the device. That is what makes a stale memoized port detectable.
+    def _devices_reported_elsewhere(self) -> list[str]:
+        """Serials an ADB server on adb's default port reports, if one is running there.
+
+        Diagnostic only, and evidence rather than inference: a device is claimed by
+        whichever server finds it first, so devices visible *there* while we see none is
+        decisive about a split claim. Empty when there is nothing to learn.
+
+        Connects before asking, and never asks at all when nothing is listening — an
+        ``adb devices`` against a free port would *start a server there*, and a
+        diagnostic that creates the thing it is diagnosing is worse than silence.
+        """
+        if self.server_port == DEFAULT_ADB_SERVER_PORT:
+            return []
+        try:
+            with socket.create_connection(("127.0.0.1", DEFAULT_ADB_SERVER_PORT), timeout=1):
+                pass
+        except OSError:
+            return []
+
+        try:
+            result = subprocess.run(
+                [self.adb_path, "devices"],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=min(self.connect_timeout, 5),
+                env=_adb_env(DEFAULT_ADB_SERVER_PORT),
+            )
+        except (subprocess.SubprocessError, OSError):
+            return []
+
+        serials = []
+        for line in result.stdout.splitlines()[1:]:
+            # `* daemon not running…` style banners go to stdout too; a banner read as a
+            # serial would invent a device and misdiagnose a genuinely empty bench.
+            if not line.strip() or line.startswith("*"):
+                continue
+            fields = line.split()
+            if len(fields) >= 2:
+                serials.append(fields[0])
+        return serials
+
+    def _live_forwards(self, serial: str) -> set[int] | None:
+        """Local ports the ADB server currently forwards to *serial*'s adbd.
+
+        ``adb forward --list`` prints one ``<serial> tcp:<local> tcp:<remote>`` line per
+        listener and is the single source of truth: forwards live in the ADB server, and
+        they vanish with the device. That is what makes a stale memoized port detectable.
+
+        A **set**, because one device can hold several forwards to the same adbd port —
+        listeners are keyed by their local spec, so ours and a colleague's `adb forward
+        tcp:9000 tcp:5555` coexist, and adb lists both. Anything asking "is *this* port
+        still forwarded" must therefore test membership; picking one port and comparing
+        would depend on adb's listener ordering, which is insertion order in a vector
+        that removals shift.
+
+        ``None`` when the server could not be asked, which is **not** the same as "there
+        are none": collapsing the two is what let a failed listing be read as "everything
+        is gone". Each caller decides what an unknown answer means for it.
         """
         try:
             result = self._run_adb(["forward", "--list"])
@@ -619,6 +769,7 @@ class AdbDevice(Driver):
             return None
 
         want_remote = f"tcp:{self.adbd_port}"
+        ports = set()
         for line in result.stdout.splitlines():
             fields = line.split()
             if len(fields) < 3 or fields[0] != serial:
@@ -626,16 +777,18 @@ class AdbDevice(Driver):
             if not fields[1].startswith("tcp:") or fields[2] != want_remote:
                 continue
             try:
-                return int(fields[1].removeprefix("tcp:"))
+                ports.add(int(fields[1].removeprefix("tcp:")))
             except ValueError:
                 continue
-        return None
+        return ports
 
-    def _create_forward(self, serial: str) -> int:
+    def _create_forward(self, serial: str, known: set[int] | None) -> int:
         """Forward this device's adbd to a free exporter port; return the chosen port.
 
         ``tcp:0`` asks the ADB server to pick the port, so the exporter needs no
-        configured port range kept clear of whatever else runs there.
+        configured port range kept clear of whatever else runs there. *known* is the set
+        of forwards this device already had, used to identify ours if adb does not name
+        the port it chose, or ``None`` if that could not be established.
         """
         try:
             result = self._run_adb(["-s", serial, "forward", "tcp:0", f"tcp:{self.adbd_port}"])
@@ -657,15 +810,22 @@ class AdbDevice(Driver):
 
         # Reporting the port is optional in adb's protocol — AOSP's client prints it
         # only when the server sends one ("Server or device may optionally return a
-        # resolved TCP port number"). A silent server still created the forward, so
-        # ask what it bound rather than treating this as a failure.
-        port = self._live_forward_port(serial)
-        if port is None:
+        # resolved TCP port number"). A silent server still created the forward, so ask
+        # what it bound rather than treating this as a failure. The difference against
+        # what was there before names ours even when the device holds other forwards.
+        live = self._live_forwards(serial) if known is not None else None
+        appeared = live - known if (live is not None and known is not None) else None
+        if appeared is None or len(appeared) != 1:
+            detail = (
+                "and `forward --list` could not be read"
+                if appeared is None
+                else f"and `forward --list` does not identify one ({sorted(appeared) or 'no new forward'})"
+            )
             raise RuntimeError(
                 f"could not forward {serial}: adb reported no forwarded port "
-                f"(stdout {(result.stdout or '').strip()!r}) and `forward --list` does not show one"
+                f"(stdout {(result.stdout or '').strip()!r}) {detail}"
             )
-        return port
+        return appeared.pop()
 
     @staticmethod
     def _parse_forwarded_port(stdout: str | None) -> int | None:
@@ -710,7 +870,17 @@ class AdbDevice(Driver):
         # match adb's own success strings instead of the exit status.
         if result.returncode != 0 or not message.startswith(("connected to", "already connected to")):
             raise RuntimeError(f"could not connect to {target}: {message or 'no output'}")
-        self._connected = target
+
+        if self._connected is None:
+            # Which of the two success strings adb chose is the only evidence of who
+            # connected this device. "already connected to" means the shared server had
+            # it before us — possibly for another lease — so disconnecting it on close
+            # would drop it out from under that user. Recorded once: a later stream
+            # always sees "already connected to", including for our own connection.
+            self._connected = target
+            self._owns_connection = message.startswith("connected to")
+            if not self._owns_connection:
+                self.logger.info("%s was already connected; leaving it connected on close", target)
 
         host, _, port = target.rpartition(":")
         return host, int(port)
@@ -718,21 +888,44 @@ class AdbDevice(Driver):
     def _ensure_forward(self) -> int:
         """The local port forwarding this device's adbd, creating it if needed."""
         serial = self._resolve_serial()
+        live = self._live_forwards(serial)
 
-        if self._forward_port is not None:
-            if self._live_forward_port(serial) == self._forward_port:
-                return self._forward_port
-            self.logger.info(
-                "forward tcp:%d for %s is gone (device re-enumerated?); recreating",
+        if live is None and self._forward_port is not None:
+            # The server could not be asked. Reading that as "no forwards exist" is the
+            # failure bennyz raised against the old slot pool, reappearing here: a forward
+            # we own looks gone, ownership is dropped, and a second one is created that
+            # nothing will ever remove. Keep what we have — a stream to a dead port fails
+            # loudly and self-heals next time, while an orphaned forward is silent.
+            self.logger.warning(
+                "could not confirm forward tcp:%d for %s; keeping it rather than risking a second, unowned forward",
                 self._forward_port,
                 serial,
             )
-            self._forward_port = None
+            return self._forward_port
 
-        # An earlier forward for this serial from a previous stream is reusable.
-        existing = self._live_forward_port(serial)
-        self._forward_port = existing if existing is not None else self._create_forward(serial)
-        self.logger.info("%s forwarded on tcp:%d", serial, self._forward_port)
+        if self._forward_port is not None and live is not None:
+            if self._forward_port in live:
+                return self._forward_port
+            self.logger.info(
+                "tcp:%d no longer forwards %s (device re-enumerated, or adb rebound the "
+                "port to another device); recreating",
+                self._forward_port,
+                serial,
+            )
+            self._forward_port, self._forward_serial, self._owns_forward = None, None, False
+
+        if live:
+            # Reusable, but not ours to remove: `forward --list` cannot say who created a
+            # forward, and on a shared or adopted server it may be another driver's or a
+            # person's. Reuse avoids churning the server across per-stream resolves.
+            # Lowest port when the device holds several, so repeated resolves agree.
+            self._forward_port, self._owns_forward = min(live), False
+            self.logger.info("%s is already forwarded on tcp:%d; reusing it as-is", serial, self._forward_port)
+        else:
+            self._forward_port, self._owns_forward = self._create_forward(serial, live), True
+            self.logger.info("%s forwarded on tcp:%d", serial, self._forward_port)
+
+        self._forward_serial = serial
         return self._forward_port
 
     @exportstream
@@ -750,7 +943,15 @@ class AdbDevice(Driver):
 
     @export
     def info(self) -> dict[str, str]:
-        """Describe this device: its transport, selector, and whether it is present."""
+        """Describe this device: its transport, selector, and whether it is present.
+
+        Takes a reference to the shared server first, like every other path that runs adb.
+        Skipping it does not avoid starting a server — the adb *client* silently starts one
+        when nothing answers the port — it only means the driver does not know it caused
+        that server, adopts it on the next acquire, and then leaves it running at teardown
+        because adopted servers are never killed. Observed against real hardware: `info()`
+        alone left an ADB server behind after `close()`.
+        """
         result = {
             "transport": self.transport,
             "adbd_port": str(self.adbd_port),
@@ -761,7 +962,9 @@ class AdbDevice(Driver):
 
         result["selector"] = self.serial or str(self.usb_port)
         try:
-            result["serial"] = self._resolve_serial()
+            with self._lock:
+                self._ensure_server()
+                result["serial"] = self._resolve_serial()
             result["present"] = "yes"
         except RuntimeError as e:
             result["present"] = "no"
@@ -769,29 +972,75 @@ class AdbDevice(Driver):
         return result
 
     def close(self):
-        """Drop the forward, disconnect a TCP device, and release the shared server."""
+        """Drop what we created, leave what we merely reused, release the shared server.
+
+        Teardown only undoes this driver's own side effects. A forward or connection that
+        was already in the shared ADB server belongs to whoever made it, and removing it
+        would break them — silently, since adb reports nothing.
+        """
         with self._lock:
-            forward_port, connected = self._forward_port, self._connected
-            self._forward_port = self._connected = None
+            forward_port, forward_serial, owns_forward = self._forward_port, self._forward_serial, self._owns_forward
+            connected, owns_connection = self._connected, self._owns_connection
+            self._forward_port = self._forward_serial = self._connected = None
+            self._owns_forward = self._owns_connection = False
 
-        if forward_port is not None:
-            try:
-                self._run_adb(["forward", "--remove", f"tcp:{forward_port}"], check=False)
-            except (subprocess.SubprocessError, OSError) as e:
-                self.logger.warning("could not remove forward tcp:%d (%s)", forward_port, e)
+        if forward_port is not None and owns_forward and forward_serial is not None:
+            self._remove_own_forward(forward_serial, forward_port)
+        elif forward_port is not None:
+            self.logger.debug("leaving forward tcp:%d alone; this driver did not create it", forward_port)
 
-        if connected is not None:
+        if connected is not None and owns_connection:
             try:
                 self._run_adb(["disconnect", connected], check=False)
             except (subprocess.SubprocessError, OSError) as e:
                 self.logger.debug("could not disconnect %s (%s)", connected, e)
+        elif connected is not None:
+            self.logger.debug("leaving %s connected; this driver did not connect it", connected)
 
         if self._server is not None:
-            _release_server(
-                self.adb_path,
-                self.server_port,
-                connect_timeout=self.connect_timeout,
-                logger=self.logger,
-            )
+            _release_server(self.server_port, connect_timeout=self.connect_timeout, logger=self.logger)
             self._server = None
         super().close()
+
+    def _remove_own_forward(self, serial: str, port: int) -> None:
+        """Remove the forward we created, if the ADB server still shows it as ours.
+
+        Removal cannot be scoped to a device, so confirm before removing. `adb forward
+        --remove` maps to the ``killforward`` host service, which passes its transport to
+        ``remove_listener`` — and that matches on the local spec alone and ignores the
+        transport entirely (AOSP ``adb_listeners.cpp``). So ``-s <serial>`` does not
+        narrow the removal, and adding it makes teardown *worse*: ``killforward`` acquires
+        the transport up front, and ``acquire_one_transport`` rejects any state that is not
+        ``device`` — so a DUT that is merely **offline**, which is where a relay leaves it
+        mid power-cycle, refuses the removal while its listener is still there to remove.
+        (A device that is truly gone is moot: its listener was already erased with its
+        transport.)
+
+        A re-check does narrow it, and there are two ways our port stops being ours.
+        ``install_listener`` matches on the local spec too, and on a hit it **repurposes
+        the existing listener in place** — new ``connect_to``, new transport, exit 0,
+        silently — unless the caller passed ``--no-rebind``. So one
+        ``adb -s OTHER forward tcp:<our port> tcp:5555`` from a person or another exporter
+        moves our port to a different device without freeing anything. Less likely, each
+        listener also registers a transport-disconnect hook, so a device going away drops
+        its own forwards and the kernel may later hand that ephemeral port to another
+        ``tcp:0``. Either way, removing by local spec would delete that device's forward.
+
+        We cannot prevent the theft: ``--no-rebind`` on our own ``tcp:0`` is a no-op,
+        because the listener is renamed to its resolved port and nothing ever matches the
+        literal ``tcp:0`` again. A listing we cannot get is treated as "not ours" — the
+        server is unreachable, so there is nothing to remove that a blind attempt would
+        not risk taking from someone else.
+        """
+        live = self._live_forwards(serial)
+        if live is None or port not in live:
+            self.logger.debug(
+                "not removing forward tcp:%d: %s",
+                port,
+                "the server could not be asked" if live is None else "it no longer forwards this device",
+            )
+            return
+        try:
+            self._run_adb(["forward", "--remove", f"tcp:{port}"], check=False)
+        except (subprocess.SubprocessError, OSError) as e:
+            self.logger.warning("could not remove forward tcp:%d (%s)", port, e)

@@ -192,13 +192,13 @@ class AdbClient(DriverClient):
         @adb.command()
         @click.option("-H", "host", default="127.0.0.1", show_default=True, help="Local address to bind")
         @click.option("-P", "port", type=int, default=0, show_default=True, help="Local port to bind (0=auto)")
-        def tunnel(host: str, port: int):
-            """Forward the exporter's ADB server to a local port, and hold.
+        def serve(host: str, port: int):
+            """Serve the exporter's ADB server on a local port, and hold.
 
             Point your own adb at it with the environment variables printed below.
             """
             with self.forward_adb(host, port) as addr:
-                click.echo(f"ADB server tunneled to {addr[0]}:{addr[1]}")
+                click.echo(f"exporter's ADB server at {addr[0]}:{addr[1]}")
                 click.echo("")
                 click.echo("To use your own adb or other tools, run:")
                 click.echo(f"  export ANDROID_ADB_SERVER_ADDRESS={addr[0]}")
@@ -215,8 +215,8 @@ class AdbDeviceClient(DriverClient):
     """Client for one declared Android device on the exporter.
 
     Exposes the device's adbd as a local TCP endpoint. What you do with that endpoint
-    is up to your own adb: ``attach`` runs a single ``adb connect`` for convenience,
-    and ``endpoint`` just prints the address so you can drive adb yourself.
+    is up to your own adb: ``connect`` runs a single ``adb connect`` for convenience,
+    and ``serve`` just holds the address open so you can drive adb yourself.
     """
 
     def info(self) -> dict:
@@ -224,7 +224,7 @@ class AdbDeviceClient(DriverClient):
         return self.call("info")
 
     @contextmanager
-    def endpoint(self, host: str = "127.0.0.1", port: int = 0) -> Generator[str, None, None]:
+    def serve(self, host: str = "127.0.0.1", port: int = 0) -> Generator[str, None, None]:
         """Expose the device's adbd on a local TCP port.
 
         No adb is involved. This is the primitive: Jumpstarter moves the ADB protocol
@@ -241,7 +241,7 @@ class AdbDeviceClient(DriverClient):
             yield f"{addr[0]}:{addr[1]}"
 
     @contextmanager
-    def attach(
+    def connect(
         self,
         *,
         adb: str = "adb",
@@ -269,11 +269,16 @@ class AdbDeviceClient(DriverClient):
             bounds a command on your machine against a local port-forward.
 
         Yields:
-            The ``host:port`` the device was attached as.
+            The ``host:port`` the device was connected as.
         """
-        with self.endpoint(host=host, port=port) as target:
-            _adb_connect(adb, target, timeout=timeout)
+        with self.serve(host=host, port=port) as target:
+            # `adb connect` inside the try: a *failed* connect still registers the
+            # address, as an `offline` entry that outlives the session. Observed against
+            # hardware — a forward whose adbd was not listening gave `failed to connect`
+            # on stdout and left `127.0.0.1:54786 offline` in the local server. So the
+            # disconnect below has to cover the failure path, not just the happy one.
             try:
+                _adb_connect(adb, target, timeout=timeout)
                 yield target
             finally:
                 # Leave no stale `offline` entry in the developer's ADB server. Bounded
@@ -296,7 +301,7 @@ class AdbDeviceClient(DriverClient):
         def adb():
             """One Android device on the exporter.
 
-            Jumpstarter does not wrap the adb CLI. Use `attach` to add this device to
+            Jumpstarter does not wrap the adb CLI. Use `connect` to add this device to
             your own ADB server, then run your own `adb -s <address> ...`.
             """
 
@@ -310,28 +315,28 @@ class AdbDeviceClient(DriverClient):
         @click.option("--adb", "adb_path", default="adb", show_default=True, help="Path to your local adb")
         @click.option("-H", "host", default="127.0.0.1", show_default=True, help="Local address to bind")
         @click.option("-P", "port", type=int, default=0, show_default=True, help="Local port to bind (0=auto)")
-        def attach(adb_path: str, host: str, port: int):
+        def connect(adb_path: str, host: str, port: int):
             """Add this device to your own ADB server, and hold until Ctrl+C."""
-            with self.attach(adb=adb_path, host=host, port=port) as target:
-                click.echo(f"attached as {target}")
+            with self.connect(adb=adb_path, host=host, port=port) as target:
+                click.echo(f"connected as {target}")
                 click.echo("")
                 click.echo(f"Your ADB server now lists it; use it with:  adb -s {target} shell")
                 click.echo("Android Studio will list it too.")
                 click.echo("")
-                click.echo("Press Ctrl+C to detach")
+                click.echo("Press Ctrl+C to disconnect")
                 _wait_for_interrupt(self)
-            click.echo("detached")
+            click.echo("disconnected")
             return 0
 
         @adb.command()
         @click.option("-H", "host", default="127.0.0.1", show_default=True, help="Local address to bind")
         @click.option("-P", "port", type=int, default=0, show_default=True, help="Local port to bind (0=auto)")
-        def endpoint(host: str, port: int):
-            """Print the device's local adbd address, and hold until Ctrl+C.
+        def serve(host: str, port: int):
+            """Serve the device's adbd at a local address, and hold until Ctrl+C.
 
             For driving adb yourself, or for tools that take a host:port.
             """
-            with self.endpoint(host=host, port=port) as target:
+            with self.serve(host=host, port=port) as target:
                 click.echo(target)
                 click.echo("")
                 click.echo(f"Add it to your ADB server with:  adb connect {target}")

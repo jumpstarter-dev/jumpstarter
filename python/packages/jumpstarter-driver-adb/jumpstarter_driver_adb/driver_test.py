@@ -54,9 +54,30 @@ class _FakeAdb:
             lines.append(f"{serial}\t{state}{extra} product:x model:y device:z")
         return "\n".join(lines) + "\n"
 
+    def _acquire(self, serial, argv, check):
+        """Model `acquire_one_transport`, which every `-s` command goes through first.
+
+        Not scoping — `-s` does not narrow what a command acts on. It selects a transport,
+        and the server refuses the whole request when that transport is missing or not in
+        the `device` state (`transport.cpp` rejects offline/unauthorized/connecting unless
+        the caller passes `accept_any_state`, and no forward request does).
+        """
+        state = next((st for s, st, _ in self.devices if s == serial), None)
+        stderr = f"error: device '{serial}' not found\n" if state is None else f"error: device {state}\n"
+        if state == "device":
+            return None
+        if check:
+            raise subprocess.CalledProcessError(1, argv, output="", stderr=stderr)
+        return MagicMock(stdout="", stderr=stderr, returncode=1)
+
     def __call__(self, argv, **kwargs):
         self.calls.append(argv)
         args = argv[1:]
+
+        if "-s" in args:
+            refusal = self._acquire(args[args.index("-s") + 1], argv, kwargs.get("check", False))
+            if refusal is not None:
+                return refusal
 
         if args[:1] == ["version"]:
             return MagicMock(stdout="Android Debug Bridge version 1.0.41", stderr="", returncode=0)
@@ -66,25 +87,32 @@ class _FakeAdb:
             return MagicMock(stdout="List of devices attached\n", stderr="", returncode=0)
 
         if "forward" in args:
-            serial = args[args.index("-s") + 1] if "-s" in args else ""
-            if "--list" in args:
-                lines = "".join(f"{s} tcp:{p} tcp:5555\n" for p, s in self.forwards.items())
-                return MagicMock(stdout=lines, stderr="", returncode=0)
-            if "--remove-all" in args:
-                self.forwards = {p: s for p, s in self.forwards.items() if s != serial}
-                return MagicMock(stdout="", stderr="", returncode=0)
-            if "--remove" in args:
-                self.forwards.pop(int(args[-1].removeprefix("tcp:")), None)
-                return MagicMock(stdout="", stderr="", returncode=0)
-            local = int(args[-2].removeprefix("tcp:"))
-            if local == 0:
-                local = self._next_port
-                self._next_port += 1
-            self.forwards[local] = serial
-            # Real adb prints the chosen port, and only that, for tcp:0.
-            return MagicMock(stdout=f"{local}\n", stderr="", returncode=0)
+            return self._forward(args)
 
         return MagicMock(stdout="ok", stderr="", returncode=0)
+
+    def _forward(self, args):
+        """Handle the `forward` family against the remembered forward state."""
+        serial = args[args.index("-s") + 1] if "-s" in args else ""
+        if "--list" in args:
+            lines = "".join(f"{s} tcp:{p} tcp:5555\n" for p, s in self.forwards.items())
+            return MagicMock(stdout=lines, stderr="", returncode=0)
+        if "--remove-all" in args:
+            self.forwards = {p: s for p, s in self.forwards.items() if s != serial}
+            return MagicMock(stdout="", stderr="", returncode=0)
+        if "--remove" in args:
+            # Keyed by the local spec alone: `remove_listener` ignores the transport, so
+            # a `-s` here would not narrow which forward goes.
+            self.forwards.pop(int(args[-1].removeprefix("tcp:")), None)
+            return MagicMock(stdout="", stderr="", returncode=0)
+
+        local = int(args[-2].removeprefix("tcp:"))
+        if local == 0:
+            local = self._next_port
+            self._next_port += 1
+        self.forwards[local] = serial
+        # Real adb prints the chosen port, and only that, for tcp:0.
+        return MagicMock(stdout=f"{local}\n", stderr="", returncode=0)
 
 
 def _mock_adb_ok():
@@ -288,7 +316,7 @@ def test_adbserver_keeps_the_surface_its_consumers_use(mock_run, mock_conn, _):
 # given device. So on a host that already runs one, starting a second does not give
 # us "another view" of the devices -- it gives us an empty one, while `start-server`
 # reports success. Adopting the running server is the only way to see the hardware,
-# and sharing one between drivers is a correctness requirement, not an optimisation.
+# and sharing one between drivers is a correctness requirement, not an optimization.
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -324,9 +352,15 @@ def test_starts_a_server_when_the_port_is_free(mock_run, mock_conn, _):
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
-@patch("socket.create_connection")
+@patch("socket.create_connection", side_effect=OSError("refused"))
 @patch("subprocess.run", return_value=_mock_adb_ok())
 def test_a_server_we_started_is_killed_on_close(mock_run, mock_conn, _):
+    """The port has to be genuinely free for the server to be ours.
+
+    This previously passed with the port occupied, which only worked because the driver
+    claimed ownership of a server it had not started — see
+    `test_adopt_false_does_not_claim_a_server_it_could_not_start`.
+    """
     server = AdbServer(adopt_existing_server=False)
     assert server._owns_server is True
     server.close()
@@ -502,7 +536,7 @@ def test_a_declared_server_and_a_device_share_one_server(mock_conn, _):
 @patch("shutil.which", return_value="/usr/bin/adb")
 @patch("socket.create_connection", side_effect=OSError("refused"))
 def test_different_server_ports_get_independent_servers(mock_conn, _):
-    """The registry is keyed per (adb_path, port)."""
+    """The registry is keyed per port, so distinct ports are distinct servers."""
     fake, patcher = _fake()
     with patcher:
         a = AdbDevice(usb_port="1-4.2", server_port=15037)
@@ -511,6 +545,124 @@ def test_different_server_ports_get_independent_servers(mock_conn, _):
         b._ensure_server()
         assert a._server is not b._server
         assert len([c for c in fake.calls if c[1:] == ["start-server"]]) == 2
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_two_adb_paths_on_one_port_share_one_server(mock_conn, _):
+    """Keying the registry on (adb_path, port) split one real server across two entries.
+
+    Only one process can listen on the port, and adb reaches it through
+    ANDROID_ADB_SERVER_PORT without regard for which binary started it, so the two
+    entries described the same server with two independent refcounts.
+    """
+    fake, patcher = _fake()
+    with patcher:
+        a = AdbDevice(usb_port="1-4.2")
+        b = AdbDevice(usb_port="1-4.3", adb_path="/opt/platform-tools/adb")
+        a._ensure_server()
+        b._ensure_server()
+
+        assert a._server is b._server
+        assert list(adb_driver._SERVERS) == [15037]
+        assert len([c for c in fake.calls if c[1:] == ["start-server"]]) == 1
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_a_differently_named_adb_does_not_get_its_own_refcount(mock_conn, _):
+    """The consequence of the split key: either refcount reaching zero killed the server.
+
+    The AdbServer entry hit zero on close and ran `adb kill-server` while the device
+    still held its own entry, pointing at a process that no longer existed.
+    """
+    fake, patcher = _fake()
+    with patcher:
+        server = AdbServer(adopt_existing_server=False)
+        device = AdbDevice(usb_port="1-4.2", adb_path="/opt/platform-tools/adb")
+        device._ensure_server()
+
+        server.close()
+        assert not [c for c in fake.calls if c[1:] == ["kill-server"]], "killed a server still in use"
+
+        device.close()
+        assert [c for c in fake.calls if c[1:] == ["kill-server"]], "last holder left the server running"
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection")
+def test_start_server_does_not_claim_an_adopted_server(mock_conn, _):
+    """`adb start-server` is silent and exits 0 whether it started a server or found one.
+
+    So ownership cannot be inferred from it. Probing first keeps an adopted server
+    unowned, and `close()` therefore leaves it running.
+    """
+    fake, patcher = _fake()
+    with patcher:
+        server = AdbServer()
+        assert server._owns_server is False
+
+        assert server.start_server() == 15037
+        assert server._owns_server is False
+
+        server.close()
+    assert not [c for c in fake.calls if c[1:] == ["kill-server"]]
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection")
+def test_restarting_a_dead_adopted_server_makes_it_ours(mock_conn, _):
+    """A server this process started is ours even if the one we adopted was not.
+
+    Ownership used to be decided once, at acquisition, by a throwaway registry entry —
+    so a restart left it false and `close()` walked away from a server we had started.
+    """
+    fake, patcher = _fake()
+    with patcher:
+        server = AdbServer()
+        assert server._owns_server is False
+
+        mock_conn.side_effect = OSError("refused")  # the adopted server is gone
+        assert server.start_server() == 15037
+        assert server._owns_server is True
+
+        server.close()
+    assert [c for c in fake.calls if c[1:] == ["kill-server"]]
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection")
+def test_adopt_false_does_not_claim_a_server_it_could_not_start(mock_conn, _):
+    """`adopt_existing_server: false` cannot conjure a second server on a taken port.
+
+    `adb start-server` is silent and exits 0 whether it started one or found one, so
+    starting here would "succeed" and leave us believing we own a server somebody else
+    runs — and `close()` would kill it. Against Android Studio that drops every device
+    claim, and Studio respawns its server about a second later (measured on hardware).
+    """
+    fake, patcher = _fake()
+    with patcher:
+        server = AdbServer(adopt_existing_server=False)
+        assert server._owns_server is False, "claimed a server it did not start"
+        server.close()
+
+    assert not [c for c in fake.calls if c[1:] == ["kill-server"]], "killed someone else's server"
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_kill_server_gives_up_ownership(mock_conn, _):
+    """Nothing of ours runs on that port afterwards.
+
+    Killing and then killing again on close would target whatever process took the
+    freed port in between.
+    """
+    fake, patcher = _fake()
+    with patcher:
+        server = AdbServer(adopt_existing_server=False)
+        server.kill_server()
+        server.close()
+    assert len([c for c in fake.calls if c[1:] == ["kill-server"]]) == 1
 
 
 # ================================================================== AdbDevice
@@ -549,12 +701,116 @@ def test_usb_port_resolves_to_a_serial_and_forwards(mock_conn, _):
 @patch("shutil.which", return_value="/usr/bin/adb")
 @patch("socket.create_connection", side_effect=OSError("refused"))
 def test_an_absent_device_is_an_actionable_error(mock_conn, _):
-    """A DUT powered off by its relay is normal, not a crash — but say so clearly."""
+    """A DUT powered off by its relay is normal, not a crash — but say so clearly.
+
+    The server can see other devices, so the port really is empty.
+    """
+    fake, patcher = _fake(devices=(("OTHERDEVICE99", "device", "usb:1-1.1"),))
+    with patcher:
+        device = AdbDevice(usb_port="1-4.2")
+        with pytest.raises(RuntimeError, match="no device on USB port usb:1-4.2") as e:
+            device._resolve_endpoint()
+    assert "powered off" in str(e.value)
+    assert "OTHERDEVICE99 (usb:1-1.1)" in str(e.value), "should say what it can see"
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_an_empty_server_still_blames_the_relay_first(mock_conn, _):
+    """The bench case: one DUT, relay off, so its own server legitimately sees nothing.
+
+    This is the ordinary state on a bench, not a misconfiguration, and the operator needs
+    the relay — not a hunt for a rogue ADB server they do not have.
+    """
     fake, patcher = _fake(devices=())
     with patcher:
         device = AdbDevice(usb_port="1-4.2")
-        with pytest.raises(RuntimeError, match="no device on USB port usb:1-4.2"):
+        with pytest.raises(RuntimeError, match="no device on USB port usb:1-4.2") as e:
             device._resolve_endpoint()
+
+    assert "power relay" in str(e.value)
+    assert "5037" not in str(e.value), "invented a rogue server with no evidence for one"
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_a_failed_listing_does_not_orphan_our_forward(mock_conn, _):
+    """bennyz, on the old slot pool: a failed listing must not look like "nothing exists".
+
+    Reading an unanswerable `forward --list` as an empty one made a forward we own appear
+    gone. Ownership was dropped and a second forward created, so the first was orphaned —
+    invisible to teardown, and leaked for the life of the ADB server.
+    """
+    fake, patcher = _fake()
+    with patcher:
+        device = AdbDevice(usb_port="1-4.2")
+        _, port = device._resolve_endpoint()
+
+    def run(argv, **kwargs):
+        if "--list" in argv:
+            raise subprocess.TimeoutExpired("adb forward --list", 30.0)
+        return fake(argv, **kwargs)
+
+    with patch("subprocess.run", side_effect=run):
+        assert device._resolve_endpoint() == ("127.0.0.1", port), "abandoned a forward it owns"
+        assert device._owns_forward is True, "disowned a forward it created"
+
+    assert len(fake.forwards) == 1, f"created a second forward: {fake.forwards}"
+
+    # And with the listing working again, teardown still removes exactly that forward.
+    with patcher:
+        device.close()
+    assert not fake.forwards
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+def test_devices_held_by_another_server_are_named_as_such(mock_conn, _=None):
+    """With evidence, the split claim is stated — it is decisive, not a guess.
+
+    Observed on real hardware: a desktop `adb` on 5037 held the tablet, so the driver's
+    server on 15037 saw an empty list. A device is claimed by whichever server finds it
+    first, so devices visible there and not here can only mean a split.
+    """
+    fake = _FakeAdb(devices=())
+
+    def run(argv, **kwargs):
+        if kwargs.get("env", {}).get("ANDROID_ADB_SERVER_PORT") == "5037":
+            return MagicMock(stdout="List of devices attached\nR52X200B4NW\tdevice\n", stderr="", returncode=0)
+        return fake(argv, **kwargs)
+
+    # Something answers on 5037; our own port is refused so the driver starts its own.
+    def connect(address, *a, **kw):
+        if address[1] == 5037:
+            return MagicMock(__enter__=MagicMock(), __exit__=MagicMock())
+        raise OSError("refused")
+
+    with patch("subprocess.run", side_effect=run), patch("socket.create_connection", side_effect=connect):
+        device = AdbDevice(usb_port="1-4.2")
+        with pytest.raises(RuntimeError, match="no device on USB port usb:1-4.2") as e:
+            device._resolve_endpoint()
+
+    reason = str(e.value)
+    assert "power relay" in reason, "the relay is still the first thing to check"
+    assert "R52X200B4NW" in reason, "should name what the other server holds"
+    assert "set server_port to 5037" in reason
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_diagnosing_a_blind_server_does_not_start_one(mock_conn, _):
+    """An `adb devices` against a free port starts a server there.
+
+    A diagnostic that creates the thing it is diagnosing would leave a stray server on
+    5037 on every failed resolve, so nothing is asked unless something already answers.
+    """
+    fake, patcher = _fake(devices=())
+    with patcher:
+        device = AdbDevice(usb_port="1-4.2")
+        with pytest.raises(RuntimeError):
+            device._resolve_endpoint()
+
+    asked = [c for c in fake.calls if c[1:] == ["devices"]]
+    assert not asked, f"probed adb on a port with nothing listening: {asked}"
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -616,7 +872,7 @@ def test_a_stale_memoized_forward_is_recreated(mock_conn, _):
     """Forwards live in the ADB server and vanish with the device.
 
     Trusting memory made attach report success while creating no forward, so the
-    client tunnelled to a dead port and the device sat `offline` with no error
+    client tunneled to a dead port and the device sat `offline` with no error
     anywhere. Observed on hardware.
     """
     fake = _FakeAdb()
@@ -652,11 +908,15 @@ def test_an_explicit_serial_skips_the_port_lookup(mock_conn, _):
 
 @patch("shutil.which", return_value="/usr/bin/adb")
 @patch("socket.create_connection", side_effect=OSError("refused"))
-def test_a_macos_hex_devpath_matches(mock_conn, _):
-    """The macOS native backend reports an IOKit location ID, not a port path."""
-    fake, patcher = _fake(devices=((SERIAL, "device", "usb:1A320000"),))
+def test_a_macos_location_id_devpath_matches(mock_conn, _):
+    """The macOS native backend reports an IOKit location ID, not a port path.
+
+    Decimal with a literal `X` suffix — `usb_osx.cpp` formats it `"usb:%" PRIu32 "X"`, so
+    the `X` is not a hex marker. Taken from a real SM-P613 on adb 1.0.41.
+    """
+    fake, patcher = _fake(devices=((SERIAL, "device", "usb:538116096X"),))
     with patcher:
-        device = AdbDevice(usb_port="1A320000")
+        device = AdbDevice(usb_port="538116096X")
         assert device._resolve_serial() == SERIAL
 
 
@@ -803,15 +1063,178 @@ def test_concurrent_streams_create_one_forward(mock_conn, _):
 
 @patch("shutil.which", return_value="/usr/bin/adb")
 @patch("socket.create_connection", side_effect=OSError("refused"))
-def test_close_removes_the_forward_and_releases_the_server(mock_conn, _):
+def test_close_removes_the_forward_we_created(mock_conn, _):
     fake, patcher = _fake()
     with patcher:
         device = AdbDevice(usb_port="1-4.2")
-        device._resolve_endpoint()
-        assert fake.forwards
+        _, port = device._resolve_endpoint()
+        assert device._owns_forward is True
         device.close()
-        assert not fake.forwards
-        assert not adb_driver._SERVERS
+
+    assert not fake.forwards
+    assert not adb_driver._SERVERS
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_close_leaves_a_forward_adb_rebound_to_another_device(mock_conn, _):
+    """Our local port can stop being ours without anything being freed.
+
+    `install_listener` matches on the local spec, and on a hit it repurposes that listener
+    in place — new transport, exit 0, silently — unless `--no-rebind` was passed. So one
+    `adb -s OTHER forward tcp:<our port> tcp:5555` moves our port to another device. (The
+    same end state arrives less often via the kernel reusing a freed ephemeral port for a
+    later `tcp:0`.) Removal matches on the local spec too — `remove_listener` ignores the
+    transport it is handed — so teardown must confirm the forward is still ours rather
+    than trusting the port it remembers.
+    """
+    fake, patcher = _fake()
+    with patcher:
+        device = AdbDevice(usb_port="1-4.2")
+        _, port = device._resolve_endpoint()
+
+        fake.forwards[port] = "OTHERDEVICE99"  # `adb -s OTHERDEVICE99 forward tcp:<port> ...`
+        device.close()
+
+    assert fake.forwards == {port: "OTHERDEVICE99"}, "removed another device's forward"
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_a_rebound_port_is_replaced_on_the_next_stream(mock_conn, _):
+    """A stolen port must not keep being handed to clients.
+
+    Nothing can stop the theft — `--no-rebind` on our own `tcp:0` is a no-op, since the
+    listener is renamed to its resolved port and never matches the literal `tcp:0` again —
+    so the defense is that endpoints are resolved per stream against what the server
+    actually forwards for *our* serial.
+    """
+    fake, patcher = _fake()
+    with patcher:
+        device = AdbDevice(usb_port="1-4.2")
+        _, stolen = device._resolve_endpoint()
+
+        fake.forwards[stolen] = "OTHERDEVICE99"
+        _, port = device._resolve_endpoint()
+
+        assert port != stolen, "kept handing out a port that now points at another device"
+        assert fake.forwards[port] == SERIAL
+        assert fake.forwards[stolen] == "OTHERDEVICE99", "clobbered the other device"
+        assert device._owns_forward is True
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_close_removes_only_our_forward_when_the_device_has_several(mock_conn, _):
+    """One device can hold several forwards to the same adbd port.
+
+    Listeners are keyed by their local spec, so ours and a colleague's `adb forward
+    tcp:9000 tcp:5555` coexist and adb lists both. Teardown must remove exactly the one
+    it created — not the device's forwards wholesale, and not whichever adb lists first.
+    """
+    fake, patcher = _fake()
+    with patcher:
+        device = AdbDevice(usb_port="1-4.2")
+        _, port = device._resolve_endpoint()
+
+        fake.forwards[9000] = SERIAL  # someone forwards the same device by hand
+        assert device._resolve_endpoint() == ("127.0.0.1", port), "lost track of our own forward"
+
+        device.close()
+
+    assert fake.forwards == {9000: SERIAL}, "removed a forward this driver did not create"
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_close_removes_the_forward_of_an_offline_device(mock_conn, _):
+    """The bench case: a relay power-cycles the DUT and teardown runs against it offline.
+
+    An offline device keeps its transport, so its forwards survive — but every `-s`
+    command is refused, because the server acquires the transport first and rejects a
+    non-`device` state. Removal must not go through `-s`; `remove_listener` matches the
+    local spec and never looks at the transport, so the unscoped form is both sufficient
+    and the only form that works here.
+    """
+    fake, patcher = _fake()
+    with patcher:
+        device = AdbDevice(usb_port="1-4.2")
+        _, port = device._resolve_endpoint()
+
+        fake.devices = [(SERIAL, "offline", USB_PORT)]  # the relay cut power mid-lease
+        device.close()
+
+    assert not fake.forwards, "left a forward behind on an offline device"
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_a_silent_forward_racing_another_process_is_not_guessed(mock_conn, _):
+    """Two exporters can share one adopted ADB server and declare the same device.
+
+    If a foreign forward appears between our listing and our own `forward tcp:0`, and the
+    server does not name the port it chose, "which port is forwarded for this serial" has
+    two answers. Picking one risks handing the client another process's forward, so the
+    ambiguity is reported instead.
+    """
+    fake = _FakeAdb()
+
+    def run(argv, **kwargs):
+        args = argv[1:]
+        if "forward" in args and "--list" not in args and "--remove" not in args:
+            fake(argv, **kwargs)  # our forward lands
+            fake.forwards[9000] = SERIAL  # so does the other process's
+            return MagicMock(stdout="", stderr="", returncode=0)  # but the server is silent
+        return fake(argv, **kwargs)
+
+    with patch("subprocess.run", side_effect=run):
+        device = AdbDevice(usb_port="1-4.2")
+        with pytest.raises(RuntimeError, match="does not identify one"):
+            device._resolve_endpoint()
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_a_forward_we_did_not_create_is_reused_but_never_removed(mock_conn, _):
+    """`forward --list` cannot say who created a forward.
+
+    Forwards live in the shared ADB server, so one already there may belong to another
+    driver, another exporter process, or a person at the bench. Reusing it is right —
+    re-forwarding per stream would churn the server — but deleting it on close broke
+    its owner silently, since adb reports nothing.
+    """
+    fake = _FakeAdb()
+    fake.forwards[9000] = SERIAL  # someone's `adb -s HVA1234567 forward tcp:9000 tcp:5555`
+    with patch("subprocess.run", new=MagicMock(side_effect=fake)):
+        device = AdbDevice(usb_port="1-4.2")
+        assert device._resolve_endpoint() == ("127.0.0.1", 9000)
+        assert device._owns_forward is False
+        device.close()
+
+    assert fake.forwards == {9000: SERIAL}
+    assert not [c for c in fake.calls if "--remove" in c]
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_a_recreated_forward_is_ours_again(mock_conn, _):
+    """Reuse must not make ownership sticky.
+
+    A forward adopted before a power cycle is gone afterwards; the one we then create
+    is ours, and has to be cleaned up.
+    """
+    fake = _FakeAdb()
+    fake.forwards[9000] = SERIAL
+    with patch("subprocess.run", new=MagicMock(side_effect=fake)):
+        device = AdbDevice(usb_port="1-4.2")
+        device._resolve_endpoint()
+        fake.forwards.clear()  # the device re-enumerated, taking the forward with it
+        _, port = device._resolve_endpoint()
+
+        assert device._owns_forward is True
+        device.close()
+    assert not fake.forwards
+    assert [c for c in fake.calls if "--remove" in c] == [["/usr/bin/adb", "forward", "--remove", f"tcp:{port}"]]
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -821,15 +1244,21 @@ def test_teardown_completes_when_forward_removal_hangs(mock_conn, _):
     fake, patcher = _fake()
     with patcher:
         device = AdbDevice(usb_port="1-4.2")
-        device._resolve_endpoint()
+        _, port = device._resolve_endpoint()
+
+    removals = []
 
     def run(argv, **kwargs):
         if "--remove" in argv:
+            removals.append(argv)
             raise subprocess.TimeoutExpired("adb forward --remove", 30.0)
-        return _mock_adb_ok()
+        # The forward is still live, so close() gets as far as trying to remove it.
+        return fake(argv, **kwargs)
 
     with patch("subprocess.run", side_effect=run):
         device.close()  # must not raise
+
+    assert removals == [["/usr/bin/adb", "forward", "--remove", f"tcp:{port}"]]
     assert device._forward_port is None
 
 
@@ -845,10 +1274,32 @@ def test_info_reports_presence(mock_conn, _):
         assert info["serial"] == SERIAL
         assert info["present"] == "yes"
 
-        fake.devices = []
+        fake.devices = [("OTHERDEVICE99", "device", "usb:1-1.1")]
         absent = device.info()
         assert absent["present"] == "no"
         assert "powered off" in absent["reason"]
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_info_takes_a_reference_to_the_server_it_uses(mock_conn, _):
+    """Otherwise the adb client silently starts one that nothing accounts for.
+
+    Observed on real hardware: `info()` ran `devices -l` before any acquire, the adb
+    client auto-started a server on the port, the next acquire *adopted* it — and
+    adopted servers are never killed, so `close()` left it running for good.
+    """
+    fake, patcher = _fake()
+    with patcher:
+        device = AdbDevice(usb_port="1-4.2")
+        device.info()
+
+        assert device._server is not None, "info() ran adb without taking a reference"
+        assert device._server.owns is True, "adopted a server this driver itself caused"
+
+        device.close()
+    assert not adb_driver._SERVERS
+    assert [c for c in fake.calls if c[1:] == ["kill-server"]], "left the server running"
 
 
 # ------------------------------------------------------------- transport: tcp
@@ -904,7 +1355,7 @@ def test_tcp_connect_failure_is_detected_despite_exit_zero(mock_conn, _):
 
 @patch("shutil.which", return_value="/usr/bin/adb")
 @patch("socket.create_connection", side_effect=OSError("refused"))
-def test_tcp_close_disconnects(mock_conn, _):
+def test_tcp_close_disconnects_a_device_we_connected(mock_conn, _):
     def run(argv, **kwargs):
         if argv[1:2] == ["connect"]:
             return MagicMock(stdout="connected to 10.0.0.5:5555\n", stderr="", returncode=0)
@@ -915,6 +1366,54 @@ def test_tcp_close_disconnects(mock_conn, _):
         device._resolve_endpoint()
         device.close()
         assert ["/usr/bin/adb", "disconnect", "10.0.0.5:5555"] in [c.args[0] for c in mock_run.call_args_list]
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_a_tcp_device_someone_else_connected_is_left_connected(mock_conn, _):
+    """`already connected to` means the shared server had the device before us.
+
+    Which of adb's two success strings comes back is the only evidence of who
+    connected it; disconnecting on that basis dropped it out from under its owner.
+    """
+
+    def run(argv, **kwargs):
+        if argv[1:2] == ["connect"]:
+            return MagicMock(stdout="already connected to 10.0.0.5:5555\n", stderr="", returncode=0)
+        return _mock_adb_ok()
+
+    with patch("subprocess.run", side_effect=run) as mock_run:
+        device = AdbDevice(transport="tcp", address="10.0.0.5:5555")
+        assert device._resolve_endpoint() == ("10.0.0.5", 5555)
+        assert device._owns_connection is False
+        device.close()
+
+    assert not [c for c in mock_run.call_args_list if c.args[0][1:2] == ["disconnect"]]
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_reconnecting_per_stream_does_not_forfeit_ownership(mock_conn, _):
+    """Every stream after the first sees `already connected to`, ours included.
+
+    `adb connect` runs per stream because it is idempotent, so ownership is decided
+    once, on the reply that actually established the connection.
+    """
+    replies = iter(["connected to 10.0.0.5:5555\n", "already connected to 10.0.0.5:5555\n"])
+
+    def run(argv, **kwargs):
+        if argv[1:2] == ["connect"]:
+            return MagicMock(stdout=next(replies), stderr="", returncode=0)
+        return _mock_adb_ok()
+
+    with patch("subprocess.run", side_effect=run) as mock_run:
+        device = AdbDevice(transport="tcp", address="10.0.0.5:5555")
+        device._resolve_endpoint()
+        device._resolve_endpoint()
+
+        assert device._owns_connection is True
+        device.close()
+    assert ["/usr/bin/adb", "disconnect", "10.0.0.5:5555"] in [c.args[0] for c in mock_run.call_args_list]
 
 
 # ---------------------------------------------------------- config validation
