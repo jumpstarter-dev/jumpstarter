@@ -22,21 +22,37 @@ from jumpstarter.common.grpc import translate_grpc_exceptions
 logger = logging.getLogger(__name__)
 
 
+_EMOJI_TERM_PREFIXES = (
+    "xterm",
+    "screen",
+    "tmux",
+    "rxvt",
+    "alacritty",
+    "kitty",
+    "wezterm",
+    "foot",
+    "ghostty",
+    "contour",
+    "rio",
+)
+"""Terminal type prefixes whose modern implementations reliably render emoji."""
+
+
 def _use_emoji() -> bool:
     """Return True when the output terminal is likely to support emoji.
 
     Falls back to ASCII indicators when any of the following is true:
-    * ``TERM`` is set to ``dumb`` (minimal terminal capabilities).
     * ``NO_COLOR`` environment variable is set (spirit: plain text output).
     * ``stdout`` is not a TTY (output piped to a file / another process).
+    * ``TERM`` is not set or does not match a known emoji-capable prefix
+      (e.g. ``linux``, ``vt100``, ``dumb``, ``ansi`` all fall back to ASCII).
     """
-    if os.environ.get("TERM") == "dumb":
-        return False
     if os.environ.get("NO_COLOR") is not None:
         return False
     if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
         return False
-    return True
+    term = os.environ.get("TERM", "")
+    return term.startswith(_EMOJI_TERM_PREFIXES)
 
 
 @dataclass
