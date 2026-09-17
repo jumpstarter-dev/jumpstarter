@@ -829,7 +829,7 @@ def shell(
         case ExporterConfigV1Alpha1():
             with config.serve_unix() as path:
                 # SAFETY: the exporter config is local thus considered trusted
-                launch_shell(
+                exit_code = launch_shell(
                     path,
                     "local",
                     allow=[],
@@ -838,3 +838,5 @@ def shell(
                     command=command,
                     motd=config.motd,
                 )
+            # Exit once the serve context has torn down.
+            sys.exit(exit_code)
