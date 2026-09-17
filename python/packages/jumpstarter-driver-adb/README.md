@@ -1,34 +1,21 @@
 # ADB Driver
 
-`jumpstarter-driver-adb` carries the Android Debug Bridge protocol between a remote
-Android device and your workstation, so your **own** `adb` — and Android Studio,
-tradefed, gradle — can drive a device on someone else's bench.
+`jumpstarter-driver-adb` carries the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb)
+protocol between a remote Android device and a Jumpstarter client. This enables existing tools in the Android ecosystem
+such as Android Studio to connect to a remote Android device as if it was physically
+connected via USB.
 
 ## How it works
 
-Devices are **declared** in the exporter config, one driver instance per device, and
+Android devices are **declared** in the exporter config, one driver instance per device, and
 plugged into the exporter over USB (or reachable at their own TCP address). Jumpstarter
 moves the ADB protocol to your machine; ADB does everything else.
 
 ```text
-DUT ──USB──▶ EXPORTER ──Jumpstarter tunnel──▶ YOU
+DUT ──USB──▶ EXPORTER ──Jumpstarter tunnel──▶ CLIENT
              (owns the USB                    (your own adb,
               connection)                      Studio, tradefed…)
 ```
-
-Two things worth knowing up front, because they shape the whole design:
-
-**Jumpstarter does not wrap the `adb` CLI.** There is no `j adb shell`, no
-`j adb install`. You already have `adb`; the driver's job is to hand you an address
-and get out of the way. `attach` runs a single `adb connect` for convenience, and
-`endpoint` just prints the address so you can drive adb yourself.
-
-**Devices are declared, not discovered.** Each device is named in the exporter config
-by the **bench USB port** it is plugged into. That is what makes a DUT composable with
-its power relay and its console, so leasing the DUT leases the right device — and it
-survives the two things that break auto-discovery: a relay power-cycle that
-re-enumerates USB and changes the device's serial, and swapping hardware between
-benches.
 
 ## Installation
 
@@ -44,46 +31,29 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ "jumpstarter-
 
 ## Configuration
 
-A two-DUT bench, each DUT with its own power relay:
+For example, a simple Android phone bench could be configured as follows:
 
 ```yaml
 export:
-  dut1:
-    type: jumpstarter_driver_composite.driver.Composite
-    children:
-      power:
-        type: jumpstarter_driver_yepkit.driver.Ykush
-        config: { serial: "YK112233", port: "1" }
-      adb:
-        type: jumpstarter_driver_adb.driver.AdbDevice
-        config:
-          usb_port: "1-4.2"      # the bench port: swap the DUT, config unchanged
+  # An Android phone cabled directly to the exporter over USB
+  phone:
+    type: jumpstarter_driver_adb.driver.AdbDevice
+    config:
+      usb_port: "1-4.2"        # the physical USB port the device is plugged into
 
-  dut2:
-    type: jumpstarter_driver_composite.driver.Composite
-    children:
-      power:
-        type: jumpstarter_driver_yepkit.driver.Ykush
-        config: { serial: "YK112233", port: "2" }
-      adb:
-        type: jumpstarter_driver_adb.driver.AdbDevice
-        config:
-          usb_port: "1-4.3"
-
-  # A device whose adbd already listens on TCP: a networked or AAOS head unit,
-  # or a virtual device.
-  dut3:
+  # A device whose adbd already listens on TCP, for example a virtual Cuttlefish instance
+  virtual:
     type: jumpstarter_driver_adb.driver.AdbDevice
     config:
       transport: tcp
       address: "10.0.0.5:5555"
 ```
 
-Note there is **no ADB server entry**. The server is implicit: the first device to
-need one starts or adopts it, and every device on the same port shares it. Declare an
-`AdbServer` only if you want the server-level CLI (`j adb devices`, `j adb tunnel`).
+### Finding a device's ADB USB port
 
-### Finding a device's `usb_port`
+#### Linux
+
+On a Linux device, if ADB is installed, you can run the following command:
 
 ```console
 $ adb devices -l
@@ -91,11 +61,32 @@ List of devices attached
 HVA1234567    device usb:1-4.2 product:sdk model:Pixel device:generic
 ```
 
-The `usb:` field is the value to put in `usb_port` — with or without the `usb:`
-prefix, both are accepted. On Linux it is the kernel's bus-port path (`1-4.2`), which
-is stable for a given physical port. On macOS it is an IOKit location ID in hex
-instead, and its exact form depends on which USB backend adb uses (`ADB_LIBUSB`), so
-exporters are expected to be Linux.
+The `usb:` field is the value to put in `usb_port`. With or without the `usb:`
+prefix, both are accepted. On Linux it is the kernel's bus-port path (`1-4.2`), which is
+stable for a given physical port, so it is the identity a bench wants.
+
+#### macOS
+
+On macOS, the USB device is reported as the `IOKit` location ID:
+
+```console
+$ adb devices -l
+List of devices attached
+HVA1234567    device usb:538116096X product:sdk model:Pixel device:generic
+```
+
+Copy the `usb:` field verbatim, `X` suffix included — here `usb_port` is `538116096X`.
+
+The `X` is not a hex marker. adb formats this value as decimal followed by a literal `X`,
+so do not convert it to hex. The number itself is macOS's IOKit location ID, which
+describes **where** the device sits in the USB tree rather than anything about the device:
+it packs the controller and each hub port into one integer, so it plays the same role as
+Linux's `1-1.1`.
+
+That makes it stable for fixed wiring, but it is a path through your hubs — moving the
+device to another port, or re-cabling a dock, changes it. It is also not readable at a
+glance the way `1-4.2` is. Prefer Linux for production exporters and keep macOS for local
+development.
 
 ### `AdbDevice` parameters
 
@@ -108,12 +99,11 @@ exporters are expected to be Linux.
 | adbd_port | adbd's TCP port on the device (`persist.adb.tcp.port`); also the default port for `address` | int | no | 5555 |
 | adb_path | Path to the ADB executable on the exporter | str | no | `adb` (resolved from PATH) |
 | connect_timeout | Timeout (seconds) for adb commands | float | no | 30.0 |
-| server_port | Which ADB server to use. Rarely set — the server is implicit and shared | int | no | 15037 |
-| adopt_existing_server | Use an ADB server already listening on `server_port` rather than starting another | bool | no | true |
+| server_port | Which ADB server to use. By default, the adb server is automatically started and shared. | int | no | 15037 |
+| adopt_existing_server | Use an ADB server already listening on `server_port` rather than starting another. With `false` the driver owns the server *only if the port was free* — see below | bool | no | true |
 
-Prefer `usb_port` over `serial`. A serial identifies *a device*; the bench port
-identifies *a position*, which is what stays true when hardware is swapped or a power
-cycle changes the serial.
+Always prefer the specific `usb_port` over a device `serial`.
+A serial identifies *a specific device*; the port identifies *a USB port*, which stays consistent even if the DUT is swapped out.
 
 ### `AdbServer` parameters
 
@@ -126,63 +116,226 @@ server-level CLI.
 | host | Host address of the ADB server on the exporter | str | no | `127.0.0.1` |
 | port | Port of the ADB server on the exporter | int | no | 15037 |
 | connect_timeout | Timeout (seconds) for adb commands | float | no | 30.0 |
-| adopt_existing_server | Use an ADB server already listening on `port` instead of starting another | bool | no | true |
+| adopt_existing_server | Use an ADB server already listening on `port` instead of starting another. With `false`, ownership is taken only if the port was free (see `AdbDevice` above) | bool | no | true |
 
 ### Running the exporter in a container
 
-adb finds USB devices by walking `/dev/bus/usb` and **rejects any path component that
-is not all digits**, so it only ever looks at real `/dev/bus/usb/<bus>/<dev>` nodes. A
-friendly `/dev` symlink is therefore useful for the `podman run` line — Podman
-resolves a symlinked `--device` and stores only the major/minor — but adb itself will
-never see that name. Pass the device through at its real path:
+An exporter in a rootless container needs access to one USB device, and only that one.
 
-```shell
-podman run --device /dev/bus/usb/001/017 ...
+The obvious approach — `--device /dev/bus/usb/001/017` — does not survive normal use. The
+`<dev>` number is reassigned whenever the device re-enumerates, which a power cycle or a
+replug does, and neither Podman nor Docker can add a device to a running container. adb
+also walks `/dev/bus/usb` itself and ignores any path component that is not all digits, so
+a friendly symlink does not help either.
+
+Mount the whole USB tree instead, so re-enumeration is followed automatically, and use a
+`udev` rule to hand **one port** to the container's user. Values to substitute:
+
+| Placeholder | Meaning | Example |
+| --- | --- | --- |
+| `<PORT>` | the USB port, the same value as `usb_port` in your exporter config | `1-4.2` |
+| `<USER>` | the user the container runs as | `jumpstarter` |
+| `<KEYDIR>` | host directory holding the exporter's ADB key | `/var/lib/jumpstarter/adb` |
+| `<IMAGE>` | your exporter image | — |
+
+**1. Give the port to your user.** Create `/etc/udev/rules.d/72-jumpstarter-adb.rules`:
+
+```udev
+SUBSYSTEM=="usb", KERNEL=="<PORT>", ENV{DEVTYPE}=="usb_device", \
+  TAG-="uaccess", TAG-="seat", OWNER="<USER>", GROUP="root", MODE="0600"
 ```
 
-Permissions matter, and udev is the right place for them: adb falls back to read-only
-(and cannot talk to the device) if it cannot open the node `O_RDWR`. A rule granting
-your exporter's user or group access to the DUT's vendor ID is the usual fix.
+**2. Apply it**, then unplug and replug the device — udev sets node permissions when a
+device appears, so the rule takes effect on the next enumeration:
 
-Passing exactly one device into a container also isolates it: that container's ADB
-server can only ever see the device you gave it.
+```console
+$ sudo udevadm control --reload
+```
+
+**3. Check that one port, and only that port, changed hands:**
+
+```console
+$ ls -l /dev/bus/usb/*/
+crw-------  1 <USER> root  189, 31 ... 031   # your device
+crw-rw-r--  1 root   root  189,  0 ... 001   # everything else, untouched
+```
+
+**4. Run the container:**
+
+```shell
+podman run -v /dev/bus/usb:/dev/bus/usb \
+  -v <KEYDIR>:/root/.android \
+  -v /etc/jumpstarter/exporter.yaml:/etc/jumpstarter/exporter.yaml:ro \
+  <IMAGE>
+```
+
+`<KEYDIR>` matters: every ADB server generates its own `~/.android/adbkey`, and the device
+trusts keys, not containers. Without a persistent directory you have to authorize the
+debugging prompt again on every container restart.
+
+**5. Confirm the container sees exactly one device:**
+
+```console
+$ podman run --rm -v /dev/bus/usb:/dev/bus/usb <IMAGE> adb devices -l
+List of devices attached
+<serial>    device usb:<PORT> ...
+```
+
+If it lists nothing, an ADB server on the *host* is usually holding the device, since only
+one server can claim it. Stop that server, or point the driver at it with `server_port`.
+
+#### Things that fail quietly
+
+| Pitfall | What happens | Fix |
+| --- | --- | --- |
+| The rule file sorts after `73-seat-late.rules` | systemd tags removable devices `uaccess` and gives the logged-in user an ACL on **every** one, which overrides `MODE="0600"` | Name the file `72-` or lower, and keep the `TAG-=` entries |
+| `--group-add keep-groups` | Restores *all* of the user's groups, the opposite of what you want here | Leave it off; grant access with `OWNER=` on the port |
+| `<USER>` has no subuid range | Rootless Podman fails in `newuidmap` before it reaches the device | Add ranges for the user in `/etc/subuid` and `/etc/subgid` |
+
+`--device` does work rootless — it is only a bind mount — but it pins the node number
+rather than the port. The cgroup device rules that could express "this major:minor only"
+need root.
+
+#### Differences between distributions
+
+The mechanism above is upstream udev and upstream Podman, so it is portable, but three
+things differ by host and are worth checking before blaming the driver:
+
+| Host | What changes |
+| --- | --- |
+| SELinux (Fedora, RHEL, CentOS Stream) | The bind mount keeps its SELinux label, so the container gets `Permission denied` on the device even with correct ownership. Run `sudo setsebool -P container_use_devices=true`. `--security-opt label=disable` also works but drops SELinux separation for the whole container. |
+| Debian, Ubuntu, Raspberry Pi OS | Ship `51-android.rules`, which puts Android devices in `plugdev`. That is per-device, not per-port, so it grants more than a bench wants; the rule above overrides it because `/etc` files of a later name win. |
+| No systemd-logind | No `uaccess` tag exists, so the `TAG-=` lines are harmless no-ops and `OWNER`/`MODE` apply directly. |
+
+Rule ordering is not distribution-specific: udev collects `/etc/udev/rules.d`,
+`/run/udev/rules.d` and `/usr/lib/udev/rules.d` and sorts them **lexicographically as one
+set**, regardless of directory. A `72-` file in `/etc` therefore runs before
+`73-seat-late.rules` in `/usr/lib` on any systemd host.
+
+Two Podman details are easy to trip over. `--group-add keep-groups` only works with the
+**crun** runtime and is silently unavailable under runc — one more reason to grant access
+with `OWNER=` on the port instead. And `--userns=keep-id` is optional here: by default a
+rootless container maps your user to *root inside the container*, which already owns the
+bind-mounted node; use `keep-id` only if the image expects to run as a specific UID.
+
+The `usb_port` value itself is per-host, since it describes your USB topology. Read it
+from `adb devices -l` on the exporter rather than copying it between benches.
 
 ### An ADB server already running on the exporter
 
-An ADB server **claims** the USB devices it finds, and only one server can hold a
-given device. So if a server is already listening on the driver's port — started by
-hand, by udev, by a previous run, or by a developer working on the exporter directly —
-a second one does not give a second view of those devices. It gives an *empty* one,
-and `adb start-server` reports success either way, so the driver would come up seeing
-no devices at all while looking healthy.
+An ADB server **claims** the USB devices it finds, and only one server can hold a given
+device. A second server on the same port therefore sees an *empty* device list — and
+`adb start-server` exits 0 either way, so a driver that started one would look healthy
+and see nothing at all.
 
-By default the driver therefore **adopts** a server already on its port, and leaves it
-running at teardown rather than killing a server other processes are using. For the
-same reason, every `AdbDevice` on a given port shares one server rather than each
-starting its own.
+The driver's behavior follows from that:
 
-If something that is *not* an ADB server holds the port, the driver declines to adopt
-it and logs a warning. This matters because `adb start-server` and `adb devices` both
-block forever against such a listener rather than failing, so all of the driver's adb
-calls are bounded by `connect_timeout`.
+| Situation | What the driver does |
+| --- | --- |
+| A server is already listening on `server_port` | Adopts it, and leaves it running at teardown |
+| Several `AdbDevice`s share a port | They share the one server; sharing is keyed on the **port**, not on `adb_path` |
+| Two drivers name different `adb_path`s | They share it, with a warning: an `adb` client whose version differs from the running server kills and restarts it, dropping every device claim on that port |
+| Something that is *not* an ADB server holds the port | Declines to adopt it, and warns. `adb start-server` and `adb devices` both block forever against such a listener, so every adb call is bounded by `connect_timeout` |
+
+Teardown only undoes what the driver itself did, at the end of the lease that created it:
+
+- A forward or an `adb connect` that was **already there is reused and left in place**.
+  `adb forward --list` cannot say who created a forward, so removing one could break
+  another lease — or a person at the bench — with no error reported anywhere.
+- A forward the driver **did** create is re-checked before removal, because
+  `adb forward --remove` matches on the local port alone and ignores `-s <serial>`. Another
+  `adb forward` on that port silently rebinds it to a different device, so the driver
+  removes it only while it still forwards this device.
 
 ### Port assignment
 
 The exporter runs its ADB server on a non-standard port (default 15037) so it cannot
-collide with the standard 5037 — which matters because Android Studio starts and
-maintains a server there and will restart it if killed.
+collide with the standard 5037. This is important because Android Studio starts and
+maintains its own server on the default port.
 
 Exporter-side forward ports are **not** configured: each forward is created as
 `adb forward tcp:0`, so the ADB server picks a free port and the driver adopts
 whatever it chose. Nothing on the exporter has to be kept clear of a guessed range.
 
+## Upgrading from an earlier `AdbServer`
+
+**Breaking change: the `j adb <command>` passthrough has been removed.** Any script or
+CI job that ran `j adb shell`, `j adb logcat`, `j adb install` and so on needs updating —
+see the table below. Nothing else about the CLI or the config is source-incompatible.
+
+**Exporter configs need no changes.** `adb_path`, `host`, `port` (still 15037) and
+`connect_timeout` keep their names, types and defaults. `adopt_existing_server` is new and
+defaults to `true`.
+
+Two behaviors changed, both in the safer direction:
+
+| | Before | Now |
+| --- | --- | --- |
+| A server is already listening on `port` | A second one was started. `adb start-server` exits 0 either way, so the exporter came up healthy but seeing **no devices**, since only one server can hold a device | It is adopted |
+| Exporter teardown | Always ran `adb kill-server`, dropping the device claims of everything else on the host — including an Android Studio server | Kills only a server it started itself |
+
+If a bench previously "worked" but reported an empty device list, that was this bug and it
+is now fixed. The unconditional kill is gone deliberately and cannot be restored:
+`adopt_existing_server: false` asks for a server of the driver's own, but it still never
+kills one it did not start.
+
+**The `j adb <command>` passthrough has been removed.** Jumpstarter no longer wraps the adb
+CLI; it gives you an address and you use your own adb:
+
+| Before | Now |
+| --- | --- |
+| `j adb devices` | unchanged |
+| `j adb shell`, `j adb logcat`, any other passthrough | `j <device>.adb connect`, then your own `adb -s <address> shell` |
+| pointing tools at the exporter's whole server | `j adb serve`, then export the printed `ANDROID_ADB_SERVER_*` variables |
+
+**Drivers that embed `AdbServer`** — such as the Cuttlefish and Android emulator drivers —
+need no changes. `start_server`, `kill_server`, `connect_device`, `disconnect_device`,
+`list_devices` and `adb_env` keep their signatures and their failure behavior. The only
+difference to be aware of is that `close()` may now leave the server running.
+
 ## Usage
 
-### Attach a device to your own ADB server
+### Starting the exporter
+
+The examples below assume the config above, whose export is named `phone`, so the client
+commands are `j phone ...`. Rename to taste; the CLI follows the export name.
+
+#### Local Exporter
 
 ```console
-$ j dut1.adb attach
-attached as 127.0.0.1:41000
+$ jmp shell --exporter-config ./exporter.yaml
+$ j phone info
+$ exit
+```
+
+Useful for bringing a new bench up, since there is nothing else to run.
+
+#### Direct Connection
+
+**On a separate exporter host**, run the exporter as a service and connect to it directly,
+with no controller.
+
+On the machine with the device attached:
+
+```shell
+jmp run --exporter-config /etc/jumpstarter/exporter.yaml \
+  --tls-grpc-listener 0.0.0.0:8083 --tls-grpc-insecure
+```
+
+Then from your client device:
+
+```console
+$ jmp shell --tls-grpc <exporter-host>:8083 --tls-grpc-insecure -- j phone connect
+connected as 127.0.0.1:41000
+```
+
+### Attach a device to an existing ADB server
+
+On the Jumpstarter client, run `j <name> connect` to add the ADB device to your local ADB server. For example, to join Android Studio's existing ADB server.
+
+```console
+$ j phone connect
+connected as 127.0.0.1:41000
 
 Your ADB server now lists it; use it with:  adb -s 127.0.0.1:41000 shell
 Android Studio will list it too.
@@ -191,13 +344,13 @@ Press Ctrl+C to detach
 ```
 
 Leave it running for as long as you want the device available. Then, in another
-terminal, it is just adb:
+terminal, it is just regular `adb`:
 
 ```shell
-adb -s 127.0.0.1:41000 shell
-adb -s 127.0.0.1:41000 install app.apk
-adb -s 127.0.0.1:41000 logcat
-adb -s 127.0.0.1:41000 push local_file.txt /sdcard/
+adb shell
+adb install app.apk
+adb logcat
+adb push local_file.txt /sdcard/
 ```
 
 Because `adb connect` is **additive**, the device joins whatever your ADB server
@@ -207,11 +360,11 @@ need one at all: `adb connect` starts one if none is running.
 
 ### Just give me the address
 
-`attach` is a convenience. If you would rather drive adb yourself, or point a tool
+`connect` is a convenience. If you would rather drive adb yourself, or point a tool
 that takes a `host:port` at the device:
 
 ```console
-$ j dut1.adb endpoint
+$ j phone serve
 127.0.0.1:41000
 
 Add it to your ADB server with:  adb connect 127.0.0.1:41000
@@ -223,7 +376,7 @@ No adb runs on your machine at all. This is the primitive the rest is built on.
 ### Is my device there?
 
 ```console
-$ j dut1.adb info
+$ j phone info
 transport: usb
 adbd_port: 5555
 selector: usb:1-4.2
@@ -242,9 +395,9 @@ device is picked up the moment its relay turns on.
   the USB connection.
 - The local address (`127.0.0.1:<port>`) is assigned per session and is not stable
   across sessions. Anything that remembers a device by address (a saved Android Studio
-  run target) needs re-selecting after re-attaching. Use `-P` to pin the port if you
+  run target) needs re-selecting after reconnecting. Use `-P` to pin the port if you
   need one address to stay put.
-- Direct mode has no lease arbitration, so two clients attaching the same device will
+- Direct mode has no lease arbitration, so two clients connecting the same device will
   interfere. Use distributed mode for a shared fleet.
 
 ### Power cycles and re-enumeration
@@ -255,7 +408,7 @@ ADB serial, and the old forward disappears with it — the driver notices, re-re
 the declared `usb_port` to the new serial, and forwards again. No config edit, no
 exporter restart.
 
-Re-attach after the DUT is back up; the local address will generally be a new port.
+Reconnect after the DUT is back up; the local address will generally be a new port.
 
 ## Transports
 
@@ -285,13 +438,13 @@ the line must not be shared with a kernel console or getty, and at 115200 baud y
 
 ## Pointing your tools at the exporter's ADB server
 
-The opposite model to `attach`: instead of adding one device to *your* server, aim
+The opposite model to `connect`: instead of adding one device to *your* server, aim
 your tools at the exporter's server and see its devices instead of your own. Right for
 CI, a headless runner, or a container. Requires a declared `AdbServer`.
 
 ```console
-$ j adb tunnel
-ADB server tunneled to 127.0.0.1:54321
+$ j adb serve
+exporter's ADB server at 127.0.0.1:54321
 
 To use your own adb or other tools, run:
   export ANDROID_ADB_SERVER_ADDRESS=127.0.0.1
@@ -302,18 +455,18 @@ Press Ctrl+C to stop
 
 This replaces your server rather than adding to it, which is exactly wrong when an IDE
 is running — Android Studio owns 5037 and respawns its server there within ~3s of
-being killed, so the port cannot reliably be taken over. Use `attach` in that case.
+being killed, so the port cannot reliably be taken over. Use `connect` in that case.
 
 ## Integration with Android ecosystem tools
 
 ### How this relates to Android's own remote-device support
 
-`attach` is deliberately the same shape as the remote-device flow Google documents, so
+`connect` is deliberately the same shape as the remote-device flow Google documents, so
 Android Studio needs no Jumpstarter-specific support:
 
 - Android's [wireless debugging](https://developer.android.com/tools/adb) has you run
   `adb tcpip 5555` then `adb connect <ip>:5555`, and the device then appears as a
-  `host:port` serial alongside your emulators. `attach` does exactly that, except the
+  `host:port` serial alongside your emulators. `connect` does exactly that, except the
   `host:port` is a local tunnel endpoint rather than the device's own IP — which is
   what makes it work when the device is on a bench network you cannot route to.
 - Because the ADB server "manages connections to devices and handles commands from
@@ -327,7 +480,7 @@ boundary), and **the address is not stable** across sessions.
 
 ### Android Studio
 
-Run `j dut1.adb attach`. The device appears in Studio's device chooser with **no
+Run `j phone connect`. The device appears in Studio's device chooser with **no
 configuration**: no `adb.server.port`, no environment variables, no restart. Leave the
 command running for as long as you want the device available.
 
@@ -337,12 +490,12 @@ tradefed discovers devices through the ADB server, so an attached device is visi
 it with no extra setup:
 
 ```shell
-j dut1.adb attach          # leave running
+j phone connect          # leave running
 tradefed.sh
 # > list devices          <-- shows the attached device
 ```
 
-To give tradefed the exporter's whole device list instead, use `j adb tunnel` and
+To give tradefed the exporter's whole device list instead, use `j adb serve` and
 export `ANDROID_ADB_SERVER_PORT`.
 
 ### Python API
@@ -354,7 +507,7 @@ against the endpoint, no CLI involved:
 # Requires: pip install jumpstarter-driver-adb[python-api]
 import adbutils
 
-with client.dut1.adb.endpoint() as target:
+with client.phone.serve() as target:
     host, port = target.rsplit(":", 1)
     adb = adbutils.AdbClient(host=host, port=int(port))
     print(adb.device().prop.model)
@@ -377,24 +530,24 @@ For a networked device you want in *your* ADB server, prefer an `AdbDevice` with
 
 | Usage | Description |
 | --- | --- |
-| `j <device>.adb attach` | Add this device to your own ADB server; holds until Ctrl+C |
-| `j <device>.adb endpoint` | Print the device's local adbd address; holds until Ctrl+C |
+| `j <device>.adb connect` | Add this device to your own ADB server; holds until Ctrl+C |
+| `j <device>.adb serve` | Serve the device's adbd at a local address; holds until Ctrl+C |
 | `j <device>.adb info` | Show the device's transport, selector and whether it is present |
 
-Options for `attach` and `endpoint`:
+Options for `connect` and `serve`:
 
 | Option | Description | Default |
 | --- | --- | --- |
 | `-H HOST` | Local address to bind | 127.0.0.1 |
 | `-P PORT` | Local port to bind (0=auto) | 0 |
-| `--adb PATH` | Path to your local adb (`attach` only) | adb |
+| `--adb PATH` | Path to your local adb (`connect` only) | adb |
 
 ### Server-level (`j adb ...`, needs a declared `AdbServer`)
 
 | Usage | Description |
 | --- | --- |
 | `j adb devices` | List devices visible to the exporter's ADB server |
-| `j adb tunnel [-H HOST] [-P PORT]` | Forward the exporter's ADB server to a local port; holds until Ctrl+C |
+| `j adb serve [-H HOST] [-P PORT]` | Forward the exporter's ADB server to a local port; holds until Ctrl+C |
 
 Everything else is your own `adb`, run directly.
 
