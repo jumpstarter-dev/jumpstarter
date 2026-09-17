@@ -992,18 +992,67 @@ class AdbDevice(Driver):
         elif forward_port is not None:
             self.logger.debug("leaving forward tcp:%d alone; this driver did not create it", forward_port)
 
-        if connected is not None and owns_connection:
-            try:
-                self._run_adb(["disconnect", connected], check=False)
-            except (subprocess.SubprocessError, OSError) as e:
-                self.logger.debug("could not disconnect %s (%s)", connected, e)
-        elif connected is not None:
-            self.logger.debug("leaving %s connected; this driver did not connect it", connected)
+        self._disconnect(connected, owns_connection)
 
         if self._server is not None:
             _release_server(self.server_port, connect_timeout=self.connect_timeout, logger=self.logger)
             self._server = None
         super().close()
+
+    def _disconnect(self, connected: str | None, owns_connection: bool) -> None:
+        """Disconnect *connected*, if this driver is the one that connected it."""
+        if connected is None:
+            return
+        if not owns_connection:
+            self.logger.debug("leaving %s connected; this driver did not connect it", connected)
+            return
+        try:
+            self._run_adb(["disconnect", connected], check=False)
+        except (subprocess.SubprocessError, OSError) as e:
+            self.logger.debug("could not disconnect %s (%s)", connected, e)
+
+    # ------------------------------------------------------------------ driver-side API
+    #
+    # For a parent driver that runs adb itself rather than streaming the device — the
+    # Cuttlefish driver waits for `sys.boot_completed` with its own `adb shell`. These are
+    # in-process calls on the child driver object, not exported to clients.
+
+    def adb_env(self) -> dict[str, str]:
+        """Environment pointing adb at this device's server, holding a reference to it.
+
+        Acquiring the server is the point, not a side effect: without it the caller's first
+        adb call finds nothing on the port and the adb *client* silently starts a server
+        this driver does not know about. The next acquire would then adopt it, and adopted
+        servers are never killed, so it would outlive the lease.
+        """
+        with self._lock:
+            self._ensure_server()
+        return _adb_env(self.server_port)
+
+    def ensure_reachable(self) -> str:
+        """Make the device reachable now and return the ``host:port`` adb can address it by.
+
+        Endpoints are otherwise resolved per stream, which is what makes re-enumeration
+        self-healing. A parent driver that wants the device in the shared server *before*
+        any client connects — to poll for boot, say — calls this instead.
+
+        For ``transport: tcp`` this runs the validated ``adb connect``; for ``usb`` it
+        resolves the serial and its forward. Safe to call repeatedly.
+        """
+        host, port = self._resolve_endpoint()
+        return f"{host}:{port}"
+
+    def disconnect(self) -> None:
+        """Drop this driver's ``adb connect``, if it made one, without ending the lease.
+
+        For a parent driver that power-cycles the device mid-lease. A connection that was
+        already in the shared server when this driver found it is left alone, and a later
+        `ensure_reachable` reconnects as needed.
+        """
+        with self._lock:
+            connected, owns_connection = self._connected, self._owns_connection
+            self._connected, self._owns_connection = None, False
+        self._disconnect(connected, owns_connection)
 
     def _remove_own_forward(self, serial: str, port: int) -> None:
         """Remove the forward we created, if the ADB server still shows it as ours.
