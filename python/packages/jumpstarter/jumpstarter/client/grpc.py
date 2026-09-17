@@ -31,6 +31,7 @@ class WithOptions:
 def add_display_columns(table, options: WithOptions = None):
     if options is None:
         options = WithOptions()
+    table.add_column(" ")
     table.add_column("NAME")
     if options.show_disabled:
         table.add_column("ENABLED")
@@ -49,6 +50,7 @@ def add_exporter_row(table, exporter, options: WithOptions = None, lease_info: t
     if options is None:
         options = WithOptions()
     row_data = []
+    row_data.append(exporter.status_icon())
     row_data.append(exporter.name)
     if options.show_disabled:
         row_data.append("yes" if exporter.enabled else "no")
@@ -148,6 +150,24 @@ class Exporter(BaseModel):
         elif options and options.show_leases:
             lease_info = ("", "Available", "")
         add_exporter_row(table, self, options, lease_info)
+
+    def status_icon(self) -> str:
+        """Return a single-character emoji representing the exporter's runtime status."""
+        if self.status is None:
+            return "❓"
+        match self.status:
+            case ExporterStatus.AVAILABLE:
+                return "🟢"
+            case ExporterStatus.OFFLINE:
+                return "🔴"
+            case ExporterStatus.BEFORE_LEASE_HOOK | ExporterStatus.AFTER_LEASE_HOOK:
+                return "⚙️"
+            case ExporterStatus.LEASE_READY:
+                return "⏳"
+            case ExporterStatus.BEFORE_LEASE_HOOK_FAILED | ExporterStatus.AFTER_LEASE_HOOK_FAILED:
+                return "❗"
+            case _:
+                return "❓"
 
     def rich_add_names(self, names):
         names.append(self.name)
