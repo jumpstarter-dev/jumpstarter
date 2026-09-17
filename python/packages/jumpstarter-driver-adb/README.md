@@ -140,7 +140,7 @@ Mount the whole USB tree instead, so re-enumeration is followed automatically, a
 
 **1. Give the port to your user.** Create `/etc/udev/rules.d/72-jumpstarter-adb.rules`:
 
-```udev
+```text
 SUBSYSTEM=="usb", KERNEL=="<PORT>", ENV{DEVTYPE}=="usb_device", \
   TAG-="uaccess", TAG-="seat", OWNER="<USER>", GROUP="root", MODE="0600"
 ```
