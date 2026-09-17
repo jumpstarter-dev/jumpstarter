@@ -368,3 +368,18 @@ def test_launch_shell_logs_exit_status(tmp_path, caplog):
         )
     assert exit_code == 42
     assert "exited with 42" in caplog.text
+
+
+@pytest.mark.parametrize(("signal_name", "signum", "expected"), [("KILL", 9, 137), ("TERM", 15, 143)])
+def test_launch_shell_signal_death(tmp_path, caplog, signal_name, signum, expected):
+    with caplog.at_level("DEBUG", logger="jumpstarter.common.utils"):
+        exit_code = launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+            command=("sh", "-c", f"kill -{signal_name} $$"),
+        )
+    assert exit_code == expected
+    assert f"killed by signal {signum}" in caplog.text

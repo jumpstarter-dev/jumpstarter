@@ -103,7 +103,14 @@ def _run_process(
     if lease is not None:
         lease.lease_ending_callback = partial(lease_ending_handler, process)
     returncode = process.wait()
-    logger.debug("command %s exited with %d", cmd[0], returncode)
+    if returncode < 0:
+        # wait() reports signal deaths as -N; report them as a shell does. Log
+        # the signal too: 137 alone cannot be told from a command exiting 137.
+        signum = -returncode
+        returncode = 128 + signum
+        logger.debug("command %s killed by signal %d, reporting %d", cmd[0], signum, returncode)
+    else:
+        logger.debug("command %s exited with %d", cmd[0], returncode)
     return returncode
 
 
