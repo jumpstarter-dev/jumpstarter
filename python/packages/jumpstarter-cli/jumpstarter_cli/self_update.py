@@ -40,4 +40,4 @@ def self_update(source: str):
     if source:
         cmd.extend(["--source", source])
 
-    subprocess.run(cmd, input=script, check=True)
+    subprocess.run(cmd, input=script, check=True, text=True)
