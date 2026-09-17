@@ -49,12 +49,17 @@ def _adb_env(port: int) -> dict[str, str]:
     return {**os.environ, "ANDROID_ADB_SERVER_PORT": str(port)}
 
 
-def _resolve_adb_path(adb_path: str) -> str:
+def _resolve_adb_path(adb_path: str, connect_timeout: float) -> str:
     """Resolve ``"adb"`` against PATH, and fail early if it is missing or broken.
 
     Normalized through ``realpath`` so that ``adb``, ``/usr/bin/adb`` and a symlink
     into a versioned SDK directory are one string. Two drivers naming the same binary
     differently must not look like two binaries — see ``_acquire_server``.
+
+    Bounded like every other adb call here. This one runs from ``__post_init__`` of both
+    drivers, so an adb that never returns would hang exporter startup with nothing to
+    recover from. Expiry is a configuration failure: a binary that cannot answer
+    ``version`` cannot serve a device either.
     """
     if adb_path == "adb":
         resolved = shutil.which("adb")
@@ -70,8 +75,10 @@ def _resolve_adb_path(adb_path: str) -> str:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=connect_timeout,
         )
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+    # FileNotFoundError is an OSError, so a missing binary still reports as before.
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
         raise ConfigurationError(f"ADB executable not functional: {e}") from e
     return adb_path
 
@@ -335,7 +342,7 @@ class AdbServer(TcpNetwork):
 
         _validate_port("port", self.port)
         _validate_timeout(self.connect_timeout)
-        self.adb_path = _resolve_adb_path(self.adb_path)
+        self.adb_path = _resolve_adb_path(self.adb_path, self.connect_timeout)
 
         # Eager, unlike AdbDevice: this driver *is* the server, and callers such as
         # the cuttlefish and androidemulator drivers expect it up after construction.
@@ -553,7 +560,7 @@ class AdbDevice(Driver):
 
         self._lock = threading.Lock()
         self._validate_config()
-        self.adb_path = _resolve_adb_path(self.adb_path)
+        self.adb_path = _resolve_adb_path(self.adb_path, self.connect_timeout)
         if self.usb_port is not None:
             self.usb_port = self._normalize_usb_port(self.usb_port)
 
