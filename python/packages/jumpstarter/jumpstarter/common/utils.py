@@ -1,3 +1,4 @@
+import logging
 import os
 import signal
 import sys
@@ -26,6 +27,8 @@ if TYPE_CHECKING:
     from jumpstarter.driver import Driver
 
 __all__ = ["ExporterMetadata", "env", "env_with_metadata"]
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -99,7 +102,9 @@ def _run_process(
         return 126
     if lease is not None:
         lease.lease_ending_callback = partial(lease_ending_handler, process)
-    return process.wait()
+    returncode = process.wait()
+    logger.debug("command %s exited with %d", cmd[0], returncode)
+    return returncode
 
 
 def _lease_env_vars(lease) -> dict[str, str]:
