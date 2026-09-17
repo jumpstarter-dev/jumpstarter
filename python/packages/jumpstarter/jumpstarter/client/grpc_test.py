@@ -556,7 +556,7 @@ class TestLeaseRichDisplay:
         table = Table()
         Lease.rich_add_columns(table)
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "SELECTOR", "EXPIRES AT", "REMAINING", "CLIENT", "EXPORTER", "TAGS"]
+        assert columns == ["NAME", "SELECTOR", "EXPIRES AT", "REMAINING", "CLIENT", "EXPORTER", "TAGS", "SHARED WITH"]
 
     def test_rich_add_columns_excludes_begin_time_and_duration(self):
         table = Table()
@@ -717,6 +717,86 @@ class TestLeaseListFilterBySelector:
         assert "bad" in caplog.text
         assert "board in rpi" in caplog.text
         assert "unknown label selector operator: 'bogus'" in caplog.text
+
+
+class TestLeaseAccessControl:
+    def create_lease(self, *, client="owner", shared=None, effective=None):
+        return Lease(
+            namespace="default",
+            name="test-lease",
+            selector="board=rpi",
+            duration=timedelta(hours=1),
+            client=client,
+            exporter="test-exporter",
+            conditions=[],
+            shared_with=shared or [],
+            effective_shared_with=effective or [],
+        )
+
+    def test_owner_is_always_accessible(self):
+        lease = self.create_lease(client="owner")
+        assert lease.is_accessible_by("owner")
+
+    def test_effective_shared_client_is_accessible(self):
+        lease = self.create_lease(shared=["alice"], effective=["alice"])
+        assert lease.is_accessible_by("alice")
+
+    def test_desired_but_not_effective_is_denied(self):
+        # alice is in the owner's intent but was filtered out by policy.
+        lease = self.create_lease(shared=["alice"], effective=[])
+        assert not lease.is_accessible_by("alice")
+
+    def test_unrelated_client_is_denied(self):
+        lease = self.create_lease(shared=["alice"], effective=["alice"])
+        assert not lease.is_accessible_by("mallory")
+
+    def test_filter_by_client_uses_effective_set(self):
+        owned = self.create_lease(client="me")
+        shared_ok = Lease(
+            namespace="default",
+            name="shared-ok",
+            selector="board=rpi",
+            duration=timedelta(hours=1),
+            client="other",
+            exporter="e",
+            conditions=[],
+            shared_with=["me"],
+            effective_shared_with=["me"],
+        )
+        shared_denied = Lease(
+            namespace="default",
+            name="shared-denied",
+            selector="board=rpi",
+            duration=timedelta(hours=1),
+            client="other",
+            exporter="e",
+            conditions=[],
+            shared_with=["me"],
+            effective_shared_with=[],
+        )
+        result = LeaseList(leases=[owned, shared_ok, shared_denied], next_page_token=None).filter_by_client("me")
+        assert [lease.name for lease in result.leases] == ["test-lease", "shared-ok"]
+
+
+@pytest.mark.asyncio
+async def test_lease_from_protobuf_parses_shared_with_fields():
+    from jumpstarter_protocol import client_pb2
+
+    pb = client_pb2.Lease(
+        name="namespaces/default/leases/test",
+        selector="board=rpi",
+        client="namespaces/default/clients/owner",
+    )
+    pb.duration.FromTimedelta(timedelta(hours=1))
+    pb.shared_with.extend(["alice", "bob"])
+    pb.effective_shared_with.extend(["alice"])
+
+    lease = Lease.from_protobuf(pb)
+    assert lease.shared_with == ["alice", "bob"]
+    assert lease.effective_shared_with == ["alice"]
+    # bob was requested but denied → not accessible; alice survived filtering.
+    assert lease.is_accessible_by("alice")
+    assert not lease.is_accessible_by("bob")
 
 
 @pytest.mark.asyncio
@@ -907,3 +987,103 @@ async def test_lease_from_protobuf_empty_deprecated_labels():
 
     lease = Lease.from_protobuf(proto_lease)
     assert lease.deprecated_labels == {}
+
+
+@pytest.mark.anyio
+async def test_update_lease_with_share_add():
+    from jumpstarter_protocol import client_pb2
+
+    mock_channel = Mock()
+
+    response_lease = client_pb2.Lease(
+        selector="board=rpi4",
+        client="namespaces/default/clients/test-client",
+    )
+    response_lease.name = "namespaces/default/leases/test-lease"
+    response_lease.duration.FromTimedelta(timedelta(hours=1))
+    response_lease.shared_with.extend(["alice", "bob"])
+
+    mock_stub = Mock()
+    mock_stub.UpdateLease = AsyncMock(return_value=response_lease)
+
+    svc = ClientService(channel=mock_channel, namespace="default")
+    svc.stub = mock_stub
+
+    result = await svc.UpdateLease(
+        name="test-lease",
+        duration=timedelta(hours=1),
+        add_shared_with=["alice", "bob"],
+    )
+
+    call_args = mock_stub.UpdateLease.call_args[0][0]
+    assert list(call_args.add_shared_with) == ["alice", "bob"]
+    assert result.shared_with == ["alice", "bob"]
+
+
+@pytest.mark.anyio
+async def test_update_lease_with_share_remove():
+    from jumpstarter_protocol import client_pb2
+
+    mock_channel = Mock()
+
+    response_lease = client_pb2.Lease(
+        selector="board=rpi4",
+        client="namespaces/default/clients/test-client",
+    )
+    response_lease.name = "namespaces/default/leases/test-lease"
+    response_lease.duration.FromTimedelta(timedelta(hours=1))
+
+    mock_stub = Mock()
+    mock_stub.UpdateLease = AsyncMock(return_value=response_lease)
+
+    svc = ClientService(channel=mock_channel, namespace="default")
+    svc.stub = mock_stub
+
+    await svc.UpdateLease(
+        name="test-lease",
+        duration=timedelta(hours=1),
+        remove_shared_with=["alice"],
+    )
+
+    call_args = mock_stub.UpdateLease.call_args[0][0]
+    assert list(call_args.remove_shared_with) == ["alice"]
+
+
+@pytest.mark.anyio
+async def test_update_lease_share_only_no_update_mask():
+    from jumpstarter_protocol import client_pb2
+
+    mock_channel = Mock()
+
+    response_lease = client_pb2.Lease(
+        selector="board=rpi4",
+        client="namespaces/default/clients/test-client",
+    )
+    response_lease.name = "namespaces/default/leases/test-lease"
+    response_lease.duration.FromTimedelta(timedelta(hours=1))
+    response_lease.shared_with.extend(["alice"])
+
+    mock_stub = Mock()
+    mock_stub.UpdateLease = AsyncMock(return_value=response_lease)
+
+    svc = ClientService(channel=mock_channel, namespace="default")
+    svc.stub = mock_stub
+
+    await svc.UpdateLease(
+        name="test-lease",
+        add_shared_with=["alice"],
+    )
+
+    call_args = mock_stub.UpdateLease.call_args[0][0]
+    assert list(call_args.update_mask.paths) == []
+    assert list(call_args.add_shared_with) == ["alice"]
+
+
+@pytest.mark.anyio
+async def test_update_lease_raises_when_no_changes():
+    mock_channel = Mock()
+
+    svc = ClientService(channel=mock_channel, namespace="default")
+
+    with pytest.raises(ValueError, match="At least one of"):
+        await svc.UpdateLease(name="test-lease")

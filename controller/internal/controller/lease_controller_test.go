@@ -2654,3 +2654,177 @@ var _ = Describe("pendingRequeueAfter", func() {
 		Entry("5m (capped)", 5*time.Minute, 30*time.Second),
 	)
 })
+
+var _ = Describe("jumpstarterdevv1alpha1.ClientAllowedByPolicy", func() {
+	var (
+		exporter *jumpstarterdevv1alpha1.Exporter
+		client   *jumpstarterdevv1alpha1.Client
+	)
+
+	BeforeEach(func() {
+		exporter = &jumpstarterdevv1alpha1.Exporter{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-exporter",
+				Namespace: "default",
+				Labels:    map[string]string{"board": "rpi4", "env": "lab"},
+			},
+		}
+		client = &jumpstarterdevv1alpha1.Client{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-client",
+				Namespace: "default",
+				Labels:    map[string]string{"team": "devops"},
+			},
+		}
+	})
+
+	It("should allow when client matches a policy's From selector", func() {
+		policies := []jumpstarterdevv1alpha1.ExporterAccessPolicy{{
+			Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+				ExporterSelector: metav1.LabelSelector{
+					MatchLabels: map[string]string{"board": "rpi4"},
+				},
+				Policies: []jumpstarterdevv1alpha1.Policy{{
+					From: []jumpstarterdevv1alpha1.From{{
+						ClientSelector: metav1.LabelSelector{
+							MatchLabels: map[string]string{"team": "devops"},
+						},
+					}},
+				}},
+			},
+		}}
+
+		allowed, err := jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies, exporter, client)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(allowed).To(BeTrue())
+	})
+
+	It("should deny when client labels don't match any From selector", func() {
+		policies := []jumpstarterdevv1alpha1.ExporterAccessPolicy{{
+			Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+				ExporterSelector: metav1.LabelSelector{
+					MatchLabels: map[string]string{"board": "rpi4"},
+				},
+				Policies: []jumpstarterdevv1alpha1.Policy{{
+					From: []jumpstarterdevv1alpha1.From{{
+						ClientSelector: metav1.LabelSelector{
+							MatchLabels: map[string]string{"team": "security"},
+						},
+					}},
+				}},
+			},
+		}}
+
+		allowed, err := jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies, exporter, client)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(allowed).To(BeFalse())
+	})
+
+	It("should deny when exporter labels don't match any policy", func() {
+		policies := []jumpstarterdevv1alpha1.ExporterAccessPolicy{{
+			Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+				ExporterSelector: metav1.LabelSelector{
+					MatchLabels: map[string]string{"board": "jetson"},
+				},
+				Policies: []jumpstarterdevv1alpha1.Policy{{
+					From: []jumpstarterdevv1alpha1.From{{
+						ClientSelector: metav1.LabelSelector{
+							MatchLabels: map[string]string{"team": "devops"},
+						},
+					}},
+				}},
+			},
+		}}
+
+		allowed, err := jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies, exporter, client)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(allowed).To(BeFalse())
+	})
+
+	It("should deny when no policies are supplied (callers short-circuit this case)", func() {
+		allowed, err := jumpstarterdevv1alpha1.ClientAllowedByPolicy(nil, exporter, client)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(allowed).To(BeFalse())
+		allowed, err = jumpstarterdevv1alpha1.ClientAllowedByPolicy([]jumpstarterdevv1alpha1.ExporterAccessPolicy{}, exporter, client)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(allowed).To(BeFalse())
+	})
+
+	It("should error when a policy has a malformed exporter selector", func() {
+		policies := []jumpstarterdevv1alpha1.ExporterAccessPolicy{{
+			Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+				ExporterSelector: metav1.LabelSelector{
+					MatchExpressions: []metav1.LabelSelectorRequirement{{
+						Key:      "board",
+						Operator: "InvalidOperator",
+						Values:   []string{"rpi4"},
+					}},
+				},
+			},
+		}}
+
+		_, err := jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies, exporter, client)
+		Expect(err).To(HaveOccurred())
+	})
+
+	It("should error when a policy has a malformed client selector", func() {
+		policies := []jumpstarterdevv1alpha1.ExporterAccessPolicy{{
+			Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+				ExporterSelector: metav1.LabelSelector{
+					MatchLabels: map[string]string{"board": "rpi4"},
+				},
+				Policies: []jumpstarterdevv1alpha1.Policy{{
+					From: []jumpstarterdevv1alpha1.From{{
+						ClientSelector: metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{{
+								Key:      "team",
+								Operator: "InvalidOperator",
+								Values:   []string{"devops"},
+							}},
+						},
+					}},
+				}},
+			},
+		}}
+
+		_, err := jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies, exporter, client)
+		Expect(err).To(HaveOccurred())
+	})
+
+	It("should allow when any one of multiple policies matches", func() {
+		policies := []jumpstarterdevv1alpha1.ExporterAccessPolicy{
+			{
+				Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+					ExporterSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{"board": "jetson"},
+					},
+					Policies: []jumpstarterdevv1alpha1.Policy{{
+						From: []jumpstarterdevv1alpha1.From{{
+							ClientSelector: metav1.LabelSelector{
+								MatchLabels: map[string]string{"team": "devops"},
+							},
+						}},
+					}},
+				},
+			},
+			{
+				Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+					ExporterSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{"board": "rpi4"},
+					},
+					Policies: []jumpstarterdevv1alpha1.Policy{{
+						From: []jumpstarterdevv1alpha1.From{{
+							ClientSelector: metav1.LabelSelector{
+								MatchLabels: map[string]string{"team": "devops"},
+							},
+						}},
+					}},
+				},
+			},
+		}
+
+		allowed, err := jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies, exporter, client)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(allowed).To(BeTrue())
+	})
+})
