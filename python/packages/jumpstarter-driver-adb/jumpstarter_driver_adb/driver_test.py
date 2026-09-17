@@ -1475,3 +1475,106 @@ def test_invalid_adbd_port(_, bad):
 def test_empty_usb_port_is_rejected(_):
     with pytest.raises(ConfigurationError, match="usb_port"):
         AdbDevice(usb_port="   ")
+
+
+# ------------------------------------------------- driver-side API for parent drivers
+#
+# The Cuttlefish driver runs its own `adb shell` to poll for `sys.boot_completed`, so it
+# needs an adb environment and a device that is already in the shared server.
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_adb_env_points_at_our_server_and_holds_it(mock_conn, _):
+    """Handing out the environment without taking a reference would leak a server.
+
+    The caller's first adb call would find nothing on the port, the adb client would
+    start one silently, and the next acquire would adopt it — and adopted servers are
+    never killed, so it would outlive the lease.
+    """
+    fake, patcher = _fake()
+    with patcher:
+        device = AdbDevice(usb_port="1-4.2")
+        env = device.adb_env()
+
+        assert env["ANDROID_ADB_SERVER_PORT"] == "15037"
+        assert device._server is not None, "handed out an env without acquiring the server"
+        assert device._server.owns is True
+
+        device.close()
+    assert not adb_driver._SERVERS
+    assert [c for c in fake.calls if c[1:] == ["kill-server"]], "left the server running"
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_ensure_reachable_connects_a_tcp_device_before_any_stream(mock_conn, _):
+    """A parent driver polling for boot cannot wait for a client to open a stream."""
+
+    def run(argv, **kwargs):
+        if argv[1:2] == ["connect"]:
+            return MagicMock(stdout="connected to 10.0.0.5:5555\n", stderr="", returncode=0)
+        return _mock_adb_ok()
+
+    with patch("subprocess.run", side_effect=run) as mock_run:
+        device = AdbDevice(transport="tcp", address="10.0.0.5:5555")
+        assert device.ensure_reachable() == "10.0.0.5:5555"
+        assert ["/usr/bin/adb", "connect", "10.0.0.5:5555"] in [c.args[0] for c in mock_run.call_args_list]
+
+        # Repeatable: adb connect is idempotent, and ownership is not re-decided.
+        assert device.ensure_reachable() == "10.0.0.5:5555"
+        assert device._owns_connection is True
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_ensure_reachable_resolves_a_usb_device_to_its_forward(mock_conn, _):
+    fake, patcher = _fake()
+    with patcher:
+        device = AdbDevice(usb_port="1-4.2")
+        target = device.ensure_reachable()
+
+    host, _, port = target.rpartition(":")
+    assert host == "127.0.0.1"
+    assert int(port) in fake.forwards
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_disconnect_drops_our_connection_mid_lease(mock_conn, _):
+    """For a parent driver that power-cycles the device without ending the lease."""
+
+    def run(argv, **kwargs):
+        if argv[1:2] == ["connect"]:
+            return MagicMock(stdout="connected to 10.0.0.5:5555\n", stderr="", returncode=0)
+        return _mock_adb_ok()
+
+    with patch("subprocess.run", side_effect=run) as mock_run:
+        device = AdbDevice(transport="tcp", address="10.0.0.5:5555")
+        device.ensure_reachable()
+
+        device.disconnect()
+        assert ["/usr/bin/adb", "disconnect", "10.0.0.5:5555"] in [c.args[0] for c in mock_run.call_args_list]
+
+        # Idempotent, and a second call must not disconnect anything again.
+        before = len(mock_run.call_args_list)
+        device.disconnect()
+        assert len(mock_run.call_args_list) == before
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_disconnect_leaves_a_connection_we_did_not_make(mock_conn, _):
+    """`already connected to` means the shared server had it before us."""
+
+    def run(argv, **kwargs):
+        if argv[1:2] == ["connect"]:
+            return MagicMock(stdout="already connected to 10.0.0.5:5555\n", stderr="", returncode=0)
+        return _mock_adb_ok()
+
+    with patch("subprocess.run", side_effect=run) as mock_run:
+        device = AdbDevice(transport="tcp", address="10.0.0.5:5555")
+        device.ensure_reachable()
+        device.disconnect()
+
+    assert not [c for c in mock_run.call_args_list if c.args[0][1:2] == ["disconnect"]]

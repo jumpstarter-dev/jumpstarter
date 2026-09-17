@@ -107,8 +107,8 @@ A serial identifies *a specific device*; the port identifies *a USB port*, which
 
 ### `AdbServer` parameters
 
-Optional. Declare it to point your tooling at the exporter's ADB server, or to get the
-server-level CLI.
+Deprecated; prefer `AdbDevice`. Declare it to point your tooling at the exporter's whole
+ADB server, or to get the server-level CLI.
 
 | Parameter | Description | Type | Required | Default |
 | --- | --- | --- | --- | --- |
@@ -560,7 +560,23 @@ Everything else is your own `adb`, run directly.
     :members: connect, info
 ```
 
+A parent driver that runs adb itself, rather than streaming the device to a client, can
+also use these. They are in-process calls on the child driver object, not exported to
+clients — the Cuttlefish driver polls `sys.boot_completed` with its own `adb shell`, and
+needs the device in the shared server before any client connects.
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_adb.driver.AdbDevice
+    :members: adb_env, ensure_reachable, disconnect
+    :noindex:
+```
+
 ### Server driver
+
+**Deprecated.** Prefer `AdbDevice`, which exposes one declared device and works with an
+ADB server you already run. `AdbServer` is retained for the cases `AdbDevice` cannot
+cover — pointing tooling at the exporter's *whole* server, and devices that cannot expose
+adbd over TCP — and because the Cuttlefish and Android emulator drivers embed it.
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_adb.driver.AdbServer()
@@ -571,7 +587,7 @@ Everything else is your own `adb`, run directly.
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_adb.client.AdbDeviceClient()
-    :members: attach, endpoint, info
+    :members: connect, serve, info
 ```
 
 ### Server client
