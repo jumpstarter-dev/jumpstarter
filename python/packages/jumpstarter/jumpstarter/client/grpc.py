@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import sys
 from collections import OrderedDict
 from dataclasses import InitVar, dataclass, field
 from datetime import datetime, timedelta
@@ -18,6 +20,23 @@ from jumpstarter.common import ExporterStatus
 from jumpstarter.common.grpc import translate_grpc_exceptions
 
 logger = logging.getLogger(__name__)
+
+
+def _use_emoji() -> bool:
+    """Return True when the output terminal is likely to support emoji.
+
+    Falls back to ASCII indicators when any of the following is true:
+    * ``TERM`` is set to ``dumb`` (minimal terminal capabilities).
+    * ``NO_COLOR`` environment variable is set (spirit: plain text output).
+    * ``stdout`` is not a TTY (output piped to a file / another process).
+    """
+    if os.environ.get("TERM") == "dumb":
+        return False
+    if os.environ.get("NO_COLOR") is not None:
+        return False
+    if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
+        return False
+    return True
 
 
 @dataclass
@@ -152,22 +171,28 @@ class Exporter(BaseModel):
         add_exporter_row(table, self, options, lease_info)
 
     def status_icon(self) -> str:
-        """Return a single-character emoji representing the exporter's runtime status."""
+        """Return an icon representing the exporter's runtime status.
+
+        Uses emoji when the terminal supports it, otherwise falls back to
+        ASCII characters (respects ``TERM=dumb``, ``NO_COLOR``, and non-TTY
+        output).
+        """
+        emoji = _use_emoji()
         if self.status is None:
-            return "❓"
+            return "❓" if emoji else "?"
         match self.status:
             case ExporterStatus.AVAILABLE:
-                return "🟢"
+                return "🟢" if emoji else "+"
             case ExporterStatus.OFFLINE:
-                return "🔴"
+                return "🔴" if emoji else "-"
             case ExporterStatus.BEFORE_LEASE_HOOK | ExporterStatus.AFTER_LEASE_HOOK:
-                return "⚙️"
+                return "⚙️" if emoji else "*"
             case ExporterStatus.LEASE_READY:
-                return "⏳"
+                return "⏳" if emoji else "~"
             case ExporterStatus.BEFORE_LEASE_HOOK_FAILED | ExporterStatus.AFTER_LEASE_HOOK_FAILED:
-                return "❗"
+                return "❗" if emoji else "!"
             case _:
-                return "❓"
+                return "❓" if emoji else "?"
 
     def rich_add_names(self, names):
         names.append(self.name)

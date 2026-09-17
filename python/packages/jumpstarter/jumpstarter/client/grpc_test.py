@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from datetime import datetime, timedelta
 from io import StringIO
 from unittest.mock import AsyncMock, Mock, patch
@@ -15,6 +16,7 @@ from jumpstarter.client.grpc import (
     Lease,
     LeaseList,
     WithOptions,
+    _use_emoji,
     add_display_columns,
     add_exporter_row,
 )
@@ -138,51 +140,93 @@ class TestWithDisabledOption:
         assert len(table.columns) == 4  # icon, NAME, ENABLED, LABELS
 
 
+class TestUseEmoji:
+    """Tests for _use_emoji() terminal detection."""
+
+    def test_returns_false_when_term_dumb(self):
+        with patch.dict("os.environ", {"TERM": "dumb"}, clear=False):
+            assert _use_emoji() is False
+
+    def test_returns_false_when_no_color_set(self):
+        with patch.dict("os.environ", {"NO_COLOR": ""}, clear=False):
+            assert _use_emoji() is False
+
+    def test_returns_false_when_no_color_set_with_value(self):
+        with patch.dict("os.environ", {"NO_COLOR": "1"}, clear=False):
+            assert _use_emoji() is False
+
+    def test_returns_false_when_stdout_not_tty(self):
+        with patch.dict("os.environ", {}, clear=False):
+            # Remove TERM and NO_COLOR if present
+            env = {k: v for k, v in os.environ.items() if k not in ("TERM", "NO_COLOR")}
+            with patch.dict("os.environ", env, clear=True):
+                with patch("sys.stdout") as mock_stdout:
+                    mock_stdout.isatty.return_value = False
+                    assert _use_emoji() is False
+
+    def test_returns_true_when_tty_and_no_restrictions(self):
+        env = {k: v for k, v in os.environ.items() if k not in ("TERM", "NO_COLOR")}
+        with patch.dict("os.environ", env, clear=True):
+            with patch("sys.stdout") as mock_stdout:
+                mock_stdout.isatty.return_value = True
+                assert _use_emoji() is True
+
+
 class TestExporterStatusIcon:
     """Tests for Exporter.status_icon() method."""
 
-    def test_available_shows_green(self):
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
+    def test_available_shows_green_emoji(self, _mock):
         exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.AVAILABLE)
         assert exporter.status_icon() == "🟢"
 
-    def test_offline_shows_red(self):
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
+    def test_offline_shows_red_emoji(self, _mock):
         exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.OFFLINE)
         assert exporter.status_icon() == "🔴"
 
-    def test_before_lease_hook_shows_gear(self):
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
+    def test_before_lease_hook_shows_gear_emoji(self, _mock):
         exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.BEFORE_LEASE_HOOK)
         assert exporter.status_icon() == "⚙️"
 
-    def test_after_lease_hook_shows_gear(self):
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
+    def test_after_lease_hook_shows_gear_emoji(self, _mock):
         exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.AFTER_LEASE_HOOK)
         assert exporter.status_icon() == "⚙️"
 
-    def test_lease_ready_shows_hourglass(self):
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
+    def test_lease_ready_shows_hourglass_emoji(self, _mock):
         exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.LEASE_READY)
         assert exporter.status_icon() == "⏳"
 
-    def test_before_lease_hook_failed_shows_exclamation(self):
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
+    def test_before_lease_hook_failed_shows_exclamation_emoji(self, _mock):
         exporter = Exporter(
             namespace="default", name="test", labels={}, status=ExporterStatus.BEFORE_LEASE_HOOK_FAILED
         )
         assert exporter.status_icon() == "❗"
 
-    def test_after_lease_hook_failed_shows_exclamation(self):
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
+    def test_after_lease_hook_failed_shows_exclamation_emoji(self, _mock):
         exporter = Exporter(
             namespace="default", name="test", labels={}, status=ExporterStatus.AFTER_LEASE_HOOK_FAILED
         )
         assert exporter.status_icon() == "❗"
 
-    def test_none_status_shows_question(self):
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
+    def test_none_status_shows_question_emoji(self, _mock):
         exporter = Exporter(namespace="default", name="test", labels={}, status=None)
         assert exporter.status_icon() == "❓"
 
-    def test_unspecified_status_shows_question(self):
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
+    def test_unspecified_status_shows_question_emoji(self, _mock):
         exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.UNSPECIFIED)
         assert exporter.status_icon() == "❓"
 
-    def test_icon_appears_in_table_output(self):
-        """Verify the icon column is rendered in table output."""
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
+    def test_emoji_icon_appears_in_table_output(self, _mock):
+        """Verify the emoji icon column is rendered in table output."""
         exporter = Exporter(namespace="default", name="my-exporter", labels={}, status=ExporterStatus.AVAILABLE)
         table = Table()
         Exporter.rich_add_columns(table)
@@ -196,6 +240,73 @@ class TestExporterStatusIcon:
         console.print(table)
         output = console.file.getvalue()
         assert "🟢" in output
+        assert "my-exporter" in output
+
+
+class TestExporterStatusIconAscii:
+    """Tests for Exporter.status_icon() ASCII fallback (NO_COLOR / TERM=dumb / non-TTY)."""
+
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
+    def test_available_shows_plus(self, _mock):
+        exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.AVAILABLE)
+        assert exporter.status_icon() == "+"
+
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
+    def test_offline_shows_minus(self, _mock):
+        exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.OFFLINE)
+        assert exporter.status_icon() == "-"
+
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
+    def test_before_lease_hook_shows_asterisk(self, _mock):
+        exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.BEFORE_LEASE_HOOK)
+        assert exporter.status_icon() == "*"
+
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
+    def test_after_lease_hook_shows_asterisk(self, _mock):
+        exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.AFTER_LEASE_HOOK)
+        assert exporter.status_icon() == "*"
+
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
+    def test_lease_ready_shows_tilde(self, _mock):
+        exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.LEASE_READY)
+        assert exporter.status_icon() == "~"
+
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
+    def test_before_lease_hook_failed_shows_bang(self, _mock):
+        exporter = Exporter(
+            namespace="default", name="test", labels={}, status=ExporterStatus.BEFORE_LEASE_HOOK_FAILED
+        )
+        assert exporter.status_icon() == "!"
+
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
+    def test_after_lease_hook_failed_shows_bang(self, _mock):
+        exporter = Exporter(
+            namespace="default", name="test", labels={}, status=ExporterStatus.AFTER_LEASE_HOOK_FAILED
+        )
+        assert exporter.status_icon() == "!"
+
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
+    def test_none_status_shows_question_mark(self, _mock):
+        exporter = Exporter(namespace="default", name="test", labels={}, status=None)
+        assert exporter.status_icon() == "?"
+
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
+    def test_unspecified_status_shows_question_mark(self, _mock):
+        exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.UNSPECIFIED)
+        assert exporter.status_icon() == "?"
+
+    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
+    def test_ascii_icon_appears_in_table_output(self, _mock):
+        """Verify the ASCII icon column is rendered in table output."""
+        exporter = Exporter(namespace="default", name="my-exporter", labels={}, status=ExporterStatus.AVAILABLE)
+        table = Table()
+        Exporter.rich_add_columns(table)
+        exporter.rich_add_rows(table)
+
+        console = Console(file=StringIO(), width=80)
+        console.print(table)
+        output = console.file.getvalue()
+        assert "+" in output
         assert "my-exporter" in output
 
 
