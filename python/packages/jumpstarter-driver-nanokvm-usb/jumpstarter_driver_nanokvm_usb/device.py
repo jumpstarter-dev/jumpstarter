@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 
 from .keyboard import KeyboardReport, resolve_key_code
@@ -56,6 +57,7 @@ class NanoKVMUSBDevice:
         self._addr = 0x00
         self._buttons = 0
         self._connected = False
+        self._connect_lock = threading.RLock()
 
     @property
     def is_connected(self) -> bool:
@@ -65,27 +67,35 @@ class NanoKVMUSBDevice:
     def has_video(self) -> bool:
         return self._video.is_open
 
+    def ensure_connected(self) -> InfoPacket | None:
+        """Connect on first use; serialized across video/HID child drivers."""
+        with self._connect_lock:
+            if self.is_connected:
+                return None
+            return self.connect()
+
     def connect(self) -> InfoPacket | None:
-        try:
-            self._serial.open(self._serial_port_path, self._baud_rate)
-            info = self.get_info()
+        with self._connect_lock:
+            try:
+                self._serial.open(self._serial_port_path, self._baud_rate)
+                info = self.get_info()
 
-            if self._video_device is not None:
-                self._video.open(
-                    self._video_device,
-                    self._video_width,
-                    self._video_height,
-                    self._video_fps,
-                    video_format=self._video_format,
-                    jpeg_quality=self._video_jpeg_quality,
-                    v4l2_ctl_executable=self._v4l2_ctl_executable,
-                )
+                if self._video_device is not None:
+                    self._video.open(
+                        self._video_device,
+                        self._video_width,
+                        self._video_height,
+                        self._video_fps,
+                        video_format=self._video_format,
+                        jpeg_quality=self._video_jpeg_quality,
+                        v4l2_ctl_executable=self._v4l2_ctl_executable,
+                    )
 
-            self._connected = True
-            return info
-        except Exception:
-            self.close()
-            raise
+                self._connected = True
+                return info
+            except Exception:
+                self.close()
+                raise
 
     def close(self) -> None:
         self._serial.close()

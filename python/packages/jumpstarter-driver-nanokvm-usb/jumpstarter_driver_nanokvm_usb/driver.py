@@ -59,8 +59,7 @@ class NanoKVMUSBDriverBase(Driver):
 
     async def _ensure_device(self) -> NanoKVMUSBDevice:
         assert self.device is not None
-        if not self.device.is_connected:
-            await to_thread.run_sync(self.device.connect)
+        await to_thread.run_sync(self.device.ensure_connected)
         return self.device
 
     def close(self):
@@ -87,8 +86,7 @@ class NanoKVMUSBVideo(NanoKVMUSBDriverBase):
         def _capture() -> bytes:
             device = self.device
             assert device is not None
-            if not device.is_connected:
-                device.connect()
+            device.ensure_connected()
             for _ in range(skip_frames):
                 device.capture_frame_jpeg()
             data = device.capture_frame_jpeg()

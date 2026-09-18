@@ -122,6 +122,18 @@ def test_v4l2_ctl_open_rejects_missing_executable():
     assert not cap.is_open
 
 
+def test_v4l2_ctl_open_rejects_immediate_exit(tmp_path):
+    fake = tmp_path / "fake-v4l2-ctl"
+    fake.write_text("#!/bin/sh\nexit 1\n")
+    fake.chmod(0o755)
+
+    cap = V4L2CtlMjpegCapture(v4l2_ctl_executable=str(fake))
+    with pytest.raises(OSError, match="exited immediately"):
+        cap.open("/dev/video0", 640, 480, 30)
+    assert not cap.is_open
+    assert cap._proc is None
+
+
 def test_extract_jpegs_soi_split_across_chunks():
     buffer = bytearray()
     assert _extract_jpegs(buffer, b"\xff") == []

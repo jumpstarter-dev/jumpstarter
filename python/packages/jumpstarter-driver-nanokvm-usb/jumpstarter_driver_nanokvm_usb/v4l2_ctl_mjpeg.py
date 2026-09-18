@@ -7,9 +7,12 @@ import queue
 import shutil
 import subprocess
 import threading
-from typing import Any
+import time
 
 logger = logging.getLogger(__name__)
+
+# Brief delay after Popen so immediate device-open failures surface before open() returns.
+_STARTUP_POLL_S = 0.05
 
 
 def resolve_v4l2_ctl_executable(override: str | None = None) -> str | None:
@@ -81,7 +84,27 @@ class V4L2CtlMjpegCapture:
         self._v4l2_ctl_executable = executable
         self._stop.clear()
 
-        self._thread = threading.Thread(target=self._reader_loop, name="v4l2-ctl-mjpeg", daemon=True)
+        try:
+            proc = self._start_process()
+            time.sleep(_STARTUP_POLL_S)
+            if proc.poll() is not None:
+                raise OSError(
+                    f"v4l2-ctl exited immediately while opening {self._device} "
+                    f"(exit code {proc.returncode})"
+                )
+        except OSError:
+            self._cleanup_process()
+            raise
+        except Exception as exc:
+            self._cleanup_process()
+            raise OSError(f"Failed to start v4l2-ctl on {self._device}: {exc}") from exc
+
+        self._thread = threading.Thread(
+            target=self._reader_loop,
+            args=(proc,),
+            name="v4l2-ctl-mjpeg",
+            daemon=True,
+        )
         self._thread.start()
         logger.info(
             "v4l2-ctl MJPEG passthrough on %s (%sx%s @ %sfps)",
@@ -108,21 +131,44 @@ class V4L2CtlMjpegCapture:
                 "--stream-to=-",
             ]
         )
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            bufsize=0,
-        )
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                bufsize=0,
+            )
+        except OSError:
+            raise
         if proc.stdout is None:
-            raise ConnectionError("v4l2-ctl did not provide stdout")
+            proc.kill()
+            proc.wait(timeout=2)
+            raise OSError("v4l2-ctl did not provide stdout")
         self._proc = proc
         return proc
 
-    def _reader_loop(self) -> None:
+    def _cleanup_process(self) -> None:
+        if self._proc is not None:
+            self._proc.terminate()
+            try:
+                self._proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self._proc.kill()
+                self._proc.wait(timeout=2)
+            self._proc = None
+
+    def _reader_loop(self, initial_proc: subprocess.Popen[bytes] | None = None) -> None:
         try:
+            proc = initial_proc
             while not self._stop.is_set():
-                proc = self._start_process()
+                if proc is None:
+                    try:
+                        proc = self._start_process()
+                    except OSError:
+                        if self._stop.is_set():
+                            break
+                        time.sleep(0.5)
+                        continue
                 stdout = proc.stdout
                 assert stdout is not None
                 while not self._stop.is_set():
@@ -139,9 +185,13 @@ class V4L2CtlMjpegCapture:
                                     self._queue.get_nowait()
                                 except queue.Empty:
                                     pass
-                proc.wait(timeout=1)
+                try:
+                    proc.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    pass
                 if self._proc is proc:
                     self._proc = None
+                proc = None
         finally:
             self._stop.set()
 
