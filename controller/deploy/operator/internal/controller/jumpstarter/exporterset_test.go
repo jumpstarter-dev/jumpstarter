@@ -17,13 +17,16 @@ limitations under the License.
 package jumpstarter
 
 import (
+	"os"
 	"slices"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/yaml"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
 )
@@ -119,6 +122,36 @@ var _ = Describe("exporterSetPolicyRules", func() {
 		Expect(groups).To(HaveKey("jumpstarter.dev"))
 		Expect(groups).To(HaveKey(""))
 		Expect(groups).To(HaveKey("coordination.k8s.io"))
+	})
+
+	It("should reconcile runtime network isolation policies", func() {
+		for _, rule := range rules {
+			if containsString(rule.APIGroups, "networking.k8s.io") && containsString(rule.Resources, "networkpolicies") {
+				Expect(rule.Verbs).To(ContainElements("get", "list", "watch", "create", "update", "patch"))
+				return
+			}
+		}
+		Fail("no rule found for runtime network policies")
+	})
+
+	It("should only delegate privileges held by the operator", func() {
+		data, err := os.ReadFile("../../../config/rbac/role.yaml")
+		Expect(err).NotTo(HaveOccurred())
+
+		managerRole := rbacv1.ClusterRole{}
+		Expect(yaml.Unmarshal(data, &managerRole)).To(Succeed())
+
+		for _, delegated := range rules {
+			for _, group := range delegated.APIGroups {
+				for _, resource := range delegated.Resources {
+					for _, verb := range delegated.Verbs {
+						Expect(policyRulesAllow(managerRole.Rules, group, resource, verb)).To(
+							BeTrue(), "operator cannot delegate %s on %s/%s", verb, group, resource,
+						)
+					}
+				}
+			}
+		}
 	})
 
 	It("should grant read-only access on exportersets (no create/update/delete)", func() {
@@ -264,6 +297,17 @@ var _ = Describe("exporterSetPolicyRules", func() {
 		Expect(configmapFound).To(BeTrue(), "no rule found for configmaps")
 	})
 })
+
+func policyRulesAllow(rules []rbacv1.PolicyRule, group, resource, verb string) bool {
+	for _, rule := range rules {
+		if (slices.Contains(rule.APIGroups, group) || slices.Contains(rule.APIGroups, "*")) &&
+			(slices.Contains(rule.Resources, resource) || slices.Contains(rule.Resources, "*")) &&
+			(slices.Contains(rule.Verbs, verb) || slices.Contains(rule.Verbs, "*")) {
+			return true
+		}
+	}
+	return false
+}
 
 var _ = Describe("hasEnabledProvisioners", func() {
 	It("should return false for empty list", func() {
