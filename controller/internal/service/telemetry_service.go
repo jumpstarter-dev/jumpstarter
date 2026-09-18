@@ -22,17 +22,18 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
-	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
+	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
-	"google.golang.org/grpc/status"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -45,6 +46,10 @@ const (
 )
 
 const maxEntriesPerBatch = 500
+
+// grpcGracefulStopTimeout bounds GracefulStop so a stuck MetricsStream cannot
+// hang process shutdown (HTTP metrics shutdown uses the same 5s budget).
+const grpcGracefulStopTimeout = 5 * time.Second
 
 // logFieldExporter is the structured log field key carrying the exporter name.
 const logFieldExporter = "exporter"
@@ -69,42 +74,50 @@ var reservedExtraFieldKeys = map[string]struct{}{
 type TelemetryService struct {
 	pb.UnimplementedTelemetryServiceServer
 
-	// BindAddr is the TCP address to listen on (e.g. ":9093").
+	// BindAddr is the TCP address to listen on for gRPC (e.g. ":9093").
 	BindAddr string
 
-	// Signer is used to validate bearer tokens on every PushLogs call.
-	// Tokens are issued by the controller from the same CONTROLLER_KEY seed,
-	// so the telemetry binary can verify them locally without a k8s client.
+	// MetricsBindAddr is the TCP address for HTTP GET /metrics, /healthz, and
+	// /readyz. Empty or "0" disables the HTTP server (tests). Production
+	// default is :8080 — a dedicated port, not multiplexed onto gRPC :9093.
+	MetricsBindAddr string
+
+	// ScrapeTimeout is the fan-out wait for MetricsStream responses (JEP default 7s).
+	ScrapeTimeout time.Duration
+
+	// DriverTypeEnum allowlist; unknown driver_type values are remapped to "other".
+	DriverTypeEnum []string
+
+	// ExemplarKeys allowlist applied on the telemetry merge path.
+	ExemplarKeys []string
+
+	// Signer is used to validate bearer tokens on every PushLogs call and
+	// MetricsStream. Tokens are issued by the controller from the same
+	// CONTROLLER_KEY seed, so the telemetry binary can verify them locally
+	// without a k8s client.
 	Signer *oidc.Signer
+
+	stateMu         sync.Mutex
+	conns           map[string]*metricsConn
+	scrapeTimeouts  *prometheus.CounterVec
+	parseErrors     *prometheus.CounterVec
+	metricsRegistry *prometheus.Registry
+	metricsAddr     string
+	grpcReady       atomic.Bool
+	// scrapeGroup coalesces overlapping /metrics reverse-scrapes.
+	scrapeGroup singleflight.Group
 }
 
 // PushLogs receives a batch of structured log entries and writes them via the
 // controller-runtime logger (structured JSON to stdout).
 // Future phase: forward to Loki push API.
 func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest) (*pb.PushLogsResponse, error) {
-	token, err := authentication.BearerTokenFromContext(ctx)
+	id, err := s.authenticateExporter(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	// Validate token and extract the subject (format: exporter:namespace:name:uid).
-	subject, err := s.Signer.ParseSubject(token)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "invalid token: %v", err)
-	}
-
-	// Only exporter tokens are allowed to push logs. Any other validly-signed
-	// token (e.g. a client token) is rejected immediately so that the identity
-	// checks below always have a non-empty claimedName/claimedNamespace.
-	parts := strings.SplitN(subject, ":", 4)
-	if len(parts) != 4 || parts[0] != "exporter" {
-		return nil, status.Errorf(codes.PermissionDenied, "token is not an exporter token")
-	}
-	claimedNamespace := parts[1]
-	claimedName := parts[2]
-	if claimedNamespace == "" || claimedName == "" {
-		return nil, status.Errorf(codes.PermissionDenied, "token has incomplete exporter identity")
-	}
+	claimedNamespace := id.namespace
+	claimedName := id.name
 
 	// Use context-based logger so tests can inject their own via logf.IntoContext.
 	logger := log.FromContext(ctx).WithName("telemetry")
@@ -260,9 +273,21 @@ func (s *TelemetryService) Start(ctx context.Context) error {
 		return fmt.Errorf("telemetry: listen %s: %w", s.BindAddr, err)
 	}
 
+	s.initMetricsState()
+	s.initScrapeTimeouts()
+	s.grpcReady.Store(true)
+
+	httpShutdown, err := s.startMetricsHTTP()
+	if err != nil {
+		s.grpcReady.Store(false)
+		_ = lis.Close()
+		return fmt.Errorf("telemetry: metrics HTTP listen %s: %w", s.MetricsBindAddr, err)
+	}
+
 	srv := grpc.NewServer(
 		grpc.Creds(creds),
 		grpc.ChainUnaryInterceptor(recovery.UnaryServerInterceptor()),
+		grpc.ChainStreamInterceptor(recovery.StreamServerInterceptor()),
 	)
 	pb.RegisterTelemetryServiceServer(srv, s)
 	reflection.Register(srv)
@@ -276,13 +301,50 @@ func (s *TelemetryService) Start(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
-		srv.GracefulStop()
+		s.grpcReady.Store(false)
+		if httpShutdown != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = httpShutdown(shutdownCtx)
+		}
+		stopGRPCServer(srv, grpcGracefulStopTimeout)
 		if err := <-errCh; err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			return err
 		}
 		return nil
 	case err := <-errCh:
+		s.grpcReady.Store(false)
+		if httpShutdown != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = httpShutdown(shutdownCtx)
+		}
 		srv.Stop()
 		return err
+	}
+}
+
+// stopGRPCServer runs GracefulStop with a deadline, then Stop, so long-lived
+// MetricsStream RPCs cannot block process termination.
+func stopGRPCServer(srv *grpc.Server, timeout time.Duration) {
+	if srv == nil {
+		return
+	}
+	if timeout <= 0 {
+		srv.Stop()
+		return
+	}
+	done := make(chan struct{})
+	go func() {
+		srv.GracefulStop()
+		close(done)
+	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+		srv.Stop()
+		<-done
 	}
 }
