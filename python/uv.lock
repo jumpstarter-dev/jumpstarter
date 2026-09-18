@@ -2922,6 +2922,10 @@ dependencies = [
     { name = "jumpstarter-driver-opendal" },
     { name = "jumpstarter-driver-power" },
     { name = "jumpstarter-driver-pyserial" },
+    { name = "pexpect" },
+    { name = "pydantic", version = "2.11.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
+    { name = "pydantic", version = "2.13.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+    { name = "pyyaml" },
 ]
 
 [package.dev-dependencies]
@@ -2938,6 +2942,9 @@ requires-dist = [
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
     { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
+    { name = "pexpect", specifier = ">=4.9" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
 ]
 
 [package.metadata.requires-dev]
