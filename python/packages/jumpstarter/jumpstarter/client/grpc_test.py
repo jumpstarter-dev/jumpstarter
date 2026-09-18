@@ -18,6 +18,7 @@ from jumpstarter.client.grpc import (
     add_display_columns,
     add_exporter_row,
 )
+from jumpstarter.common.enums import ExporterStatus
 
 
 class TestWithOptions:
@@ -38,7 +39,7 @@ class TestAddDisplayColumns:
         add_display_columns(table)
 
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "LABELS"]
+        assert columns == ["NAME", " ", "LABELS"]
 
     def test_with_online_column(self):
         table = Table()
@@ -46,7 +47,7 @@ class TestAddDisplayColumns:
         add_display_columns(table, options)
 
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "ONLINE", "LABELS"]
+        assert columns == ["NAME", " ", "ONLINE", "LABELS"]
 
     def test_with_leases_columns(self):
         table = Table()
@@ -54,7 +55,7 @@ class TestAddDisplayColumns:
         add_display_columns(table, options)
 
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "LABELS", "LEASED BY", "LEASE STATUS", "RELEASE TIME"]
+        assert columns == ["NAME", " ", "LABELS", "LEASED BY", "LEASE STATUS", "RELEASE TIME"]
 
     def test_with_all_columns(self):
         table = Table()
@@ -62,7 +63,25 @@ class TestAddDisplayColumns:
         add_display_columns(table, options)
 
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "ONLINE", "LABELS", "LEASED BY", "LEASE STATUS", "RELEASE TIME"]
+        assert columns == ["NAME", " ", "ONLINE", "LABELS", "LEASED BY", "LEASE STATUS", "RELEASE TIME"]
+
+    def test_with_status_suppresses_icon_column(self):
+        table = Table()
+        options = WithOptions(show_status=True)
+        add_display_columns(table, options)
+
+        columns = [col.header for col in table.columns]
+        assert columns == ["NAME", "STATUS", "LABELS"]
+        assert " " not in columns
+
+    def test_with_status_and_online(self):
+        table = Table()
+        options = WithOptions(show_status=True, show_online=True)
+        add_display_columns(table, options)
+
+        columns = [col.header for col in table.columns]
+        assert columns == ["NAME", "ONLINE", "STATUS", "LABELS"]
+        assert " " not in columns
 
 
 class TestAddExporterRow:
@@ -80,7 +99,7 @@ class TestAddExporterRow:
 
         # Just verify a row was added and correct number of columns
         assert len(table.rows) == 1
-        assert len(table.columns) == 2  # NAME, LABELS
+        assert len(table.columns) == 3  # NAME, icon, LABELS
 
     def test_row_with_lease_info(self):
         table = Table()
@@ -92,7 +111,7 @@ class TestAddExporterRow:
         add_exporter_row(table, exporter, options, lease_info)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 6  # NAME, icon, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
     def test_row_with_lease_info_available(self):
         table = Table()
@@ -104,7 +123,7 @@ class TestAddExporterRow:
         add_exporter_row(table, exporter, options, lease_info)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 5
+        assert len(table.columns) == 6  # NAME, icon, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
     def test_row_with_all_options(self):
         table = Table()
@@ -116,7 +135,7 @@ class TestAddExporterRow:
         add_exporter_row(table, exporter, options, lease_info)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 6  # NAME, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 7  # NAME, icon, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
 
 class TestWithDisabledOption:
@@ -125,7 +144,7 @@ class TestWithDisabledOption:
         options = WithOptions(show_disabled=True)
         add_display_columns(table, options)
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "ENABLED", "LABELS"]
+        assert columns == ["NAME", " ", "ENABLED", "LABELS"]
 
     def test_show_disabled_adds_enabled_value_to_row(self):
         table = Table()
@@ -134,7 +153,64 @@ class TestWithDisabledOption:
         exporter = Exporter(namespace="default", name="test", labels={}, enabled=False)
         add_exporter_row(table, exporter, options)
         assert len(table.rows) == 1
-        assert len(table.columns) == 3  # NAME, ENABLED, LABELS
+        assert len(table.columns) == 4  # NAME, icon, ENABLED, LABELS
+
+
+class TestExporterStatusIconDelegation:
+    """Verify Exporter.status_icon() delegates to the status module."""
+
+    @patch("jumpstarter.client.status._use_emoji", return_value=True)
+    def test_emoji_icon_appears_in_table_output(self, _mock):
+        """Verify the emoji icon column is rendered in table output."""
+        exporter = Exporter(namespace="default", name="my-exporter", labels={}, status=ExporterStatus.AVAILABLE)
+        table = Table()
+        Exporter.rich_add_columns(table)
+        exporter.rich_add_rows(table)
+
+        columns = [col.header for col in table.columns]
+        assert columns[0] == "NAME"
+        assert columns[1] == " "
+
+        console = Console(file=StringIO(), width=80)
+        console.print(table)
+        output = console.file.getvalue()
+        assert "🟢" in output
+        assert "my-exporter" in output
+
+    @patch("jumpstarter.client.status._use_emoji", return_value=False)
+    def test_ascii_icon_appears_in_table_output(self, _mock):
+        """Verify the ASCII icon column is rendered in table output."""
+        exporter = Exporter(namespace="default", name="my-exporter", labels={}, status=ExporterStatus.AVAILABLE)
+        table = Table()
+        Exporter.rich_add_columns(table)
+        exporter.rich_add_rows(table)
+
+        console = Console(file=StringIO(), width=80)
+        console.print(table)
+        output = console.file.getvalue()
+        assert "+" in output
+        assert "my-exporter" in output
+
+    @patch("jumpstarter.client.status._use_emoji", return_value=False)
+    def test_icon_column_suppressed_when_show_status(self, _mock):
+        """When show_status=True, icon column is replaced by STATUS column."""
+        exporter = Exporter(
+            namespace="default", name="my-exporter", labels={}, status=ExporterStatus.AVAILABLE
+        )
+        table = Table()
+        options = WithOptions(show_status=True)
+        Exporter.rich_add_columns(table, options)
+        exporter.rich_add_rows(table, options)
+
+        columns = [col.header for col in table.columns]
+        assert " " not in columns
+        assert "STATUS" in columns
+
+        console = Console(file=StringIO(), width=80)
+        console.print(table)
+        output = console.file.getvalue()
+        assert "AVAILABLE" in output
+        assert "my-exporter" in output
 
 
 class TestExporterList:
@@ -166,7 +242,7 @@ class TestExporterList:
         exporter.rich_add_rows(table)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 2  # NAME, LABELS
+        assert len(table.columns) == 3  # NAME, icon, LABELS
 
     def test_exporter_with_lease_no_display(self):
         lease = self.create_test_lease()
@@ -180,7 +256,7 @@ class TestExporterList:
 
         # Should not show lease info when show_leases=False
         assert len(table.rows) == 1
-        assert len(table.columns) == 2  # NAME, LABELS
+        assert len(table.columns) == 3  # NAME, icon, LABELS
 
     def test_exporter_with_lease_display(self):
         lease = self.create_test_lease()
@@ -194,7 +270,7 @@ class TestExporterList:
         exporter.rich_add_rows(table, options)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 6  # NAME, icon, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
         # Test actual table content by rendering it
         console = Console(file=StringIO(), width=120)
@@ -217,7 +293,7 @@ class TestExporterList:
         exporter.rich_add_rows(table, options)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 6  # NAME, icon, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
         # Test actual table content by rendering it
         console = Console(file=StringIO(), width=120)
@@ -249,7 +325,7 @@ class TestExporterList:
         exporter_offline.rich_add_rows(table, options)
 
         assert len(table.rows) == 2
-        assert len(table.columns) == 3  # NAME, ONLINE, LABELS
+        assert len(table.columns) == 4  # NAME, icon, ONLINE, LABELS
 
         # Test actual table content by rendering it
         console = Console(file=StringIO(), width=120)
@@ -287,7 +363,7 @@ class TestExporterList:
         exporter_offline_no_lease.rich_add_rows(table, options)
 
         assert len(table.rows) == 2
-        assert len(table.columns) == 6  # NAME, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 7  # NAME, icon, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
         # Test actual table content by rendering it
         console = Console(file=StringIO(), width=150)
@@ -384,8 +460,8 @@ class TestExporterList:
         Exporter.rich_add_columns(table, options)
         exporter.rich_add_rows(table, options)
 
-        # Should have 5 columns: NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
-        assert len(table.columns) == 5
+        # Should have 6 columns: NAME, icon, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 6
         assert len(table.rows) == 1
 
         # Test actual table content by rendering it
@@ -444,8 +520,9 @@ class TestExporterListDisabledFiltering:
         el.rich_add_columns(table)
         el.rich_add_rows(table)
         assert len(table.rows) == 2
-        # Should have ENABLED column when include_disabled is set
+        # Should have icon column and ENABLED column when include_disabled is set
         columns = [col.header for col in table.columns]
+        assert " " in columns
         assert "ENABLED" in columns
 
     def test_rich_add_names_skips_disabled(self):

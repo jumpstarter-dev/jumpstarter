@@ -14,6 +14,7 @@ from jumpstarter_protocol import client_pb2, client_pb2_grpc, jumpstarter_pb2_gr
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer
 
 from jumpstarter.client.selectors import extract_match_labels_filter, selector_contains
+from jumpstarter.client.status import status_icon
 from jumpstarter.common import ExporterStatus
 from jumpstarter.common.grpc import translate_grpc_exceptions
 
@@ -32,6 +33,8 @@ def add_display_columns(table, options: WithOptions = None):
     if options is None:
         options = WithOptions()
     table.add_column("NAME")
+    if not options.show_status:
+        table.add_column(" ")
     if options.show_disabled:
         table.add_column("ENABLED")
     if options.show_online:
@@ -50,6 +53,8 @@ def add_exporter_row(table, exporter, options: WithOptions = None, lease_info: t
         options = WithOptions()
     row_data = []
     row_data.append(exporter.name)
+    if not options.show_status:
+        row_data.append(exporter.status_icon())
     if options.show_disabled:
         row_data.append("yes" if exporter.enabled else "no")
     if options.show_online:
@@ -148,6 +153,14 @@ class Exporter(BaseModel):
         elif options and options.show_leases:
             lease_info = ("", "Available", "")
         add_exporter_row(table, self, options, lease_info)
+
+    def status_icon(self) -> str:
+        """Return an icon representing the exporter's runtime status.
+
+        Delegates to :func:`jumpstarter.client.status.status_icon` which
+        selects emoji or ASCII based on terminal capabilities.
+        """
+        return status_icon(self.status)
 
     def rich_add_names(self, names):
         names.append(self.name)
