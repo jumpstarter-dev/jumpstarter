@@ -2,9 +2,9 @@ import os
 from unittest.mock import patch
 
 from jumpstarter.client.status import (
-    STATUS_HELP_TEXT,
     STATUS_ICONS,
     _use_emoji,
+    status_help_text,
     status_icon,
 )
 from jumpstarter.common.enums import ExporterStatus
@@ -103,8 +103,8 @@ class TestStatusIcon:
     """Tests for status_icon() with emoji output."""
 
     @patch("jumpstarter.client.status._use_emoji", return_value=True)
-    def test_available_shows_white_circle_emoji(self, _mock):
-        assert status_icon(ExporterStatus.AVAILABLE) == "⚪"
+    def test_available_shows_green_circle_emoji(self, _mock):
+        assert status_icon(ExporterStatus.AVAILABLE) == "🟢"
 
     @patch("jumpstarter.client.status._use_emoji", return_value=True)
     def test_offline_shows_cross_emoji(self, _mock):
@@ -201,17 +201,30 @@ class TestStatusIcons:
 
 
 class TestStatusHelpText:
-    """Tests for STATUS_HELP_TEXT."""
+    """Tests for status_help_text()."""
 
-    def test_contains_all_ascii_indicators(self):
-        # Deduplicate ascii chars from the mapping
+    @patch("jumpstarter.client.status._use_emoji", return_value=False)
+    def test_ascii_mode_contains_all_ascii_indicators(self, _mock):
+        text = status_help_text()
         seen = set()
         for _emoji, ascii_char, desc in STATUS_ICONS.values():
             if (ascii_char, desc) not in seen:
                 seen.add((ascii_char, desc))
-                assert ascii_char in STATUS_HELP_TEXT, f"Missing '{ascii_char}' in STATUS_HELP_TEXT"
-                assert desc in STATUS_HELP_TEXT, f"Missing '{desc}' in STATUS_HELP_TEXT"
+                assert ascii_char in text, f"Missing '{ascii_char}' in status_help_text()"
+                assert desc in text, f"Missing '{desc}' in status_help_text()"
 
-    def test_is_non_empty_string(self):
-        assert isinstance(STATUS_HELP_TEXT, str)
-        assert len(STATUS_HELP_TEXT) > 0
+    @patch("jumpstarter.client.status._use_emoji", return_value=True)
+    def test_emoji_mode_contains_emoji_indicators(self, _mock):
+        text = status_help_text()
+        seen = set()
+        for emoji_char, _ascii, desc in STATUS_ICONS.values():
+            if (emoji_char, desc) not in seen:
+                seen.add((emoji_char, desc))
+                assert emoji_char in text, f"Missing '{emoji_char}' in status_help_text()"
+                assert desc in text, f"Missing '{desc}' in status_help_text()"
+
+    @patch("jumpstarter.client.status._use_emoji", return_value=False)
+    def test_is_non_empty_string(self, _mock):
+        text = status_help_text()
+        assert isinstance(text, str)
+        assert len(text) > 0

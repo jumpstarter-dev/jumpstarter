@@ -7,6 +7,7 @@ from jumpstarter_cli_common.print import model_print
 
 from .common import opt_selector
 from .login import relogin_client
+from jumpstarter.client.status import status_help_text
 
 
 @click.group(cls=AliasedGroup)
@@ -16,7 +17,16 @@ def get():
     """
 
 
-@get.command(name="exporters")
+class _ExportersCommand(click.Command):
+    """Command subclass that appends a dynamic status-icon legend to --help."""
+
+    def format_epilog(self, ctx, formatter):
+        formatter.write_paragraph()
+        with formatter.indentation():
+            formatter.write_text(status_help_text())
+
+
+@get.command(name="exporters", cls=_ExportersCommand)
 @opt_config(exporter=False)
 @opt_selector
 @opt_output_all
@@ -50,10 +60,6 @@ def get_exporters(
 ):
     """
     Display one or many exporters
-
-    \b
-    Status icons: + available, x offline, ~ leased,
-                  * hook running, ! hook failed, ? unknown
     """
 
     include_leases = "leases" in with_options

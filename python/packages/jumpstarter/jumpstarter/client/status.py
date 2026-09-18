@@ -49,7 +49,7 @@ def _use_emoji() -> bool:
 # Central mapping:  status -> (emoji, ascii, description)
 # Keep the help text in ``STATUS_HELP_TEXT`` in sync when editing this dict.
 STATUS_ICONS: dict[ExporterStatus | None, tuple[str, str, str]] = {
-    ExporterStatus.AVAILABLE: ("⚪", "+", "available"),
+    ExporterStatus.AVAILABLE: ("🟢", "+", "available"),
     ExporterStatus.OFFLINE: ("❌", "x", "offline"),
     ExporterStatus.BEFORE_LEASE_HOOK: ("⚙️", "*", "hook running"),
     ExporterStatus.AFTER_LEASE_HOOK: ("⚙️", "*", "hook running"),
@@ -73,5 +73,20 @@ def status_icon(status: ExporterStatus | None) -> str:
     return STATUS_ICONS.get(status, _FALLBACK)[emoji_idx]
 
 
-# Static help text kept next to the mapping so updates stay in sync.
-STATUS_HELP_TEXT = "Status icons: + available, x offline, ~ leased, * hook running, ! hook failed, ? unknown"
+def status_help_text() -> str:
+    """Return a one-line legend for the status icons.
+
+    Picks emoji or ASCII indicators based on terminal capabilities so
+    the ``--help`` output matches what the user would actually see.
+    """
+    emoji_idx = 0 if _use_emoji() else 1
+    # Deduplicate entries that share the same icon and description
+    seen: set[tuple[str, str]] = set()
+    parts: list[str] = []
+    for icon_emoji, icon_ascii, desc in STATUS_ICONS.values():
+        icon = icon_emoji if emoji_idx == 0 else icon_ascii
+        key = (icon, desc)
+        if key not in seen:
+            seen.add(key)
+            parts.append(f"{icon}  {desc}")
+    return "Status icons: " + ", ".join(parts)

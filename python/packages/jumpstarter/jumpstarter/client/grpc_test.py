@@ -174,7 +174,7 @@ class TestExporterStatusIconDelegation:
         console = Console(file=StringIO(), width=80)
         console.print(table)
         output = console.file.getvalue()
-        assert "⚪" in output
+        assert "🟢" in output
         assert "my-exporter" in output
 
     @patch("jumpstarter.client.status._use_emoji", return_value=False)
