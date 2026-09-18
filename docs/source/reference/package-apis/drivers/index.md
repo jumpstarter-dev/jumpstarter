@@ -92,6 +92,12 @@ Drivers for virtual and emulated targets:
 - {doc}`Cuttlefish <cuttlefish>` (`jumpstarter-driver-cuttlefish`) - Android Cuttlefish virtual device management
 - {doc}`Netsim <netsim>` (`jumpstarter-driver-netsim`) - Android netsim virtual radio control (Bluetooth, WiFi, UWB)
 
+### Test and Measurement
+
+Drivers for signal capture, analysis, and protocol decoding:
+
+- {doc}`Sigrok <sigrok>` (`jumpstarter-driver-sigrok`) - Logic analyzer and oscilloscope capture via sigrok-cli
+
 ### Utility
 
 General-purpose utility drivers:
@@ -134,6 +140,7 @@ renode.md
 ridesx.md
 sdwire.md
 shell.md
+sigrok.md
 snmp.md
 someip.md
 ssh.md

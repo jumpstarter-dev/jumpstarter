@@ -1,1 +1,1 @@
-../../../../../packages/jumpstarter-driver-sigrok/README.md
+../../../../../python/packages/jumpstarter-driver-sigrok/README.md
