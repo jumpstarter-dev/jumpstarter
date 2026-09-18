@@ -1,0 +1,242 @@
+"""MJPEG capture via v4l2-ctl (uses libv4l2, native UVC JPEG without re-encode)."""
+
+from __future__ import annotations
+
+import logging
+import queue
+import shutil
+import subprocess
+import threading
+import time
+
+logger = logging.getLogger(__name__)
+
+# Brief delay after Popen so immediate device-open failures surface before open() returns.
+_STARTUP_POLL_S = 0.05
+
+
+def resolve_v4l2_ctl_executable(override: str | None = None) -> str | None:
+    """Return an executable path for v4l2-ctl, or None if not found."""
+    return shutil.which(override or "v4l2-ctl")
+
+
+def _device_path(device: int | str) -> str:
+    if isinstance(device, str):
+        return device
+    return f"/dev/video{device}"
+
+
+def _extract_jpegs(buffer: bytearray, chunk: bytes) -> list[bytes]:
+    buffer.extend(chunk)
+    frames: list[bytes] = []
+    while True:
+        start = buffer.find(b"\xff\xd8")
+        if start == -1:
+            if len(buffer) > 0 and buffer[-1] == 0xFF:
+                buffer[:] = buffer[-1:]
+            else:
+                buffer.clear()
+            break
+        if start > 0:
+            del buffer[:start]
+        end = buffer.find(b"\xff\xd9", 2)
+        if end == -1:
+            break
+        frames.append(bytes(buffer[: end + 2]))
+        del buffer[: end + 2]
+    return frames
+
+
+class V4L2CtlMjpegCapture:
+    """Capture MJPEG frames using ``v4l2-ctl --stream-mmap``."""
+
+    def __init__(self, v4l2_ctl_executable: str | None = None) -> None:
+        self._v4l2_ctl_executable = v4l2_ctl_executable
+        self._proc: subprocess.Popen[bytes] | None = None
+        self._thread: threading.Thread | None = None
+        self._queue: queue.Queue[bytes] = queue.Queue(maxsize=32)
+        self._buffer = bytearray()
+        self._stop = threading.Event()
+        self._device = ""
+        self._width = 0
+        self._height = 0
+        self._fps = 0
+
+    @property
+    def is_open(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+    def open(self, device: int | str, width: int, height: int, fps: int) -> None:
+        requested = self._v4l2_ctl_executable or "v4l2-ctl"
+        executable = resolve_v4l2_ctl_executable(self._v4l2_ctl_executable)
+        if executable is None:
+            raise OSError(
+                f"v4l2-ctl not found: {requested!r} (install v4l-utils or fix v4l2_ctl_executable)"
+            )
+
+        if self.is_open:
+            self.close()
+
+        self._device = _device_path(device)
+        self._width = width
+        self._height = height
+        self._fps = fps
+        self._v4l2_ctl_executable = executable
+        self._stop.clear()
+
+        try:
+            proc = self._start_process()
+            time.sleep(_STARTUP_POLL_S)
+            if proc.poll() is not None:
+                raise OSError(
+                    f"v4l2-ctl exited immediately while opening {self._device} "
+                    f"(exit code {proc.returncode})"
+                )
+        except OSError:
+            self._cleanup_process()
+            raise
+        except Exception as exc:
+            self._cleanup_process()
+            raise OSError(f"Failed to start v4l2-ctl on {self._device}: {exc}") from exc
+
+        self._thread = threading.Thread(
+            target=self._reader_loop,
+            args=(proc,),
+            name="v4l2-ctl-mjpeg",
+            daemon=True,
+        )
+        self._thread.start()
+        logger.info(
+            "v4l2-ctl MJPEG passthrough on %s (%sx%s @ %sfps)",
+            self._device,
+            width,
+            height,
+            fps,
+        )
+
+    def _start_process(self) -> subprocess.Popen[bytes]:
+        assert self._v4l2_ctl_executable is not None
+        cmd = [
+            self._v4l2_ctl_executable,
+            "-d",
+            self._device,
+            f"--set-fmt-video=width={self._width},height={self._height},pixelformat=MJPG",
+        ]
+        if self._fps > 0:
+            cmd.append(f"--set-parm={self._fps}")
+        cmd.extend(
+            [
+                "--stream-mmap",
+                "--stream-count=120",
+                "--stream-to=-",
+            ]
+        )
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                bufsize=0,
+            )
+        except OSError:
+            raise
+        if proc.stdout is None:
+            proc.kill()
+            proc.wait(timeout=2)
+            raise OSError("v4l2-ctl did not provide stdout")
+        self._proc = proc
+        return proc
+
+    def _cleanup_process(self) -> None:
+        if self._proc is not None:
+            self._proc.terminate()
+            try:
+                self._proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self._proc.kill()
+                self._proc.wait(timeout=2)
+            self._proc = None
+
+    def _enqueue_frame(self, frame: bytes) -> None:
+        """Put a frame into the queue, evicting the oldest frame if full."""
+        while not self._stop.is_set():
+            try:
+                self._queue.put(frame, timeout=0.1)
+                return
+            except queue.Full:
+                try:
+                    self._queue.get_nowait()
+                except queue.Empty:
+                    pass
+
+    def _read_from_process(self, proc: subprocess.Popen[bytes]) -> None:
+        """Read stdout from a v4l2-ctl process and enqueue JPEG frames."""
+        stdout = proc.stdout
+        assert stdout is not None
+        while not self._stop.is_set():
+            chunk = stdout.read(65536)
+            if not chunk:
+                break
+            for frame in _extract_jpegs(self._buffer, chunk):
+                self._enqueue_frame(frame)
+
+    def _reader_loop(self, initial_proc: subprocess.Popen[bytes] | None = None) -> None:
+        try:
+            proc = initial_proc
+            while not self._stop.is_set():
+                if proc is None:
+                    try:
+                        proc = self._start_process()
+                    except OSError:
+                        if self._stop.is_set():
+                            break
+                        time.sleep(0.5)
+                        continue
+                self._read_from_process(proc)
+                try:
+                    proc.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    pass
+                if self._proc is proc:
+                    self._proc = None
+                proc = None
+        finally:
+            self._stop.set()
+
+    def get_resolution(self) -> tuple[int, int]:
+        return self._width, self._height
+
+    def read_jpeg(self) -> bytes:
+        if not self.is_open:
+            raise ConnectionError("v4l2-ctl capture not open")
+        try:
+            return self._queue.get(timeout=2.0)
+        except queue.Empty as exc:
+            raise ConnectionError("Timed out waiting for MJPEG frame from v4l2-ctl") from exc
+
+    def discard_frames(self, count: int = 1) -> None:
+        for _ in range(count):
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                break
+
+    def close(self) -> None:
+        self._stop.set()
+        if self._proc is not None:
+            self._proc.terminate()
+            try:
+                self._proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self._proc.kill()
+                self._proc.wait(timeout=2)
+            self._proc = None
+        if self._thread is not None:
+            self._thread.join(timeout=2)
+            self._thread = None
+        while True:
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                break
+        self._buffer.clear()

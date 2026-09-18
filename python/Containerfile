@@ -8,7 +8,7 @@ RUN dnf install -y make git && \
 FROM registry.fedoraproject.org/fedora:44 AS product
 COPY --from=ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc /uv /uvx /bin/
 RUN dnf install -y python3 ustreamer libusb1 android-tools qdl python3-libgpiod curl \
-    nftables dnsmasq iproute procps-ng tcpdump && \
+    nftables dnsmasq iproute procps-ng tcpdump v4l-utils && \
     dnf clean all && \
     rm -rf /var/cache/dnf
 

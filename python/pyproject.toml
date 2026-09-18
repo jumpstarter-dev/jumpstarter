@@ -25,6 +25,7 @@ jumpstarter-driver-http = { workspace = true }
 jumpstarter-driver-http-power = { workspace = true }
 jumpstarter-driver-gpiod = { workspace = true }
 jumpstarter-driver-ridesx = { workspace = true }
+jumpstarter-driver-nanokvm-usb = { workspace = true }
 jumpstarter-driver-netsim = { workspace = true }
 jumpstarter-driver-network = { workspace = true }
 jumpstarter-driver-obd = { workspace = true }
@@ -68,6 +69,10 @@ hatch-pin-jumpstarter = { workspace = true }
 # pydantic >=2.12 so that pydantic-core ships pre-built cp314 wheels.
 constraint-dependencies = [
     "pydantic>=2.12 ; python_version >= '3.14'",
+    # Pillow 11.3.0 is the first release that ships cp314 wheels;
+    # without this constraint uv can pick an older sdist-only version
+    # that fails to build on Python 3.14.
+    "pillow>=11.3.0 ; python_version >= '3.14'",
 ]
 
 [dependency-groups]
