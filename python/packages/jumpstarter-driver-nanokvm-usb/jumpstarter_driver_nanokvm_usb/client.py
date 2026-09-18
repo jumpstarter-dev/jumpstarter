@@ -7,10 +7,9 @@ import click
 from jumpstarter_driver_composite.client import CompositeClient
 from PIL import Image
 
+from .mouse import MouseButton, resolve_button
 from jumpstarter.client import DriverClient
 from jumpstarter.client.decorators import driver_click_group
-
-from .mouse import MouseButton, resolve_button
 
 __all__ = ["NanoKVMUSBVideoClient", "NanoKVMUSBHIDClient", "NanoKVMUSBClient", "MouseButton"]
 

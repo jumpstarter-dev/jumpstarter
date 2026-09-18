@@ -6,11 +6,10 @@ import anyio
 from anyio import to_thread
 from jumpstarter_driver_composite.driver import Composite
 
-from jumpstarter.driver import Driver, export, exportstream
-
 from .device import NanoKVMUSBDevice
 from .keyboard import resolve_key_code
 from .mouse import MouseButton, resolve_button
+from jumpstarter.driver import Driver, export, exportstream
 
 __all__ = ["NanoKVMUSBVideo", "NanoKVMUSBHID", "NanoKVMUSB", "MouseButton"]
 
@@ -199,11 +198,10 @@ class NanoKVMUSBHID(NanoKVMUSBDriverBase):
         y: float | None = None,
     ):
         button_label = button if isinstance(button, str) else getattr(button, "name", str(button))
-        if isinstance(button, str):
-            button = resolve_button(button)
+        resolved = resolve_button(button) if isinstance(button, str) else int(button)
 
         device = await self._ensure_device()
-        await to_thread.run_sync(device.mouse_click, button, x, y)
+        await to_thread.run_sync(device.mouse_click, resolved, x, y)
         self.logger.info("Mouse %s clicked", button_label)
 
     @export

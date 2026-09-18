@@ -5,7 +5,7 @@
 [NanoKVM-USB](https://github.com/sipeed/NanoKVM-USB) devices connected directly
 to the exporter host over USB.
 
-Unlike the network-based [NanoKVM](nanokvm.md) driver, this package talks to the
+Unlike a network-based NanoKVM driver, this package talks to the
 hardware through:
 
 - **USB Serial** (default 57600 baud) for keyboard and mouse HID reports

@@ -157,6 +157,29 @@ class V4L2CtlMjpegCapture:
                 self._proc.wait(timeout=2)
             self._proc = None
 
+    def _enqueue_frame(self, frame: bytes) -> None:
+        """Put a frame into the queue, evicting the oldest frame if full."""
+        while not self._stop.is_set():
+            try:
+                self._queue.put(frame, timeout=0.1)
+                return
+            except queue.Full:
+                try:
+                    self._queue.get_nowait()
+                except queue.Empty:
+                    pass
+
+    def _read_from_process(self, proc: subprocess.Popen[bytes]) -> None:
+        """Read stdout from a v4l2-ctl process and enqueue JPEG frames."""
+        stdout = proc.stdout
+        assert stdout is not None
+        while not self._stop.is_set():
+            chunk = stdout.read(65536)
+            if not chunk:
+                break
+            for frame in _extract_jpegs(self._buffer, chunk):
+                self._enqueue_frame(frame)
+
     def _reader_loop(self, initial_proc: subprocess.Popen[bytes] | None = None) -> None:
         try:
             proc = initial_proc
@@ -169,22 +192,7 @@ class V4L2CtlMjpegCapture:
                             break
                         time.sleep(0.5)
                         continue
-                stdout = proc.stdout
-                assert stdout is not None
-                while not self._stop.is_set():
-                    chunk = stdout.read(65536)
-                    if not chunk:
-                        break
-                    for frame in _extract_jpegs(self._buffer, chunk):
-                        while not self._stop.is_set():
-                            try:
-                                self._queue.put(frame, timeout=0.1)
-                                break
-                            except queue.Full:
-                                try:
-                                    self._queue.get_nowait()
-                                except queue.Empty:
-                                    pass
+                self._read_from_process(proc)
                 try:
                     proc.wait(timeout=1)
                 except subprocess.TimeoutExpired:

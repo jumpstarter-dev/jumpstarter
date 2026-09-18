@@ -6,12 +6,11 @@ from unittest.mock import MagicMock
 import pytest
 from PIL import Image
 
-from jumpstarter.common.utils import serve
-
 from .driver import NanoKVMUSB, NanoKVMUSBHID, NanoKVMUSBVideo
 from .keyboard import KeyboardReport
 from .mouse import MouseButton, resolve_button
 from .v4l2_ctl_mjpeg import V4L2CtlMjpegCapture, _extract_jpegs
+from jumpstarter.common.utils import serve
 
 
 def _jpeg_bytes(width: int = 640, height: int = 480) -> bytes:
@@ -71,10 +70,14 @@ def test_nanokvm_usb_composite(mock_device):
         video_device=0,
     )
     driver._shared_device = mock_device
-    driver.children["video"].device = mock_device
-    driver.children["video"]._owns_device = False
-    driver.children["hid"].device = mock_device
-    driver.children["hid"]._owns_device = False
+    video_child = driver.children["video"]
+    assert isinstance(video_child, NanoKVMUSBVideo)
+    video_child.device = mock_device
+    video_child._owns_device = False
+    hid_child = driver.children["hid"]
+    assert isinstance(hid_child, NanoKVMUSBHID)
+    hid_child.device = mock_device
+    hid_child._owns_device = False
 
     with serve(driver) as client:
         assert hasattr(client, "video")
