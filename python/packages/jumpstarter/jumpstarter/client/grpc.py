@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import sys
 from collections import OrderedDict
 from dataclasses import InitVar, dataclass, field
 from datetime import datetime, timedelta
@@ -16,43 +14,11 @@ from jumpstarter_protocol import client_pb2, client_pb2_grpc, jumpstarter_pb2_gr
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer
 
 from jumpstarter.client.selectors import extract_match_labels_filter, selector_contains
+from jumpstarter.client.status import status_icon
 from jumpstarter.common import ExporterStatus
 from jumpstarter.common.grpc import translate_grpc_exceptions
 
 logger = logging.getLogger(__name__)
-
-
-_EMOJI_TERM_PREFIXES = (
-    "xterm",
-    "screen",
-    "tmux",
-    "rxvt",
-    "alacritty",
-    "kitty",
-    "wezterm",
-    "foot",
-    "ghostty",
-    "contour",
-    "rio",
-)
-"""Terminal type prefixes whose modern implementations reliably render emoji."""
-
-
-def _use_emoji() -> bool:
-    """Return True when the output terminal is likely to support emoji.
-
-    Falls back to ASCII indicators when any of the following is true:
-    * ``NO_COLOR`` environment variable is set (spirit: plain text output).
-    * ``stdout`` is not a TTY (output piped to a file / another process).
-    * ``TERM`` is not set or does not match a known emoji-capable prefix
-      (e.g. ``linux``, ``vt100``, ``dumb``, ``ansi`` all fall back to ASCII).
-    """
-    if os.environ.get("NO_COLOR") is not None:
-        return False
-    if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
-        return False
-    term = os.environ.get("TERM", "")
-    return term.startswith(_EMOJI_TERM_PREFIXES)
 
 
 @dataclass
@@ -66,8 +32,9 @@ class WithOptions:
 def add_display_columns(table, options: WithOptions = None):
     if options is None:
         options = WithOptions()
-    table.add_column(" ")
     table.add_column("NAME")
+    if not options.show_status:
+        table.add_column(" ")
     if options.show_disabled:
         table.add_column("ENABLED")
     if options.show_online:
@@ -85,8 +52,9 @@ def add_exporter_row(table, exporter, options: WithOptions = None, lease_info: t
     if options is None:
         options = WithOptions()
     row_data = []
-    row_data.append(exporter.status_icon())
     row_data.append(exporter.name)
+    if not options.show_status:
+        row_data.append(exporter.status_icon())
     if options.show_disabled:
         row_data.append("yes" if exporter.enabled else "no")
     if options.show_online:
@@ -189,26 +157,10 @@ class Exporter(BaseModel):
     def status_icon(self) -> str:
         """Return an icon representing the exporter's runtime status.
 
-        Uses emoji when the terminal supports it, otherwise falls back to
-        ASCII characters (respects ``TERM=dumb``, ``NO_COLOR``, and non-TTY
-        output).
+        Delegates to :func:`jumpstarter.client.status.status_icon` which
+        selects emoji or ASCII based on terminal capabilities.
         """
-        emoji = _use_emoji()
-        if self.status is None:
-            return "❓" if emoji else "?"
-        match self.status:
-            case ExporterStatus.AVAILABLE:
-                return "🟢" if emoji else "+"
-            case ExporterStatus.OFFLINE:
-                return "🔴" if emoji else "-"
-            case ExporterStatus.BEFORE_LEASE_HOOK | ExporterStatus.AFTER_LEASE_HOOK:
-                return "⚙️" if emoji else "*"
-            case ExporterStatus.LEASE_READY:
-                return "⏳" if emoji else "~"
-            case ExporterStatus.BEFORE_LEASE_HOOK_FAILED | ExporterStatus.AFTER_LEASE_HOOK_FAILED:
-                return "❗" if emoji else "!"
-            case _:
-                return "❓" if emoji else "?"
+        return status_icon(self.status)
 
     def rich_add_names(self, names):
         names.append(self.name)

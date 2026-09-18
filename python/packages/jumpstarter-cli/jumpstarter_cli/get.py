@@ -50,6 +50,10 @@ def get_exporters(
 ):
     """
     Display one or many exporters
+
+    \b
+    Status icons: + available, x offline, ~ leased,
+                  * hook running, ! hook failed, ? unknown
     """
 
     include_leases = "leases" in with_options

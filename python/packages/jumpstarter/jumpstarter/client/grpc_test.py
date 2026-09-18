@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 from datetime import datetime, timedelta
 from io import StringIO
 from unittest.mock import AsyncMock, Mock, patch
@@ -16,7 +15,6 @@ from jumpstarter.client.grpc import (
     Lease,
     LeaseList,
     WithOptions,
-    _use_emoji,
     add_display_columns,
     add_exporter_row,
 )
@@ -41,7 +39,7 @@ class TestAddDisplayColumns:
         add_display_columns(table)
 
         columns = [col.header for col in table.columns]
-        assert columns == [" ", "NAME", "LABELS"]
+        assert columns == ["NAME", " ", "LABELS"]
 
     def test_with_online_column(self):
         table = Table()
@@ -49,7 +47,7 @@ class TestAddDisplayColumns:
         add_display_columns(table, options)
 
         columns = [col.header for col in table.columns]
-        assert columns == [" ", "NAME", "ONLINE", "LABELS"]
+        assert columns == ["NAME", " ", "ONLINE", "LABELS"]
 
     def test_with_leases_columns(self):
         table = Table()
@@ -57,7 +55,7 @@ class TestAddDisplayColumns:
         add_display_columns(table, options)
 
         columns = [col.header for col in table.columns]
-        assert columns == [" ", "NAME", "LABELS", "LEASED BY", "LEASE STATUS", "RELEASE TIME"]
+        assert columns == ["NAME", " ", "LABELS", "LEASED BY", "LEASE STATUS", "RELEASE TIME"]
 
     def test_with_all_columns(self):
         table = Table()
@@ -65,7 +63,25 @@ class TestAddDisplayColumns:
         add_display_columns(table, options)
 
         columns = [col.header for col in table.columns]
-        assert columns == [" ", "NAME", "ONLINE", "LABELS", "LEASED BY", "LEASE STATUS", "RELEASE TIME"]
+        assert columns == ["NAME", " ", "ONLINE", "LABELS", "LEASED BY", "LEASE STATUS", "RELEASE TIME"]
+
+    def test_with_status_suppresses_icon_column(self):
+        table = Table()
+        options = WithOptions(show_status=True)
+        add_display_columns(table, options)
+
+        columns = [col.header for col in table.columns]
+        assert columns == ["NAME", "STATUS", "LABELS"]
+        assert " " not in columns
+
+    def test_with_status_and_online(self):
+        table = Table()
+        options = WithOptions(show_status=True, show_online=True)
+        add_display_columns(table, options)
+
+        columns = [col.header for col in table.columns]
+        assert columns == ["NAME", "ONLINE", "STATUS", "LABELS"]
+        assert " " not in columns
 
 
 class TestAddExporterRow:
@@ -83,7 +99,7 @@ class TestAddExporterRow:
 
         # Just verify a row was added and correct number of columns
         assert len(table.rows) == 1
-        assert len(table.columns) == 3  # icon, NAME, LABELS
+        assert len(table.columns) == 3  # NAME, icon, LABELS
 
     def test_row_with_lease_info(self):
         table = Table()
@@ -95,7 +111,7 @@ class TestAddExporterRow:
         add_exporter_row(table, exporter, options, lease_info)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 6  # icon, NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 6  # NAME, icon, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
     def test_row_with_lease_info_available(self):
         table = Table()
@@ -107,7 +123,7 @@ class TestAddExporterRow:
         add_exporter_row(table, exporter, options, lease_info)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 6  # icon, NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 6  # NAME, icon, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
     def test_row_with_all_options(self):
         table = Table()
@@ -119,7 +135,7 @@ class TestAddExporterRow:
         add_exporter_row(table, exporter, options, lease_info)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 7  # icon, NAME, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 7  # NAME, icon, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
 
 class TestWithDisabledOption:
@@ -128,7 +144,7 @@ class TestWithDisabledOption:
         options = WithOptions(show_disabled=True)
         add_display_columns(table, options)
         columns = [col.header for col in table.columns]
-        assert columns == [" ", "NAME", "ENABLED", "LABELS"]
+        assert columns == ["NAME", " ", "ENABLED", "LABELS"]
 
     def test_show_disabled_adds_enabled_value_to_row(self):
         table = Table()
@@ -137,151 +153,13 @@ class TestWithDisabledOption:
         exporter = Exporter(namespace="default", name="test", labels={}, enabled=False)
         add_exporter_row(table, exporter, options)
         assert len(table.rows) == 1
-        assert len(table.columns) == 4  # icon, NAME, ENABLED, LABELS
+        assert len(table.columns) == 4  # NAME, icon, ENABLED, LABELS
 
 
-class TestUseEmoji:
-    """Tests for _use_emoji() terminal detection."""
+class TestExporterStatusIconDelegation:
+    """Verify Exporter.status_icon() delegates to the status module."""
 
-    def _env_with_term(self, term):
-        """Build a clean env dict with only TERM set (no NO_COLOR)."""
-        env = {k: v for k, v in os.environ.items() if k not in ("TERM", "NO_COLOR")}
-        env["TERM"] = term
-        return env
-
-    def test_returns_false_when_term_dumb(self):
-        with patch.dict("os.environ", self._env_with_term("dumb"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is False
-
-    def test_returns_false_when_term_linux(self):
-        with patch.dict("os.environ", self._env_with_term("linux"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is False
-
-    def test_returns_false_when_term_vt100(self):
-        with patch.dict("os.environ", self._env_with_term("vt100"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is False
-
-    def test_returns_false_when_term_ansi(self):
-        with patch.dict("os.environ", self._env_with_term("ansi"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is False
-
-    def test_returns_false_when_term_unset(self):
-        env = {k: v for k, v in os.environ.items() if k not in ("TERM", "NO_COLOR")}
-        with patch.dict("os.environ", env, clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is False
-
-    def test_returns_false_when_no_color_set(self):
-        with patch.dict("os.environ", {**self._env_with_term("xterm-256color"), "NO_COLOR": ""}, clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is False
-
-    def test_returns_false_when_no_color_set_with_value(self):
-        with patch.dict("os.environ", {**self._env_with_term("xterm-256color"), "NO_COLOR": "1"}, clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is False
-
-    def test_returns_false_when_stdout_not_tty(self):
-        with patch.dict("os.environ", self._env_with_term("xterm-256color"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = False
-                assert _use_emoji() is False
-
-    def test_returns_true_for_xterm(self):
-        with patch.dict("os.environ", self._env_with_term("xterm-256color"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is True
-
-    def test_returns_true_for_tmux(self):
-        with patch.dict("os.environ", self._env_with_term("tmux-256color"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is True
-
-    def test_returns_true_for_screen(self):
-        with patch.dict("os.environ", self._env_with_term("screen-256color"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is True
-
-    def test_returns_true_for_alacritty(self):
-        with patch.dict("os.environ", self._env_with_term("alacritty"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is True
-
-    def test_returns_true_for_kitty(self):
-        with patch.dict("os.environ", self._env_with_term("kitty"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is True
-
-
-class TestExporterStatusIcon:
-    """Tests for Exporter.status_icon() method."""
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
-    def test_available_shows_green_emoji(self, _mock):
-        exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.AVAILABLE)
-        assert exporter.status_icon() == "🟢"
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
-    def test_offline_shows_red_emoji(self, _mock):
-        exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.OFFLINE)
-        assert exporter.status_icon() == "🔴"
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
-    def test_before_lease_hook_shows_gear_emoji(self, _mock):
-        exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.BEFORE_LEASE_HOOK)
-        assert exporter.status_icon() == "⚙️"
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
-    def test_after_lease_hook_shows_gear_emoji(self, _mock):
-        exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.AFTER_LEASE_HOOK)
-        assert exporter.status_icon() == "⚙️"
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
-    def test_lease_ready_shows_hourglass_emoji(self, _mock):
-        exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.LEASE_READY)
-        assert exporter.status_icon() == "⏳"
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
-    def test_before_lease_hook_failed_shows_exclamation_emoji(self, _mock):
-        exporter = Exporter(
-            namespace="default", name="test", labels={}, status=ExporterStatus.BEFORE_LEASE_HOOK_FAILED
-        )
-        assert exporter.status_icon() == "❗"
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
-    def test_after_lease_hook_failed_shows_exclamation_emoji(self, _mock):
-        exporter = Exporter(
-            namespace="default", name="test", labels={}, status=ExporterStatus.AFTER_LEASE_HOOK_FAILED
-        )
-        assert exporter.status_icon() == "❗"
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
-    def test_none_status_shows_question_emoji(self, _mock):
-        exporter = Exporter(namespace="default", name="test", labels={}, status=None)
-        assert exporter.status_icon() == "❓"
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
-    def test_unspecified_status_shows_question_emoji(self, _mock):
-        exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.UNSPECIFIED)
-        assert exporter.status_icon() == "❓"
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=True)
+    @patch("jumpstarter.client.status._use_emoji", return_value=True)
     def test_emoji_icon_appears_in_table_output(self, _mock):
         """Verify the emoji icon column is rendered in table output."""
         exporter = Exporter(namespace="default", name="my-exporter", labels={}, status=ExporterStatus.AVAILABLE)
@@ -290,69 +168,16 @@ class TestExporterStatusIcon:
         exporter.rich_add_rows(table)
 
         columns = [col.header for col in table.columns]
-        assert columns[0] == " "
-        assert columns[1] == "NAME"
+        assert columns[0] == "NAME"
+        assert columns[1] == " "
 
         console = Console(file=StringIO(), width=80)
         console.print(table)
         output = console.file.getvalue()
-        assert "🟢" in output
+        assert "⚪" in output
         assert "my-exporter" in output
 
-
-class TestExporterStatusIconAscii:
-    """Tests for Exporter.status_icon() ASCII fallback (NO_COLOR / TERM=dumb / non-TTY)."""
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
-    def test_available_shows_plus(self, _mock):
-        exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.AVAILABLE)
-        assert exporter.status_icon() == "+"
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
-    def test_offline_shows_minus(self, _mock):
-        exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.OFFLINE)
-        assert exporter.status_icon() == "-"
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
-    def test_before_lease_hook_shows_asterisk(self, _mock):
-        exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.BEFORE_LEASE_HOOK)
-        assert exporter.status_icon() == "*"
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
-    def test_after_lease_hook_shows_asterisk(self, _mock):
-        exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.AFTER_LEASE_HOOK)
-        assert exporter.status_icon() == "*"
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
-    def test_lease_ready_shows_tilde(self, _mock):
-        exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.LEASE_READY)
-        assert exporter.status_icon() == "~"
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
-    def test_before_lease_hook_failed_shows_bang(self, _mock):
-        exporter = Exporter(
-            namespace="default", name="test", labels={}, status=ExporterStatus.BEFORE_LEASE_HOOK_FAILED
-        )
-        assert exporter.status_icon() == "!"
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
-    def test_after_lease_hook_failed_shows_bang(self, _mock):
-        exporter = Exporter(
-            namespace="default", name="test", labels={}, status=ExporterStatus.AFTER_LEASE_HOOK_FAILED
-        )
-        assert exporter.status_icon() == "!"
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
-    def test_none_status_shows_question_mark(self, _mock):
-        exporter = Exporter(namespace="default", name="test", labels={}, status=None)
-        assert exporter.status_icon() == "?"
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
-    def test_unspecified_status_shows_question_mark(self, _mock):
-        exporter = Exporter(namespace="default", name="test", labels={}, status=ExporterStatus.UNSPECIFIED)
-        assert exporter.status_icon() == "?"
-
-    @patch("jumpstarter.client.grpc._use_emoji", return_value=False)
+    @patch("jumpstarter.client.status._use_emoji", return_value=False)
     def test_ascii_icon_appears_in_table_output(self, _mock):
         """Verify the ASCII icon column is rendered in table output."""
         exporter = Exporter(namespace="default", name="my-exporter", labels={}, status=ExporterStatus.AVAILABLE)
@@ -364,6 +189,27 @@ class TestExporterStatusIconAscii:
         console.print(table)
         output = console.file.getvalue()
         assert "+" in output
+        assert "my-exporter" in output
+
+    @patch("jumpstarter.client.status._use_emoji", return_value=False)
+    def test_icon_column_suppressed_when_show_status(self, _mock):
+        """When show_status=True, icon column is replaced by STATUS column."""
+        exporter = Exporter(
+            namespace="default", name="my-exporter", labels={}, status=ExporterStatus.AVAILABLE
+        )
+        table = Table()
+        options = WithOptions(show_status=True)
+        Exporter.rich_add_columns(table, options)
+        exporter.rich_add_rows(table, options)
+
+        columns = [col.header for col in table.columns]
+        assert " " not in columns
+        assert "STATUS" in columns
+
+        console = Console(file=StringIO(), width=80)
+        console.print(table)
+        output = console.file.getvalue()
+        assert "AVAILABLE" in output
         assert "my-exporter" in output
 
 
@@ -396,7 +242,7 @@ class TestExporterList:
         exporter.rich_add_rows(table)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 3  # icon, NAME, LABELS
+        assert len(table.columns) == 3  # NAME, icon, LABELS
 
     def test_exporter_with_lease_no_display(self):
         lease = self.create_test_lease()
@@ -410,7 +256,7 @@ class TestExporterList:
 
         # Should not show lease info when show_leases=False
         assert len(table.rows) == 1
-        assert len(table.columns) == 3  # icon, NAME, LABELS
+        assert len(table.columns) == 3  # NAME, icon, LABELS
 
     def test_exporter_with_lease_display(self):
         lease = self.create_test_lease()
@@ -424,7 +270,7 @@ class TestExporterList:
         exporter.rich_add_rows(table, options)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 6  # icon, NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 6  # NAME, icon, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
         # Test actual table content by rendering it
         console = Console(file=StringIO(), width=120)
@@ -447,7 +293,7 @@ class TestExporterList:
         exporter.rich_add_rows(table, options)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 6  # icon, NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 6  # NAME, icon, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
         # Test actual table content by rendering it
         console = Console(file=StringIO(), width=120)
@@ -479,7 +325,7 @@ class TestExporterList:
         exporter_offline.rich_add_rows(table, options)
 
         assert len(table.rows) == 2
-        assert len(table.columns) == 4  # icon, NAME, ONLINE, LABELS
+        assert len(table.columns) == 4  # NAME, icon, ONLINE, LABELS
 
         # Test actual table content by rendering it
         console = Console(file=StringIO(), width=120)
@@ -517,7 +363,7 @@ class TestExporterList:
         exporter_offline_no_lease.rich_add_rows(table, options)
 
         assert len(table.rows) == 2
-        assert len(table.columns) == 7  # icon, NAME, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 7  # NAME, icon, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
         # Test actual table content by rendering it
         console = Console(file=StringIO(), width=150)
@@ -614,7 +460,7 @@ class TestExporterList:
         Exporter.rich_add_columns(table, options)
         exporter.rich_add_rows(table, options)
 
-        # Should have 6 columns: icon, NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        # Should have 6 columns: NAME, icon, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
         assert len(table.columns) == 6
         assert len(table.rows) == 1
 
