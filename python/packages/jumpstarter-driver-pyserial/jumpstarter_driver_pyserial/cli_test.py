@@ -279,16 +279,19 @@ def test_pipe_command_mode_descriptions(pyserial_client):
         assert "read-only" in result.output.lower()
 
 
-def test_start_console_command_structure(pyserial_client):
-    """Test that start-console command has the correct structure."""
+def test_console_command_structure(pyserial_client):
+    """Test that console command has the correct structure and start-console alias exists."""
     cli = pyserial_client.cli()
 
-    # Click converts underscores to hyphens in command names
-    cmd_name = "start-console" if "start-console" in cli.commands else "start_console"
-    console_cmd = cli.commands[cmd_name]
-
+    # Primary command is "console"
+    console_cmd = cli.commands["console"]
     assert console_cmd is not None
     assert hasattr(console_cmd, "callback")
+
+    # Backward-compat alias "start-console" should also exist (hidden)
+    alias_cmd = cli.commands["start-console"]
+    assert alias_cmd is not None
+    assert alias_cmd.hidden is True
 
 
 def test_cli_base_command(pyserial_client):

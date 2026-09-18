@@ -131,8 +131,8 @@ class PySerialClient(DriverClient):
             """Serial port client"""
             pass
 
-        @base.command()
-        def start_console():
+        @base.command(aliases=["start-console"])
+        def console():
             """Start serial port console"""
             click.echo("\nStarting serial port console ... exit with CTRL+B x 3 times\n")
             console = Console(serial_client=self)

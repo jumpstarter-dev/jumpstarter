@@ -68,7 +68,7 @@ $ jmp shell -l board=qc-ridesx4
 $$ j storage flash --target system_a:rootfs.simg --target system_b:qm_var.simg --target boot_a:aboot.img
 $$ j storage erase recoveryinfo
 $$ j power on
-$$ j serial start-console
+$$ j serial console
 ```
 
 By default the device is powered off after flashing. Use ``--no-power-off`` to

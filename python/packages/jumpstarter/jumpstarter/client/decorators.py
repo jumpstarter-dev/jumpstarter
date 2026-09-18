@@ -89,7 +89,13 @@ class DriverClickGroup(click.Group):
         self.client = client
 
     def command(self, *args: Any, **kwargs: Any) -> Callable:
-        """Command decorator with server methods_description override support."""
+        """Command decorator with server methods_description override and alias support.
+
+        Pass ``aliases=["name", ...]`` to register additional names for the
+        same command.  Aliases are hidden from ``--help`` so they don't clutter
+        the output, but work exactly like the canonical name.
+        """
+        aliases: list[str] = kwargs.pop("aliases", [])
 
         def decorator(f: Callable) -> click.Command:
             name = kwargs.get("name")
@@ -99,6 +105,19 @@ class DriverClickGroup(click.Group):
             if name in self.client.methods_description:
                 kwargs["help"] = self.client.methods_description[name]
 
-            return super(DriverClickGroup, self).command(*args, **kwargs)(f)
+            cmd: click.Command = super(DriverClickGroup, self).command(*args, **kwargs)(f)
+
+            # Register hidden aliases that point to the same callback
+            for alias in aliases:
+                alias_cmd = click.Command(
+                    name=alias,
+                    callback=cmd.callback,
+                    params=list(cmd.params),
+                    help=cmd.help,
+                    hidden=True,
+                )
+                self.add_command(alias_cmd)
+
+            return cmd
 
         return decorator
