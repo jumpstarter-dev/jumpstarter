@@ -14,7 +14,7 @@ dependencies = [
     "jumpstarter-driver-composite",
     "opencv-python-headless",
     "numpy",
-    "pillow",
+    "pillow>=10.0.0",
     "pydantic",
     "pyserial>=3.5",
     "click",
