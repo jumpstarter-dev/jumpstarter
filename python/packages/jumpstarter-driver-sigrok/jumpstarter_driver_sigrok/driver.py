@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import subprocess
 from base64 import b64encode
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from shutil import which
 from tempfile import TemporaryDirectory
+from typing import Any
 
 from .common import CaptureConfig, DecoderConfig, OutputFormat
 from jumpstarter.driver import Driver, export
@@ -59,7 +61,7 @@ class Sigrok(Driver):
         return result.stdout
 
     @export
-    def get_driver_info(self) -> dict:
+    def get_driver_info(self) -> dict[str, Any]:
         return {
             "driver": self.driver,
             "conn": self.conn,
@@ -98,7 +100,7 @@ class Sigrok(Driver):
             }
 
     @export
-    async def capture_stream(self, config: CaptureConfig | dict):
+    async def capture_stream(self, config: CaptureConfig | dict) -> AsyncIterator[bytes]:
         """Streaming capture; yields chunks of binary data from sigrok-cli stdout."""
         self._ensure_executable()
         cfg = CaptureConfig.model_validate(config)

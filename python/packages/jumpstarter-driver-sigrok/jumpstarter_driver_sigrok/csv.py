@@ -113,7 +113,7 @@ def _infer_channel_names(types_row: list[str]) -> list[str]:
     return channel_names
 
 
-def _parse_csv_row(channel_names: list[str], row: list[str]) -> dict[str, int | float]:
+def _parse_csv_row(channel_names: list[str], row: list[str]) -> dict[str, int | float | str]:
     """Parse a CSV data row into channel values.
 
     Args:

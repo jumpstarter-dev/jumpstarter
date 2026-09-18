@@ -200,7 +200,17 @@ def _parse_binary_value(values_str: str, start: int, channel_map: dict[str, str]
         try:
             return int(binary_value, 2), symbol, next_pos
         except ValueError:
-            return 0, symbol, next_pos
+            # Binary value contains x/z states (e.g., "10x10") which can't be parsed as int
+            clean_value = binary_value.replace("x", "0").replace("z", "0").replace("X", "0").replace("Z", "0")
+            logger.warning(
+                "VCD channel %s has x/z bits in binary value '%s', substituting with 0",
+                channel_map[symbol],
+                binary_value,
+            )
+            try:
+                return int(clean_value, 2), symbol, next_pos
+            except ValueError:
+                return 0, symbol, next_pos
 
     return None, None, next_pos
 

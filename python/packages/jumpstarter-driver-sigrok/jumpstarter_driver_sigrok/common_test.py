@@ -2,7 +2,9 @@
 
 from base64 import b64encode
 
-from .common import CaptureResult, OutputFormat, Sample
+import pytest
+
+from .common import CaptureConfig, CaptureResult, DecoderConfig, OutputFormat, Sample
 
 
 class TestSampleFormatTime:
@@ -218,3 +220,135 @@ class TestOutputFormatAll:
     def test_all_length_matches_enum_members(self):
         result = OutputFormat.all()
         assert len(result) == len(OutputFormat)
+
+
+class TestValidateSampleRate:
+    """Tests for CaptureConfig.validate_sample_rate field validator."""
+
+    def test_valid_simple_number(self):
+        cfg = CaptureConfig(sample_rate="1000000")
+        assert cfg.sample_rate == "1000000"
+
+    def test_valid_with_m_suffix(self):
+        cfg = CaptureConfig(sample_rate="1M")
+        assert cfg.sample_rate == "1M"
+
+    def test_valid_with_khz_suffix(self):
+        cfg = CaptureConfig(sample_rate="100kHz")
+        assert cfg.sample_rate == "100kHz"
+
+    def test_valid_with_mhz_suffix(self):
+        cfg = CaptureConfig(sample_rate="8MHz")
+        assert cfg.sample_rate == "8MHz"
+
+    def test_valid_with_ghz_suffix(self):
+        cfg = CaptureConfig(sample_rate="1.5GHz")
+        assert cfg.sample_rate == "1.5GHz"
+
+    def test_valid_with_decimal(self):
+        cfg = CaptureConfig(sample_rate="1.5M")
+        assert cfg.sample_rate == "1.5M"
+
+    def test_valid_with_space_before_unit(self):
+        cfg = CaptureConfig(sample_rate="1 MHz")
+        assert cfg.sample_rate == "1 MHz"
+
+    def test_invalid_with_injection_attempt(self):
+        with pytest.raises(ValueError, match="Invalid sample_rate format"):
+            CaptureConfig(sample_rate="1M,capture_file=/etc/shadow")
+
+    def test_invalid_with_letters_only(self):
+        with pytest.raises(ValueError, match="Invalid sample_rate format"):
+            CaptureConfig(sample_rate="fast")
+
+    def test_invalid_empty(self):
+        with pytest.raises(ValueError, match="Invalid sample_rate format"):
+            CaptureConfig(sample_rate="")
+
+    def test_invalid_with_semicolon(self):
+        with pytest.raises(ValueError, match="Invalid sample_rate format"):
+            CaptureConfig(sample_rate="1M;echo bad")
+
+
+class TestValidateOptions:
+    """Tests for DecoderConfig.validate_options field validator."""
+
+    def test_valid_options(self):
+        dc = DecoderConfig(name="uart", options={"baudrate": 9600, "parity": "none"})
+        assert dc.options == {"baudrate": 9600, "parity": "none"}
+
+    def test_none_options(self):
+        dc = DecoderConfig(name="uart", options=None)
+        assert dc.options is None
+
+    def test_colon_in_key_rejected(self):
+        with pytest.raises(ValueError, match="must not contain ':'"):
+            DecoderConfig(name="uart", options={"bad:key": "value"})
+
+    def test_colon_in_value_rejected(self):
+        with pytest.raises(ValueError, match="must not contain ':'"):
+            DecoderConfig(name="uart", options={"key": "bad:value"})
+
+    def test_valid_bool_option(self):
+        dc = DecoderConfig(name="uart", options={"invert": True})
+        assert dc.options == {"invert": True}
+
+    def test_valid_float_option(self):
+        dc = DecoderConfig(name="uart", options={"threshold": 1.5})
+        assert dc.options == {"threshold": 1.5}
+
+
+class TestValidateDecoderName:
+    """Tests for DecoderConfig.validate_name field validator."""
+
+    def test_valid_simple_name(self):
+        dc = DecoderConfig(name="uart")
+        assert dc.name == "uart"
+
+    def test_valid_name_with_underscore(self):
+        dc = DecoderConfig(name="sdcard_spi")
+        assert dc.name == "sdcard_spi"
+
+    def test_valid_name_with_hyphen(self):
+        dc = DecoderConfig(name="onewire-link")
+        assert dc.name == "onewire-link"
+
+    def test_valid_name_with_digits(self):
+        dc = DecoderConfig(name="i2c")
+        assert dc.name == "i2c"
+
+    def test_colon_injection_rejected(self):
+        with pytest.raises(ValueError, match="Invalid decoder name"):
+            DecoderConfig(name="uart:rx=D0")
+
+    def test_space_rejected(self):
+        with pytest.raises(ValueError, match="Invalid decoder name"):
+            DecoderConfig(name="uart spi")
+
+    def test_empty_name_rejected(self):
+        with pytest.raises(ValueError, match="Invalid decoder name"):
+            DecoderConfig(name="")
+
+    def test_starts_with_digit_rejected(self):
+        with pytest.raises(ValueError, match="Invalid decoder name"):
+            DecoderConfig(name="2wire")
+
+
+class TestValidateDecoderChannels:
+    """Tests for DecoderConfig.validate_channels field validator."""
+
+    def test_valid_channels(self):
+        dc = DecoderConfig(name="spi", channels={"clk": "D0", "mosi": "D1"})
+        assert dc.channels == {"clk": "D0", "mosi": "D1"}
+
+    def test_none_channels(self):
+        dc = DecoderConfig(name="spi", channels=None)
+        assert dc.channels is None
+
+    def test_colon_in_key_rejected(self):
+        with pytest.raises(ValueError, match="must not contain ':'"):
+            DecoderConfig(name="spi", channels={"clk:bad": "D0"})
+
+    def test_colon_in_value_rejected(self):
+        with pytest.raises(ValueError, match="must not contain ':'"):
+            DecoderConfig(name="spi", channels={"clk": "D0:injection"})

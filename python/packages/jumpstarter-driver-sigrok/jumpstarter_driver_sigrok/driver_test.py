@@ -1,8 +1,10 @@
+import subprocess
 from shutil import which
+from unittest.mock import patch
 
 import pytest
 
-from .common import CaptureConfig, CaptureResult, OutputFormat
+from .common import CaptureConfig, CaptureResult, DecoderConfig, OutputFormat
 from .driver import Sigrok
 from jumpstarter.common.utils import serve
 
@@ -467,3 +469,269 @@ def test_decode_analog_csv(demo_client):
     # Analog values should be floats (voltages)
     for _channel, value in first_sample.values.items():
         assert isinstance(value, (int, float))
+
+
+# --- Unit tests for command-building helpers (no sigrok-cli needed) ---
+
+
+class TestBaseDriverArgs:
+    """Tests for Sigrok._base_driver_args()."""
+
+    def test_basic_driver_args(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli", conn="auto")
+        args = driver._base_driver_args()
+        assert args == ["/usr/bin/sigrok-cli", "-d", "demo"]
+
+    def test_driver_args_with_conn(self):
+        driver = Sigrok(driver="fx2lafw", executable="/usr/bin/sigrok-cli", conn="1a86.7523")
+        args = driver._base_driver_args()
+        assert args == ["/usr/bin/sigrok-cli", "-d", "fx2lafw:conn=1a86.7523"]
+
+    def test_driver_args_conn_none(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli", conn=None)
+        args = driver._base_driver_args()
+        assert args == ["/usr/bin/sigrok-cli", "-d", "demo"]
+
+
+class TestChannelArgs:
+    """Tests for Sigrok._channel_args()."""
+
+    def test_no_channels_configured(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli")
+        assert driver._channel_args(None) == []
+
+    def test_channels_configured_no_selection(self):
+        driver = Sigrok(
+            driver="demo",
+            executable="/usr/bin/sigrok-cli",
+            channels={"D0": "clk", "D1": "data"},
+        )
+        args = driver._channel_args(None)
+        assert args == ["-C", "D0=clk,D1=data"]
+
+    def test_channels_selected_by_user_name(self):
+        driver = Sigrok(
+            driver="demo",
+            executable="/usr/bin/sigrok-cli",
+            channels={"D0": "clk", "D1": "data", "D2": "cs"},
+        )
+        args = driver._channel_args(["clk", "data"])
+        assert "-C" in args
+        channel_str = args[args.index("-C") + 1]
+        assert "D0=clk" in channel_str
+        assert "D1=data" in channel_str
+
+    def test_channels_selected_by_device_name(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli")
+        args = driver._channel_args(["D0", "D1"])
+        assert args == ["-C", "D0,D1"]
+
+
+class TestConfigArgs:
+    """Tests for Sigrok._config_args()."""
+
+    def test_default_config(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli")
+        cfg = CaptureConfig(sample_rate="1M", samples=100)
+        args = driver._config_args(cfg)
+        assert "-c" in args
+        assert "samplerate=1M" in args[args.index("-c") + 1]
+        assert "--samples" in args
+        assert "100" in args
+
+    def test_continuous_mode(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli")
+        cfg = CaptureConfig(sample_rate="1M", samples=None)
+        args = driver._config_args(cfg, continuous=True)
+        assert "--continuous" in args
+        assert "--samples" not in args
+
+    def test_default_samples_when_none(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli")
+        cfg = CaptureConfig(sample_rate="1M", samples=None)
+        args = driver._config_args(cfg)
+        assert "--samples" in args
+        assert "1000" in args
+
+    def test_pretrigger_config(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli")
+        cfg = CaptureConfig(sample_rate="1M", samples=100, pretrigger=50)
+        args = driver._config_args(cfg)
+        config_str = args[args.index("-c") + 1]
+        assert "pretrigger=50" in config_str
+
+
+class TestTriggerArgs:
+    """Tests for Sigrok._trigger_args()."""
+
+    def test_no_triggers(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli")
+        cfg = CaptureConfig(sample_rate="1M", triggers=None)
+        assert driver._trigger_args(cfg) == []
+
+    def test_with_triggers(self):
+        driver = Sigrok(
+            driver="demo",
+            executable="/usr/bin/sigrok-cli",
+            channels={"D0": "clk", "D1": "data"},
+        )
+        cfg = CaptureConfig(sample_rate="1M", triggers={"clk": "rising"})
+        args = driver._trigger_args(cfg)
+        assert "--triggers" in args
+        assert "D0=rising" in args[args.index("--triggers") + 1]
+
+
+class TestDecoderArgs:
+    """Tests for Sigrok._decoder_args()."""
+
+    def test_no_decoders(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli")
+        cfg = CaptureConfig(sample_rate="1M", decoders=None)
+        assert driver._decoder_args(cfg) == []
+
+    def test_simple_decoder(self):
+        driver = Sigrok(
+            driver="demo",
+            executable="/usr/bin/sigrok-cli",
+            channels={"D0": "rx", "D1": "tx"},
+        )
+        cfg = CaptureConfig(
+            sample_rate="1M",
+            decoders=[DecoderConfig(name="uart", channels={"rx": "rx", "tx": "tx"})],
+        )
+        args = driver._decoder_args(cfg)
+        assert "-P" in args
+        p_arg = args[args.index("-P") + 1]
+        assert p_arg.startswith("uart:")
+
+    def test_decoder_with_options(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli")
+        cfg = CaptureConfig(
+            sample_rate="1M",
+            decoders=[DecoderConfig(name="uart", options={"baudrate": 115200})],
+        )
+        args = driver._decoder_args(cfg)
+        p_arg = args[args.index("-P") + 1]
+        assert "baudrate=115200" in p_arg
+
+    def test_decoder_with_annotations(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli")
+        cfg = CaptureConfig(
+            sample_rate="1M",
+            decoders=[DecoderConfig(name="uart", annotations=["tx-data", "rx-data"])],
+        )
+        args = driver._decoder_args(cfg)
+        assert "-A" in args
+        a_arg = args[args.index("-A") + 1]
+        assert a_arg == "uart=tx-data,rx-data"
+
+
+class TestFlattenDecoders:
+    """Tests for Sigrok._flatten_decoders()."""
+
+    def test_flat_list(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli")
+        decoders = [DecoderConfig(name="uart"), DecoderConfig(name="spi")]
+        result = driver._flatten_decoders(decoders)
+        assert len(result) == 2
+        assert result[0].name == "uart"
+        assert result[1].name == "spi"
+
+    def test_nested_stack(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli")
+        decoders = [
+            DecoderConfig(
+                name="spi",
+                stack=[DecoderConfig(name="sdcard_spi")],
+            ),
+        ]
+        result = driver._flatten_decoders(decoders)
+        assert len(result) == 2
+        assert result[0].name == "spi"
+        assert result[1].name == "sdcard_spi"
+
+
+class TestResolveChannel:
+    """Tests for Sigrok._resolve_channel()."""
+
+    def test_resolve_user_name(self):
+        driver = Sigrok(
+            driver="demo",
+            executable="/usr/bin/sigrok-cli",
+            channels={"D0": "clk", "D1": "data"},
+        )
+        assert driver._resolve_channel("clk") == "D0"
+
+    def test_resolve_device_name(self):
+        driver = Sigrok(
+            driver="demo",
+            executable="/usr/bin/sigrok-cli",
+            channels={"D0": "clk"},
+        )
+        assert driver._resolve_channel("D0") == "D0"
+
+    def test_resolve_unknown_device_style(self):
+        driver = Sigrok(
+            driver="demo",
+            executable="/usr/bin/sigrok-cli",
+            channels={"D0": "clk"},
+        )
+        # Device-style names like "A1" should pass through even if not in channel map
+        assert driver._resolve_channel("A1") == "A1"
+
+    def test_resolve_no_channels(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli")
+        assert driver._resolve_channel("D0") == "D0"
+
+    def test_resolve_unknown_raises(self):
+        driver = Sigrok(
+            driver="demo",
+            executable="/usr/bin/sigrok-cli",
+            channels={"D0": "clk"},
+        )
+        with pytest.raises(ValueError, match="not found in channel map"):
+            driver._resolve_channel("unknown_channel")
+
+
+class TestBuildCaptureCommand:
+    """Tests for Sigrok._build_capture_command()."""
+
+    def test_basic_capture_command(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli")
+        cfg = CaptureConfig(sample_rate="1M", samples=100, output_format=OutputFormat.VCD)
+        cmd, outfile = driver._build_capture_command(cfg, "/tmp/test")
+        assert cmd[0] == "/usr/bin/sigrok-cli"
+        assert "-d" in cmd
+        assert "-O" in cmd
+        assert "vcd" in cmd
+        assert "-o" in cmd
+        assert str(outfile).endswith("capture.vcd")
+
+
+class TestBuildStreamCommand:
+    """Tests for Sigrok._build_stream_command()."""
+
+    def test_stream_command_outputs_to_stdout(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli")
+        cfg = CaptureConfig(sample_rate="1M", output_format=OutputFormat.BINARY)
+        cmd = driver._build_stream_command(cfg)
+        assert "-o" in cmd
+        assert cmd[cmd.index("-o") + 1] == "-"
+        assert "--continuous" in cmd
+
+
+class TestTimeoutEnforcement:
+    """Tests for subprocess timeout enforcement."""
+
+    def test_scan_timeout_propagated(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli", timeout=10)
+        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="sigrok-cli", timeout=10)):
+            with pytest.raises(subprocess.TimeoutExpired):
+                driver.scan()
+
+    def test_capture_timeout_propagated(self):
+        driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli", timeout=10)
+        cfg = CaptureConfig(sample_rate="1M", samples=100)
+        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="sigrok-cli", timeout=10)):
+            with pytest.raises(subprocess.TimeoutExpired):
+                driver.capture(cfg)

@@ -78,6 +78,29 @@ class DecoderConfig(BaseModel):
     annotations: list[str] | None = None
     stack: list["DecoderConfig"] | None = None
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        if not re.match(r"^[a-zA-Z][a-zA-Z0-9_-]*$", v):
+            raise ValueError(
+                f"Invalid decoder name: {v!r}. "
+                "Decoder names must start with a letter and contain only letters, digits, underscores, or hyphens."
+            )
+        return v
+
+    @field_validator("channels")
+    @classmethod
+    def validate_channels(cls, v: dict[str, str] | None) -> dict[str, str] | None:
+        if v is None:
+            return v
+        for key, value in v.items():
+            if ":" in key or ":" in value:
+                raise ValueError(
+                    f"Decoder channel key/value must not contain ':' (got key={key!r}, value={value!r}). "
+                    "Colons are used as sigrok-cli delimiters and could cause option injection."
+                )
+        return v
+
     @field_validator("options")
     @classmethod
     def validate_options(cls, v: dict[str, str | int | float | bool] | None) -> dict[str, str | int | float | bool] | None:  # noqa: E501
