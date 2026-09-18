@@ -180,14 +180,23 @@ class ConnectionManager:
                         )
                         logger.info("Connection %s tearing down (%s)", connection_id, conn.exporter_name)
             except BaseException as exc:
-                _check_lease_error(lease_ref)
-                if tracker.called:
-                    # Isolate a post-startup failure to this connection; do not cancel siblings.
-                    unwrapped = _unwrap_exception(exc)
-                    logger.exception("Connection %s failed", connection_id)
-                    await self._send_log("error", f"Connection {connection_id} failed: {unwrapped}")
-                    return
-                raise
+                if isinstance(exc, anyio.get_cancelled_exc_class()):
+                    # Never treat cancellation (e.g. shared task group shutdown)
+                    # as a connection failure; let it propagate untouched so the
+                    # task group can unwind normally.
+                    raise
+                if not tracker.called:
+                    # Pre-startup: a lease-related error takes priority over the
+                    # raw exception, then the original failure propagates to the
+                    # connect() caller as usual.
+                    _check_lease_error(lease_ref)
+                    raise
+                # Post-startup: isolate the failure to this connection; do not
+                # cancel siblings sharing the task group.
+                unwrapped = _unwrap_exception(exc)
+                logger.exception("Connection %s failed", connection_id)
+                await self._send_log("error", f"Connection {connection_id} failed: {unwrapped}")
+                return
             finally:
                 self._connections.pop(connection_id, None)
                 self._portals.pop(connection_id, None)
