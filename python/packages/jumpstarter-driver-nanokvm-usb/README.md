@@ -36,7 +36,7 @@ export:
     config:
       serial_port: "/dev/ttyACM0"
       baud_rate: 57600
-      video_device: 0
+      video_device: "/dev/v4l/by-path/pci-0000:00:14.0-usbv2-0:3.4.3:1.0-video-index0"
       video_width: 1920
       video_height: 1080
       video_fps: 30
