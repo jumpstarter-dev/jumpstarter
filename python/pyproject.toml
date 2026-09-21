@@ -73,6 +73,10 @@ constraint-dependencies = [
     # without this constraint uv can pick an older sdist-only version
     # that fails to build on Python 3.14.
     "pillow>=11.3.0 ; python_version >= '3.14'",
+    # SciPy 1.16.1 is the first release that ships cp314 wheels;
+    # 1.16.0 falls back to an sdist build that requires OpenBLAS,
+    # which is not available in the CI environment.
+    "scipy>=1.16.1 ; python_version >= '3.14'",
 ]
 
 [dependency-groups]
