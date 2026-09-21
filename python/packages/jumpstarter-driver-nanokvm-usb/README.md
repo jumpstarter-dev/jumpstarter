@@ -16,7 +16,8 @@ hardware through:
 - **Video capture**: Snapshots and live JPEG frame streams from the UVC device
 - **Keyboard control**: Paste text and press keys via serial HID
 - **Mouse control**: Absolute and relative movement, clicks, and scrolling
-- **Composite driver**: Access video and HID through a unified `NanoKVMUSB` interface
+- **VNC**: Embedded RFB server (view the captured HDMI and control HID from noVNC/TigerVNC)
+- **Composite driver**: Access video, HID, and VNC through a unified `NanoKVMUSB` interface
 
 ## Installation
 
@@ -42,6 +43,10 @@ export:
       video_fps: 30
       screen_width: 1920
       screen_height: 1080
+      vnc_enabled: true
+      # vnc_password: "secret"
+      # vnc_tcp_port: 5900
+      # vnc_tcp_bind: "0.0.0.0"  # LAN; use vnc_password
 ```
 
 ### Config parameters
@@ -56,15 +61,23 @@ export:
 | video_fps | Capture rate for `stream()` | int | no | 30 |
 | screen_width | Target screen width for relative mouse moves | int | no | 1920 |
 | screen_height | Target screen height for relative mouse moves | int | no | 1080 |
+| vnc_enabled | Start an embedded RFB server (Unix socket child `vnc`) | bool | no | true |
+| vnc_password | VNC password (VncAuth). Empty/None = no authentication | str | no | |
+| vnc_tcp_port | Also bind RFB TCP on the exporter (`None` = Unix socket only) | int | no | |
+| vnc_tcp_bind | Address for `vnc_tcp_port` (`127.0.0.1` or `0.0.0.0` for LAN) | str | no | 127.0.0.1 |
+| vnc_encrypt | Default noVNC `encrypt` URL flag | bool | no | false |
 
 ## Architecture
 
-The driver is a composite with two child interfaces:
+The driver is a composite with three child interfaces:
 
 1. **video**: UVC snapshot capture and live frame streaming
 2. **hid**: Keyboard and mouse control over USB serial
+3. **vnc**: Unix-socket RFB endpoint (noVNC / any VNC client)
 
-Both children share a single `NanoKVMUSBDevice` instance on the exporter so the
+Video stream and VNC share a single capture pump so `/dev/video*` is opened once.
+Keyboard and mouse events from the VNC client are translated to the same HID path as `hid`.
+The children share a single `NanoKVMUSBDevice` instance on the exporter so the
 serial port and camera are opened once.
 
 ## Video streaming
@@ -76,16 +89,14 @@ the Jumpstarter connection to whichever **client** opens the stream.
 ### Lifecycle
 
 1. A client calls `video.stream("stream")` (context manager) or `open_stream()`.
-2. The exporter starts an async task that captures JPEG frames from UVC and sends
-   them through the stream.
+2. The exporter's shared FramePump already captures JPEG frames from UVC; the
+   stream task forwards those frames to the client.
 3. The client reads frames with `stream.receive()` — each message is one JPEG.
 4. When the client closes the context (or calls `close()`), the exporter stops
-   capturing and releases the stream.
+   the stream task. Capture continues if VNC or another stream is still using
+   the pump.
 
-While the stream is active, the exporter dedicates a background task to video
-capture. This does **not** block the whole exporter process (it is async), but it
-does keep the UVC device busy until the client disconnects. HID commands remain
-available on the `hid` child during streaming.
+HID commands remain available on the `hid` child during streaming and VNC.
 
 For recording, OCR, frame deduplication, and preprocessing without blocking
 ``jmp shell``, use ``edge-clearance-delivery/video-receiver/`` (``stream-bridge.py`` +
@@ -110,11 +121,44 @@ with video.stream("stream") as stream:
         frame_jpeg = stream.receive()
 ```
 
+## VNC
+
+The exporter runs an RFB 3.8 server on a Unix socket. Jumpstarter tunnels that
+socket to the **client** (same pattern as QEMU): you do not need to be on the
+exporter host. Keyboard and mouse in the VNC client go to the NanoKVM-USB HID.
+
+**From the Jumpstarter client** (any machine with a lease):
+
+```bash
+j nanokvm-usb vnc session
+```
+
+That opens noVNC against a TCP/WebSocket port on *your* machine. For a native
+viewer (TigerVNC, Remmina) on the client:
+
+```bash
+j nanokvm-usb vnc forward-tcp 5900
+# then connect to localhost:5900
+```
+
+Or from Python:
+
+```python
+with lease.drivers["nanokvm-usb"].session() as url:
+    print(url)  # noVNC URL
+```
+
+**TCP on the exporter** (optional): set `vnc_tcp_port` to bind RFB on the exporter
+host. Default `vnc_tcp_bind` is `127.0.0.1` (local viewers on that machine only).
+Use `vnc_tcp_bind: "0.0.0.0"` to accept LAN clients without a Jumpstarter tunnel.
+Binding a non-loopback address without `vnc_password` exposes an unauthenticated
+session on the network; set a password.
+
 ## API reference
 
 ### NanoKVMUSBClient
 
-Composite client with `video` and `hid` children.
+Composite client with `video`, `hid`, and `vnc` children.
 
 ### NanoKVMUSBVideoClient
 
@@ -130,6 +174,13 @@ Composite client with `video` and `hid` children.
     :members: paste_text, press_key, reset_hid, mouse_move_abs, mouse_move_rel, mouse_click, mouse_scroll
 ```
 
+### NanoKVMUSBVNCClient
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_nanokvm_usb.client.NanoKVMUSBVNCClient()
+    :members: session
+```
+
 ## CLI usage
 
 ```bash
@@ -143,6 +194,10 @@ j nanokvm-usb hid press enter
 # Mouse
 j nanokvm-usb hid mouse move 0.5 0.5
 j nanokvm-usb hid mouse click --button left --x 0.5 --y 0.5
+
+# VNC (view + HID) via Jumpstarter tunnel
+j nanokvm-usb vnc session
+j nanokvm-usb vnc forward-tcp 5900
 ```
 
 ## Host requirements
