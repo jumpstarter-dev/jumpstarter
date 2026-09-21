@@ -32,6 +32,7 @@ MSG_FB_UPDATE_REQUEST = 3
 MSG_KEY_EVENT = 4
 MSG_POINTER_EVENT = 5
 MSG_CLIENT_CUT_TEXT = 6
+_CLIENT_IO_TIMEOUT = 30
 
 # X11 keysyms used by RFB
 _KEYSYM_NAMED: dict[int, str] = {
@@ -485,7 +486,7 @@ class RfbServer:
                     conn, _addr = listener.accept()
                 except OSError:
                     continue
-                conn.settimeout(30)
+                conn.settimeout(_CLIENT_IO_TIMEOUT)
                 with self._clients_lock:
                     self._clients.append(conn)
                 threading.Thread(
@@ -552,7 +553,7 @@ class RfbServer:
         pf = _default_pixel_format()
         last_gen = -1
         want_update = True
-        conn.setblocking(False)
+        conn.settimeout(0)
         while not self._stop.is_set():
             try:
                 readable, _, _ = select.select([conn], [], [], 0.05)
@@ -582,7 +583,7 @@ class RfbServer:
             return None
         msg = header[0]
         requested = False
-        conn.setblocking(True)
+        conn.settimeout(_CLIENT_IO_TIMEOUT)
         try:
             if msg == MSG_SET_PIXEL_FORMAT:
                 _recvexact(conn, 3)
@@ -612,7 +613,7 @@ class RfbServer:
             else:
                 logger.debug("ignoring unknown RFB client message %s", msg)
         finally:
-            conn.setblocking(False)
+            conn.settimeout(0)
         return pf, requested
 
     def _handle_key(self, keysym: int, down: bool) -> None:
@@ -651,9 +652,9 @@ class RfbServer:
             image = image.resize((self._width, self._height))
         pixels = pack_rgb_frame(image, pf)
         header = struct.pack("!BxH", 0, 1) + struct.pack("!HHHHi", 0, 0, self._width, self._height, ENCODING_RAW)
-        conn.setblocking(True)
+        conn.settimeout(_CLIENT_IO_TIMEOUT)
         try:
             conn.sendall(header + pixels)
         finally:
-            conn.setblocking(False)
+            conn.settimeout(0)
         return gen
