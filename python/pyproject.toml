@@ -64,10 +64,13 @@ jumpstarter-testing = { workspace = true }
 hatch-pin-jumpstarter = { workspace = true }
 
 [tool.uv]
-# pydantic >=2.12 requires typing-extensions >=4.14.1, but mitmproxy caps
-# typing-extensions <=4.14 on Python <3.13. On Python >=3.14 we need
-# pydantic >=2.12 so that pydantic-core ships pre-built cp314 wheels.
+# Ensure uv resolves versions that ship pre-built cp314 wheels on Python 3.14.
+# Without these constraints the resolver can pick older releases that only
+# provide cp312/cp313 wheels, forcing slow (or failing) source builds in CI.
 constraint-dependencies = [
+    # pydantic >=2.12 requires typing-extensions >=4.14.1, but mitmproxy caps
+    # typing-extensions <=4.14 on Python <3.13. On Python >=3.14 we need
+    # pydantic >=2.12 so that pydantic-core ships pre-built cp314 wheels.
     "pydantic>=2.12 ; python_version >= '3.14'",
     # Pillow 11.3.0 is the first release that ships cp314 wheels;
     # without this constraint uv can pick an older sdist-only version
@@ -82,6 +85,24 @@ constraint-dependencies = [
     # slow sdist builds on Python 3.14.
     "numpy>=2.3.2 ; python_version >= '3.14'",
     "pywavelets>=1.9.0 ; python_version >= '3.14'",
+    # aiohttp 3.13.0 is the first release that ships cp314 wheels.
+    "aiohttp>=3.13.0 ; python_version >= '3.14'",
+    # cffi 2.0.0 is the first release that ships cp314 wheels;
+    # consumers (cryptography, pynacl, …) accept cffi >=1.14.
+    "cffi>=2.0.0 ; python_version >= '3.14'",
+    # grpcio 1.75.1 is the first release that ships cp314 wheels;
+    # building from source takes 10+ minutes.
+    "grpcio>=1.75.1 ; python_version >= '3.14'",
+    # MarkupSafe 3.0.3 is the first release that ships cp314 wheels.
+    "markupsafe>=3.0.3 ; python_version >= '3.14'",
+    # msgpack 1.1.2 is the first release that ships cp314 wheels.
+    "msgpack>=1.1.2 ; python_version >= '3.14'",
+    # PyYAML 6.0.3 is the first release that ships cp314 wheels.
+    "pyyaml>=6.0.3 ; python_version >= '3.14'",
+    # rpds-py 0.26.0 is the first release that ships cp314 wheels.
+    "rpds-py>=0.26.0 ; python_version >= '3.14'",
+    # gpiod 2.4.0 is the first release that ships cp314 wheels.
+    "gpiod>=2.4.0 ; python_version >= '3.14'",
 ]
 
 [dependency-groups]
