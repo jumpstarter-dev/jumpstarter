@@ -30,6 +30,7 @@ dependencies = [
   "jumpstarter-driver-http-power",
   "jumpstarter-driver-iscsi",
   "jumpstarter-driver-mitmproxy",
+  "jumpstarter-driver-nanokvm-usb",
   "jumpstarter-driver-netsim",
   "jumpstarter-driver-network",
   "jumpstarter-driver-noyito-relay",
