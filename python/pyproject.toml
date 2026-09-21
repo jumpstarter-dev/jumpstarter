@@ -28,6 +28,7 @@ jumpstarter-driver-ridesx = { workspace = true }
 jumpstarter-driver-nanokvm-usb = { workspace = true }
 jumpstarter-driver-netsim = { workspace = true }
 jumpstarter-driver-network = { workspace = true }
+jumpstarter-driver-noyito-relay = { workspace = true }
 jumpstarter-driver-obd = { workspace = true }
 jumpstarter-driver-opendal = { workspace = true }
 jumpstarter-driver-power = { workspace = true }
@@ -42,9 +43,12 @@ jumpstarter-driver-tmt = { workspace = true }
 jumpstarter-driver-tftp = { workspace = true }
 jumpstarter-driver-snmp = { workspace = true }
 jumpstarter-driver-shell = { workspace = true }
+jumpstarter-driver-sigrok = { workspace = true }
 jumpstarter-driver-someip = { workspace = true }
 jumpstarter-driver-ssh = { workspace = true }
+jumpstarter-driver-ssh-mitm = { workspace = true }
 jumpstarter-driver-ssh-mount = { workspace = true }
+jumpstarter-driver-stlink-msd = { workspace = true }
 jumpstarter-driver-uboot = { workspace = true }
 jumpstarter-driver-uds = { workspace = true }
 jumpstarter-driver-uds-can = { workspace = true }
