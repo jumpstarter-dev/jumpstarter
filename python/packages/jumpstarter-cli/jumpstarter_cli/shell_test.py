@@ -3,9 +3,13 @@ import inspect
 import json
 import logging
 import math
+import os
+import sys
 import time
 from contextlib import asynccontextmanager, contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from threading import Thread
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import anyio
@@ -19,6 +23,7 @@ from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentic
 from jumpstarter_cli.shell import (
     _attempt_token_recovery,
     _cancel_if_connection_lost,
+    _exit_shared_session,
     _monitor_shared_access,
     _monitor_token_expiry,
     _resolve_lease_from_active_async,
@@ -34,6 +39,7 @@ from jumpstarter_cli.shell import (
 from jumpstarter.client.grpc import Lease, LeaseList
 from jumpstarter.common import ExporterStatus
 from jumpstarter.common.exceptions import ExporterOfflineError, ExporterUnreachableError
+from jumpstarter.common.utils import _run_process
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.env import JMP_LEASE
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
@@ -1535,14 +1541,45 @@ class _FakeCancelScope:
         self.cancel_called = True
 
 
+def test_shared_access_loss_stops_running_command(capfd, monkeypatch):
+    monkeypatch.setattr(sys, "stdin", sys.__stdin__)
+    lease = SimpleNamespace(lease_revoked=False, lease_ending_callback=None)
+    exit_codes = []
+    command = [sys.executable, "-c", "import time; time.sleep(30)"]
+    worker = Thread(target=lambda: exit_codes.append(_run_process(command, os.environ.copy(), lease)), daemon=True)
+    worker.start()
+
+    try:
+        deadline = time.monotonic() + 3
+        while lease.lease_ending_callback is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert lease.lease_ending_callback is not None
+
+        scope = _FakeCancelScope()
+        _exit_shared_session(lease, scope, "Shared access has been revoked.")
+        worker.join(timeout=3)
+
+        assert not worker.is_alive(), "shared shell left its command running"
+        assert exit_codes and exit_codes[0] != 0
+        assert lease.lease_revoked is True
+        assert scope.cancel_called is True
+        assert "revoked" in capfd.readouterr().out.lower()
+    finally:
+        if worker.is_alive() and lease.lease_ending_callback is not None:
+            lease.lease_ending_callback(lease, timedelta(0))
+            worker.join(timeout=3)
+
+
 async def test_monitor_shared_access_exits_when_revoked(capsys):
-    # A shared client that has dropped out of the effective set must set the
-    # revoked flag and cancel the shell scope so the live session tears down.
+    # A shared client that has dropped out of the effective set (same owner)
+    # must set the revoked flag and cancel the shell scope, reporting a
+    # revocation rather than a transfer or lease end.
     lease = Mock()
     lease.name = "test-lease"
     lease.client_name = "alice"
     lease.lease_revoked = False
     fresh = Mock(client="owner")
+    fresh.effective_end_time = None
     fresh.is_accessible_by = Mock(return_value=False)
     lease.get = AsyncMock(return_value=fresh)
     scope = _FakeCancelScope()
@@ -1555,6 +1592,51 @@ async def test_monitor_shared_access_exits_when_revoked(capsys):
     assert "revoked" in capsys.readouterr().out.lower()
 
 
+async def test_monitor_shared_access_reports_transfer(capsys):
+    # A transfer is a two-poll signal: the first poll (access still granted)
+    # records "owner" as the owner; a later poll shows the owner changed to
+    # "carol" and access lost -> transfer, not a plain revocation.
+    lease = Mock()
+    lease.name = "test-lease"
+    lease.client_name = "alice"
+    lease.lease_revoked = False
+    granted = Mock(client="owner")  # first observation: we still have access
+    granted.effective_end_time = None
+    granted.is_accessible_by = Mock(return_value=True)
+    transferred = Mock(client="carol")  # ownership has since moved on
+    transferred.effective_end_time = None
+    transferred.is_accessible_by = Mock(return_value=False)
+    lease.get = AsyncMock(side_effect=[granted, transferred])
+    scope = _FakeCancelScope()
+
+    with patch("jumpstarter_cli.shell.anyio.sleep", new=AsyncMock()):
+        await _monitor_shared_access(lease, scope)
+
+    assert lease.lease_revoked is True
+    assert scope.cancel_called is True
+    assert "transferred" in capsys.readouterr().out.lower()
+
+
+async def test_monitor_shared_access_reports_lease_ended(capsys):
+    # A lease that has ended (effective_end_time set) is reported as ended, even
+    # if the client also happens to have lost share access.
+    lease = Mock()
+    lease.name = "test-lease"
+    lease.client_name = "alice"
+    lease.lease_revoked = False
+    fresh = Mock(client="owner")
+    fresh.effective_end_time = datetime.now(timezone.utc)
+    fresh.is_accessible_by = Mock(return_value=False)
+    lease.get = AsyncMock(return_value=fresh)
+    scope = _FakeCancelScope()
+
+    await _monitor_shared_access(lease, scope)
+
+    assert lease.lease_revoked is True
+    assert scope.cancel_called is True
+    assert "ended" in capsys.readouterr().out.lower()
+
+
 async def test_monitor_shared_access_keeps_session_while_granted():
     # A shared client that still has effective access is left alone.
     lease = Mock()
@@ -1562,6 +1644,7 @@ async def test_monitor_shared_access_keeps_session_while_granted():
     lease.client_name = "alice"
     lease.lease_revoked = False
     fresh = Mock(client="owner")
+    fresh.effective_end_time = None
     fresh.is_accessible_by = Mock(return_value=True)
     lease.get = AsyncMock(return_value=fresh)
     scope = _FakeCancelScope()

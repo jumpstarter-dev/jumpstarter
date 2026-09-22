@@ -278,21 +278,40 @@ async def _monitor_token_expiry(config, lease, cancel_scope, token_state=None) -
             return
 
 
-async def _monitor_shared_access(lease, cancel_scope) -> None:
-    """Cooperatively exit a shared client's session when its access is revoked.
+def _exit_shared_session(lease, cancel_scope, message: str) -> None:
+    """Stop the shell command when a shared client loses access."""
+    lease.lease_revoked = True
+    click.echo(click.style(f"\n{message} Exiting session.", fg="yellow", bold=True))
+    try:
+        if callback := getattr(lease, "lease_ending_callback", None):
+            callback(lease, timedelta(0))
+    finally:
+        cancel_scope.cancel()
 
-    Revoking a share (owner running `jmp share remove`, or an access-policy
-    change dropping the client from the lease's effective set) does NOT forcibly
-    tear down a router stream the exporter has already established — the
-    controller only stops granting *new* connections. So to honor a revocation
-    for a live session, the shared client polls its own lease and exits when it
-    is no longer in the effective (granted) share set.
+
+async def _monitor_shared_access(lease, cancel_scope) -> None:
+    """Cooperatively exit a shared client's session when it loses access.
+
+    Losing access to a live session does NOT forcibly tear down a router stream
+    the exporter has already established — the controller only stops granting
+    *new* connections. So to honor the loss for a live session, the shared client
+    polls its own lease and exits when it can no longer reach it, reporting *why*
+    so the user isn't left guessing:
+
+    - **Lease ended** (`effective_end_time` set): the lease expired or was
+      released; this affects owner and shared clients alike, so it is checked
+      first — an ended lease must not be mislabeled a share revocation.
+    - **Transferred**: the owner changed (`fresh.client` differs from the owner
+      we first observed) and we no longer have access — ownership moved to
+      someone else.
+    - **Revoked**: same owner, but we dropped out of the effective share set
+      (owner ran `jmp share remove`, or an access-policy change filtered us out).
 
     This is a *soft*, cooperative guarantee with a bounded exposure window (up to
     one poll interval): a shared client that ignores this signal, or whose clock
     is stopped, keeps its existing stream until the exporter itself drops it. The
     hard guarantee remains the owner's: `jmp delete lease` / release ends the
-    lease for everyone. (A transfer has the same live-stream gap today.)
+    lease for everyone.
 
     Only shared (non-owner) clients are monitored — an owner losing the lease is
     handled by the natural lease_ended / delete path.
@@ -300,6 +319,7 @@ async def _monitor_shared_access(lease, cancel_scope) -> None:
     client_name = lease.client_name
     if not client_name:
         return
+    original_owner: str | None = None
     while not cancel_scope.cancel_called:
         try:
             fresh = await lease.get()
@@ -309,19 +329,31 @@ async def _monitor_shared_access(lease, cancel_scope) -> None:
             logger.debug("shared-access monitor: could not refresh lease %s", lease.name, exc_info=True)
             await anyio.sleep(_SHARED_ACCESS_POLL_SECONDS)
             continue
-        # Owners are never revoked this way; only react to lost *shared* access.
-        if client_name != fresh.client and not fresh.is_accessible_by(client_name):
-            lease.lease_revoked = True
-            click.echo(
-                click.style(
-                    "\nShared access to this lease has been revoked. Exiting session.",
-                    fg="yellow",
-                    bold=True,
-                )
-            )
-            cancel_scope.cancel()
+
+        if original_owner is None:
+            original_owner = fresh.client
+
+        # An ended lease affects everyone; classify it as such before the share
+        # checks so it is never reported as a revocation.
+        if fresh.effective_end_time is not None:
+            _exit_shared_session(lease, cancel_scope, "This lease has ended.")
             return
-        await anyio.sleep(_SHARED_ACCESS_POLL_SECONDS)
+
+        # Owner keeps access; shared clients keep it while in the effective set.
+        # Track ownership so a transfer that leaves us with access isn't later
+        # misreported as a revocation.
+        if client_name == fresh.client or fresh.is_accessible_by(client_name):
+            original_owner = fresh.client
+            await anyio.sleep(_SHARED_ACCESS_POLL_SECONDS)
+            continue
+
+        # Access lost while the lease is still active: distinguish a transfer
+        # (ownership moved) from a plain revocation (same owner dropped us).
+        if fresh.client != original_owner:
+            _exit_shared_session(lease, cancel_scope, "This lease was transferred to another client.")
+        else:
+            _exit_shared_session(lease, cancel_scope, "Shared access to this lease has been revoked.")
+        return
 
 
 async def _cancel_if_connection_lost(monitor, coro):

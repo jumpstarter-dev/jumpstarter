@@ -68,15 +68,19 @@ not allow that client to reach this exporter. See
 
 ## Working with a lease shared with you
 
-A shared client does not create a lease — the owner already did. To find leases
-shared with you, list across all clients with `-A`/`--all-clients`:
+A shared client does not create a lease — the owner already did. A plain
+`jmp get leases` already lists leases shared with you alongside your own,
+because the default view shows every lease you can access, not just the ones you
+created:
 
 ```{code-block} console
-$ jmp get leases -A
+$ jmp get leases
 ```
 
 Leases you can reach but do not own are annotated with `shared by <owner>` so
-you can tell them apart from your own.
+you can tell them apart from your own. (`-A`/`--all-clients` is broader still:
+it lists *every* client's leases, including ones neither owned by nor shared
+with you.)
 
 To open a shell against a lease shared with you, pass its ID with `--lease`:
 
