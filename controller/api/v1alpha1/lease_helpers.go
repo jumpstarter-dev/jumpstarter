@@ -373,6 +373,18 @@ func (l *Lease) SetStatusInvalid(reason, messageFormat string, a ...any) {
 	l.SetStatusCondition(LeaseConditionTypeInvalid, true, reason, messageFormat, a...)
 }
 
+// SetSharedAccessReady marks the effective shared-access set as fully evaluated.
+func (l *Lease) SetSharedAccessReady(reason, messageFormat string, a ...any) {
+	l.SetStatusCondition(LeaseConditionTypeSharedAccessReady, true, reason, messageFormat, a...)
+}
+
+// SetSharedAccessDegraded records that the effective shared-access set could not
+// be fully computed (e.g. a malformed policy or a failed client/exporter lookup).
+// This is informational only and must not fail the core lease reconcile.
+func (l *Lease) SetSharedAccessDegraded(reason, messageFormat string, a ...any) {
+	l.SetStatusCondition(LeaseConditionTypeSharedAccessReady, false, reason, messageFormat, a...)
+}
+
 func (l *Lease) SetStatusCondition(
 	condition LeaseConditionType,
 	status bool,

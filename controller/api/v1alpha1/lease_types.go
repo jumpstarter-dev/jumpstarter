@@ -98,6 +98,12 @@ const (
 	LeaseConditionTypeReady         LeaseConditionType = "Ready"
 	LeaseConditionTypeUnsatisfiable LeaseConditionType = "Unsatisfiable"
 	LeaseConditionTypeInvalid       LeaseConditionType = "Invalid"
+	// LeaseConditionTypeSharedAccessReady reports whether Status.SharedWith
+	// (the effective, policy-filtered shared-access set) reflects an up-to-date,
+	// fully evaluated computation. It is set to False (reason SharingDegraded)
+	// when a sharing policy or a client/exporter lookup could not be evaluated,
+	// without failing the core lease reconcile.
+	LeaseConditionTypeSharedAccessReady LeaseConditionType = "SharedAccessReady"
 )
 
 type LeaseLabel string

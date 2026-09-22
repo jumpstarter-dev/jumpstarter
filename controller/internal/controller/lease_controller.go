@@ -114,9 +114,11 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 	// Recompute the effective shared-with set before persisting status so the
 	// derived Status.SharedWith is saved by the single Status().Update below.
-	if err := r.reconcileSharedWithPolicies(ctx, &lease); err != nil {
-		return result, err
-	}
+	// Sharing is an optional, derived feature: its failures are recorded as a
+	// SharedAccessReady=False condition (and logged) but must never abort the
+	// reconcile, otherwise a malformed policy or a deleted exporter would throw
+	// away the core exporter-assignment/end-time updates and retry forever.
+	r.reconcileSharedWithPolicies(ctx, &lease)
 
 	if err := r.Status().Update(ctx, &lease); err != nil {
 		return RequeueConflict(logger, result, err)
@@ -547,34 +549,51 @@ func (r *LeaseReconciler) attachMatchingPolicies(ctx context.Context, lease *jum
 	return approvedExporters, unmatchedDescriptions, nil
 }
 
+// reconcileSharedWithPolicies recomputes Status.SharedWith, the effective,
+// policy-filtered shared-access set derived from the owner-controlled
+// Spec.SharedWith. It never returns an error: sharing is an optional, derived
+// feature and its failures must not abort the core lease reconcile (which
+// persists exporter assignment and end-time updates). Failures are surfaced via
+// the SharedAccessReady condition and logs, and the computation always fails
+// closed (it never grants access it could not verify).
 func (r *LeaseReconciler) reconcileSharedWithPolicies(
 	ctx context.Context,
 	lease *jumpstarterdevv1alpha1.Lease,
-) error {
+) {
+	logger := log.FromContext(ctx)
+
 	// Status.SharedWith is derived state: the effective, policy-filtered access
 	// set. It is recomputed on every reconcile so the controller never mutates the
 	// owner-controlled Spec.SharedWith.
 	if len(lease.Spec.SharedWith) == 0 || lease.Status.Ended {
 		lease.Status.SharedWith = nil
-		return nil
+		lease.SetSharedAccessReady("NoSharing", "No shared access requested")
+		return
 	}
 
 	// Without an assigned exporter, exporter-scoped policies cannot be evaluated
 	// yet; grant the desired set for now. It is filtered once an exporter is bound.
 	if lease.Status.ExporterRef == nil {
 		lease.Status.SharedWith = slices.Clone(lease.Spec.SharedWith)
-		return nil
+		lease.SetSharedAccessReady("PendingExporter",
+			"Exporter not yet assigned; sharing intent granted pending policy evaluation")
+		return
 	}
 
 	var policies jumpstarterdevv1alpha1.ExporterAccessPolicyList
 	if err := r.List(ctx, &policies, client.InNamespace(lease.Namespace)); err != nil {
-		return fmt.Errorf("reconcileSharedWithPolicies: failed to list policies: %w", err)
+		// Preserve the previously-persisted effective set (fail closed: do not
+		// grant anything new) and surface the failure rather than aborting.
+		logger.Error(err, "reconcileSharedWithPolicies: failed to list policies; preserving prior effective shared access")
+		lease.SetSharedAccessDegraded("SharingDegraded", "Failed to list exporter access policies: %v", err)
+		return
 	}
 
 	// No policies configured means sharing is unrestricted.
 	if len(policies.Items) == 0 {
 		lease.Status.SharedWith = slices.Clone(lease.Spec.SharedWith)
-		return nil
+		lease.SetSharedAccessReady("Unrestricted", "No exporter access policies configured; sharing unrestricted")
+		return
 	}
 
 	var exporter jumpstarterdevv1alpha1.Exporter
@@ -582,11 +601,17 @@ func (r *LeaseReconciler) reconcileSharedWithPolicies(
 		Namespace: lease.Namespace,
 		Name:      lease.Status.ExporterRef.Name,
 	}, &exporter); err != nil {
-		return fmt.Errorf("reconcileSharedWithPolicies: failed to get exporter: %w", err)
+		// A deleted/unreadable exporter (e.g. NotFound after deletion) must not
+		// retry forever: preserve the prior effective set and mark degraded.
+		logger.Error(err, "reconcileSharedWithPolicies: failed to get assigned exporter; preserving prior effective shared access",
+			"exporter", lease.Status.ExporterRef.Name)
+		lease.SetSharedAccessDegraded("SharingDegraded",
+			"Failed to get assigned exporter %s: %v", lease.Status.ExporterRef.Name, err)
+		return
 	}
 
-	logger := log.FromContext(ctx)
 	var allowed []string
+	degraded := false
 	for _, clientName := range lease.Spec.SharedWith {
 		var jclient jumpstarterdevv1alpha1.Client
 		if err := r.Get(ctx, types.NamespacedName{
@@ -597,13 +622,20 @@ func (r *LeaseReconciler) reconcileSharedWithPolicies(
 				logger.Info("excluding shared client from effective access: not found", "client", clientName)
 				continue
 			}
-			return fmt.Errorf("reconcileSharedWithPolicies: failed to get shared client %s: %w", clientName, err)
+			// Fail closed: exclude the client we could not evaluate, but keep going
+			// and flag the result as degraded instead of aborting the reconcile.
+			logger.Error(err, "excluding shared client from effective access: lookup failed", "client", clientName)
+			degraded = true
+			continue
 		}
 		allowedByPolicy, err := jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies.Items, &exporter, &jclient)
 		if err != nil {
-			// A malformed policy selector must not silently exclude the shared client;
-			// return the error so the reconcile is retried and the misconfiguration surfaces.
-			return fmt.Errorf("reconcileSharedWithPolicies: failed to evaluate access policy for client %s: %w", clientName, err)
+			// A malformed policy selector must not silently grant access: fail closed
+			// by excluding the client and flag the result as degraded so the
+			// misconfiguration surfaces without blocking the core reconcile.
+			logger.Error(err, "excluding shared client from effective access: policy evaluation failed", "client", clientName)
+			degraded = true
+			continue
 		}
 		if allowedByPolicy {
 			allowed = append(allowed, clientName)
@@ -612,7 +644,12 @@ func (r *LeaseReconciler) reconcileSharedWithPolicies(
 		}
 	}
 	lease.Status.SharedWith = allowed
-	return nil
+	if degraded {
+		lease.SetSharedAccessDegraded("SharingDegraded",
+			"One or more shared clients could not be evaluated; effective shared access may be incomplete")
+	} else {
+		lease.SetSharedAccessReady("Ready", "Effective shared access computed from policies")
+	}
 }
 
 // ListMatchingExporters returns a list of exporters that match the selector of the lease
@@ -890,6 +927,65 @@ func (r *LeaseReconciler) mapExporterToLeases(ctx context.Context, obj client.Ob
 	return requests
 }
 
+// activeLeaseRequests returns reconcile requests for the active leases in the
+// namespace. When clientName is non-empty, only leases where that client is the
+// owner or appears in Spec.SharedWith are enqueued, so a Client change only
+// re-reconciles the leases whose shared-access computation it can affect.
+func (r *LeaseReconciler) activeLeaseRequests(ctx context.Context, namespace, clientName string) []reconcile.Request {
+	var leaseList jumpstarterdevv1alpha1.LeaseList
+	if err := r.List(ctx, &leaseList, client.InNamespace(namespace), MatchingActiveLeases()); err != nil {
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for i := range leaseList.Items {
+		lease := &leaseList.Items[i]
+		if clientName != "" &&
+			lease.Spec.ClientRef.Name != clientName &&
+			!slices.Contains(lease.Spec.SharedWith, clientName) {
+			continue
+		}
+		requests = append(requests, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: lease.Name, Namespace: lease.Namespace},
+		})
+	}
+	return requests
+}
+
+// mapPolicyToLeases enqueues all active leases in the policy's namespace: an
+// ExporterAccessPolicy change can affect both exporter approval and the derived
+// Status.SharedWith of any lease in the namespace.
+func (r *LeaseReconciler) mapPolicyToLeases(ctx context.Context, obj client.Object) []reconcile.Request {
+	return r.activeLeaseRequests(ctx, obj.GetNamespace(), "")
+}
+
+// mapClientToLeases enqueues the active leases whose shared-access computation
+// depends on the changed client (owner or shared-with member). A client's labels
+// determine policy matching, so a label change can revoke or grant shared access.
+func (r *LeaseReconciler) mapClientToLeases(ctx context.Context, obj client.Object) []reconcile.Request {
+	return r.activeLeaseRequests(ctx, obj.GetNamespace(), obj.GetName())
+}
+
+// clientLabelsChanged only admits Client updates that change labels (or
+// create/delete events), since only labels affect policy matching. This avoids
+// re-reconciling leases on unrelated Client status/token updates.
+func clientLabelsChanged() predicate.Funcs {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return true
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return !labels.Equals(labels.Set(e.ObjectOld.GetLabels()), labels.Set(e.ObjectNew.GetLabels()))
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return true
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return true
+		},
+	}
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *LeaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
@@ -897,5 +993,12 @@ func (r *LeaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&jumpstarterdevv1alpha1.Exporter{},
 			handler.EnqueueRequestsFromMapFunc(r.mapExporterToLeases),
 			builder.WithPredicates(exporterChangedForPendingLeases())).
+		// ExporterAccessPolicy and Client changes can revoke or grant shared
+		// access, so re-reconcile affected leases to refresh Status.SharedWith.
+		Watches(&jumpstarterdevv1alpha1.ExporterAccessPolicy{},
+			handler.EnqueueRequestsFromMapFunc(r.mapPolicyToLeases)).
+		Watches(&jumpstarterdevv1alpha1.Client{},
+			handler.EnqueueRequestsFromMapFunc(r.mapClientToLeases),
+			builder.WithPredicates(clientLabelsChanged())).
 		Complete(r)
 }
