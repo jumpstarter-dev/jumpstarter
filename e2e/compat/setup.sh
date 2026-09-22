@@ -216,8 +216,9 @@ install_old_client() {
     # Create a separate venv for old client
     uv venv "$OLD_JMP_DIR/.venv" --python "$(cat "$REPO_ROOT/.py-version")"
 
-    # Install old packages from PyPI
+    # Install old packages from PyPI and the jumpstarter package index
     uv pip install --python "$OLD_JMP_DIR/.venv/bin/python" \
+        --extra-index-url https://pkg.jumpstarter.dev/simple/ \
         "jumpstarter-cli==${COMPAT_CLIENT_VERSION}" \
         "jumpstarter==${COMPAT_CLIENT_VERSION}" \
         "jumpstarter-driver-composite==${COMPAT_CLIENT_VERSION}" \
