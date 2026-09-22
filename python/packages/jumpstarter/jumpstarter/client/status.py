@@ -36,13 +36,17 @@ def _use_emoji() -> bool:
     Falls back to ASCII indicators when any of the following is true:
     * ``NO_ICONS`` environment variable is set (ASCII-only output is
       requested, regardless of terminal capabilities).
-    * ``NO_COLOR`` environment variable is set (spirit: plain text output).
     * ``stdout`` is not a TTY (output piped to a file / another process).
     * ``TERM`` is not set or does not match a known emoji-capable prefix
       (e.g. ``linux``, ``vt100``, ``dumb``, ``ansi`` all fall back to ASCII).
+
+    ``NO_COLOR`` is intentionally not consulted here: per the
+    `NO_COLOR convention <https://no-color.org/>`_ it only asks for ANSI
+    color sequences to be omitted, not for icons/emoji to be replaced.
+    Use ``NO_ICONS`` to control that.
     """
     opts = display_options()
-    if opts.no_color or opts.no_icons:
+    if opts.no_icons:
         return False
     if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
         return False
@@ -70,7 +74,7 @@ def status_icon(status: ExporterStatus | None) -> str:
     """Return a single-character icon for *status*.
 
     Uses emoji when the terminal supports it, otherwise falls back to
-    ASCII characters (respects ``NO_COLOR``, non-TTY output, and
+    ASCII characters (respects ``NO_ICONS``, non-TTY output, and
     terminals without known emoji support).
     """
     emoji_idx = 0 if _use_emoji() else 1

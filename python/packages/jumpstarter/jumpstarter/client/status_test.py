@@ -50,17 +50,18 @@ class TestUseEmoji:
                 mock_stdout.isatty.return_value = True
                 assert _use_emoji() is False
 
-    def test_returns_false_when_no_color_set(self):
+    def test_no_color_set_does_not_affect_emoji(self):
+        """NO_COLOR only concerns ANSI color sequences (see no-color.org), not icons."""
         with patch.dict("os.environ", {**self._env_with_term("xterm-256color"), "NO_COLOR": ""}, clear=True):
             with patch("sys.stdout") as mock_stdout:
                 mock_stdout.isatty.return_value = True
-                assert _use_emoji() is False
+                assert _use_emoji() is True
 
-    def test_returns_false_when_no_color_set_with_value(self):
+    def test_no_color_set_with_value_does_not_affect_emoji(self):
         with patch.dict("os.environ", {**self._env_with_term("xterm-256color"), "NO_COLOR": "1"}, clear=True):
             with patch("sys.stdout") as mock_stdout:
                 mock_stdout.isatty.return_value = True
-                assert _use_emoji() is False
+                assert _use_emoji() is True
 
     def test_returns_false_when_no_icons_set(self):
         with patch.dict("os.environ", {**self._env_with_term("xterm-256color"), "NO_ICONS": ""}, clear=True):
@@ -152,7 +153,7 @@ class TestStatusIcon:
 
 
 class TestStatusIconAscii:
-    """Tests for status_icon() ASCII fallback (NO_COLOR / TERM=dumb / non-TTY)."""
+    """Tests for status_icon() ASCII fallback (NO_ICONS / TERM=dumb / non-TTY)."""
 
     @patch("jumpstarter.client.status._use_emoji", return_value=False)
     def test_available_shows_plus(self, _mock):

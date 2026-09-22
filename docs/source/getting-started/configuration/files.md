@@ -67,7 +67,7 @@ leases:
 - `JMP_DIAL_TIMEOUT` - Dial timeout in seconds for slow exporters (overrides config, default: 60)
 - `JMP_OIDC_CALLBACK_PORT` - Local port for the OIDC callback during `jmp login` (useful for SSH tunneling; default: OS-assigned)
 - `JMP_GRPC_PASSPHRASE` - Shared passphrase for authenticating against passphrase-protected exporters
-- `NO_COLOR` - Set to any value (including empty) to force plain text output (disables emoji status icons and shell prompt colors)
+- `NO_COLOR` - Set to any value (including empty) to disable ANSI color sequences in the `jmp shell` prompt (see [no-color.org](https://no-color.org/); does not affect status icons)
 - `NO_ICONS` - Set to any value (including empty) to force ASCII status icons and the `jmp shell` prompt (e.g. `jumpstarter ^<exporter> >`)
 
 **Shell Session Variables** (automatically set by `jmp shell`):
