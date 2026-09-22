@@ -141,11 +141,10 @@ class TestLeasesCommand:
 
 class TestGetIpCommand:
     def test_returns_ip_for_known_mac(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "get_dut_ip", return_value="192.168.100.10"):
-                result = runner.invoke(client.cli(), ["get-ip", "aa:bb:cc:dd:ee:ff"])
-                assert result.exit_code == 0
-                assert "192.168.100.10" in result.output
+        with _make_client(tmp_path) as client, patch.object(client, "get_dut_ip", return_value="192.168.100.10"):
+            result = runner.invoke(client.cli(), ["get-ip", "aa:bb:cc:dd:ee:ff"])
+            assert result.exit_code == 0
+            assert "192.168.100.10" in result.output
 
     def test_error_for_unknown_mac(self, tmp_path: Path, runner: CliRunner):
         with _make_client(tmp_path) as client, patch.object(client, "get_dut_ip", return_value=None):
@@ -228,11 +227,13 @@ class TestRemoveAddressCommand:
 
 class TestNatRulesCommand:
     def test_displays_rules(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "get_nat_rules", return_value="table ip jmp { masquerade }"):
-                result = runner.invoke(client.cli(), ["nat-rules"])
-                assert result.exit_code == 0
-                assert "masquerade" in result.output
+        with (
+            _make_client(tmp_path) as client,
+            patch.object(client, "get_nat_rules", return_value="table ip jmp { masquerade }"),
+        ):
+            result = runner.invoke(client.cli(), ["nat-rules"])
+            assert result.exit_code == 0
+            assert "masquerade" in result.output
 
     def test_no_rules_message(self, tmp_path: Path, runner: CliRunner):
         with _make_client(tmp_path) as client, patch.object(client, "get_nat_rules", return_value=""):

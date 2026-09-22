@@ -399,7 +399,7 @@ class TestClusterCreation:
         mock_create.assert_called_once()
 
         # Verify the arguments passed to create_cluster_and_install
-        args, kwargs = mock_create.call_args
+        args, _kwargs = mock_create.call_args
         assert args[0] == "kind"  # cluster_type
         assert args[1] is False  # force_recreate_cluster
         assert args[2] == "test-cluster"  # cluster_name
@@ -423,7 +423,7 @@ class TestClusterCreation:
         mock_create.assert_called_once()
 
         # Verify the arguments passed to create_cluster_and_install
-        args, kwargs = mock_create.call_args
+        args, _kwargs = mock_create.call_args
         assert args[0] == "minikube"  # cluster_type
         assert args[1] is False  # force_recreate_cluster
         assert args[2] == "test-cluster"  # cluster_name

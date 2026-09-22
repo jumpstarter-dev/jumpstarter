@@ -138,6 +138,8 @@ def test_obd_clear_dtc_invokes_mode_04():
 def test_obd_no_adapter_raises():
     """Driver must raise ConnectionError when no ELM327 adapter is found."""
     mock_conn = _make_mock_connection(status=obd.OBDStatus.NOT_CONNECTED)
-    with patch("jumpstarter_driver_obd.driver.obd.OBD", return_value=mock_conn):
-        with pytest.raises(ConnectionError, match="No ELM327 adapter found"):
-            OBD()
+    with (
+        patch("jumpstarter_driver_obd.driver.obd.OBD", return_value=mock_conn),
+        pytest.raises(ConnectionError, match="No ELM327 adapter found"),
+    ):
+        OBD()

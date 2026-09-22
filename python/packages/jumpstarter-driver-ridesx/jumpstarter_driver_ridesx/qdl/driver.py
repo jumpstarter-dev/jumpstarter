@@ -8,7 +8,6 @@ import logging
 import re
 import shutil
 import subprocess
-import sys
 import tarfile
 import tempfile
 import time
@@ -127,9 +126,8 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
 
     @staticmethod
     def _safe_extractall(archive: tarfile.TarFile, extract_root: Path) -> None:
-        if sys.version_info >= (3, 12):
-            archive.extractall(path=extract_root, filter="data")
-            return
+        archive.extractall(path=extract_root, filter="data")
+        return
         destination = extract_root.resolve()
         for member in archive.getmembers():
             QualcommFlasher._validate_member(member, destination)
@@ -224,13 +222,15 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
     async def _http_head_metadata(url: str) -> dict[str, str]:
         """Fetch ETag/Last-Modified/Content-Length via a HEAD request."""
         metadata: dict[str, str] = {}
-        async with aiohttp.ClientSession() as session:
-            async with session.head(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                if resp.status == 200:
-                    for key in ("ETag", "Last-Modified", "Content-Length"):
-                        value = resp.headers.get(key)
-                        if value:
-                            metadata[key] = value
+        async with (
+            aiohttp.ClientSession() as session,
+            session.head(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=15)) as resp,
+        ):
+            if resp.status == 200:
+                for key in ("ETag", "Last-Modified", "Content-Length"):
+                    value = resp.headers.get(key)
+                    if value:
+                        metadata[key] = value
         return metadata
 
     @staticmethod
@@ -477,7 +477,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         decompress_flag = QualcommFlasher._detect_compression(header)
         tar_cmd = QualcommFlasher._build_tar_cmd(extract_root, decompress_flag)
         logger.info("Running: %s", " ".join(tar_cmd))
-        stderr_file = tempfile.TemporaryFile()
+        stderr_file = tempfile.TemporaryFile()  # noqa: SIM115
         return subprocess.Popen(
             tar_cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=stderr_file,
         )

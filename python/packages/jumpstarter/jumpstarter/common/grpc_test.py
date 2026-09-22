@@ -94,9 +94,8 @@ class TestSslChannelCredentialsInsecure:
         async def getaddrinfo(*_args, **_kwargs):
             await asyncio.sleep(10)
 
-        with _patch_resolver(getaddrinfo):
-            with pytest.raises(ConnectionError, match="Timeout resolving example.com"):
-                await _ssl_channel_credentials_insecure("example.com:443", timeout=0.05)
+        with _patch_resolver(getaddrinfo), pytest.raises(ConnectionError, match="Timeout resolving example.com"):
+            await _ssl_channel_credentials_insecure("example.com:443", timeout=0.05)
 
     @pytest.mark.asyncio
     async def test_connect_timeout_reports_the_resolved_ips(self):
@@ -106,13 +105,14 @@ class TestSslChannelCredentialsInsecure:
         async def never_connects(*_args, **_kwargs):
             await asyncio.sleep(10)
 
-        with _patch_resolver(getaddrinfo):
-            with patch("jumpstarter.common.grpc._try_connect_and_extract_cert", never_connects):
-                with pytest.raises(
-                    ConnectionError,
-                    match=r"Timeout connecting to example\.com:443.*resolved to 192\.0\.2\.1",
-                ):
-                    await _ssl_channel_credentials_insecure("example.com:443", timeout=0.05)
+        with (
+            _patch_resolver(getaddrinfo),
+            patch("jumpstarter.common.grpc._try_connect_and_extract_cert", never_connects),pytest.raises(
+            ConnectionError,
+            match=r"Timeout connecting to example\.com:443.*resolved to 192\.0\.2\.1",
+        )
+        ):
+            await _ssl_channel_credentials_insecure("example.com:443", timeout=0.05)
 
     @pytest.mark.asyncio
     async def test_all_ips_failing_lists_the_errors(self):
@@ -122,7 +122,9 @@ class TestSslChannelCredentialsInsecure:
         async def refused(*_args, **_kwargs):
             raise OSError("connection refused")
 
-        with _patch_resolver(getaddrinfo):
-            with patch("jumpstarter.common.grpc._try_connect_and_extract_cert", refused):
-                with pytest.raises(ConnectionError, match="all IPs exhausted"):
-                    await _ssl_channel_credentials_insecure("example.com:443", timeout=5)
+        with (
+            _patch_resolver(getaddrinfo),
+            patch("jumpstarter.common.grpc._try_connect_and_extract_cert", refused),
+            pytest.raises(ConnectionError, match="all IPs exhausted"),
+        ):
+            await _ssl_channel_credentials_insecure("example.com:443", timeout=5)

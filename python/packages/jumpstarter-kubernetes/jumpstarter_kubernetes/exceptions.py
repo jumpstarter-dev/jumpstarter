@@ -42,7 +42,7 @@ class ToolNotInstalledError(JumpstarterKubernetesError):
 class ClusterNotFoundError(JumpstarterKubernetesError):
     """Raised when a cluster cannot be found."""
 
-    def __init__(self, cluster_name: str, cluster_type: str = None):
+    def __init__(self, cluster_name: str, cluster_type: str | None = None):
         self.cluster_name = cluster_name
         self.cluster_type = cluster_type
         if cluster_type:
@@ -65,7 +65,7 @@ class ClusterAlreadyExistsError(JumpstarterKubernetesError):
 class ClusterOperationError(JumpstarterKubernetesError):
     """Raised when a cluster operation (create, delete, etc.) fails."""
 
-    def __init__(self, operation: str, cluster_name: str, cluster_type: str, cause: Exception = None):
+    def __init__(self, operation: str, cluster_name: str, cluster_type: str, cause: Exception | None = None):
         self.operation = operation
         self.cluster_name = cluster_name
         self.cluster_type = cluster_type
@@ -80,7 +80,7 @@ class ClusterOperationError(JumpstarterKubernetesError):
 class CertificateError(JumpstarterKubernetesError):
     """Raised when certificate operations fail."""
 
-    def __init__(self, message: str, certificate_path: str = None):
+    def __init__(self, message: str, certificate_path: str | None = None):
         self.certificate_path = certificate_path
         super().__init__(message)
 
@@ -88,7 +88,7 @@ class CertificateError(JumpstarterKubernetesError):
 class KubeconfigError(JumpstarterKubernetesError):
     """Raised when kubectl configuration operations fail."""
 
-    def __init__(self, message: str, config_path: str = None):
+    def __init__(self, message: str, config_path: str | None = None):
         self.config_path = config_path
         super().__init__(message)
 
@@ -96,7 +96,7 @@ class KubeconfigError(JumpstarterKubernetesError):
 class ClusterTypeValidationError(JumpstarterKubernetesError):
     """Raised when cluster type validation fails."""
 
-    def __init__(self, cluster_type: str, supported_types: list = None):
+    def __init__(self, cluster_type: str, supported_types: list | None = None):
         self.cluster_type = cluster_type
         self.supported_types = supported_types or ["kind", "minikube"]
         message = f'Unsupported cluster type "{cluster_type}". Supported types: {", ".join(self.supported_types)}'
@@ -114,6 +114,6 @@ class ClusterNameValidationError(JumpstarterKubernetesError):
 class EndpointConfigurationError(JumpstarterKubernetesError):
     """Raised when endpoint configuration fails."""
 
-    def __init__(self, message: str, cluster_type: str = None):
+    def __init__(self, message: str, cluster_type: str | None = None):
         self.cluster_type = cluster_type
         super().__init__(message)

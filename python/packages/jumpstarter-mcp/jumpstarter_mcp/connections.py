@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import anyio
 import anyio.abc
@@ -34,7 +34,7 @@ class Connection:
 
     @property
     def uptime_seconds(self) -> float:
-        return (datetime.now() - self.created_at).total_seconds()
+        return (datetime.now(tz=UTC) - self.created_at).total_seconds()
 
 
 def _unwrap_exception(exc: BaseException) -> BaseException:
@@ -256,7 +256,7 @@ class ConnectionManager:
                         socket_path=str(path),
                         allow=lease.allow,
                         unsafe=lease.unsafe,
-                        created_at=datetime.now(),
+                        created_at=datetime.now(tz=UTC),
                         client=client,
                     )
                     self._connections[connection_id] = conn

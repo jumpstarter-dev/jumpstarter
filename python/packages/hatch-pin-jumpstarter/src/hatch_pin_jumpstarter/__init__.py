@@ -29,9 +29,8 @@ class PinJumpstarter(BuildHookInterface):
                     req.specifier &= SpecifierSet(f"=={self.metadata.version}")
                     metadata["project"]["dependencies"][i] = str(req)
 
-        f = NamedTemporaryFile(delete=False)
-        tomli_w.dump(metadata, f)
-        f.close()
+        with NamedTemporaryFile(delete=False) as f:
+            tomli_w.dump(metadata, f)
 
         build_data["__hatch_pin_jumpstarter_tempfile"] = f
         build_data["force_include"][f.name] = "pyproject.toml"

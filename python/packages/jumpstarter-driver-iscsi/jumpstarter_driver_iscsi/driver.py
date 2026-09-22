@@ -119,7 +119,7 @@ class ISCSI(Driver):
                     target_exists = True
                     self.logger.info(f"Using existing target: {self._iqn}")
                     if target.tpgs:
-                        self._tpg = list(target.tpgs)[0]
+                        self._tpg = next(iter(target.tpgs))
                     else:
                         self._tpg = TPG(self._target, 1)
                     break

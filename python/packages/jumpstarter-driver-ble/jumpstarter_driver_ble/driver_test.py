@@ -57,13 +57,12 @@ def test_ble_driver_info():
     """Test the info export returns correct device information via e2e server/client."""
     mock_client = _make_mock_bleak_client()
 
-    with patch("jumpstarter_driver_ble.driver.BleakClient", return_value=mock_client):
-        with serve(_make_driver()) as client:
-            info = client.call("info")
-            assert TEST_ADDRESS in info
-            assert TEST_SERVICE_UUID in info
-            assert TEST_WRITE_CHAR_UUID in info
-            assert TEST_NOTIFY_CHAR_UUID in info
+    with patch("jumpstarter_driver_ble.driver.BleakClient", return_value=mock_client), serve(_make_driver()) as client:
+        info = client.call("info")
+        assert TEST_ADDRESS in info
+        assert TEST_SERVICE_UUID in info
+        assert TEST_WRITE_CHAR_UUID in info
+        assert TEST_NOTIFY_CHAR_UUID in info
 
 
 def test_ble_driver_connect_stream():
@@ -72,21 +71,23 @@ def test_ble_driver_connect_stream():
 
     mock_client.write_gatt_char = AsyncMock()
 
-    with patch("jumpstarter_driver_ble.driver.BleakClient", return_value=mock_client):
-        with serve(_make_driver()) as client:
-            with client.stream() as stream:
-                # Send data through the stream
-                stream.send(b"hello")
+    with (
+        patch("jumpstarter_driver_ble.driver.BleakClient", return_value=mock_client),
+        serve(_make_driver()) as client,
+        client.stream() as stream,
+    ):
+            # Send data through the stream
+            stream.send(b"hello")
 
-                # stream.send() only guarantees data was written to the
-                # gRPC transport, not that the server has called
-                # write_gatt_char yet — poll until it has.
-                eventually(mock_client.write_gatt_char.assert_called)
+            # stream.send() only guarantees data was written to the
+            # gRPC transport, not that the server has called
+            # write_gatt_char yet — poll until it has.
+            eventually(mock_client.write_gatt_char.assert_called)
 
-                # Verify start_notify was called for the notify characteristic
-                mock_client.start_notify.assert_called_once()
-                call_args = mock_client.start_notify.call_args
-                assert call_args[0][0] == TEST_NOTIFY_CHAR_UUID
+            # Verify start_notify was called for the notify characteristic
+            mock_client.start_notify.assert_called_once()
+            call_args = mock_client.start_notify.call_args
+            assert call_args[0][0] == TEST_NOTIFY_CHAR_UUID
 
 
 def test_ble_notify_handler():
@@ -103,7 +104,7 @@ def test_ble_notify_handler():
 
 def test_ble_notify_handler_queue_full(capsys):
     """Test the notification handler handles a full buffer gracefully."""
-    send_stream, receive_stream = anyio.create_memory_object_stream[bytearray](max_buffer_size=1)  # ty: ignore[call-non-callable]
+    send_stream, _receive_stream = anyio.create_memory_object_stream[bytearray](max_buffer_size=1)  # ty: ignore[call-non-callable]
     sender = MagicMock()
 
     # Fill the buffer
@@ -189,16 +190,15 @@ def test_ble_driver_connect_not_connected():
     """Test that connect raises when client fails to connect."""
     mock_client = _make_mock_bleak_client(is_connected=False)
 
-    with patch("jumpstarter_driver_ble.driver.BleakClient", return_value=mock_client):
-        with serve(_make_driver()) as client:
-            raised = False
-            try:
-                with client.stream() as stream:
-                    stream.send(b"hello")
-                    stream.receive()
-            except BaseException:
-                raised = True
-            assert raised, "Expected an exception when BLE device is not connected"
+    with patch("jumpstarter_driver_ble.driver.BleakClient", return_value=mock_client), serve(_make_driver()) as client:
+        raised = False
+        try:
+            with client.stream() as stream:
+                stream.send(b"hello")
+                stream.receive()
+        except BaseException:
+            raised = True
+        assert raised, "Expected an exception when BLE device is not connected"
 
 
 def test_ble_driver_client_class_reference():

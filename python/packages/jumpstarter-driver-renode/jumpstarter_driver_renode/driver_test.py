@@ -348,9 +348,11 @@ class TestRenodePower:
         power: RenodePower = driver.children["power"]  # ty: ignore[invalid-assignment]
         power._process = MagicMock()
 
-        with patch("jumpstarter_driver_renode.driver.Popen") as mock_popen:
-            with patch("jumpstarter_driver_renode.driver.RenodeMonitor") as mock_monitor_cls:
-                await power.on()
+        with (
+            patch("jumpstarter_driver_renode.driver.Popen") as mock_popen,
+            patch("jumpstarter_driver_renode.driver.RenodeMonitor") as mock_monitor_cls,
+        ):
+            await power.on()
 
         mock_popen.assert_not_called()
         mock_monitor_cls.assert_not_called()

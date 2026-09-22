@@ -258,7 +258,7 @@ class HookExecutor:
             logger.warning("%s (on_failure=warn, continuing)", error_msg)
             return error_msg
 
-        logger.error("%s (on_failure=%s, raising exception)", error_msg, on_failure)
+        logger.exception("%s (on_failure=%s, raising exception)", error_msg, on_failure)
 
         error = HookExecutionError(
             message=error_msg,
@@ -272,7 +272,7 @@ class HookExecutor:
         else:
             raise error
 
-    async def _execute_hook_process(  # noqa: C901
+    async def _execute_hook_process(
         self,
         hook_config: HookInstanceConfigV1Alpha1,
         lease_scope: "LeaseContext",
@@ -310,7 +310,7 @@ class HookExecutor:
             try:
                 parent_fd, child_fd = pty.openpty()
             except Exception as e:
-                logger.error("Failed to create PTY: %s", e, exc_info=True)
+                logger.error("Failed to create PTY: %s", e)
                 raise
             logger.debug("PTY created: parent_fd=%d, child_fd=%d", parent_fd, child_fd)
 
@@ -357,8 +357,8 @@ class HookExecutor:
                         start_new_session=True,  # Equivalent to os.setsid()
                         close_fds=True,  # Close inherited fds to prevent interference with gRPC connections
                     )
-                except Exception as e:
-                    logger.error("Failed to spawn subprocess: %s", e, exc_info=True)
+                except Exception:
+                    logger.exception("Failed to spawn subprocess")
                     raise
                 logger.debug("Subprocess spawned with PID %d", process.pid)
                 # Close child fd in parent process - subprocess has it now
@@ -375,7 +375,7 @@ class HookExecutor:
                 fcntl.fcntl(parent_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
                 logger.debug("Parent fd set to non-blocking")
 
-                async def read_pty_output() -> None:  # noqa: C901
+                async def read_pty_output() -> None:
                     """Read from PTY parent fd line by line using non-blocking I/O."""
                     logger.debug("read_pty_output task started")
                     buffer = b""
@@ -554,7 +554,7 @@ class HookExecutor:
                 if cancel_scope.cancelled_caught:
                     timed_out = True
                     error_msg = f"Hook timed out after {timeout} seconds"
-                    logger.error(error_msg)
+                    logger.exception(error_msg)
                     # Terminate the process
                     if process and process.poll() is None:
                         process.terminate()
@@ -581,7 +581,7 @@ class HookExecutor:
             except Exception as e:
                 error_msg = f"Error executing hook: {e}"
                 cause = e
-                logger.error(error_msg, exc_info=True)
+                logger.error(error_msg)
             finally:
                 # Clean up file descriptors - only close those still open to avoid
                 # closing an unrelated fd that reused the same number.
@@ -659,8 +659,8 @@ class HookExecutor:
         if request_lease_release:
             try:
                 await request_lease_release()
-            except Exception as e:
-                logger.error("Failed to request lease release: %s", e, exc_info=True)
+            except Exception:
+                logger.exception("Failed to request lease release")
 
     async def _wait_for_lease_ready(
         self,
@@ -685,7 +685,7 @@ class HookExecutor:
                 return False
             if elapsed >= timeout:
                 error_msg = "Timeout waiting for lease scope to be ready"
-                logger.error(error_msg)
+                logger.exception(error_msg)
                 await report_status(ExporterStatus.BEFORE_LEASE_HOOK_FAILED, error_msg)
                 lease_scope.before_lease_hook.set()
                 return False
@@ -786,7 +786,7 @@ class HookExecutor:
                 )
 
         except Exception as e:
-            logger.error("beforeLease hook failed with unexpected error: %s", e, exc_info=True)
+            logger.error("beforeLease hook failed with unexpected error: %s", e)
             await report_status(
                 ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
                 f"beforeLease hook failed: {e}",
@@ -863,7 +863,7 @@ class HookExecutor:
         except HookExecutionError as e:
             if e.should_shutdown_exporter():
                 # on_failure='exit' - shut down the entire exporter
-                logger.error("afterLease hook failed with on_failure='exit': %s", e)
+                logger.exception("afterLease hook failed with on_failure='exit'")
                 await report_status(
                     ExporterStatus.AFTER_LEASE_HOOK_FAILED,
                     f"afterLease hook failed (on_failure=exit, shutting down): {e}",
@@ -892,7 +892,7 @@ class HookExecutor:
             # Unexpected errors: report failure but do not shut down.
             # Same transient status - the lease is released and the exporter
             # accepts new leases after the finally block completes.
-            logger.error("afterLease hook failed with unexpected error: %s", e, exc_info=True)
+            logger.error("afterLease hook failed with unexpected error: %s", e)
             await report_status(
                 ExporterStatus.AFTER_LEASE_HOOK_FAILED,
                 f"afterLease hook failed: {e}",
@@ -907,5 +907,5 @@ class HookExecutor:
             if request_lease_release and not shutdown_called:
                 try:
                     await request_lease_release()
-                except Exception as e:
-                    logger.error("Failed to request lease release: %s", e, exc_info=True)
+                except Exception:
+                    logger.exception("Failed to request lease release")

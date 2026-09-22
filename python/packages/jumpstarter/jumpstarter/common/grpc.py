@@ -45,7 +45,7 @@ async def _try_connect_and_extract_cert(
         writer.close()
 
 
-async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc.ChannelCredentials:  # noqa: C901
+async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc.ChannelCredentials:
     """
     Extract TLS certificates from server without verification (insecure mode).
 
@@ -198,5 +198,5 @@ def translate_grpc_exceptions():
         raise ConnectionError("grpc error") from e
     except ValueError as e:
         raise ConfigurationError("grpc error") from e
-    except Exception as e:
-        raise e
+    except Exception:
+        raise

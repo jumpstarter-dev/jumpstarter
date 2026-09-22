@@ -86,7 +86,7 @@ def _read_someip_message(conn: socket.socket) -> tuple[int, int, int, int, int, 
             return None
         header += chunk
 
-    service_id, method_id, length, client_id, session_id, proto_ver, iface_ver, msg_type, ret_code = struct.unpack(
+    service_id, method_id, length, client_id, session_id, _proto_ver, _iface_ver, msg_type, ret_code = struct.unpack(
         "!HHIHHBBBB", header
     )
 
@@ -142,7 +142,7 @@ class MockSomeIpServer:
                     result = _read_someip_message(conn)
                     if result is None:
                         break
-                    service_id, method_id, client_id, session_id, msg_type, ret_code, payload = result
+                    service_id, method_id, client_id, session_id, msg_type, _ret_code, payload = result
                     responses = self._dispatch(
                         service_id, method_id, client_id, session_id, msg_type, payload
                     )
@@ -345,10 +345,8 @@ class StatefulOsipClient:
         """Simulate service discovery by calling back with matching registered services."""
         self._require_started()
         for svc in self._registered_services:
-            if svc.service_id == service.service_id:
-                if service.instance_id == 0xFFFF or svc.instance_id == service.instance_id:
-                    if callback:
-                        callback(svc)
+            if svc.service_id == service.service_id and (service.instance_id == 0xFFFF or svc.instance_id == service.instance_id) and callback:
+                callback(svc)
 
     def subscribe_events(self, eventgroup_id: int):
         self._require_started()
@@ -492,10 +490,8 @@ class LoopbackOsipClient(StatefulOsipClient):
     def find(self, service, *, callback=None):
         self._require_started()
         for svc in self._server.offered_services:
-            if svc.service_id == service.service_id:
-                if service.instance_id == 0xFFFF or svc.instance_id == service.instance_id:
-                    if callback:
-                        callback(svc)
+            if svc.service_id == service.service_id and (service.instance_id == 0xFFFF or svc.instance_id == service.instance_id) and callback:
+                callback(svc)
 
 
 @pytest.fixture

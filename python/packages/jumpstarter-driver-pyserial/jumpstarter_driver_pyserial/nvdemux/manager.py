@@ -334,12 +334,10 @@ class DemuxerManager:
 
         # Wait for monitor thread to exit
         monitor_thread = self._monitor_thread
-        if monitor_thread is not None and monitor_thread.is_alive():
-            # Don't join if we're being called from the monitor thread itself
-            if threading.current_thread() is not monitor_thread:
-                monitor_thread.join(timeout=2.0)
-                if monitor_thread.is_alive():
-                    logger.warning("Monitor thread did not exit within timeout")
+        if monitor_thread is not None and monitor_thread.is_alive() and threading.current_thread() is not monitor_thread:
+            monitor_thread.join(timeout=2.0)
+            if monitor_thread.is_alive():
+                logger.warning("Monitor thread did not exit within timeout")
         self._monitor_thread = None
 
         logger.debug("Stopped demuxer monitor")

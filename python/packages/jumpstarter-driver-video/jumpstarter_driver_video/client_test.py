@@ -361,18 +361,20 @@ async def test_proxy_mjpeg_stream_forwards_headers_and_body_chunks():
 async def test_proxy_returns_502_on_invalid_chunk_size():
     tunnel = _FakeTunnel(
         [
-            b"HTTP/1.1 200 OK\r\n"
+            (b"HTTP/1.1 200 OK\r\n"
             b"Transfer-Encoding: chunked\r\n"
             b"\r\n"
-            b"NOT_HEX\r\ndata\r\n",
+            b"NOT_HEX\r\ndata\r\n"),
         ]
     )
     client = SimpleNamespace(stream_async=lambda method: _FakeStreamContext(tunnel))
     response = _FakeStreamResponse()
 
-    with patch("jumpstarter_driver_video.client.web.StreamResponse", return_value=response):
-        with pytest.raises(web.HTTPBadGateway, match="invalid chunk size"):
-            await proxy_mjpeg_stream(client, object(), "/stream")
+    with (
+        patch("jumpstarter_driver_video.client.web.StreamResponse", return_value=response),
+        pytest.raises(web.HTTPBadGateway, match="invalid chunk size"),
+    ):
+        await proxy_mjpeg_stream(client, object(), "/stream")
 
 
 @pytest.mark.anyio
@@ -389,6 +391,8 @@ async def test_proxy_returns_502_on_oversized_chunk():
     client = SimpleNamespace(stream_async=lambda method: _FakeStreamContext(tunnel))
     response = _FakeStreamResponse()
 
-    with patch("jumpstarter_driver_video.client.web.StreamResponse", return_value=response):
-        with pytest.raises(web.HTTPBadGateway, match="chunk too large"):
-            await proxy_mjpeg_stream(client, object(), "/stream")
+    with (
+        patch("jumpstarter_driver_video.client.web.StreamResponse", return_value=response),
+        pytest.raises(web.HTTPBadGateway, match="chunk too large"),
+    ):
+        await proxy_mjpeg_stream(client, object(), "/stream")

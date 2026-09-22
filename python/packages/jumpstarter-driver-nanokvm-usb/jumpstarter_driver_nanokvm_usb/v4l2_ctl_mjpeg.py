@@ -131,15 +131,12 @@ class V4L2CtlMjpegCapture:
                 "--stream-to=-",
             ]
         )
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                bufsize=0,
-            )
-        except OSError:
-            raise
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            bufsize=0,
+        )
         if proc.stdout is None:
             proc.kill()
             proc.wait(timeout=2)

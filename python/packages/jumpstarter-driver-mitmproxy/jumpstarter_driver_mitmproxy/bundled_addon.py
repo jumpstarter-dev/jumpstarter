@@ -35,7 +35,7 @@ import time
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import parse_qs, urlparse
 
 from mitmproxy import ctx, http
@@ -158,12 +158,12 @@ class TemplateEngine:
     # Class-level counter state, intentionally shared across instances.
     # Counters persist across config reloads so {{counter(name)}} values
     # increase monotonically within a proxy session.
-    _counters: dict[str, int] = defaultdict(int)
+    _counters: ClassVar[dict[str, int]]= defaultdict(int)
 
     # Only these environment variables may be read via {{env(...)}} templates.
     # This prevents mock configs from leaking secrets such as credentials or
     # API keys.  Extend this set when new env-driven behaviour is needed.
-    ALLOWED_ENV_VARS: set[str] = {
+    ALLOWED_ENV_VARS: ClassVar[set[str]]= {
         "JUMPSTARTER_ENV",
         "JUMPSTARTER_DEVICE_ID",
         "JUMPSTARTER_MOCK_PROFILE",
@@ -288,7 +288,7 @@ class TemplateEngine:
         ctx.log.warn(f"env() template blocked: variable '{var_name}' is not in ALLOWED_ENV_VARS")
         return ""
 
-    _BUILTIN_DISPATCH: list[tuple[str, Any]] = [
+    _BUILTIN_DISPATCH: ClassVar[list[tuple[str, Any]]]= [
         ("random_int(", _eval_random_int),
         ("random_float(", _eval_random_float),
         ("random_choice(", _eval_random_choice),
@@ -340,7 +340,7 @@ class TemplateEngine:
         except (IndexError, ValueError):
             return ""
 
-    _FLOW_DISPATCH: list[tuple[str, Any]] = [
+    _FLOW_DISPATCH: ClassVar[list[tuple[str, Any]]]= [
         ("request_header(", _eval_request_header),
         ("request_body_json(", _eval_request_body_json),
         ("request_query(", _eval_request_query),
@@ -475,9 +475,8 @@ class CaptureClient:
         """Send a JSON event line. Reconnects once on failure."""
         payload = json.dumps(event) + "\n"
         for attempt in range(2):
-            if self._sock is None:
-                if not self._connect():
-                    return
+            if self._sock is None and not self._connect():
+                return
             try:
                 self._sock.sendall(payload.encode())
                 return
@@ -691,10 +690,9 @@ class MitmproxyMockAddon:
                 or (is_websocket and pat_method == "WEBSOCKET")
             )
 
-            if match_method and path.startswith(prefix):
-                if self._matches_conditions(ep, flow):
-                    priority = ep.get("priority", 0)
-                    candidates.append((priority, pattern, ep))
+            if match_method and path.startswith(prefix) and self._matches_conditions(ep, flow):
+                priority = ep.get("priority", 0)
+                candidates.append((priority, pattern, ep))
 
     def _matches_conditions(
         self, endpoint: dict, flow: http.HTTPFlow,

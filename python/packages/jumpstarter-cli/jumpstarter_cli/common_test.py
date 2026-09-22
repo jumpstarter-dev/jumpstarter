@@ -42,7 +42,7 @@ class TestDateTimeParamType:
 
     def test_pass_through_datetime_object_naive_gets_normalized(self):
         """Test that naive datetime object gets normalized."""
-        input_dt = datetime(2024, 1, 1, 12, 0, 0)  # Naive
+        input_dt = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)  # Naive
         dt = DATETIME.convert(input_dt, None, None)
         assert dt.year == 2024
         assert dt.month == 1

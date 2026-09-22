@@ -370,7 +370,7 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
         return exit_code
 
 
-async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope, on_shell_exit):  # noqa: C901
+async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope, on_shell_exit):
     """Run shell with lease context managers and wait for afterLease hook if logs enabled.
 
     When exporter_logs is enabled, this function will:
@@ -409,161 +409,163 @@ async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope
 
                 # Start log streaming and status monitor together
                 # The status monitor polls in the background for reliable status tracking
-                async with client.log_stream_async(show_all_logs=exporter_logs):
-                    async with client.status_monitor_async(poll_interval=0.3) as monitor:
-                        # Wait for beforeLease hook to complete while logs are streaming
-                        # This allows hook output to be displayed in real-time
-                        # Uses non-blocking polling instead of streaming for robustness
-                        logger.info("Waiting for beforeLease hook to complete...")
+                async with (
+                    client.log_stream_async(show_all_logs=exporter_logs),
+                    client.status_monitor_async(poll_interval=0.3) as monitor,
+                ):
+                    # Wait for beforeLease hook to complete while logs are streaming
+                    # This allows hook output to be displayed in real-time
+                    # Uses non-blocking polling instead of streaming for robustness
+                    logger.info("Waiting for beforeLease hook to complete...")
 
-                        # Wait for LEASE_READY or hook failure using background monitor
-                        result = await monitor.wait_for_any_of(
-                            [ExporterStatus.LEASE_READY, ExporterStatus.BEFORE_LEASE_HOOK_FAILED], timeout=300.0
-                        )
+                    # Wait for LEASE_READY or hook failure using background monitor
+                    result = await monitor.wait_for_any_of(
+                        [ExporterStatus.LEASE_READY, ExporterStatus.BEFORE_LEASE_HOOK_FAILED], timeout=300.0
+                    )
 
-                        if result == ExporterStatus.BEFORE_LEASE_HOOK_FAILED:
-                            reason = monitor.status_message or "beforeLease hook failed"
+                    if result == ExporterStatus.BEFORE_LEASE_HOOK_FAILED:
+                        reason = monitor.status_message or "beforeLease hook failed"
+                        raise ExporterOfflineError(reason)
+                    elif result is None:
+                        if monitor.connection_lost:
+                            # Connection lost while waiting for hook - lease expired
+                            logger.info("Lease expired while waiting for beforeLease hook to complete")
+                            return 0
+                        else:
+                            reason = monitor.status_message or "Timeout waiting for beforeLease hook"
                             raise ExporterOfflineError(reason)
-                        elif result is None:
-                            if monitor.connection_lost:
-                                # Connection lost while waiting for hook - lease expired
-                                logger.info("Lease expired while waiting for beforeLease hook to complete")
-                                return 0
-                            else:
-                                reason = monitor.status_message or "Timeout waiting for beforeLease hook"
-                                raise ExporterOfflineError(reason)
 
-                        logger.debug("Exporter ready (status: %s), launching shell...", result)
+                    logger.debug("Exporter ready (status: %s), launching shell...", result)
 
-                        if monitor.status_message and monitor.status_message.startswith(HOOK_WARNING_PREFIX):
-                            warning_text = monitor.status_message[len(HOOK_WARNING_PREFIX) :]
-                            click.echo(click.style(f"Warning: {warning_text}", fg="yellow", bold=True))
+                    if monitor.status_message and monitor.status_message.startswith(HOOK_WARNING_PREFIX):
+                        warning_text = monitor.status_message[len(HOOK_WARNING_PREFIX) :]
+                        click.echo(click.style(f"Warning: {warning_text}", fg="yellow", bold=True))
 
-                        # Fetch motd now (after the beforeLease hook has run);
-                        # skipped in command mode where it is never shown
-                        motd = None
-                        if not command:
+                    # Fetch motd now (after the beforeLease hook has run);
+                    # skipped in command mode where it is never shown
+                    motd = None
+                    if not command:
+                        try:
+                            with anyio.fail_after(5):
+                                motd = await fetch_motd(client)
+                        except Exception:
+                            logger.debug("Failed to fetch motd, continuing without it")
+
+                    # Run the shell command. The exit code is reported from
+                    # inside the thread: run_sync is not cancellable, so if the
+                    # enclosing task group is already unwinding, the await below
+                    # raises instead of returning and the value would be lost.
+                    def _run_and_record():
+                        code = _run_shell_only(lease, config, command, path, motd)
+                        on_shell_exit(code)
+                        return code
+
+                    exit_code = await anyio.to_thread.run_sync(_run_and_record)
+
+                    # Shell has exited. For auto-created leases (release=True), call
+                    # EndSession to trigger afterLease hook while keeping log stream
+                    # and status monitor open. For pre-created leases (release=False),
+                    # skip EndSession so the exporter stays in LEASE_READY and the
+                    # user can reconnect later.
+                    if (
+                        lease.release
+                        and lease.name
+                        and not lease.lease_ended
+                        and not cancel_scope.cancel_called
+                        and not monitor._get_status_unsupported
+                    ):
+                        # Quick probe to catch exporter restarts the slow-poll loop
+                        # (5s interval in LEASE_READY) may not have detected yet.
+                        if not monitor.connection_lost:
                             try:
-                                with anyio.fail_after(5):
-                                    motd = await fetch_motd(client)
-                            except Exception:
-                                logger.debug("Failed to fetch motd, continuing without it")
-
-                        # Run the shell command. The exit code is reported from
-                        # inside the thread: run_sync is not cancellable, so if the
-                        # enclosing task group is already unwinding, the await below
-                        # raises instead of returning and the value would be lost.
-                        def _run_and_record():
-                            code = _run_shell_only(lease, config, command, path, motd)
-                            on_shell_exit(code)
-                            return code
-
-                        exit_code = await anyio.to_thread.run_sync(_run_and_record)
-
-                        # Shell has exited. For auto-created leases (release=True), call
-                        # EndSession to trigger afterLease hook while keeping log stream
-                        # and status monitor open. For pre-created leases (release=False),
-                        # skip EndSession so the exporter stays in LEASE_READY and the
-                        # user can reconnect later.
-                        if (
-                            lease.release
-                            and lease.name
-                            and not lease.lease_ended
-                            and not cancel_scope.cancel_called
-                            and not monitor._get_status_unsupported
-                        ):
-                            # Quick probe to catch exporter restarts the slow-poll loop
-                            # (5s interval in LEASE_READY) may not have detected yet.
-                            if not monitor.connection_lost:
-                                try:
-                                    probe_status = await _cancel_if_connection_lost(
-                                        monitor, client.get_status_async()
+                                probe_status = await _cancel_if_connection_lost(
+                                    monitor, client.get_status_async()
+                                )
+                                if probe_status is None:
+                                    logger.debug(
+                                        "Connection probe timed out, marking connection as lost"
                                     )
-                                    if probe_status is None:
-                                        logger.debug(
-                                            "Connection probe timed out, marking connection as lost"
-                                        )
-                                        monitor._connection_lost = True
-                                    elif lease.lease_ended:
-                                        logger.debug(
-                                            "Lease ended during probe (status=%s), skipping afterLease hook",
-                                            probe_status,
-                                        )
-                                        return exit_code
-                                    elif probe_status not in (
-                                        ExporterStatus.LEASE_READY,
-                                        ExporterStatus.AFTER_LEASE_HOOK,
-                                    ):
-                                        logger.debug(
-                                            "Exporter in unexpected state (%s), skipping afterLease hook",
-                                            probe_status,
-                                        )
-                                        monitor._connection_lost = True
-                                except Exception:
-                                    if lease.lease_ended:
-                                        logger.debug("Lease ended during probe, skipping afterLease hook")
-                                        return exit_code
-                                    logger.debug("Connection probe failed, marking connection as lost")
                                     monitor._connection_lost = True
+                                elif lease.lease_ended:
+                                    logger.debug(
+                                        "Lease ended during probe (status=%s), skipping afterLease hook",
+                                        probe_status,
+                                    )
+                                    return exit_code
+                                elif probe_status not in (
+                                    ExporterStatus.LEASE_READY,
+                                    ExporterStatus.AFTER_LEASE_HOOK,
+                                ):
+                                    logger.debug(
+                                        "Exporter in unexpected state (%s), skipping afterLease hook",
+                                        probe_status,
+                                    )
+                                    monitor._connection_lost = True
+                            except Exception:
+                                if lease.lease_ended:
+                                    logger.debug("Lease ended during probe, skipping afterLease hook")
+                                    return exit_code
+                                logger.debug("Connection probe failed, marking connection as lost")
+                                monitor._connection_lost = True
 
-                            if monitor.connection_lost:
-                                logger.debug("Connection already lost, skipping afterLease hook")
-                            else:
-                                logger.info("Running afterLease hook (Ctrl+C to skip)...")
-                                try:
-                                    # EndSession triggers the afterLease hook asynchronously
-                                    # Wrap in anyio timeout as safety net in case gRPC deadline
-                                    # doesn't fire on a broken channel (e.g. lease timeout)
-                                    success = False
-                                    with anyio.move_on_after(10):
-                                        success = await client.end_session_async()
-                                    if success:
-                                        # Wait for hook to complete using background monitor
-                                        # This allows afterLease logs to be displayed in real-time
-                                        result = await monitor.wait_for_any_of(
-                                            [ExporterStatus.AVAILABLE, ExporterStatus.AFTER_LEASE_HOOK_FAILED],
-                                            timeout=300.0,
-                                        )
-                                        if result == ExporterStatus.AVAILABLE:
-                                            if monitor.status_message and monitor.status_message.startswith(
-                                                HOOK_WARNING_PREFIX
-                                            ):
-                                                warning_text = monitor.status_message[len(HOOK_WARNING_PREFIX) :]
-                                                click.echo(
-                                                    click.style(f"Warning: {warning_text}", fg="yellow", bold=True)
-                                                )
-                                            logger.info("afterLease hook completed")
-                                        elif result == ExporterStatus.AFTER_LEASE_HOOK_FAILED:
-                                            reason = monitor.status_message or "afterLease hook failed"
+                        if monitor.connection_lost:
+                            logger.debug("Connection already lost, skipping afterLease hook")
+                        else:
+                            logger.info("Running afterLease hook (Ctrl+C to skip)...")
+                            try:
+                                # EndSession triggers the afterLease hook asynchronously
+                                # Wrap in anyio timeout as safety net in case gRPC deadline
+                                # doesn't fire on a broken channel (e.g. lease timeout)
+                                success = False
+                                with anyio.move_on_after(10):
+                                    success = await client.end_session_async()
+                                if success:
+                                    # Wait for hook to complete using background monitor
+                                    # This allows afterLease logs to be displayed in real-time
+                                    result = await monitor.wait_for_any_of(
+                                        [ExporterStatus.AVAILABLE, ExporterStatus.AFTER_LEASE_HOOK_FAILED],
+                                        timeout=300.0,
+                                    )
+                                    if result == ExporterStatus.AVAILABLE:
+                                        if monitor.status_message and monitor.status_message.startswith(
+                                            HOOK_WARNING_PREFIX
+                                        ):
+                                            warning_text = monitor.status_message[len(HOOK_WARNING_PREFIX) :]
+                                            click.echo(
+                                                click.style(f"Warning: {warning_text}", fg="yellow", bold=True)
+                                            )
+                                        logger.info("afterLease hook completed")
+                                    elif result == ExporterStatus.AFTER_LEASE_HOOK_FAILED:
+                                        reason = monitor.status_message or "afterLease hook failed"
+                                        raise ExporterOfflineError(reason)
+                                    elif monitor.connection_lost:
+                                        # If connection lost during afterLease hook lifecycle
+                                        # (running or failed), the exporter shut down
+                                        if monitor.current_status in (
+                                            ExporterStatus.AFTER_LEASE_HOOK,
+                                            ExporterStatus.AFTER_LEASE_HOOK_FAILED,
+                                        ):
+                                            reason = (
+                                                monitor.status_message
+                                                or "afterLease hook failed (connection lost)"
+                                            )
                                             raise ExporterOfflineError(reason)
-                                        elif monitor.connection_lost:
-                                            # If connection lost during afterLease hook lifecycle
-                                            # (running or failed), the exporter shut down
-                                            if monitor.current_status in (
-                                                ExporterStatus.AFTER_LEASE_HOOK,
-                                                ExporterStatus.AFTER_LEASE_HOOK_FAILED,
-                                            ):
-                                                reason = (
-                                                    monitor.status_message
-                                                    or "afterLease hook failed (connection lost)"
-                                                )
-                                                raise ExporterOfflineError(reason)
-                                            # Connection lost but hook wasn't running. This is expected when
-                                            # the lease times out - exporter handles its own cleanup.
-                                            logger.info("Connection lost, skipping afterLease hook wait")
-                                        elif result is None:
-                                            logger.warning("Timeout waiting for afterLease hook to complete")
-                                    else:
-                                        logger.debug("EndSession not implemented, skipping hook wait")
-                                except ExporterOfflineError:
-                                    raise
-                                except Exception as e:
-                                    logger.warning("Error during afterLease hook: %s", e)
+                                        # Connection lost but hook wasn't running. This is expected when
+                                        # the lease times out - exporter handles its own cleanup.
+                                        logger.info("Connection lost, skipping afterLease hook wait")
+                                    elif result is None:
+                                        logger.warning("Timeout waiting for afterLease hook to complete")
+                                else:
+                                    logger.debug("EndSession not implemented, skipping hook wait")
+                            except ExporterOfflineError:
+                                raise
+                            except Exception as e:
+                                logger.warning("Error during afterLease hook: %s", e)
 
-                        return exit_code
+                    return exit_code
 
 
-async def _shell_with_signal_handling(  # noqa: C901
+async def _shell_with_signal_handling(
     config, selector, exporter_name, lease_name, duration, exporter_logs, command, acquisition_timeout,
     retry_timeout=None, dial_timeout=None, allow_disabled=False,
 ):

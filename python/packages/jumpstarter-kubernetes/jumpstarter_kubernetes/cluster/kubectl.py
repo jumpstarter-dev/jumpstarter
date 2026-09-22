@@ -1,7 +1,7 @@
 """Kubectl operations for cluster management."""
 
 import json
-from typing import Literal, TypedDict, Union
+from typing import Literal, TypedDict
 
 from ..clusters import V1Alpha1ClusterInfo, V1Alpha1ClusterList, V1Alpha1JumpstarterInstance
 from ..exceptions import JumpstarterKubernetesError
@@ -97,7 +97,7 @@ class CrInstanceNotFound(TypedDict):
     installed: Literal[False]
 
 
-CrInstanceResult = Union[CrInstanceSuccess, CrInstanceError, CrInstanceNotFound]
+CrInstanceResult = CrInstanceSuccess | CrInstanceError | CrInstanceNotFound
 
 
 async def _check_cr_instances(

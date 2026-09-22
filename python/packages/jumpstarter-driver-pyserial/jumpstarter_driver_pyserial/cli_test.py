@@ -56,21 +56,19 @@ def test_pipe_command_with_output_file(pyserial_client):
     runner = CliRunner()
     cli = pyserial_client.cli()
 
-    with runner.isolated_filesystem():
-        # Mock the portal.call to prevent actual execution
-        with patch.object(pyserial_client.portal, "call") as mock_call:
-            mock_call.side_effect = KeyboardInterrupt  # Simulate Ctrl+C to exit
+    with runner.isolated_filesystem(), patch.object(pyserial_client.portal, "call") as mock_call:
+        mock_call.side_effect = KeyboardInterrupt  # Simulate Ctrl+C to exit
 
-            # Use --no-input to explicitly disable input detection
-            runner.invoke(cli, ["pipe", "-o", "test.log", "--no-input"])
+        # Use --no-input to explicitly disable input detection
+        runner.invoke(cli, ["pipe", "-o", "test.log", "--no-input"])
 
-            # Should have attempted to call _pipe_serial
-            assert mock_call.called
-            # Check the arguments passed
-            args = mock_call.call_args[0]
-            assert args[1] == "test.log"  # output file
-            assert args[2] is False  # input_enabled
-            assert args[3] is False  # append
+        # Should have attempted to call _pipe_serial
+        assert mock_call.called
+        # Check the arguments passed
+        args = mock_call.call_args[0]
+        assert args[1] == "test.log"  # output file
+        assert args[2] is False  # input_enabled
+        assert args[3] is False  # append
 
 
 def test_pipe_command_with_append(pyserial_client):

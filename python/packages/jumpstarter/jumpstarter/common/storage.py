@@ -10,7 +10,7 @@ from anyio.streams.file import FileReadStream, FileWriteStream
 from jumpstarter.streams.encoding import AutoDecompressIterator
 
 
-async def wait_for_storage_device(  # noqa: C901
+async def wait_for_storage_device(
     storage_device: str | os.PathLike,
     mode: Literal["wb", "rb"],
     timeout: int = 10,

@@ -457,8 +457,8 @@ class AsyncDriverClient(
                 yield metadata.resource.model_dump(mode="json")
 
     @asynccontextmanager
-    async def log_stream_async(self, show_all_logs: bool = True):  # noqa: C901
-        async def log_stream():  # noqa: C901
+    async def log_stream_async(self, show_all_logs: bool = True):
+        async def log_stream():
             reconnect_delay = 0.1  # Start with 100ms delay
             max_reconnect_delay = 2.0  # Max 2 seconds between reconnects
             max_reconnects = 10  # Give up after this many reconnects

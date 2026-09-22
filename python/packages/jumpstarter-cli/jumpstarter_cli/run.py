@@ -77,7 +77,7 @@ def _reap_zombie_processes(capture_child=None):
         logger.warning(f"PARENT: Error during zombie reaping: {e}")
 
 
-def _handle_child(  # noqa: C901
+def _handle_child(
     config,
     parsed_bind=None,
     tls_insecure=False,
@@ -86,7 +86,7 @@ def _handle_child(  # noqa: C901
     passphrase=None,
 ):
     """Handle child process with graceful shutdown."""
-    async def serve_with_graceful_shutdown():  # noqa: C901
+    async def serve_with_graceful_shutdown():
         received_signal = 0
         signal_handled = False
         exporter = None

@@ -92,20 +92,24 @@ class UStreamer(VideoInterface, Driver):
 
     @export
     async def state(self):
-        async with ClientSession(connector=UnixConnector(path=self.socketp)) as session:
-            async with session.get("http://localhost/state") as r:
-                json = await r.json()
-                self.logger.debug(f"state: {json}")
-                return UStreamerState.model_validate(json)
+        async with (
+            ClientSession(connector=UnixConnector(path=self.socketp)) as session,
+            session.get("http://localhost/state") as r,
+        ):
+            json = await r.json()
+            self.logger.debug(f"state: {json}")
+            return UStreamerState.model_validate(json)
 
     @export
     async def snapshot(self):
-        async with ClientSession(connector=UnixConnector(path=self.socketp)) as session:
-            async with session.get("http://localhost/snapshot") as r:
-                data = await r.read()
-                length = len(data)
-                self.logger.debug(f"snapshot: {length} bytes")
-                return b64encode(data).decode("ascii")
+        async with (
+            ClientSession(connector=UnixConnector(path=self.socketp)) as session,
+            session.get("http://localhost/snapshot") as r,
+        ):
+            data = await r.read()
+            length = len(data)
+            self.logger.debug(f"snapshot: {length} bytes")
+            return b64encode(data).decode("ascii")
 
     @export
     def stream_path(self) -> str:

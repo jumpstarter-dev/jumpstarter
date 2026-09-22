@@ -125,9 +125,8 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
                 namespace=self.namespace, group="jumpstarter.dev", plural="clients", version="v1alpha1", name=name
             )
             # check if the client status is updated with the credentials
-            if "status" in updated_client:
-                if "credential" in updated_client["status"]:
-                    return V1Alpha1Client.from_dict(updated_client)
+            if "status" in updated_client and "credential" in updated_client["status"]:
+                return V1Alpha1Client.from_dict(updated_client)
             count += 1
             await asyncio.sleep(CREATE_CLIENT_DELAY)
         raise Exception("Timeout waiting for client credentials")

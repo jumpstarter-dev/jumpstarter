@@ -233,7 +233,7 @@ class DbusNetwork(NetworkInterface, Driver):
     def extra_labels(self):
         return {self.KIND_LABEL: self.kind}
 
-    def __post_init__(self):  # noqa: C901
+    def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
 

@@ -120,7 +120,7 @@ def test_get_client(_load_kube_config_mock, get_client_mock: AsyncMock):
         http_resp=MockResponse(
             404,
             "Not Found",
-            '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"clients.jumpstarter.dev "test" not found","reason":"NotFound","details":{"name":"hello","group":"jumpstarter.dev","kind":"clients"},"code":404}',  # noqa: E501
+            '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"clients.jumpstarter.dev "test" not found","reason":"NotFound","details":{"name":"hello","group":"jumpstarter.dev","kind":"clients"},"code":404}',
         )
     )
     result = runner.invoke(get, ["client", "hello"])
@@ -385,7 +385,7 @@ def test_get_exporter(_load_kube_config_mock, get_exporter_mock: AsyncMock):
         http_resp=MockResponse(
             404,
             "Not Found",
-            '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"exporters.jumpstarter.dev "test" not found","reason":"NotFound","details":{"name":"hello","group":"jumpstarter.dev","kind":"exporters"},"code":404}',  # noqa: E501
+            '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"exporters.jumpstarter.dev "test" not found","reason":"NotFound","details":{"name":"hello","group":"jumpstarter.dev","kind":"exporters"},"code":404}',
         )
     )
     result = runner.invoke(get, ["exporter", "hello"])
@@ -506,7 +506,7 @@ def test_get_exporter_devices(_load_kube_config_mock, get_exporter_mock: AsyncMo
         http_resp=MockResponse(
             404,
             "Not Found",
-            '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"exporters.jumpstarter.dev "test" not found","reason":"NotFound","details":{"name":"hello","group":"jumpstarter.dev","kind":"exporters"},"code":404}',  # noqa: E501
+            '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"exporters.jumpstarter.dev "test" not found","reason":"NotFound","details":{"name":"hello","group":"jumpstarter.dev","kind":"exporters"},"code":404}',
         )
     )
     result = runner.invoke(get, ["exporter", "hello", "--devices"])
@@ -1032,7 +1032,7 @@ def test_get_lease(_load_kube_config_mock, get_lease_mock: AsyncMock):
         http_resp=MockResponse(
             404,
             "Not Found",
-            '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"leases.jumpstarter.dev "82a8ac0d-d7ff-4009-8948-18a3c5c607b1" not found","reason":"NotFound","details":{"name":"82a8ac0d-d7ff-4009-8948-18a3c5c607b1","group":"jumpstarter.dev","kind":"leases"},"code":404}',  # noqa: E501
+            '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"leases.jumpstarter.dev "82a8ac0d-d7ff-4009-8948-18a3c5c607b1" not found","reason":"NotFound","details":{"name":"82a8ac0d-d7ff-4009-8948-18a3c5c607b1","group":"jumpstarter.dev","kind":"leases"},"code":404}',
         )
     )
     result = runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b1"])

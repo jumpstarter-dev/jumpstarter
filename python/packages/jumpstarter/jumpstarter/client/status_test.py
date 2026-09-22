@@ -20,28 +20,24 @@ class TestUseEmoji:
         return env
 
     def test_returns_false_when_term_dumb(self):
-        with patch.dict("os.environ", self._env_with_term("dumb"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is False
+        with patch.dict("os.environ", self._env_with_term("dumb"), clear=True), patch("sys.stdout") as mock_stdout:
+            mock_stdout.isatty.return_value = True
+            assert _use_emoji() is False
 
     def test_returns_false_when_term_linux(self):
-        with patch.dict("os.environ", self._env_with_term("linux"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is False
+        with patch.dict("os.environ", self._env_with_term("linux"), clear=True), patch("sys.stdout") as mock_stdout:
+            mock_stdout.isatty.return_value = True
+            assert _use_emoji() is False
 
     def test_returns_false_when_term_vt100(self):
-        with patch.dict("os.environ", self._env_with_term("vt100"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is False
+        with patch.dict("os.environ", self._env_with_term("vt100"), clear=True), patch("sys.stdout") as mock_stdout:
+            mock_stdout.isatty.return_value = True
+            assert _use_emoji() is False
 
     def test_returns_false_when_term_ansi(self):
-        with patch.dict("os.environ", self._env_with_term("ansi"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is False
+        with patch.dict("os.environ", self._env_with_term("ansi"), clear=True), patch("sys.stdout") as mock_stdout:
+            mock_stdout.isatty.return_value = True
+            assert _use_emoji() is False
 
     def test_returns_false_when_term_unset(self):
         env = {k: v for k, v in os.environ.items() if k not in ("TERM", "NO_COLOR", "NO_ICONS")}
@@ -51,64 +47,78 @@ class TestUseEmoji:
 
     def test_no_color_set_does_not_affect_emoji(self):
         """NO_COLOR only concerns ANSI color sequences (see no-color.org), not icons."""
-        with patch.dict("os.environ", {**self._env_with_term("xterm-256color"), "NO_COLOR": ""}, clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is True
+        with (
+            patch.dict("os.environ", {**self._env_with_term("xterm-256color"), "NO_COLOR": ""}, clear=True),
+            patch("sys.stdout") as mock_stdout,
+        ):
+            mock_stdout.isatty.return_value = True
+            assert _use_emoji() is True
 
     def test_no_color_set_with_value_does_not_affect_emoji(self):
-        with patch.dict("os.environ", {**self._env_with_term("xterm-256color"), "NO_COLOR": "1"}, clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is True
+        with (
+            patch.dict("os.environ", {**self._env_with_term("xterm-256color"), "NO_COLOR": "1"}, clear=True),
+            patch("sys.stdout") as mock_stdout,
+        ):
+            mock_stdout.isatty.return_value = True
+            assert _use_emoji() is True
 
     def test_returns_false_when_no_icons_set(self):
-        with patch.dict("os.environ", {**self._env_with_term("xterm-256color"), "NO_ICONS": ""}, clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is False
+        with (
+            patch.dict("os.environ", {**self._env_with_term("xterm-256color"), "NO_ICONS": ""}, clear=True),
+            patch("sys.stdout") as mock_stdout,
+        ):
+            mock_stdout.isatty.return_value = True
+            assert _use_emoji() is False
 
     def test_returns_false_when_no_icons_set_with_value(self):
-        with patch.dict("os.environ", {**self._env_with_term("xterm-256color"), "NO_ICONS": "1"}, clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is False
+        with (
+            patch.dict("os.environ", {**self._env_with_term("xterm-256color"), "NO_ICONS": "1"}, clear=True),
+            patch("sys.stdout") as mock_stdout,
+        ):
+            mock_stdout.isatty.return_value = True
+            assert _use_emoji() is False
 
     def test_returns_false_when_stdout_not_tty(self):
-        with patch.dict("os.environ", self._env_with_term("xterm-256color"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = False
-                assert _use_emoji() is False
+        with (
+            patch.dict("os.environ", self._env_with_term("xterm-256color"), clear=True),
+            patch("sys.stdout") as mock_stdout,
+        ):
+            mock_stdout.isatty.return_value = False
+            assert _use_emoji() is False
 
     def test_returns_true_for_xterm(self):
-        with patch.dict("os.environ", self._env_with_term("xterm-256color"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is True
+        with (
+            patch.dict("os.environ", self._env_with_term("xterm-256color"), clear=True),
+            patch("sys.stdout") as mock_stdout,
+        ):
+            mock_stdout.isatty.return_value = True
+            assert _use_emoji() is True
 
     def test_returns_true_for_tmux(self):
-        with patch.dict("os.environ", self._env_with_term("tmux-256color"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is True
+        with (
+            patch.dict("os.environ", self._env_with_term("tmux-256color"), clear=True),
+            patch("sys.stdout") as mock_stdout,
+        ):
+            mock_stdout.isatty.return_value = True
+            assert _use_emoji() is True
 
     def test_returns_true_for_screen(self):
-        with patch.dict("os.environ", self._env_with_term("screen-256color"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is True
+        with (
+            patch.dict("os.environ", self._env_with_term("screen-256color"), clear=True),
+            patch("sys.stdout") as mock_stdout,
+        ):
+            mock_stdout.isatty.return_value = True
+            assert _use_emoji() is True
 
     def test_returns_true_for_alacritty(self):
-        with patch.dict("os.environ", self._env_with_term("alacritty"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is True
+        with patch.dict("os.environ", self._env_with_term("alacritty"), clear=True), patch("sys.stdout") as mock_stdout:
+            mock_stdout.isatty.return_value = True
+            assert _use_emoji() is True
 
     def test_returns_true_for_kitty(self):
-        with patch.dict("os.environ", self._env_with_term("kitty"), clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is True
+        with patch.dict("os.environ", self._env_with_term("kitty"), clear=True), patch("sys.stdout") as mock_stdout:
+            mock_stdout.isatty.return_value = True
+            assert _use_emoji() is True
 
 
 class TestStatusIcon:

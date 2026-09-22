@@ -60,7 +60,7 @@ class NetsimClient(DriverClient):
     def status(self) -> str:
         return self.call("status")
 
-    def cli(self):  # noqa: C901
+    def cli(self):
         @click.group()
         def netsim():
             """Android netsim virtual radio control.

@@ -120,9 +120,7 @@ def _process_match(
 
 def _validate_main_version(key: str, value: str) -> bool:
     """Reject spurious UEFI version matches that are too short or lack BOOT."""
-    if key == "uefi_version" and (len(value) < 10 or ("BOOT" not in value and len(value) < 20)):
-        return False
-    return True
+    return not (key == "uefi_version" and (len(value) < 10 or "BOOT" not in value and len(value) < 20))
 
 
 def extract_sail_version(sail, timeout=60, log_buffer=None) -> dict[str, str]:

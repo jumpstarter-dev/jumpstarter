@@ -155,9 +155,7 @@ class MITMServerInterface(paramiko.ServerInterface):
         self.pty_term: str = "xterm"
 
     def _check_username(self, username: str | None) -> bool:
-        if self.allowed_username and username and username != self.allowed_username:
-            return False
-        return True
+        return not (self.allowed_username and username and username != self.allowed_username)
 
     def check_channel_request(self, kind, chanid):
         if kind == "session":
@@ -361,7 +359,7 @@ class SSHMITM(Driver):
 
         return dut_client, channel
 
-    def _handle_session(self, transport: paramiko.Transport):  # noqa: C901
+    def _handle_session(self, transport: paramiko.Transport):
         """Handle incoming SSH session: accept client, connect to DUT, proxy."""
         server = MITMServerInterface(self.default_username, default_dut_username=self.default_username)
 

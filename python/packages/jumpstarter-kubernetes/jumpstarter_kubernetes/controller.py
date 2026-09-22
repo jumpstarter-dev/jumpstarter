@@ -6,7 +6,7 @@ from packaging.version import Version
 from .exceptions import JumpstarterKubernetesError
 
 
-async def get_latest_compatible_controller_version(client_version: str | None):  # noqa: C901
+async def get_latest_compatible_controller_version(client_version: str | None):
     """Get the latest compatible controller version for a given client version"""
     if client_version is None:
         # Return the latest available version when no client version is specified
@@ -64,9 +64,9 @@ async def get_latest_compatible_controller_version(client_version: str | None): 
 
     if compatible:
         # max() on tuples compares by first element (version), then second (tag_name)
-        selected_version, selected_tag = max(compatible)
+        _selected_version, selected_tag = max(compatible)
     elif fallback:
-        selected_version, selected_tag = max(fallback)
+        _selected_version, selected_tag = max(fallback)
     else:
         raise JumpstarterKubernetesError("No valid controller versions found in the repository")
 

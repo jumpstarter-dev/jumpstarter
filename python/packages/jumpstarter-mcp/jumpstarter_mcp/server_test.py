@@ -7,7 +7,8 @@ import asyncio.subprocess
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -27,7 +28,7 @@ from jumpstarter_mcp.tools.leases import _lease_status
 
 
 class FakePowerClient:
-    children: dict = {}
+    children: ClassVar[dict]= {}
 
     def on(self) -> None:
         """Power on the device."""
@@ -49,7 +50,7 @@ class FakePowerClient:
 
 
 class FakeSerialClient:
-    children: dict = {}
+    children: ClassVar[dict]= {}
 
     def open(self):
         """Open serial port."""
@@ -88,7 +89,7 @@ def _make_connection(
         socket_path=socket_path,
         allow=[],
         unsafe=True,
-        created_at=datetime.now(),
+        created_at=datetime.now(tz=UTC),
         client=client or FakeCompositeClient(),
     )
 

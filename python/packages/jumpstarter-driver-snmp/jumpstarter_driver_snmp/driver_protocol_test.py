@@ -14,7 +14,7 @@ import threading
 import time
 from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, Self
 
 import pytest
 from pysnmp.carrier.asyncio.dgram import udp
@@ -164,7 +164,7 @@ class SnmpTestAgent:
         if self._thread.is_alive():
             raise RuntimeError("SNMP test agent did not stop in time")
 
-    def __enter__(self) -> SnmpTestAgent:
+    def __enter__(self) -> Self:
         return self.start()
 
     def __exit__(self, *exc_info):

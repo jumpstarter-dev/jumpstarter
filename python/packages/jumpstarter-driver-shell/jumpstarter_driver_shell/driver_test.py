@@ -240,7 +240,7 @@ def test_blocked_env_var_prefixes(client):
 
 def test_safe_env_vars_allowed(client):
     """Test that legitimate environment variables still work"""
-    stdout, stderr, returncode = _collect_streaming_output(client, "env", {"ENV1": "safe_value"})
+    stdout, _stderr, returncode = _collect_streaming_output(client, "env", {"ENV1": "safe_value"})
     assert stdout == "safe_value\n"
     assert returncode == 0
 

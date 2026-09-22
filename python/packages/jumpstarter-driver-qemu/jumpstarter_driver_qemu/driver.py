@@ -75,11 +75,13 @@ class QemuFlasher(FlasherInterface, Driver):
                 pass
             return
 
-        async with await FileWriteStream.from_path(self.parent.validate_partition(partition)) as stream:
-            async with self.resource(source) as res:
-                # Wrap with auto-decompression to handle .gz, .xz, .bz2, .zstd files
-                async for chunk in AutoDecompressIterator(source=res):
-                    await stream.send(chunk)
+        async with (
+            await FileWriteStream.from_path(self.parent.validate_partition(partition)) as stream,
+            self.resource(source) as res,
+        ):
+            # Wrap with auto-decompression to handle .gz, .xz, .bz2, .zstd files
+            async for chunk in AutoDecompressIterator(source=res):
+                await stream.send(chunk)
 
     @export
     async def flash_oci(
@@ -206,7 +208,7 @@ class QemuPower(PowerInterface, Driver):
     parent: Qemu
 
     @export
-    async def on(self) -> None:  # noqa: C901
+    async def on(self) -> None:
         if hasattr(self, "_process"):
             self.logger.warning("already powered on, ignoring request")
             return

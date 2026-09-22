@@ -121,7 +121,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 pass
             yield self.serial
 
-    def flash(  # noqa: C901
+    def flash(
         self,
         path: PathBuf,
         *,
@@ -1047,7 +1047,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             self.logger.info(f"Uploading image to storage: {filename}")
             to_storage.write_from_path(filename, src_path, src_operator)
 
-            metadata, metadata_json = self._create_metadata_and_json(
+            _metadata, metadata_json = self._create_metadata_and_json(
                 src_operator, src_path, file_hash, original_url, headers
             )
             metadata_file = filename + ".metadata"
@@ -1253,19 +1253,19 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     def use_dtb(self, path: PathBuf, operator: Operator | None = None):
         """Use DTB file"""
         if operator is None:
-            path, operator, operator_scheme = operator_for_path(path)
+            path, operator, _operator_scheme = operator_for_path(path)
 
 
     def use_initram(self, path: PathBuf, operator: Operator | None = None):
         """Use initramfs file"""
         if operator is None:
-            path, operator, operator_scheme = operator_for_path(path)
+            path, operator, _operator_scheme = operator_for_path(path)
 
 
     def use_kernel(self, path: PathBuf, operator: Operator | None = None):
         """Use kernel file"""
         if operator is None:
-            path, operator, operator_scheme = operator_for_path(path)
+            path, operator, _operator_scheme = operator_for_path(path)
 
 
     @property
@@ -1314,7 +1314,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     def _prepare_headers(self, headers: dict[str, str] | None, bearer_token: str | None) -> str:
         all_headers = headers.copy() if headers else {}
         if bearer_token:
-            if any(k.lower() == "authorization" for k in all_headers.keys()):
+            if any(k.lower() == "authorization" for k in all_headers):
                 self.logger.warning("Authorization header provided - ignoring bearer token")
             else:
                 all_headers["Authorization"] = f"Bearer {bearer_token}"

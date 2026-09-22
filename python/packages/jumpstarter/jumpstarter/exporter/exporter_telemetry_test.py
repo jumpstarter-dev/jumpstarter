@@ -124,10 +124,12 @@ async def test_setup_telemetry_insecure_uses_insecure_channel():
     resp = MagicMock()
     resp.telemetry_endpoints = [ep]
 
-    with patch.object(exp, "_controller_stub", return_value=make_controller_stub_ctx(resp)()):
-        with patch("jumpstarter.exporter.exporter.grpc.aio.insecure_channel") as mock_insecure:
-            mock_insecure.return_value = MagicMock()
-            await exp._setup_telemetry()
+    with (
+        patch.object(exp, "_controller_stub", return_value=make_controller_stub_ctx(resp)()),
+        patch("jumpstarter.exporter.exporter.grpc.aio.insecure_channel") as mock_insecure,
+    ):
+        mock_insecure.return_value = MagicMock()
+        await exp._setup_telemetry()
 
     mock_insecure.assert_called_once_with(ep.endpoint)
     assert exp._telemetry_handler is not None
@@ -142,10 +144,12 @@ async def test_setup_telemetry_env_var_insecure(monkeypatch):
     resp = MagicMock()
     resp.telemetry_endpoints = [ep]
 
-    with patch.object(exp, "_controller_stub", return_value=make_controller_stub_ctx(resp)()):
-        with patch("jumpstarter.exporter.exporter.grpc.aio.insecure_channel") as mock_insecure:
-            mock_insecure.return_value = MagicMock()
-            await exp._setup_telemetry()
+    with (
+        patch.object(exp, "_controller_stub", return_value=make_controller_stub_ctx(resp)()),
+        patch("jumpstarter.exporter.exporter.grpc.aio.insecure_channel") as mock_insecure,
+    ):
+        mock_insecure.return_value = MagicMock()
+        await exp._setup_telemetry()
 
     mock_insecure.assert_called_once()
 
@@ -158,11 +162,13 @@ async def test_setup_telemetry_certificate_uses_secure_channel_with_cert():
     resp = MagicMock()
     resp.telemetry_endpoints = [ep]
 
-    with patch.object(exp, "_controller_stub", return_value=make_controller_stub_ctx(resp)()):
-        with patch("jumpstarter.exporter.exporter.grpc.aio.secure_channel") as mock_secure:
-            with patch("jumpstarter.exporter.exporter.grpc.ssl_channel_credentials") as mock_creds:
-                mock_secure.return_value = MagicMock()
-                await exp._setup_telemetry()
+    with (
+        patch.object(exp, "_controller_stub", return_value=make_controller_stub_ctx(resp)()),
+        patch("jumpstarter.exporter.exporter.grpc.aio.secure_channel") as mock_secure,
+        patch("jumpstarter.exporter.exporter.grpc.ssl_channel_credentials") as mock_creds,
+    ):
+        mock_secure.return_value = MagicMock()
+        await exp._setup_telemetry()
 
     mock_secure.assert_called_once()
     mock_creds.assert_called_once_with(root_certificates=b"---PEM---")
@@ -176,11 +182,13 @@ async def test_setup_telemetry_no_cert_uses_system_ca():
     resp = MagicMock()
     resp.telemetry_endpoints = [ep]
 
-    with patch.object(exp, "_controller_stub", return_value=make_controller_stub_ctx(resp)()):
-        with patch("jumpstarter.exporter.exporter.grpc.aio.secure_channel") as mock_secure:
-            with patch("jumpstarter.exporter.exporter.grpc.ssl_channel_credentials") as mock_creds:
-                mock_secure.return_value = MagicMock()
-                await exp._setup_telemetry()
+    with (
+        patch.object(exp, "_controller_stub", return_value=make_controller_stub_ctx(resp)()),
+        patch("jumpstarter.exporter.exporter.grpc.aio.secure_channel") as mock_secure,
+        patch("jumpstarter.exporter.exporter.grpc.ssl_channel_credentials") as mock_creds,
+    ):
+        mock_secure.return_value = MagicMock()
+        await exp._setup_telemetry()
 
     mock_secure.assert_called_once()
     mock_creds.assert_called_once_with()
@@ -195,10 +203,12 @@ async def test_setup_telemetry_applies_min_severity():
     resp = MagicMock()
     resp.telemetry_endpoints = [ep]
 
-    with patch.object(exp, "_controller_stub", return_value=make_controller_stub_ctx(resp)()):
-        with patch("jumpstarter.exporter.exporter.grpc.aio.insecure_channel") as mock_insecure:
-            mock_insecure.return_value = MagicMock()
-            await exp._setup_telemetry()
+    with (
+        patch.object(exp, "_controller_stub", return_value=make_controller_stub_ctx(resp)()),
+        patch("jumpstarter.exporter.exporter.grpc.aio.insecure_channel") as mock_insecure,
+    ):
+        mock_insecure.return_value = MagicMock()
+        await exp._setup_telemetry()
 
     assert exp._telemetry_handler is not None
     assert exp._telemetry_handler.level == logging.WARNING

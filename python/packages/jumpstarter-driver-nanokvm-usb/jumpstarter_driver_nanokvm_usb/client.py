@@ -83,7 +83,7 @@ class NanoKVMUSBHIDClient(DriverClient):
     def mouse_scroll(self, dx: int, dy: int):
         self.call("mouse_scroll", dx, dy)
 
-    def cli(self):  # noqa: C901
+    def cli(self):
         @driver_click_group(self)
         def base():
             """NanoKVM-USB HID commands"""

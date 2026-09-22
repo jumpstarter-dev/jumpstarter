@@ -155,14 +155,15 @@ def test_user_config_load_or_create_config_exists():
 
 
 def test_user_config_load_or_create_dir_exists():
-    with patch.object(UserConfigV1Alpha1, "exists", return_value=False) as mock_exists:
-        with patch.object(os.path, "exists", return_value=True):
-            with patch.object(UserConfigV1Alpha1, "save") as mock_save:
-                _ = UserConfigV1Alpha1.load_or_create()
-                mock_exists.assert_called_once()
-                mock_save.assert_called_once_with(
-                    UserConfigV1Alpha1(config=UserConfigV1Alpha1Config(current_client=None))
-                )
+    with (
+        patch.object(UserConfigV1Alpha1, "exists", return_value=False) as mock_exists,
+        patch.object(os.path, "exists", return_value=True),patch.object(UserConfigV1Alpha1, "save") as mock_save
+    ):
+        _ = UserConfigV1Alpha1.load_or_create()
+        mock_exists.assert_called_once()
+        mock_save.assert_called_once_with(
+            UserConfigV1Alpha1(config=UserConfigV1Alpha1Config(current_client=None))
+        )
 
 
 def test_user_config_load_or_create_dir_does_not_exist():

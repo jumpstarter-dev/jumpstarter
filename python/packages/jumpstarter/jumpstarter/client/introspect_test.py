@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 from types import MappingProxyType
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import click
@@ -35,7 +36,7 @@ def test_description_helpers_are_public_package_exports():
 
 
 class FakePowerClient:
-    children: dict = {}
+    children: ClassVar[dict]= {}
 
     def on(self) -> None:
         """Power on the device."""
@@ -57,7 +58,7 @@ class FakePowerClient:
 
 
 class FakeSerialClient:
-    children: dict = {}
+    children: ClassVar[dict]= {}
 
     def open(self):
         """Open serial port."""

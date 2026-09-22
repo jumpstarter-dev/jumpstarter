@@ -20,12 +20,12 @@ from anyio.to_thread import run_sync
 # OAuth2Session.  The warning provides no actionable information to end users.
 warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"authlib\.")
 
-from authlib.integrations.requests_client import OAuth2Session  # noqa: E402
-from joserfc.errors import JoseError  # noqa: E402
-from joserfc.jws import extract_compact  # noqa: E402
-from yarl import URL  # noqa: E402
+from authlib.integrations.requests_client import OAuth2Session
+from joserfc.errors import JoseError
+from joserfc.jws import extract_compact
+from yarl import URL
 
-from jumpstarter.config.env import JMP_OIDC_CALLBACK_PORT, JMP_OIDC_DEVICE_FLOW  # noqa: E402
+from jumpstarter.config.env import JMP_OIDC_CALLBACK_PORT, JMP_OIDC_DEVICE_FLOW
 
 
 def _get_ssl_context() -> ssl.SSLContext:
@@ -191,7 +191,7 @@ class Config:
             await runner.cleanup()
             raise click.ClickException(f"Failed to start callback server on port {port}: {e}") from None
 
-        redirect_uri = "http://localhost:%d/callback" % site._server.sockets[0].getsockname()[1]
+        redirect_uri = f"http://localhost:{site._server.sockets[0].getsockname()[1]}/callback"
 
         client = self.client(redirect_uri=redirect_uri)
 
@@ -200,7 +200,7 @@ class Config:
         if prompt:
             auth_params["prompt"] = prompt
 
-        uri, state = client.create_authorization_url(config["authorization_endpoint"], **auth_params)
+        uri, _state = client.create_authorization_url(config["authorization_endpoint"], **auth_params)
 
         print("Please open the URL in browser: ", uri)
 
@@ -213,7 +213,7 @@ class Config:
             lambda: client.fetch_token(config["token_endpoint"], authorization_response=authorization_response)
         )
 
-    async def device_authorization_grant(self):  # noqa: C901
+    async def device_authorization_grant(self):
         """Perform OAuth 2.0 Device Authorization Grant (RFC 8628).
 
         This flow is suitable for headless or containerized environments where

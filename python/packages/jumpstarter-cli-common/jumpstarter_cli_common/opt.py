@@ -1,7 +1,7 @@
 import logging
 import sys
 from functools import partial
-from typing import Literal, Optional
+from typing import Literal
 
 import click
 from rich import traceback
@@ -165,13 +165,12 @@ opt_insecure_tls_config = opt_insecure_tls
 
 
 def confirm_insecure_tls(insecure_tls: bool, nointeractive: bool):
-    if nointeractive is False and insecure_tls:
-        if not click.confirm(
-            "Insecure TLS mode is enabled. Certificate verification will be"
-            " disabled for HTTPS connections. Continue?"
-        ):
-            click.echo("Aborting.")
-            raise click.Abort()
+    if nointeractive is False and insecure_tls and not click.confirm(
+        "Insecure TLS mode is enabled. Certificate verification will be"
+        " disabled for HTTPS connections. Continue?"
+    ):
+        click.echo("Aborting.")
+        raise click.Abort()
 
 
 confirm_insecure = confirm_insecure_tls
@@ -189,7 +188,7 @@ class OutputMode(str):
     PATH = "path"
 
 
-OutputType = Optional[OutputMode]
+OutputType = OutputMode | None
 
 opt_output_all = click.option(
     "-o",
@@ -199,7 +198,7 @@ opt_output_all = click.option(
     help='Output mode. Use "-o name" for shorter output (resource/name).',
 )
 
-DataOutputType = Optional[Literal["json", "yaml"]]
+DataOutputType = Literal["json", "yaml"] | None
 
 opt_output_json_yaml = click.option(
     "-o",
@@ -209,7 +208,7 @@ opt_output_json_yaml = click.option(
     help='Output mode. Use "-o json" or "-o yaml" for machine-readable output.',
 )
 
-NameOutputType = Optional[Literal["name"]]
+NameOutputType = Literal["name"] | None
 
 opt_output_name_only = click.option(
     "-o",
@@ -219,7 +218,7 @@ opt_output_name_only = click.option(
     help='Output mode. Use "-o name" for shorter output (resource/name).',
 )
 
-PathOutputType = Optional[Literal["path"]]
+PathOutputType = Literal["path"] | None
 
 opt_output_path_only = click.option(
     "-o",

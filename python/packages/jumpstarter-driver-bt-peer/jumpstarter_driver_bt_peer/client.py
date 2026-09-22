@@ -64,7 +64,7 @@ class BtPeerClient(DriverClient):
     def get_connections(self) -> list[Any]:
         return _parse_list(self.call("get_connections"))
 
-    def cli(self):  # noqa: C901
+    def cli(self):
         @click.group()
         def bt_peer():
             """Bluetooth peer device (bumble)."""

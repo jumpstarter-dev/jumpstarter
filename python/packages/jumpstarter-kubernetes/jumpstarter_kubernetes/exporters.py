@@ -1,6 +1,6 @@
 import asyncio
 import base64
-from typing import Literal
+from typing import ClassVar, Literal
 
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 from pydantic import Field
@@ -28,7 +28,7 @@ class V1Alpha1ExporterStatus(JsonBaseModel):
     # The controller fills these in after it reconciles the exporter, so a
     # freshly created one has a status with nothing in it yet.
     credential: SerializeV1ObjectReference | None = None
-    devices: list[V1Alpha1ExporterDevice] = []
+    devices: ClassVar[list[V1Alpha1ExporterDevice]]= []
     endpoint: str = ""
     exporter_status: str | None = Field(alias="exporterStatus", default=None)
     status_message: str | None = Field(alias="statusMessage", default=None)
@@ -196,9 +196,8 @@ class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
                 namespace=self.namespace, group="jumpstarter.dev", plural="exporters", version="v1alpha1", name=name
             )
             # check if the client status is updated with the credentials
-            if "status" in updated_exporter:
-                if "credential" in updated_exporter["status"]:
-                    return V1Alpha1Exporter.from_dict(updated_exporter)
+            if "status" in updated_exporter and "credential" in updated_exporter["status"]:
+                return V1Alpha1Exporter.from_dict(updated_exporter)
             count += 1
             await asyncio.sleep(CREATE_EXPORTER_DELAY)
         raise Exception("Timeout waiting for exporter credentials")

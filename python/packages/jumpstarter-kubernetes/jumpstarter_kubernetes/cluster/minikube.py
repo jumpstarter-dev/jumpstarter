@@ -22,7 +22,7 @@ def minikube_installed(minikube: str) -> bool:
     return shutil.which(minikube) is not None
 
 
-async def minikube_cluster_exists(minikube: str, cluster_name: str) -> bool:  # noqa: C901
+async def minikube_cluster_exists(minikube: str, cluster_name: str) -> bool:
     """Check if a Minikube cluster exists.
 
     Uses 'minikube profile list' to distinguish between stopped and non-existent clusters.
@@ -58,19 +58,14 @@ async def minikube_cluster_exists(minikube: str, cluster_name: str) -> bool:  # 
 
         # Check if the error indicates profile doesn't exist
         combined_output = (stdout + stderr).lower()
-        if "profile" in combined_output and "not found" in combined_output:
-            return False
-
         # Non-zero exit but not "not found" means cluster exists but may be stopped
-        return True
+        return not ("profile" in combined_output and "not found" in combined_output)
 
     except RuntimeError as e:
         # Check if the error message indicates profile not found
         error_msg = str(e).lower()
-        if "profile" in error_msg and "not found" in error_msg:
-            return False
         # Other errors may indicate the cluster exists but has issues
-        return True
+        return not ("profile" in error_msg and "not found" in error_msg)
 
 
 async def delete_minikube_cluster(minikube: str, cluster_name: str, callback: OutputCallback = None) -> bool:
@@ -96,7 +91,7 @@ async def delete_minikube_cluster(minikube: str, cluster_name: str, callback: Ou
         )
 
 
-async def create_minikube_cluster(  # noqa: C901
+async def create_minikube_cluster(
     minikube: str,
     cluster_name: str,
     extra_args: list[str] | None = None,

@@ -436,13 +436,13 @@ def test_operator_for_path_strips_query_params():
     from .client import operator_for_path
 
     # HTTP URL without query parameters
-    path, operator, scheme = operator_for_path("https://cdn.example.com/images/image.raw.xz")
+    path, _, scheme = operator_for_path("https://cdn.example.com/images/image.raw.xz")
     assert scheme == "http"
     assert path == Path("/images/image.raw.xz")
 
     # HTTP URL with query parameters - query params are stripped because
     # signed URL downloads use original_url passthrough instead
-    path, operator, scheme = operator_for_path(
+    path, _, scheme = operator_for_path(
         "https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
     )
     assert scheme == "http"
@@ -450,7 +450,7 @@ def test_operator_for_path_strips_query_params():
 
     # Filesystem path (use resolve() for the expected value since macOS
     # resolves /tmp to /private/tmp)
-    path, operator, scheme = operator_for_path("/tmp/image.raw.xz")
+    path, _operator, scheme = operator_for_path("/tmp/image.raw.xz")
     assert scheme == "fs"
     assert path == Path("/tmp/image.raw.xz").resolve()
 
@@ -504,12 +504,14 @@ def test_write_from_path_http_with_explicit_operator(tmp_path):
     guard, otherwise the HTTP URL goes through OpenDAL presign_read which mangles it
     into a double-host path like endpoint/https%3A/host/path.
     """
-    with serve(Opendal(scheme="fs", kwargs={"root": str(tmp_path)})) as client:
-        with _http_path_recording_server() as (port, received_paths):
-            url = f"http://127.0.0.1:{port}/path%40encoded/file.bin"
-            explicit_operator = Operator("http", endpoint=f"http://127.0.0.1:{port}")
-            client.write_from_path("dest.bin", url, operator=explicit_operator)
-            _assert_encoding_preserved(received_paths)
+    with (
+        serve(Opendal(scheme="fs", kwargs={"root": str(tmp_path)})) as client,
+        _http_path_recording_server() as (port, received_paths),
+    ):
+        url = f"http://127.0.0.1:{port}/path%40encoded/file.bin"
+        explicit_operator = Operator("http", endpoint=f"http://127.0.0.1:{port}")
+        client.write_from_path("dest.bin", url, operator=explicit_operator)
+        _assert_encoding_preserved(received_paths)
 
 
 def test_flash_http_with_explicit_operator():

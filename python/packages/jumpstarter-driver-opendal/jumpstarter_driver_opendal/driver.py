@@ -223,13 +223,15 @@ class Opendal(Driver):
         """Copy a file from the exporter to the target path.
         This function is intended to be used on the exporter side to copy files to the target path.
         """
-        async with await AsyncOperator("fs", root=source.parent.as_posix()).open(source.name, "rb") as src:
-            async with await self._operator.open(target, "wb") as dst:
-                while True:
-                    data = await src.read(size=65536)
-                    if len(data) == 0:
-                        break
-                    await dst.write(bs=data)
+        async with (
+            await AsyncOperator("fs", root=source.parent.as_posix()).open(source.name, "rb") as src,
+            await self._operator.open(target, "wb") as dst,
+        ):
+            while True:
+                data = await src.read(size=65536)
+                if len(data) == 0:
+                    break
+                await dst.write(bs=data)
 
         # Always track path creation (assume pre-existing files are just uncleaned remnants)
         self._created_paths.add(self._normalize_path(target))
@@ -329,17 +331,15 @@ class MockFlasher(FlasherInterface, Driver):
 
     @export
     async def flash(self, source, partition: str | None = None):
-        async with await FileWriteStream.from_path(self.__path(partition)) as stream:
-            async with self.resource(source) as res:
-                async for chunk in res:
-                    await stream.send(chunk)
+        async with await FileWriteStream.from_path(self.__path(partition)) as stream, self.resource(source) as res:
+            async for chunk in res:
+                await stream.send(chunk)
 
     @export
     async def dump(self, target, partition: str | None = None):
-        async with await FileReadStream.from_path(self.__path(partition)) as stream:
-            async with self.resource(target) as res:
-                async for chunk in stream:
-                    await res.send(chunk)
+        async with await FileReadStream.from_path(self.__path(partition)) as stream, self.resource(target) as res:
+            async for chunk in stream:
+                await res.send(chunk)
 
 
 class StorageMuxInterface(metaclass=ABCMeta):

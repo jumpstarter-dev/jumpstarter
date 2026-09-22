@@ -56,8 +56,7 @@ class AdbServer(TcpNetwork):
             result = subprocess.run(
                 [self.adb_path, "version"],
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 text=True,
             )
             self.logger.debug(result.stdout.strip())
@@ -84,8 +83,7 @@ class AdbServer(TcpNetwork):
             result = subprocess.run(
                 [self.adb_path, "start-server"],
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 text=True,
                 env=self.adb_env(),
             )
@@ -105,8 +103,7 @@ class AdbServer(TcpNetwork):
             result = subprocess.run(
                 [self.adb_path, "kill-server"],
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 text=True,
                 env=self.adb_env(),
             )
@@ -122,8 +119,7 @@ class AdbServer(TcpNetwork):
             result = subprocess.run(
                 [self.adb_path, "connect", device],
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 text=True,
                 env=self.adb_env(),
                 timeout=self.connect_timeout,
@@ -160,8 +156,7 @@ class AdbServer(TcpNetwork):
             result = subprocess.run(
                 [self.adb_path, "disconnect", device],
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 text=True,
                 env=self.adb_env(),
                 timeout=self.connect_timeout,
@@ -184,8 +179,7 @@ class AdbServer(TcpNetwork):
             result = subprocess.run(
                 [self.adb_path, "devices", "-l"],
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 text=True,
                 env=self.adb_env(),
             )

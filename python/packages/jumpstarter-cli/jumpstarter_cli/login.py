@@ -63,16 +63,15 @@ async def fetch_auth_config(
     _validate_login_endpoint_url(login_endpoint, allow_http=insecure_tls)
 
     url = f"{login_endpoint.rstrip('/')}/v1/auth/config"
-    ssl_context: ssl.SSLContext | bool = False if insecure_tls else True
+    ssl_context: ssl.SSLContext | bool = not insecure_tls
     timeout = aiohttp.ClientTimeout(total=_HTTP_TIMEOUT_SECONDS)
 
     try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, ssl=ssl_context) as response:
-                if response.status != 200:
-                    raise click.ClickException(f"Failed to fetch auth config from {url}: HTTP {response.status}")
-                payload = await response.json()
-                return _validate_auth_config_payload(payload, url)
+        async with aiohttp.ClientSession(timeout=timeout) as session, session.get(url, ssl=ssl_context) as response:
+            if response.status != 200:
+                raise click.ClickException(f"Failed to fetch auth config from {url}: HTTP {response.status}")
+            payload = await response.json()
+            return _validate_auth_config_payload(payload, url)
     except aiohttp.ClientConnectorCertificateError as e:
         raise click.ClickException(
             f"TLS certificate verification failed while connecting to {login_endpoint}. "
@@ -146,7 +145,7 @@ def _warn_exporter_client_only_flags(config_kind: str | None, allow: str, unsafe
 @opt_config(allow_missing=True)
 @handle_exceptions
 @blocking
-async def login(  # noqa: C901
+async def login(
     config,
     login_target: str | None,
     endpoint: str,

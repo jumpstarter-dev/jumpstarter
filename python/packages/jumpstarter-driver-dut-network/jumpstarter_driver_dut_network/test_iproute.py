@@ -201,9 +201,8 @@ class TestPolicyRouting:
         fail = subprocess.CompletedProcess(
             args=[], returncode=2, stdout="", stderr="Error: some failure\n",
         )
-        with patch.object(iproute, "_run_priv", return_value=fail):
-            with pytest.raises(RuntimeError, match="some failure"):
-                iproute.add_policy_route("10.0.0.1", "eth0", 100)
+        with patch.object(iproute, "_run_priv", return_value=fail), pytest.raises(RuntimeError, match="some failure"):
+            iproute.add_policy_route("10.0.0.1", "eth0", 100)
 
     def test_add_policy_route_rejects_reserved_table(self):
         with pytest.raises(ValueError, match="reserved"):
@@ -230,9 +229,8 @@ class TestPolicyRouting:
         fail = subprocess.CompletedProcess(
             args=[], returncode=2, stdout="", stderr="Error: some failure\n",
         )
-        with patch.object(iproute, "_run_priv", return_value=fail):
-            with pytest.raises(RuntimeError, match="some failure"):
-                iproute.add_ip_rule("192.168.100.10", 100)
+        with patch.object(iproute, "_run_priv", return_value=fail), pytest.raises(RuntimeError, match="some failure"):
+            iproute.add_ip_rule("192.168.100.10", 100)
 
     def test_delete_ip_rule(self):
         with patch.object(iproute, "_run_priv") as mock:

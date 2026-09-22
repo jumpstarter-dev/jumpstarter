@@ -63,7 +63,7 @@ class LoggingCallback:
     Useful for server applications or when you want structured logging.
     """
 
-    def __init__(self, logger: logging.Logger = None):
+    def __init__(self, logger: logging.Logger | None = None):
         """Initialize with optional logger. If None, uses root logger."""
         self.logger = logger or logging.getLogger(__name__)
 

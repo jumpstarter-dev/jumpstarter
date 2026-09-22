@@ -36,7 +36,7 @@ class TestRetryCounterResetsAfterReceivingData:
             raise Exception("connection lost")
 
         exporter = _make_exporter()
-        send_tx, send_rx = create_memory_object_stream[str](100)
+        send_tx, _send_rx = create_memory_object_stream[str](100)
 
         with pytest.raises(Exception, match="connection lost"):
             await exporter._retry_stream(
@@ -62,7 +62,7 @@ class TestRetryCounterResetsAfterReceivingData:
             yield  # make it an async generator
 
         exporter = _make_exporter()
-        send_tx, send_rx = create_memory_object_stream[str](100)
+        send_tx, _send_rx = create_memory_object_stream[str](100)
 
         with pytest.raises(Exception, match="UNAVAILABLE"):
             await exporter._retry_stream(
@@ -89,7 +89,7 @@ class TestExporterFailsFastOnPersistentErrors:
             yield
 
         exporter = _make_exporter()
-        send_tx, send_rx = create_memory_object_stream[str](100)
+        send_tx, _send_rx = create_memory_object_stream[str](100)
 
         with pytest.raises(Exception, match="permanently unreachable"):
             await exporter._retry_stream(
@@ -116,7 +116,7 @@ class TestExporterFailsFastOnPersistentErrors:
             yield
 
         exporter = _make_exporter()
-        send_tx, send_rx = create_memory_object_stream[str](100)
+        send_tx, _send_rx = create_memory_object_stream[str](100)
 
         with pytest.raises(Exception, match="failure"):
             await exporter._retry_stream(
@@ -144,17 +144,19 @@ class TestRetryCounterResetLogging:
             raise Exception("connection lost")
 
         exporter = _make_exporter()
-        send_tx, send_rx = create_memory_object_stream[str](100)
+        send_tx, _send_rx = create_memory_object_stream[str](100)
 
-        with caplog.at_level(logging.DEBUG, logger="jumpstarter.exporter.exporter"):
-            with pytest.raises(Exception, match="connection lost"):
-                await exporter._retry_stream(
-                    stream_name="test",
-                    stream_factory=stream_factory,
-                    send_tx=send_tx,
-                    retries=retries,
-                    backoff=0.0,
-                )
+        with (
+            caplog.at_level(logging.DEBUG, logger="jumpstarter.exporter.exporter"),
+            pytest.raises(Exception, match="connection lost"),
+        ):
+            await exporter._retry_stream(
+                stream_name="test",
+                stream_factory=stream_factory,
+                send_tx=send_tx,
+                retries=retries,
+                backoff=0.0,
+            )
 
         reset_messages = [r for r in caplog.records if "retry counter reset" in r.message.lower()]
         assert len(reset_messages) == 1

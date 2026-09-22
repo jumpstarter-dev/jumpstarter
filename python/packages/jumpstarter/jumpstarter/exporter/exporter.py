@@ -652,7 +652,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     )
                     await anyio.sleep(backoff)
                     continue
-                logger.error("Failed to %s: %s", description, e)
+                logger.exception("Failed to %s", description)
                 return False, e.code()
             except Exception as e:
                 logger.error("Failed to %s: %s", description, e)
@@ -825,7 +825,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     with CancelScope(shield=True):
                         await channel.close()
         except Exception as e:
-            logger.error("Error during controller unregistration: %s", e, exc_info=True)
+            logger.error("Error during controller unregistration: %s", e)
 
     @asynccontextmanager
     async def __asynccontextmanager__(self) -> AsyncGenerator[Self]:
@@ -834,8 +834,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         finally:
             try:
                 await self._unregister_with_controller()
-            except Exception as e:
-                logger.error("Error during exporter cleanup: %s", e, exc_info=True)
+            except Exception:
+                logger.exception("Error during exporter cleanup")
                 # Don't re-raise to avoid masking the original exception
 
     async def _handle_client_conn(
@@ -1068,7 +1068,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         lease_scope.after_lease_hook_done.set()
         return True
 
-    async def handle_lease(self, lease_name: str, tg: TaskGroup, lease_scope: LeaseContext) -> None:  # noqa: C901
+    async def handle_lease(self, lease_name: str, tg: TaskGroup, lease_scope: LeaseContext) -> None:
         """Handle all incoming client connections for a lease.
 
         This method orchestrates the complete lifecycle of managing connections during

@@ -218,26 +218,28 @@ class TestFilterPassedToNftables:
 
 class TestTransactionalSetup:
     def test_cleanup_called_on_setup_failure(self, tmp_path: Path):
-        with pytest.raises(RuntimeError, match="Cannot detect upstream"):
-            with patch(f"{_DRIVER_MODULE}.sys") as mock_sys, \
-                 patch(f"{_DRIVER_MODULE}.shutil") as mock_shutil, \
-                 patch(f"{_DRIVER_MODULE}.iproute") as mock_iproute, \
-                 patch(f"{_DRIVER_MODULE}.nftables") as mock_nft, \
-                 patch(f"{_DRIVER_MODULE}.dnsmasq"):
-                mock_sys.platform = "linux"
-                mock_shutil.which.return_value = "/usr/bin/fake"
-                mock_iproute.interface_exists.return_value = False
-                mock_iproute.detect_upstream_interface.return_value = None
-                mock_nft._table_name_for.return_value = "jumpstarter_eth0"
-                from .driver import DutNetwork
-                DutNetwork(
-                    interface="eth0",
-                    subnet="192.168.100.0/24",
-                    gateway_ip="192.168.100.1",
-                    upstream_interface=None,
-                    nat_mode="masquerade",
-                    state_dir=str(tmp_path),
-                )  # type: ignore[missing-argument]
+        with (
+            pytest.raises(RuntimeError, match="Cannot detect upstream"),
+            patch(f"{_DRIVER_MODULE}.sys") as mock_sys,
+            patch(f"{_DRIVER_MODULE}.shutil") as mock_shutil,
+            patch(f"{_DRIVER_MODULE}.iproute") as mock_iproute,
+            patch(f"{_DRIVER_MODULE}.nftables") as mock_nft,
+            patch(f"{_DRIVER_MODULE}.dnsmasq"),
+        ):
+            mock_sys.platform = "linux"
+            mock_shutil.which.return_value = "/usr/bin/fake"
+            mock_iproute.interface_exists.return_value = False
+            mock_iproute.detect_upstream_interface.return_value = None
+            mock_nft._table_name_for.return_value = "jumpstarter_eth0"
+            from .driver import DutNetwork
+            DutNetwork(
+                interface="eth0",
+                subnet="192.168.100.0/24",
+                gateway_ip="192.168.100.1",
+                upstream_interface=None,
+                nat_mode="masquerade",
+                state_dir=str(tmp_path),
+            )  # type: ignore[missing-argument]
 
 
 class TestDriverSetupMasquerade:
@@ -256,7 +258,7 @@ class TestDriverSetupMasquerade:
         mock_dns.start.assert_called_once()
 
     def test_saves_previous_forwarding_per_interface(self, tmp_path: Path):
-        driver, mock_ip, _, _ = _make_driver(tmp_path, nat_mode="masquerade")
+        _driver, mock_ip, _, _ = _make_driver(tmp_path, nat_mode="masquerade")
         assert mock_ip.get_interface_forwarding.call_count == 2
 
     def test_calls_ensure_filter_forward(self, tmp_path: Path):
@@ -313,7 +315,7 @@ class TestDriverSetupDisabled:
         mock_ip.configure_interface.assert_called_once()
 
     def test_upstream_not_required(self, tmp_path: Path):
-        driver, mock_ip, _, _ = _make_driver(
+        _driver, mock_ip, _, _ = _make_driver(
             tmp_path, nat_mode="disabled", upstream_interface=None,
         )
         mock_ip.detect_upstream_interface.assert_not_called()
@@ -321,7 +323,7 @@ class TestDriverSetupDisabled:
 
 class TestDriverCleanup:
     def test_cleanup_masquerade(self, tmp_path: Path):
-        driver, mock_ip, mock_nft, mock_dns = _make_driver(tmp_path, nat_mode="masquerade")
+        driver, _mock_ip, _mock_nft, _mock_dns = _make_driver(tmp_path, nat_mode="masquerade")
         with patch(f"{_DRIVER_MODULE}.iproute") as mock_ip2, \
              patch(f"{_DRIVER_MODULE}.nftables") as mock_nft2, \
              patch(f"{_DRIVER_MODULE}.dnsmasq") as mock_dns2:
@@ -495,16 +497,14 @@ class TestResolveIp:
     def test_unresolvable_hostname_raises(self):
         from .driver import DutNetwork
 
-        with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")):
-            with pytest.raises(ValueError, match="Cannot resolve hostname"):
-                DutNetwork._resolve_ip("no-such-host.invalid")
+        with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")), pytest.raises(ValueError, match="Cannot resolve hostname"):
+            DutNetwork._resolve_ip("no-such-host.invalid")
 
     def test_empty_getaddrinfo_result_raises(self):
         from .driver import DutNetwork
 
-        with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", return_value=[]):
-            with pytest.raises(ValueError, match="Cannot resolve hostname"):
-                DutNetwork._resolve_ip("empty-result.invalid")
+        with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", return_value=[]), pytest.raises(ValueError, match="Cannot resolve hostname"):
+            DutNetwork._resolve_ip("empty-result.invalid")
 
 
 class TestDnsNameIn1to1:
@@ -536,7 +536,7 @@ class TestDnsNameIn1to1:
             {"mac": "aa:bb:cc:dd:ee:02", "ip": "192.168.100.11", "public_ip": "myhost.example.com"},
         ]
         with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", return_value=fake_result):
-            driver, mock_ip, mock_nft, _ = _make_driver(
+            _driver, mock_ip, _mock_nft, _ = _make_driver(
                 tmp_path, nat_mode="1to1", addresses=leases,
             )
             assert mock_ip.add_ip_alias.call_count == 2
@@ -547,9 +547,8 @@ class TestDnsNameIn1to1:
         leases = [
             {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.100.10", "public_ip": "bad-host.invalid"},
         ]
-        with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", side_effect=socket.gaierror("fail")):
-            with pytest.raises(ValueError, match="Cannot resolve hostname"):
-                _make_driver(tmp_path, nat_mode="1to1", addresses=leases)
+        with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", side_effect=socket.gaierror("fail")), pytest.raises(ValueError, match="Cannot resolve hostname"):
+            _make_driver(tmp_path, nat_mode="1to1", addresses=leases)
 
 
 class TestAddressEntryValidation:
@@ -691,7 +690,7 @@ class TestVlanSetupMasquerade:
             {"ip": "192.168.100.126", "vlan_id": 906,
              "public_ip": "203.0.113.2", "public_gateway": "203.0.113.254"},
         ]
-        driver, _, mock_nft, _ = _make_driver(
+        _driver, _, mock_nft, _ = _make_driver(
             tmp_path, nat_mode="masquerade", addresses=addrs,
         )
         call_kwargs = mock_nft.apply_masquerade_rules.call_args[1]

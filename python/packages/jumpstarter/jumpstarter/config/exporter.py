@@ -341,9 +341,8 @@ class ExporterConfigV1Alpha1(BaseModel):
 
     @contextmanager
     def serve_unix(self):
-        with start_blocking_portal() as portal:
-            with portal.wrap_async_context_manager(self.serve_unix_async()) as path:
-                yield path
+        with start_blocking_portal() as portal, portal.wrap_async_context_manager(self.serve_unix_async()) as path:
+            yield path
 
     @asynccontextmanager
     async def create_exporter(self, *, standalone: bool = False):

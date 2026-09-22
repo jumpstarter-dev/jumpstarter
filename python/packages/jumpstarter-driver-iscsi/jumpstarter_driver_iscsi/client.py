@@ -97,7 +97,7 @@ class ISCSIServerClient(CompositeClient):
                     header_map[key] = value
 
                 parsed = urlparse(file)
-                tf = NamedTemporaryFile(
+                tf = NamedTemporaryFile(  # noqa: SIM115
                     prefix="jumpstarter-iscsi-",
                     suffix=os.path.basename(parsed.path),
                     delete=False,

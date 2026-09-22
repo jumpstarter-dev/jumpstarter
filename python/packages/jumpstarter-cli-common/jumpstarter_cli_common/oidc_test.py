@@ -235,9 +235,9 @@ class TestDeviceAuthorizationGrant:
         with (
             patch.object(config, "configuration", new_callable=AsyncMock, return_value=discovery),
             patch("jumpstarter_cli_common.oidc.aiohttp.ClientSession", return_value=mock_session),
+            pytest.raises(click.ClickException, match="denied by the user"),
         ):
-            with pytest.raises(click.ClickException, match="denied by the user"):
-                await config.device_authorization_grant()
+            await config.device_authorization_grant()
 
     @pytest.mark.asyncio
     async def test_raises_on_expired_token(self) -> None:
@@ -277,9 +277,9 @@ class TestDeviceAuthorizationGrant:
         with (
             patch.object(config, "configuration", new_callable=AsyncMock, return_value=discovery),
             patch("jumpstarter_cli_common.oidc.aiohttp.ClientSession", return_value=mock_session),
+            pytest.raises(click.ClickException, match="expired"),
         ):
-            with pytest.raises(click.ClickException, match="expired"):
-                await config.device_authorization_grant()
+            await config.device_authorization_grant()
 
 
 # ---------------------------------------------------------------------------

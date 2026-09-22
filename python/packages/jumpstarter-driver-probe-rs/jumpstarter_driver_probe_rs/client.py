@@ -57,10 +57,10 @@ class ProbeRsClient(DriverClient):
         if words <= 0:
             raise ArgumentError("Words must be positive")
 
-        data_strs = self.call("read", f"b{int(width)}", "0x%x" % int(address), "%d" % words)
+        data_strs = self.call("read", f"b{int(width)}", f"0x{int(address):x}", f"{words:d}")
         return [int(data, 16) for data in data_strs]
 
-    def cli(self):  # noqa: C901
+    def cli(self):
         @driver_click_group(self)
         def base():
             """probe-rs client"""
@@ -100,13 +100,13 @@ class ProbeRsClient(DriverClient):
 
             data_ints = self.read(width, address, words)
             if width == 8:
-                data_strs = ["%02x" % data for data in data_ints]
+                data_strs = [f"{data:02x}" for data in data_ints]
             elif width == 16:
-                data_strs = ["%04x" % data for data in data_ints]
+                data_strs = [f"{data:04x}" for data in data_ints]
             elif width == 32:
-                data_strs = ["%08x" % data for data in data_ints]
+                data_strs = [f"{data:08x}" for data in data_ints]
             elif width == 64:
-                data_strs = ["%016x" % data for data in data_ints]
+                data_strs = [f"{data:016x}" for data in data_ints]
 
             print(" ".join(data_strs))
 

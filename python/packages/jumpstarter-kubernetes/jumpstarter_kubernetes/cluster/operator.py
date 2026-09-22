@@ -255,7 +255,7 @@ async def apply_jumpstarter_cr(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await process.communicate(input=cr_yaml.encode())
+    _stdout, stderr = await process.communicate(input=cr_yaml.encode())
 
     if process.returncode != 0:
         raise ClusterOperationError(

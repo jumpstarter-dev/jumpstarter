@@ -1,6 +1,7 @@
 """Introspection must drive synchronous driver facades outside the event loop."""
 
 from types import SimpleNamespace
+from typing import ClassVar
 from unittest.mock import MagicMock
 
 import click
@@ -12,7 +13,7 @@ from jumpstarter_mcp.tools.commands import driver_methods, drivers, explore
 
 
 class LeafClient:
-    children: dict = {}
+    children: ClassVar[dict]= {}
 
     def on(self):
         """Turn power on."""

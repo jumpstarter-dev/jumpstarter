@@ -135,9 +135,8 @@ def _parse_registries_for_url(oci_url: str) -> tuple[str, ...]:
     else:
         # namespace/image form (e.g. "library/ubuntu") — first segment has
         # no dot and isn't localhost, so it's not a registry hostname.
-        if "." not in registry and registry != "localhost":
-            if ":" not in registry or not registry.split(":", 1)[1].isdigit():
-                return _get_unqualified_search_registries()
+        if "." not in registry and registry != "localhost" and (":" not in registry or not registry.split(":", 1)[1].isdigit()):
+            return _get_unqualified_search_registries()
 
     return (registry,)
 

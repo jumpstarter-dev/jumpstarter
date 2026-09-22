@@ -157,9 +157,8 @@ class SSHWrapperClient(CompositeClient):
         temp_file = None
         if ssh_identity:
             try:
-                temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='_ssh_key')
-                temp_file.write(ssh_identity)
-                temp_file.close()
+                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='_ssh_key') as temp_file:
+                    temp_file.write(ssh_identity)
                 # Set proper permissions (600) for SSH key
                 os.chmod(temp_file.name, 0o600)
                 identity_file = temp_file.name

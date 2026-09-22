@@ -212,7 +212,7 @@ def async_handle_exceptions(func):
                 if cli_exc := _map_cli_exception(exc):
                     raise cli_exc from None
             # If no handled exceptions, re-raise the original group
-            raise eg
+            raise
         except Exception as e:
             if cli_exc := _map_cli_exception(e):
                 raise cli_exc from None

@@ -218,9 +218,11 @@ class TestRunCommand:
 
     @pytest.mark.asyncio
     async def test_run_command_not_found(self):
-        with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError("command not found")):
-            with pytest.raises(RuntimeError, match="Command not found: nonexistent"):
-                await run_command(["nonexistent"])
+        with (
+            patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError("command not found")),
+            pytest.raises(RuntimeError, match="Command not found: nonexistent"),
+        ):
+            await run_command(["nonexistent"])
 
     @pytest.mark.asyncio
     async def test_run_command_with_output_success(self):
@@ -236,9 +238,11 @@ class TestRunCommand:
 
     @pytest.mark.asyncio
     async def test_run_command_with_output_not_found(self):
-        with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError("command not found")):
-            with pytest.raises(RuntimeError, match="Command not found: nonexistent"):
-                await run_command_with_output(["nonexistent"])
+        with (
+            patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError("command not found")),
+            pytest.raises(RuntimeError, match="Command not found: nonexistent"),
+        ):
+            await run_command_with_output(["nonexistent"])
 
     @pytest.mark.asyncio
     async def test_run_command_with_output_failure(self):

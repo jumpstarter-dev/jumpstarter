@@ -106,18 +106,17 @@ def test_no_cps_throttling():
     """Test that without CPS throttling, transmission is fast."""
     test_data = b"hello"
 
-    with serve(PySerial(url="loop://")) as client:  # No CPS specified
-        with client.stream() as stream:
-            start_time = time.perf_counter()
-            stream.send(test_data)
-            end_time = time.perf_counter()
+    with serve(PySerial(url="loop://")) as client, client.stream() as stream:
+        start_time = time.perf_counter()
+        stream.send(test_data)
+        end_time = time.perf_counter()
 
-            elapsed_time = end_time - start_time
-            # Without throttling, should be fast; allow headroom for CI noise
-            assert elapsed_time < 0.5, f"Expected fast transmission, got {elapsed_time}s"
+        elapsed_time = end_time - start_time
+        # Without throttling, should be fast; allow headroom for CI noise
+        assert elapsed_time < 0.5, f"Expected fast transmission, got {elapsed_time}s"
 
-            received = stream.receive()
-            assert test_data.decode("utf-8").startswith(received.decode("utf-8"))
+        received = stream.receive()
+        assert test_data.decode("utf-8").startswith(received.decode("utf-8"))
 
 
 def test_cps_zero_disables_throttling():

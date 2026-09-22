@@ -112,7 +112,7 @@ class CuttlefishClient(CompositeClient):
     def wait_boot(self, timeout: int = 0) -> str:
         return self.call("wait_boot", timeout)
 
-    def cli(self):  # noqa: C901
+    def cli(self):
         @click.group()
         def cuttlefish():
             """Cuttlefish Host Orchestrator.

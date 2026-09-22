@@ -141,7 +141,7 @@ class TestDriverMethods:
     def test_digital_output_initialization(self, mock_gpiod):
         """Test DigitalOutput driver initialization with mocked gpiod"""
         # Set up common mocks
-        mock_chip, mock_line, mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
+        _mock_chip, _mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
 
         # Import and test the driver
         from jumpstarter_driver_gpiod.driver import DigitalOutput
@@ -164,7 +164,7 @@ class TestDriverMethods:
     def test_digital_input_initialization(self, mock_gpiod):
         """Test DigitalInput driver initialization with mocked gpiod"""
         # Set up common mocks
-        mock_chip, mock_line, mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=17)
+        _mock_chip, _mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=17)
 
         # Import and test the driver
         from jumpstarter_driver_gpiod.driver import DigitalInput
@@ -187,7 +187,7 @@ class TestDriverMethods:
     def test_digital_output_methods(self, mock_gpiod):
         """Test DigitalOutput driver methods with mocked gpiod"""
         # Set up common mocks
-        mock_chip, mock_line, mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
+        _mock_chip, _mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
 
         # Import and test the driver
         from jumpstarter_driver_gpiod.driver import DigitalOutput
@@ -217,7 +217,7 @@ class TestDriverMethods:
     def test_digital_input_methods(self, mock_gpiod):
         """Test DigitalInput driver methods with mocked gpiod"""
         # Set up common mocks
-        mock_chip, mock_line, mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=17)
+        _mock_chip, _mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=17)
 
         # Import and test the driver
         from jumpstarter_driver_gpiod.driver import DigitalInput
@@ -299,7 +299,7 @@ class TestErrorHandling:
     def test_line_request_error(self, mock_gpiod):
         """Test handling of line request error"""
         # Set up common mocks
-        mock_chip, mock_line, mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
+        mock_chip, _mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
 
         # Set up the error condition
         mock_chip.request_lines.side_effect = Exception("Cannot request line")
@@ -313,7 +313,7 @@ class TestErrorHandling:
     def test_invalid_drive_value(self, mock_gpiod):
         """Test initialization with invalid drive value"""
         # Set up common mocks
-        mock_chip, mock_line, mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
+        _mock_chip, _mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
 
         from jumpstarter_driver_gpiod.driver import DigitalOutput
 
@@ -324,7 +324,7 @@ class TestErrorHandling:
     def test_invalid_bias_value(self, mock_gpiod):
         """Test initialization with invalid bias value"""
         # Set up common mocks
-        mock_chip, mock_line, mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
+        _mock_chip, _mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
 
         from jumpstarter_driver_gpiod.driver import DigitalOutput
 
@@ -335,7 +335,7 @@ class TestErrorHandling:
     def test_invalid_initial_value(self, mock_gpiod):
         """Test initialization with invalid initial value"""
         # Set up common mocks
-        mock_chip, mock_line, mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
+        _mock_chip, _mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
 
         from jumpstarter_driver_gpiod.driver import DigitalOutput
 

@@ -159,8 +159,8 @@ class RideSXClient(FlasherClient, CompositeClient):
 
             try:
                 self._power_off_if_available(power_off)
-            except Exception as power_error:
-                self.logger.exception("power-off cleanup failed after flash operation error: %s", power_error)
+            except Exception:
+                self.logger.exception("power-off cleanup failed after flash operation error")
 
             if wrapped_error is not None:
                 raise wrapped_error from flash_error
@@ -168,9 +168,9 @@ class RideSXClient(FlasherClient, CompositeClient):
 
         try:
             self._power_off_if_available(power_off)
-        except Exception as power_error:
+        except Exception:
             # Keep successful flashes successful, but make cleanup failures visible.
-            self.logger.exception("power-off cleanup failed after successful flash operation: %s", power_error)
+            self.logger.exception("power-off cleanup failed after successful flash operation")
 
         return result
 

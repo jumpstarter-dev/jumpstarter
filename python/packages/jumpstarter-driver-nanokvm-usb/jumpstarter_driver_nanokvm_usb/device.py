@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from typing import Self
 
 from .keyboard import KeyboardReport, resolve_key_code
 from .mouse import (
@@ -206,7 +207,7 @@ class NanoKVMUSBDevice:
             self._video.discard_stale_frames(self._video_discard_stale)
         return self._video.read_frame_jpeg(q)
 
-    def __enter__(self) -> NanoKVMUSBDevice:
+    def __enter__(self) -> Self:
         self.connect()
         return self
 

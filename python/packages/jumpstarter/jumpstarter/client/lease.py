@@ -9,7 +9,7 @@ from contextlib import (
     contextmanager,
 )
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, Self
 
 import grpc
@@ -463,7 +463,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     logger.warning("Failed to check lease %s status: %s", self.name, e)
                     # If we know when the lease should end, use it to bound the sleep
                     if last_known_end_time is not None:
-                        remain = (last_known_end_time - datetime.now().astimezone()).total_seconds()
+                        remain = (last_known_end_time - datetime.now(tz=UTC).astimezone()).total_seconds()
                         if remain <= 0:
                             logger.info(
                                 "Lease %s estimated to have ended at %s (unable to confirm with server)",
@@ -483,7 +483,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     continue
 
                 last_known_end_time = end_time
-                remain = end_time - datetime.now().astimezone()
+                remain = end_time - datetime.now(tz=UTC).astimezone()
                 if remain < timedelta(0):
                     logger.info(f"Lease {self.name} ended at {end_time}")
                     self._notify_lease_ending(timedelta(0))
@@ -506,9 +506,11 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
 
     @asynccontextmanager
     async def connect_async(self, stack):
-        async with self.serve_unix_async() as path:
-            async with client_from_path(path, self.portal, stack, allow=self.allow, unsafe=self.unsafe) as client:
-                yield client
+        async with (
+            self.serve_unix_async() as path,
+            client_from_path(path, self.portal, stack, allow=self.allow, unsafe=self.unsafe) as client,
+        ):
+            yield client
 
     @contextmanager
     def connect(self):
@@ -553,7 +555,7 @@ class LeaseAcquisitionSpinner:
         )
 
     def __enter__(self):
-        self.start_time = datetime.now()
+        self.start_time = datetime.now(tz=UTC)
         if self._should_show_spinner:
             self.spinner = self.console.status(
                 f"Acquiring lease {self.lease_name or '...'}...", spinner="dots", spinner_style="blue"
@@ -573,13 +575,13 @@ class LeaseAcquisitionSpinner:
         """
         if self.spinner and self._should_show_spinner:
             self._current_message = f"[blue]{message}[/blue]"
-            elapsed = datetime.now() - self.start_time
+            elapsed = datetime.now(tz=UTC) - self.start_time
             elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
             self.spinner.update(f"{self._current_message} [dim]({elapsed_str})[/dim]")
         else:
             # Log info message when no console is available
             # Throttle updates to at most every 5 minutes unless forced
-            now = datetime.now()
+            now = datetime.now(tz=UTC)
             should_log = (
                 force or self._last_log_time is None or (now - self._last_log_time) >= self._log_throttle_interval
             )
@@ -593,7 +595,7 @@ class LeaseAcquisitionSpinner:
     def tick(self):
         """Update the spinner with current elapsed time without changing the message."""
         if self.spinner and self._should_show_spinner and self._current_message:
-            elapsed = datetime.now() - self.start_time
+            elapsed = datetime.now(tz=UTC) - self.start_time
             elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
             # Use the stored current message and update with new elapsed time
             self.spinner.update(f"{self._current_message} [dim]({elapsed_str})[/dim]")

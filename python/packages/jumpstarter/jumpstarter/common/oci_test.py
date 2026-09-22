@@ -243,22 +243,26 @@ class TestResolveOciCredentials:
         auth_path = tmp_path / "auth.json"
         auth_path.write_text(_make_auth_json({"quay.io": {"auth": _encode_auth("fileuser", "filepass")}}))
 
-        with patch.dict(os.environ, {"OCI_USERNAME": "envuser", "OCI_PASSWORD": "envpass"}):
-            with patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]):
-                result = resolve_oci_credentials("oci://quay.io/org/image:latest")
-                assert result.username == "envuser"
-                assert result.password.get_secret_value() == "envpass"
+        with (
+            patch.dict(os.environ, {"OCI_USERNAME": "envuser", "OCI_PASSWORD": "envpass"}),
+            patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]),
+        ):
+            result = resolve_oci_credentials("oci://quay.io/org/image:latest")
+            assert result.username == "envuser"
+            assert result.password.get_secret_value() == "envpass"
 
     def test_falls_back_to_auth_file(self, tmp_path):
         auth_path = tmp_path / "auth.json"
         auth_path.write_text(_make_auth_json({"quay.io": {"auth": _encode_auth("fileuser", "filepass")}}))
 
         env_clean = {k: v for k, v in os.environ.items() if k not in ("OCI_USERNAME", "OCI_PASSWORD")}
-        with patch.dict(os.environ, env_clean, clear=True):
-            with patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]):
-                result = resolve_oci_credentials("oci://quay.io/org/image:latest")
-                assert result.username == "fileuser"
-                assert result.password.get_secret_value() == "filepass"
+        with (
+            patch.dict(os.environ, env_clean, clear=True),
+            patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]),
+        ):
+            result = resolve_oci_credentials("oci://quay.io/org/image:latest")
+            assert result.username == "fileuser"
+            assert result.password.get_secret_value() == "filepass"
 
     def test_partial_env_falls_back_to_auth_file(self, tmp_path):
         """When only one env var is set, fall through to auth file instead of returning partial."""
@@ -268,11 +272,13 @@ class TestResolveOciCredentials:
         # Only OCI_USERNAME set, OCI_PASSWORD not set
         env_partial = {k: v for k, v in os.environ.items() if k != "OCI_PASSWORD"}
         env_partial["OCI_USERNAME"] = "partialuser"
-        with patch.dict(os.environ, env_partial, clear=True):
-            with patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]):
-                result = resolve_oci_credentials("oci://quay.io/org/image:latest")
-                assert result.username == "fileuser"
-                assert result.password.get_secret_value() == "filepass"
+        with (
+            patch.dict(os.environ, env_partial, clear=True),
+            patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]),
+        ):
+            result = resolve_oci_credentials("oci://quay.io/org/image:latest")
+            assert result.username == "fileuser"
+            assert result.password.get_secret_value() == "filepass"
 
     def test_partial_env_password_only_falls_back_to_auth_file(self, tmp_path):
         """When only OCI_PASSWORD is set, fall through to auth file instead of returning partial."""
@@ -281,11 +287,13 @@ class TestResolveOciCredentials:
 
         env_partial = {k: v for k, v in os.environ.items() if k != "OCI_USERNAME"}
         env_partial["OCI_PASSWORD"] = "partialpass"
-        with patch.dict(os.environ, env_partial, clear=True):
-            with patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]):
-                result = resolve_oci_credentials("oci://quay.io/org/image:latest")
-                assert result.username == "fileuser"
-                assert result.password.get_secret_value() == "filepass"
+        with (
+            patch.dict(os.environ, env_partial, clear=True),
+            patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]),
+        ):
+            result = resolve_oci_credentials("oci://quay.io/org/image:latest")
+            assert result.username == "fileuser"
+            assert result.password.get_secret_value() == "filepass"
 
     def test_whitespace_env_vars_fall_through_to_auth_file(self, tmp_path):
         """Whitespace-only env vars should not be treated as credentials."""
@@ -295,19 +303,23 @@ class TestResolveOciCredentials:
         env = {k: v for k, v in os.environ.items() if k not in ("OCI_USERNAME", "OCI_PASSWORD")}
         env["OCI_USERNAME"] = "  "
         env["OCI_PASSWORD"] = "  "
-        with patch.dict(os.environ, env, clear=True):
-            with patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]):
-                result = resolve_oci_credentials("oci://quay.io/org/image:latest")
-                assert result.username == "fileuser"
-                assert result.password.get_secret_value() == "filepass"
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]),
+        ):
+            result = resolve_oci_credentials("oci://quay.io/org/image:latest")
+            assert result.username == "fileuser"
+            assert result.password.get_secret_value() == "filepass"
 
     def test_returns_none_when_no_source(self):
         env_clean = {k: v for k, v in os.environ.items() if k not in ("OCI_USERNAME", "OCI_PASSWORD")}
-        with patch.dict(os.environ, env_clean, clear=True):
-            with patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[]):
-                result = resolve_oci_credentials("oci://quay.io/org/image:latest")
-                assert result.username is None
-                assert result.password is None
+        with (
+            patch.dict(os.environ, env_clean, clear=True),
+            patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[]),
+        ):
+            result = resolve_oci_credentials("oci://quay.io/org/image:latest")
+            assert result.username is None
+            assert result.password is None
 
 
 class TestParseOciRegistryDigest:
@@ -500,11 +512,13 @@ class TestOciCredentials:
         auth_path.write_text(_make_auth_json({"quay.io": {"auth": _encode_auth("user", "pass")}}))
 
         env_clean = {k: v for k, v in os.environ.items() if k not in ("OCI_USERNAME", "OCI_PASSWORD")}
-        with patch.dict(os.environ, env_clean, clear=True):
-            with patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]):
-                result = resolve_oci_credentials("oci://quay.io/org/image:latest")
-                assert isinstance(result, OciCredentials)
-                assert result.is_authenticated
+        with (
+            patch.dict(os.environ, env_clean, clear=True),
+            patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]),
+        ):
+            result = resolve_oci_credentials("oci://quay.io/org/image:latest")
+            assert isinstance(result, OciCredentials)
+            assert result.is_authenticated
 
 
 class TestUnqualifiedSearchRegistries:

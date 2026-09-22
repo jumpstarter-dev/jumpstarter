@@ -564,9 +564,11 @@ class TestReportStatusGrpcErrorHandling:
         )
         mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=error)
 
-        with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
-            with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"):
-                await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+        with (
+            patch.object(exporter, "_controller_stub", return_value=stub_ctx),
+            caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"),
+        ):
+            await exporter._report_status(ExporterStatus.AVAILABLE, "test")
 
         warning_msgs = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert any("ReportStatus not supported" in r.message for r in warning_msgs), (
@@ -593,10 +595,12 @@ class TestReportStatusGrpcErrorHandling:
         )
         mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=error)
 
-        with patch.object(exporter, "_controller_stub", return_value=stub_ctx), \
-                patch("anyio.sleep") as mock_sleep:
-            with caplog.at_level(logging.DEBUG, logger="jumpstarter.exporter.exporter"):
-                await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+        with (
+            patch.object(exporter, "_controller_stub", return_value=stub_ctx),
+            patch("anyio.sleep") as mock_sleep,
+            caplog.at_level(logging.DEBUG, logger="jumpstarter.exporter.exporter"),
+        ):
+            await exporter._report_status(ExporterStatus.AVAILABLE, "test")
 
         # Should log retry warnings (_RPC_MAX_RETRIES)
         warning_msgs = [r for r in caplog.records if r.levelno == logging.WARNING]
@@ -650,7 +654,7 @@ class TestReportStatusGrpcErrorHandling:
             # Third attempt succeeds
             delivered_statuses.append(ExporterStatus.from_proto(request.status))
 
-        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=fail_twice_then_succeed)
+        _mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=fail_twice_then_succeed)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), \
                 patch("anyio.sleep") as mock_sleep:

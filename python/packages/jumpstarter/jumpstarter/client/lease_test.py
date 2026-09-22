@@ -111,7 +111,7 @@ class TestLeaseAcquisitionSpinner:
         """Test status update when console is available."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
+            spinner.start_time = datetime.now(tz=UTC)
 
             mock_spinner = Mock()
             spinner.spinner = mock_spinner
@@ -128,7 +128,7 @@ class TestLeaseAcquisitionSpinner:
         """Test status update when console is not available (should log)."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
+            spinner.start_time = datetime.now(tz=UTC)
 
             with caplog.at_level(logging.INFO):
                 spinner.update_status("Test message")
@@ -140,7 +140,7 @@ class TestLeaseAcquisitionSpinner:
         """Test tick update when console is available and message exists."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
+            spinner.start_time = datetime.now(tz=UTC)
             spinner._current_message = "[blue]Test message[/blue]"
 
             mock_spinner = Mock()
@@ -157,7 +157,7 @@ class TestLeaseAcquisitionSpinner:
         """Test tick update when console is not available (should not log)."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
+            spinner.start_time = datetime.now(tz=UTC)
             spinner._current_message = "[blue]Test message[/blue]"
 
             # Should not raise any exceptions or log anything
@@ -167,7 +167,7 @@ class TestLeaseAcquisitionSpinner:
         """Test tick update when no current message exists."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
+            spinner.start_time = datetime.now(tz=UTC)
             spinner._current_message = None
 
             mock_spinner = Mock()
@@ -182,7 +182,7 @@ class TestLeaseAcquisitionSpinner:
         """Test that elapsed time is formatted correctly."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now() - timedelta(seconds=65)  # 1:05
+            spinner.start_time = datetime.now(tz=UTC) - timedelta(seconds=65)  # 1:05
             spinner._current_message = "[blue]Test message[/blue]"
 
             mock_spinner = Mock()
@@ -225,7 +225,7 @@ class TestLeaseAcquisitionSpinner:
         """Test that the base message is preserved across multiple ticks."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
+            spinner.start_time = datetime.now(tz=UTC)
 
             # Set up mock before calling update_status
             mock_spinner = Mock()
@@ -261,7 +261,7 @@ class TestLeaseAcquisitionSpinner:
         """Test that the first update is always logged when console is not available."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
+            spinner.start_time = datetime.now(tz=UTC)
 
             with caplog.at_level(logging.INFO):
                 spinner.update_status("First message")
@@ -273,8 +273,8 @@ class TestLeaseAcquisitionSpinner:
         """Test that updates within 5 minutes are not logged."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
-            spinner._last_log_time = datetime.now() - timedelta(minutes=2)  # 2 minutes ago
+            spinner.start_time = datetime.now(tz=UTC)
+            spinner._last_log_time = datetime.now(tz=UTC) - timedelta(minutes=2)  # 2 minutes ago
 
             with caplog.at_level(logging.INFO):
                 spinner.update_status("Second message")
@@ -286,8 +286,8 @@ class TestLeaseAcquisitionSpinner:
         """Test that updates after 5 minutes are logged."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
-            spinner._last_log_time = datetime.now() - timedelta(minutes=6)  # 6 minutes ago
+            spinner.start_time = datetime.now(tz=UTC)
+            spinner._last_log_time = datetime.now(tz=UTC) - timedelta(minutes=6)  # 6 minutes ago
 
             with caplog.at_level(logging.INFO):
                 spinner.update_status("After interval message")
@@ -299,8 +299,8 @@ class TestLeaseAcquisitionSpinner:
         """Test that forced updates are always logged regardless of throttle interval."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
-            spinner._last_log_time = datetime.now() - timedelta(minutes=1)  # 1 minute ago
+            spinner.start_time = datetime.now(tz=UTC)
+            spinner._last_log_time = datetime.now(tz=UTC) - timedelta(minutes=1)  # 1 minute ago
 
             with caplog.at_level(logging.INFO):
                 spinner.update_status("Forced message", force=True)
@@ -312,7 +312,7 @@ class TestLeaseAcquisitionSpinner:
         """Test that multiple rapid updates only log at appropriate intervals."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
+            spinner.start_time = datetime.now(tz=UTC)
 
             with caplog.at_level(logging.INFO):
                 # First update should be logged
@@ -320,7 +320,7 @@ class TestLeaseAcquisitionSpinner:
                 assert "Message 1" in caplog.text
 
                 # Set last log time to recent
-                spinner._last_log_time = datetime.now() - timedelta(minutes=1)
+                spinner._last_log_time = datetime.now(tz=UTC) - timedelta(minutes=1)
 
                 # Second update should not be logged (within interval)
                 spinner.update_status("Message 2")
@@ -331,7 +331,7 @@ class TestLeaseAcquisitionSpinner:
                 assert "Message 3" not in caplog.text
 
                 # Set last log time to past the interval
-                spinner._last_log_time = datetime.now() - timedelta(minutes=6)
+                spinner._last_log_time = datetime.now(tz=UTC) - timedelta(minutes=6)
 
                 # Fourth update should be logged (past interval)
                 spinner.update_status("Message 4")
@@ -341,7 +341,7 @@ class TestLeaseAcquisitionSpinner:
         """Test that throttling is not applied when console is available."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
+            spinner.start_time = datetime.now(tz=UTC)
 
             mock_spinner = Mock()
             spinner.spinner = mock_spinner
@@ -352,7 +352,7 @@ class TestLeaseAcquisitionSpinner:
             spinner.update_status("Message 3")
 
             # All should be called even if we set a recent last_log_time
-            spinner._last_log_time = datetime.now() - timedelta(minutes=1)
+            spinner._last_log_time = datetime.now(tz=UTC) - timedelta(minutes=1)
             spinner.update_status("Message 4")
 
             assert mock_spinner.update.call_count == 4
@@ -869,16 +869,18 @@ class TestServeUnixAsync:
             router_stream_calls.append((endpoint, token, tls_config, grpc_options))
             yield
 
-        with patch.object(lease, "_dial_with_retry", side_effect=mock_dial_with_retry):
-            with patch("jumpstarter.client.lease.connect_router_stream", side_effect=mock_connect_router_stream):
-                async with lease.serve_unix_async() as socket_path:
-                    # Readiness check should have been called
-                    assert dial_calls == 1
+        with (
+            patch.object(lease, "_dial_with_retry", side_effect=mock_dial_with_retry),
+            patch("jumpstarter.client.lease.connect_router_stream", side_effect=mock_connect_router_stream),
+        ):
+            async with lease.serve_unix_async() as socket_path:
+                # Readiness check should have been called
+                assert dial_calls == 1
 
-                    # Connect to the Unix socket
-                    async with await anyio.connect_unix(socket_path):
-                        # Give the handler time to process
-                        await anyio.sleep(0.1)
+                # Connect to the Unix socket
+                async with await anyio.connect_unix(socket_path):
+                    # Give the handler time to process
+                    await anyio.sleep(0.1)
 
         # Verify per-connection Dial was called
         assert dial_calls == 2

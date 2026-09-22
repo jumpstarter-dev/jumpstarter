@@ -38,9 +38,8 @@ def driver_click_group(client: "DriverClient", **kwargs: Any) -> Callable:
 
     def decorator(f: Callable) -> DriverClickGroup:
         # Use function docstring if no help= provided
-        if "help" not in kwargs or kwargs["help"] is None:
-            if f.__doc__:
-                kwargs["help"] = f.__doc__.strip()
+        if ("help" not in kwargs or kwargs["help"] is None) and f.__doc__:
+            kwargs["help"] = f.__doc__.strip()
 
         # Server description overrides Click defaults
         if getattr(client, "description", None):

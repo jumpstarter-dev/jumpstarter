@@ -49,7 +49,7 @@ def validate_cluster_type_selection(
         return auto_detect_cluster_type()
 
 
-async def delete_cluster_by_name(  # noqa: C901
+async def delete_cluster_by_name(
     cluster_name: str,
     cluster_type: str | None = None,
     force: bool = False,
@@ -93,12 +93,11 @@ async def delete_cluster_by_name(  # noqa: C901
         raise ClusterTypeValidationError(cluster_type, ["kind", "minikube"])
 
     # Confirm deletion unless force is specified
-    if not force:
-        if not callback.confirm(
-            f'This will permanently delete the "{cluster_name}" {cluster_type} cluster and ALL its data. Continue?'
-        ):
-            callback.progress("Cluster deletion cancelled.")
-            return
+    if not force and not callback.confirm(
+        f'This will permanently delete the "{cluster_name}" {cluster_type} cluster and ALL its data. Continue?'
+    ):
+        callback.progress("Cluster deletion cancelled.")
+        return
 
     # Delete the cluster
     if cluster_type == "kind":
@@ -109,7 +108,7 @@ async def delete_cluster_by_name(  # noqa: C901
     callback.success(f'Successfully deleted {cluster_type} cluster "{cluster_name}"')
 
 
-async def create_cluster_and_install(  # noqa: C901
+async def create_cluster_and_install(
     cluster_type: ClusterType,
     force_recreate_cluster: bool,
     cluster_name: str,
@@ -183,7 +182,7 @@ async def create_cluster_and_install(  # noqa: C901
             ip = extract_host_from_ssh(k3s_ssh_host)
 
         # Configure endpoints
-        actual_ip, actual_basedomain, actual_grpc, actual_router = await configure_endpoints(
+        _actual_ip, actual_basedomain, actual_grpc, actual_router = await configure_endpoints(
             cluster_type, minikube, cluster_name, ip, basedomain, grpc_endpoint, router_endpoint
         )
 

@@ -34,7 +34,7 @@ class CompositeClient(DriverClient):
             raise AttributeError(name) from None
 
     def close(self):
-        for _, v in self.children.items():
+        for v in self.children.values():
             if hasattr(v, "close"):
                 v.close()
 

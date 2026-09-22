@@ -285,23 +285,25 @@ async def _connect_lease(config: ClientConfigV1Alpha1, lease_name: str, portal: 
     Passing lease_name into lease_async attaches to that lease rather than
     creating one, and leaves it unreleased on exit.
     """
-    async with config.lease_async(
-        selector=None,
-        exporter_name=None,
-        lease_name=lease_name,
-        # Attaching by name never reaches Lease._create, and with selector None
-        # the "selector changed, make a new one" branch cannot fire either, so
-        # no duration is ever sent to the controller. Naming 30 minutes here
-        # only suggested this call could extend a lease that it cannot.
-        duration=timedelta(0),
-        portal=portal,
-    ) as lease:
-        async with lease.serve_unix_async() as path:
-            with ExitStack() as stack:
-                async with client_from_path(
-                    path, portal, stack, allow=lease.allow, unsafe=lease.unsafe
-                ) as client:
-                    yield client
+    async with (
+        config.lease_async(
+            selector=None,
+            exporter_name=None,
+            lease_name=lease_name,
+            # Attaching by name never reaches Lease._create, and with selector None
+            # the "selector changed, make a new one" branch cannot fire either, so
+            # no duration is ever sent to the controller. Naming 30 minutes here
+            # only suggested this call could extend a lease that it cannot.
+            duration=timedelta(0),
+            portal=portal,
+        ) as lease,
+        lease.serve_unix_async() as path,
+    ):
+        with ExitStack() as stack:
+            async with client_from_path(
+                path, portal, stack, allow=lease.allow, unsafe=lease.unsafe
+            ) as client:
+                yield client
 
 
 def describe_drivers(config: ClientConfigV1Alpha1, lease_name: str) -> dict[str, Any]:
@@ -322,9 +324,11 @@ def describe_drivers(config: ClientConfigV1Alpha1, lease_name: str) -> dict[str,
     if not lease_name:
         raise ValueError("lease_name must be a non-empty existing lease name")
 
-    with start_blocking_portal() as portal:
-        with portal.wrap_async_context_manager(_connect_lease(config, lease_name, portal)) as client:
-            return describe_client(client)
+    with (
+        start_blocking_portal() as portal,
+        portal.wrap_async_context_manager(_connect_lease(config, lease_name, portal)) as client,
+    ):
+        return describe_client(client)
 
 
 async def describe_drivers_async(config: ClientConfigV1Alpha1, lease_name: str) -> dict[str, Any]:

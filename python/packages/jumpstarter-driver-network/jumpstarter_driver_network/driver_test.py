@@ -25,23 +25,26 @@ async def echo_handler(stream):
 
 
 def test_tcp_network_portforward(tcp_echo_server):
-    with serve(TcpNetwork(host=tcp_echo_server[0], port=tcp_echo_server[1])) as client:
-        with TcpPortforwardAdapter(client=client) as addr:
-            stream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            stream.connect(addr)
-            stream.send(b"hello")
-            assert stream.recv(5) == b"hello"
+    with (
+        serve(TcpNetwork(host=tcp_echo_server[0], port=tcp_echo_server[1])) as client,
+        TcpPortforwardAdapter(client=client) as addr,
+    ):
+        stream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        stream.connect(addr)
+        stream.send(b"hello")
+        assert stream.recv(5) == b"hello"
 
 
 def test_unix_network_portforward():
-    with start_blocking_portal() as portal:
-        with portal.wrap_async_context_manager(TemporaryUnixListener(echo_handler)) as inner:
-            with serve(UnixNetwork(path=inner)) as client:
-                with UnixPortforwardAdapter(client=client) as addr:
-                    stream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                    stream.connect(str(addr))
-                    stream.send(b"hello")
-                    assert stream.recv(5) == b"hello"
+    with (
+        start_blocking_portal() as portal,
+        portal.wrap_async_context_manager(TemporaryUnixListener(echo_handler)) as inner,
+        serve(UnixNetwork(path=inner)) as client,UnixPortforwardAdapter(client=client) as addr
+    ):
+        stream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        stream.connect(str(addr))
+        stream.send(b"hello")
+        assert stream.recv(5) == b"hello"
 
 
 def test_udp_network():
@@ -59,16 +62,16 @@ def test_udp_network():
 
 
 def test_unix_network():
-    with start_blocking_portal() as portal:
-        with portal.wrap_async_context_manager(TemporaryUnixListener(echo_handler)) as path:
-            with serve(
-                UnixNetwork(
-                    path=path,
-                )
-            ) as client:
-                with client.stream() as stream:
-                    stream.send(b"hello")
-                    assert stream.receive() == b"hello"
+    with (
+        start_blocking_portal() as portal,
+        portal.wrap_async_context_manager(TemporaryUnixListener(echo_handler)) as path,serve(
+        UnixNetwork(
+            path=path,
+        )
+    ) as client, client.stream() as stream
+    ):
+        stream.send(b"hello")
+        assert stream.receive() == b"hello"
 
 
 @pytest.mark.skipif(which("iperf3") is None, reason="iperf3 not available")
@@ -140,8 +143,7 @@ def test_dbus_network_system(monkeypatch):
             subprocess.run(
                 ["busctl", "list", "--system", "--no-pager"],
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
             )
         assert oldvar == os.getenv("DBUS_SYSTEM_BUS_ADDRESS")
 
@@ -160,8 +162,7 @@ def test_dbus_network_session(monkeypatch):
             subprocess.run(
                 ["busctl", "list", "--user", "--no-pager"],
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
             )
         assert oldvar == os.getenv("DBUS_SESSION_BUS_ADDRESS")
 
