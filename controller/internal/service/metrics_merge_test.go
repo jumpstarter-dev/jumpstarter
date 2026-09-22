@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/common/expfmt"
 )
 
-func labeledCounterValue(t *testing.T, mfs []*dto.MetricFamily, name, label, want string) float64 {
+func labeledCounterValue(t *testing.T, mfs []*dto.MetricFamily, name, want string) float64 {
 	t.Helper()
 	for _, mf := range mfs {
 		if mf.GetName() != name && mf.GetName()+"_total" != name {
@@ -34,13 +34,13 @@ func labeledCounterValue(t *testing.T, mfs []*dto.MetricFamily, name, label, wan
 		}
 		for _, m := range mf.Metric {
 			for _, lp := range m.GetLabel() {
-				if lp.GetName() == label && lp.GetValue() == want {
+				if lp.GetName() == labelExporter && lp.GetValue() == want {
 					return m.GetCounter().GetValue()
 				}
 			}
 		}
 	}
-	t.Fatalf("%s{%s=%q} missing from gathered families", name, label, want)
+	t.Fatalf("%s{%s=%q} missing from gathered families", name, labelExporter, want)
 	return 0
 }
 
@@ -221,7 +221,7 @@ func TestRecordMetricsParseError_IncrementsLabeledCounter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Gather: %v", err)
 	}
-	value := labeledCounterValue(t, mfs, metricsParseErrorsMetric, labelExporter, "sidekick")
+	value := labeledCounterValue(t, mfs, metricsParseErrorsMetric, "sidekick")
 	if value != 1 {
 		t.Fatalf("%s{exporter=sidekick} = %v, want 1", metricsParseErrorsMetric, value)
 	}

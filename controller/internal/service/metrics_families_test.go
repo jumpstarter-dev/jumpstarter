@@ -182,7 +182,7 @@ func TestDtoFromProtoFamilies_CanonicalizesOpenMetricsCounterName(t *testing.T) 
 	}
 }
 
-func TestMergeSnapshots_PrefersFamiliesOverUnparseableText(t *testing.T) {
+func TestMergeSnapshots_PrefersFamiliesOverUnparsableText(t *testing.T) {
 	var calls int
 	families := mergeSnapshots([]exporterSnapshot{{
 		name: "sidekick",

@@ -96,12 +96,12 @@ func exporterStreamCtx(t *testing.T, svc *TelemetryService, subject string) cont
 	)
 }
 
-func waitRegistered(t *testing.T, svc *TelemetryService, n int) {
+func waitRegistered(t *testing.T, svc *TelemetryService) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		conns := svc.snapshotConns()
-		if len(conns) != n {
+		if len(conns) != 1 {
 			time.Sleep(10 * time.Millisecond)
 			continue
 		}
@@ -125,7 +125,7 @@ func waitRegistered(t *testing.T, svc *TelemetryService, n int) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("timed out waiting for %d MetricsStream connections, have %d", n, len(svc.snapshotConns()))
+	t.Fatalf("timed out waiting for MetricsStream connection, have %d", len(svc.snapshotConns()))
 }
 
 func httpGet(t *testing.T, url string) (int, string) {
@@ -444,7 +444,7 @@ func TestFanout_TimeoutIncrementsCounterWithoutGRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Gather: %v", err)
 	}
-	value := labeledCounterValue(t, mfs, scrapeTimeoutsMetric, labelExporter, "slow")
+	value := labeledCounterValue(t, mfs, scrapeTimeoutsMetric, "slow")
 	if value != 1 {
 		t.Fatalf("%s{exporter=slow} = %v, want 1", scrapeTimeoutsMetric, value)
 	}
@@ -472,7 +472,7 @@ func TestFanout_TimeoutOmitsExporterAndIncrementsCounter(t *testing.T) {
 			}
 		}
 	}()
-	waitRegistered(t, svc, 1)
+	waitRegistered(t, svc)
 
 	code, body := httpGet(t, "http://"+addr+"/metrics")
 	if code != http.StatusOK {
@@ -488,7 +488,7 @@ func TestFanout_TimeoutOmitsExporterAndIncrementsCounter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Gather: %v", err)
 	}
-	value := labeledCounterValue(t, mfs, scrapeTimeoutsMetric, labelExporter, "slow")
+	value := labeledCounterValue(t, mfs, scrapeTimeoutsMetric, "slow")
 	if value != 1 {
 		t.Fatalf("%s{exporter=slow} = %v, want 1 body:\n%s", scrapeTimeoutsMetric, value, body)
 	}
@@ -535,7 +535,7 @@ jumpstarter_operations_total{exporter="spoofed",operation="on",result="success",
 			}
 		}
 	}()
-	waitRegistered(t, svc, 1)
+	waitRegistered(t, svc)
 
 	code, body := httpGet(t, "http://"+addr+"/metrics")
 	if code != http.StatusOK {
@@ -602,7 +602,7 @@ jumpstarter_operations_total{operation="on",result="success",driver_type="power"
 			}
 		}
 	}()
-	waitRegistered(t, svc, 1)
+	waitRegistered(t, svc)
 
 	code, body := httpGet(t, "http://"+addr+"/metrics")
 	if code != http.StatusOK {
@@ -627,7 +627,7 @@ jumpstarter_operations_total{operation="on",result="success",driver_type="power"
 	}
 }
 
-func TestFanout_UnparseableSnapshotIncrementsParseErrorsOnSameResponse(t *testing.T) {
+func TestFanout_UnparsableSnapshotIncrementsParseErrorsOnSameResponse(t *testing.T) {
 	svc, client, addr := startTestHub(t, time.Second)
 	ctx := exporterStreamCtx(t, svc, "exporter:jumpstarter:sidekick:uid1")
 	stream, err := client.MetricsStream(ctx)
@@ -663,7 +663,7 @@ func TestFanout_UnparseableSnapshotIncrementsParseErrorsOnSameResponse(t *testin
 			}
 		}
 	}()
-	waitRegistered(t, svc, 1)
+	waitRegistered(t, svc)
 
 	code, body := httpGet(t, "http://"+addr+"/metrics")
 	if code != http.StatusOK {
@@ -680,7 +680,7 @@ func TestFanout_UnparseableSnapshotIncrementsParseErrorsOnSameResponse(t *testin
 	if err != nil {
 		t.Fatalf("Gather: %v", err)
 	}
-	value := labeledCounterValue(t, mfs, metricsParseErrorsMetric, labelExporter, "sidekick")
+	value := labeledCounterValue(t, mfs, metricsParseErrorsMetric, "sidekick")
 	if value != 1 {
 		t.Fatalf("%s{exporter=sidekick} = %v, want 1 body:\n%s", metricsParseErrorsMetric, value, body)
 	}
@@ -758,7 +758,7 @@ func TestFanout_StructuredFamiliesKeepHistogramExemplars(t *testing.T) {
 			}
 		}
 	}()
-	waitRegistered(t, svc, 1)
+	waitRegistered(t, svc)
 
 	code, body := httpGet(t, "http://"+addr+"/metrics")
 	if code != http.StatusOK {
@@ -831,7 +831,7 @@ jumpstarter_active_sessions{exporter="sidekick"} 1
 			}
 		}
 	}()
-	waitRegistered(t, svc, 1)
+	waitRegistered(t, svc)
 
 	const n = 8
 	var wg sync.WaitGroup
@@ -921,7 +921,7 @@ func TestStopGRPCServer_UnblocksStuckMetricsStream(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Send register: %v", err)
 	}
-	waitRegistered(t, svc, 1)
+	waitRegistered(t, svc)
 
 	const grace = 150 * time.Millisecond
 	start := time.Now()

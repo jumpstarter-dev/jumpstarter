@@ -244,8 +244,8 @@ def test_scrape_response_families_carry_exemplars_without_text_parse():
 
 
 def test_families_from_collector_normalizes_info_and_enum():
-    from prometheus_client import CollectorRegistry, Enum, Info
     from jumpstarter_protocol import telemetry_pb2
+    from prometheus_client import CollectorRegistry, Enum, Info
 
     from jumpstarter.metrics.families import families_from_collector
 
