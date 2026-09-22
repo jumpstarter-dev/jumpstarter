@@ -162,12 +162,16 @@ class TestFlattenProperties:
         rows = flatten_properties(props)
         assert rows[0][1] == "`fast` | `slow`"
 
-    def test_description_truncated_at_120_chars(self):
+    def test_long_description_is_preserved(self):
         long_desc = "x" * 200
         props = {"field": {"type": "string", "description": long_desc}}
         rows = flatten_properties(props)
-        assert len(rows[0][2]) == 120
-        assert rows[0][2].endswith("...")
+        assert rows[0][2] == long_desc
+
+    def test_multiline_description_is_normalized(self):
+        props = {"field": {"type": "string", "description": "First line\nsecond line"}}
+        rows = flatten_properties(props)
+        assert rows[0][2] == "First line second line"
 
     def test_default_value_appended_to_description(self):
         props = {"port": {"type": "integer", "description": "Port", "default": 8080}}
@@ -213,6 +217,12 @@ class TestRenderTable:
         lines = result.strip().split("\n")
         assert lines[2] == r"| `field` | string | value is A \| B |"
 
+    def test_pipe_characters_in_type_are_escaped(self):
+        rows = [("`field`", "`A` | `B`", "Description")]
+        result = render_table(rows)
+        lines = result.strip().split("\n")
+        assert lines[2] == r"| `field` | `A` \| `B` | Description |"
+
 
 class TestProcessCrd:
     def test_minimal_crd_produces_kind_and_heading(self, tmp_path):
@@ -227,7 +237,9 @@ class TestProcessCrd:
 
     def test_crd_with_spec_properties(self, tmp_path):
         crd = _minimal_crd(
-            spec_properties={"replicas": {"type": "integer", "description": "Replica count"}}
+            spec_properties={
+                "replicas": {"type": "integer", "description": "Replica count"}
+            }
         )
         filepath = tmp_path / "test.yaml"
         filepath.write_text(yaml.dump(crd), encoding="utf-8")
