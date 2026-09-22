@@ -802,7 +802,12 @@ async def _shell_direct_async(
 @click.argument("command", nargs=-1)
 # client specific
 # TODO: warn if these are specified with exporter config
-@click.option("--lease", "lease_name")
+@click.option(
+    "--lease",
+    "lease_name",
+    help="Use an existing lease by ID instead of acquiring one. "
+    "Required to enter a lease shared with you by another client when you hold more than one active lease.",
+)
 @opt_selector
 @opt_exporter_name
 @opt_duration_partial(default=timedelta(minutes=30), show_default="00:30:00")

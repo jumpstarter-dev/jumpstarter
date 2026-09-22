@@ -163,6 +163,14 @@ j serial console
 
 Exit the console by pressing CTRL+B three times.
 
+Use `--observe` to attach in read-only (watch-only) mode. Observers receive
+serial output but cannot write, so they can watch a session another client is
+driving without interfering:
+
+```bash
+j serial console --observe
+```
+
 ### pipe
 
 Pipe serial port data to stdout or a file. Automatically detects if stdin is piped and enables bidirectional mode.
@@ -204,12 +212,59 @@ cat commands.txt | j serial pipe --no-output
 - `--no-input`: Disable stdin to serial port, even if stdin is piped
 - `-a, --append`: Append to output file instead of overwriting
 - `--no-output`: Disable serial output handling (stdin -> serial only, exits at EOF)
+- `--observe`: Watch-only mode (read-only). Use when another session holds exclusive write access.
 
 Notes:
 - `--no-output` cannot be combined with `--output` or `--append`.
 - `--no-output` requires stdin input (piped stdin or `--input`).
+- `--observe` cannot be combined with `--input` or `--no-output`.
 
 Exit with Ctrl+C.
+
+## Serial console sharing and observe mode
+
+The serial console fans out to multiple clients so that several holders of a
+shared lease can attach to the same port at once. This pairs well with
+[lease sharing](https://jumpstarter.dev/main/getting-started/guides/examples/lease-sharing.html):
+the lease owner shares access, and everyone can watch the console while one
+client drives it.
+
+Access is coordinated by an exclusive **write token**:
+
+- The first client to open an interactive session (`console` or `pipe` with
+  input) acquires the write token and may write to the port.
+- Additional clients attach as **observers** — either explicitly with
+  `--observe`, or automatically because the write token is already held. They
+  receive all serial output (including a replay of recent scrollback on attach)
+  but cannot write.
+- When the write-token holder disconnects, the token is released and another
+  client may take it.
+
+### release-console
+
+Force-release the write token if the holder disconnected uncleanly and left it
+stuck, freeing another client to take over writing:
+
+```bash
+j serial release-console
+```
+
+### console-status
+
+Inspect the current session: who holds the write token, how many observers are
+attached, and how much scrollback is buffered:
+
+```bash
+j serial console-status
+```
+
+```console
+Write token holder: client-alice
+Observers: 2
+Total clients: 3
+Reader running: True
+Scrollback: 4096 bytes
+```
 
 ## API Reference
 

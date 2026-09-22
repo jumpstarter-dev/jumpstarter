@@ -587,7 +587,7 @@ func (s *ClientService) DeleteLease(ctx context.Context, req *cpb.DeleteLeaseReq
 	}
 
 	if !jlease.IsOwnedBy(jclient.Name) {
-		return nil, fmt.Errorf("DeleteLease permission denied: only lease owner can release")
+		return nil, status.Errorf(codes.PermissionDenied, "DeleteLease permission denied: only lease owner can release")
 	}
 
 	if jlease.Spec.Release {

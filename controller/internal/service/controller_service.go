@@ -833,8 +833,8 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 	}
 
 	if !lease.IsAccessibleBy(client.Name) {
-		err := fmt.Errorf("permission denied")
-		logger.Error(err, "lease not held by client")
+		err := status.Errorf(codes.PermissionDenied, "permission denied")
+		logger.Error(err, "lease not accessible by client")
 		return nil, err
 	}
 
@@ -1146,7 +1146,7 @@ func (s *ControllerService) ReleaseLease(
 	// Release is destructive and ends the lease for everyone, so it is restricted
 	// to the owner. Shared clients keep read/list/dial access via IsAccessibleBy.
 	if !lease.IsOwnedBy(jclient.Name) {
-		return nil, fmt.Errorf("ReleaseLease permission denied: only lease owner can release")
+		return nil, status.Errorf(codes.PermissionDenied, "ReleaseLease permission denied: only lease owner can release")
 	}
 
 	// Idempotent: already ended or marked for release
