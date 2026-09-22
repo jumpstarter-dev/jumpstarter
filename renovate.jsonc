@@ -454,7 +454,7 @@
       ]
     },
     {
-      "description": "Group compat-test targets (latest released controller tag + published PyPI client)",
+      "description": "Group compat-test targets (latest released controller tag + published client)",
       "groupName": "compat-test-targets",
       "matchManagers": [
         "custom.regex"
