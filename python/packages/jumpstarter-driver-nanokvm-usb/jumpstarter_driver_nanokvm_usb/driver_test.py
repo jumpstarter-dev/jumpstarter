@@ -8,7 +8,7 @@ import pytest
 from PIL import Image
 
 from .driver import NanoKVMUSB, NanoKVMUSBHID, NanoKVMUSBVideo, NanoKVMUSBVNC
-from .keyboard import KeyboardReport
+from .keyboard import MODIFIER_BITS, KeyboardReport
 from .mouse import MouseButton, resolve_button
 from .v4l2_ctl_mjpeg import V4L2CtlMjpegCapture, _extract_jpegs
 from jumpstarter.common.utils import serve
@@ -216,6 +216,7 @@ def test_frame_pump_fans_out_jpeg():
 
 
 def test_keysym_and_pointer_mapping():
+    from .vnc_keymap import ALTGR, SHIFT, char_combo, is_swallowed_keysym, named_key, normalize_layout
     from .vnc_server import keysym_to_key, rfb_buttons_to_hid
 
     assert keysym_to_key(ord("a")) == "KeyA"
@@ -224,6 +225,31 @@ def test_keysym_and_pointer_mapping():
     assert keysym_to_key(0xFF0D) == "Enter"
     assert keysym_to_key(0xFFBE) == "F1"
     assert keysym_to_key(0xFFFF) == "Delete"
+    assert named_key(0xFFE5) == "CapsLock"
+    assert named_key(0xFFB0) == "Numpad0"
+    assert is_swallowed_keysym(0xFE03)
+    assert keysym_to_key(0xFE03) is None
+
+    assert char_combo(ord("@"), "us") == ("Digit2", SHIFT)
+    assert char_combo(0x01000040, "us") == ("Digit2", SHIFT)
+    assert char_combo(ord("@"), "es") == ("Digit2", ALTGR)
+    assert char_combo(ord('"'), "us") == ("Quote", SHIFT)
+    assert char_combo(ord('"'), "es") == ("Digit2", SHIFT)
+    assert char_combo(ord("/"), "us") == ("Slash", frozenset())
+    assert char_combo(ord("/"), "es") == ("Digit7", SHIFT)
+    assert char_combo(0xF1, "es") == ("Semicolon", frozenset())
+    assert char_combo(0x010000F1, "es") == ("Semicolon", frozenset())
+    with pytest.raises(ValueError, match="unsupported vnc_layout"):
+        normalize_layout("de")
+
+    kb = KeyboardReport()
+    kb.key_down("ShiftLeft")
+    down = kb.printable_down("Slash", frozenset())
+    assert down[0] & MODIFIER_BITS["ShiftLeft"] == 0
+    assert down[2] == 0x38
+    up = kb.printable_up()
+    assert up[0] & MODIFIER_BITS["ShiftLeft"]
+
     hid, wheel = rfb_buttons_to_hid(0x01)
     assert hid == MouseButton.LEFT
     assert wheel == 0
@@ -283,9 +309,9 @@ def test_rfb_handshake_and_input(tmp_path):
         # PointerEvent: left button at 32,24
         client.sendall(b"\x05\x01" + struct.pack("!HH", 32, 24))
         deadline = time.monotonic() + 2
-        while time.monotonic() < deadline and not hid.hid_key.called:
+        while time.monotonic() < deadline and not hid.hid_char.called:
             time.sleep(0.02)
-        hid.hid_key.assert_called_with("KeyA", True)
+        hid.hid_char.assert_called_with("KeyA", frozenset(), True)
         deadline = time.monotonic() + 2
         while time.monotonic() < deadline and not hid.mouse_pointer.called:
             time.sleep(0.02)

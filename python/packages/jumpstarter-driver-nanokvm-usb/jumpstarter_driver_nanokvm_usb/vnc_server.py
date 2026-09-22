@@ -18,6 +18,7 @@ from PIL import Image
 
 from .frame_pump import FramePump
 from .mouse import MouseButton
+from .vnc_keymap import char_combo, is_swallowed_keysym, named_key, normalize_layout
 
 logger = logging.getLogger(__name__)
 
@@ -34,99 +35,22 @@ MSG_POINTER_EVENT = 5
 MSG_CLIENT_CUT_TEXT = 6
 _CLIENT_IO_TIMEOUT = 30
 
-# X11 keysyms used by RFB
-_KEYSYM_NAMED: dict[int, str] = {
-    0xFF08: "Backspace",
-    0xFF09: "Tab",
-    0xFF0D: "Enter",
-    0xFF1B: "Escape",
-    0xFFFF: "Delete",
-    0xFF50: "Home",
-    0xFF51: "ArrowLeft",
-    0xFF52: "ArrowUp",
-    0xFF53: "ArrowRight",
-    0xFF54: "ArrowDown",
-    0xFF55: "PageUp",
-    0xFF56: "PageDown",
-    0xFF57: "End",
-    0xFF63: "Insert",
-    0xFFE1: "ShiftLeft",
-    0xFFE2: "ShiftRight",
-    0xFFE3: "ControlLeft",
-    0xFFE4: "ControlRight",
-    0xFFE7: "MetaLeft",
-    0xFFE8: "MetaRight",
-    0xFFE9: "AltLeft",
-    0xFFEA: "AltRight",
-    0xFFEB: "MetaLeft",
-    0xFFEC: "MetaRight",
-    0x0020: "Space",
-}
-for _i in range(12):
-    _KEYSYM_NAMED[0xFFBE + _i] = f"F{_i + 1}"
-
-_UNSHIFTED_PUNCT: dict[int, str] = {
-    ord(" "): "Space",
-    ord("`"): "Backquote",
-    ord("-"): "Minus",
-    ord("="): "Equal",
-    ord("["): "BracketLeft",
-    ord("]"): "BracketRight",
-    ord("\\"): "Backslash",
-    ord(";"): "Semicolon",
-    ord("'"): "Quote",
-    ord(","): "Comma",
-    ord("."): "Period",
-    ord("/"): "Slash",
-    # shifted variants still use the unshifted HID key; Shift is a separate event
-    ord("~"): "Backquote",
-    ord("!"): "Digit1",
-    ord("@"): "Digit2",
-    ord("#"): "Digit3",
-    ord("$"): "Digit4",
-    ord("%"): "Digit5",
-    ord("^"): "Digit6",
-    ord("&"): "Digit7",
-    ord("*"): "Digit8",
-    ord("("): "Digit9",
-    ord(")"): "Digit0",
-    ord("_"): "Minus",
-    ord("+"): "Equal",
-    ord("{"): "BracketLeft",
-    ord("}"): "BracketRight",
-    ord("|"): "Backslash",
-    ord(":"): "Semicolon",
-    ord('"'): "Quote",
-    ord("<"): "Comma",
-    ord(">"): "Period",
-    ord("?"): "Slash",
-}
-
 
 class HidTarget(Protocol):
     def hid_key(self, key: str, down: bool) -> None: ...
+    def hid_char(self, key: str, modifiers: frozenset[str], down: bool) -> None: ...
     def mouse_pointer(self, x: float, y: float, buttons: int, wheel: int = 0) -> None: ...
 
 
-def keysym_to_key(keysym: int) -> str | None:
-    """Map an RFB/X11 keysym to a NanoKVM-USB key name."""
-    if keysym in _KEYSYM_NAMED:
-        return _KEYSYM_NAMED[keysym]
-    if 0x61 <= keysym <= 0x7A:  # a-z
-        return f"Key{chr(keysym).upper()}"
-    if 0x41 <= keysym <= 0x5A:  # A-Z
-        return f"Key{chr(keysym)}"
-    if 0x30 <= keysym <= 0x39:
-        return f"Digit{chr(keysym)}"
-    if keysym in _UNSHIFTED_PUNCT:
-        return _UNSHIFTED_PUNCT[keysym]
-    if 0x20 <= keysym <= 0x7E:
-        ch = chr(keysym)
-        if ch.isalpha():
-            return f"Key{ch.upper()}"
-        if ch.isdigit():
-            return f"Digit{ch}"
-    return None
+def keysym_to_key(keysym: int, layout: str = "us") -> str | None:
+    """Map a named RFB keysym, or the HID key of a printable on ``layout``."""
+    named = named_key(keysym)
+    if named is not None:
+        return named
+    combo = char_combo(keysym, layout)
+    if combo is None:
+        return None
+    return combo[0]
 
 
 def rfb_buttons_to_hid(mask: int) -> tuple[int, int]:
@@ -394,6 +318,7 @@ class RfbServer:
         password: str | None = None,
         tcp_port: int | None = None,
         tcp_bind: str = "127.0.0.1",
+        layout: str = "us",
         on_client: Callable[[], None] | None = None,
     ) -> None:
         self.path = path
@@ -404,6 +329,7 @@ class RfbServer:
         self._password = password
         self._tcp_port = tcp_port
         self._tcp_bind = tcp_bind
+        self._layout = normalize_layout(layout)
         self._on_client = on_client
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -617,14 +543,24 @@ class RfbServer:
         return pf, requested
 
     def _handle_key(self, keysym: int, down: bool) -> None:
-        key = keysym_to_key(keysym)
-        if key is None:
+        if is_swallowed_keysym(keysym):
+            return
+        named = named_key(keysym)
+        if named is not None:
+            try:
+                self._hid.hid_key(named, down)
+            except Exception:
+                logger.debug("HID key event failed", exc_info=True)
+            return
+        combo = char_combo(keysym, self._layout)
+        if combo is None:
             logger.debug("unmapped RFB keysym 0x%04x", keysym)
             return
+        key, modifiers = combo
         try:
-            self._hid.hid_key(key, down)
+            self._hid.hid_char(key, modifiers, down)
         except Exception:
-            logger.debug("HID key event failed", exc_info=True)
+            logger.debug("HID character event failed", exc_info=True)
 
     def _handle_pointer(self, mask: int, x: int, y: int) -> None:
         nx = 0.0 if self._width <= 1 else max(0.0, min(1.0, x / (self._width - 1)))

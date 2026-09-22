@@ -44,6 +44,7 @@ export:
       screen_width: 1920
       screen_height: 1080
       vnc_enabled: true
+      # vnc_layout: es  # DUT keyboard layout (default us)
       # vnc_password: "secret"
       # vnc_tcp_port: 5900
       # vnc_tcp_bind: "0.0.0.0"  # LAN; use vnc_password
@@ -66,6 +67,7 @@ export:
 | vnc_tcp_port | Also bind RFB TCP on the exporter (`None` = Unix socket only) | int | no | |
 | vnc_tcp_bind | Address for `vnc_tcp_port` (`127.0.0.1` or `0.0.0.0` for LAN) | str | no | 127.0.0.1 |
 | vnc_encrypt | Default noVNC `encrypt` URL flag | bool | no | false |
+| vnc_layout | DUT keyboard layout for VNC character injection (`us` or `es`) | str | no | us |
 
 ## Architecture
 
@@ -153,6 +155,11 @@ host. Default `vnc_tcp_bind` is `127.0.0.1` (local viewers on that machine only)
 Use `vnc_tcp_bind: "0.0.0.0"` to accept LAN clients without a Jumpstarter tunnel.
 Binding a non-loopback address without `vnc_password` exposes an unauthenticated
 session on the network; set a password.
+
+Printable keys are injected as HID combos for **`vnc_layout`** (the DUT OS
+keyboard), not the VNC client's layout. Default is `us`. Set `vnc_layout: es`
+if the DUT uses a Spanish keyboard so `@`, `ñ`, and AltGr characters land
+correctly even when Remmina is using another layout.
 
 ## API reference
 

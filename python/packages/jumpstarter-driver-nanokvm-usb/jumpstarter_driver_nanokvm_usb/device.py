@@ -139,6 +139,12 @@ class NanoKVMUSBDevice:
             report = self._keyboard.key_down(code) if down else self._keyboard.key_up(code)
             self._send_keyboard(report)
 
+    def hid_char(self, key: str, modifiers: frozenset[str], down: bool) -> None:
+        """Type a printable character using DUT-layout HID modifiers (RFB)."""
+        with self._hid_lock:
+            report = self._keyboard.printable_down(key, modifiers) if down else self._keyboard.printable_up()
+            self._send_keyboard(report)
+
     def release_all_keys(self) -> None:
         with self._hid_lock:
             report = self._keyboard.reset()

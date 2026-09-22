@@ -109,6 +109,25 @@ KEYCODE_MAP: dict[str, int] = {
     "ArrowLeft": 0x50,
     "ArrowDown": 0x51,
     "ArrowUp": 0x52,
+    "NumLock": 0x53,
+    "NumpadDivide": 0x54,
+    "NumpadMultiply": 0x55,
+    "NumpadSubtract": 0x56,
+    "NumpadAdd": 0x57,
+    "NumpadEnter": 0x58,
+    "Numpad1": 0x59,
+    "Numpad2": 0x5A,
+    "Numpad3": 0x5B,
+    "Numpad4": 0x5C,
+    "Numpad5": 0x5D,
+    "Numpad6": 0x5E,
+    "Numpad7": 0x5F,
+    "Numpad8": 0x60,
+    "Numpad9": 0x61,
+    "Numpad0": 0x62,
+    "NumpadDecimal": 0x63,
+    "IntlBackslash": 0x64,
+    "ContextMenu": 0x65,
     "ControlLeft": 0xE0,
     "ShiftLeft": 0xE1,
     "AltLeft": 0xE2,
@@ -339,6 +358,30 @@ class KeyboardReport:
                 break
             report[2 + index] = keycode
         return report
+
+    def printable_down(self, key: str, combo_mods: frozenset[str]) -> list[int]:
+        """HID report for a character: combo modifiers, ignoring client Shift/AltGr."""
+        keycode = KEYCODE_MAP.get(key)
+        if keycode is None:
+            raise ValueError(f"Unknown key: {key!r}")
+        shift_altgr = MODIFIER_BITS["ShiftLeft"] | MODIFIER_BITS["ShiftRight"] | MODIFIER_BITS["AltRight"]
+        modifier = self._modifier & ~shift_altgr
+        for mod in combo_mods:
+            bit = MODIFIER_BITS.get(mod)
+            if bit is None:
+                raise ValueError(f"Unknown modifier: {mod!r}")
+            modifier |= bit
+        report = [modifier, 0, keycode, 0, 0, 0, 0, 0]
+        slot = 3
+        for pressed in self._pressed.values():
+            if pressed == keycode or slot >= 8:
+                continue
+            report[slot] = pressed
+            slot += 1
+        return report
+
+    def printable_up(self) -> list[int]:
+        return self._build_report()
 
     def char_to_report(self, ch: str) -> tuple[list[int], list[int]]:
         code = ord(ch)

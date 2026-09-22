@@ -272,6 +272,7 @@ class NanoKVMUSB(Composite):
     vnc_tcp_port: int | None = None
     vnc_tcp_bind: str = "127.0.0.1"
     vnc_encrypt: bool = False
+    vnc_layout: str = "us"
 
     _shared_device: NanoKVMUSBDevice = field(init=False, repr=False)
     _vnc_server: RfbServer | None = field(init=False, repr=False, default=None)
@@ -329,6 +330,7 @@ class NanoKVMUSB(Composite):
                 password=self.vnc_password or None,
                 tcp_port=self.vnc_tcp_port,
                 tcp_bind=self.vnc_tcp_bind,
+                layout=self.vnc_layout,
                 on_client=self._shared_device.ensure_connected,
             )
             self.children["vnc"] = NanoKVMUSBVNC(

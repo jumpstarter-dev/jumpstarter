@@ -18,6 +18,7 @@ export:
       screen_width: 1920
       screen_height: 1080
       vnc_enabled: true
+      # vnc_layout: es  # DUT keyboard layout (default us)
       # vnc_password: "secret"
       # vnc_tcp_port: 5900
       # vnc_tcp_bind: "0.0.0.0"  # LAN; use vnc_password
