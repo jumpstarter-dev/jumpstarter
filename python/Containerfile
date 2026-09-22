@@ -8,7 +8,7 @@ RUN dnf install -y make git && \
 FROM registry.fedoraproject.org/fedora:44 AS product
 COPY --from=ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc /uv /uvx /bin/
 RUN dnf install -y python3 ustreamer libusb1 android-tools qdl python3-libgpiod curl \
-    nftables dnsmasq iproute procps-ng tcpdump && \
+    nftables dnsmasq iproute procps-ng tcpdump v4l-utils && \
     dnf clean all && \
     rm -rf /var/cache/dnf
 
@@ -32,7 +32,7 @@ RUN ARCH=$(uname -m) && \
 
 # Build the jumpstarter-exec Rust binary for the sidecar remote-exec bridge.
 # Uses UBI 10 + rust-toolset for Red Hat-supported toolchain and glibc compatibility.
-FROM registry.access.redhat.com/ubi10/ubi:latest@sha256:4690398669a07627339936c9e79b05233053056ce688efeb4400d3c1c530486b AS rust-builder
+FROM registry.access.redhat.com/ubi10/ubi:latest@sha256:229097f6000bebb77cbc83121583c4b1b1eee85742293905a8d8226a2925b3fc AS rust-builder
 # GIT_VERSION is already passed as a build-arg by CI (see build-images.yaml)
 # for hatch-vcs; forward it into the Rust build so jumpstarter-exec's
 # build.rs can embed the same version (see rust/jumpstarter-exec/build.rs).

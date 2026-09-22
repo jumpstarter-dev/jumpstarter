@@ -25,8 +25,10 @@ jumpstarter-driver-http = { workspace = true }
 jumpstarter-driver-http-power = { workspace = true }
 jumpstarter-driver-gpiod = { workspace = true }
 jumpstarter-driver-ridesx = { workspace = true }
+jumpstarter-driver-nanokvm-usb = { workspace = true }
 jumpstarter-driver-netsim = { workspace = true }
 jumpstarter-driver-network = { workspace = true }
+jumpstarter-driver-noyito-relay = { workspace = true }
 jumpstarter-driver-obd = { workspace = true }
 jumpstarter-driver-opendal = { workspace = true }
 jumpstarter-driver-power = { workspace = true }
@@ -41,9 +43,12 @@ jumpstarter-driver-tmt = { workspace = true }
 jumpstarter-driver-tftp = { workspace = true }
 jumpstarter-driver-snmp = { workspace = true }
 jumpstarter-driver-shell = { workspace = true }
+jumpstarter-driver-sigrok = { workspace = true }
 jumpstarter-driver-someip = { workspace = true }
 jumpstarter-driver-ssh = { workspace = true }
+jumpstarter-driver-ssh-mitm = { workspace = true }
 jumpstarter-driver-ssh-mount = { workspace = true }
+jumpstarter-driver-stlink-msd = { workspace = true }
 jumpstarter-driver-uboot = { workspace = true }
 jumpstarter-driver-uds = { workspace = true }
 jumpstarter-driver-uds-can = { workspace = true }
@@ -63,11 +68,45 @@ jumpstarter-testing = { workspace = true }
 hatch-pin-jumpstarter = { workspace = true }
 
 [tool.uv]
-# pydantic >=2.12 requires typing-extensions >=4.14.1, but mitmproxy caps
-# typing-extensions <=4.14 on Python <3.13. On Python >=3.14 we need
-# pydantic >=2.12 so that pydantic-core ships pre-built cp314 wheels.
+# Ensure uv resolves versions that ship pre-built cp314 wheels on Python 3.14.
+# Without these constraints the resolver can pick older releases that only
+# provide cp312/cp313 wheels, forcing slow (or failing) source builds in CI.
 constraint-dependencies = [
+    # pydantic >=2.12 requires typing-extensions >=4.14.1, but mitmproxy caps
+    # typing-extensions <=4.14 on Python <3.13. On Python >=3.14 we need
+    # pydantic >=2.12 so that pydantic-core ships pre-built cp314 wheels.
     "pydantic>=2.12 ; python_version >= '3.14'",
+    # Pillow 11.3.0 is the first release that ships cp314 wheels;
+    # without this constraint uv can pick an older sdist-only version
+    # that fails to build on Python 3.14.
+    "pillow>=11.3.0 ; python_version >= '3.14'",
+    # SciPy 1.16.1 is the first release that ships cp314 wheels;
+    # 1.16.0 falls back to an sdist build that requires OpenBLAS,
+    # which is not available in the CI environment.
+    "scipy>=1.16.1 ; python_version >= '3.14'",
+    # NumPy 2.3.2 and PyWavelets 1.9.0 are the first releases that
+    # ship cp314 wheels; without these constraints uv falls back to
+    # slow sdist builds on Python 3.14.
+    "numpy>=2.3.2 ; python_version >= '3.14'",
+    "pywavelets>=1.9.0 ; python_version >= '3.14'",
+    # aiohttp 3.13.0 is the first release that ships cp314 wheels.
+    "aiohttp>=3.13.0 ; python_version >= '3.14'",
+    # cffi 2.0.0 is the first release that ships cp314 wheels;
+    # consumers (cryptography, pynacl, …) accept cffi >=1.14.
+    "cffi>=2.0.0 ; python_version >= '3.14'",
+    # grpcio 1.75.1 is the first release that ships cp314 wheels;
+    # building from source takes 10+ minutes.
+    "grpcio>=1.75.1 ; python_version >= '3.14'",
+    # MarkupSafe 3.0.3 is the first release that ships cp314 wheels.
+    "markupsafe>=3.0.3 ; python_version >= '3.14'",
+    # msgpack 1.1.2 is the first release that ships cp314 wheels.
+    "msgpack>=1.1.2 ; python_version >= '3.14'",
+    # PyYAML 6.0.3 is the first release that ships cp314 wheels.
+    "pyyaml>=6.0.3 ; python_version >= '3.14'",
+    # rpds-py 0.26.0 is the first release that ships cp314 wheels.
+    "rpds-py>=0.26.0 ; python_version >= '3.14'",
+    # gpiod 2.4.0 is the first release that ships cp314 wheels.
+    "gpiod>=2.4.0 ; python_version >= '3.14'",
 ]
 
 [dependency-groups]

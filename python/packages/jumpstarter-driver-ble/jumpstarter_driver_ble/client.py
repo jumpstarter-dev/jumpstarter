@@ -54,8 +54,8 @@ class BleWriteNotifyStreamClient(DriverClient):
             """Get target information"""
             print(self.info())
 
-        @base.command()
-        def start_console():
+        @base.command(aliases=["start-console"])
+        def console():
             """Start BLE console"""
             click.echo(
                 "\nStarting ble console ... exit with CTRL+B x 3 times\n")

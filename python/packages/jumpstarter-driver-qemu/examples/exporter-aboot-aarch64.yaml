@@ -18,7 +18,7 @@
 #   jmp shell -l board=aboot-aarch64
 #   $$ j qemu flasher flash aboot.img            # root disk
 #   $$ j power on
-#   $$ j console start-console
+#   $$ j console console
 ---
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig

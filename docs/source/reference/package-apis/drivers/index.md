@@ -57,7 +57,7 @@ Drivers that handle media streams:
 
 - {doc}`uStreamer <ustreamer>` (`jumpstarter-driver-ustreamer`) - Video streaming
 - {doc}`Video <video>` (`jumpstarter-driver-video`) - Video interface and HTTP/MJPEG camera sources
-
+- {doc}`NanoKVM-USB <nanokvm-usb>` (`jumpstarter-driver-nanokvm-usb`) - NanoKVM-USB KVM over local USB serial and UVC
 ### Automotive Diagnostics
 
 Drivers for automotive diagnostic protocols:
@@ -92,6 +92,12 @@ Drivers for virtual and emulated targets:
 - {doc}`Cuttlefish <cuttlefish>` (`jumpstarter-driver-cuttlefish`) - Android Cuttlefish virtual device management
 - {doc}`Netsim <netsim>` (`jumpstarter-driver-netsim`) - Android netsim virtual radio control (Bluetooth, WiFi, UWB)
 
+### Test and Measurement
+
+Drivers for signal capture, analysis, and protocol decoding:
+
+- {doc}`Sigrok <sigrok>` (`jumpstarter-driver-sigrok`) - Logic analyzer and oscilloscope capture via sigrok-cli
+
 ### Utility
 
 General-purpose utility drivers:
@@ -122,6 +128,7 @@ iscsi.md
 mitmproxy.md
 netsim.md
 network.md
+nanokvm-usb.md
 noyito-relay.md
 obd.md
 opendal.md
@@ -134,6 +141,7 @@ renode.md
 ridesx.md
 sdwire.md
 shell.md
+sigrok.md
 snmp.md
 someip.md
 ssh.md

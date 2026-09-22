@@ -153,12 +153,12 @@ If these requirements are not met, the driver will raise a `ValueError` during i
 
 The pyserial driver provides two CLI commands for interacting with serial ports:
 
-### start_console
+### console
 
 Start an interactive serial console with direct terminal access.
 
 ```bash
-j serial start-console
+j serial console
 ```
 
 Exit the console by pressing CTRL+B three times.

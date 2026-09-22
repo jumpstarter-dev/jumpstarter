@@ -1,3 +1,4 @@
+import logging
 import os
 import signal
 import sys
@@ -27,6 +28,8 @@ if TYPE_CHECKING:
     from jumpstarter.driver import Driver
 
 __all__ = ["ExporterMetadata", "env", "env_with_metadata"]
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -100,7 +103,16 @@ def _run_process(
         return 126
     if lease is not None:
         lease.lease_ending_callback = partial(lease_ending_handler, process)
-    return process.wait()
+    returncode = process.wait()
+    if returncode < 0:
+        # wait() reports signal deaths as -N; report them as a shell does. Log
+        # the signal too: 137 alone cannot be told from a command exiting 137.
+        signum = -returncode
+        returncode = 128 + signum
+        logger.debug("command %s killed by signal %d, reporting %d", cmd[0], signum, returncode)
+    else:
+        logger.debug("command %s exited with %d", cmd[0], returncode)
+    return returncode
 
 
 def _lease_env_vars(lease) -> dict[str, str]:

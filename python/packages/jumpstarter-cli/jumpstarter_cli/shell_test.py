@@ -4,7 +4,7 @@ import json
 import logging
 import math
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -13,6 +13,7 @@ import click
 import grpc
 import grpc.aio
 import pytest
+from click.testing import CliRunner
 from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentication
 
 from jumpstarter_cli.shell import (
@@ -34,6 +35,7 @@ from jumpstarter.common import ExporterStatus
 from jumpstarter.common.exceptions import ExporterOfflineError, ExporterUnreachableError
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.env import JMP_LEASE
+from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
 pytestmark = pytest.mark.anyio
 
@@ -990,8 +992,8 @@ class TestRunShellWithLeaseAsync:
         client = _build_fake_client(monitor)
         client.get_status_async.side_effect = grpc.aio.AioRpcError(
             code=grpc.StatusCode.UNAVAILABLE,
-            initial_metadata=None,
-            trailing_metadata=None,
+            initial_metadata=grpc.aio.Metadata(),
+            trailing_metadata=grpc.aio.Metadata(),
             details="exporter offline",
         )
         lease = _make_shell_lease(release=True, lease_ended=False)
@@ -1410,3 +1412,40 @@ class TestRetryLoopLeaseExpired:
 
         assert exit_code == 0
         assert state["call_count"] == 3
+
+
+def _write_exporter_config(tmp_path):
+    path = tmp_path / "exporter.yaml"
+    path.write_text(
+        """apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: local
+endpoint: ""
+token: ""
+export: {}
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+@contextmanager
+def _fake_serve_unix(self):
+    yield "/tmp/fake.sock"
+
+
+# CliRunner gives sys.stdin no fileno(), so the real Popen cannot run under it,
+# and serving the config needs drivers this package does not depend on.
+# launch_shell's own exit codes are covered in jumpstarter/common/utils_test.py.
+@pytest.mark.parametrize("expected", [42, 1, 0, 137, 127])
+def test_shell_exporter_config_propagates_exit_code(tmp_path, expected):
+    config_path = _write_exporter_config(tmp_path)
+    with (
+        patch.object(ExporterConfigV1Alpha1, "serve_unix", _fake_serve_unix),
+        patch("jumpstarter_cli.shell.launch_shell", return_value=expected) as launched,
+    ):
+        result = CliRunner().invoke(shell, ["--exporter-config", str(config_path), "--", "sh", "-c", "true"])
+    assert launched.called
+    assert result.exit_code == expected

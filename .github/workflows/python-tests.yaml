@@ -55,9 +55,9 @@ jobs:
     env:
       # renovate: datasource=custom.fedora-cloud-qcow2 depName=fedora-cloud-base-generic
       FEDORA_CLOUD_VERSION: 43-1.6
-      # Building packages like grpcio and scipy from source (required for
-      # Python 3.14 until upstream ships wheels) can exceed the default 300s
-      # uv lock timeout. 30 minutes gives enough headroom.
+      # Extra headroom for uv lock resolution; constraint-dependencies in
+      # python/pyproject.toml now steer the resolver to cp314-wheel versions,
+      # but keep a generous timeout as a safety net.
       UV_LOCK_TIMEOUT: 1800
     strategy:
       matrix:
