@@ -16,7 +16,8 @@ from opensomeip.types import MessageId, MessageType, ReturnCode
 try:
     from opensomeip._bridge import get_ext
 except ImportError:
-    get_ext = lambda: None  # ty: ignore[invalid-assignment]
+    def get_ext():  # ty: ignore[invalid-assignment]
+        return None
 from pydantic import ConfigDict, SkipValidation, validate_call
 from pydantic.dataclasses import dataclass
 
