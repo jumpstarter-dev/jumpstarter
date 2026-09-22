@@ -166,15 +166,36 @@ class PySerial(FanOutStreamMixin, Driver):
 
     @export
     def close(self):
+        """Boot every attached console client and release the write token.
+
+        Client-callable recovery hook: use it to reclaim a console wedged or
+        abandoned by another client. If this was the last client and
+        ``always_on`` is false, the reader stops and the serial port closes.
+        Closing a port can toggle DTR and reset some boards unless
+        ``disable_hupcl`` is set. Full teardown happens at session end via
+        shutdown().
+        """
+        # FanOutStreamMixin.close() kicks clients + releases the token, then
+        # chains to Driver.close() for any children.
+        super().close()
+
+    def shutdown(self):
+        """Session-end teardown: drop the serial link and stop the reader.
+
+        Runs on the exporter's event-loop thread from Session teardown. Close
+        the transport explicitly first so the OS releases the port before the
+        next session's driver opens it — shutdown_sync() cancels the reader task
+        but cannot await its async cleanup from this synchronous path.
+        """
         transport = self._transport
         if transport is None:
-            self.logger.debug("close() called but no active connection")
+            self.logger.debug("shutdown() called but no active connection")
         else:
-            self.logger.debug("close() closing transport for %s", self.url)
+            self.logger.debug("shutdown() closing transport for %s", self.url)
             transport.close()
-        # Always chain up so FanOutStreamMixin.close() shuts down the reader
-        # task and client buffers, then the base Driver.close() runs.
-        super().close()
+        # FanOutStreamMixin.shutdown() tears down the reader, then Driver.shutdown()
+        # recurses to children.
+        super().shutdown()
 
     @export
     def set_dtr(self, value: bool):

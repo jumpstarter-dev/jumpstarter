@@ -14,8 +14,9 @@ from anyio import (
     ClosedResourceError,
 )
 from anyio.abc import ObjectStream
+from anyio.from_thread import run_sync as run_sync_from_thread
 
-from jumpstarter.common.exceptions import JumpstarterException
+from jumpstarter.common.exceptions import CONSOLE_IN_USE_MARKER, JumpstarterException
 from jumpstarter.driver.decorators import export, exportstream
 
 logger = logging.getLogger(__name__)
@@ -29,15 +30,20 @@ _SOURCE_READY_TIMEOUT = 30.0
 
 
 class ExclusiveSessionActive(JumpstarterException):
-    """Another client holds the write token."""
+    """Another client holds the write token.
 
-    def __init__(self, holder_identity: str | None = None):
-        self.holder_identity = holder_identity
-        if holder_identity:
-            message = f"Console in use by {holder_identity}. Use --observe or release-console."
-        else:
-            message = "Console in use. Use --observe or release-console."
-        super().__init__(message)
+    The exporter cannot see an authenticated client identity for a driver
+    stream (the router stream carries no principal), so the holder is not
+    named here. Attributing the token to a specific client requires the
+    controller to plumb the dialing client's name through Dial/Listen; until
+    then the message is deliberately identity-free rather than misleading.
+    """
+
+    def __init__(self):
+        # Prefix a stable machine marker so the CLI can recognize this rejection
+        # by token (plus the FAILED_PRECONDITION gRPC code) rather than by the
+        # human wording; the CLI strips the marker before display.
+        super().__init__(f"{CONSOLE_IN_USE_MARKER} Console in use by another client. Use --observe or release-console.")
 
 
 class WriteTokenRevokedError(JumpstarterException):
@@ -338,6 +344,25 @@ class StreamFanOut:
         except Exception:
             if not self._shutdown:
                 logger.exception("Reader loop failed unexpectedly")
+        finally:
+            # If the reader stops while we are not deliberately shutting down
+            # (e.g. _reader_loop raised a non-IO exception after the source was
+            # ready), reset the start state so the next attach restarts the
+            # reader instead of blocking on _source_ready until the timeout.
+            # During a real shutdown, _stop_reader/shutdown_sync own this reset.
+            if not self._shutdown:
+                async with self._lock:
+                    for buf in self._clients.values():
+                        buf.close()
+                    self._clients.clear()
+                    self._write_token_holder = None
+                    self._write_token_holder_identity = None
+                    self._scrollback.clear()
+                    self._scrollback_bytes = 0
+                    self._source = None
+                    self._reader_running = False
+                    self._started = False
+                    self._source_ready = anyio.Event()
 
     async def _ensure_started(self) -> None:
         """Start the reader loop. Must hold _lock."""
@@ -376,7 +401,7 @@ class StreamFanOut:
         """Attach with the write token. Yields an ExclusiveStream."""
         async with self._lock:
             if self._write_token_holder is not None:
-                raise ExclusiveSessionActive(self._write_token_holder_identity)
+                raise ExclusiveSessionActive()
 
             await self._ensure_started()
 
@@ -458,14 +483,47 @@ class StreamFanOut:
                 await task
             self._reader_task = None
         self._started = False
+        self._reader_running = False
+        self._source = None
+        self._scrollback.clear()
+        self._scrollback_bytes = 0
         self._shutdown = False
         self._source_ready = anyio.Event()
 
+    def kick_sync(self) -> None:
+        """Boot every attached client and release the write token.
+
+        The last client detaching stops the reader when always_on is false;
+        closing a serial port may toggle DTR and reset the attached board.
+        For full teardown use ``shutdown_sync`` (session end only).
+
+        While the reader is active, run on its event-loop thread so these
+        mutations cannot interleave with the reader loop.
+        """
+        for buf in self._clients.values():
+            buf.close()
+        self._clients.clear()
+        self._write_token_holder = None
+        self._write_token_holder_identity = None
+
     def shutdown_sync(self) -> None:
-        """Synchronous shutdown for use from sync close() methods."""
+        """Synchronous full teardown for use from sync close()/shutdown() methods.
+
+        Stops the reader loop and closes every client buffer. Intended for
+        session-end teardown, not for a client-callable kick (use kick_sync).
+
+        Must run on the event-loop thread; the caller (exporter Session
+        teardown) does. The reader task is cancelled but cannot be awaited from
+        a sync method, so drivers holding a physical handle (e.g. a serial
+        transport) should close it explicitly before calling this to guarantee
+        the resource is released before the next session opens it.
+        """
         self._shutdown = True
         if self._reader_task is not None:
-            self._reader_task.cancel()
+            try:
+                self._reader_task.cancel()
+            except Exception:
+                logger.debug("Failed to cancel reader task during shutdown", exc_info=True)
             self._reader_task = None
         for buf in self._clients.values():
             buf.close()
@@ -473,6 +531,7 @@ class StreamFanOut:
         self._write_token_holder = None
         self._write_token_holder_identity = None
         self._started = False
+        self._reader_running = False
 
     async def close(self) -> None:
         """Shut down everything."""
@@ -487,6 +546,9 @@ class StreamFanOut:
     def status(self) -> dict:
         """Return current fan-out status for diagnostics."""
         return {
+            # Whether the write token is held at all — reliable regardless of
+            # identity plumbing.
+            "write_token_held": self._write_token_holder is not None,
             "write_token_holder": self._write_token_holder_identity,
             "observer_count": sum(
                 1 for cid in self._clients if cid != self._write_token_holder
@@ -556,7 +618,33 @@ class FanOutStreamMixin:
         return self._get_fanout().status()
 
     def close(self):
+        """Client-callable: boot every attached client and release the write token.
+
+        The last client detaching stops the reader when always_on is false.
+        Closing a serial port may toggle DTR and reset the attached board.
+        Full teardown happens at session end via shutdown().
+        """
         if self._fanout is not None:
-            self._fanout.shutdown_sync()
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                if self._fanout._reader_task is None:
+                    self._fanout.kick_sync()
+                else:
+                    run_sync_from_thread(self._fanout.kick_sync)
+            else:
+                self._fanout.kick_sync()
         if hasattr(super(), "close"):
             super().close()
+
+    def shutdown(self):
+        """Session-end teardown: stop the reader loop and release the source.
+
+        Invoked by the exporter Session when the driver tree is torn down, never
+        by a remote client. Kept separate from close() so a client kick cannot
+        latch _shutdown and permanently wedge the fan-out.
+        """
+        if self._fanout is not None:
+            self._fanout.shutdown_sync()
+        if hasattr(super(), "shutdown"):
+            super().shutdown()

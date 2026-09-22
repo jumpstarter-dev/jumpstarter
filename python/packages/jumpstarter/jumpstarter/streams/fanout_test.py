@@ -283,10 +283,18 @@ class TestStreamFanOut:
 
         fanout = StreamFanOut(source_factory=factory, always_on=False)
 
+        # The rejection carries the known identity on the exception attribute for
+        # exporter-side logging, but the user-facing message stays identity-free
+        # (the router stream has no authenticated principal to trust) and never
+        # leaks the internal machine marker as human wording.
         async with fanout.attach_exclusive(identity="user-alice"):
-            with pytest.raises(ExclusiveSessionActive, match="user-alice"):
+            with pytest.raises(ExclusiveSessionActive) as exc_info:
                 async with fanout.attach_exclusive():
                     pass
+
+        assert exc_info.value.holder_identity == "user-alice"
+        assert "user-alice" not in str(exc_info.value)
+        assert "Console in use" in str(exc_info.value)
 
         await fanout.close()
 

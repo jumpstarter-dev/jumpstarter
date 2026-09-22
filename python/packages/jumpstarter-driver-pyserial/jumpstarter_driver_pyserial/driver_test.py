@@ -247,8 +247,8 @@ def test_close_noop_when_no_stream():
         client.call("close")
 
 
-def test_close_closes_transport(monkeypatch):
-    """close() should close the underlying transport."""
+def test_last_detach_closes_transport(monkeypatch):
+    """The default lazy reader releases the transport after the last detach."""
     import asyncio
     from unittest.mock import MagicMock
 
@@ -285,16 +285,17 @@ def test_close_closes_transport(monkeypatch):
             data = await stream.receive()
             assert data == b"test-data"
 
-        # With always_on fan-out, transport stays open after connect() exits.
-        # It's cleaned up when the fan-out shuts down (last client detaches or close()).
-        await driver._get_fanout().close()
         assert driver._transport is None
 
     anyio.run(_run)
 
 
-def test_close_from_outside_releases_port(monkeypatch):
-    """close() closes the transport, causing the stream to tear down."""
+def test_shutdown_releases_port_but_close_keeps_it(monkeypatch):
+    """With always_on, close() kicks clients and shutdown() releases the port.
+
+    This checks the configured always-on behavior; with the default lazy
+    reader, detaching the last client closes the port instead.
+    """
     import asyncio
     from unittest.mock import MagicMock
 
@@ -328,13 +329,17 @@ def test_close_from_outside_releases_port(monkeypatch):
 
         monkeypatch.setattr(driver_module, "open_serial_connection", fake_open)
 
-        driver = PySerial(url="/dev/ttyMOCK", check_present=False)
+        driver = PySerial(url="/dev/ttyMOCK", check_present=False, always_on=True)
 
         with contextlib.suppress(Exception):
             async with driver.connect() as stream:
                 data = await stream.receive()
                 assert data == b"hello"
+                # With always_on, a kick does not drop the physical port.
                 driver.close()
+                assert not closed["called"]
+                # shutdown() is session-end teardown and releases the port.
+                driver.shutdown()
 
         assert closed["called"]
 

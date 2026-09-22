@@ -19,7 +19,7 @@ from rich.logging import RichHandler
 
 from jumpstarter.client.status_monitor import StatusMonitor
 from jumpstarter.common import ExporterStatus, LogSource, Metadata
-from jumpstarter.common.exceptions import JumpstarterException
+from jumpstarter.common.exceptions import CONSOLE_IN_USE_MARKER, JumpstarterException
 from jumpstarter.common.resources import ResourceMetadata
 from jumpstarter.common.serde import decode_value, encode_value
 from jumpstarter.common.streams import (
@@ -430,7 +430,13 @@ class AsyncDriverClient(
             .model_dump(mode="json", round_trip=True)
             .items(),
         )
-        metadata = dict(list(await context.initial_metadata()))
+        try:
+            metadata = dict(list(await context.initial_metadata()))
+        except AioRpcError as exc:
+            details = exc.details() or ""
+            if exc.code() == StatusCode.FAILED_PRECONDITION and CONSOLE_IN_USE_MARKER in details:
+                raise DriverError(details.split(CONSOLE_IN_USE_MARKER, 1)[1].strip()) from None
+            raise
         async with MetadataStream(stream=RouterStream(context=context), metadata=metadata) as stream:
             yield stream
 
