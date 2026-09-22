@@ -317,10 +317,8 @@ class ISCSIServerClient(CompositeClient):
             """Serve an image as an iSCSI LUN from a local path or HTTP(S) URL."""
             self.start()
 
-            try:
+            with contextlib.suppress(Exception):
                 self.call("clear_all_luns")
-            except Exception:
-                pass
 
             if not name:
                 candidate = urlparse(file).path if file.startswith(("http://", "https://")) else file

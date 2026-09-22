@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -256,10 +257,8 @@ def _capture_session_for_notifications(mcp: FastMCP, manager: ConnectionManager)
             session = ctx.request_context.session
 
             async def _log(level: str, message: str) -> None:
-                try:
+                with contextlib.suppress(Exception):
                     await session.send_log_message(level=level, data=message, logger="jumpstarter")
-                except Exception:
-                    pass
 
             manager.set_log_callback(_log)
     except (LookupError, AttributeError):
@@ -502,7 +501,9 @@ async def run_server():
     except asyncio.CancelledError:
         logger.info("MCP stdio session ended (cancelled)")
     except BaseException as exc:
-        if isinstance(exc, ClosedResourceError) or isinstance(exc, BaseExceptionGroup) and _is_closed_resource_error(exc):
+        if isinstance(exc, ClosedResourceError) or (
+            isinstance(exc, BaseExceptionGroup) and _is_closed_resource_error(exc)
+        ):
             logger.info("MCP client disconnected (stdio closed)")
         else:
             logger.exception("MCP server crashed")

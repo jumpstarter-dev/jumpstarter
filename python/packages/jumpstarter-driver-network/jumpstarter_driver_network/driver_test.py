@@ -1,3 +1,4 @@
+import contextlib
 import os
 import socket
 import subprocess
@@ -18,10 +19,8 @@ from jumpstarter.common.utils import serve
 async def echo_handler(stream):
     async with stream:
         while True:
-            try:
+            with contextlib.suppress(Exception):
                 await stream.send(await stream.receive())
-            except Exception:
-                pass
 
 
 def test_tcp_network_portforward(tcp_echo_server):

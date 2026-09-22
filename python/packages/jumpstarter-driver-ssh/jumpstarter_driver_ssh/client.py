@@ -1,3 +1,4 @@
+import contextlib
 import os
 import shlex
 import subprocess
@@ -166,10 +167,8 @@ class SSHWrapperClient(CompositeClient):
             except Exception as e:
                 self.logger.error("Failed to create temporary identity file: %s", e)
                 if temp_file:
-                    try:
+                    with contextlib.suppress(Exception):
                         os.unlink(temp_file.name)
-                    except Exception:
-                        pass
                 raise
 
         try:

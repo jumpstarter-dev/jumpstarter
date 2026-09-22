@@ -1,5 +1,6 @@
 import asyncio
 import asyncio.subprocess
+import contextlib
 import os
 import signal
 import subprocess
@@ -146,27 +147,23 @@ class Shell(Driver):
 
         # Read from stdout
         if process.stdout:
-            try:
+            with contextlib.suppress(Exception):
                 if read_all:
                     chunk = await process.stdout.read()
                 else:
                     chunk = await asyncio.wait_for(process.stdout.read(1024), timeout=0.01)
                 if chunk:
                     stdout_data = chunk.decode('utf-8', errors='replace')
-            except (TimeoutError, Exception):
-                pass
 
         # Read from stderr
         if process.stderr:
-            try:
+            with contextlib.suppress(Exception):
                 if read_all:
                     chunk = await process.stderr.read()
                 else:
                     chunk = await asyncio.wait_for(process.stderr.read(1024), timeout=0.01)
                 if chunk:
                     stderr_data = chunk.decode('utf-8', errors='replace')
-            except (TimeoutError, Exception):
-                pass
 
         return stdout_data, stderr_data
 

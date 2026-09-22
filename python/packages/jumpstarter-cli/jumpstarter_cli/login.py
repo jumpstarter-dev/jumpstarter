@@ -381,7 +381,9 @@ async def relogin_client(config: ClientConfigV1Alpha1):
             insecure_tls=config.tls.insecure,
         )
         if config.refresh_token:
-            try:
+            import contextlib
+
+            with contextlib.suppress(Exception):
                 tokens = await oidc.refresh_token_grant(config.refresh_token)
                 config.token = tokens["access_token"]
                 refresh_token = tokens.get("refresh_token")
@@ -389,8 +391,6 @@ async def relogin_client(config: ClientConfigV1Alpha1):
                     config.refresh_token = refresh_token
                 ClientConfigV1Alpha1.save(config)  # ty: ignore[invalid-argument-type]
                 return
-            except Exception:
-                pass
 
         if should_use_device_flow(device_flow_flag=False):
             tokens = await oidc.device_authorization_grant()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import re
@@ -210,12 +211,10 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
     @staticmethod
     def _extract_source_url(source: Any) -> str | None:
         """Extract the URL from a PresignedRequestResource handle, or None."""
-        try:
+        with contextlib.suppress(Exception):
             handle = TypeAdapter(Resource).validate_python(source)
             if isinstance(handle, PresignedRequestResource) and handle.method == "GET":
                 return handle.url
-        except Exception:
-            pass
         return None
 
     @staticmethod

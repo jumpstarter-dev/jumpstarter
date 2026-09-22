@@ -7,6 +7,7 @@ import stat
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -559,18 +560,14 @@ class HookExecutor:
                     if process and process.poll() is None:
                         process.terminate()
                         # Give it a moment to terminate gracefully
-                        try:
+                        with suppress(Exception):
                             with anyio.move_on_after(5):
                                 await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
-                        except Exception:
-                            pass
                         # Force kill if still running
                         if process.poll() is None:
                             process.kill()
-                            try:
+                            with suppress(Exception):
                                 await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
-                            except Exception:
-                                pass
 
                 elif returncode == 0:
                     logger.debug("Hook executed successfully")

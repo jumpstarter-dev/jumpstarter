@@ -181,7 +181,7 @@ def test_client_config_load():
         f.close()
         with (
             patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as get_path_mock,
-            patch.object( ClientConfigV1Alpha1, "from_file", return_value=ClientConfigV1Alpha1( alias="another", metadata=ObjectMeta(namespace="default", name="another"), endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False), ), ) as from_file_mock,
+            patch.object( ClientConfigV1Alpha1, "from_file", return_value=ClientConfigV1Alpha1( alias="another", metadata=ObjectMeta(namespace="default", name="another"), endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False), ), ) as from_file_mock,  # noqa: E501
         ):
             value = ClientConfigV1Alpha1.load("another")
             assert value.alias == "another"

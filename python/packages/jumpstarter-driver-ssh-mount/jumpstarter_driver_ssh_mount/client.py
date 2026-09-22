@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import subprocess
@@ -378,15 +379,11 @@ class SSHMountClient(CompositeClient):
         except Exception as e:
             self.logger.error("Failed to create temporary identity file: %s", e)
             if fd is not None:
-                try:
+                with contextlib.suppress(Exception):
                     os.close(fd)
-                except Exception:
-                    pass
             if temp_path:
-                try:
+                with contextlib.suppress(Exception):
                     os.unlink(temp_path)
-                except Exception:
-                    pass
             raise
 
     def _cleanup_identity_file(self, identity_file: str | None) -> None:

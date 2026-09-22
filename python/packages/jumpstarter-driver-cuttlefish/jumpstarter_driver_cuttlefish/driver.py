@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import subprocess
@@ -399,10 +400,8 @@ class Cuttlefish(Driver):
             return
         device = self._cvd_device
         self.logger.info(f"Disconnecting ADB from {device}")
-        try:
+        with contextlib.suppress(Exception):
             adb.disconnect_device(device)
-        except Exception:
-            pass
 
     def _wait_boot(self, timeout: float = 300):
         """Wait for CVD to be ADB-reachable and fully booted."""

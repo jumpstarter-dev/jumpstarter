@@ -345,7 +345,11 @@ class StatefulOsipClient:
         """Simulate service discovery by calling back with matching registered services."""
         self._require_started()
         for svc in self._registered_services:
-            if svc.service_id == service.service_id and (service.instance_id == 0xFFFF or svc.instance_id == service.instance_id) and callback:
+            if (
+                svc.service_id == service.service_id
+                and (service.instance_id == 0xFFFF or svc.instance_id == service.instance_id)
+                and callback
+            ):
                 callback(svc)
 
     def subscribe_events(self, eventgroup_id: int):
@@ -490,7 +494,11 @@ class LoopbackOsipClient(StatefulOsipClient):
     def find(self, service, *, callback=None):
         self._require_started()
         for svc in self._server.offered_services:
-            if svc.service_id == service.service_id and (service.instance_id == 0xFFFF or svc.instance_id == service.instance_id) and callback:
+            if (
+                svc.service_id == service.service_id
+                and (service.instance_id == 0xFFFF or svc.instance_id == service.instance_id)
+                and callback
+            ):
                 callback(svc)
 
 

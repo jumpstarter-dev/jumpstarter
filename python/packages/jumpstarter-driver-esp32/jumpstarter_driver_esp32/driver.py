@@ -1,3 +1,4 @@
+import contextlib
 import gc
 import os
 import tempfile
@@ -54,13 +55,11 @@ class Esp32Flasher(FlasherInterface, Driver):
 
     def _close_esp(self, esp):
         port_path = None
-        try:
+        with contextlib.suppress(Exception):
             if hasattr(esp, "_port") and esp._port:
                 port_path = getattr(esp._port, "portstr", None) or getattr(esp._port, "name", None)
                 esp._port.close()
                 esp._port = None
-        except Exception:
-            pass
         if port_path:
             self._force_release_port(port_path)
 

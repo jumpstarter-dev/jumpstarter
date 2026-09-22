@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import shutil
 import socket
@@ -179,10 +180,8 @@ class RenodePower(PowerInterface, Driver):
             return
 
         if self._monitor is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await self._monitor.execute("quit")
-            except Exception:
-                pass
             await self._monitor.disconnect()
             self._monitor = None
 

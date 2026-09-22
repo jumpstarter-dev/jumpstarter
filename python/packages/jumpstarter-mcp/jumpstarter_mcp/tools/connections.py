@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from datetime import timedelta
-
-import anyio.to_thread
 
 from jumpstarter_mcp.connections import ConnectionManager
 
@@ -42,19 +41,15 @@ async def connect(
     # Auto-explore: get CLI tree and driver list
     cli_tree = None
     drivers = None
-    try:
+    with contextlib.suppress(Exception):
         client = conn.client
         if hasattr(client, "cli"):
             import anyio
             cli_cmd = await anyio.to_thread.run_sync(client.cli)
             cli_tree = walk_click_tree(cli_cmd)
-    except Exception:
-        pass
 
-    try:
+    with contextlib.suppress(Exception):
         drivers = list_drivers(conn.client)
-    except Exception:
-        pass
 
     return {
         "connection_id": conn.id,

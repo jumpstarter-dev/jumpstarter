@@ -1,4 +1,4 @@
-from contextlib import closing
+from contextlib import closing, suppress
 from urllib.parse import parse_qsl, urlparse
 
 from anyio.from_thread import start_blocking_portal
@@ -13,10 +13,8 @@ from jumpstarter.common.utils import serve
 async def echo_handler(stream):
     async with stream:
         while True:
-            try:
+            with suppress(Exception):
                 await stream.send(await stream.receive())
-            except Exception:
-                pass
 
 
 def test_client_adapter_novnc():

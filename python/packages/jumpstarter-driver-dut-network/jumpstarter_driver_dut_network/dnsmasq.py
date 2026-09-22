@@ -1,3 +1,4 @@
+import contextlib
 import ipaddress
 import logging
 import os
@@ -145,11 +146,9 @@ def write_config(
 
 def _drain_pipe(pipe, log_fn) -> None:
     """Read from a pipe until EOF, forwarding each line to a logger."""
-    try:
+    with contextlib.suppress(Exception):
         for line in pipe:
             log_fn(line.decode(errors="replace").rstrip())
-    except Exception:
-        pass
 
 
 _STARTUP_TIMEOUT = 2.0

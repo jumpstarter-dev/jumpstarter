@@ -103,7 +103,9 @@ class DecoderConfig(BaseModel):
 
     @field_validator("options")
     @classmethod
-    def validate_options(cls, v: dict[str, str | int | float | bool] | None) -> dict[str, str | int | float | bool] | None:
+    def validate_options(
+        cls, v: dict[str, str | int | float | bool] | None
+    ) -> dict[str, str | int | float | bool] | None:
         if v is None:
             return v
         for key, value in v.items():

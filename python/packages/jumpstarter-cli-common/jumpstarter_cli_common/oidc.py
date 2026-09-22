@@ -20,12 +20,12 @@ from anyio.to_thread import run_sync
 # OAuth2Session.  The warning provides no actionable information to end users.
 warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"authlib\.")
 
-from authlib.integrations.requests_client import OAuth2Session
-from joserfc.errors import JoseError
-from joserfc.jws import extract_compact
-from yarl import URL
+from authlib.integrations.requests_client import OAuth2Session  # noqa: E402
+from joserfc.errors import JoseError  # noqa: E402
+from joserfc.jws import extract_compact  # noqa: E402
+from yarl import URL  # noqa: E402
 
-from jumpstarter.config.env import JMP_OIDC_CALLBACK_PORT, JMP_OIDC_DEVICE_FLOW
+from jumpstarter.config.env import JMP_OIDC_CALLBACK_PORT, JMP_OIDC_DEVICE_FLOW  # noqa: E402
 
 
 def _get_ssl_context() -> ssl.SSLContext:

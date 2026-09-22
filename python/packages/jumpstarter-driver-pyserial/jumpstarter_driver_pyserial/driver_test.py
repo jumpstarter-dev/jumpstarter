@@ -1,3 +1,4 @@
+import contextlib
 import time
 from types import SimpleNamespace
 from typing import cast
@@ -19,13 +20,16 @@ def test_bare_pyserial():
         assert "hello".startswith(stream.receive().decode("utf-8"))
 
 
+
 def test_second_exclusive_connect_surfaces_console_in_use():
     """A second exclusive stream should fail with a clean 'console in use' error."""
-    with serve(PySerial(url="loop://")) as client:
-        with client.stream() as _held:
-            with pytest.raises(Exception) as exc_info:
-                with client.stream() as stream:
-                    stream.receive()
+    with (
+        serve(PySerial(url="loop://")) as client,
+        client.stream() as _held,
+        pytest.raises(Exception) as exc_info,
+        client.stream() as stream,
+    ):
+        stream.receive()
 
     combined = []
     cause = exc_info.value
@@ -43,6 +47,7 @@ def test_second_exclusive_connect_surfaces_console_in_use():
     text = "\n".join(combined)
     assert "Console in use" in text
     assert "Unexpected <class" not in text
+
 
 
 def test_bare_open_pyserial():
@@ -260,10 +265,8 @@ def test_close_closes_transport(monkeypatch):
 
         def fake_close():
             orig_close()
-            try:
+            with contextlib.suppress(Exception):
                 protocol.connection_lost(None)
-            except Exception:
-                pass
 
         transport.close = fake_close
 
@@ -312,10 +315,8 @@ def test_close_from_outside_releases_port(monkeypatch):
         def fake_close():
             closed["called"] = True
             orig_close()
-            try:
+            with contextlib.suppress(Exception):
                 protocol.connection_lost(None)
-            except Exception:
-                pass
 
         transport.close = fake_close
 
@@ -329,13 +330,11 @@ def test_close_from_outside_releases_port(monkeypatch):
 
         driver = PySerial(url="/dev/ttyMOCK", check_present=False)
 
-        try:
+        with contextlib.suppress(Exception):
             async with driver.connect() as stream:
                 data = await stream.receive()
                 assert data == b"hello"
                 driver.close()
-        except Exception:
-            pass
 
         assert closed["called"]
 

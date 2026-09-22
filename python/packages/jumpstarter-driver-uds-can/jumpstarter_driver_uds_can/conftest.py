@@ -1,3 +1,4 @@
+import contextlib
 import struct
 import threading
 
@@ -122,18 +123,12 @@ class MockUdsEcu:
     def stop(self):
         self._running = False
         self._thread.join(timeout=2)
-        try:
+        with contextlib.suppress(Exception):
             self._stack.stop()
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             self._notifier.stop()
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             self._bus.shutdown()
-        except Exception:
-            pass
 
 
 @pytest.fixture

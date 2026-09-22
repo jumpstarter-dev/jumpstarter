@@ -182,14 +182,12 @@ class ISCSI(Driver):
         try:
             root_abs = os.path.abspath(self.root_dir)
             for so in list(self._rtsroot.storage_objects):  # type: ignore[attr-defined]
-                try:
+                with suppress(Exception):
                     if isinstance(so, FileIOStorageObject):
                         udev_path = os.path.abspath(getattr(so, "udev_path", ""))
                         if udev_path.startswith(root_abs + os.sep) or udev_path == root_abs:
                             with suppress(Exception):
                                 so.delete()
-                except Exception:
-                    continue
         except Exception as e:
             self.logger.debug(f"No orphan storage object cleanup performed: {e}")
 

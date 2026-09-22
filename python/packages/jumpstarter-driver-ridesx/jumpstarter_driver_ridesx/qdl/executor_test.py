@@ -53,7 +53,7 @@ def test_fix_provision_default_xml_strips_invalid_header(tmp_path):
     ufs_dir.mkdir()
     provision = ufs_dir / "provision_default.xml"
     provision.write_text(
-        '<!-- bad -->\n<!-- still bad -->\n<!-- x -->\n<!-- y -->\n<!-- z -->\n<!-- a -->\n<!-- b -->\n<!-- c -->\n<!-- d -->\n<?xml version="1.0" ?><data></data>',
+        '<!-- bad -->\n<!-- still bad -->\n<!-- x -->\n<!-- y -->\n<!-- z -->\n<!-- a -->\n<!-- b -->\n<!-- c -->\n<!-- d -->\n<?xml version="1.0" ?><data></data>',  # noqa: E501
         encoding="utf-8",
     )
     fix_provision_default_xml(ufs_dir)

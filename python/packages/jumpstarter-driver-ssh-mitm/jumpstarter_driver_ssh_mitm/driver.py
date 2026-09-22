@@ -115,22 +115,14 @@ class StreamSocket:
             self.portal.call(self.recv_stream.aclose)
         with suppress(Exception):
             self.portal.call(self.send_stream.aclose)
-        try:
+        with suppress(Exception):
             self.client_sock.shutdown(socket.SHUT_RDWR)
-        except Exception:
-            pass
-        try:
+        with suppress(Exception):
             self.server_sock.shutdown(socket.SHUT_RDWR)
-        except Exception:
-            pass
-        try:
+        with suppress(Exception):
             self.client_sock.close()
-        except Exception:
-            pass
-        try:
+        with suppress(Exception):
             self.server_sock.close()
-        except Exception:
-            pass
         self._recv_thread.join(timeout=5)
         self._send_thread.join(timeout=5)
         if self._recv_thread.is_alive() or self._send_thread.is_alive():
@@ -325,10 +317,8 @@ class SSHMITM(Driver):
             except Exception as e:
                 self.logger.debug("Channel %s ended: %s", name, e)
             finally:
-                try:
+                with suppress(Exception):
                     dst.close()
-                except Exception:
-                    pass
 
         t1 = threading.Thread(target=forward, args=(client_channel, dut_channel, "client→dut"), daemon=True)
         t2 = threading.Thread(target=forward, args=(dut_channel, client_channel, "dut→client"), daemon=True)
@@ -391,28 +381,21 @@ class SSHMITM(Driver):
             self._proxy_channels(client_channel, dut_channel)
 
             if server.exec_command:
-                try:
+                with suppress(Exception):
                     exit_status = dut_channel.recv_exit_status()
                     client_channel.send_exit_status(exit_status)
-                except Exception:
-                    pass
-                finally:
-                    client_channel.close()
+                client_channel.close()
 
         except Exception as e:
             self.logger.error("Failed to connect to DUT: %s", e)
             client_channel.close()
         finally:
             if dut_channel:
-                try:
+                with suppress(Exception):
                     dut_channel.close()
-                except Exception:
-                    pass
             if dut_client:
-                try:
+                with suppress(Exception):
                     dut_client.close()
-                except Exception:
-                    pass
             transport.close()
 
     @exportstream

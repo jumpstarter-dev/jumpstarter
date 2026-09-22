@@ -497,13 +497,19 @@ class TestResolveIp:
     def test_unresolvable_hostname_raises(self):
         from .driver import DutNetwork
 
-        with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")), pytest.raises(ValueError, match="Cannot resolve hostname"):
+        with (
+            patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")),
+            pytest.raises(ValueError, match="Cannot resolve hostname"),
+        ):
             DutNetwork._resolve_ip("no-such-host.invalid")
 
     def test_empty_getaddrinfo_result_raises(self):
         from .driver import DutNetwork
 
-        with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", return_value=[]), pytest.raises(ValueError, match="Cannot resolve hostname"):
+        with (
+            patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", return_value=[]),
+            pytest.raises(ValueError, match="Cannot resolve hostname"),
+        ):
             DutNetwork._resolve_ip("empty-result.invalid")
 
 
@@ -547,7 +553,10 @@ class TestDnsNameIn1to1:
         leases = [
             {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.100.10", "public_ip": "bad-host.invalid"},
         ]
-        with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", side_effect=socket.gaierror("fail")), pytest.raises(ValueError, match="Cannot resolve hostname"):
+        with (
+            patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", side_effect=socket.gaierror("fail")),
+            pytest.raises(ValueError, match="Cannot resolve hostname"),
+        ):
             _make_driver(tmp_path, nat_mode="1to1", addresses=leases)
 
 

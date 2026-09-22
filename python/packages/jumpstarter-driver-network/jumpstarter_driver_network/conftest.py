@@ -1,3 +1,5 @@
+import contextlib
+
 import pytest
 from anyio.from_thread import start_blocking_portal
 
@@ -7,10 +9,8 @@ from jumpstarter.common import TemporaryTcpListener
 async def echo_handler(stream):
     async with stream:
         while True:
-            try:
+            with contextlib.suppress(Exception):
                 await stream.send(await stream.receive())
-            except Exception:
-                pass
 
 
 @pytest.fixture
