@@ -670,7 +670,10 @@ var _ = Describe("DUT Network Filter E2E Tests", Label("dut-network"), Ordered, 
 		It("should show filter rules in nftables output", func() {
 			out, err := jmpShell("j", "dut-network", "nat-rules")
 			Expect(err).NotTo(HaveOccurred(), out)
-			Expect(out).To(ContainSubstring("policy drop"))
+			// The forward chain policy is always accept; the egress drop
+			// policy is enforced by a catch-all drop rule on the
+			// DUT -> upstream interface pair.
+			Expect(out).To(ContainSubstring(fmt.Sprintf("iifname %q oifname %q drop", vethHost, vethUp)))
 			Expect(out).To(ContainSubstring(fmt.Sprintf("dport %d", allowedPort)))
 		})
 	})

@@ -147,7 +147,7 @@ Same netns topology, separate exporter on port 19092 with an egress filter
 
 | Test Name | Steps | Pass Check |
 |---|---|---|
-| should show filter rules in nftables output | `j dut-network nat-rules` | output contains "policy drop" and `dport 9997` |
+| should show filter rules in nftables output | `j dut-network nat-rules` | output contains the egress catch-all drop rule (`iifname "jmp-vhost" oifname "jmp-vup" drop`) and `dport 9997` |
 | should allow TCP to the permitted port | TCP server on allowed port 9997, client connects from DUT ns | client receives "FILTER_OK" |
 | should block TCP to a non-allowed port | TCP server on blocked port 9998, client connects from DUT ns | connection fails (timeout/reset) |
 | should block ICMP ping when egress policy is drop | ping from DUT ns to ext IP | ping fails (`Consistently`) |
