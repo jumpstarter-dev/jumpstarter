@@ -1,5 +1,12 @@
 import sys
 
+# Machine-readable marker prefixed to the wire message of an exclusive-console
+# rejection (ExclusiveSessionActive). It travels in the gRPC status details, so
+# the CLI can recognize the error by the FAILED_PRECONDITION code plus this
+# stable token instead of matching the human-readable wording (which may be
+# reworded or localized). The CLI strips it before display. Keep it stable.
+CONSOLE_IN_USE_MARKER = "[jumpstarter:console-in-use]"
+
 
 class JumpstarterException(Exception):
     """Base class for jumpstarter-specific errors.

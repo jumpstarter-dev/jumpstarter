@@ -117,6 +117,18 @@ class Driver(
         for child in self.children.values():
             child.close()
 
+    def shutdown(self):
+        """Session-end teardown hook, run by the exporter before close().
+
+        Defaults to a no-op that just recurses to children, so ordinary drivers
+        keep releasing their resources in close() as before. Drivers whose
+        exported close() has non-teardown semantics (e.g. a fan-out console
+        whose close() only kicks clients) override this to perform the real
+        teardown that must not be reachable from a remote client.
+        """
+        for child in self.children.values():
+            child.shutdown()
+
     def reset(self):
         for child in self.children.values():
             child.reset()

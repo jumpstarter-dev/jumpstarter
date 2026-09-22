@@ -58,7 +58,12 @@ class PySerialClient(DriverClient):
             no_output: If True, do not read serial output; only forward stdin to serial.
             observe: If True, use observe mode (read-only).
         """
-        method = "observe" if observe else "connect"
+        # Only take the exclusive write token when this invocation will actually
+        # write to the port. A plain logging/monitoring pipe (no stdin) must
+        # attach read-only so it never locks out an interactive user — e.g. a CI
+        # job tailing serial into a file while someone drives the console.
+        use_observe = observe or not input_enabled
+        method = "observe" if use_observe else "connect"
         async with self.stream_async(method=method) as stream:
             # Fire-and-forget mode: only forward stdin and exit when stdin reaches EOF.
             if no_output:
@@ -281,13 +286,18 @@ class PySerialClient(DriverClient):
         def console_status():
             """Show serial console session status"""
             status = self.call("console_status")
-            holder = status.get("write_token_holder")
+            # The exporter cannot see which client dialed a router stream (the
+            # transport carries only an opaque token), so we report whether the
+            # exclusive write token is held, not who holds it. Naming the holder
+            # is a follow-up that needs the controller to plumb client identity
+            # into the Dial/Listen response.
+            held = status.get("write_token_held", False)
             observers = status.get("observer_count", 0)
             total = status.get("total_clients", 0)
             running = status.get("reader_running", False)
             scrollback = status.get("scrollback_bytes", 0)
 
-            click.echo(f"Write token holder: {holder or '(none)'}")
+            click.echo(f"Write token held: {'yes' if held else 'no'}")
             click.echo(f"Observers: {observers}")
             click.echo(f"Total clients: {total}")
             click.echo(f"Reader running: {running}")

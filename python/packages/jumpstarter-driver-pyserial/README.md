@@ -233,10 +233,16 @@ Access is coordinated by an exclusive **write token**:
 
 - The first client to open an interactive session (`console` or `pipe` with
   input) acquires the write token and may write to the port.
-- Additional clients attach as **observers** — either explicitly with
-  `--observe`, or automatically because the write token is already held. They
-  receive all serial output (including a replay of recent scrollback on attach)
-  but cannot write.
+- Additional clients attach as **observers**, receiving all serial output
+  (including a replay of recent scrollback on attach) but unable to write. A
+  client observes when it passes `--observe`, or when a `pipe` has no stdin to
+  forward (a plain logging/monitoring pipe never takes the write token, so it
+  cannot lock out an interactive user).
+- There is no silent fallback for interactive sessions: running `console` (or
+  `pipe -i`) while another client holds the token fails with an error telling
+  you to retry with `--observe`. Running an interactive command means you intend
+  to type, so we surface the conflict instead of quietly dropping you to
+  read-only.
 - When the write-token holder disconnects, the token is released and another
   client may take it.
 
@@ -251,20 +257,25 @@ j serial release-console
 
 ### console-status
 
-Inspect the current session: who holds the write token, how many observers are
-attached, and how much scrollback is buffered:
+Inspect the current session: whether the write token is held, how many
+observers are attached, and how much scrollback is buffered:
 
 ```bash
 j serial console-status
 ```
 
 ```console
-Write token holder: client-alice
+Write token held: yes
 Observers: 2
 Total clients: 3
 Reader running: True
 Scrollback: 4096 bytes
 ```
+
+The status reports *whether* the token is held, not *who* holds it: the
+exporter serves an opaque router stream and never learns which client dialed in.
+Attributing the token to a named client needs the controller to plumb the
+dialing client's identity into the connection, which is a separate change.
 
 ## API Reference
 

@@ -294,8 +294,13 @@ def test_close_closes_transport(monkeypatch):
     anyio.run(_run)
 
 
-def test_close_from_outside_releases_port(monkeypatch):
-    """close() closes the transport, causing the stream to tear down."""
+def test_shutdown_releases_port_but_close_keeps_it(monkeypatch):
+    """close() kicks clients but keeps the serial link; shutdown() releases the port.
+
+    close() is the client-callable recovery hook (boot everyone, keep the port
+    live for a fresh attach); dropping the physical connection is session-end
+    teardown and belongs to shutdown().
+    """
     import asyncio
     from unittest.mock import MagicMock
 
@@ -337,7 +342,11 @@ def test_close_from_outside_releases_port(monkeypatch):
             async with driver.connect() as stream:
                 data = await stream.receive()
                 assert data == b"hello"
+                # close() kicks clients but must NOT drop the physical port.
                 driver.close()
+                assert not closed["called"]
+                # shutdown() is session-end teardown and releases the port.
+                driver.shutdown()
         except Exception:
             pass
 
