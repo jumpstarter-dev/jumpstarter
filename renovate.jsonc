@@ -442,7 +442,7 @@
       ]
     },
     {
-      "description": "jumpstarter packages are published to pkg.jumpstarter.dev, not PyPI",
+      "description": "jumpstarter packages are published to pkg.jumpstarter.dev",
       "matchDatasources": [
         "pypi"
       ],
