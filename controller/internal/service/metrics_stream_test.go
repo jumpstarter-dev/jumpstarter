@@ -133,7 +133,7 @@ func httpGet(t *testing.T, url string) (int, string) {
 	client := &http.Client{Timeout: 3 * time.Second}
 	var resp *http.Response
 	var lastErr error
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		resp, lastErr = client.Get(url)
 		if lastErr == nil {
 			break
@@ -837,7 +837,7 @@ jumpstarter_active_sessions{exporter="sidekick"} 1
 	var wg sync.WaitGroup
 	codes := make([]int, n)
 	errs := make([]error, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -867,7 +867,7 @@ jumpstarter_active_sessions{exporter="sidekick"} 1
 	if got := scrapes.Load(); got != 1 {
 		t.Fatalf("scrape requests = %d, want 1 coalesced fan-out", got)
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if errs[i] != nil {
 			t.Errorf("GET %d: %v", i, errs[i])
 			continue

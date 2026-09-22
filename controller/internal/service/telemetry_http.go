@@ -76,10 +76,7 @@ func (s *TelemetryService) startMetricsHTTP() (func(context.Context) error, erro
 	mux.HandleFunc("/healthz", s.handleHealthz)
 	mux.HandleFunc("/readyz", s.handleReadyz)
 
-	writeTimeout := s.scrapeTimeoutDuration() + 15*time.Second
-	if writeTimeout < 30*time.Second {
-		writeTimeout = 30 * time.Second
-	}
+	writeTimeout := max(s.scrapeTimeoutDuration()+15*time.Second, 30*time.Second)
 
 	srv := &http.Server{
 		Handler:           mux,
