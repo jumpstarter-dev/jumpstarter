@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import anyio
+import click
 import pytest
 from anyio import create_memory_object_stream
 from anyio.streams.stapled import StapledObjectStream
@@ -48,6 +49,38 @@ def test_second_exclusive_connect_surfaces_console_in_use():
     assert "Console in use" in text
     assert "Unexpected <class" not in text
 
+
+def test_second_exclusive_pipe_preserves_console_in_use_error():
+    with (
+        serve(PySerial(url="loop://")) as client,
+        client.stream() as _held,
+        pytest.raises(ExceptionGroup) as exc_info,
+    ):
+        client.portal.call(client._pipe_serial, None, True)
+
+    group = exc_info.value
+    assert isinstance(group, ExceptionGroup)
+    error = group.exceptions[0]
+    assert isinstance(error, anyio.BrokenResourceError)
+    grpc_error = error.__cause__
+    assert grpc_error is not None
+    grpc_code = getattr(grpc_error, "code", None)
+    grpc_details = getattr(grpc_error, "details", None)
+    assert callable(grpc_code)
+    assert callable(grpc_details)
+    assert grpc_code().name == "FAILED_PRECONDITION"
+    assert "[jumpstarter:console-in-use]" in grpc_details()
+
+
+@pytest.mark.anyio
+async def test_pipe_reports_unexplained_disconnect_as_error():
+    class BrokenStream:
+        async def receive(self):
+            raise anyio.BrokenResourceError
+
+    client = object.__new__(PySerialClient)
+    with pytest.raises(click.ClickException, match="Serial connection lost"):
+        await client._serial_to_output(BrokenStream(), None, False)
 
 
 def test_bare_open_pyserial():

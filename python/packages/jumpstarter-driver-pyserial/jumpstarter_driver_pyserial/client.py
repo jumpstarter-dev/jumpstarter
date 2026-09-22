@@ -100,10 +100,14 @@ class PySerialClient(DriverClient):
                     sys.stdout.buffer.flush()
         except EndOfStream:
             click.echo("\nSerial connection closed normally (end of stream).", err=True)
-        except BrokenResourceError:
-            click.echo(
-                "\nSerial connection lost (broken resource). The connection may have been interrupted.", err=True
-            )
+        except BrokenResourceError as exc:
+            if exc.__cause__ is not None:
+                # Preserve the gRPC cause so the CLI can report a console-in-use
+                # rejection (or another transport error) and exit nonzero.
+                raise
+            raise click.ClickException(
+                "Serial connection lost (broken resource). The connection may have been interrupted."
+            ) from None
 
     async def _stdin_to_serial(self, stream) -> tuple[int, int]:
         """Read from stdin and write to serial. Returns (bytes_read, bytes_sent)."""

@@ -11,6 +11,7 @@ from jumpstarter_cli_common.exceptions import (
     handle_exceptions_with_reauthentication,
 )
 
+from jumpstarter.common.exceptions import CONSOLE_IN_USE_MARKER
 from jumpstarter.common.exceptions import ConnectionError as JmpConnectionError
 
 
@@ -277,13 +278,14 @@ class _MockGrpcError(Exception):
         return self._details
 
 
-_WRAPPED_CONSOLE_IN_USE = (
-    "Unexpected <class 'jumpstarter.streams.fanout.ExclusiveSessionActive'>: "
-    "Console in use. Use --observe or release-console."
-)
+# The real wire detail: the exporter aborts an exclusive-console Stream with
+# FAILED_PRECONDITION and this marker-prefixed message (see Session.Stream).
+_CONSOLE_IN_USE_DETAIL = f"{CONSOLE_IN_USE_MARKER} Console in use by another client. Use --observe or release-console."
 
 
 def test_handle_exceptions_maps_exclusive_session_active() -> None:
+    # A locally-raised ExclusiveSessionActive is surfaced with the marker
+    # stripped (it must never reach the user).
     from jumpstarter.streams.fanout import ExclusiveSessionActive
 
     @handle_exceptions
@@ -292,19 +294,34 @@ def test_handle_exceptions_maps_exclusive_session_active() -> None:
 
     with pytest.raises(click.ClickException, match="Console in use") as exc_info:
         fn()
-    assert "Unexpected" not in str(exc_info.value)
+    assert CONSOLE_IN_USE_MARKER not in str(exc_info.value)
 
 
-def test_handle_exceptions_maps_wrapped_console_in_use_grpc_error() -> None:
+def test_handle_exceptions_maps_console_in_use_grpc_error() -> None:
+    # The over-the-wire path: FAILED_PRECONDITION carrying the marker maps to a
+    # clean, marker-free console message.
     from anyio import BrokenResourceError
 
     @handle_exceptions
     def fn():
-        raise BrokenResourceError from _MockGrpcError("UNKNOWN", _WRAPPED_CONSOLE_IN_USE)
+        raise BrokenResourceError from _MockGrpcError("FAILED_PRECONDITION", _CONSOLE_IN_USE_DETAIL)
 
     with pytest.raises(click.ClickException, match="Console in use") as exc_info:
         fn()
-    assert "Unexpected" not in str(exc_info.value)
+    assert CONSOLE_IN_USE_MARKER not in str(exc_info.value)
+
+
+def test_console_in_use_ignored_without_failed_precondition() -> None:
+    # The same message under a different gRPC code is NOT treated as the
+    # exclusive-console rejection (detection is gated on FAILED_PRECONDITION).
+    @handle_exceptions
+    def fn():
+        raise _MockGrpcError("UNAVAILABLE", _CONSOLE_IN_USE_DETAIL)
+
+    with pytest.raises(click.ClickException) as exc_info:
+        fn()
+    # Falls through to the generic UNAVAILABLE handler, not the console message.
+    assert "unavailable" in str(exc_info.value).lower()
 
 
 @pytest.mark.anyio
@@ -314,7 +331,7 @@ async def test_async_handle_exceptions_maps_console_in_use_in_exception_group() 
     @async_handle_exceptions
     async def fn():
         try:
-            raise _MockGrpcError("UNKNOWN", _WRAPPED_CONSOLE_IN_USE)
+            raise _MockGrpcError("FAILED_PRECONDITION", _CONSOLE_IN_USE_DETAIL)
         except _MockGrpcError as grpc_exc:
             wrapped = BrokenResourceError()
             wrapped.__cause__ = grpc_exc
@@ -322,4 +339,4 @@ async def test_async_handle_exceptions_maps_console_in_use_in_exception_group() 
 
     with pytest.raises(click.ClickException, match="Console in use") as exc_info:
         await fn()
-    assert "Unexpected" not in str(exc_info.value)
+    assert CONSOLE_IN_USE_MARKER not in str(exc_info.value)

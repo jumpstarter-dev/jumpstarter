@@ -7,6 +7,7 @@ Tests the Click CLI interface including the pipe command.
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
+import click
 import pytest
 from anyio import BrokenResourceError, EndOfStream, Event, fail_after
 from click.testing import CliRunner
@@ -389,21 +390,13 @@ async def test_serial_to_output_handles_end_of_stream(pyserial_client):
 
 @pytest.mark.anyio
 async def test_serial_to_output_handles_broken_resource(pyserial_client):
-    """Test that _serial_to_output handles BrokenResourceError gracefully."""
+    """A broken serial stream must fail the command."""
     # Create a mock stream that raises BrokenResourceError
     mock_stream = AsyncMock()
     mock_stream.receive.side_effect = BrokenResourceError
 
-    # Capture the click output
-    from click.testing import CliRunner
-
-    runner = CliRunner()
-    with runner.isolated_filesystem():
-        # Call _serial_to_output directly
+    with pytest.raises(click.ClickException, match="Serial connection lost"):
         await pyserial_client._serial_to_output(mock_stream, None, False)
-
-    # The method should have caught BrokenResourceError and not raised it
-    # (we're testing that it doesn't propagate)
 
 
 @pytest.mark.anyio
@@ -417,7 +410,6 @@ async def test_serial_to_output_end_of_stream_with_file(pyserial_client):
 
     runner = CliRunner()
     with runner.isolated_filesystem():
-        # Call _serial_to_output with a file output
         await pyserial_client._serial_to_output(mock_stream, "test.log", False)
 
         # The file should have been created (even if empty)
@@ -437,8 +429,8 @@ async def test_serial_to_output_broken_resource_with_file(pyserial_client):
 
     runner = CliRunner()
     with runner.isolated_filesystem():
-        # Call _serial_to_output with a file output
-        await pyserial_client._serial_to_output(mock_stream, "test.log", False)
+        with pytest.raises(click.ClickException, match="Serial connection lost"):
+            await pyserial_client._serial_to_output(mock_stream, "test.log", False)
 
         # The file should have been created (even if empty)
         import os
