@@ -969,7 +969,7 @@ def test_subshell_fish_prompt_plain_when_no_color():
     )
 
     with serve(instance) as client:
-        with patch.dict(os.environ, {"SHELL": "/usr/bin/fish", "NO_COLOR": "1"}):
+        with patch.dict(os.environ, {"SHELL": "/usr/bin/fish", "NO_COLOR": "1"}, clear=True):
             with patch('subprocess.run') as mock_run:
                 mock_run.return_value = MagicMock(returncode=0)
                 client._run_subshell("/tmp/test-mount", "/")

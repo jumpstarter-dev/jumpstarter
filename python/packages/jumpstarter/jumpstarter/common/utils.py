@@ -179,7 +179,7 @@ def _fish_prompt_fn(context: str, bolt: str, arrow: str, no_color: bool) -> str:
     return (
         "function fish_prompt; "
         "set_color grey; "
-        'printf "%s" (basename $PWD); '
+        'printf "%s " (basename $PWD); '
         "set_color yellow; "
         f'printf "{bolt}"; '
         "set_color white; "
