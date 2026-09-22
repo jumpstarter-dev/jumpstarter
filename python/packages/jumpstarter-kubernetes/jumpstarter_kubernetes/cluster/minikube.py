@@ -5,7 +5,6 @@ import os
 import shlex
 import shutil
 from pathlib import Path
-from typing import List, Optional
 
 from ..callbacks import OutputCallback, SilentCallback
 from ..exceptions import (
@@ -100,7 +99,7 @@ async def delete_minikube_cluster(minikube: str, cluster_name: str, callback: Ou
 async def create_minikube_cluster(  # noqa: C901
     minikube: str,
     cluster_name: str,
-    extra_args: Optional[List[str]] = None,
+    extra_args: list[str] | None = None,
     force_recreate: bool = False,
     callback: OutputCallback = None,
 ) -> bool:
@@ -157,7 +156,7 @@ async def create_minikube_cluster(  # noqa: C901
         )
 
 
-async def list_minikube_clusters(minikube: str) -> List[str]:
+async def list_minikube_clusters(minikube: str) -> list[str]:
     """List all Minikube clusters."""
     if not minikube_installed(minikube):
         return []
@@ -213,7 +212,7 @@ async def create_minikube_cluster_with_options(
     cluster_name: str,
     minikube_extra_args: str,
     force_recreate_cluster: bool,
-    extra_certs: Optional[str] = None,
+    extra_certs: str | None = None,
     callback: OutputCallback = None,
 ) -> None:
     """Create a Minikube cluster with optional certificate preparation."""

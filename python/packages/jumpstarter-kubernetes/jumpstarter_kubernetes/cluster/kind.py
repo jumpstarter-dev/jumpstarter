@@ -4,7 +4,6 @@ import os
 import shlex
 import shutil
 import tempfile
-from typing import List, Optional
 
 from ..callbacks import OutputCallback, SilentCallback
 from ..exceptions import (
@@ -50,7 +49,7 @@ async def delete_kind_cluster(kind: str, cluster_name: str) -> bool:
 
 
 async def create_kind_cluster(
-    kind: str, cluster_name: str, extra_args: Optional[List[str]] = None, force_recreate: bool = False
+    kind: str, cluster_name: str, extra_args: list[str] | None = None, force_recreate: bool = False
 ) -> bool:
     """Create a Kind cluster."""
     if extra_args is None:
@@ -125,7 +124,7 @@ nodes:
             pass
 
 
-async def list_kind_clusters(kind: str) -> List[str]:
+async def list_kind_clusters(kind: str) -> list[str]:
     """List all Kind clusters."""
     if not kind_installed(kind):
         return []
@@ -183,7 +182,7 @@ async def create_kind_cluster_with_options(
     cluster_name: str,
     kind_extra_args: str,
     force_recreate_cluster: bool,
-    extra_certs: Optional[str] = None,
+    extra_certs: str | None = None,
     callback: OutputCallback = None,
 ) -> None:
     """Create a Kind cluster with optional certificate injection."""

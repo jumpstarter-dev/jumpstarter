@@ -1255,21 +1255,18 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         if operator is None:
             path, operator, operator_scheme = operator_for_path(path)
 
-        ...
 
     def use_initram(self, path: PathBuf, operator: Operator | None = None):
         """Use initramfs file"""
         if operator is None:
             path, operator, operator_scheme = operator_for_path(path)
 
-        ...
 
     def use_kernel(self, path: PathBuf, operator: Operator | None = None):
         """Use kernel file"""
         if operator is None:
             path, operator, operator_scheme = operator_for_path(path)
 
-        ...
 
     @property
     def manifest(self):
@@ -1348,7 +1345,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
     def _resolve_oci_credentials(
         self, path: PathBuf, username: str | None, password: str | None
-    ) -> "OciCredentials":
+    ) -> OciCredentials:
         from jumpstarter.common.oci import OciCredentials, resolve_oci_credentials
 
         if username is not None or password is not None or str(path).startswith("oci://"):
@@ -1486,7 +1483,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         @driver_click_group(self)
         def base():
             """Software-defined flasher interface"""
-            pass
 
         @base.command()
         @click.argument("file", required=False)

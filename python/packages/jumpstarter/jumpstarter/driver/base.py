@@ -436,9 +436,8 @@ class Driver(
                     async with aiohttp.request(
                         method, self._make_url(url), headers=headers, raise_for_status=True,
                         data=remote, timeout=client_timeout,
-                    ) as _resp:
-                        async with stream:
-                            yield ProgressStream(stream=stream, logging=True)
+                    ) as _resp, stream:
+                        yield ProgressStream(stream=stream, logging=True)
                 case _:
                     # INVARIANT: method is always one of GET or PUT, see PresignedRequestResource
                     raise ValueError("unreachable")

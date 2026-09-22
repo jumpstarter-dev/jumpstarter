@@ -325,9 +325,8 @@ class WebsocketNetwork(NetworkInterface, Driver):
         '''
         self.logger.info("Connecting to %s", self.url)
 
-        async with websockets.connect(self.url) as websocket:
-            async with WebsocketClientStream(conn=websocket) as stream:
-                yield stream
+        async with websockets.connect(self.url) as websocket, WebsocketClientStream(conn=websocket) as stream:
+            yield stream
 
         self.logger.info("Disconnected from %s", self.url)
 

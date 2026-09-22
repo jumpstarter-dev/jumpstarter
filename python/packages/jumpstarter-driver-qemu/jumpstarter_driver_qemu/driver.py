@@ -164,7 +164,7 @@ class QemuFlasher(FlasherInterface, Driver):
                 remaining = self.parent.flash_timeout - elapsed
                 try:
                     name, text = await asyncio.wait_for(output_queue.get(), timeout=min(remaining, 30))
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
 
                 if text is None:
@@ -196,10 +196,9 @@ class QemuFlasher(FlasherInterface, Driver):
     async def dump(self, target, partition: str | None = None):
         async with await FileReadStream.from_path(
             self.parent.validate_partition(partition, use_default_partitions=True)
-        ) as stream:
-            async with self.resource(target) as res:
-                async for chunk in stream:
-                    await res.send(chunk)
+        ) as stream, self.resource(target) as res:
+            async for chunk in stream:
+                await res.send(chunk)
 
 
 @dataclass(kw_only=True)
@@ -277,7 +276,7 @@ class QemuPower(PowerInterface, Driver):
             ",".join(
                 ["user", "id=eth0"]
                 + [
-                    "hostfwd={}:{}:{}-:{}".format(v.protocol, v.hostaddr, v.hostport, v.guestport)
+                    f"hostfwd={v.protocol}:{v.hostaddr}:{v.hostport}-:{v.guestport}"
                     for k, v in self.parent.hostfwd.items()
                 ]
             ),
@@ -292,7 +291,7 @@ class QemuPower(PowerInterface, Driver):
         ]
 
         if _vsock_available():
-            devices.append("vhost-vsock-pci,guest-cid={}".format(self.parent._cid))
+            devices.append(f"vhost-vsock-pci,guest-cid={self.parent._cid}")
 
         for device in devices:
             cmdline += ["-device", device]
@@ -389,7 +388,7 @@ class QemuPower(PowerInterface, Driver):
         qmp = QMPClient(self.parent.hostname)
 
         logging.getLogger(
-            "qemu.qmp.protocol.{}".format(self.parent.hostname),
+            f"qemu.qmp.protocol.{self.parent.hostname}",
         ).addFilter(QmpLogFilter())
 
         with fail_after(10):

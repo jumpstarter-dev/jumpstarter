@@ -788,9 +788,8 @@ class TestLeaseListFilterBySelector:
         with patch(
             "jumpstarter.client.grpc.selector_contains",
             side_effect=ValueError("unknown label selector operator: 'bogus'"),
-        ):
-            with caplog.at_level(logging.WARNING, logger="jumpstarter.client.grpc"):
-                leases.filter_by_selector("board in rpi")
+        ), caplog.at_level(logging.WARNING, logger="jumpstarter.client.grpc"):
+            leases.filter_by_selector("board in rpi")
         assert "bad" in caplog.text
         assert "board in rpi" in caplog.text
         assert "unknown label selector operator: 'bogus'" in caplog.text

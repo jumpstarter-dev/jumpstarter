@@ -2,7 +2,6 @@ import asyncio
 import logging
 import pathlib
 from enum import IntEnum
-from typing import Optional, Set, Tuple
 
 from opendal import AsyncOperator
 
@@ -48,10 +47,10 @@ class TftpServer:
         self.block_size = block_size
         self.timeout = timeout
         self.retries = retries
-        self.active_transfers: Set["TftpTransfer"] = set()
+        self.active_transfers: set[TftpTransfer] = set()
         self.shutdown_event = asyncio.Event()
-        self.transport: Optional[asyncio.DatagramTransport] = None
-        self.protocol: Optional["TftpServerProtocol"] = None
+        self.transport: asyncio.DatagramTransport | None = None
+        self.protocol: TftpServerProtocol | None = None
 
         if logger is not None:
             self.logger = logger.getChild(self.__class__.__name__)
@@ -61,7 +60,7 @@ class TftpServer:
         self.ready_event = asyncio.Event()
 
     @property
-    def address(self) -> Optional[Tuple[str, int]]:
+    def address(self) -> tuple[str, int] | None:
         """Get the server's bound address and port."""
         if self.transport:
             return self.transport.get_extra_info("socket").getsockname()
@@ -119,17 +118,17 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
 
     def __init__(self, server: TftpServer):
         self.server = server
-        self.transport: Optional[asyncio.DatagramTransport] = None
+        self.transport: asyncio.DatagramTransport | None = None
         self.logger = server.logger.getChild(self.__class__.__name__)
 
     def connection_made(self, transport: asyncio.DatagramTransport):
         self.transport = transport
         self.logger.debug("Server protocol connection established")
 
-    def connection_lost(self, exc: Optional[Exception]):
+    def connection_lost(self, exc: Exception | None):
         self.logger.info("TFTP server protocol connection lost")
 
-    def datagram_received(self, data: bytes, addr: Tuple[str, int]):
+    def datagram_received(self, data: bytes, addr: tuple[str, int]):
         self.logger.debug(f"Received datagram from {addr}")
         if len(data) < 4:
             self.logger.warning(f"Received malformed packet from {addr}")
@@ -155,7 +154,7 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
             self.logger.warning(f"Unsupported opcode {opcode} from {addr}")
             self._send_error(addr, TftpErrorCode.ILLEGAL_OPERATION, "Unsupported operation")
 
-    async def _handle_read_request(self, data: bytes, addr: Tuple[str, int]):
+    async def _handle_read_request(self, data: bytes, addr: tuple[str, int]):
         try:
             filename, mode, options = self._parse_request(data)
             self.logger.info(f"RRQ from {addr}: '{filename}' in mode '{mode}' with options {options}")
@@ -174,17 +173,17 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
             self.logger.error(f"Error handling RRQ from {addr}: {e}")
             self._send_error(addr, TftpErrorCode.NOT_DEFINED, str(e))
 
-    def _send_oack(self, addr: Tuple[str, int], options: dict):
+    def _send_oack(self, addr: tuple[str, int], options: dict):
         """Send Option Acknowledgment (OACK) packet."""
         oack_data = Opcode.OACK.to_bytes(2, "big")
         for opt_name, opt_value in options.items():
-            oack_data += f"{opt_name}\0{str(opt_value)}\0".encode("utf-8")
+            oack_data += f"{opt_name}\0{opt_value!s}\0".encode()
 
         if self.transport:
             self.transport.sendto(oack_data, addr)
             self.logger.debug(f"Sent OACK to {addr} with options {options}")
 
-    def _send_error(self, addr: Tuple[str, int], error_code: TftpErrorCode, message: str):
+    def _send_error(self, addr: tuple[str, int], error_code: TftpErrorCode, message: str):
         error_packet = (
             Opcode.ERROR.to_bytes(2, "big") + error_code.to_bytes(2, "big") + message.encode("utf-8") + b"\x00"
         )
@@ -192,7 +191,7 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
             self.transport.sendto(error_packet, addr)
             self.logger.debug(f"Sent ERROR {error_code.name} to {addr}: {message}")
 
-    def _parse_request(self, data: bytes) -> Tuple[str, str, dict]:
+    def _parse_request(self, data: bytes) -> tuple[str, str, dict]:
         parts = data[2:].split(b"\x00")
         if len(parts) < 2:
             raise ValueError("Invalid RRQ format")
@@ -222,14 +221,14 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
                 break
         return options
 
-    def _validate_mode(self, mode: str, addr: Tuple[str, int]) -> bool:
+    def _validate_mode(self, mode: str, addr: tuple[str, int]) -> bool:
         if mode not in ("netascii", "octet"):
             self.logger.warning(f"Unsupported transfer mode '{mode}' from {addr}")
             self._send_error(addr, TftpErrorCode.ILLEGAL_OPERATION, "Unsupported transfer mode")
             return False
         return True
 
-    async def _resolve_and_validate_path(self, filename: str, addr: Tuple[str, int]) -> Optional[str]:
+    async def _resolve_and_validate_path(self, filename: str, addr: tuple[str, int]) -> str | None:
         normalized = pathlib.PurePosixPath(filename)
         if ".." in normalized.parts or normalized.is_absolute():
             self.logger.error(f"Path traversal attempt from {addr}: {filename}")
@@ -250,7 +249,7 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
 
         return filename
 
-    def _negotiate_block_size(self, requested_blksize: Optional[str]) -> int:
+    def _negotiate_block_size(self, requested_blksize: str | None) -> int:
         if requested_blksize is None:
             return self.server.block_size
 
@@ -269,7 +268,7 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
             )
             return self.server.block_size
 
-    def _negotiate_timeout(self, requested_timeout: Optional[str]) -> float:
+    def _negotiate_timeout(self, requested_timeout: str | None) -> float:
         if requested_timeout is None:
             return self.server.timeout
 
@@ -286,7 +285,7 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
             self.logger.warning(f"Invalid timeout value '{requested_timeout}', using default: {self.server.timeout}")
             return self.server.timeout
 
-    def _negotiate_options(self, options: dict) -> Tuple[dict, int, float]:
+    def _negotiate_options(self, options: dict) -> tuple[dict, int, float]:
         negotiated = {}
         blksize = self.server.block_size
         timeout = self.server.timeout
@@ -304,7 +303,7 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
         return negotiated, blksize, timeout
 
     async def _start_transfer(
-        self, filepath: str, addr: Tuple[str, int], blksize: int, timeout: float, negotiated_options: dict
+        self, filepath: str, addr: tuple[str, int], blksize: int, timeout: float, negotiated_options: dict
     ):
         transfer = TftpReadTransfer(
             server=self.server,
@@ -329,7 +328,7 @@ class TftpTransfer:
         self,
         server: TftpServer,
         filepath: pathlib.Path,
-        client_addr: Tuple[str, int],
+        client_addr: tuple[str, int],
         block_size: int,
         timeout: float,
         retries: int,
@@ -340,9 +339,9 @@ class TftpTransfer:
         self.block_size = block_size
         self.timeout = timeout
         self.retries = retries
-        self.transport: Optional[asyncio.DatagramTransport] = None
-        self.protocol: Optional["TftpTransferProtocol"] = None
-        self.cleanup_task: Optional[asyncio.Task] = None
+        self.transport: asyncio.DatagramTransport | None = None
+        self.protocol: TftpTransferProtocol | None = None
+        self.cleanup_task: asyncio.Task | None = None
         self.logger = server.logger.getChild(self.__class__.__name__)
 
     async def start(self):
@@ -363,11 +362,11 @@ class TftpReadTransfer(TftpTransfer):
         self,
         server: TftpServer,
         filepath: str,
-        client_addr: Tuple[str, int],
+        client_addr: tuple[str, int],
         block_size: int,
         timeout: float,
         retries: int,
-        negotiated_options: Optional[dict] = None,
+        negotiated_options: dict | None = None,
     ):
         super().__init__(
             server=server,
@@ -382,7 +381,7 @@ class TftpReadTransfer(TftpTransfer):
         self.last_ack = 0
         self.oack_confirmed = False
         self.negotiated_options = negotiated_options
-        self.current_packet: Optional[bytes] = None
+        self.current_packet: bytes | None = None
 
     async def start(self):
         self.logger.info(f"Starting read transfer of '{self.filepath}' to {self.client_addr}")
@@ -481,7 +480,7 @@ class TftpReadTransfer(TftpTransfer):
     def _create_oack_packet(self) -> bytes:
         packet = Opcode.OACK.to_bytes(2, "big")
         for opt_name, opt_value in self.negotiated_options.items():
-            packet += f"{opt_name}\0{str(opt_value)}\0".encode("utf-8")
+            packet += f"{opt_name}\0{opt_value!s}\0".encode()
         return packet
 
     def _create_data_packet(self, data: bytes) -> bytes:
@@ -515,7 +514,7 @@ class TftpReadTransfer(TftpTransfer):
                 else:
                     self.logger.warning(f"Received wrong ACK: expected {expected_block}, got {self.last_ack}")
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self.logger.warning(f"Timeout waiting for ACK of block {expected_block} (Attempt {attempt})")
 
         return False
@@ -554,7 +553,7 @@ class TftpTransferProtocol(asyncio.DatagramProtocol):
         local_addr = transport.get_extra_info("sockname")
         self.logger.debug(f"Transfer protocol connection established on {local_addr} for {self.transfer.client_addr}")
 
-    def datagram_received(self, data: bytes, addr: Tuple[str, int]):
+    def datagram_received(self, data: bytes, addr: tuple[str, int]):
         self.logger.debug(f"Received datagram from {addr}")
         if addr != self.transfer.client_addr:
             self.logger.warning(f"Ignoring packet from unknown source {addr}")
@@ -585,7 +584,7 @@ class TftpTransferProtocol(asyncio.DatagramProtocol):
     def connection_lost(self, exc):
         self.logger.debug(f"Connection closed for transfer to {self.transfer.client_addr}")
 
-    def _send_error(self, addr: Tuple[str, int], error_code: TftpErrorCode, message: str):
+    def _send_error(self, addr: tuple[str, int], error_code: TftpErrorCode, message: str):
         error_packet = (
             Opcode.ERROR.to_bytes(2, "big") + error_code.to_bytes(2, "big") + message.encode("utf-8") + b"\x00"
         )

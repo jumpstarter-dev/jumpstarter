@@ -216,8 +216,7 @@ def _write_captured_file(
     clean = "/".join(p for p in clean.split("/") if p not in ("", ".", ".."))
     if not clean:
         clean = "root"
-    if clean.endswith(ext):
-        clean = clean[:-len(ext)]
+    clean = clean.removesuffix(ext)
     rel = f"responses/{method}/{clean}{ext}"
     base = files_dir.resolve()
     dest = (files_dir / rel).resolve()
@@ -298,7 +297,7 @@ class DirectoriesConfig(BaseModel):
     files: str = ""
 
     @model_validator(mode="after")
-    def _resolve_defaults(self) -> "DirectoriesConfig":
+    def _resolve_defaults(self) -> DirectoriesConfig:
         if not self.data:
             import getpass
             import tempfile
@@ -1880,7 +1879,7 @@ class MitmproxyDriver(Driver):
                 )
                 t.start()
                 self._capture_reader_threads.append(t)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 break

@@ -1,6 +1,5 @@
 from contextlib import suppress
 from dataclasses import dataclass, field
-from typing import Tuple
 
 from anyio import BrokenResourceError, WouldBlock, create_memory_object_stream
 from anyio.abc import AnyByteStream, ObjectStream
@@ -24,7 +23,7 @@ class WebsocketServerStream(ObjectStream[bytes]):
     stream: AnyByteStream
 
     ws: WSConnection = field(init=False, default_factory=lambda: WSConnection(ConnectionType.SERVER))
-    queue: Tuple[MemoryObjectSendStream[bytes], MemoryObjectReceiveStream[bytes]] = field(
+    queue: tuple[MemoryObjectSendStream[bytes], MemoryObjectReceiveStream[bytes]] = field(
         init=False,
         default_factory=lambda: create_memory_object_stream[bytes](32),  # ty: ignore[call-non-callable]
     )

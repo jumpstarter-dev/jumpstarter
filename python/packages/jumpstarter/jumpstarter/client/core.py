@@ -238,7 +238,7 @@ class AsyncDriverClient(
                 return True
             raise DriverError(f"Failed to end session: {e.details()}") from e
 
-    async def wait_for_hook_status(self, target_status: "ExporterStatus", timeout: float = 60.0) -> bool:
+    async def wait_for_hook_status(self, target_status: ExporterStatus, timeout: float = 60.0) -> bool:
         """Wait for exporter to reach a target status using polling.
 
         Used after end_session_async() to wait for afterLease hook completion

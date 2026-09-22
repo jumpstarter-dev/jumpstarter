@@ -1,7 +1,6 @@
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Optional
 
 from anyio import sleep
 from anyio._backends._asyncio import StreamReaderWrapper, StreamWriterWrapper
@@ -46,7 +45,7 @@ class NVDemuxSerial(Driver):
     target: str = field(default="CCPLEX: 0")
     chip: str = field(default="T264")
     baudrate: int = field(default=115200)
-    cps: Optional[float] = field(default=None)
+    cps: float | None = field(default=None)
     timeout: float = field(default=10.0)
     poll_interval: float = field(default=1.0)
 

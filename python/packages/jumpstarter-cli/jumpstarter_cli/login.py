@@ -335,7 +335,6 @@ async def login(  # noqa: C901
         except Exception as e:
             if nointeractive:
                 raise click.ClickException(f"Failed to refresh access token: {e}") from e
-            pass
 
     if token is not None:
         kwargs = {"connector_id": connector_id} if connector_id is not None else {}

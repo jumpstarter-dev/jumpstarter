@@ -1,6 +1,6 @@
 import asyncio
 import base64
-from typing import Literal, Optional
+from typing import Literal
 
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 from pydantic import Field
@@ -27,7 +27,7 @@ class V1Alpha1ExporterDevice(JsonBaseModel):
 class V1Alpha1ExporterStatus(JsonBaseModel):
     # The controller fills these in after it reconciles the exporter, so a
     # freshly created one has a status with nothing in it yet.
-    credential: Optional[SerializeV1ObjectReference] = None
+    credential: SerializeV1ObjectReference | None = None
     devices: list[V1Alpha1ExporterDevice] = []
     endpoint: str = ""
     exporter_status: str | None = Field(alias="exporterStatus", default=None)
@@ -38,7 +38,7 @@ class V1Alpha1Exporter(JsonBaseModel):
     api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
     kind: Literal["Exporter"] = Field(default="Exporter")
     metadata: SerializeV1ObjectMeta
-    status: Optional[V1Alpha1ExporterStatus] = None
+    status: V1Alpha1ExporterStatus | None = None
 
     @staticmethod
     def from_dict(dict: dict):
@@ -108,7 +108,7 @@ class V1Alpha1Exporter(JsonBaseModel):
                 labels = []
                 if d.labels is not None:
                     for label in d.labels:
-                        labels.append(f"{label}:{str(d.labels[label])}")
+                        labels.append(f"{label}:{d.labels[label]!s}")
                 table.add_row(
                     self.metadata.name,
                     status or "Unknown",

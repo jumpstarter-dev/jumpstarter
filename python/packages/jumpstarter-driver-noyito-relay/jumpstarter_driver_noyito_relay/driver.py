@@ -146,7 +146,7 @@ class NoyitoPowerHID(PowerInterface, Driver):
                 _fallback = os.environ.get("DYLD_FALLBACK_LIBRARY_PATH", "")
                 if _brew_lib not in _fallback.split(":"):
                     os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = _brew_lib + (":" + _fallback if _fallback else "")
-        import hid  # noqa: PLC0415
+        import hid
         with hid.Device(self.vendor_id, self.product_id) as device:
             device.write(b"\x00" + cmd)  # 0x00 = HID report ID
 
@@ -171,7 +171,7 @@ class NoyitoPowerHID(PowerInterface, Driver):
                 _fallback = os.environ.get("DYLD_FALLBACK_LIBRARY_PATH", "")
                 if _brew_lib not in _fallback.split(":"):
                     os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = _brew_lib + (":" + _fallback if _fallback else "")
-        import hid  # noqa: PLC0415
+        import hid
 
         cmd = _build_command(0x0F, 0x02)  # 0x0F = all-channels status query pseudo-channel
         with hid.Device(self.vendor_id, self.product_id) as device:

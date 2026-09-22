@@ -42,10 +42,9 @@ def test_mount_sshfs_not_installed():
         children={"ssh": _make_ssh_child()},
     )
 
-    with serve(instance) as client:
-        with patch.object(client, '_find_executable', return_value=None):
-            with pytest.raises(Exception, match="sshfs is not installed"):
-                client.mount("/tmp/test-mount")
+    with serve(instance) as client, patch.object(client, '_find_executable', return_value=None):
+        with pytest.raises(Exception, match="sshfs is not installed"):
+            client.mount("/tmp/test-mount")
 
 
 def test_mount_sshfs_constructs_correct_args_and_detects_immediate_exit():
@@ -418,16 +417,15 @@ def test_umount_with_system_umount_fallback():
         children={"ssh": _make_ssh_child()},
     )
 
-    with serve(instance) as client:
-        with patch.object(client, '_find_executable', return_value=None):
-            with patch('subprocess.run') as mock_run:
-                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+    with serve(instance) as client, patch.object(client, '_find_executable', return_value=None):
+        with patch('subprocess.run') as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
-                client.umount("/tmp/test-mount")
+            client.umount("/tmp/test-mount")
 
-                assert mock_run.called
-                call_args = mock_run.call_args[0][0]
-                assert call_args[0] == "umount"
+            assert mock_run.called
+            call_args = mock_run.call_args[0][0]
+            assert call_args[0] == "umount"
 
 
 def test_umount_lazy():
@@ -559,15 +557,14 @@ def test_umount_passes_timeout():
         children={"ssh": _make_ssh_child()},
     )
 
-    with serve(instance) as client:
-        with patch.object(client, '_find_executable', return_value=None):
-            with patch('subprocess.run') as mock_run:
-                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+    with serve(instance) as client, patch.object(client, '_find_executable', return_value=None):
+        with patch('subprocess.run') as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
-                client.umount("/tmp/test-mount")
+            client.umount("/tmp/test-mount")
 
-                # Verify timeout=120 is passed
-                assert mock_run.call_args[1].get("timeout") == 120
+            # Verify timeout=120 is passed
+            assert mock_run.call_args[1].get("timeout") == 120
 
 
 def test_mount_port_22_omits_p_flag():
@@ -629,18 +626,17 @@ def test_umount_lazy_macos_uses_force():
         children={"ssh": _make_ssh_child()},
     )
 
-    with serve(instance) as client:
-        with patch.object(client, '_find_executable', return_value=None):
-            with patch('subprocess.run') as mock_run:
-                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+    with serve(instance) as client, patch.object(client, '_find_executable', return_value=None):
+        with patch('subprocess.run') as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
-                with patch('jumpstarter_driver_ssh_mount.client.sys') as mock_sys:
-                    mock_sys.platform = "darwin"
-                    client.umount("/tmp/test-mount", lazy=True)
+            with patch('jumpstarter_driver_ssh_mount.client.sys') as mock_sys:
+                mock_sys.platform = "darwin"
+                client.umount("/tmp/test-mount", lazy=True)
 
-                    call_args = mock_run.call_args[0][0]
-                    assert "-f" in call_args
-                    assert "-l" not in call_args
+                call_args = mock_run.call_args[0][0]
+                assert "-f" in call_args
+                assert "-l" not in call_args
 
 
 def test_extra_args_prefixed_with_dash_o():
@@ -809,11 +805,10 @@ def test_subshell_bad_shell_raises_click_exception():
         children={"ssh": _make_ssh_child()},
     )
 
-    with serve(instance) as client:
-        with patch.dict(os.environ, {"SHELL": "/nonexistent/shell"}):
-            with patch('subprocess.run', side_effect=FileNotFoundError("No such file")):
-                with pytest.raises(Exception, match="Shell .* not found"):
-                    client._run_subshell("/tmp/test-mount", "/")
+    with serve(instance) as client, patch.dict(os.environ, {"SHELL": "/nonexistent/shell"}):
+        with patch('subprocess.run', side_effect=FileNotFoundError("No such file")):
+            with pytest.raises(Exception, match="Shell .* not found"):
+                client._run_subshell("/tmp/test-mount", "/")
 
 
 def test_subshell_fish_prompt():
@@ -821,20 +816,19 @@ def test_subshell_fish_prompt():
         children={"ssh": _make_ssh_child()},
     )
 
-    with serve(instance) as client:
-        with patch.dict(os.environ, {"SHELL": "/usr/bin/fish"}):
-            with patch('subprocess.run') as mock_run:
-                mock_run.return_value = MagicMock(returncode=0)
-                client._run_subshell("/tmp/test-mount", "/")
+    with serve(instance) as client, patch.dict(os.environ, {"SHELL": "/usr/bin/fish"}):
+        with patch('subprocess.run') as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            client._run_subshell("/tmp/test-mount", "/")
 
-                mock_run.assert_called_once()
-                call_args = mock_run.call_args[0][0]
-                assert call_args[0] == "/usr/bin/fish"
-                assert "--init-command" in call_args
-                # The fish_prompt function should contain (mount) and the arrow
-                init_cmd = call_args[call_args.index("--init-command") + 1]
-                assert "(mount)" in init_cmd
-                assert "fish_prompt" in init_cmd
+            mock_run.assert_called_once()
+            call_args = mock_run.call_args[0][0]
+            assert call_args[0] == "/usr/bin/fish"
+            assert "--init-command" in call_args
+            # The fish_prompt function should contain (mount) and the arrow
+            init_cmd = call_args[call_args.index("--init-command") + 1]
+            assert "(mount)" in init_cmd
+            assert "fish_prompt" in init_cmd
 
 
 def test_subshell_bash_inserts_mount_tag():
@@ -860,14 +854,13 @@ def test_subshell_bash_fallback_prefix():
         children={"ssh": _make_ssh_child()},
     )
 
-    with serve(instance) as client:
-        with patch.dict(os.environ, {"SHELL": "/bin/bash", "PS1": r"\$ "}):
-            with patch('subprocess.run') as mock_run:
-                mock_run.return_value = MagicMock(returncode=0)
-                client._run_subshell("/tmp/test-mount", "/home/user")
+    with serve(instance) as client, patch.dict(os.environ, {"SHELL": "/bin/bash", "PS1": r"\$ "}):
+        with patch('subprocess.run') as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            client._run_subshell("/tmp/test-mount", "/home/user")
 
-                env_passed = mock_run.call_args[1].get("env", {})
-                assert env_passed.get("PS1", "").startswith("[sshfs:/home/user]")
+            env_passed = mock_run.call_args[1].get("env", {})
+            assert env_passed.get("PS1", "").startswith("[sshfs:/home/user]")
 
 
 def test_subshell_zsh_inserts_mount_tag():
@@ -877,18 +870,17 @@ def test_subshell_zsh_inserts_mount_tag():
 
     with serve(instance) as client:
         jmp_ps1 = "%~ ⚡exporter ➤ "
-        with patch.dict(os.environ, {"SHELL": "/bin/zsh", "PS1": jmp_ps1}):
-            with patch('subprocess.run') as mock_run:
-                mock_run.return_value = MagicMock(returncode=0)
-                client._run_subshell("/tmp/test-mount", "/")
+        with patch.dict(os.environ, {"SHELL": "/bin/zsh", "PS1": jmp_ps1}), patch('subprocess.run') as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            client._run_subshell("/tmp/test-mount", "/")
 
-                mock_run.assert_called_once()
-                call_args = mock_run.call_args[0][0]
-                assert call_args[0] == "/bin/zsh"
-                assert "--no-rcs" in call_args
-                assert "-i" in call_args
-                env_passed = mock_run.call_args[1].get("env", {})
-                assert "(mount)➤" in env_passed.get("PS1", "")
+            mock_run.assert_called_once()
+            call_args = mock_run.call_args[0][0]
+            assert call_args[0] == "/bin/zsh"
+            assert "--no-rcs" in call_args
+            assert "-i" in call_args
+            env_passed = mock_run.call_args[1].get("env", {})
+            assert "(mount)➤" in env_passed.get("PS1", "")
 
 
 def test_subshell_bash_inserts_mount_tag_ascii_prompt():
@@ -988,16 +980,15 @@ def test_create_temp_identity_file_failure():
         children={"ssh": _make_ssh_child(ssh_identity=TEST_SSH_KEY)},
     )
 
-    with serve(instance) as client:
-        with patch('os.write', side_effect=OSError("disk full")):
-            with patch('os.close') as mock_close:
-                with patch('os.unlink') as mock_unlink:
-                    with pytest.raises(OSError, match="disk full"):
-                        client._create_temp_identity_file()
+    with serve(instance) as client, patch('os.write', side_effect=OSError("disk full")):
+        with patch('os.close') as mock_close:
+            with patch('os.unlink') as mock_unlink:
+                with pytest.raises(OSError, match="disk full"):
+                    client._create_temp_identity_file()
 
-                    # fd and temp file should be cleaned up
-                    assert mock_close.called
-                    assert mock_unlink.called
+                # fd and temp file should be cleaned up
+                assert mock_close.called
+                assert mock_unlink.called
 
 
 def test_allow_other_comma_separated_removal():
@@ -1027,12 +1018,11 @@ def test_subshell_unknown_shell_fallback():
         children={"ssh": _make_ssh_child()},
     )
 
-    with serve(instance) as client:
-        with patch.dict(os.environ, {"SHELL": "/bin/dash"}):
-            with patch('subprocess.run') as mock_run:
-                mock_run.return_value = MagicMock(returncode=0)
-                client._run_subshell("/tmp/test-mount", "/")
+    with serve(instance) as client, patch.dict(os.environ, {"SHELL": "/bin/dash"}):
+        with patch('subprocess.run') as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            client._run_subshell("/tmp/test-mount", "/")
 
-                mock_run.assert_called_once()
-                call_args = mock_run.call_args[0][0]
-                assert call_args == ["/bin/dash", "-i"]
+            mock_run.assert_called_once()
+            call_args = mock_run.call_args[0][0]
+            assert call_args == ["/bin/dash", "-i"]

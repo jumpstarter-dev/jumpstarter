@@ -242,42 +242,41 @@ class ConnectionManager:
 
         lease.lease_ending_callback = _on_lease_ending
 
-        async with lease.serve_unix_async() as path:
-            async with lease.monitor_async():
-                with ExitStack() as stack:
-                    self._stacks[connection_id] = stack
-                    async with client_from_path(
-                        path, portal, stack,
-                        allow=lease.allow, unsafe=lease.unsafe,
-                    ) as client:
-                        conn = Connection(
-                            id=connection_id,
-                            lease_name=lease.name,
-                            exporter_name=lease.exporter_name,
-                            socket_path=str(path),
-                            allow=lease.allow,
-                            unsafe=lease.unsafe,
-                            created_at=datetime.now(),
-                            client=client,
-                        )
-                        self._connections[connection_id] = conn
-                        logger.info(
-                            "Connected %s to exporter %s (socket=%s)",
-                            connection_id, lease.exporter_name, path,
-                        )
+        async with lease.serve_unix_async() as path, lease.monitor_async():
+            with ExitStack() as stack:
+                self._stacks[connection_id] = stack
+                async with client_from_path(
+                    path, portal, stack,
+                    allow=lease.allow, unsafe=lease.unsafe,
+                ) as client:
+                    conn = Connection(
+                        id=connection_id,
+                        lease_name=lease.name,
+                        exporter_name=lease.exporter_name,
+                        socket_path=str(path),
+                        allow=lease.allow,
+                        unsafe=lease.unsafe,
+                        created_at=datetime.now(),
+                        client=client,
+                    )
+                    self._connections[connection_id] = conn
+                    logger.info(
+                        "Connected %s to exporter %s (socket=%s)",
+                        connection_id, lease.exporter_name, path,
+                    )
 
-                        async with anyio.create_task_group() as notify_tg:
-                            notify_tg.start_soon(
-                                self._forward_lease_notifications, notify_recv, connection_id, event,
-                            )
-                            notify_tg.start_soon(
-                                self._watch_lease_transfer, lease, conn, connection_id, event,
-                            )
-                            task_status.started(conn)
-                            await event.wait()
-                            notify_tg.cancel_scope.cancel()
+                    async with anyio.create_task_group() as notify_tg:
+                        notify_tg.start_soon(
+                            self._forward_lease_notifications, notify_recv, connection_id, event,
+                        )
+                        notify_tg.start_soon(
+                            self._watch_lease_transfer, lease, conn, connection_id, event,
+                        )
+                        task_status.started(conn)
+                        await event.wait()
+                        notify_tg.cancel_scope.cancel()
 
-                        await notify_send.aclose()
+                    await notify_send.aclose()
         return conn
 
     async def disconnect(self, connection_id: str) -> None:

@@ -202,28 +202,27 @@ def collect_version_info(serial, sail, power_cycle_callable, *, verbose=False, c
     sail_capture = _SerialCapture()
     main_capture = _SerialCapture()
 
-    with sail:
-        with serial:
-            if verbose:
-                logger.info("Power cycling device...")
-            power_cycle_callable()
-            if verbose:
-                logger.info("Collecting version information...")
-            # Run both scans concurrently: SAIL output appears early in
-            # boot while main serial output spans SBL1 through UEFI/ABL.
-            import concurrent.futures
+    with sail, serial:
+        if verbose:
+            logger.info("Power cycling device...")
+        power_cycle_callable()
+        if verbose:
+            logger.info("Collecting version information...")
+        # Run both scans concurrently: SAIL output appears early in
+        # boot while main serial output spans SBL1 through UEFI/ABL.
+        import concurrent.futures
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-                sail_future = pool.submit(extract_sail_version, sail, timeout=60, log_buffer=sail_capture)
-                main_future = pool.submit(extract_main_version, serial, timeout=60, log_buffer=main_capture)
-                result.sail_versions = sail_future.result()
-                result.main_versions = main_future.result()
-            if "hypervisor" in result.sail_versions and "hypervisor" not in result.main_versions:
-                result.main_versions["hypervisor"] = result.sail_versions["hypervisor"]
-            qc_image_version = result.main_versions.get("qc_image_version")
-            rm_version = result.main_versions.get("rm_version")
-            if qc_image_version:
-                result.firmware_variant = identify_firmware_variant(qc_image_version, rm_version=rm_version)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            sail_future = pool.submit(extract_sail_version, sail, timeout=60, log_buffer=sail_capture)
+            main_future = pool.submit(extract_main_version, serial, timeout=60, log_buffer=main_capture)
+            result.sail_versions = sail_future.result()
+            result.main_versions = main_future.result()
+        if "hypervisor" in result.sail_versions and "hypervisor" not in result.main_versions:
+            result.main_versions["hypervisor"] = result.sail_versions["hypervisor"]
+        qc_image_version = result.main_versions.get("qc_image_version")
+        rm_version = result.main_versions.get("rm_version")
+        if qc_image_version:
+            result.firmware_variant = identify_firmware_variant(qc_image_version, rm_version=rm_version)
 
     result.sail_raw = sail_capture.getvalue()
     result.main_raw = main_capture.getvalue()

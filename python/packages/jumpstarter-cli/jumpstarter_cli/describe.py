@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import click
 from jumpstarter_cli_common.alias import AliasedGroup
@@ -54,7 +54,7 @@ def _print_mapping(label: str, mapping: dict[str, str], indent: int = 0) -> None
 def _condition_time(condition) -> datetime | None:
     if condition.HasField("lastTransitionTime"):
         time = condition.lastTransitionTime
-        return datetime.fromtimestamp(time.seconds + time.nanos / 1e9, tz=timezone.utc)
+        return datetime.fromtimestamp(time.seconds + time.nanos / 1e9, tz=UTC)
     return None
 
 
@@ -267,7 +267,7 @@ def _token_details(token: str | None) -> tuple[datetime | None, str]:
     remaining = get_token_remaining_seconds(token)
     if exp is None or remaining is None:
         return None, "no expiry claim"
-    expiry = datetime.fromtimestamp(exp, tz=timezone.utc)
+    expiry = datetime.fromtimestamp(exp, tz=UTC)
     if remaining < 0:
         return expiry, f"expired ({format_duration(remaining)} ago)"
     return expiry, f"valid ({format_duration(remaining)} remaining)"

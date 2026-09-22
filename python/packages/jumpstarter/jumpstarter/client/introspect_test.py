@@ -21,7 +21,7 @@ from jumpstarter.client.introspect import (
 
 
 def test_description_helpers_are_public_package_exports():
-    import jumpstarter.client as client
+    from jumpstarter import client
 
     for name, helper in (
         ("describe_client", describe_client),

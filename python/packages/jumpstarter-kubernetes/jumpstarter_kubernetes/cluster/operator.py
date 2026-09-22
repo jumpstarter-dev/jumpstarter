@@ -1,7 +1,7 @@
 """Operator-based Jumpstarter installation."""
 
 import asyncio
-from typing import Literal, Optional
+from typing import Literal
 
 from ..callbacks import OutputCallback, SilentCallback
 from ..exceptions import ClusterOperationError
@@ -16,7 +16,7 @@ OPERATOR_NAMESPACE = "jumpstarter-operator-system"
 OPERATOR_DEPLOYMENT = "jumpstarter-operator-controller-manager"
 
 
-def _kubectl_base(kubeconfig: Optional[str] = None, context: Optional[str] = None) -> list[str]:
+def _kubectl_base(kubeconfig: str | None = None, context: str | None = None) -> list[str]:
     """Build base kubectl command with optional kubeconfig and context."""
     cmd = ["kubectl"]
     if kubeconfig:
@@ -27,8 +27,8 @@ def _kubectl_base(kubeconfig: Optional[str] = None, context: Optional[str] = Non
 
 
 async def install_cert_manager(
-    kubeconfig: Optional[str] = None,
-    context: Optional[str] = None,
+    kubeconfig: str | None = None,
+    context: str | None = None,
     callback: OutputCallback = None,
 ) -> None:
     """Install cert-manager if not already present."""
@@ -72,9 +72,9 @@ async def install_cert_manager(
 
 async def install_operator(
     version: str,
-    kubeconfig: Optional[str] = None,
-    context: Optional[str] = None,
-    operator_installer: Optional[str] = None,
+    kubeconfig: str | None = None,
+    context: str | None = None,
+    operator_installer: str | None = None,
     callback: OutputCallback = None,
 ) -> None:
     """Apply the operator installer YAML from a GitHub release or local path."""
@@ -133,7 +133,7 @@ def _build_jumpstarter_cr(
     grpc_endpoint: str,
     router_endpoint: str,
     mode: Literal["nodeport", "ingress"],
-    image: Optional[str] = None,
+    image: str | None = None,
 ) -> str:
     """Build the Jumpstarter CR YAML."""
     if mode == "nodeport":
@@ -216,9 +216,9 @@ async def apply_jumpstarter_cr(
     grpc_endpoint: str,
     router_endpoint: str,
     mode: Literal["nodeport", "ingress"] = "nodeport",
-    image: Optional[str] = None,
-    kubeconfig: Optional[str] = None,
-    context: Optional[str] = None,
+    image: str | None = None,
+    kubeconfig: str | None = None,
+    context: str | None = None,
     callback: OutputCallback = None,
 ) -> None:
     """Create and apply the Jumpstarter custom resource."""
@@ -268,8 +268,8 @@ async def apply_jumpstarter_cr(
 
 async def wait_for_jumpstarter_ready(
     namespace: str = "jumpstarter-lab",
-    kubeconfig: Optional[str] = None,
-    context: Optional[str] = None,
+    kubeconfig: str | None = None,
+    context: str | None = None,
     callback: OutputCallback = None,
     timeout: int = 300,
 ) -> None:
@@ -326,10 +326,10 @@ async def install_jumpstarter_operator(
     grpc_endpoint: str,
     router_endpoint: str,
     mode: Literal["nodeport", "ingress"] = "nodeport",
-    image: Optional[str] = None,
-    kubeconfig: Optional[str] = None,
-    context: Optional[str] = None,
-    operator_installer: Optional[str] = None,
+    image: str | None = None,
+    kubeconfig: str | None = None,
+    context: str | None = None,
+    operator_installer: str | None = None,
     callback: OutputCallback = None,
 ) -> None:
     """Install Jumpstarter using the operator method.

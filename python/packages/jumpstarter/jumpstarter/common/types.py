@@ -1,6 +1,6 @@
 """Type aliases for gRPC and Protobuf types."""
 
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TypeAlias
 
 from grpc.aio import Channel
 from jumpstarter_protocol import jumpstarter_pb2_grpc, router_pb2_grpc
@@ -14,8 +14,6 @@ ControllerStub: TypeAlias = jumpstarter_pb2_grpc.ControllerServiceStub
 AsyncChannel: TypeAlias = Channel
 
 # Async stub type aliases are only available for type checking (defined in .pyi files)
-if TYPE_CHECKING:
-    pass
 
 __all__ = [
     "AsyncChannel",

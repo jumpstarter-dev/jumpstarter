@@ -11,6 +11,7 @@ from contextlib import nullcontext
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import anyio
+import anyio.lowlevel
 import grpc
 import pytest
 from anyio import Event, create_memory_object_stream, create_task_group, fail_after
@@ -1350,7 +1351,7 @@ class TestApplyStatus:
 
         async with create_task_group() as tg:
             await exporter._apply_status(status, tg)
-            await anyio.sleep(0)
+            await anyio.lowlevel.checkpoint()
             tg.cancel_scope.cancel()
 
         assert exporter._lease_context is not None
@@ -1521,7 +1522,7 @@ class TestHandleLeaseConnections:
         with fail_after(5):
             async with create_task_group() as tg:
                 tg.start_soon(exporter.handle_lease, "cancel-lease", tg, lease_ctx)
-                await anyio.sleep(0)
+                await anyio.lowlevel.checkpoint()
                 tg.cancel_scope.cancel()
 
         msg = status_rx.receive_nowait()
@@ -1748,7 +1749,7 @@ def _wire_handle_lease(exporter):
     async def fake_handle_lease(lease_name, tg, lease_ctx):
         await lease_ctx.lease_ended.wait()
         lease_ctx.after_lease_hook_done.set()
-        await anyio.sleep(0)
+        await anyio.lowlevel.checkpoint()
         if exporter._control_tx is not None:
             await exporter._control_tx.send(LeaseFinished(lease_ctx))
 
@@ -1786,7 +1787,7 @@ class TestExitOnLeaseEnd:
                 tg.start_soon(exporter.serve)
                 await statuses_sent.wait()
                 # Yield so serve() can process the queued status.
-                await anyio.sleep(0)
+                await anyio.lowlevel.checkpoint()
                 assert exporter._stop_requested is False
                 tg.cancel_scope.cancel()
 
@@ -2057,7 +2058,7 @@ class TestOnLeaseReleased:
 
         async with create_task_group() as tg:
             await exporter._apply_status(status, tg)
-            await anyio.sleep(0)
+            await anyio.lowlevel.checkpoint()
             tg.cancel_scope.cancel()
 
         assert spawned == [lease_ctx]

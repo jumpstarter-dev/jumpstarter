@@ -33,7 +33,7 @@ class EnerGenie(PowerInterface, Driver):
             return response.status_code == 200
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout,
                 requests.exceptions.RequestException) as e:
-            self.logger.error(f"Login failed: {str(e)}")
+            self.logger.error(f"Login failed: {e!s}")
             return False
 
     def __post_init__(self):
@@ -73,7 +73,7 @@ class EnerGenie(PowerInterface, Driver):
                 return False
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout,
                 requests.exceptions.RequestException) as e:
-            self.logger.error(f"Set switch failed: {str(e)}")
+            self.logger.error(f"Set switch failed: {e!s}")
             return False
 
         self.logger.debug(f"Set switch {switch_number} to {state} state")

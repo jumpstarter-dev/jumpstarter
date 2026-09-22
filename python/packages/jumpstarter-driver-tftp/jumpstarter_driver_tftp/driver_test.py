@@ -117,8 +117,7 @@ def test_tftp_start_surfaces_startup_error(tmp_path):
     with patch(
         "jumpstarter_driver_tftp.driver.TftpServer",
         side_effect=RuntimeError("port already in use"),
-    ):
-        with pytest.raises(TftpError, match="port already in use"):
-            server.start()
+    ), pytest.raises(TftpError, match="port already in use"):
+        server.start()
 
     server.close()

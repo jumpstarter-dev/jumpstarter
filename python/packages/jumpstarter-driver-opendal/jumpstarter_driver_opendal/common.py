@@ -1,7 +1,7 @@
 # Reference: https://github.com/apache/opendal/blob/main/bindings/python/python/opendal/__init__.pyi
 import warnings
 from os import PathLike
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 import opendal
 from pydantic import BaseModel, Field, model_validator
@@ -39,11 +39,11 @@ class EntryMode(BaseModel):
 
 
 class Metadata(BaseModel):
-    content_disposition: Optional[str]
+    content_disposition: str | None
     content_length: int
-    content_md5: Optional[str]
-    content_type: Optional[str]
-    etag: Optional[str]
+    content_md5: str | None
+    content_type: str | None
+    etag: str | None
     mode: EntryMode
 
 
@@ -94,9 +94,9 @@ class Capability(BaseModel):
     write_with_content_type: bool
     write_with_content_disposition: bool
     write_with_cache_control: bool
-    write_multi_max_size: Optional[int]
-    write_multi_min_size: Optional[int]
-    write_total_max_size: Optional[int]
+    write_multi_max_size: int | None
+    write_multi_min_size: int | None
+    write_total_max_size: int | None
 
     create_dir: bool
     delete: bool

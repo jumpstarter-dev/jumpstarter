@@ -135,7 +135,7 @@ def _opt_labels_callback(ctx, param, value):
     for label in value:
         k, sep, v = label.partition("=")
         if sep == "":
-            raise click.BadParameter("Invalid label '{}', should be formatted as 'key=value'".format(k))
+            raise click.BadParameter(f"Invalid label '{k}', should be formatted as 'key=value'")
         labels[k] = v
 
     return labels
@@ -177,7 +177,7 @@ def confirm_insecure_tls(insecure_tls: bool, nointeractive: bool):
 confirm_insecure = confirm_insecure_tls
 
 
-def validate_name(name: Optional[str]) -> None:
+def validate_name(name: str | None) -> None:
     if not name or not name.strip():
         raise click.UsageError("Missing required argument 'NAME'.")
 

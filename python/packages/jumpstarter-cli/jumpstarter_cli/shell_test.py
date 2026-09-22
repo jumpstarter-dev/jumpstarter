@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
 import anyio
+import anyio.lowlevel
 import click
 import grpc
 import grpc.aio
@@ -129,7 +130,7 @@ async def test_shell_warns_when_expired_token_prevents_cleanup_on_normal_exit():
             token_state["expired_unrecovered"] = True
 
     async def fake_run_shell(*_args):
-        await anyio.sleep(0)
+        await anyio.lowlevel.checkpoint()
         return 0
 
     with (

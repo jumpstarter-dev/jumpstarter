@@ -113,7 +113,7 @@ def _generate_test_pattern_jpeg(
         timestamp = time.strftime("%H:%M:%S")
         try:
             font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 24)
-        except (OSError, IOError):
+        except OSError:
             font = ImageFont.load_default()
 
         text = f"MOCK CAMERA  Frame: {frame_num:06d}  {timestamp}"

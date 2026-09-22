@@ -213,10 +213,9 @@ class TestLogHandlerContextManager:
         queue = deque()
         handler = LogHandler(queue, source=LogSource.SYSTEM)
 
-        with pytest.raises(ValueError):
-            with handler.context_log_source("hook.before", LogSource.BEFORE_LEASE_HOOK):
-                assert "hook.before" in handler._child_handlers
-                raise ValueError("Test exception")
+        with pytest.raises(ValueError), handler.context_log_source("hook.before", LogSource.BEFORE_LEASE_HOOK):
+            assert "hook.before" in handler._child_handlers
+            raise ValueError("Test exception")
 
         assert "hook.before" not in handler._child_handlers
 

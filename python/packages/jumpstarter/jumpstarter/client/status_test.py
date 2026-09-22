@@ -45,10 +45,9 @@ class TestUseEmoji:
 
     def test_returns_false_when_term_unset(self):
         env = {k: v for k, v in os.environ.items() if k not in ("TERM", "NO_COLOR", "NO_ICONS")}
-        with patch.dict("os.environ", env, clear=True):
-            with patch("sys.stdout") as mock_stdout:
-                mock_stdout.isatty.return_value = True
-                assert _use_emoji() is False
+        with patch.dict("os.environ", env, clear=True), patch("sys.stdout") as mock_stdout:
+            mock_stdout.isatty.return_value = True
+            assert _use_emoji() is False
 
     def test_no_color_set_does_not_affect_emoji(self):
         """NO_COLOR only concerns ANSI color sequences (see no-color.org), not icons."""

@@ -240,9 +240,8 @@ async def test_virtio_transport_mmio_requires_4g(cmdline_test):
     too-little memory must fail loudly instead of silently failing to boot."""
     driver = cmdline_test(virtio_transport="mmio")  # default mem=512M
 
-    with patch("jumpstarter_driver_qemu.driver.Popen") as mock_popen:
-        with pytest.raises(RuntimeError, match="4G"):
-            await driver.children["power"].on()
+    with patch("jumpstarter_driver_qemu.driver.Popen") as mock_popen, pytest.raises(RuntimeError, match="4G"):
+        await driver.children["power"].on()
 
     mock_popen.assert_not_called()
 
@@ -603,7 +602,7 @@ async def test_flash_oci_inner_wait_timeout():
             timeout_fired = True
             if hasattr(awaitable, "close"):
                 awaitable.close()
-            raise asyncio.TimeoutError()
+            raise TimeoutError()
         return await original_wait_for(awaitable, timeout=timeout)
 
     with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
@@ -697,33 +696,29 @@ def test_flash_oci_via_flasher_client():
     """flasher.flash('oci://...') should route through flash_oci on the driver."""
     mock_process = _create_mock_process(stdout_lines=["done\n"])
 
-    with serve(Qemu()) as qemu:
-        with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
-            with patch(
-                "asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process
-            ) as mock_exec:
-                qemu.flasher.flash("oci://quay.io/org/image:tag")
+    with serve(Qemu()) as qemu, patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"), patch(
+        "asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process
+    ) as mock_exec:
+        qemu.flasher.flash("oci://quay.io/org/image:tag")
 
-                mock_exec.assert_called_once()
-                assert mock_exec.call_args.args[1] == "from-url"
-                assert mock_exec.call_args.args[2] == "oci://quay.io/org/image:tag"
+        mock_exec.assert_called_once()
+        assert mock_exec.call_args.args[1] == "from-url"
+        assert mock_exec.call_args.args[2] == "oci://quay.io/org/image:tag"
 
 
 def test_flash_oci_convenience_method():
     """qemu.flash_oci() should delegate to flasher.flash()."""
     mock_process = _create_mock_process()
 
-    with serve(Qemu()) as qemu:
-        with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
-            with patch(
-                "asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process
-            ) as mock_exec:
-                qemu.flash_oci("oci://quay.io/org/image:tag", partition="bios")
+    with serve(Qemu()) as qemu, patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"), patch(
+        "asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process
+    ) as mock_exec:
+        qemu.flash_oci("oci://quay.io/org/image:tag", partition="bios")
 
-                mock_exec.assert_called_once()
-                assert mock_exec.call_args.args[1] == "from-url"
-                assert mock_exec.call_args.args[2] == "oci://quay.io/org/image:tag"
-                assert Path(mock_exec.call_args.args[3]).name == "bios"
+        mock_exec.assert_called_once()
+        assert mock_exec.call_args.args[1] == "from-url"
+        assert mock_exec.call_args.args[2] == "oci://quay.io/org/image:tag"
+        assert Path(mock_exec.call_args.args[3]).name == "bios"
 
 
 @pytest.mark.anyio

@@ -6,7 +6,7 @@ import socket
 from contextlib import suppress
 from dataclasses import dataclass, field
 from tempfile import NamedTemporaryFile
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from jumpstarter_driver_opendal.driver import Opendal
 from pydantic import validate_call
@@ -18,13 +18,11 @@ from jumpstarter.driver import Driver, export
 class ISCSIError(Exception):
     """Base exception for iSCSI server errors"""
 
-    pass
 
 
 class ConfigurationError(ISCSIError):
     """Error in iSCSI configuration"""
 
-    pass
 
 
 
@@ -48,14 +46,14 @@ class ISCSI(Driver):
     host: str = field(default="")
     port: int = 3260
     remove_created_on_close: bool = False  # Keep disk images persistent by default
-    block_device_allowlist: List[str] = field(default_factory=list)
+    block_device_allowlist: list[str] = field(default_factory=list)
 
-    _rtsroot: Optional[RTSRoot] = field(init=False, default=None)
-    _target: Optional[Target] = field(init=False, default=None)
-    _tpg: Optional[TPG] = field(init=False, default=None)
-    _storage_objects: Dict[str, Any] = field(init=False, default_factory=dict)
-    _portals: List[NetworkPortal] = field(init=False, default_factory=list)
-    _luns: Dict[str, LUN] = field(init=False, default_factory=dict)
+    _rtsroot: RTSRoot | None = field(init=False, default=None)
+    _target: Target | None = field(init=False, default=None)
+    _tpg: TPG | None = field(init=False, default=None)
+    _storage_objects: dict[str, Any] = field(init=False, default_factory=dict)
+    _portals: list[NetworkPortal] = field(init=False, default_factory=list)
+    _luns: dict[str, LUN] = field(init=False, default_factory=dict)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -485,7 +483,7 @@ class ISCSI(Driver):
 
     @export
     @validate_call
-    def list_luns(self) -> List[Dict[str, Any]]:
+    def list_luns(self) -> list[dict[str, Any]]:
         """List all configured LUNs
 
         Returns:

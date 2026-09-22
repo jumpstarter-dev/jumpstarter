@@ -181,10 +181,9 @@ class PiPicoFlasher(FlasherInterface, Driver):
         dest_path = mount / dest_name
 
         with _temporary_filename(suffix=".uf2") as tmp_path:
-            async with await FileWriteStream.from_path(tmp_path) as stream:
-                async with self.resource(source) as res:
-                    async for chunk in res:
-                        await stream.send(chunk)
+            async with await FileWriteStream.from_path(tmp_path) as stream, self.resource(source) as res:
+                async for chunk in res:
+                    await stream.send(chunk)
 
             self.logger.info("Copying UF2 to BOOTSEL volume %s", dest_path)
 

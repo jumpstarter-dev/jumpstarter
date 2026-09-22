@@ -1,6 +1,5 @@
 import os
 from dataclasses import dataclass, field
-from typing import Optional
 
 import anyio
 import anyio.from_thread
@@ -28,7 +27,7 @@ class HttpServer(Driver):
     timeout: int = field(default=600)
     remove_created_on_close: bool = True  # Clean up temporary web files by default
     app: web.Application = field(init=False, default_factory=web.Application)
-    runner: Optional[web.AppRunner] = field(init=False, default=None)
+    runner: web.AppRunner | None = field(init=False, default=None)
     _bound_port: int = field(init=False, default=0)
 
     def __post_init__(self):

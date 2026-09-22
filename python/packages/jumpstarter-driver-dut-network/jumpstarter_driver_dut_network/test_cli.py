@@ -86,62 +86,57 @@ class TestCliHelp:
 
 class TestStatusCommand:
     def test_outputs_json(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "status", return_value={
-                "interface": "eth-dut",
-                "subnet": "192.168.100.0/24",
-                "nat_mode": "masquerade",
-                "interface_status": {"name": "eth-dut", "addresses": ["192.168.100.1/24"]},
-            }):
-                result = runner.invoke(client.cli(), ["status"])
-                assert result.exit_code == 0
-                data = json.loads(result.output)
-                assert data["interface"] == "eth-dut"
-                assert data["subnet"] == "192.168.100.0/24"
-                assert data["nat_mode"] == "masquerade"
+        with _make_client(tmp_path) as client, patch.object(client, "status", return_value={
+            "interface": "eth-dut",
+            "subnet": "192.168.100.0/24",
+            "nat_mode": "masquerade",
+            "interface_status": {"name": "eth-dut", "addresses": ["192.168.100.1/24"]},
+        }):
+            result = runner.invoke(client.cli(), ["status"])
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data["interface"] == "eth-dut"
+            assert data["subnet"] == "192.168.100.0/24"
+            assert data["nat_mode"] == "masquerade"
 
     def test_interface_status_present(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "status", return_value={
-                "interface": "eth-dut",
-                "interface_status": {"name": "eth-dut"},
-            }):
-                result = runner.invoke(client.cli(), ["status"])
-                data = json.loads(result.output)
-                assert "interface_status" in data
-                assert data["interface_status"]["name"] == "eth-dut"
+        with _make_client(tmp_path) as client, patch.object(client, "status", return_value={
+            "interface": "eth-dut",
+            "interface_status": {"name": "eth-dut"},
+        }):
+            result = runner.invoke(client.cli(), ["status"])
+            data = json.loads(result.output)
+            assert "interface_status" in data
+            assert data["interface_status"]["name"] == "eth-dut"
 
 
 class TestLeasesCommand:
     def test_no_leases_message(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "get_leases", return_value=[]):
-                result = runner.invoke(client.cli(), ["leases"])
-                assert result.exit_code == 0
-                assert "No active DHCP leases" in result.output
+        with _make_client(tmp_path) as client, patch.object(client, "get_leases", return_value=[]):
+            result = runner.invoke(client.cli(), ["leases"])
+            assert result.exit_code == 0
+            assert "No active DHCP leases" in result.output
 
     def test_displays_leases(self, tmp_path: Path, runner: CliRunner):
         leases = [
             {"mac": "aa:bb:cc:dd:ee:ff", "ip": "192.168.100.10", "hostname": "dut1", "expiry": "2099-01-01"},
         ]
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "get_leases", return_value=leases):
-                result = runner.invoke(client.cli(), ["leases"])
-                assert result.exit_code == 0
-                assert "aa:bb:cc:dd:ee:ff" in result.output
-                assert "192.168.100.10" in result.output
-                assert "dut1" in result.output
+        with _make_client(tmp_path) as client, patch.object(client, "get_leases", return_value=leases):
+            result = runner.invoke(client.cli(), ["leases"])
+            assert result.exit_code == 0
+            assert "aa:bb:cc:dd:ee:ff" in result.output
+            assert "192.168.100.10" in result.output
+            assert "dut1" in result.output
 
     def test_displays_table_header(self, tmp_path: Path, runner: CliRunner):
         leases = [
             {"mac": "00:11:22:33:44:55", "ip": "192.168.100.20", "hostname": "", "expiry": "static"},
         ]
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "get_leases", return_value=leases):
-                result = runner.invoke(client.cli(), ["leases"])
-                assert "MAC" in result.output
-                assert "IP" in result.output
-                assert "Hostname" in result.output
+        with _make_client(tmp_path) as client, patch.object(client, "get_leases", return_value=leases):
+            result = runner.invoke(client.cli(), ["leases"])
+            assert "MAC" in result.output
+            assert "IP" in result.output
+            assert "Hostname" in result.output
 
 
 class TestGetIpCommand:
@@ -153,11 +148,10 @@ class TestGetIpCommand:
                 assert "192.168.100.10" in result.output
 
     def test_error_for_unknown_mac(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "get_dut_ip", return_value=None):
-                result = runner.invoke(client.cli(), ["get-ip", "ff:ff:ff:ff:ff:ff"])
-                assert result.exit_code != 0
-                assert "No lease found" in result.output
+        with _make_client(tmp_path) as client, patch.object(client, "get_dut_ip", return_value=None):
+            result = runner.invoke(client.cli(), ["get-ip", "ff:ff:ff:ff:ff:ff"])
+            assert result.exit_code != 0
+            assert "No lease found" in result.output
 
     def test_requires_mac_argument(self, tmp_path: Path, runner: CliRunner):
         with _make_client(tmp_path) as client:
@@ -167,49 +161,45 @@ class TestGetIpCommand:
 
 class TestAddAddressCommand:
     def test_add_address_output(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "add_address"):
-                result = runner.invoke(client.cli(), ["add-address", "192.168.100.50", "-m", "aa:bb:cc:dd:ee:ff"])
-                assert result.exit_code == 0
-                assert "Added address" in result.output
-                assert "192.168.100.50" in result.output
+        with _make_client(tmp_path) as client, patch.object(client, "add_address"):
+            result = runner.invoke(client.cli(), ["add-address", "192.168.100.50", "-m", "aa:bb:cc:dd:ee:ff"])
+            assert result.exit_code == 0
+            assert "Added address" in result.output
+            assert "192.168.100.50" in result.output
 
     def test_add_address_without_mac(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "add_address") as mock_add:
-                result = runner.invoke(client.cli(), [
-                    "add-address", "192.168.100.50", "--public-ip", "10.0.0.50",
-                ])
-                assert result.exit_code == 0
-                mock_add.assert_called_once_with(
-                    "192.168.100.50", None, "", "10.0.0.50", None, None,
-                )
+        with _make_client(tmp_path) as client, patch.object(client, "add_address") as mock_add:
+            result = runner.invoke(client.cli(), [
+                "add-address", "192.168.100.50", "--public-ip", "10.0.0.50",
+            ])
+            assert result.exit_code == 0
+            mock_add.assert_called_once_with(
+                "192.168.100.50", None, "", "10.0.0.50", None, None,
+            )
 
     def test_add_address_with_hostname(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "add_address") as mock_add:
-                result = runner.invoke(
-                    client.cli(),
-                    ["add-address", "192.168.100.50", "-m", "aa:bb:cc:dd:ee:ff", "-n", "my-dut"],
-                )
-                assert result.exit_code == 0
-                mock_add.assert_called_once_with(
-                    "192.168.100.50", "aa:bb:cc:dd:ee:ff", "my-dut", None, None, None,
-                )
+        with _make_client(tmp_path) as client, patch.object(client, "add_address") as mock_add:
+            result = runner.invoke(
+                client.cli(),
+                ["add-address", "192.168.100.50", "-m", "aa:bb:cc:dd:ee:ff", "-n", "my-dut"],
+            )
+            assert result.exit_code == 0
+            mock_add.assert_called_once_with(
+                "192.168.100.50", "aa:bb:cc:dd:ee:ff", "my-dut", None, None, None,
+            )
 
     def test_add_address_with_vlan_options(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "add_address") as mock_add:
-                result = runner.invoke(client.cli(), [
-                    "add-address", "192.168.100.50",
-                    "--public-ip", "203.0.113.1",
-                    "--vlan-id", "905",
-                    "--public-gateway", "203.0.113.254",
-                ])
-                assert result.exit_code == 0
-                mock_add.assert_called_once_with(
-                    "192.168.100.50", None, "", "203.0.113.1", 905, "203.0.113.254",
-                )
+        with _make_client(tmp_path) as client, patch.object(client, "add_address") as mock_add:
+            result = runner.invoke(client.cli(), [
+                "add-address", "192.168.100.50",
+                "--public-ip", "203.0.113.1",
+                "--vlan-id", "905",
+                "--public-gateway", "203.0.113.254",
+            ])
+            assert result.exit_code == 0
+            mock_add.assert_called_once_with(
+                "192.168.100.50", None, "", "203.0.113.1", 905, "203.0.113.254",
+            )
 
     def test_requires_ip_argument(self, tmp_path: Path, runner: CliRunner):
         with _make_client(tmp_path) as client:
@@ -219,18 +209,16 @@ class TestAddAddressCommand:
 
 class TestRemoveAddressCommand:
     def test_remove_address_output(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "remove_address"):
-                result = runner.invoke(client.cli(), ["remove-address", "192.168.100.50"])
-                assert result.exit_code == 0
-                assert "Removed address" in result.output
-                assert "192.168.100.50" in result.output
+        with _make_client(tmp_path) as client, patch.object(client, "remove_address"):
+            result = runner.invoke(client.cli(), ["remove-address", "192.168.100.50"])
+            assert result.exit_code == 0
+            assert "Removed address" in result.output
+            assert "192.168.100.50" in result.output
 
     def test_calls_client_method(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "remove_address") as mock_rm:
-                runner.invoke(client.cli(), ["remove-address", "192.168.100.50"])
-                mock_rm.assert_called_once_with("192.168.100.50")
+        with _make_client(tmp_path) as client, patch.object(client, "remove_address") as mock_rm:
+            runner.invoke(client.cli(), ["remove-address", "192.168.100.50"])
+            mock_rm.assert_called_once_with("192.168.100.50")
 
     def test_requires_ip_argument(self, tmp_path: Path, runner: CliRunner):
         with _make_client(tmp_path) as client:
@@ -247,54 +235,48 @@ class TestNatRulesCommand:
                 assert "masquerade" in result.output
 
     def test_no_rules_message(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "get_nat_rules", return_value=""):
-                result = runner.invoke(client.cli(), ["nat-rules"])
-                assert result.exit_code == 0
-                assert "No active NAT rules" in result.output
+        with _make_client(tmp_path) as client, patch.object(client, "get_nat_rules", return_value=""):
+            result = runner.invoke(client.cli(), ["nat-rules"])
+            assert result.exit_code == 0
+            assert "No active NAT rules" in result.output
 
 
 class TestDnsEntriesCommand:
     def test_no_entries_message(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "get_dns_entries", return_value=[]):
-                result = runner.invoke(client.cli(), ["dns-entries"])
-                assert result.exit_code == 0
-                assert "No DNS entries configured" in result.output
+        with _make_client(tmp_path) as client, patch.object(client, "get_dns_entries", return_value=[]):
+            result = runner.invoke(client.cli(), ["dns-entries"])
+            assert result.exit_code == 0
+            assert "No DNS entries configured" in result.output
 
     def test_displays_entries(self, tmp_path: Path, runner: CliRunner):
         entries = [{"hostname": "myhost.local", "ip": "10.0.0.1"}]
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "get_dns_entries", return_value=entries):
-                result = runner.invoke(client.cli(), ["dns-entries"])
-                assert result.exit_code == 0
-                assert "myhost.local" in result.output
-                assert "10.0.0.1" in result.output
+        with _make_client(tmp_path) as client, patch.object(client, "get_dns_entries", return_value=entries):
+            result = runner.invoke(client.cli(), ["dns-entries"])
+            assert result.exit_code == 0
+            assert "myhost.local" in result.output
+            assert "10.0.0.1" in result.output
 
     def test_displays_table_header(self, tmp_path: Path, runner: CliRunner):
         entries = [{"hostname": "h.local", "ip": "1.2.3.4"}]
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "get_dns_entries", return_value=entries):
-                result = runner.invoke(client.cli(), ["dns-entries"])
-                assert "Hostname" in result.output
-                assert "IP" in result.output
+        with _make_client(tmp_path) as client, patch.object(client, "get_dns_entries", return_value=entries):
+            result = runner.invoke(client.cli(), ["dns-entries"])
+            assert "Hostname" in result.output
+            assert "IP" in result.output
 
 
 class TestAddDnsCommand:
     def test_add_dns_output(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "add_dns_entry"):
-                result = runner.invoke(client.cli(), ["add-dns", "new.local", "10.0.0.99"])
-                assert result.exit_code == 0
-                assert "Added DNS entry" in result.output
-                assert "new.local" in result.output
-                assert "10.0.0.99" in result.output
+        with _make_client(tmp_path) as client, patch.object(client, "add_dns_entry"):
+            result = runner.invoke(client.cli(), ["add-dns", "new.local", "10.0.0.99"])
+            assert result.exit_code == 0
+            assert "Added DNS entry" in result.output
+            assert "new.local" in result.output
+            assert "10.0.0.99" in result.output
 
     def test_calls_client_method(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "add_dns_entry") as mock_add:
-                runner.invoke(client.cli(), ["add-dns", "x.local", "9.8.7.6"])
-                mock_add.assert_called_once_with("x.local", "9.8.7.6")
+        with _make_client(tmp_path) as client, patch.object(client, "add_dns_entry") as mock_add:
+            runner.invoke(client.cli(), ["add-dns", "x.local", "9.8.7.6"])
+            mock_add.assert_called_once_with("x.local", "9.8.7.6")
 
     def test_requires_hostname_and_ip(self, tmp_path: Path, runner: CliRunner):
         with _make_client(tmp_path) as client:
@@ -304,18 +286,16 @@ class TestAddDnsCommand:
 
 class TestRemoveDnsCommand:
     def test_remove_dns_output(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "remove_dns_entry"):
-                result = runner.invoke(client.cli(), ["remove-dns", "old.local"])
-                assert result.exit_code == 0
-                assert "Removed DNS entry" in result.output
-                assert "old.local" in result.output
+        with _make_client(tmp_path) as client, patch.object(client, "remove_dns_entry"):
+            result = runner.invoke(client.cli(), ["remove-dns", "old.local"])
+            assert result.exit_code == 0
+            assert "Removed DNS entry" in result.output
+            assert "old.local" in result.output
 
     def test_calls_client_method(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "remove_dns_entry") as mock_rm:
-                runner.invoke(client.cli(), ["remove-dns", "gone.local"])
-                mock_rm.assert_called_once_with("gone.local")
+        with _make_client(tmp_path) as client, patch.object(client, "remove_dns_entry") as mock_rm:
+            runner.invoke(client.cli(), ["remove-dns", "gone.local"])
+            mock_rm.assert_called_once_with("gone.local")
 
     def test_requires_hostname_argument(self, tmp_path: Path, runner: CliRunner):
         with _make_client(tmp_path) as client:

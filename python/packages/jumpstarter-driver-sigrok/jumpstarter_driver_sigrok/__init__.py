@@ -7,5 +7,5 @@ from jumpstarter_driver_sigrok.common import (
 )
 from jumpstarter_driver_sigrok.driver import Sigrok
 
-__all__ = ["Sigrok", "CaptureConfig", "CaptureResult", "DecoderConfig", "OutputFormat", "Sample"]
+__all__ = ["CaptureConfig", "CaptureResult", "DecoderConfig", "OutputFormat", "Sample", "Sigrok"]
 

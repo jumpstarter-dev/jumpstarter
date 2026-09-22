@@ -2,7 +2,6 @@
 Corellium API types.
 """
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -36,4 +35,4 @@ class Instance:
     Virtual instance dataclass.
     """
     id: str
-    state: Optional[str] = field(default=None)
+    state: str | None = field(default=None)

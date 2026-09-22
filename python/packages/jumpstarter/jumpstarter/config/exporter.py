@@ -5,7 +5,7 @@ import os
 import tempfile
 from contextlib import asynccontextmanager, contextmanager, suppress
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 
 import grpc
 import yaml
@@ -109,7 +109,7 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
         | ExporterConfigV1Alpha1DriverInstanceProxy
     )
 
-    def instantiate(self) -> "Driver":
+    def instantiate(self) -> Driver:
         match self.root:
             case ExporterConfigV1Alpha1DriverInstanceBase():
                 try:
@@ -274,7 +274,7 @@ class ExporterConfigV1Alpha1(BaseModel):
         )
 
     @classmethod
-    def save(cls, config: Self, path: Optional[str] = None) -> Path:
+    def save(cls, config: Self, path: str | None = None) -> Path:
         """Save the config to disk, defaulting to the user config dir when no path is given."""
         # Set the config path before saving
         if path is None:

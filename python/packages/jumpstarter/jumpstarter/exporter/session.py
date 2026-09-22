@@ -79,14 +79,14 @@ class Session(
             unbind_log_context("exporter")
             try:
                 self.root_device.close()
-            except Exception as e:
+            except Exception:
                 # Get driver name from report for more descriptive logging
                 try:
                     report = self.root_device.report()
                     driver_name = report.labels.get("jumpstarter.dev/name", self.root_device.__class__.__name__)
-                except Exception:
+                except AttributeError:
                     driver_name = self.root_device.__class__.__name__
-                logger.error("Error closing driver %s: %s", driver_name, e, exc_info=True)
+                logger.exception("Error closing driver %s", driver_name)
             finally:
                 logging.getLogger().removeHandler(self._logging_handler)
 
@@ -269,16 +269,14 @@ class Session(
         Yields:
             tuple[str, str]: (main_socket_path, hook_socket_path)
         """
-        with TemporarySocket() as main_path:
-            with TemporarySocket() as hook_path:
-                async with self.serve_multi_port_async(f"unix://{main_path}", f"unix://{hook_path}"):
-                    yield main_path, hook_path
+        with TemporarySocket() as main_path, TemporarySocket() as hook_path:
+            async with self.serve_multi_port_async(f"unix://{main_path}", f"unix://{hook_path}"):
+                yield main_path, hook_path
 
     @contextmanager
     def serve_unix(self):
-        with start_blocking_portal() as portal:
-            with portal.wrap_async_context_manager(self.serve_unix_async()) as path:
-                yield path
+        with start_blocking_portal() as portal, portal.wrap_async_context_manager(self.serve_unix_async()) as path:
+            yield path
 
     def __getitem__(self, key: UUID):
         return self.mapping[key]
@@ -343,11 +341,13 @@ class Session(
                     metadata.extend(stream.extra(MetadataStreamAttributes.metadata).items())
                 await context.send_initial_metadata(metadata)
 
-                async with RouterStream(context=context) as remote:
-                    async with forward_stream(remote, stream, metrics_driver_type=driver.driver_type):
-                        event = Event()
-                        context.add_done_callback(lambda _: event.set())
-                        await event.wait()
+                async with (
+                    RouterStream(context=context) as remote,
+                    forward_stream(remote, stream, metrics_driver_type=driver.driver_type),
+                ):
+                    event = Event()
+                    context.add_done_callback(lambda _: event.set())
+                    await event.wait()
         except (ExclusiveSessionActive, WriteTokenRevokedError, ReadOnlyStreamError) as e:
             # Abort with the exception message so clients see a gRPC status
             # instead of grpcio's "Unexpected <class ...>" UNKNOWN wrapper.

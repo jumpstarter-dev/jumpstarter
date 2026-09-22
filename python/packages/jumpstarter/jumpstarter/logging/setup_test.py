@@ -218,33 +218,30 @@ class TestNamespaceDetection:
         ns_file = tmp_path / "namespace"
         ns_file.write_text("k8s-namespace\n")
 
-        with patch.dict("os.environ", {}, clear=True):
-            with patch("jumpstarter.logging.setup.Path") as mock_path:
-                mock_instance = mock_path.return_value
-                mock_instance.exists.return_value = True
-                mock_instance.read_text.return_value = "k8s-namespace\n"
-                assert _detect_namespace() == "k8s-namespace"
+        with patch.dict("os.environ", {}, clear=True), patch("jumpstarter.logging.setup.Path") as mock_path:
+            mock_instance = mock_path.return_value
+            mock_instance.exists.return_value = True
+            mock_instance.read_text.return_value = "k8s-namespace\n"
+            assert _detect_namespace() == "k8s-namespace"
 
     def test_detect_namespace_returns_none_when_not_in_k8s(self):
         """Should return None when no env vars and no service account file."""
         from jumpstarter.logging.setup import _detect_namespace
 
-        with patch.dict("os.environ", {}, clear=True):
-            with patch("jumpstarter.logging.setup.Path") as mock_path:
-                mock_instance = mock_path.return_value
-                mock_instance.exists.return_value = False
-                assert _detect_namespace() is None
+        with patch.dict("os.environ", {}, clear=True), patch("jumpstarter.logging.setup.Path") as mock_path:
+            mock_instance = mock_path.return_value
+            mock_instance.exists.return_value = False
+            assert _detect_namespace() is None
 
     def test_setup_logging_binds_namespace_when_available(self):
         """Namespace should appear in log output when detected."""
         stream = io.StringIO()
-        with patch.dict("os.environ", {"NAMESPACE": "test-ns"}):
-            with patch("jumpstarter.logging.setup.sys.stderr", stream):
-                setup_logging(component="exporter", log_format="json")
-                root = logging.getLogger()
-                for handler in root.handlers:
-                    if isinstance(handler, logging.StreamHandler):
-                        handler.stream = stream
+        with patch.dict("os.environ", {"NAMESPACE": "test-ns"}), patch("jumpstarter.logging.setup.sys.stderr", stream):
+            setup_logging(component="exporter", log_format="json")
+            root = logging.getLogger()
+            for handler in root.handlers:
+                if isinstance(handler, logging.StreamHandler):
+                    handler.stream = stream
 
         logger = logging.getLogger("test.namespace_bind")
         logger.info("With namespace")
@@ -261,16 +258,18 @@ class TestNamespaceDetection:
         structlog.contextvars.clear_contextvars()
 
         stream = io.StringIO()
-        with patch.dict("os.environ", {}, clear=True):
-            with patch("jumpstarter.logging.setup.Path") as mock_path:
-                mock_instance = mock_path.return_value
-                mock_instance.exists.return_value = False
-                with patch("jumpstarter.logging.setup.sys.stderr", stream):
-                    setup_logging(component="exporter", log_format="json")
-                    root = logging.getLogger()
-                    for handler in root.handlers:
-                        if isinstance(handler, logging.StreamHandler):
-                            handler.stream = stream
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch("jumpstarter.logging.setup.Path") as mock_path,
+            patch("jumpstarter.logging.setup.sys.stderr", stream),
+        ):
+            mock_instance = mock_path.return_value
+            mock_instance.exists.return_value = False
+            setup_logging(component="exporter", log_format="json")
+            root = logging.getLogger()
+            for handler in root.handlers:
+                if isinstance(handler, logging.StreamHandler):
+                    handler.stream = stream
 
         logger = logging.getLogger("test.no_namespace")
         logger.info("Without namespace")

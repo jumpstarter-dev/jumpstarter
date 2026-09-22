@@ -69,31 +69,30 @@ async def copy_stream(
 
 @asynccontextmanager
 async def forward_stream(a, b, *, metrics_driver_type: str | None = None):
-    async with a, b:
-        async with create_task_group() as tg:
-            if metrics_driver_type is None:
-                tg.start_soon(copy_stream, a, b)
-                tg.start_soon(copy_stream, b, a)
-            else:
-                tg.start_soon(
-                    partial(
-                        copy_stream,
-                        a,
-                        b,
-                        metrics_direction="tx",
-                        metrics_driver_type=metrics_driver_type,
-                    )
+    async with a, b, create_task_group() as tg:
+        if metrics_driver_type is None:
+            tg.start_soon(copy_stream, a, b)
+            tg.start_soon(copy_stream, b, a)
+        else:
+            tg.start_soon(
+                partial(
+                    copy_stream,
+                    a,
+                    b,
+                    metrics_direction="tx",
+                    metrics_driver_type=metrics_driver_type,
                 )
-                tg.start_soon(
-                    partial(
-                        copy_stream,
-                        b,
-                        a,
-                        metrics_direction="rx",
-                        metrics_driver_type=metrics_driver_type,
-                    )
+            )
+            tg.start_soon(
+                partial(
+                    copy_stream,
+                    b,
+                    a,
+                    metrics_direction="rx",
+                    metrics_driver_type=metrics_driver_type,
                 )
-            yield
+            )
+        yield
 
 
 def create_memory_stream():

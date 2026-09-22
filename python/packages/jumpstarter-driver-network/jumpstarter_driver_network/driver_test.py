@@ -50,13 +50,12 @@ def test_udp_network():
             host="127.0.0.1",
             port=8001,
         )
-    ) as client:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.bind(("127.0.0.1", 8001))
+    ) as client, socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.bind(("127.0.0.1", 8001))
 
-            with client.stream() as stream:
-                stream.send(b"hello")
-                assert s.recv(5) == b"hello"
+        with client.stream() as stream:
+            stream.send(b"hello")
+            assert s.recv(5) == b"hello"
 
 
 def test_unix_network():
@@ -119,14 +118,12 @@ def test_udp_network_direct():
         assert addr in ["udp://127.0.0.1:5201", "udp://localhost:5201"]
 
 def test_tcp_network_direct_disabled():
-    with serve(TcpNetwork(host="127.0.0.1", port=5201, enable_address=False)) as client:
-        with pytest.raises(ValueError):
-            client.address()
+    with serve(TcpNetwork(host="127.0.0.1", port=5201, enable_address=False)) as client, pytest.raises(ValueError):
+        client.address()
 
 def test_udp_network_direct_disabled():
-    with serve(UdpNetwork(host="127.0.0.1", port=5201, enable_address=False)) as client:
-        with pytest.raises(ValueError):
-            client.address()
+    with serve(UdpNetwork(host="127.0.0.1", port=5201, enable_address=False)) as client, pytest.raises(ValueError):
+        client.address()
 
 
 @pytest.mark.skipif(

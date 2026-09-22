@@ -42,19 +42,15 @@ class SilentCallback:
 
     def progress(self, message: str) -> None:
         """Does nothing."""
-        pass
 
     def success(self, message: str) -> None:
         """Does nothing."""
-        pass
 
     def warning(self, message: str) -> None:
         """Does nothing."""
-        pass
 
     def error(self, message: str) -> None:
         """Does nothing."""
-        pass
 
     def confirm(self, prompt: str) -> bool:
         """Always returns True (auto-confirm)."""

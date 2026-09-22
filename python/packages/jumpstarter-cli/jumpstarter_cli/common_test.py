@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import click
 import pytest
@@ -19,7 +19,7 @@ class TestDateTimeParamType:
         assert dt.minute == 0
         assert dt.second == 0
         assert dt.tzinfo is not None
-        assert dt.tzinfo == timezone.utc
+        assert dt.tzinfo == UTC
 
     def test_parse_iso8601_naive_gets_normalized(self):
         """Test that naive datetime gets normalized to local timezone."""
@@ -35,10 +35,10 @@ class TestDateTimeParamType:
 
     def test_pass_through_datetime_object_with_timezone(self):
         """Test that datetime object with timezone passes through."""
-        input_dt = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        input_dt = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
         dt = DATETIME.convert(input_dt, None, None)
         assert dt == input_dt
-        assert dt.tzinfo == timezone.utc
+        assert dt.tzinfo == UTC
 
     def test_pass_through_datetime_object_naive_gets_normalized(self):
         """Test that naive datetime object gets normalized."""

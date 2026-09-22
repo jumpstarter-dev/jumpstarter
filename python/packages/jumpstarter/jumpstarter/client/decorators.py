@@ -2,7 +2,8 @@
 Client-side Click group helpers for building driver CLIs.
 """
 
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import click
 

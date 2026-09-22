@@ -188,7 +188,7 @@ class TestGetExportersLogic:
         # This test verifies that the new parse_with function would reject unknown options
         # The actual CLI behavior now validates input, so unknown options cause failures
         # This test documents the expected behavior change
-        pass  # Test is no longer relevant since parse_with now validates input
+        # Test is no longer relevant since parse_with now validates input
 
     def test_exporter_list_creation_basic(self):
         """Test creating ExporterList with basic exporters"""

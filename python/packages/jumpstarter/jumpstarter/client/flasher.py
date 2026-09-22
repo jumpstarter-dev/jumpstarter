@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import warnings
 from abc import ABCMeta, abstractmethod
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Callable, Generator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from enum import StrEnum
 from os import PathLike
 from pathlib import Path
-from typing import Any, Callable, Literal, Mapping, cast
+from typing import Any, Literal, cast
 
 import click
 from anyio import BrokenResourceError, EndOfStream
@@ -222,7 +222,6 @@ class FlasherClientInterface(metaclass=ABCMeta):
         @driver_click_group(self)
         def base():
             """Generic flasher interface"""
-            pass
 
         @base.command()
         @click.argument("file", nargs=-1, required=False)
@@ -425,7 +424,6 @@ class StreamingFlasherClient(FlasherClient, StreamingFlasherClientInterface):
         @driver_click_group(self)
         def base():
             """Streaming flasher interface"""
-            pass
 
         @base.command()
         @click.argument("file")

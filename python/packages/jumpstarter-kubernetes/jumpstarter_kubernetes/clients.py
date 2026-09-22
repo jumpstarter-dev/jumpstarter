@@ -1,7 +1,7 @@
 import asyncio
 import base64
 import logging
-from typing import Literal, Optional
+from typing import Literal
 
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
@@ -23,7 +23,7 @@ CREATE_CLIENT_COUNT = 10
 
 
 class V1Alpha1ClientStatus(JsonBaseModel):
-    credential: Optional[SerializeV1ObjectReference] = None
+    credential: SerializeV1ObjectReference | None = None
     endpoint: str
 
 
@@ -31,7 +31,7 @@ class V1Alpha1Client(JsonBaseModel):
     api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
     kind: Literal["Client"] = Field(default="Client")
     metadata: SerializeV1ObjectMeta
-    status: Optional[V1Alpha1ClientStatus]
+    status: V1Alpha1ClientStatus | None
 
     @staticmethod
     def from_dict(dict: dict):

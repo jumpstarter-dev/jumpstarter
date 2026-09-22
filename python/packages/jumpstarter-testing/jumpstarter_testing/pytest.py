@@ -58,8 +58,7 @@ class JumpstarterTest:
         except RuntimeError:
             selector = getattr(self, "selector", None)
             config = ClientConfigV1Alpha1.load("default")
-            with config.lease(selector=selector) as lease:
-                with lease.connect() as client:
-                    yield client
+            with config.lease(selector=selector) as lease, lease.connect() as client:
+                yield client
         # BUG workaround: make sure that grpc servers get the client/lease release properly
         time.sleep(1)

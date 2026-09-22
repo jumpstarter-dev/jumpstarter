@@ -2,7 +2,7 @@ import asyncio
 import socket
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
-from typing import Any, Dict
+from typing import Any
 
 from pysnmp.carrier.asyncio.dgram import udp
 from pysnmp.entity import config, engine
@@ -32,7 +32,6 @@ class PowerState(IntEnum):
 class SNMPError(Exception):
     """Base exception for SNMP errors"""
 
-    pass
 
 
 @dataclass(kw_only=True)
@@ -127,7 +126,7 @@ class SNMPServer(Driver):
     def client(cls) -> str:
         return "jumpstarter_driver_snmp.client.SNMPServerClient"
 
-    def _create_snmp_callback(self, result: Dict[str, Any], response_received: asyncio.Event):
+    def _create_snmp_callback(self, result: dict[str, Any], response_received: asyncio.Event):
         def callback(snmpEngine, sendRequestHandle, errorIndication, errorStatus, errorIndex, varBinds, cbCtx):
             self.logger.debug(f"Callback {errorIndication} {errorStatus} {errorIndex} {varBinds}")
             if errorIndication:
@@ -191,7 +190,7 @@ class SNMPServer(Driver):
                     self._run_snmp_dispatcher(snmp_engine, response_received),
                     self.timeout
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self.logger.warning(f"SNMP operation timed out after {self.timeout} seconds")
                 result["error"] = "SNMP operation timed out"
 
@@ -203,7 +202,7 @@ class SNMPServer(Driver):
         except SNMPError:
             raise
         except Exception as e:
-            error_msg = f"SNMP set failed: {str(e)}"
+            error_msg = f"SNMP set failed: {e!s}"
             self.logger.error(error_msg)
             raise SNMPError(error_msg) from e
 

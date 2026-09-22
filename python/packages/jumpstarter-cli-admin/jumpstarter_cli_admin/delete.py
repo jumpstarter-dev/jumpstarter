@@ -1,4 +1,3 @@
-from typing import Optional
 
 import click
 from jumpstarter_cli_common.alias import AliasedGroup
@@ -48,9 +47,9 @@ def delete():
 @opt_nointeractive
 @blocking
 async def delete_client(
-    name: Optional[str],
-    kubeconfig: Optional[str],
-    context: Optional[str],
+    name: str | None,
+    kubeconfig: str | None,
+    context: str | None,
     namespace: str,
     delete: bool,
     output: NameOutputType,
@@ -100,9 +99,9 @@ async def delete_client(
 @opt_nointeractive
 @blocking
 async def delete_exporter(
-    name: Optional[str],
-    kubeconfig: Optional[str],
-    context: Optional[str],
+    name: str | None,
+    kubeconfig: str | None,
+    context: str | None,
     namespace: str,
     delete: bool,
     output: NameOutputType,
@@ -153,8 +152,8 @@ async def delete_exporter(
 @blocking
 async def delete_cluster(
     name: str,
-    kind: Optional[str],
-    minikube: Optional[str],
+    kind: str | None,
+    minikube: str | None,
     force: bool,
     output: NameOutputType,
 ):

@@ -1,10 +1,10 @@
-from typing import Annotated, Any, Dict
+from typing import Annotated, Any
 
 from kubernetes_asyncio.client.models import V1Condition, V1ObjectMeta, V1ObjectReference
 from pydantic import WrapSerializer
 
 
-def k8s_obj_to_dict(value: Any, handler, info) -> Dict[str, Any]:
+def k8s_obj_to_dict(value: Any, handler, info) -> dict[str, Any]:
     result = value.to_dict(serialize=True)
     return {k: v for k, v in result.items() if v is not None}
 

@@ -45,10 +45,9 @@ class ProbeRs(Driver):
     @export
     async def download(self, src: str):
         with TemporaryFilename() as filename:
-            async with await FileWriteStream.from_path(filename) as stream:
-                async with self.resource(src) as res:
-                    async for chunk in res:
-                        await stream.send(chunk)
+            async with await FileWriteStream.from_path(filename) as stream, self.resource(src) as res:
+                async for chunk in res:
+                    await stream.send(chunk)
             return self._run_cmd(["download", filename])
 
     @export

@@ -1,6 +1,7 @@
 import json
+from collections.abc import Generator
 from dataclasses import dataclass, field
-from typing import Any, Generator, Optional
+from typing import Any
 from urllib.parse import urlsplit
 
 import requests
@@ -23,11 +24,11 @@ def _json_path(data: Any, path: str) -> Any:
 class HttpEndpointConfig:
     url: str = field()
     method: str = field(default='GET')
-    data: Optional[str] = field(default=None)
+    data: str | None = field(default=None)
     # For read endpoints: dotted JSON paths to the values (e.g. "emeter.voltage").
     # When unset, read() looks for top-level "voltage"/"current" keys.
-    voltage_path: Optional[str] = field(default=None)
-    current_path: Optional[str] = field(default=None)
+    voltage_path: str | None = field(default=None)
+    current_path: str | None = field(default=None)
 
 
 @dataclass(kw_only=True)
@@ -44,8 +45,8 @@ class HttpDigestAuth:
 
 @dataclass(kw_only=True)
 class HttpAuthConfig:
-    basic: Optional[HttpBasicAuth] = field(default=None)
-    digest: Optional[HttpDigestAuth] = field(default=None)
+    basic: HttpBasicAuth | None = field(default=None)
+    digest: HttpDigestAuth | None = field(default=None)
 
 
 @dataclass(kw_only=True)
@@ -58,9 +59,9 @@ class HttpPower(PowerInterface, Driver):
     # HTTP endpoints configuration
     power_on: HttpEndpointConfig = field()
     power_off: HttpEndpointConfig = field()
-    power_read: Optional[HttpEndpointConfig] = field(default=None)
+    power_read: HttpEndpointConfig | None = field(default=None)
     # Authentication configuration
-    auth: Optional[HttpAuthConfig] = field(default=None)
+    auth: HttpAuthConfig | None = field(default=None)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -88,7 +89,7 @@ class HttpPower(PowerInterface, Driver):
         # shared across origins, whose nonces and realms are unrelated.
         self._digest_auth: dict[tuple[str, str], requests.auth.HTTPDigestAuth] = {}
 
-    def _build_auth(self, url: str) -> Optional[requests.auth.AuthBase]:
+    def _build_auth(self, url: str) -> requests.auth.AuthBase | None:
         """Build the requests auth handler for ``url`` from the configured credentials"""
         if self.auth is None:
             return None
@@ -159,7 +160,7 @@ class HttpPower(PowerInterface, Driver):
         yield PowerReading(voltage=voltage, current=current)
 
     @staticmethod
-    def _extract_reading(data: Any, path: Optional[str], default_key: str) -> float:
+    def _extract_reading(data: Any, path: str | None, default_key: str) -> float:
         """Pull one numeric reading. A configured path that's missing is an error;
         a missing default key just means the device doesn't report it (0.0)."""
         key = path or default_key

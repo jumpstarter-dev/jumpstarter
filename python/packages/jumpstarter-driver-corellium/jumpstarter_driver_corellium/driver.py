@@ -6,7 +6,6 @@ import os
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from typing import Dict, Optional
 
 from jumpstarter_driver_network.driver import WebsocketNetwork
 from jumpstarter_driver_power.driver import PowerReading, VirtualPowerInterface
@@ -101,7 +100,7 @@ class CorelliumPower(VirtualPowerInterface, Driver):
 
     parent: Corellium
 
-    def get_timeout_opts(self) -> Dict[str, int]:
+    def get_timeout_opts(self) -> dict[str, int]:
         """
         Return config/opts to be used when waiting for Corellium's API.
         """
@@ -110,7 +109,7 @@ class CorelliumPower(VirtualPowerInterface, Driver):
             "interval": os.environ.get("CORELLIUM_API_INTERVAL", 5),
         }
 
-    def wait_instance(self, current: Instance, desired: Optional[Instance]):
+    def wait_instance(self, current: Instance, desired: Instance | None):
         """
         Wait for `current` instance to reach the same state as the `desired` instance.
 

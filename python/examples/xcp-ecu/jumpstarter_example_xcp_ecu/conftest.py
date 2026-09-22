@@ -25,6 +25,5 @@ def ecu_client(mock_ecu):
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=mock_ecu,
-    ):
-        with serve(driver) as client:
-            yield client
+    ), serve(driver) as client:
+        yield client

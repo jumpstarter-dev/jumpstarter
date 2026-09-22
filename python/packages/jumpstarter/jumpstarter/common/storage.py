@@ -27,22 +27,22 @@ async def wait_for_storage_device(  # noqa: C901
                     case "rb":
                         fd = os.open(storage_device, os.O_RDONLY)
                     case _:
-                        raise ValueError("invalid mode: {}".format(mode))
+                        raise ValueError(f"invalid mode: {mode}")
                 with os.fdopen(fd, mode):  # to prevent fd from leaking
                     if os.lseek(fd, 0, os.SEEK_END) > 0:
                         if logger:
-                            logger.info("storage device {} is ready".format(storage_device))
+                            logger.info(f"storage device {storage_device} is ready")
                         break
                 if logger:
-                    logger.debug("waiting for storage device {} to have a nonzero size".format(storage_device))
+                    logger.debug(f"waiting for storage device {storage_device} to have a nonzero size")
             except FileNotFoundError:
                 if logger:
-                    logger.debug("waiting for storage device {} to appear".format(storage_device))
+                    logger.debug(f"waiting for storage device {storage_device} to appear")
             except OSError as e:
                 match e.errno:
                     case errno.ENOMEDIUM | errno.EIO:
                         if logger:
-                            logger.debug("waiting for storage device {} to be ready".format(storage_device))
+                            logger.debug(f"waiting for storage device {storage_device} to be ready")
                     case _:
                         raise
 
@@ -78,10 +78,7 @@ async def write_to_storage_device(
                     total_bytes += len(chunk)
                     if total_bytes > next_print:
                         logger.info(
-                            "written {} MB to storage device {}".format(
-                                total_bytes / (1024 * 1024),
-                                storage_device,
-                            )
+                            f"written {total_bytes / (1024 * 1024)} MB to storage device {storage_device}"
                         )
                         next_print += 50 * 1024 * 1024
 
@@ -89,7 +86,7 @@ async def write_to_storage_device(
                 while True:
                     try:
                         if logger:
-                            logger.info("fsyncing storage device {}, please wait".format(storage_device))
+                            logger.info(f"fsyncing storage device {storage_device}, please wait")
                         await to_thread.run_sync(os.fsync, file.fileno())
                     except OSError as e:
                         if e.errno == errno.EIO:
@@ -126,9 +123,6 @@ async def read_from_storage_device(
                     total_bytes += len(chunk)
                     if total_bytes > next_print:
                         logger.info(
-                            "read {} MB from storage device {}".format(
-                                total_bytes / (1024 * 1024),
-                                storage_device,
-                            )
+                            f"read {total_bytes / (1024 * 1024)} MB from storage device {storage_device}"
                         )
                         next_print += 50 * 1024 * 1024

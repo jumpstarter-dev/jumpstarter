@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
-from typing import Annotated, ClassVar, Literal, Optional, Self
+from typing import Annotated, ClassVar, Literal, Self
 
 import grpc
 import yaml
@@ -155,11 +155,10 @@ class ClientConfigV1Alpha1(BaseSettings):
         lease_name: str | None = None,
         duration: timedelta = timedelta(minutes=30),
     ):
-        with start_blocking_portal() as portal:
-            with portal.wrap_async_context_manager(
-                self.lease_async(selector, exporter_name, lease_name, duration, portal)
-            ) as lease:
-                yield lease
+        with start_blocking_portal() as portal, portal.wrap_async_context_manager(
+            self.lease_async(selector, exporter_name, lease_name, duration, portal)
+        ) as lease:
+            yield lease
 
     @_blocking_compat
     @_handle_connection_error
@@ -433,7 +432,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         return cls.from_file(path)
 
     @classmethod
-    def save(cls, config: Self, path: Optional[os.PathLike] = None) -> Path:
+    def save(cls, config: Self, path: os.PathLike | None = None) -> Path:
         """Saves a client config as YAML."""
         # Ensure the clients dir exists
         if path is None:
@@ -534,7 +533,7 @@ class ClientConfigV1Alpha1(BaseSettings):
 
 class ClientConfigListV1Alpha1(BaseModel):
     api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
-    current_config: Optional[str] = Field(alias="currentConfig")
+    current_config: str | None = Field(alias="currentConfig")
     items: list[ClientConfigV1Alpha1]
     kind: Literal["ClientConfigList"] = Field(default="ClientConfigList")
 

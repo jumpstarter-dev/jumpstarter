@@ -33,7 +33,7 @@ import re
 import socket as _socket
 import time
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -235,7 +235,7 @@ class TemplateEngine:
     def _evaluate_builtin(cls, expr: str) -> Any | None:
         """Evaluate built-in expressions (no flow needed)."""
         if expr == "now_iso":
-            return datetime.now(timezone.utc).isoformat()
+            return datetime.now(UTC).isoformat()
         if expr == "now_epoch":
             return int(time.time())
         if expr == "uuid":

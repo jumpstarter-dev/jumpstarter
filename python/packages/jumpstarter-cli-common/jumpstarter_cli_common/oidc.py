@@ -93,12 +93,11 @@ class Config:
     async def configuration(self):
         ssl_context: ssl.SSLContext | bool = False if self.insecure_tls else _get_ssl_context()
         connector = aiohttp.TCPConnector(ssl=ssl_context)
-        async with aiohttp.ClientSession(connector=connector) as session:
-            async with session.get(
-                URL(self.issuer).joinpath(".well-known", "openid-configuration"),
-                raise_for_status=True,
-            ) as response:
-                return await response.json()
+        async with aiohttp.ClientSession(connector=connector) as session, session.get(
+            URL(self.issuer).joinpath(".well-known", "openid-configuration"),
+            raise_for_status=True,
+        ) as response:
+            return await response.json()
 
     def _scopes(self) -> list[str]:
         if self.offline_access:

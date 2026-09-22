@@ -50,7 +50,6 @@ class CompositeClient(DriverClient):
         )
         def base():
             """Generic composite device"""
-            pass
 
         for k, v in self.children.items():
             if isinstance(v, StubDriverClient):

@@ -1,6 +1,7 @@
+from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
-from typing import Any, Callable, Literal, Mapping
+from typing import Any, Literal
 
 from anyio import BrokenResourceError, EndOfStream
 from anyio.abc import ObjectStream

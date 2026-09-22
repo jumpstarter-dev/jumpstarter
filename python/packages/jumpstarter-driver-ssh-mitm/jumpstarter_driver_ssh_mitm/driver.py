@@ -15,7 +15,6 @@ import threading
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import paramiko
 from anyio import get_cancelled_exc_class
@@ -95,7 +94,7 @@ class StreamSocket:
                         self.portal.call(self.send_stream.send, data)
                     else:
                         break
-                except socket.timeout:
+                except TimeoutError:
                     # Allow loop to check _running and exit cleanly
                     continue
                 except (BrokenPipeError, OSError):
@@ -220,7 +219,7 @@ class SSHMITM(Driver):
     default_pty_width: int = 80
     default_pty_height: int = 24
 
-    _host_key: Optional[paramiko.RSAKey] = field(init=False, default=None)
+    _host_key: paramiko.RSAKey | None = field(init=False, default=None)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):

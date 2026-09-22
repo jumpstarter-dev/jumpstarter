@@ -251,9 +251,8 @@ def test_someip_rpc_call_timeout(mock_osip_cls):
     mock_osip_cls.return_value = mock_client
 
     driver = SomeIp(host="127.0.0.1", port=30490)
-    with serve(driver) as client:
-        with pytest.raises(DriverError, match="No response from service"):
-            client.rpc_call(0x1234, 0x0001, b"\x01")
+    with serve(driver) as client, pytest.raises(DriverError, match="No response from service"):
+        client.rpc_call(0x1234, 0x0001, b"\x01")
 
 
 @patch("jumpstarter_driver_someip.driver.OsipClient")
@@ -263,9 +262,8 @@ def test_someip_receive_message_timeout(mock_osip_cls):
     mock_osip_cls.return_value = mock_client
 
     driver = SomeIp(host="127.0.0.1", port=30490)
-    with serve(driver) as client:
-        with pytest.raises(DriverError, match="No message received"):
-            client.receive_message(timeout=0.1)
+    with serve(driver) as client, pytest.raises(DriverError, match="No message received"):
+        client.receive_message(timeout=0.1)
 
 
 @patch("jumpstarter_driver_someip.driver.OsipClient")
@@ -277,9 +275,8 @@ def test_someip_receive_event_timeout(mock_osip_cls):
     mock_osip_cls.return_value = mock_client
 
     driver = SomeIp(host="127.0.0.1", port=30490)
-    with serve(driver) as client:
-        with pytest.raises(DriverError, match="No event received"):
-            client.receive_event(timeout=0.1)
+    with serve(driver) as client, pytest.raises(DriverError, match="No event received"):
+        client.receive_event(timeout=0.1)
 
 
 @patch("jumpstarter_driver_someip.driver.OsipClient")
@@ -287,9 +284,8 @@ def test_someip_connection_error(mock_osip_cls):
     mock_osip_cls.return_value.start.side_effect = ConnectionRefusedError("Connection refused")
 
     driver = SomeIp(host="192.168.1.100", port=30490)
-    with serve(driver) as client:
-        with pytest.raises(DriverError, match="Connection refused"):
-            client.start()
+    with serve(driver) as client, pytest.raises(DriverError, match="Connection refused"):
+        client.start()
 
 
 # =========================================================================

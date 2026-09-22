@@ -485,16 +485,14 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 last_known_end_time = end_time
                 remain = end_time - datetime.now().astimezone()
                 if remain < timedelta(0):
-                    logger.info("Lease {} ended at {}".format(self.name, end_time))
+                    logger.info(f"Lease {self.name} ended at {end_time}")
                     self._notify_lease_ending(timedelta(0))
                     break
 
                 # Log once when entering the threshold window
                 if threshold - timedelta(seconds=check_interval) <= remain < threshold:
                     logger.info(
-                        "Lease {} ending in {} minutes at {}".format(
-                            self.name, int((remain.total_seconds() + 30) // 60), end_time
-                        )
+                        f"Lease {self.name} ending in {int((remain.total_seconds() + 30) // 60)} minutes at {end_time}"
                     )
                     self._notify_lease_ending(remain)
                 await sleep(min(remain.total_seconds(), check_interval))
@@ -514,9 +512,8 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
 
     @contextmanager
     def connect(self):
-        with ExitStack() as stack:
-            with self.portal.wrap_async_context_manager(self.connect_async(stack)) as client:
-                yield client
+        with ExitStack() as stack, self.portal.wrap_async_context_manager(self.connect_async(stack)) as client:
+            yield client
 
     @contextmanager
     def serve_unix(self):

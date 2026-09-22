@@ -19,7 +19,7 @@ class UbootConsole(Driver):
 
         for child in ("power", "serial"):
             if child not in self.children:
-                raise ValueError("UbootConsole: {} driver not configured as a child".format(child))
+                raise ValueError(f"UbootConsole: {child} driver not configured as a child")
 
     @export
     def get_prompt(self) -> str:

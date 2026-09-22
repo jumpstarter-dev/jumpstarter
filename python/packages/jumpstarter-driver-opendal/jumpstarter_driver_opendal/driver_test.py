@@ -239,37 +239,36 @@ def test_driver_mock_storage_mux_flasher_http_auto_decompress(tmp_path):
 
 
 def test_drivers_mock_storage_mux_fs(monkeypatch: pytest.MonkeyPatch):
-    with serve(MockStorageMux()) as client:
-        with TemporaryDirectory() as tempdir:
-            # original file on the client to be pushed to the exporter
-            original = Path(tempdir) / "original"
-            # new file read back from the exporter to the client
-            readback = Path(tempdir) / "readback"
+    with serve(MockStorageMux()) as client, TemporaryDirectory() as tempdir:
+        # original file on the client to be pushed to the exporter
+        original = Path(tempdir) / "original"
+        # new file read back from the exporter to the client
+        readback = Path(tempdir) / "readback"
 
-            # test accessing files with absolute path
+        # test accessing files with absolute path
 
-            # fill the original file with random bytes
-            original.write_bytes(randbytes(1024 * 1024 * 10))
-            # write the file to the storage on the exporter
-            client.write_local_file(str(original))
-            # read the storage on the exporter to a local file
-            client.read_local_file(str(readback))
-            # ensure the contents are equal
+        # fill the original file with random bytes
+        original.write_bytes(randbytes(1024 * 1024 * 10))
+        # write the file to the storage on the exporter
+        client.write_local_file(str(original))
+        # read the storage on the exporter to a local file
+        client.read_local_file(str(readback))
+        # ensure the contents are equal
+        assert original.read_bytes() == readback.read_bytes()
+
+        # test accessing files with relative path
+        with monkeypatch.context() as m:
+            m.chdir(tempdir)
+
+            original.write_bytes(randbytes(1024 * 1024 * 1))
+            client.write_local_file("original")
+            client.read_local_file("readback")
             assert original.read_bytes() == readback.read_bytes()
 
-            # test accessing files with relative path
-            with monkeypatch.context() as m:
-                m.chdir(tempdir)
-
-                original.write_bytes(randbytes(1024 * 1024 * 1))
-                client.write_local_file("original")
-                client.read_local_file("readback")
-                assert original.read_bytes() == readback.read_bytes()
-
-                original.write_bytes(randbytes(1024 * 1024 * 1))
-                client.write_local_file("./original")
-                client.read_local_file("./readback")
-                assert original.read_bytes() == readback.read_bytes()
+            original.write_bytes(randbytes(1024 * 1024 * 1))
+            client.write_local_file("./original")
+            client.read_local_file("./readback")
+            assert original.read_bytes() == readback.read_bytes()
 
 
 def test_drivers_mock_storage_mux_http():
@@ -515,12 +514,11 @@ def test_write_from_path_http_with_explicit_operator(tmp_path):
 
 def test_flash_http_with_explicit_operator():
     """FlasherClient.flash must use original_url bypass even when operator is passed explicitly."""
-    with serve(MockFlasher()) as flasher:
-        with _http_path_recording_server() as (port, received_paths):
-            url = f"http://127.0.0.1:{port}/path%40encoded/file.bin"
-            explicit_operator = Operator("http", endpoint=f"http://127.0.0.1:{port}")
-            flasher.flash(url, operator=explicit_operator)
-            _assert_encoding_preserved(received_paths)
+    with serve(MockFlasher()) as flasher, _http_path_recording_server() as (port, received_paths):
+        url = f"http://127.0.0.1:{port}/path%40encoded/file.bin"
+        explicit_operator = Operator("http", endpoint=f"http://127.0.0.1:{port}")
+        flasher.flash(url, operator=explicit_operator)
+        _assert_encoding_preserved(received_paths)
 
 
 def test_flash_http_url_preserves_percent_encoding():

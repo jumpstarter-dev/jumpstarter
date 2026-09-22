@@ -76,7 +76,7 @@ class DecoderConfig(BaseModel):
     channels: dict[str, str] | None = None
     options: dict[str, str | int | float | bool] | None = None
     annotations: list[str] | None = None
-    stack: list["DecoderConfig"] | None = None
+    stack: list[DecoderConfig] | None = None
 
     @field_validator("name")
     @classmethod

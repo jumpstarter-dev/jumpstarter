@@ -441,7 +441,6 @@ class OpendalClient(DriverClient):
         @driver_click_group(self)
         def base():
             """Opendal Storage"""
-            pass
 
         @base.command
         @arg_path
@@ -577,7 +576,6 @@ class FlasherClientInterface(metaclass=ABCMeta):
         @driver_click_group(self)
         def base():
             """Generic flasher interface"""
-            pass
 
         @base.command()
         @click.argument("file", nargs=-1, required=False)
@@ -752,7 +750,6 @@ class StorageMuxClient(DriverClient):
             @driver_click_group(self)
             def base():
                 """Storage operations"""
-                pass
 
         @base.command()
         def host():

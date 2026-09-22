@@ -1,4 +1,3 @@
-from typing import Optional
 
 import click
 from jumpstarter_cli_common.alias import AliasedGroup
@@ -48,12 +47,12 @@ def rotate():
 @opt_output_name_only
 @blocking
 async def rotate_client(
-    name: Optional[str],
-    kubeconfig: Optional[str],
-    context: Optional[str],
+    name: str | None,
+    kubeconfig: str | None,
+    context: str | None,
     namespace: str,
     save: bool,
-    out: Optional[str],
+    out: str | None,
     output: NameOutputType,
 ):
     """Rotate the internal token for a client object"""

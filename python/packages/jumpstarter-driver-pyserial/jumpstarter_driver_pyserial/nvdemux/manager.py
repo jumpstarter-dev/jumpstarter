@@ -14,9 +14,10 @@ import signal
 import subprocess
 import sys
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from types import FrameType
-from typing import Callable, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -102,15 +103,15 @@ class DemuxerManager:
         self._drivers: dict[str, DriverInfo] = {}
         self._pts_map: dict[str, str] = {}  # target -> pts_path
         self._ready_targets: set[str] = set()
-        self._process: Optional[subprocess.Popen] = None
-        self._monitor_thread: Optional[threading.Thread] = None
+        self._process: subprocess.Popen | None = None
+        self._monitor_thread: threading.Thread | None = None
         self._shutdown = threading.Event()
         self._cleanup_done = False
 
         # Process configuration (must be same for all drivers)
-        self._demuxer_path: Optional[str] = None
-        self._device: Optional[str] = None
-        self._chip: Optional[str] = None
+        self._demuxer_path: str | None = None
+        self._device: str | None = None
+        self._chip: str | None = None
         self._poll_interval: float = 1.0
 
         # Register atexit handler for cleanup on normal exit

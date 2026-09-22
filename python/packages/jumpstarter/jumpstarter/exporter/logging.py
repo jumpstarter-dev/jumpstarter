@@ -1,7 +1,7 @@
 import logging
 from collections import deque
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from threading import RLock
 
 from google.protobuf.timestamp_pb2 import Timestamp
@@ -59,7 +59,7 @@ class LogHandler(logging.Handler):
         if hasattr(record, "operation"):
             kwargs["operation"] = record.operation
         ts = Timestamp()
-        ts.FromDatetime(datetime.fromtimestamp(record.created, tz=timezone.utc))
+        ts.FromDatetime(datetime.fromtimestamp(record.created, tz=UTC))
         kwargs["timestamp"] = ts
         structured = {}
         for key, val in record.__dict__.items():

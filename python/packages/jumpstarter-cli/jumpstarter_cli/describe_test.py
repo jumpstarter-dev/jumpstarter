@@ -2,7 +2,7 @@ import base64
 import json
 import time
 from contextlib import ExitStack
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -34,7 +34,7 @@ def _make_jwt(exp_offset_seconds=3600, include_exp=True):
 
 def _make_condition(type="Ready", status="True", reason="Ready", message="lease is ready"):
     condition = kubernetes_pb2.Condition(type=type, status=status, reason=reason, message=message)
-    condition.lastTransitionTime.seconds = int(datetime(2023, 1, 1, 10, 0, 0, tzinfo=timezone.utc).timestamp())
+    condition.lastTransitionTime.seconds = int(datetime(2023, 1, 1, 10, 0, 0, tzinfo=UTC).timestamp())
     return condition
 
 
@@ -47,7 +47,7 @@ def _make_lease(name="lease-1", conditions=None, exporter="exporter-1", **kwargs
         client="my-client",
         exporter=exporter,
         conditions=conditions if conditions is not None else [_make_condition()],
-        effective_begin_time=datetime(2023, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
+        effective_begin_time=datetime(2023, 1, 1, 10, 0, 0, tzinfo=UTC),
         tags={"build": "1234"},
         context={"purpose": "ci"},
         **kwargs,

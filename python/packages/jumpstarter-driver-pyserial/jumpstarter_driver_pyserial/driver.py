@@ -1,7 +1,7 @@
 import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, Optional, Union
+from typing import Any
 
 from anyio import (
     create_memory_object_stream,
@@ -27,8 +27,8 @@ LOOP = "loop://"
 @dataclass(kw_only=True)
 class ThrottledStream(ObjectStream):
     """Wrapper stream that adds CPS throttling to any ObjectStream."""
-    stream: Union[ObjectSendStream[bytes], ObjectStream[bytes]]
-    cps: Optional[float] = None
+    stream: ObjectSendStream[bytes] | ObjectStream[bytes]
+    cps: float | None = None
 
     async def send(self, item: bytes):
         if self.cps is not None and self.cps > 0:
@@ -68,8 +68,8 @@ class ThrottledStream(ObjectStream):
 @dataclass(kw_only=True)
 class AsyncSerial(ObjectStream):
     reader: StreamReaderWrapper
-    writer: Union[StreamWriterWrapper, ThrottledStream]
-    cps: Optional[float] = None  # characters per second throttling
+    writer: StreamWriterWrapper | ThrottledStream
+    cps: float | None = None  # characters per second throttling
 
     def __post_init__(self):
         # Replace writer with throttled version if chars-per-second throttling is set
@@ -100,7 +100,7 @@ class PySerial(FanOutStreamMixin, Driver):
     url: str
     baudrate: int = field(default=115200)
     check_present: bool = field(default=True)
-    cps: Optional[float] = field(default=None)  # characters per second throttling
+    cps: float | None = field(default=None)  # characters per second throttling
     disable_hupcl: bool = field(default=False)
     _transport: Any = field(default=None, init=False, repr=False)
 

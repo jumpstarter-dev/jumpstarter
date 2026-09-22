@@ -43,11 +43,10 @@ class BleWriteNotifyStreamClient(DriverClient):
         with PexpectAdapter(client=self) as adapter:
             yield adapter
 
-    def cli(self):  # noqa: C901
+    def cli(self):
         @driver_click_group(self)
         def base():
             """ble client"""
-            pass
 
         @base.command()
         def info():

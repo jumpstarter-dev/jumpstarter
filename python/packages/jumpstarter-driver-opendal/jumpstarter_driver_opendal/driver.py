@@ -389,19 +389,17 @@ class MockStorageMux(StorageMuxInterface, Driver):
 
     @export
     async def write(self, src: str):
-        async with await FileWriteStream.from_path(self.file.name) as stream:
-            async with self.resource(src) as res:
-                # match write_to_storage_device: compressed images are
-                # detected by file signature and decompressed transparently
-                async for chunk in AutoDecompressIterator(source=res):
-                    await stream.send(chunk)
+        async with await FileWriteStream.from_path(self.file.name) as stream, self.resource(src) as res:
+            # match write_to_storage_device: compressed images are
+            # detected by file signature and decompressed transparently
+            async for chunk in AutoDecompressIterator(source=res):
+                await stream.send(chunk)
 
     @export
     async def read(self, dst: str):
-        async with await FileReadStream.from_path(self.file.name) as stream:
-            async with self.resource(dst) as res:
-                async for chunk in stream:
-                    await res.send(chunk)
+        async with await FileReadStream.from_path(self.file.name) as stream, self.resource(dst) as res:
+            async for chunk in stream:
+                await res.send(chunk)
 
 
 @dataclass

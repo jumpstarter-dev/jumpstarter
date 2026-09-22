@@ -11,7 +11,7 @@ from .keyboard import resolve_key_code
 from .mouse import MouseButton, resolve_button
 from jumpstarter.driver import Driver, export, exportstream
 
-__all__ = ["NanoKVMUSBVideo", "NanoKVMUSBHID", "NanoKVMUSB", "MouseButton"]
+__all__ = ["MouseButton", "NanoKVMUSB", "NanoKVMUSBHID", "NanoKVMUSBVideo"]
 
 
 @dataclass(kw_only=True)
@@ -168,7 +168,7 @@ class NanoKVMUSBHID(NanoKVMUSBDriverBase):
                 device.press_key(key)
 
         await to_thread.run_sync(_press)
-        self.logger.debug(f"Pressed key: {repr(key)}")
+        self.logger.debug(f"Pressed key: {key!r}")
 
     @export
     async def reset_hid(self):

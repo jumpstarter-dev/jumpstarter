@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from jumpstarter.common.oci import OciCredentials
@@ -77,7 +77,7 @@ class RideSXClient(FlasherClient, CompositeClient):
 
         return filename
 
-    def flash_images(self, partitions: Dict[str, str], operators: Optional[Dict[str, Operator]] = None):
+    def flash_images(self, partitions: dict[str, str], operators: dict[str, Operator] | None = None):
         """Flash images to specified partitions
 
         Args:
@@ -111,7 +111,7 @@ class RideSXClient(FlasherClient, CompositeClient):
 
         return flash_result
 
-    def _validate_partition_mappings(self, partitions: Dict[str, str] | None) -> None:
+    def _validate_partition_mappings(self, partitions: dict[str, str] | None) -> None:
         """Validate partition mappings; raise ValueError if any path is empty."""
         if partitions is None:
             return
@@ -176,10 +176,10 @@ class RideSXClient(FlasherClient, CompositeClient):
 
     def flash(
         self,
-        path: str | Dict[str, str],
+        path: str | dict[str, str],
         *,
         target: str | None = None,
-        operator: Operator | Dict[str, Operator] | None = None,
+        operator: Operator | dict[str, Operator] | None = None,
         compression=None,
         power_off: bool = True,
     ):
@@ -244,7 +244,7 @@ class RideSXClient(FlasherClient, CompositeClient):
     def flash_with_targets(
         self,
         oci_url: str,
-        partitions: Dict[str, str],
+        partitions: dict[str, str],
         *,
         power_off: bool = True,
     ):
@@ -274,8 +274,8 @@ class RideSXClient(FlasherClient, CompositeClient):
 
     def flash_local(
         self,
-        partitions: Dict[str, str],
-        operators: Dict[str, Operator] | None = None,
+        partitions: dict[str, str],
+        operators: dict[str, Operator] | None = None,
         *,
         power_off: bool = True,
     ):
@@ -304,7 +304,7 @@ class RideSXClient(FlasherClient, CompositeClient):
     def _flash_oci_auto_impl(
         self,
         oci_url: str,
-        partitions: Dict[str, str] | None = None,
+        partitions: dict[str, str] | None = None,
     ):
         """Core implementation of OCI flash without wrapper logic."""
         creds = self._read_oci_credentials(oci_url)
@@ -339,7 +339,7 @@ class RideSXClient(FlasherClient, CompositeClient):
     def flash_oci_auto(
         self,
         oci_url: str,
-        partitions: Dict[str, str] | None = None,
+        partitions: dict[str, str] | None = None,
         *,
         power_off: bool = True,
     ):
@@ -435,7 +435,6 @@ class RideSXClient(FlasherClient, CompositeClient):
         @driver_click_group(self)
         def base():
             """RideSX storage operations"""
-            pass
 
         # Add all generic commands except 'flash' (we override it)
         for name, cmd in generic_cli.commands.items():

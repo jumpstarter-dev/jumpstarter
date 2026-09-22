@@ -318,7 +318,6 @@ class QualcommFlasherClient(StreamingFlasherClient, CompositeClient):
         @driver_click_group(self)
         def base():
             """Qualcomm firmware flasher"""
-            pass
 
         @base.command()
         @click.argument("file", metavar="FILE|URL")

@@ -64,7 +64,6 @@ class ProbeRsClient(DriverClient):
         @driver_click_group(self)
         def base():
             """probe-rs client"""
-            pass
 
         @base.command()
         def info():

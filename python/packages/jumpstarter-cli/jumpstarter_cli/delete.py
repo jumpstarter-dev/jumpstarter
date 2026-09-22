@@ -58,4 +58,4 @@ def delete_leases(
             case OutputMode.NAME:
                 click.echo(name)
             case _:
-                click.echo('lease "{}" deleted'.format(name))
+                click.echo(f'lease "{name}" deleted')

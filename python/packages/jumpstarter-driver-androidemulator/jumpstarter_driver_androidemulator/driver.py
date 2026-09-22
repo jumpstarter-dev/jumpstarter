@@ -103,7 +103,7 @@ class AndroidEmulatorPower(PowerInterface, Driver):
                         self.logger.info(message.strip())
                 else:
                     self.logger.info(text)
-        except (ValueError, IOError):
+        except (OSError, ValueError):
             pass
         finally:
             pipe.close()
@@ -147,7 +147,7 @@ class AndroidEmulatorPower(PowerInterface, Driver):
         self._stderr_thread.start()
 
     @export
-    def off(self) -> None:  # noqa: C901
+    def off(self) -> None:
         """Stop the Android emulator."""
         if self._process is None or self._process.returncode is not None:
             self.logger.warning("Emulator not running, ignoring")

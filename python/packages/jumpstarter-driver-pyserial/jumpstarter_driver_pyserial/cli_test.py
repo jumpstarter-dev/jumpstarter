@@ -78,16 +78,15 @@ def test_pipe_command_with_append(pyserial_client):
     runner = CliRunner()
     cli = pyserial_client.cli()
 
-    with runner.isolated_filesystem():
-        with patch.object(pyserial_client.portal, "call") as mock_call:
-            mock_call.side_effect = KeyboardInterrupt
+    with runner.isolated_filesystem(), patch.object(pyserial_client.portal, "call") as mock_call:
+        mock_call.side_effect = KeyboardInterrupt
 
-            runner.invoke(cli, ["pipe", "-o", "test.log", "-a"])
+        runner.invoke(cli, ["pipe", "-o", "test.log", "-a"])
 
-            assert mock_call.called
-            args = mock_call.call_args[0]
-            assert args[1] == "test.log"  # output file
-            assert args[3] is True  # append
+        assert mock_call.called
+        args = mock_call.call_args[0]
+        assert args[1] == "test.log"  # output file
+        assert args[3] is True  # append
 
 
 def test_pipe_command_with_input_flag(pyserial_client):
@@ -230,18 +229,17 @@ def test_pipe_command_with_file_and_input(pyserial_client):
     runner = CliRunner()
     cli = pyserial_client.cli()
 
-    with runner.isolated_filesystem():
-        with patch.object(pyserial_client.portal, "call") as mock_call:
-            mock_call.side_effect = KeyboardInterrupt
+    with runner.isolated_filesystem(), patch.object(pyserial_client.portal, "call") as mock_call:
+        mock_call.side_effect = KeyboardInterrupt
 
-            with patch("sys.stdin.isatty", return_value=False):
-                runner.invoke(cli, ["pipe", "-o", "test.log"])
+        with patch("sys.stdin.isatty", return_value=False):
+            runner.invoke(cli, ["pipe", "-o", "test.log"])
 
-                assert mock_call.called
-                args = mock_call.call_args[0]
-                assert args[1] == "test.log"  # output file
-                assert args[2] is True  # input_enabled (auto-detected)
-                assert args[3] is False  # append
+            assert mock_call.called
+            args = mock_call.call_args[0]
+            assert args[1] == "test.log"  # output file
+            assert args[2] is True  # input_enabled (auto-detected)
+            assert args[3] is False  # append
 
 
 def test_pipe_command_keyboard_interrupt_handling(pyserial_client):

@@ -102,9 +102,8 @@ def test_read_not_supported(mock_serial_cls):
     mock_ser = _make_serial_mock()
     mock_serial_cls.return_value = mock_ser
 
-    with serve(NoyitoPowerSerial(port="/dev/ttyUSB0", channel=1)) as client:
-        with pytest.raises(NotImplementedError):
-            list(client.read())
+    with serve(NoyitoPowerSerial(port="/dev/ttyUSB0", channel=1)) as client, pytest.raises(NotImplementedError):
+        list(client.read())
 
 
 @patch("jumpstarter_driver_noyito_relay.driver.serial.Serial")
@@ -288,9 +287,8 @@ def test_hid_read_not_supported(mock_hid_cls):
     mock_dev = _make_hid_mock()
     mock_hid_cls.return_value = mock_dev
 
-    with serve(NoyitoPowerHID(num_channels=4, channel=1)) as client:
-        with pytest.raises(NotImplementedError):
-            list(client.read())
+    with serve(NoyitoPowerHID(num_channels=4, channel=1)) as client, pytest.raises(NotImplementedError):
+        list(client.read())
 
 
 @patch("hid.Device")

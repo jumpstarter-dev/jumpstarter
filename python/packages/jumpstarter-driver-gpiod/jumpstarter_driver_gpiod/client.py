@@ -38,7 +38,6 @@ class DigitalOutputClient(PowerClient):
         @driver_click_group(self)
         def gpio():
             """GPIO power control commands."""
-            pass
 
         for cmd in super().cli().commands.values():
             gpio.add_command(cmd)
@@ -83,7 +82,6 @@ class DigitalInputClient(DriverClient):
         @driver_click_group(self)
         def gpio():
             """GPIO input commands."""
-            pass
 
         @gpio.command()
         def read():

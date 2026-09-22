@@ -75,10 +75,9 @@ class RenodeFlasher(FlasherInterface, Driver):
             raise ValueError(f"unsupported load_command {load_command!r}, allowed: {sorted(_ALLOWED_LOAD_COMMANDS)}")
 
         firmware_path = self.parent._tmp_dir.name + "/firmware"
-        async with await FileWriteStream.from_path(firmware_path) as stream:
-            async with self.resource(source) as res:
-                async for chunk in res:
-                    await stream.send(chunk)
+        async with await FileWriteStream.from_path(firmware_path) as stream, self.resource(source) as res:
+            async for chunk in res:
+                await stream.send(chunk)
 
         if load_command is not None:
             cmd = load_command

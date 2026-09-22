@@ -15,13 +15,11 @@ from jumpstarter.driver import Driver, export
 class TftpError(Exception):
     """Base exception for TFTP server errors"""
 
-    pass
 
 
 class ServerNotRunning(TftpError):
     """Server is not running"""
 
-    pass
 
 
 @dataclass(kw_only=True)
@@ -43,11 +41,11 @@ class Tftp(Driver):
     port: int = 69
     remove_created_on_close: bool = True  # Clean up temporary boot files by default
     server: Optional["TftpServer"] = field(init=False, default=None)
-    server_thread: Optional[threading.Thread] = field(init=False, default=None)
+    server_thread: threading.Thread | None = field(init=False, default=None)
     _shutdown_event: threading.Event = field(init=False, default_factory=threading.Event)
     _loop_ready: threading.Event = field(init=False, default_factory=threading.Event)
-    _loop: Optional[asyncio.AbstractEventLoop] = field(init=False, default=None)
-    _startup_error: Optional[BaseException] = field(init=False, default=None)
+    _loop: asyncio.AbstractEventLoop | None = field(init=False, default=None)
+    _startup_error: BaseException | None = field(init=False, default=None)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):

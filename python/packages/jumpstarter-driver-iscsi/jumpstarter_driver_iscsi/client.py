@@ -3,7 +3,7 @@ import hashlib
 import os
 from dataclasses import dataclass
 from tempfile import NamedTemporaryFile
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 import click
@@ -75,18 +75,17 @@ class ISCSIServerClient(CompositeClient):
             if base.endswith(ext):
                 base = base[: -len(ext)]
                 break
-        if base.endswith(".img"):
-            base = base[: -len(".img")]
+        base = base.removesuffix(".img")
         return base or "image"
 
     def _get_src_and_operator(
         self, file: str, headers: tuple[str, ...]
-    ) -> tuple[str, Optional[Operator], Optional[str]]:
+    ) -> tuple[str, Operator | None, str | None]:
         from jumpstarter_driver_opendal.client import operator_for_path
 
         if file.startswith(("http://", "https://")):
             if headers:
-                header_map: Dict[str, str] = {}
+                header_map: dict[str, str] = {}
                 for h in headers:
                     if ":" not in h:
                         raise click.ClickException(f"Invalid header format: {h!r}. Expected 'Key: Value'.")
@@ -155,7 +154,7 @@ class ISCSIServerClient(CompositeClient):
         """
         self.call("remove_lun", name)
 
-    def list_luns(self) -> List[Dict[str, Any]]:
+    def list_luns(self) -> list[dict[str, Any]]:
         """
         List all configured LUNs
 
@@ -164,7 +163,7 @@ class ISCSIServerClient(CompositeClient):
         """
         return self.call("list_luns")
 
-    def _calculate_file_hash(self, file_path: str, operator: Optional[Operator] = None) -> str:
+    def _calculate_file_hash(self, file_path: str, operator: Operator | None = None) -> str:
         """Calculate SHA256 hash of a file"""
         if operator is None:
             hash_obj = hashlib.sha256()
@@ -183,7 +182,7 @@ class ISCSIServerClient(CompositeClient):
                     hash_obj.update(chunk)
             return hash_obj.hexdigest()
 
-    def _files_are_identical(self, src: PathBuf, dst_path: str, operator: Optional[Operator] = None) -> bool:
+    def _files_are_identical(self, src: PathBuf, dst_path: str, operator: Operator | None = None) -> bool:
         """Check if source and destination files are identical"""
         try:
             if not self.storage.exists(dst_path):
@@ -218,7 +217,7 @@ class ISCSIServerClient(CompositeClient):
             return False
 
     def _should_skip_upload(
-        self, src_path: str, dst_path: str, operator: Optional[Operator], force_upload: bool, algo: Optional[str]
+        self, src_path: str, dst_path: str, operator: Operator | None, force_upload: bool, algo: str | None
     ) -> bool:
         if force_upload or algo is not None or not self.storage.exists(dst_path):
             return False
@@ -232,7 +231,7 @@ class ISCSIServerClient(CompositeClient):
         return False
 
     def _upload_file(
-        self, src_path: str, dst_name: str, dst_path: str, operator: Optional[Operator], algo: Optional[str]
+        self, src_path: str, dst_name: str, dst_path: str, operator: Operator | None, algo: str | None
     ):
         if algo is None:
             self.logger.info(f"Uploading {src_path} to {dst_path}...")
@@ -253,7 +252,7 @@ class ISCSIServerClient(CompositeClient):
         dst_name: str,
         src: PathBuf,
         size_mb: int = 0,
-        operator: Optional[Operator] = None,
+        operator: Operator | None = None,
         force_upload: bool = False,
     ) -> str:
         """
@@ -314,7 +313,7 @@ class ISCSIServerClient(CompositeClient):
             multiple=True,
             help="Custom HTTP header in 'Key: Value' format. Repeatable.",
         )
-        def serve(file: str, name: Optional[str], size_mb: int, force_upload: bool, headers: tuple[str, ...]):
+        def serve(file: str, name: str | None, size_mb: int, force_upload: bool, headers: tuple[str, ...]):
             """Serve an image as an iSCSI LUN from a local path or HTTP(S) URL."""
             self.start()
 

@@ -496,6 +496,7 @@ class _SlowHangDriver(Driver):
 def test_client_cancelled_driver_call_does_not_record_operation_metric():
     """Client-initiated cancel must not create operation or error series."""
     import concurrent.futures
+    import contextlib
     import time
 
     from jumpstarter.common.utils import serve
@@ -505,10 +506,8 @@ def test_client_cancelled_driver_call_does_not_record_operation_metric():
         fut = client.portal.start_task_soon(client.call_async, "hang")
         assert driver._ready.wait(timeout=5), "driver hang() never started"
         assert fut.cancel(), "expected in-flight DriverCall future to cancel"
-        try:
+        with contextlib.suppress(concurrent.futures.CancelledError):
             fut.result(timeout=5)
-        except (concurrent.futures.CancelledError, Exception):
-            pass
 
         # Allow any late server-side cleanup before asserting the registry.
         time.sleep(0.1)

@@ -27,11 +27,9 @@ async def NovncAdapter(*, client: DriverClient, method: str = "connect", encrypt
     """
 
     async def handler(conn):
-        async with conn:
-            async with client.stream_async(method) as stream:
-                async with WebsocketServerStream(stream=stream) as stream:
-                    async with forward_stream(conn, stream):
-                        pass
+        async with conn, client.stream_async(method) as stream, WebsocketServerStream(stream=stream) as stream:
+            async with forward_stream(conn, stream):
+                pass
 
     async with TemporaryTcpListener(handler) as addr:
         params = {

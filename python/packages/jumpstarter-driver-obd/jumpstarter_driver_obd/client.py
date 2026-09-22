@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 from .driver import OBDConnectionStatus
 from jumpstarter.client import DriverClient
@@ -9,7 +8,7 @@ from jumpstarter.client import DriverClient
 class OBDClient(DriverClient):
     """Client for the OBD-II driver."""
 
-    def query(self, command_name: str) -> Optional[str]:
+    def query(self, command_name: str) -> str | None:
         """Query a PID by name (e.g. 'RPM'); returns None if the ECU doesn't answer."""
         return self.call("query", command_name)
 

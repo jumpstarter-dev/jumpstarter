@@ -245,7 +245,7 @@ async def test_retry_mechanism(tftp_server):
         assert 1 in block_numbers, "First block number should be 1"
 
     except Exception as e:
-        pytest.fail(f"Test failed with error: {str(e)}") # ty: ignore[call-non-callable]
+        pytest.fail(f"Test failed with error: {e!s}") # ty: ignore[call-non-callable]
 
     finally:
         if transport is not None:

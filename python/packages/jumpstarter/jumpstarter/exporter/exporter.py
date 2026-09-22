@@ -8,6 +8,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Self
 
 import anyio
+import anyio.lowlevel
 import grpc
 from anyio import (
     AsyncContextManagerMixin,
@@ -1097,7 +1098,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             # before serve() gets a chance to set lease_ended (anyio's receive()
             # always checkpoints, even when data is buffered). Inside the try so
             # cancellation here still runs fallback cleanup.
-            await anyio.sleep(0)
+            await anyio.lowlevel.checkpoint()
 
             # Fast path: if the lease is already ended (stale lease from backlog
             # when the exporter couldn't keep up with lease churn), skip session

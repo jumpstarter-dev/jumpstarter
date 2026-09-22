@@ -94,7 +94,6 @@ class QemuClient(CompositeClient):
         @base.group()
         def resize():
             """Resize QEMU resources"""
-            pass
 
         @resize.command(name="disk")
         @click.argument("size")

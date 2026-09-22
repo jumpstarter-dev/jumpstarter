@@ -1,6 +1,6 @@
 import os
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -695,7 +695,7 @@ async def test_list_exporters_with_leases_preserves_exporter_fields():
         duration=timedelta(hours=1),
         client="c",
         exporter="exporter-a",
-        effective_begin_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        effective_begin_time=datetime(2026, 1, 1, tzinfo=UTC),
         conditions=[condition],
     )
 

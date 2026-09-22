@@ -502,9 +502,7 @@ async def run_server():
     except asyncio.CancelledError:
         logger.info("MCP stdio session ended (cancelled)")
     except BaseException as exc:
-        if isinstance(exc, ClosedResourceError):
-            logger.info("MCP client disconnected (stdio closed)")
-        elif isinstance(exc, BaseExceptionGroup) and _is_closed_resource_error(exc):
+        if isinstance(exc, ClosedResourceError) or isinstance(exc, BaseExceptionGroup) and _is_closed_resource_error(exc):
             logger.info("MCP client disconnected (stdio closed)")
         else:
             logger.exception("MCP server crashed")

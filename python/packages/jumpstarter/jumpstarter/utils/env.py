@@ -124,10 +124,12 @@ def env():
     This is useful when interacting with an already established Jumpstarter shell,
     to either a local exporter or a remote one.
     """
-    with start_blocking_portal() as portal:
-        with ExitStack() as stack:
-            with portal.wrap_async_context_manager(env_async(portal, stack)) as client:
-                yield client
+    with (
+        start_blocking_portal() as portal,
+        ExitStack() as stack,
+        portal.wrap_async_context_manager(env_async(portal, stack)) as client,
+    ):
+        yield client
 
 
 @contextmanager
@@ -144,7 +146,9 @@ def env_with_metadata():
             print(metadata.labels)
             print(metadata.lease)
     """
-    with start_blocking_portal() as portal:
-        with ExitStack() as stack:
-            with portal.wrap_async_context_manager(env_with_metadata_async(portal, stack)) as result:
-                yield result
+    with (
+        start_blocking_portal() as portal,
+        ExitStack() as stack,
+        portal.wrap_async_context_manager(env_with_metadata_async(portal, stack)) as result,
+    ):
+        yield result

@@ -1,4 +1,3 @@
-from typing import Optional
 
 import click
 from jumpstarter_cli_common.blocking import blocking
@@ -56,12 +55,12 @@ def import_res():
 async def import_client(
     name: str,
     namespace: str,
-    kubeconfig: Optional[str],
-    context: Optional[str],
+    kubeconfig: str | None,
+    context: str | None,
     insecure_tls: bool,
-    allow: Optional[str],
+    allow: str | None,
     unsafe: bool,
-    out: Optional[str],
+    out: str | None,
     output: PathOutputType,
     nointeractive: bool,
 ):
@@ -118,9 +117,9 @@ async def import_client(
 async def import_exporter(
     name: str,
     namespace: str,
-    out: Optional[str],
-    kubeconfig: Optional[str],
-    context: Optional[str],
+    out: str | None,
+    kubeconfig: str | None,
+    context: str | None,
     insecure_tls: bool,
     output: PathOutputType,
     nointeractive: bool,

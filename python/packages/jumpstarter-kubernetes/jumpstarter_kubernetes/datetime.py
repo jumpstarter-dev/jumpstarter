@@ -1,10 +1,10 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def time_since(t_str: str):
     # Format the elapsed time in a readable way
-    t = datetime.strptime(t_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-    now = datetime.now(timezone.utc)
+    t = datetime.strptime(t_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    now = datetime.now(UTC)
     elapsed = now - t
 
     # Format the elapsed time in a readable way

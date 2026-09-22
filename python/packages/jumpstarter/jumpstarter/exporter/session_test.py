@@ -195,20 +195,22 @@ def test_client_fetches_motd_via_getreport():
 
     driver = SimpleDriver()
 
-    with start_blocking_portal() as portal:
-        with ExitStack() as stack:
-            with Session(
-                uuid=driver.uuid,
-                labels=driver.labels,
-                root_device=driver,
-                motd="Welcome to my-exporter!",
-            ) as session:
-                with portal.wrap_async_context_manager(session.serve_unix_async()) as path:
-                    with portal.wrap_async_context_manager(
-                        client_from_path(path, portal, stack, allow=[], unsafe=True)
-                    ) as client:
-                        report = portal.call(lambda: client.stub.GetReport(empty_pb2.Empty()))
-                        assert report.motd == "Welcome to my-exporter!"
+    with (
+        start_blocking_portal() as portal,
+        ExitStack() as stack,
+        Session(
+            uuid=driver.uuid,
+            labels=driver.labels,
+            root_device=driver,
+            motd="Welcome to my-exporter!",
+        ) as session,
+        portal.wrap_async_context_manager(session.serve_unix_async()) as path,
+        portal.wrap_async_context_manager(
+            client_from_path(path, portal, stack, allow=[], unsafe=True)
+        ) as client,
+    ):
+        report = portal.call(lambda: client.stub.GetReport(empty_pb2.Empty()))
+        assert report.motd == "Welcome to my-exporter!"
 
 
 def test_description_override_in_exporter_config():
@@ -476,12 +478,11 @@ async def test_serve_tcp_passphrase_missing():
     with session:
         async with session.serve_tcp_async(
             "127.0.0.1", 0, interceptors=[PassphraseInterceptor(passphrase)]
-        ) as bound_port:
-            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
-                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
-                with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-                    await stub.GetReport(empty_pb2.Empty())
-                assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
+        ) as bound_port, grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
+            stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+            with pytest.raises(grpc.aio.AioRpcError) as exc_info:
+                await stub.GetReport(empty_pb2.Empty())
+            assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
 
 
 # ============================================================================
@@ -504,9 +505,11 @@ async def test_serve_tcp_passphrase_rejected_logs_warning(caplog):
             metadata = ((PASSPHRASE_METADATA_KEY, "wrong-passphrase"),)
             async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
                 stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
-                with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.auth"):
-                    with pytest.raises(grpc.aio.AioRpcError):
-                        await stub.GetReport(empty_pb2.Empty(), metadata=metadata)
+                with (
+                    caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.auth"),
+                    pytest.raises(grpc.aio.AioRpcError),
+                ):
+                    await stub.GetReport(empty_pb2.Empty(), metadata=metadata)
 
     # The interceptor should have emitted a WARNING log with the method name.
     auth_warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "authentication failed" in r.message]
@@ -534,12 +537,13 @@ async def test_serve_tcp_passphrase_missing_logs_warning(caplog):
     with session:
         async with session.serve_tcp_async(
             "127.0.0.1", 0, interceptors=[PassphraseInterceptor(passphrase)]
-        ) as bound_port:
-            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
-                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
-                with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.auth"):
-                    with pytest.raises(grpc.aio.AioRpcError):
-                        await stub.GetReport(empty_pb2.Empty())
+        ) as bound_port, grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
+            stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+            with (
+                caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.auth"),
+                pytest.raises(grpc.aio.AioRpcError),
+            ):
+                await stub.GetReport(empty_pb2.Empty())
 
     auth_warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "authentication failed" in r.message]
     assert len(auth_warnings) >= 1, f"expected auth failure warning log, got: {[r.message for r in caplog.records]}"
@@ -618,24 +622,26 @@ async def test_log_stream_returns_enriched_fields():
 
         session._logging_handler.emit(record)
 
-        async with session.serve_tcp_async("127.0.0.1", 0) as bound_port:
-            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
-                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+        async with (
+            session.serve_tcp_async("127.0.0.1", 0) as bound_port,
+            grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel,
+        ):
+            stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
 
-                log_stream = stub.LogStream(empty_pb2.Empty())
+            log_stream = stub.LogStream(empty_pb2.Empty())
 
-                msg = await log_stream.read()
+            msg = await log_stream.read()
 
-                assert msg.message == "Power on completed"
-                assert msg.severity == "INFO"
-                assert msg.driver_type == "power"
-                assert msg.operation == "power_on"
-                assert msg.HasField("timestamp")
-                assert msg.timestamp.seconds > 0
-                assert msg.structured_fields["result"] == "success"
-                assert msg.structured_fields["lease_id"] == "lease-123"
+            assert msg.message == "Power on completed"
+            assert msg.severity == "INFO"
+            assert msg.driver_type == "power"
+            assert msg.operation == "power_on"
+            assert msg.HasField("timestamp")
+            assert msg.timestamp.seconds > 0
+            assert msg.structured_fields["result"] == "success"
+            assert msg.structured_fields["lease_id"] == "lease-123"
 
-                log_stream.cancel()
+            log_stream.cancel()
 
 
 @pytest.mark.anyio
@@ -658,18 +664,20 @@ async def test_log_stream_without_enriched_fields():
         test_logger.setLevel(logging.INFO)
         test_logger.info("Simple message")
 
-        async with session.serve_tcp_async("127.0.0.1", 0) as bound_port:
-            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
-                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+        async with (
+            session.serve_tcp_async("127.0.0.1", 0) as bound_port,
+            grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel,
+        ):
+            stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
 
-                log_stream = stub.LogStream(empty_pb2.Empty())
-                msg = await log_stream.read()
+            log_stream = stub.LogStream(empty_pb2.Empty())
+            msg = await log_stream.read()
 
-                assert msg.message == "Simple message"
-                assert msg.severity == "INFO"
-                assert not msg.HasField("driver_type")
-                assert not msg.HasField("operation")
-                assert msg.HasField("timestamp")
-                assert len(msg.structured_fields) == 0
+            assert msg.message == "Simple message"
+            assert msg.severity == "INFO"
+            assert not msg.HasField("driver_type")
+            assert not msg.HasField("operation")
+            assert msg.HasField("timestamp")
+            assert len(msg.structured_fields) == 0
 
-                log_stream.cancel()
+            log_stream.cancel()

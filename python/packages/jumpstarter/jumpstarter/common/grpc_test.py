@@ -73,12 +73,11 @@ class TestSslChannelCredentialsInsecure:
                 raise OSError("connection refused")
             return b"-----BEGIN CERTIFICATE-----\n"
 
-        with _patch_resolver(getaddrinfo):
-            with patch(
-                "jumpstarter.common.grpc._try_connect_and_extract_cert",
-                connect,
-            ):
-                credentials = await _ssl_channel_credentials_insecure("example.com:443", timeout=5)
+        with _patch_resolver(getaddrinfo), patch(
+            "jumpstarter.common.grpc._try_connect_and_extract_cert",
+            connect,
+        ):
+            credentials = await _ssl_channel_credentials_insecure("example.com:443", timeout=5)
 
         assert credentials is not None
 
@@ -87,9 +86,8 @@ class TestSslChannelCredentialsInsecure:
         async def getaddrinfo(*_args, **_kwargs):
             raise socket.gaierror("Name or service not known")
 
-        with _patch_resolver(getaddrinfo):
-            with pytest.raises(ConnectionError, match="Failed resolving example.com"):
-                await _ssl_channel_credentials_insecure("example.com:443", timeout=5)
+        with _patch_resolver(getaddrinfo), pytest.raises(ConnectionError, match="Failed resolving example.com"):
+            await _ssl_channel_credentials_insecure("example.com:443", timeout=5)
 
     @pytest.mark.asyncio
     async def test_slow_resolver_is_reported_as_a_resolution_timeout(self):

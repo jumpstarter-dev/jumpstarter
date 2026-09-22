@@ -33,15 +33,14 @@ config:
             token="123",
             drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False),
         ),
-    ) as mock_load:
-        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-            f.write(USER_CONFIG)
-            f.close()
-            monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", f.name)
-            config = UserConfigV1Alpha1.load()
-            mock_load.assert_called_once_with("testclient")
-            assert config.config.current_client.alias == "testclient"
-            os.unlink(f.name)
+    ) as mock_load, tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+        f.write(USER_CONFIG)
+        f.close()
+        monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", f.name)
+        config = UserConfigV1Alpha1.load()
+        mock_load.assert_called_once_with("testclient")
+        assert config.config.current_client.alias == "testclient"
+        os.unlink(f.name)
 
 
 def test_user_config_load_does_not_exist(monkeypatch: pytest.MonkeyPatch):
@@ -65,15 +64,14 @@ config: {}
             token="123",
             drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False),
         ),
-    ) as mock_load:
-        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-            f.write(USER_CONFIG)
-            f.close()
-            monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", f.name)
-            config = UserConfigV1Alpha1.load()
-            mock_load.assert_not_called()
-            assert config.config.current_client is None
-            os.unlink(f.name)
+    ) as mock_load, tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+        f.write(USER_CONFIG)
+        f.close()
+        monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", f.name)
+        config = UserConfigV1Alpha1.load()
+        mock_load.assert_not_called()
+        assert config.config.current_client is None
+        os.unlink(f.name)
 
 
 def test_user_config_load_current_client_empty(monkeypatch: pytest.MonkeyPatch):
@@ -92,15 +90,14 @@ config:
             token="123",
             drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False),
         ),
-    ) as mock_load:
-        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-            f.write(USER_CONFIG)
-            f.close()
-            monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", f.name)
-            config = UserConfigV1Alpha1.load()
-            mock_load.assert_not_called()
-            assert config.config.current_client is None
-            os.unlink(f.name)
+    ) as mock_load, tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+        f.write(USER_CONFIG)
+        f.close()
+        monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", f.name)
+        config = UserConfigV1Alpha1.load()
+        mock_load.assert_not_called()
+        assert config.config.current_client is None
+        os.unlink(f.name)
 
 
 def test_user_config_load_invalid_api_version_raises(monkeypatch: pytest.MonkeyPatch):
@@ -147,15 +144,14 @@ kind: UserConfig
 
 
 def test_user_config_load_or_create_config_exists():
-    with patch.object(UserConfigV1Alpha1, "exists", return_value=True) as mock_exists:
-        with patch.object(
-            UserConfigV1Alpha1,
-            "load",
-            return_value=UserConfigV1Alpha1(config=UserConfigV1Alpha1Config(current_client=None)),
-        ) as mock_load:
-            _ = UserConfigV1Alpha1.load_or_create()
-            mock_exists.assert_called_once()
-            mock_load.assert_called_once()
+    with patch.object(UserConfigV1Alpha1, "exists", return_value=True) as mock_exists, patch.object(
+        UserConfigV1Alpha1,
+        "load",
+        return_value=UserConfigV1Alpha1(config=UserConfigV1Alpha1Config(current_client=None)),
+    ) as mock_load:
+        _ = UserConfigV1Alpha1.load_or_create()
+        mock_exists.assert_called_once()
+        mock_load.assert_called_once()
 
 
 def test_user_config_load_or_create_dir_exists():
@@ -236,27 +232,26 @@ config:
             token="123",
             drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False),
         ),
-    ) as mock_load:
-        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-            monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", f.name)
-            config = UserConfigV1Alpha1(
-                config=UserConfigV1Alpha1Config(
-                    current_client=ClientConfigV1Alpha1(
-                        alias="another",
-                        metadata=ObjectMeta(namespace="default", name="testclient"),
-                        endpoint="abc",
-                        token="123",
-                        drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False),
-                    )
+    ) as mock_load, tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+        monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", f.name)
+        config = UserConfigV1Alpha1(
+            config=UserConfigV1Alpha1Config(
+                current_client=ClientConfigV1Alpha1(
+                    alias="another",
+                    metadata=ObjectMeta(namespace="default", name="testclient"),
+                    endpoint="abc",
+                    token="123",
+                    drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False),
                 )
             )
-            config.use_client("testclient")
-            with open(f.name) as loaded:
-                value = loaded.read()
-                assert value == USER_CONFIG
-                mock_load.assert_called_once_with("testclient")
-            assert config.config.current_client.alias == "testclient"
-            os.unlink(f.name)
+        )
+        config.use_client("testclient")
+        with open(f.name) as loaded:
+            value = loaded.read()
+            assert value == USER_CONFIG
+            mock_load.assert_called_once_with("testclient")
+        assert config.config.current_client.alias == "testclient"
+        os.unlink(f.name)
 
 
 def test_user_config_use_client_none(monkeypatch: pytest.MonkeyPatch):

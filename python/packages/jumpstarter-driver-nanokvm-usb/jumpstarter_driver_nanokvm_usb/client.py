@@ -11,7 +11,7 @@ from .mouse import MouseButton, resolve_button
 from jumpstarter.client import DriverClient
 from jumpstarter.client.decorators import driver_click_group
 
-__all__ = ["NanoKVMUSBVideoClient", "NanoKVMUSBHIDClient", "NanoKVMUSBClient", "MouseButton"]
+__all__ = ["MouseButton", "NanoKVMUSBClient", "NanoKVMUSBHIDClient", "NanoKVMUSBVideoClient"]
 
 
 def _decode_cli_escapes(text: str) -> str:
@@ -42,7 +42,6 @@ class NanoKVMUSBVideoClient(DriverClient):
         @driver_click_group(self)
         def base():
             """NanoKVM-USB video commands"""
-            pass
 
         @base.command()
         @click.argument("output", type=click.Path(), default="snapshot.jpg")
@@ -88,7 +87,6 @@ class NanoKVMUSBHIDClient(DriverClient):
         @driver_click_group(self)
         def base():
             """NanoKVM-USB HID commands"""
-            pass
 
         @base.command()
         @click.argument("text")
@@ -96,7 +94,7 @@ class NanoKVMUSBHIDClient(DriverClient):
             """Paste text via keyboard HID (supports \\n for newline, \\t for tab)"""
             decoded_text = _decode_cli_escapes(text)
             self.paste_text(decoded_text)
-            click.echo(f"Pasted: {repr(decoded_text)}")
+            click.echo(f"Pasted: {decoded_text!r}")
 
         @base.command()
         @click.argument("key")
@@ -104,7 +102,7 @@ class NanoKVMUSBHIDClient(DriverClient):
             """Press a single key (supports \\n for Enter, \\t for Tab)"""
             decoded_key = _decode_cli_escapes(key)
             self.press_key(decoded_key)
-            click.echo(f"Pressed: {repr(decoded_key)}")
+            click.echo(f"Pressed: {decoded_key!r}")
 
         @base.command()
         def reset():
@@ -115,7 +113,6 @@ class NanoKVMUSBHIDClient(DriverClient):
         @base.group()
         def mouse():
             """Mouse control commands"""
-            pass
 
         @mouse.command()
         @click.argument("x", type=float)

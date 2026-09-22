@@ -1,6 +1,5 @@
 import sys
 from contextlib import contextmanager
-from typing import Optional
 
 import click
 from anyio import BrokenResourceError, EndOfStream, create_task_group, open_file
@@ -42,7 +41,7 @@ class PySerialClient(DriverClient):
 
     async def _pipe_serial(
         self,
-        output_file: Optional[str] = None,
+        output_file: str | None = None,
         input_enabled: bool = False,
         append: bool = False,
         no_output: bool = False,
@@ -79,7 +78,7 @@ class PySerialClient(DriverClient):
                 await self._serial_to_output(stream, output_file, append)
                 tg.cancel_scope.cancel()
 
-    async def _serial_to_output(self, stream, output_file: Optional[str], append: bool):
+    async def _serial_to_output(self, stream, output_file: str | None, append: bool):
         """Read from serial and write to file or stdout."""
         try:
             if output_file:
@@ -132,7 +131,6 @@ class PySerialClient(DriverClient):
         @driver_click_group(self)
         def base():
             """Serial port client"""
-            pass
 
         @base.command(aliases=["start-console"])
         @click.option("--observe", is_flag=True, default=False, help="Watch-only mode (read-only)")

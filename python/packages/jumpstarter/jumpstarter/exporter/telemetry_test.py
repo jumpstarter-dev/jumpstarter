@@ -1,5 +1,6 @@
 """Unit tests for TelemetryLogHandler."""
 
+import contextlib
 import logging
 from collections import deque
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -301,13 +302,13 @@ class TestFlush:
             flush_calls.append(1)
             handler._queue.clear()
 
-        with patch.object(handler, "_flush", side_effect=fake_flush):
-            with patch("jumpstarter.exporter.telemetry.sleep", new_callable=AsyncMock) as mock_sleep:
-                mock_sleep.side_effect = [None, Exception("stop")]
-                try:
-                    await handler.flush_loop()
-                except Exception:
-                    pass
+        with (
+            patch.object(handler, "_flush", side_effect=fake_flush),
+            patch("jumpstarter.exporter.telemetry.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            mock_sleep.side_effect = [None, Exception("stop")]
+            async with contextlib.suppress(Exception):
+                await handler.flush_loop()
 
         assert len(flush_calls) >= 1
 

@@ -39,11 +39,12 @@ from __future__ import annotations
 import base64
 import fnmatch
 import json
+from collections.abc import Generator
 from contextlib import contextmanager
 from ipaddress import IPv6Address, ip_address
 from pathlib import Path
 from threading import Event
-from typing import Any, Generator
+from typing import Any
 
 import click
 import yaml
@@ -67,7 +68,7 @@ class CaptureContext:
         assert cap.requests  # frozen snapshot
     """
 
-    def __init__(self, client: "MitmproxyClient"):
+    def __init__(self, client: MitmproxyClient):
         self._client = client
         self._snapshot: list[dict] | None = None
 
@@ -175,7 +176,6 @@ class MitmproxyClient(DriverClient):
         @driver_click_group(self)
         def base():
             """Mitmproxy driver"""
-            pass
 
         # ── Lifecycle commands ─────────────────────────────────
 
@@ -242,7 +242,6 @@ class MitmproxyClient(DriverClient):
         @base.group("mock")
         def mock_group():
             """Mock endpoint management."""
-            pass
 
         @mock_group.command("list")
         def mock_list_cmd():
@@ -295,7 +294,6 @@ class MitmproxyClient(DriverClient):
         @base.group("flow")
         def flow_group():
             """Recorded flow file management."""
-            pass
 
         @flow_group.command("list")
         def flow_list_cmd():
@@ -457,10 +455,8 @@ class MitmproxyClient(DriverClient):
             from jumpstarter.streams.common import forward_stream
 
             async def handler(client, method, conn):
-                async with conn:
-                    async with client.stream_async(method) as stream:
-                        async with forward_stream(conn, stream):
-                            pass
+                async with conn, client.stream_async(method) as stream, forward_stream(conn, stream):
+                    pass
 
             @blocking
             @asynccontextmanager

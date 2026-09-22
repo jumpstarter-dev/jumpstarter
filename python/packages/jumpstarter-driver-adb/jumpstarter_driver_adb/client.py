@@ -3,9 +3,9 @@ import os
 import subprocess
 import sys
 import tempfile
+from collections.abc import Generator
 from contextlib import contextmanager
 from threading import Event
-from typing import Generator
 
 import click
 from jumpstarter_driver_network.adapters import TcpPortforwardAdapter

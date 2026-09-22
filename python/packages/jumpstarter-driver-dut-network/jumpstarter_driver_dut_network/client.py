@@ -1,7 +1,7 @@
 """Client interface for the DUT Network isolation driver."""
 
 import json
-from typing import Generator
+from collections.abc import Generator
 
 import click
 
@@ -83,7 +83,6 @@ class DutNetworkClient(DriverClient):
         @driver_click_group(self)
         def base():
             """DUT Network Isolation"""
-            pass
 
         @base.command()
         def status():

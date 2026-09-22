@@ -126,30 +126,28 @@ def test_drivers_tmt_run_tmt_with_forward_ssh():
     """Test run_tmt method with SSH forwarding"""
     instance = TMT(children={"ssh": TcpNetwork(host="127.0.0.1", port=22)})
 
-    with serve(instance) as client:
-        with patch('jumpstarter_driver_tmt.client.TcpPortforwardAdapter') as mock_adapter:
-            mock_adapter.return_value.__enter__.return_value = ("localhost", 2222)
-            with patch.object(client, '_run_tmt_local') as mock_run_tmt:
-                    mock_run_tmt.return_value = 0
-                    result = client.run_tmt_local(True, "tmt", "user", "pass", ["arg1"])
-                    assert result == 0
-                    mock_run_tmt.assert_called_once_with(
-                        "localhost", 2222, "tmt", "user", "pass", "", ["arg1"]
-                    )
+    with serve(instance) as client, patch('jumpstarter_driver_tmt.client.TcpPortforwardAdapter') as mock_adapter:
+        mock_adapter.return_value.__enter__.return_value = ("localhost", 2222)
+        with patch.object(client, '_run_tmt_local') as mock_run_tmt:
+                mock_run_tmt.return_value = 0
+                result = client.run_tmt_local(True, "tmt", "user", "pass", ["arg1"])
+                assert result == 0
+                mock_run_tmt.assert_called_once_with(
+                    "localhost", 2222, "tmt", "user", "pass", "", ["arg1"]
+                )
 
 
 def test_drivers_tmt_run_tmt_with_direct_address():
     """Test run_tmt method with direct address connection"""
     instance = TMT(children={"ssh": TcpNetwork(host="127.0.0.1", port=22)})
 
-    with serve(instance) as client:
-        with patch.object(client, '_run_tmt_local') as mock_run_tmt:
-            mock_run_tmt.return_value = 0
-            result = client.run_tmt_local(False, "tmt", "user", "pass", ["arg1"])
-            assert result == 0
-            mock_run_tmt.assert_called_once_with(
-                "127.0.0.1", 22, "tmt", "user", "pass", "", ["arg1"]
-            )
+    with serve(instance) as client, patch.object(client, '_run_tmt_local') as mock_run_tmt:
+        mock_run_tmt.return_value = 0
+        result = client.run_tmt_local(False, "tmt", "user", "pass", ["arg1"])
+        assert result == 0
+        mock_run_tmt.assert_called_once_with(
+            "127.0.0.1", 22, "tmt", "user", "pass", "", ["arg1"]
+        )
 
 
 def test_drivers_tmt_run_tmt_fallback_to_forwarding():
@@ -176,37 +174,35 @@ def test_drivers_tmt_run_tmt_internal():
     """Test the internal _run_tmt method"""
     instance = TMT(children={"ssh": TcpNetwork(host="127.0.0.1", port=22)})
 
-    with serve(instance) as client:
-        with patch('subprocess.run') as mock_subprocess:
-            mock_result = MagicMock()
-            mock_result.returncode = 0
-            mock_subprocess.return_value = mock_result
+    with serve(instance) as client, patch('subprocess.run') as mock_subprocess:
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_subprocess.return_value = mock_result
 
-            result = client._run_tmt_local("localhost", 2222, "tmt", "user", "pass", "j power cycle", ["test", "arg"])
+        result = client._run_tmt_local("localhost", 2222, "tmt", "user", "pass", "j power cycle", ["test", "arg"])
 
-            assert result == 0
-            mock_subprocess.assert_called_once()
-            # Verify the command and args passed to subprocess.run
-            call_args = mock_subprocess.call_args[0][0]
-            assert call_args[0] == "tmt"
-            assert "test" in call_args
-            assert "arg" in call_args
+        assert result == 0
+        mock_subprocess.assert_called_once()
+        # Verify the command and args passed to subprocess.run
+        call_args = mock_subprocess.call_args[0][0]
+        assert call_args[0] == "tmt"
+        assert "test" in call_args
+        assert "arg" in call_args
 
 
 def test_drivers_tmt_run_tmt_internal_with_error():
     """Test the internal _run_tmt method with error return code"""
     instance = TMT(children={"ssh": TcpNetwork(host="127.0.0.1", port=22)})
 
-    with serve(instance) as client:
-        with patch('subprocess.run') as mock_subprocess:
-            mock_result = MagicMock()
-            mock_result.returncode = 1
-            mock_subprocess.return_value = mock_result
+    with serve(instance) as client, patch('subprocess.run') as mock_subprocess:
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_subprocess.return_value = mock_result
 
-            result = client._run_tmt_local("localhost", 2222, "tmt", "user", "pass", "j power cycle", ["test"])
+        result = client._run_tmt_local("localhost", 2222, "tmt", "user", "pass", "j power cycle", ["test"])
 
-            assert result == 1
-            mock_subprocess.assert_called_once()
+        assert result == 1
+        mock_subprocess.assert_called_once()
 
 
 def test_drivers_tmt_driver_exports():

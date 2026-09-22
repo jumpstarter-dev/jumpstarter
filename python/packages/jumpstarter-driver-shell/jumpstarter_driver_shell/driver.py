@@ -3,8 +3,8 @@ import asyncio.subprocess
 import os
 import signal
 import subprocess
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from typing import AsyncGenerator
 
 from jumpstarter.driver import Driver, export
 
@@ -153,7 +153,7 @@ class Shell(Driver):
                     chunk = await asyncio.wait_for(process.stdout.read(1024), timeout=0.01)
                 if chunk:
                     stdout_data = chunk.decode('utf-8', errors='replace')
-            except (asyncio.TimeoutError, Exception):
+            except (TimeoutError, Exception):
                 pass
 
         # Read from stderr
@@ -165,7 +165,7 @@ class Shell(Driver):
                     chunk = await asyncio.wait_for(process.stderr.read(1024), timeout=0.01)
                 if chunk:
                     stderr_data = chunk.decode('utf-8', errors='replace')
-            except (asyncio.TimeoutError, Exception):
+            except (TimeoutError, Exception):
                 pass
 
         return stdout_data, stderr_data
@@ -216,7 +216,7 @@ class Shell(Driver):
                     pass
                 try:
                     await asyncio.wait_for(process.wait(), timeout=5.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     try:
                         os.killpg(process.pid, signal.SIGKILL)
                         self.logger.warning(f"SIGTERM failed to terminate {process.pid}, sending SIGKILL")

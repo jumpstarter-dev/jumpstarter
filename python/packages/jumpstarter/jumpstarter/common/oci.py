@@ -115,8 +115,7 @@ def _parse_registries_for_url(oci_url: str) -> tuple[str, ...]:
     configured ``unqualified-search-registries``.
     """
     url = oci_url
-    if url.startswith("oci://"):
-        url = url[len("oci://") :]
+    url = url.removeprefix("oci://")
 
     # Strip digest references before parsing — "ubuntu@sha256:abc" would
     # otherwise have the colon corrupt port/tag disambiguation.

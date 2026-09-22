@@ -64,9 +64,8 @@ def _make_mock_connection(status=obd.OBDStatus.CAR_CONNECTED):
 def obd_client():
     """Yield an OBDClient connected to a mocked OBD driver."""
     mock_conn = _make_mock_connection()
-    with patch("jumpstarter_driver_obd.driver.obd.OBD", return_value=mock_conn):
-        with serve(OBD()) as client:
-            yield client
+    with patch("jumpstarter_driver_obd.driver.obd.OBD", return_value=mock_conn), serve(OBD()) as client:
+        yield client
 
 
 def test_obd_status(obd_client):
@@ -130,9 +129,8 @@ def test_obd_query_rejects_destructive(obd_client):
 def test_obd_clear_dtc_invokes_mode_04():
     # The dedicated method must actually send CLEAR_DTC to the adapter.
     mock_conn = _make_mock_connection()
-    with patch("jumpstarter_driver_obd.driver.obd.OBD", return_value=mock_conn):
-        with serve(OBD()) as client:
-            assert client.clear_dtc() is None
+    with patch("jumpstarter_driver_obd.driver.obd.OBD", return_value=mock_conn), serve(OBD()) as client:
+        assert client.clear_dtc() is None
     sent = [call.args[0] for call in mock_conn.query.call_args_list]
     assert obd.commands["CLEAR_DTC"] in sent
 

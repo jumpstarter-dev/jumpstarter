@@ -6,11 +6,12 @@ import select
 import stat
 import tempfile
 import time
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Literal
+from typing import TYPE_CHECKING, Literal
 
 import anyio
+import anyio.lowlevel
 from anyio import CancelScope
 
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus, LogSource
@@ -528,7 +529,7 @@ class HookExecutor:
 
                 # Yield to event loop to ensure other tasks can progress
                 # This helps prevent race conditions in task scheduling
-                await anyio.sleep(0)
+                await anyio.lowlevel.checkpoint()
 
                 with anyio.move_on_after(timeout) as cancel_scope:
                     # Run output reading and process waiting concurrently

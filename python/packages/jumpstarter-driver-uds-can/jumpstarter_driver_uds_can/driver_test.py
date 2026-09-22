@@ -267,9 +267,8 @@ def test_uds_can_timeout_on_read(mock_bus_cls, mock_notifier_cls, mock_stack_cls
     uds_mock.read_data_by_identifier.side_effect = TimeoutError("No CAN response")
 
     driver = UdsCan(channel="vcan0", rxid=0x641, txid=0x642)
-    with serve(driver) as client:
-        with pytest.raises(DriverError, match="No CAN response"):
-            client.read_data_by_identifier([0xF190])
+    with serve(driver) as client, pytest.raises(DriverError, match="No CAN response"):
+        client.read_data_by_identifier([0xF190])
 
 
 @patch("jumpstarter_driver_uds_can.driver.UdsoncanClient")

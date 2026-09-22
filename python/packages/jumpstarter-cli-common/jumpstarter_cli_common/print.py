@@ -68,7 +68,7 @@ def model_print(  # noqa: C901
 
             if len(table.rows) == 0:
                 if namespace:
-                    console.print("No resources found in {} namespace.".format(namespace))
+                    console.print(f"No resources found in {namespace} namespace.")
                 else:
                     console.print("No resources found.")
             else:

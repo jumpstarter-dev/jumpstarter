@@ -1,7 +1,7 @@
 import logging
 import os
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from io import StringIO
 
 from anyio import TypedAttributeSet, typed_attribute
@@ -33,7 +33,7 @@ class ProgressStream(ObjectStream[bytes]):
     __prog: Progress | None = field(init=False, default=None)
     __recv: TaskID | None = field(init=False, default=None)
     __send: TaskID | None = field(init=False, default=None)
-    __last: datetime = field(init=False, default_factory=datetime.now)
+    __last: datetime = field(init=False, default_factory=lambda: datetime.now(tz=UTC))
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -66,8 +66,8 @@ class ProgressStream(ObjectStream[bytes]):
         item = await self.stream.receive()
 
         self.__prog.advance(self.__recv, len(item))
-        if self.logging and (datetime.now() - self.__last > timedelta(seconds=2)):
-            self.__last = datetime.now()
+        if self.logging and (datetime.now(tz=UTC) - self.__last > timedelta(seconds=2)):
+            self.__last = datetime.now(tz=UTC)
             console = Console(file=StringIO())
             console.print(self.__prog.get_renderable())
             logger.info(console.file.getvalue().rstrip())
@@ -83,8 +83,8 @@ class ProgressStream(ObjectStream[bytes]):
             )
 
         self.__prog.advance(self.__recv, len(item))
-        if self.logging and (datetime.now() - self.__last > timedelta(seconds=2)):
-            self.__last = datetime.now()
+        if self.logging and (datetime.now(tz=UTC) - self.__last > timedelta(seconds=2)):
+            self.__last = datetime.now(tz=UTC)
             console = Console(file=StringIO())
             console.print(self.__prog.get_renderable())
             logger.info(console.file.getvalue().rstrip())

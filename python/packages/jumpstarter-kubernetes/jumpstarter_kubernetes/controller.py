@@ -1,4 +1,3 @@
-from typing import Optional
 
 import aiohttp
 import semver
@@ -7,7 +6,7 @@ from packaging.version import Version
 from .exceptions import JumpstarterKubernetesError
 
 
-async def get_latest_compatible_controller_version(client_version: Optional[str]):  # noqa: C901
+async def get_latest_compatible_controller_version(client_version: str | None):  # noqa: C901
     """Get the latest compatible controller version for a given client version"""
     if client_version is None:
         # Return the latest available version when no client version is specified
@@ -16,7 +15,7 @@ async def get_latest_compatible_controller_version(client_version: Optional[str]
     else:
         use_fallback_only = False
         # Strip leading "v" for parsing but keep original for error messages
-        version_to_parse = client_version[1:] if client_version.startswith("v") else client_version
+        version_to_parse = client_version.removeprefix("v")
         try:
             client_version_parsed = Version(version_to_parse)
         except Exception as e:
@@ -48,7 +47,7 @@ async def get_latest_compatible_controller_version(client_version: Optional[str]
 
         tag_name = tag["name"]
         # Strip leading "v" for parsing but keep original tag name
-        version_str = tag_name[1:] if tag_name.startswith("v") else tag_name
+        version_str = tag_name.removeprefix("v")
 
         try:
             version = semver.VersionInfo.parse(version_str)

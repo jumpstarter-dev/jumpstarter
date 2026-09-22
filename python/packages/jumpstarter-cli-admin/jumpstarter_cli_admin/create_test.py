@@ -40,35 +40,35 @@ CLIENT_OBJECT = V1Alpha1Client(
     ),
 )
 
-CLIENT_JSON = """{{
+CLIENT_JSON = f"""{{
     "apiVersion": "jumpstarter.dev/v1alpha1",
     "kind": "Client",
     "metadata": {{
         "creationTimestamp": "2024-01-01T21:00:00Z",
-        "name": "{name}",
+        "name": "{CLIENT_NAME}",
         "namespace": "default"
     }},
     "status": {{
         "credential": {{
-            "name": "{name}-credential"
+            "name": "{CLIENT_NAME}-credential"
         }},
-        "endpoint": "{endpoint}"
+        "endpoint": "{CLIENT_ENDPOINT}"
     }}
 }}
-""".format(name=CLIENT_NAME, endpoint=CLIENT_ENDPOINT)
+"""
 
-CLIENT_YAML = """apiVersion: jumpstarter.dev/v1alpha1
+CLIENT_YAML = f"""apiVersion: jumpstarter.dev/v1alpha1
 kind: Client
 metadata:
   creationTimestamp: '2024-01-01T21:00:00Z'
-  name: {name}
+  name: {CLIENT_NAME}
   namespace: default
 status:
   credential:
-    name: {name}-credential
-  endpoint: {endpoint}
+    name: {CLIENT_NAME}-credential
+  endpoint: {CLIENT_ENDPOINT}
 
-""".format(name=CLIENT_NAME, endpoint=CLIENT_ENDPOINT)
+"""
 
 UNSAFE_CLIENT_CONFIG = ClientConfigV1Alpha1(
     alias=CLIENT_NAME,
@@ -221,41 +221,41 @@ EXPORTER_OBJECT = V1Alpha1Exporter(
     ),
 )
 
-EXPORTER_JSON = """{{
+EXPORTER_JSON = f"""{{
     "apiVersion": "jumpstarter.dev/v1alpha1",
     "kind": "Exporter",
     "metadata": {{
         "creationTimestamp": "2024-01-01T21:00:00Z",
-        "name": "{name}",
+        "name": "{EXPORTER_NAME}",
         "namespace": "default"
     }},
     "status": {{
         "credential": {{
-            "name": "{name}-credential"
+            "name": "{EXPORTER_NAME}-credential"
         }},
         "devices": [],
-        "endpoint": "{endpoint}",
+        "endpoint": "{EXPORTER_ENDPOINT}",
         "exporterStatus": null,
         "statusMessage": null
     }}
 }}
-""".format(name=EXPORTER_NAME, endpoint=EXPORTER_ENDPOINT)
+"""
 
-EXPORTER_YAML = """apiVersion: jumpstarter.dev/v1alpha1
+EXPORTER_YAML = f"""apiVersion: jumpstarter.dev/v1alpha1
 kind: Exporter
 metadata:
   creationTimestamp: '2024-01-01T21:00:00Z'
-  name: {name}
+  name: {EXPORTER_NAME}
   namespace: default
 status:
   credential:
-    name: {name}-credential
+    name: {EXPORTER_NAME}-credential
   devices: []
-  endpoint: {endpoint}
+  endpoint: {EXPORTER_ENDPOINT}
   exporterStatus: null
   statusMessage: null
 
-""".format(name=EXPORTER_NAME, endpoint=EXPORTER_ENDPOINT)
+"""
 
 EXPORTER_CONFIG = ExporterConfigV1Alpha1(
     alias=EXPORTER_NAME,

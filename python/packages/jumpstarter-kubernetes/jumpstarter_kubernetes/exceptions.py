@@ -8,7 +8,6 @@ and provide better error handling without CLI framework dependencies.
 class JumpstarterKubernetesError(Exception):
     """Base exception for all jumpstarter-kubernetes errors."""
 
-    pass
 
 
 class CredentialNotReadyError(JumpstarterKubernetesError):

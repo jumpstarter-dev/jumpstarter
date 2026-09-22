@@ -222,10 +222,9 @@ def test_run_server_propagates_startup_errors():
             "jumpstarter_driver_video.client.move_on_after",
             side_effect=lambda *args, **kwargs: contextlib.nullcontext(),
         ),
-        patch("jumpstarter_driver_video.client.click.echo") as mock_echo,
+        patch("jumpstarter_driver_video.client.click.echo") as mock_echo,pytest.raises(OSError, match="port in use")
     ):
-        with pytest.raises(OSError, match="port in use"):
-            run_video_server(client, object(), 0, False)
+        run_video_server(client, object(), 0, False)
 
     runner.setup.assert_awaited_once()
     site.start.assert_awaited_once()
@@ -244,10 +243,9 @@ def test_run_server_raises_when_no_bound_address_is_reported():
         patch(
             "jumpstarter_driver_video.client.move_on_after",
             side_effect=lambda *args, **kwargs: contextlib.nullcontext(),
-        ),
+        ),pytest.raises(RuntimeError, match="without a bound address")
     ):
-        with pytest.raises(RuntimeError, match="without a bound address"):
-            run_video_server(client, object(), 0, False)
+        run_video_server(client, object(), 0, False)
 
     runner.setup.assert_awaited_once()
     site.start.assert_awaited_once()
