@@ -329,10 +329,10 @@ func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseReq
 		return nil, err
 	}
 
-	if len(jlease.Spec.SharedWith) > jumpstarterdevv1alpha1.MaxSharedWithEntries {
-		return nil, status.Errorf(codes.InvalidArgument, "shared_with list exceeds maximum of %d entries", jumpstarterdevv1alpha1.MaxSharedWithEntries)
-	}
 	if len(jlease.Spec.SharedWith) > 0 {
+		// Deduplicate first, then enforce the limit against the deduplicated list,
+		// so a request with repeated names that collapses to a list within the
+		// limit is accepted rather than rejected on its raw length.
 		var deduped []string
 		for _, name := range jlease.Spec.SharedWith {
 			if name == jclient.Name {
@@ -349,6 +349,9 @@ func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseReq
 				return nil, status.Errorf(codes.Internal, "failed to get shared client %q: %v", name, err)
 			}
 			deduped = append(deduped, name)
+		}
+		if len(deduped) > jumpstarterdevv1alpha1.MaxSharedWithEntries {
+			return nil, status.Errorf(codes.InvalidArgument, "shared_with list exceeds maximum of %d entries", jumpstarterdevv1alpha1.MaxSharedWithEntries)
 		}
 		jlease.Spec.SharedWith = deduped
 	}
