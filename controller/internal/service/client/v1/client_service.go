@@ -281,6 +281,7 @@ func (s *ClientService) ListLeases(ctx context.Context, req *cpb.ListLeasesReque
 	}, nil
 }
 
+// CreateLease validates and persists a lease request for the authenticated client.
 func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseRequest) (*cpb.Lease, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
@@ -301,6 +302,10 @@ func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseReq
 
 	jclient, err := s.AuthClient(ctx, namespace)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := s.validateExplicitExporter(ctx, namespace, req.Lease); err != nil {
 		return nil, err
 	}
 
@@ -355,6 +360,33 @@ func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseReq
 	result := jlease.ToProtobuf()
 	annotateLeaseDeprecatedLabels(result, s.deprecatedMessages)
 	return result, nil
+}
+
+// validateExplicitExporter rejects a known disabled exporter before creating a
+// lease. Selector-based requests and missing exporters remain asynchronous so
+// the controller can continue to handle queueing and discovery normally.
+func (s *ClientService) validateExplicitExporter(
+	ctx context.Context,
+	namespace string,
+	lease *cpb.Lease,
+) error {
+	if lease.AllowDisabled || lease.ExporterName == nil || *lease.ExporterName == "" {
+		return nil
+	}
+
+	var exporter jumpstarterdevv1alpha1.Exporter
+	err := s.Get(ctx, types.NamespacedName{Namespace: namespace, Name: *lease.ExporterName}, &exporter)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+
+	if err := jumpstarterdevv1alpha1.ValidateExporterEnabledForLease(&exporter, lease.AllowDisabled); err != nil {
+		return status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return nil
 }
 
 func validateLeaseTarget(lease *cpb.Lease) error {

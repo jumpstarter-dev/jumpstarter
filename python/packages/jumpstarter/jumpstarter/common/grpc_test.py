@@ -2,10 +2,15 @@ import asyncio
 import socket
 from unittest.mock import patch
 
+import grpc
 import pytest
 
 from jumpstarter.common.exceptions import ConnectionError
-from jumpstarter.common.grpc import _override_default_grpc_options, _ssl_channel_credentials_insecure
+from jumpstarter.common.grpc import (
+    _override_default_grpc_options,
+    _ssl_channel_credentials_insecure,
+    translate_grpc_exceptions,
+)
 
 
 def test_default_options_preserve_existing_defaults():
@@ -18,6 +23,17 @@ def test_user_options_override_defaults():
     user_options = {"grpc.keepalive_time_ms": 50000}
     options = dict(_override_default_grpc_options(user_options))
     assert options["grpc.keepalive_time_ms"] == 50000
+
+
+def test_translate_grpc_failed_precondition_preserves_details():
+    with pytest.raises(ConnectionError, match="requested exporter is disabled"):
+        with translate_grpc_exceptions():
+            raise grpc.aio.AioRpcError(
+                code=grpc.StatusCode.FAILED_PRECONDITION,
+                initial_metadata=None,
+                trailing_metadata=None,
+                details="requested exporter is disabled",
+            )
 
 
 def _addr_info(*ips):

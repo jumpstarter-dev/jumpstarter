@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	"fmt"
 	"strings"
 
 	cpb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/client/v1"
@@ -14,6 +15,21 @@ import (
 // Returns true if Enabled is nil (backward compatibility) or explicitly set to true.
 func (e *Exporter) IsEnabled() bool {
 	return e.Spec.Enabled == nil || *e.Spec.Enabled
+}
+
+// ValidateExporterEnabledForLease rejects disabled exporters unless the lease
+// explicitly allows them. Callers can apply their own error transport around
+// the returned validation error.
+func ValidateExporterEnabledForLease(exporter *Exporter, allowDisabled bool) error {
+	if exporter == nil || exporter.IsEnabled() || allowDisabled {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"requested exporter %s is disabled. To lease a disabled exporter, set spec.allowDisabled: true on the Lease, "+
+			"or use --allow-disabled with jmp create lease or jmp shell",
+		exporter.Name,
+	)
 }
 
 func (e *Exporter) InternalSubject() string {

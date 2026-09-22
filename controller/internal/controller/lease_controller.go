@@ -213,7 +213,7 @@ func (r *LeaseReconciler) reconcileStatusBeginEndTimes(
 	return nil
 }
 
-// Also manages LeaseConditionTypeUnsatisfiable and LeaseConditionTypePending
+// reconcileStatusExporterRef manages LeaseConditionTypeUnsatisfiable and LeaseConditionTypePending.
 func (r *LeaseReconciler) reconcileStatusExporterRef(
 	ctx context.Context,
 	result *ctrl.Result,
@@ -277,14 +277,11 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 				)
 				return nil
 			}
-			// Check if the explicitly requested exporter is disabled
-			if !exporter.IsEnabled() && !lease.Spec.AllowDisabled {
+			if err := jumpstarterdevv1alpha1.ValidateExporterEnabledForLease(&exporter, lease.Spec.AllowDisabled); err != nil {
 				lease.SetStatusUnsatisfiable(
 					"ExporterDisabled",
-					"Requested exporter %s is disabled. "+
-						"To lease a disabled exporter, set spec.allowDisabled: true on the Lease, "+
-						"or use --allow-disabled with jmp create lease or jmp shell",
-					exporter.Name,
+					"%s",
+					err.Error(),
 				)
 				return nil
 			}

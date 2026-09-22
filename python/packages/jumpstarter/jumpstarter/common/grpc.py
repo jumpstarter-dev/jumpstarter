@@ -133,8 +133,7 @@ async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc
                         task.cancel()
     except TimeoutError as e:
         raise ConnectionError(
-            f"Timeout connecting to {parsed.hostname}:{port} after {timeout}s "
-            f"(resolved to {', '.join(resolved_ips)})"
+            f"Timeout connecting to {parsed.hostname}:{port} after {timeout}s (resolved to {', '.join(resolved_ips)})"
         ) from e
 
 
@@ -190,6 +189,8 @@ def translate_grpc_exceptions():
         if e.code().name == "UNKNOWN":
             # an error returned from our functions
             raise ConnectionError(f"grpc controller responded: {e.details()}") from None
+        if e.code().name == "FAILED_PRECONDITION":
+            raise ConnectionError(e.details()) from None
         else:
             raise ConnectionError("grpc error") from e
     except grpc.RpcError as e:

@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
@@ -71,6 +72,85 @@ func TestValidateLeaseTarget(t *testing.T) {
 			t.Fatalf("unexpected message: %q", st.Message())
 		}
 	})
+}
+
+// TestValidateExplicitExporter verifies the RPC preflight lookup and transport.
+func TestValidateExplicitExporter(t *testing.T) {
+	disabled := false
+	enabled := true
+	scheme := runtime.NewScheme()
+	if err := jumpstarterdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add scheme: %v", err)
+	}
+
+	client := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(
+			&jumpstarterdevv1alpha1.Exporter{
+				ObjectMeta: metav1.ObjectMeta{Name: "disabled-exporter", Namespace: "default"},
+				Spec:       jumpstarterdevv1alpha1.ExporterSpec{Enabled: &disabled},
+			},
+			&jumpstarterdevv1alpha1.Exporter{
+				ObjectMeta: metav1.ObjectMeta{Name: "enabled-exporter", Namespace: "default"},
+				Spec:       jumpstarterdevv1alpha1.ExporterSpec{Enabled: &enabled},
+			},
+		).Build()
+	svc := &ClientService{Client: client}
+
+	tests := []struct {
+		name          string
+		exporterName  string
+		allowDisabled bool
+		wantCode      codes.Code
+		wantMessage   string
+	}{
+		{
+			name:         "rejects disabled exporter without override",
+			exporterName: "disabled-exporter",
+			wantCode:     codes.FailedPrecondition,
+			wantMessage:  "requested exporter disabled-exporter is disabled.",
+		},
+		{
+			name:          "allows disabled exporter with override",
+			exporterName:  "disabled-exporter",
+			allowDisabled: true,
+		},
+		{
+			name:         "allows enabled exporter",
+			exporterName: "enabled-exporter",
+		},
+		{
+			name:         "allows missing exporter for asynchronous reconciliation",
+			exporterName: "missing-exporter",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exporterName := tt.exporterName
+			err := svc.validateExplicitExporter(
+				context.Background(),
+				"default",
+				&cpb.Lease{ExporterName: &exporterName, AllowDisabled: tt.allowDisabled},
+			)
+			if tt.wantCode == codes.OK {
+				if err != nil {
+					t.Fatalf("expected no error, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected disabled exporter to be rejected")
+			}
+			if status.Code(err) != tt.wantCode {
+				t.Fatalf("expected %v, got %v", tt.wantCode, status.Code(err))
+			}
+			message := status.Convert(err).Message()
+			if !strings.Contains(message, tt.wantMessage) {
+				t.Fatalf("expected message to contain %q, got %q", tt.wantMessage, message)
+			}
+		})
+	}
 }
 
 func TestDeleteLeaseRejectsAlreadyReleasedLease(t *testing.T) {

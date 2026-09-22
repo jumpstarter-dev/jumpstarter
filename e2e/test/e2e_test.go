@@ -426,6 +426,32 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, fu
 			MustJmp("delete", "leases", "--client", "test-client-oidc", "--all")
 		})
 
+		It("rejects a disabled named exporter before creating a lease", func() {
+			ns := Namespace()
+			exporterName := "test-exporter-oidc"
+			clientName := "test-client-oidc"
+			leaseID := "disabled-exporter-preflight"
+
+			WaitForExporters(exporterName, "test-exporter-sa", "test-exporter-legacy")
+			DeferCleanup(func() {
+				_, _ = Jmp("delete", "leases", leaseID, "--client", clientName)
+				MustKubectl("-n", ns, "patch", "exporters.jumpstarter.dev/"+exporterName,
+					"--type=merge", "-p", `{"spec":{"enabled":true}}`)
+			})
+
+			MustKubectl("-n", ns, "patch", "exporters.jumpstarter.dev/"+exporterName,
+				"--type=merge", "-p", `{"spec":{"enabled":false}}`)
+
+			out, err := Jmp("create", "lease", "--client", clientName,
+				"-n", exporterName, "--lease-id", leaseID, "--duration", "1m")
+			Expect(err).To(HaveOccurred(), out)
+			Expect(out).To(ContainSubstring("requested exporter " + exporterName + " is disabled"))
+
+			lease := MustKubectl("-n", ns, "get", "leases.jumpstarter.dev/"+leaseID,
+				"--ignore-not-found", "-o", "name")
+			Expect(lease).To(BeEmpty())
+		})
+
 		It("can create a lease with context metadata", func() {
 			WaitForExporters("test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy")
 			DeferCleanup(func() {
