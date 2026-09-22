@@ -52,3 +52,14 @@ interfaces exposed by the drivers configured in your {term}`exporter`. In this e
 Each driver can expose different commands through this interface, making it easy
 to interact with the mock hardware. The command structure follows `j
 <driver_type> <action>`, where available actions depend on the specific driver.
+
+## The Shell Prompt
+
+The {term}`exporter shell` prompt is displayed as `jumpstarter ⚡<exporter>
+➤`. Set the `NO_ICONS` environment variable to any value (including empty)
+to get an ASCII prompt instead:
+
+```console
+$ NO_ICONS=1 jmp shell
+jumpstarter ^<exporter> >
+```
