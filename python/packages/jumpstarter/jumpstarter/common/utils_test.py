@@ -222,6 +222,42 @@ def test_launch_shell_zsh_prompt_uses_ascii_when_no_icons(tmp_path, monkeypatch)
     assert "➤" not in ps1
 
 
+def test_launch_shell_bash_prompt_is_plain_when_no_color(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.delenv("NO_ICONS", raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fake.bash")
+    assert exit_code == 0
+    ps1 = call[1].get("env", {}).get("PS1", "")
+    assert "\\e[" not in ps1  # No ANSI escape sequences
+    assert "\\W" in ps1
+    assert "⚡" in ps1
+    assert "➤" in ps1
+
+
+def test_launch_shell_fish_prompt_is_plain_when_no_color(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.delenv("NO_ICONS", raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fish")
+    assert exit_code == 0
+    cmd = call[0][0]
+    assert "--init-command" in cmd
+    init_cmd = cmd[cmd.index("--init-command") + 1]
+    assert "set_color" not in init_cmd
+    assert 'printf "⚡"' in init_cmd
+    assert 'printf "➤ "' in init_cmd
+
+
+def test_launch_shell_zsh_prompt_is_plain_when_no_color(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.delenv("NO_ICONS", raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "zsh")
+    assert exit_code == 0
+    ps1 = call[1].get("env", {}).get("PS1", "")
+    assert "%F{" not in ps1  # No zsh color sequences
+    assert "⚡" in ps1
+    assert "➤" in ps1
+
+
 def test_exporter_metadata_from_env(monkeypatch):
     monkeypatch.setenv("JMP_EXPORTER", "my-board")
     monkeypatch.setenv("JMP_LEASE", "lease-abc")

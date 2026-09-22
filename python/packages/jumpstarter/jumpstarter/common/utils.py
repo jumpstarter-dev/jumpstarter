@@ -152,6 +152,52 @@ def _build_common_env(
     return env
 
 
+def _bash_ps1(context: str, bolt: str, arrow: str, no_color: bool) -> str:
+    """Build the bash ``PS1`` for the jmp shell prompt."""
+    if no_color:
+        return f"{PROMPT_CWD} {bolt} {context} {arrow} "
+    return (
+        f"{ANSI_GRAY}{PROMPT_CWD} "
+        f"{ANSI_YELLOW}{bolt}"
+        f"{ANSI_WHITE}{context} "
+        f"{ANSI_YELLOW}{arrow}"
+        f"{ANSI_RESET} "
+    )
+
+
+def _fish_prompt_fn(context: str, bolt: str, arrow: str, no_color: bool) -> str:
+    """Build the fish ``fish_prompt`` function for the jmp shell prompt."""
+    if no_color:
+        return (
+            "function fish_prompt; "
+            'printf "%s " (basename $PWD); '
+            f'printf "{bolt}"; '
+            f'printf "{context}"; '
+            f'printf "{arrow} "; '
+            "end"
+        )
+    return (
+        "function fish_prompt; "
+        "set_color grey; "
+        'printf "%s" (basename $PWD); '
+        "set_color yellow; "
+        f'printf "{bolt}"; '
+        "set_color white; "
+        f'printf "{context}"; '
+        "set_color yellow; "
+        f'printf "{arrow} "; '
+        "set_color normal; "
+        "end"
+    )
+
+
+def _zsh_ps1(context: str, bolt: str, arrow: str, no_color: bool) -> str:
+    """Build the zsh ``PS1`` for the jmp shell prompt."""
+    if no_color:
+        return f"%1~ {bolt} {context} {arrow} "
+    return f"%F{{8}}%1~ %F{{yellow}}{bolt}%F{{white}}{context} %F{{yellow}}{arrow}%f "
+
+
 def launch_shell(
     host: str,
     context: str,
@@ -199,40 +245,18 @@ def launch_shell(
     arrow = ">" if opts.no_icons else "➤"
 
     if shell_name.endswith("bash"):
-        ps1 = (
-            f"{ANSI_GRAY}{PROMPT_CWD} "
-            f"{ANSI_YELLOW}{bolt}"
-            f"{ANSI_WHITE}{context} "
-            f"{ANSI_YELLOW}{arrow}"
-            f"{ANSI_RESET} "
-        )
-        env = common_env | {"PS1": ps1}
+        env = common_env | {"PS1": _bash_ps1(context, bolt, arrow, opts.no_color)}
         cmd = [shell]
         if not use_profiles:
             cmd.extend(["--norc", "--noprofile"])
         return _run_process(cmd, env, lease)
 
     elif shell_name == "fish":
-        fish_fn = (
-            "function fish_prompt; "
-            "set_color grey; "
-            'printf "%s" (basename $PWD); '
-            "set_color yellow; "
-            f'printf "{bolt}"; '
-            "set_color white; "
-            f'printf "{context}"; '
-            "set_color yellow; "
-            f'printf "{arrow} "; '
-            "set_color normal; "
-            "end"
-        )
-        cmd = [shell, "--init-command", fish_fn]
+        cmd = [shell, "--init-command", _fish_prompt_fn(context, bolt, arrow, opts.no_color)]
         return _run_process(cmd, common_env, lease)
 
     elif shell_name == "zsh":
-        env = common_env | {
-            "PS1": f"%F{{8}}%1~ %F{{yellow}}{bolt}%F{{white}}{context} %F{{yellow}}{arrow}%f ",
-        }
+        env = common_env | {"PS1": _zsh_ps1(context, bolt, arrow, opts.no_color)}
         if "HISTFILE" not in env:
             env["HISTFILE"] = os.path.join(os.path.expanduser("~"), ".zsh_history")
 

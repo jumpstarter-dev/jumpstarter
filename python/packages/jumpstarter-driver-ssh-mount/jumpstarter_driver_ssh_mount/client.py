@@ -275,7 +275,9 @@ class SSHMountClient(CompositeClient):
         shell = os.environ.get("SHELL", "/bin/sh")
         shell_name = os.path.basename(shell)
         env = os.environ.copy()
-        no_icons = display_options().no_icons
+        opts = display_options()
+        no_icons = opts.no_icons
+        no_color = opts.no_color
 
         mount_tag = "(mount)"
         bolt = "^" if no_icons else "⚡"
@@ -288,19 +290,29 @@ class SSHMountClient(CompositeClient):
                     env=env,
                 )
             elif shell_name == "fish":
-                fish_fn = (
-                    "function fish_prompt; "
-                    "set_color grey; "
-                    'printf "%s" (basename $PWD); '
-                    "set_color yellow; "
-                    f'printf "{bolt}"; '
-                    "set_color white; "
-                    f'printf "{mount_tag}"; '
-                    "set_color yellow; "
-                    f'printf "{arrow} "; '
-                    "set_color normal; "
-                    "end"
-                )
+                if no_color:
+                    fish_fn = (
+                        "function fish_prompt; "
+                        'printf "%s " (basename $PWD); '
+                        f'printf "{bolt}"; '
+                        f'printf "{mount_tag}"; '
+                        f'printf "{arrow} "; '
+                        "end"
+                    )
+                else:
+                    fish_fn = (
+                        "function fish_prompt; "
+                        "set_color grey; "
+                        'printf "%s" (basename $PWD); '
+                        "set_color yellow; "
+                        f'printf "{bolt}"; '
+                        "set_color white; "
+                        f'printf "{mount_tag}"; '
+                        "set_color yellow; "
+                        f'printf "{arrow} "; '
+                        "set_color normal; "
+                        "end"
+                    )
                 subprocess.run([shell, "--init-command", fish_fn], env=env)
             elif shell_name == "zsh":
                 env["PS1"] = _tag_mount_ps1(env.get("PS1", "%# "), mount_tag, remote_path, no_icons)

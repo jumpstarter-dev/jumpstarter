@@ -963,6 +963,26 @@ def test_subshell_fish_prompt_ascii_when_no_icons():
                 assert "➤" not in init_cmd
 
 
+def test_subshell_fish_prompt_plain_when_no_color():
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        with patch.dict(os.environ, {"SHELL": "/usr/bin/fish", "NO_COLOR": "1"}):
+            with patch('subprocess.run') as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                client._run_subshell("/tmp/test-mount", "/")
+
+                mock_run.assert_called_once()
+                call_args = mock_run.call_args[0][0]
+                init_cmd = call_args[call_args.index("--init-command") + 1]
+                assert "set_color" not in init_cmd
+                assert 'printf "⚡"' in init_cmd
+                assert 'printf "(mount)"' in init_cmd
+                assert 'printf "➤ "' in init_cmd
+
+
 def test_create_temp_identity_file_failure():
     instance = SSHMount(
         children={"ssh": _make_ssh_child(ssh_identity=TEST_SSH_KEY)},
