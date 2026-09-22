@@ -8,7 +8,7 @@ from typing import NoReturn
 
 import click
 
-from jumpstarter.common.exceptions import ConnectionError, JumpstarterException
+from jumpstarter.common.exceptions import CONSOLE_IN_USE_MARKER, ConnectionError, JumpstarterException
 
 
 class ClickExceptionRed(click.ClickException):
@@ -20,33 +20,55 @@ def _append_details(base_message: str, details: str) -> str:
     return f"{base_message} Details: {details}" if details else base_message
 
 
-def _extract_console_in_use_message(text: str) -> str | None:
-    """Pull the user-facing exclusive-console message out of a wrapped error string."""
-    marker = "Console in use"
-    idx = text.find(marker)
+def _strip_console_marker(message: str) -> str:
+    """Return *message* with the console-in-use marker (and any prefix ahead of
+    it) removed; unchanged if the marker is absent."""
+    idx = message.find(CONSOLE_IN_USE_MARKER)
     if idx == -1:
+        return message
+    return message[idx + len(CONSOLE_IN_USE_MARKER) :].strip()
+
+
+def _extract_console_in_use_message(code: str | None, details: str) -> str | None:
+    """Return the user-facing exclusive-console message, or None.
+
+    Recognizes the rejection by the gRPC FAILED_PRECONDITION code plus the
+    stable CONSOLE_IN_USE_MARKER token embedded in the details — not by matching
+    the human wording, which may be reworded — then strips the marker for
+    display.
+    """
+    if code != "FAILED_PRECONDITION" or CONSOLE_IN_USE_MARKER not in details:
         return None
-    return text[idx:]
+    return _strip_console_marker(details)
 
 
 def _exception_chain(exc: BaseException):
-    """Yield *exc* and related exceptions (groups, __cause__, then __context__)."""
+    """Yield ``(exc, via_context)`` for *exc* and related exceptions.
+
+    Traversal order: the exception itself, group children, ``__cause__``
+    (explicit ``raise ... from ...``), then ``__context__`` (implicit chaining).
+    ``via_context`` becomes True once any ``__context__`` edge is crossed, so
+    callers can treat implicitly-chained exceptions with more caution: Python
+    sets ``__context__`` to whatever merely happened to be in flight when the
+    real error was raised, which is often incidental (e.g. a KeyboardInterrupt
+    or ClickException that has nothing to do with the failure being reported).
+    """
     seen: set[int] = set()
 
-    def walk(current: BaseException):
+    def walk(current: BaseException, via_context: bool):
         if id(current) in seen:
             return
         seen.add(id(current))
-        yield current
+        yield current, via_context
         if isinstance(current, BaseExceptionGroup):
             for child in current.exceptions:
-                yield from walk(child)
+                yield from walk(child, via_context)
         if current.__cause__ is not None:
-            yield from walk(current.__cause__)
+            yield from walk(current.__cause__, via_context)
         if current.__context__ is not None and not current.__suppress_context__:
-            yield from walk(current.__context__)
+            yield from walk(current.__context__, True)
 
-    yield from walk(exc)
+    yield from walk(exc, False)
 
 
 def _map_runtime_exception(exc: BaseException, message: str, message_lower: str) -> click.ClickException | None:
@@ -125,7 +147,7 @@ def _map_grpc_exception(exc: BaseException) -> click.ClickException | None:
     code, details = _extract_grpc_code_and_details(exc)
     details_lower = details.lower()
 
-    if console_msg := _extract_console_in_use_message(details):
+    if console_msg := _extract_console_in_use_message(code, details):
         return ClickExceptionRed(console_msg)
 
     if code == "DEADLINE_EXCEEDED":
@@ -187,11 +209,21 @@ def _map_common_exception(exc: BaseException) -> click.ClickException | None:
 
 
 def _map_cli_exception(exc: BaseException) -> click.ClickException | None:
-    for candidate in _exception_chain(exc):
+    for candidate, via_context in _exception_chain(exc):
+        # Type-specific transport/runtime/gRPC and Jumpstarter errors are
+        # distinctive enough to trust anywhere in the chain, including via
+        # implicit __context__.
         if common_exc := _map_common_exception(candidate):
             return common_exc
         if isinstance(candidate, JumpstarterException):
-            return ClickExceptionRed(str(candidate))
+            # Strip the console marker for the rare locally-raised case; a no-op
+            # for every other Jumpstarter error (marker absent).
+            return ClickExceptionRed(_strip_console_marker(str(candidate)))
+        # KeyboardInterrupt and a bare ClickException are prone to being
+        # incidental when reached through implicit __context__ chaining, so
+        # honor them only on the primary exception or its explicit __cause__.
+        if via_context:
+            continue
         if isinstance(candidate, KeyboardInterrupt):
             return ClickExceptionRed("Cancelled by user.")
         if isinstance(candidate, click.ClickException):
