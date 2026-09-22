@@ -47,7 +47,7 @@ def _family_name(metric: Any) -> str:
 
 def _set_unix_timestamp(dest: Any, ts: float) -> None:
     seconds = int(ts)
-    nanos = int(round((ts - seconds) * 1_000_000_000))
+    nanos = round((ts - seconds) * 1_000_000_000)
     if nanos >= 1_000_000_000:
         seconds += 1
         nanos -= 1_000_000_000

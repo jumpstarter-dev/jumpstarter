@@ -118,7 +118,7 @@ class TestStreamFanOut:
     @pytest.mark.anyio
     async def test_exclusive_basic(self):
         a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -136,8 +136,8 @@ class TestStreamFanOut:
 
     @pytest.mark.anyio
     async def test_second_exclusive_raises(self):
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -155,7 +155,7 @@ class TestStreamFanOut:
     @pytest.mark.anyio
     async def test_observer_receives_same_data(self):
         a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -163,21 +163,20 @@ class TestStreamFanOut:
 
         fanout = StreamFanOut(source_factory=factory, always_on=False)
 
-        async with fanout.attach_exclusive() as primary:
-            async with fanout.attach_observer() as observer:
-                await a_tx.send(b"shared data")
-                await anyio.sleep(0.05)
-                primary_data = await primary.receive()
-                observer_data = await observer.receive()
-                assert b"shared data" in primary_data
-                assert b"shared data" in observer_data
+        async with fanout.attach_exclusive() as primary, fanout.attach_observer() as observer:
+            await a_tx.send(b"shared data")
+            await anyio.sleep(0.05)
+            primary_data = await primary.receive()
+            observer_data = await observer.receive()
+            assert b"shared data" in primary_data
+            assert b"shared data" in observer_data
 
         await fanout.close()
 
     @pytest.mark.anyio
     async def test_observer_send_raises(self):
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -185,17 +184,16 @@ class TestStreamFanOut:
 
         fanout = StreamFanOut(source_factory=factory, always_on=False)
 
-        async with fanout.attach_exclusive():
-            async with fanout.attach_observer() as observer:
-                with pytest.raises(ReadOnlyStreamError):
-                    await observer.send(b"should fail")
+        async with fanout.attach_exclusive(), fanout.attach_observer() as observer:
+            with pytest.raises(ReadOnlyStreamError):
+                await observer.send(b"should fail")
 
         await fanout.close()
 
     @pytest.mark.anyio
     async def test_primary_close_frees_token(self):
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -214,7 +212,7 @@ class TestStreamFanOut:
     @pytest.mark.anyio
     async def test_observer_before_exclusive(self):
         a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -232,8 +230,8 @@ class TestStreamFanOut:
 
     @pytest.mark.anyio
     async def test_release_write_token(self):
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -251,7 +249,7 @@ class TestStreamFanOut:
     @pytest.mark.anyio
     async def test_scrollback_replay(self):
         a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -276,8 +274,8 @@ class TestStreamFanOut:
 
     @pytest.mark.anyio
     async def test_exclusive_session_active_identity(self):
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -294,8 +292,8 @@ class TestStreamFanOut:
 
     @pytest.mark.anyio
     async def test_status(self):
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -303,19 +301,18 @@ class TestStreamFanOut:
 
         fanout = StreamFanOut(source_factory=factory, always_on=False)
 
-        async with fanout.attach_exclusive(identity="tester"):
-            async with fanout.attach_observer():
-                status = fanout.status()
-                assert status["write_token_holder"] == "tester"
-                assert status["observer_count"] == 1
-                assert status["total_clients"] == 2
+        async with fanout.attach_exclusive(identity="tester"), fanout.attach_observer():
+            status = fanout.status()
+            assert status["write_token_holder"] == "tester"
+            assert status["observer_count"] == 1
+            assert status["total_clients"] == 2
 
         await fanout.close()
 
     @pytest.mark.anyio
     async def test_overflow_error_policy(self):
         a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -343,8 +340,8 @@ class TestStreamFanOut:
 
     @pytest.mark.anyio
     async def test_exclusive_send_when_source_none(self):
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -361,8 +358,8 @@ class TestStreamFanOut:
 
     @pytest.mark.anyio
     async def test_send_eof_is_noop(self):
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -377,8 +374,8 @@ class TestStreamFanOut:
 
     @pytest.mark.anyio
     async def test_extra_attributes_empty(self):
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -396,8 +393,8 @@ class TestStreamFanOut:
     async def test_extra_raises_without_default(self):
         from anyio import TypedAttributeLookupError
 
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -414,7 +411,7 @@ class TestStreamFanOut:
     @pytest.mark.anyio
     async def test_async_iteration(self):
         a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -433,8 +430,8 @@ class TestStreamFanOut:
 
     @pytest.mark.anyio
     async def test_anext_raises_stop_on_close(self):
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -451,8 +448,8 @@ class TestStreamFanOut:
 
     @pytest.mark.anyio
     async def test_context_manager_protocol(self):
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -469,8 +466,8 @@ class TestStreamFanOut:
 
     @pytest.mark.anyio
     async def test_observer_aclose_idempotent(self):
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -478,17 +475,16 @@ class TestStreamFanOut:
 
         fanout = StreamFanOut(source_factory=factory, always_on=False)
 
-        async with fanout.attach_exclusive():
-            async with fanout.attach_observer() as observer:
-                await observer.aclose()
-                await observer.aclose()
+        async with fanout.attach_exclusive(), fanout.attach_observer() as observer:
+            await observer.aclose()
+            await observer.aclose()
 
         await fanout.close()
 
     @pytest.mark.anyio
     async def test_scrollback_overflow_trims(self):
         a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
@@ -520,7 +516,7 @@ class TestStreamFanOut:
 
     @pytest.mark.anyio
     async def test_exclusive_send_to_source(self):
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
@@ -538,8 +534,8 @@ class TestStreamFanOut:
 
     @pytest.mark.anyio
     async def test_reconnect_broadcasts_message(self):
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
         call_count = 0
 
         @asynccontextmanager
@@ -589,7 +585,7 @@ class TestFanOutStreamMixin:
         from dataclasses import dataclass
 
         a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @dataclass(kw_only=True)
         class TestDriver(FanOutStreamMixin):
@@ -620,8 +616,8 @@ class TestFanOutStreamMixin:
     async def test_mixin_release_console(self):
         from dataclasses import dataclass
 
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @dataclass(kw_only=True)
         class TestDriver(FanOutStreamMixin):
@@ -643,8 +639,8 @@ class TestFanOutStreamMixin:
     async def test_mixin_console_status(self):
         from dataclasses import dataclass
 
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @dataclass(kw_only=True)
         class TestDriver(FanOutStreamMixin):
@@ -709,7 +705,7 @@ class TestFanOutStreamMixin:
         from dataclasses import dataclass
 
         a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @dataclass(kw_only=True)
         class TestDriver(FanOutStreamMixin):
@@ -732,7 +728,7 @@ class TestFanOutStreamMixin:
         from dataclasses import dataclass
 
         a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @dataclass(kw_only=True)
         class TestDriver(FanOutStreamMixin):
@@ -754,8 +750,8 @@ class TestFanOutStreamMixin:
     async def test_mixin_release_console_via_method(self):
         from dataclasses import dataclass
 
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @dataclass(kw_only=True)
         class TestDriver(FanOutStreamMixin):
@@ -777,8 +773,8 @@ class TestFanOutStreamMixin:
     async def test_mixin_console_status_via_method(self):
         from dataclasses import dataclass
 
-        a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, b_rx = create_memory_object_stream[bytes](32)
+        _a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
         @dataclass(kw_only=True)
         class TestDriver(FanOutStreamMixin):

@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import deque
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppress
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Callable, ClassVar
+from typing import Any, ClassVar
 
 import anyio
 from anyio import (
@@ -328,10 +329,8 @@ class StreamFanOut:
     def _broadcast_system(self, msg: bytes) -> None:
         """Push a system message to all clients. Non-blocking."""
         for buf in self._clients.values():
-            try:
+            with suppress(Exception):
                 buf.push(msg)
-            except Exception:
-                pass
 
     async def _run_reader(self) -> None:
         try:
@@ -453,10 +452,8 @@ class StreamFanOut:
         task = self._reader_task
         if task is not None:
             task.cancel()
-            try:
+            with suppress(asyncio.CancelledError, Exception):
                 await task
-            except (asyncio.CancelledError, Exception):
-                pass
             self._reader_task = None
         self._started = False
         self._shutdown = False
