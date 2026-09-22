@@ -449,7 +449,7 @@ func TestApplySharedWithChanges(t *testing.T) {
 	t.Run("reject exceeding max 10", func(t *testing.T) {
 		var clients []kclient.Object
 		var names []string
-		for i := 0; i < 11; i++ {
+		for i := range 11 {
 			name := "client" + string(rune('a'+i))
 			names = append(names, name)
 			clients = append(clients, &jumpstarterdevv1alpha1.Client{
