@@ -540,6 +540,25 @@ func tcpConnect(ns string, host string, port int, timeoutSec int) (string, error
 	return runInNsCapture(ns, "python3", "-c", clientScript)
 }
 
+// dnsQuery sends a raw DNS A-record query from the given namespace to the
+// given DNS server and returns the resolved IP.
+func dnsQuery(ns string, name string, server string) (string, error) {
+	script := fmt.Sprintf(
+		"import socket, struct, random\n"+
+			"qid = random.randint(0, 65535)\n"+
+			"name = b''.join(bytes([len(p)]) + p.encode() for p in '%s'.split('.')) + b'\\x00'\n"+
+			"q = struct.pack('>HHHHHH', qid, 0x0100, 1, 0, 0, 0) + name + struct.pack('>HH', 1, 1)\n"+
+			"s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"+
+			"s.settimeout(3)\n"+
+			"s.sendto(q, ('%s', 53))\n"+
+			"data, _ = s.recvfrom(512)\n"+
+			"if struct.unpack('>H', data[6:8])[0] < 1:\n"+
+			"    raise SystemExit('no DNS answer')\n"+
+			"print(socket.inet_ntoa(data[-4:]))",
+		name, server)
+	return runInNsCapture(ns, "python3", "-c", script)
+}
+
 // Serial: reuses the same veth topology as the base dut-network tests but
 // starts the exporter with a filter config that restricts egress to a single
 // TCP port.  Verifies that allowed traffic passes and everything else is dropped.
@@ -551,20 +570,20 @@ var _ = Describe("DUT Network Filter E2E Tests", Label("dut-network"), Ordered, 
 	)
 
 	const (
-		dutNs      = "jmp-e2e-dut"
-		extNs      = "jmp-e2e-ext"
-		vethHost   = "jmp-vhost"
-		vethDut    = "jmp-vdut"
-		vethUp     = "jmp-vup"
-		vethExt    = "jmp-vext"
-		nftTable   = "jumpstarter_jmp_vhost"
-		dutIP      = "192.168.200.10"
-		gatewayIP  = "192.168.200.1"
-		extIP      = "10.99.0.1"
-		upstreamIP = "10.99.0.2"
-		subnet     = "192.168.200.0/24"
-		allowedPort  = 9997
-		blockedPort  = 9998
+		dutNs       = "jmp-e2e-dut"
+		extNs       = "jmp-e2e-ext"
+		vethHost    = "jmp-vhost"
+		vethDut     = "jmp-vdut"
+		vethUp      = "jmp-vup"
+		vethExt     = "jmp-vext"
+		nftTable    = "jumpstarter_jmp_vhost"
+		dutIP       = "192.168.200.10"
+		gatewayIP   = "192.168.200.1"
+		extIP       = "10.99.0.1"
+		upstreamIP  = "10.99.0.2"
+		subnet      = "192.168.200.0/24"
+		allowedPort = 9997
+		blockedPort = 9998
 	)
 
 	setupNetworkNamespaces := func() {
@@ -651,7 +670,7 @@ var _ = Describe("DUT Network Filter E2E Tests", Label("dut-network"), Ordered, 
 		It("should show filter rules in nftables output", func() {
 			out, err := jmpShell("j", "dut-network", "nat-rules")
 			Expect(err).NotTo(HaveOccurred(), out)
-			Expect(out).To(ContainSubstring("drop"))
+			Expect(out).To(ContainSubstring("policy drop"))
 			Expect(out).To(ContainSubstring(fmt.Sprintf("dport %d", allowedPort)))
 		})
 	})
@@ -682,6 +701,30 @@ var _ = Describe("DUT Network Filter E2E Tests", Label("dut-network"), Ordered, 
 				return err
 			}, 3*time.Second, 1*time.Second).Should(HaveOccurred(),
 				"ping should be blocked by egress drop policy")
+		})
+	})
+
+	Context("DNS responder is before filtering", func() {
+		It("should resolve DNS entries despite egress drop policy", func() {
+			out, err := jmpShell("j", "dut-network", "add-dns", "e2e-filter.lab.local", "10.0.0.42")
+			Expect(err).NotTo(HaveOccurred(), out)
+			Expect(out).To(ContainSubstring("Added"))
+			defer func() {
+				removeOut, removeErr := jmpShell("j", "dut-network", "remove-dns", "e2e-filter.lab.local")
+				Expect(removeErr).NotTo(HaveOccurred(), removeOut)
+			}()
+
+			// The dnsmasq responder sits on the gateway (host-local IP), so
+			// queries and answers bypass the FORWARD filter chain: DNS must
+			// keep working even though egress policy is drop.
+			var resolved string
+			Eventually(func() error {
+				var qErr error
+				resolved, qErr = dnsQuery(dutNs, "e2e-filter.lab.local", gatewayIP)
+				return qErr
+			}, 10*time.Second, 1*time.Second).Should(Succeed(),
+				fmt.Sprintf("DNS resolution through gateway failed: %s", resolved))
+			Expect(resolved).To(ContainSubstring("10.0.0.42"))
 		})
 	})
 })

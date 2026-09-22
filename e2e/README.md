@@ -147,10 +147,11 @@ Same netns topology, separate exporter on port 19092 with an egress filter
 
 | Test Name | Steps | Pass Check |
 |---|---|---|
-| should show filter rules in nftables output | `j dut-network nat-rules` | output contains "drop" and `dport 9997` |
+| should show filter rules in nftables output | `j dut-network nat-rules` | output contains "policy drop" and `dport 9997` |
 | should allow TCP to the permitted port | TCP server on allowed port 9997, client connects from DUT ns | client receives "FILTER_OK" |
 | should block TCP to a non-allowed port | TCP server on blocked port 9998, client connects from DUT ns | connection fails (timeout/reset) |
 | should block ICMP ping when egress policy is drop | ping from DUT ns to ext IP | ping fails (`Consistently`) |
+| should resolve DNS entries despite egress drop policy | `add-dns e2e-filter.lab.local 10.0.0.42`, raw DNS query from DUT ns to gateway `192.168.200.1`, `remove-dns` | query resolves `10.0.0.42` (`Eventually`) — dnsmasq responder is before the FORWARD filter |
 
 ---
 

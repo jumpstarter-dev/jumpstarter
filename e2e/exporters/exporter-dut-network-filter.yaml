@@ -25,9 +25,9 @@ export:
         egress:
           policy: drop
           rules:
-            # Allow only the blocked-check port (9997) to a specific
-            # destination, and deny everything else.  The E2E test verifies
-            # that traffic to a non-allowed destination (port 9998) is dropped.
+             # Allow TCP to the allowed port (9997) on a specific
+             # destination; everything else is dropped.  The E2E test
+             # verifies that traffic to the blocked port (9998) is dropped.
             - action: accept
               destination: "10.99.0.1/32"
               port: 9997
