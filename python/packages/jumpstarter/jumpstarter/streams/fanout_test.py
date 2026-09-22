@@ -273,7 +273,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_exclusive_session_active_identity(self):
+    async def test_exclusive_session_active_message(self):
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -283,10 +283,12 @@ class TestStreamFanOut:
 
         fanout = StreamFanOut(source_factory=factory, always_on=False)
 
-        async with fanout.attach_exclusive(identity="user-alice"):
-            with pytest.raises(ExclusiveSessionActive, match="user-alice"):
+        async with fanout.attach_exclusive():
+            with pytest.raises(ExclusiveSessionActive) as exc_info:
                 async with fanout.attach_exclusive():
                     pass
+
+        assert "Console in use" in str(exc_info.value)
 
         await fanout.close()
 
@@ -301,9 +303,10 @@ class TestStreamFanOut:
 
         fanout = StreamFanOut(source_factory=factory, always_on=False)
 
-        async with fanout.attach_exclusive(identity="tester"), fanout.attach_observer():
+        async with fanout.attach_exclusive(), fanout.attach_observer():
             status = fanout.status()
-            assert status["write_token_holder"] == "tester"
+            assert status["write_token_held"]
+            assert "write_token_holder" not in status
             assert status["observer_count"] == 1
             assert status["total_clients"] == 2
 
@@ -650,7 +653,7 @@ class TestFanOutStreamMixin:
 
         driver = TestDriver()
         status = driver._get_fanout().status()
-        assert "write_token_holder" in status
+        assert "write_token_held" in status
         assert "observer_count" in status
 
     def test_mixin_get_fanout_assert(self):
@@ -784,5 +787,5 @@ class TestFanOutStreamMixin:
 
         driver = TestDriver()
         status = await driver.console_status()
-        assert "write_token_holder" in status
+        assert "write_token_held" in status
         assert "observer_count" in status
