@@ -12,6 +12,7 @@ import os
 import sys
 
 from jumpstarter.common import ExporterStatus
+from jumpstarter.common.display import display_options
 
 _EMOJI_TERM_PREFIXES = (
     "xterm",
@@ -33,12 +34,15 @@ def _use_emoji() -> bool:
     """Return True when the output terminal is likely to support emoji.
 
     Falls back to ASCII indicators when any of the following is true:
+    * ``NO_ICONS`` environment variable is set (ASCII-only output is
+      requested, regardless of terminal capabilities).
     * ``NO_COLOR`` environment variable is set (spirit: plain text output).
     * ``stdout`` is not a TTY (output piped to a file / another process).
     * ``TERM`` is not set or does not match a known emoji-capable prefix
       (e.g. ``linux``, ``vt100``, ``dumb``, ``ansi`` all fall back to ASCII).
     """
-    if os.environ.get("NO_COLOR") is not None:
+    opts = display_options()
+    if opts.no_color or opts.no_icons:
         return False
     if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
         return False

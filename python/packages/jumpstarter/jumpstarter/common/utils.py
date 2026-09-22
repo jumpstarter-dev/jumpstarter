@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 
 from jumpstarter.client import client_from_path
+from jumpstarter.common.display import display_options
 from jumpstarter.config.env import (
     JMP_DRIVERS_ALLOW,
     JMP_EXPORTER,
@@ -181,10 +182,19 @@ def launch_shell(
     if motd:
         print(motd, flush=True)
 
+    opts = display_options()
+    bolt = "^" if opts.no_icons else "⚡"
+    arrow = ">" if opts.no_icons else "➤"
+
     if shell_name.endswith("bash"):
-        env = common_env | {
-            "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
-        }
+        ps1 = (
+            f"{ANSI_GRAY}{PROMPT_CWD} "
+            f"{ANSI_YELLOW}{bolt}"
+            f"{ANSI_WHITE}{context} "
+            f"{ANSI_YELLOW}{arrow}"
+            f"{ANSI_RESET} "
+        )
+        env = common_env | {"PS1": ps1}
         cmd = [shell]
         if not use_profiles:
             cmd.extend(["--norc", "--noprofile"])
@@ -196,11 +206,11 @@ def launch_shell(
             "set_color grey; "
             'printf "%s" (basename $PWD); '
             "set_color yellow; "
-            'printf "⚡"; '
+            f'printf "{bolt}"; '
             "set_color white; "
             f'printf "{context}"; '
             "set_color yellow; "
-            'printf "➤ "; '
+            f'printf "{arrow} "; '
             "set_color normal; "
             "end"
         )
@@ -209,7 +219,7 @@ def launch_shell(
 
     elif shell_name == "zsh":
         env = common_env | {
-            "PS1": f"%F{{8}}%1~ %F{{yellow}}⚡%F{{white}}{context} %F{{yellow}}➤%f ",
+            "PS1": f"%F{{8}}%1~ %F{{yellow}}{bolt}%F{{white}}{context} %F{{yellow}}{arrow}%f ",
         }
         if "HISTFILE" not in env:
             env["HISTFILE"] = os.path.join(os.path.expanduser("~"), ".zsh_history")

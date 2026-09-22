@@ -15,10 +15,28 @@ from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 
 from jumpstarter.client.core import DriverMethodNotImplemented
 from jumpstarter.client.decorators import driver_click_command
+from jumpstarter.common.display import display_options
 
 SUBPROCESS_TIMEOUT = 120
 MOUNT_POLL_INTERVAL = 0.5
 MOUNT_POLL_TIMEOUT = 10
+
+
+def _tag_mount_ps1(ps1: str, mount_tag: str, remote_path: str, no_icons: bool) -> str:
+    """Insert *mount_tag* before the jmp prompt arrow in *ps1*.
+
+    Falls back to prefixing the prompt with ``[sshfs:remote_path]`` when
+    the jmp prompt arrow is not present.
+    """
+    arrow = ">" if no_icons else "➤"
+    if arrow in ps1:
+        if no_icons:
+            # ">" is a common character in custom prompts, so only tag the
+            # last occurrence (the prompt arrow).
+            idx = ps1.rfind(arrow)
+            return ps1[:idx] + mount_tag + ps1[idx:]
+        return ps1.replace(arrow, f"{mount_tag}{arrow}")
+    return f"[sshfs:{remote_path}] {ps1}"
 
 
 @dataclass(kw_only=True)
@@ -257,16 +275,14 @@ class SSHMountClient(CompositeClient):
         shell = os.environ.get("SHELL", "/bin/sh")
         shell_name = os.path.basename(shell)
         env = os.environ.copy()
+        no_icons = display_options().no_icons
 
         mount_tag = "(mount)"
+        bolt = "^" if no_icons else "⚡"
+        arrow = ">" if no_icons else "➤"
         try:
             if shell_name.endswith("bash"):
-                ps1 = env.get("PS1", r"\$ ")
-                if "➤" in ps1:
-                    ps1 = ps1.replace("➤", f"{mount_tag}➤")
-                else:
-                    ps1 = f"[sshfs:{remote_path}] {ps1}"
-                env["PS1"] = ps1
+                env["PS1"] = _tag_mount_ps1(env.get("PS1", r"\$ "), mount_tag, remote_path, no_icons)
                 subprocess.run(
                     [shell, "--norc", "--noprofile", "-i"],
                     env=env,
@@ -277,22 +293,17 @@ class SSHMountClient(CompositeClient):
                     "set_color grey; "
                     'printf "%s" (basename $PWD); '
                     "set_color yellow; "
-                    'printf "⚡"; '
+                    f'printf "{bolt}"; '
                     "set_color white; "
                     f'printf "{mount_tag}"; '
                     "set_color yellow; "
-                    'printf "➤ "; '
+                    f'printf "{arrow} "; '
                     "set_color normal; "
                     "end"
                 )
                 subprocess.run([shell, "--init-command", fish_fn], env=env)
             elif shell_name == "zsh":
-                ps1 = env.get("PS1", "%# ")
-                if "➤" in ps1:
-                    ps1 = ps1.replace("➤", f"{mount_tag}➤")
-                else:
-                    ps1 = f"[sshfs:{remote_path}] {ps1}"
-                env["PS1"] = ps1
+                env["PS1"] = _tag_mount_ps1(env.get("PS1", "%# "), mount_tag, remote_path, no_icons)
                 subprocess.run([shell, "--no-rcs", "-i"], env=env)
             else:
                 subprocess.run([shell, "-i"], env=env)

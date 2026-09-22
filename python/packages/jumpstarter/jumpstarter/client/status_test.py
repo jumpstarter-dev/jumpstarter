@@ -14,8 +14,8 @@ class TestUseEmoji:
     """Tests for _use_emoji() terminal detection."""
 
     def _env_with_term(self, term):
-        """Build a clean env dict with only TERM set (no NO_COLOR)."""
-        env = {k: v for k, v in os.environ.items() if k not in ("TERM", "NO_COLOR")}
+        """Build a clean env dict with only TERM set (no NO_COLOR/NO_ICONS)."""
+        env = {k: v for k, v in os.environ.items() if k not in ("TERM", "NO_COLOR", "NO_ICONS")}
         env["TERM"] = term
         return env
 
@@ -44,7 +44,7 @@ class TestUseEmoji:
                 assert _use_emoji() is False
 
     def test_returns_false_when_term_unset(self):
-        env = {k: v for k, v in os.environ.items() if k not in ("TERM", "NO_COLOR")}
+        env = {k: v for k, v in os.environ.items() if k not in ("TERM", "NO_COLOR", "NO_ICONS")}
         with patch.dict("os.environ", env, clear=True):
             with patch("sys.stdout") as mock_stdout:
                 mock_stdout.isatty.return_value = True
@@ -58,6 +58,18 @@ class TestUseEmoji:
 
     def test_returns_false_when_no_color_set_with_value(self):
         with patch.dict("os.environ", {**self._env_with_term("xterm-256color"), "NO_COLOR": "1"}, clear=True):
+            with patch("sys.stdout") as mock_stdout:
+                mock_stdout.isatty.return_value = True
+                assert _use_emoji() is False
+
+    def test_returns_false_when_no_icons_set(self):
+        with patch.dict("os.environ", {**self._env_with_term("xterm-256color"), "NO_ICONS": ""}, clear=True):
+            with patch("sys.stdout") as mock_stdout:
+                mock_stdout.isatty.return_value = True
+                assert _use_emoji() is False
+
+    def test_returns_false_when_no_icons_set_with_value(self):
+        with patch.dict("os.environ", {**self._env_with_term("xterm-256color"), "NO_ICONS": "1"}, clear=True):
             with patch("sys.stdout") as mock_stdout:
                 mock_stdout.isatty.return_value = True
                 assert _use_emoji() is False
