@@ -1,0 +1,44 @@
+# ExporterSet — off-cluster QEMU aarch64 pool via SSH
+#
+# This example creates a scalable pool of aarch64 virtual targets
+# running as Podman containers on remote lab hosts. The
+# exporter-set controller manages the lifecycle via SSH.
+#
+# Uses the qemu-ssh-aarch64 VirtualTargetClass (see
+# v1alpha1_virtualtargetclass_qemu_ssh.yaml).
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
+kind: ExporterSet
+metadata:
+  name: aarch64-ssh-pool
+  namespace: jumpstarter
+spec:
+  minReplicas: 0
+  maxReplicas: 4
+  minAvailableReplicas: 1
+  scaleDownCooldown: 5m
+  recycleStrategy: ExitAndReplace
+  virtualTargetClassName: qemu-ssh-aarch64
+  # Override class-level resource defaults (deep-merged)
+  parameters:
+    resources:
+      memory: 8Gi
+  selector:
+    matchLabels:
+      board: aarch64-qemu
+      virtual: "true"
+  template:
+    metadata:
+      labels:
+        board: aarch64-qemu
+        arch: aarch64
+        virtual: "true"
+    spec:
+      drivers:
+        - name: qemu
+          type: jumpstarter_driver_qemu.driver.Qemu
+        - name: power
+          type: jumpstarter_driver_power.driver.QemuPower
+        - name: serial
+          type: jumpstarter_driver_serial.driver.QemuSerial
+        # tcp driver is auto-injected by the provisioner (ssh
+        # hostfwd on port 2222) — no need to specify it explicitly
