@@ -2018,3 +2018,44 @@ func TestMergeImages_esOverridesVtc(t *testing.T) {
 		t.Errorf("runtime should be overridden by es, got %v", got.Runtime)
 	}
 }
+
+func TestIsExporterOffline_noCondition(t *testing.T) {
+	exp := &jumpstarterdevv1alpha1.Exporter{
+		Status: jumpstarterdevv1alpha1.ExporterStatus{},
+	}
+	if isExporterOffline(exp) {
+		t.Fatal("expected false when Online condition doesn't exist (exporter never registered)")
+	}
+}
+
+func TestIsExporterOffline_online(t *testing.T) {
+	exp := &jumpstarterdevv1alpha1.Exporter{
+		Status: jumpstarterdevv1alpha1.ExporterStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:   string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+					Status: metav1.ConditionTrue,
+				},
+			},
+		},
+	}
+	if isExporterOffline(exp) {
+		t.Fatal("expected false when exporter is online")
+	}
+}
+
+func TestIsExporterOffline_offline(t *testing.T) {
+	exp := &jumpstarterdevv1alpha1.Exporter{
+		Status: jumpstarterdevv1alpha1.ExporterStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:   string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+					Status: metav1.ConditionFalse,
+				},
+			},
+		},
+	}
+	if !isExporterOffline(exp) {
+		t.Fatal("expected true when exporter is offline")
+	}
+}
