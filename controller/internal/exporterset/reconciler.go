@@ -366,8 +366,30 @@ func (r *ExporterSetReconciler) scaleUp(
 // has credentials but no Pod yet. Config Secrets are always synced so token
 // rotation takes effect without a Pod restart (Kubernetes refreshes Secret-backed
 // volume mounts automatically).
+//
+// For off-cluster provisioners (those implementing Deployer), this method
+// calls Deploy instead of creating a Pod — see ensureExporterDeployments.
+//
 // Returns true if any Exporter is still waiting for its credential Secret.
 func (r *ExporterSetReconciler) ensureExporterPods(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+	vtc *virtualtargetv1alpha1.VirtualTargetClass,
+	mergedParameters map[string]any,
+	ownedExporters []jumpstarterdevv1alpha1.Exporter,
+	podsByExporter map[string][]corev1.Pod,
+) (waiting bool, err error) {
+	// Off-cluster provisioners manage instances via SSH/API instead of Pods.
+	if deployer, ok := r.Provisioner.(Deployer); ok {
+		return r.ensureExporterDeployments(ctx, es, vtc, mergedParameters, ownedExporters, deployer)
+	}
+
+	return r.ensureExporterPodsInCluster(ctx, es, vtc, mergedParameters, ownedExporters, podsByExporter)
+}
+
+// ensureExporterPodsInCluster is the in-cluster Pod path (unchanged from
+// original ensureExporterPods logic).
+func (r *ExporterSetReconciler) ensureExporterPodsInCluster(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
 	vtc *virtualtargetv1alpha1.VirtualTargetClass,
@@ -419,6 +441,67 @@ func (r *ExporterSetReconciler) ensureExporterPods(
 
 		if err := r.createExporterPod(ctx, es, vtc, mergedParameters, mergeImages(vtc.Spec.Images, es.Spec.Images), exp); err != nil {
 			return waiting, err
+		}
+	}
+
+	return waiting, nil
+}
+
+// ensureExporterDeployments is the off-cluster path: calls Deployer.Deploy
+// for exporters that have credentials but haven't been deployed yet.
+func (r *ExporterSetReconciler) ensureExporterDeployments(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+	vtc *virtualtargetv1alpha1.VirtualTargetClass,
+	mergedParameters map[string]any,
+	ownedExporters []jumpstarterdevv1alpha1.Exporter,
+	deployer Deployer,
+) (waiting bool, err error) {
+	logger := log.FromContext(ctx)
+
+	var caBundle string
+	var caRead bool
+
+	images := mergeImages(vtc.Spec.Images, es.Spec.Images)
+
+	for i := range ownedExporters {
+		exp := &ownedExporters[i]
+
+		if !exp.IsEnabled() {
+			continue
+		}
+
+		if exp.Status.Credential == nil || exp.Status.Endpoint == "" {
+			logger.V(1).Info("waiting for credential", "exporter", exp.Name)
+			waiting = true
+			continue
+		}
+
+		if !caRead {
+			caBundle, err = r.readCABundle(ctx, vtc)
+			if err != nil {
+				return false, err
+			}
+			caRead = true
+		}
+
+		deployed, err := deployer.IsDeployed(ctx, exp)
+		if err != nil {
+			return waiting, fmt.Errorf("check deployment for %s: %w", exp.Name, err)
+		}
+		if deployed {
+			continue
+		}
+
+		if err := deployer.Deploy(ctx, es, vtc, mergedParameters, images, exp, caBundle); err != nil {
+			return waiting, fmt.Errorf("deploy %s: %w", exp.Name, err)
+		}
+
+		logger.Info("deployed exporter on remote host", "exporter", exp.Name)
+
+		if r.Recorder != nil {
+			r.Recorder.Eventf(es, corev1.EventTypeNormal, "Deployed",
+				"Deployed Exporter %s on remote host", exp.Name)
 		}
 	}
 
@@ -686,15 +769,19 @@ func (r *ExporterSetReconciler) cleanupDisabledExporters(
 	return deleted, nil
 }
 
-// cleanupTerminalExporters deletes unleased exporters whose Pod has reached a
-// terminal phase (Succeeded or Failed). This is the ExitAndReplace recycle
-// path: exitOnLeaseEnd completes the Pod, then the controller deletes the
-// Exporter (cascading the Pod) so scale-up can refill minAvailableReplicas.
-// Without this, Offline/Succeeded instances inflate replicas, block warm-buffer
-// refill at maxReplicas, and leave Completed Pods behind.
+// cleanupTerminalExporters deletes unleased exporters whose lifecycle has
+// ended. This is the ExitAndReplace recycle path: the exporter completes its
+// work, then the controller deletes the Exporter CR so scale-up can refill
+// minAvailableReplicas. Without this, Offline/Succeeded instances inflate
+// replicas, block warm-buffer refill at maxReplicas, and leave stale
+// resources behind.
 //
-// InPlaceReuse skips this path: a Failed/Succeeded Pod must not permanently
-// delete the Exporter CR (lease-end reuse keeps the instance).
+// For in-cluster provisioners the terminal signal is a Pod in
+// Succeeded/Failed phase. For off-cluster provisioners (Deployer), it is
+// an exporter that was deployed but has gone offline — meaning the remote
+// container exited after the lease ended.
+//
+// InPlaceReuse skips this path entirely.
 // podsByExporter comes from a single List in Reconcile.
 func (r *ExporterSetReconciler) cleanupTerminalExporters(
 	ctx context.Context,
@@ -707,6 +794,7 @@ func (r *ExporterSetReconciler) cleanupTerminalExporters(
 	}
 
 	logger := log.FromContext(ctx)
+	deployer, isOffCluster := r.Provisioner.(Deployer)
 
 	deleted := false
 	for i := range exporters {
@@ -715,8 +803,26 @@ func (r *ExporterSetReconciler) cleanupTerminalExporters(
 			continue
 		}
 
-		pods := podsByExporter[exp.Name]
-		if !allPodsTerminal(pods) {
+		terminal := false
+
+		if isOffCluster {
+			// Off-cluster: terminal means "deployed but went offline". The
+			// Online condition is set to True when the exporter registers
+			// heartbeats, then flipped to False when they stop. If the
+			// condition doesn't exist at all the exporter never registered
+			// so we leave it alone (still starting up).
+			deployed, err := deployer.IsDeployed(ctx, exp)
+			if err != nil {
+				return deleted, fmt.Errorf("check deployment for %s: %w", exp.Name, err)
+			}
+			terminal = deployed && isExporterOffline(exp)
+		} else {
+			// In-cluster: terminal means all Pods reached Succeeded/Failed.
+			pods := podsByExporter[exp.Name]
+			terminal = allPodsTerminal(pods)
+		}
+
+		if !terminal {
 			continue
 		}
 
@@ -728,17 +834,29 @@ func (r *ExporterSetReconciler) cleanupTerminalExporters(
 			return deleted, fmt.Errorf("unable to delete Exporter %s: %w", exp.Name, err)
 		}
 
-		logger.Info("deleted Exporter after terminal Pod (ExitAndReplace)",
-			"exporter", exp.Name, "pods", len(pods))
+		logger.Info("deleted terminal Exporter (ExitAndReplace)",
+			"exporter", exp.Name, "offCluster", isOffCluster)
 
 		if r.Recorder != nil {
 			r.Recorder.Eventf(es, corev1.EventTypeNormal, "Recycle",
-				"Deleted Exporter %s after terminal Pod", exp.Name)
+				"Deleted Exporter %s after terminal lifecycle", exp.Name)
 		}
 		deleted = true
 	}
 
 	return deleted, nil
+}
+
+// isExporterOffline reports whether the exporter's Online condition has been
+// explicitly set to False. Returns false when the condition doesn't exist
+// (exporter never registered) to avoid cleaning up exporters that are still
+// starting.
+func isExporterOffline(exp *jumpstarterdevv1alpha1.Exporter) bool {
+	cond := meta.FindStatusCondition(
+		exp.Status.Conditions,
+		string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+	)
+	return cond != nil && cond.Status == metav1.ConditionFalse
 }
 
 func allPodsTerminal(pods []corev1.Pod) bool {
