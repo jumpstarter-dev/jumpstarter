@@ -1,0 +1,48 @@
+# VirtualTargetClass — off-cluster QEMU via SSH
+#
+# This example defines a pool profile for aarch64 virtual targets
+# running on remote lab hosts (bare metal or VMs with KVM). The
+# exporter-set controller connects via SSH and deploys Podman
+# containers (quadlets) on each host.
+#
+# Prerequisites:
+#   1. Create the SSH credentials Secret:
+#        kubectl create secret generic lab-ssh-key \
+#          --from-file=ssh-privatekey=$HOME/.ssh/id_ed25519 \
+#          -n jumpstarter
+#   2. Ensure remote hosts have Podman and systemd installed.
+#   3. Enable qemu-ssh.jumpstarter.dev provisioner in the Jumpstarter CR.
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
+kind: VirtualTargetClass
+metadata:
+  name: qemu-ssh-aarch64
+  namespace: jumpstarter
+spec:
+  provisioner: qemu-ssh.jumpstarter.dev
+  credentialsSecretRef:
+    name: lab-ssh-key
+  bindingMode: Immediate
+  reclaimPolicy: Delete
+  parameters:
+    # SSH connection defaults (per-host overrides available below)
+    ssh:
+      user: root
+      port: 22
+    # Remote lab hosts — each can run up to `slots` concurrent instances
+    hosts:
+      - name: lab-host-01.example.com
+        arch: aarch64
+        slots: 2
+      - name: lab-host-02.example.com
+        arch: aarch64
+        slots: 2
+    # Runtime container configuration
+    runtime:
+      kvm: true    # pass /dev/kvm into the QEMU runtime container
+    # Default resource allocation per virtual target
+    arch: aarch64
+    resources:
+      cpu: 4
+      memory: 4Gi
+    storage:
+      size: 16Gi
