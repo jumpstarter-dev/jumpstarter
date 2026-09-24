@@ -77,6 +77,7 @@ def test_nanokvm_usb_composite(mock_device):
     driver = NanoKVMUSB(
         serial_port="/dev/null",
         video_device=0,
+        vnc_enabled=True,
     )
     driver._shared_device = mock_device
     video_child = driver.children["video"]
@@ -247,8 +248,19 @@ def test_keysym_and_pointer_mapping():
     down = kb.printable_down("Slash", frozenset())
     assert down[0] & MODIFIER_BITS["ShiftLeft"] == 0
     assert down[2] == 0x38
-    up = kb.printable_up()
+    up = kb.printable_up("Slash")
     assert up[0] & MODIFIER_BITS["ShiftLeft"]
+    assert 0x38 not in up[2:]
+
+    kb = KeyboardReport()
+    down_a = kb.printable_down("KeyA", frozenset())
+    down_b = kb.printable_down("KeyB", frozenset())
+    assert 0x04 in down_a[2:]
+    assert 0x04 in down_b[2:]
+    assert 0x05 in down_b[2:]
+    up_a = kb.printable_up("KeyA")
+    assert 0x04 not in up_a[2:]
+    assert 0x05 in up_a[2:]
 
     hid, wheel = rfb_buttons_to_hid(0x01)
     assert hid == MouseButton.LEFT
@@ -258,11 +270,11 @@ def test_keysym_and_pointer_mapping():
 
 
 def test_des_encrypt_nist_vector():
-    from .vnc_server import _des_ecb_encrypt, vnc_auth_response
+    from .des import des_ecb_encrypt, vnc_auth_response
 
     key = bytes.fromhex("133457799BBCDFF1")
     plain = bytes.fromhex("0123456789ABCDEF")
-    assert _des_ecb_encrypt(plain, key) == bytes.fromhex("85E813540F0AB405")
+    assert des_ecb_encrypt(plain, key) == bytes.fromhex("85E813540F0AB405")
     response = vnc_auth_response(b"\x00" * 16, "secret")
     assert len(response) == 16
 
@@ -417,5 +429,88 @@ def test_rfb_tcp_handshake(tmp_path):
         assert _recvexact(client, name_len) == b"NanoKVM-USB"
         client.close()
     finally:
+        server.stop()
+        pump.stop()
+
+
+def test_pack_rgb_frame_bgrx_matches_rgbx():
+    import numpy as np
+
+    from .vnc_server import _bgrx_with_zero_pad, _default_pixel_format, pack_rgb_frame
+
+    rgb = Image.new("RGB", (4, 2), color=(0, 0, 0))
+    pixels = rgb.load()
+    assert pixels is not None
+    pixels[0, 0] = (255, 0, 0)
+    pixels[1, 0] = (0, 255, 0)
+    pixels[2, 0] = (0, 0, 255)
+    pixels[3, 0] = (1, 2, 3)
+
+    pf = _default_pixel_format()
+    packed_rgb = pack_rgb_frame(rgb, pf)
+    rgbx = rgb.convert("RGBX")
+    packed_rgbx = pack_rgb_frame(rgbx, pf)
+    packed_rgba = pack_rgb_frame(rgb.convert("RGBA"), pf)
+    assert packed_rgbx == packed_rgb
+    assert packed_rgba == packed_rgb
+    assert packed_rgb[0:4] == bytes([0, 0, 255, 0])
+
+    arr = np.frombuffer(rgbx.tobytes(), dtype=np.uint8).reshape(2, 4, 4)
+    packed_bgrx = _bgrx_with_zero_pad(arr[:, :, [2, 1, 0, 3]])
+    assert packed_bgrx == packed_rgb
+
+
+def test_rfb_max_clients(tmp_path):
+    import socket
+    import time
+
+    from .frame_pump import FramePump
+    from .vnc_server import RFB_VERSION, RfbServer, _recvexact
+
+    jpeg = _jpeg_bytes(16, 16)
+    pump = FramePump(lambda: jpeg, fps=10)
+    pump.start()
+    sock_path = str(tmp_path / "vnc-max.sock")
+    server = RfbServer(
+        sock_path,
+        pump,
+        MagicMock(),
+        width=16,
+        height=16,
+        tcp_port=0,
+        tcp_bind="127.0.0.1",
+        max_clients=1,
+    )
+    server.start()
+    first = None
+    second = None
+    try:
+        endpoint = server.tcp_endpoint
+        assert endpoint is not None
+        host, port = endpoint
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            try:
+                first = socket.create_connection((host, port), timeout=2)
+                break
+            except OSError:
+                time.sleep(0.01)
+        assert first is not None
+        first.settimeout(5)
+        assert _recvexact(first, 12) == RFB_VERSION
+        second = socket.create_connection((host, port), timeout=2)
+        second.settimeout(2)
+        try:
+            leftover = second.recv(12)
+        except ConnectionResetError:
+            leftover = b""
+        assert leftover == b""
+        first.close()
+        first = None
+    finally:
+        if first is not None:
+            first.close()
+        if second is not None:
+            second.close()
         server.stop()
         pump.stop()

@@ -122,7 +122,7 @@ class NanoKVMUSBVideo(NanoKVMUSBDriverBase):
             state = {"gen": -1}
 
             def _next_frame() -> bytes:
-                pump = getattr(device, "_pump", None)
+                pump = device.pump
                 if isinstance(pump, FramePump):
                     gen = state["gen"]
                     got = pump.wait_jpeg(
@@ -267,12 +267,13 @@ class NanoKVMUSB(Composite):
     v4l2_ctl_executable: str | None = None
     screen_width: int = 1920
     screen_height: int = 1080
-    vnc_enabled: bool = True
+    vnc_enabled: bool = False
     vnc_password: str | None = None
     vnc_tcp_port: int | None = None
     vnc_tcp_bind: str = "127.0.0.1"
     vnc_encrypt: bool = False
     vnc_layout: str = "us"
+    vnc_max_clients: int = 2
 
     _shared_device: NanoKVMUSBDevice = field(init=False, repr=False)
     _vnc_server: RfbServer | None = field(init=False, repr=False, default=None)
@@ -323,7 +324,7 @@ class NanoKVMUSB(Composite):
             vnc_path = str(Path(self._vnc_dir) / "vnc.sock")
             self._vnc_server = RfbServer(
                 vnc_path,
-                pump=lambda: self._shared_device._pump,
+                pump=lambda: self._shared_device.pump,
                 hid=self._shared_device,
                 width=self.video_width,
                 height=self.video_height,
@@ -331,6 +332,7 @@ class NanoKVMUSB(Composite):
                 tcp_port=self.vnc_tcp_port,
                 tcp_bind=self.vnc_tcp_bind,
                 layout=self.vnc_layout,
+                max_clients=self.vnc_max_clients,
                 on_client=self._shared_device.ensure_connected,
             )
             self.children["vnc"] = NanoKVMUSBVNC(
@@ -342,9 +344,10 @@ class NanoKVMUSB(Composite):
 
         super().__post_init__()
         if self._vnc_server is not None:
-            if self.vnc_tcp_port is not None and not is_loopback_bind(self.vnc_tcp_bind) and not self.vnc_password:
+            if self.vnc_tcp_port is not None and not is_loopback_bind(self.vnc_tcp_bind):
                 self.logger.warning(
-                    "RFB TCP bind %s:%s has no vnc_password; the session is reachable on the network",
+                    "RFB TCP bind %s:%s is reachable on the network; "
+                    "vnc_password (VncAuth) is not transport encryption",
                     self.vnc_tcp_bind,
                     self.vnc_tcp_port,
                 )

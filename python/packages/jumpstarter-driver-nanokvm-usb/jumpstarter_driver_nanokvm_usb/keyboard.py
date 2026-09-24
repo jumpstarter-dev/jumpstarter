@@ -351,8 +351,8 @@ class KeyboardReport:
         self._pressed.clear()
         return self._build_report()
 
-    def _build_report(self) -> list[int]:
-        report = [self._modifier, 0, 0, 0, 0, 0, 0, 0]
+    def _build_report(self, modifier: int | None = None) -> list[int]:
+        report = [self._modifier if modifier is None else modifier, 0, 0, 0, 0, 0, 0, 0]
         for index, keycode in enumerate(self._pressed.values()):
             if index >= MAX_KEYS:
                 break
@@ -364,6 +364,8 @@ class KeyboardReport:
         keycode = KEYCODE_MAP.get(key)
         if keycode is None:
             raise ValueError(f"Unknown key: {key!r}")
+        if key not in self._pressed and len(self._pressed) < MAX_KEYS:
+            self._pressed[key] = keycode
         shift_altgr = MODIFIER_BITS["ShiftLeft"] | MODIFIER_BITS["ShiftRight"] | MODIFIER_BITS["AltRight"]
         modifier = self._modifier & ~shift_altgr
         for mod in combo_mods:
@@ -371,16 +373,10 @@ class KeyboardReport:
             if bit is None:
                 raise ValueError(f"Unknown modifier: {mod!r}")
             modifier |= bit
-        report = [modifier, 0, keycode, 0, 0, 0, 0, 0]
-        slot = 3
-        for pressed in self._pressed.values():
-            if pressed == keycode or slot >= 8:
-                continue
-            report[slot] = pressed
-            slot += 1
-        return report
+        return self._build_report(modifier)
 
-    def printable_up(self) -> list[int]:
+    def printable_up(self, key: str) -> list[int]:
+        self._pressed.pop(key, None)
         return self._build_report()
 
     def char_to_report(self, ch: str) -> tuple[list[int], list[int]]:

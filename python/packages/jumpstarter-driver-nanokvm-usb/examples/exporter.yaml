@@ -21,4 +21,5 @@ export:
       # vnc_layout: es  # DUT keyboard layout (default us)
       # vnc_password: "secret"
       # vnc_tcp_port: 5900
-      # vnc_tcp_bind: "0.0.0.0"  # LAN; use vnc_password
+      # vnc_tcp_bind: "0.0.0.0"  # LAN; VncAuth is not TLS
+      # vnc_max_clients: 2

@@ -47,7 +47,8 @@ export:
       # vnc_layout: es  # DUT keyboard layout (default us)
       # vnc_password: "secret"
       # vnc_tcp_port: 5900
-      # vnc_tcp_bind: "0.0.0.0"  # LAN; use vnc_password
+      # vnc_tcp_bind: "0.0.0.0"  # LAN; VncAuth is not TLS
+      # vnc_max_clients: 2
 ```
 
 ### Config parameters
@@ -62,20 +63,22 @@ export:
 | video_fps | Capture rate for `stream()` | int | no | 30 |
 | screen_width | Target screen width for relative mouse moves | int | no | 1920 |
 | screen_height | Target screen height for relative mouse moves | int | no | 1080 |
-| vnc_enabled | Start an embedded RFB server (Unix socket child `vnc`) | bool | no | true |
+| vnc_enabled | Start an embedded RFB server (Unix socket child `vnc`) | bool | no | false |
 | vnc_password | VNC password (VncAuth). Empty/None = no authentication | str | no | |
 | vnc_tcp_port | Also bind RFB TCP on the exporter (`None` = Unix socket only) | int | no | |
 | vnc_tcp_bind | Address for `vnc_tcp_port` (`127.0.0.1` or `0.0.0.0` for LAN) | str | no | 127.0.0.1 |
 | vnc_encrypt | Default noVNC `encrypt` URL flag | bool | no | false |
 | vnc_layout | DUT keyboard layout for VNC character injection (`us` or `es`) | str | no | us |
+| vnc_max_clients | Maximum simultaneous RFB clients | int | no | 2 |
 
 ## Architecture
 
-The driver is a composite with three child interfaces:
+The driver is a composite with video and HID children, plus an optional VNC
+child when `vnc_enabled` is true:
 
 1. **video**: UVC snapshot capture and live frame streaming
 2. **hid**: Keyboard and mouse control over USB serial
-3. **vnc**: Unix-socket RFB endpoint (noVNC / any VNC client)
+3. **vnc**: Unix-socket RFB endpoint (noVNC / any VNC client), opt-in
 
 Video stream and VNC share a single capture pump so `/dev/video*` is opened once.
 Keyboard and mouse events from the VNC client are translated to the same HID path as `hid`.
@@ -125,6 +128,7 @@ with video.stream("stream") as stream:
 
 ## VNC
 
+Set `vnc_enabled: true` to start the embedded RFB server (disabled by default).
 The exporter runs an RFB 3.8 server on a Unix socket. Jumpstarter tunnels that
 socket to the **client** (same pattern as QEMU): you do not need to be on the
 exporter host. Keyboard and mouse in the VNC client go to the NanoKVM-USB HID.
@@ -153,13 +157,14 @@ with lease.drivers["nanokvm-usb"].session() as url:
 **TCP on the exporter** (optional): set `vnc_tcp_port` to bind RFB on the exporter
 host. Default `vnc_tcp_bind` is `127.0.0.1` (local viewers on that machine only).
 Use `vnc_tcp_bind: "0.0.0.0"` to accept LAN clients without a Jumpstarter tunnel.
-Binding a non-loopback address without `vnc_password` exposes an unauthenticated
-session on the network; set a password.
+A non-loopback bind is reachable on the network even with `vnc_password`: VncAuth
+is not TLS. `vnc_max_clients` defaults to 2.
 
 Printable keys are injected as HID combos for **`vnc_layout`** (the DUT OS
 keyboard), not the VNC client's layout. Default is `us`. Set `vnc_layout: es`
 if the DUT uses a Spanish keyboard so `@`, `ñ`, and AltGr characters land
-correctly even when Remmina is using another layout.
+correctly even when Remmina is using another layout. Only `us` and `es` are
+built in; extra layout tables in `vnc_keymap.py` are welcome as pull requests.
 
 ## API reference
 
