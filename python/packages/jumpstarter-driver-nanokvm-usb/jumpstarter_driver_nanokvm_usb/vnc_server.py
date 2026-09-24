@@ -382,6 +382,7 @@ class RfbServer:
         last_gen = -1
         last_pixels: bytes | None = None
         want_update = True
+        force_full = True
         conn.settimeout(0)
         while not self._stop.is_set():
             try:
@@ -392,18 +393,22 @@ class RfbServer:
                 result = self._read_client_message(conn, pf)
                 if result is None:
                     break
-                pf, requested = result
+                pf, requested, incremental = result
                 if requested:
                     want_update = True
+                    if not incremental:
+                        force_full = True
             if want_update:
-                sent = self._send_frame(conn, pf, last_gen, last_pixels)
+                sent = self._send_frame(conn, pf, last_gen, last_pixels, force_full)
                 if sent is not None:
-                    last_gen, last_pixels = sent
-                    want_update = False
+                    last_gen, last_pixels, did_send = sent
+                    if did_send:
+                        want_update = False
+                        force_full = False
 
     def _read_client_message(  # noqa: C901
         self, conn: socket.socket, pf: dict[str, int]
-    ) -> tuple[dict[str, int], bool] | None:
+    ) -> tuple[dict[str, int], bool, bool] | None:
         try:
             header = conn.recv(1)
         except BlockingIOError:
@@ -412,6 +417,7 @@ class RfbServer:
             return None
         msg = header[0]
         requested = False
+        incremental = True
         conn.settimeout(_CLIENT_IO_TIMEOUT)
         try:
             if msg == MSG_SET_PIXEL_FORMAT:
@@ -423,7 +429,8 @@ class RfbServer:
                 if count:
                     _recvexact(conn, 4 * count)
             elif msg == MSG_FB_UPDATE_REQUEST:
-                _recvexact(conn, 9)
+                payload = _recvexact(conn, 9)
+                incremental = payload[0] != 0
                 requested = True
             elif msg == MSG_KEY_EVENT:
                 payload = _recvexact(conn, 7)
@@ -443,7 +450,7 @@ class RfbServer:
                 logger.debug("ignoring unknown RFB client message %s", msg)
         finally:
             conn.settimeout(0)
-        return pf, requested
+        return pf, requested, incremental
 
     def _handle_key(self, keysym: int, down: bool) -> None:
         if is_swallowed_keysym(keysym):
@@ -480,7 +487,8 @@ class RfbServer:
         pf: dict[str, int],
         last_gen: int,
         last_pixels: bytes | None,
-    ) -> tuple[int, bytes | None] | None:
+        force_full: bool,
+    ) -> tuple[int, bytes | None, bool] | None:
         pump = self._pump() if callable(self._pump) else self._pump
         if pump is None:
             return None
@@ -493,13 +501,13 @@ class RfbServer:
             image.load()
         except Exception:
             logger.debug("failed to decode JPEG for RFB", exc_info=True)
-            return gen, last_pixels
+            return gen, last_pixels, False
         if image.size != (self._width, self._height):
             image = image.resize((self._width, self._height))
         pixels = pack_rgb_frame(image, pf)
         conn.settimeout(_CLIENT_IO_TIMEOUT)
         try:
-            if last_pixels is not None and pixels == last_pixels:
+            if not force_full and last_pixels is not None and pixels == last_pixels:
                 conn.sendall(struct.pack("!BxH", 0, 0))
             else:
                 header = struct.pack("!BxH", 0, 1) + struct.pack(
@@ -508,4 +516,4 @@ class RfbServer:
                 conn.sendall(header + pixels)
         finally:
             conn.settimeout(0)
-        return gen, pixels
+        return gen, pixels, True

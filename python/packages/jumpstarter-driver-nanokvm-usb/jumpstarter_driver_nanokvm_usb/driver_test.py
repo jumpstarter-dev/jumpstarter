@@ -262,6 +262,16 @@ def test_keysym_and_pointer_mapping():
     assert 0x04 not in up_a[2:]
     assert 0x05 in up_a[2:]
 
+    kb = KeyboardReport()
+    held = kb.printable_down("Digit2", SHIFT)
+    assert held[0] & MODIFIER_BITS["ShiftLeft"]
+    assert 0x1F in held[2:]
+    kb.printable_down("KeyA", frozenset())
+    after = kb.printable_up("KeyA")
+    assert 0x04 not in after[2:]
+    assert 0x1F in after[2:]
+    assert after[0] & MODIFIER_BITS["ShiftLeft"]
+
     hid, wheel = rfb_buttons_to_hid(0x01)
     assert hid == MouseButton.LEFT
     assert wheel == 0
@@ -512,5 +522,116 @@ def test_rfb_max_clients(tmp_path):
             first.close()
         if second is not None:
             second.close()
+        server.stop()
+        pump.stop()
+
+
+def _rfb_connect(sock_path: str):
+    import socket
+    import struct
+    import time
+
+    from .vnc_server import RFB_VERSION, _recvexact
+
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline and not Path(sock_path).exists():
+        time.sleep(0.01)
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client.settimeout(5)
+    client.connect(sock_path)
+    assert _recvexact(client, 12) == RFB_VERSION
+    client.sendall(RFB_VERSION)
+    header = _recvexact(client, 2)
+    assert header == bytes([1, 1])
+    client.sendall(bytes([1]))
+    assert struct.unpack("!I", _recvexact(client, 4))[0] == 0
+    client.sendall(b"\x01")
+    server_init = _recvexact(client, 20)
+    width, height = struct.unpack("!HH", server_init[:4])
+    name_len = struct.unpack("!I", _recvexact(client, 4))[0]
+    _recvexact(client, name_len)
+    return client, width, height
+
+
+def _read_framebuffer_update(client, *, expect_pixels: bool):
+    import struct
+
+    from .vnc_server import _recvexact
+
+    header = _recvexact(client, 4)
+    assert header[0] == 0
+    nrects = struct.unpack("!H", header[2:4])[0]
+    if expect_pixels:
+        assert nrects == 1
+        rect = _recvexact(client, 12)
+        _x, _y, width, height, encoding = struct.unpack("!HHHHi", rect)
+        assert encoding == 0
+        _recvexact(client, width * height * 4)
+    else:
+        assert nrects == 0
+    return nrects
+
+
+def test_rfb_skips_invalid_jpeg_and_sends_next_frame(tmp_path):
+    import struct
+    import threading
+    import time
+
+    from .frame_pump import FramePump
+    from .vnc_server import RfbServer
+
+    jpeg = _jpeg_bytes(16, 16)
+    ready = threading.Event()
+
+    def capture() -> bytes:
+        if not ready.is_set():
+            return b"not-a-jpeg"
+        return jpeg
+
+    pump = FramePump(capture, fps=20)
+    pump.start()
+    sock_path = str(tmp_path / "vnc-bad-jpeg.sock")
+    server = RfbServer(sock_path, pump, MagicMock(), width=16, height=16)
+    server.start()
+    client = None
+    try:
+        client, width, height = _rfb_connect(sock_path)
+        assert (width, height) == (16, 16)
+        client.sendall(b"\x03\x01" + struct.pack("!HHHH", 0, 0, 16, 16))
+        time.sleep(0.15)
+        ready.set()
+        _read_framebuffer_update(client, expect_pixels=True)
+    finally:
+        if client is not None:
+            client.close()
+        server.stop()
+        pump.stop()
+
+
+def test_rfb_non_incremental_sends_full_frame(tmp_path):
+    import struct
+
+    from .frame_pump import FramePump
+    from .vnc_server import RfbServer
+
+    jpeg = _jpeg_bytes(16, 16)
+    pump = FramePump(lambda: jpeg, fps=20)
+    pump.start()
+    sock_path = str(tmp_path / "vnc-incremental.sock")
+    server = RfbServer(sock_path, pump, MagicMock(), width=16, height=16)
+    server.start()
+    client = None
+    try:
+        client, width, height = _rfb_connect(sock_path)
+        assert (width, height) == (16, 16)
+        client.sendall(b"\x03\x01" + struct.pack("!HHHH", 0, 0, 16, 16))
+        _read_framebuffer_update(client, expect_pixels=True)
+        client.sendall(b"\x03\x01" + struct.pack("!HHHH", 0, 0, 16, 16))
+        _read_framebuffer_update(client, expect_pixels=False)
+        client.sendall(b"\x03\x00" + struct.pack("!HHHH", 0, 0, 16, 16))
+        _read_framebuffer_update(client, expect_pixels=True)
+    finally:
+        if client is not None:
+            client.close()
         server.stop()
         pump.stop()
