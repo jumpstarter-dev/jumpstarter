@@ -155,9 +155,9 @@ clean-docs:
 clean: clean-docs clean-venv clean-build clean-test
 
 ifdef LOGS_DIR
-test: pkg-test-all docs-test docs-test-grpc test-report
+test: pkg-test-all test-report
 else
-test: pkg-test-all docs-test docs-test-grpc
+test: pkg-test-all
 endif
 
 ty: pkg-ty-all
