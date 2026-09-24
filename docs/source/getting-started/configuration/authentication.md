@@ -168,6 +168,14 @@ Do not store the GitHub client secret in version control. Create the secret
 directly on the cluster.
 :::
 
+:::{note}
+The command above passes the secret on the command line, which an
+interactive shell may retain in history. If you prefer to avoid that,
+write the secret to a permission-restricted file (`chmod 600`) and use
+`--from-file=client-secret=/path/to/restricted/github-client-secret`
+instead.
+:::
+
 #### 3. Deploy Dex
 
 Deploy Dex with the GitHub connector. The example below uses Kubernetes
@@ -294,8 +302,25 @@ subjects:
     namespace: dex
 ```
 
-Expose Dex externally. On OpenShift, use a Route with edge TLS termination
-(the cluster's wildcard certificate handles HTTPS automatically):
+Expose Dex with a Service, then externally:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: dex
+  namespace: dex
+spec:
+  selector:
+    app: dex
+  ports:
+    - name: http
+      port: 5556
+      targetPort: http
+```
+
+On OpenShift, use a Route with edge TLS termination (the cluster's
+wildcard certificate handles HTTPS automatically):
 
 ```yaml
 apiVersion: route.openshift.io/v1
