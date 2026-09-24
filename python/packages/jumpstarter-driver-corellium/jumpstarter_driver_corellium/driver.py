@@ -105,8 +105,8 @@ class CorelliumPower(VirtualPowerInterface, Driver):
         Return config/opts to be used when waiting for Corellium's API.
         """
         return {
-            "retries": int(os.environ.get("CORELLIUM_API_RETRIES", 12)),
-            "interval": os.environ.get("CORELLIUM_API_INTERVAL", 5),
+            "retries": int(os.environ.get("CORELLIUM_API_RETRIES", "12")),
+            "interval": int(os.environ.get("CORELLIUM_API_INTERVAL", "5")),
         }
 
     def wait_instance(self, current: Instance, desired: Instance | None):

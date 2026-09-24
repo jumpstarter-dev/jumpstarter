@@ -130,6 +130,7 @@ class Netsim(Driver):
                 capture_output=True,
                 text=True,
                 timeout=10,
+                check=False,
             )
         except subprocess.TimeoutExpired as e:
             raise NetsimError("netsim capture patch timed out after 10s") from e

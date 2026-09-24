@@ -150,7 +150,7 @@ class AdbClient(DriverClient):
                 click.echo("\n" + "=" * 60)
                 click.echo("ADB built-in help (from local adb binary):")
                 click.echo("=" * 60 + "\n")
-                subprocess.run([adb, "help"], stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+                subprocess.run([adb, "help"], stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, check=False)
                 return 0
 
             _validate_adb_args(args)

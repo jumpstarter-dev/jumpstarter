@@ -101,6 +101,7 @@ def test_tcp_network_performance():
                 ],
                 stdout=sys.stdout,
                 stderr=sys.stderr,
+                check=False,
             )
 
         server.terminate()

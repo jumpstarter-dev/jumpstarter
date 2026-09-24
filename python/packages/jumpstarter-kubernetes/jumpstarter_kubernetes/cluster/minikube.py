@@ -91,7 +91,7 @@ async def delete_minikube_cluster(minikube: str, cluster_name: str, callback: Ou
         )
 
 
-async def create_minikube_cluster(
+async def create_minikube_cluster(  # noqa: C901
     minikube: str,
     cluster_name: str,
     extra_args: list[str] | None = None,
@@ -193,7 +193,7 @@ async def prepare_certificates(extra_certs: str, callback: OutputCallback = None
 
     # If ca.crt already exists, append to it
     if cert_dest.exists():
-        with open(extra_certs_path, "r") as src, open(cert_dest, "a") as dst:
+        with open(extra_certs_path, "r") as src, open(cert_dest, "a") as dst:  # noqa: ASYNC230
             dst.write("\n")
             dst.write(src.read())
     else:

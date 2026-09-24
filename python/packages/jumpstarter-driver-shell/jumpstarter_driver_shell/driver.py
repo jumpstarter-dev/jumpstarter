@@ -127,7 +127,7 @@ class Shell(Driver):
         # Validate arguments
         for arg in args:
             if not isinstance(arg, str):
-                raise ValueError(f"All arguments must be strings, got {type(arg)}")
+                raise TypeError(f"All arguments must be strings, got {type(arg)}")
 
         # Validate working directory if set
         if self.cwd and not os.path.isdir(self.cwd):
@@ -231,7 +231,7 @@ class Shell(Driver):
                 # Small delay to prevent busy waiting
                 await asyncio.sleep(0.1)
 
-            except Exception:
+            except Exception:  # noqa: BLE001
                 break
 
         # Process completed, get return code and final output

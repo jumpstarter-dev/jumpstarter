@@ -172,7 +172,7 @@ class MitmproxyClient(DriverClient):
 
     # ── CLI (jmp shell) ────────────────────────────────────────
 
-    def cli(self):
+    def cli(self):  # noqa: C901
         @driver_click_group(self)
         def base():
             """Mitmproxy driver"""

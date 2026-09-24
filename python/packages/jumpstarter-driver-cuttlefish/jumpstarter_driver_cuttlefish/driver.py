@@ -390,7 +390,7 @@ class Cuttlefish(Driver):
         self.logger.info(f"Auto-connecting ADB to {device}")
         try:
             adb.connect_device(device)
-        except Exception:
+        except Exception:  # noqa: BLE001
             self.logger.warning("ADB connect to %s failed, will retry during boot wait", device)
         return device
 
@@ -424,6 +424,7 @@ class Cuttlefish(Driver):
                     text=True,
                     timeout=5,
                     env=adb_env,
+                    check=False,
                 )
             except (subprocess.TimeoutExpired, OSError):
                 pass
@@ -434,6 +435,7 @@ class Cuttlefish(Driver):
                     text=True,
                     timeout=5,
                     env=adb_env,
+                    check=False,
                 )
                 for line in r.stdout.splitlines():
                     if device in line and "\tdevice" in line:
@@ -457,6 +459,7 @@ class Cuttlefish(Driver):
                     text=True,
                     timeout=10,
                     env=adb_env,
+                    check=False,
                 )
                 if r.stdout.strip() == "1":
                     self.logger.info("Boot completed on %s", device)
@@ -583,7 +586,7 @@ class CvdPower(VirtualPowerInterface, Driver):
         with self.parent._operation_lock:
             self._on()
 
-    def _on(self) -> None:
+    def _on(self) -> None:  # noqa: C901
         existing = self.parent._get_existing_cvds()
         if len(existing) > 1:
             if self.parent.managed:

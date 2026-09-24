@@ -6,7 +6,7 @@ from rich.table import Table
 from .opt import OutputMode, OutputType
 
 
-def model_print(
+def model_print(  # noqa: C901
     model: BaseModel,
     output: OutputType,
     namespace: str | None = None,

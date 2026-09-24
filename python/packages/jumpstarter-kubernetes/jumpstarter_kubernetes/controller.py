@@ -6,7 +6,7 @@ from packaging.version import Version
 from .exceptions import JumpstarterKubernetesError
 
 
-async def get_latest_compatible_controller_version(client_version: str | None):
+async def get_latest_compatible_controller_version(client_version: str | None):  # noqa: C901
     """Get the latest compatible controller version for a given client version"""
     if client_version is None:
         # Return the latest available version when no client version is specified

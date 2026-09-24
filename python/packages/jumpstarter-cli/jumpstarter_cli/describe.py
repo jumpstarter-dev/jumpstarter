@@ -261,7 +261,7 @@ def _token_details(token: str | None) -> tuple[datetime | None, str]:
         return None, "no token"
     try:
         payload = decode_jwt(token)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None, "malformed"
     exp = payload.get("exp")
     remaining = get_token_remaining_seconds(token)

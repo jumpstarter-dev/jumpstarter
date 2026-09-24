@@ -64,9 +64,10 @@ class ProbeRs(Driver):
         self.logger.debug("Running command: %s", cmd)
         result = subprocess.run(
             cmd,
-            capture_output=True,  # Captures stdout and stderr
-            text=True,  # Returns stdout/stderr as strings (not bytes)
+            capture_output=True,
+            text=True,
             env=self.env_from_cfg(),
+            check=False,
         )
 
         if result.returncode != 0:

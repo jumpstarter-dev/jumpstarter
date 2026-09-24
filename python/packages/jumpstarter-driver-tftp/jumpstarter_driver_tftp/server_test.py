@@ -244,7 +244,7 @@ async def test_retry_mechanism(tftp_server):
         assert len(block_numbers) == 1, "All retried packets should be for the same block"
         assert 1 in block_numbers, "First block number should be 1"
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         pytest.fail(f"Test failed with error: {e!s}") # ty: ignore[call-non-callable]
 
     finally:

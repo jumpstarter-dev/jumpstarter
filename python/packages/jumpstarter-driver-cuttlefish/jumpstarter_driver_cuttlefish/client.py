@@ -30,7 +30,7 @@ def _run_with_progress(label: str, fn):
     def worker():
         try:
             result[0] = fn()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             error[0] = e
 
     t = threading.Thread(target=worker)
@@ -112,7 +112,7 @@ class CuttlefishClient(CompositeClient):
     def wait_boot(self, timeout: int = 0) -> str:
         return self.call("wait_boot", timeout)
 
-    def cli(self):
+    def cli(self):  # noqa: C901
         @click.group()
         def cuttlefish():
             """Cuttlefish Host Orchestrator.

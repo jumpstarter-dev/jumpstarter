@@ -94,7 +94,7 @@ class AsyncDriverClient(
         message = f"DriverCall '{method}' failed with gRPC {error.code().name}: {details}"
         try:
             debug = error.debug_error_string()
-        except Exception:
+        except Exception:  # noqa: BLE001
             debug = ""
         if debug:
             self.logger.debug("gRPC debug for %s: %s", method, debug)
@@ -167,7 +167,7 @@ class AsyncDriverClient(
             try:
                 status = await self.get_status_async()
                 self.logger.debug("[POLL %d] GetStatus returned: %s", poll_count, status)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 # Connection error - keep trying
                 self.logger.debug("[POLL %d] Error getting status, will retry: %s", poll_count, e)
                 await anyio.sleep(poll_interval)
@@ -457,8 +457,8 @@ class AsyncDriverClient(
                 yield metadata.resource.model_dump(mode="json")
 
     @asynccontextmanager
-    async def log_stream_async(self, show_all_logs: bool = True):
-        async def log_stream():
+    async def log_stream_async(self, show_all_logs: bool = True):  # noqa: C901
+        async def log_stream():  # noqa: C901
             reconnect_delay = 0.1  # Start with 100ms delay
             max_reconnect_delay = 2.0  # Max 2 seconds between reconnects
             max_reconnects = 10  # Give up after this many reconnects
@@ -527,7 +527,7 @@ class AsyncDriverClient(
                     else:
                         self.logger.debug("Log stream error: %s", e.code())
 
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     # Other errors - log and try to reconnect
                     self.logger.debug("Log stream error: %s", e)
 

@@ -654,7 +654,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     continue
                 logger.exception("Failed to %s", description)
                 return False, e.code()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error("Failed to %s: %s", description, e)
                 return False, None
 
@@ -824,7 +824,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 finally:
                     with CancelScope(shield=True):
                         await channel.close()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Error during controller unregistration: %s", e)
 
     @asynccontextmanager
@@ -865,7 +865,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 logger.debug("Connected to session, bridging to router at %s", endpoint)
                 async with connect_router_stream(endpoint, token, stream, tls_config, grpc_options):
                     logger.debug("Router stream established, forwarding traffic")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Failed to handle client connection: %s", e)
 
     async def _handle_end_session(self, lease_context: LeaseContext) -> None:
@@ -928,7 +928,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 else:
                     logger.debug("No afterLease hook configured or no client, transitioning to AVAILABLE")
                 await self._report_status(ExporterStatus.AVAILABLE, "Available for new lease")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Error running afterLease hook via EndSession: %s", e)
         finally:
             # Signal that the hook is done (whether it ran or not)
@@ -1068,7 +1068,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         lease_scope.after_lease_hook_done.set()
         return True
 
-    async def handle_lease(self, lease_name: str, tg: TaskGroup, lease_scope: LeaseContext) -> None:
+    async def handle_lease(self, lease_name: str, tg: TaskGroup, lease_scope: LeaseContext) -> None:  # noqa: C901
         """Handle all incoming client connections for a lease.
 
         This method orchestrates the complete lifecycle of managing connections during
@@ -1223,7 +1223,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             # _lease_context. This task only sets events on its own LeaseContext
             # and posts one message; it never clears the slot or replays status
             # itself, so there is no second writer to race.
-            with CancelScope(shield=True):
+            with CancelScope(shield=True):  # noqa: ASYNC100
                 if not lease_scope.before_lease_hook.is_set():
                     lease_scope.before_lease_hook.set()
                 if not lease_scope.after_lease_hook_done.is_set():

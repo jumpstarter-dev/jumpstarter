@@ -213,7 +213,7 @@ class ISCSIServerClient(CompositeClient):
 
             return src_hash == dst_hash
 
-        except Exception:
+        except Exception:  # noqa: BLE001
             return False
 
     def _should_skip_upload(
@@ -288,7 +288,7 @@ class ISCSIServerClient(CompositeClient):
             try:
                 dst_stat = self.storage.stat(dst_path)
                 size_mb = max(1, int(dst_stat.content_length) // (1024 * 1024))
-            except Exception:
+            except Exception:  # noqa: BLE001
                 size_mb = 1
 
         self.add_lun(dst_name, dst_path, size_mb)

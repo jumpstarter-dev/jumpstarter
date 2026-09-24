@@ -127,7 +127,7 @@ class PySerialClient(DriverClient):
 
         return bytes_read, bytes_sent
 
-    def cli(self):
+    def cli(self):  # noqa: C901
         @driver_click_group(self)
         def base():
             """Serial port client"""

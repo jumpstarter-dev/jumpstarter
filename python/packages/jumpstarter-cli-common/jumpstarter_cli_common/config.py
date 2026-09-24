@@ -10,7 +10,7 @@ from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 from jumpstarter.config.user import UserConfigV1Alpha1
 
 
-def opt_config_inner(
+def opt_config_inner(  # noqa: C901
     f,
     *,
     client: bool,
@@ -49,7 +49,7 @@ def opt_config_inner(
         ]
 
     @wraps(f)
-    def wrapper(*args, **kwds):
+    def wrapper(*args, **kwds):  # noqa: C901
         try:
             match len(params):
                 case 0:

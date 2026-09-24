@@ -77,7 +77,7 @@ class DutNetworkClient(DriverClient):
         """
         yield from self.streamingcall("tcpdump", args)
 
-    def cli(self) -> click.Group:
+    def cli(self) -> click.Group:  # noqa: C901
         """Build the Click CLI command group for this driver."""
         @driver_click_group(self)
         def base():

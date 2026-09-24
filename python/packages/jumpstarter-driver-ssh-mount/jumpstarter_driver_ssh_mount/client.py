@@ -289,6 +289,7 @@ class SSHMountClient(CompositeClient):
                 subprocess.run(
                     [shell, "--norc", "--noprofile", "-i"],
                     env=env,
+                    check=False,
                 )
             elif shell_name == "fish":
                 if no_color:
@@ -314,12 +315,12 @@ class SSHMountClient(CompositeClient):
                         "set_color normal; "
                         "end"
                     )
-                subprocess.run([shell, "--init-command", fish_fn], env=env)
+                subprocess.run([shell, "--init-command", fish_fn], env=env, check=False)
             elif shell_name == "zsh":
                 env["PS1"] = _tag_mount_ps1(env.get("PS1", "%# "), mount_tag, remote_path, no_icons)
-                subprocess.run([shell, "--no-rcs", "-i"], env=env)
+                subprocess.run([shell, "--no-rcs", "-i"], env=env, check=False)
             else:
-                subprocess.run([shell, "-i"], env=env)
+                subprocess.run([shell, "-i"], env=env, check=False)
         except FileNotFoundError as err:
             raise click.ClickException(
                 f"Shell '{shell}' not found. Set the SHELL environment variable to a valid shell."
@@ -390,7 +391,7 @@ class SSHMountClient(CompositeClient):
         if identity_file:
             try:
                 os.unlink(identity_file)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 self.logger.warning("Failed to clean up identity file %s: %s", identity_file, e)
 
     def umount(self, mountpoint: str, *, lazy: bool = False) -> None:
@@ -399,7 +400,7 @@ class SSHMountClient(CompositeClient):
         cmd = self._build_umount_cmd(mountpoint, lazy=lazy)
 
         self.logger.debug("Running unmount command: %s", cmd)
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT, check=False)
 
         if result.returncode != 0:
             stderr = result.stderr.strip()
@@ -410,11 +411,11 @@ class SSHMountClient(CompositeClient):
     def _force_umount(self, mountpoint: str) -> None:
         cmd = self._build_umount_cmd(mountpoint, lazy=False)
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT, check=False)
             if result.returncode != 0:
                 self.logger.debug("Force umount of %s returned %d: %s",
                                   mountpoint, result.returncode, result.stderr.strip())
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.debug("Force umount of %s failed: %s", mountpoint, e)
 
     def _build_umount_cmd(self, mountpoint: str, *, lazy: bool = False) -> list[str]:

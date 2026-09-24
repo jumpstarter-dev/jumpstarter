@@ -129,7 +129,7 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
                 return V1Alpha1Client.from_dict(updated_client)
             count += 1
             await asyncio.sleep(CREATE_CLIENT_DELAY)
-        raise Exception("Timeout waiting for client credentials")
+        raise Exception("Timeout waiting for client credentials")  # noqa: TRY002
 
     async def list_clients(self) -> V1Alpha1List[V1Alpha1Client]:
         """List the client objects in the cluster async"""
@@ -171,7 +171,7 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
         """Rotate the internal token for a client by deleting its secret and waiting for regeneration."""
         client = await self.get_client(name)
         if client.status is None or client.status.credential is None:
-            raise Exception(f"Client '{name}' has no credential secret")
+            raise Exception(f"Client '{name}' has no credential secret")  # noqa: TRY002
 
         secret_name = client.status.credential.name
         await self.core_api.delete_namespaced_secret(secret_name, self.namespace)
@@ -187,7 +187,7 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
                     raise
             count += 1
             await asyncio.sleep(CREATE_CLIENT_DELAY)
-        raise Exception("Timeout waiting for token regeneration")
+        raise Exception("Timeout waiting for token regeneration")  # noqa: TRY002
 
     async def delete_client(self, name: str):
         """Delete a client object"""

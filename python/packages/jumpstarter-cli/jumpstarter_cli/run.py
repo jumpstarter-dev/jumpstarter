@@ -73,11 +73,11 @@ def _reap_zombie_processes(capture_child=None):
                 logger.debug(f"PARENT: Reaped zombie process {pid} with status {status}")
             except ChildProcessError:
                 break # No more children
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"PARENT: Error during zombie reaping: {e}")
 
 
-def _handle_child(
+def _handle_child(  # noqa: C901
     config,
     parsed_bind=None,
     tls_insecure=False,
@@ -86,7 +86,7 @@ def _handle_child(
     passphrase=None,
 ):
     """Handle child process with graceful shutdown."""
-    async def serve_with_graceful_shutdown():
+    async def serve_with_graceful_shutdown():  # noqa: C901
         received_signal = 0
         signal_handled = False
         exporter = None
@@ -143,7 +143,7 @@ def _handle_child(
                                 tls_credentials=tls_credentials,
                                 interceptors=interceptors,
                             )
-                        except* Exception as excgroup:
+                        except* Exception as excgroup:  # noqa: BLE001
                             _handle_exporter_exceptions(excgroup)
                         exporter_exit_code = exporter.exit_code
                 else:
@@ -152,7 +152,7 @@ def _handle_child(
                     async with config.create_exporter() as exporter:
                         try:
                             await exporter.serve()
-                        except* Exception as excgroup:
+                        except* Exception as excgroup:  # noqa: BLE001
                             _handle_exporter_exceptions(excgroup)
 
                         # Check if exporter set an exit code (e.g., from hook failure with on_failure='exit')

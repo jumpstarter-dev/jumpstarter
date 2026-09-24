@@ -92,7 +92,7 @@ class ConnectionManager:
         if self._log_callback is not None:
             try:
                 await self._log_callback(level, message)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 logger.debug("Failed to send MCP log notification: %s", message)
 
     @property
@@ -210,7 +210,7 @@ class ConnectionManager:
 
         try:
             conn = await self._task_group.start(_run_connection)
-        except BaseException as exc:
+        except BaseException as exc:  # noqa: BLE001
             self._cleanup_events.pop(connection_id, None)
             unwrapped = _unwrap_exception(exc)
             if isinstance(unwrapped, ConnectionError):

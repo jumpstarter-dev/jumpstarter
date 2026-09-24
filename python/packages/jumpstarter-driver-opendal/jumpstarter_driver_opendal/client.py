@@ -434,7 +434,7 @@ class OpendalClient(DriverClient):
         return self.call("get_created_resources")
 
 
-    def cli(self):
+    def cli(self):  # noqa: C901
         arg_path = click.argument("path", type=click.Path())
         arg_source = click.argument("source", type=click.Path())
         arg_target = click.argument("target", type=click.Path())
@@ -644,7 +644,7 @@ class FlasherClient(FlasherClientInterface, DriverClient):
 
             storage_hash = storage.hash(filename)
             return storage_hash != src_hash
-        except Exception:
+        except Exception:  # noqa: BLE001
             return True
 
     def _flash_single(

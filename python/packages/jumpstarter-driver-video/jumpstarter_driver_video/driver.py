@@ -93,13 +93,13 @@ class HttpVideo(VideoInterface, Driver):
         """
         try:
             data = await self._fetch_frame()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.debug("state: source unreachable: %s", e)
             return VideoState(online=False)
         try:
             with Image.open(io.BytesIO(data)) as img:
                 width, height = img.size
-        except Exception:
+        except Exception:  # noqa: BLE001
             return VideoState(online=True)
         return VideoState(online=True, width=width, height=height)
 

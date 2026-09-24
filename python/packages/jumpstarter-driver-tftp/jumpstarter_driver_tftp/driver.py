@@ -70,7 +70,7 @@ class Tftp(Driver):
     def _start_server(self):
         try:
             asyncio.run(self._run_server_lifecycle())
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.error(f"Error running TFTP server: {e}")
         finally:
             self.logger.info("TFTP server thread completed")

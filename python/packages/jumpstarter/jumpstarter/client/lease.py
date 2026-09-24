@@ -217,7 +217,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         try:
             exporter = await self.svc.GetExporter(name=self.exporter_name)
             self.exporter_labels = exporter.labels
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.exporter_labels = {}
             logger.warning("Could not fetch labels for exporter %s: %s", self.exporter_name, e)
 
@@ -328,7 +328,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                             )
                     except TimeoutError:
                         logger.warning("Timeout while deleting lease %s during cleanup", self.name)
-                    except Exception:
+                    except Exception:  # noqa: BLE001
                         logger.debug("Error during lease cleanup for %s (likely already expired)", self.name)
 
     @contextmanager
@@ -462,7 +462,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
             while True:
                 try:
                     lease = await self.get()
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning("Failed to check lease %s status: %s", self.name, e)
                     # If we know when the lease should end, use it to bound the sleep
                     if last_known_end_time is not None:

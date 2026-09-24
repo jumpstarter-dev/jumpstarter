@@ -196,7 +196,7 @@ def test_ble_driver_connect_not_connected():
             with client.stream() as stream:
                 stream.send(b"hello")
                 stream.receive()
-        except BaseException:
+        except BaseException:  # noqa: BLE001
             raised = True
         assert raised, "Expected an exception when BLE device is not connected"
 

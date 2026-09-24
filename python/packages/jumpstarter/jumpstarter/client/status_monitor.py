@@ -134,7 +134,7 @@ class StatusMonitor:
         """
         self._on_status_change.append(callback)
 
-    async def wait_for_status(
+    async def wait_for_status(  # noqa: C901
         self, target: ExporterStatus, timeout: float | None = None
     ) -> bool:
         """Wait for a specific status (non-blocking to other tasks).
@@ -171,7 +171,7 @@ class StatusMonitor:
                     return False
                 # Other errors - connection might still work, continue waiting
                 logger.debug("GetStatus error during verification: %s", e.code())
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.debug("GetStatus error during verification: %s", e)
                 return False
 
@@ -217,7 +217,7 @@ class StatusMonitor:
         else:
             return await wait_loop()
 
-    async def wait_for_any_of(
+    async def wait_for_any_of(  # noqa: C901
         self, targets: list[ExporterStatus], timeout: float | None = None
     ) -> ExporterStatus | None:
         """Wait for any of the specified statuses.
@@ -254,7 +254,7 @@ class StatusMonitor:
                     return None
                 # Other errors - connection might still work, continue waiting
                 logger.debug("GetStatus error during verification: %s", e.code())
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.debug("GetStatus error during verification: %s", e)
                 return None
 
@@ -311,7 +311,7 @@ class StatusMonitor:
         else:
             return await wait_for_first()
 
-    async def _poll_loop(self):
+    async def _poll_loop(self):  # noqa: C901
         """Background polling loop."""
         self._poll_task_started.set()
         logger.debug("Status monitor poll loop started")
@@ -377,7 +377,7 @@ class StatusMonitor:
                     for callback in self._on_status_change:
                         try:
                             await callback(new_status, old_status)
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             logger.error(f"Status change callback error: {e}")
 
             except NotImplementedError:
@@ -424,7 +424,7 @@ class StatusMonitor:
                         logger.debug("GetStatus timed out (attempt %d), retrying...", deadline_retries)
                     continue
                 logger.debug(f"GetStatus poll error: {e.code()}")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.debug(f"GetStatus poll error: {e}")
 
             # Wait for next poll or stop signal

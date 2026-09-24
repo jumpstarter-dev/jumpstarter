@@ -213,7 +213,7 @@ class Config:
             lambda: client.fetch_token(config["token_endpoint"], authorization_response=authorization_response)
         )
 
-    async def device_authorization_grant(self):
+    async def device_authorization_grant(self):  # noqa: C901
         """Perform OAuth 2.0 Device Authorization Grant (RFC 8628).
 
         This flow is suitable for headless or containerized environments where

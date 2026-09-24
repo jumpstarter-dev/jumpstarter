@@ -277,7 +277,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
             return True
         try:
             current = await self._http_head_metadata(url)
-        except Exception:
+        except Exception:  # noqa: BLE001
             logger.debug("HEAD request failed for cache freshness check; assuming fresh")
             return True
         for key in ("ETag", "Last-Modified", "Content-Length"):
@@ -353,7 +353,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
             return None
         try:
             return await self._http_head_metadata(source_url)
-        except Exception:
+        except Exception:  # noqa: BLE001
             logger.debug("Failed to collect HTTP metadata for cache marker")
             return None
 
@@ -654,7 +654,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
                 ctx.manifest, ctx.firmware_root,
             ):
                 yield status
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             yield FlashStatus(phase=FlashPhase.ERROR, message=str(exc))
             if ctx.cache_dir is not None and not self._cache_is_valid(ctx.cache_dir):
                 shutil.rmtree(ctx.cache_dir, ignore_errors=True)

@@ -87,7 +87,7 @@ async def OpendalAdapter(
     else:
         try:
             metadata = await operator.to_async_operator().stat(path)
-        except Exception:
+        except Exception:  # noqa: BLE001
             metadata = None
         file = await operator.to_async_operator().open(path, mode)
         async with client.resource_async(

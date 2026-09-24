@@ -65,7 +65,7 @@ class NanoKVMUSBDriverBase(Driver):
         if self._owns_device and self.device is not None:
             try:
                 self.device.close()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 self.logger.debug(f"Error closing device: {exc}")
 
 
@@ -287,5 +287,5 @@ class NanoKVMUSB(Composite):
     def close(self):
         try:
             self._shared_device.close()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self.logger.debug(f"Error closing shared device: {exc}")

@@ -142,7 +142,7 @@ class RenodePower(PowerInterface, Driver):
         ]
 
         self.logger.info("starting Renode: %s", " ".join(cmdline))
-        self._process = Popen(cmdline, stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
+        self._process = Popen(cmdline, stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)  # noqa: ASYNC220
 
         self._monitor = RenodeMonitor()
         try:

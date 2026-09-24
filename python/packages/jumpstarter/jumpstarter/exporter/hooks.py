@@ -273,7 +273,7 @@ class HookExecutor:
         else:
             raise error
 
-    async def _execute_hook_process(
+    async def _execute_hook_process(  # noqa: C901
         self,
         hook_config: HookInstanceConfigV1Alpha1,
         lease_scope: "LeaseContext",
@@ -349,7 +349,7 @@ class HookExecutor:
 
                 logger.debug("Spawning subprocess with command: %s", cmd)
                 try:
-                    process = subprocess.Popen(
+                    process = subprocess.Popen(  # noqa: ASYNC220
                         cmd,
                         stdin=child_fd,
                         stdout=child_fd,
@@ -376,7 +376,7 @@ class HookExecutor:
                 fcntl.fcntl(parent_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
                 logger.debug("Parent fd set to non-blocking")
 
-                async def read_pty_output() -> None:
+                async def read_pty_output() -> None:  # noqa: C901
                     """Read from PTY parent fd line by line using non-blocking I/O."""
                     logger.debug("read_pty_output task started")
                     buffer = b""
@@ -430,7 +430,7 @@ class HookExecutor:
                                 logger.debug("read_pty_output: OSError in loop: %s", e)
                                 break
 
-                            except Exception as e:
+                            except Exception as e:  # noqa: BLE001
                                 logger.debug("read_pty_output: unexpected error in loop: %s", e)
                                 break
 
@@ -521,7 +521,7 @@ class HookExecutor:
                                     process.kill()
                                 # Final reap with non-abandoning wait
                                 await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=False)
-                            except Exception as e:
+                            except Exception as e:  # noqa: BLE001
                                 logger.debug("wait_for_process: error during cleanup: %s", e)
 
                 # Use move_on_after for timeout
@@ -575,7 +575,7 @@ class HookExecutor:
                 else:
                     error_msg = f"Hook failed with exit code {returncode}"
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 error_msg = f"Error executing hook: {e}"
                 cause = e
                 logger.error(error_msg)
@@ -782,7 +782,7 @@ class HookExecutor:
                     f"beforeLease hook failed (on_failure=endLease): {e}",
                 )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("beforeLease hook failed with unexpected error: %s", e)
             await report_status(
                 ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
@@ -885,7 +885,7 @@ class HookExecutor:
                     f"afterLease hook failed (on_failure=endLease): {e}",
                 )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             # Unexpected errors: report failure but do not shut down.
             # Same transient status - the lease is released and the exporter
             # accepts new leases after the finally block completes.

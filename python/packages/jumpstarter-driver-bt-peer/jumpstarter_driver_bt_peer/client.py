@@ -16,14 +16,14 @@ def _parse(raw: str) -> dict[str, Any] | list[Any] | str:
 def _parse_dict(raw: str) -> dict[str, Any]:
     result = _parse(raw)
     if not isinstance(result, dict):
-        raise ValueError(f"expected dict, got {type(result).__name__}: {raw!r}")
+        raise TypeError(f"expected dict, got {type(result).__name__}: {raw!r}")
     return result
 
 
 def _parse_list(raw: str) -> list[Any]:
     result = _parse(raw)
     if not isinstance(result, list):
-        raise ValueError(f"expected list, got {type(result).__name__}: {raw!r}")
+        raise TypeError(f"expected list, got {type(result).__name__}: {raw!r}")
     return result
 
 
@@ -64,7 +64,7 @@ class BtPeerClient(DriverClient):
     def get_connections(self) -> list[Any]:
         return _parse_list(self.call("get_connections"))
 
-    def cli(self):
+    def cli(self):  # noqa: C901
         @click.group()
         def bt_peer():
             """Bluetooth peer device (bumble)."""

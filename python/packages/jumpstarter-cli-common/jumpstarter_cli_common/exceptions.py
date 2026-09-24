@@ -108,14 +108,14 @@ def _extract_grpc_code_and_details(exc: BaseException) -> tuple[str | None, str]
         if callable(code_member):
             grpc_code = code_member()
             code = grpc_code.name if hasattr(grpc_code, "name") else str(grpc_code)
-    except Exception:
+    except Exception:  # noqa: BLE001
         code = None
 
     try:
         details_member = exc.details  # ty: ignore[unresolved-attribute]
         if callable(details_member):
             details = str(details_member() or "")
-    except Exception:
+    except Exception:  # noqa: BLE001
         details = ""
     return code, details
 
@@ -261,7 +261,7 @@ def _handle_connection_error_with_reauth(exc, login_func):
         config = exc.get_config()
         try:
             login_func(config)
-        except Exception as reauth_exc:
+        except Exception as reauth_exc:  # noqa: BLE001
             raise ClickExceptionRed(f"Re-authentication failed: {reauth_exc}") from None
         raise _ReauthSucceeded() from None
     else:

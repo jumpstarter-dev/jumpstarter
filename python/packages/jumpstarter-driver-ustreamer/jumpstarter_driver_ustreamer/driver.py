@@ -80,7 +80,7 @@ class UStreamer(VideoInterface, Driver):
             cmdline,
             stdout=sys.stdout,
             stderr=sys.stderr,
-            preexec_fn=_get_preexec_fn(),
+            preexec_fn=_get_preexec_fn(),  # noqa: PLW1509
         )
 
     def close(self):

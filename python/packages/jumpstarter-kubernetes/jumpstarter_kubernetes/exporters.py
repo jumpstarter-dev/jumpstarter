@@ -200,7 +200,7 @@ class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
                 return V1Alpha1Exporter.from_dict(updated_exporter)
             count += 1
             await asyncio.sleep(CREATE_EXPORTER_DELAY)
-        raise Exception("Timeout waiting for exporter credentials")
+        raise Exception("Timeout waiting for exporter credentials")  # noqa: TRY002
 
     async def get_exporter_config(self, name: str) -> ExporterConfigV1Alpha1:
         """Get an exporter config for a specified exporter name"""

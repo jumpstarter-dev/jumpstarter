@@ -246,7 +246,7 @@ class Driver(
             # Propagate context.abort() from lookup/handlers without recording
             # metrics (avoids client-controlled operation label cardinality).
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             await self._handle_driver_exception(e, op, started, context)
 
     async def StreamingDriverCall(self, request, context):
@@ -289,7 +289,7 @@ class Driver(
             # Propagate context.abort() from lookup/handlers without recording
             # metrics (avoids client-controlled operation label cardinality).
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             await self._handle_driver_exception(e, op, started, context)
 
     @asynccontextmanager

@@ -208,7 +208,7 @@ class QemuPower(PowerInterface, Driver):
     parent: Qemu
 
     @export
-    async def on(self) -> None:
+    async def on(self) -> None:  # noqa: C901
         if hasattr(self, "_process"):
             self.logger.warning("already powered on, ignoring request")
             return
@@ -385,7 +385,7 @@ class QemuPower(PowerInterface, Driver):
                 f"{blk_device},drive=cidata",
             ]
 
-        self._process = Popen(self.parent._wrap_command(cmdline), stdin=PIPE)
+        self._process = Popen(self.parent._wrap_command(cmdline), stdin=PIPE)  # noqa: ASYNC220
 
         qmp = QMPClient(self.parent.hostname)
 

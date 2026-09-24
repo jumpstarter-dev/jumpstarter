@@ -18,7 +18,7 @@ def get_ip_address(logger: logging.Logger | None = None) -> str:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                 s.connect(("192.175.48.1", 53))  # AS112
                 return s.getsockname()[0]
-        except Exception:
+        except Exception:  # noqa: BLE001
             if logger:
                 logger.warning("Could not determine default IP address, falling back to 0.0.0.0")
             return "0.0.0.0"

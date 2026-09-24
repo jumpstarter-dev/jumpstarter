@@ -45,7 +45,7 @@ async def _try_connect_and_extract_cert(
         writer.close()
 
 
-async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc.ChannelCredentials:
+async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc.ChannelCredentials:  # noqa: C901
     """
     Extract TLS certificates from server without verification (insecure mode).
 
@@ -95,7 +95,7 @@ async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc
                         ip_address, port, ssl_context, parsed.hostname, timeout
                     )
                     return (ip_address, result, None)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     return (ip_address, None, e)
 
             tasks = []

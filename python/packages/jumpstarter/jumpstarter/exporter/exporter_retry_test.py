@@ -33,7 +33,7 @@ class TestRetryCounterResetsAfterReceivingData:
             call_count += 1
             if call_count <= data_cycles:
                 yield f"item-{call_count}"
-            raise Exception("connection lost")
+            raise Exception("connection lost")  # noqa: TRY002
 
         exporter = _make_exporter()
         send_tx, _send_rx = create_memory_object_stream[str](100)
@@ -58,7 +58,7 @@ class TestRetryCounterResetsAfterReceivingData:
         async def stream_factory(controller):
             nonlocal call_count
             call_count += 1
-            raise Exception("UNAVAILABLE")
+            raise Exception("UNAVAILABLE")  # noqa: TRY002
             yield  # make it an async generator
 
         exporter = _make_exporter()
@@ -85,7 +85,7 @@ class TestExporterFailsFastOnPersistentErrors:
         async def stream_factory(controller):
             nonlocal call_count
             call_count += 1
-            raise Exception("permanently unreachable")
+            raise Exception("permanently unreachable")  # noqa: TRY002
             yield
 
         exporter = _make_exporter()
@@ -111,8 +111,8 @@ class TestExporterFailsFastOnPersistentErrors:
             nonlocal call_count
             call_count += 1
             if call_count == 3:
-                raise Exception("third failure")
-            raise Exception("failure")
+                raise Exception("third failure")  # noqa: TRY002
+            raise Exception("failure")  # noqa: TRY002
             yield
 
         exporter = _make_exporter()
@@ -141,7 +141,7 @@ class TestRetryCounterResetLogging:
             call_count += 1
             if call_count <= 1:
                 yield f"item-{call_count}"
-            raise Exception("connection lost")
+            raise Exception("connection lost")  # noqa: TRY002
 
         exporter = _make_exporter()
         send_tx, _send_rx = create_memory_object_stream[str](100)

@@ -59,7 +59,7 @@ class Opendal(Driver):
     async def open(self, /, path: str, mode: Mode) -> UUID:
         try:
             metadata = await self._operator.stat(path)
-        except Exception:
+        except Exception:  # noqa: BLE001
             metadata = None
 
         file = await self._operator.open(path, mode)
@@ -302,7 +302,7 @@ class Opendal(Driver):
                     else:
                         os.remove(full_path)
                         self.logger.debug(f"Removed created file: {path}")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 self.logger.error(f"Failed to remove path {path}: {e}")
 
 

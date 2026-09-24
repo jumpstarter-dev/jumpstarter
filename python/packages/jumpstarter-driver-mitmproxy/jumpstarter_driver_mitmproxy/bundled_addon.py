@@ -428,7 +428,7 @@ class AddonRegistry:
                     f"Addon {name} missing Handler class"
                 )
                 return None
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             ctx.log.error(f"Failed to load addon {name}: {e}")
             return None
 
@@ -596,7 +596,7 @@ class MitmproxyMockAddon:
                 f"(files: {self.files_dir}, addons: {addons_dir})"
             )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             ctx.log.error(f"Failed to load config: {e}")
 
     def _load_state(self):
@@ -613,7 +613,7 @@ class MitmproxyMockAddon:
                 self._state = json.load(f)
 
             self._state_mtime = mtime
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             ctx.log.error(f"Failed to load state: {e}")
 
     # ── Request matching ────────────────────────────────────
@@ -1023,7 +1023,7 @@ class MitmproxyMockAddon:
                 ctx.log.warn(
                     f"Addon {addon_name} did not handle request"
                 )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             ctx.log.error(f"Addon {addon_name} error: {e}")
             flow.response = http.Response.make(
                 500,
@@ -1088,7 +1088,7 @@ class MitmproxyMockAddon:
         if handler and hasattr(handler, "websocket_message"):
             try:
                 handler.websocket_message(flow, endpoint.get("addon_config", {}))
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 ctx.log.error(
                     f"Addon {addon_name} websocket error: {e}"
                 )

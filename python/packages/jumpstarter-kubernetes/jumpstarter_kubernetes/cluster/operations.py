@@ -49,7 +49,7 @@ def validate_cluster_type_selection(
         return auto_detect_cluster_type()
 
 
-async def delete_cluster_by_name(
+async def delete_cluster_by_name(  # noqa: C901
     cluster_name: str,
     cluster_type: str | None = None,
     force: bool = False,
@@ -108,7 +108,7 @@ async def delete_cluster_by_name(
     callback.success(f'Successfully deleted {cluster_type} cluster "{cluster_name}"')
 
 
-async def create_cluster_and_install(
+async def create_cluster_and_install(  # noqa: C901
     cluster_type: ClusterType,
     force_recreate_cluster: bool,
     cluster_name: str,

@@ -585,7 +585,7 @@ class TestMonitorAsyncError:
             nonlocal call_count
             call_count += 1
             if call_count <= 2:
-                raise Exception("transient error")
+                raise Exception("transient error")  # noqa: TRY002
             # Third call: return expired lease to exit the loop
             end_time = datetime.now(tz=UTC) - timedelta(seconds=10)
             return Mock(
@@ -623,7 +623,7 @@ class TestMonitorAsyncError:
                     effective_end_time=None,
                     duration=timedelta(hours=1),
                 )
-            raise Exception("server unavailable")
+            raise Exception("server unavailable")  # noqa: TRY002
 
         lease.get = get_then_fail
 

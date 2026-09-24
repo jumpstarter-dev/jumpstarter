@@ -393,7 +393,7 @@ async def test_serial_to_output_receives_data_then_end_of_stream(pyserial_client
         await pyserial_client._serial_to_output(mock_stream, "test.log", False)
 
         # Verify the file contains the data
-        with open("test.log", "rb") as f:
+        with open("test.log", "rb") as f:  # noqa: ASYNC230
             content = f.read()
             assert content == b"HelloWorld"
 

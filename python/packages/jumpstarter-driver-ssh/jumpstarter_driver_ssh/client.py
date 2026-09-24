@@ -189,7 +189,7 @@ class SSHWrapperClient(CompositeClient):
                 try:
                     os.unlink(identity_file)
                     self.logger.debug("Cleaned up temporary identity file: %s", identity_file)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     self.logger.warning("Failed to clean up temporary identity file %s: %s", identity_file, str(e))
 
     def _build_ssh_command_args(self, port, identity_file, args):
@@ -286,7 +286,9 @@ class SSHWrapperClient(CompositeClient):
     def _execute_ssh_command(self, ssh_args, options: SSHCommandRunOptions) -> SSHCommandRunResult:
         """Execute the SSH command and return the result"""
         try:
-            result = subprocess.run(ssh_args, capture_output=options.capture_output, text=options.capture_as_text)
+            result = subprocess.run(
+                ssh_args, capture_output=options.capture_output, text=options.capture_as_text, check=False
+            )
             return SSHCommandRunResult.from_completed_process(result)
         except FileNotFoundError:
             self.logger.error(

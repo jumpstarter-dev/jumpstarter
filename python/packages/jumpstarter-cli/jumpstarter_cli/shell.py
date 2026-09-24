@@ -126,11 +126,11 @@ async def _try_refresh_token(config, lease) -> bool:
         # Persist to disk (best-effort, uses original config path)
         try:
             ClientConfigV1Alpha1.save(config, path=config.path)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Failed to save refreshed token to disk: %s", e)
 
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # Restore old token so the monitor doesn't think we succeeded
         config.token = old_token
         config.refresh_token = old_refresh_token
@@ -169,7 +169,7 @@ async def _try_reload_token_from_disk(config, lease) -> bool:
         await _update_lease_channel(config, lease)
 
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         config.token = old_token
         config.refresh_token = old_refresh_token
         logger.debug("Failed to reload token from disk: %s", e)
@@ -274,7 +274,7 @@ async def _monitor_token_expiry(config, lease, cancel_scope, token_state=None) -
                 await anyio.sleep(5)
             else:
                 await anyio.sleep(30)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return
 
 
@@ -370,7 +370,7 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
         return exit_code
 
 
-async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope, on_shell_exit):
+async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope, on_shell_exit):  # noqa: C901
     """Run shell with lease context managers and wait for afterLease hook if logs enabled.
 
     When exporter_logs is enabled, this function will:
@@ -448,7 +448,7 @@ async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope
                         try:
                             with anyio.fail_after(5):
                                 motd = await fetch_motd(client)
-                        except Exception:
+                        except Exception:  # noqa: BLE001
                             logger.debug("Failed to fetch motd, continuing without it")
 
                     # Run the shell command. The exit code is reported from
@@ -501,7 +501,7 @@ async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope
                                         probe_status,
                                     )
                                     monitor._connection_lost = True
-                            except Exception:
+                            except Exception:  # noqa: BLE001
                                 if lease.lease_ended:
                                     logger.debug("Lease ended during probe, skipping afterLease hook")
                                     return exit_code
@@ -559,13 +559,13 @@ async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope
                                     logger.debug("EndSession not implemented, skipping hook wait")
                             except ExporterOfflineError:
                                 raise
-                            except Exception as e:
+                            except Exception as e:  # noqa: BLE001
                                 logger.warning("Error during afterLease hook: %s", e)
 
                     return exit_code
 
 
-async def _shell_with_signal_handling(
+async def _shell_with_signal_handling(  # noqa: C901
     config, selector, exporter_name, lease_name, duration, exporter_logs, command, acquisition_timeout,
     retry_timeout=None, dial_timeout=None, allow_disabled=False,
 ):

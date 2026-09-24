@@ -112,7 +112,7 @@ class SnmpTestAgent:
         try:
             try:
                 self._loop.run_until_complete(self._setup(sock))
-            except BaseException as e:
+            except BaseException as e:  # noqa: BLE001
                 self._error = e
                 self._ready.set()
                 return

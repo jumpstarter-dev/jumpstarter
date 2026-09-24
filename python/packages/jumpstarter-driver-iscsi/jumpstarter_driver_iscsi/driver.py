@@ -85,7 +85,7 @@ class ISCSI(Driver):
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                 s.connect(("8.8.8.8", 80))
                 return s.getsockname()[0]
-        except Exception:
+        except Exception:  # noqa: BLE001
             self.logger.warning("Could not determine default IP address, falling back to 0.0.0.0")
             return "0.0.0.0"
 
@@ -123,7 +123,7 @@ class ISCSI(Driver):
                     else:
                         self._tpg = TPG(self._target, 1)
                     break
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.warning(f"Error checking for existing target: {e}")
 
         if not target_exists:
@@ -146,7 +146,7 @@ class ISCSI(Driver):
                 if portal.ip_address == self.host and portal.port == self.port:
                     portal_exists = True
                     break
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.warning(f"Error checking for existing portal: {e}")
 
         if not portal_exists:
@@ -165,7 +165,7 @@ class ISCSI(Driver):
             for lun in list(self._tpg.luns):  # type: ignore[attr-defined]
                 try:
                     storage_obj = getattr(lun, "storage_object", None)
-                except Exception:
+                except Exception:  # noqa: BLE001
                     storage_obj = None
 
                 try:
@@ -174,7 +174,7 @@ class ISCSI(Driver):
                     if storage_obj is not None:
                         with suppress(Exception):
                             storage_obj.delete()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.warning(f"Failed clearing existing LUNs from TPG: {e}")
 
     def _cleanup_orphan_storage_objects(self):
@@ -188,7 +188,7 @@ class ISCSI(Driver):
                         if udev_path.startswith(root_abs + os.sep) or udev_path == root_abs:
                             with suppress(Exception):
                                 so.delete()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.debug(f"No orphan storage object cleanup performed: {e}")
 
     @export
@@ -504,6 +504,6 @@ class ISCSI(Driver):
         """Clean up resources when the driver is closed"""
         try:
             self.stop()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.error(f"Error during cleanup: {e}")
         super().close()

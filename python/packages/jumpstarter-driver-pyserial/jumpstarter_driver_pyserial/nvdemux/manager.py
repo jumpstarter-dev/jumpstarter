@@ -46,7 +46,7 @@ def _get_preexec_fn() -> Callable[[], None] | None:
             if result != 0:
                 errno = ctypes.get_errno()
                 logger.warning("prctl(PR_SET_PDEATHSIG) failed with errno %d", errno)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Failed to set parent death signal: %s", e)
 
     return set_pdeathsig
@@ -187,7 +187,7 @@ class DemuxerManager:
             cls._original_sigint_handler = signal.signal(signal.SIGINT, make_handler(signal.SIGINT))
             cls._signal_handlers_installed = True
             logger.debug("Installed signal handlers for SIGTERM and SIGINT")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Failed to install signal handlers: %s", e)
 
     def _validate_config(self, demuxer_path: str, device: str, chip: str, target: str):
@@ -327,7 +327,7 @@ class DemuxerManager:
             except ProcessLookupError:
                 # Process already dead
                 logger.debug("Demuxer process already exited")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error("Error terminating demuxer process: %s", e)
             finally:
                 self._process = None
@@ -373,7 +373,7 @@ class DemuxerManager:
         while not self._shutdown.is_set():
             try:
                 self._run_demuxer_cycle()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error("Error in demuxer monitor loop: %s", e)
                 # Clear ready state on error
                 with self._lock:
@@ -441,7 +441,7 @@ class DemuxerManager:
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,  # Line buffered
-                preexec_fn=preexec_fn,
+                preexec_fn=preexec_fn,  # noqa: PLW1509
             )
             logger.debug("Demuxer process started with PID %d", self._process.pid)
             return True
@@ -487,7 +487,7 @@ class DemuxerManager:
                     # Force immediate process termination
                     os._exit(1)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Error reading demuxer stderr: %s", e)
 
     def _read_demuxer_output(self):
@@ -513,7 +513,7 @@ class DemuxerManager:
                         self._pts_map[target] = pts_path
                         self._ready_targets.add(target)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Error reading demuxer output: %s", e)
 
         # Clear state when process ends

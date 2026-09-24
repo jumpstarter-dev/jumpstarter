@@ -145,7 +145,7 @@ def _warn_exporter_client_only_flags(config_kind: str | None, allow: str, unsafe
 @opt_config(allow_missing=True)
 @handle_exceptions
 @blocking
-async def login(
+async def login(  # noqa: C901
     config,
     login_target: str | None,
     endpoint: str,

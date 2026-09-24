@@ -260,13 +260,13 @@ class BtPeer(Driver):
         try:
             if device is not None:
                 await device.power_off()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             first_error = exc
         finally:
             try:
                 if transport is not None:
                     await transport.close()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 if first_error is None:
                     first_error = exc
 

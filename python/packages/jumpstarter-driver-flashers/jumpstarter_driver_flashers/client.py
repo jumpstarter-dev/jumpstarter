@@ -121,7 +121,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 pass
             yield self.serial
 
-    def flash(
+    def flash(  # noqa: C901
         self,
         path: PathBuf,
         *,
@@ -1086,7 +1086,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     "etag": metadata.etag,
                 }
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             # TODO(bennyz): remove when opendal issue is sorted out
             # https://github.com/apache/opendal/discussions/6418
             # fallback to request if we're using a custom certificate
@@ -1106,7 +1106,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
                     metadata_dict.update(http_metadata)
                     self.logger.info("Successfully got HTTP metadata using requests fallback")
-                except Exception as http_e:
+                except Exception as http_e:  # noqa: BLE001
                     self.logger.error(f"Error getting HTTP metadata with requests fallback: {http_e}")
             else:
                 self.logger.error(f"Error getting metadata: {e}")

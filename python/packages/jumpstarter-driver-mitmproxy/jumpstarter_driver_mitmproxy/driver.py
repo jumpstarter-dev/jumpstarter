@@ -553,7 +553,7 @@ class MitmproxyDriver(Driver):
             try:
                 self._load_startup_mocks()
                 self._write_mock_config()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 self._stop_capture_server()
                 return f"Failed to initialize mock mode: {e}"
 
@@ -1412,7 +1412,7 @@ class MitmproxyDriver(Driver):
         if not src.exists():
             raise FileNotFoundError(f"Flow file not found: {name}")
         chunk_size = 2 * 1024 * 1024
-        with open(src, "rb") as f:
+        with open(src, "rb") as f:  # noqa: ASYNC230
             while True:
                 chunk = f.read(chunk_size)
                 if not chunk:
@@ -1765,7 +1765,7 @@ class MitmproxyDriver(Driver):
             return
         # 2 MB raw → ~2.7 MB base64, well under the 4 MB gRPC limit
         chunk_size = 2 * 1024 * 1024
-        with open(src, "rb") as f:
+        with open(src, "rb") as f:  # noqa: ASYNC230
             while True:
                 chunk = f.read(chunk_size)
                 if not chunk:

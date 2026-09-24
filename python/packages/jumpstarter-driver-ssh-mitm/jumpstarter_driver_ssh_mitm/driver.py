@@ -79,7 +79,7 @@ class StreamSocket:
                 except (BrokenPipeError, OSError):
                     break
             self._running = False
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             socket_logger.debug("recv loop stopped: %s", exc)
 
     def _forward_send(self):
@@ -100,7 +100,7 @@ class StreamSocket:
                 except (BrokenPipeError, OSError):
                     break
             self._running = False
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             socket_logger.debug("send loop stopped: %s", exc)
 
     def get_paramiko_socket(self):
@@ -238,7 +238,7 @@ class SSHMITM(Driver):
         if self.ssh_identity_file:
             try:
                 return Path(self.ssh_identity_file).expanduser().read_text()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 raise ConfigurationError(f"Failed to read ssh_identity_file '{self.ssh_identity_file}': {e}") from None
         return None
 
@@ -314,7 +314,7 @@ class SSHMITM(Driver):
                     if not data:
                         break
                     dst.sendall(data)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 self.logger.debug("Channel %s ended: %s", name, e)
             finally:
                 with suppress(Exception):
@@ -386,7 +386,7 @@ class SSHMITM(Driver):
                     client_channel.send_exit_status(exit_status)
                 client_channel.close()
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.error("Failed to connect to DUT: %s", e)
             client_channel.close()
         finally:
@@ -428,7 +428,7 @@ class SSHMITM(Driver):
 
             try:
                 yield client_stream
-            except (cancelled_exc, Exception) as e:
+            except (cancelled_exc, Exception) as e:  # noqa: BLE001
                 if isinstance(e, cancelled_exc):
                     self.logger.debug("SSH stream cancelled by client")
                 else:

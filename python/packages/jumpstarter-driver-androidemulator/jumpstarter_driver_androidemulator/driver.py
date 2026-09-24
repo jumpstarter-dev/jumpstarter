@@ -161,6 +161,7 @@ class AndroidEmulatorPower(PowerInterface, Driver):
                 env={**os.environ, "ANDROID_ADB_SERVER_PORT": str(self.parent.adb_server_port)},
                 timeout=5,
                 capture_output=True,
+                check=False,
             )
             self._process.wait(timeout=15)
             self.logger.info("Emulator shut down gracefully")

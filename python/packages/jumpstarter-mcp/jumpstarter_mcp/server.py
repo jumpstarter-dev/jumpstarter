@@ -140,7 +140,7 @@ async def _ensure_fresh_token(config: ClientConfigV1Alpha1) -> ClientConfigV1Alp
 
     try:
         issuer = decode_jwt_issuer(token)
-    except Exception:
+    except Exception:  # noqa: BLE001
         logger.warning("Failed to decode JWT issuer, skipping token refresh")
         return config
 

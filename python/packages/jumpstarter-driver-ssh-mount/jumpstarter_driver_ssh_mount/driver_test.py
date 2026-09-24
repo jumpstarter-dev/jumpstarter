@@ -1064,7 +1064,7 @@ def test_subshell_fish_prompt_plain_when_no_color():
         assert "set_color" not in init_cmd
         assert 'printf "⚡"' in init_cmd
         assert 'printf "(mount)"' in init_cmd
-            assert 'printf "➤ "' in init_cmd
+        assert 'printf "➤ "' in init_cmd
 
 
 def test_create_temp_identity_file_failure():
