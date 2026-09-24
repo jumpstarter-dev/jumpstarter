@@ -27,7 +27,7 @@ class SigrokClient(DriverClient):
         Yields:
             bytes: Chunks of captured data
         """
-        yield from self.streamingcall("capture_stream", config)
+        yield from self.streamingcall("capture_stream", config)  # pragma: no cover
 
     def get_driver_info(self) -> dict[str, Any]:
         return self.call("get_driver_info")

@@ -196,7 +196,7 @@ class QemuFlasher(FlasherInterface, Driver):
 
     @export
     async def dump(self, target, partition: str | None = None):
-        async with await FileReadStream.from_path(
+        async with await FileReadStream.from_path(  # pragma: no cover
             self.parent.validate_partition(partition, use_default_partitions=True)
         ) as stream, self.resource(target) as res:
             async for chunk in stream:

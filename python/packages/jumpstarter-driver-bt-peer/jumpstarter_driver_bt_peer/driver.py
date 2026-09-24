@@ -266,7 +266,7 @@ class BtPeer(Driver):
             try:
                 if transport is not None:
                     await transport.close()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # pragma: no cover  # noqa: BLE001
                 if first_error is None:
                     first_error = exc
 

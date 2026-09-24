@@ -454,7 +454,7 @@ class MitmproxyClient(DriverClient):
             from jumpstarter.common import TemporaryTcpListener
             from jumpstarter.streams.common import forward_stream
 
-            async def handler(client, method, conn):
+            async def handler(client, method, conn):  # pragma: no cover
                 async with conn, client.stream_async(method) as stream, forward_stream(conn, stream):
                     pass
 

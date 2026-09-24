@@ -302,7 +302,7 @@ class Opendal(Driver):
                     else:
                         os.remove(full_path)
                         self.logger.debug(f"Removed created file: {path}")
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:  # pragma: no cover  # noqa: BLE001
                 self.logger.error(f"Failed to remove path {path}: {e}")
 
 

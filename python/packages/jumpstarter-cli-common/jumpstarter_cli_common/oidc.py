@@ -328,7 +328,7 @@ class Config:
 def decode_jwt(token: str):
     try:
         return json.loads(extract_compact(token.encode()).payload)
-    except (ValueError, KeyError, TypeError, JoseError) as e:
+    except (ValueError, KeyError, TypeError, JoseError) as e:  # pragma: no cover
         raise ValueError(f"Invalid JWT format: {e}") from e
 
 

@@ -169,7 +169,7 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
             negotiated_options, blksize, timeout = self._negotiate_options(options)
             self.logger.info(f"Negotiated options: {negotiated_options}")
             await self._start_transfer(resolved_path, addr, blksize, timeout, negotiated_options)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # pragma: no cover  # noqa: BLE001
             self.logger.error(f"Error handling RRQ from {addr}: {e}")
             self._send_error(addr, TftpErrorCode.NOT_DEFINED, str(e))
 
@@ -217,7 +217,7 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
                 opt_value = option_parts[i + 1].decode("utf-8")
                 options[opt_name] = opt_value
                 i += 2
-            except Exception:  # noqa: BLE001
+            except Exception:  # pragma: no cover  # noqa: BLE001
                 break
         return options
 

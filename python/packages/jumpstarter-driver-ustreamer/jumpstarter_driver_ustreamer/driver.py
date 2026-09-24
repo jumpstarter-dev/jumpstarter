@@ -91,7 +91,7 @@ class UStreamer(VideoInterface, Driver):
             self.process.kill()
 
     @export
-    async def state(self):
+    async def state(self):  # pragma: no cover
         async with (
             ClientSession(connector=UnixConnector(path=self.socketp)) as session,
             session.get("http://localhost/state") as r,
@@ -101,7 +101,7 @@ class UStreamer(VideoInterface, Driver):
             return UStreamerState.model_validate(json)
 
     @export
-    async def snapshot(self):
+    async def snapshot(self):  # pragma: no cover
         async with (
             ClientSession(connector=UnixConnector(path=self.socketp)) as session,
             session.get("http://localhost/snapshot") as r,

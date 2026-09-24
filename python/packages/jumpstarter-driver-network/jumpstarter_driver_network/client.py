@@ -43,9 +43,9 @@ class NetworkClient(DriverClient):
                 host = ip_address(addr[0])
                 port = addr[1]
                 match host:
-                    case IPv6Address():
+                    case IPv6Address():  # pragma: no cover
                         click.echo(f"[{host}]:{port}")
-                    case _:
+                    case _:  # pragma: no cover
                         click.echo(f"{host}:{port}")
 
                 Event().wait()

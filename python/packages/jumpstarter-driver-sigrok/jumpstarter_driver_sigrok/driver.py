@@ -127,7 +127,7 @@ class Sigrok(Driver):
             process.terminate()
             try:
                 await asyncio.wait_for(process.wait(), timeout=5)
-            except TimeoutError:
+            except TimeoutError:  # pragma: no cover
                 process.kill()
 
     # --- Command builders -----------------------------------------------

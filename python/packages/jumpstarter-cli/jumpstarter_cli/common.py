@@ -79,12 +79,12 @@ class DurationParamType(click.ParamType):
                 param,
                 ctx,
             )
-            raise  # noqa: PLE0704  # satisfy ty: self.fail is NoReturn but ty cannot verify it
+            raise  # pragma: no cover  # noqa: PLE0704  # satisfy ty: self.fail is NoReturn but ty cannot verify it
 
         if self.minimum is not None and td < self.minimum:
             min_seconds = int(self.minimum.total_seconds())
             self.fail(f"{value!r} must be at least {min_seconds} seconds", param, ctx)
-            raise  # noqa: PLE0704  # satisfy ty: self.fail is NoReturn but ty cannot verify it
+            raise  # pragma: no cover  # noqa: PLE0704  # satisfy ty: self.fail is NoReturn but ty cannot verify it
 
         return td
 

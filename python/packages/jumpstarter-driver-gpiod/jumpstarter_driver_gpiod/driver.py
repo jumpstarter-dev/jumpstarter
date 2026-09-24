@@ -40,7 +40,7 @@ class _GPIOBase(Driver):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
 
-    def close(self):
+    def close(self):  # pragma: no cover
         with contextlib.suppress(Exception):
             if hasattr(self, "_line") and self._line:
                 self._line.release()

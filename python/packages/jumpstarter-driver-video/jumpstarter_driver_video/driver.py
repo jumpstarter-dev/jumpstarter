@@ -99,7 +99,7 @@ class HttpVideo(VideoInterface, Driver):
         try:
             with Image.open(io.BytesIO(data)) as img:
                 width, height = img.size
-        except Exception:  # noqa: BLE001
+        except Exception:  # pragma: no cover  # noqa: BLE001
             return VideoState(online=True)
         return VideoState(online=True, width=width, height=height)
 

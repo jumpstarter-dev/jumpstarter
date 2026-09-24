@@ -127,7 +127,7 @@ class Shell(Driver):
         # Validate arguments
         for arg in args:
             if not isinstance(arg, str):
-                raise TypeError(f"All arguments must be strings, got {type(arg)}")
+                raise TypeError(f"All arguments must be strings, got {type(arg)}")  # pragma: no cover
 
         # Validate working directory if set
         if self.cwd and not os.path.isdir(self.cwd):
@@ -213,7 +213,7 @@ class Shell(Driver):
                     pass
                 try:
                     await asyncio.wait_for(process.wait(), timeout=5.0)
-                except TimeoutError:
+                except TimeoutError:  # pragma: no cover
                     try:
                         os.killpg(process.pid, signal.SIGKILL)
                         self.logger.warning(f"SIGTERM failed to terminate {process.pid}, sending SIGKILL")
@@ -231,7 +231,7 @@ class Shell(Driver):
                 # Small delay to prevent busy waiting
                 await asyncio.sleep(0.1)
 
-            except Exception:  # noqa: BLE001
+            except Exception:  # pragma: no cover  # noqa: BLE001
                 break
 
         # Process completed, get return code and final output

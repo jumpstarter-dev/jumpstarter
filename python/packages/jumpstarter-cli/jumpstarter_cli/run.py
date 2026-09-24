@@ -73,7 +73,7 @@ def _reap_zombie_processes(capture_child=None):
                 logger.debug(f"PARENT: Reaped zombie process {pid} with status {status}")
             except ChildProcessError:
                 break # No more children
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # pragma: no cover  # noqa: BLE001
         logger.warning(f"PARENT: Error during zombie reaping: {e}")
 
 

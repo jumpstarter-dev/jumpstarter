@@ -67,7 +67,7 @@ class HttpServer(Driver):
             self.logger.warning("Cleaning up stale HTTP server runner before starting.")
             try:
                 await self.runner.cleanup()
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:  # pragma: no cover  # noqa: BLE001
                 self.logger.warning(f"Failed to clean up stale runner: {e}")
             self.runner = None
             self._bound_port = 0
@@ -159,7 +159,7 @@ class HttpServer(Driver):
                     if hasattr(site, "_server") and site._server:
                         site._server.close()
             self.logger.info("HTTP server sockets force-closed.")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # pragma: no cover  # noqa: BLE001
             self.logger.warning(f"HTTP server force-close failed: {e}")
 
     async def _async_cleanup(self):

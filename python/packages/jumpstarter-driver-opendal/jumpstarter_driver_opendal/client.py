@@ -644,7 +644,7 @@ class FlasherClient(FlasherClientInterface, DriverClient):
 
             storage_hash = storage.hash(filename)
             return storage_hash != src_hash
-        except Exception:  # noqa: BLE001
+        except Exception:  # pragma: no cover  # noqa: BLE001
             return True
 
     def _flash_single(

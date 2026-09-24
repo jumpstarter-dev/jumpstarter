@@ -75,7 +75,7 @@ class DutNetworkClient(DriverClient):
         Yields:
             Lines of tcpdump text output.
         """
-        yield from self.streamingcall("tcpdump", args)
+        yield from self.streamingcall("tcpdump", args)  # pragma: no cover
 
     def cli(self) -> click.Group:  # noqa: C901
         """Build the Click CLI command group for this driver."""

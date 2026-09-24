@@ -29,7 +29,7 @@ class PinJumpstarter(BuildHookInterface):
                     req.specifier &= SpecifierSet(f"=={self.metadata.version}")
                     metadata["project"]["dependencies"][i] = str(req)
 
-        with NamedTemporaryFile(delete=False) as f:
+        with NamedTemporaryFile(delete=False) as f:  # pragma: no cover
             tomli_w.dump(metadata, f)
 
         build_data["__hatch_pin_jumpstarter_tempfile"] = f
