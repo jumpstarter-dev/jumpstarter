@@ -278,6 +278,7 @@ class QualcommFlasherClient(StreamingFlasherClient, CompositeClient):
         if url is not None:
             source_id = hashlib.sha256(str(path).encode()).hexdigest()[:12]
         else:
+            assert local_path is not None
             stat = local_path.stat()
             source_id = hashlib.sha256(
                 f"{local_path.resolve()}:{stat.st_mtime_ns}:{stat.st_size}".encode(),

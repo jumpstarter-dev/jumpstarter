@@ -267,6 +267,7 @@ async def test_async_cleanup_error_path(tmp_path, unused_tcp_port):
         await server._async_cleanup()
 
     # Clean up the real runner so the port is released
+    assert real_runner is not None
     await real_runner.cleanup()
 
 
@@ -299,6 +300,7 @@ async def test_close_cleanup_failure_logs_warning(tmp_path, unused_tcp_port, cap
     assert server._bound_port == 0
 
     # Clean up the real runner so the port is released
+    assert real_runner is not None
     await real_runner.cleanup()
 
 
