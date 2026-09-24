@@ -588,11 +588,12 @@ def test_ssh_identity_temp_file_creation_and_cleanup():
             patch('os.chmod') as mock_chmod,
             patch('os.unlink') as mock_unlink,
         ):
-            # Mock the temporary file
+            # Mock the temporary file; __enter__ must return the mock itself so
+            # writes inside the `with` block land on mock_temp_file_instance.
             mock_temp_file_instance = MagicMock()
             mock_temp_file_instance.name = "/tmp/test_ssh_key_12345"
-            mock_temp_file_instance.write = MagicMock()
-            mock_temp_file_instance.close = MagicMock()
+            mock_temp_file_instance.__enter__ = MagicMock(return_value=mock_temp_file_instance)
+            mock_temp_file_instance.__exit__ = MagicMock(return_value=False)
             mock_temp_file.return_value = mock_temp_file_instance
 
             # Test SSH command with identity
@@ -602,7 +603,6 @@ def test_ssh_identity_temp_file_creation_and_cleanup():
             # Verify temporary file was created
             mock_temp_file.assert_called_once_with(mode='w', delete=False, suffix='_ssh_key')
             mock_temp_file_instance.write.assert_called_once_with(TEST_SSH_KEY)
-            mock_temp_file_instance.close.assert_called_once()
 
             # Verify proper permissions were set
             mock_chmod.assert_called_once_with("/tmp/test_ssh_key_12345", 0o600)
@@ -653,11 +653,12 @@ def test_ssh_identity_temp_file_cleanup_error():
             patch('os.chmod') as mock_chmod,
             patch('os.unlink') as mock_unlink,
         ):
-            # Mock the temporary file
+            # Mock the temporary file; __enter__ must return the mock itself so
+            # writes inside the `with` block land on mock_temp_file_instance.
             mock_temp_file_instance = MagicMock()
             mock_temp_file_instance.name = "/tmp/test_ssh_key_12345"
-            mock_temp_file_instance.write = MagicMock()
-            mock_temp_file_instance.close = MagicMock()
+            mock_temp_file_instance.__enter__ = MagicMock(return_value=mock_temp_file_instance)
+            mock_temp_file_instance.__exit__ = MagicMock(return_value=False)
             mock_temp_file.return_value = mock_temp_file_instance
 
             # Mock cleanup failure

@@ -252,6 +252,7 @@ def test_set_capture_on(mock_run, drv_cli):
         capture_output=True,
         text=True,
         timeout=10,
+        check=False,
     )
 
 
@@ -264,6 +265,7 @@ def test_set_capture_off(mock_run, drv_cli):
         capture_output=True,
         text=True,
         timeout=10,
+        check=False,
     )
 
 
@@ -285,6 +287,7 @@ def test_start_capture(mock_run, requests_mock, drv_cli):
         capture_output=True,
         text=True,
         timeout=10,
+        check=False,
     )
 
 
@@ -310,6 +313,7 @@ def test_stop_capture(mock_run, drv_cli):
         capture_output=True,
         text=True,
         timeout=10,
+        check=False,
     )
 
 
