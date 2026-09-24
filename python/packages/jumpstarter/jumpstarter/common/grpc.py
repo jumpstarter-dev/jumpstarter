@@ -191,7 +191,7 @@ def translate_grpc_exceptions():
             # an error returned from our functions
             raise ConnectionError(f"grpc controller responded: {e.details()}") from None
         if e.code().name == "FAILED_PRECONDITION":
-            raise ConnectionError(e.details()) from None
+            raise ConnectionError(e.details() or "") from None
         else:
             raise ConnectionError("grpc error") from e
     except grpc.RpcError as e:

@@ -45,7 +45,7 @@ def driver_click_group(client: "DriverClient", **kwargs: Any) -> Callable:
         if getattr(client, "description", None):
             kwargs["help"] = client.description
 
-        group = DriverClickGroup(client, name=f.__name__, callback=f, **kwargs)
+        group = DriverClickGroup(client, name=f.__name__, callback=f, **kwargs)  # type: ignore[attr-defined]
 
         # Transfer Click parameters attached by decorators like @click.option
         group.params = getattr(f, "__click_params__", [])
@@ -100,7 +100,7 @@ class DriverClickGroup(click.Group):
         def decorator(f: Callable) -> click.Command:
             name = kwargs.get("name")
             if not name:
-                name = f.__name__.lower().replace("_", "-")
+                name = f.__name__.lower().replace("_", "-")  # type: ignore[attr-defined]
 
             if name in self.client.methods_description:
                 kwargs["help"] = self.client.methods_description[name]

@@ -52,7 +52,7 @@ def test_launch_shell_no_motd_for_command(tmp_path, monkeypatch, capfd):
         allow=["*"],
         unsafe=False,
         use_profiles=False,
-        command=(shutil.which("true"),),
+        command=(shutil.which("true"),),  # type: ignore[arg-type]
         motd="Welcome to my-exporter!",
     )
     assert exit_code == 0

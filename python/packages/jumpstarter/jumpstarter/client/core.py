@@ -384,7 +384,7 @@ class AsyncDriverClient(
             error_message = self._format_rpc_error(method, e)
             match e.code():
                 case StatusCode.FAILED_PRECONDITION:
-                    raise ExporterNotReady(e.details()) from None
+                    raise ExporterNotReady(e.details() or "") from None
                 case StatusCode.NOT_FOUND:
                     raise DriverMethodNotImplemented(error_message) from None
                 case StatusCode.UNIMPLEMENTED:
@@ -413,15 +413,15 @@ class AsyncDriverClient(
         except AioRpcError as e:
             match e.code():
                 case StatusCode.FAILED_PRECONDITION:
-                    raise ExporterNotReady(e.details()) from None
+                    raise ExporterNotReady(e.details() or "") from None
                 case StatusCode.UNIMPLEMENTED:
-                    raise DriverMethodNotImplemented(e.details()) from None
+                    raise DriverMethodNotImplemented(e.details() or "") from None
                 case StatusCode.INVALID_ARGUMENT:
-                    raise DriverInvalidArgument(e.details()) from None
+                    raise DriverInvalidArgument(e.details() or "") from None
                 case StatusCode.UNKNOWN:
-                    raise DriverError(e.details()) from None
+                    raise DriverError(e.details() or "") from None
                 case _:
-                    raise DriverError(e.details()) from e
+                    raise DriverError(e.details() or "") from e
 
     @asynccontextmanager
     async def stream_async(self, method):
@@ -449,9 +449,9 @@ class AsyncDriverClient(
         )
         metadata = dict(list(await context.initial_metadata()))
         async with MetadataStream(stream=RouterStream(context=context), metadata=metadata) as rstream:
-            metadata = ResourceMetadata(**rstream.extra(MetadataStreamAttributes.metadata))
+            metadata = ResourceMetadata(**rstream.extra(MetadataStreamAttributes.metadata))  # type: ignore[call-arg]
             if metadata.x_jmp_accept_encoding is None:
-                stream = compress_stream(stream, content_encoding)
+                stream = compress_stream(stream, content_encoding)  # type: ignore[arg-type]
 
             async with forward_stream(ProgressStream(stream=stream), rstream):
                 yield metadata.resource.model_dump(mode="json")

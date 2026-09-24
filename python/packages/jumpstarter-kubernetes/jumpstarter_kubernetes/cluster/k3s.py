@@ -50,7 +50,7 @@ async def _ssh_run_with_output(ssh_host: str, command: str) -> int:
 async def create_k3s_cluster(
     ssh_host: str,
     force_recreate: bool = False,
-    callback: OutputCallback = None,
+    callback: OutputCallback | None = None,
 ) -> str:
     """Create a k3s cluster on a remote host via SSH.
 
@@ -98,7 +98,7 @@ async def create_k3s_cluster(
     return kubeconfig_path
 
 
-async def fetch_k3s_kubeconfig(ssh_host: str, callback: OutputCallback = None) -> str:
+async def fetch_k3s_kubeconfig(ssh_host: str, callback: OutputCallback | None = None) -> str:
     """Fetch the k3s kubeconfig from a remote host and save it locally.
 
     Replaces 127.0.0.1 with the SSH host IP so it's usable from the local machine.
@@ -129,7 +129,7 @@ async def fetch_k3s_kubeconfig(ssh_host: str, callback: OutputCallback = None) -
     return kubeconfig_path
 
 
-async def delete_k3s_cluster(ssh_host: str, callback: OutputCallback = None) -> None:
+async def delete_k3s_cluster(ssh_host: str, callback: OutputCallback | None = None) -> None:
     """Uninstall k3s from a remote host via SSH."""
     if callback is None:
         callback = SilentCallback()
@@ -159,7 +159,7 @@ async def create_k3s_cluster_with_options(
     ssh_host: str,
     cluster_name: str,
     force_recreate: bool = False,
-    callback: OutputCallback = None,
+    callback: OutputCallback | None = None,
 ) -> str:
     """Create a k3s cluster with options, matching the interface of kind/minikube helpers.
 
@@ -178,7 +178,9 @@ async def create_k3s_cluster_with_options(
         raise ClusterOperationError(action, cluster_name, "k3s", e) from e
 
 
-async def delete_k3s_cluster_with_feedback(ssh_host: str, cluster_name: str, callback: OutputCallback = None) -> None:
+async def delete_k3s_cluster_with_feedback(
+    ssh_host: str, cluster_name: str, callback: OutputCallback | None = None
+) -> None:
     """Delete a k3s cluster with user feedback."""
     if callback is None:
         callback = SilentCallback()

@@ -68,7 +68,7 @@ async def minikube_cluster_exists(minikube: str, cluster_name: str) -> bool:
         return not ("profile" in error_msg and "not found" in error_msg)
 
 
-async def delete_minikube_cluster(minikube: str, cluster_name: str, callback: OutputCallback = None) -> bool:
+async def delete_minikube_cluster(minikube: str, cluster_name: str, callback: OutputCallback | None = None) -> bool:
     """Delete a Minikube cluster."""
     if callback is None:
         callback = SilentCallback()
@@ -96,7 +96,7 @@ async def create_minikube_cluster(  # noqa: C901
     cluster_name: str,
     extra_args: list[str] | None = None,
     force_recreate: bool = False,
-    callback: OutputCallback = None,
+    callback: OutputCallback | None = None,
 ) -> bool:
     """Create a Minikube cluster."""
     if extra_args is None:
@@ -172,7 +172,7 @@ async def get_minikube_cluster_ip(minikube: str, cluster_name: str) -> str:
     return await get_minikube_ip(cluster_name, minikube)
 
 
-async def prepare_certificates(extra_certs: str, callback: OutputCallback = None) -> None:
+async def prepare_certificates(extra_certs: str, callback: OutputCallback | None = None) -> None:
     """Prepare custom certificates for Minikube."""
     if callback is None:
         callback = SilentCallback()
@@ -208,7 +208,7 @@ async def create_minikube_cluster_with_options(
     minikube_extra_args: str,
     force_recreate_cluster: bool,
     extra_certs: str | None = None,
-    callback: OutputCallback = None,
+    callback: OutputCallback | None = None,
 ) -> None:
     """Create a Minikube cluster with optional certificate preparation."""
     if callback is None:
@@ -242,7 +242,7 @@ async def create_minikube_cluster_with_options(
 
 
 async def delete_minikube_cluster_with_feedback(
-    minikube: str, cluster_name: str, callback: OutputCallback = None
+    minikube: str, cluster_name: str, callback: OutputCallback | None = None
 ) -> None:
     """Delete a Minikube cluster with user feedback."""
     if callback is None:

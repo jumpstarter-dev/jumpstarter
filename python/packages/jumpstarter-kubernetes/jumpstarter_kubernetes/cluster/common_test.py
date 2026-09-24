@@ -1,6 +1,7 @@
 """Tests for common cluster utilities and types."""
 
 import asyncio
+import asyncio.subprocess
 import os
 import tempfile
 from unittest.mock import AsyncMock, patch
@@ -171,7 +172,7 @@ class TestValidateClusterName:
 
         # This would be caught by type checking, but test runtime behavior
         with pytest.raises(ClusterNameValidationError, match="Cluster name cannot be empty"):
-            validate_cluster_name(None)
+            validate_cluster_name(None)  # type: ignore[arg-type]
 
     def test_validate_cluster_name_with_special_chars(self):
         result = validate_cluster_name("test-cluster_123")

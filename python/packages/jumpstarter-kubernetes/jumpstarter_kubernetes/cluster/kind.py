@@ -139,7 +139,7 @@ async def list_kind_clusters(kind: str) -> list[str]:
         return []
 
 
-async def inject_certificates(extra_certs: str, cluster_name: str, callback: OutputCallback = None) -> None:
+async def inject_certificates(extra_certs: str, cluster_name: str, callback: OutputCallback | None = None) -> None:
     """Inject custom certificates into a Kind cluster."""
     if callback is None:
         callback = SilentCallback()
@@ -183,7 +183,7 @@ async def create_kind_cluster_with_options(
     kind_extra_args: str,
     force_recreate_cluster: bool,
     extra_certs: str | None = None,
-    callback: OutputCallback = None,
+    callback: OutputCallback | None = None,
 ) -> None:
     """Create a Kind cluster with optional certificate injection."""
     if callback is None:
@@ -216,7 +216,9 @@ async def create_kind_cluster_with_options(
         raise ClusterOperationError(action, cluster_name, "kind", e) from e
 
 
-async def delete_kind_cluster_with_feedback(kind: str, cluster_name: str, callback: OutputCallback = None) -> None:
+async def delete_kind_cluster_with_feedback(
+    kind: str, cluster_name: str, callback: OutputCallback | None = None
+) -> None:
     """Delete a Kind cluster with user feedback."""
     if callback is None:
         callback = SilentCallback()

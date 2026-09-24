@@ -217,7 +217,7 @@ EXPORTER_OBJECT = V1Alpha1Exporter(
     kind="Exporter",
     metadata=V1ObjectMeta(namespace="default", name=EXPORTER_NAME, creation_timestamp="2024-01-01T21:00:00Z"),
     status=V1Alpha1ExporterStatus(
-        endpoint=EXPORTER_ENDPOINT, credential=V1ObjectReference(name=f"{EXPORTER_NAME}-credential"), devices=[]
+        endpoint=EXPORTER_ENDPOINT, credential=V1ObjectReference(name=f"{EXPORTER_NAME}-credential"), devices=[]  # type: ignore[call-arg]
     ),
 )
 

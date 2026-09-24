@@ -377,7 +377,7 @@ class Driver(
         """Redact query parameters from a URL to avoid leaking credentials in logs."""
         parsed = urlparse(url)
         if parsed.query:
-            return urlunparse(parsed._replace(query="[REDACTED]"))
+            return urlunparse(parsed._replace(query="[REDACTED]"))  # type: ignore[return-value]
         return url
 
     _SENSITIVE_HEADER_PREFIXES = ("authorization", "cookie", "proxy-authorization", "x-amz-", "x-ms-", "x-goog-")

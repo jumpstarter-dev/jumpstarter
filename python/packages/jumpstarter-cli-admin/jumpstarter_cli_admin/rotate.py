@@ -1,4 +1,6 @@
 
+from pathlib import Path
+
 import click
 from jumpstarter_cli_common.alias import AliasedGroup
 from jumpstarter_cli_common.blocking import blocking
@@ -57,6 +59,7 @@ async def rotate_client(
 ):
     """Rotate the internal token for a client object"""
     validate_name(name)
+    assert name is not None
     try:
         async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
             if output is None:
@@ -69,11 +72,11 @@ async def rotate_client(
                 if ClientConfigV1Alpha1.exists(name):
                     config = ClientConfigV1Alpha1.load(name)
                     config.token = new_token
-                    ClientConfigV1Alpha1.save(config, out)
+                    ClientConfigV1Alpha1.save(config, Path(out) if out is not None else None)
                 else:
                     client_config = await api.get_client_config(name, allow=[], unsafe=False)
                     client_config.token = new_token
-                    ClientConfigV1Alpha1.save(client_config, out)
+                    ClientConfigV1Alpha1.save(client_config, Path(out) if out is not None else None)
                 if output is None:
                     click.echo("Client configuration updated with new token")
     except ApiException as e:

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Literal
 
 import anyio
 import anyio.lowlevel
-from anyio import CancelScope
+from anyio import CancelScope, to_thread
 
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus, LogSource
 from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_MOTD_FILE, JUMPSTARTER_HOST
@@ -501,7 +501,7 @@ class HookExecutor:
                     """
                     logger.debug("wait_for_process: waiting for PID %d", process.pid)
                     try:
-                        result = await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
+                        result = await to_thread.run_sync(process.wait, abandon_on_cancel=True)
                         logger.debug("wait_for_process: PID %d exited with code %d", process.pid, result)
                         return result
                     finally:
@@ -520,7 +520,7 @@ class HookExecutor:
                                     logger.debug("wait_for_process: force killing PID %d", process.pid)
                                     process.kill()
                                 # Final reap with non-abandoning wait
-                                await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=False)
+                                await to_thread.run_sync(process.wait, abandon_on_cancel=False)
                             except Exception as e:  # noqa: BLE001
                                 logger.debug("wait_for_process: error during cleanup: %s", e)
 
@@ -562,12 +562,12 @@ class HookExecutor:
                         # Give it a moment to terminate gracefully
                         with suppress(Exception):
                             with anyio.move_on_after(5):
-                                await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
+                                await to_thread.run_sync(process.wait, abandon_on_cancel=True)
                         # Force kill if still running
                         if process.poll() is None:
                             process.kill()
                             with suppress(Exception):
-                                await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
+                                await to_thread.run_sync(process.wait, abandon_on_cancel=True)
 
                 elif returncode == 0:
                     logger.debug("Hook executed successfully")

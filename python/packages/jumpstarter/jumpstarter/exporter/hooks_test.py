@@ -195,8 +195,8 @@ class TestHookExecutor:
             await executor.execute_before_lease_hook(lease_scope)
 
         assert "exit code 1" in str(exc_info.value)
-        assert exc_info.value.on_failure == "endLease"
-        assert exc_info.value.hook_type == "before_lease"
+        assert exc_info.value.on_failure == "endLease"  # type: ignore[attr-defined]
+        assert exc_info.value.hook_type == "before_lease"  # type: ignore[attr-defined]
 
     async def test_hook_timeout(self, lease_scope) -> None:
         timeout_config = HookConfigV1Alpha1(
@@ -208,7 +208,7 @@ class TestHookExecutor:
             await executor.execute_before_lease_hook(lease_scope)
 
         assert "timed out after 1 seconds" in str(exc_info.value)
-        assert exc_info.value.on_failure == "exit"
+        assert exc_info.value.on_failure == "exit"  # type: ignore[attr-defined]
 
     @macos_pty_xfail
     async def test_hook_environment_variables(self, lease_scope) -> None:
@@ -419,7 +419,7 @@ class TestHookExecutor:
             warning_logged_in_context = context_active
             return original_handle(error_msg, on_failure, hook_type, cause)
 
-        executor._handle_hook_failure = tracking_handle
+        executor._handle_hook_failure = tracking_handle  # type: ignore[method-assign]
 
         result = await executor.execute_before_lease_hook(lease_scope)
         assert result is not None

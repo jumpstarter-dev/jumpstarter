@@ -57,7 +57,11 @@ async def get_latest_compatible_controller_version(client_version: str | None): 
         if use_fallback_only:
             # When no client version specified, all versions are candidates
             fallback.add((version, tag_name))
-        elif version.major == client_version_parsed.major and version.minor == client_version_parsed.minor:
+        elif (
+            client_version_parsed is not None
+            and version.major == client_version_parsed.major
+            and version.minor == client_version_parsed.minor
+        ):
             compatible.add((version, tag_name))
         else:
             fallback.add((version, tag_name))

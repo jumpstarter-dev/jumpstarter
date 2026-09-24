@@ -115,9 +115,9 @@ class TestLeaseEndDuringHook:
             nonlocal after_lease_started_before_hook_done
             if not lease_ctx.before_lease_hook.is_set():
                 after_lease_started_before_hook_done = True
-            return await original_run_after(*args, **kwargs)
+            return await original_run_after(*args, **kwargs)  # type: ignore[call-arg]
 
-        hook_executor.run_after_lease_hook = tracking_run_after
+        hook_executor.run_after_lease_hook = tracking_run_after  # type: ignore[method-assign]
 
         exporter = make_exporter(lease_ctx, hook_executor)
 
@@ -299,18 +299,18 @@ class TestConsecutiveLeaseOrdering:
 
         async def tracking_before(*args, **kwargs):
             events.append("before_start")
-            result = await original_run_before(*args, **kwargs)
+            result = await original_run_before(*args, **kwargs)  # type: ignore[call-arg]
             events.append("before_end")
             return result
 
         async def tracking_after(*args, **kwargs):
             events.append("after_start")
-            result = await original_run_after(*args, **kwargs)
+            result = await original_run_after(*args, **kwargs)  # type: ignore[call-arg]
             events.append("after_end")
             return result
 
-        hook_executor.run_before_lease_hook = tracking_before
-        hook_executor.run_after_lease_hook = tracking_after
+        hook_executor.run_before_lease_hook = tracking_before  # type: ignore[method-assign]
+        hook_executor.run_after_lease_hook = tracking_after  # type: ignore[method-assign]
 
         lease_ctx_1 = make_lease_context(lease_name="lease-1")
         exporter = make_exporter(lease_ctx_1, hook_executor)
@@ -456,9 +456,9 @@ class TestIdempotentLeaseEnd:
         async def counting_run_after(*args, **kwargs):
             nonlocal after_hook_call_count
             after_hook_call_count += 1
-            return await original_run_after(*args, **kwargs)
+            return await original_run_after(*args, **kwargs)  # type: ignore[call-arg]
 
-        hook_executor.run_after_lease_hook = counting_run_after
+        hook_executor.run_after_lease_hook = counting_run_after  # type: ignore[method-assign]
 
         lease_ctx = make_lease_context()
         lease_ctx.before_lease_hook.set()

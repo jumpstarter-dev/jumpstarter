@@ -19,6 +19,7 @@ from anyio import (
     create_task_group,
     move_on_after,
     sleep,
+    to_thread,
 )
 from anyio.abc import TaskGroup
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
@@ -116,7 +117,7 @@ def shutdown_runtime_sidecar(
     socket is configured (non-sidecar / InPlaceReuse hosts) or shutdown failed.
 
     Callers on the async event loop must offload this via
-    ``await anyio.to_thread.run_sync(shutdown_runtime_sidecar)``.
+    ``await to_thread.run_sync(shutdown_runtime_sidecar)``.
     """
     import os
     import subprocess
@@ -657,6 +658,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             except Exception as e:  # noqa: BLE001
                 logger.error("Failed to %s: %s", description, e)
                 return False, None
+        return False, None
 
     async def _send_report_status_rpc(self, request: jumpstarter_pb2.ReportStatusRequest) -> bool:
         """Send ReportStatus RPC to the controller with retry on transient errors.
@@ -1270,7 +1272,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 # Ensure the runtime container exits whenever this exporter is
                 # configured for ExitAndReplace (covers hook on_failure=exit and
                 # other stop paths that skip the lease-end branch above).
-                await anyio.to_thread.run_sync(shutdown_runtime_sidecar)
+                await to_thread.run_sync(shutdown_runtime_sidecar)
             self._tg = None
             self._status_drain_active = False
             clear_log_context()

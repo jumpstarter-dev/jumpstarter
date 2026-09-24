@@ -504,7 +504,7 @@ class TestStreamFanOut:
 
     def test_extra_returns_attribute_value(self):
         buf = ClientBuffer(max_bytes=1024)
-        stream = ExclusiveStream(fanout=None, client_id=1, buffer=buf)
+        stream = ExclusiveStream(fanout=None, client_id=1, buffer=buf)  # type: ignore[arg-type]
         original = type(stream).extra_attributes
         try:
             type(stream).extra_attributes = property(

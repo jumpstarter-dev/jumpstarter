@@ -68,9 +68,10 @@ class ProgressStream(ObjectStream[bytes]):
         self.__prog.advance(self.__recv, len(item))
         if self.logging and (datetime.now(tz=UTC) - self.__last > timedelta(seconds=2)):
             self.__last = datetime.now(tz=UTC)
-            console = Console(file=StringIO())
+            buf = StringIO()
+            console = Console(file=buf)
             console.print(self.__prog.get_renderable())
-            logger.info(console.file.getvalue().rstrip())
+            logger.info(buf.getvalue().rstrip())
 
         return item
 
@@ -85,9 +86,10 @@ class ProgressStream(ObjectStream[bytes]):
         self.__prog.advance(self.__recv, len(item))
         if self.logging and (datetime.now(tz=UTC) - self.__last > timedelta(seconds=2)):
             self.__last = datetime.now(tz=UTC)
-            console = Console(file=StringIO())
+            buf = StringIO()
+            console = Console(file=buf)
             console.print(self.__prog.get_renderable())
-            logger.info(console.file.getvalue().rstrip())
+            logger.info(buf.getvalue().rstrip())
 
         await self.stream.send(item)
 

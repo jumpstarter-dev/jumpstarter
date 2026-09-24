@@ -95,7 +95,7 @@ class ForceCallback:
     Skips all confirmations and produces minimal output.
     """
 
-    def __init__(self, output_callback: OutputCallback = None):
+    def __init__(self, output_callback: OutputCallback | None = None):
         """Initialize with optional output callback for messages."""
         self.output_callback = output_callback or SilentCallback()
 

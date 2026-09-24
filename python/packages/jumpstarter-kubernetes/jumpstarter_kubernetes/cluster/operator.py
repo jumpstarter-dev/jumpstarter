@@ -1,6 +1,7 @@
 """Operator-based Jumpstarter installation."""
 
 import asyncio
+import asyncio.subprocess
 from typing import Literal
 
 from ..callbacks import OutputCallback, SilentCallback
@@ -29,7 +30,7 @@ def _kubectl_base(kubeconfig: str | None = None, context: str | None = None) -> 
 async def install_cert_manager(
     kubeconfig: str | None = None,
     context: str | None = None,
-    callback: OutputCallback = None,
+    callback: OutputCallback | None = None,
 ) -> None:
     """Install cert-manager if not already present."""
     if callback is None:
@@ -75,7 +76,7 @@ async def install_operator(
     kubeconfig: str | None = None,
     context: str | None = None,
     operator_installer: str | None = None,
-    callback: OutputCallback = None,
+    callback: OutputCallback | None = None,
 ) -> None:
     """Apply the operator installer YAML from a GitHub release or local path."""
     if callback is None:
@@ -219,7 +220,7 @@ async def apply_jumpstarter_cr(
     image: str | None = None,
     kubeconfig: str | None = None,
     context: str | None = None,
-    callback: OutputCallback = None,
+    callback: OutputCallback | None = None,
 ) -> None:
     """Create and apply the Jumpstarter custom resource."""
     if callback is None:
@@ -232,7 +233,7 @@ async def apply_jumpstarter_cr(
     returncode, ns_yaml, _ = await run_command(cmd)
     if returncode == 0:
         apply_cmd = _kubectl_base(kubeconfig, context) + ["apply", "-f", "-"]
-        process = await asyncio.create_subprocess_exec(
+        process = await asyncio.create_subprocess_exec(  # type: ignore[missing-argument]
             *apply_cmd, stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -249,7 +250,7 @@ async def apply_jumpstarter_cr(
     callback.progress("Applying Jumpstarter CR...")
 
     apply_cmd = _kubectl_base(kubeconfig, context) + ["apply", "-f", "-"]
-    process = await asyncio.create_subprocess_exec(
+    process = await asyncio.create_subprocess_exec(  # type: ignore[missing-argument]
         *apply_cmd,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
@@ -270,7 +271,7 @@ async def wait_for_jumpstarter_ready(
     namespace: str = "jumpstarter-lab",
     kubeconfig: str | None = None,
     context: str | None = None,
-    callback: OutputCallback = None,
+    callback: OutputCallback | None = None,
     timeout: int = 300,
 ) -> None:
     """Wait for Jumpstarter controller and router deployments to become ready."""
@@ -330,7 +331,7 @@ async def install_jumpstarter_operator(
     kubeconfig: str | None = None,
     context: str | None = None,
     operator_installer: str | None = None,
-    callback: OutputCallback = None,
+    callback: OutputCallback | None = None,
 ) -> None:
     """Install Jumpstarter using the operator method.
 

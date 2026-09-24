@@ -171,9 +171,9 @@ class TestExporterStatusIconDelegation:
         assert columns[0] == "NAME"
         assert columns[1] == " "
 
-        console = Console(file=StringIO(), width=80)
+        console = Console(file=(buf := StringIO()), width=80)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
         assert "🟢" in output
         assert "my-exporter" in output
 
@@ -185,9 +185,9 @@ class TestExporterStatusIconDelegation:
         Exporter.rich_add_columns(table)
         exporter.rich_add_rows(table)
 
-        console = Console(file=StringIO(), width=80)
+        console = Console(file=(buf := StringIO()), width=80)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
         assert "+" in output
         assert "my-exporter" in output
 
@@ -206,9 +206,9 @@ class TestExporterStatusIconDelegation:
         assert " " not in columns
         assert "STATUS" in columns
 
-        console = Console(file=StringIO(), width=80)
+        console = Console(file=(buf := StringIO()), width=80)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
         assert "AVAILABLE" in output
         assert "my-exporter" in output
 
@@ -273,9 +273,9 @@ class TestExporterList:
         assert len(table.columns) == 6  # NAME, icon, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
         # Test actual table content by rendering it
-        console = Console(file=StringIO(), width=120)
+        console = Console(file=(buf := StringIO()), width=120)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
 
         # Check that the actual content is present in the rendered output
         assert "test-exporter" in output
@@ -296,9 +296,9 @@ class TestExporterList:
         assert len(table.columns) == 6  # NAME, icon, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
         # Test actual table content by rendering it
-        console = Console(file=StringIO(), width=120)
+        console = Console(file=(buf := StringIO()), width=120)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
 
         # Check that the actual content shows "Available" status
         assert "test-exporter" in output
@@ -328,9 +328,9 @@ class TestExporterList:
         assert len(table.columns) == 4  # NAME, icon, ONLINE, LABELS
 
         # Test actual table content by rendering it
-        console = Console(file=StringIO(), width=120)
+        console = Console(file=(buf := StringIO()), width=120)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
 
         # Check that the actual content shows correct online status indicators
         assert "online-exporter" in output
@@ -366,9 +366,9 @@ class TestExporterList:
         assert len(table.columns) == 7  # NAME, icon, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
         # Test actual table content by rendering it
-        console = Console(file=StringIO(), width=150)
+        console = Console(file=(buf := StringIO()), width=150)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
 
         # Verify all content is present
         assert "online-with-lease" in output
@@ -465,9 +465,9 @@ class TestExporterList:
         assert len(table.rows) == 1
 
         # Test actual table content by rendering it
-        console = Console(file=StringIO(), width=120)
+        console = Console(file=(buf := StringIO()), width=120)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
 
         # Verify the scheduled lease displays expected release time
         assert "test-exporter" in output
@@ -717,9 +717,9 @@ class TestLeaseRichDisplay:
         Lease.rich_add_columns(table)
         lease.rich_add_rows(table)
 
-        console = Console(file=StringIO(), width=200)
+        console = Console(file=(buf := StringIO()), width=200)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
         assert "2023-01-01 11:00:00" in output
 
     def test_rich_add_rows_empty_when_no_timing_data(self):
@@ -728,9 +728,9 @@ class TestLeaseRichDisplay:
         Lease.rich_add_columns(table)
         lease.rich_add_rows(table)
 
-        console = Console(file=StringIO(), width=200)
+        console = Console(file=(buf := StringIO()), width=200)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
         assert "test-lease" in output
         assert "test-client" in output
 
@@ -740,9 +740,9 @@ class TestLeaseRichDisplay:
         table = Table()
         Lease.rich_add_columns(table)
         lease.rich_add_rows(table)
-        console = Console(file=StringIO(), force_terminal=True)
+        console = Console(file=(buf := StringIO()), force_terminal=True)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
         assert "team=devops" in output
         assert "ci-job=12345" in output
 

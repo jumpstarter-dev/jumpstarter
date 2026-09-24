@@ -166,7 +166,7 @@ async def check_jumpstarter_installation(
 
         if returncode != 0:
             result_data["error"] = f"Command failed: {stderr or stdout}"
-            return V1Alpha1JumpstarterInstance(**result_data)
+            return V1Alpha1JumpstarterInstance(**result_data)  # type: ignore[missing-argument]
 
         crds = _parse_json_with_prefix(stdout)
         jumpstarter_crds = [
@@ -187,7 +187,7 @@ async def check_jumpstarter_installation(
     except RuntimeError as e:
         result_data["error"] = f"Command failed: {e}"
 
-    return V1Alpha1JumpstarterInstance(**result_data)
+    return V1Alpha1JumpstarterInstance(**result_data)  # type: ignore[missing-argument]
 
 
 async def get_cluster_info(

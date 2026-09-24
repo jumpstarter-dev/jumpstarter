@@ -168,8 +168,8 @@ def test_user_config_load_or_create_dir_exists():
 
 def test_user_config_load_or_create_dir_does_not_exist():
     with tempfile.TemporaryDirectory() as d:
-        UserConfigV1Alpha1.BASE_CONFIG_PATH = f"{d}/jumpstarter"
-        UserConfigV1Alpha1.USER_CONFIG_PATH = f"{d}/jumpstarter/config.yaml"
+        UserConfigV1Alpha1.BASE_CONFIG_PATH = f"{d}/jumpstarter"  # type: ignore[assignment]
+        UserConfigV1Alpha1.USER_CONFIG_PATH = f"{d}/jumpstarter/config.yaml"  # type: ignore[assignment]
         with patch.object(UserConfigV1Alpha1, "save") as mock_save:
             _ = UserConfigV1Alpha1.load_or_create()
             mock_save.assert_called_once_with(UserConfigV1Alpha1(config=UserConfigV1Alpha1Config(current_client=None)))

@@ -331,7 +331,7 @@ class Session(
             yield v
 
     async def Stream(self, _request_iterator, context):
-        request = StreamRequestMetadata(**dict(list(context.invocation_metadata()))).request
+        request = StreamRequestMetadata(**dict(list(context.invocation_metadata()))).request  # type: ignore[call-arg]
         logger.debug("Streaming(%s)", request)
         try:
             driver = self[request.uuid]

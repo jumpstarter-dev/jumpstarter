@@ -116,7 +116,7 @@ def make_api(*, discovery=None, existing=None, applied=None) -> ApplyV1Alpha1Api
 
 def patch_call(api: ApplyV1Alpha1Api):
     """The PATCH the API sent, as (path, path_params, query_params, body)."""
-    for call in api._client.call_api.await_args_list:
+    for call in api._client.call_api.await_args_list:  # type: ignore[attr-defined]
         if call.args[1] == "PATCH":
             return call
     raise AssertionError("no apply request was sent")
@@ -288,7 +288,7 @@ async def test_apply_rejects_a_kind_the_cluster_does_not_serve():
 @pytest.mark.asyncio
 async def test_apply_explains_a_missing_api_group():
     api = make_api()
-    api._client.call_api.side_effect = ApiException(status=404)
+    api._client.call_api.side_effect = ApiException(status=404)  # type: ignore[attr-defined]
 
     with pytest.raises(ManifestError, match="CRDs are installed"):
         await api.apply(load_manifests(CLIENT_MANIFEST)[0])
@@ -301,5 +301,5 @@ async def test_apply_all_looks_up_each_kind_once():
     applied = await api.apply_all(load_manifests(f"{CLIENT_MANIFEST}\n---\n{CLIENT_MANIFEST}"))
 
     assert [item.action for item in applied.items] == ["created", "created"]
-    discoveries = [call for call in api._client.call_api.await_args_list if call.args[1] == "GET"]
+    discoveries = [call for call in api._client.call_api.await_args_list if call.args[1] == "GET"]  # type: ignore[attr-defined]
     assert len(discoveries) == 1

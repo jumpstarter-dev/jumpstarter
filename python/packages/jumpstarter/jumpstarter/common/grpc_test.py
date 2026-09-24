@@ -29,8 +29,8 @@ def test_translate_grpc_failed_precondition_preserves_details():
     with pytest.raises(ConnectionError, match="requested exporter is disabled"), translate_grpc_exceptions():
         raise grpc.aio.AioRpcError(
             code=grpc.StatusCode.FAILED_PRECONDITION,
-            initial_metadata=None,
-            trailing_metadata=None,
+            initial_metadata=None,  # type: ignore[arg-type]
+            trailing_metadata=None,  # type: ignore[arg-type]
             details="requested exporter is disabled",
         )
 
@@ -53,7 +53,7 @@ class _LoopWithFakeResolver:
 
 def _patch_resolver(getaddrinfo):
     def fake_get_running_loop():
-        return _LoopWithFakeResolver(asyncio.events.get_running_loop(), getaddrinfo)
+        return _LoopWithFakeResolver(asyncio.get_running_loop(), getaddrinfo)
 
     return patch("asyncio.get_running_loop", fake_get_running_loop)
 

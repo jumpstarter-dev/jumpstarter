@@ -26,7 +26,7 @@ TEST_EXPORTER = V1Alpha1Exporter(
     ),
     status=V1Alpha1ExporterStatus(
         credential=V1ObjectReference(name="test-credential"),
-        devices=[V1Alpha1ExporterDevice(labels={"test": "label"}, uuid="f4cf49ab-fc64-46c6-94e7-a40502eb77b1")],
+        devices=[V1Alpha1ExporterDevice(labels={"test": "label"}, uuid="f4cf49ab-fc64-46c6-94e7-a40502eb77b1")],  # type: ignore[call-arg]
         endpoint="https://test-exporter",
     ),
 )
@@ -468,7 +468,7 @@ def test_exporter_rich_add_rows_devices_when_it_has_none():
         api_version="jumpstarter.dev/v1alpha1",
         kind="Exporter",
         metadata=V1ObjectMeta(name="never-run", namespace="default", creation_timestamp="2021-10-01T00:00:00Z"),
-        status=V1Alpha1ExporterStatus(endpoint="https://e", devices=[]),
+        status=V1Alpha1ExporterStatus(endpoint="https://e", devices=[]),  # type: ignore[call-arg]
     )
     mock_table = MagicMock()
     exporter.rich_add_rows(mock_table, devices=True)

@@ -1,6 +1,7 @@
 """Common utilities and types for cluster operations."""
 
 import asyncio
+import asyncio.subprocess
 import os
 from typing import Literal
 
@@ -72,7 +73,7 @@ async def run_command(cmd: list[str]) -> tuple[int, str, str]:
         raise ValueError("Command list cannot be empty")
 
     try:
-        process = await asyncio.create_subprocess_exec(
+        process = await asyncio.create_subprocess_exec(  # type: ignore[missing-argument]
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await process.communicate()
@@ -99,7 +100,7 @@ async def run_command_with_output(cmd: list[str]) -> int:
         raise ValueError("Command list cannot be empty")
 
     try:
-        process = await asyncio.create_subprocess_exec(*cmd)
+        process = await asyncio.create_subprocess_exec(*cmd)  # type: ignore[missing-argument]
         return await process.wait()
     except builtins.FileNotFoundError as e:
         raise RuntimeError(f"Command not found: {cmd[0]}") from e

@@ -51,4 +51,4 @@ class TestDisplayOptions:
     def test_options_are_immutable(self):
         opts = DisplayOptions(no_color=True, no_icons=True)
         with pytest.raises(dataclasses.FrozenInstanceError):
-            opts.no_color = False
+            opts.no_color = False  # type: ignore[misc]

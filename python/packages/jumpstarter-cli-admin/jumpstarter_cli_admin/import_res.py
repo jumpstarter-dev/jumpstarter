@@ -1,4 +1,6 @@
 
+from pathlib import Path
+
 import click
 from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.opt import (
@@ -82,7 +84,7 @@ async def import_client(
             allow_drivers = allow.split(",") if allow is not None and len(allow) > 0 else []
             client_config = await api.get_client_config(name, allow=allow_drivers, unsafe=unsafe)
             client_config.tls.insecure = insecure_tls
-            config_path = ClientConfigV1Alpha1.save(client_config, out)
+            config_path = ClientConfigV1Alpha1.save(client_config, Path(out) if out is not None else None)
             # If this is the only client config, set it as default
             if out is None and len(ClientConfigV1Alpha1.list().items) == 1:
                 user_config = UserConfigV1Alpha1.load_or_create()

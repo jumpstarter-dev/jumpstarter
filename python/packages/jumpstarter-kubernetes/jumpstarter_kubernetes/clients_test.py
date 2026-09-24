@@ -315,7 +315,7 @@ async def test_get_ca_bundle_other_api_error():
     with pytest.raises(ApiException) as exc_info:
         await api.get_ca_bundle()
 
-    assert exc_info.value.status == 403
+    assert exc_info.value.status == 403  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio

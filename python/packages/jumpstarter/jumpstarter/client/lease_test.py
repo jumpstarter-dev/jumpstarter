@@ -915,8 +915,8 @@ class TestServeUnixAsync:
                 return Mock(router_endpoint="test-endpoint", router_token="test-token")
             raise AioRpcError(
                 code=StatusCode.UNAVAILABLE,
-                initial_metadata=None,
-                trailing_metadata=None,
+                initial_metadata=None,  # type: ignore[arg-type]
+                trailing_metadata=None,  # type: ignore[arg-type]
                 details="exporter offline",
             )
 
@@ -928,7 +928,7 @@ class TestServeUnixAsync:
             async with lease.serve_unix_async() as socket_path, await anyio.connect_unix(socket_path):
                 await anyio.sleep(1)
 
-        exceptions = exc_info.value.exceptions
+        exceptions = exc_info.value.exceptions  # type: ignore[attr-defined]
         assert len(exceptions) == 1
         assert isinstance(exceptions[0], ExporterUnreachableError)
         assert "Per-connection Dial failed" in str(exceptions[0])
@@ -956,8 +956,8 @@ class TestServeUnixAsync:
             if calls["count"] == 2:
                 raise AioRpcError(
                     code=StatusCode.UNAVAILABLE,
-                    initial_metadata=None,
-                    trailing_metadata=None,
+                    initial_metadata=None,  # type: ignore[arg-type]
+                    trailing_metadata=None,  # type: ignore[arg-type]
                     details="transient",
                 )
             return Mock(router_endpoint="test-endpoint", router_token="test-token")

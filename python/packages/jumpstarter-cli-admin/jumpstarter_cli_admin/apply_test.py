@@ -28,11 +28,11 @@ metadata:
 
 def applied(kind: str, name: str, action: str, api_version: str = "jumpstarter.dev/v1alpha1"):
     return V1Alpha1AppliedResource(
-        apiVersion=api_version,
+        apiVersion=api_version,  # type: ignore[call-arg]
         kind=kind,
         name=name,
         namespace="default",
-        action=action,
+        action=action,  # type: ignore[arg-type]
         resource={"apiVersion": api_version, "kind": kind, "metadata": {"name": name}},
     )
 

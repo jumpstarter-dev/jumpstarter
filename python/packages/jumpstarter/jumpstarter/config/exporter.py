@@ -139,6 +139,8 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
                 from jumpstarter_driver_composite.driver import Proxy
 
                 return Proxy(ref=self.root.ref)
+            case _:
+                raise ValueError(f"Unknown driver instance type: {type(self.root)}")
 
     @classmethod
     def from_path(cls, path: str) -> ExporterConfigV1Alpha1DriverInstance:
@@ -327,11 +329,11 @@ class ExporterConfigV1Alpha1(BaseModel):
         from jumpstarter.exporter import Session
 
         with Session(
-            root_device=ExporterConfigV1Alpha1DriverInstance(
-                type="jumpstarter_driver_composite.driver.Composite",
-                description=self.description,
-                children=self.export,
-            ).instantiate(),
+            root_device=ExporterConfigV1Alpha1DriverInstance.model_validate({
+                "type": "jumpstarter_driver_composite.driver.Composite",
+                "description": self.description,
+                "children": self.export,
+            }).instantiate(),
             motd=self.motd,
         ) as session:
             async with session.serve_unix_async() as path:
@@ -384,11 +386,11 @@ class ExporterConfigV1Alpha1(BaseModel):
                 token=self.token or "",
                 exporter_name=self.metadata.name,
                 channel_factory=dummy_channel_factory if standalone else channel_factory,
-                device_factory=ExporterConfigV1Alpha1DriverInstance(
-                    type="jumpstarter_driver_composite.driver.Composite",
-                    description=self.description,
-                    children=self.export,
-                ).instantiate,
+                device_factory=ExporterConfigV1Alpha1DriverInstance.model_validate({
+                    "type": "jumpstarter_driver_composite.driver.Composite",
+                    "description": self.description,
+                    "children": self.export,
+                }).instantiate,
                 tls=self.tls,
                 grpc_options=self.grpcOptions,
                 hook_executor=hook_executor,

@@ -1,4 +1,6 @@
 
+from pathlib import Path
+
 import click
 from jumpstarter_cli_common.alias import AliasedGroup
 from jumpstarter_cli_common.blocking import blocking
@@ -113,7 +115,7 @@ async def create_client(
                 client_config.drivers.unsafe = unsafe
                 client_config.drivers.allow = allow_drivers
                 client_config.tls.insecure = insecure_tls
-                ClientConfigV1Alpha1.save(client_config, out)
+                ClientConfigV1Alpha1.save(client_config, Path(out) if out is not None else None)
                 # If this is the only client config, set it as default
                 if out is None and len(ClientConfigV1Alpha1.list().items) == 1:
                     user_config = UserConfigV1Alpha1.load_or_create()

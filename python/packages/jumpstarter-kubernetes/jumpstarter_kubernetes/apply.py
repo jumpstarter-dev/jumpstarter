@@ -265,7 +265,7 @@ class ApplyV1Alpha1Api(AbstractAsyncCustomObjectApi):
         )
 
         return V1Alpha1AppliedResource(
-            apiVersion=api_version,
+            apiVersion=api_version,  # type: ignore[call-arg]
             kind=kind,
             name=name,
             namespace=namespace,

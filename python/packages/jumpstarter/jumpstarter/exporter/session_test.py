@@ -464,7 +464,7 @@ async def test_serve_tcp_passphrase_rejected():
                 stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
                 with pytest.raises(grpc.aio.AioRpcError) as exc_info:
                     await stub.GetReport(empty_pb2.Empty(), metadata=metadata)
-                assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
+                assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED  # type: ignore[attr-defined]
 
 
 @pytest.mark.anyio
@@ -482,7 +482,7 @@ async def test_serve_tcp_passphrase_missing():
             stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
             with pytest.raises(grpc.aio.AioRpcError) as exc_info:
                 await stub.GetReport(empty_pb2.Empty())
-            assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
+            assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED  # type: ignore[attr-defined]
 
 
 # ============================================================================

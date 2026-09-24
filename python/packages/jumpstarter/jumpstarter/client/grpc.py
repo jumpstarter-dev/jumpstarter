@@ -29,7 +29,7 @@ class WithOptions:
     show_disabled: bool = False
 
 
-def add_display_columns(table, options: WithOptions = None):
+def add_display_columns(table, options: WithOptions | None = None):
     if options is None:
         options = WithOptions()
     table.add_column("NAME")
@@ -48,7 +48,9 @@ def add_display_columns(table, options: WithOptions = None):
         table.add_column("RELEASE TIME")
 
 
-def add_exporter_row(table, exporter, options: WithOptions = None, lease_info: tuple[str, str, str] | None = None):
+def add_exporter_row(
+    table, exporter, options: WithOptions | None = None, lease_info: tuple[str, str, str] | None = None
+):
     if options is None:
         options = WithOptions()
     row_data = []
@@ -129,10 +131,10 @@ class Exporter(BaseModel):
         )
 
     @classmethod
-    def rich_add_columns(cls, table, options: WithOptions = None):
+    def rich_add_columns(cls, table, options: WithOptions | None = None):
         add_display_columns(table, options)
 
-    def rich_add_rows(self, table, options: WithOptions = None):
+    def rich_add_rows(self, table, options: WithOptions | None = None):
         lease_info = None
         if options and options.show_leases and self.lease:
             lease_client = self.lease.client
@@ -525,11 +527,11 @@ class ClientService:
     ):
         with translate_grpc_exceptions():
             exporters = await self.stub.ListExporters(
-                client_pb2.ListExportersRequest(
+                client_pb2.ListExportersRequest(  # type: ignore[call-arg]
                     parent=f"namespaces/{self.namespace}",
-                    page_size=page_size,
-                    page_token=page_token,
-                    filter=filter,
+                    page_size=page_size,  # type: ignore[arg-type]
+                    page_token=page_token,  # type: ignore[arg-type]
+                    filter=filter,  # type: ignore[arg-type]
                     show_hidden_labels=show_hidden_labels,
                 )
             )
@@ -555,11 +557,11 @@ class ClientService:
     ):
         with translate_grpc_exceptions():
             leases = await self.stub.ListLeases(
-                client_pb2.ListLeasesRequest(
+                client_pb2.ListLeasesRequest(  # type: ignore[call-arg]
                     parent=f"namespaces/{self.namespace}",
-                    page_size=page_size,
-                    page_token=page_token,
-                    filter=extract_match_labels_filter(filter),
+                    page_size=page_size,  # type: ignore[arg-type]
+                    page_token=page_token,  # type: ignore[arg-type]
+                    filter=extract_match_labels_filter(filter),  # type: ignore[arg-type]
                     only_active=only_active,
                     tag_filter=tag_filter or "",
                 )
@@ -706,8 +708,8 @@ class MultipathExporterStub:
     def __post_init__(self, channels):
         for channel in channels:
             stub = SimpleNamespace()
-            jumpstarter_pb2_grpc.ExporterServiceStub.__init__(stub, channel)
-            router_pb2_grpc.RouterServiceStub.__init__(stub, channel)
+            jumpstarter_pb2_grpc.ExporterServiceStub.__init__(stub, channel)  # type: ignore[arg-type]
+            router_pb2_grpc.RouterServiceStub.__init__(stub, channel)  # type: ignore[arg-type]
             self.__stubs[channel] = stub
 
     def __getattr__(self, name):

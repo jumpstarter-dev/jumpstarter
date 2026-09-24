@@ -61,7 +61,7 @@ class V1Alpha1Exporter(JsonBaseModel):
                 if "credential" in dict["status"]
                 else None,
                 endpoint=dict["status"].get("endpoint", ""),
-                devices=[V1Alpha1ExporterDevice(labels=d["labels"], uuid=d["uuid"]) for d in dict["status"]["devices"]]
+                devices=[V1Alpha1ExporterDevice(labels=d["labels"], uuid=d["uuid"]) for d in dict["status"]["devices"]]  # type: ignore[call-arg]
                 if "devices" in dict["status"]
                 else [],
                 exporter_status=dict["status"].get("exporterStatus"),

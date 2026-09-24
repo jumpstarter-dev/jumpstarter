@@ -121,8 +121,4 @@ lint-fix:
 
 .PHONY: default help pkg-test-all pkg-ty-all build generate sync \
 	clean clean-venv clean-build clean-test test test-report ty \
-	lint lint-fix \
-	pkg-ty-jumpstarter \
-	pkg-ty-jumpstarter-cli-admin \
-	pkg-ty-jumpstarter-kubernetes \
-	pkg-ty-jumpstarter-protocol
+	lint lint-fix

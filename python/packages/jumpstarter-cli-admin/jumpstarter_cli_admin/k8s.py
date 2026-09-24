@@ -9,8 +9,8 @@ def handle_k8s_api_exception(e: ApiException):
     """Handle a Kubernetes API exception"""
     # Try to parse the JSON response
     try:
-        json_body = json.loads(e.body)
-    except (json.decoder.JSONDecodeError, TypeError):
+        json_body = json.loads(e.body)  # type: ignore[arg-type]
+    except (json.JSONDecodeError, TypeError):
         raise click.ClickException(f"Server error: {e.body}") from e
 
     # Valid JSON is not necessarily a Status: a proxy in front of the API server

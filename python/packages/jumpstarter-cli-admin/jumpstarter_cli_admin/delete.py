@@ -57,6 +57,7 @@ async def delete_client(
 ):
     """Delete a client object in the Kubernetes cluster"""
     validate_name(name)
+    assert name is not None
     try:
         async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
             await api.delete_client(name)
@@ -109,6 +110,7 @@ async def delete_exporter(
 ):
     """Delete an exporter object in the Kubernetes cluster"""
     validate_name(name)
+    assert name is not None
     try:
         async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
             await api.delete_exporter(name)

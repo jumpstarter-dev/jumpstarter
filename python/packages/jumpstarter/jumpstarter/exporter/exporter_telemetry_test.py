@@ -80,8 +80,8 @@ async def test_setup_telemetry_rpc_error_is_silently_ignored():
 
     err = grpc.aio.AioRpcError(
         code=grpc.StatusCode.UNIMPLEMENTED,
-        initial_metadata=None,
-        trailing_metadata=None,
+        initial_metadata=None,  # type: ignore[arg-type]
+        trailing_metadata=None,  # type: ignore[arg-type]
     )
 
     async def raise_rpc(*_a, **_kw):

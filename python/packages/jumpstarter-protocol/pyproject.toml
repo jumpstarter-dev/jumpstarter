@@ -37,3 +37,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.hooks.pin_jumpstarter]
 name = "pin_jumpstarter"
+
+[tool.ty.src]
+exclude = [
+  "jumpstarter_protocol/jumpstarter/**/*_pb2.py",
+  "jumpstarter_protocol/jumpstarter/**/*_pb2_grpc.py",
+  "jumpstarter_protocol/jumpstarter/**/*_pb2.pyi",
+  "jumpstarter_protocol/jumpstarter/**/*_pb2_grpc.pyi",
+]
