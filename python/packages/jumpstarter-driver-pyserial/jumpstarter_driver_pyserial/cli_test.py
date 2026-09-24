@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from anyio import BrokenResourceError, EndOfStream
+from anyio import BrokenResourceError, EndOfStream, Event, fail_after
 from click.testing import CliRunner
 
 from .driver import PySerial
@@ -276,23 +276,45 @@ def test_pipe_command_mode_descriptions(pyserial_client):
         assert "read-only" in result.output.lower()
 
 
+def test_pipe_observe_ignores_redirected_stdin(pyserial_client):
+    with patch.object(pyserial_client.portal, "call") as call:
+        result = CliRunner().invoke(pyserial_client.cli(), ["pipe", "--observe"], input="command\n")
+
+    assert result.exit_code == 0
+    call.assert_called_once()
+    assert call.call_args.args[2] is False
+    assert call.call_args.args[5] is True
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     ("observe", "input_enabled", "expected_method"),
-    [(False, False, "observe"), (True, True, "observe"), (False, True, "connect")],
+    [(False, False, "observe"), (True, False, "observe"), (False, True, "connect")],
 )
 async def test_pipe_serial_selects_stream_mode(pyserial_client, observe, input_enabled, expected_method):
     methods = []
+    stdin_started = Event()
 
     @asynccontextmanager
     async def stream_async(*, method):
         methods.append(method)
         yield object()
 
+    async def serial_to_output(*_args):
+        if input_enabled:
+            with fail_after(1):
+                await stdin_started.wait()
+
+    async def stdin_to_serial(_stream):
+        stdin_started.set()
+        return (0, 0)
+
     with (
         patch.object(pyserial_client, "stream_async", side_effect=stream_async),
-        patch.object(pyserial_client, "_serial_to_output", new_callable=AsyncMock) as output,
-        patch.object(pyserial_client, "_stdin_to_serial", new_callable=AsyncMock) as stdin,
+        patch.object(
+            pyserial_client, "_serial_to_output", new_callable=AsyncMock, side_effect=serial_to_output
+        ) as output,
+        patch.object(pyserial_client, "_stdin_to_serial", new_callable=AsyncMock, side_effect=stdin_to_serial) as stdin,
     ):
         await pyserial_client._pipe_serial(input_enabled=input_enabled, observe=observe)
 

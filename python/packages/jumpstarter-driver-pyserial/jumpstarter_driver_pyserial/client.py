@@ -190,7 +190,7 @@ class PySerialClient(DriverClient):
             """Pipe serial port data to stdout or file.
 
             By default, reads from the serial port and writes to stdout.
-            Automatically detects if stdin is piped and enables bidirectional mode.
+            Automatically detects piped stdin unless --observe is selected.
 
             When stdin is used, commands are sent until EOF, then continues
             monitoring serial output until Ctrl+C.
@@ -241,7 +241,7 @@ class PySerialClient(DriverClient):
             elif input_flag:
                 input_enabled = True
             else:
-                input_enabled = stdin_is_piped
+                input_enabled = stdin_is_piped and not observe
 
             if no_output and not input_enabled:
                 raise click.UsageError("--no-output requires stdin input (pipe stdin or use --input)")
