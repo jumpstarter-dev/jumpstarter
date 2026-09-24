@@ -96,6 +96,7 @@ func Connect(cfg SSHConnectConfig) (*SSHHost, error) {
 			ssh.PublicKeys(signer),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // lab hosts; TODO: make configurable
+		Timeout:         30 * time.Second,
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
@@ -142,9 +143,16 @@ func (h *SSHHost) RunCommand(ctx context.Context, command string) (CommandResult
 	}
 
 	// Close the session when the context expires to unblock Run.
+	// The done channel ensures the goroutine exits when the command
+	// completes, even if the context has a long or no deadline.
+	done := make(chan struct{})
+	defer close(done)
 	go func() {
-		<-ctx.Done()
-		_ = session.Close()
+		select {
+		case <-ctx.Done():
+			_ = session.Close()
+		case <-done:
+		}
 	}()
 
 	stdout, err := session.StdoutPipe()
@@ -214,6 +222,9 @@ func (h *SSHHost) ReconcileFile(ctx context.Context, path, content string) (bool
 
 	existing, err := h.readFile(path)
 	if err != nil {
+		if !isNotExist(err) {
+			return false, "", fmt.Errorf("read %s on %s: %w", path, h.hostName, err)
+		}
 		// File doesn't exist — create it.
 		if err := h.writeFile(path, content); err != nil {
 			return false, "", fmt.Errorf("create %s on %s: %w", path, h.hostName, err)
@@ -307,10 +318,12 @@ func (h *SSHHost) writeFile(path, content string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close() //nolint:errcheck
 
-	_, err = f.Write([]byte(content))
-	return err
+	if _, err := f.Write([]byte(content)); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // isNotExist checks whether an SFTP error indicates "file not found".
@@ -323,8 +336,10 @@ func isNotExist(err error) bool {
 }
 
 // sensitivePatterns matches credential-like fields for sanitization.
+// The value group matches to the end of the line so multi-word
+// secrets like "password: my secret" are fully redacted.
 var sensitivePatterns = regexp.MustCompile(
-	`(?i)(token|password|key|secret|credential)(\s*[:=]\s*)(\S+)`,
+	`(?im)(token|password|key|secret|credential)([^\S\n]*[:=][^\S\n]*)(.+)`,
 )
 
 // SanitizeDiff redacts sensitive values from diff output.

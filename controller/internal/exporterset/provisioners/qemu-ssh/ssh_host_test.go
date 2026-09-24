@@ -56,6 +56,11 @@ func TestSanitizeDiff_redactsTokens(t *testing.T) {
 			input: "endpoint: https://example.com\ntoken: abc123\nname: test",
 			want:  "endpoint: https://example.com\ntoken: [REDACTED]\nname: test",
 		},
+		{
+			name:  "multi-word secret fully redacted",
+			input: `password: my secret value`,
+			want:  `password: [REDACTED]`,
+		},
 	}
 
 	for _, tc := range cases {

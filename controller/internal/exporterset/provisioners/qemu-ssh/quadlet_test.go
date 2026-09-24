@@ -32,7 +32,10 @@ func baseConfig() QuadletConfig {
 
 func TestRuntimeContainerFile_basic(t *testing.T) {
 	cfg := baseConfig()
-	got := RuntimeContainerFile(cfg)
+	got, err := RuntimeContainerFile(cfg)
+	if err != nil {
+		t.Fatalf("RuntimeContainerFile() error = %v", err)
+	}
 
 	mustContain(t, got, "[Unit]")
 	mustContain(t, got, "Description=Jumpstarter QEMU Runtime for rpi4-virtual-abc12")
@@ -51,7 +54,10 @@ func TestRuntimeContainerFile_basic(t *testing.T) {
 func TestRuntimeContainerFile_withKVM(t *testing.T) {
 	cfg := baseConfig()
 	cfg.KVM = true
-	got := RuntimeContainerFile(cfg)
+	got, err := RuntimeContainerFile(cfg)
+	if err != nil {
+		t.Fatalf("RuntimeContainerFile() error = %v", err)
+	}
 
 	mustContain(t, got, "AddDevice=/dev/kvm")
 }
@@ -59,10 +65,31 @@ func TestRuntimeContainerFile_withKVM(t *testing.T) {
 func TestRuntimeContainerFile_withExtraDevices(t *testing.T) {
 	cfg := baseConfig()
 	cfg.ExtraDevices = []string{"/dev/vhost-net", "/dev/net/tun"}
-	got := RuntimeContainerFile(cfg)
+	got, err := RuntimeContainerFile(cfg)
+	if err != nil {
+		t.Fatalf("RuntimeContainerFile() error = %v", err)
+	}
 
 	mustContain(t, got, "AddDevice=/dev/vhost-net")
 	mustContain(t, got, "AddDevice=/dev/net/tun")
+}
+
+func TestRuntimeContainerFile_rejectsNewlineInDevice(t *testing.T) {
+	cfg := baseConfig()
+	cfg.ExtraDevices = []string{"/dev/kvm\nPrivileged=true"}
+	_, err := RuntimeContainerFile(cfg)
+	if err == nil {
+		t.Fatal("expected error for device path with newline injection")
+	}
+}
+
+func TestRuntimeContainerFile_rejectsTrailingBackslash(t *testing.T) {
+	cfg := baseConfig()
+	cfg.ExtraDevices = []string{`/dev/kvm\`}
+	_, err := RuntimeContainerFile(cfg)
+	if err == nil {
+		t.Fatal("expected error for device path with trailing backslash")
+	}
 }
 
 func TestExporterContainerFile_basic(t *testing.T) {
