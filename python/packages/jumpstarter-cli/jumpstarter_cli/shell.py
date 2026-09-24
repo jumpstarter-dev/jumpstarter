@@ -437,7 +437,9 @@ async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope
 
                     logger.debug("Exporter ready (status: %s), launching shell...", result)
 
-                    if monitor.status_message and monitor.status_message.startswith(HOOK_WARNING_PREFIX):  # pragma: no cover
+                    if monitor.status_message and monitor.status_message.startswith(  # pragma: no cover
+                        HOOK_WARNING_PREFIX
+                    ):
                         warning_text = monitor.status_message[len(HOOK_WARNING_PREFIX) :]
                         click.echo(click.style(f"Warning: {warning_text}", fg="yellow", bold=True))
 
@@ -527,8 +529,8 @@ async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope
                                         timeout=300.0,
                                     )
                                     if result == ExporterStatus.AVAILABLE:
-                                        if monitor.status_message and monitor.status_message.startswith(  # pragma: no cover
-                                            HOOK_WARNING_PREFIX
+                                        if monitor.status_message and monitor.status_message.startswith(
+                                            HOOK_WARNING_PREFIX  # pragma: no cover
                                         ):
                                             warning_text = monitor.status_message[len(HOOK_WARNING_PREFIX) :]
                                             click.echo(
