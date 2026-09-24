@@ -202,7 +202,12 @@ class _SharedServer:
             logger.debug(result.stderr.strip())
 
     def kill(self, connect_timeout: float, logger) -> None:
-        """Kill the ADB server, bounded because this runs from teardown."""
+        """Kill the ADB server, or raise if it is still running afterwards.
+
+        Bounded, because this also runs from teardown. `adb kill-server` exits 0 even when
+        there was no server to kill ("cannot connect to daemon"), so a zero exit is not
+        proof of anything: what counts is whether the port is still being served.
+        """
         logger.info("Killing ADB server on port %d", self.port)
         try:
             result = subprocess.run(
@@ -214,12 +219,26 @@ class _SharedServer:
                 timeout=connect_timeout,
                 env=self.env(),
             )
-            if result.stdout.strip():
-                logger.info(result.stdout.strip())
         except subprocess.CalledProcessError as e:
-            logger.error("Failed to kill ADB server: %s", e)
-        except subprocess.TimeoutExpired:
-            logger.error("`adb kill-server` timed out after %ss", connect_timeout)
+            detail = (e.stderr or "").strip() or str(e)
+            raise RuntimeError(f"could not kill the ADB server on port {self.port}: {detail}") from e
+        except subprocess.TimeoutExpired as e:
+            raise RuntimeError(f"`adb kill-server` timed out after {connect_timeout}s on port {self.port}") from e
+        except OSError as e:
+            raise RuntimeError(f"could not run adb to kill the ADB server on port {self.port}: {e}") from e
+
+        if result.stdout.strip():
+            logger.info(result.stdout.strip())
+        if self._port_open():
+            raise RuntimeError(f"`adb kill-server` returned, but port {self.port} is still being served")
+
+    def _port_open(self) -> bool:
+        """Whether anything is still accepting connections on this server's port."""
+        try:
+            with socket.create_connection(("127.0.0.1", self.port), timeout=1):
+                return True
+        except OSError:
+            return False
 
 
 # One ADB server per port per exporter process. Keyed on the port alone, because that
@@ -305,7 +324,12 @@ def _release_server(port: int, *, connect_timeout: float, logger) -> None:
             return
         del _SERVERS[port]
         if entry.owns:
-            entry.kill(connect_timeout, logger)
+            # Teardown is best-effort: a lease must finish releasing even if the server
+            # will not die, so report the failure rather than abort the rest of `close()`.
+            try:
+                entry.kill(connect_timeout, logger)
+            except RuntimeError as e:
+                logger.error("%s", e)
         else:
             logger.debug("leaving the adopted ADB server on port %d running", port)
 

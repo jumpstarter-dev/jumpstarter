@@ -742,6 +742,80 @@ def test_kill_server_gives_up_ownership(mock_conn, _):
     assert len([c for c in fake.calls if c[1:] == ["kill-server"]]) == 1
 
 
+@pytest.mark.parametrize(
+    "failure, message",
+    [
+        (subprocess.TimeoutExpired("adb kill-server", 30.0), "timed out"),
+        (subprocess.CalledProcessError(1, "adb kill-server", stderr="permission denied"), "permission denied"),
+        (OSError("Input/output error"), "Input/output error"),
+    ],
+    ids=["hangs", "exit-nonzero", "cannot-exec"],
+)
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_kill_server_reports_a_failed_kill(mock_conn, _, failure, message):
+    """The exported `kill_server` said nothing when the kill failed.
+
+    It then cleared ownership as though the server were gone, so a caller asking to kill
+    the server was told it had succeeded while the server kept running.
+    """
+    fake, patcher = _fake()
+    with patcher:
+        server = AdbServer(adopt_existing_server=False)
+
+    def run(argv, **kwargs):
+        if argv[1:] == ["kill-server"]:
+            raise failure
+        return fake(argv, **kwargs)
+
+    with patch("subprocess.run", side_effect=run):
+        with pytest.raises(RuntimeError, match=message):
+            server.kill_server()
+
+    assert server._owns_server is True, "gave up ownership of a server that is still running"
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+def test_kill_server_notices_a_server_that_survived(_):
+    """`adb kill-server` exits 0 even with no server to kill, so exit status proves nothing.
+
+    Measured against adb 1.0.41: it prints `cannot connect to daemon` and exits 0 when the
+    port is empty. What counts is whether the port is still being served afterwards.
+    """
+    fake, patcher = _fake()
+    with patcher, patch("socket.create_connection", side_effect=OSError("refused")):
+        server = AdbServer(adopt_existing_server=False)
+
+    with (
+        patcher,
+        patch("socket.create_connection", return_value=MagicMock(__enter__=MagicMock(), __exit__=MagicMock())),
+    ):
+        with pytest.raises(RuntimeError, match="still being served"):
+            server.kill_server()
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_teardown_finishes_even_if_the_server_will_not_die(mock_conn, _):
+    """`close()` runs at lease end; a stuck server must not stop the lease being released.
+
+    The failure is logged instead, and the registry entry is dropped either way.
+    """
+    fake, patcher = _fake()
+    with patcher:
+        server = AdbServer(adopt_existing_server=False)
+
+    def run(argv, **kwargs):
+        if argv[1:] == ["kill-server"]:
+            raise subprocess.TimeoutExpired("adb kill-server", 30.0)
+        return fake(argv, **kwargs)
+
+    with patch("subprocess.run", side_effect=run):
+        server.close()  # must not raise
+
+    assert not adb_driver._SERVERS
+
+
 # ================================================================== AdbDevice
 #
 # One declared device per driver instance. Identity for USB is the BENCH PORT, not the
