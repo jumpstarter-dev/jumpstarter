@@ -73,7 +73,7 @@ HTTP servers are used to serve images to the DUT bootloader and busybox shell.
 | variant        | The variant of the DUT DTB to flash to     | str  | no       | (the default defined in the manifest) |
 | manifest       | The manifest to use from the bundle. Every bundle can have multiple manifests, this is the name of the manifest to use  | str  | no       | manifest.yaml |
 | default_target | The default target to flash to if none specified | str  | no       |                              |
-| exporter_ip        | IP address the DUT uses to reach the exporter tftp/http servers, overrides the detected server IP | str | no | (detected from the tftp/http server) |
+| exporter_ip        | IP address the DUT uses to reach the exporter tftp/http servers. Passed as `advertised_host` to the auto-created tftp/http children, overriding the detected server IP | str | no | (detected from the tftp/http server) |
 
 ### oci-bundles
 

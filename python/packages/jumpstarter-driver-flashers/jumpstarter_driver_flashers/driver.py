@@ -33,13 +33,22 @@ class BaseFlasher(Driver):
             super().__post_init__()
 
         # Ensure required children are present if not already instantiated
-        # in configuration
+        # in configuration. When exporter_ip is configured, the auto-created
+        # children advertise it to the DUT without binding to it.
         if "tftp" not in self.children:
-            self.children["tftp"] = Tftp(root_dir=self.tftp_dir, remove_created_on_close=True)
+            self.children["tftp"] = Tftp(
+                root_dir=self.tftp_dir,
+                remove_created_on_close=True,
+                advertised_host=self.exporter_ip,
+            )
         self.tftp = self.children["tftp"]
 
         if "http" not in self.children:
-            self.children["http"] = HttpServer(root_dir=self.http_dir, remove_created_on_close=True)
+            self.children["http"] = HttpServer(
+                root_dir=self.http_dir,
+                remove_created_on_close=True,
+                advertised_host=self.exporter_ip,
+            )
         self.http = self.children["http"]
 
         # Ensure required children are present, the following are not auto-created
@@ -80,11 +89,6 @@ class BaseFlasher(Driver):
             return None
         with open(self.cacert) as f:
             return f.read()
-
-    @export
-    async def get_exporter_ip(self) -> str | None:
-        """Return the exporter IP override for DUT-facing services, if configured"""
-        return self.exporter_ip
 
     @export
     async def setup_fls_binary(self):

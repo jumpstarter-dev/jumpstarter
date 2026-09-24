@@ -50,8 +50,8 @@ def test_missing_power(temp_dirs):
         BaseFlasher(cache_dir=cache, http_dir=http, tftp_dir=tftp, children={"serial": PySerial(url="loop://")})
 
 
-def test_drivers_flashers_exporter_ip_override(temp_dirs, complete_flasher):
-    """Test that get_exporter_ip returns the configured override, and None by default"""
+def test_drivers_flashers_exporter_ip_override(temp_dirs):
+    """Test that exporter_ip is passed as advertised_host to auto-created tftp/http children"""
     cache, http, tftp = temp_dirs
     flasher = BaseFlasher(
         flasher_bundle="quay.io/jumpstarter-dev/jumpstarter-flasher-test:new",
@@ -65,10 +65,22 @@ def test_drivers_flashers_exporter_ip_override(temp_dirs, complete_flasher):
         },
     )
     with serve(flasher) as client:
-        assert client.call("get_exporter_ip") == "192.168.0.100"
+        assert client.tftp.get_host() == "192.168.0.100"
+        assert client.http.get_url().startswith("http://192.168.0.100:")
 
-    with serve(complete_flasher) as client:
-        assert client.call("get_exporter_ip") is None
+    # without exporter_ip, auto-created children advertise the detected bind host
+    default = BaseFlasher(
+        flasher_bundle="quay.io/jumpstarter-dev/jumpstarter-flasher-test:new",
+        cache_dir=cache,
+        http_dir=http,
+        tftp_dir=tftp,
+        children={
+            "serial": PySerial(url="loop://"),
+            "power": MockPower(),
+        },
+    )
+    assert default.tftp.advertised_host is None
+    assert default.http.advertised_host is None
 
 
 def test_drivers_flashers_setup_flasher_bundle(complete_flasher):
