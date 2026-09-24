@@ -21,6 +21,19 @@ import (
 	"strings"
 )
 
+// validateDevicePath rejects device paths that could alter the
+// generated Quadlet file via newline injection, NUL bytes, or
+// trailing backslashes (systemd line continuation).
+func validateDevicePath(path string) error {
+	if strings.ContainsAny(path, "\r\n\x00") {
+		return fmt.Errorf("device path %q contains forbidden characters (CR/LF/NUL)", path)
+	}
+	if strings.HasSuffix(path, `\`) {
+		return fmt.Errorf("device path %q has trailing backslash (systemd line continuation)", path)
+	}
+	return nil
+}
+
 const (
 	// QuadletDir is the systemd directory for Podman quadlet
 	// .container files.
@@ -68,7 +81,13 @@ type QuadletConfig struct {
 
 // RuntimeContainerFile generates the Podman quadlet .container file
 // for the QEMU runtime sidecar.
-func RuntimeContainerFile(cfg QuadletConfig) string {
+func RuntimeContainerFile(cfg QuadletConfig) (string, error) {
+	for _, dev := range cfg.ExtraDevices {
+		if err := validateDevicePath(dev); err != nil {
+			return "", fmt.Errorf("runtime container %s: %w", cfg.Name, err)
+		}
+	}
+
 	volumeName := podmanVolumeName(cfg.Name)
 
 	var b strings.Builder
@@ -102,7 +121,7 @@ func RuntimeContainerFile(cfg QuadletConfig) string {
 	b.WriteString("[Install]\n")
 	b.WriteString("WantedBy=default.target\n")
 
-	return b.String()
+	return b.String(), nil
 }
 
 // ExporterContainerFile generates the Podman quadlet .container file

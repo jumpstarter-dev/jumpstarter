@@ -92,7 +92,10 @@ func TestParseSSHConfig(t *testing.T) {
 		},
 	}
 
-	cfg := ParseSSHConfig(params)
+	cfg, err := ParseSSHConfig(params)
+	if err != nil {
+		t.Fatalf("ParseSSHConfig() error = %v", err)
+	}
 	if cfg.User != "jumpstarter" {
 		t.Errorf("User = %q, want jumpstarter", cfg.User)
 	}
@@ -102,9 +105,25 @@ func TestParseSSHConfig(t *testing.T) {
 }
 
 func TestParseSSHConfig_missing(t *testing.T) {
-	cfg := ParseSSHConfig(map[string]any{})
+	cfg, err := ParseSSHConfig(map[string]any{})
+	if err != nil {
+		t.Fatalf("ParseSSHConfig() error = %v", err)
+	}
 	if cfg.User != "" || cfg.Port != 0 {
 		t.Errorf("expected zero SSHConfig, got %+v", cfg)
+	}
+}
+
+func TestParseSSHConfig_invalidType(t *testing.T) {
+	params := map[string]any{
+		"ssh": map[string]any{
+			"user": 12345,
+		},
+	}
+
+	_, err := ParseSSHConfig(params)
+	if err == nil {
+		t.Fatal("ParseSSHConfig() expected error for invalid user type")
 	}
 }
 

@@ -79,19 +79,21 @@ func ParseHost(mergedParameters map[string]any) (HostConfig, error) {
 
 // ParseSSHConfig extracts parameters-level SSH defaults from merged
 // parameters.
-func ParseSSHConfig(mergedParameters map[string]any) SSHConfig {
+func ParseSSHConfig(mergedParameters map[string]any) (SSHConfig, error) {
 	var cfg SSHConfig
 	sshRaw, ok := mergedParameters["ssh"]
 	if !ok {
-		return cfg
+		return cfg, nil
 	}
 
 	data, err := json.Marshal(sshRaw)
 	if err != nil {
-		return cfg
+		return cfg, fmt.Errorf("marshal ssh config: %w", err)
 	}
-	_ = json.Unmarshal(data, &cfg)
-	return cfg
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return cfg, fmt.Errorf("unmarshal ssh config: %w", err)
+	}
+	return cfg, nil
 }
 
 // ResolveSSHUser returns the effective SSH user for a host, falling
