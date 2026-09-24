@@ -109,6 +109,25 @@ KEYCODE_MAP: dict[str, int] = {
     "ArrowLeft": 0x50,
     "ArrowDown": 0x51,
     "ArrowUp": 0x52,
+    "NumLock": 0x53,
+    "NumpadDivide": 0x54,
+    "NumpadMultiply": 0x55,
+    "NumpadSubtract": 0x56,
+    "NumpadAdd": 0x57,
+    "NumpadEnter": 0x58,
+    "Numpad1": 0x59,
+    "Numpad2": 0x5A,
+    "Numpad3": 0x5B,
+    "Numpad4": 0x5C,
+    "Numpad5": 0x5D,
+    "Numpad6": 0x5E,
+    "Numpad7": 0x5F,
+    "Numpad8": 0x60,
+    "Numpad9": 0x61,
+    "Numpad0": 0x62,
+    "NumpadDecimal": 0x63,
+    "IntlBackslash": 0x64,
+    "ContextMenu": 0x65,
     "ControlLeft": 0xE0,
     "ShiftLeft": 0xE1,
     "AltLeft": 0xE2,
@@ -310,6 +329,7 @@ class KeyboardReport:
     def __init__(self) -> None:
         self._modifier = 0
         self._pressed: dict[str, int] = {}
+        self._printable_mods: dict[str, frozenset[str]] = {}
 
     def key_down(self, code: str) -> list[int]:
         if is_modifier(code):
@@ -318,6 +338,8 @@ class KeyboardReport:
             keycode = KEYCODE_MAP.get(code)
             if keycode is not None and len(self._pressed) < MAX_KEYS:
                 self._pressed[code] = keycode
+        if self._printable_mods:
+            return self._build_report(self._combo_modifier())
         return self._build_report()
 
     def key_up(self, code: str) -> list[int]:
@@ -325,20 +347,56 @@ class KeyboardReport:
             self._modifier &= ~MODIFIER_BITS[code]
         else:
             self._pressed.pop(code, None)
+            self._printable_mods.pop(code, None)
+        if self._printable_mods:
+            return self._build_report(self._combo_modifier())
         return self._build_report()
 
     def reset(self) -> list[int]:
         self._modifier = 0
         self._pressed.clear()
+        self._printable_mods.clear()
         return self._build_report()
 
-    def _build_report(self) -> list[int]:
-        report = [self._modifier, 0, 0, 0, 0, 0, 0, 0]
+    def _build_report(self, modifier: int | None = None) -> list[int]:
+        report = [self._modifier if modifier is None else modifier, 0, 0, 0, 0, 0, 0, 0]
         for index, keycode in enumerate(self._pressed.values()):
             if index >= MAX_KEYS:
                 break
             report[2 + index] = keycode
         return report
+
+    def _combo_modifier(self) -> int:
+        shift_altgr = MODIFIER_BITS["ShiftLeft"] | MODIFIER_BITS["ShiftRight"] | MODIFIER_BITS["AltRight"]
+        modifier = self._modifier & ~shift_altgr
+        for mods in self._printable_mods.values():
+            for mod in mods:
+                bit = MODIFIER_BITS.get(mod)
+                if bit is None:
+                    raise ValueError(f"Unknown modifier: {mod!r}")
+                modifier |= bit
+        return modifier
+
+    def printable_down(self, key: str, combo_mods: frozenset[str]) -> list[int]:
+        """HID report for a character: combo modifiers, ignoring client Shift/AltGr."""
+        keycode = KEYCODE_MAP.get(key)
+        if keycode is None:
+            raise ValueError(f"Unknown key: {key!r}")
+        for mod in combo_mods:
+            if mod not in MODIFIER_BITS:
+                raise ValueError(f"Unknown modifier: {mod!r}")
+        if key not in self._pressed and len(self._pressed) < MAX_KEYS:
+            self._pressed[key] = keycode
+        if key in self._pressed:
+            self._printable_mods[key] = combo_mods
+        return self._build_report(self._combo_modifier())
+
+    def printable_up(self, key: str) -> list[int]:
+        self._pressed.pop(key, None)
+        self._printable_mods.pop(key, None)
+        if self._printable_mods:
+            return self._build_report(self._combo_modifier())
+        return self._build_report()
 
     def char_to_report(self, ch: str) -> tuple[list[int], list[int]]:
         code = ord(ch)

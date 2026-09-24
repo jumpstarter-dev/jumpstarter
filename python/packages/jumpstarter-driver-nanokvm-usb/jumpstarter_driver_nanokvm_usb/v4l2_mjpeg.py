@@ -285,9 +285,7 @@ class V4L2MjpegCapture:
             self._buffers = buffers
             self._width = actual_w
             self._height = actual_h
-            logger.info(
-                "V4L2 MJPEG passthrough on %s (%sx%s @ %sfps)", path, actual_w, actual_h, fps
-            )
+            logger.info("V4L2 MJPEG passthrough on %s (%sx%s @ %sfps)", path, actual_w, actual_h, fps)
         except Exception:
             _release_mmap_buffers(buffers)
             if fd is not None:

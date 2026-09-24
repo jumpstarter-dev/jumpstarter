@@ -1,17 +1,29 @@
+import shutil
+import tempfile
 from base64 import b64encode
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import anyio
 from anyio import to_thread
 from jumpstarter_driver_composite.driver import Composite
+from jumpstarter_driver_network.driver import UnixNetwork
 
 from .device import NanoKVMUSBDevice
+from .frame_pump import FramePump
 from .keyboard import resolve_key_code
 from .mouse import MouseButton, resolve_button
+from .vnc_server import RfbServer, is_loopback_bind
 from jumpstarter.driver import Driver, export, exportstream
 
-__all__ = ["NanoKVMUSBVideo", "NanoKVMUSBHID", "NanoKVMUSB", "MouseButton"]
+__all__ = [
+    "NanoKVMUSBVideo",
+    "NanoKVMUSBHID",
+    "NanoKVMUSB",
+    "NanoKVMUSBVNC",
+    "MouseButton",
+]
 
 
 @dataclass(kw_only=True)
@@ -86,10 +98,7 @@ class NanoKVMUSBVideo(NanoKVMUSBDriverBase):
             device = self.device
             assert device is not None
             device.ensure_connected()
-            for _ in range(skip_frames):
-                device.capture_frame_jpeg()
-            data = device.capture_frame_jpeg()
-            return data
+            return device.snapshot_jpeg(skip_frames)
 
         device = await self._ensure_device()
         self.device = device
@@ -108,19 +117,31 @@ class NanoKVMUSBVideo(NanoKVMUSBDriverBase):
         send_stream, receive_stream = anyio.create_memory_object_stream(max_buffer_size=buffer_size)
 
         async def stream_video():
-            frame_interval = 1.0 / self.video_fps if self.video_fps > 0 else 0.0
+            device = self.device
+            assert device is not None
+            state = {"gen": -1}
+
+            def _next_frame() -> bytes:
+                pump = device.pump
+                if isinstance(pump, FramePump):
+                    gen = state["gen"]
+                    got = pump.wait_jpeg(
+                        timeout=2.0,
+                        after_generation=gen if gen >= 0 else None,
+                    )
+                    if got is None:
+                        raise ConnectionError("Timed out waiting for video frame")
+                    jpeg, state["gen"] = got
+                    return jpeg
+                return device.capture_frame_jpeg(self.video_jpeg_quality)
+
             async with send_stream:
                 while True:
-                    data = await to_thread.run_sync(
-                        self.device.capture_frame_jpeg,  # type: ignore[union-attr]
-                        self.video_jpeg_quality,
-                    )
+                    data = await to_thread.run_sync(_next_frame)
                     try:
                         await send_stream.send(data)
                     except anyio.BrokenResourceError:
                         break
-                    if frame_interval > 0:
-                        await anyio.sleep(frame_interval)
 
         async with anyio.create_task_group() as tg:
             tg.start_soon(stream_video)
@@ -150,9 +171,7 @@ class NanoKVMUSBHID(NanoKVMUSBDriverBase):
             try:
                 resolve_key_code(key)
             except ValueError:
-                self.logger.warning(
-                    f"press_key should be used with single characters, got: {key}"
-                )
+                self.logger.warning(f"press_key should be used with single characters, got: {key}")
 
         device = await self._ensure_device()
 
@@ -212,11 +231,27 @@ class NanoKVMUSBHID(NanoKVMUSBDriverBase):
 
 
 @dataclass(kw_only=True)
+class NanoKVMUSBVNC(UnixNetwork):
+    """Unix-socket RFB endpoint with a noVNC session client."""
+
+    default_encrypt: bool = False
+
+    @export
+    async def get_default_encrypt(self) -> bool:
+        return self.default_encrypt
+
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter_driver_nanokvm_usb.client.NanoKVMUSBVNCClient"
+
+
+@dataclass(kw_only=True)
 class NanoKVMUSB(Composite):
     """
     Composite driver for NanoKVM-USB devices.
 
-    Provides video capture and HID control over USB serial + UVC.
+    Provides video capture, HID control, and an embedded RFB/VNC endpoint
+    over USB serial + UVC.
     """
 
     serial_port: str
@@ -232,8 +267,17 @@ class NanoKVMUSB(Composite):
     v4l2_ctl_executable: str | None = None
     screen_width: int = 1920
     screen_height: int = 1080
+    vnc_enabled: bool = False
+    vnc_password: str | None = None
+    vnc_tcp_port: int | None = None
+    vnc_tcp_bind: str = "127.0.0.1"
+    vnc_encrypt: bool = False
+    vnc_layout: str = "us"
+    vnc_max_clients: int = 2
 
     _shared_device: NanoKVMUSBDevice = field(init=False, repr=False)
+    _vnc_server: RfbServer | None = field(init=False, repr=False, default=None)
+    _vnc_dir: str | None = field(init=False, repr=False, default=None)
 
     def __post_init__(self):
         self._shared_device = NanoKVMUSBDevice(
@@ -275,16 +319,58 @@ class NanoKVMUSB(Composite):
                 screen_height=self.screen_height,
             ),
         }
-        for child in self.children.values():
-            child._owns_device = False
+        if self.vnc_enabled:
+            self._vnc_dir = tempfile.mkdtemp(prefix="nanokvm-usb-vnc-")
+            vnc_path = str(Path(self._vnc_dir) / "vnc.sock")
+            self._vnc_server = RfbServer(
+                vnc_path,
+                pump=lambda: self._shared_device.pump,
+                hid=self._shared_device,
+                width=self.video_width,
+                height=self.video_height,
+                password=self.vnc_password or None,
+                tcp_port=self.vnc_tcp_port,
+                tcp_bind=self.vnc_tcp_bind,
+                layout=self.vnc_layout,
+                max_clients=self.vnc_max_clients,
+                on_client=self._shared_device.ensure_connected,
+            )
+            self.children["vnc"] = NanoKVMUSBVNC(
+                path=vnc_path,
+                default_encrypt=self.vnc_encrypt,
+            )
+        for name in ("video", "hid"):
+            self.children[name]._owns_device = False
 
         super().__post_init__()
+        if self._vnc_server is not None:
+            if self.vnc_tcp_port is not None and not is_loopback_bind(self.vnc_tcp_bind):
+                self.logger.warning(
+                    "RFB TCP bind %s:%s is reachable on the network; "
+                    "vnc_password (VncAuth) is not transport encryption",
+                    self.vnc_tcp_bind,
+                    self.vnc_tcp_port,
+                )
+            self._vnc_server.start()
 
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_nanokvm_usb.client.NanoKVMUSBClient"
 
     def close(self):
+        if self._vnc_server is not None:
+            try:
+                self._vnc_server.stop()
+            except Exception as exc:
+                self.logger.debug(f"Error stopping RFB server: {exc}")
+            self._vnc_server = None
+        try:
+            super().close()
+        except Exception as exc:
+            self.logger.debug(f"Error closing child drivers: {exc}")
+        if self._vnc_dir is not None:
+            shutil.rmtree(self._vnc_dir, ignore_errors=True)
+            self._vnc_dir = None
         try:
             self._shared_device.close()
         except Exception as exc:

@@ -1,17 +1,27 @@
 import io
+import webbrowser
 from base64 import b64decode
 from contextlib import contextmanager
 from dataclasses import dataclass
 
+import anyio
 import click
 from jumpstarter_driver_composite.client import CompositeClient
+from jumpstarter_driver_network.adapters.novnc import NovncAdapter
+from jumpstarter_driver_network.client import NetworkClient
 from PIL import Image
 
 from .mouse import MouseButton, resolve_button
 from jumpstarter.client import DriverClient
 from jumpstarter.client.decorators import driver_click_group
 
-__all__ = ["NanoKVMUSBVideoClient", "NanoKVMUSBHIDClient", "NanoKVMUSBClient", "MouseButton"]
+__all__ = [
+    "NanoKVMUSBVideoClient",
+    "NanoKVMUSBHIDClient",
+    "NanoKVMUSBClient",
+    "NanoKVMUSBVNCClient",
+    "MouseButton",
+]
 
 
 def _decode_cli_escapes(text: str) -> str:
@@ -161,6 +171,51 @@ class NanoKVMUSBHIDClient(DriverClient):
         return base
 
 
+class NanoKVMUSBVNCClient(NetworkClient):
+    """Client for the embedded RFB endpoint (noVNC session)."""
+
+    def get_default_encrypt(self) -> bool:
+        return bool(self.call("get_default_encrypt"))
+
+    @contextmanager
+    def session(self, *, encrypt: bool | None = None):
+        use_encrypt = self.get_default_encrypt() if encrypt is None else encrypt
+        with NovncAdapter(client=self, method="connect", encrypt=use_encrypt) as url:
+            yield url
+
+    def cli(self):
+        base = super().cli()
+
+        @base.command()
+        @click.option("--browser/--no-browser", default=True, help="Open the session in a web browser.")
+        @click.option(
+            "--encrypt",
+            "encrypt_override",
+            flag_value=True,
+            default=None,
+            help="Force an encrypted noVNC connection.",
+        )
+        @click.option(
+            "--no-encrypt",
+            "encrypt_override",
+            flag_value=False,
+            help="Force an unencrypted noVNC connection.",
+        )
+        def session(browser: bool, encrypt_override: bool | None):
+            """Open a noVNC session to the captured HDMI and HID."""
+            with self.session(encrypt=encrypt_override) as url:
+                click.echo(f"To connect, please visit: {url}")
+                if browser:
+                    webbrowser.open(url)
+                click.echo("Press Ctrl+C to close the VNC session.")
+                try:
+                    self.portal.call(anyio.sleep_forever)
+                except (KeyboardInterrupt, anyio.get_cancelled_exc_class()):
+                    click.echo("\nClosing VNC session.")
+
+        return base
+
+
 @dataclass(kw_only=True)
 class NanoKVMUSBClient(CompositeClient):
     """
@@ -169,7 +224,16 @@ class NanoKVMUSBClient(CompositeClient):
     Provides access to:
     - video: UVC snapshot capture and live stream
     - hid: keyboard and mouse control over USB serial
+    - vnc: embedded RFB / noVNC session (when vnc_enabled)
     """
+
+    @contextmanager
+    def session(self, *, encrypt: bool | None = None):
+        """Open a noVNC session via the ``vnc`` child."""
+        if not hasattr(self, "vnc"):
+            raise RuntimeError("VNC is disabled (vnc_enabled=false)")
+        with self.vnc.session(encrypt=encrypt) as url:
+            yield url
 
     def cli(self):
         return super().cli()

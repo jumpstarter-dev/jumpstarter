@@ -1,13 +1,14 @@
 """Tests for NanoKVM-USB driver."""
 
 from io import BytesIO
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 from PIL import Image
 
-from .driver import NanoKVMUSB, NanoKVMUSBHID, NanoKVMUSBVideo
-from .keyboard import KeyboardReport
+from .driver import NanoKVMUSB, NanoKVMUSBHID, NanoKVMUSBVideo, NanoKVMUSBVNC
+from .keyboard import MODIFIER_BITS, KeyboardReport
 from .mouse import MouseButton, resolve_button
 from .v4l2_ctl_mjpeg import V4L2CtlMjpegCapture, _extract_jpegs
 from jumpstarter.common.utils import serve
@@ -26,7 +27,15 @@ def mock_device():
     device.is_connected = True
     device.screen_width = 1920
     device.screen_height = 1080
-    device.capture_frame_jpeg.return_value = _jpeg_bytes()
+    jpeg = _jpeg_bytes()
+    device.capture_frame_jpeg.return_value = jpeg
+
+    def _snapshot_jpeg(skip_frames=3):
+        for _ in range(int(skip_frames)):
+            device.capture_frame_jpeg()
+        return device.capture_frame_jpeg()
+
+    device.snapshot_jpeg.side_effect = _snapshot_jpeg
     return device
 
 
@@ -68,6 +77,7 @@ def test_nanokvm_usb_composite(mock_device):
     driver = NanoKVMUSB(
         serial_port="/dev/null",
         video_device=0,
+        vnc_enabled=True,
     )
     driver._shared_device = mock_device
     video_child = driver.children["video"]
@@ -82,12 +92,14 @@ def test_nanokvm_usb_composite(mock_device):
     with serve(driver) as client:
         assert hasattr(client, "video")
         assert hasattr(client, "hid")
+        assert hasattr(client, "vnc")
 
         image = client.video.snapshot()
         assert isinstance(image, Image.Image)
 
         client.hid.paste_text("Test")
         mock_device.type_text.assert_called_with("Test")
+        assert client.vnc.get_default_encrypt() is False
 
 
 def test_nanokvm_usb_video_client_creation():
@@ -100,6 +112,19 @@ def test_nanokvm_usb_hid_client_creation():
 
 def test_nanokvm_usb_client_creation():
     assert NanoKVMUSB.client() == "jumpstarter_driver_nanokvm_usb.client.NanoKVMUSBClient"
+
+
+def test_nanokvm_usb_vnc_client_creation():
+    assert NanoKVMUSBVNC.client() == "jumpstarter_driver_nanokvm_usb.client.NanoKVMUSBVNCClient"
+
+
+def test_nanokvm_usb_vnc_disabled():
+    driver = NanoKVMUSB(serial_port="/dev/null", video_device=0, vnc_enabled=False)
+    try:
+        assert "vnc" not in driver.children
+        assert driver._vnc_server is None
+    finally:
+        driver.close()
 
 
 def test_nanokvm_usb_mouse_move_abs(mock_device):
@@ -168,3 +193,445 @@ def test_protocol_packet_roundtrip():
     assert decoded.addr == packet.addr
     assert decoded.cmd == packet.cmd
     assert decoded.data == packet.data
+
+
+def test_frame_pump_fans_out_jpeg():
+    from .frame_pump import FramePump
+
+    jpeg = _jpeg_bytes(32, 24)
+    pump = FramePump(lambda: jpeg, fps=50)
+    pump.start()
+    try:
+        first = pump.wait_jpeg(timeout=2.0)
+        assert first is not None
+        data, gen = first
+        assert data == jpeg
+        second = pump.wait_jpeg(timeout=2.0, after_generation=gen)
+        assert second is not None
+        assert second[1] > gen
+        skipped = pump.wait_n_frames(3, timeout=2.0)
+        assert skipped == jpeg
+    finally:
+        pump.stop()
+    assert not pump.is_running
+
+
+def test_keysym_and_pointer_mapping():
+    from .vnc_keymap import ALTGR, SHIFT, char_combo, is_swallowed_keysym, named_key, normalize_layout
+    from .vnc_server import keysym_to_key, rfb_buttons_to_hid
+
+    assert keysym_to_key(ord("a")) == "KeyA"
+    assert keysym_to_key(ord("A")) == "KeyA"
+    assert keysym_to_key(ord("5")) == "Digit5"
+    assert keysym_to_key(0xFF0D) == "Enter"
+    assert keysym_to_key(0xFFBE) == "F1"
+    assert keysym_to_key(0xFFFF) == "Delete"
+    assert named_key(0xFFE5) == "CapsLock"
+    assert named_key(0xFFB0) == "Numpad0"
+    assert is_swallowed_keysym(0xFE03)
+    assert keysym_to_key(0xFE03) is None
+
+    assert char_combo(ord("@"), "us") == ("Digit2", SHIFT)
+    assert char_combo(0x01000040, "us") == ("Digit2", SHIFT)
+    assert char_combo(ord("@"), "es") == ("Digit2", ALTGR)
+    assert char_combo(ord('"'), "us") == ("Quote", SHIFT)
+    assert char_combo(ord('"'), "es") == ("Digit2", SHIFT)
+    assert char_combo(ord("/"), "us") == ("Slash", frozenset())
+    assert char_combo(ord("/"), "es") == ("Digit7", SHIFT)
+    assert char_combo(0xF1, "es") == ("Semicolon", frozenset())
+    assert char_combo(0x010000F1, "es") == ("Semicolon", frozenset())
+    with pytest.raises(ValueError, match="unsupported vnc_layout"):
+        normalize_layout("de")
+
+    kb = KeyboardReport()
+    kb.key_down("ShiftLeft")
+    down = kb.printable_down("Slash", frozenset())
+    assert down[0] & MODIFIER_BITS["ShiftLeft"] == 0
+    assert down[2] == 0x38
+    up = kb.printable_up("Slash")
+    assert up[0] & MODIFIER_BITS["ShiftLeft"]
+    assert 0x38 not in up[2:]
+
+    kb = KeyboardReport()
+    down_a = kb.printable_down("KeyA", frozenset())
+    down_b = kb.printable_down("KeyB", frozenset())
+    assert 0x04 in down_a[2:]
+    assert 0x04 in down_b[2:]
+    assert 0x05 in down_b[2:]
+    up_a = kb.printable_up("KeyA")
+    assert 0x04 not in up_a[2:]
+    assert 0x05 in up_a[2:]
+
+    kb = KeyboardReport()
+    held = kb.printable_down("Digit2", SHIFT)
+    assert held[0] & MODIFIER_BITS["ShiftLeft"]
+    assert 0x1F in held[2:]
+    kb.printable_down("KeyA", frozenset())
+    after = kb.printable_up("KeyA")
+    assert 0x04 not in after[2:]
+    assert 0x1F in after[2:]
+    assert after[0] & MODIFIER_BITS["ShiftLeft"]
+
+    hid, wheel = rfb_buttons_to_hid(0x01)
+    assert hid == MouseButton.LEFT
+    assert wheel == 0
+    hid, wheel = rfb_buttons_to_hid(0x08)
+    assert wheel == 1
+
+
+def test_des_encrypt_nist_vector():
+    from .des import des_ecb_encrypt, vnc_auth_response
+
+    key = bytes.fromhex("133457799BBCDFF1")
+    plain = bytes.fromhex("0123456789ABCDEF")
+    assert des_ecb_encrypt(plain, key) == bytes.fromhex("85E813540F0AB405")
+    response = vnc_auth_response(b"\x00" * 16, "secret")
+    assert len(response) == 16
+
+
+def test_rfb_handshake_and_input(tmp_path):
+    import socket
+    import struct
+    import time
+
+    from .frame_pump import FramePump
+    from .vnc_server import RFB_VERSION, RfbServer, _recvexact
+
+    jpeg = _jpeg_bytes(64, 48)
+    pump = FramePump(lambda: jpeg, fps=20)
+    pump.start()
+    hid = MagicMock()
+    sock_path = str(tmp_path / "vnc.sock")
+    server = RfbServer(sock_path, pump, hid, width=64, height=48)
+    server.start()
+    try:
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and not Path(sock_path).exists():
+            time.sleep(0.01)
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        client.settimeout(5)
+        client.connect(sock_path)
+        assert _recvexact(client, 12) == RFB_VERSION
+        client.sendall(RFB_VERSION)
+        header = _recvexact(client, 2)
+        assert header[0] == 1
+        assert header[1] == 1
+        client.sendall(bytes([1]))
+        assert struct.unpack("!I", _recvexact(client, 4))[0] == 0
+        client.sendall(b"\x01")  # ClientInit
+        server_init = _recvexact(client, 20)
+        width, height = struct.unpack("!HH", server_init[:4])
+        assert (width, height) == (64, 48)
+        name_len = struct.unpack("!I", _recvexact(client, 4))[0]
+        assert _recvexact(client, name_len) == b"NanoKVM-USB"
+        client.sendall(b"\x02\x00" + struct.pack("!H", 1) + struct.pack("!i", 0))
+        client.sendall(b"\x03\x00" + struct.pack("!HHHH", 0, 0, 64, 48))
+        # KeyEvent: down, pad, keysym 'a'
+        client.sendall(b"\x04\x01\x00\x00" + struct.pack("!I", ord("a")))
+        # PointerEvent: left button at 32,24
+        client.sendall(b"\x05\x01" + struct.pack("!HH", 32, 24))
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and not hid.hid_char.called:
+            time.sleep(0.02)
+        hid.hid_char.assert_called_with("KeyA", frozenset(), True)
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and not hid.mouse_pointer.called:
+            time.sleep(0.02)
+        args = hid.mouse_pointer.call_args[0]
+        assert args[2] == MouseButton.LEFT
+        client.close()
+    finally:
+        server.stop()
+        pump.stop()
+
+
+def test_rfb_vnc_auth(tmp_path):
+    import socket
+    import struct
+    import time
+
+    from .frame_pump import FramePump
+    from .vnc_server import RFB_VERSION, RfbServer, _recvexact, vnc_auth_response
+
+    jpeg = _jpeg_bytes(16, 16)
+    pump = FramePump(lambda: jpeg, fps=10)
+    pump.start()
+    sock_path = str(tmp_path / "vnc-auth.sock")
+    server = RfbServer(sock_path, pump, MagicMock(), width=16, height=16, password="secret")
+    server.start()
+    try:
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and not Path(sock_path).exists():
+            time.sleep(0.01)
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        client.settimeout(5)
+        client.connect(sock_path)
+        assert _recvexact(client, 12) == RFB_VERSION
+        client.sendall(RFB_VERSION)
+        header = _recvexact(client, 2)
+        assert header == bytes([1, 2])
+        client.sendall(bytes([2]))
+        challenge = _recvexact(client, 16)
+        client.sendall(vnc_auth_response(challenge, "secret"))
+        assert struct.unpack("!I", _recvexact(client, 4))[0] == 0
+        client.close()
+    finally:
+        server.stop()
+        pump.stop()
+
+
+def test_is_loopback_bind():
+    from .vnc_server import is_loopback_bind
+
+    assert is_loopback_bind("127.0.0.1")
+    assert is_loopback_bind("localhost")
+    assert not is_loopback_bind("0.0.0.0")
+    assert not is_loopback_bind("192.168.1.10")
+
+
+def test_rfb_tcp_handshake(tmp_path):
+    import socket
+    import struct
+    import time
+
+    from .frame_pump import FramePump
+    from .vnc_server import RFB_VERSION, RfbServer, _recvexact
+
+    jpeg = _jpeg_bytes(16, 16)
+    pump = FramePump(lambda: jpeg, fps=10)
+    pump.start()
+    sock_path = str(tmp_path / "vnc-tcp.sock")
+    server = RfbServer(
+        sock_path,
+        pump,
+        MagicMock(),
+        width=16,
+        height=16,
+        tcp_port=0,
+        tcp_bind="127.0.0.1",
+    )
+    server.start()
+    try:
+        endpoint = server.tcp_endpoint
+        assert endpoint is not None
+        host, port = endpoint
+        deadline = time.monotonic() + 2
+        client = None
+        while time.monotonic() < deadline:
+            try:
+                client = socket.create_connection((host, port), timeout=2)
+                break
+            except OSError:
+                time.sleep(0.01)
+        assert client is not None
+        client.settimeout(5)
+        assert _recvexact(client, 12) == RFB_VERSION
+        client.sendall(RFB_VERSION)
+        header = _recvexact(client, 2)
+        assert header == bytes([1, 1])
+        client.sendall(bytes([1]))
+        assert struct.unpack("!I", _recvexact(client, 4))[0] == 0
+        client.sendall(b"\x01")
+        server_init = _recvexact(client, 20)
+        width, height = struct.unpack("!HH", server_init[:4])
+        assert (width, height) == (16, 16)
+        name_len = struct.unpack("!I", _recvexact(client, 4))[0]
+        assert _recvexact(client, name_len) == b"NanoKVM-USB"
+        client.close()
+    finally:
+        server.stop()
+        pump.stop()
+
+
+def test_pack_rgb_frame_bgrx_matches_rgbx():
+    import numpy as np
+
+    from .vnc_server import _bgrx_with_zero_pad, _default_pixel_format, pack_rgb_frame
+
+    rgb = Image.new("RGB", (4, 2), color=(0, 0, 0))
+    pixels = rgb.load()
+    assert pixels is not None
+    pixels[0, 0] = (255, 0, 0)
+    pixels[1, 0] = (0, 255, 0)
+    pixels[2, 0] = (0, 0, 255)
+    pixels[3, 0] = (1, 2, 3)
+
+    pf = _default_pixel_format()
+    packed_rgb = pack_rgb_frame(rgb, pf)
+    rgbx = rgb.convert("RGBX")
+    packed_rgbx = pack_rgb_frame(rgbx, pf)
+    packed_rgba = pack_rgb_frame(rgb.convert("RGBA"), pf)
+    assert packed_rgbx == packed_rgb
+    assert packed_rgba == packed_rgb
+    assert packed_rgb[0:4] == bytes([0, 0, 255, 0])
+
+    arr = np.frombuffer(rgbx.tobytes(), dtype=np.uint8).reshape(2, 4, 4)
+    packed_bgrx = _bgrx_with_zero_pad(arr[:, :, [2, 1, 0, 3]])
+    assert packed_bgrx == packed_rgb
+
+
+def test_rfb_max_clients(tmp_path):
+    import socket
+    import time
+
+    from .frame_pump import FramePump
+    from .vnc_server import RFB_VERSION, RfbServer, _recvexact
+
+    jpeg = _jpeg_bytes(16, 16)
+    pump = FramePump(lambda: jpeg, fps=10)
+    pump.start()
+    sock_path = str(tmp_path / "vnc-max.sock")
+    server = RfbServer(
+        sock_path,
+        pump,
+        MagicMock(),
+        width=16,
+        height=16,
+        tcp_port=0,
+        tcp_bind="127.0.0.1",
+        max_clients=1,
+    )
+    server.start()
+    first = None
+    second = None
+    try:
+        endpoint = server.tcp_endpoint
+        assert endpoint is not None
+        host, port = endpoint
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            try:
+                first = socket.create_connection((host, port), timeout=2)
+                break
+            except OSError:
+                time.sleep(0.01)
+        assert first is not None
+        first.settimeout(5)
+        assert _recvexact(first, 12) == RFB_VERSION
+        second = socket.create_connection((host, port), timeout=2)
+        second.settimeout(2)
+        try:
+            leftover = second.recv(12)
+        except ConnectionResetError:
+            leftover = b""
+        assert leftover == b""
+        first.close()
+        first = None
+    finally:
+        if first is not None:
+            first.close()
+        if second is not None:
+            second.close()
+        server.stop()
+        pump.stop()
+
+
+def _rfb_connect(sock_path: str):
+    import socket
+    import struct
+    import time
+
+    from .vnc_server import RFB_VERSION, _recvexact
+
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline and not Path(sock_path).exists():
+        time.sleep(0.01)
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client.settimeout(5)
+    client.connect(sock_path)
+    assert _recvexact(client, 12) == RFB_VERSION
+    client.sendall(RFB_VERSION)
+    header = _recvexact(client, 2)
+    assert header == bytes([1, 1])
+    client.sendall(bytes([1]))
+    assert struct.unpack("!I", _recvexact(client, 4))[0] == 0
+    client.sendall(b"\x01")
+    server_init = _recvexact(client, 20)
+    width, height = struct.unpack("!HH", server_init[:4])
+    name_len = struct.unpack("!I", _recvexact(client, 4))[0]
+    _recvexact(client, name_len)
+    return client, width, height
+
+
+def _read_framebuffer_update(client, *, expect_pixels: bool):
+    import struct
+
+    from .vnc_server import _recvexact
+
+    header = _recvexact(client, 4)
+    assert header[0] == 0
+    nrects = struct.unpack("!H", header[2:4])[0]
+    if expect_pixels:
+        assert nrects == 1
+        rect = _recvexact(client, 12)
+        _x, _y, width, height, encoding = struct.unpack("!HHHHi", rect)
+        assert encoding == 0
+        _recvexact(client, width * height * 4)
+    else:
+        assert nrects == 0
+    return nrects
+
+
+def test_rfb_skips_invalid_jpeg_and_sends_next_frame(tmp_path):
+    import struct
+    import threading
+    import time
+
+    from .frame_pump import FramePump
+    from .vnc_server import RfbServer
+
+    jpeg = _jpeg_bytes(16, 16)
+    ready = threading.Event()
+
+    def capture() -> bytes:
+        if not ready.is_set():
+            return b"not-a-jpeg"
+        return jpeg
+
+    pump = FramePump(capture, fps=20)
+    pump.start()
+    sock_path = str(tmp_path / "vnc-bad-jpeg.sock")
+    server = RfbServer(sock_path, pump, MagicMock(), width=16, height=16)
+    server.start()
+    client = None
+    try:
+        client, width, height = _rfb_connect(sock_path)
+        assert (width, height) == (16, 16)
+        client.sendall(b"\x03\x01" + struct.pack("!HHHH", 0, 0, 16, 16))
+        time.sleep(0.15)
+        ready.set()
+        _read_framebuffer_update(client, expect_pixels=True)
+    finally:
+        if client is not None:
+            client.close()
+        server.stop()
+        pump.stop()
+
+
+def test_rfb_non_incremental_sends_full_frame(tmp_path):
+    import struct
+
+    from .frame_pump import FramePump
+    from .vnc_server import RfbServer
+
+    jpeg = _jpeg_bytes(16, 16)
+    pump = FramePump(lambda: jpeg, fps=20)
+    pump.start()
+    sock_path = str(tmp_path / "vnc-incremental.sock")
+    server = RfbServer(sock_path, pump, MagicMock(), width=16, height=16)
+    server.start()
+    client = None
+    try:
+        client, width, height = _rfb_connect(sock_path)
+        assert (width, height) == (16, 16)
+        client.sendall(b"\x03\x01" + struct.pack("!HHHH", 0, 0, 16, 16))
+        _read_framebuffer_update(client, expect_pixels=True)
+        client.sendall(b"\x03\x01" + struct.pack("!HHHH", 0, 0, 16, 16))
+        _read_framebuffer_update(client, expect_pixels=False)
+        client.sendall(b"\x03\x00" + struct.pack("!HHHH", 0, 0, 16, 16))
+        _read_framebuffer_update(client, expect_pixels=True)
+    finally:
+        if client is not None:
+            client.close()
+        server.stop()
+        pump.stop()
