@@ -441,20 +441,75 @@ def test_the_adoption_probe_asks_the_server_not_the_client(mock_conn, _):
     assert ["/usr/bin/adb", "start-server"] not in [argv for argv, _ in calls]
 
 
+@pytest.mark.parametrize(
+    "failure, message",
+    [
+        (subprocess.TimeoutExpired("adb start-server", 30.0), "timed out"),
+        (subprocess.CalledProcessError(1, "adb start-server", stderr="cannot bind"), "cannot bind"),
+        (OSError("Permission denied"), "Permission denied"),
+    ],
+    ids=["hung-port", "exit-nonzero", "cannot-exec"],
+)
 @patch("shutil.which", return_value="/usr/bin/adb")
 @patch("socket.create_connection", side_effect=OSError("refused"))
-def test_start_server_survives_a_hung_port(mock_conn, _):
-    """`adb start-server` blocks forever on a non-ADB listener; bound it."""
+def test_a_server_that_fails_to_start_is_an_error_not_a_running_server(mock_conn, _, failure, message):
+    """A swallowed start failure left the driver registered as owning a running server.
+
+    Every later adb call against that port then failed, far from the cause. The start is
+    still bounded — a non-ADB listener makes `adb start-server` block forever — but its
+    failure now surfaces where it happened, and nothing half-started is left behind.
+    """
 
     def run(argv, **kwargs):
         if argv[1:] == ["start-server"]:
             assert kwargs.get("timeout"), "start-server must be bounded"
-            raise subprocess.TimeoutExpired("adb start-server", 30.0)
+            raise failure
         return _mock_adb_ok()
 
     with patch("subprocess.run", side_effect=run):
-        server = AdbServer()  # must not hang or raise
-    assert server.port == 15037
+        with pytest.raises(RuntimeError, match=message):
+            AdbServer()
+
+    assert not adb_driver._SERVERS, "registered a server that never started"
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_a_failed_start_can_be_retried(mock_conn, _):
+    """Nothing half-registered may block the next attempt once the port is free again."""
+    attempts = []
+
+    def run(argv, **kwargs):
+        if argv[1:] == ["start-server"]:
+            attempts.append(argv)
+            if len(attempts) == 1:
+                raise subprocess.TimeoutExpired("adb start-server", 30.0)
+        return _mock_adb_ok()
+
+    with patch("subprocess.run", side_effect=run):
+        with pytest.raises(RuntimeError):
+            AdbServer()
+        server = AdbServer()
+
+    assert len(attempts) == 2, "the retry never reached adb start-server"
+    assert server._owns_server is True
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+def test_start_server_reports_a_restart_failure(_):
+    """The exported `start_server` restarts a dead server, and has to say when it can't."""
+    fake, patcher = _fake()
+    with patcher, patch("socket.create_connection", side_effect=OSError("refused")):
+        server = AdbServer()
+
+    def run(argv, **kwargs):
+        if argv[1:] == ["start-server"]:
+            raise subprocess.CalledProcessError(1, "adb start-server", stderr="cannot bind")
+        return fake(argv, **kwargs)
+
+    with patch("subprocess.run", side_effect=run), patch("socket.create_connection", side_effect=OSError("refused")):
+        with pytest.raises(RuntimeError, match="cannot bind"):
+            server.start_server()
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")

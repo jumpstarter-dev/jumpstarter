@@ -267,12 +267,13 @@ see the table below. Nothing else about the CLI or the config is source-incompat
 `connect_timeout` keep their names, types and defaults. `adopt_existing_server` is new and
 defaults to `true`.
 
-Two behaviors changed, both in the safer direction:
+Three behaviors changed, all in the safer direction:
 
 | | Before | Now |
 | --- | --- | --- |
 | A server is already listening on `port` | A second one was started. `adb start-server` exits 0 either way, so the exporter came up healthy but seeing **no devices**, since only one server can hold a device | It is adopted |
 | Exporter teardown | Always ran `adb kill-server`, dropping the device claims of everything else on the host — including an Android Studio server | Kills only a server it started itself |
+| `adb start-server` fails or times out | Logged, then ignored: the driver carried on as if it owned a running server, and later adb calls failed far from the cause | Raises `RuntimeError` at construction (`AdbServer`) or first use (`AdbDevice`), and nothing half-started is left registered |
 
 If a bench previously "worked" but reported an empty device list, that was this bug and it
 is now fixed. The unconditional kill is gone deliberately and cannot be restored:

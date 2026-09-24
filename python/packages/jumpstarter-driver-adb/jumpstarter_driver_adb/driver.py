@@ -166,7 +166,12 @@ class _SharedServer:
         return result.returncode == 0
 
     def start(self, connect_timeout: float, logger) -> None:
-        """Start the ADB server, bounded so a wedged port cannot hang startup."""
+        """Start the ADB server, or raise if it did not come up.
+
+        Bounded so a wedged port cannot hang startup. Raises rather than logs: callers
+        record the server as ours and running once this returns, so a failure swallowed
+        here left the driver looking healthy while every later adb call failed.
+        """
         logger.info("Starting ADB server on port %d", self.port)
         try:
             result = subprocess.run(
@@ -180,19 +185,21 @@ class _SharedServer:
                 timeout=connect_timeout,
                 env=self.env(),
             )
-            if result.stdout.strip():
-                logger.info(result.stdout.strip())
-            if result.stderr.strip():
-                logger.debug(result.stderr.strip())
         except subprocess.CalledProcessError as e:
-            logger.error("Failed to start ADB server: %s", e)
-        except subprocess.TimeoutExpired:
-            logger.error(
-                "`adb start-server` timed out after %ss on port %d. Something that is not "
-                "an ADB server may hold that port; free it or configure a different port.",
-                connect_timeout,
-                self.port,
-            )
+            detail = (e.stderr or "").strip() or str(e)
+            raise RuntimeError(f"could not start the ADB server on port {self.port}: {detail}") from e
+        except subprocess.TimeoutExpired as e:
+            raise RuntimeError(
+                f"`adb start-server` timed out after {connect_timeout}s on port {self.port}. Something "
+                "that is not an ADB server may hold that port; free it or configure a different port."
+            ) from e
+        except OSError as e:
+            raise RuntimeError(f"could not run adb to start the ADB server on port {self.port}: {e}") from e
+
+        if result.stdout.strip():
+            logger.info(result.stdout.strip())
+        if result.stderr.strip():
+            logger.debug(result.stderr.strip())
 
     def kill(self, connect_timeout: float, logger) -> None:
         """Kill the ADB server, bounded because this runs from teardown."""
