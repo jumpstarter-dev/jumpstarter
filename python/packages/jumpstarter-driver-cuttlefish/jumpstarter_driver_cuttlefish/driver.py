@@ -7,6 +7,7 @@ import time
 from collections.abc import Generator
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import ClassVar
 
 import requests
 from jumpstarter_driver_adb.driver import AdbServer
@@ -39,7 +40,7 @@ class HostOrchestratorBackend:
 
     delete_is_group_scoped = False
 
-    _paths = {
+    _paths: ClassVar[dict] = {
         "create": ("POST", "/cvds"),
         "start": ("POST", "{cvd}/:start"),
         "stop": ("POST", "{cvd}/:stop"),
@@ -149,7 +150,7 @@ class CvdCliBackend:
     keep the same shape.
     """
 
-    _subcommands = {
+    _subcommands: ClassVar[dict] = {
         "start": ["start", "--report_anonymous_usage_stats=n"],
         "stop": ["stop"],
         "restart": ["restart"],
@@ -174,7 +175,7 @@ class CvdCliBackend:
         argv = cvd_argv(self.socket, args)
         self.driver.logger.debug("running %s", " ".join(argv))
         try:
-            proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+            proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
         except OSError as e:
             raise CuttlefishError(f"cannot run jumpstarter-exec at {exec_binary(self.socket)}: {e}") from e
         except subprocess.TimeoutExpired as e:
@@ -586,7 +587,7 @@ class CvdPower(VirtualPowerInterface, Driver):
         with self.parent._operation_lock:
             self._on()
 
-    def _on(self) -> None:  # noqa: C901
+    def _on(self) -> None:
         existing = self.parent._get_existing_cvds()
         if len(existing) > 1:
             if self.parent.managed:

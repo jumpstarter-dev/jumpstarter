@@ -26,7 +26,7 @@ def exec_inventory(state: dict) -> list[dict]:
     """List CVDs through the cvd CLI; failure means the launcher or cvd is down."""
     argv = cvd_argv(state["socket"], ["fleet"])
     try:
-        proc = subprocess.run(argv, capture_output=True, text=True, timeout=PROBE_TIMEOUT)
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=PROBE_TIMEOUT, check=False)
     except OSError as exc:
         raise RuntimeError(f"cannot run jumpstarter-exec: {exc}") from exc
     except subprocess.TimeoutExpired as exc:
@@ -40,7 +40,7 @@ def exec_reachable(state: dict) -> None:
     """Check that the launcher accepts commands without contending on cvd."""
     argv = [str(exec_binary(state["socket"])), "exec", "--socket", state["socket"], "--", "/bin/true"]
     try:
-        proc = subprocess.run(argv, capture_output=True, text=True, timeout=2)
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=2, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise RuntimeError(f"launcher is unavailable: {exc}") from exc
     if proc.returncode != 0:

@@ -51,7 +51,7 @@ def instance_to_cvd(group_name: str, instance: dict) -> dict:
     clients see identical documents from both backends.
     """
     if not isinstance(instance, dict):
-        raise ValueError(f"unexpected cvd instance document: {instance!r}")
+        raise TypeError(f"unexpected cvd instance document: {instance!r}")
     return {
         "group": group_name,
         "name": instance.get("instance_name"),
@@ -65,7 +65,7 @@ def instance_to_cvd(group_name: str, instance: dict) -> dict:
 
 def group_to_cvds(group: dict) -> list[dict]:
     if not isinstance(group, dict) or not isinstance(group.get("instances"), list):
-        raise ValueError(f"unexpected cvd group document: {group!r}")
+        raise TypeError(f"unexpected cvd group document: {group!r}")
     return [instance_to_cvd(group.get("group_name", ""), instance) for instance in group["instances"]]
 
 
@@ -76,7 +76,7 @@ def fleet_to_cvds(output: str) -> list[dict]:
     except ValueError as e:
         raise ValueError(f"cvd fleet returned invalid JSON: {output[:200]!r}") from e
     if not isinstance(data, dict) or not isinstance(data.get("groups"), list):
-        raise ValueError(f"unexpected cvd fleet document: {output[:200]!r}")
+        raise TypeError(f"unexpected cvd fleet document: {output[:200]!r}")
     cvds = []
     for group in data["groups"]:
         cvds.extend(group_to_cvds(group))

@@ -136,9 +136,8 @@ def test_failure_reports_exit_code_and_stderr_without_banner(cvd, drv):
 
 def test_timeout_and_missing_launcher(drv):
     with patch("jumpstarter_driver_cuttlefish.driver.subprocess.run",
-               side_effect=subprocess.TimeoutExpired("cvd", 5)):
-        with pytest.raises(CuttlefishTimeout, match="timed out"):
-            drv.start_cvd()
+               side_effect=subprocess.TimeoutExpired("cvd", 5)), pytest.raises(CuttlefishTimeout, match="timed out"):
+        drv.start_cvd()
     with patch("jumpstarter_driver_cuttlefish.driver.subprocess.run", side_effect=FileNotFoundError("missing")):
         with pytest.raises(CuttlefishError, match="cannot run jumpstarter-exec"):
             drv.status()
