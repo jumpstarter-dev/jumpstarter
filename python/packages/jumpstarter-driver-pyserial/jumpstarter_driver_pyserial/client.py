@@ -1,3 +1,5 @@
+import os
+import stat
 import sys
 from contextlib import contextmanager
 
@@ -10,6 +12,21 @@ from pexpect.fdpexpect import fdspawn
 from .console import Console
 from jumpstarter.client import DriverClient
 from jumpstarter.client.decorators import driver_click_group
+
+
+def _stdin_supplies_data() -> bool:
+    """Whether stdin is a pipe, socket or regular file that can feed the console.
+
+    A TTY or a character device such as /dev/null (nohup, systemd, CI) is not:
+    auto-enabling input there would take the exclusive write token for a pipe
+    that hits EOF immediately and lock interactive users out.
+    """
+    try:
+        mode = os.fstat(sys.stdin.fileno()).st_mode
+    except (OSError, ValueError):
+        # No usable file descriptor (closed, or a test harness stream).
+        return not sys.stdin.isatty()
+    return stat.S_ISFIFO(mode) or stat.S_ISSOCK(mode) or stat.S_ISREG(mode)
 
 
 class PySerialClient(DriverClient):
@@ -190,7 +207,7 @@ class PySerialClient(DriverClient):
             """Pipe serial port data to stdout or file.
 
             By default, reads from the serial port and writes to stdout.
-            Automatically detects if stdin is piped and enables bidirectional mode.
+            Automatically detects piped stdin unless --observe is selected.
 
             When stdin is used, commands are sent until EOF, then continues
             monitoring serial output until Ctrl+C.
@@ -232,8 +249,8 @@ class PySerialClient(DriverClient):
             if append and not output:
                 raise click.UsageError("--append requires --output")
 
-            # Auto-detect stdin: if it's not a TTY (i.e., piped or redirected), enable input
-            stdin_is_piped = not sys.stdin.isatty()
+            # Auto-detect stdin: enable input only when it is piped or redirected from a file
+            stdin_is_piped = _stdin_supplies_data()
 
             # Determine if input should be enabled
             if no_input:
@@ -241,7 +258,7 @@ class PySerialClient(DriverClient):
             elif input_flag:
                 input_enabled = True
             else:
-                input_enabled = stdin_is_piped
+                input_enabled = stdin_is_piped and not observe
 
             if no_output and not input_enabled:
                 raise click.UsageError("--no-output requires stdin input (pipe stdin or use --input)")
