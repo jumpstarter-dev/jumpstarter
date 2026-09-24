@@ -307,7 +307,7 @@ class TestFlush:
             patch("jumpstarter.exporter.telemetry.sleep", new_callable=AsyncMock) as mock_sleep,
         ):
             mock_sleep.side_effect = [None, Exception("stop")]
-            async with contextlib.suppress(Exception):
+            with contextlib.suppress(Exception):
                 await handler.flush_loop()
 
         assert len(flush_calls) >= 1

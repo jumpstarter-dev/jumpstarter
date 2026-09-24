@@ -1,6 +1,6 @@
 import asyncio
 import base64
-from typing import ClassVar, Literal
+from typing import Literal
 
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 from pydantic import Field
@@ -28,7 +28,7 @@ class V1Alpha1ExporterStatus(JsonBaseModel):
     # The controller fills these in after it reconciles the exporter, so a
     # freshly created one has a status with nothing in it yet.
     credential: SerializeV1ObjectReference | None = None
-    devices: ClassVar[list[V1Alpha1ExporterDevice]]= []
+    devices: list[V1Alpha1ExporterDevice] = Field(default_factory=list)
     endpoint: str = ""
     exporter_status: str | None = Field(alias="exporterStatus", default=None)
     status_message: str | None = Field(alias="statusMessage", default=None)

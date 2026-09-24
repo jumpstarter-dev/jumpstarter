@@ -431,7 +431,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         return cls.from_file(path)
 
     @classmethod
-    def save(cls, config: Self, path: os.PathLike | None = None) -> Path:
+    def save(cls, config: Self, path: str | os.PathLike | None = None) -> Path:
         """Saves a client config as YAML."""
         # Ensure the clients dir exists
         if path is None:

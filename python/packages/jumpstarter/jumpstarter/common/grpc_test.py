@@ -53,7 +53,7 @@ class _LoopWithFakeResolver:
 
 def _patch_resolver(getaddrinfo):
     def fake_get_running_loop():
-        return _LoopWithFakeResolver(asyncio.get_running_loop(), getaddrinfo)
+        return _LoopWithFakeResolver(asyncio.events.get_running_loop(), getaddrinfo)  # type: ignore[attr-defined]
 
     return patch("asyncio.get_running_loop", fake_get_running_loop)
 
