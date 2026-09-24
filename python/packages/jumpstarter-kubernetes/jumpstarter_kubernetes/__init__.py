@@ -45,13 +45,12 @@ from .list import V1Alpha1List
 
 __all__ = [
     "ApplyV1Alpha1Api",
-    "ManifestError",
-    "V1Alpha1AppliedResource",
-    "V1Alpha1AppliedResourceList",
-    "load_manifests",
     "ClientsV1Alpha1Api",
     "ExportersV1Alpha1Api",
     "LeasesV1Alpha1Api",
+    "ManifestError",
+    "V1Alpha1AppliedResource",
+    "V1Alpha1AppliedResourceList",
     "V1Alpha1Client",
     "V1Alpha1ClientList",
     "V1Alpha1ClientStatus",
@@ -83,6 +82,7 @@ __all__ = [
     "kind_installed",
     "list_clusters",
     "list_kubectl_contexts",
+    "load_manifests",
     "minikube_installed",
     "validate_cluster_type_selection",
 ]

@@ -96,7 +96,7 @@ def wait_ready(endpoint: str, attempts: int = 60, interval: float = 5) -> None:
             else:
                 http_reachable(state)
             return
-        except Exception:
+        except Exception:  # noqa: BLE001
             time.sleep(interval)
     raise RuntimeError(f"Cuttlefish runtime at {endpoint} did not become ready")
 

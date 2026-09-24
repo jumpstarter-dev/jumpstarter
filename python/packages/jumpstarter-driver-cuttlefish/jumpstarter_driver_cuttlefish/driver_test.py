@@ -635,9 +635,11 @@ def test_managed_records_power_intent(managed_drv, operation, expected):
 def test_managed_records_failed_operation(managed_drv):
     from pathlib import Path
 
-    with patch.object(managed_drv._backend, "operate", side_effect=CuttlefishError("runtime died")):
-        with pytest.raises(CuttlefishError):
-            managed_drv.start_cvd()
+    with (
+        patch.object(managed_drv._backend, "operate", side_effect=CuttlefishError("runtime died")),
+        pytest.raises(CuttlefishError),
+    ):
+        managed_drv.start_cvd()
     assert json.loads(Path(managed_drv.health_state_path).read_text())["state"] == "failed"
 
 

@@ -26,14 +26,13 @@ def test_user_options_override_defaults():
 
 
 def test_translate_grpc_failed_precondition_preserves_details():
-    with pytest.raises(ConnectionError, match="requested exporter is disabled"):
-        with translate_grpc_exceptions():
-            raise grpc.aio.AioRpcError(
-                code=grpc.StatusCode.FAILED_PRECONDITION,
-                initial_metadata=None,
-                trailing_metadata=None,
-                details="requested exporter is disabled",
-            )
+    with pytest.raises(ConnectionError, match="requested exporter is disabled"), translate_grpc_exceptions():
+        raise grpc.aio.AioRpcError(
+            code=grpc.StatusCode.FAILED_PRECONDITION,
+            initial_metadata=None,
+            trailing_metadata=None,
+            details="requested exporter is disabled",
+        )
 
 
 def _addr_info(*ips):

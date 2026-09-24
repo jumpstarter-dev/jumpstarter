@@ -106,15 +106,16 @@ def test_running_guest_without_ipv6(health_state):
 
 @pytest.mark.parametrize("error", [FileNotFoundError, PermissionError])
 def test_required_listener_table_errors(error):
-    with patch.object(Path, "read_text", side_effect=error("/proc/net/tcp")):
-        with pytest.raises(error):
-            listening_ports()
+    with patch.object(Path, "read_text", side_effect=error("/proc/net/tcp")), pytest.raises(error):
+        listening_ports()
 
 
 def test_ipv6_permission_errors_are_not_ignored():
-    with patch.object(Path, "read_text", side_effect=["header\n", PermissionError("/proc/net/tcp6")]):
-        with pytest.raises(PermissionError):
-            listening_ports()
+    with (
+        patch.object(Path, "read_text", side_effect=["header\n", PermissionError("/proc/net/tcp6")]),
+        pytest.raises(PermissionError),
+    ):
+        listening_ports()
 
 
 def test_warm_exporter_before_first_lease(tmp_path):
@@ -138,9 +139,9 @@ def test_wait_ready_gate():
         wait_ready("http://127.0.0.1:2081", attempts=1, interval=0)
     assert urlopen.call_args.args[0] == "http://127.0.0.1:2081/_debug/statusz"
     with patch("jumpstarter_driver_cuttlefish.health.urllib.request.urlopen", side_effect=OSError("refused")), \
-         patch("jumpstarter_driver_cuttlefish.health.time.sleep") as sleep:
-        with pytest.raises(RuntimeError, match="did not become ready"):
-            wait_ready("http://127.0.0.1:2081", attempts=3, interval=5)
+         patch("jumpstarter_driver_cuttlefish.health.time.sleep") as sleep, \
+         pytest.raises(RuntimeError, match="did not become ready"):
+        wait_ready("http://127.0.0.1:2081", attempts=3, interval=5)
     assert sleep.call_count == 3
 
 

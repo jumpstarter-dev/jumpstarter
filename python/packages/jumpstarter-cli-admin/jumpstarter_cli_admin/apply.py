@@ -1,5 +1,5 @@
 from http import HTTPStatus
-from typing import IO, Optional
+from typing import IO
 
 import click
 from jumpstarter_cli_common.blocking import blocking
@@ -53,8 +53,8 @@ async def apply(
     force_conflicts: bool,
     dry_run: bool,
     namespace: str,
-    kubeconfig: Optional[str],
-    context: Optional[str],
+    kubeconfig: str | None,
+    context: str | None,
     output: OutputType,
 ):
     """Apply Jumpstarter manifests to a Kubernetes cluster

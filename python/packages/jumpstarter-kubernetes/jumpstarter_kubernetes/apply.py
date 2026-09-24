@@ -10,7 +10,7 @@ Jumpstarter admin tool, not a general-purpose ``kubectl apply``.
 """
 
 import logging
-from typing import Literal, Optional
+from typing import Literal
 
 import yaml
 from kubernetes_asyncio.client.exceptions import ApiException
@@ -101,7 +101,7 @@ class V1Alpha1AppliedResource(JsonBaseModel):
     api_version: str = Field(alias="apiVersion")
     kind: str
     name: str
-    namespace: Optional[str] = None
+    namespace: str | None = None
     action: Literal["created", "configured", "unchanged"]
     resource: dict
 
@@ -143,7 +143,7 @@ class V1Alpha1AppliedResourceList(V1Alpha1List[V1Alpha1AppliedResource]):
 class ApplyV1Alpha1Api(AbstractAsyncCustomObjectApi):
     """Apply Jumpstarter manifests of any kind the cluster serves."""
 
-    def __init__(self, namespace: str, config_file: Optional[str] = None, context: Optional[str] = None):
+    def __init__(self, namespace: str, config_file: str | None = None, context: str | None = None):
         super().__init__(namespace, config_file, context)
         self._resources: dict[tuple[str, str, str], tuple[str, bool]] = {}
 
@@ -185,7 +185,7 @@ class ApplyV1Alpha1Api(AbstractAsyncCustomObjectApi):
 
         raise ManifestError(f"the cluster does not serve kind {kind} in {group}/{version}")
 
-    async def _read(self, group, version, plural, name, namespace) -> Optional[dict]:
+    async def _read(self, group, version, plural, name, namespace) -> dict | None:
         try:
             if namespace is None:
                 return await self.api.get_cluster_custom_object(group=group, version=version, plural=plural, name=name)
@@ -284,7 +284,7 @@ class ApplyV1Alpha1Api(AbstractAsyncCustomObjectApi):
 
 
 def _action_taken(
-    existing: Optional[dict], applied: dict, *, dry_run: bool = False
+    existing: dict | None, applied: dict, *, dry_run: bool = False
 ) -> Literal["created", "configured", "unchanged"]:
     """Describe an apply by what the cluster did, or would do, with it.
 
