@@ -16,6 +16,7 @@ class MockFlasherClient(BaseFlasherClient):
         self._manifest = None
         self._console_debug = False
         self._redaction_values = set()
+        self._exporter_ip = None
         self.children = {}
         self.methods_description = {}
         self.logger = type(
@@ -619,6 +620,68 @@ def test_flash_bearer_token_signed_url_preserves_query_params():
     assert captured["path"] == "/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
     # The image_url should point to the exporter with the clean filename (no query params)
     assert captured["image_url"] == "http://exporter/image.raw.xz"
+
+
+def test_server_host_and_http_url_fall_back_to_child_drivers():
+    """Without a configured override, tftp host and http url come from the child drivers."""
+    client = MockFlasherClient()
+
+    class DummyService:
+        def get_url(self):
+            return "http://10.0.0.5:8080"
+
+        def get_host(self):
+            return "10.0.0.5"
+
+    client.http = DummyService()  # ty: ignore[unresolved-attribute]
+    client.tftp = DummyService()  # ty: ignore[unresolved-attribute]
+    client.call = lambda method, *args: None  # ty: ignore[invalid-assignment]
+
+    assert client._server_host() == "10.0.0.5"
+    assert client._http_url() == "http://10.0.0.5:8080"
+
+
+def test_server_host_and_http_url_use_configured_exporter_ip_override():
+    """A configured exporter_ip overrides the tftp host and http url host for DUT-facing services."""
+    client = MockFlasherClient()
+
+    class DummyService:
+        def get_url(self):
+            return "http://10.0.0.5:8080"
+
+        def get_host(self):
+            return "10.0.0.5"
+
+    client.http = DummyService()  # ty: ignore[unresolved-attribute]
+    client.tftp = DummyService()  # ty: ignore[unresolved-attribute]
+    client.call = lambda method, *args: "192.168.0.100" if method == "get_exporter_ip" else None  # ty: ignore[invalid-assignment]
+
+    assert client._server_host() == "192.168.0.100"
+    # override swaps the host but keeps the exporter's scheme and port
+    assert client._http_url() == "http://192.168.0.100:8080"
+    assert client._generate_uboot_env() == {"serverip": "192.168.0.100"}
+
+
+def test_exporter_ip_override_is_fetched_once():
+    """The exporter_ip override is fetched from the driver only once."""
+    client = MockFlasherClient()
+    calls = []
+
+    class DummyService:
+        def get_url(self):
+            return "http://10.0.0.5:8080"
+
+        def get_host(self):
+            return "10.0.0.5"
+
+    client.http = DummyService()  # ty: ignore[unresolved-attribute]
+    client.tftp = DummyService()  # ty: ignore[unresolved-attribute]
+    client.call = lambda method, *args: (calls.append(method), "192.168.0.100")[1]  # ty: ignore[invalid-assignment]
+
+    client._http_url()
+    client._http_url()
+    client._server_host()
+    assert calls.count("get_exporter_ip") == 1
 
 
 def test_resolve_flash_parameters():

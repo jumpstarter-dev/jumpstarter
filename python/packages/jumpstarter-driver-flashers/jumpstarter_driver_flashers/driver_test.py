@@ -50,6 +50,27 @@ def test_missing_power(temp_dirs):
         BaseFlasher(cache_dir=cache, http_dir=http, tftp_dir=tftp, children={"serial": PySerial(url="loop://")})
 
 
+def test_drivers_flashers_exporter_ip_override(temp_dirs, complete_flasher):
+    """Test that get_exporter_ip returns the configured override, and None by default"""
+    cache, http, tftp = temp_dirs
+    flasher = BaseFlasher(
+        flasher_bundle="quay.io/jumpstarter-dev/jumpstarter-flasher-test:new",
+        cache_dir=cache,
+        http_dir=http,
+        tftp_dir=tftp,
+        exporter_ip="192.168.0.100",
+        children={
+            "serial": PySerial(url="loop://"),
+            "power": MockPower(),
+        },
+    )
+    with serve(flasher) as client:
+        assert client.call("get_exporter_ip") == "192.168.0.100"
+
+    with serve(complete_flasher) as client:
+        assert client.call("get_exporter_ip") is None
+
+
 def test_drivers_flashers_setup_flasher_bundle(complete_flasher):
     with serve(complete_flasher) as client:
         client.call("setup_flasher_bundle")

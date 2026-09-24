@@ -94,10 +94,29 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         self._manifest = None
         self._console_debug = False
         self._redaction_values: set[str] = set()
+        self._exporter_ip: str | None = None
 
     def set_console_debug(self, debug: bool):
         """Set console debug mode"""
         self._console_debug = debug
+
+    def _exporter_ip_override(self) -> str | None:
+        """Return the configured exporter IP override for DUT-facing services, if any"""
+        if self._exporter_ip is None:
+            self._exporter_ip = self.call("get_exporter_ip")
+        return self._exporter_ip
+
+    def _server_host(self) -> str:
+        """Host IP the DUT should use to reach the exporter services"""
+        return self._exporter_ip_override() or self.tftp.get_host()
+
+    def _http_url(self) -> str:
+        """Base URL of the exporter HTTP server as seen by the DUT"""
+        override = self._exporter_ip_override()
+        if override:
+            parsed = urlparse(self.http.get_url())
+            return f"{parsed.scheme}://{override}:{parsed.port}"
+        return self.http.get_url()
 
     @contextmanager
     def busybox_shell(self):
@@ -220,7 +239,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         with self._services_up():
             if should_download_to_httpd:
-                image_url = self.http.get_url() + "/" + self._filename(path)
+                image_url = self._http_url() + "/" + self._filename(path)
 
             # Retry logic at the highest level - retry entire console setup and flash operation
             for attempt in range(retries + 1):  # +1 for initial attempt
@@ -555,7 +574,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         stored_cacert = "/tmp/cacert.crt"
         cacert_bytes = cacert_content.encode() if isinstance(cacert_content, str) else cacert_content
         self.http.storage.write_bytes("cacert.crt", cacert_bytes)
-        cacert_url = self.http.get_url() + "/cacert.crt"
+        cacert_url = self._http_url() + "/cacert.crt"
         self.logger.info(f"Downloading CA certificate to DUT from {cacert_url}")
         console.sendline(f"curl -fsSL {cacert_url} -o {stored_cacert}")
         console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
@@ -711,7 +730,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         else:
             self.logger.info("Serving FLS binary from exporter container")
             self.call("setup_fls_binary")
-            fls_url = self.http.get_url() + "/fls"
+            fls_url = self._http_url() + "/fls"
             self._download_fls_binary(console, prompt, fls_url, "Failed to download FLS from exporter")
 
         # Flash the image
@@ -1179,9 +1198,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
     def _generate_uboot_env(self):
         """Generate a uboot environment dictionary, may need specific overrides for different targets"""
-        tftp_host = self.tftp.get_host()
         return {
-            "serverip": tftp_host,
+            "serverip": self._server_host(),
         }
 
     @contextmanager

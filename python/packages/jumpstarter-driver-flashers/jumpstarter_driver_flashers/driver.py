@@ -26,6 +26,7 @@ class BaseFlasher(Driver):
     tftp_dir: str = field(default="/var/lib/tftpboot")
     http_dir: str = field(default="/var/www/html")
     cacert: str | None = field(default=None)
+    exporter_ip: str | None = field(default=None)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -79,6 +80,11 @@ class BaseFlasher(Driver):
             return None
         with open(self.cacert) as f:
             return f.read()
+
+    @export
+    async def get_exporter_ip(self) -> str | None:
+        """Return the exporter IP override for DUT-facing services, if configured"""
+        return self.exporter_ip
 
     @export
     async def setup_fls_binary(self):
