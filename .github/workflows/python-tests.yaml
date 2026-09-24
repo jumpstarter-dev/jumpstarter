@@ -26,10 +26,13 @@ jobs:
         id: filter
         with:
           base: ${{ github.base_ref || github.event.merge_group.base_ref || 'main' }}
+          # Required for the '!...' exclusion patterns below to work; with the
+          # default 'some' quantifier a negated pattern matches every file it
+          # does NOT cover, so docs-only PRs would still trigger the tests.
+          predicate-quantifier: some-with-excludes
           filters: |
             python:
               - 'python/**'
-              - '!docs/**'
               - '!python/**/*.md'
               - '.github/workflows/python-tests.yaml'
             renode_driver:

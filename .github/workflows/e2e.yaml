@@ -34,15 +34,20 @@ jobs:
         id: filter
         with:
           base: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
+          # Required for the '!...' exclusion patterns below to work; with the
+          # default 'some' quantifier a negated pattern matches every file it
+          # does NOT cover, so docs-only PRs would still trigger e2e.
+          predicate-quantifier: some-with-excludes
           filters: |
+            # Run e2e on any change except pure documentation/tooling:
+            # the suite exercises the whole stack, so a positive path list
+            # would keep missing new code directories (e.g. rust/).
             e2e:
-              - 'controller/**'
-              - 'e2e/**'
-              - 'python/**'
+              - '**'
               - '!docs/**'
-              - '!python/**/*.md'
-              - '.github/workflows/e2e.yaml'
-              - 'Makefile'
+              - '!**/*.md'
+              - '!**/*.mdc'
+              - '!.devcontainer/**'
       - name: Compute e2e architecture matrix
         id: matrix
         run: |
