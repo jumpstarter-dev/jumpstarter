@@ -203,7 +203,13 @@ install_jumpstarter() {
     # Activate virtual environment and install
     source "${VENV_DIR}/bin/activate"
 
-    # We don't upgrade pip here, because it might break the installation
+    # Older pip resolvers can reject this dependency tree even when a solution exists.
+    print_info "Updating pip in the virtual environment..."
+    if ! python3 -m pip install --upgrade pip; then
+        print_error "Failed to update pip in ${VENV_DIR}"
+        exit 1
+    fi
+
     # Install jumpstarter-all with specific version and index URL
     print_info "Installing jumpstarter-all==${version}..."
     if ! python3 -m pip install --extra-index-url "${index_url}" "jumpstarter-all==${version}"; then
