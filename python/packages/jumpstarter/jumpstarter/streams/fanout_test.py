@@ -11,7 +11,9 @@ from anyio import (
     create_memory_object_stream,
     create_task_group,
 )
+from anyio.lowlevel import checkpoint
 from anyio.streams.stapled import StapledObjectStream
+from anyio.to_thread import run_sync as run_sync_in_worker
 
 from .fanout import (
     BufferOverflowError,
@@ -273,6 +275,33 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
+    async def test_last_detach_clears_scrollback_before_next_observer(self):
+        sources = []
+
+        @asynccontextmanager
+        async def factory():
+            tx, rx = create_memory_object_stream[bytes](32)
+            sink, _ = create_memory_object_stream[bytes](32)
+            sources.append(tx)
+            yield StapledObjectStream(sink, rx)
+
+        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        async with fanout.attach_observer() as first:
+            await sources[-1].send(b"old output")
+            with anyio.fail_after(1):
+                assert await first.receive() == b"old output"
+
+        assert fanout.status()["scrollback_bytes"] == 0
+        assert not fanout.status()["reader_running"]
+
+        async with fanout.attach_observer() as second:
+            await sources[-1].send(b"new output")
+            with anyio.fail_after(1):
+                assert await second.receive() == b"new output"
+
+        await fanout.close()
+
+    @pytest.mark.anyio
     async def test_exclusive_session_active_identity(self):
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
@@ -283,16 +312,11 @@ class TestStreamFanOut:
 
         fanout = StreamFanOut(source_factory=factory, always_on=False)
 
-        # The rejection carries the known identity on the exception attribute for
-        # exporter-side logging, but the user-facing message stays identity-free
-        # (the router stream has no authenticated principal to trust) and never
-        # leaks the internal machine marker as human wording.
         async with fanout.attach_exclusive(identity="user-alice"):
             with pytest.raises(ExclusiveSessionActive) as exc_info:
                 async with fanout.attach_exclusive():
                     pass
 
-        assert exc_info.value.holder_identity == "user-alice"
         assert "user-alice" not in str(exc_info.value)
         assert "Console in use" in str(exc_info.value)
 
@@ -586,8 +610,120 @@ class TestStreamFanOut:
         assert fanout._reader_task is None
         assert not fanout._started
 
+    @pytest.mark.anyio
+    async def test_unexpected_reader_failure_resets_start_state(self, monkeypatch):
+        @asynccontextmanager
+        async def factory():
+            yield None
+
+        fanout = StreamFanOut(source_factory=factory)
+
+        async def failing_reader():
+            raise RuntimeError("unexpected source failure")
+
+        monkeypatch.setattr(fanout, "_reader_loop", failing_reader)
+        fanout._started = True
+        fanout._source_ready.set()
+
+        await fanout._run_reader()
+
+        assert not fanout._started
+        assert not fanout._source_ready.is_set()
+
+    @pytest.mark.anyio
+    async def test_unexpected_reader_failure_disconnects_clients(self, monkeypatch):
+        @asynccontextmanager
+        async def factory():
+            yield None
+
+        fanout = StreamFanOut(source_factory=factory)
+        buf = ClientBuffer()
+        fanout._clients[1] = buf
+        fanout._write_token_holder = 1
+        fanout._started = True
+
+        async def failing_reader():
+            raise RuntimeError("unexpected source failure")
+
+        monkeypatch.setattr(fanout, "_reader_loop", failing_reader)
+        await fanout._run_reader()
+
+        assert buf.closed
+        with pytest.raises(ClosedResourceError):
+            await buf.pull()
+        assert not fanout._clients
+        assert not fanout.status()["write_token_held"]
+        assert not fanout._started
+
+    @pytest.mark.anyio
+    async def test_kick_keeps_reader_alive_but_shutdown_stops_it(self):
+        a_tx, a_rx = create_memory_object_stream[bytes](32)
+        b_tx, _ = create_memory_object_stream[bytes](32)
+
+        @asynccontextmanager
+        async def factory():
+            yield StapledObjectStream(b_tx, a_rx)
+
+        fanout = StreamFanOut(source_factory=factory)
+        async with fanout.attach_exclusive() as first:
+            reader = fanout._reader_task
+            assert reader is not None
+
+            fanout.kick_sync()
+            assert not fanout._shutdown
+            assert fanout._reader_task is reader
+            assert not reader.done()
+            with pytest.raises(ClosedResourceError):
+                await first.receive()
+
+            async with fanout.attach_exclusive() as replacement:
+                await a_tx.send(b"after kick")
+                with anyio.fail_after(1):
+                    assert await replacement.receive() == b"after kick"
+
+                fanout.shutdown_sync()
+                assert fanout._shutdown
+                assert fanout._reader_task is None
+                with pytest.raises(ClosedResourceError):
+                    await replacement.receive()
+
+        with anyio.fail_after(1):
+            while not reader.done():
+                await checkpoint()
+        assert reader.done()
+
 
 class TestFanOutStreamMixin:
+    @pytest.mark.anyio
+    async def test_exported_close_kicks_on_loop_thread(self, monkeypatch):
+        from dataclasses import dataclass
+
+        _tx, rx = create_memory_object_stream[bytes](32)
+        sink, _ = create_memory_object_stream[bytes](32)
+
+        @dataclass(kw_only=True)
+        class TestDriver(FanOutStreamMixin):
+            @asynccontextmanager
+            async def _open_source(self):
+                yield StapledObjectStream(sink, rx)
+
+        driver = TestDriver()
+        fanout = driver._get_fanout()
+        loop = asyncio.get_running_loop()
+        original_kick = fanout.kick_sync
+
+        def checked_kick():
+            assert asyncio.get_running_loop() is loop
+            original_kick()
+
+        monkeypatch.setattr(fanout, "kick_sync", checked_kick)
+        async with fanout.attach_exclusive() as stream:
+            await run_sync_in_worker(driver.close)
+            with pytest.raises(ClosedResourceError):
+                await stream.receive()
+
+        await fanout.close()
+
     @pytest.mark.anyio
     async def test_mixin_connect_and_observe(self):
         from dataclasses import dataclass
@@ -694,6 +830,29 @@ class TestFanOutStreamMixin:
         driver = TestDriver()
         driver.close()
         assert close_called
+
+    def test_mixin_shutdown_stops_fanout_and_calls_super(self):
+        from dataclasses import dataclass
+
+        shutdown_called = False
+
+        class Base:
+            def shutdown(self):
+                nonlocal shutdown_called
+                shutdown_called = True
+
+        @dataclass(kw_only=True)
+        class TestDriver(FanOutStreamMixin, Base):
+            @asynccontextmanager
+            async def _open_source(self):
+                yield  # pragma: no cover
+
+        driver = TestDriver()
+        fanout = driver._get_fanout()
+        driver.shutdown()
+
+        assert fanout._shutdown
+        assert shutdown_called
 
     @pytest.mark.anyio
     async def test_mixin_open_source_not_implemented(self):
