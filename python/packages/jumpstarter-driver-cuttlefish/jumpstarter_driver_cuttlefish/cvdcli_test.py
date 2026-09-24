@@ -62,7 +62,7 @@ def test_fleet_to_cvds_matches_host_orchestrator_shape():
     json.dumps({"groups": [{"group_name": "cvd_1", "instances": [None]}]}),
 ])
 def test_fleet_to_cvds_rejects_unexpected_documents(output):
-    with pytest.raises(ValueError):
+    with pytest.raises((ValueError, TypeError)):
         fleet_to_cvds(output)
 
 

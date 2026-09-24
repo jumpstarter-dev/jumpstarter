@@ -138,16 +138,16 @@ def test_timeout_and_missing_launcher(drv):
     with patch("jumpstarter_driver_cuttlefish.driver.subprocess.run",
                side_effect=subprocess.TimeoutExpired("cvd", 5)), pytest.raises(CuttlefishTimeout, match="timed out"):
         drv.start_cvd()
-    with patch("jumpstarter_driver_cuttlefish.driver.subprocess.run", side_effect=FileNotFoundError("missing")):
-        with pytest.raises(CuttlefishError, match="cannot run jumpstarter-exec"):
-            drv.status()
+    with patch("jumpstarter_driver_cuttlefish.driver.subprocess.run", side_effect=FileNotFoundError("missing")), \
+         pytest.raises(CuttlefishError, match="cannot run jumpstarter-exec"):
+        drv.status()
 
 
 def test_invalid_fleet_output(drv):
     with patch("jumpstarter_driver_cuttlefish.driver.subprocess.run",
-               return_value=subprocess.CompletedProcess([], 0, stdout="garbage", stderr="")):
-        with pytest.raises(CuttlefishError, match="invalid JSON"):
-            drv.list_cvds()
+               return_value=subprocess.CompletedProcess([], 0, stdout="garbage", stderr="")), \
+         pytest.raises(CuttlefishError, match="invalid JSON"):
+        drv.list_cvds()
 
 
 def test_list_operations_unsupported(drv):

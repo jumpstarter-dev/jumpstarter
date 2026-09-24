@@ -175,9 +175,9 @@ def test_exec_backend_checks_inventory_through_cvd_fleet(tmp_path):
     stopped = [{"group_name": "cvd_1", "instances": [{"instance_name": "1", "status": "Stopped"}]}]
     with patch("jumpstarter_driver_cuttlefish.health.exec_reachable"), \
          patch("jumpstarter_driver_cuttlefish.health.subprocess.run", return_value=_fleet(stopped)), \
-         patch("jumpstarter_driver_cuttlefish.health.listening_ports", return_value={7681}):
-        with pytest.raises(RuntimeError, match="stopped unexpectedly"):
-            check(str(path))
+         patch("jumpstarter_driver_cuttlefish.health.listening_ports", return_value={7681}), \
+         pytest.raises(RuntimeError, match="stopped unexpectedly"):
+        check(str(path))
 
 
 def test_exec_backend_launcher_failure_is_unhealthy_even_when_off(tmp_path):
@@ -187,9 +187,9 @@ def test_exec_backend_launcher_failure_is_unhealthy_even_when_off(tmp_path):
     import subprocess
 
     failure = subprocess.CompletedProcess([], 1, stdout="", stderr="socket unavailable")
-    with patch("jumpstarter_driver_cuttlefish.health.subprocess.run", return_value=failure):
-        with pytest.raises(RuntimeError, match="launcher check failed"):
-            check(str(path))
+    with patch("jumpstarter_driver_cuttlefish.health.subprocess.run", return_value=failure), \
+         pytest.raises(RuntimeError, match="launcher check failed"):
+        check(str(path))
     with patch("jumpstarter_driver_cuttlefish.health.subprocess.run", return_value=_fleet([])) as run:
         check(str(path))
         assert run.call_args.args[0][-1] == "/bin/true"
@@ -208,9 +208,9 @@ def test_wait_ready_for_both_backends(tmp_path):
     assert run.call_args.args[0][-1] == "/bin/true"
     with patch("jumpstarter_driver_cuttlefish.health.urllib.request.urlopen", return_value=io.BytesIO()):
         wait_ready("http://127.0.0.1:2081", attempts=1, interval=0)
-    with patch("jumpstarter_driver_cuttlefish.health.urllib.request.urlopen", side_effect=OSError("refused")):
-        with pytest.raises(RuntimeError, match="did not become ready"):
-            wait_ready("http://127.0.0.1:2081", attempts=2, interval=0)
+    with patch("jumpstarter_driver_cuttlefish.health.urllib.request.urlopen", side_effect=OSError("refused")), \
+         pytest.raises(RuntimeError, match="did not become ready"):
+        wait_ready("http://127.0.0.1:2081", attempts=2, interval=0)
 
 
 def test_initialize_records_exec_endpoint(tmp_path):
