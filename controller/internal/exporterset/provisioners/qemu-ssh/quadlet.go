@@ -19,6 +19,8 @@ package qemussh
 import (
 	"fmt"
 	"strings"
+
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/qemucommon"
 )
 
 const (
@@ -36,9 +38,6 @@ const (
 	// sharedMountPath is the container mount for the shared volume
 	// (Unix sockets: QMP, serial, launcher).
 	sharedMountPath = "/shared"
-
-	// launcherSocketPath is the Unix socket used by jumpstarter-exec.
-	launcherSocketPath = "/shared/launcher.sock"
 )
 
 // QuadletConfig holds the parameters needed to generate quadlet
@@ -125,7 +124,7 @@ func ExporterContainerFile(cfg QuadletConfig) string {
 	fmt.Fprintf(&b, "Image=%s\n", cfg.ExporterImage)
 	fmt.Fprintf(&b, "Volume=%s:%s:z\n", volumeName, sharedMountPath)
 	fmt.Fprintf(&b, "Volume=%s:%s:ro\n", ExporterConfigDir, ExporterConfigDir)
-	fmt.Fprintf(&b, "Environment=JUMPSTARTER_LAUNCHER_SOCKET=%s\n", launcherSocketPath)
+	fmt.Fprintf(&b, "Environment=JUMPSTARTER_LAUNCHER_SOCKET=%s\n", qemucommon.LauncherSocketPath)
 	fmt.Fprintf(&b, "Exec=jmp run --exporter-config %s\n", configFile)
 	b.WriteString("\n")
 

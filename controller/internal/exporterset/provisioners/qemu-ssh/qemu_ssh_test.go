@@ -21,6 +21,7 @@ import (
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/qemucommon"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -122,9 +123,9 @@ func TestResolveImage_latest(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := resolveImage(tc.version, tc.image)
+			got := qemucommon.ResolveImage(tc.version, tc.image)
 			if got != tc.want {
-				t.Errorf("resolveImage(%q, %q) = %q, want %q",
+				t.Errorf("ResolveImage(%q, %q) = %q, want %q",
 					tc.version, tc.image, got, tc.want)
 			}
 		})
@@ -177,8 +178,8 @@ func TestBuildExportMap_basic(t *testing.T) {
 	drivers := []virtualtargetv1alpha1.DriverConfig{
 		{
 			Name:   "qemu",
-			Type:   qemuDriverType,
-			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+			Type:   qemucommon.QemuDriverType,
+			Config: qemucommon.MustJSON(map[string]any{"arch": "x86_64"}),
 		},
 		{
 			Name: "ssh",
@@ -196,7 +197,7 @@ func TestBuildExportMap_basic(t *testing.T) {
 	}
 
 	qemu := exportMap["qemu"]
-	if qemu.Type != qemuDriverType {
+	if qemu.Type != qemucommon.QemuDriverType {
 		t.Errorf("qemu.type = %q", qemu.Type)
 	}
 
@@ -208,8 +209,8 @@ func TestBuildExportMap_basic(t *testing.T) {
 
 func TestBuildExportMap_duplicateKey(t *testing.T) {
 	drivers := []virtualtargetv1alpha1.DriverConfig{
-		{Name: "qemu", Type: qemuDriverType},
-		{Name: "qemu", Type: tcpDriverType},
+		{Name: "qemu", Type: qemucommon.QemuDriverType},
+		{Name: "qemu", Type: qemucommon.TcpDriverType},
 	}
 
 	_, err := buildExportMap(drivers)

@@ -23,6 +23,7 @@ import (
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/disk"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/qemucommon"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -315,23 +316,23 @@ func TestRenderPod_injectsJumpstarterExecLogFields(t *testing.T) {
 
 func TestResolveImage_devPreservesLatest(t *testing.T) {
 	p := New("dev")
-	got := p.resolveImage(DefaultExporterImage)
-	if got != DefaultExporterImage {
+	got := qemucommon.ResolveImage(p.Version, qemucommon.DefaultExporterImage)
+	if got != qemucommon.DefaultExporterImage {
 		t.Errorf("resolveImage() = %q, want :latest preserved for dev", got)
 	}
 }
 
 func TestResolveImage_emptyVersionPreservesLatest(t *testing.T) {
 	p := New("")
-	got := p.resolveImage(DefaultExporterImage)
-	if got != DefaultExporterImage {
+	got := qemucommon.ResolveImage(p.Version, qemucommon.DefaultExporterImage)
+	if got != qemucommon.DefaultExporterImage {
 		t.Errorf("resolveImage() = %q, want :latest preserved for empty version", got)
 	}
 }
 
 func TestResolveImage_taggedVersionResolvesLatest(t *testing.T) {
 	p := New("v0.9.0")
-	got := p.resolveImage(DefaultExporterImage)
+	got := qemucommon.ResolveImage(p.Version, qemucommon.DefaultExporterImage)
 	want := "quay.io/jumpstarter-dev/jumpstarter:0.9.0"
 	if got != want {
 		t.Errorf("resolveImage() = %q, want %q", got, want)
@@ -340,7 +341,7 @@ func TestResolveImage_taggedVersionResolvesLatest(t *testing.T) {
 
 func TestResolveImage_rcVersionResolvesLatest(t *testing.T) {
 	p := New("v0.9.0-rc.1")
-	got := p.resolveImage(DefaultExporterImage)
+	got := qemucommon.ResolveImage(p.Version, qemucommon.DefaultExporterImage)
 	want := "quay.io/jumpstarter-dev/jumpstarter:0.9.0-rc.1"
 	if got != want {
 		t.Errorf("resolveImage() = %q, want %q", got, want)
@@ -349,7 +350,7 @@ func TestResolveImage_rcVersionResolvesLatest(t *testing.T) {
 
 func TestResolveImage_adminOverridePassesThrough(t *testing.T) {
 	p := New("v0.9.0")
-	got := p.resolveImage("quay.io/custom/image:v2.0")
+	got := qemucommon.ResolveImage(p.Version, "quay.io/custom/image:v2.0")
 	if got != "quay.io/custom/image:v2.0" {
 		t.Errorf("resolveImage() = %q, want admin override unchanged", got)
 	}
@@ -385,8 +386,8 @@ func TestRenderPod_usesResolvedImages(t *testing.T) {
 
 func TestResolveImage_dirtyGitVersionPreservesLatest(t *testing.T) {
 	p := New("v0.8.1-324-g02cf8552")
-	got := p.resolveImage(DefaultExporterImage)
-	if got != DefaultExporterImage {
+	got := qemucommon.ResolveImage(p.Version, qemucommon.DefaultExporterImage)
+	if got != qemucommon.DefaultExporterImage {
 		t.Errorf("resolveImage() = %q, want :latest preserved for dirty git version", got)
 	}
 }

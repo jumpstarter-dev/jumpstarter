@@ -22,10 +22,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/qemucommon"
 	corev1 "k8s.io/api/core/v1"
 	sigsyaml "sigs.k8s.io/yaml"
 
@@ -37,12 +37,6 @@ const (
 	// ProvisionerName is the provisioner identifier for
 	// off-cluster QEMU targets deployed via SSH.
 	ProvisionerName = "qemu-ssh.jumpstarter.dev"
-
-	// DefaultExporterImage is the exporter container image.
-	DefaultExporterImage = "quay.io/jumpstarter-dev/jumpstarter:latest"
-
-	// DefaultQEMURuntimeImage is the QEMU runtime container image.
-	DefaultQEMURuntimeImage = "quay.io/jumpstarter-dev/virtual/qemu-runtime:latest"
 
 	// sshPrivateKeyField is the Secret data key for SSH private
 	// keys (standard kubernetes.io/ssh-auth type).
@@ -95,7 +89,7 @@ func (p *Provisioner) EnrichExporterExport(
 
 // Deploy sets up the exporter on a remote host via SSH:
 //  1. Read SSH key from credentialsSecretRef
-//  2. Select a host with free capacity
+//  2. Parse the single configured host
 //  3. Connect via SSH
 //  4. Write exporter config, quadlet files
 //  5. Create shared volume, reload systemd, start containers
@@ -116,29 +110,22 @@ func (p *Provisioner) Deploy(
 		return err
 	}
 
-	hosts, err := ParseHosts(mergedParameters)
+	host, err := ParseHost(mergedParameters)
 	if err != nil {
-		return fmt.Errorf("parse hosts: %w", err)
+		return fmt.Errorf("parse host: %w", err)
 	}
 
 	sshCfg := ParseSSHConfig(mergedParameters)
 
-	exporterAnnotations := exporterAnnotationsList(ctx, p.Client, es)
-
-	host, err := SelectHost(hosts, exporterAnnotations)
-	if err != nil {
-		return fmt.Errorf("select host: %w", err)
-	}
-
-	logger.Info("selected host for exporter",
+	logger.Info("deploying exporter to host",
 		"exporter", exporter.Name,
 		"host", host.Name,
 	)
 
 	conn, err := Connect(SSHConnectConfig{
 		Host:       host.Name,
-		Port:       ResolveSSHPort(*host, sshCfg),
-		User:       ResolveSSHUser(*host, sshCfg),
+		Port:       ResolveSSHPort(host, sshCfg),
+		User:       ResolveSSHUser(host, sshCfg),
 		PrivateKey: privateKey,
 	})
 	if err != nil {
@@ -207,28 +194,28 @@ func (p *Provisioner) Cleanup(
 	if vtc.Spec.Parameters != nil && vtc.Spec.Parameters.Raw != nil {
 		_ = sigsyaml.Unmarshal(vtc.Spec.Parameters.Raw, &mergedParams)
 	}
-	sshCfg := ParseSSHConfig(mergedParams)
-	hosts, _ := ParseHosts(mergedParams)
-
-	var host *HostConfig
-	for i := range hosts {
-		if hosts[i].Name == hostName {
-			host = &hosts[i]
-			break
+	if es.Spec.Parameters != nil && es.Spec.Parameters.Raw != nil {
+		esParams := map[string]any{}
+		if err := sigsyaml.Unmarshal(es.Spec.Parameters.Raw, &esParams); err == nil {
+			for k, v := range esParams {
+				mergedParams[k] = v
+			}
 		}
 	}
 
-	port := sshCfg.Port
-	user := sshCfg.User
-	if host != nil {
-		port = ResolveSSHPort(*host, sshCfg)
-		user = ResolveSSHUser(*host, sshCfg)
-	}
-	if port == 0 {
-		port = 22
-	}
-	if user == "" {
-		user = "root"
+	sshCfg := ParseSSHConfig(mergedParams)
+	port := 22
+	user := "root"
+	if host, err := ParseHost(mergedParams); err == nil {
+		port = ResolveSSHPort(host, sshCfg)
+		user = ResolveSSHUser(host, sshCfg)
+	} else {
+		if sshCfg.Port > 0 {
+			port = sshCfg.Port
+		}
+		if sshCfg.User != "" {
+			user = sshCfg.User
+		}
 	}
 
 	conn, err := Connect(SSHConnectConfig{
@@ -425,8 +412,8 @@ func (p *Provisioner) annotateHost(
 func (p *Provisioner) resolveImages(
 	images *virtualtargetv1alpha1.ImageOverrides,
 ) (exporterImage, runtimeImage string) {
-	exporterImage = resolveImage(p.Version, DefaultExporterImage)
-	runtimeImage = resolveImage(p.Version, DefaultQEMURuntimeImage)
+	exporterImage = qemucommon.ResolveImage(p.Version, qemucommon.DefaultExporterImage)
+	runtimeImage = qemucommon.ResolveImage(p.Version, qemucommon.DefaultQEMURuntimeImage)
 
 	if images != nil {
 		if images.Exporter != nil && images.Exporter.Image != "" {
@@ -438,18 +425,6 @@ func (p *Provisioner) resolveImages(
 	}
 
 	return exporterImage, runtimeImage
-}
-
-// resolveImage replaces :latest with the controller version tag.
-func resolveImage(version, image string) string {
-	if version == "" || version == "dev" || strings.Contains(version, "-g") {
-		return image
-	}
-	v := strings.TrimPrefix(version, "v")
-	if base, ok := strings.CutSuffix(image, ":latest"); ok {
-		return base + ":" + v
-	}
-	return image
 }
 
 // buildExporterConfig generates the ExporterConfig YAML that will be
@@ -527,28 +502,6 @@ func (p *Provisioner) readCredentialToken(
 	}
 
 	return string(token), nil
-}
-
-// exporterAnnotationsList collects ExporterAnnotations from all
-// exporters in the namespace. This intentionally includes exporters
-// from other ExporterSets because host slot capacity is shared —
-// multiple ExporterSets targeting the same hosts must not exceed
-// physical slot limits.
-func exporterAnnotationsList(
-	ctx context.Context,
-	c client.Client,
-	es *virtualtargetv1alpha1.ExporterSet,
-) []ExporterAnnotations {
-	var exporterList jumpstarterdevv1alpha1.ExporterList
-	if err := c.List(ctx, &exporterList, client.InNamespace(es.Namespace)); err != nil {
-		return nil
-	}
-
-	result := make([]ExporterAnnotations, 0, len(exporterList.Items))
-	for i := range exporterList.Items {
-		result = append(result, &exporterList.Items[i])
-	}
-	return result
 }
 
 // --- ExporterConfig types (mirrors exporterconfig.go in parent package) ---

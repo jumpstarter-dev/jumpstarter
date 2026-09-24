@@ -23,16 +23,14 @@ package qemu
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
-	"strings"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/disk"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/qemucommon"
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -41,12 +39,6 @@ const (
 	// ProvisionerName is the provisioner identifier for
 	// QEMU-based virtual targets.
 	ProvisionerName = "qemu.jumpstarter.dev"
-
-	// DefaultExporterImage is the exporter sidecar image.
-	DefaultExporterImage = "quay.io/jumpstarter-dev/jumpstarter:latest"
-
-	// DefaultQEMURuntimeImage is the QEMU runtime container image.
-	DefaultQEMURuntimeImage = "quay.io/jumpstarter-dev/virtual/qemu-runtime:latest"
 
 	// sharedVolumeName is the name of the shared emptyDir volume
 	// used for Unix socket communication between the exporter
@@ -66,11 +58,6 @@ const (
 	// the exporter image (installed by the Rust builder stage).
 	jmpExecBinaryPath = "/jumpstarter/bin/jumpstarter-exec"
 
-	// launcherSocketPath is the Unix socket used by jumpstarter-exec
-	// for remote command execution between the exporter and
-	// the QEMU runtime container.
-	launcherSocketPath = "/shared/launcher.sock"
-
 	// exporterNonRootUID is the UID for the exporter main container.
 	// The runtime sidecar runs as root so it can read exporter-created
 	// paths on the shared volume without world-writable permissions.
@@ -80,12 +67,6 @@ const (
 	// exporterset.ExporterConfigMountPath + "/" + exporterConfigKey
 	// (cannot import the parent package — test import cycle).
 	exporterConfigPath = "/etc/jumpstarter/exporters/config.yaml"
-
-	// QEMU driver type for identification during enrichment.
-	qemuDriverType = "jumpstarter_driver_qemu.driver.Qemu"
-
-	// Wrapper driver types auto-injected.
-	tcpDriverType = "jumpstarter_driver_network.driver.TcpNetwork"
 )
 
 // Provisioner implements the qemu.jumpstarter.dev provisioner.
@@ -110,23 +91,10 @@ func (p *Provisioner) Name() string {
 
 // resolveImage replaces the :latest tag with the controller's own version tag.
 // If the version is unknown ("dev"), dirty (contains "-g", indicating a
-// non-release git describe like "0.8.1-324-g02cf8552"), or the image uses
-// a non-latest tag (admin override), the image is returned unchanged.
-func (p *Provisioner) resolveImage(image string) string {
-	if p.Version == "" || p.Version == "dev" || strings.Contains(p.Version, "-g") {
-		return image
-	}
-	version := strings.TrimPrefix(p.Version, "v")
-	if base, ok := strings.CutSuffix(image, ":latest"); ok {
-		return base + ":" + version
-	}
-	return image
-}
-
 // resolveImageSpec returns the image from an ImageSpec override, falling back to
-// the default image passed through resolveImage. Also returns the pull policy.
+// the default image passed through qemucommon.ResolveImage. Also returns the pull policy.
 func (p *Provisioner) resolveImageSpec(spec *virtualtargetv1alpha1.ImageSpec, defaultImage string) (string, corev1.PullPolicy) {
-	image := p.resolveImage(defaultImage)
+	image := qemucommon.ResolveImage(p.Version, defaultImage)
 	pullPolicy := corev1.PullIfNotPresent
 
 	if spec != nil {
@@ -187,8 +155,8 @@ func (p *Provisioner) RenderPod(
 		runtimeSpec = images.Runtime
 	}
 
-	exporterImage, exporterPullPolicy := p.resolveImageSpec(exporterSpec, DefaultExporterImage)
-	runtimeImage, runtimePullPolicy := p.resolveImageSpec(runtimeSpec, DefaultQEMURuntimeImage)
+	exporterImage, exporterPullPolicy := p.resolveImageSpec(exporterSpec, qemucommon.DefaultExporterImage)
+	runtimeImage, runtimePullPolicy := p.resolveImageSpec(runtimeSpec, qemucommon.DefaultQEMURuntimeImage)
 
 	// JEP-0013 persistent log context for jumpstarter-exec (matches
 	// set_persistent_log_context in the Python exporter).
@@ -275,7 +243,7 @@ func (p *Provisioner) RenderPod(
 					Env: []corev1.EnvVar{
 						{
 							Name:  "JUMPSTARTER_LAUNCHER_SOCKET",
-							Value: launcherSocketPath,
+							Value: qemucommon.LauncherSocketPath,
 						},
 					},
 					SecurityContext: &corev1.SecurityContext{
@@ -347,169 +315,12 @@ func (p *Provisioner) RenderPod(
 	return pod, nil
 }
 
-// EnrichExporterExport injects QEMU-specific driver configuration:
-// - Forces launcher_socket on the QEMU driver entry
-// - Defaults arch/smp/mem/disk_size from mergedParameters if not set
-// - Injects default_partitions (firmware paths) based on arch unless user overrides
-// - Auto-injects hostfwd.ssh if not present
-// - Auto-injects tcp wrapper driver entry
+// EnrichExporterExport injects QEMU-specific driver configuration.
 func (p *Provisioner) EnrichExporterExport(
 	drivers []virtualtargetv1alpha1.DriverConfig,
 	mergedParameters map[string]any,
 ) ([]virtualtargetv1alpha1.DriverConfig, error) {
-	result := make([]virtualtargetv1alpha1.DriverConfig, 0, len(drivers)+1)
-	hasTCP := false
-
-	for _, d := range drivers {
-		if d.Type == tcpDriverType {
-			hasTCP = true
-		}
-
-		if d.Type == qemuDriverType {
-			var err error
-			d, err = enrichQemuDriver(d, mergedParameters)
-			if err != nil {
-				return nil, err
-			}
-		}
-		result = append(result, d)
-	}
-
-	// Auto-inject tcp wrapper driver if not present.
-	if !hasTCP {
-		result = append(result, virtualtargetv1alpha1.DriverConfig{
-			Name: "tcp",
-			Type: tcpDriverType,
-			Config: mustJSON(map[string]any{
-				"host": "127.0.0.1",
-				"port": 2222,
-			}),
-		})
-	}
-
-	return result, nil
-}
-
-// enrichQemuDriver applies QEMU-specific defaults to a driver config entry.
-func enrichQemuDriver(d virtualtargetv1alpha1.DriverConfig, params map[string]any) (virtualtargetv1alpha1.DriverConfig, error) {
-	config := make(map[string]any)
-	if d.Config != nil && d.Config.Raw != nil {
-		if err := json.Unmarshal(d.Config.Raw, &config); err != nil {
-			return d, fmt.Errorf("unmarshal QEMU driver config: %w", err)
-		}
-	}
-
-	// Force launcher_socket.
-	config["launcher_socket"] = launcherSocketPath
-
-	// Default arch/smp/mem/disk_size from merged parameters.
-	setDefault(config, "arch", params, "arch")
-	setDefault(config, "smp", params, "resources.cpu")
-	setDefault(config, "mem", params, "resources.memory")
-	setDefault(config, "disk_size", params, "storage.size")
-
-	// Inject default_partitions based on arch unless user explicitly set them.
-	if _, hasPartitions := config["default_partitions"]; !hasPartitions {
-		arch, _ := config["arch"].(string)
-		config["default_partitions"] = defaultPartitionsForArch(arch)
-	}
-
-	// Inject hostfwd.ssh if not already present.
-	hostfwd, _ := config["hostfwd"].(map[string]any)
-	if hostfwd == nil {
-		hostfwd = make(map[string]any)
-	}
-	if _, hasSSH := hostfwd["ssh"]; !hasSSH {
-		hostfwd["ssh"] = map[string]any{
-			"hostaddr":  "127.0.0.1",
-			"hostport":  2222,
-			"guestport": 22,
-		}
-		config["hostfwd"] = hostfwd
-	}
-
-	raw, _ := json.Marshal(config)
-	d.Config = &apiextensionsv1.JSON{Raw: raw}
-	return d, nil
-}
-
-// defaultPartitionsForArch returns the firmware partition paths for the given architecture.
-func defaultPartitionsForArch(arch string) map[string]string {
-	switch arch {
-	case "aarch64":
-		return map[string]string{
-			"OVMF_CODE.fd": "/usr/share/AAVMF/AAVMF_CODE.fd",
-			"OVMF_VARS.fd": "/usr/share/AAVMF/AAVMF_VARS.fd",
-		}
-	default:
-		return map[string]string{
-			"OVMF_CODE.fd": "/usr/share/edk2/ovmf/OVMF_CODE.fd",
-			"OVMF_VARS.fd": "/usr/share/edk2/ovmf/OVMF_VARS.fd",
-		}
-	}
-}
-
-// setDefault sets config[key] from params[paramPath] if not already set.
-// paramPath supports one level of nesting with dot notation.
-func setDefault(config map[string]any, key string, params map[string]any, paramPath string) {
-	if _, exists := config[key]; exists {
-		return
-	}
-
-	parts := splitDot(paramPath)
-	var val any = params
-	for _, p := range parts {
-		m, ok := val.(map[string]any)
-		if !ok {
-			return
-		}
-		val = m[p]
-	}
-
-	if val != nil {
-		// Kubernetes resource quantities use binary suffixes (Gi, Mi);
-		// the QEMU driver expects qemu-img style sizes (G, M).
-		if key == "disk_size" || key == "mem" {
-			val = normalizeQemuSize(val)
-		}
-		config[key] = val
-	}
-}
-
-// normalizeQemuSize converts Kubernetes binary quantity strings (e.g. "10Gi")
-// to the form expected by the QEMU driver / qemu-img (e.g. "10G").
-func normalizeQemuSize(v any) any {
-	s, ok := v.(string)
-	if !ok || len(s) < 2 {
-		return v
-	}
-	if s[len(s)-1] != 'i' {
-		return v
-	}
-	switch s[len(s)-2] {
-	case 'K', 'M', 'G', 'T', 'k', 'm', 'g', 't':
-		return s[:len(s)-1]
-	default:
-		return v
-	}
-}
-
-func splitDot(s string) []string {
-	result := make([]string, 0, 2)
-	start := 0
-	for i := range s {
-		if s[i] == '.' {
-			result = append(result, s[start:i])
-			start = i + 1
-		}
-	}
-	result = append(result, s[start:])
-	return result
-}
-
-func mustJSON(v any) *apiextensionsv1.JSON {
-	raw, _ := json.Marshal(v)
-	return &apiextensionsv1.JSON{Raw: raw}
+	return qemucommon.EnrichExporterExport(drivers, mergedParameters)
 }
 
 // Cleanup handles teardown of QEMU-based exporter instances.
