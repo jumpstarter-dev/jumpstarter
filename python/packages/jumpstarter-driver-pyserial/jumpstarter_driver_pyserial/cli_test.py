@@ -4,6 +4,7 @@ CLI tests for PySerial driver.
 Tests the Click CLI interface including the pipe command.
 """
 
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -275,6 +276,51 @@ def test_pipe_command_mode_descriptions(pyserial_client):
         assert "read-only" in result.output.lower()
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("observe", "input_enabled", "expected_method"),
+    [(False, False, "observe"), (True, True, "observe"), (False, True, "connect")],
+)
+async def test_pipe_serial_selects_stream_mode(pyserial_client, observe, input_enabled, expected_method):
+    methods = []
+
+    @asynccontextmanager
+    async def stream_async(*, method):
+        methods.append(method)
+        yield object()
+
+    with (
+        patch.object(pyserial_client, "stream_async", side_effect=stream_async),
+        patch.object(pyserial_client, "_serial_to_output", new_callable=AsyncMock) as output,
+        patch.object(pyserial_client, "_stdin_to_serial", new_callable=AsyncMock) as stdin,
+    ):
+        await pyserial_client._pipe_serial(input_enabled=input_enabled, observe=observe)
+
+    assert methods == [expected_method]
+    output.assert_awaited_once()
+    assert stdin.await_count == int(input_enabled)
+
+
+@pytest.mark.parametrize("held", [False, True])
+def test_console_status_reports_write_token_without_identity(pyserial_client, held):
+    status = {
+        "write_token_held": held,
+        "observer_count": 2,
+        "total_clients": 3,
+        "reader_running": True,
+        "scrollback_bytes": 12,
+    }
+    with patch.object(pyserial_client, "call", return_value=status):
+        result = CliRunner().invoke(pyserial_client.cli(), ["console-status"])
+
+    assert result.exit_code == 0
+    assert f"Write token held: {'yes' if held else 'no'}" in result.output
+    assert "Observers: 2" in result.output
+    assert "Total clients: 3" in result.output
+    assert "Reader running: True" in result.output
+    assert "Scrollback: 12 bytes" in result.output
+
+
 def test_console_command_structure(pyserial_client):
     """Test that console command has the correct structure and start-console alias exists."""
     cli = pyserial_client.cli()
@@ -396,4 +442,3 @@ async def test_serial_to_output_receives_data_then_end_of_stream(pyserial_client
         with open("test.log", "rb") as f:  # noqa: ASYNC230
             content = f.read()
             assert content == b"HelloWorld"
-
