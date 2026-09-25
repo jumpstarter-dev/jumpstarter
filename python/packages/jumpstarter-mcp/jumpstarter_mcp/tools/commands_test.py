@@ -13,7 +13,7 @@ from jumpstarter_mcp.tools.commands import driver_methods, drivers, explore
 
 
 class LeafClient:
-    children: ClassVar[dict]= {}
+    children: ClassVar[dict] = {}
 
     def on(self):
         """Turn power on."""

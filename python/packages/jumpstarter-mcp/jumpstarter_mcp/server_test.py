@@ -16,6 +16,7 @@ import pytest
 from jumpstarter_mcp.connections import Connection, ConnectionManager
 from jumpstarter_mcp.server import (
     TOKEN_REFRESH_THRESHOLD_SECONDS,
+    _capture_session_for_notifications,
     _ensure_fresh_token,
     _setup_logging,
     create_server,
@@ -28,7 +29,7 @@ from jumpstarter_mcp.tools.leases import _lease_status
 
 
 class FakePowerClient:
-    children: ClassVar[dict]= {}
+    children: ClassVar[dict] = {}
 
     def on(self) -> None:
         """Power on the device."""
@@ -50,7 +51,7 @@ class FakePowerClient:
 
 
 class FakeSerialClient:
-    children: ClassVar[dict]= {}
+    children: ClassVar[dict] = {}
 
     def open(self):
         """Open serial port."""
@@ -458,9 +459,7 @@ class TestSetupLogging:
                 _setup_logging()
 
             new_file_handlers = [
-                h
-                for h in root.handlers
-                if isinstance(h, logging.FileHandler) and h not in handlers_before
+                h for h in root.handlers if isinstance(h, logging.FileHandler) and h not in handlers_before
             ]
             assert len(new_file_handlers) == 1
             assert "mcp-server.log" in new_file_handlers[0].baseFilename
@@ -534,7 +533,7 @@ class TestStdoutIsolation:
 
             # Apply the same redirect pattern as run_server():
             sys.stdout.flush()
-            mcp_fd = os.dup(sys.stdout.fileno())   # save "real stdout" (pipe)
+            mcp_fd = os.dup(sys.stdout.fileno())  # save "real stdout" (pipe)
             os.dup2(sys.stderr.fileno(), sys.stdout.fileno())  # fd 1 -> stderr
             sys.stdout = sys.stderr
 
@@ -564,3 +563,48 @@ class TestStdoutIsolation:
             os.close(r_err)
             sys.stdout = saved_sys_stdout
             sys.stderr = saved_sys_stderr
+
+
+# ---------------------------------------------------------------------------
+# _capture_session_for_notifications
+# ---------------------------------------------------------------------------
+
+
+class TestCaptureSessionForNotifications:
+    def test_ctx_none_skips_callback_setup(self):
+        _, manager = create_server()
+        _capture_session_for_notifications(None, manager)
+        assert manager._log_callback is None
+
+    def test_existing_callback_not_overwritten(self):
+        _, manager = create_server()
+
+        async def original(level: str, message: str) -> None:
+            pass
+
+        manager.set_log_callback(original)
+        _capture_session_for_notifications(MagicMock(), manager)
+        assert manager._log_callback is original
+
+    def test_valid_ctx_installs_callback(self):
+        _, manager = create_server()
+        _capture_session_for_notifications(MagicMock(session=AsyncMock()), manager)
+        assert manager._log_callback is not None
+
+    @pytest.mark.asyncio
+    async def test_installed_callback_calls_send_log_message(self):
+        _, manager = create_server()
+        mock_session = AsyncMock()
+        _capture_session_for_notifications(MagicMock(session=mock_session), manager)
+        assert manager._log_callback is not None
+        await manager._log_callback("info", "hello")
+        mock_session.send_log_message.assert_called_once_with(level="info", data="hello", logger="jumpstarter")
+
+    @pytest.mark.asyncio
+    async def test_installed_callback_suppresses_send_failure(self):
+        _, manager = create_server()
+        mock_session = AsyncMock()
+        mock_session.send_log_message.side_effect = RuntimeError("transport closed")
+        _capture_session_for_notifications(MagicMock(session=mock_session), manager)
+        assert manager._log_callback is not None
+        await manager._log_callback("error", "boom")
