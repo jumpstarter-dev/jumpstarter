@@ -20,13 +20,20 @@ from rich.progress import (
 logger = logging.getLogger(__name__)
 
 
+def _fmt_bytes(n: float) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if abs(n) < 1000:
+            return f"{n:.1f} {unit}" if unit != "B" else f"{n:.0f} {unit}"
+        n /= 1000
+    return f"{n:.1f} TB"
+
+
 def _log_progress(task: Task) -> str:
-    completed_mb = task.completed / 1e6
-    total_str = f"{task.total / 1e6:.1f} MB" if task.total else "?"
-    speed_str = f"{task.speed / 1e6:.1f} MB/s" if task.speed else "?"
+    total_str = _fmt_bytes(task.total) if task.total else "?"
+    speed_str = f"{_fmt_bytes(task.speed)}/s" if task.speed else "?"
     elapsed_str = str(timedelta(seconds=int(task.elapsed or 0)))
     return (
-        f"transfer: {task.percentage:.1f}% | {completed_mb:.1f} MB / {total_str}"
+        f"transfer: {task.percentage:.1f}% | {_fmt_bytes(task.completed)} / {total_str}"
         f" | {speed_str} | elapsed {elapsed_str}"
     )
 

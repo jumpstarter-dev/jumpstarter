@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from jumpstarter.streams.progress import ProgressStream
+from jumpstarter.streams.progress import ProgressStream, _fmt_bytes
 
 pytestmark = pytest.mark.anyio
 
@@ -65,3 +65,10 @@ async def test_no_logging_skips_log_call():
 async def test_send_without_prior_receive_does_not_crash():
     ps = ProgressStream(stream=_BytesStream(), logging=True)
     await ps.send(b"hello world")
+
+
+def test_fmt_bytes_adapts_units():
+    assert _fmt_bytes(500) == "500 B"
+    assert _fmt_bytes(1500) == "1.5 KB"
+    assert _fmt_bytes(1_500_000) == "1.5 MB"
+    assert _fmt_bytes(1_500_000_000) == "1.5 GB"
