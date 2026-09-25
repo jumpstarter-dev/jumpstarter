@@ -33,6 +33,7 @@ from .common import (
     opt_retry_timeout,
     opt_selector,
 )
+from .formatter import RSTStrippingCommand
 from .login import relogin_client
 from jumpstarter.client import DirectLease
 from jumpstarter.client.client import client_from_path, fetch_motd
@@ -800,7 +801,7 @@ async def _shell_direct_async(
     return exit_code
 
 
-@click.command("shell")
+@click.command("shell", cls=RSTStrippingCommand)
 @opt_config(allow_missing=True)
 @click.argument("command", nargs=-1)
 # client specific

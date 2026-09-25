@@ -8,6 +8,7 @@ from jumpstarter_cli_common.opt import OutputType, opt_output_all
 from jumpstarter_cli_common.print import model_print
 
 from .common import opt_allow_disabled, opt_begin_time, opt_duration_partial, opt_exporter_name, opt_selector
+from .formatter import RSTStrippingCommand
 from .login import relogin_client
 
 
@@ -42,7 +43,7 @@ def create():
     """
 
 
-@create.command(name="lease")
+@create.command(name="lease", cls=RSTStrippingCommand)
 @opt_config(exporter=False)
 @opt_selector
 @opt_exporter_name
