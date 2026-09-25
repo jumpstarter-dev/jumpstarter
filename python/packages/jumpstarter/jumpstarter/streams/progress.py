@@ -2,15 +2,14 @@ import logging
 import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from io import StringIO
 
 from anyio import TypedAttributeSet, typed_attribute
 from anyio.abc import ObjectStream
-from rich.console import Console
 from rich.progress import (
     BarColumn,
     DownloadColumn,
     Progress,
+    Task,
     TaskID,
     TextColumn,
     TimeElapsedColumn,
@@ -19,6 +18,17 @@ from rich.progress import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _log_progress(task: Task) -> str:
+    completed_mb = task.completed / 1e6
+    total_str = f"{task.total / 1e6:.1f} MB" if task.total else "?"
+    speed_str = f"{task.speed / 1e6:.1f} MB/s" if task.speed else "?"
+    elapsed_str = str(timedelta(seconds=int(task.elapsed or 0)))
+    return (
+        f"transfer: {task.percentage:.1f}% | {completed_mb:.1f} MB / {total_str}"
+        f" | {speed_str} | elapsed {elapsed_str}"
+    )
 
 
 class ProgressAttribute(TypedAttributeSet):
@@ -68,10 +78,7 @@ class ProgressStream(ObjectStream[bytes]):
         self.__prog.advance(self.__recv, len(item))
         if self.logging and (datetime.now(tz=UTC) - self.__last > timedelta(seconds=2)):
             self.__last = datetime.now(tz=UTC)
-            buf = StringIO()
-            console = Console(file=buf)
-            console.print(self.__prog.get_renderable())
-            logger.info(buf.getvalue().rstrip())
+            logger.info(_log_progress(self.__prog.tasks[self.__recv]))
 
         return item
 
@@ -83,13 +90,10 @@ class ProgressStream(ObjectStream[bytes]):
                 total=self.stream.extra(ProgressAttribute.total, None),
             )
 
-        self.__prog.advance(self.__recv, len(item))
+        self.__prog.advance(self.__send, len(item))
         if self.logging and (datetime.now(tz=UTC) - self.__last > timedelta(seconds=2)):
             self.__last = datetime.now(tz=UTC)
-            buf = StringIO()
-            console = Console(file=buf)
-            console.print(self.__prog.get_renderable())
-            logger.info(buf.getvalue().rstrip())
+            logger.info(_log_progress(self.__prog.tasks[self.__send]))
 
         await self.stream.send(item)
 
