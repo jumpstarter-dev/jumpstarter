@@ -42,6 +42,24 @@ def test_session_unbinds_exporter_log_context():
     assert "exporter" not in structlog.contextvars.get_contextvars()
 
 
+def test_session_closes_driver_when_shutdown_hook_fails(caplog):
+    class FailingShutdownDriver(SimpleDriver):
+        closed = False
+
+        def shutdown(self):
+            raise RuntimeError("shutdown failed")
+
+        def close(self):
+            self.closed = True
+
+    driver = FailingShutdownDriver()
+    with caplog.at_level(logging.WARNING), Session(uuid=driver.uuid, root_device=driver, exporter_name="test-exporter"):
+        pass
+
+    assert driver.closed
+    assert "Error during driver shutdown hook" in caplog.text
+
+
 def test_get_report_includes_descriptions():
     """Test that GetReport includes descriptions for drivers that have them"""
     # Create drivers with and without descriptions

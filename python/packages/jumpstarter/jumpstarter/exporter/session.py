@@ -78,6 +78,13 @@ class Session(
                 )
             unbind_log_context("exporter")
             try:
+                # shutdown() first: session-end teardown for drivers (e.g. the
+                # fan-out console) whose exported close() only kicks clients and
+                # must not tear down live resources. No-op for ordinary drivers.
+                self.root_device.shutdown()
+            except Exception:
+                logger.warning("Error during driver shutdown hook", exc_info=True)
+            try:
                 self.root_device.close()
             except Exception:
                 # Get driver name from report for more descriptive logging

@@ -8,7 +8,9 @@ import pytest
 from grpc import StatusCode
 from grpc.aio import AioRpcError
 
+from jumpstarter.client.core import AsyncDriverClient, DriverError
 from jumpstarter.common import ExporterStatus, Metadata
+from jumpstarter.common.exceptions import CONSOLE_IN_USE_MARKER
 
 pytestmark = pytest.mark.anyio
 
@@ -30,6 +32,25 @@ class MockAioRpcError(AioRpcError):
 def create_mock_rpc_error(code: StatusCode, details: str = "") -> MockAioRpcError:
     """Create a mock AioRpcError with the specified status code."""
     return MockAioRpcError(code, details)
+
+
+async def test_stream_async_hides_console_marker_from_python_callers() -> None:
+    stub = MagicMock()
+    context = MagicMock()
+    context.initial_metadata = AsyncMock(
+        side_effect=create_mock_rpc_error(
+            StatusCode.FAILED_PRECONDITION,
+            f"{CONSOLE_IN_USE_MARKER} Console in use by another client.",
+        )
+    )
+    stub.Stream.return_value = context
+    client = AsyncDriverClient(stub=stub)
+
+    with pytest.raises(DriverError, match="Console in use") as exc_info:
+        async with client.stream_async("connect"):
+            pass
+
+    assert CONSOLE_IN_USE_MARKER not in str(exc_info.value)
 
 
 def create_status_response(
