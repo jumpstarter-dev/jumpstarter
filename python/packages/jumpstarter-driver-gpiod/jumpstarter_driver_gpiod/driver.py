@@ -107,15 +107,51 @@ class DigitalOutput(_GPIOBase):
     def __post_init__(self):
         super().__post_init__()
 
+        if self.initial_value == "preserve":
+            self._line = self._request_preserving()
+            return
+
         # Configure line settings for output
-        settings = self._output_line_settings()
+        settings = self._output_line_settings(self._parse_initial_value())
 
         self.logger.debug(f"line {self.line} ({self._line_name}) settings: {settings}")
 
         # Request the line
         self._line = self._chip.request_lines(config={self.line: settings}, consumer="jumpstarter-gpiod")
 
-    def _output_line_settings(self):
+    def _request_preserving(self):
+        """Claim the line as an output without changing the level it is at.
+
+        A plain output request always drives ``initial_value``, so every exporter
+        restart switches whatever the line controls (a relay feeding a DUT's power,
+        say). Instead, request the line with its direction left as-is, read the
+        logical level, and only then reconfigure it to an output at that same level.
+
+        Bias is applied in the reconfigure, not the probe: the kernel rejects bias
+        flags without an explicit direction. A line that was never driven reads
+        whatever its pull or float gives, so pin it in firmware (config.txt
+        ``gpio=<n>=op,dh``) when its cold-boot level matters.
+        """
+        probe = gpiod.LineSettings(active_low=self.active_low)
+        request = self._chip.request_lines(config={self.line: probe}, consumer="jumpstarter-gpiod")
+
+        value = request.get_value(self.line)
+        settings = self._output_line_settings(value)
+        self.logger.debug(f"line {self.line} ({self._line_name}) preserving {value}, settings: {settings}")
+        request.reconfigure_lines(config={self.line: settings})
+        return request
+
+    def _parse_initial_value(self):
+        if self.initial_value in ["active", "on", True]:
+            return gpiod.line.Value.ACTIVE
+        if self.initial_value in ["inactive", "off", False, None]:
+            return gpiod.line.Value.INACTIVE
+        raise ValueError(
+            f"Invalid initial_value: {self.initial_value}, must be one of: "
+            + "inactive, active, on, off, preserve, True, False"
+        )
+
+    def _output_line_settings(self, output_value):
         settings = self._line_settings()
         settings.direction = gpiod.line.Direction.OUTPUT
 
@@ -128,16 +164,7 @@ class DigitalOutput(_GPIOBase):
         else:
             raise ValueError(f"Invalid drive: {self.drive}, must be one of: " + "open_drain, push_pull, open_source")
 
-        if self.initial_value in ["active", "on", True]:
-            settings.output_value = gpiod.line.Value.ACTIVE
-        elif self.initial_value in ["inactive", "off", False, None]:
-            settings.output_value = gpiod.line.Value.INACTIVE
-        else:
-            raise ValueError(
-                f"Invalid initial_value: {self.initial_value}, must be one of: "
-                + "inactive, active, on, off, True, False"
-            )
-
+        settings.output_value = output_value
         return settings
 
     @export
@@ -151,6 +178,15 @@ class DigitalOutput(_GPIOBase):
         """Set the pin to active state"""
         self._line.set_value(self.line, gpiod.line.Value.ACTIVE)
         self.logger.info(f"line {self.line} ({self._line_name}) on() -> pin reads: {self.read_pin()}")
+
+    @export
+    def status(self) -> str:
+        """Return "on" or "off": the logical level this driver holds the line at.
+
+        ``active_low`` is already applied, so this matches ``on()``/``off()``. It
+        reports what the Pi drives, not whether a relay behind the line switched.
+        """
+        return "on" if self.read_pin() == PinState.ACTIVE else "off"
 
 
 @dataclass(kw_only=True)
@@ -229,7 +265,15 @@ class DigitalInput(_GPIOBase):
 
 @dataclass(kw_only=True)
 class PowerSwitch(PowerInterface, DigitalOutput):
-    mode: str = "push_pull"
+    """A GPIO line switching a load, e.g. one channel of a relay HAT.
+
+    Speaks PowerInterface (on/off/cycle) like the other relay drivers, adds
+    ``status``, and inherits ``initial_value: preserve`` from DigitalOutput.
+    """
+
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter_driver_gpiod.client.PowerSwitchClient"
 
     @export
     def on(self) -> None:
