@@ -54,7 +54,14 @@
     min-width: 200px;
     max-width: 400px;
     white-space: normal;
+    font-weight: normal;
     z-index: 1000;
     pointer-events: none;
+}
+
+.glossary-term--flip[data-tooltip]:hover::after,
+.glossary-term--flip[data-tooltip].tooltip-active::after {
+    left: auto;
+    right: 0;
 }
 

@@ -45,6 +45,10 @@
                 }
                 a.appendChild(span);
 
+                if (a.getBoundingClientRect().right > window.innerWidth * 0.6) {
+                    span.classList.add("glossary-term--flip");
+                }
+
                 if (isTouch) {
                     a.addEventListener("click", function (e) {
                         var wasActive = span.classList.contains("tooltip-active");
