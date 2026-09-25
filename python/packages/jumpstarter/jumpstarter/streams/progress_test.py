@@ -47,7 +47,6 @@ async def test_logging_emits_plain_text():
     mock_logger.info.assert_called_once()
     msg = mock_logger.info.call_args[0][0]
     assert "━" not in msg  # Rich bar block character
-    assert "%" in msg
     assert "elapsed" in msg
 
 
@@ -72,3 +71,32 @@ def test_fmt_bytes_adapts_units():
     assert _fmt_bytes(1500) == "1.5 KB"
     assert _fmt_bytes(1_500_000) == "1.5 MB"
     assert _fmt_bytes(1_500_000_000) == "1.5 GB"
+
+
+def test_log_progress_unknown_total_shows_question_mark():
+    from jumpstarter.streams.progress import _log_progress
+    from rich.progress import Progress, TextColumn
+
+    p = Progress(TextColumn("{task.description}"), disable=True)
+    p.start()
+    tid = p.add_task("transfer", total=None)
+    p.advance(tid, 512 * 1024)
+    msg = _log_progress(p.tasks[tid])
+    p.stop()
+
+    assert "0.0%" not in msg
+    assert msg.startswith("transfer: ?")
+
+
+def test_log_progress_known_total_shows_percentage():
+    from jumpstarter.streams.progress import _log_progress
+    from rich.progress import Progress, TextColumn
+
+    p = Progress(TextColumn("{task.description}"), disable=True)
+    p.start()
+    tid = p.add_task("transfer", total=1_000_000)
+    p.advance(tid, 500_000)
+    msg = _log_progress(p.tasks[tid])
+    p.stop()
+
+    assert "50.0%" in msg
