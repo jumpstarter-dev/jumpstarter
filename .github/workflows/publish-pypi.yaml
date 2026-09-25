@@ -1,0 +1,40 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"       # final releases only (v0.9.0, v1.0.0, etc.)
+      # RC tags (v*-rc.*) are excluded by not matching this pattern
+
+jobs:
+  publish:
+    name: Build and publish to PyPI
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # required for trusted publishing (OIDC)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Build all packages
+        working-directory: python
+        run: uv build --all --out-dir dist
+
+      - name: Verify versions match tag
+        working-directory: python
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "Expected version: $TAG"
+          BAD=$(ls dist/ | grep -v "^hatch_pin_jumpstarter" | grep -v "$TAG" || true)
+          if [ -n "$BAD" ]; then
+            echo "ERROR: Files with unexpected version:"
+            echo "$BAD"
+            exit 1
+          fi
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages: python/dist/jumpstarter*
