@@ -46,6 +46,7 @@ export:
 | check_present | Check if the serial port exists during exporter initialization, disable if you are connecting to a dynamically created port (i.e. USB from your DUT) | bool  | no       | True    |
 | cps            | Characters per second throttling limit. When set, data transmission will be throttled to simulate slow typing. Useful for devices that can't handle fast input | float | no       | None    |
 | disable_hupcl  | Disable HUPCL on POSIX systems to avoid toggling DTR/RTS on close (can prevent MCU reset on serial disconnect)                                       | bool  | no       | False   |
+| always_on      | Keep the serial port open even when no clients are connected. When false (the default), the port is opened on first client attach and closed when the last client detaches, freeing it for other tools (e.g. esptool). When true, the port stays open for the lifetime of the exporter, which can be useful to avoid HUPCL-triggered resets between sessions | bool  | no       | False   |
 
 ### NVDemuxSerial Driver
 

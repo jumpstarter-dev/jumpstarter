@@ -383,8 +383,10 @@ class StreamFanOut:
 
             client_id = self._new_client_id()
             buf = ClientBuffer(max_bytes=buffer_bytes, on_overflow=on_overflow)
-            # Atomic: snapshot scrollback + register, under lock
-            buf.prefill(self._scrollback_snapshot())
+            # New exclusive writer = new session. Clear stale scrollback so
+            # observers who attach later see only output from this session.
+            self._scrollback.clear()
+            self._scrollback_bytes = 0
             self._clients[client_id] = buf
             self._write_token_holder = client_id
             self._write_token_holder_identity = identity
@@ -517,13 +519,17 @@ class FanOutStreamMixin:
         raise NotImplementedError("subclass must implement _open_source()")
         yield  # pragma: no cover — makes this a generator for @asynccontextmanager
 
+    def _get_fanout_always_on(self) -> bool:
+        """Return always_on setting. Subclasses with an instance field override this."""
+        return self._fanout_always_on
+
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
         self._fanout = StreamFanOut(
             source_factory=self._open_source,
             scrollback_size=self._fanout_scrollback_size,
-            always_on=self._fanout_always_on,
+            always_on=self._get_fanout_always_on(),
         )
 
     def _get_fanout(self) -> StreamFanOut:

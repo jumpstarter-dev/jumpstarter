@@ -102,7 +102,11 @@ class PySerial(FanOutStreamMixin, Driver):
     check_present: bool = field(default=True)
     cps: Optional[float] = field(default=None)  # characters per second throttling
     disable_hupcl: bool = field(default=False)
+    always_on: bool = field(default=False)
     _transport: Any = field(default=None, init=False, repr=False)
+
+    def _get_fanout_always_on(self) -> bool:
+        return self.always_on
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
