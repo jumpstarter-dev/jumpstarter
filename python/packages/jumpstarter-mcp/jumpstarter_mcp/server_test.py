@@ -28,7 +28,7 @@ from jumpstarter_mcp.tools.leases import _lease_status
 
 
 class FakePowerClient:
-    children: ClassVar[dict]= {}
+    children: ClassVar[dict] = {}
 
     def on(self) -> None:
         """Power on the device."""
@@ -50,7 +50,7 @@ class FakePowerClient:
 
 
 class FakeSerialClient:
-    children: ClassVar[dict]= {}
+    children: ClassVar[dict] = {}
 
     def open(self):
         """Open serial port."""
@@ -458,9 +458,7 @@ class TestSetupLogging:
                 _setup_logging()
 
             new_file_handlers = [
-                h
-                for h in root.handlers
-                if isinstance(h, logging.FileHandler) and h not in handlers_before
+                h for h in root.handlers if isinstance(h, logging.FileHandler) and h not in handlers_before
             ]
             assert len(new_file_handlers) == 1
             assert "mcp-server.log" in new_file_handlers[0].baseFilename
@@ -534,7 +532,7 @@ class TestStdoutIsolation:
 
             # Apply the same redirect pattern as run_server():
             sys.stdout.flush()
-            mcp_fd = os.dup(sys.stdout.fileno())   # save "real stdout" (pipe)
+            mcp_fd = os.dup(sys.stdout.fileno())  # save "real stdout" (pipe)
             os.dup2(sys.stderr.fileno(), sys.stdout.fileno())  # fd 1 -> stderr
             sys.stdout = sys.stderr
 
