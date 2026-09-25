@@ -30,7 +30,7 @@ def _fmt_bytes(n: float) -> str:
 
 def _log_progress(task: Task) -> str:
     pct_str = f"{task.percentage:.1f}%" if task.total else "?"
-    total_str = _fmt_bytes(task.total) if task.total else "?"
+    total_str = _fmt_bytes(task.total) if task.total is not None else "?"
     speed_str = f"{_fmt_bytes(task.speed)}/s" if task.speed else "?"
     elapsed_str = str(timedelta(seconds=int(task.elapsed or 0)))
     return (

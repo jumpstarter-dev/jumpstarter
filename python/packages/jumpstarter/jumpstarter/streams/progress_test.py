@@ -103,3 +103,18 @@ def test_log_progress_known_total_shows_percentage():
     p.stop()
 
     assert "50.0%" in msg
+
+
+def test_log_progress_zero_total_shows_zero_bytes_not_question_mark():
+    from rich.progress import Progress, TextColumn
+
+    from jumpstarter.streams.progress import _log_progress
+
+    p = Progress(TextColumn("{task.description}"), disable=True)
+    p.start()
+    tid = p.add_task("transfer", total=0)
+    msg = _log_progress(p.tasks[tid])
+    p.stop()
+
+    assert "/ 0 B" in msg
+    assert "/ ?" not in msg
