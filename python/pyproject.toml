@@ -109,6 +109,13 @@ constraint-dependencies = [
     "gpiod>=2.4.0 ; python_version >= '3.14'",
 ]
 
+override-dependencies = [
+    # mitmproxy 12.x caps typing-extensions<=4.14 on Python <3.13, but
+    # mcp>=2.0 requires pydantic>=2.12.0 which requires typing-extensions>=4.14.1.
+    # typing-extensions is backward-compatible; this override is safe.
+    "typing-extensions>=4.14.1",
+]
+
 [dependency-groups]
 docs = [
     "sphinx<9.1.1",

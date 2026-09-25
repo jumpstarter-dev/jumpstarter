@@ -62,8 +62,7 @@ def _check_lease_error(lease) -> None:
         return
     if lease.lease_transferred:
         raise ConnectionError(
-            f"Lease {lease.name} has been transferred to another client. "
-            "The session is no longer valid."
+            f"Lease {lease.name} has been transferred to another client. The session is no longer valid."
         ) from None
     if lease.lease_ended:
         raise ConnectionError(f"Lease {lease.name} has expired.") from None
@@ -110,8 +109,7 @@ class ConnectionManager:
             if remaining <= timedelta(0):
                 await self._send_log(
                     "error",
-                    f"Lease {name} for {exporter} has expired. "
-                    f"Connection {connection_id} is no longer valid.",
+                    f"Lease {name} for {exporter} has expired. Connection {connection_id} is no longer valid.",
                 )
                 event.set()
             else:
@@ -157,7 +155,10 @@ class ConnectionManager:
         connection_id = str(uuid.uuid4())[:8]
         logger.info(
             "Connecting %s (lease=%s, selector=%s, exporter=%s)",
-            connection_id, lease_name, selector, exporter_name,
+            connection_id,
+            lease_name,
+            selector,
+            exporter_name,
         )
         event = anyio.Event()
 
@@ -176,7 +177,12 @@ class ConnectionManager:
                     ) as lease:
                         lease_ref = lease
                         conn = await self._setup_connection(
-                            config, lease, portal, connection_id, event, tracker,
+                            config,
+                            lease,
+                            portal,
+                            connection_id,
+                            event,
+                            tracker,
                         )
                         logger.info("Connection %s tearing down (%s)", connection_id, conn.exporter_name)
             except BaseException as exc:
@@ -232,11 +238,13 @@ class ConnectionManager:
 
         def _on_lease_ending(lease_obj, remaining):
             try:
-                notify_send.send_nowait((
-                    lease_obj.name,
-                    getattr(lease_obj, "exporter_name", "unknown"),
-                    remaining,
-                ))
+                notify_send.send_nowait(
+                    (
+                        lease_obj.name,
+                        getattr(lease_obj, "exporter_name", "unknown"),
+                        remaining,
+                    )
+                )
             except (anyio.WouldBlock, anyio.ClosedResourceError):
                 pass
 
@@ -246,8 +254,11 @@ class ConnectionManager:
             with ExitStack() as stack:
                 self._stacks[connection_id] = stack
                 async with client_from_path(
-                    path, portal, stack,
-                    allow=lease.allow, unsafe=lease.unsafe,
+                    path,
+                    portal,
+                    stack,
+                    allow=lease.allow,
+                    unsafe=lease.unsafe,
                 ) as client:
                     conn = Connection(
                         id=connection_id,
@@ -262,15 +273,24 @@ class ConnectionManager:
                     self._connections[connection_id] = conn
                     logger.info(
                         "Connected %s to exporter %s (socket=%s)",
-                        connection_id, lease.exporter_name, path,
+                        connection_id,
+                        lease.exporter_name,
+                        path,
                     )
 
                     async with anyio.create_task_group() as notify_tg:
                         notify_tg.start_soon(
-                            self._forward_lease_notifications, notify_recv, connection_id, event,
+                            self._forward_lease_notifications,
+                            notify_recv,
+                            connection_id,
+                            event,
                         )
                         notify_tg.start_soon(
-                            self._watch_lease_transfer, lease, conn, connection_id, event,
+                            self._watch_lease_transfer,
+                            lease,
+                            conn,
+                            connection_id,
+                            event,
                         )
                         task_status.started(conn)
                         await event.wait()
@@ -328,11 +348,11 @@ class ConnectionManager:
         }
 
         python_example = (
-            'from jumpstarter.utils.env import env\n'
-            '\n'
-            'with env() as client:\n'
-            '    client.power.on()\n'
-            '    client.power.off()\n'
+            "from jumpstarter.utils.env import env\n"
+            "\n"
+            "with env() as client:\n"
+            "    client.power.on()\n"
+            "    client.power.off()\n"
         )
 
         return {
