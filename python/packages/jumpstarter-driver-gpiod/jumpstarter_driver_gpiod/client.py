@@ -34,6 +34,10 @@ class DigitalOutputClient(PowerClient):
         """Read gpio state."""
         return PinState(int(self.call("read_pin")))
 
+    def status(self) -> str:
+        """Return "on" or "off" from the driven line level."""
+        return self.call("status")
+
     def cli(self):
         @driver_click_group(self)
         def gpio():
@@ -57,7 +61,35 @@ class DigitalOutputClient(PowerClient):
             """read pin."""
             print(self.read())
 
+        @gpio.command()
+        def status():
+            """Print on/off from the driven line level."""
+            click.echo(self.status())
+
         return gpio
+
+
+@dataclass(kw_only=True)
+class PowerSwitchClient(PowerClient):
+    """A PowerClient for GPIO power switches, with ``status``.
+
+    ``read`` keeps PowerClient's meaning (power measurements), which a
+    dry-contact relay cannot provide; ``status`` reports the driven state.
+    """
+
+    def status(self) -> str:
+        """Return "on" or "off" from the driven line level."""
+        return self.call("status")
+
+    def cli(self):
+        base = super().cli()
+
+        @base.command()
+        def status():
+            """Print on/off from the driven line level."""
+            click.echo(self.status())
+
+        return base
 
 
 @dataclass(kw_only=True)

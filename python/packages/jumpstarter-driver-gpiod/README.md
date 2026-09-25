@@ -64,11 +64,15 @@ export:
     type: jumpstarter_driver_gpiod.driver.PowerSwitch
     config:
       line: 18
-      mode: "push_pull"
+      drive: "push_pull"
       active_low: false
       bias: "pull_up"
-      initial_value: "inactive"
+      initial_value: "preserve"
 ```
+
+`PowerSwitch` speaks the same `PowerInterface` as the other relay drivers
+(`j power_switch on|off|cycle|status`). `read` raises `NotImplementedError`,
+because a GPIO-switched contact has no voltage or current to measure.
 
 ### Config parameters
 
@@ -79,8 +83,7 @@ export:
 | drive          | The drive mode for the GPIO line. Options: "push_pull", "open_drain", "open_source"                                                                 | str | no | null | DigitalOutput, PowerSwitch |
 | active_low     | Whether the pin is active low (True) or active high (False)                                                                                         | bool | no | False | All |
 | bias           | The bias configuration for the GPIO line. Options: "as_is", "pull_up", "pull_down", "disabled"                                                      | str | no | null | All |
-| initial_value  | The initial value for output pins. Options: "active", "inactive", "on", "off", True, False                                                          | str/bool | no | "inactive" | DigitalOutput, PowerSwitch |
-| mode           | The mode for PowerSwitch (same as drive parameter)                                                                                                   | str | no | "push_pull" | PowerSwitch |
+| initial_value  | The initial value for output pins. Options: "active", "inactive", "on", "off", "preserve", True, False. "preserve" claims the line without changing its level, see below | str/bool | no | "inactive" | DigitalOutput, PowerSwitch |
 
 ## Usage
 
@@ -161,6 +164,21 @@ print(f"Power state: {state}")
 For output pins, you can set the initial state:
 - **"inactive"** or **"off"** or **False**: Start with pin LOW
 - **"active"** or **"on"** or **True**: Start with pin HIGH
+- **"preserve"**: Keep whatever level the line is already at
+
+Any other value drives the line when the exporter starts, so every exporter
+restart switches whatever the line controls. Use `preserve` for a line that
+feeds a device's power. The kernel keeps a released line at its last level, so
+a restart then leaves the load alone. Before anything has claimed the line
+(cold boot), it reads whatever its bias or float gives. To make that level
+deterministic, set it in firmware, e.g. `gpio=26=op,dh` in `/boot/firmware/config.txt`.
+
+#### Status
+
+`status` returns `on` or `off` from the logical level the Pi drives,
+`active_low` already applied. It cannot tell whether a relay behind the line
+actually switched: a missing jumper, a lost supply, or a welded contact all
+still report the driven level.
 
 ## API Reference
 
@@ -168,7 +186,14 @@ For output pins, you can set the initial state:
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_gpiod.client.DigitalOutputClient()
-    :members: on, off, read
+    :members: on, off, read, status
+```
+
+### PowerSwitchClient
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_gpiod.client.PowerSwitchClient()
+    :members: on, off, cycle, status
 ```
 
 ### DigitalInputClient
