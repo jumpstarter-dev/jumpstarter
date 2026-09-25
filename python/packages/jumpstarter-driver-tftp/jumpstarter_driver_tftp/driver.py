@@ -32,6 +32,8 @@ class Tftp(Driver):
         root_dir (str): Root directory for the TFTP server. Defaults to "/var/lib/tftpboot"
         host (str): IP address to bind the server to. If empty, will use the default route interface
         port (int): Port number to listen on. Defaults to 69 (standard TFTP port)
+        advertised_host (str | None): IP address to advertise to clients via get_host()
+            without binding to it. Defaults to the bind host.
     """
 
     driver_type = "storage"
@@ -39,6 +41,7 @@ class Tftp(Driver):
     root_dir: str = "/var/lib/tftpboot"
     host: str = field(default="")
     port: int = 69
+    advertised_host: str | None = None
     remove_created_on_close: bool = True  # Clean up temporary boot files by default
     server: Optional["TftpServer"] = field(init=False, default=None)
     server_thread: threading.Thread | None = field(init=False, default=None)
@@ -172,12 +175,12 @@ class Tftp(Driver):
 
     @export
     def get_host(self) -> str:
-        """Get the host address the server is bound to.
+        """Get the host address clients should use to reach the server.
 
         Returns:
-            str: The IP address or hostname
+            str: The advertised IP address or hostname, or the bind host
         """
-        return self.host
+        return self.advertised_host or self.host
 
     @export
     def get_port(self) -> int:

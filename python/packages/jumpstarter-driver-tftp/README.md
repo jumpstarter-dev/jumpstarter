@@ -31,6 +31,7 @@ export:
 | ----------------------- | ---------------------------------------------------------------- | ---- | -------- | ------------------- |
 | root_dir                | Root directory for the TFTP server                               | str  | no       | "/var/lib/tftpboot" |
 | host                    | IP address to bind the server to                                 | str  | no       | auto-detect         |
+| advertised_host         | IP address to advertise to clients without binding to it         | str  | no       | (bind host)         |
 | port                    | Port number to listen on                                         | int  | no       | 69                  |
 | remove_created_on_close | Automatically remove created files/directories when driver closes| bool | no       | true                |
 

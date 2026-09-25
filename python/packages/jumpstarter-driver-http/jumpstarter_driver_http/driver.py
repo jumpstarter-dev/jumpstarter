@@ -24,6 +24,9 @@ class HttpServer(Driver):
     root_dir: str = "/var/www"
     host: str | None = field(default=None)
     port: int = 8080
+    # IP address to advertise to clients via get_host()/get_url() without
+    # binding to it. Defaults to the bind host.
+    advertised_host: str | None = field(default=None)
     timeout: int = field(default=600)
     remove_created_on_close: bool = True  # Clean up temporary web files by default
     app: web.Application = field(init=False, default_factory=web.Application)
@@ -112,7 +115,7 @@ class HttpServer(Driver):
         Returns:
             str: Base URL of the HTTP server.
         """
-        return f"http://{self.host}:{self._bound_port}"
+        return f"http://{self.advertised_host or self.host}:{self._bound_port}"
 
     @export
     def get_host(self) -> str | None:
@@ -120,9 +123,9 @@ class HttpServer(Driver):
         Get the host IP address of the HTTP server.
 
         Returns:
-            str: Host IP address.
+            str: Advertised host IP address, or the bind host.
         """
-        return self.host
+        return self.advertised_host or self.host
 
     @export
     def get_port(self) -> int:
