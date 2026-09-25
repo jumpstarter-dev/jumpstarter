@@ -50,14 +50,14 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			},
 			Controller: operatorv1alpha1.ControllerConfig{
 				Image:    "quay.io/jumpstarter/jumpstarter:latest",
-				Replicas: 1,
+				Replicas: new(int32(1)),
 				GRPC: operatorv1alpha1.GRPCConfig{
 					Endpoints: []operatorv1alpha1.Endpoint{{Address: "controller"}},
 				},
 			},
 			Routers: operatorv1alpha1.RoutersConfig{
 				Image:    "quay.io/jumpstarter/jumpstarter:latest",
-				Replicas: 1,
+				Replicas: new(int32(1)),
 				GRPC: operatorv1alpha1.GRPCConfig{
 					Endpoints: []operatorv1alpha1.Endpoint{{Address: "router"}},
 				},
@@ -411,6 +411,27 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		Expect(configData).NotTo(ContainSubstring("telemetry"))
 	})
 
+	It("does not embed telemetry endpoint in ConfigMap when enabled=true but replicas=0 (suspended)", func() {
+		By("creating a Jumpstarter CR with telemetry enabled but replicas=0")
+		spec := makeJumpstarterSpec()
+		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
+			Enabled:  true,
+			Image:    "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+			Replicas: new(int32(0)),
+		}
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       spec,
+		})).To(Succeed())
+
+		doReconcile()
+
+		By("verifying telemetry endpoint is absent from the controller ConfigMap")
+		configData := getConfigData()
+		Expect(configData).NotTo(ContainSubstring("telemetry"),
+			"suspended telemetry (replicas=0) should not embed an endpoint that has no ready pods")
+	})
+
 	It("sets TelemetryDeploymentReady status condition", func() {
 		By("creating a Jumpstarter CR with telemetry enabled")
 		spec := makeJumpstarterSpec()
@@ -654,6 +675,85 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		}, deployment)).To(Succeed())
 		Expect(deployment.Spec.Template.Spec.Containers[0].Image).To(
 			Equal("quay.io/jumpstarter-dev/jumpstarter-telemetry:v2"))
+	})
+
+	It("suspends the telemetry deployment (replicas=0, enabled=true): Deployment stays at 0, Service kept, condition Suspended", func() {
+		By("creating a Jumpstarter CR with telemetry enabled and replicas=0")
+		spec := makeJumpstarterSpec()
+		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
+			Enabled:  true,
+			Image:    "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+			Replicas: new(int32(0)),
+		}
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       spec,
+		})).To(Succeed())
+
+		By("reconciling")
+		doReconcile()
+
+		By("verifying the Deployment exists with 0 replicas (not deleted)")
+		deployment := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      crName + "-telemetry",
+			Namespace: crNamespace,
+		}, deployment)).To(Succeed(), "Deployment should exist, not be deleted")
+		Expect(*deployment.Spec.Replicas).To(Equal(int32(0)))
+
+		By("verifying the Service is still present")
+		svc := &corev1.Service{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      telemetryServiceName,
+			Namespace: crNamespace,
+		}, svc)).To(Succeed(), "Service should be preserved when suspended")
+
+		By("verifying the TelemetryDeploymentReady condition reports Suspended (True)")
+		js := &operatorv1alpha1.Jumpstarter{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: crNamespace}, js)).To(Succeed())
+		cond := meta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypeTelemetryDeploymentReady)
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionTrue), "suspended state should be reported as True, not False")
+		Expect(cond.Message).To(ContainSubstring("suspended"))
+	})
+
+	It("resumes telemetry after suspension: Deployment scales back up when replicas > 0", func() {
+		By("creating a Jumpstarter CR with telemetry enabled and replicas=0")
+		spec := makeJumpstarterSpec()
+		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
+			Enabled:  true,
+			Image:    "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+			Replicas: new(int32(0)),
+		}
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       spec,
+		})).To(Succeed())
+
+		doReconcile()
+
+		By("verifying suspended state")
+		deployment := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      crName + "-telemetry",
+			Namespace: crNamespace,
+		}, deployment)).To(Succeed())
+		Expect(*deployment.Spec.Replicas).To(Equal(int32(0)))
+
+		By("resuming by setting replicas=2")
+		js := &operatorv1alpha1.Jumpstarter{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: crNamespace}, js)).To(Succeed())
+		js.Spec.Telemetry.Replicas = new(int32(2))
+		Expect(k8sClient.Update(ctx, js)).To(Succeed())
+
+		doReconcile()
+
+		By("verifying Deployment is scaled back up to 2")
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      crName + "-telemetry",
+			Namespace: crNamespace,
+		}, deployment)).To(Succeed())
+		Expect(*deployment.Spec.Replicas).To(Equal(int32(2)))
 	})
 })
 
@@ -1010,7 +1110,7 @@ var _ = Describe("buildConfig telemetry certificate", func() {
 		Expect(cfg.Telemetry.Certificate).To(Equal(externalCABundle))
 	})
 
-	It("does not include certificate when cert-manager is disabled", func() {
+	It("does not include certificate when cert-manager is disabled and no CertSecret is set", func() {
 		js := &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-cfg-no-tls", Namespace: crNamespace},
 			Spec: operatorv1alpha1.JumpstarterSpec{
@@ -1024,6 +1124,98 @@ var _ = Describe("buildConfig telemetry certificate", func() {
 
 		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		cfg, err := r.buildConfig(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(cfg.Telemetry).NotTo(BeNil())
+		Expect(cfg.Telemetry.Enabled).To(BeTrue())
+		Expect(cfg.Telemetry.Certificate).To(BeEmpty())
+	})
+
+	It("includes ca.crt from manual CertSecret when cert-manager is disabled", func() {
+		By("creating a TLS secret with ca.crt")
+		Expect(k8sClient.Create(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-telemetry-tls", Namespace: crNamespace},
+			Data: map[string][]byte{
+				"tls.crt": []byte("fake-cert"),
+				"tls.key": []byte("fake-key"),
+				"ca.crt":  []byte(testPEM),
+			},
+		})).To(Succeed())
+
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cfg-manual-ca", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled: true,
+					Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+					GRPC: operatorv1alpha1.TelemetryGRPCConfig{
+						TLS: operatorv1alpha1.TLSConfig{CertSecret: "my-telemetry-tls"},
+					},
+				},
+			},
+		}
+
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		cfg, err := r.buildConfig(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(cfg.Telemetry).NotTo(BeNil())
+		Expect(cfg.Telemetry.Enabled).To(BeTrue())
+		Expect(cfg.Telemetry.Certificate).To(ContainSubstring("BEGIN CERTIFICATE"))
+	})
+
+	It("does not include certificate when manual CertSecret has no ca.crt (system-trusted cert)", func() {
+		By("creating a TLS secret without ca.crt")
+		Expect(k8sClient.Create(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-public-tls", Namespace: crNamespace},
+			Data: map[string][]byte{
+				"tls.crt": []byte("fake-cert"),
+				"tls.key": []byte("fake-key"),
+			},
+		})).To(Succeed())
+
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cfg-public-ca", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled: true,
+					Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+					GRPC: operatorv1alpha1.TelemetryGRPCConfig{
+						TLS: operatorv1alpha1.TLSConfig{CertSecret: "my-public-tls"},
+					},
+				},
+			},
+		}
+
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		cfg, err := r.buildConfig(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(cfg.Telemetry).NotTo(BeNil())
+		Expect(cfg.Telemetry.Enabled).To(BeTrue())
+		Expect(cfg.Telemetry.Certificate).To(BeEmpty())
+	})
+
+	It("does not fail when manual CertSecret does not exist (logs at V(1) instead)", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cfg-missing-manual", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled: true,
+					Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+					GRPC: operatorv1alpha1.TelemetryGRPCConfig{
+						TLS: operatorv1alpha1.TLSConfig{CertSecret: "nonexistent-secret"},
+					},
+				},
+			},
+		}
+
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		cfg, err := r.buildConfig(ctx, js)
+		// Should not fail — logs at V(1) and continues without certificate
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(cfg.Telemetry).NotTo(BeNil())
