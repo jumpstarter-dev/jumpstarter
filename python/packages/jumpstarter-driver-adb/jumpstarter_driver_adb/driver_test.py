@@ -170,9 +170,8 @@ def test_an_adb_that_cannot_answer_version_is_a_config_error(_, failure):
     exception. There is nothing to recover from at that point, so expiry has to surface
     as a configuration failure rather than a wedged exporter.
     """
-    with patch("subprocess.run", side_effect=failure) as run:
-        with pytest.raises(ConfigurationError, match="not functional"):
-            AdbServer()
+    with patch("subprocess.run", side_effect=failure) as run, pytest.raises(ConfigurationError, match="not functional"):
+        AdbServer()
     assert run.call_args.kwargs["timeout"] == 30.0, "the version probe must be bounded"
 
 
@@ -218,7 +217,7 @@ def test_kill_server(mock_run, mock_conn, _):
 @patch("shutil.which", return_value="/usr/bin/adb")
 @patch("socket.create_connection", side_effect=OSError("refused"))
 def test_list_devices(mock_conn, _):
-    fake, patcher = _fake()
+    _, patcher = _fake()
     with patcher:
         server = AdbServer()
         assert SERIAL in server.list_devices()
@@ -466,9 +465,8 @@ def test_a_server_that_fails_to_start_is_an_error_not_a_running_server(mock_conn
             raise failure
         return _mock_adb_ok()
 
-    with patch("subprocess.run", side_effect=run):
-        with pytest.raises(RuntimeError, match=message):
-            AdbServer()
+    with patch("subprocess.run", side_effect=run), pytest.raises(RuntimeError, match=message):
+        AdbServer()
 
     assert not adb_driver._SERVERS, "registered a server that never started"
 
@@ -507,9 +505,12 @@ def test_start_server_reports_a_restart_failure(_):
             raise subprocess.CalledProcessError(1, "adb start-server", stderr="cannot bind")
         return fake(argv, **kwargs)
 
-    with patch("subprocess.run", side_effect=run), patch("socket.create_connection", side_effect=OSError("refused")):
-        with pytest.raises(RuntimeError, match="cannot bind"):
-            server.start_server()
+    with (
+        patch("subprocess.run", side_effect=run),
+        patch("socket.create_connection", side_effect=OSError("refused")),
+        pytest.raises(RuntimeError, match="cannot bind"),
+    ):
+        server.start_server()
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -768,9 +769,8 @@ def test_kill_server_reports_a_failed_kill(mock_conn, _, failure, message):
             raise failure
         return fake(argv, **kwargs)
 
-    with patch("subprocess.run", side_effect=run):
-        with pytest.raises(RuntimeError, match=message):
-            server.kill_server()
+    with patch("subprocess.run", side_effect=run), pytest.raises(RuntimeError, match=message):
+        server.kill_server()
 
     assert server._owns_server is True, "gave up ownership of a server that is still running"
 
@@ -782,16 +782,16 @@ def test_kill_server_notices_a_server_that_survived(_):
     Measured against adb 1.0.41: it prints `cannot connect to daemon` and exits 0 when the
     port is empty. What counts is whether the port is still being served afterwards.
     """
-    fake, patcher = _fake()
+    _, patcher = _fake()
     with patcher, patch("socket.create_connection", side_effect=OSError("refused")):
         server = AdbServer(adopt_existing_server=False)
 
     with (
         patcher,
         patch("socket.create_connection", return_value=MagicMock(__enter__=MagicMock(), __exit__=MagicMock())),
+        pytest.raises(RuntimeError, match="still being served"),
     ):
-        with pytest.raises(RuntimeError, match="still being served"):
-            server.kill_server()
+        server.kill_server()
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -826,7 +826,7 @@ def test_teardown_finishes_even_if_the_server_will_not_die(mock_conn, _):
 @patch("socket.create_connection", side_effect=OSError("refused"))
 def test_usb_port_is_normalized(mock_conn, _):
     """adb matches the devpath by exact string equality, including the `usb:` prefix."""
-    fake, patcher = _fake()
+    _, patcher = _fake()
     with patcher:
         assert AdbDevice(usb_port="1-4.2").usb_port == "usb:1-4.2"
         assert AdbDevice(usb_port="usb:1-4.2").usb_port == "usb:1-4.2"
@@ -856,7 +856,7 @@ def test_an_absent_device_is_an_actionable_error(mock_conn, _):
 
     The server can see other devices, so the port really is empty.
     """
-    fake, patcher = _fake(devices=(("OTHERDEVICE99", "device", "usb:1-1.1"),))
+    _, patcher = _fake(devices=(("OTHERDEVICE99", "device", "usb:1-1.1"),))
     with patcher:
         device = AdbDevice(usb_port="1-4.2")
         with pytest.raises(RuntimeError, match="no device on USB port usb:1-4.2") as e:
@@ -873,7 +873,7 @@ def test_an_empty_server_still_blames_the_relay_first(mock_conn, _):
     This is the ordinary state on a bench, not a misconfiguration, and the operator needs
     the relay — not a hunt for a rogue ADB server they do not have.
     """
-    fake, patcher = _fake(devices=())
+    _, patcher = _fake(devices=())
     with patcher:
         device = AdbDevice(usb_port="1-4.2")
         with pytest.raises(RuntimeError, match="no device on USB port usb:1-4.2") as e:
@@ -1039,7 +1039,7 @@ def test_a_stale_memoized_forward_is_recreated(mock_conn, _):
 @patch("socket.create_connection", side_effect=OSError("refused"))
 def test_an_unauthorized_device_is_reported_not_forwarded(mock_conn, _):
     """`offline`/`unauthorized` cannot be forwarded; say which it is."""
-    fake, patcher = _fake(devices=((SERIAL, "unauthorized", USB_PORT),))
+    _, patcher = _fake(devices=((SERIAL, "unauthorized", USB_PORT),))
     with patcher:
         device = AdbDevice(usb_port="1-4.2")
         with pytest.raises(RuntimeError, match="unauthorized"):
@@ -1065,7 +1065,7 @@ def test_a_macos_location_id_devpath_matches(mock_conn, _):
     Decimal with a literal `X` suffix — `usb_osx.cpp` formats it `"usb:%" PRIu32 "X"`, so
     the `X` is not a hex marker. Taken from a real SM-P613 on adb 1.0.41.
     """
-    fake, patcher = _fake(devices=((SERIAL, "device", "usb:538116096X"),))
+    _, patcher = _fake(devices=((SERIAL, "device", "usb:538116096X"),))
     with patcher:
         device = AdbDevice(usb_port="538116096X")
         assert device._resolve_serial() == SERIAL
@@ -1080,7 +1080,7 @@ def test_a_devpath_that_equals_the_serial_still_matches(mock_conn, _):
     (`if (devpath.empty()) { devpath = serial; }`). Matching must still work, and must
     not select some other device.
     """
-    fake, patcher = _fake(
+    _, patcher = _fake(
         devices=(
             ("OTHER", "device", "usb:1-1"),
             (SERIAL, "device", f"usb:{SERIAL}"),
@@ -1095,7 +1095,7 @@ def test_a_devpath_that_equals_the_serial_still_matches(mock_conn, _):
 @patch("socket.create_connection", side_effect=OSError("refused"))
 def test_an_emulator_without_a_devpath_is_not_matched(mock_conn, _):
     """Emulator lines carry no `usb:` field, so they must never match a bench port."""
-    fake, patcher = _fake(devices=(("emulator-5554", "device", None),))
+    _, patcher = _fake(devices=(("emulator-5554", "device", None),))
     with patcher:
         device = AdbDevice(usb_port="1-4.2")
         with pytest.raises(RuntimeError, match="no device on USB port"):
@@ -1140,9 +1140,8 @@ def test_a_forward_with_no_discoverable_port_is_an_error(mock_conn, _):
             return MagicMock(stdout=fake._devices_long(), stderr="", returncode=0)
         return MagicMock(stdout="", stderr="", returncode=0)
 
-    with patch("subprocess.run", side_effect=blank):
-        with pytest.raises(RuntimeError, match="reported no forwarded port"):
-            device._resolve_endpoint()
+    with patch("subprocess.run", side_effect=blank), pytest.raises(RuntimeError, match="reported no forwarded port"):
+        device._resolve_endpoint()
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -1163,9 +1162,8 @@ def test_forward_failure_mentions_adb_tcpip(mock_conn, _):
             raise subprocess.CalledProcessError(1, "adb", stderr="cannot bind")
         return _mock_adb_ok()
 
-    with patch("subprocess.run", side_effect=failing):
-        with pytest.raises(RuntimeError, match="tcpip"):
-            device._resolve_endpoint()
+    with patch("subprocess.run", side_effect=failing), pytest.raises(RuntimeError, match="tcpip"):
+        device._resolve_endpoint()
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -1218,7 +1216,7 @@ def test_close_removes_the_forward_we_created(mock_conn, _):
     fake, patcher = _fake()
     with patcher:
         device = AdbDevice(usb_port="1-4.2")
-        _, port = device._resolve_endpoint()
+        _, _port = device._resolve_endpoint()
         assert device._owns_forward is True
         device.close()
 
@@ -1310,7 +1308,7 @@ def test_close_removes_the_forward_of_an_offline_device(mock_conn, _):
     fake, patcher = _fake()
     with patcher:
         device = AdbDevice(usb_port="1-4.2")
-        _, port = device._resolve_endpoint()
+        _, _port = device._resolve_endpoint()
 
         fake.devices = [(SERIAL, "offline", USB_PORT)]  # the relay cut power mid-lease
         device.close()

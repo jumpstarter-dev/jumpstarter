@@ -1,7 +1,7 @@
 import asyncio
 import subprocess
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
 
 import anyio
 import click
@@ -165,7 +165,7 @@ class AdbClient(DriverClient):
         serials = []
         for line in self.list_devices().splitlines():
             line = line.strip()
-            if not line or line.startswith("*") or line.startswith("List of devices"):
+            if not line or line.startswith(("*", "List of devices")):
                 continue
             fields = line.split()
             # Only `device`; offline/unauthorized cannot be forwarded.

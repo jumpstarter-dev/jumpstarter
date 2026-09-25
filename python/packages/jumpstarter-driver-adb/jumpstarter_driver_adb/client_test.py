@@ -41,9 +41,11 @@ def _completed(stdout, returncode=0):
 )
 def test_a_failed_connect_is_detected_despite_exit_zero(output):
     """This is the whole point: rc=0 with a failure message on stdout."""
-    with patch("subprocess.run", return_value=_completed(output, returncode=0)):
-        with pytest.raises(RuntimeError, match="did not connect"):
-            _adb_connect("adb", "127.0.0.1:59999")
+    with (
+        patch("subprocess.run", return_value=_completed(output, returncode=0)),
+        pytest.raises(RuntimeError, match="did not connect"),
+    ):
+        _adb_connect("adb", "127.0.0.1:59999")
 
 
 @pytest.mark.parametrize(
@@ -57,9 +59,11 @@ def test_a_successful_connect_is_accepted(output):
 
 
 def test_a_hung_connect_raises_rather_than_blocking():
-    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("adb connect", 60)):
-        with pytest.raises(RuntimeError, match="failed"):
-            _adb_connect("adb", "127.0.0.1:16000")
+    with (
+        patch("subprocess.run", side_effect=subprocess.TimeoutExpired("adb connect", 60)),
+        pytest.raises(RuntimeError, match="failed"),
+    ):
+        _adb_connect("adb", "127.0.0.1:16000")
 
 
 # --------------------------------------------------------- connect and serve
@@ -113,17 +117,21 @@ def test_local_adb_timeouts_are_bounded_and_overridable():
     client = _device_client()
 
     # Default: the documented client-side constant, not the driver's connect_timeout.
-    with patch("subprocess.run", return_value=_completed("connected to " + TARGET)) as run:
-        with AdbDeviceClient.connect(client):
-            pass
+    with (
+        patch("subprocess.run", return_value=_completed("connected to " + TARGET)) as run,
+        AdbDeviceClient.connect(client),
+    ):
+        pass
     defaults = {c.args[0][1]: c.kwargs["timeout"] for c in run.call_args_list}
     assert defaults["connect"] == ADB_CONNECT_TIMEOUT
     assert defaults["disconnect"] == ADB_DISCONNECT_TIMEOUT
 
     # ...and overridable per call.
-    with patch("subprocess.run", return_value=_completed("connected to " + TARGET)) as run:
-        with AdbDeviceClient.connect(client, timeout=5):
-            pass
+    with (
+        patch("subprocess.run", return_value=_completed("connected to " + TARGET)) as run,
+        AdbDeviceClient.connect(client, timeout=5),
+    ):
+        pass
     timeouts = {c.args[0][1]: c.kwargs["timeout"] for c in run.call_args_list}
     assert timeouts["connect"] == 5, "connect(timeout=...) must reach adb connect"
     assert all(t and t > 0 for t in timeouts.values()), timeouts
@@ -132,19 +140,23 @@ def test_local_adb_timeouts_are_bounded_and_overridable():
 def test_connect_honors_a_custom_adb_path():
     """`--adb` locates the binary for that one call; nothing else shells out."""
     client = _device_client()
-    with patch("subprocess.run", return_value=_completed("connected to " + TARGET)) as run:
-        with AdbDeviceClient.connect(client, adb="/opt/sdk/adb"):
-            pass
+    with (
+        patch("subprocess.run", return_value=_completed("connected to " + TARGET)) as run,
+        AdbDeviceClient.connect(client, adb="/opt/sdk/adb"),
+    ):
+        pass
     assert [c.args[0][0] for c in run.call_args_list] == ["/opt/sdk/adb", "/opt/sdk/adb"]
 
 
 def test_connect_disconnects_even_when_the_body_raises():
     """Otherwise a crash leaves a stale `offline` entry in the developer's server."""
     client = _device_client()
-    with patch("subprocess.run", return_value=_completed("connected to " + TARGET)) as run:
-        with pytest.raises(ValueError):
-            with AdbDeviceClient.connect(client):
-                raise ValueError("boom")
+    with (
+        patch("subprocess.run", return_value=_completed("connected to " + TARGET)) as run,
+        pytest.raises(ValueError),
+        AdbDeviceClient.connect(client),
+    ):
+        raise ValueError("boom")
     assert ["adb", "disconnect", TARGET] in [c.args[0] for c in run.call_args_list]
 
 
@@ -157,9 +169,8 @@ def test_a_failed_disconnect_does_not_mask_the_session():
             raise subprocess.TimeoutExpired("adb disconnect", 30)
         return _completed("connected to " + TARGET)
 
-    with patch("subprocess.run", side_effect=run):
-        with AdbDeviceClient.connect(client) as target:
-            assert target == TARGET
+    with patch("subprocess.run", side_effect=run), AdbDeviceClient.connect(client) as target:
+        assert target == TARGET
 
 
 def test_a_failed_connect_is_still_disconnected():
@@ -171,10 +182,12 @@ def test_a_failed_connect_is_still_disconnected():
     developer's ADB server every time a device is not ready.
     """
     client = _device_client()
-    with patch("subprocess.run", return_value=_completed("failed to connect to " + TARGET)) as run:
-        with pytest.raises(RuntimeError, match="did not connect"):
-            with AdbDeviceClient.connect(client):
-                pass
+    with (
+        patch("subprocess.run", return_value=_completed("failed to connect to " + TARGET)) as run,
+        pytest.raises(RuntimeError, match="did not connect"),
+        AdbDeviceClient.connect(client),
+    ):
+        pass
 
     assert [c.args[0] for c in run.call_args_list] == [
         ["adb", "connect", TARGET],
@@ -192,9 +205,9 @@ def test_serve_runs_no_adb_at_all():
     with (
         patch("jumpstarter_driver_adb.client.TcpPortforwardAdapter", return_value=forwarded),
         patch("subprocess.run", side_effect=AssertionError("serve must not run adb")) as run,
+        AdbDeviceClient.serve(client) as target,
     ):
-        with AdbDeviceClient.serve(client) as target:
-            assert target == TARGET
+        assert target == TARGET
     run.assert_not_called()
 
 
@@ -244,10 +257,12 @@ def test_ctrl_c_during_connect_still_detaches():
     client = _device_client()
     client.portal = _Portal(KeyboardInterrupt())
 
-    with patch("subprocess.run", return_value=_completed("connected to " + TARGET)) as run:
-        with AdbDeviceClient.connect(client) as target:
-            _wait_for_interrupt(client)  # returns, as a real Ctrl+C would
-            assert target == TARGET
+    with (
+        patch("subprocess.run", return_value=_completed("connected to " + TARGET)) as run,
+        AdbDeviceClient.connect(client) as target,
+    ):
+        _wait_for_interrupt(client)  # returns, as a real Ctrl+C would
+        assert target == TARGET
     assert ["adb", "disconnect", TARGET] in [c.args[0] for c in run.call_args_list]
 
 
@@ -392,6 +407,8 @@ def test_forward_adb_yields_the_local_listener():
     forwarded = MagicMock()
     forwarded.__enter__ = MagicMock(return_value=("127.0.0.1", 54321))
     forwarded.__exit__ = MagicMock(return_value=False)
-    with patch("jumpstarter_driver_adb.client.TcpPortforwardAdapter", return_value=forwarded):
-        with AdbClient.forward_adb(client, port=0) as addr:
-            assert addr == ("127.0.0.1", 54321)
+    with (
+        patch("jumpstarter_driver_adb.client.TcpPortforwardAdapter", return_value=forwarded),
+        AdbClient.forward_adb(client, port=0) as addr,
+    ):
+        assert addr == ("127.0.0.1", 54321)

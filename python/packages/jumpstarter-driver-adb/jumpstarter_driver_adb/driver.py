@@ -72,8 +72,7 @@ def _resolve_adb_path(adb_path: str, connect_timeout: float) -> str:
         subprocess.run(
             [adb_path, "version"],
             check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
             timeout=connect_timeout,
         )
@@ -177,8 +176,7 @@ class _SharedServer:
             result = subprocess.run(
                 [self.adb_path, "start-server"],
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 text=True,
                 # Bounded: `start-server` blocks forever if a non-ADB process holds the
                 # port, which would otherwise hang exporter startup.
@@ -213,8 +211,7 @@ class _SharedServer:
             result = subprocess.run(
                 [self.adb_path, "kill-server"],
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 text=True,
                 timeout=connect_timeout,
                 env=self.env(),
@@ -681,7 +678,7 @@ class AdbDevice(Driver):
         devices: list[tuple[str, str, str | None]] = []
         for line in result.stdout.splitlines():
             line = line.strip()
-            if not line or line.startswith("*") or line.startswith("List of devices"):
+            if not line or line.startswith(("*", "List of devices")):
                 continue
             fields = line.split()
             if len(fields) < 2:
