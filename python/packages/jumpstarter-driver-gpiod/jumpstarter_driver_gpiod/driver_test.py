@@ -95,6 +95,15 @@ class TestDigitalOutputClient:
         assert "on" in cli_group.commands
         assert "off" in cli_group.commands
         assert "read" in cli_group.commands
+        assert "status" in cli_group.commands
+
+    def test_power_switch_cli_exposes_status(self):
+        """PowerSwitch's client keeps PowerClient's on/off/cycle and adds status."""
+        from jumpstarter_driver_gpiod.client import PowerSwitchClient
+
+        client = PowerSwitchClient(stub=MagicMock(), portal=MagicMock(), stack=MagicMock())
+        commands = client.cli().commands
+        assert {"on", "off", "cycle", "status"} <= set(commands)
 
 
 class TestDigitalInputClient:
@@ -212,6 +221,47 @@ class TestDriverMethods:
         result = driver.read_pin()
         assert result.value == 0
         assert str(result) == "inactive"
+
+    @pytest.mark.parametrize("held", [0, 1])
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
+    def test_preserve_keeps_the_level_the_line_is_at(self, mock_gpiod, held):
+        """A restart with initial_value=preserve must never drive a new level.
+
+        The regression this guards: a plain output request drives initial_value,
+        so every exporter restart switched the relay (and the DUT's power).
+        """
+        mock_chip, mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=26)
+        mock_gpiod.LineSettings.side_effect = lambda **kw: MagicMock(**kw)
+        mock_line.get_value.return_value = held
+
+        from jumpstarter_driver_gpiod.driver import DigitalOutput
+
+        DigitalOutput(line=26, active_low=True, bias="pull_up", initial_value="preserve")
+
+        # The claim itself must not make the line an output (that would drive it).
+        probe = mock_chip.request_lines.call_args.kwargs["config"][26]
+        assert getattr(probe, "direction", None) != mock_gpiod.line.Direction.OUTPUT
+
+        # Only then is it reconfigured, as an output at exactly the level read.
+        mock_line.reconfigure_lines.assert_called_once()
+        settings = mock_line.reconfigure_lines.call_args.kwargs["config"][26]
+        assert settings.direction == mock_gpiod.line.Direction.OUTPUT
+        assert settings.output_value == held
+        mock_line.set_value.assert_not_called()
+
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
+    def test_status_follows_the_logical_level(self, mock_gpiod):
+        """status() reports on/off from read_pin, so active_low needs no special case."""
+        _mock_chip, mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=26)
+
+        from jumpstarter_driver_gpiod.driver import DigitalOutput
+
+        driver = DigitalOutput(line=26, active_low=True)
+
+        mock_line.get_value.return_value = mock_gpiod.line.Value.ACTIVE
+        assert driver.status() == "on"
+        mock_line.get_value.return_value = mock_gpiod.line.Value.INACTIVE
+        assert driver.status() == "off"
 
     @patch("jumpstarter_driver_gpiod.driver.gpiod")
     def test_digital_input_methods(self, mock_gpiod):
