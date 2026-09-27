@@ -187,4 +187,4 @@ def test_local_mode_device_scoping_and_byte_transport(client):
     ):
         assert json.load(response)["value"]["ready"] is True
     with pytest.raises(ValueError, match="usbmux"), client.serve(protocol="coredevice"):
-        pytest.fail("unadvertised protocol accepted")
+        raise AssertionError("unadvertised protocol accepted")
