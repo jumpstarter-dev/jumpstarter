@@ -21,19 +21,6 @@ import (
 	"strings"
 )
 
-// validateDevicePath rejects device paths that could alter the
-// generated Quadlet file via newline injection, NUL bytes, or
-// trailing backslashes (systemd line continuation).
-func validateDevicePath(path string) error {
-	if strings.ContainsAny(path, "\r\n\x00") {
-		return fmt.Errorf("device path %q contains forbidden characters (CR/LF/NUL)", path)
-	}
-	if strings.HasSuffix(path, `\`) {
-		return fmt.Errorf("device path %q has trailing backslash (systemd line continuation)", path)
-	}
-	return nil
-}
-
 const (
 	// QuadletDir is the systemd directory for Podman quadlet
 	// .container files.
@@ -79,13 +66,48 @@ type QuadletConfig struct {
 	ExtraDevices []string
 }
 
+// validateQuadletValue rejects values that contain newlines,
+// carriage returns, or NUL bytes. Such values could inject arbitrary
+// directives into root-owned systemd unit files.
+func validateQuadletValue(field, value string) error {
+	if strings.ContainsAny(value, "\r\n\x00") {
+		return fmt.Errorf("quadlet field %s contains forbidden characters: %q", field, value)
+	}
+	if strings.HasSuffix(value, `\`) {
+		return fmt.Errorf("quadlet field %s has trailing backslash (systemd line continuation): %q", field, value)
+	}
+	return nil
+}
+
+// validateQuadletConfig checks all values that will be interpolated
+// into the generated quadlet files.
+func validateQuadletConfig(cfg QuadletConfig) error {
+	for field, val := range map[string]string{
+		"RuntimeImage":  cfg.RuntimeImage,
+		"ExporterImage": cfg.ExporterImage,
+		"Name":          cfg.Name,
+		"Namespace":     cfg.Namespace,
+	} {
+		if err := validateQuadletValue(field, val); err != nil {
+			return err
+		}
+	}
+	for i, dev := range cfg.ExtraDevices {
+		if err := validateQuadletValue(fmt.Sprintf("ExtraDevices[%d]", i), dev); err != nil {
+			return err
+		}
+		if !strings.HasPrefix(dev, "/dev/") {
+			return fmt.Errorf("ExtraDevices[%d] must be a /dev/ path, got %q", i, dev)
+		}
+	}
+	return nil
+}
+
 // RuntimeContainerFile generates the Podman quadlet .container file
 // for the QEMU runtime sidecar.
 func RuntimeContainerFile(cfg QuadletConfig) (string, error) {
-	for _, dev := range cfg.ExtraDevices {
-		if err := validateDevicePath(dev); err != nil {
-			return "", fmt.Errorf("runtime container %s: %w", cfg.Name, err)
-		}
+	if err := validateQuadletConfig(cfg); err != nil {
+		return "", err
 	}
 
 	volumeName := podmanVolumeName(cfg.Name)
@@ -126,7 +148,10 @@ func RuntimeContainerFile(cfg QuadletConfig) (string, error) {
 
 // ExporterContainerFile generates the Podman quadlet .container file
 // for the Jumpstarter exporter.
-func ExporterContainerFile(cfg QuadletConfig) string {
+func ExporterContainerFile(cfg QuadletConfig) (string, error) {
+	if err := validateQuadletConfig(cfg); err != nil {
+		return "", err
+	}
 	volumeName := podmanVolumeName(cfg.Name)
 	runtimeService := cfg.Name + "-runtime"
 	configFile := ExporterConfigDir + "/" + cfg.Name + ".yaml"
@@ -155,7 +180,7 @@ func ExporterContainerFile(cfg QuadletConfig) string {
 	b.WriteString("[Install]\n")
 	b.WriteString("WantedBy=default.target\n")
 
-	return b.String()
+	return b.String(), nil
 }
 
 // RuntimeContainerFileName returns the quadlet filename for the

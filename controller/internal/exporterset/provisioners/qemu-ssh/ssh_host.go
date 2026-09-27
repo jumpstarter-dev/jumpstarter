@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sync"
@@ -96,7 +97,7 @@ func Connect(cfg SSHConnectConfig) (*SSHHost, error) {
 			ssh.PublicKeys(signer),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // lab hosts; TODO: make configurable
-		Timeout:         30 * time.Second,
+		Timeout:         defaultConnectTimeout,
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
@@ -119,8 +120,13 @@ func Connect(cfg SSHConnectConfig) (*SSHHost, error) {
 	}, nil
 }
 
-// defaultCommandTimeout is the maximum duration for a single SSH command.
-const defaultCommandTimeout = 2 * time.Minute
+const (
+	// defaultCommandTimeout is the maximum duration for a single SSH command.
+	defaultCommandTimeout = 2 * time.Minute
+
+	// defaultConnectTimeout is the timeout for the SSH handshake.
+	defaultConnectTimeout = 30 * time.Second
+)
 
 // RunCommand executes a command on the remote host. The context is
 // used for cancellation: if it expires, the SSH session is closed
@@ -314,9 +320,14 @@ func (h *SSHHost) writeFile(path, content string) error {
 		}
 	}
 
-	f, err := h.sftpClient.Create(path)
+	f, err := h.sftpClient.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
 	if err != nil {
 		return err
+	}
+
+	if err := f.Chmod(0600); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("chmod %s: %w", path, err)
 	}
 
 	if _, err := f.Write([]byte(content)); err != nil {

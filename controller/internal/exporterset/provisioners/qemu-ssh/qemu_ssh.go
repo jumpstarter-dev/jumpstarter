@@ -116,29 +116,25 @@ func (p *Provisioner) Deploy(
 		return err
 	}
 
-	hosts, err := ParseHosts(mergedParameters)
+	host, err := ParseHost(mergedParameters)
 	if err != nil {
-		return fmt.Errorf("parse hosts: %w", err)
+		return fmt.Errorf("parse host: %w", err)
 	}
 
-	sshCfg := ParseSSHConfig(mergedParameters)
-
-	exporterAnnotations := exporterAnnotationsList(ctx, p.Client, es)
-
-	host, err := SelectHost(hosts, exporterAnnotations)
+	sshCfg, err := ParseSSHConfig(mergedParameters)
 	if err != nil {
-		return fmt.Errorf("select host: %w", err)
+		return fmt.Errorf("parse ssh config: %w", err)
 	}
 
-	logger.Info("selected host for exporter",
+	logger.Info("deploying exporter to host",
 		"exporter", exporter.Name,
 		"host", host.Name,
 	)
 
 	conn, err := Connect(SSHConnectConfig{
 		Host:       host.Name,
-		Port:       ResolveSSHPort(*host, sshCfg),
-		User:       ResolveSSHUser(*host, sshCfg),
+		Port:       ResolveSSHPort(host, sshCfg),
+		User:       ResolveSSHUser(host, sshCfg),
 		PrivateKey: privateKey,
 	})
 	if err != nil {
@@ -207,29 +203,11 @@ func (p *Provisioner) Cleanup(
 	if vtc.Spec.Parameters != nil && vtc.Spec.Parameters.Raw != nil {
 		_ = sigsyaml.Unmarshal(vtc.Spec.Parameters.Raw, &mergedParams)
 	}
-	sshCfg := ParseSSHConfig(mergedParams)
-	hosts, _ := ParseHosts(mergedParams)
+	sshCfg, _ := ParseSSHConfig(mergedParams)
+	host, _ := ParseHost(mergedParams)
 
-	var host *HostConfig
-	for i := range hosts {
-		if hosts[i].Name == hostName {
-			host = &hosts[i]
-			break
-		}
-	}
-
-	port := sshCfg.Port
-	user := sshCfg.User
-	if host != nil {
-		port = ResolveSSHPort(*host, sshCfg)
-		user = ResolveSSHUser(*host, sshCfg)
-	}
-	if port == 0 {
-		port = 22
-	}
-	if user == "" {
-		user = "root"
-	}
+	port := ResolveSSHPort(host, sshCfg)
+	user := ResolveSSHUser(host, sshCfg)
 
 	conn, err := Connect(SSHConnectConfig{
 		Host:       hostName,
@@ -299,8 +277,12 @@ func (p *Provisioner) deployInstance(
 		ExtraDevices:  extraDevices,
 	}
 
+	runtimeQuadlet, err := RuntimeContainerFile(quadletCfg)
+	if err != nil {
+		return fmt.Errorf("generate runtime quadlet: %w", err)
+	}
 	runtimePath := filepath.Join(QuadletDir, RuntimeContainerFileName(name))
-	changed, diff, err = conn.ReconcileFile(ctx, runtimePath, RuntimeContainerFile(quadletCfg))
+	changed, diff, err = conn.ReconcileFile(ctx, runtimePath, runtimeQuadlet)
 	if err != nil {
 		return fmt.Errorf("reconcile runtime quadlet: %w", err)
 	}
@@ -308,8 +290,12 @@ func (p *Provisioner) deployInstance(
 		logger.Info("runtime quadlet written", "path", runtimePath, "diff", diff)
 	}
 
+	exporterQuadlet, err := ExporterContainerFile(quadletCfg)
+	if err != nil {
+		return fmt.Errorf("generate exporter quadlet: %w", err)
+	}
 	exporterPath := filepath.Join(QuadletDir, ExporterContainerFileName(name))
-	changed, diff, err = conn.ReconcileFile(ctx, exporterPath, ExporterContainerFile(quadletCfg))
+	changed, diff, err = conn.ReconcileFile(ctx, exporterPath, exporterQuadlet)
 	if err != nil {
 		return fmt.Errorf("reconcile exporter quadlet: %w", err)
 	}
@@ -318,22 +304,29 @@ func (p *Provisioner) deployInstance(
 	}
 
 	volumeName := PodmanVolumeName(name)
-	if _, err := conn.RunCommand(ctx,
+	if res, err := conn.RunCommand(ctx,
 		fmt.Sprintf("podman volume inspect %s >/dev/null 2>&1 || podman volume create %s",
 			volumeName, volumeName)); err != nil {
 		return fmt.Errorf("create shared volume: %w", err)
+	} else if res.ExitCode != 0 {
+		return fmt.Errorf("create shared volume: exit %d: %s", res.ExitCode, res.Stderr)
 	}
 
-	if _, err := conn.RunCommand(ctx, "systemctl daemon-reload"); err != nil {
+	if res, err := conn.RunCommand(ctx, "systemctl daemon-reload"); err != nil {
 		return fmt.Errorf("systemctl daemon-reload: %w", err)
+	} else if res.ExitCode != 0 {
+		return fmt.Errorf("systemctl daemon-reload: exit %d: %s", res.ExitCode, res.Stderr)
 	}
 
 	runtimeSvc := RuntimeServiceName(name)
 	exporterSvc := ExporterServiceName(name)
 
-	if _, err := conn.RunCommand(ctx,
+	if res, err := conn.RunCommand(ctx,
 		fmt.Sprintf("systemctl enable --now %s %s", runtimeSvc, exporterSvc)); err != nil {
 		return fmt.Errorf("start services: %w", err)
+	} else if res.ExitCode != 0 {
+		return fmt.Errorf("start services %s %s: exit %d: %s",
+			runtimeSvc, exporterSvc, res.ExitCode, res.Stderr)
 	}
 
 	return nil
@@ -527,28 +520,6 @@ func (p *Provisioner) readCredentialToken(
 	}
 
 	return string(token), nil
-}
-
-// exporterAnnotationsList collects ExporterAnnotations from all
-// exporters in the namespace. This intentionally includes exporters
-// from other ExporterSets because host slot capacity is shared —
-// multiple ExporterSets targeting the same hosts must not exceed
-// physical slot limits.
-func exporterAnnotationsList(
-	ctx context.Context,
-	c client.Client,
-	es *virtualtargetv1alpha1.ExporterSet,
-) []ExporterAnnotations {
-	var exporterList jumpstarterdevv1alpha1.ExporterList
-	if err := c.List(ctx, &exporterList, client.InNamespace(es.Namespace)); err != nil {
-		return nil
-	}
-
-	result := make([]ExporterAnnotations, 0, len(exporterList.Items))
-	for i := range exporterList.Items {
-		result = append(result, &exporterList.Items[i])
-	}
-	return result
 }
 
 // --- ExporterConfig types (mirrors exporterconfig.go in parent package) ---
