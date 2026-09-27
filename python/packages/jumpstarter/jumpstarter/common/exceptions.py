@@ -44,6 +44,10 @@ class ConnectionError(JumpstarterException):
 
 
 
+class CertificateDiscoveryError(ConnectionError):
+    """TLS certificate discovery failed before a gRPC channel was created."""
+
+
 class ExporterOfflineError(ConnectionError):
     """Raised when the connection to the exporter is lost during a lease."""
 

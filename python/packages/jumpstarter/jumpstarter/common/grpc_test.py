@@ -5,10 +5,11 @@ from unittest.mock import patch
 import grpc
 import pytest
 
-from jumpstarter.common.exceptions import ConnectionError
+from jumpstarter.common.exceptions import CertificateDiscoveryError, ConnectionError
 from jumpstarter.common.grpc import (
     _override_default_grpc_options,
     _ssl_channel_credentials_insecure,
+    is_controller_unavailable,
     translate_grpc_exceptions,
 )
 
@@ -85,7 +86,10 @@ class TestSslChannelCredentialsInsecure:
         async def getaddrinfo(*_args, **_kwargs):
             raise socket.gaierror("Name or service not known")
 
-        with _patch_resolver(getaddrinfo), pytest.raises(ConnectionError, match="Failed resolving example.com"):
+        with (
+            _patch_resolver(getaddrinfo),
+            pytest.raises(CertificateDiscoveryError, match="Failed resolving example.com"),
+        ):
             await _ssl_channel_credentials_insecure("example.com:443", timeout=5)
 
     @pytest.mark.asyncio
@@ -93,7 +97,10 @@ class TestSslChannelCredentialsInsecure:
         async def getaddrinfo(*_args, **_kwargs):
             await asyncio.sleep(10)
 
-        with _patch_resolver(getaddrinfo), pytest.raises(ConnectionError, match="Timeout resolving example.com"):
+        with (
+            _patch_resolver(getaddrinfo),
+            pytest.raises(CertificateDiscoveryError, match="Timeout resolving example.com"),
+        ):
             await _ssl_channel_credentials_insecure("example.com:443", timeout=0.05)
 
     @pytest.mark.asyncio
@@ -106,10 +113,11 @@ class TestSslChannelCredentialsInsecure:
 
         with (
             _patch_resolver(getaddrinfo),
-            patch("jumpstarter.common.grpc._try_connect_and_extract_cert", never_connects),pytest.raises(
-            ConnectionError,
-            match=r"Timeout connecting to example\.com:443.*resolved to 192\.0\.2\.1",
-        )
+            patch("jumpstarter.common.grpc._try_connect_and_extract_cert", never_connects),
+            pytest.raises(
+                CertificateDiscoveryError,
+                match=r"Timeout connecting to example\.com:443.*resolved to 192\.0\.2\.1",
+            ),
         ):
             await _ssl_channel_credentials_insecure("example.com:443", timeout=0.05)
 
@@ -124,6 +132,17 @@ class TestSslChannelCredentialsInsecure:
         with (
             _patch_resolver(getaddrinfo),
             patch("jumpstarter.common.grpc._try_connect_and_extract_cert", refused),
-            pytest.raises(ConnectionError, match="all IPs exhausted"),
+            pytest.raises(CertificateDiscoveryError, match="all IPs exhausted"),
         ):
             await _ssl_channel_credentials_insecure("example.com:443", timeout=5)
+
+
+def test_translated_permission_failure_is_not_retried_as_controller_outage():
+    with pytest.raises(ConnectionError) as caught, translate_grpc_exceptions():
+        raise grpc.aio.AioRpcError(
+            code=grpc.StatusCode.PERMISSION_DENIED,
+            initial_metadata=None,  # type: ignore[arg-type]
+            trailing_metadata=None,  # type: ignore[arg-type]
+            details="permission denied",
+        )
+    assert not is_controller_unavailable(caught.value)

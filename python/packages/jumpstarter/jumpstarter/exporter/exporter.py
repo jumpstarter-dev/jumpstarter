@@ -31,6 +31,7 @@ from jumpstarter_protocol import (
 )
 
 from jumpstarter.common import ExporterStatus, Metadata, TemporarySocket
+from jumpstarter.common.grpc import is_controller_unavailable
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.config.env import JMP_GRPC_INSECURE, JUMPSTARTER_GRPC_INSECURE
 from jumpstarter.config.tls import TLSConfigV1Alpha1
@@ -457,50 +458,25 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         stream_name: str,
         stream_factory: Callable[[jumpstarter_pb2_grpc.ControllerServiceStub], AsyncGenerator],
         send_tx,
-        retries: int = 5,
-        backoff: float = 1.0,  # Reduced from 3.0 for faster recovery from transient errors
+        backoff: float = 0.5,
     ):
-        """Generic retry wrapper for gRPC streaming calls.
-
-        Args:
-            stream_name: Name of the stream for logging purposes
-            stream_factory: Function that takes a controller stub and returns an async generator
-            send_tx: Transmission channel to send stream items to
-            retries: Maximum number of retry attempts
-            backoff: Seconds to wait between retries
-        """
-        retries_left = retries
+        """Reconnect a controller stream after transient errors until cancelled."""
+        delay = backoff
         while True:
-            received_data = False
             try:
                 async with self._controller_stub() as controller:
-                    logger.debug("%s stream connected to controller", stream_name)
                     async for item in stream_factory(controller):
-                        received_data = True
-                        logger.debug("%s stream received item", stream_name)
+                        delay = backoff
                         await send_tx.send(item)
             except Exception as e:
-                if received_data:
-                    logger.debug("%s stream retry counter reset after receiving data", stream_name)
-                    retries_left = retries
-                if retries_left > 0:
-                    retries_left -= 1
-                    # Check for common transient errors that warrant faster retry
-                    error_str = str(e)
-                    is_transient = "Stream removed" in error_str or "UNAVAILABLE" in error_str
-                    retry_delay = 0.5 if is_transient else backoff
-                    logger.info(
-                        "%s stream interrupted, restarting in %ss, %s retries left: %s",
-                        stream_name,
-                        retry_delay,
-                        retries_left,
-                        e,
-                    )
-                    await sleep(retry_delay)
-                else:
+                if not is_controller_unavailable(e):
                     raise
-            else:
-                retries_left = retries
+                logger.warning("%s stream interrupted, retrying in %.1fs: %s", stream_name, delay, e)
+            # A disconnected controller cannot tell us that the lease ended.
+            # Keep its session alive until Status confirms release or we are cancelled.
+            # Also back off on EOF: an empty stream must not cause a busy loop.
+            await sleep(delay)
+            delay = min(delay * 2, 5.0)
 
     def _listen_stream_factory(
         self, lease_name: str
