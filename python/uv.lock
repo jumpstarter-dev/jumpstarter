@@ -51,6 +51,7 @@ members = [
     "jumpstarter-driver-gpiod",
     "jumpstarter-driver-http",
     "jumpstarter-driver-http-power",
+    "jumpstarter-driver-iosdevice",
     "jumpstarter-driver-iscsi",
     "jumpstarter-driver-mitmproxy",
     "jumpstarter-driver-nanokvm-usb",
@@ -2096,6 +2097,7 @@ dependencies = [
     { name = "jumpstarter-driver-gpiod" },
     { name = "jumpstarter-driver-http" },
     { name = "jumpstarter-driver-http-power" },
+    { name = "jumpstarter-driver-iosdevice" },
     { name = "jumpstarter-driver-iscsi" },
     { name = "jumpstarter-driver-mitmproxy" },
     { name = "jumpstarter-driver-nanokvm-usb" },
@@ -2163,6 +2165,7 @@ requires-dist = [
     { name = "jumpstarter-driver-gpiod", editable = "packages/jumpstarter-driver-gpiod" },
     { name = "jumpstarter-driver-http", editable = "packages/jumpstarter-driver-http" },
     { name = "jumpstarter-driver-http-power", editable = "packages/jumpstarter-driver-http-power" },
+    { name = "jumpstarter-driver-iosdevice", editable = "packages/jumpstarter-driver-iosdevice" },
     { name = "jumpstarter-driver-iscsi", editable = "packages/jumpstarter-driver-iscsi" },
     { name = "jumpstarter-driver-mitmproxy", editable = "packages/jumpstarter-driver-mitmproxy" },
     { name = "jumpstarter-driver-nanokvm-usb", editable = "packages/jumpstarter-driver-nanokvm-usb" },
@@ -2902,6 +2905,36 @@ requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
     { name = "requests", specifier = ">=2.32.5" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-iosdevice"
+source = { editable = "packages/jumpstarter-driver-iosdevice" }
+dependencies = [
+    { name = "click" },
+    { name = "cryptography" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-network" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.0.0" },
+    { name = "cryptography", specifier = ">=43.0.3" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
 ]
 
 [package.metadata.requires-dev]
