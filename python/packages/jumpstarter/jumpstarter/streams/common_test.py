@@ -1,3 +1,4 @@
+import errno
 import socket
 from contextlib import asynccontextmanager
 
@@ -5,6 +6,7 @@ import grpc
 import pytest
 from anyio import EndOfStream, Event, create_task_group, fail_after, sleep_forever
 from anyio.abc import SocketStream
+from anyio.streams.stapled import StapledObjectStream
 from jumpstarter_protocol import router_pb2, router_pb2_grpc
 
 from jumpstarter.streams.common import create_memory_stream, forward_stream
@@ -152,3 +154,53 @@ async def test_parent_cancellation_closes_both_idle_peers():
             for peer in (client, server):
                 with pytest.raises(EndOfStream):
                     await peer.receive()
+
+
+class _EofFails(StapledObjectStream):
+    """A destination whose half-close raises ``error``."""
+
+    def __init__(self, stream, error):
+        super().__init__(stream.send_stream, stream.receive_stream)
+        self.error = error
+
+    async def send_eof(self):
+        raise self.error
+
+
+async def _forward_with_failing_eof(error, exchange):
+    client, incoming = create_memory_stream()
+    outgoing, server = create_memory_stream()
+    with fail_after(5):
+        async with client, server, create_task_group() as tasks:
+
+            async def forward():
+                async with forward_stream(incoming, _EofFails(outgoing, error)):
+                    pass
+
+            tasks.start_soon(forward)
+            await client.send(b"request")
+            await client.send_eof()
+            assert await server.receive() == b"request"
+            await exchange(client, server)
+
+
+async def test_failed_eof_write_closes_other_direction():
+    async def exchange(client, server):
+        # The reverse reader is idle, so only the failed EOF can end the stream.
+        with pytest.raises(EndOfStream):
+            await client.receive()
+
+    await _forward_with_failing_eof(OSError(errno.EPIPE, "Broken pipe"), exchange)
+
+
+async def test_not_connected_eof_still_allows_response():
+    # https://github.com/jumpstarter-dev/jumpstarter/issues/444: Darwin reports
+    # ENOTCONN for a normal half-close, and the response must still flow.
+    async def exchange(client, server):
+        await server.send(b"response")
+        assert await client.receive() == b"response"
+        await server.send_eof()
+        with pytest.raises(EndOfStream):
+            await client.receive()
+
+    await _forward_with_failing_eof(OSError(errno.ENOTCONN, "Socket is not connected"), exchange)

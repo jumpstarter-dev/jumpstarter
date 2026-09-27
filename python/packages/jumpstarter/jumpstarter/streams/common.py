@@ -1,6 +1,7 @@
 import asyncio
+import errno
 import logging
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 
 from anyio import (
     BrokenResourceError,
@@ -19,6 +20,22 @@ from jumpstarter.metrics.registry import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def _send_eof(dst: AnyByteStream) -> bool:
+    """Half-close ``dst``; return False if its transport is unusable."""
+    try:
+        await dst.send_eof()
+    except AttributeError:
+        pass  # The destination cannot half-close.
+    except OSError as e:
+        # https://github.com/jumpstarter-dev/jumpstarter/issues/444
+        # sending EOF to UDS on Darwin could result in
+        # OSError: [Errno 57] Socket is not connected
+        if e.errno != errno.ENOTCONN:
+            logger.debug("stream EOF failed: %r", e)
+            return False
+    return True
 
 
 async def copy_stream(
@@ -45,15 +62,7 @@ async def copy_stream(
                     exemplars=metrics_exemplars,
                 )
             await dst.send(v)
-        with suppress(
-            AttributeError,
-            # https://github.com/jumpstarter-dev/jumpstarter/issues/444
-            # sending EOF to UDS on Darwin could result in
-            # OSError: [Errno 57] Socket is not connected
-            OSError,
-        ):
-            await dst.send_eof()
-        return True
+        return await _send_eof(dst)
     except (BrokenResourceError, ClosedResourceError, asyncio.InvalidStateError) as e:
         if isinstance(e.__cause__, BrokenPipeError):
             # BrokenPipeError (EPIPE) = writing to a closed pipe during normal teardown
