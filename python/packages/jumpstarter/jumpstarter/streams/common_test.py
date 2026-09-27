@@ -37,6 +37,19 @@ class DroppingRouter(router_pb2_grpc.RouterServiceServicer):
             yield router_pb2.StreamResponse(payload=request.payload)
 
 
+class TrackedRouter:
+    """A router stub that remembers its calls so teardown can finish them."""
+
+    def __init__(self, channel):
+        self._stub = router_pb2_grpc.RouterServiceStub(channel)
+        self.calls = []
+
+    def Stream(self):
+        call = self._stub.Stream()
+        self.calls.append(call)
+        return call
+
+
 @pytest.fixture
 async def dropping_router():
     server = grpc.aio.server()
@@ -45,7 +58,15 @@ async def dropping_router():
     await server.start()
     try:
         async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel:
-            yield router_pb2_grpc.RouterServiceStub(channel)
+            router = TrackedRouter(channel)
+            yield router
+            # grpc.aio delivers a call's completions to the event loop that
+            # created it. Finish every call before this test's loop closes, or a
+            # late completion reaches the closed loop during a later test.
+            with fail_after(5):
+                for call in router.calls:
+                    call.cancel()
+                    await call.code()
     finally:
         await server.stop(grace=None)
 
