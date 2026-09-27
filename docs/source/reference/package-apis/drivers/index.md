@@ -28,6 +28,7 @@ Drivers that control the power state and basic operation of devices:
 Drivers that provide various communication interfaces:
 
 - {doc}`ADB <adb>` (`jumpstarter-driver-adb`) - Android Debug Bridge tunneling
+- {doc}`iOS Device <iosdevice>` (`jumpstarter-driver-iosdevice`) - Per-device iOS usbmux transport
 - {doc}`BLE <ble>` (`jumpstarter-driver-ble`) - Bluetooth Low Energy communication
 - {doc}`BT Peer <bt-peer>` (`jumpstarter-driver-bt-peer`) - Bluetooth peer device powered by bumble
 - {doc}`CAN <can>` (`jumpstarter-driver-can`) - Controller Area Network communication
@@ -87,6 +88,7 @@ Drivers for flashing firmware and programming devices:
 Drivers for virtual and emulated targets:
 
 - {doc}`Android Emulator <androidemulator>` (`jumpstarter-driver-androidemulator`) - Android emulator lifecycle management with ADB tunneling
+- {doc}`iOS Simulator <iossimulator>` (`jumpstarter-driver-iossimulator`) - iOS Simulator lifecycle and idb transport
 - {doc}`KubeVirt <kubevirt>` (`jumpstarter-driver-kubevirt`) - KubeVirt virtual machine provisioning on remote clusters
 - {doc}`QEMU <qemu>` (`jumpstarter-driver-qemu`) - QEMU virtual machine management
 - {doc}`Renode <renode>` (`jumpstarter-driver-renode`) - Renode embedded systems emulation
@@ -127,6 +129,8 @@ flashers.md
 gpiod.md
 http.md
 http-power.md
+iosdevice.md
+iossimulator.md
 iscsi.md
 kubevirt.md
 mitmproxy.md
