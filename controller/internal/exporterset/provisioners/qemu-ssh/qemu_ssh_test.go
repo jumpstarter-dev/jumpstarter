@@ -17,6 +17,7 @@ limitations under the License.
 package qemussh
 
 import (
+	"context"
 	"testing"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
@@ -33,7 +34,7 @@ func TestProvisionerName(t *testing.T) {
 
 func TestRenderPod_returnsNil(t *testing.T) {
 	p := New("v1.0.0", nil)
-	pod, err := p.RenderPod(nil, nil, nil, nil, nil, nil)
+	pod, err := p.RenderPod(context.Background(), nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +48,7 @@ func TestIsDeployed_noAnnotation(t *testing.T) {
 	exporter := &jumpstarterdevv1alpha1.Exporter{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-exp"},
 	}
-	deployed, err := p.IsDeployed(nil, exporter)
+	deployed, err := p.IsDeployed(context.Background(), exporter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +67,7 @@ func TestIsDeployed_withAnnotation(t *testing.T) {
 			},
 		},
 	}
-	deployed, err := p.IsDeployed(nil, exporter)
+	deployed, err := p.IsDeployed(context.Background(), exporter)
 	if err != nil {
 		t.Fatal(err)
 	}

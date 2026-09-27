@@ -287,8 +287,12 @@ func (p *Provisioner) deployInstance(
 		logger.Info("runtime quadlet written", "path", runtimePath, "diff", diff)
 	}
 
+	exporterQuadlet, err := ExporterContainerFile(quadletCfg)
+	if err != nil {
+		return fmt.Errorf("generate exporter quadlet: %w", err)
+	}
 	exporterPath := filepath.Join(QuadletDir, ExporterContainerFileName(name))
-	changed, diff, err = conn.ReconcileFile(ctx, exporterPath, ExporterContainerFile(quadletCfg))
+	changed, diff, err = conn.ReconcileFile(ctx, exporterPath, exporterQuadlet)
 	if err != nil {
 		return fmt.Errorf("reconcile exporter quadlet: %w", err)
 	}
@@ -297,22 +301,29 @@ func (p *Provisioner) deployInstance(
 	}
 
 	volumeName := PodmanVolumeName(name)
-	if _, err := conn.RunCommand(ctx,
+	if res, err := conn.RunCommand(ctx,
 		fmt.Sprintf("podman volume inspect %s >/dev/null 2>&1 || podman volume create %s",
 			volumeName, volumeName)); err != nil {
 		return fmt.Errorf("create shared volume: %w", err)
+	} else if res.ExitCode != 0 {
+		return fmt.Errorf("create shared volume: exit %d: %s", res.ExitCode, res.Stderr)
 	}
 
-	if _, err := conn.RunCommand(ctx, "systemctl daemon-reload"); err != nil {
+	if res, err := conn.RunCommand(ctx, "systemctl daemon-reload"); err != nil {
 		return fmt.Errorf("systemctl daemon-reload: %w", err)
+	} else if res.ExitCode != 0 {
+		return fmt.Errorf("systemctl daemon-reload: exit %d: %s", res.ExitCode, res.Stderr)
 	}
 
 	runtimeSvc := RuntimeServiceName(name)
 	exporterSvc := ExporterServiceName(name)
 
-	if _, err := conn.RunCommand(ctx,
+	if res, err := conn.RunCommand(ctx,
 		fmt.Sprintf("systemctl enable --now %s %s", runtimeSvc, exporterSvc)); err != nil {
 		return fmt.Errorf("start services: %w", err)
+	} else if res.ExitCode != 0 {
+		return fmt.Errorf("start services %s %s: exit %d: %s",
+			runtimeSvc, exporterSvc, res.ExitCode, res.Stderr)
 	}
 
 	return nil
