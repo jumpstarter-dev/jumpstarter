@@ -1,7 +1,6 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
-from functools import partial
 
 from anyio import (
     BrokenResourceError,
@@ -28,7 +27,8 @@ async def copy_stream(
     *,
     metrics_direction: StreamDirection | None = None,
     metrics_driver_type: str = "other",
-):
+) -> bool:
+    """Copy until EOF; return False if the transport becomes unusable."""
     try:
         # Capture once per copy; context should be stable for the stream lifetime.
         if metrics_direction is not None:
@@ -53,6 +53,7 @@ async def copy_stream(
             OSError,
         ):
             await dst.send_eof()
+        return True
     except (BrokenResourceError, ClosedResourceError, asyncio.InvalidStateError) as e:
         if isinstance(e.__cause__, BrokenPipeError):
             # BrokenPipeError (EPIPE) = writing to a closed pipe during normal teardown
@@ -65,33 +66,27 @@ async def copy_stream(
             logger.warning("stream copy interrupted (%s): %s", type(e).__name__, e)
             if e.__cause__ is not None:
                 logger.debug("stream copy root cause: %r", e.__cause__)
+        return False
 
 
 @asynccontextmanager
 async def forward_stream(a, b, *, metrics_driver_type: str | None = None):
     async with a, b, create_task_group() as tg:
-        if metrics_driver_type is None:
-            tg.start_soon(copy_stream, a, b)
-            tg.start_soon(copy_stream, b, a)
-        else:
-            tg.start_soon(
-                partial(
-                    copy_stream,
-                    a,
-                    b,
-                    metrics_direction="tx",
-                    metrics_driver_type=metrics_driver_type,
-                )
+
+        async def copy(dst, src, direction: StreamDirection):
+            completed = await copy_stream(
+                dst,
+                src,
+                metrics_direction=direction if metrics_driver_type is not None else None,
+                metrics_driver_type=metrics_driver_type if metrics_driver_type is not None else "other",
             )
-            tg.start_soon(
-                partial(
-                    copy_stream,
-                    b,
-                    a,
-                    metrics_direction="rx",
-                    metrics_driver_type=metrics_driver_type,
-                )
-            )
+            if not completed:
+                # Transport failure closes both peers; clean EOF still permits
+                # a response in the other direction.
+                tg.cancel_scope.cancel()
+
+        tg.start_soon(copy, a, b, "tx")
+        tg.start_soon(copy, b, a, "rx")
         yield
 
 
