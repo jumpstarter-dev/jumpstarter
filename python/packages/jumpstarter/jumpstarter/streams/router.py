@@ -19,6 +19,13 @@ logger = logging.getLogger(__name__)
 @dataclass(kw_only=True, slots=True)
 class RouterStream(ObjectStream[bytes]):
     context: grpc.aio.StreamStreamCall | Any  # grpc._cython.cygrpc._ServicerContext
+    require_goaway: bool = False
+    """End cleanly only on a GOAWAY frame.
+
+    A peer that finishes sends GOAWAY (see send_eof). When the call is cancelled or
+    its transport is lost instead, grpc.aio's servicer read() returns a bare EOF;
+    with this set, that raises BrokenResourceError rather than EndOfStream.
+    """
     cls: type = field(init=False)
 
     def __post_init__(self):
@@ -44,6 +51,8 @@ class RouterStream(ObjectStream[bytes]):
 
         # Reference: https://grpc.github.io/grpc/python/grpc_asyncio.html#grpc.aio.StreamStreamCall.read
         if frame == grpc.aio.EOF:
+            if self.require_goaway:
+                raise BrokenResourceError("stream ended without GOAWAY")
             raise EndOfStream
 
         match frame.frame_type:

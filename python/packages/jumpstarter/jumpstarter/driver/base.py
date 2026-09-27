@@ -52,6 +52,7 @@ from jumpstarter.streams.common import create_memory_stream
 from jumpstarter.streams.encoding import Compression, compress_stream
 from jumpstarter.streams.metadata import MetadataStream
 from jumpstarter.streams.progress import ProgressStream
+from jumpstarter.streams.upload import create_upload_stream
 
 # Ordered most-specific first: ConnectionError is an OSError subclass.
 _DRIVER_CALL_ERRORS: tuple[tuple[type[BaseException], ErrorType, StatusCode], ...] = (
@@ -305,7 +306,7 @@ class Driver(
                     yield stream
 
             case ResourceStreamRequest():
-                remote, resource = create_memory_stream()
+                remote, resource = create_upload_stream()
 
                 resource_uuid = uuid4()
 

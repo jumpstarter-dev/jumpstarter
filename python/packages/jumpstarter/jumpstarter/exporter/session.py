@@ -18,7 +18,7 @@ from jumpstarter_protocol import (
 
 from .logging import LogHandler
 from jumpstarter.common import ExporterStatus, LogSource, Metadata, TemporarySocket
-from jumpstarter.common.streams import StreamRequestMetadata
+from jumpstarter.common.streams import ResourceStreamRequest, StreamRequestMetadata
 from jumpstarter.logging import set_log_context, unbind_log_context
 from jumpstarter.metrics import get_registry
 from jumpstarter.streams.common import forward_stream
@@ -341,8 +341,13 @@ class Session(
                     metadata.extend(stream.extra(MetadataStreamAttributes.metadata).items())
                 await context.send_initial_metadata(metadata)
 
+                # A resource upload is complete only when the client ends it with GOAWAY.
+                # A bare EOF means the transport was lost; the driver must not read the
+                # truncated upload as a clean end.
                 async with (
-                    RouterStream(context=context) as remote,
+                    RouterStream(
+                        context=context, require_goaway=isinstance(request, ResourceStreamRequest)
+                    ) as remote,
                     forward_stream(remote, stream, metrics_driver_type=driver.driver_type),
                 ):
                     event = Event()
