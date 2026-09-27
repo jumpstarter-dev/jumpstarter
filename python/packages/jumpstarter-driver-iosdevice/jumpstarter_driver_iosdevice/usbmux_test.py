@@ -383,7 +383,7 @@ async def test_connect_device_helper_checks_identity_and_preserves_initial_bytes
         )
         with pytest.raises(UsbMuxResultError):
             async with daemon.connect_device("leased-udid", 8100, device_id=8):
-                pytest.fail("wrong device accepted")
+                raise AssertionError("wrong device accepted")
 
 
 async def test_usb_selection_ignores_wifi_copy_of_leased_device():

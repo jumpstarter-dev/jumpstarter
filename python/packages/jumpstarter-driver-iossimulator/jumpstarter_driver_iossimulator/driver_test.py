@@ -14,7 +14,7 @@ import anyio
 import pytest
 
 from . import driver as module
-from .driver import IosSimulator
+from .driver import IosSimulator, IosSimulatorDevice, IosSimulatorPower
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.common.utils import serve
 
@@ -93,6 +93,18 @@ class FakeSimctl:
 
     def commands(self, operation):
         return [args for args, _ in self.calls if args[4] == operation]
+
+
+def _power(simulator: IosSimulator) -> IosSimulatorPower:
+    power = simulator.children["power"]
+    assert isinstance(power, IosSimulatorPower)
+    return power
+
+
+def _ios(simulator: IosSimulator) -> IosSimulatorDevice:
+    ios = simulator.children["ios"]
+    assert isinstance(ios, IosSimulatorDevice)
+    return ios
 
 
 @pytest.fixture
@@ -243,12 +255,12 @@ def test_two_instances_do_not_share_sets(state, fake):
     first = IosSimulator(device_type=DEVICE_TYPE, runtime=RUNTIME, state_dir=str(state))
     second = IosSimulator(device_type=DEVICE_TYPE, runtime=RUNTIME, state_dir=str(state))
     try:
-        first.children["power"].on()
-        second.children["power"].on()
+        _power(first).on()
+        _power(second).on()
         assert first._lease_dir != second._lease_dir
         assert first._udid != second._udid
         first.close()
-        assert second.children["ios"].info()["present"] is True
+        assert _ios(second).info()["present"] is True
     finally:
         first.close()
         second.close()
@@ -379,7 +391,7 @@ def test_socket_path_limit_cleans_uncreated_directory(state, fake):
     long_root.mkdir()
     simulator = IosSimulator(device_type=DEVICE_TYPE, runtime=RUNTIME, state_dir=str(long_root))
     with pytest.raises(RuntimeError, match="too long"):
-        simulator.children["power"].on()
+        _power(simulator).on()
     assert not list(long_root.iterdir())
     assert not fake.calls
 
@@ -415,10 +427,11 @@ def test_clone_preserves_golden_source(state, fake):
     source = deepcopy(fake.sets[str(golden)])
     simulator = IosSimulator(golden_device_set=str(golden), golden_udid=source_udid, state_dir=str(state))
     try:
-        simulator.children["power"].on()
+        _power(simulator).on()
         clone = fake.commands("clone")[0]
         assert clone[3] == str(golden)
         assert clone[5] == source_udid
+        assert simulator._lease_dir is not None
         assert clone[-1] == str(simulator._lease_dir / "devices")
         assert simulator._udid != source_udid
         simulator.close()
@@ -436,7 +449,7 @@ def test_running_golden_is_refused_without_stopping_it(state, fake):
     fake.sets[str(golden)] = {source_udid: {"udid": source_udid, "state": "Booted"}}
     simulator = IosSimulator(golden_device_set=str(golden), golden_udid=source_udid, state_dir=str(state))
     with pytest.raises(RuntimeError, match="must be Shutdown"):
-        simulator.children["power"].on()
+        _power(simulator).on()
     assert [args[4] for args, _ in fake.calls] == ["list"]
     assert simulator._lease_dir is None
     assert fake.sets[str(golden)][source_udid]["state"] == "Booted"
@@ -471,7 +484,7 @@ def test_idb_stream_refuses_powered_off_simulator(simulator):
     async def connect():
         with pytest.raises(RuntimeError, match="powered off"):
             async with simulator.children["ios"].connect_idb():
-                pytest.fail("powered-off simulator must not expose a companion")
+                raise AssertionError("powered-off simulator must not expose a companion")
 
     anyio.run(connect)
 
@@ -501,7 +514,12 @@ def test_http_provider_lifecycle(simulator, state, monkeypatch, fake):
         assert context.udid == simulator._udid
         assert context.device_set == simulator._owned_set()
         service = MagicMock()
-        service.close.side_effect = lambda: None if not fake.commands("shutdown") else pytest.fail("late service stop")
+
+        def close():
+            if fake.commands("shutdown"):
+                raise AssertionError("late service stop")
+
+        service.close.side_effect = close
         services.append(service)
         return service
 

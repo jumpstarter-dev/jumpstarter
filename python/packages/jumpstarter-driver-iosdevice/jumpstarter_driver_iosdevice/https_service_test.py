@@ -1,7 +1,7 @@
 import socket
 import ssl
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from anyio import (
@@ -97,16 +97,17 @@ async def running_https():
     driver = IosDevice(
         transport="network", udid=UDID, usbmux_host=host, usbmux_port=port, http_port=HTTP_PORT, connect_timeout=2
     )
-    driver._describe = AsyncMock(return_value={"udid": UDID, "model": "iPadTest", "os_version": "26.2"})
-    async with listener, create_task_group() as tasks:
-        tasks.start_soon(listener.serve, peer.handle)
-        try:
-            yield driver, peer
-        finally:
-            if driver._trust_broker is not None:
-                await driver._trust_broker.aclose()
-            driver.close()
-            tasks.cancel_scope.cancel()
+    described = {"udid": UDID, "model": "iPadTest", "os_version": "26.2"}
+    with patch.object(driver, "_describe", AsyncMock(return_value=described)):
+        async with listener, create_task_group() as tasks:
+            tasks.start_soon(listener.serve, peer.handle)
+            try:
+                yield driver, peer
+            finally:
+                if driver._trust_broker is not None:
+                    await driver._trust_broker.aclose()
+                driver.close()
+                tasks.cancel_scope.cancel()
 
 
 @asynccontextmanager
@@ -166,19 +167,21 @@ def test_broker_rejects_raw_and_https_overlap():
 
 
 @pytest.mark.anyio
-async def test_https_disabled_and_unprepared_streams_are_rejected():
+async def test_https_disabled_and_unprepared_streams_are_rejected(monkeypatch):
     driver = IosDevice(udid=UDID)
-    driver._describe = AsyncMock(return_value={"udid": UDID, "model": "TestPhone", "os_version": "26.2"})
+    monkeypatch.setattr(
+        driver, "_describe", AsyncMock(return_value={"udid": UDID, "model": "TestPhone", "os_version": "26.2"})
+    )
     assert (await driver.info())["https_services"] == []
     with pytest.raises(RuntimeError, match="not configured"):
         await driver.https_info()
     with pytest.raises(RuntimeError, match="not configured"):
         async with driver.connect_https():
-            pytest.fail("disabled stream yielded")
+            raise AssertionError("disabled stream yielded")
     async with running_https() as (driver, peer):
         with pytest.raises(RuntimeError, match="information"):
             async with driver.connect_https():
-                pytest.fail("unprepared stream yielded")
+                raise AssertionError("unprepared stream yielded")
         assert not peer.requests
 
 
@@ -255,7 +258,7 @@ async def test_https_only_port_cannot_bypass_via_raw_usbmux_connect():
             assert response["Number"] != 0
         with pytest.raises(UsbMuxError, match="raw"):
             async with broker.open_forward(HTTP_PORT):
-                pytest.fail("HTTPS port exposed raw")
+                raise AssertionError("HTTPS port exposed raw")
         assert not peer.connected_ports
 
 
@@ -271,7 +274,7 @@ async def test_detach_between_metadata_and_connect_requires_fresh_info_and_ca():
         assert broker._https_identity is None
         with pytest.raises(RuntimeError, match="information"):
             async with driver.connect_https():
-                pytest.fail("detached generation yielded")
+                raise AssertionError("detached generation yielded")
         # Same numeric DeviceID and UDID deliberately reappear after detach.
         second = await driver.https_info()
         assert second["ca_certificate"] != first["ca_certificate"]
@@ -290,7 +293,7 @@ async def test_device_swap_before_connect_revokes_existing_identity():
         peer.device["DeviceID"] += 1
         with pytest.raises(RuntimeError, match="generation changed"):
             async with driver.connect_https():
-                pytest.fail("replaced device yielded")
+                raise AssertionError("replaced device yielded")
         assert not broker.is_active and broker._https_identity is None
         assert not peer.connected_ports
 
@@ -314,7 +317,7 @@ async def test_revocation_closes_active_tls_and_blocks_following_connections(rev
         assert peer.received == b"before-revocation"
         with pytest.raises(RuntimeError, match="information"):
             async with driver.connect_https():
-                pytest.fail("revoked stream yielded")
+                raise AssertionError("revoked stream yielded")
 
 
 @pytest.mark.anyio

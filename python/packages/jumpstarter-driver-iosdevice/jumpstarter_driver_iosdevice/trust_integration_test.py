@@ -298,7 +298,8 @@ async def _running(paired_peer, *, connection_type=None, **kwargs):
 
 
 async def _mux_query(address, request):
-    async with await connect_tcp(*address) as stream:
+    host, port = address
+    async with await connect_tcp(host, port) as stream:
         await _write_mux(stream, request)
         _, response = await _read_mux(BufferedByteReceiveStream(stream))
         return response
@@ -310,7 +311,8 @@ async def _public_record(address):
 
 
 async def _connect(address, port):
-    stream = await connect_tcp(*address)
+    host, mux_port = address
+    stream = await connect_tcp(host, mux_port)
     await _write_mux(stream, {"MessageType": "Connect", "DeviceID": DEVICE_ID, "PortNumber": socket.htons(port)})
     _, response = await _read_mux(BufferedByteReceiveStream(stream))
     assert response == {"MessageType": "Result", "Number": 0}

@@ -16,7 +16,6 @@ from contextlib import ExitStack, asynccontextmanager, contextmanager
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -39,10 +38,9 @@ TARGET = "127.0.0.1:41000"
 def client():
     with start_blocking_portal() as portal, ExitStack() as stack:
         device = IosDeviceClient(stub=MagicMock(), portal=portal, stack=stack)
-        device.call = MagicMock(
-            return_value={"present": True, "udid": "leased-device", "protocols": ["usbmux"], "forward_ports": [8100]}
-        )
-        yield device
+        info = {"present": True, "udid": "leased-device", "protocols": ["usbmux"], "forward_ports": [8100]}
+        with patch.object(device, "call", MagicMock(return_value=info)):
+            yield device
 
 
 @pytest.fixture
@@ -129,7 +127,7 @@ def test_failed_attach_also_detaches(client, adapter, protocol, failure):
         pytest.raises(RuntimeError),
         client.connect(),
     ):
-        pytest.fail("A failed attach must not yield an endpoint")
+        raise AssertionError("A failed attach must not yield an endpoint")
     assert run.call_count == 2
     assert run.call_args_list[1].args[0][1] == ("del" if protocol == "usbmux" else "disconnect")
     adapter.return_value.__exit__.assert_called_once()
@@ -175,6 +173,10 @@ def _instances(*remotes):
     return subprocess.CompletedProcess([], 255, stdout=plistlib.dumps({"Instances": instances}), stderr=b"")
 
 
+def _detach_warnings(logger):
+    return [call for call in logger.warning.call_args_list if call.args[0].startswith("Could not detach")]
+
+
 @pytest.mark.parametrize(
     ("listing", "warned"),
     [
@@ -185,22 +187,30 @@ def _instances(*remotes):
         (OSError("usbfluxctl missing"), True),
     ],
 )
-def test_failed_usbflux_detach_warns_only_while_still_registered(client, adapter, caplog, listing, warned):
+def test_failed_usbflux_detach_warns_only_while_still_registered(client, adapter, listing, warned):
     # Ctrl+C closes the listener first; usbfluxd then drops the remote itself.
     removed = _completed(1, stderr="Failed to remove remote instance.")
-    with patch.object(subprocess, "run", side_effect=[_completed(), removed, listing]) as run, client.connect():
+    with (
+        patch.object(client, "logger") as logger,
+        patch.object(subprocess, "run", side_effect=[_completed(), removed, listing]) as run,
+        client.connect(),
+    ):
         pass
     assert run.call_args_list[2].args[0] == ["usbfluxctl", "list", "xml"]
-    assert ("Could not detach" in caplog.text) is warned
+    assert bool(_detach_warnings(logger)) is warned
 
 
-def test_failed_idb_detach_always_warns(client, adapter, caplog):
+def test_failed_idb_detach_always_warns(client, adapter):
     client.call.return_value["protocols"] = ["idb"]
     detach_failed = _completed(1, stderr="not connected")
-    with patch.object(subprocess, "run", side_effect=[_completed(), detach_failed]) as run, client.connect():
+    with (
+        patch.object(client, "logger") as logger,
+        patch.object(subprocess, "run", side_effect=[_completed(), detach_failed]) as run,
+        client.connect(),
+    ):
         pass
     assert run.call_count == 2
-    assert "Could not detach" in caplog.text
+    assert len(_detach_warnings(logger)) == 1
 
 
 def test_connect_uses_custom_tool_and_timeout(client, adapter):
@@ -273,12 +283,12 @@ def test_tool_failure_closes_listener(client, adapter, failure):
     "failure", [KeyboardInterrupt(), SystemExit(), GeneratorExit(), RuntimeError("closed"), asyncio.CancelledError()]
 )
 def test_interrupt_unwinds_cli_wait(failure):
-    _wait_for_interrupt(SimpleNamespace(portal=MagicMock(call=MagicMock(side_effect=failure))))
+    _wait_for_interrupt(MagicMock(portal=MagicMock(call=MagicMock(side_effect=failure))))
 
 
 def test_unexpected_wait_error_propagates():
     with pytest.raises(ValueError, match="bug"):
-        _wait_for_interrupt(SimpleNamespace(portal=MagicMock(call=MagicMock(side_effect=ValueError("bug")))))
+        _wait_for_interrupt(MagicMock(portal=MagicMock(call=MagicMock(side_effect=ValueError("bug")))))
 
 
 def test_cli_info_and_surface(client):
@@ -617,7 +627,7 @@ def test_https_native_tls_crosses_opaque_adapter_and_requires_public_ca(https_cl
     @asynccontextmanager
     async def stream(method):
         methods.append(method)
-        async with await connect_tcp(*server.server_address) as transport:
+        async with await connect_tcp("127.0.0.1", server.server_port) as transport:
             yield transport
 
     https_client.stream_async = stream
@@ -625,7 +635,9 @@ def test_https_native_tls_crosses_opaque_adapter_and_requires_public_ca(https_cl
         with https_client.https() as endpoint:
             with pytest.raises(urllib.error.URLError) as caught:
                 urllib.request.urlopen(endpoint.url + "/status", timeout=5)
-            assert isinstance(caught.value.reason, ssl.SSLCertVerificationError)
+            error = caught.value
+            assert isinstance(error, urllib.error.URLError)
+            assert isinstance(error.reason, ssl.SSLCertVerificationError)
             with urllib.request.urlopen(
                 endpoint.url + "/status", context=endpoint.ssl_context(), timeout=5
             ) as response:
