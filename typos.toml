@@ -40,6 +40,12 @@ parm = "parm"
 Parm = "Parm"
 PARM = "PARM"
 
+# UDID is Apple's Unique Device Identifier; BUID is usbmuxd's system identifier
+udid = "udid"
+UDID = "UDID"
+buid = "buid"
+BUID = "BUID"
+
 [type.gomod]
 # Exclude go.mod and go.sum from spell checking
 extend-glob = ["go.mod", "go.sum"]
