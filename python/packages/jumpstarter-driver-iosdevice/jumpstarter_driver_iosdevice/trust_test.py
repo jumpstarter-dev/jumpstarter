@@ -112,8 +112,9 @@ def test_tls_certificate_files_are_private_and_removed(monkeypatch, owner_record
     ],
 )
 def test_invalid_broker_settings(options):
+    settings = {"udid": "device"} | options
     with pytest.raises(ValueError):
-        ExporterTrustBroker(**({"udid": "device"} | options))
+        ExporterTrustBroker(udid=settings.pop("udid"), **settings)
 
 
 @pytest.mark.anyio
@@ -294,7 +295,7 @@ async def test_invalidated_broker_cannot_read_or_connect():
         await broker.prepare()
     with pytest.raises(UsbMuxError):
         async with broker.proxy("device"):
-            pytest.fail("revoked stream was exposed")
+            raise AssertionError("revoked stream was exposed")
     with pytest.raises(UsbMuxError):
         async with broker.open_forward(8100):
-            pytest.fail("revoked forward was exposed")
+            raise AssertionError("revoked forward was exposed")

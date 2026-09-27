@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from anyio import BrokenResourceError, ClosedResourceError
 
-from .driver import IosDevice, _get_value, _serial_at_port
+from .driver import IosDevice, IosPortForward, _get_value, _serial_at_port
 from jumpstarter.common.exceptions import ConfigurationError
 
 UDID = "00008110-001234567890001E"
@@ -45,7 +45,8 @@ def test_invalid_configuration(config):
 def test_forwards_are_explicit_and_no_physical_power_child():
     driver = IosDevice(udid=UDID, forward_ports=[8100, 9100])
     assert set(driver.children) == {"port_8100", "port_9100"}
-    assert driver.children["port_8100"].device is driver
+    child = driver.children["port_8100"]
+    assert isinstance(child, IosPortForward) and child.device is driver
     with pytest.raises(ConfigurationError, match="conflicts"):
         IosDevice(udid=UDID, forward_ports=[8100], children={"port_8100": driver})
 
@@ -150,7 +151,9 @@ async def test_forward_uses_selected_phone_port():
         patch.object(driver, "_daemon") as daemon,
     ):
         daemon.return_value.connect_device = connect
-        async with driver.children["port_8100"].connect() as forwarded:
+        port_forward = driver.children["port_8100"]
+        assert isinstance(port_forward, IosPortForward)
+        async with port_forward.connect() as forwarded:
             assert forwarded is stream
     assert calls == [(UDID, 8100)]
 
@@ -281,7 +284,9 @@ async def test_exporter_mode_routes_usbmux_and_forwards_through_shared_broker():
     ):
         async with driver.connect_usbmux() as connection:
             assert connection is stream
-        async with driver.children["port_8100"].connect() as connection:
+        port_forward = driver.children["port_8100"]
+        assert isinstance(port_forward, IosPortForward)
+        async with port_forward.connect() as connection:
             assert connection is stream
     assert get_broker.await_count == 2
     assert seen == [("usbmux", UDID), ("forward", 8100)]

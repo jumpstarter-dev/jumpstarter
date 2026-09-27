@@ -6,7 +6,7 @@ import sys
 import threading
 from contextlib import suppress
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import h11
 import pytest
@@ -537,7 +537,7 @@ async def test_uncertain_failure_answers_its_own_request_before_revoking_others(
     assert idle_ended.is_set() and service.process is None
 
 
-def test_startup_failure_names_node_requirement_and_keeps_log_exporter_side(tmp_path, caplog):
+def test_startup_failure_names_node_requirement_and_keeps_log_exporter_side(tmp_path):
     executable = tmp_path / "broken-appium"
     executable.write_text(
         f"#!{sys.executable}\n"
@@ -545,12 +545,13 @@ def test_startup_failure_names_node_requirement_and_keeps_log_exporter_side(tmp_
         "raise SystemExit(1)\n"
     )
     executable.chmod(0o700)
-    with pytest.raises(module.ServiceError) as error:
+    with patch.object(module, "logger") as logger, pytest.raises(module.ServiceError) as error:
         make_service(tmp_path, executable)
     message = str(error.value)
     assert "exited before readiness" in message and "requires Node.js 22" in message
     assert "/Users/private" not in message
-    assert "No such module: http_parser" in caplog.text
+    logged = [call.args[0] % call.args[1:] for call in logger.warning.call_args_list]
+    assert any("No such module: http_parser" in line for line in logged)
     assert not list(tmp_path.glob("appium-*"))
 
 

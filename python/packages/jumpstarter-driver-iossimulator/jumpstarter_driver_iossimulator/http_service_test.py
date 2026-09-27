@@ -11,7 +11,7 @@ from jumpstarter.common.exceptions import ConfigurationError
 def test_context_identity_and_metadata(tmp_path):
     context = SimulatorHttpContext(tmp_path, tmp_path / "devices", "owned", "27.0")
     with pytest.raises(FrozenInstanceError):
-        context.udid = "other"
+        context.udid = "other"  # ty: ignore[invalid-assignment]
     assert context.device_metadata() == {"platform": "iOS", "udid": "owned", "version": "27.0"}
 
 
