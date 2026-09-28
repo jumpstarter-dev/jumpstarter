@@ -36,6 +36,7 @@ WINDOWS_PACKAGES = frozenset({
     "jumpstarter-driver-opendal",
     "jumpstarter-driver-pi-pico",
     "jumpstarter-driver-power",
+    "jumpstarter-driver-probe-rs",
     "jumpstarter-driver-pyserial",
     "jumpstarter-driver-ssh",
     "jumpstarter-imagehash",

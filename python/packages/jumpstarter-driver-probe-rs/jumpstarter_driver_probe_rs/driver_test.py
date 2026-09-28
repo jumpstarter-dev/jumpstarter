@@ -2,8 +2,10 @@ from .driver import ProbeRs
 from jumpstarter.common.utils import serve
 
 
-def test_drivers_probe_rs(monkeypatch):
+def test_drivers_probe_rs(monkeypatch, tmp_path):
     instance = ProbeRs()
+    firmware = tmp_path / "firmware.bin"
+    firmware.write_bytes(b"\xde\xad\xbe\xef")
 
     def mock_run_cmd(cmd):
         if cmd[0] == "info":
@@ -20,7 +22,7 @@ def test_drivers_probe_rs(monkeypatch):
         assert "Flash size:" in info
         assert client.reset() == "ok"
         assert client.erase() == "ok"
-        assert client.download_file("/dev/null") == "ok"
+        assert client.download_file(firmware) == "ok"
         assert client.read(32, 0xF000, 4) == [0xDEADBEEF, 0xCAFEBABE, 0xCAFE0000, 0xDEAD0000]
 
 
