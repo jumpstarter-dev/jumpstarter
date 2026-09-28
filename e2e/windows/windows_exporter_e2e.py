@@ -15,6 +15,7 @@ import os
 import platform
 import signal
 import socket
+import socketserver
 import subprocess
 import sys
 import tempfile
@@ -64,6 +65,16 @@ class ProcessFixture(MockPower):
         self._descendant.terminate()
         self._descendant.wait(timeout=5)
         super().close()
+
+
+class EchoHandler(socketserver.BaseRequestHandler):
+    def handle(self):
+        while data := self.request.recv(65536):
+            self.request.sendall(data)
+
+
+class EchoServer(socketserver.ThreadingTCPServer):
+    daemon_threads = True
 
 
 def arguments():
@@ -173,12 +184,14 @@ def check_child_logging(directory, workers):
     require(set(workers) <= logged_pids, "spawned workers did not preserve JSON logging and DEBUG level")
 
 
-def write_config(directory):
+def write_config(directory, echo_port):
     config = {
         "apiVersion": "jumpstarter.dev/v1alpha1", "kind": "ExporterConfig",
         "metadata": {"name": "windows-native-fixture", "namespace": "default"},
         "export": {
             "power": {"type": "jumpstarter_driver_power.driver.MockPower"},
+            "network": {"type": "jumpstarter_driver_network.driver.TcpNetwork",
+                        "config": {"host": "127.0.0.1", "port": echo_port}},
             "process_probe": {"type": "windows_exporter_e2e.ProcessFixture"},
         },
         "hooks": {
@@ -208,8 +221,11 @@ def main():
     known_pids = set()
     endpoint = None
     logs = []
+    echo = EchoServer(("127.0.0.1", 0), EchoHandler)
+    thread = threading.Thread(target=echo.serve_forever, daemon=True)
+    thread.start()
     try:
-        config = write_config(directory)
+        config = write_config(directory, echo.server_address[1])
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
             endpoint = reservation.getsockname()
@@ -278,6 +294,9 @@ def main():
             process.wait(timeout=5)
         for log in logs:
             log.close()
+        echo.shutdown()
+        echo.server_close()
+        thread.join(timeout=5)
     report = {
         "recorded_at": datetime.now(UTC).isoformat(), "platform": platform.platform(), "python": sys.version,
         "scope": "stock native Windows jmp run, ephemeral loopback, no controller or hardware",

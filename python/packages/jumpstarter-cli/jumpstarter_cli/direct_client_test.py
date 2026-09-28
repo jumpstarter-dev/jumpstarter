@@ -9,6 +9,7 @@ import pytest
 from anyio import fail_after
 from anyio.from_thread import start_blocking_portal
 from jumpstarter_driver_composite.driver import Composite
+from jumpstarter_driver_network.driver import EchoNetwork
 from jumpstarter_driver_power.driver import MockPower
 
 from jumpstarter.client import client_from_path
@@ -17,13 +18,14 @@ from jumpstarter.exporter import Session
 
 ALLOWED_CLIENTS = [
     "jumpstarter_driver_composite.client.CompositeClient",
+    "jumpstarter_driver_network.client.NetworkClient",
     "jumpstarter_driver_power.client.PowerClient",
 ]
 
 
 @pytest.fixture(params=["tcp", "unix"])
 def direct_session(request):
-    driver = Composite(children={"power": MockPower()})
+    driver = Composite(children={"power": MockPower(), "network": EchoNetwork()})
     with start_blocking_portal() as portal, Session(root_device=driver) as session:
         session.update_status(ExporterStatus.LEASE_READY)
         if request.param == "tcp":
@@ -44,6 +46,10 @@ def test_direct_sdk_discovers_clients_and_calls_drivers(direct_session):
                 await client.power.call_async("on")
                 assert [reading async for reading in client.power.streamingcall_async("read")]
                 await client.power.call_async("off")
+                payload = b"\x00\xff\x1a\r\nbinary network data"
+                async with client.network.stream_async("connect") as stream:
+                    await stream.send(payload)
+                    assert await stream.receive() == payload
 
         portal.call(exercise)
 
@@ -65,5 +71,6 @@ def test_driver_cli_subprocesses_share_direct_endpoint(direct_session, tmp_path)
         assert result.returncode == 0, result.stdout + result.stderr
         if args == ("--help",):
             assert "power" in result.stdout
+            assert "network" in result.stdout
         elif args == ("power", "read"):
             assert "voltage=" in result.stdout

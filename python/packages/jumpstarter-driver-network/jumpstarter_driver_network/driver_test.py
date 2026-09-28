@@ -34,6 +34,7 @@ def test_tcp_network_portforward(tcp_echo_server):
         assert stream.recv(5) == b"hello"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix forwarding is not supported on Windows")
 def test_unix_network_portforward():
     with (
         start_blocking_portal() as portal,
@@ -60,6 +61,7 @@ def test_udp_network():
             assert s.recv(5) == b"hello"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix forwarding is not supported on Windows")
 def test_unix_network():
     with (
         start_blocking_portal() as portal,
@@ -149,7 +151,8 @@ def test_dbus_network_system(monkeypatch):
 
 
 @pytest.mark.skipif(
-    os.getenv("DBUS_SESSION_BUS_ADDRESS") is None and not os.path.exists(f"/run/user/{os.getuid()}/bus"),
+    sys.platform == "win32"
+    or (os.getenv("DBUS_SESSION_BUS_ADDRESS") is None and not os.path.exists(f"/run/user/{os.getuid()}/bus")),
     reason="dbus session bus not available",
 )
 @pytest.mark.skipif(which("busctl") is None, reason="busctl not available")

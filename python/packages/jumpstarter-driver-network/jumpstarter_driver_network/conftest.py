@@ -1,6 +1,7 @@
 import contextlib
 
 import pytest
+from anyio import EndOfStream
 from anyio.from_thread import start_blocking_portal
 
 from jumpstarter.common import TemporaryTcpListener
@@ -8,8 +9,8 @@ from jumpstarter.common import TemporaryTcpListener
 
 async def echo_handler(stream):
     async with stream:
-        while True:
-            with contextlib.suppress(Exception):
+        with contextlib.suppress(EndOfStream):
+            while True:
                 await stream.send(await stream.receive())
 
 

@@ -2211,6 +2211,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power" },
     { name = "pytest" },
     { name = "pytest-anyio" },
@@ -2229,6 +2230,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-anyio", specifier = ">=0.0.0" },

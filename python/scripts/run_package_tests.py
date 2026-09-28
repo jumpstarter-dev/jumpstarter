@@ -28,6 +28,7 @@ WINDOWS_PACKAGES = frozenset({
     "jumpstarter-cli-common",
     "jumpstarter-cli-driver",
     "jumpstarter-driver-composite",
+    "jumpstarter-driver-network",
     "jumpstarter-driver-power",
     "jumpstarter-imagehash",
     "jumpstarter-kubernetes",

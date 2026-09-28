@@ -35,6 +35,7 @@ drivers run on Windows in CI; the notes say what those tests exercise:
 | Driver | Notes |
 | --- | --- |
 | composite | |
+| {doc}`network <../../reference/package-apis/drivers/network>` | TCP, UDP and WebSocket drivers, port forwarding and pexpect; Unix-socket and D-Bus drivers need a POSIX exporter |
 | {doc}`power <../../reference/package-apis/drivers/power>` | `MockPower`; physical power backends are tested separately |
 
 Other drivers are not yet supported on Windows. Clients connect to exporters of

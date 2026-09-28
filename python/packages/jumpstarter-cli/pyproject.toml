@@ -20,6 +20,7 @@ dependencies = [
 [dependency-groups]
 dev = [
   "jumpstarter-driver-composite",
+  "jumpstarter-driver-network",
   "jumpstarter-driver-power",
   "pytest>=8.3.2",
   "pytest-anyio>=0.0.0",

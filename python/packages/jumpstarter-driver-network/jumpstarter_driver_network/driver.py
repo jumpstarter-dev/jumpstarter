@@ -1,10 +1,11 @@
 import ctypes
+import os
 import socket
 from abc import ABCMeta, abstractmethod
 from asyncio import get_running_loop
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from os import getenv, getuid
+from os import getenv
 from typing import ClassVar, Literal
 
 import websockets
@@ -241,7 +242,11 @@ class DbusNetwork(NetworkInterface, Driver):
             case "system":
                 bus = getenv("DBUS_SYSTEM_BUS_ADDRESS", "unix:path=/run/dbus/system_bus_socket")
             case "session":
-                bus = getenv("DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{getuid()}/bus")
+                bus = getenv("DBUS_SESSION_BUS_ADDRESS")
+                if bus is None:
+                    if not hasattr(os, "getuid"):
+                        raise RuntimeError("The default D-Bus session address requires a POSIX host")
+                    bus = f"unix:path=/run/user/{os.getuid()}/bus"
             case _:
                 raise ValueError(f"invalid bus type: {self.kind}")
 

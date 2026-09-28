@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Exercise installed native clients against explicitly supplied E2E fixtures.
 
-The exporter must expose MockPower. Other fixture drivers may be present; the
-baseline client loads them as stubs. This runner toggles the fixture's power and creates short controller leases. It
+The exporter must expose MockPower and an echo network. Other fixture drivers
+may be present; clients without Windows support load them as stubs. This runner
+toggles the fixture's power and creates short controller leases. It
 does not provision infrastructure or save credentials. Managed connection errors
 are failures, including errors in the native Windows Unix listener.
 Each probe runs in a subprocess so a transport or teardown hang has a deadline.
@@ -13,6 +14,7 @@ import json
 import os
 import platform
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -24,11 +26,14 @@ from pathlib import Path
 
 ALLOWED_CLIENTS = [
     "jumpstarter_driver_composite.client.CompositeClient",
+    "jumpstarter_driver_network.client.NetworkClient",
     "jumpstarter_driver_power.client.PowerClient",
 ]
+PAYLOAD = bytes(range(256)) * 4 + b"\x00\xff\x1a\r\nwindows-e2e"
 RESULT_PREFIX = "WINDOWS_E2E_RESULT="
 DIRECT_PROBES = (
-    "direct.discovery", "direct.power", "direct.cli_help", "direct.cli_power", "direct.shell_command",
+    "direct.discovery", "direct.power", "direct.binary_streams", "direct.tcp_forwarding",
+    "direct.cli_help", "direct.cli_power", "direct.shell_command",
 )
 CONTROLLER_PROBES = (
     "controller.discovery", "controller.lease_lifecycle", "controller.managed_connection", "controller.shell_command",
@@ -45,6 +50,7 @@ def arguments():
     parser.add_argument("--controller-config", type=Path, help="Existing ClientConfig YAML, read only")
     parser.add_argument("--exporter-name", default="windows-e2e-linux", help="Controller-managed Linux exporter")
     parser.add_argument("--power-driver", default="power")
+    parser.add_argument("--network-driver", default="network")
     parser.add_argument("--timeout", type=float, default=30, help="Probe timeout in seconds (minimum 5)")
     parser.add_argument("--report", type=Path, help="Write a JSON results report, never a credential file")
     parser.add_argument("--powershell", help="Also exercise interactive startup with this pwsh/powershell executable")
@@ -132,6 +138,52 @@ def check_power(client, args):
     finally:
         power.off()
     return {"readings": len(readings), "power_off_completed": True}
+
+
+def stream_drivers(args):
+    return (args.network_driver,)
+
+
+def check_streams(client, args):
+    import anyio
+
+    async def exchange(stream_client):
+        with anyio.fail_after(args.timeout):
+            async with stream_client.stream_async("connect") as stream:
+                await stream.send(PAYLOAD)
+                received = bytearray()
+                while len(received) < len(PAYLOAD):
+                    received.extend(await stream.receive())
+                require(received == PAYLOAD, "binary stream payload mismatch")
+
+    for name in stream_drivers(args):
+        client.portal.call(exchange, child(client, name))
+    return {"bytes_per_stream": len(PAYLOAD), "drivers": list(stream_drivers(args))}
+
+
+def check_forwarding(client, args):
+    from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
+
+    for name in stream_drivers(args):
+        with (
+            TcpPortforwardAdapter(client=child(client, name)) as address,
+            socket.create_connection(address, timeout=args.timeout) as stream,
+        ):
+            stream.sendall(PAYLOAD)
+            received = bytearray()
+            while len(received) < len(PAYLOAD):
+                chunk = stream.recv(len(PAYLOAD) - len(received))
+                require(bool(chunk), "forwarded stream closed before completing payload")
+                received.extend(chunk)
+            require(received == PAYLOAD, "forwarded binary payload mismatch")
+        try:
+            connection = socket.create_connection(address, timeout=1)
+        except OSError:
+            pass
+        else:
+            connection.close()
+            raise AssertionError("local forwarding listener survived context exit")
+    return {"bytes_per_forward": len(PAYLOAD), "listeners_closed": True}
 
 
 def terminate_process_tree(process):
@@ -254,7 +306,7 @@ exit 37
         completed.returncode == (37 if powershell else 0),
         f"CLI failed ({completed.returncode}): {(completed.stdout + completed.stderr)[-6000:]}",
     )
-    expected = (args.power_driver,) if probe == "direct.cli_help" else ("voltage=",)
+    expected = (args.power_driver, *stream_drivers(args)) if probe == "direct.cli_help" else ("voltage=",)
     require(all(item in completed.stdout for item in expected), "j output is missing expected fixture information")
     if powershell:
         # Match output lines, not the redirected input echoed by PowerShell.
@@ -298,6 +350,7 @@ def controller_probe(args, probe):
             # local listener. Do not substitute a TCP bridge or monkeypatch it.
             with lease.connect() as client:
                 check_power(client, args)
+                check_streams(client, args)
     release_wait = wait_for_lease_release(config, {lease_name})
     return {"lease": lease_name, "released": True, "exporter": args.exporter_name,
             "release_observation_seconds": release_wait}
@@ -310,9 +363,15 @@ def run_probe(args, probe):
         return controller_probe(args, probe)
     with direct_client(args) as client:
         if probe == "direct.discovery":
-            child(client, args.power_driver)
+            for name in (args.power_driver, *stream_drivers(args)):
+                child(client, name)
             return {"drivers": sorted(client.children)}
-        return check_power(client, args)
+        checks = {
+            "direct.power": check_power,
+            "direct.binary_streams": check_streams,
+            "direct.tcp_forwarding": check_forwarding,
+        }
+        return checks[probe](client, args)
 
 
 def exception_details(exc):
@@ -354,7 +413,7 @@ def worker(args):
 def probe_command(args, probe):
     command = [sys.executable, str(Path(__file__).resolve()), "--_probe", probe,
                "--timeout", str(args.timeout), "--exporter-name", args.exporter_name,
-               "--power-driver", args.power_driver]
+               "--power-driver", args.power_driver, "--network-driver", args.network_driver]
     if args.direct_endpoint:
         command.extend(["--direct-endpoint", args.direct_endpoint])
     if args.direct_insecure:
@@ -416,7 +475,7 @@ def main():
         "exporter_name": args.exporter_name, "results": results,
         "powershell": args.powershell,
         "limitations": [
-            "MockPower validates the runtime and transport, not physical hardware.",
+            "MockPower and the echo network validate transport, not physical hardware.",
             "Driver-specific clients are covered by the runners added with their Windows support.",
             "Optional PowerShell probes exercise interactive startup with redirected input, not a real terminal.",
             "Managed connection failures are reported unchanged; no socket compatibility shim is applied.",

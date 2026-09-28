@@ -135,7 +135,7 @@ physical COM device is exercised by this fixture.
 
 `e2e/windows/windows_exporter_e2e.py` starts the stock Windows `jmp run`
 launcher against its own ephemeral loopback fixtures. It needs the installed
-CLI, current `jumpstarter-core` wheel and power driver package, and uses the
+CLI, current `jumpstarter-core` wheel and power/network driver packages, and uses the
 default PowerShell hook executor. It needs no Podman, Kind, controller
 credentials or physical devices.
 
@@ -143,7 +143,7 @@ credentials or physical devices.
 python/.venv/Scripts/python.exe e2e/windows/windows_exporter_e2e.py --report-dir .e2e/windows-exporter --timeout 30
 ```
 
-The runner exports MockPower and configures two lifecycle hooks. Its
+The runner exports MockPower and a TCP echo network and configures two lifecycle hooks. Its
 PowerShell `beforeLease` hook runs `j power on` through the exporter's hook
 socket, and its Python `afterLease` hook runs on graceful shutdown. It checks
 both hooks, the direct SDK/CLI probes from `windows_client_e2e.py`, an automatic
@@ -159,6 +159,23 @@ These checks cover the standalone exporter with a synthetic driver. Native
 Windows controller registration and device backends require separate coverage.
 See the [native package](../../python/native/jumpstarter-core/README.md) for the
 process and local socket components used by the runtime.
+
+## Native network protocols
+
+`e2e/windows/windows_network_e2e.py` exercises network driver clients against a
+stock native Windows `jmp run`, using `e2e/windows/windows_fixture.py` for
+exporter startup and shutdown. Peers are owned loopback TCP, UDP and WebSocket
+servers; no driver, transport or subprocess is monkeypatched. It needs no Kind
+cluster, controller credentials or physical devices.
+
+```powershell
+python/.venv/Scripts/python.exe e2e/windows/windows_network_e2e.py --output .e2e/windows-network.json
+```
+
+`--case tcp`, `udp` or `websocket` selects one workflow (default deadline 60
+seconds per case). It checks four concurrent TCP forwards, exact binary bytes,
+datagram and message boundaries, reconnect and listener cleanup, and that the
+exporter stops gracefully and removes its worker processes and listener.
 
 ## Cleanup
 
