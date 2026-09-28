@@ -31,16 +31,18 @@ Windows backend
 ---------------
 The backend uses Winsock AF_UNIX streams through ``socket2`` for creation,
 non-inheritable handles, nonblocking accept/connect, byte I/O, shutdown, and
-cleanup. A zero-timeout Windows ``select`` call checks connection completion.
+cleanup. The socket's pending error and peer address report connection
+completion.
 The Python API exposes owned objects, not raw socket handles.
 
 ``PrivateDirectory.create(base=None)`` creates an unpredictable directory
-atomically with a protected, inheritable DACL granting access to the current
-user and SYSTEM, then verifies that DACL. Its ``socket_path`` is suitable for
-Winsock and gRPC. Paths must be absolute, NUL-free UTF-8 and at most 107 bytes.
-Windows short path names are used when available for long temporary-directory
-paths; otherwise callers receive an actionable error and can supply a shorter
-private runtime-directory base.
+atomically with a protected DACL granting access only to its owner (the current
+user) and SYSTEM, then verifies that DACL. Files created in the directory
+inherit entries for their owner's SID and SYSTEM, so it can also hold private
+files such as an SSH identity. Its ``socket_path`` is suitable for Winsock and
+gRPC. Paths must be absolute, NUL-free UTF-8 and at most 107 bytes; overlong
+paths raise an actionable error, and callers can supply a shorter private
+runtime-directory base.
 """
 
 from ._core import PrivateDirectory, UnixListener, UnixStream

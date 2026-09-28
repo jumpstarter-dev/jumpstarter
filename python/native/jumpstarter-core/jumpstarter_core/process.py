@@ -1,15 +1,16 @@
 """Ownership and cleanup of a child-process tree.
 
 The native ``ChildProcessTree`` class is currently available only on Windows.
-Construct ``ChildProcessTree(child.pid)`` while the spawned child is waiting at
-a startup handshake. Release the handshake only after construction succeeds:
+Construct ``ChildProcessTree(handle)`` with the spawned child's process handle
+(``subprocess.Popen._handle`` or ``multiprocessing.Process.sentinel``) while the
+child is waiting at a startup handshake. Release the handshake only after construction succeeds:
 processes created before assignment are not covered.
 
 ``close()`` is idempotent and terminates remaining members without waiting for
 them to exit. The caller must retain its child-process handle, implement graceful
 shutdown and deadlines, and reap the child after cleanup. Assignment failure
 raises ``OSError``; terminate the still-gated child instead of continuing
-unmanaged. Zero and the current process ID are rejected. This API does not
+unmanaged. Null and current-process handles are rejected. This API does not
 implement spawning, signals, asynchronous scheduling, or protocol behavior.
 
 Windows backend

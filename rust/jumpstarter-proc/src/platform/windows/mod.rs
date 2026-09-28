@@ -9,7 +9,8 @@
 //!   assignment are not captured. Assignment failures are reported, and callers
 //!   retain graceful shutdown, deadline enforcement, and reaping.
 //!
-//! This module uses `windows-sys` directly; no Python interpreter or bindings
-//! participate in resource ownership or cleanup.
+//! Job Objects come from the `win32job` crate, so this backend has no FFI of
+//! its own; no Python interpreter or bindings participate in resource ownership
+//! or cleanup.
 
 pub(crate) mod process;

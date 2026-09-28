@@ -2,7 +2,6 @@
 
 import gc
 import json
-import os
 import subprocess
 import sys
 import time
@@ -80,7 +79,7 @@ def _release_gate(process):
 def test_guard_terminates_child_and_later_grandchild(tmp_path, cleanup):
     ready = tmp_path / "ready.json"
     with _process("-c", _CHILD, str(ready)) as child:
-        guard = ChildProcessTree(child.pid)
+        guard = ChildProcessTree(int(child._handle))
         try:
             _release_gate(child)
             info = _wait_ready(ready)
@@ -110,7 +109,7 @@ child = subprocess.Popen(
     [sys.executable, "-c", sys.argv[1], sys.argv[2]],
     stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
 )
-guard = ChildProcessTree(child.pid)
+guard = ChildProcessTree(int(child._handle))
 child.stdin.write(b"start\\n")
 child.stdin.flush()
 time.sleep(60)
@@ -127,7 +126,7 @@ time.sleep(60)
             assert win32event.WaitForSingleObject(grandchild, 5000) == win32event.WAIT_OBJECT_0
 
 
-@pytest.mark.parametrize("pid", [0, os.getpid()])
-def test_guard_rejects_nonchild_process_ids(pid):
-    with pytest.raises(OSError, match="child process ID"):
-        ChildProcessTree(pid)
+@pytest.mark.parametrize("handle", [0, -1])
+def test_guard_rejects_null_and_current_process_handles(handle):
+    with pytest.raises(OSError, match="child process handle"):
+        ChildProcessTree(handle)

@@ -7,9 +7,4 @@ repository.workspace = true
 description = "Owned process primitives for Jumpstarter runtimes"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = [
-    "Win32_Foundation",
-    "Win32_Security",
-    "Win32_System_JobObjects",
-    "Win32_System_Threading",
-] }
+win32job = "2.0.3"

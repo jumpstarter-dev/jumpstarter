@@ -33,6 +33,7 @@ def supervisor(monkeypatch):  # noqa: C901 - fake child/tree model the superviso
 
     class Child:
         pid = 123
+        sentinel = 456
         exitcode = 0
 
         def start(self):
@@ -61,8 +62,8 @@ def supervisor(monkeypatch):  # noqa: C901 - fake child/tree model the superviso
             state.events.append(("child", "closed"))
 
     class Tree:
-        def __init__(self, pid):
-            assert pid == 123
+        def __init__(self, handle):
+            assert handle == 456
             state.events.append(("tree", "assigned"))
             if state.mode == "assignment_failure":
                 raise OSError("assignment rejected")

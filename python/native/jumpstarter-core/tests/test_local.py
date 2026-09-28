@@ -62,30 +62,54 @@ def connection():
         directory.close()
 
 
-def test_directory_dacl_is_private_and_socket_inherits_it():
+def dacl_entries(path):
+    descriptor = win32security.GetNamedSecurityInfo(
+        str(path),
+        win32security.SE_FILE_OBJECT,
+        win32security.DACL_SECURITY_INFORMATION | win32security.OWNER_SECURITY_INFORMATION,
+    )
+    acl = descriptor.GetSecurityDescriptorDacl()
+    assert acl is not None
+    entries = set()
+    for index in range(acl.GetAceCount()):
+        (ace_type, flags), access, sid = acl.GetAce(index)
+        assert ace_type == win32security.ACCESS_ALLOWED_ACE_TYPE
+        assert access == ntsecuritycon.FILE_ALL_ACCESS
+        entries.add((win32security.ConvertSidToStringSid(sid), flags & ~win32security.INHERITED_ACE))
+    assert len(entries) == acl.GetAceCount()
+    return descriptor, entries
+
+
+def test_directory_dacl_is_private_and_children_inherit_concrete_owner_sids():
+    token = win32security.OpenProcessToken(win32api.GetCurrentProcess(), win32security.TOKEN_QUERY)
+    try:
+        # New objects are owned by the token's default owner: this user, or
+        # Administrators for an elevated administrator on some Windows editions.
+        owner = win32security.GetTokenInformation(token, win32security.TokenOwner)
+    finally:
+        token.Close()
+    inherit = win32security.OBJECT_INHERIT_ACE | win32security.CONTAINER_INHERIT_ACE
     with connection() as (directory, _, _, _):
-        token = win32security.OpenProcessToken(win32api.GetCurrentProcess(), win32security.TOKEN_QUERY)
+        socket = Path(directory.socket_path)
+        key = socket.parent / "identity"
+        key.write_bytes(b"private")
         try:
-            user = win32security.GetTokenInformation(token, win32security.TokenUser)[0]
+            descriptor, entries = dacl_entries(socket.parent)
+            assert descriptor.GetSecurityDescriptorOwner() == owner
+            assert descriptor.GetSecurityDescriptorControl()[0] & win32security.SE_DACL_PROTECTED
+            # OWNER RIGHTS covers the directory; CREATOR OWNER applies only to children.
+            assert entries == {
+                ("S-1-3-4", 0),
+                ("S-1-3-0", inherit | win32security.INHERIT_ONLY_ACE),
+                ("S-1-5-18", inherit),
+            }
+            for child in (socket, key):
+                descriptor, entries = dacl_entries(child)
+                assert descriptor.GetSecurityDescriptorOwner() == owner
+                # Concrete SIDs only: OpenSSH rejects keys whose ACL names OWNER RIGHTS.
+                assert entries == {(win32security.ConvertSidToStringSid(owner), 0), ("S-1-5-18", 0)}
         finally:
-            token.Close()
-        expected = {win32security.ConvertSidToStringSid(user), "S-1-5-18"}
-        for path in (Path(directory.socket_path).parent, Path(directory.socket_path)):
-            descriptor = win32security.GetNamedSecurityInfo(
-                str(path), win32security.SE_FILE_OBJECT, win32security.DACL_SECURITY_INFORMATION
-            )
-            if path.is_dir():
-                assert descriptor.GetSecurityDescriptorControl()[0] & win32security.SE_DACL_PROTECTED
-            acl = descriptor.GetSecurityDescriptorDacl()
-            assert acl is not None
-            assert acl.GetAceCount() == 2
-            actual = set()
-            for index in range(acl.GetAceCount()):
-                (ace_type, _), access, sid = acl.GetAce(index)
-                assert ace_type == win32security.ACCESS_ALLOWED_ACE_TYPE
-                assert access == ntsecuritycon.FILE_ALL_ACCESS
-                actual.add(win32security.ConvertSidToStringSid(sid))
-            assert actual == expected
+            key.unlink()
 
 
 def test_binary_io_partial_writes_and_half_close():

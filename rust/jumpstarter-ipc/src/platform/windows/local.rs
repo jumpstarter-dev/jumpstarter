@@ -1,25 +1,20 @@
-//! Safe socket2 owns socket I/O and handles. The only socket FFI is a
-//! zero-timeout readiness check for completing a nonblocking connection.
+//! Safe socket2 owns socket I/O and handles; this module has no FFI.
 //!
 //! Sockets are configured as nonblocking before connect or bind. Accepted
 //! sockets are explicitly configured as nonblocking as well. Owned handles
 //! are non-inheritable; a mutex prevents close from racing an operation that
-//! uses a handle. `select` checks writable and exceptional readiness without
-//! waiting, then `take_error` reports a failed connection. Platform socket
-//! errors are returned through `std::io::Error`.
+//! uses a handle. A pending connection reports failure through `take_error`
+//! and completion through a peer address. Platform socket errors are
+//! returned through `std::io::Error`.
 
 use std::io::{self, Read};
 use std::net::Shutdown;
 use std::os::windows::io::{AsRawSocket, RawSocket};
 use std::path::Path;
-use std::ptr;
 use std::sync::Mutex;
 
 use socket2::{Domain, SockAddr, Socket, Type};
-use windows_sys::Win32::Networking::WinSock::{
-    select, WSAGetLastError, FD_SET, SOCKET_ERROR, TIMEVAL, WSAEALREADY, WSAEINPROGRESS,
-    WSAENOTSOCK,
-};
+use windows_sys::Win32::Networking::WinSock::{WSAEALREADY, WSAEINPROGRESS, WSAENOTSOCK};
 
 use super::{lock, private_directory};
 
@@ -200,34 +195,13 @@ impl UnixStream {
 }
 
 fn connect_ready(socket: &Socket) -> io::Result<bool> {
-    let mut writable = FD_SET {
-        fd_count: 1,
-        fd_array: [0; 64],
-    };
-    writable.fd_array[0] = socket.as_raw_socket() as usize;
-    let mut failed = writable;
-    let timeout = TIMEVAL {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
-    // SAFETY: the socket remains owned and locked by StreamState throughout
-    // this call. Both sets contain one valid handle and the timeout is zero;
-    // select never waits or outlives these stack allocations.
-    let result = unsafe { select(0, ptr::null_mut(), &mut writable, &mut failed, &timeout) };
-    if result == SOCKET_ERROR {
-        // SAFETY: retrieves the calling thread's error immediately after select.
-        return Err(io::Error::from_raw_os_error(unsafe { WSAGetLastError() }));
-    }
-    if result == 0 {
-        return Ok(false);
-    }
+    // A failed connection reports its error through SO_ERROR.
     if let Some(error) = socket.take_error()? {
         return Err(error);
     }
-    if failed.fd_count != 0 {
-        return Err(io::Error::other(
-            "local socket connection failed without an error code",
-        ));
+    match socket.peer_addr() {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::NotConnected => Ok(false),
+        Err(error) => Err(error),
     }
-    Ok(writable.fd_count != 0)
 }

@@ -7,14 +7,12 @@ repository.workspace = true
 description = "Owned local IPC primitives for Jumpstarter runtimes"
 
 [target.'cfg(windows)'.dependencies]
+getrandom = "0.4"
 socket2 = "0.6.5"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Networking_WinSock",
     "Win32_Security",
     "Win32_Security_Authorization",
-    "Win32_Security_Cryptography",
     "Win32_Storage_FileSystem",
-    "Win32_System_SystemServices",
-    "Win32_System_Threading",
 ] }

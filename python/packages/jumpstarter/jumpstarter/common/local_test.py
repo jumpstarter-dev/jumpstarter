@@ -171,11 +171,7 @@ def test_windows_socket_directory_handles_overlong_runtime_dir_without_orphans(t
     base = tmp_path / ("x" * 120)
     base.mkdir()
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(base))
-    try:
-        with TemporarySocket() as path:
-            # NTFS may provide an 8.3 alias for a long parent directory.
-            assert len(str(path).encode("utf-8")) < 108
-            assert path.parent.parent.samefile(base)
-    except (ValueError, OSError) as exc:
-        assert any(word in str(exc).lower() for word in ("long", "107", "108", "length"))
+    with pytest.raises(OSError, match="maximum 107"):
+        with TemporarySocket():
+            pass
     assert not list(base.iterdir())

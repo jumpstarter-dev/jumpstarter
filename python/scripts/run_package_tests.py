@@ -79,7 +79,7 @@ def run_command(command: list[str], directory: Path, environment: dict, output, 
     ) as child:
         try:
             if sys.platform == "win32":
-                guard = ChildProcessTree(child.pid)
+                guard = ChildProcessTree(int(child._handle))
                 child.stdin.write(b"1")
                 child.stdin.close()
             try:

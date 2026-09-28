@@ -279,7 +279,7 @@ def _run_windows_child(config, *options):
             child.start()
             started = True
             child_control.close()
-            tree = ChildProcessTree(child.pid)
+            tree = ChildProcessTree(child.sentinel)  # The process handle on Windows.
             parent_control.send("start")
             return _wait_windows_child(child, tree, parent_control, stop_signals)
         finally:

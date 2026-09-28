@@ -9,15 +9,16 @@
 //! Keep the child behind a startup handshake until assignment succeeds; earlier
 //! descendants are not captured. The caller retains spawning, the startup gate,
 //! graceful shutdown, deadlines, assignment-failure cleanup, and reaping. Closing
-//! the guard is idempotent but does not wait for termination. Zero/current-process
-//! IDs and incompatible existing job policies return errors rather than silently
-//! weakening containment.
+//! the guard is idempotent but does not wait for termination. Null or
+//! current-process handles and incompatible existing job policies return errors
+//! rather than silently weakening containment.
 //!
 //! There is no Linux or macOS backend yet. A future backend must explicitly
 //! establish its containment guarantees; process groups alone must not be treated
 //! as equivalent to the Windows owner-death cleanup contract.
 
 use std::io;
+use std::os::windows::io::AsRawHandle;
 
 use crate::platform;
 
@@ -33,13 +34,15 @@ pub struct ChildProcessTree {
 impl ChildProcessTree {
     /// Assigns an already-spawned child to the guard's process containment scope.
     ///
-    /// Keep the child behind a startup handshake until this succeeds: processes
-    /// started before assignment are not captured. The caller owns the child's
-    /// process handle and must terminate the gated child if assignment fails.
-    /// Incompatible containment policies return an error rather than leaving
-    /// the child unmanaged. Zero and the current process ID are rejected.
-    pub fn new(pid: u32) -> io::Result<Self> {
-        platform::process::ChildProcessTree::new(pid).map(|inner| Self { inner })
+    /// `process` is the child's handle, such as a [`std::process::Child`],
+    /// with `PROCESS_SET_QUOTA` and `PROCESS_TERMINATE` access. Keep the child
+    /// behind a startup handshake until this succeeds: processes started before
+    /// assignment are not captured. The caller owns the child's handle and must
+    /// terminate the gated child if assignment fails. Incompatible containment
+    /// policies return an error rather than leaving the child unmanaged. Null
+    /// and the current-process pseudo-handle are rejected.
+    pub fn new(process: &impl AsRawHandle) -> io::Result<Self> {
+        platform::process::ChildProcessTree::new(process).map(|inner| Self { inner })
     }
 
     /// Terminates remaining members. Safe to call more than once.
