@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import socket
 from unittest.mock import patch
 
@@ -135,6 +136,28 @@ class TestSslChannelCredentialsInsecure:
             pytest.raises(CertificateDiscoveryError, match="all IPs exhausted"),
         ):
             await _ssl_channel_credentials_insecure("example.com:443", timeout=5)
+
+    @pytest.mark.asyncio
+    async def test_exporter_retry_can_suppress_per_ip_warnings(self, caplog):
+        async def getaddrinfo(*_args, **_kwargs):
+            return _addr_info("192.0.2.1", "192.0.2.2")
+
+        async def refused(*_args, **_kwargs):
+            raise OSError("connection refused")
+
+        caplog.set_level(logging.DEBUG, logger="jumpstarter.common.grpc")
+        with (
+            _patch_resolver(getaddrinfo),
+            patch("jumpstarter.common.grpc._try_connect_and_extract_cert", refused),
+            pytest.raises(CertificateDiscoveryError, match="all IPs exhausted"),
+        ):
+            await _ssl_channel_credentials_insecure(
+                "example.com:443", timeout=5, log_connection_failures=False
+            )
+
+        failures = [record for record in caplog.records if "Failed to connect to" in record.message]
+        assert len(failures) == 2
+        assert all(record.levelno == logging.DEBUG for record in failures)
 
 
 def test_translated_permission_failure_is_not_retried_as_controller_outage():

@@ -1,9 +1,10 @@
+import logging
 from functools import partial
 from unittest.mock import AsyncMock, Mock
 
 import grpc
 import pytest
-from anyio import Event, create_memory_object_stream, create_task_group, fail_after, sleep_forever
+from anyio import Event, create_memory_object_stream, create_task_group, fail_after, sleep, sleep_forever
 from grpc.aio import AioRpcError
 
 from jumpstarter.common.exceptions import CertificateDiscoveryError, ConnectionError, ExporterOfflineError
@@ -30,11 +31,15 @@ def _make_exporter(channel_factory=None):
         _rpc_error(grpc.StatusCode.DEADLINE_EXCEEDED),
         _rpc_error(grpc.StatusCode.UNKNOWN, "oidc: authenticator not initialized"),
         _rpc_error(grpc.StatusCode.UNKNOWN, "Stream removed"),
+        _rpc_error(grpc.StatusCode.UNKNOWN, "watch channel closed"),
         _rpc_error(grpc.StatusCode.INTERNAL, "Received RST_STREAM with error code 2"),
+        _rpc_error(grpc.StatusCode.INTERNAL, "last seen time mismatch"),
         _rpc_error(grpc.StatusCode.CANCELLED, "stream cancelled by ingress"),
+        OSError("controller socket reset"),
     ],
 )
-async def test_stream_recovers_after_repeated_failures_and_remains_cancellable(error):
+async def test_stream_recovers_after_repeated_failures_and_remains_cancellable(error, caplog):
+    caplog.set_level(logging.INFO, logger="jumpstarter.exporter.exporter")
     attempts = 0
     closed = False
 
@@ -58,6 +63,14 @@ async def test_stream_recovers_after_repeated_failures_and_remains_cancellable(e
             tg.cancel_scope.cancel()
     assert attempts == 13
     assert closed
+    retry_warnings = [
+        record for record in caplog.records
+        if record.name == "jumpstarter.exporter.exporter"
+        and record.levelno == logging.WARNING
+        and "stream interrupted" in record.message
+    ]
+    assert len(retry_warnings) == 1
+    assert any("stream reconnected after" in record.message for record in caplog.records)
 
 
 @pytest.mark.anyio
@@ -87,8 +100,9 @@ async def test_retries_certificate_discovery_connection_errors():
     [
         _rpc_error(grpc.StatusCode.PERMISSION_DENIED),
         _rpc_error(grpc.StatusCode.UNAUTHENTICATED),
-        _rpc_error(grpc.StatusCode.UNKNOWN, "unexpected server failure"),
-        _rpc_error(grpc.StatusCode.INTERNAL, "unexpected server failure"),
+        _rpc_error(grpc.StatusCode.NOT_FOUND),
+        _rpc_error(grpc.StatusCode.INVALID_ARGUMENT),
+        _rpc_error(grpc.StatusCode.UNIMPLEMENTED),
         ConnectionError("grpc error: permission denied"),
         ConnectionError("Failed connecting to controller:443 - all IPs exhausted"),
         ExporterOfflineError("exporter offline"),
@@ -110,6 +124,79 @@ async def test_permanent_errors_propagate_without_retry(error):
         await exporter._retry_stream("Listen", stream_factory, tx, backoff=0)
     assert caught.value is error
     assert calls == 1
+    if isinstance(error, AioRpcError):
+        assert exporter.exit_code == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("ends_cleanly", [False, True])
+async def test_status_stream_budget_expires_after_error_or_eof(ends_cleanly):
+    attempts = 0
+
+    async def stream_factory(controller):
+        nonlocal attempts
+        attempts += 1
+        if not ends_cleanly:
+            raise _rpc_error(grpc.StatusCode.UNKNOWN, "watch channel closed")
+        return
+        yield
+
+    exporter = _make_exporter()
+    tx, _ = create_memory_object_stream(1)
+    with fail_after(2), pytest.raises(TimeoutError, match="Status stream unavailable"):
+        await exporter._retry_stream("Status", stream_factory, tx, backoff=0.01, outage_budget=0.06)
+    assert attempts >= 2
+    assert exporter.exit_code == 1
+    assert exporter._controller_stream_failed
+
+
+@pytest.mark.anyio
+async def test_status_stream_budget_resets_after_data():
+    attempts = 0
+
+    async def stream_factory(controller):
+        nonlocal attempts
+        attempts += 1
+        if attempts in (1, 3):
+            if attempts == 3:
+                await sleep(0.06)
+            raise _rpc_error(grpc.StatusCode.UNKNOWN, "watch channel closed")
+        if attempts == 2:
+            await sleep(0.06)
+        yield attempts
+
+    exporter = _make_exporter()
+    tx, rx = create_memory_object_stream(2)
+    with fail_after(2):
+        async with create_task_group() as tg:
+            tg.start_soon(partial(
+                exporter._retry_stream, "Status", stream_factory, tx,
+                backoff=0.005, outage_budget=0.1,
+            ))
+            assert await rx.receive() == 2
+            assert await rx.receive() == 4
+            tg.cancel_scope.cancel()
+    assert exporter.exit_code is None
+
+
+@pytest.mark.anyio
+async def test_status_stream_budget_cancels_stalled_reconnect():
+    attempts = 0
+
+    async def stream_factory(controller):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise _rpc_error(grpc.StatusCode.UNKNOWN, "watch channel closed")
+        await sleep_forever()
+        yield
+
+    exporter = _make_exporter()
+    tx, _ = create_memory_object_stream(1)
+    with fail_after(2), pytest.raises(TimeoutError, match="Status stream unavailable"):
+        await exporter._retry_stream("Status", stream_factory, tx, backoff=0.005, outage_budget=0.06)
+    assert attempts == 2
+    assert exporter.exit_code == 1
 
 
 @pytest.mark.anyio

@@ -354,11 +354,13 @@ def run(
     if exit_on_lease_end:
         config.exit_on_lease_end = True
     parsed_bind = _parse_listener_bind(listener_bind) if listener_bind is not None else None
-    return _serve_with_exc_handling(
-        config,
-        parsed_bind,
-        tls_insecure,
-        tls_cert,
-        tls_key,
-        passphrase,
+    raise SystemExit(
+        _serve_with_exc_handling(
+            config,
+            parsed_bind,
+            tls_insecure,
+            tls_cert,
+            tls_key,
+            passphrase,
+        )
     )

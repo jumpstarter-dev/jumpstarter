@@ -2,6 +2,9 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+from click.testing import CliRunner
+
 import jumpstarter_cli.run as run_mod
 
 
@@ -220,3 +223,16 @@ class TestExitOnLeaseEnd:
             exit_code = run_mod._serve_with_exc_handling(config)
 
         assert exit_code == 137
+
+
+@pytest.mark.parametrize("supervisor_code", [0, 1])
+def test_run_uses_supervisor_exit_code(monkeypatch, tmp_path, supervisor_code):
+    monkeypatch.setattr(run_mod, "_serve_with_exc_handling", lambda *args: supervisor_code)
+    config = tmp_path / "exporter.yaml"
+    config.write_text(
+        "apiVersion: jumpstarter.dev/v1alpha1\nkind: ExporterConfig\n"
+        "metadata:\n  namespace: default\n  name: test\n"
+    )
+
+    result = CliRunner().invoke(run_mod.run, ["--exporter-config", str(config)])
+    assert result.exit_code == supervisor_code, result.output
