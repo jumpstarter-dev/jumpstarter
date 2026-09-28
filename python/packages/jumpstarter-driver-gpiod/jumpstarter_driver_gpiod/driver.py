@@ -141,7 +141,7 @@ class DigitalOutput(_GPIOBase):
         """
         try:
             observed = self._line.get_value(self.line)
-        except Exception as e:
+        except OSError as e:  # a failed line ioctl; anything else is a bug, so let it raise
             self.logger.warning(f"line {self.line} ({self._line_name}) readback failed ({e}); state is now unknown")
             self._driven = None
             return
