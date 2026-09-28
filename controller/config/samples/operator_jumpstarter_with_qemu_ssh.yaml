@@ -1,0 +1,23 @@
+# Jumpstarter operator CR — enabling both in-cluster QEMU and off-cluster
+# QEMU-SSH provisioners.
+#
+# Apply with: kubectl apply -f operator_jumpstarter_with_qemu_ssh.yaml
+apiVersion: operator.jumpstarter.dev/v1alpha1
+kind: Jumpstarter
+metadata:
+  name: jumpstarter
+  namespace: jumpstarter
+spec:
+  exporterSets:
+    # Container image for the exporter-set controller binary.
+    # All provisioners share the same binary; --provisioner selects
+    # the backend at startup.
+    image: quay.io/jumpstarter-dev/exporter-set-controller:latest
+    provisioners:
+      # In-cluster QEMU provisioner (creates Pods with QEMU sidecar)
+      - name: qemu.jumpstarter.dev
+        enabled: true
+      # Off-cluster QEMU provisioner (deploys containers on remote
+      # hosts via SSH using Podman quadlets)
+      - name: qemu-ssh.jumpstarter.dev
+        enabled: true
