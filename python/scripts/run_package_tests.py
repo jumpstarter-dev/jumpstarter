@@ -40,6 +40,7 @@ WINDOWS_PACKAGES = frozenset({
     "jumpstarter-driver-pyserial",
     "jumpstarter-driver-shell",
     "jumpstarter-driver-ssh",
+    "jumpstarter-driver-tmt",
     "jumpstarter-imagehash",
     "jumpstarter-kubernetes",
     "jumpstarter-mcp",

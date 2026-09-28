@@ -50,6 +50,7 @@ drivers run on Windows in CI; the notes say what those tests exercise:
 | {doc}`pyserial <../../reference/package-apis/drivers/pyserial>` | Serial streams, `j serial pipe`, pexpect and the interactive `j serial console`; tested with `loop://` rather than COM hardware |
 | {doc}`shell <../../reference/package-apis/drivers/shell>` | Methods run through the configured `shell`; the default `bash` needs a native Bash such as Git Bash |
 | {doc}`ssh <../../reference/package-apis/drivers/ssh>` | Uses the Windows OpenSSH client (`ssh.exe`); temporary identity files are private to the current user |
+| {doc}`tmt <../../reference/package-apis/drivers/tmt>` | Requires `tmt` on the client; tests use a mocked tool |
 
 Other drivers are not yet supported on Windows. Clients connect to exporters of
 any platform, so a Windows client can use a Linux exporter's drivers once their

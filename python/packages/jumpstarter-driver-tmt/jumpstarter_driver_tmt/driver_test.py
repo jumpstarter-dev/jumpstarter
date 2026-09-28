@@ -9,6 +9,20 @@ from .driver import TMT
 from jumpstarter.common.utils import serve
 
 
+@pytest.fixture
+def invoke_cli(capfd):
+    runner = CliRunner()
+
+    def invoke(*args, **kwargs):
+        # Live exporter logs suspend pytest capture, replacing sys.stdout while
+        # Click owns it. Let Click capture this invocation without a second
+        # capture owner; pytest resumes immediately after the command returns.
+        with capfd.disabled():
+            return runner.invoke(*args, **kwargs)
+
+    return invoke
+
+
 def test_drivers_tmt():
     instance = TMT(children={"ssh": TcpNetwork(host="127.0.0.1", port=22)})
 
@@ -16,48 +30,46 @@ def test_drivers_tmt():
         assert client.ssh.address() == "tcp://127.0.0.1:22"
 
 
-def test_drivers_tmt_cli():
+def test_drivers_tmt_cli(invoke_cli):
     """Test the CLI functionality with tmt command and arguments"""
     instance = TMT(children={"ssh": TcpNetwork(host="127.0.0.1", port=22)})
 
     with serve(instance) as client:
         # Test the CLI tmt command without arguments
-        runner = CliRunner()
         cli = client.cli()
 
         with patch.object(client, '_run_tmt_local') as mock_run_tmt:
             mock_run_tmt.return_value = 0  # Success return code
-            result = runner.invoke(cli, [])
+            result = invoke_cli(cli, [])
             assert result.exit_code == 0
             mock_run_tmt.assert_called_once()
 
         # Test the CLI tmt command with arguments
         with patch.object(client, '_run_tmt_local') as mock_run_tmt:
             mock_run_tmt.return_value = 0  # Success return code
-            result = runner.invoke(cli, ["test", "arg1", "arg2"])
+            result = invoke_cli(cli, ["test", "arg1", "arg2"])
             assert result.exit_code == 0
             mock_run_tmt.assert_called_once()
 
 
-def test_drivers_tmt_cli_with_options():
+def test_drivers_tmt_cli_with_options(invoke_cli):
     """Test the CLI functionality with various options"""
     instance = TMT(children={"ssh": TcpNetwork(host="127.0.0.1", port=22)})
 
     with serve(instance) as client:
-        runner = CliRunner()
         cli = client.cli()
 
         # Test with --forward-ssh flag
         with patch.object(client, '_run_tmt_local') as mock_run_tmt:
             mock_run_tmt.return_value = 0  # Success return code
-            result = runner.invoke(cli, ["--forward-ssh", "test"])
+            result = invoke_cli(cli, ["--forward-ssh", "test"])
             assert result.exit_code == 0
             mock_run_tmt.assert_called_once()
 
         # Test with custom username and password
         with patch.object(client, '_run_tmt_local') as mock_run_tmt:
             mock_run_tmt.return_value = 0  # Success return code
-            result = runner.invoke(
+            result = invoke_cli(
                 cli, ["--tmt-username", "custom_user", "--tmt-password", "custom_pass", "test"]
             )
             assert result.exit_code == 0
@@ -66,37 +78,35 @@ def test_drivers_tmt_cli_with_options():
         # Test with custom tmt command
         with patch.object(client, '_run_tmt_local') as mock_run_tmt:
             mock_run_tmt.return_value = 0  # Success return code
-            result = runner.invoke(cli, ["--tmt-cmd", "custom-tmt", "test"])
+            result = invoke_cli(cli, ["--tmt-cmd", "custom-tmt", "test"])
             assert result.exit_code == 0
             mock_run_tmt.assert_called_once()
 
 
-def test_drivers_tmt_cli_error_handling():
+def test_drivers_tmt_cli_error_handling(invoke_cli):
     """Test CLI error handling when TMT command fails"""
     instance = TMT(children={"ssh": TcpNetwork(host="127.0.0.1", port=22)})
 
     with serve(instance) as client:
-        runner = CliRunner()
         cli = client.cli()
 
         # Test CLI with non-zero return code
         with patch.object(client, '_run_tmt_local') as mock_run_tmt:
             mock_run_tmt.return_value = 1  # Error return code
-            result = runner.invoke(cli, ["test"])
+            result = invoke_cli(cli, ["test"])
             assert result.exit_code == 1
             mock_run_tmt.assert_called_once()
 
 
-def test_drivers_tmt_cli_tmt_on_exporter():
+def test_drivers_tmt_cli_tmt_on_exporter(invoke_cli):
     """Test CLI with --tmt-on-exporter flag"""
     instance = TMT(children={"ssh": TcpNetwork(host="127.0.0.1", port=22)})
 
     with serve(instance) as client:
-        runner = CliRunner()
         cli = client.cli()
 
         # Test CLI with --tmt-on-exporter flag (should abort)
-        result = runner.invoke(cli, ["--tmt-on-exporter", "test"])
+        result = invoke_cli(cli, ["--tmt-on-exporter", "test"])
         assert result.exit_code == 1  # click.Abort() returns exit code 1
         assert "TMT will be run on the exporter" in result.output
         assert "Aborted!" in result.output
@@ -417,17 +427,16 @@ def test_drivers_tmt_logging_functionality():
                     )
 
 
-def test_drivers_tmt_cli_logging():
+def test_drivers_tmt_cli_logging(invoke_cli):
     """Test logging in CLI functionality"""
     instance = TMT(children={"ssh": TcpNetwork(host="127.0.0.1", port=22)})
 
     with serve(instance) as client:
-        runner = CliRunner()
         cli = client.cli()
 
         with patch.object(client, '_run_tmt_local') as mock_run_tmt:
             mock_run_tmt.return_value = 0
             with patch.object(client.logger, 'debug') as mock_debug:
-                result = runner.invoke(cli, ["test"])
+                result = invoke_cli(cli, ["test"])
                 assert result.exit_code == 0
                 mock_debug.assert_called_with("TMT result: 0")
