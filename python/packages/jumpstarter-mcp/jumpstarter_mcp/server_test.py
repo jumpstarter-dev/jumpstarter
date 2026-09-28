@@ -617,6 +617,7 @@ class TestCaptureSessionForNotifications:
         mock_session = MagicMock()
         mock_session._connection = mock_connection
         _capture_session_for_notifications(MagicMock(session=mock_session), manager)
+        assert manager._log_callback is not None
 
         await manager._log_callback("warning", "lease expires soon")
 
@@ -634,6 +635,7 @@ class TestCaptureSessionForNotifications:
         mock_session = MagicMock()
         mock_session._connection = mock_connection
         _capture_session_for_notifications(MagicMock(session=mock_session), manager)
+        assert manager._log_callback is not None
 
         await manager._log_callback("error", "lease expired")
 
