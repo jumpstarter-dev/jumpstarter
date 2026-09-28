@@ -347,6 +347,38 @@ class TestDriverMethods:
         assert driver.status() == "unknown"
 
     @pytest.mark.parametrize(
+        ("fail", "error"),
+        [
+            ("get_value", OSError("EIO")),
+            ("reconfigure_lines", OSError("EINVAL")),
+            ("bad_bias", None),
+        ],
+    )
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
+    def test_preserve_releases_the_line_when_it_fails(self, mock_gpiod, fail, error):
+        """A preserve start that fails after claiming the line must not leave it claimed.
+
+        The request isn't stored until the claim finishes, so close() never sees it;
+        without an explicit release the line stays busy for the next exporter.
+        """
+        _mock_chip, mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=26)
+        mock_gpiod.LineSettings.side_effect = lambda **kw: MagicMock(**kw)
+        mock_line.get_value.return_value = 1
+        kwargs = {}
+        if fail == "bad_bias":
+            kwargs["bias"] = "sideways"
+            expected = ValueError
+        else:
+            getattr(mock_line, fail).side_effect = error
+            expected = type(error)
+
+        from jumpstarter_driver_gpiod.driver import DigitalOutput
+
+        with pytest.raises(expected):
+            DigitalOutput(line=26, initial_value="preserve", **kwargs)
+        mock_line.release.assert_called_once()
+
+    @pytest.mark.parametrize(
         ("held", "expected"),
         [(0, "off"), (1, "on")],
     )

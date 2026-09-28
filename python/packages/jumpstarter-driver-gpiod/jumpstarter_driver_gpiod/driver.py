@@ -174,10 +174,17 @@ class DigitalOutput(_GPIOBase):
         probe = gpiod.LineSettings(active_low=self.active_low)
         request = self._chip.request_lines(config={self.line: probe}, consumer="jumpstarter-gpiod")
 
-        value = request.get_value(self.line)
-        settings = self._output_line_settings(value)
-        self.logger.debug(f"line {self.line} ({self._line_name}) preserving {value}, settings: {settings}")
-        request.reconfigure_lines(config={self.line: settings})
+        # Until this returns, close() can't see the request, so release it here on
+        # failure (a bad drive/bias raises too) rather than leave the line claimed.
+        try:
+            value = request.get_value(self.line)
+            settings = self._output_line_settings(value)
+            self.logger.debug(f"line {self.line} ({self._line_name}) preserving {value}, settings: {settings}")
+            request.reconfigure_lines(config={self.line: settings})
+        except Exception:
+            with contextlib.suppress(Exception):
+                request.release()
+            raise
         return request, value
 
     def _parse_initial_value(self):
