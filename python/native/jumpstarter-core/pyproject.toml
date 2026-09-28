@@ -1,6 +1,7 @@
 [project]
 name = "jumpstarter-core"
-version = "0.1.0"
+# Release builds stamp the Jumpstarter version (python/scripts/set_core_version.py).
+version = "0.0.0"
 description = "Python bindings for incrementally adopted Jumpstarter Rust runtime components"
 requires-python = ">=3.12"
 license = "Apache-2.0"

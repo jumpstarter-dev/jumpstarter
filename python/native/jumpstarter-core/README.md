@@ -27,7 +27,13 @@ The distribution contains one private `jumpstarter_core._core` extension and
 public scoped Python APIs. Future components can join the same extension
 through their own modules. The extension uses CPython's stable ABI from Python
 3.12; each supported Python version still requires runtime qualification.
-The independent package version is currently `0.1.0`.
+
+Release builds give the distribution the same version as the other Jumpstarter
+packages, which pin it exactly on Windows. The checked-in `0.0.0` is a
+placeholder for local builds; `python/scripts/set_core_version.py` stamps the
+version computed by `hatch-vcs`. The [wheel workflow](../../../.github/workflows/core-wheels.yaml)
+builds x64 and ARM64 wheels natively on each architecture, tests them, and
+attaches them and the source distribution to published GitHub releases.
 
 The package lives outside the main Python workspace so consumers select its
 native build requirements explicitly. Maturin includes the Rust sources and

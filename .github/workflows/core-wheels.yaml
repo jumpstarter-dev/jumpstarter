@@ -1,5 +1,10 @@
 name: Core Windows Wheels
 
+# Builds the jumpstarter-core native wheels for Windows x64 and ARM64 and its
+# source distribution. Each is stamped with the same version as the other
+# Jumpstarter packages, which pin it exactly on Windows. Published releases get
+# the artifacts attached as release assets.
+
 on:
   workflow_dispatch:
   pull_request:
@@ -10,20 +15,117 @@ on:
       - 'rust/Cargo.toml'
       - 'rust/Cargo.lock'
       - 'python/native/jumpstarter-core/**'
+      - 'python/scripts/set_core_version*'
       - 'python/scripts/verify_pruned_cargo_lock*'
       - '.github/workflows/core-wheels.yaml'
   merge_group:
+  release:
+    types: [published]
 
 permissions:
   contents: read
 
 jobs:
-  windows-x64:
+  wheels:
+    name: Wheel (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            platform-tag: win_amd64
+          - arch: arm64
+            runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            platform-tag: win_arm64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0 # Version tags determine the package version.
+          persist-credentials: false
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - id: uv
+        run: '"version=$(Get-Content .uv-version)" >> $env:GITHUB_OUTPUT'
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: ${{ steps.uv.outputs.version }}
+          python-version: '3.12'
+      - name: Cache Cargo downloads and build artifacts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: windows-core-${{ matrix.arch }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            windows-core-${{ matrix.arch }}-cargo-
+      - name: Stamp the Jumpstarter version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: ./.github/scripts/stamp-core-version.ps1
+      - name: Verify the native crates work without Python
+        run: |
+          foreach ($crate in @("jumpstarter-ipc", "jumpstarter-proc")) {
+            $tree = cargo tree --locked --manifest-path rust/Cargo.toml --package $crate --target ${{ matrix.target }}
+            if ($LASTEXITCODE -ne 0) { throw "Cannot inspect $crate dependencies" }
+            Write-Output $tree
+            if ($tree -match '\bpyo3(?:[-\s]|$)') { throw "$crate must not depend on PyO3" }
+            cargo check --locked --manifest-path rust/Cargo.toml --package $crate --target ${{ matrix.target }}
+            if ($LASTEXITCODE -ne 0) { throw "Cannot build $crate independently of Python" }
+          }
+          cargo run --locked --release --manifest-path rust/Cargo.toml --package jumpstarter-ipc `
+            --example local_roundtrip --target ${{ matrix.target }}
+          if ($LASTEXITCODE -ne 0) { throw "The standalone Rust IPC example failed" }
+      - name: Build the stable ABI wheel from the locked workspace
+        working-directory: python/native/jumpstarter-core
+        run: >-
+          uvx --from maturin==1.15.0 maturin build
+          --release --locked --target ${{ matrix.target }}
+          --interpreter python --out ../../../dist/core
+      - name: Test the wheel in a clean environment
+        run: |
+          $wheels = @(Get-ChildItem "dist/core/jumpstarter_core-$env:JUMPSTARTER_VERSION-cp312-abi3-${{ matrix.platform-tag }}.whl")
+          if ($wheels.Count -ne 1) { throw "Expected one cp312-abi3 ${{ matrix.platform-tag }} wheel for $env:JUMPSTARTER_VERSION" }
+          $venv = Join-Path $env:RUNNER_TEMP "core-wheel-test"
+          uv venv --python 3.12 $venv
+          if ($LASTEXITCODE -ne 0) { throw "Cannot create wheel test environment" }
+          $python = Join-Path $venv "Scripts/python.exe"
+          # The tests inspect DACLs and process state through pywin32.
+          uv pip install --python $python $wheels[0].FullName pytest==8.4.1 "pywin32>=311"
+          if ($LASTEXITCODE -ne 0) { throw "Cannot install the core wheel" }
+          # Run from outside the source tree so the installed wheel is imported.
+          Push-Location $env:RUNNER_TEMP
+          try {
+            & $python -I -m pytest (Join-Path $env:GITHUB_WORKSPACE "python/native/jumpstarter-core/tests") `
+              -q -p no:cacheprovider -o addopts=
+            if ($LASTEXITCODE -ne 0) { throw "The installed core wheel failed its tests" }
+          }
+          finally { Pop-Location }
+      - name: Upload the wheel
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: jumpstarter-core-${{ matrix.platform-tag }}
+          path: dist/core/*.whl
+          if-no-files-found: error
+
+  sdist:
+    name: Source distribution
     runs-on: windows-2025
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          fetch-depth: 0 # Version tags determine the package version.
           persist-credentials: false
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
@@ -44,35 +146,20 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: windows-core-cargo-${{ hashFiles('rust/Cargo.lock') }}
+          key: windows-core-x64-cargo-${{ hashFiles('rust/Cargo.lock') }}
           restore-keys: |
-            windows-core-cargo-
-      - name: Test the source-archive lockfile guard
+            windows-core-x64-cargo-
+      - name: Test the release helper scripts
         run: >-
-          uv run --no-project --python 3.12 --with pytest==8.4.1
-          python -m pytest python/scripts/verify_pruned_cargo_lock_test.py
+          uv run --no-project --python 3.12 --with pytest==8.4.1 --with packaging
+          python -m pytest python/scripts/verify_pruned_cargo_lock_test.py python/scripts/set_core_version_test.py
           -q -p no:cacheprovider -o addopts=
-      - name: Verify the native crates work without Python
-        run: |
-          foreach ($crate in @("jumpstarter-ipc", "jumpstarter-proc")) {
-            $tree = cargo tree --locked --manifest-path rust/Cargo.toml --package $crate --target x86_64-pc-windows-msvc
-            if ($LASTEXITCODE -ne 0) { throw "Cannot inspect $crate dependencies" }
-            Write-Output $tree
-            if ($tree -match '\bpyo3(?:[-\s]|$)') { throw "$crate must not depend on PyO3" }
-            cargo check --locked --manifest-path rust/Cargo.toml --package $crate --target x86_64-pc-windows-msvc
-            if ($LASTEXITCODE -ne 0) { throw "Cannot build $crate independently of Python" }
-          }
-          cargo run --locked --release --manifest-path rust/Cargo.toml --package jumpstarter-ipc `
-            --example local_roundtrip --target x86_64-pc-windows-msvc
-          if ($LASTEXITCODE -ne 0) { throw "The standalone Rust IPC example failed" }
+      - name: Stamp the Jumpstarter version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: ./.github/scripts/stamp-core-version.ps1
       - name: Fetch locked dependencies for the offline archive rebuild
         run: cargo fetch --locked --manifest-path rust/Cargo.toml
-      - name: Build the stable ABI wheel from the locked workspace
-        working-directory: python/native/jumpstarter-core
-        run: >-
-          uvx --from maturin==1.15.0 maturin build
-          --release --locked --target x86_64-pc-windows-msvc
-          --interpreter python --out ../../../dist/core
       - name: Build the source distribution
         working-directory: python/native/jumpstarter-core
         run: |
@@ -86,8 +173,8 @@ jobs:
         run: |
           $workspaceLock = Join-Path (Get-Location) "rust/Cargo.lock"
           $lockVerifier = Join-Path (Get-Location) "python/scripts/verify_pruned_cargo_lock.py"
-          $sdists = @(Get-ChildItem dist/core/jumpstarter_core-*.tar.gz)
-          if ($sdists.Count -ne 1) { throw "Expected one core source distribution" }
+          $sdists = @(Get-ChildItem "dist/core/jumpstarter_core-$env:JUMPSTARTER_VERSION.tar.gz")
+          if ($sdists.Count -ne 1) { throw "Expected one core source distribution for $env:JUMPSTARTER_VERSION" }
           $sdist = $sdists[0]
           $sourceDir = Join-Path $env:RUNNER_TEMP "jumpstarter-core-sdist"
           New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
@@ -136,7 +223,7 @@ jobs:
           finally { Pop-Location }
       - name: Import the rebuilt wheel in a clean environment
         run: |
-          $wheels = @(Get-ChildItem "$env:RUNNER_TEMP/core-rebuilt-wheels/*-cp312-abi3-win_amd64.whl")
+          $wheels = @(Get-ChildItem "$env:RUNNER_TEMP/core-rebuilt-wheels/jumpstarter_core-$env:JUMPSTARTER_VERSION-cp312-abi3-win_amd64.whl")
           if ($wheels.Count -ne 1) { throw "Expected one cp312-abi3 Windows x64 wheel" }
           $wheel = $wheels[0]
           $venv = Join-Path $env:RUNNER_TEMP "core-wheel-test"
@@ -147,9 +234,33 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Cannot install rebuilt core wheel" }
           & $python -I -c "from jumpstarter_core.local import PrivateDirectory, UnixListener, UnixStream; from jumpstarter_core.process import ChildProcessTree; import jumpstarter_core._core; print(jumpstarter_core._core.__file__)"
           if ($LASTEXITCODE -ne 0) { throw "Cannot import rebuilt core wheel" }
-      - name: Upload wheel and source distribution
+      - name: Upload the source distribution
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: jumpstarter-core-windows-x64
-          path: dist/core/*
+          name: jumpstarter-core-sdist
+          path: dist/core/*.tar.gz
           if-no-files-found: error
+
+  publish:
+    name: Attach to the release
+    if: github.event_name == 'release'
+    needs: [wheels, sdist]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download the wheels and source distribution
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: jumpstarter-core-*
+          merge-multiple: true
+          path: dist
+      - name: Upload them to the release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          ls -l dist
+          test "$(ls dist/jumpstarter_core-*.whl | wc -l)" -eq 2
+          test "$(ls dist/jumpstarter_core-*.tar.gz | wc -l)" -eq 1
+          gh release upload "${RELEASE_TAG}" dist/* --clobber --repo "${GITHUB_REPOSITORY}"

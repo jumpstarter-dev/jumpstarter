@@ -48,10 +48,22 @@ host (such as `dut-network`, `dutlink`, `gpiod`, `iscsi`, `nanokvm-usb`, `qemu`,
 ## Installation
 
 On Windows, the `jumpstarter` package depends on `jumpstarter-core`, a native
-extension that provides local sockets and process containment. Until prebuilt
-Windows wheels are published, install from a source checkout. This needs
-[uv](https://docs.astral.sh/uv/), Rust and the MSVC C++ build tools with a
-Windows SDK:
+extension that provides local sockets and process containment. Starting with
+Jumpstarter 0.10.0, each release publishes `jumpstarter-core` wheels for Windows
+x64 and ARM64 to PyPI and to the GitHub release, so no compiler is needed.
+Install the CLI and the drivers you need from PyPI, for example with
+[uv](https://docs.astral.sh/uv/):
+
+```powershell
+uv tool install jumpstarter-cli --with jumpstarter-driver-power
+jmp --help
+```
+
+The pkg.jumpstarter.dev index does not carry the Windows native wheel; use PyPI
+on Windows.
+
+To run an unreleased version, install from a source checkout. This needs uv,
+Rust and the MSVC C++ build tools with a Windows SDK:
 
 ```powershell
 git clone https://github.com/jumpstarter-dev/jumpstarter.git
@@ -61,8 +73,9 @@ uv run --no-sync jmp --help
 ```
 
 Add `--package` for each additional driver package you need. The `install.sh`
-installer and `jmp self update` are not available on Windows; update the
-checkout and run `uv sync` again instead. Shell completion is available for
+installer and `jmp self update` are not available on Windows; upgrade with
+`uv tool upgrade jumpstarter-cli`, or update the checkout and run `uv sync`
+again. Shell completion is available for
 Bash, Zsh and Fish only.
 
 ## Configuration files

@@ -25,9 +25,7 @@ class PinJumpstarter(BuildHookInterface):
         if "project" in metadata and "dependencies" in metadata["project"]:
             for i, dep in enumerate(metadata["project"]["dependencies"]):
                 req = Requirement(dep)
-                # Rust core bindings have their own version; they are distributed
-                # as platform wheels rather than in the Python VCS release set.
-                if req.name.startswith("jumpstarter") and req.name != "jumpstarter-core":
+                if req.name.startswith("jumpstarter"):
                     req.specifier &= SpecifierSet(f"=={self.metadata.version}")
                     metadata["project"]["dependencies"][i] = str(req)
 

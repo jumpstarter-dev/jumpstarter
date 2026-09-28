@@ -11,7 +11,7 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12"
 dependencies = [
-    "jumpstarter-core>=0.1.0,<0.2 ; sys_platform == 'win32'",
+    "jumpstarter-core ; sys_platform == 'win32'",
     "jumpstarter-protocol",
     # Older Windows gRPC builds can hang at interpreter shutdown after stream EOF.
     "grpcio>=1.84.0 ; sys_platform == 'win32'",

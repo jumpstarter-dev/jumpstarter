@@ -329,8 +329,11 @@ The tag push triggers:
 
 The GitHub Release triggers:
 - `release-operator-installer.yaml` — uploads `operator-installer.yaml` to the release
+- `core-wheels.yaml` — builds the `jumpstarter-core` Windows wheels (x64 and ARM64) and its
+  source distribution, stamped with the release version, and uploads them to the release
 
-Tell the user that CI is now building the container images and you will monitor progress.
+Tell the user that CI is now building the container images and the Windows wheels, and you will
+monitor progress.
 
 Find the CI run triggered by the tag and monitor it:
 ```bash
@@ -343,7 +346,30 @@ gh run watch <RUN_ID>
 
 Monitor the run periodically using `gh run view <RUN_ID> --json status,conclusion` until it completes. If it fails, offer to re-trigger with `gh run rerun <RUN_ID>`. If it fails again, show the user the failure details with `gh run view <RUN_ID> --log-failed` and stop.
 
+Also confirm that the `core-wheels.yaml` run triggered by the release succeeded and attached three
+`jumpstarter_core-*` assets (two wheels and the source distribution):
+```bash
+gh run list --workflow=core-wheels.yaml --event=release --limit 3 --json databaseId,status,conclusion,headBranch,createdAt
+gh release view vX.Y.Z --json assets --jq '.assets[].name | select(startswith("jumpstarter_core-"))'
+```
+The asset versions must equal the release version (for example `jumpstarter_core-0.10.0-cp312-abi3-win_amd64.whl`
+for `v0.10.0`, or `0.10.0rc1` for `v0.10.0-rc.1`): the other Python packages pin `jumpstarter-core` exactly
+on Windows. The workflow fails instead of uploading if the computed version does not match the tag.
+
 When the build-images workflow succeeds, inform the user and proceed automatically to step 2D.
+
+#### Phase 4: Publish the Windows wheels to PyPI
+
+A maintainer uploads the Python packages to PyPI. The pure-Python packages are built from source, but
+the `jumpstarter-core` Windows wheels need Rust and MSVC, so upload the CI-built release assets with
+them, before or together with `jumpstarter`. Otherwise Windows installs of the new version cannot
+resolve `jumpstarter-core`:
+```bash
+gh release download vX.Y.Z --pattern 'jumpstarter_core-*' --dir dist-core
+uv publish dist-core/*
+```
+Ask the user to run the upload (it needs their PyPI credentials); do not publish on their behalf.
+pkg.jumpstarter.dev does not carry the Windows native wheel.
 
 ### 2D. Operator bundle contribution
 
@@ -472,6 +498,8 @@ Present a checklist of what was done (mark completed items) and what remains:
 - [ ] GitHub Release created (with `--prerelease` for RCs)
 - [ ] CI image build completed
 - [ ] `operator-installer.yaml` asset uploaded (automated by CI)
+- [ ] `jumpstarter_core-*` Windows x64/ARM64 wheels and source distribution attached to the release (automated by CI)
+- [ ] `jumpstarter-core` release assets uploaded to PyPI with the other Python packages
 - [ ] OLM bundle generated and verified (`make bundle`)
 - [ ] Community-operators PRs created (`make contribute` + `gh pr create`)
 - [ ] Infrastructure fixes cherry-picked to `main` (if applicable)
