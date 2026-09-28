@@ -62,5 +62,43 @@ assert(
     tooltipOffset(0, MAX_W, 300) === 0
 );
 
+function fakeSpan(spanLeft) {
+    var styles = {};
+    return {
+        getBoundingClientRect: function () { return { left: spanLeft }; },
+        style: { setProperty: function (k, v) { styles[k] = v; } },
+        styles: styles,
+        classList: {
+            _active: false,
+            add: function () { this._active = true; },
+            contains: function () { return this._active; },
+            remove: function () { this._active = false; }
+        }
+    };
+}
+
+// Touch click handler must set --tooltip-offset before adding tooltip-active.
+// Without this, mouseenter (which computes the offset) may never fire on touch,
+// leaving the tooltip at the CSS default left:0 and overflowing a narrow viewport.
+function touchActivate(span, viewportWidth) {
+    var offset = tooltipOffset(span.getBoundingClientRect().left, MAX_W, viewportWidth);
+    span.style.setProperty("--tooltip-offset", offset + "px");
+    span.classList.add("tooltip-active");
+}
+
+var centerSpan = fakeSpan(50);
+touchActivate(centerSpan, 375);
+assert(
+    "touch activation: --tooltip-offset is always set before tooltip-active",
+    centerSpan.styles["--tooltip-offset"] !== undefined && centerSpan.classList._active
+);
+
+var edgeSpan = fakeSpan(300);
+touchActivate(edgeSpan, 375);
+assert(
+    "touch activation on iPhone SE (375px): near-right-edge offset shifts tooltip left",
+    parseFloat(edgeSpan.styles["--tooltip-offset"]) < 0 && edgeSpan.classList._active
+);
+
 console.log("\n" + passed + " passed, " + failed + " failed");
 if (failed > 0) process.exit(1);
