@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
 import os
@@ -248,14 +247,16 @@ def _register_lease_tools(mcp: MCPServer) -> None:
 
 
 def _capture_session_for_notifications(ctx: Context | None, manager: ConnectionManager) -> None:
-    """Capture the MCP session so background tasks can send log notifications."""
+    """Capture the MCP connection so background tasks can send log notifications."""
     if ctx is None or manager._log_callback is not None:
         return
-    session = ctx.session
+    connection = ctx.session._connection
 
     async def _log(level: str, message: str) -> None:
-        with contextlib.suppress(Exception):
-            await session.send_log_message(level=level, data=message, logger="jumpstarter")
+        await connection.notify(
+            "notifications/message",
+            {"level": level, "data": message, "logger": "jumpstarter"},
+        )
 
     manager.set_log_callback(_log)
 

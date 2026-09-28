@@ -588,23 +588,56 @@ class TestCaptureSessionForNotifications:
 
     def test_valid_ctx_installs_callback(self):
         _, manager = create_server()
-        _capture_session_for_notifications(MagicMock(session=AsyncMock()), manager)
+        mock_connection = AsyncMock()
+        mock_session = MagicMock()
+        mock_session._connection = mock_connection
+        _capture_session_for_notifications(MagicMock(session=mock_session), manager)
         assert manager._log_callback is not None
 
     @pytest.mark.asyncio
-    async def test_installed_callback_calls_send_log_message(self):
+    async def test_installed_callback_calls_connection_notify(self):
         _, manager = create_server()
-        mock_session = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_session = MagicMock()
+        mock_session._connection = mock_connection
         _capture_session_for_notifications(MagicMock(session=mock_session), manager)
         assert manager._log_callback is not None
         await manager._log_callback("info", "hello")
-        mock_session.send_log_message.assert_called_once_with(level="info", data="hello", logger="jumpstarter")
+        mock_connection.notify.assert_called_once_with(
+            "notifications/message",
+            {"level": "info", "data": "hello", "logger": "jumpstarter"},
+        )
 
     @pytest.mark.asyncio
-    async def test_installed_callback_suppresses_send_failure(self):
+    async def test_background_log_delivered_without_log_level_opt_in(self):
+        """Background logs reach the client via the connection channel even when
+        the jmp_connect request carried no log-level opt-in in its _meta."""
         _, manager = create_server()
-        mock_session = AsyncMock()
-        mock_session.send_log_message.side_effect = RuntimeError("transport closed")
+        mock_connection = AsyncMock()
+        mock_session = MagicMock()
+        mock_session._connection = mock_connection
         _capture_session_for_notifications(MagicMock(session=mock_session), manager)
-        assert manager._log_callback is not None
-        await manager._log_callback("error", "boom")
+
+        await manager._log_callback("warning", "lease expires soon")
+
+        mock_connection.notify.assert_called_once_with(
+            "notifications/message",
+            {"level": "warning", "data": "lease expires soon", "logger": "jumpstarter"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_background_log_delivered_with_log_level_opt_in(self):
+        """Background logs reach the client via the connection channel even when
+        the jmp_connect request included a log-level opt-in in its _meta."""
+        _, manager = create_server()
+        mock_connection = AsyncMock()
+        mock_session = MagicMock()
+        mock_session._connection = mock_connection
+        _capture_session_for_notifications(MagicMock(session=mock_session), manager)
+
+        await manager._log_callback("error", "lease expired")
+
+        mock_connection.notify.assert_called_once_with(
+            "notifications/message",
+            {"level": "error", "data": "lease expired", "logger": "jumpstarter"},
+        )
