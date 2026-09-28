@@ -31,6 +31,7 @@ WINDOWS_PACKAGES = frozenset({
     "jumpstarter-driver-ble",
     "jumpstarter-driver-composite",
     "jumpstarter-driver-energenie",
+    "jumpstarter-driver-flashers",
     "jumpstarter-driver-network",
     "jumpstarter-driver-opendal",
     "jumpstarter-driver-pi-pico",

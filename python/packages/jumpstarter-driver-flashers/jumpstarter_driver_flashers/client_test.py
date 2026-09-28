@@ -1,6 +1,6 @@
 import shlex
 from concurrent.futures import CancelledError
-from pathlib import PosixPath
+from pathlib import Path
 
 import click
 import pytest
@@ -156,8 +156,8 @@ def test_fls_oci_auth_env_empty_for_non_oci_paths():
     env_args = client._fls_oci_auth_env("oci://quay.io/org/image:tag", None)
     assert env_args == ""
 
-    # PosixPath (converted by operator_for_path) must not crash
-    env_args = client._fls_oci_auth_env(PosixPath("/images/image.raw.xz"), "/tmp/fls_creds")
+    # Native Path objects (converted by operator_for_path) must not crash.
+    env_args = client._fls_oci_auth_env(Path("/images/image.raw.xz"), "/tmp/fls_creds")
     assert env_args == ""
 
 
@@ -493,20 +493,18 @@ def test_filename_strips_query_params_from_url_path():
 
 def test_decompression_command_with_query_params():
     """Test _get_decompression_command handles paths with query parameters"""
-    from pathlib import PosixPath
-
     from .client import _get_decompression_command
 
-    # Standard PosixPath
-    assert _get_decompression_command(PosixPath("/images/image.raw.xz")) == "xzcat |"
-    assert _get_decompression_command(PosixPath("/images/image.raw.gz")) == "zcat |"
-    assert _get_decompression_command(PosixPath("/images/image.raw")) == ""
+    # Native Path objects.
+    assert _get_decompression_command(Path("/images/image.raw.xz")) == "xzcat |"
+    assert _get_decompression_command(Path("/images/image.raw.gz")) == "zcat |"
+    assert _get_decompression_command(Path("/images/image.raw")) == ""
 
     # Full HTTP URL
     assert _get_decompression_command("https://cdn.example.com/images/image.raw.xz") == "xzcat |"
 
     # Zstandard compression
-    assert _get_decompression_command(PosixPath("/images/image.raw.zst")) == "zstdcat |"
+    assert _get_decompression_command(Path("/images/image.raw.zst")) == "zstdcat |"
     assert _get_decompression_command("https://cdn.example.com/images/image.raw.zst") == "zstdcat |"
 
     # String path with query parameters (e.g. from path_with_query in bearer token path)

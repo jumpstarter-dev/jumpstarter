@@ -1,5 +1,8 @@
 import os
+import shutil
 import tempfile
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from jumpstarter_driver_power.driver import MockPower
@@ -26,7 +29,12 @@ def temp_dirs():
 @pytest.fixture(scope="session")  # session to retain cache over time
 def complete_flasher(temp_dirs):
     cache, http, tftp = temp_dirs
-    yield BaseFlasher(
+    def pull_fixture_bundle(_reference, *, outdir):
+        # Exercise the real manifest/cache/storage path using the committed
+        # bundle. Registry availability and credentials are not prerequisites.
+        shutil.copytree(Path(__file__).parent.parent / "oci_bundles" / "test", outdir, dirs_exist_ok=True)
+
+    instance = BaseFlasher(
         flasher_bundle="quay.io/jumpstarter-dev/jumpstarter-flasher-test:new",
         cache_dir=cache,
         http_dir=http,
@@ -36,6 +44,9 @@ def complete_flasher(temp_dirs):
             "power": MockPower(),
         },
     )
+    with patch("jumpstarter_driver_flashers.driver.Registry") as registry:
+        registry.return_value.pull.side_effect = pull_fixture_bundle
+        yield instance
 
 
 def test_missing_serial(temp_dirs):

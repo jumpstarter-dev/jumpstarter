@@ -41,6 +41,7 @@ drivers run on Windows in CI; the notes say what those tests exercise:
 | {doc}`ble <../../reference/package-apis/drivers/ble>` | Client streams and pexpect; the interactive BLE console is not available on Windows |
 | composite | |
 | {doc}`energenie <../../reference/package-apis/drivers/energenie>` | Tested with a mocked EnerGenie power socket |
+| {doc}`flashers <../../reference/package-apis/drivers/flashers>` | Tested with mocked targets and the committed test OCI bundle |
 | {doc}`network <../../reference/package-apis/drivers/network>` | TCP, UDP and WebSocket drivers, port forwarding and pexpect; Unix-socket and D-Bus drivers need a POSIX exporter |
 | {doc}`opendal <../../reference/package-apis/drivers/opendal>` | Storage and file transfer operations; `MockStorageMux` reopens its backing file on Windows |
 | {doc}`pi-pico <../../reference/package-apis/drivers/pi-pico>` | UF2 flashing to a mounted BOOTSEL drive; tested with a simulated drive |
