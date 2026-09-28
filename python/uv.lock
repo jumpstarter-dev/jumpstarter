@@ -20,7 +20,8 @@ resolution-markers = [
     "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation != 'PyPy' and sys_platform == 'android') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'android')",
     "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'android'",
     "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation == 'PyPy' and sys_platform == 'android') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'android')",
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version < '3.14' and sys_platform == 'android'",
 ]
@@ -171,7 +172,8 @@ name = "aiohttp"
 version = "3.12.13"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version < '3.14' and sys_platform == 'android'",
 ]
@@ -368,7 +370,8 @@ name = "aiosignal"
 version = "1.3.2"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version < '3.14' and sys_platform == 'android'",
 ]
@@ -503,7 +506,8 @@ name = "argon2-cffi-bindings"
 version = "25.1.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version < '3.14' and sys_platform == 'android'",
 ]
@@ -941,7 +945,8 @@ name = "cffi"
 version = "1.17.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version < '3.14' and sys_platform == 'android'",
 ]
@@ -1570,7 +1575,7 @@ name = "gpiod"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/8f/74/cb43c6e2fe74cf1567160ccbf54db176f72481e5ac58567684a262672c7c/gpiod-2.3.0.tar.gz", hash = "sha256:daa840ed5b691e7078a9cf21c79fe813b9a91c3ed0bdbafae0181c7b98b80300", size = 57304, upload-time = "2025-02-19T13:05:38.181Z" }
 wheels = [
@@ -1645,7 +1650,8 @@ resolution-markers = [
     "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation != 'PyPy' and sys_platform == 'android') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'android')",
     "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'android'",
     "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation == 'PyPy' and sys_platform == 'android') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'android')",
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
     { name = "typing-extensions", version = "4.14.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'" },
@@ -2026,6 +2032,7 @@ dev = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.10.5" },
     { name = "anyio", specifier = ">=4.4.0,!=4.6.2" },
+    { name = "anyio", marker = "sys_platform == 'win32'", specifier = ">=4.10.0" },
     { name = "backports-zstd", marker = "python_full_version < '3.14'", specifier = ">=1.1.0" },
     { name = "click", specifier = ">=8.1.7.2" },
     { name = "grpcio", marker = "sys_platform == 'win32'", specifier = ">=1.84.0" },
@@ -4501,7 +4508,8 @@ name = "markupsafe"
 version = "3.0.2"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version < '3.14' and sys_platform == 'android'",
 ]
@@ -4758,7 +4766,8 @@ name = "msgpack"
 version = "1.1.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version < '3.14' and sys_platform == 'android'",
 ]
@@ -4942,7 +4951,8 @@ name = "numpy"
 version = "2.3.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version < '3.14' and sys_platform == 'android'",
 ]
@@ -5511,7 +5521,8 @@ name = "pydantic"
 version = "2.11.7"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version < '3.14' and sys_platform == 'android'",
 ]
@@ -5566,7 +5577,8 @@ name = "pydantic-core"
 version = "2.33.2"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version < '3.14' and sys_platform == 'android'",
 ]
@@ -6147,7 +6159,8 @@ name = "pywavelets"
 version = "1.8.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version < '3.14' and sys_platform == 'android'",
 ]
@@ -6269,7 +6282,7 @@ name = "pywin32"
 version = "310"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6b/ec/4fdbe47932f671d6e348474ea35ed94227fb5df56a7c30cbbb42cd396ed0/pywin32-310-cp312-cp312-win32.whl", hash = "sha256:8a75a5cc3893e83a108c05d82198880704c44bbaee4d06e442e471d3c9ea4f3d", size = 8796239, upload-time = "2025-03-17T00:55:58.807Z" },
@@ -6351,7 +6364,8 @@ name = "pyyaml"
 version = "6.0.2"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version < '3.14' and sys_platform == 'android'",
 ]
@@ -6580,7 +6594,8 @@ name = "rpds-py"
 version = "0.25.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version < '3.14' and sys_platform == 'android'",
 ]
@@ -6858,7 +6873,8 @@ name = "scipy"
 version = "1.16.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version < '3.14' and sys_platform == 'android'",
 ]
@@ -7489,7 +7505,8 @@ name = "typing-extensions"
 version = "4.14.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version < '3.14' and sys_platform == 'android'",
 ]
@@ -7532,7 +7549,8 @@ name = "typing-inspection"
 version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version < '3.14' and sys_platform == 'android'",
 ]

@@ -107,6 +107,37 @@ async def test_idle_listener_and_connected_receive_cancel_and_cleanup():
         assert not Path(idle_path).parent.exists()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows native socket readiness")
+@pytest.mark.anyio
+async def test_idle_windows_stream_waits_for_readiness_instead_of_polling():
+    async def idle(stream):
+        async with stream:
+            await sleep_forever()
+
+    with fail_after(5):
+        async with TemporaryUnixListener(idle) as path:
+            stream = await local.connect_local_stream(path)
+            native = stream._socket
+            attempts = []
+
+            class CountingSocket:
+                def try_recv(self, size):
+                    attempts.append(size)
+                    return native.try_recv(size)
+
+                def __getattr__(self, name):
+                    return getattr(native, name)
+
+            stream._socket = CountingSocket()
+            try:
+                with move_on_after(0.3):
+                    await stream.receive()
+            finally:
+                await stream.aclose()
+    # One attempt, then a readiness wait; a polling loop would retry every few ms.
+    assert len(attempts) == 1
+
+
 @pytest.mark.anyio
 async def test_local_stream_backpressure_can_be_cancelled():
     async def no_reader(stream):

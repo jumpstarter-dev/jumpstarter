@@ -9,7 +9,7 @@ sessions continue to use their Python/AnyIO implementations.
 The module docs describe their contracts and Windows behavior:
 
 - [Local IPC](../../jumpstarter_core/local.py): AF_UNIX streams, private socket
-  directories, pathname limits, and cooperative asynchronous polling.
+  directories, pathname limits, and readiness handles for asynchronous waits.
 - [Process containment](../../jumpstarter_core/process.py): a private Job Object,
   child startup ordering, and cleanup responsibilities.
 

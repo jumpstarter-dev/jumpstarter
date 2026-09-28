@@ -1,5 +1,6 @@
 """Exercise cancellation and data integrity at the native byte-stream boundary."""
 
+import socket as stdlib_socket
 import sys
 from collections import deque
 from contextlib import ExitStack
@@ -22,13 +23,20 @@ from . import local
 
 
 class PartialSocket:
-    """A byte sink that occasionally cannot accept data or accepts only a prefix."""
+    """A byte sink that occasionally cannot accept data or accepts only a prefix.
+
+    Readiness waits use one end of a real socket pair, which is always writable.
+    """
 
     def __init__(self):
         self.limits = deque([7, None, 100000, None, 3, 100000])
         self.written = bytearray()
         self.eof_count = 0
         self.close_count = 0
+        self._ready, self._peer = stdlib_socket.socketpair()
+
+    def fileno(self):
+        return self._ready.fileno()
 
     def try_send(self, data):
         limit = self.limits.popleft() if self.limits else len(data)
@@ -43,6 +51,8 @@ class PartialSocket:
 
     def close(self):
         self.close_count += 1
+        self._ready.close()
+        self._peer.close()
 
 
 @pytest.mark.anyio
@@ -64,17 +74,33 @@ async def test_partial_writes_preserve_all_bytes_and_half_close_is_idempotent():
 
 
 class ReceiveSocket:
+    """Becomes readable through a real socket pair when the test delivers data."""
+
     def __init__(self):
         self.receiving = Event()
         self.pending = deque()
         self.closed = False
+        self._ready, self._signal = stdlib_socket.socketpair()
+        self._ready.setblocking(False)
+
+    def fileno(self):
+        return self._ready.fileno()
+
+    def deliver(self, data):
+        self.pending.append(data)
+        self._signal.send(b"\0")
 
     def try_recv(self, size):
         self.receiving.set()
-        return self.pending.popleft() if self.pending else None
+        if not self.pending:
+            return None
+        self._ready.recv(1)
+        return self.pending.popleft()
 
     def close(self):
         self.closed = True
+        self._ready.close()
+        self._signal.close()
 
 
 @pytest.mark.anyio
@@ -85,7 +111,7 @@ async def test_cancelled_receive_keeps_stream_open_and_can_be_retried():
             await stream.receive()
         assert scope.cancel_called
         assert not socket.closed
-        socket.pending.append(b"next read")
+        socket.deliver(b"next read")
         with fail_after(1):
             assert await stream.receive() == b"next read"
     assert socket.closed
@@ -115,10 +141,13 @@ async def test_concurrent_receive_is_rejected_and_close_releases_waiting_reader(
 
 @pytest.mark.anyio
 async def test_cancelled_pending_connect_closes_native_socket(monkeypatch):
-    socket = SimpleNamespace(finish_connect=lambda: False, close_count=0)
+    # A listening socket never becomes writable, like a connection still pending.
+    pending = stdlib_socket.create_server(("127.0.0.1", 0))
+    socket = SimpleNamespace(finish_connect=lambda: False, fileno=pending.fileno, close_count=0)
 
     def close():
         socket.close_count += 1
+        pending.close()
 
     socket.close = close
     monkeypatch.setattr(local, "sys", SimpleNamespace(platform="win32"))

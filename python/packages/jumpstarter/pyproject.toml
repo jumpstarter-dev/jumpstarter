@@ -17,6 +17,8 @@ dependencies = [
     "grpcio>=1.84.0 ; sys_platform == 'win32'",
     "pyyaml>=6.0.2",
     "anyio>=4.4.0,!=4.6.2",
+    # Windows sockets wait for readiness with notify_closing, added in 4.10.
+    "anyio>=4.10.0 ; sys_platform == 'win32'",
     "aiohttp>=3.10.5",
     "yarl>=1.6.0",
     "pydantic>=2.8.2",

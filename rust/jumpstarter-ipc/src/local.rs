@@ -18,6 +18,9 @@
 //! - `try_send` returns a possibly partial byte count, or `None` if pending.
 //!   Callers retain unsent bytes and retry when ready.
 //! - `shutdown_write` half-closes writes while allowing remaining reads.
+//! - `raw_socket` returns the handle for readiness notification only, such as
+//!   waiting in `select` before retrying. The object keeps ownership; never
+//!   close the handle or use it for I/O, and stop waiting on it before `close`.
 //!
 //! Callers supply buffers, readiness scheduling, deadlines, and cancellation.
 //! No Python interpreter or async runtime is needed to use these operations.

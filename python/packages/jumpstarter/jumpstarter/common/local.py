@@ -2,7 +2,10 @@
 
 Windows gRPC supports Unix-domain sockets even though CPython/AnyIO do not.
 The native package owns those sockets; this adapter only supplies AnyIO's byte
-stream contract. Unix platforms continue using AnyIO's own implementation.
+stream contract. Nonblocking native operations are retried when AnyIO reports
+the socket ready. On Windows' proactor event loop, AnyIO waits for readiness in
+one shared selector thread, so idle sockets cause no wakeups. Unix platforms
+continue using AnyIO's own implementation.
 """
 
 import os
@@ -17,15 +20,12 @@ from anyio import (
     ResourceGuard,
     connect_unix,
     create_task_group,
-    sleep,
+    notify_closing,
+    wait_readable,
+    wait_writable,
 )
 from anyio.abc import ByteStream
 from anyio.lowlevel import checkpoint
-
-# Nonblocking native operations never occupy an AnyIO worker or block the event
-# loop. A bounded pause when a socket would block also bounds cancellation
-# latency, without changing the application's Windows event-loop policy.
-_POLL_INTERVAL = 0.005
 
 
 def local_socket_target(path: os.PathLike | str) -> str:
@@ -39,6 +39,8 @@ def local_socket_target(path: os.PathLike | str) -> str:
 class _WindowsUnixStream(ByteStream):
     def __init__(self, socket):
         self._socket = socket
+        # Used only for readiness waits; the native object owns the handle.
+        self._fileno = socket.fileno()
         self._closed = False
         self._write_closed = False
         self._receive_guard = ResourceGuard("reading from")
@@ -52,15 +54,15 @@ class _WindowsUnixStream(ByteStream):
         if max_bytes < 1:
             raise ValueError("max_bytes must be at least 1")
         with self._receive_guard:
+            await checkpoint()
             while True:
-                await checkpoint()
                 self._check_open()
                 try:
                     data = self._socket.try_recv(max_bytes)
                 except OSError as exc:
                     raise BrokenResourceError from exc
                 if data is None:
-                    await sleep(_POLL_INTERVAL)
+                    await wait_readable(self._fileno)
                 elif data:
                     return data
                 else:
@@ -82,12 +84,11 @@ class _WindowsUnixStream(ByteStream):
                 except OSError as exc:
                     raise BrokenResourceError from exc
                 if sent is None:
-                    await sleep(_POLL_INTERVAL)
+                    await wait_writable(self._fileno)
                 elif sent == 0:
                     raise BrokenResourceError
                 else:
                     data = data[sent:]
-                    await checkpoint()
 
     async def send_eof(self) -> None:
         with self._send_guard:
@@ -104,6 +105,8 @@ class _WindowsUnixStream(ByteStream):
         # Close before any checkpoint: cleanup must work in cancelled scopes.
         if not self._closed:
             self._closed = True
+            # Wake pending readiness waits before the handle becomes invalid.
+            notify_closing(self._fileno)
             self._socket.close()
 
 
@@ -112,6 +115,7 @@ async def windows_unix_listener(handler, path):
     from jumpstarter_core.local import UnixListener
 
     listener = UnixListener.bind(os.fspath(path))
+    fileno = listener.fileno()
 
     async def handle(socket):
         async with _WindowsUnixStream(socket) as stream:
@@ -119,16 +123,16 @@ async def windows_unix_listener(handler, path):
 
     async def accept(group):
         while True:
-            await checkpoint()
             socket = listener.try_accept()
             if socket is None:
-                await sleep(_POLL_INTERVAL)
-            else:
-                try:
-                    group.start_soon(handle, socket)
-                except BaseException:
-                    socket.close()
-                    raise
+                await wait_readable(fileno)
+                continue
+            try:
+                group.start_soon(handle, socket)
+            except BaseException:
+                socket.close()
+                raise
+            await checkpoint()
 
     try:
         async with create_task_group() as group:
@@ -136,9 +140,9 @@ async def windows_unix_listener(handler, path):
             try:
                 yield path
             finally:
-                listener.close()
                 group.cancel_scope.cancel()
     finally:
+        # The accept task has stopped waiting on the handle by now.
         listener.close()
 
 
@@ -152,7 +156,7 @@ async def connect_local_stream(path: os.PathLike | str) -> ByteStream:
     socket = UnixStream.connect(os.fspath(path))
     try:
         while not socket.finish_connect():
-            await sleep(_POLL_INTERVAL)
+            await wait_writable(socket.fileno())
         return _WindowsUnixStream(socket)
     except BaseException:
         socket.close()

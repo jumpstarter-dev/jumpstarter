@@ -64,6 +64,11 @@ impl UnixListener {
             .map_err(py_io)
     }
 
+    /// The socket handle, only for readiness waits such as `select`.
+    fn fileno(&self) -> PyResult<u64> {
+        self.inner.raw_socket().map_err(py_io)
+    }
+
     fn try_accept(&self, py: Python<'_>) -> PyResult<Option<UnixStream>> {
         py.detach(|| self.inner.try_accept())
             .map(|stream| stream.map(|inner| UnixStream { inner }))
@@ -87,6 +92,11 @@ impl UnixStream {
         py.detach(|| ipc::UnixStream::connect(path))
             .map(|inner| Self { inner })
             .map_err(py_io)
+    }
+
+    /// The socket handle, only for readiness waits such as `select`.
+    fn fileno(&self) -> PyResult<u64> {
+        self.inner.raw_socket().map_err(py_io)
     }
 
     fn finish_connect(&self, py: Python<'_>) -> PyResult<bool> {

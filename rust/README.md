@@ -41,7 +41,7 @@ API availability and implementation requirements are documented per module:
 does not establish that every module is implemented for that target.
 
 Local socket operations currently expose nonblocking progress; the Python
-AnyIO adapter supplies polling and cancellation. A future Tokio/tonic adapter
+AnyIO adapter waits for readiness on the socket handle and supplies cancellation. A future Tokio/tonic adapter
 can consume the Rust primitives directly. That adapter and a full Rust runtime
 port are not implemented here.
 

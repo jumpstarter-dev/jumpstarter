@@ -13,16 +13,19 @@ starts a nonblocking connection; ``finish_connect`` returns whether it is ready.
 ``try_send`` returns the number of bytes written or ``None``. Callers must handle
 partial writes. ``shutdown_write`` half-closes a stream. Every object has an
 idempotent ``close`` method; dropping it also releases its native resources.
+``fileno`` returns the socket handle only for readiness waits (for example
+``select`` or AnyIO's ``wait_readable``); the object keeps ownership. Stop
+waiting on the handle before closing its object.
 
 The Rust backend serializes each socket operation against close and the binding
 releases the Python interpreter during native operations. Listener close does
 not close accepted streams. Close all sockets before their private directory;
 explicit directory close reports cleanup errors, while drop is best effort.
 
-Jumpstarter's Python AnyIO adapter polls these calls with a short cooperative
-delay. This bounds cancellation latency without blocking the event loop or
-introducing a second async runtime, at the cost of periodic wakeups and modest
-latency. The Rust crate itself does not provide an async runtime adapter.
+Jumpstarter's Python AnyIO adapter retries these calls when AnyIO reports the
+handle ready; on Windows' proactor event loop, AnyIO waits for readiness in one
+shared selector thread, so idle sockets cause no wakeups. The Rust crate itself
+does not provide an async runtime adapter.
 
 Windows backend
 ---------------

@@ -10,7 +10,7 @@
 
 use std::io::{self, Read};
 use std::net::Shutdown;
-use std::os::windows::io::AsRawSocket;
+use std::os::windows::io::{AsRawSocket, RawSocket};
 use std::path::Path;
 use std::ptr;
 use std::sync::Mutex;
@@ -80,6 +80,13 @@ impl UnixListener {
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(None),
             Err(error) => Err(error),
         }
+    }
+
+    /// The socket handle, for readiness notification only (for example
+    /// `select`). The listener keeps ownership; never close or use it for I/O.
+    pub fn raw_socket(&self) -> io::Result<RawSocket> {
+        let guard = lock(&self.socket)?;
+        Ok(guard.as_ref().ok_or_else(closed)?.as_raw_socket())
     }
 
     /// Idempotently close this listener. Dropping it also closes its handle.
@@ -176,6 +183,13 @@ impl UnixStream {
             .ok_or_else(closed)?
             .socket
             .shutdown(Shutdown::Write)
+    }
+
+    /// The socket handle, for readiness notification only (for example
+    /// `select`). The stream keeps ownership; never close or use it for I/O.
+    pub fn raw_socket(&self) -> io::Result<RawSocket> {
+        let guard = lock(&self.state)?;
+        Ok(guard.as_ref().ok_or_else(closed)?.socket.as_raw_socket())
     }
 
     /// Idempotently close this stream. Dropping it also closes its handle.
