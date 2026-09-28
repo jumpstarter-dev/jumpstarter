@@ -225,7 +225,7 @@ class TestExitOnLeaseEnd:
         assert exit_code == 137
 
 
-@pytest.mark.parametrize("supervisor_code", [0, 1])
+@pytest.mark.parametrize("supervisor_code", [0, 1, 75])
 def test_run_uses_supervisor_exit_code(monkeypatch, tmp_path, supervisor_code):
     monkeypatch.setattr(run_mod, "_serve_with_exc_handling", lambda *args: supervisor_code)
     config = tmp_path / "exporter.yaml"

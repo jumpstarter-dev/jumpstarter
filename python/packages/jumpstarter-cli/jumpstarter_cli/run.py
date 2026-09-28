@@ -166,7 +166,7 @@ def _handle_child(  # noqa: C901
 
         # Return exit code in priority order:
         # 1. Signal number if received (for signal-based termination)
-        # 2. Exporter's exit code if set (for hook failure with on_failure='exit')
+        # 2. Exporter's exit code if set (hook or controller stream failure)
         # 3. 0 for immediate restart (normal exit without signal or explicit exit code)
         if received_signal:
             return 128 + received_signal

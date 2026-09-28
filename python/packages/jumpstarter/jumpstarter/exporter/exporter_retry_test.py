@@ -125,7 +125,11 @@ async def test_permanent_errors_propagate_without_retry(error):
     assert caught.value is error
     assert calls == 1
     if isinstance(error, AioRpcError):
-        assert exporter.exit_code == 1
+        expected_exit_code = 75 if error.code() == grpc.StatusCode.UNAUTHENTICATED else 1
+        assert exporter.exit_code == expected_exit_code
+        assert exporter._controller_stream_failed
+    else:
+        assert exporter.exit_code is None
 
 
 @pytest.mark.anyio
@@ -146,7 +150,7 @@ async def test_status_stream_budget_expires_after_error_or_eof(ends_cleanly):
     with fail_after(2), pytest.raises(TimeoutError, match="Status stream unavailable"):
         await exporter._retry_stream("Status", stream_factory, tx, backoff=0.01, outage_budget=0.06)
     assert attempts >= 2
-    assert exporter.exit_code == 1
+    assert exporter.exit_code == 75
     assert exporter._controller_stream_failed
 
 
@@ -196,7 +200,7 @@ async def test_status_stream_budget_cancels_stalled_reconnect():
     with fail_after(2), pytest.raises(TimeoutError, match="Status stream unavailable"):
         await exporter._retry_stream("Status", stream_factory, tx, backoff=0.005, outage_budget=0.06)
     assert attempts == 2
-    assert exporter.exit_code == 1
+    assert exporter.exit_code == 75
 
 
 @pytest.mark.anyio

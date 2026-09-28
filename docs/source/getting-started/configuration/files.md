@@ -113,6 +113,7 @@ token: "******************" # An authentication token
 motd: | # Optional message of the day shown to clients when they enter a shell
   Welcome to myexporter!
   Flash the device with: j storage flash
+statusStreamRetryTimeout: 1800 # Retry time after Status fails or ends (default: 1800s)
 export: # Configure drivers to expose to the clients
   power:
     type: "jumpstarter_driver_power.driver.PduPower" # The driver Python class path and type
@@ -142,6 +143,14 @@ hooks: # Optional lifecycle hooks that run at lease boundaries
 The optional `hooks` section configures lifecycle scripts that run at {term}`lease`
 boundaries. See [{term}`Hook`s](../../introduction/hooks.md) for full details on
 {term}`hook` configuration, environment variables, and failure handling.
+
+If the controller's Status stream fails or ends, and no new update arrives
+within `statusStreamRetryTimeout` seconds, `jmp run` exits with status `75`
+(`EX_TEMPFAIL`).
+The default is 30 minutes. A service manager can then restart the exporter and
+reload its configuration. Status `1` remains the intentional shutdown code for
+a hook configured with `onFailure: exit`; units using
+`RestartPreventExitStatus=1` should still restart on status `75`.
 
 **Environment Variables**:
 - `JUMPSTARTER_GRPC_INSECURE` / `JMP_GRPC_INSECURE` - Set to `1` to disable TLS verification
