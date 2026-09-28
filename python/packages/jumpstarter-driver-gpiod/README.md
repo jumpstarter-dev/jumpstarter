@@ -134,7 +134,7 @@ power_switch.on()
 # Turn power off
 power_switch.off()
 
-# Read current power state
+# Read current power state: "on", "off", or "unknown" (best-effort, see Status)
 state = power_switch.status()
 print(f"Power state: {state}")
 ```
@@ -188,15 +188,36 @@ state, or a firmware pin setting — e.g. `gpio=26=op,dh` in
 
 #### Status
 
-`status` returns `on` or `off`: the level this driver last drove the line to, by
-`on()`, by `off()`, or by the initial request, with `active_low` already applied.
-It is not a fresh read of the pin — reading back an output is up to the
-controller, which may return the input buffer rather than the output latch, so an
-open-drain line held low by its load can read back as the opposite of what is
-driven. `read` (on `DigitalOutputClient`) gives you that read instead.
+`status` is **best-effort**. It is derived from the configured settings (`drive`,
+`active_low`, `initial_value`) and the line's readback — never from the load
+itself — and returns one of:
 
-Neither one can tell whether a relay behind the line actually switched: a missing
-jumper, a lost supply, or a welded contact all still report the driven level.
+- **`on`** / **`off`**: the level this driver last drove the line to, by `on()`,
+  `off()`, or the initial request, with `active_low` already applied, and nothing
+  has contradicted it since.
+- **`unknown`**: the driver can no longer vouch for the level. This happens when a
+  write fails, when the readback fails, or when a `push_pull` line reads back
+  something other than what was driven — a shorted pin, a dead pad, or a load
+  dragging the line past the logic threshold. A mismatch is logged as a warning.
+
+`unknown` is not permanent: calling `on()` or `off()` drives the line again and,
+if the write takes, makes the state known. Treat it as a cue to set the state
+explicitly rather than assume it.
+
+The readback check only applies to `push_pull` (the default). An `open_drain` or
+`open_source` line leaves one of its levels high-impedance, where the pad follows
+the external pull instead of the driver, so its readback cannot confirm or refute
+what was driven; `status` then simply reports the level last driven. `read` (on
+`DigitalOutputClient`) still gives you the raw pin read for any drive mode.
+
+With `initial_value: preserve`, the starting state is the level the line was
+found at, adopted as-is. `status` reports it accurately as the level now driven,
+but cannot tell whether that level was ever intended or is a reset default — see
+[Initial Values](#initial-values).
+
+No value of `status` can tell whether a relay behind the line actually switched:
+a missing jumper, a lost supply, or a welded contact all still report the driven
+level. Only a feedback path wired back to the exporter can confirm that.
 
 ## API Reference
 

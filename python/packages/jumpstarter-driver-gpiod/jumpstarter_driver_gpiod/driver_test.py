@@ -249,29 +249,102 @@ class TestDriverMethods:
         assert settings.output_value == held
         mock_line.set_value.assert_not_called()
 
-    @patch("jumpstarter_driver_gpiod.driver.gpiod")
-    def test_status_follows_what_was_commanded(self, mock_gpiod):
-        """status() reports the level last driven, not a read back of the pin.
+    @staticmethod
+    def _pin_follows_writes(mock_line, value):
+        """Make the mock pin read back whatever was last written, starting at ``value``."""
+        mock_line.get_value.return_value = value
+        mock_line.set_value.side_effect = lambda _line, v: setattr(mock_line.get_value, "return_value", v)
 
-        Reading back an output is the controller's choice: it may hand back the
-        input buffer, so an open-drain line held low by its load reads the opposite
-        of what is driven. status() promises the driven state, so it must not ask.
-        """
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
+    def test_status_reports_the_level_driven(self, mock_gpiod):
+        """With a healthy pin, status() reports the level last driven."""
         _mock_chip, mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=26)
+        self._pin_follows_writes(mock_line, mock_gpiod.line.Value.INACTIVE)
 
         from jumpstarter_driver_gpiod.driver import DigitalOutput
 
         driver = DigitalOutput(line=26, active_low=True)
         assert driver.status() == "off"  # initial_value defaults to inactive
 
-        # A pin that reads back the other way must not change the answer.
-        mock_line.get_value.return_value = mock_gpiod.line.Value.INACTIVE
+        driver.on()
+        assert driver.status() == "on"
+        driver.off()
+        assert driver.status() == "off"
+
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
+    def test_status_is_unknown_when_a_push_pull_pin_disagrees(self, mock_gpiod):
+        """A push-pull pin reading back the other level is a fault, not a state.
+
+        status() must not report the driven level through it, and must recover
+        once a later write does take.
+        """
+        _mock_chip, mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=26)
+        mock_line.get_value.return_value = mock_gpiod.line.Value.INACTIVE  # stuck low
+
+        from jumpstarter_driver_gpiod.driver import DigitalOutput
+
+        driver = DigitalOutput(line=26)
+        driver.on()
+        assert driver.status() == "unknown"
+
+        self._pin_follows_writes(mock_line, mock_gpiod.line.Value.INACTIVE)  # fault cleared
         driver.on()
         assert driver.status() == "on"
 
-        mock_line.get_value.return_value = mock_gpiod.line.Value.ACTIVE
-        driver.off()
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
+    def test_status_is_unknown_when_the_start_level_does_not_take(self, mock_gpiod):
+        """The initial request is checked like any other write."""
+        _mock_chip, mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=26)
+        mock_line.get_value.return_value = mock_gpiod.line.Value.ACTIVE  # stuck high
+
+        from jumpstarter_driver_gpiod.driver import DigitalOutput
+
+        driver = DigitalOutput(line=26, initial_value="off")
+        assert driver.status() == "unknown"
+
+    @pytest.mark.parametrize("drive", ["open_drain", "open_source"])
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
+    def test_status_ignores_readback_on_single_ended_drives(self, mock_gpiod, drive):
+        """Open-drain/source float for one level, so a disagreeing pin proves nothing."""
+        _mock_chip, mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=26)
+        mock_line.get_value.return_value = mock_gpiod.line.Value.INACTIVE  # pulled low externally
+
+        from jumpstarter_driver_gpiod.driver import DigitalOutput
+
+        driver = DigitalOutput(line=26, drive=drive)
+        driver.on()
+        assert driver.status() == "on"
+
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
+    def test_status_is_unknown_after_a_failed_write(self, mock_gpiod):
+        """A write that raises leaves the state unknown, not at the previous level."""
+        _mock_chip, mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=26)
+        self._pin_follows_writes(mock_line, mock_gpiod.line.Value.INACTIVE)
+
+        from jumpstarter_driver_gpiod.driver import DigitalOutput
+
+        driver = DigitalOutput(line=26)
         assert driver.status() == "off"
+
+        mock_line.set_value.side_effect = OSError("EIO")
+        with pytest.raises(OSError, match="EIO"):
+            driver.on()
+        assert driver.status() == "unknown"
+
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
+    def test_status_is_unknown_after_a_failed_readback(self, mock_gpiod):
+        """A readback that raises does not fail on(), whose write took, but voids the claim."""
+        _mock_chip, mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=26)
+        self._pin_follows_writes(mock_line, mock_gpiod.line.Value.INACTIVE)
+
+        from jumpstarter_driver_gpiod.driver import DigitalOutput
+
+        driver = DigitalOutput(line=26)
+
+        mock_line.get_value.side_effect = OSError("EIO")
+        driver.on()
+        mock_line.set_value.assert_called_with(26, mock_gpiod.line.Value.ACTIVE)
+        assert driver.status() == "unknown"
 
     @pytest.mark.parametrize(
         ("held", "expected"),

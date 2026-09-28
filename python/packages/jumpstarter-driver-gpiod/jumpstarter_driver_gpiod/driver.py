@@ -98,7 +98,9 @@ class DigitalOutput(_GPIOBase):
     active_low: bool = field(default=False)
     bias: str | None = field(default=None)
     initial_value: str | bool = field(default="inactive")
-    _driven: gpiod.line.Value = field(init=False, repr=False)
+    # The level status() reports, or None for "unknown". Only ever holds a level we
+    # know the line took, so every path that loses that knowledge clears it.
+    _driven: gpiod.line.Value | None = field(init=False, default=None, repr=False)
 
     @classmethod
     def client(cls) -> str:
@@ -108,17 +110,65 @@ class DigitalOutput(_GPIOBase):
         super().__post_init__()
 
         if self.initial_value == "preserve":
-            self._line = self._request_preserving()
+            self._line, value = self._request_preserving()
+        else:
+            # Configure line settings for output
+            value = self._parse_initial_value()
+            settings = self._output_line_settings(value)
+
+            self.logger.debug(f"line {self.line} ({self._line_name}) settings: {settings}")
+
+            # Request the line
+            self._line = self._chip.request_lines(config={self.line: settings}, consumer="jumpstarter-gpiod")
+
+        # The request succeeded, so the line is ours and driving ``value``.
+        self._driven = value
+        self._verify_driven()
+
+    def _drive(self, value) -> None:
+        """Drive the line to ``value`` and record it as the level ``status()`` reports.
+
+        ``_driven`` is cleared first so a write that raises leaves it unknown: the
+        level we last drove says nothing about hardware we just failed to talk to,
+        and reporting it would be a guess.
+        """
+        self._driven = None
+        self._line.set_value(self.line, value)
+        self._driven = value
+        self._verify_driven()
+
+    def _verify_driven(self) -> None:
+        """Cross-check the pad against what we drove, and give up the claim if it differs.
+
+        A push-pull output holds both halves of the swing, so it should read back
+        the level it drives. A mismatch is a real fault -- a shorted pin, a dead
+        pad, or a load dragging the line past the logic threshold -- and we cannot
+        honestly report the driven state through one.
+
+        Open-drain and open-source only drive one half; the other is high-impedance,
+        where the pad sits wherever the external pull puts it. A mismatch there is
+        expected and says nothing, so it is logged but not treated as a fault.
+
+        A readback that fails outright does not undo the write that preceded it, so
+        it is not raised; but with nothing to confirm the write, the state is unknown.
+        """
+        try:
+            observed = self._line.get_value(self.line)
+        except Exception as e:
+            self.logger.warning(f"line {self.line} ({self._line_name}) readback failed ({e}); state is now unknown")
+            self._driven = None
+            return
+        self.logger.debug(f"line {self.line} ({self._line_name}) drove {self._driven}, pin reads {observed}")
+
+        if self.drive not in ["push_pull", None]:
             return
 
-        # Configure line settings for output
-        self._driven = self._parse_initial_value()
-        settings = self._output_line_settings(self._driven)
-
-        self.logger.debug(f"line {self.line} ({self._line_name}) settings: {settings}")
-
-        # Request the line
-        self._line = self._chip.request_lines(config={self.line: settings}, consumer="jumpstarter-gpiod")
+        if observed != self._driven:
+            self.logger.warning(
+                f"line {self.line} ({self._line_name}) drove {self._driven} but pin reads {observed}; "
+                "the line is not following this driver, so its state is now unknown"
+            )
+            self._driven = None
 
     def _request_preserving(self):
         """Claim the line as an output without changing the level it is at.
@@ -137,16 +187,23 @@ class DigitalOutput(_GPIOBase):
         reads whatever its pull or float gives. Pin the level in firmware
         (config.txt ``gpio=<n>=op,dh``) or hold it in hardware when a transition
         would matter.
+
+        Note what this does and does not settle for ``status()``. The level we end
+        up driving is known -- it is exactly the one read back here -- so
+        ``status()`` can report it. Whether that level was ever *intended*, as
+        opposed to a reset default we found and adopted, is not knowable from the
+        pad alone; that would take a record of what a previous run commanded.
+
+        Returns the request and the level it now drives.
         """
         probe = gpiod.LineSettings(active_low=self.active_low)
         request = self._chip.request_lines(config={self.line: probe}, consumer="jumpstarter-gpiod")
 
         value = request.get_value(self.line)
-        self._driven = value
         settings = self._output_line_settings(value)
         self.logger.debug(f"line {self.line} ({self._line_name}) preserving {value}, settings: {settings}")
         request.reconfigure_lines(config={self.line: settings})
-        return request
+        return request, value
 
     def _parse_initial_value(self):
         if self.initial_value in ["active", "on", True]:
@@ -177,30 +234,35 @@ class DigitalOutput(_GPIOBase):
     @export
     def off(self) -> None:
         """Set the pin to inactive state"""
-        self._line.set_value(self.line, gpiod.line.Value.INACTIVE)
-        self._driven = gpiod.line.Value.INACTIVE
-        self.logger.info(f"line {self.line} ({self._line_name}) off() -> pin reads: {self.read_pin()}")
+        self._drive(gpiod.line.Value.INACTIVE)
+        self.logger.info(f"line {self.line} ({self._line_name}) off() -> status: {self.status()}")
 
     @export
     def on(self) -> None:
         """Set the pin to active state"""
-        self._line.set_value(self.line, gpiod.line.Value.ACTIVE)
-        self._driven = gpiod.line.Value.ACTIVE
-        self.logger.info(f"line {self.line} ({self._line_name}) on() -> pin reads: {self.read_pin()}")
+        self._drive(gpiod.line.Value.ACTIVE)
+        self.logger.info(f"line {self.line} ({self._line_name}) on() -> status: {self.status()}")
 
     @export
     def status(self) -> str:
-        """Return "on" or "off": the logical level this driver holds the line at.
+        """Return "on", "off", or "unknown": a best-effort view of the level this driver holds the line at.
 
-        This is the level last commanded -- by ``on()``, by ``off()``, or by the
-        initial request -- not a fresh read. Reading back an output is up to the
-        controller: it may return the input buffer instead of the output latch, so
-        an open-drain line held low by its load, or a shorted one, can read back as
-        the opposite of what is driven. Use ``read_pin()`` when you want that read.
+        Best-effort because it is built from the configured settings and the line's
+        readback, not from the load. It is the level last driven -- by ``on()``,
+        ``off()``, or the initial request -- as long as nothing contradicts it, and
+        "unknown" once something does: a write that failed, or, on a push-pull line,
+        a pin that reads back something other than what was driven. Open-drain and
+        open-source lines float for one of their levels, so their readback cannot
+        contradict the driven level and is not used to.
+
+        "unknown" is not terminal: ``on()`` or ``off()`` drives a level again and,
+        if it takes, makes the state known.
 
         ``active_low`` is already applied, so this matches ``on()``/``off()``. It
         reports what the Pi drives, not whether a relay behind the line switched.
         """
+        if self._driven is None:
+            return "unknown"
         return "on" if self._driven == gpiod.line.Value.ACTIVE else "off"
 
 

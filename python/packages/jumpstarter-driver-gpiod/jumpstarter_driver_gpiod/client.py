@@ -35,7 +35,7 @@ class DigitalOutputClient(PowerClient):
         return PinState(int(self.call("read_pin")))
 
     def status(self) -> str:
-        """Return "on" or "off": the level this driver last drove the line to."""
+        """Return "on", "off", or "unknown": best-effort, from the settings and the line readback."""
         return self.call("status")
 
     def cli(self):
@@ -63,7 +63,7 @@ class DigitalOutputClient(PowerClient):
 
         @gpio.command()
         def status():
-            """Print on/off, the level last driven."""
+            """Print on/off/unknown (best-effort, not a load measurement)."""
             click.echo(self.status())
 
         return gpio
@@ -74,11 +74,11 @@ class PowerSwitchClient(PowerClient):
     """A PowerClient for GPIO power switches, with ``status``.
 
     ``read`` keeps PowerClient's meaning (power measurements), which a
-    dry-contact relay cannot provide; ``status`` reports the driven state.
+    dry-contact relay cannot provide; ``status`` reports a best-effort driven state.
     """
 
     def status(self) -> str:
-        """Return "on" or "off": the level this driver last drove the line to."""
+        """Return "on", "off", or "unknown": best-effort, from the settings and the line readback."""
         return self.call("status")
 
     def cli(self):
@@ -86,7 +86,7 @@ class PowerSwitchClient(PowerClient):
 
         @base.command()
         def status():
-            """Print on/off, the level last driven."""
+            """Print on/off/unknown (best-effort, not a load measurement)."""
             click.echo(self.status())
 
         return base
