@@ -43,7 +43,7 @@
 .glossary-term[data-tooltip].tooltip-active::after {
     content: attr(data-tooltip);
     position: absolute;
-    left: 0;
+    left: var(--tooltip-offset, 0);
     bottom: 100%;
     background: var(--color-background-secondary);
     color: var(--color-foreground-primary);
@@ -59,9 +59,4 @@
     pointer-events: none;
 }
 
-.glossary-term--flip[data-tooltip]:hover::after,
-.glossary-term--flip[data-tooltip].tooltip-active::after {
-    left: auto;
-    right: 0;
-}
 

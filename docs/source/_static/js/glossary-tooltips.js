@@ -45,9 +45,14 @@
                 }
                 a.appendChild(span);
 
-                if (a.getBoundingClientRect().right > window.innerWidth * 0.6) {
-                    span.classList.add("glossary-term--flip");
-                }
+                span.addEventListener("mouseenter", function () {
+                    var rect = span.getBoundingClientRect();
+                    var tooltipMaxWidth = 400;
+                    var offset = 0;
+                    offset = Math.min(offset, window.innerWidth - rect.left - tooltipMaxWidth);
+                    offset = Math.max(offset, -rect.left);
+                    span.style.setProperty("--tooltip-offset", offset + "px");
+                });
 
                 if (isTouch) {
                     a.addEventListener("click", function (e) {
