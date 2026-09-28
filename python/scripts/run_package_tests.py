@@ -30,6 +30,7 @@ WINDOWS_PACKAGES = frozenset({
     "jumpstarter-driver-ble",
     "jumpstarter-driver-composite",
     "jumpstarter-driver-network",
+    "jumpstarter-driver-opendal",
     "jumpstarter-driver-power",
     "jumpstarter-driver-pyserial",
     "jumpstarter-driver-ssh",

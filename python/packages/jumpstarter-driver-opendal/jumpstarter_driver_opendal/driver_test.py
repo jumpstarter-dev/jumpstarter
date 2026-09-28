@@ -388,13 +388,11 @@ def test_copy_and_rename_tracking(tmp_path):
 
 def test_clean_filename():
     """Test clean_filename extracts filenames and strips query parameters"""
-    from pathlib import PosixPath
-
     from .client import clean_filename
 
     # Plain filesystem path
     assert clean_filename("/images/image.raw.xz") == "image.raw.xz"
-    assert clean_filename(PosixPath("/images/image.raw.xz")) == "image.raw.xz"
+    assert clean_filename(Path("/images/image.raw.xz")) == "image.raw.xz"
 
     # Filesystem path with query params (as returned by operator_for_path for signed URLs)
     assert clean_filename("/images/image.raw.xz?Expires=123&Signature=abc") == "image.raw.xz"

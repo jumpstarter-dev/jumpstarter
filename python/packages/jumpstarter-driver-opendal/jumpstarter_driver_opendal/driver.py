@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator
+from contextlib import ExitStack
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory, _TemporaryFileWrapper
 from typing import Any
@@ -373,7 +375,19 @@ class StorageMuxFlasherInterface(StorageMuxInterface):
 
 @dataclass
 class MockStorageMux(StorageMuxInterface, Driver):
-    file: _TemporaryFileWrapper = field(default_factory=NamedTemporaryFile)
+    # Allow streams to reopen the file on Windows without sharing delete access.
+    file: _TemporaryFileWrapper = field(default_factory=partial(NamedTemporaryFile, delete_on_close=False))
+    _file_context: ExitStack = field(init=False, default_factory=ExitStack)
+
+    def __post_init__(self):
+        super().__post_init__()
+        self._file_context.enter_context(self.file)
+
+    def close(self):
+        try:
+            self._file_context.close()
+        finally:
+            super().close()
 
     @export
     async def host(self):
