@@ -98,6 +98,7 @@ class DigitalOutput(_GPIOBase):
     active_low: bool = field(default=False)
     bias: str | None = field(default=None)
     initial_value: str | bool = field(default="inactive")
+    _driven: gpiod.line.Value = field(init=False, repr=False)
 
     @classmethod
     def client(cls) -> str:
@@ -111,7 +112,8 @@ class DigitalOutput(_GPIOBase):
             return
 
         # Configure line settings for output
-        settings = self._output_line_settings(self._parse_initial_value())
+        self._driven = self._parse_initial_value()
+        settings = self._output_line_settings(self._driven)
 
         self.logger.debug(f"line {self.line} ({self._line_name}) settings: {settings}")
 
@@ -127,14 +129,20 @@ class DigitalOutput(_GPIOBase):
         logical level, and only then reconfigure it to an output at that same level.
 
         Bias is applied in the reconfigure, not the probe: the kernel rejects bias
-        flags without an explicit direction. A line that was never driven reads
-        whatever its pull or float gives, so pin it in firmware (config.txt
-        ``gpio=<n>=op,dh``) when its cold-boot level matters.
+        flags without an explicit direction.
+
+        This narrows the window, it does not close it. The kernel promises nothing
+        about a line once its request is released, so the level may already have
+        moved by the time this probe reads it, and a line that was never driven
+        reads whatever its pull or float gives. Pin the level in firmware
+        (config.txt ``gpio=<n>=op,dh``) or hold it in hardware when a transition
+        would matter.
         """
         probe = gpiod.LineSettings(active_low=self.active_low)
         request = self._chip.request_lines(config={self.line: probe}, consumer="jumpstarter-gpiod")
 
         value = request.get_value(self.line)
+        self._driven = value
         settings = self._output_line_settings(value)
         self.logger.debug(f"line {self.line} ({self._line_name}) preserving {value}, settings: {settings}")
         request.reconfigure_lines(config={self.line: settings})
@@ -170,22 +178,30 @@ class DigitalOutput(_GPIOBase):
     def off(self) -> None:
         """Set the pin to inactive state"""
         self._line.set_value(self.line, gpiod.line.Value.INACTIVE)
+        self._driven = gpiod.line.Value.INACTIVE
         self.logger.info(f"line {self.line} ({self._line_name}) off() -> pin reads: {self.read_pin()}")
 
     @export
     def on(self) -> None:
         """Set the pin to active state"""
         self._line.set_value(self.line, gpiod.line.Value.ACTIVE)
+        self._driven = gpiod.line.Value.ACTIVE
         self.logger.info(f"line {self.line} ({self._line_name}) on() -> pin reads: {self.read_pin()}")
 
     @export
     def status(self) -> str:
         """Return "on" or "off": the logical level this driver holds the line at.
 
+        This is the level last commanded -- by ``on()``, by ``off()``, or by the
+        initial request -- not a fresh read. Reading back an output is up to the
+        controller: it may return the input buffer instead of the output latch, so
+        an open-drain line held low by its load, or a shorted one, can read back as
+        the opposite of what is driven. Use ``read_pin()`` when you want that read.
+
         ``active_low`` is already applied, so this matches ``on()``/``off()``. It
         reports what the Pi drives, not whether a relay behind the line switched.
         """
-        return "on" if self.read_pin() == PinState.ACTIVE else "off"
+        return "on" if self._driven == gpiod.line.Value.ACTIVE else "off"
 
 
 @dataclass(kw_only=True)

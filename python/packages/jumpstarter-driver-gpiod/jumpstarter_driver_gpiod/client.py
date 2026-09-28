@@ -35,7 +35,7 @@ class DigitalOutputClient(PowerClient):
         return PinState(int(self.call("read_pin")))
 
     def status(self) -> str:
-        """Return "on" or "off" from the driven line level."""
+        """Return "on" or "off": the level this driver last drove the line to."""
         return self.call("status")
 
     def cli(self):
@@ -63,7 +63,7 @@ class DigitalOutputClient(PowerClient):
 
         @gpio.command()
         def status():
-            """Print on/off from the driven line level."""
+            """Print on/off, the level last driven."""
             click.echo(self.status())
 
         return gpio
@@ -78,7 +78,7 @@ class PowerSwitchClient(PowerClient):
     """
 
     def status(self) -> str:
-        """Return "on" or "off" from the driven line level."""
+        """Return "on" or "off": the level this driver last drove the line to."""
         return self.call("status")
 
     def cli(self):
@@ -86,7 +86,7 @@ class PowerSwitchClient(PowerClient):
 
         @base.command()
         def status():
-            """Print on/off from the driven line level."""
+            """Print on/off, the level last driven."""
             click.echo(self.status())
 
         return base

@@ -250,18 +250,44 @@ class TestDriverMethods:
         mock_line.set_value.assert_not_called()
 
     @patch("jumpstarter_driver_gpiod.driver.gpiod")
-    def test_status_follows_the_logical_level(self, mock_gpiod):
-        """status() reports on/off from read_pin, so active_low needs no special case."""
+    def test_status_follows_what_was_commanded(self, mock_gpiod):
+        """status() reports the level last driven, not a read back of the pin.
+
+        Reading back an output is the controller's choice: it may hand back the
+        input buffer, so an open-drain line held low by its load reads the opposite
+        of what is driven. status() promises the driven state, so it must not ask.
+        """
         _mock_chip, mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=26)
 
         from jumpstarter_driver_gpiod.driver import DigitalOutput
 
         driver = DigitalOutput(line=26, active_low=True)
+        assert driver.status() == "off"  # initial_value defaults to inactive
+
+        # A pin that reads back the other way must not change the answer.
+        mock_line.get_value.return_value = mock_gpiod.line.Value.INACTIVE
+        driver.on()
+        assert driver.status() == "on"
 
         mock_line.get_value.return_value = mock_gpiod.line.Value.ACTIVE
-        assert driver.status() == "on"
-        mock_line.get_value.return_value = mock_gpiod.line.Value.INACTIVE
+        driver.off()
         assert driver.status() == "off"
+
+    @pytest.mark.parametrize(
+        ("held", "expected"),
+        [(0, "off"), (1, "on")],
+    )
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
+    def test_status_after_preserve_reports_the_preserved_level(self, mock_gpiod, held, expected):
+        """A preserve start has driven the probed level, so status() reports it."""
+        _mock_chip, mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=26)
+        mock_gpiod.LineSettings.side_effect = lambda **kw: MagicMock(**kw)
+        mock_line.get_value.return_value = held
+
+        from jumpstarter_driver_gpiod.driver import DigitalOutput
+
+        driver = DigitalOutput(line=26, initial_value="preserve")
+        assert driver.status() == expected
 
     @patch("jumpstarter_driver_gpiod.driver.gpiod")
     def test_digital_input_methods(self, mock_gpiod):

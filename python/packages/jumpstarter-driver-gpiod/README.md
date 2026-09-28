@@ -135,9 +135,13 @@ power_switch.on()
 power_switch.off()
 
 # Read current power state
-state = power_switch.read()
+state = power_switch.status()
 print(f"Power state: {state}")
 ```
+
+`read()` keeps `PowerInterface`'s meaning (a stream of power measurements), which
+a dry-contact relay cannot provide, so it raises `NotImplementedError` here. Use
+`status()` for the switch state.
 
 ### Pin Configuration Details
 
@@ -168,17 +172,31 @@ For output pins, you can set the initial state:
 
 Any other value drives the line when the exporter starts, so every exporter
 restart switches whatever the line controls. Use `preserve` for a line that
-feeds a device's power. The kernel keeps a released line at its last level, so
-a restart then leaves the load alone. Before anything has claimed the line
-(cold boot), it reads whatever its bias or float gives. To make that level
-deterministic, set it in firmware, e.g. `gpio=26=op,dh` in `/boot/firmware/config.txt`.
+feeds a device's power: it reads the line's level before configuring it as an
+output, then drives that same level.
+
+`preserve` narrows the window for a transition, it does not close it. The kernel
+makes no promise about a line once its request is released — the level is then up
+to the GPIO controller and the pin's bias, and it may have moved by the time
+`preserve` reclaims the line and reads it. Before anything has claimed the line
+at all (cold boot), it reads whatever its bias or float gives.
+
+So where the load must not switch across an exporter restart, hold the level
+outside the request: a latching relay, an external pull that matches the wanted
+state, or a firmware pin setting — e.g. `gpio=26=op,dh` in
+`/boot/firmware/config.txt`, which also makes the cold-boot level deterministic.
 
 #### Status
 
-`status` returns `on` or `off` from the logical level the Pi drives,
-`active_low` already applied. It cannot tell whether a relay behind the line
-actually switched: a missing jumper, a lost supply, or a welded contact all
-still report the driven level.
+`status` returns `on` or `off`: the level this driver last drove the line to, by
+`on()`, by `off()`, or by the initial request, with `active_low` already applied.
+It is not a fresh read of the pin — reading back an output is up to the
+controller, which may return the input buffer rather than the output latch, so an
+open-drain line held low by its load can read back as the opposite of what is
+driven. `read` (on `DigitalOutputClient`) gives you that read instead.
+
+Neither one can tell whether a relay behind the line actually switched: a missing
+jumper, a lost supply, or a welded contact all still report the driven level.
 
 ## API Reference
 
