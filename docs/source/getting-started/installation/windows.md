@@ -48,6 +48,7 @@ drivers run on Windows in CI; the notes say what those tests exercise:
 | {doc}`power <../../reference/package-apis/drivers/power>` | `MockPower`; physical power backends are tested separately |
 | {doc}`probe-rs <../../reference/package-apis/drivers/probe-rs>` | Requires the `probe-rs` executable; tests use a mocked tool |
 | {doc}`pyserial <../../reference/package-apis/drivers/pyserial>` | Serial streams, `j serial pipe`, pexpect and the interactive `j serial console`; tested with `loop://` rather than COM hardware |
+| {doc}`shell <../../reference/package-apis/drivers/shell>` | Methods run through the configured `shell`; the default `bash` needs a native Bash such as Git Bash |
 | {doc}`ssh <../../reference/package-apis/drivers/ssh>` | Uses the Windows OpenSSH client (`ssh.exe`); temporary identity files are private to the current user |
 
 Other drivers are not yet supported on Windows. Clients connect to exporters of

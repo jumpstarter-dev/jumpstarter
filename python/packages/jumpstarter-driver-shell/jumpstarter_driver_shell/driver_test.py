@@ -1,8 +1,39 @@
 
+import os
+import shutil
+import sys
+from pathlib import Path
+
 import pytest
 
 from .driver import Shell
 from jumpstarter.common.utils import serve
+
+
+def _find_bash():
+    """Select Bash on the exporter host, excluding the Windows WSL launcher."""
+    bash = shutil.which("bash")
+    if sys.platform != "win32":
+        return bash
+    # Git Bash runs on this host; a WSL launcher instead invokes a Linux shell
+    # and does not preserve the native Windows process invocation contract.
+    git = shutil.which("git")
+    if git:
+        for relative_path in ("bin/bash.exe", "usr/bin/bash.exe"):
+            candidate = Path(git).parent.parent / relative_path
+            if candidate.is_file():
+                return str(candidate)
+    if bash:
+        path = Path(bash)
+        windows = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+        wsl_directories = {windows / name for name in ("System32", "Sysnative", "SysWOW64")}
+        if path.parent not in wsl_directories and "windowsapps" not in {part.lower() for part in path.parts}:
+            return bash
+    return None
+
+
+BASH = _find_bash()
+requires_bash = pytest.mark.skipif(BASH is None, reason="Shell execution test requires native Bash")
 
 
 def _collect_streaming_output(client, method_name, env_vars=None, *args):
@@ -27,6 +58,7 @@ def _collect_streaming_output(client, method_name, env_vars=None, *args):
 def client():
     instance = Shell(
         log_level="DEBUG",
+        shell=[BASH or "bash", "-c"],
         methods={
             "echo": "echo $1",
             "env": "echo $ENV1",
@@ -39,6 +71,7 @@ def client():
         yield client
 
 
+@requires_bash
 def test_normal_args(client):
     stdout, stderr, returncode = _collect_streaming_output(client, "echo", {}, "hello")
     assert stdout == "hello\n"
@@ -46,6 +79,7 @@ def test_normal_args(client):
     assert returncode == 0
 
 
+@requires_bash
 def test_env_vars(client):
     stdout, stderr, returncode = _collect_streaming_output(client, "env", {"ENV1": "world"})
     assert stdout == "world\n"
@@ -53,6 +87,7 @@ def test_env_vars(client):
     assert returncode == 0
 
 
+@requires_bash
 def test_multi_line_scripts(client):
     stdout, stderr, returncode = _collect_streaming_output(client, "multi_line", {}, "a", "b", "c")
     assert stdout == "a\nb\nc\n"
@@ -60,6 +95,7 @@ def test_multi_line_scripts(client):
     assert returncode == 0
 
 
+@requires_bash
 def test_return_codes(client):
     stdout, stderr, returncode = _collect_streaming_output(client, "exit1")
     assert stdout == ""
@@ -67,6 +103,7 @@ def test_return_codes(client):
     assert returncode == 1
 
 
+@requires_bash
 def test_stderr(client):
     stdout, stderr, returncode = _collect_streaming_output(client, "stderr", {}, "error")
     assert stdout == ""
@@ -128,9 +165,11 @@ def test_cli_includes_all_methods():
         assert available_commands == expected_methods, f"Expected {expected_methods}, got {available_commands}"
 
 
+@requires_bash
 def test_cli_exit_codes():
     """Test that CLI methods correctly exit with shell command return codes"""
     shell = Shell(
+        shell=[BASH, "-c"],
         methods={
             "exit0": "exit 0",
             "exit1": "exit 1",
@@ -238,6 +277,7 @@ def test_blocked_env_var_prefixes(client):
             _collect_streaming_output(client, "env", {var: "malicious"})
 
 
+@requires_bash
 def test_safe_env_vars_allowed(client):
     """Test that legitimate environment variables still work"""
     stdout, _stderr, returncode = _collect_streaming_output(client, "env", {"ENV1": "safe_value"})
@@ -245,9 +285,11 @@ def test_safe_env_vars_allowed(client):
     assert returncode == 0
 
 
+@requires_bash
 def test_mixed_format_methods():
     """Test that both string and dict formats work together"""
     shell = Shell(
+        shell=[BASH, "-c"],
         methods={
             "simple": "echo 'simple'",
             "detailed": {
