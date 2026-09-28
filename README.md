@@ -20,7 +20,7 @@ scripts, CI pipelines, and AI agents interact with devices through the same APIs
 - 🐍 **Python-Powered** - Integrate with PyTest and Python's testing ecosystem
 - 🌐 **Collaborative** - Share and securely lease test hardware across teams
 - ⚙️ **Automation Ready** - Same APIs for humans, test scripts, CI pipelines, and AI agents
-- 💻 **Cross-Platform** - Supports Linux and macOS
+- 💻 **Cross-Platform** - Supports Linux, macOS, and Windows
 
 ## Repository Structure
 
