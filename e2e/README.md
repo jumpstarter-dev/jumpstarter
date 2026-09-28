@@ -36,6 +36,7 @@ are explicit compatibility probes, not Ginkgo lanes or part of `make e2e-run`.
 | Managed SDK and shell | Same controller deployment | Stock routed RPCs and `jmp shell` succeed; local socket/directory cleanup and lease release complete |
 | PowerShell sessions (`--powershell`) | Same fixtures and PowerShell 7 | Interactive `jmp shell` prompt, session environment, `j` commands and exit code |
 | Interactive serial console (separate `windows_serial_console_e2e.py` runner) | Native Windows ConPTY, test-only pywinpty/pywin32, dedicated direct Linux `serial` loopback fixture; no Kind needed | Unicode/control/arrow bytes, read-only observe, long-line wrapping, EOF exit, restored console modes and no attached clients |
+| Native OpenSSH (separate `windows_ssh_e2e.py` runner) | Native ssh.exe, installed SSH/network dependencies and current core wheel; temporary loopback Paramiko simulator | Generated-key authentication/permissions/cleanup, UTF-8/binary output, exit code 37, command quoting and custom executable paths |
 | Native Windows exporter (separate `windows_exporter_e2e.py` runner) | Installed CLI/core wheel and power/network/pyserial packages; no Podman/Kind/hardware | Stock `jmp run`, PowerShell and Python lifecycle hooks, direct client probes, worker restart, Ctrl+Break stop, JSON logs, same-port restart and process-tree cleanup after supervisor death |
 | Native network protocols (`windows_network_e2e.py`) | Native CLI/core/network packages; owned loopback peers | Concurrent TCP forwards, byte-exact UDP/WebSocket messages, reconnect and cleanup |
 

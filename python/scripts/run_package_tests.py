@@ -32,6 +32,7 @@ WINDOWS_PACKAGES = frozenset({
     "jumpstarter-driver-network",
     "jumpstarter-driver-power",
     "jumpstarter-driver-pyserial",
+    "jumpstarter-driver-ssh",
     "jumpstarter-imagehash",
     "jumpstarter-kubernetes",
     "jumpstarter-mcp",

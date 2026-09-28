@@ -42,6 +42,7 @@ drivers run on Windows in CI; the notes say what those tests exercise:
 | {doc}`network <../../reference/package-apis/drivers/network>` | TCP, UDP and WebSocket drivers, port forwarding and pexpect; Unix-socket and D-Bus drivers need a POSIX exporter |
 | {doc}`power <../../reference/package-apis/drivers/power>` | `MockPower`; physical power backends are tested separately |
 | {doc}`pyserial <../../reference/package-apis/drivers/pyserial>` | Serial streams, `j serial pipe`, pexpect and the interactive `j serial console`; tested with `loop://` rather than COM hardware |
+| {doc}`ssh <../../reference/package-apis/drivers/ssh>` | Uses the Windows OpenSSH client (`ssh.exe`); temporary identity files are private to the current user |
 
 Other drivers are not yet supported on Windows. Clients connect to exporters of
 any platform, so a Windows client can use a Linux exporter's drivers once their

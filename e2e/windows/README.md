@@ -10,8 +10,8 @@ support load them as stubs.
 The managed Windows probes exercise the production Rust/PyO3 AF_UNIX listener.
 Failures return a nonzero exit code and remain in the report. No test transport
 is injected. A Linux control run helps distinguish platform and deployment failures.
-The standalone runners below cover native Windows `jmp run`, lifecycle hooks
-and interactive serial consoles without requiring a controller.
+The standalone runners below cover native Windows `jmp run`, lifecycle hooks,
+OpenSSH and interactive serial consoles without requiring a controller.
 
 ## Prerequisites
 
@@ -167,6 +167,34 @@ JSON, raw received bytes and a terminal transcript into a fresh report directory
 Failure returns nonzero. `--probe observe` selects one probe; `--output-mode 3`
 also checks restoration when VT output was initially disabled. `--probe smoke`
 checks the ConPTY harness without connecting to an exporter.
+
+## Native OpenSSH client
+
+`e2e/windows/windows_ssh_e2e.py` runs the installed native `ssh.exe` through
+the stock `SSHWrapperClient` and Jumpstarter TCP forwarding. Its local Paramiko
+simulator binds only loopback, accepts an ephemeral generated identity and never
+executes received commands. No SSH service, target hardware, saved credentials,
+Podman or Kind is needed. The runner isolates SSH configuration and disables the
+agent; it does not change the user's SSH configuration or `authorized_keys`.
+
+Use the installed SSH/network driver dependencies (including Paramiko and
+cryptography) and the current Windows core wheel:
+
+```powershell
+python/.venv/Scripts/python.exe e2e/windows/windows_ssh_e2e.py --output .e2e/windows-client/ssh-results.json --timeout 30
+```
+
+`--ssh` selects a particular native executable; otherwise PATH lookup is used.
+`--probe` selects one named probe. Six bounded probes verify generated identity
+permissions and cleanup, the default null known-hosts setting, UTF-8/binary
+output, exit-code 37 propagation, remote command arguments with spaces and
+Unicode, a quoted executable path containing spaces and Unicode, and an
+unquoted absolute Windows executable path.
+Reports contain fixture results, not private keys. Failure returns nonzero.
+
+These checks exercise real authentication and the native SSH executable against
+a simulator; they do not qualify a physical SSH target or Unix-only SSH mount
+features.
 
 ## Native Windows exporter
 

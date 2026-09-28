@@ -2,8 +2,9 @@ import contextlib
 import os
 import shlex
 import subprocess
+import sys
 import tempfile
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -42,7 +43,8 @@ class SSHCommandRunOptions:
         capture_output: If True, capture stdout and stderr.
                         If False, they are inherited from the parent process.
         capture_as_text: If True and output is captured, decode stdout and
-                         stderr as text. Otherwise, they are captured as bytes.
+                         stderr as text (UTF-8 on Windows). Otherwise, they are
+                         captured as bytes.
     """
     direct: bool = False
     capture_output: bool = True
@@ -152,13 +154,39 @@ class SSHWrapperClient(CompositeClient):
 
     def _run_ssh_local(self, host, port, options, args):
         """Run SSH command with the given host, port, and arguments"""
+        with self._temporary_identity_file(self.identity) as identity_file:
+            ssh_args = self._build_ssh_command_args(port, identity_file, args)
+            ssh_options, command_args = self._separate_ssh_options_and_command_args(args)
+            ssh_args = self._build_final_ssh_command(ssh_args, ssh_options, host, command_args)
+            return self._execute_ssh_command(ssh_args, options)
+
+    @contextmanager
+    def _temporary_identity_file(self, ssh_identity):
+        """Keep exported key material private until the SSH process finishes."""
+        private_directory = None
+        try:
+            kwargs = {}
+            if ssh_identity and sys.platform == "win32":
+                from jumpstarter_core.local import PrivateDirectory
+
+                # chmod alone does not restrict Windows ACLs. Children inherit
+                # only the current-user and SYSTEM ACEs from this directory.
+                private_directory = PrivateDirectory.create(tempfile.gettempdir())
+                kwargs["dir"] = os.path.dirname(private_directory.socket_path)
+            with self._identity_file(ssh_identity, **kwargs) as identity_file:
+                yield identity_file
+        finally:
+            if private_directory is not None:
+                private_directory.close()
+
+    @contextmanager
+    def _identity_file(self, ssh_identity, **kwargs):
         # Create temporary identity file if needed
-        ssh_identity = self.identity
         identity_file = None
         temp_file = None
         if ssh_identity:
             try:
-                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='_ssh_key') as temp_file:
+                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='_ssh_key', **kwargs) as temp_file:
                     temp_file.write(ssh_identity)
                 # Set proper permissions (600) for SSH key
                 os.chmod(temp_file.name, 0o600)
@@ -172,17 +200,7 @@ class SSHWrapperClient(CompositeClient):
                 raise
 
         try:
-            # Build SSH command arguments
-            ssh_args = self._build_ssh_command_args(port, identity_file, args)
-
-            # Separate SSH options from command arguments
-            ssh_options, command_args = self._separate_ssh_options_and_command_args(args)
-
-            # Build final SSH command
-            ssh_args = self._build_final_ssh_command(ssh_args, ssh_options, host, command_args)
-
-            # Execute the command
-            return self._execute_ssh_command(ssh_args, options)
+            yield identity_file
         finally:
             # Clean up temporary identity file
             if identity_file:
@@ -194,8 +212,18 @@ class SSHWrapperClient(CompositeClient):
 
     def _build_ssh_command_args(self, port, identity_file, args):
         """Build initial SSH command arguments"""
-        # Split the SSH command into individual arguments
-        ssh_args = shlex.split(self.command)
+        if sys.platform == "win32":
+            command = shlex.shlex(self.command, posix=True)
+            command.whitespace_split = True
+            command.commenters = ""
+            # Windows executable paths contain literal backslashes. Retain the
+            # existing shell-style option syntax after this first argument.
+            command.escape = ""
+            executable = next(command, None)
+            command.escape = "\\"
+            ssh_args = [] if executable is None else [executable, *command]
+        else:
+            ssh_args = shlex.split(self.command)
         default_username = self.username
 
         # Add identity file if provided
@@ -286,8 +314,12 @@ class SSHWrapperClient(CompositeClient):
     def _execute_ssh_command(self, ssh_args, options: SSHCommandRunOptions) -> SSHCommandRunResult:
         """Execute the SSH command and return the result"""
         try:
+            encoding_options = {}
+            if sys.platform == "win32" and options.capture_as_text:
+                encoding_options["encoding"] = "utf-8"
             result = subprocess.run(
-                ssh_args, capture_output=options.capture_output, text=options.capture_as_text, check=False
+                ssh_args, capture_output=options.capture_output, text=options.capture_as_text,
+                check=False, **encoding_options,
             )
             return SSHCommandRunResult.from_completed_process(result)
         except FileNotFoundError:

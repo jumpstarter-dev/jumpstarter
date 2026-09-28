@@ -1,5 +1,7 @@
 """Tests for the SSH wrapper driver"""
 
+from pathlib import Path
+from tempfile import gettempdir
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -472,7 +474,7 @@ def test_ssh_command_with_identity_string():
 
         # The identity file should be a temporary file
         assert identity_file_path.endswith("_ssh_key")
-        assert "/tmp" in identity_file_path or "/var/tmp" in identity_file_path
+        assert Path(gettempdir()) in Path(identity_file_path).parents
 
         # Should include -l testuser
         assert "-l" in call_args
@@ -521,7 +523,7 @@ def test_ssh_command_with_identity_file():
 
             # The identity file should be a temporary file (not the original file)
             assert identity_file_path.endswith("_ssh_key")
-            assert "/tmp" in identity_file_path or "/var/tmp" in identity_file_path
+            assert Path(gettempdir()) in Path(identity_file_path).parents
             assert identity_file_path != temp_file_path
 
             # Should include -l testuser
@@ -601,7 +603,11 @@ def test_ssh_identity_temp_file_creation_and_cleanup():
             assert isinstance(result, SSHCommandRunResult)
 
             # Verify temporary file was created
-            mock_temp_file.assert_called_once_with(mode='w', delete=False, suffix='_ssh_key')
+            creation_options = mock_temp_file.call_args.kwargs
+            assert {key: value for key, value in creation_options.items() if key != 'dir'} == {
+                'mode': 'w', 'delete': False, 'suffix': '_ssh_key',
+            }
+            mock_temp_file.assert_called_once()
             mock_temp_file_instance.write.assert_called_once_with(TEST_SSH_KEY)
 
             # Verify proper permissions were set
