@@ -41,6 +41,7 @@ drivers run on Windows in CI; the notes say what those tests exercise:
 | composite | |
 | {doc}`network <../../reference/package-apis/drivers/network>` | TCP, UDP and WebSocket drivers, port forwarding and pexpect; Unix-socket and D-Bus drivers need a POSIX exporter |
 | {doc}`opendal <../../reference/package-apis/drivers/opendal>` | Storage and file transfer operations; `MockStorageMux` reopens its backing file on Windows |
+| {doc}`pi-pico <../../reference/package-apis/drivers/pi-pico>` | UF2 flashing to a mounted BOOTSEL drive; tested with a simulated drive |
 | {doc}`power <../../reference/package-apis/drivers/power>` | `MockPower`; physical power backends are tested separately |
 | {doc}`pyserial <../../reference/package-apis/drivers/pyserial>` | Serial streams, `j serial pipe`, pexpect and the interactive `j serial console`; tested with `loop://` rather than COM hardware |
 | {doc}`ssh <../../reference/package-apis/drivers/ssh>` | Uses the Windows OpenSSH client (`ssh.exe`); temporary identity files are private to the current user |

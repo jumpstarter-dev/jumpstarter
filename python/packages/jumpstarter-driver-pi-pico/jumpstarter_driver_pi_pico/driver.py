@@ -189,7 +189,8 @@ class PiPicoFlasher(FlasherInterface, Driver):
 
             def _copy() -> None:
                 shutil.copy2(tmp_path, dest_path)
-                with open(dest_path, "rb") as f:
+                # Windows requires a writable handle to flush file buffers.
+                with open(dest_path, "rb+") as f:
                     os.fsync(f.fileno())
 
             await to_thread.run_sync(_copy)
