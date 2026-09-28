@@ -15,7 +15,9 @@ package suite on Windows Server 2025 with Python 3.12, 3.13 and 3.14.
   Bash. The prompt shows the exporter, `shell.use_profiles` controls profile
   loading, and `NO_COLOR`/`NO_ICONS` apply. Ctrl+C interrupts the command
   running inside the shell without ending the session. `jmp shell -- <command>`
-  runs a single command and returns its exit code.
+  runs a single command and returns its exit code. When the lease ends, the
+  shell and every process it started are stopped; after a normal exit,
+  background processes keep running, as with POSIX shells.
 - **`jmp run`**: runs the exporter in a supervised worker process. Ctrl+C or
   Ctrl+Break stops it gracefully (pressing again stops it immediately), worker
   restarts follow the same policy as on Linux, and processes started by drivers
@@ -90,8 +92,6 @@ modes have no effect on Windows.
 
 ## Limitations
 
-- When a lease ends, `jmp shell` stops the shell process. Programs the shell
-  started in the background are not stopped.
 - The `jumpstarter-exec` sidecar used by container-based provisioners requires
   Linux.
 - Continuous integration uses Windows Server; desktop Windows releases are

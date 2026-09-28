@@ -126,6 +126,22 @@ time.sleep(60)
             assert win32event.WaitForSingleObject(grandchild, 5000) == win32event.WAIT_OBJECT_0
 
 
+def test_release_leaves_running_members_alive(tmp_path):
+    ready = tmp_path / "ready.json"
+    with _process("-c", _CHILD, str(ready)) as child:
+        guard = ChildProcessTree(int(child._handle))
+        _release_gate(child)
+        info = _wait_ready(ready)
+        with _tracked_pid(info["grandchild"]) as grandchild:
+            guard.release()
+            guard.release()
+            guard.close()  # No longer owns the job, so nothing is terminated.
+            del guard
+            gc.collect()
+            assert child.poll() is None
+            assert win32event.WaitForSingleObject(grandchild, 500) == win32event.WAIT_TIMEOUT
+
+
 @pytest.mark.parametrize("handle", [0, -1])
 def test_guard_rejects_null_and_current_process_handles(handle):
     with pytest.raises(OSError, match="child process handle"):

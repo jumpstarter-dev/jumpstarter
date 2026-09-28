@@ -51,4 +51,11 @@ impl ChildProcessTree {
     pub fn close(&self) -> io::Result<()> {
         self.inner.close()
     }
+
+    /// Stops containing the members without terminating them, for example
+    /// after a shell exits normally and its background processes should keep
+    /// running. Safe to call more than once, and a no-op after [`Self::close`].
+    pub fn release(&self) -> io::Result<()> {
+        self.inner.release()
+    }
 }

@@ -58,4 +58,19 @@ impl ChildProcessTree {
         self.job()?.take();
         Ok(())
     }
+
+    /// Stops containing the members without terminating them.
+    ///
+    /// Clears kill-on-close before closing the job handle, so processes that
+    /// are still running continue independently. Idempotent, and a no-op after
+    /// [`Self::close`]. On failure the guard still owns the job, so a later
+    /// close or drop terminates the members.
+    pub(crate) fn release(&self) -> io::Result<()> {
+        let mut job = self.job()?;
+        if let Some(handle) = job.as_ref() {
+            handle.set_extended_limit_info(&ExtendedLimitInfo::new())?;
+        }
+        job.take();
+        Ok(())
+    }
 }

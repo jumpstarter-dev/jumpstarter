@@ -41,4 +41,9 @@ impl ChildProcessTree {
     fn close(&self, py: Python<'_>) -> PyResult<()> {
         py.detach(|| self.inner.close()).map_err(py_io)
     }
+
+    /// Stops containing the members without terminating them.
+    fn release(&self, py: Python<'_>) -> PyResult<()> {
+        py.detach(|| self.inner.release()).map_err(py_io)
+    }
 }

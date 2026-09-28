@@ -138,6 +138,55 @@ async def test_windows_lease_expiration_stops_owned_command(owned_processes):
     assert owned_processes[0].poll() is not None
 
 
+# The command starts a descendant, records its PID, then runs for the given seconds.
+_SPAWN_DESCENDANT = """
+import pathlib, subprocess, sys, time
+descendant = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+pathlib.Path(sys.argv[1]).write_text(str(descendant.pid))
+time.sleep(float(sys.argv[2]))
+"""
+
+
+def _running(pid):
+    listing = subprocess.run(
+        ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"], capture_output=True, text=True, check=True,
+    )
+    return f'"{pid}"' in listing.stdout
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows Job Object containment")
+@pytest.mark.anyio
+async def test_windows_lease_expiration_stops_the_process_tree(owned_processes, tmp_path):
+    lease = _lease()
+    previous_callback = lease.lease_ending_callback
+    pid_file = tmp_path / "descendant.pid"
+    with anyio.fail_after(20):
+        async with anyio.create_task_group() as group:
+            group.start_soon(
+                anyio.to_thread.run_sync,
+                partial(_launch, command=(sys.executable, "-c", _SPAWN_DESCENDANT, str(pid_file), "60"), lease=lease),
+            )
+            while not pid_file.exists() or lease.lease_ending_callback is previous_callback:
+                await anyio.sleep(0.05)
+            descendant = int(pid_file.read_text())
+            assert _running(descendant)
+            lease.lease_ending_callback(lease, timedelta(0))
+
+    assert owned_processes[0].poll() is not None
+    assert not _running(descendant)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows Job Object containment")
+def test_windows_normal_exit_leaves_background_processes_running(owned_processes, tmp_path):
+    pid_file = tmp_path / "descendant.pid"
+    assert _launch(command=(sys.executable, "-c", _SPAWN_DESCENDANT, str(pid_file), "0")) == 0
+    descendant = int(pid_file.read_text())
+    try:
+        assert _running(descendant)
+    finally:
+        subprocess.run(["taskkill", "/F", "/PID", str(descendant)], capture_output=True, check=False)
+
+
 def test_posix_lease_expiration_preserves_sighup(monkeypatch):
     monkeypatch.setattr(utils, "sys", SimpleNamespace(platform="linux"))
     monkeypatch.setattr(utils, "signal", SimpleNamespace(SIGHUP=1))
@@ -160,6 +209,7 @@ def test_windows_foreground_child_owns_console_ctrl_c(monkeypatch, changed, expe
     process = Mock()
     process.wait.side_effect = lambda: calls.append(("wait",)) or 7
     monkeypatch.setattr(utils, "Popen", Mock(return_value=process))
+    monkeypatch.setattr(utils, "_contain_process_tree", lambda _process: None)
 
     assert utils._run_process(["child"], {}) == 7
     assert calls == [("ctrl", None, True), ("wait",), *expected_restore]

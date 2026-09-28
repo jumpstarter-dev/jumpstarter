@@ -3,14 +3,16 @@
 The native ``ChildProcessTree`` class is currently available only on Windows.
 Construct ``ChildProcessTree(handle)`` with the spawned child's process handle
 (``subprocess.Popen._handle`` or ``multiprocessing.Process.sentinel``) while the
-child is waiting at a startup handshake. Release the handshake only after construction succeeds:
-processes created before assignment are not covered.
+child is waiting at a startup handshake. Release the handshake only after
+construction succeeds: processes created before assignment are not covered.
 
 ``close()`` is idempotent and terminates remaining members without waiting for
-them to exit. The caller must retain its child-process handle, implement graceful
-shutdown and deadlines, and reap the child after cleanup. Assignment failure
-raises ``OSError``; terminate the still-gated child instead of continuing
-unmanaged. Null and current-process handles are rejected. This API does not
+them to exit. ``release()`` instead stops containing the members and leaves any
+that are still running alive; it is idempotent and a no-op after ``close()``.
+The caller must retain its child-process handle, implement graceful shutdown
+and deadlines, and reap the child after cleanup. Assignment failure raises
+``OSError``; terminate the still-gated child instead of continuing unmanaged.
+Null and current-process handles are rejected. This API does not
 implement spawning, signals, asynchronous scheduling, or protocol behavior.
 
 Windows backend

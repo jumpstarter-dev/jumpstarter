@@ -5,7 +5,7 @@ import shutil
 import signal
 import sys
 from base64 import b64encode
-from contextlib import ExitStack, asynccontextmanager, contextmanager
+from contextlib import ExitStack, asynccontextmanager, contextmanager, suppress
 from datetime import timedelta
 from functools import partial
 from subprocess import Popen
@@ -92,23 +92,45 @@ function global:prompt {
 """
 
 
-def lease_ending_handler(process: Popen, lease, remaining_time) -> None:
+def lease_ending_handler(process: Popen, lease, remaining_time, tree=None) -> None:
     """Lease ending handler to terminate a process when lease ends.
 
     Args:
         process: The process to terminate
         lease: The lease instance
         remaining_time: Time remaining until lease expiration
+        tree: On Windows, the Job Object holding the process and its descendants
     """
 
     if remaining_time <= timedelta(0):
         try:
-            if sys.platform == "win32":
+            if tree is not None:
+                # Like SIGHUP reaching a POSIX shell's jobs, stop the whole tree.
+                tree.close()
+            elif sys.platform == "win32":
                 process.terminate()
             else:
                 process.send_signal(signal.SIGHUP)
         except (ProcessLookupError, OSError):
             pass  # Process already terminated
+
+
+def _contain_process_tree(process: Popen):
+    """On Windows, hold a new child and the processes it starts in a Job Object.
+
+    The child is assigned right after creation, before a shell or command has
+    initialized far enough to start processes of its own. Returns None where a
+    Job Object is unavailable; the child then runs uncontained.
+    """
+    if sys.platform != "win32":
+        return None
+    from jumpstarter_core.process import ChildProcessTree
+
+    try:
+        return ChildProcessTree(int(process._handle))
+    except OSError as exc:
+        logger.debug("Cannot contain process %d in a job object: %s", process.pid, exc)
+        return None
 
 
 @contextmanager
@@ -152,10 +174,17 @@ def _run_process(
     except OSError as exc:
         print(f"Error: cannot execute {cmd[0]}: {exc}", file=sys.stderr)
         return 126
+    tree = _contain_process_tree(process)
     if lease is not None:
-        lease.lease_ending_callback = partial(lease_ending_handler, process)
-    with _foreground_child_owns_ctrl_c():
-        returncode = process.wait()
+        lease.lease_ending_callback = partial(lease_ending_handler, process, tree=tree)
+    try:
+        with _foreground_child_owns_ctrl_c():
+            returncode = process.wait()
+    finally:
+        if tree is not None:
+            # As with a POSIX shell's jobs, background processes outlive a normal exit.
+            with suppress(OSError):
+                tree.release()
     if returncode < 0:
         # wait() reports signal deaths as -N; report them as a shell does. Log
         # the signal too: 137 alone cannot be told from a command exiting 137.
