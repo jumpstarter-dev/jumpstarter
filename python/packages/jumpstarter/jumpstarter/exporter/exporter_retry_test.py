@@ -109,7 +109,7 @@ async def test_retries_certificate_discovery_connection_errors():
         ValueError("bad configuration"),
     ],
 )
-async def test_permanent_errors_propagate_without_retry(error):
+async def test_fail_fast_errors_propagate_without_retry(error):
     calls = 0
 
     async def stream_factory(controller):
@@ -125,7 +125,9 @@ async def test_permanent_errors_propagate_without_retry(error):
     assert caught.value is error
     assert calls == 1
     if isinstance(error, AioRpcError):
-        expected_exit_code = 75 if error.code() == grpc.StatusCode.UNAUTHENTICATED else 1
+        expected_exit_code = (
+            75 if error.code() in (grpc.StatusCode.UNAUTHENTICATED, grpc.StatusCode.PERMISSION_DENIED) else 1
+        )
         assert exporter.exit_code == expected_exit_code
         assert exporter._controller_stream_failed
     else:

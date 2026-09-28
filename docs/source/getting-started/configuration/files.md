@@ -151,6 +151,9 @@ The default is 30 minutes. A service manager can then restart the exporter and
 reload its configuration. Status `1` remains the intentional shutdown code for
 a hook configured with `onFailure: exit`; units using
 `RestartPreventExitStatus=1` should still restart on status `75`.
+`UNAUTHENTICATED` and `PERMISSION_DENIED` stream errors also exit with status
+`75`, so a restart can reload credentials or recover after controller access
+to the Kubernetes API is restored.
 
 **Environment Variables**:
 - `JUMPSTARTER_GRPC_INSECURE` / `JMP_GRPC_INSECURE` - Set to `1` to disable TLS verification

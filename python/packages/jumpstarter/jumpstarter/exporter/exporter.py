@@ -57,19 +57,23 @@ _RPC_MAX_RETRIES = 20
 _RPC_BACKOFF_BASE = 1.0
 _RPC_BACKOFF_CAP = 30.0
 _RPC_TIMEOUT = 30
-_PERMANENT_STREAM_CODES = frozenset({
+_FAIL_FAST_STREAM_CODES = frozenset({
     grpc.StatusCode.UNAUTHENTICATED,
     grpc.StatusCode.PERMISSION_DENIED,
     grpc.StatusCode.NOT_FOUND,
     grpc.StatusCode.INVALID_ARGUMENT,
     grpc.StatusCode.UNIMPLEMENTED,
 })
+_RESTARTABLE_STREAM_CODES = frozenset({
+    grpc.StatusCode.UNAUTHENTICATED,
+    grpc.StatusCode.PERMISSION_DENIED,
+})
 _TEMPORARY_STREAM_FAILURE_EXIT_CODE = 75  # EX_TEMPFAIL; service managers may restart this.
 
 
 def _is_retryable_stream_error(error: Exception) -> bool:
     if isinstance(error, grpc.aio.AioRpcError):
-        return error.code() not in _PERMANENT_STREAM_CODES
+        return error.code() not in _FAIL_FAST_STREAM_CODES
     return isinstance(error, (CertificateDiscoveryError, OSError))
 
 # How long after a lease ends to wait for handle_lease's LeaseFinished before
@@ -338,7 +342,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     """Exit code to use when the exporter shuts down.
 
     Hook failures with on_failure='exit' use 1 to request shutdown. A Status
-    outage or stale token uses 75 to request a service-manager restart.
+    outage or an authentication/authorization error uses 75 to request a
+    service-manager restart.
     """
 
     _controller_stream_failed: bool = field(init=False, default=False)
@@ -508,10 +513,11 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 if not _is_retryable_stream_error(e):
                     if isinstance(e, grpc.aio.AioRpcError):
                         self._controller_stream_failed = True
-                        # A new process reloads the token after rotation.
+                        # A new process reloads rotated credentials; PermissionDenied
+                        # can also mean the controller temporarily lost API access.
                         self._exit_code = (
                             _TEMPORARY_STREAM_FAILURE_EXIT_CODE
-                            if e.code() == grpc.StatusCode.UNAUTHENTICATED else 1
+                            if e.code() in _RESTARTABLE_STREAM_CODES else 1
                         )
                     raise
                 reason = str(e)
