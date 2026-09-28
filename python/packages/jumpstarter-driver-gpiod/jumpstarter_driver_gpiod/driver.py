@@ -126,31 +126,18 @@ class DigitalOutput(_GPIOBase):
         self._verify_driven()
 
     def _drive(self, value) -> None:
-        """Drive the line to ``value`` and record it as the level ``status()`` reports.
-
-        ``_driven`` is cleared first so a write that raises leaves it unknown: the
-        level we last drove says nothing about hardware we just failed to talk to,
-        and reporting it would be a guess.
-        """
+        """Drive the line to ``value``; a write that raises leaves the state unknown."""
         self._driven = None
         self._line.set_value(self.line, value)
         self._driven = value
         self._verify_driven()
 
     def _verify_driven(self) -> None:
-        """Cross-check the pad against what we drove, and give up the claim if it differs.
+        """Read the pin back, and drop to unknown if it contradicts the driven level.
 
-        A push-pull output holds both halves of the swing, so it should read back
-        the level it drives. A mismatch is a real fault -- a shorted pin, a dead
-        pad, or a load dragging the line past the logic threshold -- and we cannot
-        honestly report the driven state through one.
-
-        Open-drain and open-source only drive one half; the other is high-impedance,
-        where the pad sits wherever the external pull puts it. A mismatch there is
-        expected and says nothing, so it is logged but not treated as a fault.
-
-        A readback that fails outright does not undo the write that preceded it, so
-        it is not raised; but with nothing to confirm the write, the state is unknown.
+        Only push-pull can be contradicted: open-drain and open-source float for one
+        of their levels, so their readback proves nothing. A failed readback is not
+        raised, since the write before it succeeded, but it leaves the state unknown.
         """
         try:
             observed = self._line.get_value(self.line)
@@ -171,28 +158,16 @@ class DigitalOutput(_GPIOBase):
             self._driven = None
 
     def _request_preserving(self):
-        """Claim the line as an output without changing the level it is at.
+        """Claim the line as an output at the level it is already at.
 
-        A plain output request always drives ``initial_value``, so every exporter
-        restart switches whatever the line controls (a relay feeding a DUT's power,
-        say). Instead, request the line with its direction left as-is, read the
-        logical level, and only then reconfigure it to an output at that same level.
+        Requests the line with its direction left as-is, reads the level, then
+        reconfigures it as an output driving that same level, so an exporter restart
+        doesn't switch the load. Bias goes in the reconfigure, not the probe: the
+        kernel rejects bias flags without an explicit direction.
 
-        Bias is applied in the reconfigure, not the probe: the kernel rejects bias
-        flags without an explicit direction.
-
-        This narrows the window, it does not close it. The kernel promises nothing
-        about a line once its request is released, so the level may already have
-        moved by the time this probe reads it, and a line that was never driven
-        reads whatever its pull or float gives. Pin the level in firmware
-        (config.txt ``gpio=<n>=op,dh``) or hold it in hardware when a transition
-        would matter.
-
-        Note what this does and does not settle for ``status()``. The level we end
-        up driving is known -- it is exactly the one read back here -- so
-        ``status()`` can report it. Whether that level was ever *intended*, as
-        opposed to a reset default we found and adopted, is not knowable from the
-        pad alone; that would take a record of what a previous run commanded.
+        This only carries a level across a restart of this process. A host reboot
+        resets the GPIO block, so afterwards this finds the board's default level
+        (see the README's "Power relays" section).
 
         Returns the request and the level it now drives.
         """
@@ -218,16 +193,6 @@ class DigitalOutput(_GPIOBase):
     def _output_line_settings(self, output_value):
         settings = self._line_settings()
         settings.direction = gpiod.line.Direction.OUTPUT
-
-        if self.drive == "open_drain":
-            settings.drive = gpiod.line.Drive.OPEN_DRAIN
-        elif self.drive in ["push_pull", None]:
-            settings.drive = gpiod.line.Drive.PUSH_PULL
-        elif self.drive == "open_source":
-            settings.drive = gpiod.line.Drive.OPEN_SOURCE
-        else:
-            raise ValueError(f"Invalid drive: {self.drive}, must be one of: " + "open_drain, push_pull, open_source")
-
         settings.output_value = output_value
         return settings
 
@@ -245,21 +210,12 @@ class DigitalOutput(_GPIOBase):
 
     @export
     def status(self) -> str:
-        """Return "on", "off", or "unknown": a best-effort view of the level this driver holds the line at.
+        """Return "on", "off", or "unknown" (best-effort, from the settings and the line readback).
 
-        Best-effort because it is built from the configured settings and the line's
-        readback, not from the load. It is the level last driven -- by ``on()``,
-        ``off()``, or the initial request -- as long as nothing contradicts it, and
-        "unknown" once something does: a write that failed, or, on a push-pull line,
-        a pin that reads back something other than what was driven. Open-drain and
-        open-source lines float for one of their levels, so their readback cannot
-        contradict the driven level and is not used to.
-
-        "unknown" is not terminal: ``on()`` or ``off()`` drives a level again and,
-        if it takes, makes the state known.
-
-        ``active_low`` is already applied, so this matches ``on()``/``off()``. It
-        reports what the Pi drives, not whether a relay behind the line switched.
+        "on"/"off" is the level last driven, with ``active_low`` applied. "unknown"
+        means a write or readback failed, or a push-pull line read back the other
+        level; the next ``on()``/``off()`` that takes clears it. This reports what
+        the line drives, not whether a relay behind it switched.
         """
         if self._driven is None:
             return "unknown"

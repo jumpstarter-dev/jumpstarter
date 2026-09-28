@@ -56,23 +56,26 @@ export:
 
 ### PowerSwitch Configuration
 
-Example configuration for power switching:
+Example configuration for one channel of a GPIO relay HAT:
 
 ```yaml
 export:
-  power_switch:
+  power:
     type: jumpstarter_driver_gpiod.driver.PowerSwitch
     config:
-      line: 18
-      drive: "push_pull"
-      active_low: false
-      bias: "pull_up"
-      initial_value: "preserve"
+      line: 26
+      active_low: true        # most relay HATs energize the coil on a LOW input
+      initial_value: preserve # an exporter restart leaves the relay where it is
 ```
 
+Set `active_low` to match the board, so that `on` means "relay energized". Use one
+`PowerSwitch` per channel.
+
 `PowerSwitch` speaks the same `PowerInterface` as the other relay drivers
-(`j power_switch on|off|cycle|status`). `read` raises `NotImplementedError`,
-because a GPIO-switched contact has no voltage or current to measure.
+(`j power on|off|cycle|status`). `read` raises `NotImplementedError`, because a
+GPIO-switched contact has no voltage or current to measure; use `status` for the
+switch state. See [Power relays](#power-relays) for what survives a restart and
+what doesn't.
 
 ### Config parameters
 
@@ -139,10 +142,6 @@ state = power_switch.status()
 print(f"Power state: {state}")
 ```
 
-`read()` keeps `PowerInterface`'s meaning (a stream of power measurements), which
-a dry-contact relay cannot provide, so it raises `NotImplementedError` here. Use
-`status()` for the switch state.
-
 ### Pin Configuration Details
 
 #### Drive Modes
@@ -166,58 +165,74 @@ a dry-contact relay cannot provide, so it raises `NotImplementedError` here. Use
 #### Initial Values
 
 For output pins, you can set the initial state:
-- **"inactive"** or **"off"** or **False**: Start with pin LOW
-- **"active"** or **"on"** or **True**: Start with pin HIGH
+- **"inactive"** or **"off"** or **False**: Start inactive
+- **"active"** or **"on"** or **True**: Start active
 - **"preserve"**: Keep whatever level the line is already at
 
-Any other value drives the line when the exporter starts, so every exporter
-restart switches whatever the line controls. Use `preserve` for a line that
-feeds a device's power: it reads the line's level before configuring it as an
-output, then drives that same level.
-
-`preserve` narrows the window for a transition, it does not close it. The kernel
-makes no promise about a line once its request is released — the level is then up
-to the GPIO controller and the pin's bias, and it may have moved by the time
-`preserve` reclaims the line and reads it. Before anything has claimed the line
-at all (cold boot), it reads whatever its bias or float gives.
-
-So where the load must not switch across an exporter restart, hold the level
-outside the request: a latching relay, an external pull that matches the wanted
-state, or a firmware pin setting — e.g. `gpio=26=op,dh` in
-`/boot/firmware/config.txt`, which also makes the cold-boot level deterministic.
+`active_low` is applied first, so "active" means the pin is LOW when `active_low`
+is set. Any value other than `preserve` drives the line every time the exporter
+starts.
 
 #### Status
 
-`status` is **best-effort**. It is derived from the configured settings (`drive`,
-`active_low`, `initial_value`) and the line's readback — never from the load
-itself — and returns one of:
+`status` returns `on`, `off`, or `unknown`. It is **best-effort**: it comes from
+the configured settings and the line's readback, never from the load.
 
-- **`on`** / **`off`**: the level this driver last drove the line to, by `on()`,
-  `off()`, or the initial request, with `active_low` already applied, and nothing
-  has contradicted it since.
-- **`unknown`**: the driver can no longer vouch for the level. This happens when a
-  write fails, when the readback fails, or when a `push_pull` line reads back
-  something other than what was driven — a shorted pin, a dead pad, or a load
-  dragging the line past the logic threshold. A mismatch is logged as a warning.
+- **`on`** / **`off`**: the level last driven (by `on()`, `off()`, or the initial
+  request), with `active_low` applied.
+- **`unknown`**: the driver can't vouch for the level, because a write or readback
+  failed, or a `push_pull` line read back a different level than it drives (a
+  shorted pin or dead pad; logged as a warning). The next `on()` or `off()` that
+  takes makes the state known again.
 
-`unknown` is not permanent: calling `on()` or `off()` drives the line again and,
-if the write takes, makes the state known. Treat it as a cue to set the state
-explicitly rather than assume it.
+The readback check only applies to `push_pull` (the default). `open_drain` and
+`open_source` float for one of their levels, so their readback can't confirm what
+was driven. `read` on `DigitalOutputClient` always gives the raw pin read.
 
-The readback check only applies to `push_pull` (the default). An `open_drain` or
-`open_source` line leaves one of its levels high-impedance, where the pad follows
-the external pull instead of the driver, so its readback cannot confirm or refute
-what was driven; `status` then simply reports the level last driven. `read` (on
-`DigitalOutputClient`) still gives you the raw pin read for any drive mode.
+### Power relays
 
-With `initial_value: preserve`, the starting state is the level the line was
-found at, adopted as-is. `status` reports it accurately as the level now driven,
-but cannot tell whether that level was ever intended or is a reset default — see
-[Initial Values](#initial-values).
+A GPIO relay HAT has one input per channel, and a pull resistor on the board holds
+each input at its de-energized level whenever nothing drives it. `PowerSwitch`
+drives one channel. What the relay does across restarts is set by the board and the
+host, not by this driver:
 
-No value of `status` can tell whether a relay behind the line actually switched:
-a missing jumper, a lost supply, or a welded contact all still report the driven
-level. Only a feedback path wired back to the exporter can confirm that.
+| Event                                        | Relay                                  | `status` afterwards           |
+| -------------------------------------------- | -------------------------------------- | ----------------------------- |
+| Exporter restart, with `initial_value: preserve` | Unchanged                          | The level it was left at      |
+| Exporter restart, with any other `initial_value` | Driven to that value               | That value                    |
+| Host reboot                                  | **De-energizes** for the whole boot    | The level found at start      |
+| Host power loss                              | De-energizes                           | The level found at start      |
+
+- **Exporter restart.** When the exporter exits, cleanly or by crashing, the kernel
+  releases the line, and it keeps its level on typical SoC controllers (verified on
+  a Raspberry Pi 4, including after SIGKILL, with no glitch on the line).
+  `preserve` reads that level back and keeps driving it, so the relay doesn't move.
+  The kernel doesn't guarantee this for every controller, so check yours if it
+  matters.
+- **Host reboot.** A reboot resets the SoC, which returns every GPIO to an input.
+  The board's pull then de-energizes the relay until something claims the line
+  again, and the previous level is gone. No software setting prevents this: on a
+  Raspberry Pi, `gpio=` in `config.txt` only takes effect after the reset, so the
+  relay drops and then re-energizes, and `cmdline.txt` runs later still. After a
+  reboot, `preserve` finds the de-energized level and reports it.
+
+So **wire each load for the state you want during a reboot**. The relay is
+de-energized at reset, during boot, and with the host off:
+
+- For a load that should stay **powered** through a host reboot (a DUT's supply),
+  wire it through the relay's **NC** (normally closed) contact. `on` then means
+  *de-energize the relay*, so invert `active_low` from what NO wiring would use:
+  on a board that energizes on LOW, set `active_low: false`. The load is then
+  powered at reset and during boot, and `off` energizes the relay to cut it.
+- For a load that should be **off** unless commanded (ignition, a button press),
+  wire it through the **NO** (normally open) contact.
+- If the load must keep *either* state through a host reboot, use a latching
+  relay. A standard relay can't do this.
+
+Neither `status` nor anything else in this driver can tell whether a relay
+actually switched: a missing jumper, a lost coil supply, or a welded contact all
+still report the driven level. Only a feedback line wired back to the host can
+confirm it.
 
 ## API Reference
 
