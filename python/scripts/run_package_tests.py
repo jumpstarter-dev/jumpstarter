@@ -41,6 +41,7 @@ WINDOWS_PACKAGES = frozenset({
     "jumpstarter-driver-shell",
     "jumpstarter-driver-ssh",
     "jumpstarter-driver-tmt",
+    "jumpstarter-driver-uboot",
     "jumpstarter-imagehash",
     "jumpstarter-kubernetes",
     "jumpstarter-mcp",

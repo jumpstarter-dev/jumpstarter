@@ -17,6 +17,11 @@ UBOOT_RPM_URL = "https://kojipkgs.fedoraproject.org/packages/uboot-tools/2025.10
 
 @pytest.fixture(scope="session")
 def uboot_image(tmpdir_factory):
+    if os.name == "nt":
+        pytest.skip("QEMU-backed U-Boot integration currently requires POSIX Unix sockets")
+    for executable in ("qemu-system-aarch64", "qemu-img"):
+        if shutil.which(executable) is None:
+            pytest.skip(f"U-Boot emulator integration requires {executable}")
     tmp_path = tmpdir_factory.mktemp("uboot-images")
     rpm_path = tmp_path / "uboot-images-armv8.rpm"
     bin_path = tmp_path / "u-boot.bin"
