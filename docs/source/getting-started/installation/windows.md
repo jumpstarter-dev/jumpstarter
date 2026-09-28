@@ -37,6 +37,7 @@ drivers run on Windows in CI; the notes say what those tests exercise:
 
 | Driver | Notes |
 | --- | --- |
+| {doc}`adb <../../reference/package-apis/drivers/adb>` | Requires the Android SDK platform tools (`adb.exe`); tests use a mocked `adb` |
 | {doc}`ble <../../reference/package-apis/drivers/ble>` | Client streams and pexpect; the interactive BLE console is not available on Windows |
 | composite | |
 | {doc}`energenie <../../reference/package-apis/drivers/energenie>` | Tested with a mocked EnerGenie power socket |

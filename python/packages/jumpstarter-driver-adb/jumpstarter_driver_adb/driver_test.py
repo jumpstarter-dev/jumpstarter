@@ -1,3 +1,4 @@
+import os
 import subprocess
 import threading
 import time
@@ -9,6 +10,8 @@ from . import driver as adb_driver
 from .driver import AdbDevice, AdbServer
 from jumpstarter.common.exceptions import ConfigurationError
 
+# The exporter normalizes executable paths on every host.
+ADB_PATH = os.path.realpath("/usr/bin/adb")
 SERIAL = "HVA1234567"
 USB_PORT = "usb:1-4.2"
 
@@ -140,12 +143,12 @@ def _fake(**kwargs):
 @patch("subprocess.run", return_value=_mock_adb_ok())
 def test_init_validates_adb(mock_run, mock_conn, mock_which):
     server = AdbServer()
-    assert server.adb_path == "/usr/bin/adb"
+    assert server.adb_path == ADB_PATH
     assert server.port == 15037
     # version check + start-server (the server driver starts eagerly)
     argvs = [c.args[0] for c in mock_run.call_args_list]
-    assert ["/usr/bin/adb", "version"] in argvs
-    assert ["/usr/bin/adb", "start-server"] in argvs
+    assert [ADB_PATH, "version"] in argvs
+    assert [ADB_PATH, "start-server"] in argvs
 
 
 @patch("shutil.which", return_value=None)
@@ -200,7 +203,7 @@ def test_start_server(mock_run, mock_conn, _):
     mock_run.reset_mock()
     assert server.start_server() == 15037
     call = mock_run.call_args_list[0]
-    assert call.args[0] == ["/usr/bin/adb", "start-server"]
+    assert call.args[0] == [ADB_PATH, "start-server"]
     assert call.kwargs["env"]["ANDROID_ADB_SERVER_PORT"] == "15037"
 
 
@@ -211,7 +214,7 @@ def test_kill_server(mock_run, mock_conn, _):
     server = AdbServer()
     mock_run.reset_mock()
     assert server.kill_server() == 15037
-    assert mock_run.call_args_list[0].args[0] == ["/usr/bin/adb", "kill-server"]
+    assert mock_run.call_args_list[0].args[0] == [ADB_PATH, "kill-server"]
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -248,7 +251,7 @@ def test_connect_device(mock_run, mock_conn, _):
     server = AdbServer()
     mock_run.return_value = MagicMock(stdout="connected to 10.0.0.2:6520\n", stderr="", returncode=0)
     assert server.connect_device("10.0.0.2:6520") == "connected to 10.0.0.2:6520"
-    assert mock_run.call_args.args[0] == ["/usr/bin/adb", "connect", "10.0.0.2:6520"]
+    assert mock_run.call_args.args[0] == [ADB_PATH, "connect", "10.0.0.2:6520"]
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -282,7 +285,7 @@ def test_disconnect_device(mock_run, mock_conn, _):
     server = AdbServer()
     mock_run.return_value = MagicMock(stdout="disconnected 10.0.0.2:6520\n", stderr="", returncode=0)
     assert server.disconnect_device("10.0.0.2:6520") == "disconnected 10.0.0.2:6520"
-    assert mock_run.call_args.args[0] == ["/usr/bin/adb", "disconnect", "10.0.0.2:6520"]
+    assert mock_run.call_args.args[0] == [ADB_PATH, "disconnect", "10.0.0.2:6520"]
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -348,7 +351,7 @@ def test_adopts_a_server_already_on_our_port(mock_run, mock_conn, _):
     server = AdbServer()
     assert server._owns_server is False
     argvs = [c.args[0] for c in mock_run.call_args_list]
-    assert ["/usr/bin/adb", "start-server"] not in argvs
+    assert [ADB_PATH, "start-server"] not in argvs
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -359,7 +362,7 @@ def test_an_adopted_server_is_left_running_on_close(mock_run, mock_conn, _):
     server = AdbServer()
     server.close()
     argvs = [c.args[0] for c in mock_run.call_args_list]
-    assert ["/usr/bin/adb", "kill-server"] not in argvs
+    assert [ADB_PATH, "kill-server"] not in argvs
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -369,7 +372,7 @@ def test_starts_a_server_when_the_port_is_free(mock_run, mock_conn, _):
     server = AdbServer()
     assert server._owns_server is True
     argvs = [c.args[0] for c in mock_run.call_args_list]
-    assert ["/usr/bin/adb", "start-server"] in argvs
+    assert [ADB_PATH, "start-server"] in argvs
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -386,7 +389,7 @@ def test_a_server_we_started_is_killed_on_close(mock_run, mock_conn, _):
     assert server._owns_server is True
     server.close()
     argvs = [c.args[0] for c in mock_run.call_args_list]
-    assert ["/usr/bin/adb", "kill-server"] in argvs
+    assert [ADB_PATH, "kill-server"] in argvs
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -412,7 +415,7 @@ def test_a_non_adb_listener_is_not_adopted(mock_conn, _):
 
     # Declined the adoption, so it started its own and owns it.
     assert server._owns_server is True
-    assert ["/usr/bin/adb", "start-server"] in calls
+    assert [ADB_PATH, "start-server"] in calls
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -434,10 +437,10 @@ def test_the_adoption_probe_asks_the_server_not_the_client(mock_conn, _):
         server = AdbServer()
 
     probes = [argv for argv, check in calls if check is False]
-    assert probes == [["/usr/bin/adb", "devices"]]
+    assert probes == [[ADB_PATH, "devices"]]
     # It answered, so the running server was adopted and left alone.
     assert server._owns_server is False
-    assert ["/usr/bin/adb", "start-server"] not in [argv for argv, _ in calls]
+    assert [ADB_PATH, "start-server"] not in [argv for argv, _ in calls]
 
 
 @pytest.mark.parametrize(
@@ -1383,7 +1386,7 @@ def test_a_recreated_forward_is_ours_again(mock_conn, _):
         assert device._owns_forward is True
         device.close()
     assert not fake.forwards
-    assert [c for c in fake.calls if "--remove" in c] == [["/usr/bin/adb", "forward", "--remove", f"tcp:{port}"]]
+    assert [c for c in fake.calls if "--remove" in c] == [[ADB_PATH, "forward", "--remove", f"tcp:{port}"]]
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -1407,7 +1410,7 @@ def test_teardown_completes_when_forward_removal_hangs(mock_conn, _):
     with patch("subprocess.run", side_effect=run):
         device.close()  # must not raise
 
-    assert removals == [["/usr/bin/adb", "forward", "--remove", f"tcp:{port}"]]
+    assert removals == [[ADB_PATH, "forward", "--remove", f"tcp:{port}"]]
     assert device._forward_port is None
 
 
@@ -1468,7 +1471,7 @@ def test_tcp_transport_connects_and_creates_no_forward(mock_conn, _):
         device = AdbDevice(transport="tcp", address="10.0.0.5:5555")
         assert device._resolve_endpoint() == ("10.0.0.5", 5555)
         argvs = [c.args[0] for c in mock_run.call_args_list]
-        assert ["/usr/bin/adb", "connect", "10.0.0.5:5555"] in argvs
+        assert [ADB_PATH, "connect", "10.0.0.5:5555"] in argvs
         assert not any("forward" in argv for argv in argvs)
 
 
@@ -1483,7 +1486,7 @@ def test_tcp_address_without_a_port_uses_adbd_port(mock_conn, _):
     with patch("subprocess.run", side_effect=run) as mock_run:
         device = AdbDevice(transport="tcp", address="10.0.0.5")
         assert device._resolve_endpoint() == ("10.0.0.5", 5555)
-        assert ["/usr/bin/adb", "connect", "10.0.0.5:5555"] in [c.args[0] for c in mock_run.call_args_list]
+        assert [ADB_PATH, "connect", "10.0.0.5:5555"] in [c.args[0] for c in mock_run.call_args_list]
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -1514,7 +1517,7 @@ def test_tcp_close_disconnects_a_device_we_connected(mock_conn, _):
         device = AdbDevice(transport="tcp", address="10.0.0.5:5555")
         device._resolve_endpoint()
         device.close()
-        assert ["/usr/bin/adb", "disconnect", "10.0.0.5:5555"] in [c.args[0] for c in mock_run.call_args_list]
+        assert [ADB_PATH, "disconnect", "10.0.0.5:5555"] in [c.args[0] for c in mock_run.call_args_list]
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -1562,7 +1565,7 @@ def test_reconnecting_per_stream_does_not_forfeit_ownership(mock_conn, _):
 
         assert device._owns_connection is True
         device.close()
-    assert ["/usr/bin/adb", "disconnect", "10.0.0.5:5555"] in [c.args[0] for c in mock_run.call_args_list]
+    assert [ADB_PATH, "disconnect", "10.0.0.5:5555"] in [c.args[0] for c in mock_run.call_args_list]
 
 
 # ---------------------------------------------------------- config validation
@@ -1668,7 +1671,7 @@ def test_ensure_reachable_connects_a_tcp_device_before_any_stream(mock_conn, _):
     with patch("subprocess.run", side_effect=run) as mock_run:
         device = AdbDevice(transport="tcp", address="10.0.0.5:5555")
         assert device.ensure_reachable() == "10.0.0.5:5555"
-        assert ["/usr/bin/adb", "connect", "10.0.0.5:5555"] in [c.args[0] for c in mock_run.call_args_list]
+        assert [ADB_PATH, "connect", "10.0.0.5:5555"] in [c.args[0] for c in mock_run.call_args_list]
 
         # Repeatable: adb connect is idempotent, and ownership is not re-decided.
         assert device.ensure_reachable() == "10.0.0.5:5555"
@@ -1703,7 +1706,7 @@ def test_disconnect_drops_our_connection_mid_lease(mock_conn, _):
         device.ensure_reachable()
 
         device.disconnect()
-        assert ["/usr/bin/adb", "disconnect", "10.0.0.5:5555"] in [c.args[0] for c in mock_run.call_args_list]
+        assert [ADB_PATH, "disconnect", "10.0.0.5:5555"] in [c.args[0] for c in mock_run.call_args_list]
 
         # Idempotent, and a second call must not disconnect anything again.
         before = len(mock_run.call_args_list)

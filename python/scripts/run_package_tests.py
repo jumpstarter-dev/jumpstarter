@@ -27,6 +27,7 @@ WINDOWS_PACKAGES = frozenset({
     "jumpstarter-cli-admin",
     "jumpstarter-cli-common",
     "jumpstarter-cli-driver",
+    "jumpstarter-driver-adb",
     "jumpstarter-driver-ble",
     "jumpstarter-driver-composite",
     "jumpstarter-driver-energenie",
