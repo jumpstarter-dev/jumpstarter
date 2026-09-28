@@ -10,8 +10,8 @@ support load them as stubs.
 The managed Windows probes exercise the production Rust/PyO3 AF_UNIX listener.
 Failures return a nonzero exit code and remain in the report. No test transport
 is injected. A Linux control run helps distinguish platform and deployment failures.
-The standalone exporter runner below covers native Windows `jmp run` and
-lifecycle hooks without requiring a controller.
+The standalone runners below cover native Windows `jmp run`, lifecycle hooks
+and interactive serial consoles without requiring a controller.
 
 ## Prerequisites
 
@@ -131,11 +131,48 @@ podman cp jumpstarter-windows-e2e-managed:/tmp/linux-results.json .e2e/windows-c
 Check exporter/controller logs when a probe fails. No SSH server, ADB device or
 physical COM device is exercised by this fixture.
 
+## Interactive serial console
+
+`e2e/windows/windows_serial_console_e2e.py` runs the stock `j serial console`
+inside a real Windows ConPTY. It uses only the direct Linux exporter on
+`127.0.0.1:19090`, with the `serial` PySerial `loop://` fixture. Kind, controller
+credentials and leases are not needed for this runner. For console-only testing,
+build the image and start only `jumpstarter-windows-e2e-direct` from the Linux
+exporter commands above.
+
+Install `pywinpty` and `pywin32` in the test environment. They create and inspect
+the test console; they are not Jumpstarter runtime dependencies. Use the current
+Windows runtime dependencies, including gRPC 1.84 or later.
+
+```powershell
+uv pip install --python python/.venv/Scripts/python.exe pywinpty==3.0.5 pywin32
+uv run --project python --no-sync python e2e/windows/windows_serial_console_e2e.py --direct-endpoint 127.0.0.1:19090 --direct-insecure --report-dir .e2e/windows-client
+```
+
+The three probes verify:
+
+- Exact remote bytes for Unicode (including supplementary characters), arrows,
+  Enter and Ctrl+C; the first two Ctrl+B bytes are forwarded and the third exits.
+- Observe mode displays a second client's output while sending no keyboard
+  input. Reading the actual console screen verifies lines wider than its 160
+  columns wrap intact and carriage returns overwrite the current line.
+- Closing the disposable serial driver ends a console waiting for keyboard
+  input. Every probe checks input/output console modes are restored, subsequent
+  Unicode line input works and the exporter has no remaining attached clients.
+
+The runner refuses to start on an already-used serial fixture. Its EOF probe
+closes only that fixture's serial driver, so use the dedicated container rather
+than a shared exporter. Each probe has a 60-second process deadline and writes
+JSON, raw received bytes and a terminal transcript into a fresh report directory.
+Failure returns nonzero. `--probe observe` selects one probe; `--output-mode 3`
+also checks restoration when VT output was initially disabled. `--probe smoke`
+checks the ConPTY harness without connecting to an exporter.
+
 ## Native Windows exporter
 
 `e2e/windows/windows_exporter_e2e.py` starts the stock Windows `jmp run`
 launcher against its own ephemeral loopback fixtures. It needs the installed
-CLI, current `jumpstarter-core` wheel and power/network driver packages, and uses the
+CLI, current `jumpstarter-core` wheel and power/network/pyserial driver packages, and uses the
 default PowerShell hook executor. It needs no Podman, Kind, controller
 credentials or physical devices.
 
@@ -143,7 +180,8 @@ credentials or physical devices.
 python/.venv/Scripts/python.exe e2e/windows/windows_exporter_e2e.py --report-dir .e2e/windows-exporter --timeout 30
 ```
 
-The runner exports MockPower and a TCP echo network and configures two lifecycle hooks. Its
+The runner exports MockPower, a TCP echo network and PySerial `loop://` and
+configures two lifecycle hooks. Its
 PowerShell `beforeLease` hook runs `j power on` through the exporter's hook
 socket, and its Python `afterLease` hook runs on graceful shutdown. It checks
 both hooks, the direct SDK/CLI probes from `windows_client_e2e.py`, an automatic
@@ -158,7 +196,7 @@ nonzero. The runner closes its processes and listeners afterward.
 These checks cover the standalone exporter with a synthetic driver. Native
 Windows controller registration and device backends require separate coverage.
 See the [native package](../../python/native/jumpstarter-core/README.md) for the
-process and local socket components used by the runtime.
+process, console and local socket components used by the runtime.
 
 ## Native network protocols
 

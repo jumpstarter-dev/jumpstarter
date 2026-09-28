@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Exercise installed native clients against explicitly supplied E2E fixtures.
 
-The exporter must expose MockPower and an echo network. Other fixture drivers
-may be present; clients without Windows support load them as stubs. This runner
+The exporter must expose MockPower, an echo network, and loopback serial drivers.
+Other fixture drivers may be present; clients without Windows support load them
+as stubs. This runner
 toggles the fixture's power and creates short controller leases. It
 does not provision infrastructure or save credentials. Managed connection errors
 are failures, including errors in the native Windows Unix listener.
@@ -28,12 +29,13 @@ ALLOWED_CLIENTS = [
     "jumpstarter_driver_composite.client.CompositeClient",
     "jumpstarter_driver_network.client.NetworkClient",
     "jumpstarter_driver_power.client.PowerClient",
+    "jumpstarter_driver_pyserial.client.PySerialClient",
 ]
 PAYLOAD = bytes(range(256)) * 4 + b"\x00\xff\x1a\r\nwindows-e2e"
 RESULT_PREFIX = "WINDOWS_E2E_RESULT="
 DIRECT_PROBES = (
     "direct.discovery", "direct.power", "direct.binary_streams", "direct.tcp_forwarding",
-    "direct.cli_help", "direct.cli_power", "direct.shell_command",
+    "direct.serial_expect", "direct.cli_help", "direct.cli_power", "direct.shell_command",
 )
 CONTROLLER_PROBES = (
     "controller.discovery", "controller.lease_lifecycle", "controller.managed_connection", "controller.shell_command",
@@ -51,6 +53,7 @@ def arguments():
     parser.add_argument("--exporter-name", default="windows-e2e-linux", help="Controller-managed Linux exporter")
     parser.add_argument("--power-driver", default="power")
     parser.add_argument("--network-driver", default="network")
+    parser.add_argument("--serial-driver", default="serial")
     parser.add_argument("--timeout", type=float, default=30, help="Probe timeout in seconds (minimum 5)")
     parser.add_argument("--report", type=Path, help="Write a JSON results report, never a credential file")
     parser.add_argument("--powershell", help="Also exercise interactive startup with this pwsh/powershell executable")
@@ -141,7 +144,7 @@ def check_power(client, args):
 
 
 def stream_drivers(args):
-    return (args.network_driver,)
+    return (args.network_driver, args.serial_driver)
 
 
 def check_streams(client, args):
@@ -184,6 +187,27 @@ def check_forwarding(client, args):
             connection.close()
             raise AssertionError("local forwarding listener survived context exit")
     return {"bytes_per_forward": len(PAYLOAD), "listeners_closed": True}
+
+
+def check_expect(client, args):
+    import io
+
+    from pexpect import TIMEOUT
+
+    log = io.BytesIO()
+    with child(client, args.serial_driver).pexpect() as expect:
+        expect.logfile_read = log
+        expect.send(PAYLOAD)
+        require(expect.expect_exact(PAYLOAD, timeout=args.timeout) == 0, "serial expect mismatch")
+        require(log.getvalue() == PAYLOAD, "serial expect receive log lost bytes")
+        try:
+            expect.expect_exact(b"never-sent", timeout=0.1)
+        except TIMEOUT:
+            pass
+        else:
+            raise AssertionError("serial expect did not time out")
+    require(not expect.isalive(), "serial expect socket survived context exit")
+    return {"matched_bytes": len(PAYLOAD), "receive_logging": True, "timeout": True}
 
 
 def terminate_process_tree(process):
@@ -370,6 +394,7 @@ def run_probe(args, probe):
             "direct.power": check_power,
             "direct.binary_streams": check_streams,
             "direct.tcp_forwarding": check_forwarding,
+            "direct.serial_expect": check_expect,
         }
         return checks[probe](client, args)
 
@@ -413,7 +438,8 @@ def worker(args):
 def probe_command(args, probe):
     command = [sys.executable, str(Path(__file__).resolve()), "--_probe", probe,
                "--timeout", str(args.timeout), "--exporter-name", args.exporter_name,
-               "--power-driver", args.power_driver, "--network-driver", args.network_driver]
+               "--power-driver", args.power_driver, "--network-driver", args.network_driver,
+               "--serial-driver", args.serial_driver]
     if args.direct_endpoint:
         command.extend(["--direct-endpoint", args.direct_endpoint])
     if args.direct_insecure:
@@ -475,7 +501,8 @@ def main():
         "exporter_name": args.exporter_name, "results": results,
         "powershell": args.powershell,
         "limitations": [
-            "MockPower and the echo network validate transport, not physical hardware.",
+            "MockPower, echo network and loopback serial validate transport, not physical hardware.",
+            "Native COM hardware and console-key handling are not tested by this runner.",
             "Driver-specific clients are covered by the runners added with their Windows support.",
             "Optional PowerShell probes exercise interactive startup with redirected input, not a real terminal.",
             "Managed connection failures are reported unchanged; no socket compatibility shim is applied.",

@@ -1,7 +1,7 @@
 # Windows bindings and builds
 
-The current `jumpstarter_core.local` and `jumpstarter_core.process` APIs use
-Windows backends. Their native classes are
+The current `jumpstarter_core.local`, `jumpstarter_core.process`, and
+`jumpstarter_core.console` APIs use Windows backends. Their native classes are
 registered only under `cfg(windows)`. Building the extension on another target
 does not make these APIs available there. Existing Linux and macOS Jumpstarter
 sessions continue to use their Python/AnyIO implementations.
@@ -12,11 +12,13 @@ The module docs describe their contracts and Windows behavior:
   directories, pathname limits, and readiness handles for asynchronous waits.
 - [Process containment](../../jumpstarter_core/process.py): a private Job Object,
   child startup ordering, and cleanup responsibilities.
+- [Console modes](../../jumpstarter_core/console.py): VT output, handle ownership,
+  mode restoration, and usage.
 
 The binding exposes owned objects rather than raw socket or process handles and
 does not use Python `ctypes`. The reusable implementations live in the
 [IPC backend](../../../../../rust/jumpstarter-ipc/src/platform/windows/mod.rs)
-and [process backend](../../../../../rust/jumpstarter-proc/src/platform/windows/mod.rs).
+and [process/console backend](../../../../../rust/jumpstarter-proc/src/platform/windows/mod.rs).
 
 ## Building
 

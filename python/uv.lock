@@ -2213,6 +2213,7 @@ dev = [
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power" },
+    { name = "jumpstarter-driver-pyserial" },
     { name = "pytest" },
     { name = "pytest-anyio" },
     { name = "pytest-asyncio" },
@@ -2232,6 +2233,7 @@ dev = [
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
+    { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-anyio", specifier = ">=0.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.0.0" },
@@ -3294,6 +3296,7 @@ dependencies = [
     { name = "click" },
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-network" },
+    { name = "prompt-toolkit", marker = "sys_platform == 'win32'" },
     { name = "pyserial" },
     { name = "pyserial-asyncio" },
 ]
@@ -3311,6 +3314,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.1.7.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
+    { name = "prompt-toolkit", marker = "sys_platform == 'win32'", specifier = ">=3.0.53" },
     { name = "pyserial", specifier = ">=3.5" },
     { name = "pyserial-asyncio", specifier = ">=0.6" },
 ]

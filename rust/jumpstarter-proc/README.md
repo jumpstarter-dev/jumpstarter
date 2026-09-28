@@ -1,17 +1,22 @@
 # Jumpstarter process primitives
 
-`jumpstarter-proc` provides owned Rust primitives for process containment.
-Public APIs define resource lifetimes and error contracts;
+`jumpstarter-proc` provides owned Rust primitives for process containment and
+scoped terminal modes. Public APIs define resource lifetimes and error contracts;
 private platform backends implement the operating-system operations. The crate
 has no Python, PyO3, IPC, or asynchronous scheduling dependencies.
 
-[`process`](src/process.rs) owns a child process containment scope. Callers
-retain spawning, the startup gate, graceful shutdown, deadlines,
-assignment-failure cleanup, and reaping.
+The two public modules have separate responsibilities:
+
+- [`process`](src/process.rs) owns a child process containment scope. Callers
+  retain spawning, the startup gate, graceful shutdown, deadlines,
+  assignment-failure cleanup, and reaping.
+- [`console`](src/console.rs) scopes terminal output-mode changes and restoration.
+  Callers retain I/O, encoding, input handling, and coordination of shared
+  terminal state.
 
 These primitives can be consumed directly by Rust runtimes. The separate
-`jumpstarter-core-py` crate adapts them to `jumpstarter_core.process` without
-making Python part of their implementation.
+`jumpstarter-core-py` crate adapts them to `jumpstarter_core.process` and
+`jumpstarter_core.console` without making Python part of their implementation.
 
 See the [backend availability and extension contract](src/platform/mod.rs) and
 [Windows backend documentation](src/platform/windows/mod.rs) for implemented

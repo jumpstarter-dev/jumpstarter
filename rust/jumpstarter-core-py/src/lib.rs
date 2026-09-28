@@ -7,13 +7,15 @@
 //!
 //! # Platform availability
 //!
-//! The local IPC and process classes are currently registered only
+//! The local IPC, process, and console classes are currently registered only
 //! under `cfg(windows)`. On other targets the extension builds without those
 //! classes; a successful build does not imply support for the scoped APIs.
 //! Python module documentation carries their usage and backend requirements.
 
 use pyo3::prelude::*;
 
+#[cfg(windows)]
+mod console;
 #[cfg(windows)]
 mod local;
 #[cfg(windows)]
@@ -36,6 +38,7 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(windows)]
     {
         local::register(module)?;
+        console::register(module)?;
         process::register(module)?;
     }
     #[cfg(not(windows))]

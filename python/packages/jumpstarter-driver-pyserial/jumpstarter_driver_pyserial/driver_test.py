@@ -205,7 +205,9 @@ def test_disable_hupcl_applies_termios_flags(monkeypatch):
         calls["when"] = when
         calls["attrs"] = attrs
 
-    monkeypatch.setattr(driver_module.os, "name", "posix")
+    # Simulate only this driver's platform guard. Mutating the shared os module
+    # also changes pathlib's behavior inside pytest and coverage on Windows.
+    monkeypatch.setattr(driver_module, "os", SimpleNamespace(name="posix"))
 
     monkeypatch.setattr(
         driver_module,

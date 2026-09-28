@@ -15,6 +15,7 @@ dependencies = [
   "pyserial>=3.5",
   "click>=8.1.7.2",
   "pyserial-asyncio>=0.6",
+  "prompt-toolkit>=3.0.53; sys_platform == 'win32'",
 ]
 
 [project.entry-points."jumpstarter.drivers"]

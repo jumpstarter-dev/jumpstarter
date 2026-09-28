@@ -1,7 +1,7 @@
 //! Selects the private operating-system backend.
 //!
 //! Only `cfg(windows)` has an implementation today. Linux and macOS expose no
-//! process types, stubs, or fallback behavior. The public facades own
+//! process or console types, stubs, or fallback behavior. The public facades own
 //! the API contracts; backend modules own OS handles and native operations.
 //!
 //! Future implementations belong in sibling platform modules selected here.
@@ -13,4 +13,4 @@
 mod windows;
 
 #[cfg(windows)]
-pub(crate) use windows::process;
+pub(crate) use windows::{console, process};

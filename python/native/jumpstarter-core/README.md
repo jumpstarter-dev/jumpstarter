@@ -10,10 +10,11 @@ Python or adopting a particular asynchronous runtime.
 | Layer | Responsibility |
 | --- | --- |
 | [`jumpstarter-ipc`](../../../rust/jumpstarter-ipc/README.md) | Owned local sockets and private directories with `std::io::Result` errors. |
-| [`jumpstarter-proc`](../../../rust/jumpstarter-proc/README.md) | Child-process containment with `std::io::Result` errors. |
+| [`jumpstarter-proc`](../../../rust/jumpstarter-proc/README.md) | Child-process containment and scoped terminal modes with `std::io::Result` errors. |
 | [`jumpstarter-core-py`](../../../rust/jumpstarter-core-py/src/lib.rs) | Thin PyO3 binding: converts arguments and results, maps errors, and releases the interpreter during native operations. |
 | [`jumpstarter_core.local`](jumpstarter_core/local.py) | Nonblocking local IPC consumed by Jumpstarter's AnyIO adapter. The caller supplies scheduling and cancellation. |
 | [`jumpstarter_core.process`](jumpstarter_core/process.py) | Ownership and cleanup of a child-process tree. The caller supplies spawning, graceful shutdown, deadlines, and reaping. |
+| [`jumpstarter_core.console`](jumpstarter_core/console.py) | Scoped terminal output modes. The caller supplies input, output, and encoding. |
 
 The reusable crates have no Python or PyO3 dependencies. Their public domain
 modules delegate OS operations to private platform implementations. Python
@@ -56,7 +57,7 @@ Additional Rust components should extend this distribution through scoped
 Python modules and the shared PyO3/maturin binding layer. Keep ownership of the
 `jumpstarter_core` namespace in one distribution.
 
-A Rust client or exporter can consume `jumpstarter_ipc::local` and
-`jumpstarter_proc::process` directly. An
+A Rust client or exporter can consume `jumpstarter_ipc::local`,
+`jumpstarter_proc::process`, and `jumpstarter_proc::console` directly. An
 asynchronous adapter belongs above these primitives: the Tokio/tonic stream
 adapter and a full Rust runtime port are not implemented here.

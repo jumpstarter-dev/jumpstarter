@@ -1,5 +1,6 @@
 """Exercise the native ABI and Windows security contract with real sockets."""
 
+import subprocess
 import sys
 import time
 from contextlib import contextmanager
@@ -174,3 +175,30 @@ def test_invalid_paths_fail_before_creating_any_socket(tmp_path):
         UnixListener.bind(str(tmp_path / ("x" * 200)))
     assert list(tmp_path.iterdir()) == []
 
+
+def test_console_mode_rejects_redirected_stdout_without_closing_it():
+    # Exercise the installed wheel in a child whose stdout is a real pipe.
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            (
+                "from jumpstarter_core.console import OutputMode\n"
+                "guard = OutputMode()\n"
+                "try:\n"
+                "    with guard:\n"
+                "        raise AssertionError('redirected stdout accepted as a console')\n"
+                "except OSError:\n"
+                "    pass\n"
+                "guard.close()\n"
+                "print('original stdout remains open')\n"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "original stdout remains open\n"

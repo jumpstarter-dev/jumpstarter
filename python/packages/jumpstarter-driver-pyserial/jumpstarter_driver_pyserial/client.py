@@ -5,7 +5,7 @@ import click
 from anyio import BrokenResourceError, EndOfStream, create_task_group, open_file
 from anyio.streams.file import FileReadStream
 from jumpstarter_driver_network.adapters import PexpectAdapter
-from pexpect.fdpexpect import fdspawn
+from pexpect.socket_pexpect import SocketSpawn
 
 from .console import Console
 from jumpstarter.client import DriverClient
@@ -18,13 +18,13 @@ class PySerialClient(DriverClient):
 
     """
 
-    def open(self) -> fdspawn:
+    def open(self) -> SocketSpawn:
         """
         Open a pexpect session. You can find the pexpect documentation
         here: https://pexpect.readthedocs.io/en/stable/api/pexpect.html#spawn-class
 
         Returns:
-            fdspawn: The pexpect session object.
+            SocketSpawn: The socket-backed pexpect session object.
         """
         return self.stack.enter_context(self.pexpect())
 

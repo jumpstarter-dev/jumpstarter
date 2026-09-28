@@ -192,6 +192,7 @@ def write_config(directory, echo_port):
             "power": {"type": "jumpstarter_driver_power.driver.MockPower"},
             "network": {"type": "jumpstarter_driver_network.driver.TcpNetwork",
                         "config": {"host": "127.0.0.1", "port": echo_port}},
+            "serial": {"type": "jumpstarter_driver_pyserial.driver.PySerial", "config": {"url": "loop://"}},
             "process_probe": {"type": "windows_exporter_e2e.ProcessFixture"},
         },
         "hooks": {

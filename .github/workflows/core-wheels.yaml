@@ -186,7 +186,7 @@ jobs:
           $requiredFiles = @(
             "tests/test_local.py", "tests/test_process.py",
             "docs/platforms/windows.md",
-            "jumpstarter_core/local.py", "jumpstarter_core/process.py",
+            "jumpstarter_core/local.py", "jumpstarter_core/console.py", "jumpstarter_core/process.py",
             "rust/Cargo.toml", "rust/Cargo.lock",
             "rust/jumpstarter-ipc/Cargo.toml", "rust/jumpstarter-ipc/src/lib.rs",
             "rust/jumpstarter-ipc/src/local.rs", "rust/jumpstarter-ipc/src/platform/mod.rs",
@@ -194,12 +194,13 @@ jobs:
             "rust/jumpstarter-ipc/src/platform/windows/local.rs",
             "rust/jumpstarter-ipc/src/platform/windows/private_directory.rs",
             "rust/jumpstarter-proc/Cargo.toml", "rust/jumpstarter-proc/src/lib.rs",
-            "rust/jumpstarter-proc/src/process.rs",
+            "rust/jumpstarter-proc/src/process.rs", "rust/jumpstarter-proc/src/console.rs",
             "rust/jumpstarter-proc/src/platform/mod.rs",
             "rust/jumpstarter-proc/src/platform/windows/mod.rs",
             "rust/jumpstarter-proc/src/platform/windows/process.rs",
+            "rust/jumpstarter-proc/src/platform/windows/console.rs",
             "rust/jumpstarter-core-py/Cargo.toml", "rust/jumpstarter-core-py/src/lib.rs",
-            "rust/jumpstarter-core-py/src/local.rs",
+            "rust/jumpstarter-core-py/src/local.rs", "rust/jumpstarter-core-py/src/console.rs",
             "rust/jumpstarter-core-py/src/process.rs"
           )
           foreach ($required in $requiredFiles) {
@@ -232,7 +233,7 @@ jobs:
           $python = Join-Path $venv "Scripts/python.exe"
           uv pip install --python $python $wheel.FullName
           if ($LASTEXITCODE -ne 0) { throw "Cannot install rebuilt core wheel" }
-          & $python -I -c "from jumpstarter_core.local import PrivateDirectory, UnixListener, UnixStream; from jumpstarter_core.process import ChildProcessTree; import jumpstarter_core._core; print(jumpstarter_core._core.__file__)"
+          & $python -I -c "from jumpstarter_core.local import PrivateDirectory, UnixListener, UnixStream; from jumpstarter_core.console import OutputMode; from jumpstarter_core.process import ChildProcessTree; import jumpstarter_core._core; print(jumpstarter_core._core.__file__)"
           if ($LASTEXITCODE -ne 0) { throw "Cannot import rebuilt core wheel" }
       - name: Upload the source distribution
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
