@@ -29,6 +29,7 @@ WINDOWS_PACKAGES = frozenset({
     "jumpstarter-cli-driver",
     "jumpstarter-driver-ble",
     "jumpstarter-driver-composite",
+    "jumpstarter-driver-energenie",
     "jumpstarter-driver-network",
     "jumpstarter-driver-opendal",
     "jumpstarter-driver-pi-pico",
