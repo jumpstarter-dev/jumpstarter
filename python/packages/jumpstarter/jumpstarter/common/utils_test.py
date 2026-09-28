@@ -1,4 +1,5 @@
 import shutil
+import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,6 +10,7 @@ from jumpstarter.config.client import ClientConfigV1Alpha1Drivers
 from jumpstarter.utils.env import ExporterMetadata, _resolve_drivers_config
 
 
+@pytest.mark.skipif(shutil.which("true") is None or shutil.which("false") is None, reason="requires POSIX commands")
 def test_launch_shell(tmp_path, monkeypatch):
     monkeypatch.setenv("SHELL", shutil.which("true"))
     exit_code = launch_shell(
@@ -30,6 +32,7 @@ def test_launch_shell(tmp_path, monkeypatch):
     assert exit_code == 1
 
 
+@pytest.mark.skipif(shutil.which("true") is None, reason="requires POSIX true command")
 def test_launch_shell_prints_motd(tmp_path, monkeypatch, capfd):
     monkeypatch.setenv("SHELL", shutil.which("true"))
     exit_code = launch_shell(
@@ -44,15 +47,14 @@ def test_launch_shell_prints_motd(tmp_path, monkeypatch, capfd):
     assert "Welcome to my-exporter!" in capfd.readouterr().out
 
 
-def test_launch_shell_no_motd_for_command(tmp_path, monkeypatch, capfd):
-    monkeypatch.setenv("SHELL", shutil.which("true"))
+def test_launch_shell_no_motd_for_command(tmp_path, capfd):
     exit_code = launch_shell(
         host=str(tmp_path / "test.sock"),
         context="remote",
         allow=["*"],
         unsafe=False,
         use_profiles=False,
-        command=(shutil.which("true"),),  # type: ignore[arg-type]
+        command=(sys.executable, "-c", "pass"),
         motd="Welcome to my-exporter!",
     )
     assert exit_code == 0
@@ -72,6 +74,7 @@ def test_launch_shell_command_not_found(tmp_path, capfd):
     assert "command not found: nonexistent_binary_xyz" in capfd.readouterr().err
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX executable permission bits")
 def test_launch_shell_permission_denied(tmp_path, capfd):
     script = tmp_path / "not_executable.sh"
     script.write_text("#!/bin/sh\necho hi\n")
@@ -103,6 +106,7 @@ def test_launch_shell_oserror(tmp_path, capfd):
     assert "cannot execute" in capfd.readouterr().err
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX shebang script execution")
 def test_launch_shell_sets_lease_env(tmp_path, monkeypatch):
     env_output = tmp_path / "env_output.txt"
     script = tmp_path / "capture_env.sh"
@@ -488,13 +492,14 @@ def test_launch_shell_logs_exit_status(tmp_path, caplog):
             allow=["*"],
             unsafe=False,
             use_profiles=False,
-            command=("sh", "-c", "exit 42"),
+            command=(sys.executable, "-c", "raise SystemExit(42)"),
         )
     assert exit_code == 42
     assert "exited with 42" in caplog.text
 
 
 @pytest.mark.parametrize(("signal_name", "signum", "expected"), [("KILL", 9, 137), ("TERM", 15, 143)])
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX signal exit codes")
 def test_launch_shell_signal_death(tmp_path, caplog, signal_name, signum, expected):
     with caplog.at_level("DEBUG", logger="jumpstarter.common.utils"):
         exit_code = launch_shell(

@@ -320,7 +320,10 @@ def test_metrics_server_bind_failure_is_fatal():
     import socket
 
     holder = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    holder.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    # Windows SO_REUSEADDR permits another socket to bind an occupied port.
+    # This fixture needs exclusive ownership, not address reuse after close.
+    if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+        holder.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
     holder.bind(("127.0.0.1", 0))
     holder.listen(1)
     occupied_port = holder.getsockname()[1]

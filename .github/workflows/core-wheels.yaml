@@ -1,0 +1,155 @@
+name: Core Windows Wheels
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'rust/jumpstarter-ipc/**'
+      - 'rust/jumpstarter-proc/**'
+      - 'rust/jumpstarter-core-py/**'
+      - 'rust/Cargo.toml'
+      - 'rust/Cargo.lock'
+      - 'python/native/jumpstarter-core/**'
+      - 'python/scripts/verify_pruned_cargo_lock*'
+      - '.github/workflows/core-wheels.yaml'
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-2025
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+      - id: uv
+        run: '"version=$(Get-Content .uv-version)" >> $env:GITHUB_OUTPUT'
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: ${{ steps.uv.outputs.version }}
+          python-version: '3.12'
+      - name: Cache Cargo downloads and build artifacts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: windows-core-cargo-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            windows-core-cargo-
+      - name: Test the source-archive lockfile guard
+        run: >-
+          uv run --no-project --python 3.12 --with pytest==8.4.1
+          python -m pytest python/scripts/verify_pruned_cargo_lock_test.py
+          -q -p no:cacheprovider -o addopts=
+      - name: Verify the native crates work without Python
+        run: |
+          foreach ($crate in @("jumpstarter-ipc", "jumpstarter-proc")) {
+            $tree = cargo tree --locked --manifest-path rust/Cargo.toml --package $crate --target x86_64-pc-windows-msvc
+            if ($LASTEXITCODE -ne 0) { throw "Cannot inspect $crate dependencies" }
+            Write-Output $tree
+            if ($tree -match '\bpyo3(?:[-\s]|$)') { throw "$crate must not depend on PyO3" }
+            cargo check --locked --manifest-path rust/Cargo.toml --package $crate --target x86_64-pc-windows-msvc
+            if ($LASTEXITCODE -ne 0) { throw "Cannot build $crate independently of Python" }
+          }
+          cargo run --locked --release --manifest-path rust/Cargo.toml --package jumpstarter-ipc `
+            --example local_roundtrip --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "The standalone Rust IPC example failed" }
+      - name: Fetch locked dependencies for the offline archive rebuild
+        run: cargo fetch --locked --manifest-path rust/Cargo.toml
+      - name: Build the stable ABI wheel from the locked workspace
+        working-directory: python/native/jumpstarter-core
+        run: >-
+          uvx --from maturin==1.15.0 maturin build
+          --release --locked --target x86_64-pc-windows-msvc
+          --interpreter python --out ../../../dist/core
+      - name: Build the source distribution
+        working-directory: python/native/jumpstarter-core
+        run: |
+          $lockHash = (Get-FileHash ../../../rust/Cargo.lock).Hash
+          uvx --from maturin==1.15.0 maturin sdist --out ../../../dist/core
+          if ($LASTEXITCODE -ne 0) { throw "Core source distribution build failed" }
+          if ((Get-FileHash ../../../rust/Cargo.lock).Hash -ne $lockHash) {
+            throw "Source distribution generation changed the workspace lockfile"
+          }
+      - name: Rebuild the source distribution outside the checkout
+        run: |
+          $workspaceLock = Join-Path (Get-Location) "rust/Cargo.lock"
+          $lockVerifier = Join-Path (Get-Location) "python/scripts/verify_pruned_cargo_lock.py"
+          $sdists = @(Get-ChildItem dist/core/jumpstarter_core-*.tar.gz)
+          if ($sdists.Count -ne 1) { throw "Expected one core source distribution" }
+          $sdist = $sdists[0]
+          $sourceDir = Join-Path $env:RUNNER_TEMP "jumpstarter-core-sdist"
+          New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+          tar -xf $sdist.FullName -C $sourceDir
+          if ($LASTEXITCODE -ne 0) { throw "Cannot extract core source distribution" }
+          $packageDirs = @(Get-ChildItem -LiteralPath $sourceDir -Directory)
+          if ($packageDirs.Count -ne 1) { throw "Expected one extracted source directory" }
+          $packageDir = $packageDirs[0]
+          $requiredFiles = @(
+            "tests/test_local.py", "tests/test_process.py",
+            "docs/platforms/windows.md",
+            "jumpstarter_core/local.py", "jumpstarter_core/process.py",
+            "rust/Cargo.toml", "rust/Cargo.lock",
+            "rust/jumpstarter-ipc/Cargo.toml", "rust/jumpstarter-ipc/src/lib.rs",
+            "rust/jumpstarter-ipc/src/local.rs", "rust/jumpstarter-ipc/src/platform/mod.rs",
+            "rust/jumpstarter-ipc/src/platform/windows/mod.rs",
+            "rust/jumpstarter-ipc/src/platform/windows/local.rs",
+            "rust/jumpstarter-ipc/src/platform/windows/private_directory.rs",
+            "rust/jumpstarter-proc/Cargo.toml", "rust/jumpstarter-proc/src/lib.rs",
+            "rust/jumpstarter-proc/src/process.rs",
+            "rust/jumpstarter-proc/src/platform/mod.rs",
+            "rust/jumpstarter-proc/src/platform/windows/mod.rs",
+            "rust/jumpstarter-proc/src/platform/windows/process.rs",
+            "rust/jumpstarter-core-py/Cargo.toml", "rust/jumpstarter-core-py/src/lib.rs",
+            "rust/jumpstarter-core-py/src/local.rs",
+            "rust/jumpstarter-core-py/src/process.rs"
+          )
+          foreach ($required in $requiredFiles) {
+            if (-not (Test-Path -LiteralPath (Join-Path $packageDir.FullName $required))) {
+              throw "Core source distribution is missing $required"
+            }
+          }
+          Push-Location $packageDir.FullName
+          try {
+            # Maturin prunes workspace members but retains the full Cargo.lock.
+            # Let Cargo prune unused entries offline, then reject any resolution change.
+            cargo metadata --offline --format-version 1 --manifest-path rust/jumpstarter-core-py/Cargo.toml > $null
+            if ($LASTEXITCODE -ne 0) { throw "Cannot resolve the extracted workspace offline" }
+            uv run --no-project --python 3.12 python $lockVerifier $workspaceLock rust/Cargo.lock
+            if ($LASTEXITCODE -ne 0) { throw "Extracted source distribution changed locked dependencies" }
+            uvx --from maturin==1.15.0 maturin build --release --locked `
+              --offline --target x86_64-pc-windows-msvc --interpreter python `
+              --out "$env:RUNNER_TEMP/core-rebuilt-wheels"
+            if ($LASTEXITCODE -ne 0) { throw "Core source distribution rebuild failed" }
+          }
+          finally { Pop-Location }
+      - name: Import the rebuilt wheel in a clean environment
+        run: |
+          $wheels = @(Get-ChildItem "$env:RUNNER_TEMP/core-rebuilt-wheels/*-cp312-abi3-win_amd64.whl")
+          if ($wheels.Count -ne 1) { throw "Expected one cp312-abi3 Windows x64 wheel" }
+          $wheel = $wheels[0]
+          $venv = Join-Path $env:RUNNER_TEMP "core-wheel-test"
+          uv venv --python 3.12 $venv
+          if ($LASTEXITCODE -ne 0) { throw "Cannot create wheel test environment" }
+          $python = Join-Path $venv "Scripts/python.exe"
+          uv pip install --python $python $wheel.FullName
+          if ($LASTEXITCODE -ne 0) { throw "Cannot install rebuilt core wheel" }
+          & $python -I -c "from jumpstarter_core.local import PrivateDirectory, UnixListener, UnixStream; from jumpstarter_core.process import ChildProcessTree; import jumpstarter_core._core; print(jumpstarter_core._core.__file__)"
+          if ($LASTEXITCODE -ne 0) { throw "Cannot import rebuilt core wheel" }
+      - name: Upload wheel and source distribution
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: jumpstarter-core-windows-x64
+          path: dist/core/*
+          if-no-files-found: error

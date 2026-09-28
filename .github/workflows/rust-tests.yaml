@@ -5,6 +5,8 @@ on:
   pull_request:
     paths:
       - 'rust/**'
+      - '.uv-version'
+      - '.github/actions/rust-checks/**'
       - '.github/workflows/rust-tests.yaml'
   merge_group:
 
@@ -13,7 +15,17 @@ permissions:
 
 jobs:
   rust-tests:
-    runs-on: ubuntu-latest
+    name: Rust (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # The native IPC/process crates currently have Windows backends only.
+        # PRs use the newest supported Python; merge/manual runs add the others.
+        # Hosted Windows Server jobs do not qualify Windows 10/11 desktops.
+        os: [ubuntu-24.04, windows-2025]
+        python-version: ${{ fromJSON(github.event_name == 'pull_request' && '["3.14"]' || '["3.12", "3.13", "3.14"]') }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -27,6 +39,38 @@ jobs:
           toolchain: stable
           components: clippy, rustfmt
 
+      - id: uv
+        shell: bash
+        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: ${{ steps.uv.outputs.version }}
+          python-version: ${{ matrix.python-version }}
+
+      # The workspace includes PyO3 bindings. Windows test executables need the
+      # stable-ABI python3.dll on PATH as well as Python for build discovery.
+      - name: Install Python for Rust bindings
+        shell: pwsh
+        run: |
+          uv python install ${{ matrix.python-version }}
+          if ($LASTEXITCODE -ne 0) { throw "Cannot install Python for PyO3" }
+          $python = uv python find --managed-python ${{ matrix.python-version }}
+          if ($LASTEXITCODE -ne 0) { throw "Cannot locate Python for PyO3" }
+          "PYO3_PYTHON=$python" >> $env:GITHUB_ENV
+          Split-Path -Parent $python >> $env:GITHUB_PATH
+          $libdir = & $python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR') or '')"
+          if ($LASTEXITCODE -ne 0) { throw "Cannot locate the Python shared library" }
+          if ($libdir -and $IsLinux) {
+            $paths = @($libdir, $env:LD_LIBRARY_PATH) | Where-Object { $_ }
+            "LD_LIBRARY_PATH=$($paths -join [IO.Path]::PathSeparator)" >> $env:GITHUB_ENV
+          }
+          if ($libdir -and $IsMacOS) {
+            $paths = @($libdir, $env:DYLD_LIBRARY_PATH) | Where-Object { $_ }
+            "DYLD_LIBRARY_PATH=$($paths -join [IO.Path]::PathSeparator)" >> $env:GITHUB_ENV
+          }
+
       - name: Cache Cargo registry and build artifacts
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -34,18 +78,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
+          key: ${{ matrix.os }}-${{ runner.arch }}-py${{ matrix.python-version }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ matrix.os }}-${{ runner.arch }}-py${{ matrix.python-version }}-cargo-
 
-      - name: Check formatting
-        working-directory: rust
-        run: make fmt
-
-      - name: Run clippy
-        working-directory: rust
-        run: make lint
-
-      - name: Run tests
-        working-directory: rust
-        run: make test
+      - name: Build and check the Rust workspace
+        uses: ./.github/actions/rust-checks

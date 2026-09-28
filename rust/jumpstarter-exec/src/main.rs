@@ -1,10 +1,14 @@
+#[cfg(unix)]
 use std::collections::BTreeMap;
 use std::env;
 use std::process;
 
+#[cfg(unix)]
 use jumpstarter_exec::log::{parse_log_fields, LogFormat};
+#[cfg(unix)]
 use jumpstarter_exec::server::{self, ServeOptions};
 
+#[cfg(unix)]
 const DEFAULT_SOCKET: &str = "/shared/launcher.sock";
 
 /// Git-derived version, embedded at compile time by `build.rs`.
@@ -22,6 +26,7 @@ fn main() {
         "version" => {
             println!("jumpstarter-exec {VERSION}");
         }
+        #[cfg(unix)]
         "serve" => {
             let rest = &args[2..];
             let socket =
@@ -49,6 +54,7 @@ fn main() {
                 process::exit(1);
             }
         }
+        #[cfg(unix)]
         "exec" => {
             let separator = args.iter().position(|a| a == "--").unwrap_or_else(|| {
                 eprintln!("Usage: jumpstarter-exec exec [--socket <path>] -- <command> [args...]");
@@ -73,6 +79,7 @@ fn main() {
                 }
             }
         }
+        #[cfg(unix)]
         "shutdown" => {
             let rest = &args[2..];
             let socket =
@@ -85,6 +92,11 @@ fn main() {
                 }
             }
         }
+        #[cfg(not(unix))]
+        command @ ("serve" | "exec" | "shutdown") => {
+            eprintln!("jumpstarter-exec {command}: this command currently requires Unix");
+            process::exit(1);
+        }
         other => {
             eprintln!("jumpstarter-exec: unknown subcommand '{other}'");
             usage();
@@ -95,6 +107,8 @@ fn main() {
 
 fn usage() {
     eprintln!("Usage: jumpstarter-exec <serve|exec|shutdown|version> [options]");
+    #[cfg(not(unix))]
+    eprintln!("The serve, exec, and shutdown commands currently require Unix.");
     eprintln!();
     eprintln!("Subcommands:");
     eprintln!("  serve   [--socket <path>] [--debug] [--log-format json|text]");
@@ -116,6 +130,7 @@ fn usage() {
 
 /// Merge log fields from env and repeatable `--log-field` flags.
 /// CLI flags override env on key collision.
+#[cfg(unix)]
 fn collect_log_fields(args: &[String]) -> Result<BTreeMap<String, String>, String> {
     let mut fields = BTreeMap::new();
     if let Ok(raw) = env::var("JUMPSTARTER_EXEC_LOG_FIELDS") {
@@ -129,11 +144,13 @@ fn collect_log_fields(args: &[String]) -> Result<BTreeMap<String, String>, Strin
 }
 
 /// Parse a `--flag value` pair from a slice of arguments.
+#[cfg(unix)]
 fn parse_option(args: &[String], flag: &str) -> Option<String> {
     args.windows(2).find(|w| w[0] == flag).map(|w| w[1].clone())
 }
 
 /// Collect every `--flag value` occurrence.
+#[cfg(unix)]
 fn parse_all_options(args: &[String], flag: &str) -> Vec<String> {
     args.windows(2)
         .filter(|w| w[0] == flag)
@@ -141,10 +158,12 @@ fn parse_all_options(args: &[String], flag: &str) -> Vec<String> {
         .collect()
 }
 
+#[cfg(unix)]
 fn flag_present(args: &[String], flag: &str) -> bool {
     args.iter().any(|a| a == flag)
 }
 
+#[cfg(unix)]
 fn env_truthy(name: &str) -> bool {
     match env::var(name) {
         Ok(v) => matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"),

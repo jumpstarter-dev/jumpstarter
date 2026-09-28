@@ -18,6 +18,7 @@ from jumpstarter_protocol import (
 
 from .logging import LogHandler
 from jumpstarter.common import ExporterStatus, LogSource, Metadata, TemporarySocket
+from jumpstarter.common.local import local_socket_target
 from jumpstarter.common.streams import StreamRequestMetadata
 from jumpstarter.logging import set_log_context, unbind_log_context
 from jumpstarter.metrics import get_registry
@@ -243,7 +244,7 @@ class Session(
             interceptors=interceptors,
             options=list(_GRPC_SERVER_OPTIONS_TCP_KEEPALIVE),
         )
-        server.add_insecure_port(f"unix://{unix_path}")
+        server.add_insecure_port(local_socket_target(unix_path))
         logger.debug("Session server listening on unix://%s (hooks)", unix_path)
         self._add_tcp_port(server, host, port, tls_credentials)
 
@@ -255,7 +256,7 @@ class Session(
     @asynccontextmanager
     async def serve_unix_async(self):
         with TemporarySocket() as path:
-            async with self.serve_port_async(f"unix://{path}"):
+            async with self.serve_port_async(local_socket_target(path)):
                 yield path
 
     @asynccontextmanager
@@ -270,7 +271,7 @@ class Session(
             tuple[str, str]: (main_socket_path, hook_socket_path)
         """
         with TemporarySocket() as main_path, TemporarySocket() as hook_path:
-            async with self.serve_multi_port_async(f"unix://{main_path}", f"unix://{hook_path}"):
+            async with self.serve_multi_port_async(local_socket_target(main_path), local_socket_target(hook_path)):
                 yield main_path, hook_path
 
     @contextmanager

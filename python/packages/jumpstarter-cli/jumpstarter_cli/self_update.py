@@ -1,5 +1,6 @@
 import shutil
 import subprocess
+import sys
 import urllib.request
 from pathlib import Path
 
@@ -31,6 +32,11 @@ def self_update(source: str):
     """
     Update jumpstarter
     """
+    if sys.platform == "win32":
+        raise click.ClickException(
+            "jmp self update uses the POSIX installer. On Windows, upgrade the "
+            "jumpstarter-cli package with the tool that installed it (for example uv or pip)."
+        )
     install_dir = _determine_install_dir()
     script = _fetch_install_script()
 

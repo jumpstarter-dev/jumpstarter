@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -43,6 +44,7 @@ def test__fetch_install_script(urlopen_mock):
         ),
     ],
 )
+@patch("jumpstarter_cli.self_update.sys", SimpleNamespace(platform="linux"))
 @patch("jumpstarter_cli.self_update._determine_install_dir")
 @patch("jumpstarter_cli.self_update._fetch_install_script")
 @patch("subprocess.run")
@@ -65,3 +67,12 @@ def test_self_update(
         check=True,
         text=True,
     )
+
+
+@patch("jumpstarter_cli.self_update.sys", SimpleNamespace(platform="win32"))
+@patch("subprocess.run")
+def test_self_update_explains_windows_upgrade(subprocess_mock):
+    result = CliRunner().invoke(self, ["update"])
+    assert result.exit_code != 0
+    assert "On Windows, upgrade the jumpstarter-cli package" in result.output
+    subprocess_mock.assert_not_called()

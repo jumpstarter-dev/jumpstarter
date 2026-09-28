@@ -34,27 +34,38 @@ jobs:
             python:
               - 'python/**'
               - '!python/**/*.md'
+              - 'rust/jumpstarter-ipc/**'
+              - 'rust/jumpstarter-proc/**'
+              - 'rust/jumpstarter-core-py/**'
+              - 'rust/Cargo.toml'
+              - 'rust/Cargo.lock'
+              - '.uv-version'
+              - '.github/actions/python-checks/**'
               - '.github/workflows/python-tests.yaml'
             renode_driver:
               - 'python/packages/jumpstarter-driver-renode/**'
       - name: Compute test matrix
         id: matrix
         run: |
-          # PRs: test only Python 3.14 on Linux to save CI time.
+          # PRs: test only Python 3.14 on Linux and Windows to save CI time.
           # Merge queue and workflow_dispatch run the full matrix
-          # (all Python versions on both Linux and macOS).
+          # (all Python versions on Linux, macOS and Windows).
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             echo 'python-versions=["3.14"]' >> "$GITHUB_OUTPUT"
-            echo 'runners=["ubuntu-24.04"]' >> "$GITHUB_OUTPUT"
+            echo 'runners=["ubuntu-24.04", "windows-2025"]' >> "$GITHUB_OUTPUT"
           else
             echo 'python-versions=["3.12", "3.13", "3.14"]' >> "$GITHUB_OUTPUT"
-            echo 'runners=["ubuntu-24.04", "macos-15"]' >> "$GITHUB_OUTPUT"
+            echo 'runners=["ubuntu-24.04", "macos-15", "windows-2025"]' >> "$GITHUB_OUTPUT"
           fi
 
   pytest-matrix:
     needs: changes
     if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
     env:
       # renovate: datasource=custom.fedora-cloud-qcow2 depName=fedora-cloud-base-generic
       FEDORA_CLOUD_VERSION: 43-1.6
@@ -63,13 +74,14 @@ jobs:
       # but keep a generous timeout as a safety net.
       UV_LOCK_TIMEOUT: 1800
     strategy:
+      fail-fast: false
       matrix:
         runs-on: ${{ fromJson(needs.changes.outputs.runners) }}
         # Floor: oldest Python in supported platforms (RHEL 9 appstream)
         # Ceiling: newest Python in latest Fedora
         # Review on each RHEL/Fedora release
-        # PRs run only 3.14 on Linux; merge queue runs all versions
-        # on both Linux and macOS.
+        # PRs run only 3.14 on Linux and Windows; merge queue runs all versions
+        # on Linux, macOS and Windows.
         python-version: ${{ fromJson(needs.changes.outputs.python-versions) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -77,6 +89,7 @@ jobs:
           fetch-depth: 0
 
       - name: Free up runner disk space
+        if: runner.os == 'Linux'
         uses: mathio/gha-cleanup@aca3d43a05bf564f5fc69acb929a65b01797f22b # v1.1.2
         with:
           remove-browsers: true
@@ -90,10 +103,16 @@ jobs:
           version: ${{ steps.uv.outputs.version }}
           python-version: ${{ matrix.python-version }}
 
+      - name: Install Rust for native Python components
+        if: runner.os == 'Windows'
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: stable
+
       - name: Install Qemu (Linux)
         if: runner.os == 'Linux'
         run: |
-          echo <<EOF | sudo tee /etc/udev/rules.d/99-kvm.rules
+          cat <<EOF | sudo tee /etc/udev/rules.d/99-kvm.rules
           KERNEL=="kvm", GROUP="kvm", MODE="0666"
           KERNEL=="vhost-vsock", GROUP="kvm", MODE="0666"
           KERNEL=="vhost-net", GROUP="kvm", MODE="0666"
@@ -155,6 +174,7 @@ jobs:
           brew install renode/tap/renode
 
       - name: Cache Fedora Cloud images
+        if: runner.os != 'Windows'
         id: cache-fedora-cloud-images
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -162,7 +182,7 @@ jobs:
           key: fedora-cloud-${{ env.FEDORA_CLOUD_VERSION }}
 
       - name: Download Fedora Cloud images
-        if: steps.cache-fedora-cloud-images.outputs.cache-hit != 'true'
+        if: runner.os != 'Windows' && steps.cache-fedora-cloud-images.outputs.cache-hit != 'true'
         run: |
           FEDORA_RELEASE="${FEDORA_CLOUD_VERSION%%-*}"
           for arch in aarch64 x86_64; do
@@ -170,42 +190,35 @@ jobs:
               "https://iad.mirror.rackspace.com/fedora/releases/${FEDORA_RELEASE}/Cloud/${arch}/images/Fedora-Cloud-Base-Generic-${FEDORA_CLOUD_VERSION}.${arch}.qcow2"
           done
 
-      - name: Verify uv.lock is up-to-date
-        working-directory: python
-        run: |
-          uv lock --check
-
-      - name: Run pytest
-        working-directory: python
-        env:
-          PYTEST_ADDOPTS: "--cov-report=xml --log-level=CRITICAL --log-cli-level=CRITICAL"
-        run: |
-          make test -j4 LOGS_DIR=${{ runner.temp }}/test-logs
+      - name: Build and test every Python package
+        uses: ./.github/actions/python-checks
+        with:
+          logs-dir: ${{ runner.temp }}/test-logs
 
       - name: Upload test logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: test-logs-${{ matrix.runs-on }}-py${{ matrix.python-version }}
-          path: ${{ runner.temp }}/test-logs/
+          path: |
+            ${{ runner.temp }}/test-logs/
+            !${{ runner.temp }}/test-logs/tmp/**
+            !${{ runner.temp }}/test-logs/cache/**
           if-no-files-found: ignore
           retention-days: 7
 
-      # Diff-coverage is only checked on Linux. Several packages (e.g.
-      # jumpstarter-driver-dut-network) are Linux-only, so their tests are
-      # entirely skipped on macOS, making all changed lines appear uncovered
-      # and dragging diff-coverage below the threshold. Linux runners already
-      # enforce the 80% gate, so nothing is lost.
+      # Diff-coverage is checked on Linux, where Linux-specific backend and
+      # integration tests can execute alongside portable client/unit tests.
       - name: Check coverage on changed lines
         if: github.event_name == 'pull_request' && runner.os == 'Linux'
         working-directory: python
         run: |
-          coverage_files=$(find packages ../docs/source/reference -name coverage.xml 2>/dev/null | sort)
+          coverage_files=$(find "${{ runner.temp }}/test-logs" -name '*.coverage.xml' | sort)
           if [ -z "$coverage_files" ]; then
             echo "::error::No coverage.xml files found"
             exit 1
           fi
-          uv run diff-cover $coverage_files --compare-branch=origin/${{ github.base_ref }} --fail-under=80 --exclude '*_pb2.py' '*_pb2_grpc.py' '**/conftest.py' '**/test_*.py' '**/*_test.py'
+          uv run --no-sync diff-cover $coverage_files --compare-branch=origin/${{ github.base_ref }} --fail-under=80 --exclude '*_pb2.py' '*_pb2_grpc.py' '**/conftest.py' '**/test_*.py' '**/*_test.py'
 
   # https://github.com/orgs/community/discussions/26822
   pytest:

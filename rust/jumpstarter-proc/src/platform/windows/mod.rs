@@ -1,0 +1,15 @@
+//! Windows process containment implementation.
+//!
+//! This is the only implemented backend. Public operations are exposed through
+//! `crate::process`; native handles stay private here.
+//!
+//! - [`process`] assigns a gated child to a private Job Object configured with
+//!   `KILL_ON_JOB_CLOSE`. Closing the last job handle, including when the owning
+//!   process dies, terminates remaining members. Children created before
+//!   assignment are not captured. Assignment failures are reported, and callers
+//!   retain graceful shutdown, deadline enforcement, and reaping.
+//!
+//! This module uses `windows-sys` directly; no Python interpreter or bindings
+//! participate in resource ownership or cleanup.
+
+pub(crate) mod process;

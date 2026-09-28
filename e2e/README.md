@@ -19,6 +19,28 @@ TLS CA, controller/operator deployed via `make -C controller deploy`, namespace
 `.e2e-setup-complete`, QEMU guest image prefetched. Tests run via `make e2e-run`
 → `e2e/run-e2e.sh` (`go run ginkgo`) with `JUMPSTARTER_GRPC_INSECURE=1`.
 
+## Native Windows client and exporter checks (separate runners)
+
+[Windows setup and execution](windows/README.md) uses a dedicated Podman/Kind
+cluster and a Linux exporter built from the working checkout. Run
+`e2e/windows/windows_client_e2e.py` with the native Windows interpreter. These
+are explicit compatibility probes, not Ginkgo lanes or part of `make e2e-run`.
+
+| Checks | Prerequisites | Pass check |
+|---|---|---|
+| Direct SDK discovery and power | Linux fixture on loopback port 19090 | Driver tree loads; MockPower read/on/off RPCs succeed |
+| Direct CLI and shell | Native `j` and `jmp shell --tls-grpc` | Driver help and power read commands succeed in subprocesses |
+| Controller discovery and leases | Kind controller/router, private test credentials, managed Linux exporter | Verified TLS/authentication, online discovery, lease acquisition and release |
+| Managed SDK and shell | Same controller deployment | Stock routed RPCs and `jmp shell` succeed; local socket/directory cleanup and lease release complete |
+| PowerShell sessions (`--powershell`) | Same fixtures and PowerShell 7 | Interactive `jmp shell` prompt, session environment, `j` commands and exit code |
+| Native Windows exporter (separate `windows_exporter_e2e.py` runner) | Installed CLI/core wheel and power package; no Podman/Kind/hardware | Stock `jmp run`, PowerShell and Python lifecycle hooks, direct client probes, worker restart, Ctrl+Break stop, JSON logs, same-port restart and process-tree cleanup after supervisor death |
+
+The runners write JSON reports and return nonzero for failed probes. The Linux
+control run uses the same client runner and fixtures. These tests cover synthetic
+devices across real OS/process/network boundaries; physical hardware requires
+additional coverage. The [native exporter instructions](windows/README.md#native-windows-exporter)
+describe the standalone Windows process, hook and loopback-driver qualification.
+
 ---
 
 ## Lane: `core` (`e2e_test.go`)

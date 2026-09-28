@@ -449,7 +449,8 @@ class ClientConfigV1Alpha1(BaseSettings):
             payload.pop("leases", None)
         temp_fd, temp_path = tempfile.mkstemp(prefix=f".{config.path.name}.", dir=config.path.parent)
         try:
-            os.fchmod(temp_fd, 0o600)
+            if hasattr(os, "fchmod"):  # Missing on Windows before Python 3.13
+                os.fchmod(temp_fd, 0o600)
             with os.fdopen(temp_fd, "w") as f:
                 yaml.safe_dump(
                     payload,

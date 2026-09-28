@@ -21,6 +21,12 @@ def test_cli():
         assert subcommand in result.output
 
 
+def test_cli_help():
+    result = CliRunner().invoke(jmp, ["--help"])
+    assert result.exit_code == 0, result.output
+    assert "The Jumpstarter CLI" in result.output
+
+
 class TestDeleteLeasesShortFlags:
     def test_delete_leases_accepts_short_a_flag(self):
         from .delete import delete_leases

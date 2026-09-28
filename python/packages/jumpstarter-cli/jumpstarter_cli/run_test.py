@@ -17,8 +17,8 @@ def _make_config(max_rapid_failures=5, rapid_failure_window=60, exit_on_lease_en
 class TestServeWithExcHandlingRapidFailures:
     """Test rapid failure detection in _serve_with_exc_handling.
 
-    These tests mock os.fork and _handle_parent/_handle_child to simulate
-    the restart loop without actually forking processes.
+    These tests mock one supervised child run to exercise the common restart
+    policy without actually starting processes.
     """
 
     def test_exits_after_max_rapid_failures(self):
@@ -43,8 +43,7 @@ class TestServeWithExcHandlingRapidFailures:
         time_iter = iter(time_values)
 
         with (
-            patch.object(run_mod, "_handle_parent", side_effect=mock_handle_parent),
-            patch("os.fork", side_effect=mock_fork),
+            patch.object(run_mod, "_run_child", side_effect=lambda *_args: mock_handle_parent(mock_fork())),
             patch("time.monotonic", side_effect=lambda: next(time_iter)),
         ):
             exit_code = run_mod._serve_with_exc_handling(config)
@@ -89,8 +88,7 @@ class TestServeWithExcHandlingRapidFailures:
         time_iter = iter(time_values)
 
         with (
-            patch.object(run_mod, "_handle_parent", side_effect=mock_handle_parent),
-            patch("os.fork", side_effect=mock_fork),
+            patch.object(run_mod, "_run_child", side_effect=lambda *_args: mock_handle_parent(mock_fork())),
             patch("time.monotonic", side_effect=lambda: next(time_iter)),
         ):
             exit_code = run_mod._serve_with_exc_handling(config)
@@ -113,8 +111,7 @@ class TestServeWithExcHandlingRapidFailures:
         config = _make_config()
 
         with (
-            patch.object(run_mod, "_handle_parent", side_effect=mock_handle_parent),
-            patch("os.fork", side_effect=mock_fork),
+            patch.object(run_mod, "_run_child", side_effect=lambda *_args: mock_handle_parent(mock_fork())),
             patch("time.monotonic", return_value=0.0),
         ):
             exit_code = run_mod._serve_with_exc_handling(config)
@@ -140,8 +137,7 @@ class TestServeWithExcHandlingRapidFailures:
         config = _make_config()
 
         with (
-            patch.object(run_mod, "_handle_parent", side_effect=mock_handle_parent),
-            patch("os.fork", side_effect=mock_fork),
+            patch.object(run_mod, "_run_child", side_effect=lambda *_args: mock_handle_parent(mock_fork())),
             patch("time.monotonic", side_effect=lambda: next(time_iter)),
         ):
             exit_code = run_mod._serve_with_exc_handling(config)
@@ -170,8 +166,7 @@ class TestServeWithExcHandlingRapidFailures:
         time_iter = iter(time_values)
 
         with (
-            patch.object(run_mod, "_handle_parent", side_effect=mock_handle_parent),
-            patch("os.fork", side_effect=mock_fork),
+            patch.object(run_mod, "_run_child", side_effect=lambda *_args: mock_handle_parent(mock_fork())),
             patch("time.monotonic", side_effect=lambda: next(time_iter)),
         ):
             exit_code = run_mod._serve_with_exc_handling(config)
@@ -194,8 +189,7 @@ class TestExitOnLeaseEnd:
             return None  # Child exited 0
 
         with (
-            patch.object(run_mod, "_handle_parent", side_effect=mock_handle_parent),
-            patch("os.fork", side_effect=mock_fork),
+            patch.object(run_mod, "_run_child", side_effect=lambda *_args: mock_handle_parent(mock_fork())),
             patch("time.monotonic", return_value=0.0),
         ):
             exit_code = run_mod._serve_with_exc_handling(config)
@@ -213,8 +207,7 @@ class TestExitOnLeaseEnd:
             return 137  # Killed by signal
 
         with (
-            patch.object(run_mod, "_handle_parent", side_effect=mock_handle_parent),
-            patch("os.fork", side_effect=mock_fork),
+            patch.object(run_mod, "_run_child", side_effect=lambda *_args: mock_handle_parent(mock_fork())),
             patch("time.monotonic", return_value=0.0),
         ):
             exit_code = run_mod._serve_with_exc_handling(config)

@@ -101,9 +101,9 @@ class TestGetExtraCertsPath:
             assert result == temp_file.name
             assert os.path.isabs(result)
 
-    def test_get_extra_certs_path_nonexistent(self):
+    def test_get_extra_certs_path_nonexistent(self, tmp_path):
         # Function should still return absolute path even if file doesn't exist
-        nonexistent_path = "/nonexistent/path/test.crt"
+        nonexistent_path = str(tmp_path / "nonexistent" / "test.crt")
         result = get_extra_certs_path(nonexistent_path)
         assert result == nonexistent_path
         assert os.path.isabs(result)

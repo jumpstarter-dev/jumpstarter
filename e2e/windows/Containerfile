@@ -1,0 +1,39 @@
+FROM ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc AS uv
+FROM docker.io/library/python:3.12-slim-bookworm
+
+COPY --from=uv /uv /usr/local/bin/uv
+ARG HATCH_VCS_PRETEND_VERSION=0.10.0.dev112
+ARG SOURCE_REVISION=unknown
+LABEL org.opencontainers.image.revision=${SOURCE_REVISION}
+ENV HATCH_VCS_PRETEND_VERSION=${HATCH_VCS_PRETEND_VERSION} \
+    SETUPTOOLS_SCM_PRETEND_VERSION=${HATCH_VCS_PRETEND_VERSION} \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_LINK_MODE=copy \
+    PYTHONUNBUFFERED=1 \
+    PATH=/opt/venv/bin:$PATH
+
+# Use a context containing tracked Python sources and these fixture files only.
+# The .git directory and host virtual environments are not needed for the build.
+COPY python/pyproject.toml python/uv.lock /src/python/
+COPY python/packages /src/python/packages
+COPY python/examples /src/python/examples
+# Retain the conditional dependency's metadata. Linux does not build or install
+# the Windows-only native transport and does not need a Rust toolchain.
+COPY python/native /src/python/native
+WORKDIR /src/python
+# Resolve the source URL without copying Git history or invoking git in the
+# image. This changes build metadata only; all Python source remains untouched.
+RUN SOURCE_REVISION=${SOURCE_REVISION} python -c "import os; from pathlib import Path; [p.write_text(p.read_text().replace('{commit_hash}', os.environ['SOURCE_REVISION'])) for p in Path('.').glob('*/*/pyproject.toml')]"
+RUN uv sync --frozen --no-dev --no-editable \
+    --package jumpstarter-cli \
+    --package jumpstarter-driver-power \
+    --package jumpstarter-driver-network \
+    --package jumpstarter-driver-composite \
+    --package jumpstarter-driver-pyserial \
+    && uv cache clean
+
+COPY e2e/windows/exporter.yaml /fixture/exporter.yaml
+COPY e2e/windows/windows_exporter_fixture.py /fixture/windows_exporter_fixture.py
+EXPOSE 19090
+ENTRYPOINT ["python", "/fixture/windows_exporter_fixture.py"]
+CMD ["jmp", "run", "--exporter-config", "/fixture/exporter.yaml", "--tls-grpc-listener", "0.0.0.0:19090", "--tls-grpc-insecure"]

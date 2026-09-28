@@ -14,7 +14,6 @@ from anyio import (
     AsyncContextManagerMixin,
     CancelScope,
     Event,
-    connect_unix,
     create_memory_object_stream,
     create_task_group,
     move_on_after,
@@ -31,6 +30,7 @@ from jumpstarter_protocol import (
 )
 
 from jumpstarter.common import ExporterStatus, Metadata, TemporarySocket
+from jumpstarter.common.local import connect_local_stream, local_socket_target
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.config.env import JMP_GRPC_INSECURE, JUMPSTARTER_GRPC_INSECURE
 from jumpstarter.config.tls import TLSConfigV1Alpha1
@@ -863,7 +863,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         """
         try:
             logger.debug("Connecting to session socket at %s", path)
-            async with await connect_unix(path) as stream:
+            async with await connect_local_stream(path) as stream:
                 logger.debug("Connected to session, bridging to router at %s", endpoint)
                 async with connect_router_stream(endpoint, token, stream, tls_config, grpc_options):
                     logger.debug("Router stream established, forwarding traffic")
@@ -954,7 +954,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             async with session.serve_unix_async() as path:
                 # Create a gRPC channel to the controller via the socket
                 async with grpc.aio.secure_channel(
-                    f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
+                    local_socket_target(path), grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
                 ) as channel:
                     # Register the exporter with the controller
                     await self._register_with_controller(channel)

@@ -7,6 +7,8 @@ community and we welcome contributions.
   changes, and submit a pull request
 - [Development Environment](contributing/development-environment.md): Setting up
   your local environment for Python and Go development
+- [Platform Builds and Tests](contributing/platform-testing.md): Shared CI checks
+  and native Windows, macOS, and Linux testing
 - [Guidelines](contributing/guidelines.md): Code style, documentation practices,
   and AI assistant configuration
 - [Jumpstarter Enhancement Proposals](contributing/jeps/index.md): Process for
@@ -26,6 +28,7 @@ community and we welcome contributions.
 
 contributing/how-to-contribute.md
 contributing/development-environment.md
+contributing/platform-testing.md
 contributing/guidelines.md
 contributing/jeps/index.md
 ```

@@ -1,12 +1,14 @@
 # Jumpstarter Rust workspace.
 #
 # Sibling language root to `python/` and `controller/`.
-# See the rust-core-rewrite branch for the full crate decomposition;
-# this workspace grows incrementally as crates land on main.
+# See README.md for the crate layout and runtime integration guidance.
 [workspace]
 resolver = "2"
 members = [
     "jumpstarter-exec",
+    "jumpstarter-ipc",
+    "jumpstarter-proc",
+    "jumpstarter-core-py",
 ]
 
 [workspace.package]

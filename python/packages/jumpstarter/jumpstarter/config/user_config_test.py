@@ -154,10 +154,14 @@ def test_user_config_load_or_create_config_exists():
         mock_load.assert_called_once()
 
 
-def test_user_config_load_or_create_dir_exists():
+def test_user_config_load_or_create_dir_exists(monkeypatch, tmp_path):
+    config_dir = tmp_path / "jumpstarter"
+    config_dir.mkdir()
+    monkeypatch.setattr(UserConfigV1Alpha1, "BASE_CONFIG_PATH", config_dir)
+    monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", config_dir / "config.yaml")
     with (
         patch.object(UserConfigV1Alpha1, "exists", return_value=False) as mock_exists,
-        patch.object(os.path, "exists", return_value=True),patch.object(UserConfigV1Alpha1, "save") as mock_save
+        patch.object(UserConfigV1Alpha1, "save") as mock_save,
     ):
         _ = UserConfigV1Alpha1.load_or_create()
         mock_exists.assert_called_once()
@@ -166,13 +170,14 @@ def test_user_config_load_or_create_dir_exists():
         )
 
 
-def test_user_config_load_or_create_dir_does_not_exist():
-    with tempfile.TemporaryDirectory() as d:
-        UserConfigV1Alpha1.BASE_CONFIG_PATH = f"{d}/jumpstarter"  # type: ignore[assignment]
-        UserConfigV1Alpha1.USER_CONFIG_PATH = f"{d}/jumpstarter/config.yaml"  # type: ignore[assignment]
-        with patch.object(UserConfigV1Alpha1, "save") as mock_save:
-            _ = UserConfigV1Alpha1.load_or_create()
-            mock_save.assert_called_once_with(UserConfigV1Alpha1(config=UserConfigV1Alpha1Config(current_client=None)))
+def test_user_config_load_or_create_dir_does_not_exist(monkeypatch, tmp_path):
+    config_dir = tmp_path / "jumpstarter"
+    monkeypatch.setattr(UserConfigV1Alpha1, "BASE_CONFIG_PATH", config_dir)
+    monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", config_dir / "config.yaml")
+    with patch.object(UserConfigV1Alpha1, "save") as mock_save:
+        _ = UserConfigV1Alpha1.load_or_create()
+        mock_save.assert_called_once_with(UserConfigV1Alpha1(config=UserConfigV1Alpha1Config(current_client=None)))
+    assert config_dir.is_dir()
 
 
 def test_user_config_save(monkeypatch: pytest.MonkeyPatch):
@@ -182,6 +187,7 @@ config:
   current-client: testclient
 """
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+        f.close()
         monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", f.name)
         config = UserConfigV1Alpha1(
             config=UserConfigV1Alpha1Config(
@@ -208,6 +214,7 @@ config:
   current-client: null
 """
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+        f.close()
         monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", f.name)
         config = UserConfigV1Alpha1(config=UserConfigV1Alpha1Config(current_client=None))
         UserConfigV1Alpha1.save(config)
@@ -234,6 +241,7 @@ config:
             drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False),
         ),
     ) as mock_load, tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+        f.close()
         monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", f.name)
         config = UserConfigV1Alpha1(
             config=UserConfigV1Alpha1Config(
@@ -262,6 +270,7 @@ config:
   current-client: null
 """
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+        f.close()
         monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", f.name)
         config = UserConfigV1Alpha1(
             config=UserConfigV1Alpha1Config(

@@ -20,6 +20,14 @@ __pycache__/
 dist/
 build/
 
+# Python test and coverage artifacts, including runs from the repository root
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+
 # Rust
 rust/target/
 rust/**/target/

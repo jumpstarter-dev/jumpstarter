@@ -202,7 +202,7 @@ class TestUnusedLeaseTimeout:
         assert ExporterStatus.AVAILABLE in statuses
         assert lease_ctx.after_lease_hook_done.is_set()
 
-    async def test_unused_lease_with_hooks_runs_after_lease_when_client_present(self):
+    async def test_unused_lease_with_hooks_runs_after_lease_when_client_present(self, monkeypatch):
         """When a lease ends with a client (normal end or timeout after
         client connected), the afterLease hook runs."""
         from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
@@ -215,6 +215,10 @@ class TestUnusedLeaseTimeout:
             after_lease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
         )
         hook_executor = HookExecutor(config=hook_config)
+
+        # Test lease orchestration independently of the Unix PTY hook backend.
+        execute_hook = AsyncMock(return_value=None)
+        monkeypatch.setattr(hook_executor, "_execute_hook", execute_hook)
 
         statuses = []
 
@@ -229,6 +233,8 @@ class TestUnusedLeaseTimeout:
         assert ExporterStatus.AFTER_LEASE_HOOK in statuses
         assert ExporterStatus.AVAILABLE in statuses
         assert lease_ctx.after_lease_hook_done.is_set()
+        execute_hook.assert_awaited_once()
+        assert execute_hook.await_args.args[:2] == (hook_config.after_lease, lease_ctx)
 
     async def test_new_lease_after_unused_timeout_recovery(self):
         """After recovering from unused lease timeout, a new lease
@@ -489,7 +495,7 @@ def _make_exporter_for_report_status():
 
 
 class TestBeforeLeaseHookRaceGuard:
-    async def test_new_lease_after_before_hook_race_recovery(self):
+    async def test_new_lease_after_before_hook_race_recovery(self, monkeypatch):
         """After recovering from the beforeLease hook race condition
         (lease expired during hook), a new lease must be accepted and
         processed normally."""
@@ -500,6 +506,10 @@ class TestBeforeLeaseHookRaceGuard:
             before_lease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
         )
         hook_executor = HookExecutor(config=hook_config)
+
+        # Test lease orchestration independently of the Unix PTY hook backend.
+        execute_hook = AsyncMock(return_value=None)
+        monkeypatch.setattr(hook_executor, "_execute_hook", execute_hook)
 
         lease_ctx_1 = make_lease_context(lease_name="expired-lease")
         lease_ctx_1.lease_ended.set()
@@ -531,6 +541,8 @@ class TestBeforeLeaseHookRaceGuard:
         assert ExporterStatus.LEASE_READY in statuses, (
             f"New lease must reach LEASE_READY when lease is still active. Statuses: {statuses}"
         )
+        execute_hook.assert_awaited_once()
+        assert execute_hook.await_args.args[:2] == (hook_config.before_lease, lease_ctx_2)
 
 
 def _setup_mock_controller_stub(exporter, side_effect=None):

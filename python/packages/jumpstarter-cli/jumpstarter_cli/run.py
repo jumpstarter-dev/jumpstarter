@@ -1,8 +1,10 @@
 import logging
+import multiprocessing
 import os
 import signal
 import sys
 import time
+from contextlib import contextmanager
 
 import anyio
 import click
@@ -19,6 +21,7 @@ logger = logging.getLogger(__name__)
 # Phase 3 replaces this with Telemetry reverse-scrape (unix/memory or in-process);
 # bind address is intentionally not a user-facing CLI option.
 _METRICS_BIND_ADDRESS = ":0"
+_WINDOWS_STOP_TIMEOUT = 30.0
 
 
 def _parse_listener_bind(value: str) -> tuple[str, int]:
@@ -84,6 +87,7 @@ def _handle_child(  # noqa: C901
     tls_cert=None,
     tls_key=None,
     passphrase=None,
+    control=None,
 ):
     """Handle child process with graceful shutdown."""
     async def serve_with_graceful_shutdown():  # noqa: C901
@@ -107,11 +111,27 @@ def _handle_child(  # noqa: C901
                             signal_handled = True
                         exporter.stop(wait_for_lease_exit=received_signal == signal.SIGHUP, should_unregister=True)
 
-                # Start signal handler first, then create exporter
+        async def control_handler():
+            nonlocal received_signal, signal_handled
+            while True:
+                if not received_signal:
+                    try:
+                        if control.poll():
+                            received_signal = control.recv()
+                    except (EOFError, OSError):
+                        # The supervisor disappeared before requesting a stop.
+                        received_signal = signal.SIGTERM
+                if received_signal and exporter is not None and exporter._tg is not None:
+                    signal_handled = True
+                    exporter.stop(should_unregister=True)
+                    return
+                await anyio.sleep(0.05)
+
+        # Start shutdown handling before creating the exporter.
         async with create_task_group() as signal_tg:
 
             # Start signal handler immediately
-            signal_tg.start_soon(signal_handler)
+            signal_tg.start_soon(signal_handler if control is None else control_handler)
 
             listen_addr, shutdown_metrics = start_metrics_server(_METRICS_BIND_ADDRESS)
             logger.info("Serving metrics server at http://%s/metrics", listen_addr)
@@ -178,6 +198,117 @@ def _handle_child(  # noqa: C901
     sys.exit(anyio.run(serve_with_graceful_shutdown))
 
 
+def _windows_child(config_json, options, control, logging_settings):
+    """Wait for containment before loading drivers or starting subprocesses."""
+    from jumpstarter.config.exporter import ExporterConfigV1Alpha1
+    from jumpstarter.logging import setup_logging
+
+    # Console events also reach descendants in the supervisor's console group.
+    # Only the supervisor handles them; its pipe delivers exactly one stop.
+    for sig in (signal.SIGINT, signal.SIGBREAK):
+        signal.signal(sig, signal.SIG_IGN)
+    try:
+        if control.recv() != "start":
+            return
+        log_format, level = logging_settings
+        setup_logging(component="exporter", log_format=log_format, level=level)
+        logger.debug("Windows exporter worker started", extra={"pid": os.getpid()})
+        config = ExporterConfigV1Alpha1.model_validate_json(config_json)
+        _handle_child(config, *options, control=control)
+    except EOFError:
+        return
+    finally:
+        control.close()
+
+
+@contextmanager
+def _windows_stop_requests():
+    stop_signals = []
+    previous = {}
+
+    def request_stop(signum, _frame):
+        # Python signal handlers must not block while writing to a pipe.
+        stop_signals.append(signum)
+
+    try:
+        for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGBREAK):
+            previous[sig] = signal.signal(sig, request_stop)
+        yield stop_signals
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
+def _wait_windows_child(child, tree, control, stop_signals):
+    deadline = None
+    while child.is_alive():
+        if stop_signals and deadline is None:
+            deadline = time.monotonic() + _WINDOWS_STOP_TIMEOUT
+            try:
+                control.send(stop_signals[0])
+            except (EOFError, OSError):
+                pass
+        if deadline is not None and (len(stop_signals) > 1 or time.monotonic() >= deadline):
+            logger.warning("Exporter did not finish graceful shutdown; stopping its process tree")
+            tree.close()
+            break
+        child.join(timeout=0.1)
+    child.join(timeout=5)
+    if child.is_alive():
+        raise RuntimeError("Exporter process tree did not terminate")
+    if stop_signals:
+        return 128 + stop_signals[0]
+    return child.exitcode or None
+
+
+def _run_windows_child(config, *options):
+    """Supervise a spawned exporter without relying on POSIX process APIs."""
+    from jumpstarter_cli_common import opt
+    from jumpstarter_core.process import ChildProcessTree
+
+    context = multiprocessing.get_context("spawn")
+    parent_control, child_control = context.Pipe(duplex=True)
+    logging_settings = (opt._log_format_value, logging.getLogger().level)
+    child = context.Process(
+        target=_windows_child, args=(config.model_dump_json(by_alias=True), options, child_control, logging_settings),
+    )
+    tree = None
+    started = False
+    with _windows_stop_requests() as stop_signals:
+        try:
+            child.start()
+            started = True
+            child_control.close()
+            tree = ChildProcessTree(child.pid)
+            parent_control.send("start")
+            return _wait_windows_child(child, tree, parent_control, stop_signals)
+        finally:
+            parent_control.close()
+            child_control.close()
+            try:
+                if tree is not None:
+                    tree.close()
+            finally:
+                if started:
+                    if child.is_alive():
+                        # Assignment failure occurs before the child may start drivers.
+                        child.terminate()
+                    child.join(timeout=5)
+                    if not child.is_alive():
+                        child.close()
+
+
+def _run_child(config, *options):
+    if sys.platform == "win32":
+        return _run_windows_child(config, *options)
+    pid = os.fork()
+    if pid > 0:
+        return _handle_parent(pid)
+    os.setsid()  # Reach all driver subprocesses when forwarding parent signals.
+    _handle_child(config, *options)
+    sys.exit(1)  # should never happen
+
+
 def _wait_for_child(pid, child_info):
     """Wait for child process, get status from signal handler if reaped."""
     try:
@@ -238,56 +369,44 @@ def _serve_with_exc_handling(
     rapid_failure_count = 0
     while True:
         child_start_time = time.monotonic()
-        pid = os.fork()
+        if (exit_code := _run_child(
+            config, parsed_bind, tls_insecure, tls_cert, tls_key, passphrase,
+        )) is not None:
+            return exit_code
 
-        if pid > 0:
-            if (exit_code := _handle_parent(pid)) is not None:
-                return exit_code
+        if config.exit_on_lease_end:
+            return 0
 
-            if config.exit_on_lease_end:
-                return 0
-
-            # Child exited with code 0 (restart requested).
-            # Check if it failed too quickly, indicating a persistent error
-            # (e.g., DNS resolution failure) that won't resolve by restarting.
-            elapsed = time.monotonic() - child_start_time
-            if elapsed < rapid_failure_window:
-                rapid_failure_count += 1
-                logger.warning(
-                    "Child process exited after %.1fs (<%ds), rapid failure %d/%d",
+        # Child exited with code 0 (restart requested).
+        # Check if it failed too quickly, indicating a persistent error
+        # (e.g., DNS resolution failure) that won't resolve by restarting.
+        elapsed = time.monotonic() - child_start_time
+        if elapsed < rapid_failure_window:
+            rapid_failure_count += 1
+            logger.warning(
+                "Child process exited after %.1fs (<%ds), rapid failure %d/%d",
+                elapsed,
+                rapid_failure_window,
+                rapid_failure_count,
+                max_rapid_failures,
+            )
+            if rapid_failure_count >= max_rapid_failures:
+                click.echo(
+                    f"Exporter child process failed {rapid_failure_count} times "
+                    f"within {rapid_failure_window}s each. Exiting to allow "
+                    f"container/service restart.",
+                    err=True,
+                )
+                return 1
+        else:
+            # Child ran long enough; reset the counter
+            if rapid_failure_count > 0:
+                logger.info(
+                    "Child ran for %.1fs (>=%ds), resetting rapid failure counter",
                     elapsed,
                     rapid_failure_window,
-                    rapid_failure_count,
-                    max_rapid_failures,
                 )
-                if rapid_failure_count >= max_rapid_failures:
-                    click.echo(
-                        f"Exporter child process failed {rapid_failure_count} times "
-                        f"within {rapid_failure_window}s each. Exiting to allow "
-                        f"container/service restart.",
-                        err=True,
-                    )
-                    return 1
-            else:
-                # Child ran long enough; reset the counter
-                if rapid_failure_count > 0:
-                    logger.info(
-                        "Child ran for %.1fs (>=%ds), resetting rapid failure counter",
-                        elapsed,
-                        rapid_failure_window,
-                    )
-                rapid_failure_count = 0
-        else:
-            os.setsid() # Become group leader so all spawned subprocesses are reached by parent's signals
-            _handle_child(
-                config,
-                parsed_bind,
-                tls_insecure,
-                tls_cert,
-                tls_key,
-                passphrase,
-            )
-            sys.exit(1) # should never happen
+            rapid_failure_count = 0
 
 
 @click.command("run")

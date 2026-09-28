@@ -1,3 +1,6 @@
+//! End-to-end tests for the Unix execution backend.
+#![cfg(unix)]
+
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
@@ -750,20 +753,6 @@ fn e2e_nonexistent_command() {
         "stderr should mention error, got: {stderr}"
     );
     server.kill().ok();
-}
-
-#[test]
-fn e2e_version_subcommand() {
-    let output = Command::new(binary_path())
-        .arg("version")
-        .output()
-        .expect("failed to run jumpstarter-exec version");
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.starts_with("jumpstarter-exec "),
-        "unexpected version output: {stdout}"
-    );
 }
 
 #[test]

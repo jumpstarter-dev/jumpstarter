@@ -348,7 +348,7 @@ class TestGetAuthFilePaths:
         }
         with patch.dict(os.environ, env_clean, clear=True):
             paths = _get_auth_file_paths()
-            path_strs = [str(p) for p in paths]
+            path_strs = [p.as_posix() for p in paths]
             assert any(".config/containers/auth.json" in p for p in path_strs)
             assert any(".docker/config.json" in p for p in path_strs)
 
@@ -390,9 +390,9 @@ class TestGetAuthFilePaths:
         env["DOCKER_CONFIG"] = str(tmp_path / "dockercfg")
         with patch.dict(os.environ, env, clear=True):
             paths = _get_auth_file_paths()
-            path_strs = [str(p) for p in paths]
+            path_strs = [p.as_posix() for p in paths]
             # REGISTRY_AUTH_FILE first, then XDG, then ~/.config, then DOCKER_CONFIG, then ~/.docker
-            assert path_strs[0] == str(tmp_path / "explicit.json")
+            assert paths[0] == tmp_path / "explicit.json"
             assert "xdg/containers/auth.json" in path_strs[1]
             assert ".config/containers/auth.json" in path_strs[2]
             assert "dockercfg/config.json" in path_strs[3]

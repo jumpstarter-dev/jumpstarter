@@ -47,6 +47,19 @@ def test_missing_driver_logs_warning_and_creates_stub(caplog):
             client.call("some_method")
 
 
+def test_client_import_error_creates_stub(caplog, monkeypatch):
+    """A client whose platform dependencies are unavailable must not break the session."""
+    from . import client as client_module
+
+    def unavailable(*_args, **_kwargs):
+        raise ImportError("cannot import name 'getuid' from 'os'")
+
+    monkeypatch.setattr(client_module, "import_class", unavailable)
+    with caplog.at_level(logging.WARNING), serve(MissingClientDriver()) as client:
+        assert "is not available." in caplog.text
+        assert isinstance(client, StubDriverClient)
+
+
 def test_stub_driver_client_streamingcall_raises():
     """Test that streamingcall() raises ImportError with driver info."""
     stub = create_stub_client("missing_driver.client.Client")

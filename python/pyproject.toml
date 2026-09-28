@@ -3,6 +3,7 @@ members = ["packages/*", "examples/*"]
 
 [tool.uv.sources]
 jumpstarter = { workspace = true }
+jumpstarter-core = { path = "native/jumpstarter-core" }
 jumpstarter-cli = { workspace = true }
 jumpstarter-cli-admin = { workspace = true }
 jumpstarter-cli-common = { workspace = true }
@@ -107,6 +108,9 @@ constraint-dependencies = [
     "rpds-py>=0.26.0 ; python_version >= '3.14'",
     # gpiod 2.4.0 is the first release that ships cp314 wheels.
     "gpiod>=2.4.0 ; python_version >= '3.14'",
+    # pywin32 311 is the first release with cp314 wheels; 310 has no sdist
+    # fallback, so it prevents even the Windows CLI environment from syncing.
+    "pywin32>=311 ; python_version >= '3.14' and sys_platform == 'win32'",
 ]
 
 [dependency-groups]

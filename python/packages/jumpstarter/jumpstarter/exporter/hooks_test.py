@@ -20,6 +20,12 @@ from jumpstarter.exporter.hooks import (
 
 pytestmark = pytest.mark.anyio
 
+# These tests use POSIX shell syntax or the PTY backend; Windows hooks are
+# covered by hooks_windows_test.py and the platform-neutral Python hook tests.
+requires_unix_hooks = pytest.mark.skipif(
+    os.name != "posix", reason="POSIX shell hook or PTY backend"
+)
+
 # Tests that spawn real subprocesses via PTY and assert on captured logger
 # output are flaky on macOS due to a PTY kernel buffer timing race condition.
 # See https://github.com/jumpstarter-dev/jumpstarter/issues/821
@@ -177,6 +183,7 @@ class TestHookExecutor:
         assert await executor.execute_before_lease_hook(lease_scope) is None
         assert await executor.execute_after_lease_hook(lease_scope) is None
 
+    @requires_unix_hooks
     async def test_successful_hook_execution(self, lease_scope) -> None:
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="echo 'Pre-lease hook executed'", timeout=10),
@@ -185,6 +192,7 @@ class TestHookExecutor:
         result = await executor.execute_before_lease_hook(lease_scope)
         assert result is None
 
+    @requires_unix_hooks
     async def test_failed_hook_execution(self, lease_scope) -> None:
         failed_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="endLease"),
@@ -198,6 +206,7 @@ class TestHookExecutor:
         assert exc_info.value.on_failure == "endLease"  # type: ignore[attr-defined]
         assert exc_info.value.hook_type == "before_lease"  # type: ignore[attr-defined]
 
+    @requires_unix_hooks
     async def test_hook_timeout(self, lease_scope) -> None:
         timeout_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="sleep 60", timeout=1, on_failure="exit"),
@@ -211,6 +220,7 @@ class TestHookExecutor:
         assert exc_info.value.on_failure == "exit"  # type: ignore[attr-defined]
 
     @macos_pty_xfail
+    @requires_unix_hooks
     async def test_hook_environment_variables(self, lease_scope) -> None:
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(
@@ -225,6 +235,7 @@ class TestHookExecutor:
             assert any("LEASE_NAME=test-lease-123" in call for call in info_calls)
             assert any("CLIENT_NAME=test-client" in call for call in info_calls)
 
+    @requires_unix_hooks
     async def test_before_lease_hook_appends_motd(self, lease_scope) -> None:
         lease_scope.session.motd = None
         hook_config = HookConfigV1Alpha1(
@@ -236,6 +247,7 @@ class TestHookExecutor:
         await executor.execute_before_lease_hook(lease_scope)
         assert lease_scope.session.motd == "flashed image: test-v1"
 
+    @requires_unix_hooks
     async def test_before_lease_hook_appends_motd_to_existing(self, lease_scope) -> None:
         lease_scope.session.motd = "Welcome to test-exporter!"
         hook_config = HookConfigV1Alpha1(
@@ -247,6 +259,7 @@ class TestHookExecutor:
         await executor.execute_before_lease_hook(lease_scope)
         assert lease_scope.session.motd == "Welcome to test-exporter!\nflashed image: test-v1"
 
+    @requires_unix_hooks
     async def test_before_lease_hook_motd_unchanged_when_not_written(self, lease_scope) -> None:
         lease_scope.session.motd = "Welcome to test-exporter!"
         hook_config = HookConfigV1Alpha1(
@@ -256,6 +269,7 @@ class TestHookExecutor:
         await executor.execute_before_lease_hook(lease_scope)
         assert lease_scope.session.motd == "Welcome to test-exporter!"
 
+    @requires_unix_hooks
     async def test_before_lease_hook_motd_kept_on_warn_failure(self, lease_scope) -> None:
         lease_scope.session.motd = None
         hook_config = HookConfigV1Alpha1(
@@ -268,6 +282,7 @@ class TestHookExecutor:
         assert result is not None  # warning returned, lease proceeds
         assert lease_scope.session.motd == "partial setup done"
 
+    @requires_unix_hooks
     async def test_after_lease_hook_has_no_motd_file(self, lease_scope) -> None:
         lease_scope.session.motd = "Welcome to test-exporter!"
         hook_config = HookConfigV1Alpha1(
@@ -280,6 +295,7 @@ class TestHookExecutor:
         await executor.execute_after_lease_hook(lease_scope)
         assert lease_scope.session.motd == "Welcome to test-exporter!"
 
+    @requires_unix_hooks
     async def test_after_lease_hook_clears_inherited_motd_file(self, lease_scope, monkeypatch) -> None:
         # Even if the exporter process inherited JMP_MOTD_FILE, afterLease must not see it.
         monkeypatch.setenv("JMP_MOTD_FILE", "/tmp/should-not-be-visible")
@@ -293,6 +309,7 @@ class TestHookExecutor:
         await executor.execute_after_lease_hook(lease_scope)  # raises if var is visible
         assert lease_scope.session.motd == "Welcome to test-exporter!"
 
+    @requires_unix_hooks
     def test_append_hook_motd_skips_fifo(self, tmp_path) -> None:
         # A FIFO substituted by a hook must not hang or be read.
         fifo = tmp_path / "motd.fifo"
@@ -311,6 +328,7 @@ class TestHookExecutor:
         assert len(session.motd) <= MAX_MOTD_BYTES
 
     @macos_pty_xfail
+    @requires_unix_hooks
     async def test_real_time_output_logging(self, lease_scope) -> None:
         """Test that hook output is logged in real-time at INFO level."""
         hook_config = HookConfigV1Alpha1(
@@ -329,6 +347,7 @@ class TestHookExecutor:
             assert any("Line 3" in call for call in info_calls)
 
     @macos_pty_xfail
+    @requires_unix_hooks
     async def test_post_lease_hook_execution_on_completion(self, lease_scope) -> None:
         """Test that post-lease hook executes when called directly."""
         hook_config = HookConfigV1Alpha1(
@@ -344,6 +363,7 @@ class TestHookExecutor:
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
             assert any("Post-lease cleanup completed" in call for call in info_calls)
 
+    @requires_unix_hooks
     async def test_hook_timeout_with_warn(self, lease_scope) -> None:
         """Test that hook returns warning string when timeout occurs and on_failure='warn'."""
         hook_config = HookConfigV1Alpha1(
@@ -359,6 +379,7 @@ class TestHookExecutor:
             warning_calls = [str(call) for call in mock_logger.warning.call_args_list]
             assert any("on_failure=warn, continuing" in call for call in warning_calls)
 
+    @requires_unix_hooks
     async def test_failed_hook_with_warn_returns_warning(self, lease_scope) -> None:
         """Test that hook with exit 1 and on_failure='warn' returns a warning string."""
         hook_config = HookConfigV1Alpha1(
@@ -370,6 +391,7 @@ class TestHookExecutor:
         assert result is not None
         assert "exit code 1" in result.lower()
 
+    @requires_unix_hooks
     async def test_failed_hook_with_warn_logs_warning_inside_log_source_context(self) -> None:
         """Test that the WARNING log for on_failure='warn' is emitted inside context_log_source.
 
@@ -429,6 +451,7 @@ class TestHookExecutor:
             "so it is visible to the client as a hook log (issue #246)"
         )
 
+    @requires_unix_hooks
     async def test_successful_hook_returns_none(self, lease_scope) -> None:
         """Test that a successful hook returns None (no warning)."""
         hook_config = HookConfigV1Alpha1(
@@ -440,6 +463,7 @@ class TestHookExecutor:
         assert result is None
 
     @macos_pty_xfail
+    @requires_unix_hooks
     async def test_exec_bash(self, lease_scope) -> None:
         """Test that exec=/bin/bash allows bash-specific syntax.
 
@@ -485,6 +509,7 @@ class TestHookExecutor:
             assert any("PYTHON_OK: 14" in call for call in info_calls)
 
     @macos_pty_xfail
+    @requires_unix_hooks
     async def test_script_file_sh(self, lease_scope, tmp_path) -> None:
         """Test that a .sh file auto-detects /bin/sh as interpreter."""
         script_file = tmp_path / "hook_script.sh"
@@ -532,7 +557,7 @@ class TestHookExecutor:
             debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
             assert any("Auto-detected Python script" in call for call in debug_calls)
             # Verify it used the exporter's own Python interpreter
-            assert any(sys.executable in call for call in debug_calls)
+            assert any(sys.executable in call.args for call in mock_logger.debug.call_args_list)
 
     @macos_pty_xfail
     async def test_script_file_py_exec_override(self, lease_scope, tmp_path) -> None:
@@ -559,6 +584,7 @@ class TestHookExecutor:
             assert not any("Auto-detected" in call for call in debug_calls)
 
     @macos_pty_xfail
+    @requires_unix_hooks
     async def test_noninteractive_environment(self, lease_scope) -> None:
         """Test that hooks receive noninteractive environment variables.
 
@@ -593,6 +619,7 @@ class TestHookExecutor:
             assert any("DEBIAN_FRONTEND=noninteractive" in call for call in info_calls)
             assert any("GIT_TERMINAL_PROMPT=0" in call for call in info_calls)
 
+    @requires_unix_hooks
     async def test_before_lease_hook_exit_sets_skip_flag(self, lease_scope) -> None:
         """Test that beforeLease hook failure with on_failure=exit sets skip_after_lease_hook flag."""
         hook_config = HookConfigV1Alpha1(
@@ -614,6 +641,7 @@ class TestHookExecutor:
         assert lease_scope.skip_after_lease_hook is True
         mock_shutdown.assert_called_once_with(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
 
+    @requires_unix_hooks
     async def test_before_lease_hook_endlease_sets_skip_flag_and_releases_lease(self, lease_scope) -> None:
         """Test that beforeLease hook failure with on_failure=endLease sets skip_after_lease_hook and releases lease."""
         hook_config = HookConfigV1Alpha1(
@@ -636,6 +664,7 @@ class TestHookExecutor:
         mock_request_lease_release.assert_called_once()
         mock_shutdown.assert_not_called()
 
+    @requires_unix_hooks
     async def test_before_lease_hook_endlease_handles_release_error(self, lease_scope) -> None:
         """Test that beforeLease hook with on_failure=endLease handles release errors gracefully."""
         hook_config = HookConfigV1Alpha1(
@@ -658,6 +687,7 @@ class TestHookExecutor:
         assert lease_scope.skip_after_lease_hook is True
         mock_request_lease_release.assert_called_once()
 
+    @requires_unix_hooks
     async def test_pty_output_drained_after_stop_flag_set(self) -> None:
         """Test that PTY drain captures data remaining after the stop flag is set.
 
@@ -703,6 +733,7 @@ class TestHookExecutor:
             if write_fd != -1:
                 os.close(write_fd)
 
+    @requires_unix_hooks
     async def test_drain_respects_byte_limit(self) -> None:
         """Verify the drain loop stops after MAX_DRAIN_BYTES to prevent
         indefinite blocking when a grandchild process holds the PTY open.
@@ -753,6 +784,7 @@ class TestHookExecutor:
             os.close(read_fd)
             os.close(write_fd)
 
+    @requires_unix_hooks
     async def test_drain_completes_immediately_on_empty_buffer(self) -> None:
         """Verify drain exits quickly when the PTY buffer is empty (EOF)."""
         import time
@@ -819,6 +851,7 @@ class TestHookExecutor:
         assert drained == 0
 
     @macos_pty_xfail
+    @requires_unix_hooks
     async def test_drain_captures_output_without_trailing_newline(self, lease_scope) -> None:
         """Verify output without a trailing newline is still captured."""
         hook_config = HookConfigV1Alpha1(
@@ -836,6 +869,7 @@ class TestHookExecutor:
             assert any("NO_NEWLINE_OUTPUT" in call for call in info_calls)
 
     @macos_pty_xfail
+    @requires_unix_hooks
     async def test_drain_reads_data_remaining_in_pty_buffer(self, lease_scope) -> None:
         """Verify the drain loop inside read_pty_output reads data left in the
         PTY kernel buffer after the main read loop exits.
@@ -901,6 +935,7 @@ class TestHookExecutor:
             assert any("DRAIN_CAPTURED" in call for call in info_calls)
 
     @macos_pty_xfail
+    @requires_unix_hooks
     async def test_drain_select_oserror_exits_gracefully(self, lease_scope) -> None:
         """Verify the drain loop exits gracefully when select.select() raises
         OSError (e.g. fd closed during drain).
@@ -938,6 +973,7 @@ class TestHookExecutor:
             assert any("SELECT_ERROR_TEST" in call for call in info_calls)
 
     @macos_pty_xfail
+    @requires_unix_hooks
     async def test_drain_select_valueerror_exits_gracefully(self, lease_scope) -> None:
         """Verify the drain loop exits gracefully when select.select() raises
         ValueError (e.g. negative fd).
@@ -973,6 +1009,7 @@ class TestHookExecutor:
             assert any("VALUEERROR_TEST" in call for call in info_calls)
 
     @macos_pty_xfail
+    @requires_unix_hooks
     async def test_drain_exits_when_deadline_exceeded_before_select(self, lease_scope) -> None:
         """Verify the drain loop exits when the deadline is exceeded between the
         while condition and the remaining-time check (line: if remaining <= 0).
@@ -1008,6 +1045,7 @@ class TestHookExecutor:
             assert not any("SHOULD_NOT_APPEAR" in call for call in info_calls)
 
     @macos_pty_xfail
+    @requires_unix_hooks
     async def test_drain_exception_is_suppressed(self, lease_scope) -> None:
         """Verify that an unexpected exception raised during the drain is caught
         by the except-Exception handler and does not propagate to the caller.
@@ -1043,6 +1081,7 @@ class TestHookExecutor:
             assert result is None
 
     @macos_pty_xfail
+    @requires_unix_hooks
     async def test_main_loop_non_oserror_is_caught(self, lease_scope) -> None:
         """Verify that a non-OSError exception in the main read loop is caught
         by the except-Exception handler and does not propagate to the caller.
@@ -1070,6 +1109,7 @@ class TestHookExecutor:
               )
 
     @macos_pty_xfail
+    @requires_unix_hooks
     async def test_drain_retries_empty_select_then_captures_data(self, lease_scope) -> None:
         """Verify that the drain retries after empty select() calls and still
         captures data that arrives later.
@@ -1112,6 +1152,7 @@ class TestHookExecutor:
             assert any("DELAYED_DRAIN_OK" in call for call in info_calls)
 
     @macos_pty_xfail
+    @requires_unix_hooks
     async def test_drain_terminates_after_max_empty_polls(self, lease_scope) -> None:
         """Verify the drain loop terminates after DRAIN_MAX_EMPTY_POLLS
         consecutive empty select() results.
@@ -1150,6 +1191,7 @@ class TestHookExecutor:
             assert any("MAX_EMPTY_TEST" in call for call in info_calls)
 
     @macos_pty_xfail
+    @requires_unix_hooks
     async def test_drain_empty_counter_resets_on_data(self, lease_scope) -> None:
         """Verify the consecutive empty poll counter resets when data arrives.
 
@@ -1209,6 +1251,7 @@ class TestHookExecutorPRRegressions:
     """Regression tests for issues reported during PR review of hooks feature."""
 
     @macos_pty_xfail
+    @requires_unix_hooks
     async def test_infrastructure_messages_at_debug_not_info(self, lease_scope) -> None:
         """Issue A1: Hook infrastructure messages should be at DEBUG, not INFO.
 
@@ -1248,6 +1291,7 @@ class TestHookExecutorPRRegressions:
             # User output should be at INFO level
             assert any("user output" in call for call in info_calls)
 
+    @requires_unix_hooks
     async def test_before_lease_hook_always_sets_event_on_failure(self, lease_scope) -> None:
         """Issue C3: before_lease_hook event must be set even when hook fails.
 
@@ -1274,6 +1318,7 @@ class TestHookExecutorPRRegressions:
         # Event must always be set to unblock connections
         assert lease_scope.before_lease_hook.is_set()
 
+    @requires_unix_hooks
     async def test_before_lease_hook_always_sets_event_on_exit(self, lease_scope) -> None:
         """Issue C3b: before_lease_hook event must be set when hook fails with exit.
 
@@ -1327,6 +1372,7 @@ class TestHookExecutorPRRegressions:
             for status, msg in status_calls
         ), f"Expected LEASE_READY status, got: {status_calls}"
 
+    @requires_unix_hooks
     async def test_skip_after_lease_prevents_after_hook_execution(self, lease_scope) -> None:
         """Issue E1: beforeLease fail+exit should prevent afterLease hook execution.
 
@@ -1372,6 +1418,7 @@ class TestHookExecutorPRRegressions:
             f"afterLease hook should have been skipped, but AFTER_LEASE_HOOK was reported: {status_calls}"
         )
 
+    @requires_unix_hooks
     async def test_before_hook_exit_reports_failed_not_available(self, lease_scope) -> None:
         """Issue E2: beforeLease fail+exit should report FAILED, not AVAILABLE.
 
@@ -1418,6 +1465,7 @@ class TestHookExecutorPRRegressions:
         # Shutdown should have been called with correct args
         mock_shutdown.assert_called_once_with(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
 
+    @requires_unix_hooks
     async def test_after_hook_exit_reports_failed_calls_shutdown(self, lease_scope) -> None:
         """Issue E3: afterLease fail+exit should report FAILED and call shutdown.
 
@@ -1462,6 +1510,7 @@ class TestHookExecutorPRRegressions:
         mock_shutdown.assert_called_once_with(exit_code=1, should_unregister=True, wait_for_lease_exit=True)
         mock_request_release.assert_not_called()
 
+    @requires_unix_hooks
     async def test_before_hook_warn_includes_warning_prefix(self, lease_scope) -> None:
         """Issue E5: beforeLease hook fail with warn should include HOOK_WARNING_PREFIX.
 
@@ -1494,6 +1543,7 @@ class TestHookExecutorPRRegressions:
             f"Expected LEASE_READY message to start with '{HOOK_WARNING_PREFIX}', got: '{msg}'"
         )
 
+    @requires_unix_hooks
     async def test_before_hook_exit_reports_offline_before_shutdown(self, lease_scope) -> None:
         """When beforeLease hook fails with on_failure=exit, the exporter must
         report OFFLINE status to the controller before initiating shutdown.
@@ -1533,6 +1583,7 @@ class TestHookExecutorPRRegressions:
             f"shutdown (index {shutdown_called_at_index}). Statuses: {status_calls}"
         )
 
+    @requires_unix_hooks
     async def test_after_hook_exit_reports_offline_before_shutdown(self, lease_scope) -> None:
         """When afterLease hook fails with on_failure=exit, OFFLINE must be
         reported before shutdown to prevent new lease assignment."""
@@ -1572,6 +1623,7 @@ class TestHookExecutorPRRegressions:
             f"shutdown (index {shutdown_called_at_index}). Statuses: {status_calls}"
         )
 
+    @requires_unix_hooks
     async def test_warn_failure_during_premature_lease_end_still_transitions_available(self, lease_scope) -> None:
         """Edge case: onFailure:warn during premature lease-end.
 
@@ -1617,6 +1669,7 @@ class TestHookExecutorPRRegressions:
             f"Expected AVAILABLE status after warn+afterLease, got: {status_calls}"
         )
 
+    @requires_unix_hooks
     async def test_after_hook_warn_includes_warning_prefix(self, lease_scope) -> None:
         """Issue E5b: afterLease hook fail with warn should include HOOK_WARNING_PREFIX.
 

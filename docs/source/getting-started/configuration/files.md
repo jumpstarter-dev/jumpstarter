@@ -7,6 +7,11 @@ Jumpstarter follows a specific hierarchy when loading configurations. See
 [Loading Order](loading-order.md) for details on how configurations from
 different sources are prioritized.
 
+On Windows, the same per-user layout lives under
+`%USERPROFILE%\.config\jumpstarter` (or `XDG_CONFIG_HOME`/`JMP_CLIENT_CONFIG_HOME`
+when set), and the system-wide exporter directory is
+`%PROGRAMDATA%\jumpstarter\exporters` instead of `/etc/jumpstarter/exporters`.
+
 ## User Configuration
 
 **File**: `config.yaml`  

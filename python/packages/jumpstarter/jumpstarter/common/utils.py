@@ -1,7 +1,10 @@
 import logging
+import ntpath
 import os
+import shutil
 import signal
 import sys
+from base64 import b64encode
 from contextlib import ExitStack, asynccontextmanager, contextmanager
 from datetime import timedelta
 from functools import partial
@@ -69,6 +72,25 @@ ANSI_WHITE = "\\[\\e[97m\\]"
 ANSI_RESET = "\\[\\e[0m\\]"
 PROMPT_CWD = "\\W"
 
+# Context and display preferences arrive as environment data. Keeping them out
+# of the script prevents exporter names from becoming PowerShell expressions.
+# EncodedCommand accepts UTF-16LE on both PowerShell 7 and Windows PowerShell 5.
+_POWERSHELL_PROMPT = """
+function global:prompt {
+    $directory = Split-Path -Leaf $PWD.Path
+    if (-not $directory) { $directory = $PWD.Path }
+    if ($env:_JMP_PROMPT_NO_COLOR -eq '1') {
+        return ('{0} {1} {2} {3} ' -f $directory, $env:_JMP_PROMPT_BOLT,
+            $env:_JMP_PROMPT_CONTEXT, $env:_JMP_PROMPT_ARROW)
+    }
+    Write-Host -NoNewline ($directory + ' ') -ForegroundColor DarkGray
+    Write-Host -NoNewline $env:_JMP_PROMPT_BOLT -ForegroundColor Yellow
+    Write-Host -NoNewline ($env:_JMP_PROMPT_CONTEXT + ' ') -ForegroundColor White
+    Write-Host -NoNewline $env:_JMP_PROMPT_ARROW -ForegroundColor Yellow
+    return ' '
+}
+"""
+
 
 def lease_ending_handler(process: Popen, lease, remaining_time) -> None:
     """Lease ending handler to terminate a process when lease ends.
@@ -81,9 +103,36 @@ def lease_ending_handler(process: Popen, lease, remaining_time) -> None:
 
     if remaining_time <= timedelta(0):
         try:
-            process.send_signal(signal.SIGHUP)
+            if sys.platform == "win32":
+                process.terminate()
+            else:
+                process.send_signal(signal.SIGHUP)
         except (ProcessLookupError, OSError):
             pass  # Process already terminated
+
+
+@contextmanager
+def _foreground_child_owns_ctrl_c():
+    """Leave console Ctrl+C to the foreground child while waiting for it on Windows.
+
+    Windows delivers Ctrl+C to every process attached to the console, so the
+    key that interrupts a command in the child shell would otherwise also cancel
+    the jmp session. POSIX shells take over the terminal's foreground process
+    group instead, so jmp does not receive that SIGINT there. The child already
+    exists, so it does not inherit this setting.
+    """
+    if sys.platform != "win32":
+        yield
+        return
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    ignoring = bool(kernel32.SetConsoleCtrlHandler(None, True))
+    try:
+        yield
+    finally:
+        if ignoring:
+            kernel32.SetConsoleCtrlHandler(None, False)
 
 
 def _run_process(
@@ -105,7 +154,8 @@ def _run_process(
         return 126
     if lease is not None:
         lease.lease_ending_callback = partial(lease_ending_handler, process)
-    returncode = process.wait()
+    with _foreground_child_owns_ctrl_c():
+        returncode = process.wait()
     if returncode < 0:
         # wait() reports signal deaths as -N; report them as a shell does. Log
         # the signal too: 137 alone cannot be told from a command exiting 137.
@@ -141,7 +191,7 @@ def _build_common_env(
 ) -> dict[str, str]:
     """Build the base environment dict for shell/command processes."""
     env = os.environ | {
-        JUMPSTARTER_HOST: host,
+        JUMPSTARTER_HOST: os.fspath(host),
         JMP_DRIVERS_ALLOW: "UNSAFE" if unsafe else ",".join(allow),
         "_JMP_SUPPRESS_DRIVER_WARNINGS": "1",  # Already warned during client initialization
     }
@@ -200,6 +250,40 @@ def _zsh_ps1(context: str, bolt: str, arrow: str, no_color: bool) -> str:
     return f"%F{{8}}%1~ %F{{yellow}}{bolt}%F{{white}}{context} %F{{yellow}}{arrow}%f "
 
 
+def _default_shell() -> str:
+    if sys.platform == "win32":
+        return shutil.which("pwsh") or shutil.which("powershell") or os.environ.get("COMSPEC", "cmd.exe")
+    return "bash"
+
+
+def _shell_name(shell: str) -> str:
+    if sys.platform == "win32":
+        return ntpath.basename(shell).lower().removesuffix(".exe")
+    return os.path.basename(shell)
+
+
+def _windows_shell_command(shell: str, use_profiles: bool, context: str) -> tuple[list[str], dict[str, str]] | None:
+    if sys.platform != "win32":
+        return None
+    match _shell_name(shell):
+        case "pwsh" | "powershell":
+            opts = display_options()
+            env = {
+                "_JMP_PROMPT_CONTEXT": context,
+                "_JMP_PROMPT_BOLT": "^" if opts.no_icons else "⚡",
+                "_JMP_PROMPT_ARROW": ">" if opts.no_icons else "➤",
+                "_JMP_PROMPT_NO_COLOR": "1" if opts.no_color else "0",
+            }
+            command = [shell, "-NoLogo"] + ([] if use_profiles else ["-NoProfile"])
+            encoded_prompt = b64encode(_POWERSHELL_PROMPT.encode("utf-16-le")).decode("ascii")
+            command.extend(["-NoExit", "-EncodedCommand", encoded_prompt])
+            return command, env
+        case "cmd":
+            return [shell] + ([] if use_profiles else ["/D"]), {}
+        case _:
+            return None
+
+
 def launch_shell(
     host: str,
     context: str,
@@ -229,9 +313,6 @@ def launch_shell(
         The exit code of the shell or command process
     """
 
-    shell = os.environ.get("SHELL", "bash")
-    shell_name = os.path.basename(shell)
-
     common_env = _build_common_env(
         host, allow, unsafe, lease=lease, insecure=insecure, passphrase=passphrase
     )
@@ -239,8 +320,17 @@ def launch_shell(
     if command:
         return _run_process(list(command), common_env, lease)
 
+    # Only interactive sessions need a shell; resolving one searches PATH on Windows.
+    shell = os.environ.get("SHELL") or _default_shell()
+    shell_name = _shell_name(shell)
+
     if motd:
         print(motd, flush=True)
+
+    windows_shell = _windows_shell_command(shell, use_profiles, context)
+    if windows_shell is not None:
+        cmd, prompt_env = windows_shell
+        return _run_process(cmd, common_env | prompt_env, lease)
 
     opts = display_options()
     bolt = "^" if opts.no_icons else "⚡"

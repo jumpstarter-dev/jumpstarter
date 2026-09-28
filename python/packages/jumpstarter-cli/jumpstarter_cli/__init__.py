@@ -1,4 +1,5 @@
 import os
+import sys
 
 import truststore
 
@@ -6,5 +7,5 @@ import truststore
 # https://github.com/jumpstarter-dev/jumpstarter/issues/362
 # also allow to force the system certificates injection with
 # the JUMPSTARTER_FORCE_SYSTEM_CERTS environment variable set to "1"
-if os.uname().sysname != "Darwin" or os.environ.get("JUMPSTARTER_FORCE_SYSTEM_CERTS") == "1":
+if sys.platform != "darwin" or os.environ.get("JUMPSTARTER_FORCE_SYSTEM_CERTS") == "1":
     truststore.inject_into_ssl()

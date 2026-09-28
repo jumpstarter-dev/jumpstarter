@@ -374,6 +374,41 @@ hooks:
     onFailure: endLease
 ```
 
+### Hooks on Windows Exporters
+
+On a Windows {term}`exporter`, hooks run PowerShell by default: PowerShell 7
+(`pwsh`) when installed, otherwise Windows PowerShell. Inline scripts and `.ps1`
+files use it; other interpreters are selected as follows:
+
+| Script or `exec`                                 | Interpreter on Windows                                          |
+| ------------------------------------------------ | --------------------------------------------------------------- |
+| Inline script or `.ps1` file, no `exec`          | PowerShell                                                      |
+| `exec: pwsh` or `exec: powershell`               | That PowerShell                                                 |
+| `.py` file, or `exec: python` / `exec: python3`  | The {term}`exporter`'s Python (`sys.executable`)                |
+| `.cmd` or `.bat` file                            | `cmd.exe`                                                       |
+| `.sh` file, or `exec: bash`, `sh`, `/bin/sh`, `/bin/bash` | A native Bash such as Git Bash (never the WSL launcher) |
+| Any other `exec`                                 | That executable, as on Linux                                    |
+
+A Bash hook fails with an error if no native Bash is installed. The environment
+variables above are the same; PowerShell reads them as `$env:LEASE_NAME`. As with
+`/bin/sh -c`, a PowerShell hook's exit code is that of its last command unless
+the script calls `exit`:
+
+```yaml
+hooks:
+  beforeLease:
+    script: |
+      j power on
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      "flashed image: $env:LEASE_NAME" > $env:JMP_MOTD_FILE
+    timeout: 120
+    onFailure: endLease
+```
+
+Hook output is read from a pipe instead of a PTY; PowerShell and Python output
+is UTF-8 and streams line by line. A timed-out hook is stopped together with the
+processes it started.
+
 ## Best Practices
 
 - Keep {term}`hook` scripts short and focused on a single concern (initialization or

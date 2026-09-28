@@ -12,6 +12,7 @@ precedence (highest to lowest):
 2. **Environment variables** - Override file-based configurations
 3. **User configuration files** - Located in `${HOME}/.config/jumpstarter/`
 4. **System configuration files** - Located in `/etc/jumpstarter/`
+   (`%PROGRAMDATA%\jumpstarter\` on Windows)
 
 ## Client Configuration Hierarchy
 

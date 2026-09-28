@@ -109,7 +109,7 @@ def test_import_client(_load_kube_config_mock, get_client_config_mock: AsyncMock
         import_res, ["client", CLIENT_NAME, "--nointeractive", "--unsafe", "--out", out, "--output", "path"]
     )
     assert result.exit_code == 0
-    assert result.output == f"{out}\n"
+    assert result.output == f"{Path(out)}\n"
     save_client_config_mock.assert_called_once_with(UNSAFE_CLIENT_CONFIG, str(Path(out).resolve()))
     save_client_config_mock.reset_mock()
 
@@ -196,5 +196,5 @@ def test_import_exporter(_load_kube_config_mock, _get_exporter_config_mock, save
     save_exporter_config_mock.return_value = Path(out)
     result = runner.invoke(import_res, ["exporter", EXPORTER_NAME, "--out", out, "--output", "path"])
     assert result.exit_code == 0
-    assert result.output == f"{out}\n"
+    assert result.output == f"{Path(out)}\n"
     save_exporter_config_mock.assert_called_with(EXPORTER_CONFIG, str(Path(out).resolve()))

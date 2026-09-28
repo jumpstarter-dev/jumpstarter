@@ -1,0 +1,46 @@
+name: Python workspace checks
+description: Build every Python workspace package and run all package suites with platform gates
+inputs:
+  logs-dir:
+    description: Absolute directory for build logs, pytest logs, coverage, and JUnit reports
+    required: true
+  jobs:
+    description: Number of independent package test processes
+    default: '4'
+runs:
+  using: composite
+  steps:
+    - name: Verify the Python lockfile
+      shell: bash
+      working-directory: python
+      run: uv lock --check
+    - name: Build all Python workspace packages
+      shell: bash
+      working-directory: python
+      env:
+        CHECK_LOGS: ${{ inputs.logs-dir }}
+      run: |
+        mkdir -p "$CHECK_LOGS"
+        uv build --all-packages --out-dir "$CHECK_LOGS/dist" 2>&1 | tee "$CHECK_LOGS/build.log"
+    - name: Build the native Python wheel
+      if: runner.os == 'Windows'
+      shell: bash
+      working-directory: python
+      env:
+        CHECK_LOGS: ${{ inputs.logs-dir }}
+      run: uv build --wheel native/jumpstarter-core --out-dir "$CHECK_LOGS/dist" 2>&1 | tee "$CHECK_LOGS/native-build.log"
+    - name: Sync the complete workspace
+      shell: bash
+      working-directory: python
+      run: uv sync --locked --all-packages --all-extras
+    - name: Check CLI startup
+      shell: bash
+      working-directory: python
+      run: uv run --no-sync jmp --help
+    - name: Run all package suites
+      shell: bash
+      env:
+        CHECK_LOGS: ${{ inputs.logs-dir }}
+        CHECK_JOBS: ${{ inputs.jobs }}
+        PYTEST_ADDOPTS: --log-level=CRITICAL --log-cli-level=CRITICAL
+      run: uv run --project python --no-sync python python/scripts/run_package_tests.py --logs-dir "$CHECK_LOGS" --jobs "$CHECK_JOBS"

@@ -14,6 +14,7 @@ from rich.console import Console
 from jumpstarter.client.exceptions import LeaseError
 from jumpstarter.client.lease import Lease, LeaseAcquisitionSpinner
 from jumpstarter.common.exceptions import ExporterUnreachableError
+from jumpstarter.common.local import connect_local_stream
 
 
 class MockAioRpcError(AioRpcError):
@@ -878,7 +879,7 @@ class TestServeUnixAsync:
                 assert dial_calls == 1
 
                 # Connect to the Unix socket
-                async with await anyio.connect_unix(socket_path):
+                async with await connect_local_stream(socket_path):
                     # Give the handler time to process
                     await anyio.sleep(0.1)
 
@@ -925,7 +926,7 @@ class TestServeUnixAsync:
         # The ExceptionGroup surfaces when the TemporaryUnixListener task group
         # tears down, so pytest.raises must wrap the entire serve_unix_async block.
         with pytest.raises(BaseExceptionGroup) as exc_info:
-            async with lease.serve_unix_async() as socket_path, await anyio.connect_unix(socket_path):
+            async with lease.serve_unix_async() as socket_path, await connect_local_stream(socket_path):
                 await anyio.sleep(1)
 
         exceptions = exc_info.value.exceptions  # type: ignore[attr-defined]
@@ -972,7 +973,7 @@ class TestServeUnixAsync:
             yield
 
         with patch("jumpstarter.client.lease.connect_router_stream", side_effect=mock_connect_router_stream):
-            async with lease.serve_unix_async() as socket_path, await anyio.connect_unix(socket_path):
+            async with lease.serve_unix_async() as socket_path, await connect_local_stream(socket_path):
                 await anyio.sleep(1)
 
         # The connection was served despite the blip

@@ -1,0 +1,15 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: Client
+metadata:
+  name: windows-e2e-client
+  namespace: jumpstarter-windows-e2e
+spec: {}
+---
+apiVersion: jumpstarter.dev/v1alpha1
+kind: Exporter
+metadata:
+  name: windows-e2e-linux
+  namespace: jumpstarter-windows-e2e
+  labels:
+    purpose: windows-e2e
+spec: {}

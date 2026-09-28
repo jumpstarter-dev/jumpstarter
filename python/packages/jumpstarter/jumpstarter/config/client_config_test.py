@@ -114,7 +114,7 @@ drivers:
         f.write(CLIENT_CONFIG)
         f.close()
         config = ClientConfigV1Alpha1.from_file(f.name)
-        assert config.alias == f.name.split("/")[-1]
+        assert config.alias == Path(f.name).name
         assert config.metadata.namespace == "default"
         assert config.metadata.name == "testclient"
         assert config.endpoint == "jumpstarter.my-lab.com:1443"
@@ -125,7 +125,7 @@ drivers:
 
 
 @pytest.mark.parametrize("invalid_field", ["apiVersion", "kind"])
-def test_client_config_from_file_invalid_field_raises(invalid_field):
+def test_client_config_from_file_invalid_field_raises(invalid_field, tmp_path):
     CLIENT_CONFIG = {
         "apiVersion": "jumpstarter.dev/v1alpha1",
         "kind": "ClientConfig",
@@ -135,14 +135,14 @@ def test_client_config_from_file_invalid_field_raises(invalid_field):
     }
 
     CLIENT_CONFIG[invalid_field] = "foo"
-    with tempfile.NamedTemporaryFile(mode="w") as f:
-        yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
-        with pytest.raises(ValueError):
-            _ = ClientConfigV1Alpha1.from_file(f.name)
+    path = tmp_path / "client.yaml"
+    path.write_text(yaml.safe_dump(CLIENT_CONFIG, sort_keys=False))
+    with pytest.raises(ValueError):
+        _ = ClientConfigV1Alpha1.from_file(path)
 
 
 @pytest.mark.parametrize("missing_field", ["token", "endpoint", "drivers"])
-def test_client_config_from_file_missing_field_raises(missing_field):
+def test_client_config_from_file_missing_field_raises(missing_field, tmp_path):
     CLIENT_CONFIG = {
         "apiVersion": "jumpstarter.dev/v1alpha1",
         "kind": "ClientConfig",
@@ -152,14 +152,14 @@ def test_client_config_from_file_missing_field_raises(missing_field):
     }
 
     del CLIENT_CONFIG[missing_field]
-    with tempfile.NamedTemporaryFile(mode="w") as f:
-        yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
-        with pytest.raises(ValidationError):
-            _ = ClientConfigV1Alpha1.from_file(f.name)
+    path = tmp_path / "client.yaml"
+    path.write_text(yaml.safe_dump(CLIENT_CONFIG, sort_keys=False))
+    with pytest.raises(ValidationError):
+        _ = ClientConfigV1Alpha1.from_file(path)
 
 
 @pytest.mark.parametrize("invalid_field", ["allow"])
-def test_client_config_from_file_invalid_drivers_field_raises(invalid_field):
+def test_client_config_from_file_invalid_drivers_field_raises(invalid_field, tmp_path):
     CLIENT_CONFIG = {
         "apiVersion": "jumpstarter.dev/v1alpha1",
         "kind": "ClientConfig",
@@ -169,10 +169,10 @@ def test_client_config_from_file_invalid_drivers_field_raises(invalid_field):
     }
 
     CLIENT_CONFIG["drivers"][invalid_field] = "foo"
-    with tempfile.NamedTemporaryFile(mode="w") as f:
-        yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
-        with pytest.raises(ValidationError):
-            _ = ClientConfigV1Alpha1.from_file(f.name)
+    path = tmp_path / "client.yaml"
+    path.write_text(yaml.safe_dump(CLIENT_CONFIG, sort_keys=False))
+    with pytest.raises(ValidationError):
+        _ = ClientConfigV1Alpha1.from_file(path)
 
 
 def test_client_config_load():
@@ -224,6 +224,7 @@ shell:
         shell=ShellConfigV1Alpha1(use_profiles=False),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+        f.close()
         with (
             patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as _get_path_mock,
             patch.object(ClientConfigV1Alpha1, "ensure_exists"),
@@ -265,6 +266,7 @@ shell:
         shell=ShellConfigV1Alpha1(use_profiles=False),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+        f.close()
         with patch.object(ClientConfigV1Alpha1, "ensure_exists"):
             ClientConfigV1Alpha1.save(config, f.name)
             with open(f.name) as loaded:
@@ -300,6 +302,7 @@ shell:
         shell=ShellConfigV1Alpha1(use_profiles=False),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+        f.close()
         with patch.object(ClientConfigV1Alpha1, "ensure_exists"):
             ClientConfigV1Alpha1.save(config, f.name)
             with open(f.name) as loaded:
@@ -339,6 +342,7 @@ leases:
         leases=ClientConfigV1Alpha1Lease(acquisition_timeout=3600),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+        f.close()
         with patch.object(ClientConfigV1Alpha1, "ensure_exists"):
             ClientConfigV1Alpha1.save(config, f.name)
             with open(f.name) as loaded:

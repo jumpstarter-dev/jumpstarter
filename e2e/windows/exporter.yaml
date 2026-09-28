@@ -1,0 +1,17 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: windows-client-linux-fixture
+  namespace: default
+export:
+  power:
+    type: jumpstarter_driver_power.driver.MockPower
+  network:
+    type: jumpstarter_driver_network.driver.TcpNetwork
+    config:
+      host: 127.0.0.1
+      port: 19091
+  serial:
+    type: jumpstarter_driver_pyserial.driver.PySerial
+    config:
+      url: loop://

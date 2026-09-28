@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 from click.testing import CliRunner
@@ -66,19 +67,20 @@ def test_rotate_client_save_no_existing_config(mock_get_config, mock_rotate, _mo
 @patch.object(ClientsV1Alpha1Api, "_load_kube_config")
 @patch.object(ClientsV1Alpha1Api, "rotate_client_token", new_callable=AsyncMock, return_value="new-token-value")
 @patch.object(ClientsV1Alpha1Api, "get_client_config", new_callable=AsyncMock)
-def test_rotate_client_out_file(mock_get_config, mock_rotate, _mock_kube, mock_config_cls):
+def test_rotate_client_out_file(mock_get_config, mock_rotate, _mock_kube, mock_config_cls, tmp_path):
     """--out saves config to specified file path."""
     mock_config_cls.exists.return_value = False
     mock_client_config = Mock()
     mock_get_config.return_value = mock_client_config
 
     runner = CliRunner()
-    result = runner.invoke(rotate, ["client", "my-client", "--out", "/tmp/test-config.yaml"])
+    path = tmp_path / "test-config.yaml"
+    result = runner.invoke(rotate, ["client", "my-client", "--out", str(path)])
     assert result.exit_code == 0
-    # Click resolve_path=True resolves /tmp → /private/tmp on macOS
+    # Click resolves the supplied path, including symlinks on macOS.
     call_args = mock_config_cls.save.call_args
     assert call_args[0][0] is mock_client_config
-    assert call_args[0][1].endswith("/tmp/test-config.yaml")
+    assert Path(call_args[0][1]) == path.resolve()
 
 
 @patch.object(ClientsV1Alpha1Api, "_load_kube_config")

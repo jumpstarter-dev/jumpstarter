@@ -1,0 +1,35 @@
+name: Rust workspace checks
+description: Build and test every supported Rust target after Rust and Python setup
+runs:
+  using: composite
+  steps:
+    - name: Check formatting
+      shell: bash
+      working-directory: ${{ github.workspace }}/rust
+      run: cargo fmt --all -- --check
+
+    - name: Check all workspace targets
+      shell: bash
+      working-directory: ${{ github.workspace }}/rust
+      run: cargo check --locked --workspace --all-targets
+
+    - name: Build all workspace targets
+      shell: bash
+      working-directory: ${{ github.workspace }}/rust
+      run: cargo build --locked --workspace --all-targets
+
+    - name: Run clippy
+      shell: bash
+      working-directory: ${{ github.workspace }}/rust
+      run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+    - name: Run all workspace tests
+      shell: bash
+      working-directory: ${{ github.workspace }}/rust
+      run: cargo test --locked --workspace --all-targets
+
+    # --all-targets excludes doctests; keep them as a separate strict check.
+    - name: Run documentation tests
+      shell: bash
+      working-directory: ${{ github.workspace }}/rust
+      run: cargo test --locked --workspace --doc

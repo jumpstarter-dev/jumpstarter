@@ -1,0 +1,29 @@
+[project]
+name = "jumpstarter-core"
+version = "0.1.0"
+description = "Python bindings for incrementally adopted Jumpstarter Rust runtime components"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+readme = "README.md"
+classifiers = [
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+]
+
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[tool.maturin]
+manifest-path = "../../../rust/jumpstarter-core-py/Cargo.toml"
+python-source = "."
+module-name = "jumpstarter_core._core"
+features = ["pyo3/extension-module"]
+include = [
+    { path = "tests/**/*", format = "sdist" },
+    { path = "docs/**/*", format = "sdist" },
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3.2", "pywin32>=310 ; sys_platform == 'win32'"]

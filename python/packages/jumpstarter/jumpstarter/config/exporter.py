@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import errno
+import ntpath
 import os
+import sys
 import tempfile
 from contextlib import asynccontextmanager, contextmanager, suppress
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 
 import grpc
@@ -34,7 +36,8 @@ class HookInstanceConfigV1Alpha1(BaseModel):
         description=(
             "Interpreter used to execute the script (e.g. /bin/bash, python3). "
             "When not set, auto-detected from the script file extension "
-            "(.py uses the exporter's Python, .sh uses /bin/sh) or defaults to /bin/sh for inline scripts."
+            "(.py uses the exporter's Python, .sh uses /bin/sh) or defaults to /bin/sh for inline scripts. "
+            "On Windows, inline and .ps1 scripts default to PowerShell and .sh scripts use a native Bash."
         ),
     )
     script: str = Field(alias="script", description="The j script to execute for this hook")
@@ -152,6 +155,12 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
         return cls.model_validate(yaml.safe_load(config))
 
 
+def _is_reserved_windows_name(name: str) -> bool:
+    # ntpath.isreserved (Python 3.13+) replaces the deprecated PurePath.is_reserved.
+    isreserved = getattr(ntpath, "isreserved", None)
+    return isreserved(name) if isreserved else PureWindowsPath(name).is_reserved()
+
+
 class ExporterConfigV1Alpha1(BaseModel):
     """Exporter configuration (jumpstarter.dev/v1alpha1 ExporterConfig).
 
@@ -165,8 +174,12 @@ class ExporterConfigV1Alpha1(BaseModel):
     # user config dir (e.g. ~/.config/jumpstarter/exporters), consistent with clients.
     BASE_PATH: ClassVar[Path] = CONFIG_PATH / "exporters"
     # System-wide location, kept as a read fallback so production deployments
-    # (systemd units, containers mounting /etc/jumpstarter) keep working.
-    SYSTEM_CONFIG_PATH: ClassVar[Path] = Path("/etc/jumpstarter/exporters")
+    # (systemd units, containers mounting /etc/jumpstarter, Windows services) keep working.
+    SYSTEM_CONFIG_PATH: ClassVar[Path] = (
+        Path(os.environ.get("PROGRAMDATA") or "C:/ProgramData", "jumpstarter", "exporters")
+        if sys.platform == "win32"
+        else Path("/etc/jumpstarter/exporters")
+    )
 
     alias: str = Field(default="default")
 
@@ -199,6 +212,10 @@ class ExporterConfigV1Alpha1(BaseModel):
         if not alias or alias in (".", "..") or any(sep in alias for sep in ("/", "\\")):
             raise ConfigurationError(
                 f"Invalid exporter alias '{alias}': must not contain path separators or be '.' / '..'"
+            )
+        if sys.platform == "win32" and (":" in alias or _is_reserved_windows_name(alias)):
+            raise ConfigurationError(
+                f"Invalid exporter alias '{alias}': must not contain ':' or be a reserved Windows device name"
             )
 
     @classmethod
@@ -286,7 +303,8 @@ class ExporterConfigV1Alpha1(BaseModel):
         config.path.parent.mkdir(parents=True, exist_ok=True)
         temp_fd, temp_path = tempfile.mkstemp(prefix=f".{config.path.name}.", dir=config.path.parent)
         try:
-            os.fchmod(temp_fd, 0o600)
+            if hasattr(os, "fchmod"):  # Missing on Windows before Python 3.13
+                os.fchmod(temp_fd, 0o600)
             with os.fdopen(temp_fd, "w") as f:
                 yaml.safe_dump(
                     config.model_dump(

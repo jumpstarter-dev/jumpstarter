@@ -16,6 +16,7 @@ from jumpstarter.client.base import StubDriverClient
 from jumpstarter.common.exceptions import ExporterUnreachableError, MissingDriverError
 from jumpstarter.common.grpc import _override_default_grpc_options, aio_secure_channel, ssl_channel_credentials
 from jumpstarter.common.importlib import import_class
+from jumpstarter.common.local import local_socket_target
 from jumpstarter.config.tls import TLSConfigV1Alpha1
 
 logger = logging.getLogger(__name__)
@@ -86,7 +87,7 @@ async def client_from_path(
                 yield await _connect(channel)
     else:
         async with grpc.aio.secure_channel(
-            f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
+            local_socket_target(path), grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
         ) as channel:
             yield await _connect(channel)
 
@@ -127,13 +128,16 @@ async def client_from_channel(
     for index in TopologicalSorter(topo).static_order():
         report = reports[index]
 
+        class_path = report.labels["jumpstarter.dev/client"]
         try:
-            client_class = import_class(report.labels["jumpstarter.dev/client"], allow, unsafe)
-        except MissingDriverError as e:
-            # Create stub client instead of failing
+            client_class = import_class(class_path, allow, unsafe)
+        except (MissingDriverError, ImportError) as e:
+            # Create stub client instead of failing. An installed client can also
+            # fail to import where the platform lacks one of its dependencies.
             # Suppress duplicate warnings
             if not os.environ.get("_JMP_SUPPRESS_DRIVER_WARNINGS"):
-                logger.warning("Driver client '%s' is not available.", e.class_path)
+                logger.warning("Driver client '%s' is not available.", class_path)
+            logger.debug("Driver client '%s' import failed: %s", class_path, e)
             client_class = StubDriverClient
 
         client = client_class(

@@ -1,14 +1,21 @@
 """Lifecycle hooks for Jumpstarter exporters."""
 
+import codecs
 import logging
+import ntpath
 import os
 import select
+import shutil
 import stat
+import sys
 import tempfile
+import threading
 import time
+from base64 import b64encode
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 import anyio
@@ -52,6 +59,128 @@ def _flush_lines(buffer: bytes, output_lines: list[str]) -> bytes:
             output_lines.append(line_decoded)
             logger.info("%s", line_decoded)
     return buffer
+
+
+def _decode_hook_text(data: bytes) -> str:
+    """Decode hook-written text, honoring the BOM Windows PowerShell may write."""
+    for bom, encoding in (
+        (codecs.BOM_UTF8, "utf-8-sig"),
+        (codecs.BOM_UTF16_LE, "utf-16"),
+        (codecs.BOM_UTF16_BE, "utf-16"),
+    ):
+        if data.startswith(bom):
+            return data.decode(encoding, errors="replace")
+    return data.decode(errors="replace")
+
+
+# Hooks run without a console, so PowerShell would otherwise emit output and
+# write files such as $JMP_MOTD_FILE in legacy code pages.
+_POWERSHELL_HOOK_PREAMBLE = """\
+try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch {}
+$PSDefaultParameterValues['*:Encoding'] = 'utf8'
+$ProgressPreference = 'SilentlyContinue'
+"""
+
+
+def _windows_bash() -> str | None:
+    """Find a native Bash such as Git Bash, never the WSL launcher.
+
+    WSL's bash.exe runs a Linux shell that cannot use the exporter's Windows
+    socket path or its j executable.
+    """
+    candidates = []
+    if git := shutil.which("git"):
+        root = Path(git).resolve().parent.parent
+        candidates += [root / "bin" / "bash.exe", root / "usr" / "bin" / "bash.exe"]
+    if bash := shutil.which("bash"):
+        candidates.append(Path(bash))
+    windows = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+    wsl_launchers = {windows / name for name in ("System32", "Sysnative", "SysWOW64")}
+    for candidate in candidates:
+        wsl = candidate.parent in wsl_launchers or "windowsapps" in str(candidate).lower()
+        if candidate.is_file() and not wsl:
+            return str(candidate)
+    return None
+
+
+def _powershell_hook_command(executable: str, script: str, is_file: bool) -> list[str]:
+    # Text output keeps redirected streams free of CLIXML progress records.
+    command = [
+        executable, "-NoLogo", "-NoProfile", "-NonInteractive", "-OutputFormat", "Text", "-ExecutionPolicy", "Bypass",
+    ]
+    if is_file:
+        return [*command, "-File", script]
+    # EncodedCommand avoids Windows command-line quoting of multi-line scripts.
+    encoded = b64encode((_POWERSHELL_HOOK_PREAMBLE + script).encode("utf-16-le")).decode("ascii")
+    return [*command, "-EncodedCommand", encoded]
+
+
+def _windows_hook_command(hook_config: HookInstanceConfigV1Alpha1) -> list[str]:
+    """Select the hook interpreter on Windows.
+
+    PowerShell runs inline and .ps1 hooks by default. Python hooks use the
+    exporter's interpreter, .cmd/.bat files use cmd.exe, and a native Bash such
+    as Git Bash runs .sh files or hooks whose exec is bash or sh (including
+    POSIX paths such as /bin/sh), so Linux hook configurations remain usable.
+    """
+    script = hook_config.script.strip()
+    is_file = "\n" not in script and os.path.isfile(script)
+    extension = os.path.splitext(script)[1].lower() if is_file else ""
+    interpreter = hook_config.exec_
+    if interpreter is None:
+        if extension == ".py":
+            logger.debug("Auto-detected Python script: %s (interpreter: %s)", script, sys.executable)
+            interpreter = sys.executable
+        elif extension in (".bat", ".cmd"):
+            return [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", script]
+        elif extension == ".sh":
+            interpreter = "bash"
+        else:
+            powershell = shutil.which("pwsh") or shutil.which("powershell") or "powershell.exe"
+            logger.debug("Executing %s with PowerShell: %s", "script file" if is_file else "inline script", powershell)
+            return _powershell_hook_command(powershell, script, is_file)
+
+    name = ntpath.basename(interpreter).lower().removesuffix(".exe")
+    if name in ("pwsh", "powershell"):
+        return _powershell_hook_command(interpreter, script, is_file)
+    if name in ("bash", "sh") and not os.path.isfile(interpreter):
+        bash = _windows_bash()
+        if bash is None:
+            raise RuntimeError("Hook requires Bash, but no native Bash (such as Git Bash) was found")
+        interpreter = bash
+    elif name in ("python", "python3") and not os.path.isfile(interpreter):
+        # Bare Python names mean the exporter's own interpreter, not a Store alias.
+        interpreter = sys.executable
+
+    if is_file:
+        logger.debug("Executing script file: %s (interpreter: %s)", script, interpreter)
+        return [interpreter, script]
+    logger.debug("Executing inline script (interpreter: %s)", interpreter)
+    return [interpreter, "-c", hook_config.script]
+
+
+def _log_hook_output(stream) -> None:
+    """Log complete lines from a Windows hook's output pipe until it closes."""
+    buffer = b""
+    output_lines: list[str] = []
+    try:
+        while chunk := stream.read1(4096):
+            buffer = _flush_lines(buffer + chunk, output_lines)
+    except (OSError, ValueError):
+        pass
+    if line := buffer.decode(errors="replace").rstrip():
+        logger.info("%s", line)
+
+
+def _kill_hook_process_tree(process) -> None:
+    """Terminate a Windows hook and the commands it started."""
+    import subprocess
+
+    taskkill = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "taskkill.exe")
+    subprocess.run([taskkill, "/F", "/T", "/PID", str(process.pid)], capture_output=True, check=False)
+    if process.poll() is None:
+        process.kill()
+    process.wait()
 
 
 @dataclass
@@ -217,7 +346,8 @@ class HookExecutor:
         non-regular files are skipped, and the read is capped.
         """
         try:
-            fd = os.open(motd_file, os.O_RDONLY | os.O_NONBLOCK)
+            # Windows has neither FIFOs nor O_NONBLOCK.
+            fd = os.open(motd_file, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
         except OSError as e:
             logger.warning("Failed to open hook motd file %s: %s", motd_file, e)
             return
@@ -225,7 +355,7 @@ class HookExecutor:
             if not stat.S_ISREG(os.fstat(fd).st_mode):
                 logger.warning("Hook motd file %s is not a regular file, ignoring", motd_file)
                 return
-            content = os.read(fd, MAX_MOTD_BYTES).decode(errors="replace").strip()
+            content = _decode_hook_text(os.read(fd, MAX_MOTD_BYTES)).strip()
         except OSError as e:
             logger.warning("Failed to read hook motd file %s: %s", motd_file, e)
             return
@@ -290,6 +420,11 @@ class HookExecutor:
         Returns:
             Warning message string if hook failed with on_failure='warn', None otherwise
         """
+        if sys.platform == "win32":
+            return await self._execute_hook_process_windows(
+                hook_config, log_source, hook_env, logging_session, hook_type
+            )
+
         import pty
         import subprocess
 
@@ -328,8 +463,6 @@ class HookExecutor:
                 interpreter = hook_config.exec_
                 if is_file and interpreter is None:
                     # Auto-detect interpreter from file extension
-                    import sys
-
                     ext = os.path.splitext(script_stripped)[1].lower()
                     if ext == ".py":
                         interpreter = sys.executable
@@ -601,6 +734,72 @@ class HookExecutor:
                     cause = TimeoutError(error_msg)
                 return self._handle_hook_failure(error_msg, on_failure, hook_type, cause)
         return None
+
+    async def _execute_hook_process_windows(
+        self,
+        hook_config: HookInstanceConfigV1Alpha1,
+        log_source: LogSource,
+        hook_env: dict[str, str],
+        logging_session: Session,
+        hook_type: Literal["before_lease", "after_lease"],
+    ) -> str | None:
+        """Execute the hook process on Windows, which has no PTY.
+
+        A daemon thread logs output lines from a pipe, so a background process
+        that keeps the pipe open cannot block the exporter. Python children are
+        unbuffered and UTF-8 so j output still streams line by line.
+        """
+        import subprocess
+
+        timeout = hook_config.timeout
+        error_msg: str | None = None
+        cause: Exception | None = None
+        process: subprocess.Popen | None = None
+        reader: threading.Thread | None = None
+        env = {"PYTHONIOENCODING": "utf-8"} | hook_env | {"PYTHONUNBUFFERED": "1"}
+
+        with logging_session.context_log_source(__name__, log_source):
+            try:
+                cmd = _windows_hook_command(hook_config)
+                logger.debug("Spawning subprocess with command: %s", cmd)
+                process = subprocess.Popen(  # noqa: ASYNC220
+                    cmd,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    # Like start_new_session on POSIX: console Ctrl+C stays with the exporter.
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                )
+                reader = threading.Thread(target=_log_hook_output, args=(process.stdout,), daemon=True)
+                reader.start()
+                returncode: int | None = None
+                with anyio.move_on_after(timeout) as timeout_scope:
+                    returncode = await to_thread.run_sync(process.wait, abandon_on_cancel=True)
+                if timeout_scope.cancelled_caught:
+                    error_msg = f"Hook timed out after {timeout} seconds"
+                    cause = TimeoutError(error_msg)
+                    logger.error(error_msg)
+                    await to_thread.run_sync(_kill_hook_process_tree, process)
+                elif returncode != 0:
+                    error_msg = f"Hook failed with exit code {returncode}"
+                # Descendants that outlive the hook may hold the pipe open.
+                await to_thread.run_sync(reader.join, DRAIN_TIMEOUT_SECONDS)
+                if error_msg is None:
+                    logger.debug("Hook executed successfully")
+                    return None
+            except Exception as e:  # noqa: BLE001
+                error_msg = f"Error executing hook: {e}"
+                cause = e
+                logger.error(error_msg)
+            finally:
+                if process is not None:
+                    if process.poll() is None:
+                        _kill_hook_process_tree(process)
+                    if reader is None or not reader.is_alive():
+                        process.stdout.close()
+
+            return self._handle_hook_failure(error_msg, hook_config.on_failure, hook_type, cause)
 
     async def execute_before_lease_hook(self, lease_scope: "LeaseContext") -> str | None:
         """Execute the before-lease hook.

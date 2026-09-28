@@ -1,0 +1,18 @@
+[package]
+name = "jumpstarter-core-py"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Python bindings for reusable Jumpstarter Rust core components"
+
+[lib]
+name = "_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Maturin enables extension-module when building the Python wheel. Ordinary
+# cargo test executables must retain libpython linkage, particularly on macOS.
+pyo3 = { version = "0.29", features = ["abi3-py312", "generate-import-lib"] }
+jumpstarter-ipc = { path = "../jumpstarter-ipc", version = "0.1.0" }
+jumpstarter-proc = { path = "../jumpstarter-proc", version = "0.1.0" }

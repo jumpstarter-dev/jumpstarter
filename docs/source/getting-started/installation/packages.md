@@ -15,7 +15,8 @@ Jumpstarter includes the following installable Python packages:
 ### Installing Packages
 
 The [Jumpstarter Python packages](https://pkg.jumpstarter.dev/) provide all the
-tools you need to interact with hardware locally.
+tools you need to interact with hardware locally. The installer below is for
+Linux and macOS; see [Windows](windows.md) for native Windows installation.
 
 #### Using the Installer
 ##### Quick Install (Recommended)

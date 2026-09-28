@@ -51,6 +51,9 @@ You can also run specific tests with:
 $ make pkg-test-${package_name}
 ```
 
+See [platform builds and tests](platform-testing.md) for the shared Python/Rust
+CI matrix, native Windows commands, test gates, and hosted Windows coverage.
+
 ## Go Environment
 
 The Jumpstarter controller lives in the `controller/` directory within the
