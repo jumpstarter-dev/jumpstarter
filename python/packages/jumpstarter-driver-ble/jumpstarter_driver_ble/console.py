@@ -1,8 +1,7 @@
 import sys
-import termios
-import tty
 from contextlib import contextmanager
 
+import click
 from anyio import create_task_group
 from anyio.streams.file import FileReadStream, FileWriteStream
 
@@ -23,6 +22,15 @@ class BleConsole:
 
     @contextmanager
     def setraw(self):
+        try:
+            import termios
+            import tty
+        except ImportError as exc:
+            raise click.ClickException(
+                "Interactive BLE console is not available on this platform. "
+                "Use the stream/pexpect API instead."
+            ) from exc
+
         original = termios.tcgetattr(sys.stdin.fileno())
         try:
             tty.setraw(sys.stdin.fileno())

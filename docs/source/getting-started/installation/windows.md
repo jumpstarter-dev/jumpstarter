@@ -37,6 +37,7 @@ drivers run on Windows in CI; the notes say what those tests exercise:
 
 | Driver | Notes |
 | --- | --- |
+| {doc}`ble <../../reference/package-apis/drivers/ble>` | Client streams and pexpect; the interactive BLE console is not available on Windows |
 | composite | |
 | {doc}`network <../../reference/package-apis/drivers/network>` | TCP, UDP and WebSocket drivers, port forwarding and pexpect; Unix-socket and D-Bus drivers need a POSIX exporter |
 | {doc}`power <../../reference/package-apis/drivers/power>` | `MockPower`; physical power backends are tested separately |
