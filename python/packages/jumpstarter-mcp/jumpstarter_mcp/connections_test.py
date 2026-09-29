@@ -140,13 +140,7 @@ async def test_cancellation_after_startup_is_not_reported_as_a_failure(monkeypat
     monkeypatch.setattr("jumpstarter_mcp.connections.client_from_path", _fake_client_from_path)
     _RAISE_ON_TEARDOWN.clear()
 
-    sent_logs: list[tuple[str, str]] = []
-
-    async def _capture_log(level, message):
-        sent_logs.append((level, message))
-
     manager = ConnectionManager()
-    manager.set_log_callback(_capture_log)
 
     async with manager.running():
         config_a = FakeConfig(FakeLease("lease-a", "exporter-a"))
@@ -158,8 +152,9 @@ async def test_cancellation_after_startup_is_not_reported_as_a_failure(monkeypat
         assert manager._task_group is not None
         manager._task_group.cancel_scope.cancel()
 
-    assert not any("failed" in message for _level, message in sent_logs), (
-        f"cancellation was caught and reported as a connection failure: {sent_logs}"
+    events = manager.drain_events()
+    assert not any("failed" in e["message"] for e in events), (
+        f"cancellation was caught and reported as a connection failure: {events}"
     )
 
 
@@ -185,13 +180,7 @@ class TestLeaseEndingCallback:
         monkeypatch.setattr("jumpstarter_mcp.connections.client_from_path", _fake_client_from_path)
         _RAISE_ON_TEARDOWN.clear()
 
-        logs: list[tuple[str, str]] = []
-
-        async def capture_log(level, message):
-            logs.append((level, message))
-
         manager = ConnectionManager()
-        manager.set_log_callback(capture_log)
 
         async with manager.running():
             lease_a = FakeLease("lease-a", "exporter-a")
@@ -203,7 +192,8 @@ class TestLeaseEndingCallback:
             for _ in range(10):
                 await anyio.lowlevel.checkpoint()
 
-        assert any("lease-a" in message for _level, message in logs)
+        events = manager.drain_events()
+        assert any("lease-a" in e["message"] for e in events)
 
     @pytest.mark.asyncio
     async def test_silences_closed_resource_error(self, monkeypatch):
@@ -225,13 +215,7 @@ class TestLeaseEndingCallback:
         monkeypatch.setattr("jumpstarter_mcp.connections.client_from_path", _fake_client_from_path)
         _RAISE_ON_TEARDOWN.clear()
 
-        logs: list[tuple[str, str]] = []
-
-        async def capture_log(level, message):
-            logs.append((level, message))
-
         manager = ConnectionManager()
-        manager.set_log_callback(capture_log)
 
         async with manager.running():
             lease_a = FakeLease("lease-a", "exporter-a")
@@ -244,4 +228,45 @@ class TestLeaseEndingCallback:
             for _ in range(10):
                 await anyio.lowlevel.checkpoint()
 
-        assert any("unknown" in message for _level, message in logs)
+        events = manager.drain_events()
+        assert any("unknown" in e["message"] for e in events)
+
+
+class TestEventQueue:
+    def test_drain_empty_returns_empty_list(self):
+        manager = ConnectionManager()
+        assert manager.drain_events() == []
+
+    def test_append_and_drain_returns_event(self):
+        manager = ConnectionManager()
+        manager._append_event("warning", "lease expiring", "conn-1")
+        events = manager.drain_events()
+        assert len(events) == 1
+        assert events[0]["level"] == "warning"
+        assert events[0]["message"] == "lease expiring"
+        assert events[0]["connection_id"] == "conn-1"
+        assert "timestamp" in events[0]
+
+    def test_drain_removes_events(self):
+        manager = ConnectionManager()
+        manager._append_event("error", "lease expired", "conn-1")
+        manager.drain_events()
+        assert manager.drain_events() == []
+
+    def test_drain_max_count_respected(self):
+        manager = ConnectionManager()
+        for i in range(10):
+            manager._append_event("info", f"event {i}", "conn-1")
+        first = manager.drain_events(max_count=3)
+        assert len(first) == 3
+        assert first[0]["message"] == "event 0"
+        remaining = manager.drain_events(max_count=100)
+        assert len(remaining) == 7
+
+    def test_events_overflow_drops_oldest(self):
+        manager = ConnectionManager()
+        for i in range(201):
+            manager._append_event("info", f"event {i}", "conn-1")
+        events = manager.drain_events(max_count=300)
+        assert len(events) == 200
+        assert events[0]["message"] == "event 1"

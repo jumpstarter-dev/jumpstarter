@@ -16,7 +16,6 @@ import pytest
 from jumpstarter_mcp.connections import Connection, ConnectionManager
 from jumpstarter_mcp.server import (
     TOKEN_REFRESH_THRESHOLD_SECONDS,
-    _capture_session_for_notifications,
     _ensure_fresh_token,
     _setup_logging,
     create_server,
@@ -566,80 +565,45 @@ class TestStdoutIsolation:
 
 
 # ---------------------------------------------------------------------------
-# _capture_session_for_notifications
+# jmp_list_events
 # ---------------------------------------------------------------------------
 
 
-class TestCaptureSessionForNotifications:
-    def test_ctx_none_skips_callback_setup(self):
+class TestListEvents:
+    @pytest.mark.asyncio
+    async def test_empty_queue_returns_empty_list(self):
+        import json
+
+        from jumpstarter_mcp.tools.commands import list_events
+
         _, manager = create_server()
-        _capture_session_for_notifications(None, manager)
-        assert manager._log_callback is None
-
-    def test_existing_callback_not_overwritten(self):
-        _, manager = create_server()
-
-        async def original(level: str, message: str) -> None:
-            pass
-
-        manager.set_log_callback(original)
-        _capture_session_for_notifications(MagicMock(), manager)
-        assert manager._log_callback is original
-
-    def test_valid_ctx_installs_callback(self):
-        _, manager = create_server()
-        mock_connection = AsyncMock()
-        mock_session = MagicMock()
-        mock_session._connection = mock_connection
-        _capture_session_for_notifications(MagicMock(session=mock_session), manager)
-        assert manager._log_callback is not None
+        result = json.loads(await list_events(manager))
+        assert result == []
 
     @pytest.mark.asyncio
-    async def test_installed_callback_calls_connection_notify(self):
+    async def test_events_are_drained(self):
+        import json
+
+        from jumpstarter_mcp.tools.commands import list_events
+
         _, manager = create_server()
-        mock_connection = AsyncMock()
-        mock_session = MagicMock()
-        mock_session._connection = mock_connection
-        _capture_session_for_notifications(MagicMock(session=mock_session), manager)
-        assert manager._log_callback is not None
-        await manager._log_callback("info", "hello")
-        mock_connection.notify.assert_called_once_with(
-            "notifications/message",
-            {"level": "info", "data": "hello", "logger": "jumpstarter"},
-        )
+        manager._append_event("warning", "lease expiring", "conn-1")
+        result = json.loads(await list_events(manager))
+        assert len(result) == 1
+        assert result[0]["level"] == "warning"
+        assert result[0]["message"] == "lease expiring"
+        assert json.loads(await list_events(manager)) == []
 
     @pytest.mark.asyncio
-    async def test_background_log_delivered_without_log_level_opt_in(self):
-        """Background logs reach the client via the connection channel even when
-        the jmp_connect request carried no log-level opt-in in its _meta."""
+    async def test_max_count_respected(self):
+        import json
+
+        from jumpstarter_mcp.tools.commands import list_events
+
         _, manager = create_server()
-        mock_connection = AsyncMock()
-        mock_session = MagicMock()
-        mock_session._connection = mock_connection
-        _capture_session_for_notifications(MagicMock(session=mock_session), manager)
-        assert manager._log_callback is not None
-
-        await manager._log_callback("warning", "lease expires soon")
-
-        mock_connection.notify.assert_called_once_with(
-            "notifications/message",
-            {"level": "warning", "data": "lease expires soon", "logger": "jumpstarter"},
-        )
-
-    @pytest.mark.asyncio
-    async def test_background_log_delivered_with_log_level_opt_in(self):
-        """Background logs reach the client via the connection channel even when
-        the jmp_connect request included a log-level opt-in in its _meta."""
-        _, manager = create_server()
-        mock_connection = AsyncMock()
-        mock_session = MagicMock()
-        mock_session._connection = mock_connection
-        _capture_session_for_notifications(MagicMock(session=mock_session), manager)
-        assert manager._log_callback is not None
-
-        await manager._log_callback("error", "lease expired")
-
-        mock_connection.notify.assert_called_once_with(
-            "notifications/message",
-            {"level": "error", "data": "lease expired", "logger": "jumpstarter"},
-        )
+        for i in range(10):
+            manager._append_event("info", f"event {i}", "conn-1")
+        result = json.loads(await list_events(manager, max_count=3))
+        assert len(result) == 3
+        remaining = json.loads(await list_events(manager, max_count=100))
+        assert len(remaining) == 7

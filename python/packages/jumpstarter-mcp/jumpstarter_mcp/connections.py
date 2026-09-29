@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import collections
 import logging
 import shutil
 import sys
 import sysconfig
 import uuid
-from collections.abc import Awaitable, Callable
 from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -77,22 +77,25 @@ class ConnectionManager:
         self._portals: dict[str, BlockingPortal] = {}
         self._stacks: dict[str, ExitStack] = {}
         self._cleanup_events: dict[str, anyio.Event] = {}
-        self._log_callback: Callable[[str, str], Awaitable[None]] | None = None
+        self._events: collections.deque[dict] = collections.deque(maxlen=200)
 
-    def set_log_callback(self, callback: Callable[[str, str], Awaitable[None]]) -> None:
-        """Set an async callback for sending MCP log notifications.
+    def _append_event(self, level: str, message: str, connection_id: str) -> None:
+        """Record a lease or connection event for later polling by the client."""
+        self._events.append(
+            {
+                "timestamp": datetime.now(tz=UTC).isoformat(),
+                "level": level,
+                "message": message,
+                "connection_id": connection_id,
+            }
+        )
 
-        Signature: async def callback(level: str, message: str) -> None
-        """
-        self._log_callback = callback
-
-    async def _send_log(self, level: str, message: str) -> None:
-        """Send a log notification via MCP if a callback is configured."""
-        if self._log_callback is not None:
-            try:
-                await self._log_callback(level, message)
-            except Exception:  # noqa: BLE001
-                logger.debug("Failed to send MCP log notification: %s", message)
+    def drain_events(self, max_count: int = 50) -> list[dict]:
+        """Pop and return up to max_count events from the front of the queue."""
+        batch = []
+        for _ in range(min(max_count, len(self._events))):
+            batch.append(self._events.popleft())
+        return batch
 
     @property
     def connections(self) -> dict[str, Connection]:
@@ -104,19 +107,21 @@ class ConnectionManager:
         connection_id: str,
         event: anyio.Event,
     ) -> None:
-        """Forward lease ending notifications from the sync callback to MCP."""
+        """Forward lease ending notifications from the sync callback to the event queue."""
         async for name, exporter, remaining in notify_recv:
             if remaining <= timedelta(0):
-                await self._send_log(
+                self._append_event(
                     "error",
                     f"Lease {name} for {exporter} has expired. Connection {connection_id} is no longer valid.",
+                    connection_id,
                 )
                 event.set()
             else:
                 mins = max(1, int(remaining.total_seconds() // 60))
-                await self._send_log(
+                self._append_event(
                     "warning",
                     f"Lease {name} for {exporter} will expire in ~{mins} minute(s).",
+                    connection_id,
                 )
 
     async def _watch_lease_transfer(
@@ -126,14 +131,15 @@ class ConnectionManager:
         connection_id: str,
         event: anyio.Event,
     ) -> None:
-        """Poll for lease transfer and notify via MCP when detected."""
+        """Poll for lease transfer and record an event when detected."""
         while not event.is_set():
             if lease.lease_transferred:
-                await self._send_log(
+                self._append_event(
                     "error",
                     f"Lease {lease.name} for {conn.exporter_name} "
                     f"has been transferred to another client. "
                     f"Connection {connection_id} is no longer valid.",
+                    connection_id,
                 )
                 event.set()
                 return
@@ -201,7 +207,7 @@ class ConnectionManager:
                 # cancel siblings sharing the task group.
                 unwrapped = _unwrap_exception(exc)
                 logger.exception("Connection %s failed", connection_id)
-                await self._send_log("error", f"Connection {connection_id} failed: {unwrapped}")
+                self._append_event("error", f"Connection {connection_id} failed: {unwrapped}", connection_id)
                 return
             finally:
                 self._connections.pop(connection_id, None)
