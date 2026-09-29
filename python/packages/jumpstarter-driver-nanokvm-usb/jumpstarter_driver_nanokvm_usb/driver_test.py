@@ -1,6 +1,7 @@
 """Tests for NanoKVM-USB driver."""
 
 import shutil
+import sys
 import tempfile
 from io import BytesIO
 from pathlib import Path
@@ -153,6 +154,7 @@ def test_nanokvm_usb_mouse_click(mock_device):
         mock_device.mouse_click.assert_called_once_with(MouseButton.LEFT, None, None)
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="v4l2-ctl is Linux-only")
 def test_v4l2_ctl_open_rejects_missing_executable():
     cap = V4L2CtlMjpegCapture(v4l2_ctl_executable="/nonexistent/v4l2-ctl")
     with pytest.raises(OSError, match="v4l2-ctl not found"):
@@ -160,6 +162,7 @@ def test_v4l2_ctl_open_rejects_missing_executable():
     assert not cap.is_open
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="v4l2-ctl is Linux-only")
 def test_v4l2_ctl_open_rejects_immediate_exit(tmp_path):
     fake = tmp_path / "fake-v4l2-ctl"
     fake.write_text("#!/bin/sh\nexit 1\n")
