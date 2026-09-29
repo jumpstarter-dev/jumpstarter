@@ -1,3 +1,5 @@
+import logging
+
 import yarl
 
 from .base import Driver
@@ -121,3 +123,33 @@ def test_driver_package_import_does_not_cycle():
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_propagate_log_level_recurses_into_children():
+    class _TestDriver(Driver):
+        @classmethod
+        def client(cls) -> str:
+            return "test.client"
+
+    child = _TestDriver()
+    parent = _TestDriver(log_level="DEBUG", children={"child": child})
+
+    parent.propagate_log_level()
+
+    assert parent.logger.level == logging.DEBUG
+    assert child.logger.level == logging.DEBUG
+
+
+def test_propagate_log_level_child_explicit_overrides_parent():
+    class _TestDriver(Driver):
+        @classmethod
+        def client(cls) -> str:
+            return "test.client"
+
+    child = _TestDriver(log_level="WARNING")
+    parent = _TestDriver(log_level="DEBUG", children={"child": child})
+
+    parent.propagate_log_level()
+
+    assert parent.logger.level == logging.DEBUG
+    assert child.logger.level == logging.WARNING
