@@ -355,12 +355,12 @@ class NanoKVMUSB(Composite):
         if self._vnc_server is not None:
             try:
                 self._vnc_server.stop()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 self.logger.debug(f"Error stopping RFB server: {exc}")
             self._vnc_server = None
         try:
             super().close()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self.logger.debug(f"Error closing child drivers: {exc}")
         if self._vnc_dir is not None:
             shutil.rmtree(self._vnc_dir, ignore_errors=True)

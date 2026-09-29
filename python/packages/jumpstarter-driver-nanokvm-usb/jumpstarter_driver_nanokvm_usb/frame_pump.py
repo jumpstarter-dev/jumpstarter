@@ -72,8 +72,7 @@ class FramePump:
 
     def wait_n_frames(self, count: int, timeout: float = 5.0) -> bytes:
         """Wait for ``count`` new frames and return the last JPEG."""
-        if count < 1:
-            count = 1
+        count = max(count, 1)
         deadline = time.monotonic() + timeout
         gen = -1
         jpeg: bytes | None = None
