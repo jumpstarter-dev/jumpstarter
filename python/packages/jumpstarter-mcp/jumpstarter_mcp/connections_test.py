@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import types
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import timedelta
 
 import anyio
+import anyio.lowlevel
 import pytest
 
 from jumpstarter_mcp.connections import ConnectionManager
@@ -24,7 +28,7 @@ class FakeLease:
     unsafe: bool = True
     lease_transferred: bool = False
     lease_ended: bool = False
-    lease_ending_callback: object = None
+    lease_ending_callback: Callable[..., None] | None = None
 
     @asynccontextmanager
     async def serve_unix_async(self):
@@ -136,13 +140,7 @@ async def test_cancellation_after_startup_is_not_reported_as_a_failure(monkeypat
     monkeypatch.setattr("jumpstarter_mcp.connections.client_from_path", _fake_client_from_path)
     _RAISE_ON_TEARDOWN.clear()
 
-    sent_logs: list[tuple[str, str]] = []
-
-    async def _capture_log(level, message):
-        sent_logs.append((level, message))
-
     manager = ConnectionManager()
-    manager.set_log_callback(_capture_log)
 
     async with manager.running():
         config_a = FakeConfig(FakeLease("lease-a", "exporter-a"))
@@ -154,8 +152,9 @@ async def test_cancellation_after_startup_is_not_reported_as_a_failure(monkeypat
         assert manager._task_group is not None
         manager._task_group.cancel_scope.cancel()
 
-    assert not any("failed" in message for _level, message in sent_logs), (
-        f"cancellation was caught and reported as a connection failure: {sent_logs}"
+    events = manager.drain_events()
+    assert not any("failed" in e["message"] for e in events), (
+        f"cancellation was caught and reported as a connection failure: {events}"
     )
 
 
@@ -173,3 +172,101 @@ async def test_pre_startup_failure_propagates_to_connect_caller(monkeypatch):
         config = FakeConfig(FakeLease("lease-x", "exporter-x"))
         with pytest.raises(ConnectionError, match="simulated setup failure"):
             await manager.connect(config, lease_name="lease-x")  # ty: ignore[invalid-argument-type]
+
+
+class TestLeaseEndingCallback:
+    @pytest.mark.asyncio
+    async def test_enqueues_notification(self, monkeypatch):
+        monkeypatch.setattr("jumpstarter_mcp.connections.client_from_path", _fake_client_from_path)
+        _RAISE_ON_TEARDOWN.clear()
+
+        manager = ConnectionManager()
+
+        async with manager.running():
+            lease_a = FakeLease("lease-a", "exporter-a")
+            await manager.connect(FakeConfig(lease_a), lease_name="lease-a")  # ty: ignore[invalid-argument-type]
+
+            assert lease_a.lease_ending_callback is not None
+            lease_a.lease_ending_callback(lease_a, timedelta(seconds=60))
+
+            for _ in range(10):
+                await anyio.lowlevel.checkpoint()
+
+        events = manager.drain_events()
+        assert any("lease-a" in e["message"] for e in events)
+
+    @pytest.mark.asyncio
+    async def test_silences_closed_resource_error(self, monkeypatch):
+        monkeypatch.setattr("jumpstarter_mcp.connections.client_from_path", _fake_client_from_path)
+        _RAISE_ON_TEARDOWN.clear()
+
+        manager = ConnectionManager()
+
+        async with manager.running():
+            lease_a = FakeLease("lease-a", "exporter-a")
+            await manager.connect(FakeConfig(lease_a), lease_name="lease-a")  # ty: ignore[invalid-argument-type]
+            callback = lease_a.lease_ending_callback
+            assert callback is not None
+
+        callback(lease_a, timedelta(seconds=30))
+
+    @pytest.mark.asyncio
+    async def test_uses_unknown_for_missing_exporter_name(self, monkeypatch):
+        monkeypatch.setattr("jumpstarter_mcp.connections.client_from_path", _fake_client_from_path)
+        _RAISE_ON_TEARDOWN.clear()
+
+        manager = ConnectionManager()
+
+        async with manager.running():
+            lease_a = FakeLease("lease-a", "exporter-a")
+            await manager.connect(FakeConfig(lease_a), lease_name="lease-a")  # ty: ignore[invalid-argument-type]
+
+            assert lease_a.lease_ending_callback is not None
+            obj = types.SimpleNamespace(name="nameless-lease")
+            lease_a.lease_ending_callback(obj, timedelta(seconds=30))
+
+            for _ in range(10):
+                await anyio.lowlevel.checkpoint()
+
+        events = manager.drain_events()
+        assert any("unknown" in e["message"] for e in events)
+
+
+class TestEventQueue:
+    def test_drain_empty_returns_empty_list(self):
+        manager = ConnectionManager()
+        assert manager.drain_events() == []
+
+    def test_append_and_drain_returns_event(self):
+        manager = ConnectionManager()
+        manager._append_event("warning", "lease expiring", "conn-1")
+        events = manager.drain_events()
+        assert len(events) == 1
+        assert events[0]["level"] == "warning"
+        assert events[0]["message"] == "lease expiring"
+        assert events[0]["connection_id"] == "conn-1"
+        assert "timestamp" in events[0]
+
+    def test_drain_removes_events(self):
+        manager = ConnectionManager()
+        manager._append_event("error", "lease expired", "conn-1")
+        manager.drain_events()
+        assert manager.drain_events() == []
+
+    def test_drain_max_count_respected(self):
+        manager = ConnectionManager()
+        for i in range(10):
+            manager._append_event("info", f"event {i}", "conn-1")
+        first = manager.drain_events(max_count=3)
+        assert len(first) == 3
+        assert first[0]["message"] == "event 0"
+        remaining = manager.drain_events(max_count=100)
+        assert len(remaining) == 7
+
+    def test_events_overflow_drops_oldest(self):
+        manager = ConnectionManager()
+        for i in range(201):
+            manager._append_event("info", f"event {i}", "conn-1")
+        events = manager.drain_events(max_count=300)
+        assert len(events) == 200
+        assert events[0]["message"] == "event 1"

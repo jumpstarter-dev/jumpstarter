@@ -43,7 +43,7 @@
 .glossary-term[data-tooltip].tooltip-active::after {
     content: attr(data-tooltip);
     position: absolute;
-    left: 0;
+    left: var(--tooltip-offset, 0);
     bottom: 100%;
     background: var(--color-background-secondary);
     color: var(--color-foreground-primary);
@@ -54,7 +54,9 @@
     min-width: 200px;
     max-width: 400px;
     white-space: normal;
+    font-weight: normal;
     z-index: 1000;
     pointer-events: none;
 }
+
 

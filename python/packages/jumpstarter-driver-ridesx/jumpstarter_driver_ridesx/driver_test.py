@@ -48,73 +48,68 @@ def test_missing_serial(temp_storage_dir):
 
 
 def test_detect_fastboot_device_found(ridesx_driver):
-    with serve(ridesx_driver) as client:
-        with patch("subprocess.run") as mock_subprocess:
-            mock_result = MagicMock()
-            mock_result.stdout = "ABC123456789    fastboot\n"
-            mock_result.returncode = 0
-            mock_subprocess.return_value = mock_result
+    with serve(ridesx_driver) as client, patch("subprocess.run") as mock_subprocess:
+        mock_result = MagicMock()
+        mock_result.stdout = "ABC123456789    fastboot\n"
+        mock_result.returncode = 0
+        mock_subprocess.return_value = mock_result
 
-            result = client.call("detect_fastboot_device", 1, 0.1)
+        result = client.call("detect_fastboot_device", 1, 0.1)
 
-            assert result["status"] == "device_found"
-            assert result["device_id"] == "ABC123456789"
-            mock_subprocess.assert_called_once()
+        assert result["status"] == "device_found"
+        assert result["device_id"] == "ABC123456789"
+        mock_subprocess.assert_called_once()
 
 
 def test_detect_fastboot_device_not_found(ridesx_driver):
-    with serve(ridesx_driver) as client:
-        with patch("subprocess.run") as mock_subprocess:
-            mock_result = MagicMock()
-            mock_result.stdout = ""
-            mock_result.returncode = 0
-            mock_subprocess.return_value = mock_result
+    with serve(ridesx_driver) as client, patch("subprocess.run") as mock_subprocess:
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        mock_result.returncode = 0
+        mock_subprocess.return_value = mock_result
 
-            result = client.call("detect_fastboot_device", 2, 0.01)
+        result = client.call("detect_fastboot_device", 2, 0.01)
 
-            assert result["status"] == "no_device_found"
-            assert result["device_id"] is None
-            # Driver makes max_attempts calls plus one final attempt
-            assert mock_subprocess.call_count >= 2
+        assert result["status"] == "no_device_found"
+        assert result["device_id"] is None
+        # Driver makes max_attempts calls plus one final attempt
+        assert mock_subprocess.call_count >= 2
 
 
 def test_detect_fastboot_device_timeout(ridesx_driver):
-    with serve(ridesx_driver) as client:
-        with patch("subprocess.run") as mock_subprocess:
-            mock_subprocess.side_effect = subprocess.TimeoutExpired("fastboot", 10)
+    with serve(ridesx_driver) as client, patch("subprocess.run") as mock_subprocess:
+        mock_subprocess.side_effect = subprocess.TimeoutExpired("fastboot", 10)
 
-            result = client.call("detect_fastboot_device", 2, 0.01)
+        result = client.call("detect_fastboot_device", 2, 0.01)
 
-            assert result["status"] == "no_device_found"
-            assert result["device_id"] is None
+        assert result["status"] == "no_device_found"
+        assert result["device_id"] is None
 
 
 def test_detect_fastboot_device_not_found_error(ridesx_driver):
-    with serve(ridesx_driver) as client:
-        with patch("subprocess.run", side_effect=FileNotFoundError("fastboot not found")):
-            # When called through client, RuntimeError becomes DriverError
-            from jumpstarter.client.core import DriverError
+    with serve(ridesx_driver) as client, patch("subprocess.run", side_effect=FileNotFoundError("fastboot not found")):
+        # When called through client, RuntimeError becomes DriverError
+        from jumpstarter.client.core import DriverError
 
-            with pytest.raises(DriverError, match="fastboot command not found"):
-                client.call("detect_fastboot_device", 1, 0.1)
+        with pytest.raises(DriverError, match="fastboot command not found"):
+            client.call("detect_fastboot_device", 1, 0.1)
 
 
 def test_detect_fastboot_device_retry_logic(ridesx_driver):
-    with serve(ridesx_driver) as client:
-        with patch("subprocess.run") as mock_subprocess:
-            # First two attempts return empty, third returns device
-            mock_results = [
-                MagicMock(stdout="", returncode=0),
-                MagicMock(stdout="", returncode=0),
-                MagicMock(stdout="ABC123456789    fastboot\n", returncode=0),
-            ]
-            mock_subprocess.side_effect = mock_results
+    with serve(ridesx_driver) as client, patch("subprocess.run") as mock_subprocess:
+        # First two attempts return empty, third returns device
+        mock_results = [
+            MagicMock(stdout="", returncode=0),
+            MagicMock(stdout="", returncode=0),
+            MagicMock(stdout="ABC123456789    fastboot\n", returncode=0),
+        ]
+        mock_subprocess.side_effect = mock_results
 
-            result = client.call("detect_fastboot_device", 3, 0.01)
+        result = client.call("detect_fastboot_device", 3, 0.01)
 
-            assert result["status"] == "device_found"
-            assert result["device_id"] == "ABC123456789"
-            assert mock_subprocess.call_count == 3
+        assert result["status"] == "device_found"
+        assert result["device_id"] == "ABC123456789"
+        assert mock_subprocess.call_count == 3
 
 
 # File Decompression Tests
@@ -223,31 +218,30 @@ def test_flash_with_fastboot_single_partition(temp_storage_dir, ridesx_driver):
     image_file = Path(temp_storage_dir) / "boot.img"
     image_file.write_bytes(b"boot image data")
 
-    with serve(ridesx_driver) as client:
-        with patch("subprocess.run") as mock_subprocess:
-            # Mock flash command
-            flash_result = MagicMock()
-            flash_result.stdout = "Flashing boot..."
-            flash_result.stderr = ""
-            flash_result.returncode = 0
+    with serve(ridesx_driver) as client, patch("subprocess.run") as mock_subprocess:
+        # Mock flash command
+        flash_result = MagicMock()
+        flash_result.stdout = "Flashing boot..."
+        flash_result.stderr = ""
+        flash_result.returncode = 0
 
-            # Mock continue command
-            continue_result = MagicMock()
-            continue_result.stdout = "Continuing..."
-            continue_result.stderr = ""
-            continue_result.returncode = 0
+        # Mock continue command
+        continue_result = MagicMock()
+        continue_result.stdout = "Continuing..."
+        continue_result.stderr = ""
+        continue_result.returncode = 0
 
-            mock_subprocess.side_effect = [flash_result, continue_result]
+        mock_subprocess.side_effect = [flash_result, continue_result]
 
-            client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img"})
+        client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img"})
 
-            assert mock_subprocess.call_count == 2
-            # Check flash command
-            flash_call = mock_subprocess.call_args_list[0]
-            assert flash_call[0][0] == ["fastboot", "-s", "ABC123", "flash", "boot", str(image_file)]
-            # Check continue command
-            continue_call = mock_subprocess.call_args_list[1]
-            assert continue_call[0][0] == ["fastboot", "-s", "ABC123", "continue"]
+        assert mock_subprocess.call_count == 2
+        # Check flash command
+        flash_call = mock_subprocess.call_args_list[0]
+        assert flash_call[0][0] == ["fastboot", "-s", "ABC123", "flash", "boot", str(image_file)]
+        # Check continue command
+        continue_call = mock_subprocess.call_args_list[1]
+        assert continue_call[0][0] == ["fastboot", "-s", "ABC123", "continue"]
 
 
 def test_flash_with_fastboot_multiple_partitions(temp_storage_dir, ridesx_driver):
@@ -257,27 +251,26 @@ def test_flash_with_fastboot_multiple_partitions(temp_storage_dir, ridesx_driver
     system_file = Path(temp_storage_dir) / "system.img"
     system_file.write_bytes(b"system image data")
 
-    with serve(ridesx_driver) as client:
-        with patch("subprocess.run") as mock_subprocess:
-            flash_result = MagicMock()
-            flash_result.stdout = "Flashing..."
-            flash_result.stderr = ""
-            flash_result.returncode = 0
+    with serve(ridesx_driver) as client, patch("subprocess.run") as mock_subprocess:
+        flash_result = MagicMock()
+        flash_result.stdout = "Flashing..."
+        flash_result.stderr = ""
+        flash_result.returncode = 0
 
-            continue_result = MagicMock()
-            continue_result.stdout = "Continuing..."
-            continue_result.stderr = ""
-            continue_result.returncode = 0
+        continue_result = MagicMock()
+        continue_result.stdout = "Continuing..."
+        continue_result.stderr = ""
+        continue_result.returncode = 0
 
-            mock_subprocess.side_effect = [flash_result, flash_result, continue_result]
+        mock_subprocess.side_effect = [flash_result, flash_result, continue_result]
 
-            client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img", "system": "system.img"})
+        client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img", "system": "system.img"})
 
-            assert mock_subprocess.call_count == 3
-            # Verify both partitions were flashed
-            flash_calls = [call[0][0] for call in mock_subprocess.call_args_list[:2]]
-            assert ["fastboot", "-s", "ABC123", "flash", "boot", str(boot_file)] in flash_calls
-            assert ["fastboot", "-s", "ABC123", "flash", "system", str(system_file)] in flash_calls
+        assert mock_subprocess.call_count == 3
+        # Verify both partitions were flashed
+        flash_calls = [call[0][0] for call in mock_subprocess.call_args_list[:2]]
+        assert ["fastboot", "-s", "ABC123", "flash", "boot", str(boot_file)] in flash_calls
+        assert ["fastboot", "-s", "ABC123", "flash", "system", str(system_file)] in flash_calls
 
 
 def test_flash_with_fastboot_compressed_file(temp_storage_dir, ridesx_driver):
@@ -289,28 +282,30 @@ def test_flash_with_fastboot_compressed_file(temp_storage_dir, ridesx_driver):
     decompressed_file = Path(temp_storage_dir) / "boot.img"
     decompressed_file.write_bytes(b"decompressed data")
 
-    with serve(ridesx_driver) as client:
-        with patch.object(ridesx_driver, "_decompress_file", return_value=decompressed_file):
-            with patch("subprocess.run") as mock_subprocess:
-                flash_result = MagicMock()
-                flash_result.stdout = "Flashing..."
-                flash_result.stderr = ""
-                flash_result.returncode = 0
+    with (
+        serve(ridesx_driver) as client,
+        patch.object(ridesx_driver, "_decompress_file", return_value=decompressed_file),
+        patch("subprocess.run") as mock_subprocess,
+    ):
+        flash_result = MagicMock()
+        flash_result.stdout = "Flashing..."
+        flash_result.stderr = ""
+        flash_result.returncode = 0
 
-                continue_result = MagicMock()
-                continue_result.stdout = "Continuing..."
-                continue_result.stderr = ""
-                continue_result.returncode = 0
+        continue_result = MagicMock()
+        continue_result.stdout = "Continuing..."
+        continue_result.stderr = ""
+        continue_result.returncode = 0
 
-                mock_subprocess.side_effect = [flash_result, continue_result]
+        mock_subprocess.side_effect = [flash_result, continue_result]
 
-                client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img.gz"})
+        client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img.gz"})
 
-                # Verify decompression was called
-                ridesx_driver._decompress_file.assert_called_once_with(compressed_file)
-                # Verify flash used decompressed file
-                flash_call = mock_subprocess.call_args_list[0]
-                assert str(decompressed_file) in flash_call[0][0]
+        # Verify decompression was called
+        ridesx_driver._decompress_file.assert_called_once_with(compressed_file)
+        # Verify flash used decompressed file
+        flash_call = mock_subprocess.call_args_list[0]
+        assert str(decompressed_file) in flash_call[0][0]
 
 
 def test_flash_with_fastboot_file_not_found(temp_storage_dir, ridesx_driver):
@@ -323,9 +318,8 @@ def test_flash_with_fastboot_file_not_found(temp_storage_dir, ridesx_driver):
 
 
 def test_flash_with_fastboot_empty_partitions(ridesx_driver):
-    with serve(ridesx_driver) as client:
-        with pytest.raises(ValueError, match="At least one partition must be provided"):
-            client.call("flash_with_fastboot", "ABC123", {})
+    with serve(ridesx_driver) as client, pytest.raises(ValueError, match="At least one partition must be provided"):
+        client.call("flash_with_fastboot", "ABC123", {})
 
 
 def test_flash_with_fastboot_flash_failure(temp_storage_dir, ridesx_driver):
@@ -364,70 +358,67 @@ def test_flash_with_fastboot_continue_success(temp_storage_dir, ridesx_driver):
     image_file = Path(temp_storage_dir) / "boot.img"
     image_file.write_bytes(b"boot image data")
 
-    with serve(ridesx_driver) as client:
-        with patch("subprocess.run") as mock_subprocess:
-            flash_result = MagicMock()
-            flash_result.stdout = "Flashing..."
-            flash_result.stderr = ""
-            flash_result.returncode = 0
+    with serve(ridesx_driver) as client, patch("subprocess.run") as mock_subprocess:
+        flash_result = MagicMock()
+        flash_result.stdout = "Flashing..."
+        flash_result.stderr = ""
+        flash_result.returncode = 0
 
-            continue_result = MagicMock()
-            continue_result.stdout = "Continuing..."
-            continue_result.stderr = ""
-            continue_result.returncode = 0
+        continue_result = MagicMock()
+        continue_result.stdout = "Continuing..."
+        continue_result.stderr = ""
+        continue_result.returncode = 0
 
-            mock_subprocess.side_effect = [flash_result, continue_result]
+        mock_subprocess.side_effect = [flash_result, continue_result]
 
-            client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img"})
+        client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img"})
 
-            # Verify continue was called
-            continue_call = mock_subprocess.call_args_list[1]
-            assert continue_call[0][0] == ["fastboot", "-s", "ABC123", "continue"]
+        # Verify continue was called
+        continue_call = mock_subprocess.call_args_list[1]
+        assert continue_call[0][0] == ["fastboot", "-s", "ABC123", "continue"]
 
 
 def test_flash_with_fastboot_continue_failure(temp_storage_dir, ridesx_driver):
     image_file = Path(temp_storage_dir) / "boot.img"
     image_file.write_bytes(b"boot image data")
 
-    with serve(ridesx_driver) as client:
-        with patch("subprocess.run") as mock_subprocess:
-            flash_result = MagicMock()
-            flash_result.stdout = "Flashing..."
-            flash_result.stderr = ""
-            flash_result.returncode = 0
+    with serve(ridesx_driver) as client, patch("subprocess.run") as mock_subprocess:
+        flash_result = MagicMock()
+        flash_result.stdout = "Flashing..."
+        flash_result.stderr = ""
+        flash_result.returncode = 0
 
-            # First call succeeds (flash), second call fails (continue)
-            mock_subprocess.side_effect = [
-                flash_result,
-                subprocess.CalledProcessError(1, "fastboot", stderr=b"continue failed"),
-            ]
+        # First call succeeds (flash), second call fails (continue)
+        mock_subprocess.side_effect = [
+            flash_result,
+            subprocess.CalledProcessError(1, "fastboot", stderr=b"continue failed"),
+        ]
 
-            # Should not raise, just log warning
-            client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img"})
+        # Should not raise, just log warning
+        client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img"})
 
-            # Verify both flash and continue were called
-            assert mock_subprocess.call_count == 2
+        # Verify both flash and continue were called
+        assert mock_subprocess.call_count == 2
 
 
 # Erase Partition Tests
 
 
 def test_erase_partition_success(ridesx_driver):
-    with serve(ridesx_driver) as client:
-        with patch("subprocess.run") as mock_subprocess:
-            mock_result = MagicMock()
-            mock_result.stdout = "Finished. Total time: 0.042s"
-            mock_result.stderr = ""
-            mock_result.returncode = 0
-            mock_subprocess.return_value = mock_result
+    with serve(ridesx_driver) as client, patch("subprocess.run") as mock_subprocess:
+        mock_result = MagicMock()
+        mock_result.stdout = "Finished. Total time: 0.042s"
+        mock_result.stderr = ""
+        mock_result.returncode = 0
+        mock_subprocess.return_value = mock_result
 
-            result = client.call("erase_partition", "ABC123", "recoveryinfo")
+        result = client.call("erase_partition", "ABC123", "recoveryinfo")
 
-            assert result["status"] == "success"
-            assert result["partition"] == "recoveryinfo"
-            mock_subprocess.assert_called_once()
-            call_args = mock_subprocess.call_args[0][0]
-            assert call_args == ["fastboot", "-s", "ABC123", "erase", "recoveryinfo"]
+        assert result["status"] == "success"
+        assert result["partition"] == "recoveryinfo"
+        mock_subprocess.assert_called_once()
+        call_args = mock_subprocess.call_args[0][0]
+        assert call_args == ["fastboot", "-s", "ABC123", "erase", "recoveryinfo"]
 
 
 def test_erase_partition_failure(ridesx_driver):
@@ -459,15 +450,16 @@ def test_erase_partition_fastboot_not_found(ridesx_driver):
     with serve(ridesx_driver) as client:
         from jumpstarter.client.core import DriverError
 
-        with patch("subprocess.run", side_effect=FileNotFoundError("fastboot not found")):
-            with pytest.raises(DriverError, match="fastboot command not found"):
-                client.call("erase_partition", "ABC123", "recoveryinfo")
+        with (
+            patch("subprocess.run", side_effect=FileNotFoundError("fastboot not found")),
+            pytest.raises(DriverError, match="fastboot command not found"),
+        ):
+            client.call("erase_partition", "ABC123", "recoveryinfo")
 
 
 def test_erase_partition_empty_name(ridesx_driver):
-    with serve(ridesx_driver) as client:
-        with pytest.raises(ValueError, match="Partition name cannot be empty"):
-            client.call("erase_partition", "ABC123", "")
+    with serve(ridesx_driver) as client, pytest.raises(ValueError, match="Partition name cannot be empty"):
+        client.call("erase_partition", "ABC123", "")
 
 
 def test_power_missing_serial():
@@ -499,21 +491,22 @@ def test_power_off_exported(ridesx_power_driver):
 @pytest.mark.asyncio
 async def test_power_cycle(ridesx_power_driver):
     """Test power cycle calls off, waits, then on"""
-    with patch.object(ridesx_power_driver, "off", new_callable=AsyncMock) as mock_off:
-        with patch.object(ridesx_power_driver, "on", new_callable=AsyncMock) as mock_on:
-            with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-                await ridesx_power_driver.cycle(delay=0.1)
+    with (
+        patch.object(ridesx_power_driver, "off", new_callable=AsyncMock) as mock_off,
+        patch.object(ridesx_power_driver, "on", new_callable=AsyncMock) as mock_on,
+        patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+    ):
+        await ridesx_power_driver.cycle(delay=0.1)
 
-                mock_off.assert_called_once()
-                mock_on.assert_called_once()
-                mock_sleep.assert_called_once_with(0.1)
+        mock_off.assert_called_once()
+        mock_on.assert_called_once()
+        mock_sleep.assert_called_once_with(0.1)
 
 
 def test_power_rescue(ridesx_power_driver):
     """Test that rescue raises NotImplementedError"""
-    with serve(ridesx_power_driver) as client:
-        with pytest.raises(NotImplementedError, match="Rescue mode not available"):
-            client.call("rescue")
+    with serve(ridesx_power_driver) as client, pytest.raises(NotImplementedError, match="Rescue mode not available"):
+        client.call("rescue")
 
 
 # Flash OCI Image Tests
@@ -521,44 +514,48 @@ def test_power_rescue(ridesx_power_driver):
 
 
 def test_flash_oci_image_success(temp_storage_dir, ridesx_driver):
-    with serve(ridesx_driver) as client:
-        with patch("jumpstarter_driver_ridesx.driver.get_fls_binary", return_value="/usr/local/bin/fls"):
-            with patch("subprocess.run") as mock_subprocess:
-                mock_result = MagicMock()
-                mock_result.stdout = "Flashing complete"
-                mock_result.stderr = ""
-                mock_result.returncode = 0
-                mock_subprocess.return_value = mock_result
+    with (
+        serve(ridesx_driver) as client,
+        patch("jumpstarter_driver_ridesx.driver.get_fls_binary", return_value="/usr/local/bin/fls"),
+        patch("subprocess.run") as mock_subprocess,
+    ):
+        mock_result = MagicMock()
+        mock_result.stdout = "Flashing complete"
+        mock_result.stderr = ""
+        mock_result.returncode = 0
+        mock_subprocess.return_value = mock_result
 
-                result = client.call("flash_oci_image", "oci://quay.io/image:tag", None)
+        result = client.call("flash_oci_image", "oci://quay.io/image:tag", None)
 
-                assert result["status"] == "success"
-                mock_subprocess.assert_called_once()
-                call_args = mock_subprocess.call_args[0][0]
-                assert call_args[0] == "/usr/local/bin/fls"
-                assert call_args[1] == "fastboot"
-                assert call_args[2] == "oci://quay.io/image:tag"
+        assert result["status"] == "success"
+        mock_subprocess.assert_called_once()
+        call_args = mock_subprocess.call_args[0][0]
+        assert call_args[0] == "/usr/local/bin/fls"
+        assert call_args[1] == "fastboot"
+        assert call_args[2] == "oci://quay.io/image:tag"
 
 
 def test_flash_oci_image_with_partitions(temp_storage_dir, ridesx_driver):
-    with serve(ridesx_driver) as client:
-        with patch("jumpstarter_driver_ridesx.driver.get_fls_binary", return_value="fls"):
-            with patch("subprocess.run") as mock_subprocess:
-                mock_result = MagicMock()
-                mock_result.stdout = "Flashing complete"
-                mock_result.stderr = ""
-                mock_result.returncode = 0
-                mock_subprocess.return_value = mock_result
+    with (
+        serve(ridesx_driver) as client,
+        patch("jumpstarter_driver_ridesx.driver.get_fls_binary", return_value="fls"),
+        patch("subprocess.run") as mock_subprocess,
+    ):
+        mock_result = MagicMock()
+        mock_result.stdout = "Flashing complete"
+        mock_result.stderr = ""
+        mock_result.returncode = 0
+        mock_subprocess.return_value = mock_result
 
-                partitions = {"boot_a": "boot.img", "system_a": "rootfs.simg"}
-                result = client.call("flash_oci_image", "oci://image:tag", partitions)
+        partitions = {"boot_a": "boot.img", "system_a": "rootfs.simg"}
+        result = client.call("flash_oci_image", "oci://image:tag", partitions)
 
-                assert result["status"] == "success"
-                call_args = mock_subprocess.call_args[0][0]
-                # Check that -t flags are present for partitions
-                assert "-t" in call_args
-                assert "boot_a:boot.img" in call_args
-                assert "system_a:rootfs.simg" in call_args
+        assert result["status"] == "success"
+        call_args = mock_subprocess.call_args[0][0]
+        # Check that -t flags are present for partitions
+        assert "-t" in call_args
+        assert "boot_a:boot.img" in call_args
+        assert "system_a:rootfs.simg" in call_args
 
 
 def test_flash_oci_image_error_cases(temp_storage_dir, ridesx_driver):
@@ -570,55 +567,59 @@ def test_flash_oci_image_error_cases(temp_storage_dir, ridesx_driver):
         with pytest.raises(DriverError, match="OCI URL must start with oci://"):
             client.call("flash_oci_image", "docker://image:tag", None)
 
-        with patch("jumpstarter_driver_ridesx.driver.get_fls_binary", return_value="fls"):
-            with patch("subprocess.run") as mock_subprocess:
-                # CalledProcessError
-                error = subprocess.CalledProcessError(1, "fls")
-                error.stdout = ""
-                error.stderr = "Flash failed"
-                mock_subprocess.side_effect = error
+        with (
+            patch("jumpstarter_driver_ridesx.driver.get_fls_binary", return_value="fls"),
+            patch("subprocess.run") as mock_subprocess,
+        ):
+            # CalledProcessError
+            error = subprocess.CalledProcessError(1, "fls")
+            error.stdout = ""
+            error.stderr = "Flash failed"
+            mock_subprocess.side_effect = error
 
-                with pytest.raises(DriverError, match="FLS fastboot failed: Flash failed"):
-                    client.call("flash_oci_image", "oci://image:tag", None)
+            with pytest.raises(DriverError, match="FLS fastboot failed: Flash failed"):
+                client.call("flash_oci_image", "oci://image:tag", None)
 
-                # TimeoutExpired
-                mock_subprocess.side_effect = subprocess.TimeoutExpired("fls", 1800)
+            # TimeoutExpired
+            mock_subprocess.side_effect = subprocess.TimeoutExpired("fls", 1800)
 
-                with pytest.raises(DriverError, match="FLS fastboot auto-detection timeout"):
-                    client.call("flash_oci_image", "oci://image:tag", None)
+            with pytest.raises(DriverError, match="FLS fastboot auto-detection timeout"):
+                client.call("flash_oci_image", "oci://image:tag", None)
 
-                # FileNotFoundError
-                mock_subprocess.side_effect = FileNotFoundError("fls not found")
+            # FileNotFoundError
+            mock_subprocess.side_effect = FileNotFoundError("fls not found")
 
-                with pytest.raises(DriverError, match="FLS command not found"):
-                    client.call("flash_oci_image", "oci://image:tag", None)
+            with pytest.raises(DriverError, match="FLS command not found"):
+                client.call("flash_oci_image", "oci://image:tag", None)
 
 
 def test_flash_oci_image_with_credentials(temp_storage_dir, ridesx_driver):
     """Test that OCI credentials are passed via env vars to FLS"""
-    with serve(ridesx_driver) as client:
-        with patch("jumpstarter_driver_ridesx.driver.get_fls_binary", return_value="fls"):
-            with patch("subprocess.run") as mock_subprocess:
-                mock_result = MagicMock()
-                mock_result.stdout = "Flashing complete"
-                mock_result.stderr = ""
-                mock_result.returncode = 0
-                mock_subprocess.return_value = mock_result
+    with (
+        serve(ridesx_driver) as client,
+        patch("jumpstarter_driver_ridesx.driver.get_fls_binary", return_value="fls"),
+        patch("subprocess.run") as mock_subprocess,
+    ):
+        mock_result = MagicMock()
+        mock_result.stdout = "Flashing complete"
+        mock_result.stderr = ""
+        mock_result.returncode = 0
+        mock_subprocess.return_value = mock_result
 
-                result = client.call("flash_oci_image", "oci://quay.io/private/image:tag", None, "myuser", "mypass")
+        result = client.call("flash_oci_image", "oci://quay.io/private/image:tag", None, "myuser", "mypass")
 
-                assert result["status"] == "success"
-                # Credentials should NOT appear in the command args
-                call_args = mock_subprocess.call_args[0][0]
-                assert "-u" not in call_args
-                assert "-p" not in call_args
-                assert "myuser" not in call_args
-                assert "mypass" not in call_args
-                # Credentials should be passed via env vars
-                call_kwargs = mock_subprocess.call_args[1]
-                env = call_kwargs["env"]
-                assert env["FLS_REGISTRY_USERNAME"] == "myuser"
-                assert env["FLS_REGISTRY_PASSWORD"] == "mypass"
+        assert result["status"] == "success"
+        # Credentials should NOT appear in the command args
+        call_args = mock_subprocess.call_args[0][0]
+        assert "-u" not in call_args
+        assert "-p" not in call_args
+        assert "myuser" not in call_args
+        assert "mypass" not in call_args
+        # Credentials should be passed via env vars
+        call_kwargs = mock_subprocess.call_args[1]
+        env = call_kwargs["env"]
+        assert env["FLS_REGISTRY_USERNAME"] == "myuser"
+        assert env["FLS_REGISTRY_PASSWORD"] == "mypass"
 
 
 def test_flash_oci_image_partial_credentials_rejected(temp_storage_dir, ridesx_driver):
@@ -635,32 +636,32 @@ def test_flash_oci_image_partial_credentials_rejected(temp_storage_dir, ridesx_d
 
 def test_flash_oci_image_no_credentials(temp_storage_dir, ridesx_driver):
     """Test that omitting credentials works (anonymous access)"""
-    with serve(ridesx_driver) as client:
-        with patch("jumpstarter_driver_ridesx.driver.get_fls_binary", return_value="fls"):
-            with patch("subprocess.run") as mock_subprocess:
-                mock_result = MagicMock()
-                mock_result.stdout = "Flashing complete"
-                mock_result.stderr = ""
-                mock_result.returncode = 0
-                mock_subprocess.return_value = mock_result
+    with (
+        serve(ridesx_driver) as client,
+        patch("jumpstarter_driver_ridesx.driver.get_fls_binary", return_value="fls"),
+        patch("subprocess.run") as mock_subprocess,
+    ):
+        mock_result = MagicMock()
+        mock_result.stdout = "Flashing complete"
+        mock_result.stderr = ""
+        mock_result.returncode = 0
+        mock_subprocess.return_value = mock_result
 
-                result = client.call("flash_oci_image", "oci://image:tag", None, None, None)
+        result = client.call("flash_oci_image", "oci://image:tag", None, None, None)
 
-                assert result["status"] == "success"
-                call_kwargs = mock_subprocess.call_args[1]
-                env = call_kwargs["env"]
-                assert "FLS_REGISTRY_USERNAME" not in env
-                assert "FLS_REGISTRY_PASSWORD" not in env
+        assert result["status"] == "success"
+        call_kwargs = mock_subprocess.call_args[1]
+        env = call_kwargs["env"]
+        assert "FLS_REGISTRY_USERNAME" not in env
+        assert "FLS_REGISTRY_PASSWORD" not in env
 
 
 def test_flash_oci_image_requires_oci_scheme(temp_storage_dir, ridesx_driver):
     """Test that only oci:// URLs are accepted"""
     from jumpstarter.client.core import DriverError
 
-    with serve(ridesx_driver) as client:
-        # Bare registry URL should be rejected
-        with pytest.raises(DriverError, match="OCI URL must start with oci://"):
-            client.call("flash_oci_image", "quay.io/org/image:v1", None)
+    with serve(ridesx_driver) as client, pytest.raises(DriverError, match="OCI URL must start with oci://"):
+        client.call("flash_oci_image", "quay.io/org/image:v1", None)
 
 
 # OCI URL Validation Tests (direct unit tests for _validate_oci_url)

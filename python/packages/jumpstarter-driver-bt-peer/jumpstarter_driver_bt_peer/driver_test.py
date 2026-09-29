@@ -577,10 +577,9 @@ async def test_start_peer_exception_cleanup():
         patch(
             "jumpstarter_driver_bt_peer.driver.Device",
             side_effect=RuntimeError("device init failed"),
-        ),
+        ),pytest.raises(RuntimeError, match="device init failed")
     ):
-        with pytest.raises(RuntimeError, match="device init failed"):
-            await peer.start_peer()
+        await peer.start_peer()
 
     assert peer._device is None
     assert peer._transport is None

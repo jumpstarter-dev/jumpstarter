@@ -77,7 +77,7 @@ class BaseFlasher(Driver):
         """Return the CA certificate contents if configured"""
         if not self.cacert:
             return None
-        with open(self.cacert) as f:
+        with open(self.cacert) as f:  # noqa: ASYNC230
             return f.read()
 
     @export
@@ -187,7 +187,7 @@ class BaseFlasher(Driver):
     @export
     async def get_flasher_manifest_yaml(self) -> str:
         """Return the manifest yaml as a string for client side consumption"""
-        with open(await self._get_file_path(self.manifest)) as f:
+        with open(await self._get_file_path(self.manifest)) as f:  # noqa: ASYNC230
             return f.read()
 
     async def get_flasher_manifest(self) -> FlasherBundleManifestV1Alpha1:

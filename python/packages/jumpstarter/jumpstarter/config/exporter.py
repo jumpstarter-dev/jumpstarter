@@ -5,7 +5,7 @@ import os
 import tempfile
 from contextlib import asynccontextmanager, contextmanager, suppress
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 
 import grpc
 import yaml
@@ -109,7 +109,7 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
         | ExporterConfigV1Alpha1DriverInstanceProxy
     )
 
-    def instantiate(self) -> "Driver":
+    def instantiate(self) -> Driver:
         match self.root:
             case ExporterConfigV1Alpha1DriverInstanceBase():
                 try:
@@ -139,6 +139,8 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
                 from jumpstarter_driver_composite.driver import Proxy
 
                 return Proxy(ref=self.root.ref)
+            case _:
+                raise ValueError(f"Unknown driver instance type: {type(self.root)}")
 
     @classmethod
     def from_path(cls, path: str) -> ExporterConfigV1Alpha1DriverInstance:
@@ -274,7 +276,7 @@ class ExporterConfigV1Alpha1(BaseModel):
         )
 
     @classmethod
-    def save(cls, config: Self, path: Optional[str] = None) -> Path:
+    def save(cls, config: Self, path: str | None = None) -> Path:
         """Save the config to disk, defaulting to the user config dir when no path is given."""
         # Set the config path before saving
         if path is None:
@@ -327,11 +329,11 @@ class ExporterConfigV1Alpha1(BaseModel):
         from jumpstarter.exporter import Session
 
         with Session(
-            root_device=ExporterConfigV1Alpha1DriverInstance(
-                type="jumpstarter_driver_composite.driver.Composite",
-                description=self.description,
-                children=self.export,
-            ).instantiate(),
+            root_device=ExporterConfigV1Alpha1DriverInstance.model_validate({
+                "type": "jumpstarter_driver_composite.driver.Composite",
+                "description": self.description,
+                "children": self.export,
+            }).instantiate(),
             motd=self.motd,
         ) as session:
             async with session.serve_unix_async() as path:
@@ -341,9 +343,8 @@ class ExporterConfigV1Alpha1(BaseModel):
 
     @contextmanager
     def serve_unix(self):
-        with start_blocking_portal() as portal:
-            with portal.wrap_async_context_manager(self.serve_unix_async()) as path:
-                yield path
+        with start_blocking_portal() as portal, portal.wrap_async_context_manager(self.serve_unix_async()) as path:
+            yield path
 
     @asynccontextmanager
     async def create_exporter(self, *, standalone: bool = False):
@@ -385,11 +386,11 @@ class ExporterConfigV1Alpha1(BaseModel):
                 token=self.token or "",
                 exporter_name=self.metadata.name,
                 channel_factory=dummy_channel_factory if standalone else channel_factory,
-                device_factory=ExporterConfigV1Alpha1DriverInstance(
-                    type="jumpstarter_driver_composite.driver.Composite",
-                    description=self.description,
-                    children=self.export,
-                ).instantiate,
+                device_factory=ExporterConfigV1Alpha1DriverInstance.model_validate({
+                    "type": "jumpstarter_driver_composite.driver.Composite",
+                    "description": self.description,
+                    "children": self.export,
+                }).instantiate,
                 tls=self.tls,
                 grpc_options=self.grpcOptions,
                 hook_executor=hook_executor,

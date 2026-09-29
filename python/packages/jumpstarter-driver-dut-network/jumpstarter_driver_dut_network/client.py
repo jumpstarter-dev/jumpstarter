@@ -1,7 +1,7 @@
 """Client interface for the DUT Network isolation driver."""
 
 import json
-from typing import Generator
+from collections.abc import Generator
 
 import click
 
@@ -75,15 +75,13 @@ class DutNetworkClient(DriverClient):
         Yields:
             Lines of tcpdump text output.
         """
-        for line in self.streamingcall("tcpdump", args):
-            yield line
+        yield from self.streamingcall("tcpdump", args)  # pragma: no cover
 
     def cli(self) -> click.Group:  # noqa: C901
         """Build the Click CLI command group for this driver."""
         @driver_click_group(self)
         def base():
             """DUT Network Isolation"""
-            pass
 
         @base.command()
         def status():

@@ -29,6 +29,16 @@ def update():
     default=None,
     help="Transfer lease to a different client in the same namespace",
 )
+@click.option(
+    "--share-add",
+    multiple=True,
+    help="Add a client name to the lease's shared access list (can be specified multiple times)",
+)
+@click.option(
+    "--share-remove",
+    multiple=True,
+    help="Remove a client name from the lease's shared access list (can be specified multiple times)",
+)
 @opt_output_all
 @handle_exceptions_with_reauthentication(relogin_client)
 def update_lease(
@@ -37,24 +47,36 @@ def update_lease(
     duration: timedelta | None,
     begin_time: datetime | None,
     to_client: str | None,
+    share_add: tuple[str, ...],
+    share_remove: tuple[str, ...],
     output: OutputType,
 ):
     """
     Update a lease
 
-    Update the duration, begin time, and/or owner of an existing lease.
-    At least one of --duration, --begin-time, or --to-client must be specified.
+    Update the duration, begin time, owner, or sharing of an existing lease.
+    At least one update option must be specified.
 
     To transfer a lease to another client in the same namespace, use the --to-client option.
+    To share a lease with other clients, use --share-add and --share-remove.
 
     Updating the begin time of an already active lease is not allowed.
     """
 
-    if duration is None and begin_time is None and to_client is None:
-        raise click.UsageError("At least one of --duration, --begin-time, or --to-client must be specified")
+    if duration is None and begin_time is None and to_client is None and not share_add and not share_remove:
+        raise click.UsageError(
+            "At least one of --duration, --begin-time, --to-client, --share-add, or --share-remove must be specified"
+        )
 
     client_path = f"namespaces/{config.metadata.namespace}/clients/{to_client}" if to_client else None
 
-    lease = config.update_lease(name, duration=duration, begin_time=begin_time, client=client_path)
+    lease = config.update_lease(
+        name,
+        duration=duration,
+        begin_time=begin_time,
+        client=client_path,
+        add_shared_with=list(share_add) if share_add else None,
+        remove_shared_with=list(share_remove) if share_remove else None,
+    )
 
     model_print(lease, output)

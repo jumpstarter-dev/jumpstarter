@@ -78,9 +78,7 @@ class RideSXDriver(Driver):
         return filename.endswith((".gz", ".gzip", ".xz"))
 
     def _decompress_file(self, compressed_file: Path) -> Path:
-        if compressed_file.name.endswith(".xz"):
-            decompressed_name = compressed_file.name[:-3]
-        elif compressed_file.name.endswith(".gz"):
+        if compressed_file.name.endswith(".xz") or compressed_file.name.endswith(".gz"):
             decompressed_name = compressed_file.name[:-3]
         elif compressed_file.name.endswith(".gzip"):
             decompressed_name = compressed_file.name[:-5]

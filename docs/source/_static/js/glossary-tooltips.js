@@ -31,6 +31,15 @@
             .catch(function () {});
     }
 
+    function computeOffset(span) {
+        var rect = span.getBoundingClientRect();
+        var tooltipMaxWidth = 400;
+        var offset = 0;
+        offset = Math.min(offset, window.innerWidth - rect.left - tooltipMaxWidth);
+        offset = Math.max(offset, -rect.left);
+        span.style.setProperty("--tooltip-offset", offset + "px");
+    }
+
     function applyTooltips() {
         document.querySelectorAll('a.reference.internal[href*="glossary.html#term-"]').forEach(function (a) {
             var href = a.getAttribute("href");
@@ -45,6 +54,10 @@
                 }
                 a.appendChild(span);
 
+                span.addEventListener("mouseenter", function () {
+                    computeOffset(span);
+                });
+
                 if (isTouch) {
                     a.addEventListener("click", function (e) {
                         var wasActive = span.classList.contains("tooltip-active");
@@ -53,6 +66,7 @@
                         });
                         if (!wasActive) {
                             e.preventDefault();
+                            computeOffset(span);
                             span.classList.add("tooltip-active");
                         }
                     });

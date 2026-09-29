@@ -1,7 +1,7 @@
 """Kubectl operations for cluster management."""
 
 import json
-from typing import List, Literal, Optional, TypedDict, Union
+from typing import Literal, TypedDict
 
 from ..clusters import V1Alpha1ClusterInfo, V1Alpha1ClusterList, V1Alpha1JumpstarterInstance
 from ..exceptions import JumpstarterKubernetesError
@@ -17,7 +17,7 @@ class KubectlContext(TypedDict):
     current: bool
 
 
-async def check_kubernetes_access(context: Optional[str] = None, kubectl: str = "kubectl") -> bool:
+async def check_kubernetes_access(context: str | None = None, kubectl: str = "kubectl") -> bool:
     """Check if Kubernetes cluster is accessible."""
     try:
         cmd = [kubectl]
@@ -31,7 +31,7 @@ async def check_kubernetes_access(context: Optional[str] = None, kubectl: str = 
         return False
 
 
-async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[KubectlContext]:
+async def get_kubectl_contexts(kubectl: str = "kubectl") -> list[KubectlContext]:
     """Get all kubectl contexts."""
     contexts = []
 
@@ -97,11 +97,11 @@ class CrInstanceNotFound(TypedDict):
     installed: Literal[False]
 
 
-CrInstanceResult = Union[CrInstanceSuccess, CrInstanceError, CrInstanceNotFound]
+CrInstanceResult = CrInstanceSuccess | CrInstanceError | CrInstanceNotFound
 
 
 async def _check_cr_instances(
-    kubectl: str, context: str, namespace: Optional[str]
+    kubectl: str, context: str, namespace: str | None
 ) -> CrInstanceResult:
     """Query for Jumpstarter CR instances to confirm full installation."""
     cr_resource = "jumpstarters.operator.jumpstarter.dev"
@@ -145,7 +145,7 @@ def _apply_cr_result(result_data: dict, cr_result: CrInstanceResult) -> None:
 
 
 async def check_jumpstarter_installation(
-    context: str, namespace: Optional[str] = None, kubectl: str = "kubectl"
+    context: str, namespace: str | None = None, kubectl: str = "kubectl"
 ) -> V1Alpha1JumpstarterInstance:
     """Check if Jumpstarter is installed in the cluster using CRD detection."""
     result_data = {
@@ -166,7 +166,7 @@ async def check_jumpstarter_installation(
 
         if returncode != 0:
             result_data["error"] = f"Command failed: {stderr or stdout}"
-            return V1Alpha1JumpstarterInstance(**result_data)
+            return V1Alpha1JumpstarterInstance(**result_data)  # type: ignore[missing-argument]
 
         crds = _parse_json_with_prefix(stdout)
         jumpstarter_crds = [
@@ -187,7 +187,7 @@ async def check_jumpstarter_installation(
     except RuntimeError as e:
         result_data["error"] = f"Command failed: {e}"
 
-    return V1Alpha1JumpstarterInstance(**result_data)
+    return V1Alpha1JumpstarterInstance(**result_data)  # type: ignore[missing-argument]
 
 
 async def get_cluster_info(

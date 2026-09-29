@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Callable, List, Optional, Sequence, Tuple
 from uuid import UUID
 
 import can
@@ -36,7 +36,7 @@ class CanClient(DriverClient, can.BusABC):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
 
-        self._periodic_tasks: List[_SelfRemovingCyclicTask] = []
+        self._periodic_tasks: list[_SelfRemovingCyclicTask] = []
         self._filters = None
         self._is_shutdown: bool = False
 
@@ -73,14 +73,14 @@ class CanClient(DriverClient, can.BusABC):
         return self.call("protocol")
 
     @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
-    def _recv_internal(self, timeout: Optional[float]) -> Tuple[Optional[can.Message], bool]:
+    def _recv_internal(self, timeout: float | None) -> tuple[can.Message | None, bool]:
         msg, filtered = self.call("_recv_internal", timeout)
         if msg:
             return can.Message(**CanMessage.model_validate(msg).__dict__), filtered
         return None, filtered
 
     @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
-    def send(self, msg: can.Message, timeout: Optional[float] = None) -> None:
+    def send(self, msg: can.Message, timeout: float | None = None) -> None:
         """
         Send an individual CAN message.
         """
@@ -91,9 +91,9 @@ class CanClient(DriverClient, can.BusABC):
         self,
         msgs: Sequence[can.Message],
         period: float,
-        duration: Optional[float] = None,
+        duration: float | None = None,
         autostart: bool = True,
-        modifier_callback: Optional[Callable[[can.Message], None]] = None,
+        modifier_callback: Callable[[can.Message], None] | None = None,
     ) -> can.broadcastmanager.CyclicSendTaskABC:
         if modifier_callback:
             return super()._send_periodic_internal(msgs, period, duration, autostart, modifier_callback)
@@ -106,7 +106,7 @@ class CanClient(DriverClient, can.BusABC):
     # python-can bug
     # https://docs.pydantic.dev/2.8/errors/usage_errors/#typed-dict-version
     # @validate_call(validate_return=True)
-    def _apply_filters(self, filters: Optional[can.typechecking.CanFilters]) -> None:
+    def _apply_filters(self, filters: can.typechecking.CanFilters | None) -> None:
         self.call("_apply_filters", filters)
 
     @validate_call(validate_return=True)

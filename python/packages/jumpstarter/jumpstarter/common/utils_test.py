@@ -52,7 +52,7 @@ def test_launch_shell_no_motd_for_command(tmp_path, monkeypatch, capfd):
         allow=["*"],
         unsafe=False,
         use_profiles=False,
-        command=(shutil.which("true"),),
+        command=(shutil.which("true"),),  # type: ignore[arg-type]
         motd="Welcome to my-exporter!",
     )
     assert exit_code == 0
@@ -134,6 +134,128 @@ def test_launch_shell_sets_lease_env(tmp_path, monkeypatch):
     assert "JMP_LEASE=lease-123" in output
     assert "board=rpi4" in output
     assert "location=lab-1" in output
+
+
+def _launch_shell_capturing_popen(tmp_path, monkeypatch, shell_name):
+    """Run launch_shell with a mocked Popen; return (exit_code, call_args)."""
+    monkeypatch.setenv("SHELL", str(tmp_path / shell_name))
+    with patch("jumpstarter.common.utils.Popen") as mock_popen:
+        mock_popen.return_value.wait.return_value = 0
+        exit_code = launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+        )
+    return exit_code, mock_popen.call_args
+
+
+def test_launch_shell_bash_prompt_uses_emoji_by_default(tmp_path, monkeypatch):
+    monkeypatch.delenv("NO_ICONS", raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fake.bash")
+    assert exit_code == 0
+    ps1 = call[1].get("env", {}).get("PS1", "")
+    assert "⚡" in ps1
+    assert "➤" in ps1
+
+
+def test_launch_shell_bash_prompt_uses_ascii_when_no_icons(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_ICONS", "1")
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fake.bash")
+    assert exit_code == 0
+    ps1 = call[1].get("env", {}).get("PS1", "")
+    assert "^" in ps1
+    assert "⚡" not in ps1
+    assert "➤" not in ps1
+
+
+def test_launch_shell_bash_prompt_uses_ascii_when_no_icons_empty(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_ICONS", "")
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fake.bash")
+    assert exit_code == 0
+    ps1 = call[1].get("env", {}).get("PS1", "")
+    assert "^" in ps1
+    assert "⚡" not in ps1
+
+
+def test_launch_shell_fish_prompt_uses_emoji_by_default(tmp_path, monkeypatch):
+    monkeypatch.delenv("NO_ICONS", raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fish")
+    assert exit_code == 0
+    cmd = call[0][0]
+    assert "--init-command" in cmd
+    init_cmd = cmd[cmd.index("--init-command") + 1]
+    assert 'printf "⚡"' in init_cmd
+    assert 'printf "➤ "' in init_cmd
+
+
+def test_launch_shell_fish_prompt_uses_ascii_when_no_icons(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_ICONS", "1")
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fish")
+    assert exit_code == 0
+    cmd = call[0][0]
+    assert "--init-command" in cmd
+    init_cmd = cmd[cmd.index("--init-command") + 1]
+    assert 'printf "^"' in init_cmd
+    assert 'printf "> "' in init_cmd
+    assert "⚡" not in init_cmd
+    assert "➤" not in init_cmd
+
+
+def test_launch_shell_zsh_prompt_uses_emoji_by_default(tmp_path, monkeypatch):
+    monkeypatch.delenv("NO_ICONS", raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "zsh")
+    assert exit_code == 0
+    ps1 = call[1].get("env", {}).get("PS1", "")
+    assert "⚡" in ps1
+    assert "➤" in ps1
+
+
+def test_launch_shell_zsh_prompt_uses_ascii_when_no_icons(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_ICONS", "1")
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "zsh")
+    assert exit_code == 0
+    ps1 = call[1].get("env", {}).get("PS1", "")
+    assert "^" in ps1
+    assert "⚡" not in ps1
+    assert "➤" not in ps1
+
+
+def test_launch_shell_bash_prompt_is_plain_when_no_color(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.delenv("NO_ICONS", raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fake.bash")
+    assert exit_code == 0
+    ps1 = call[1].get("env", {}).get("PS1", "")
+    assert "\\e[" not in ps1  # No ANSI escape sequences
+    assert "\\W" in ps1
+    assert "⚡" in ps1
+    assert "➤" in ps1
+
+
+def test_launch_shell_fish_prompt_is_plain_when_no_color(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.delenv("NO_ICONS", raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fish")
+    assert exit_code == 0
+    cmd = call[0][0]
+    assert "--init-command" in cmd
+    init_cmd = cmd[cmd.index("--init-command") + 1]
+    assert "set_color" not in init_cmd
+    assert 'printf "⚡"' in init_cmd
+    assert 'printf "➤ "' in init_cmd
+
+
+def test_launch_shell_zsh_prompt_is_plain_when_no_color(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.delenv("NO_ICONS", raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "zsh")
+    assert exit_code == 0
+    ps1 = call[1].get("env", {}).get("PS1", "")
+    assert "%F{" not in ps1  # No zsh color sequences
+    assert "⚡" in ps1
+    assert "➤" in ps1
 
 
 def test_exporter_metadata_from_env(monkeypatch):
@@ -351,9 +473,11 @@ def test_resolve_drivers_config_propagates_unexpected_errors(monkeypatch):
     monkeypatch.delenv("JMP_DRIVERS_ALLOW", raising=False)
     monkeypatch.delenv("JMP_DRIVERS_UNSAFE", raising=False)
 
-    with patch("jumpstarter.config.user.UserConfigV1Alpha1.load", side_effect=RuntimeError("unexpected")):
-        with pytest.raises(RuntimeError, match="unexpected"):
-            _resolve_drivers_config()
+    with (
+        patch("jumpstarter.config.user.UserConfigV1Alpha1.load", side_effect=RuntimeError("unexpected")),
+        pytest.raises(RuntimeError, match="unexpected"),
+    ):
+        _resolve_drivers_config()
 
 
 def test_launch_shell_logs_exit_status(tmp_path, caplog):

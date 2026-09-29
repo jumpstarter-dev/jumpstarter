@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 
 import click
@@ -188,7 +188,7 @@ class TestGetExportersLogic:
         # This test verifies that the new parse_with function would reject unknown options
         # The actual CLI behavior now validates input, so unknown options cause failures
         # This test documents the expected behavior change
-        pass  # Test is no longer relevant since parse_with now validates input
+        # Test is no longer relevant since parse_with now validates input
 
     def test_exporter_list_creation_basic(self):
         """Test creating ExporterList with basic exporters"""
@@ -350,7 +350,7 @@ class TestGetLeasesLogic:
         active_lease = self.create_test_lease(
             name="active-lease",
             status="In-Use",
-            effective_begin_time=datetime(2023, 1, 1, 10, 0, 0)
+            effective_begin_time=datetime(2023, 1, 1, 10, 0, 0, tzinfo=UTC)
         )
 
         leases_from_server = LeaseList(leases=[active_lease], next_page_token=None)
@@ -365,13 +365,13 @@ class TestGetLeasesLogic:
         active_lease = self.create_test_lease(
             name="active-lease",
             status="In-Use",
-            effective_begin_time=datetime(2023, 1, 1, 10, 0, 0)
+            effective_begin_time=datetime(2023, 1, 1, 10, 0, 0, tzinfo=UTC)
         )
         expired_lease = self.create_test_lease(
             name="expired-lease",
             status="Expired",
-            effective_begin_time=datetime(2023, 1, 1, 8, 0, 0),
-            effective_end_time=datetime(2023, 1, 1, 9, 0, 0)
+            effective_begin_time=datetime(2023, 1, 1, 8, 0, 0, tzinfo=UTC),
+            effective_end_time=datetime(2023, 1, 1, 9, 0, 0, tzinfo=UTC)
         )
 
         leases_from_server = LeaseList(leases=[active_lease, expired_lease], next_page_token=None)
@@ -386,17 +386,17 @@ class TestGetLeasesLogic:
         lease1 = self.create_test_lease(
             name="lease-1",
             status="In-Use",
-            effective_begin_time=datetime(2023, 1, 1, 10, 0, 0)
+            effective_begin_time=datetime(2023, 1, 1, 10, 0, 0, tzinfo=UTC)
         )
         lease2 = self.create_test_lease(
             name="lease-2",
             status="Waiting",
-            effective_begin_time=datetime(2023, 1, 1, 11, 0, 0)
+            effective_begin_time=datetime(2023, 1, 1, 11, 0, 0, tzinfo=UTC)
         )
         lease3 = self.create_test_lease(
             name="lease-3",
             status="In-Use",
-            effective_begin_time=datetime(2023, 1, 1, 12, 0, 0)
+            effective_begin_time=datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
         )
 
         leases_from_server = LeaseList(leases=[lease1, lease2, lease3], next_page_token=None)
@@ -410,12 +410,12 @@ class TestGetLeasesLogic:
         expired1 = self.create_test_lease(
             name="expired-1",
             status="Expired",
-            effective_end_time=datetime(2023, 1, 1, 8, 0, 0)
+            effective_end_time=datetime(2023, 1, 1, 8, 0, 0, tzinfo=UTC)
         )
         expired2 = self.create_test_lease(
             name="expired-2",
             status="Expired",
-            effective_end_time=datetime(2023, 1, 1, 9, 0, 0)
+            effective_end_time=datetime(2023, 1, 1, 9, 0, 0, tzinfo=UTC)
         )
 
         leases_from_server = LeaseList(leases=[expired1, expired2], next_page_token=None)

@@ -170,7 +170,7 @@ class TestAsyncIteratorStream:
 
         async def gen():
             return
-            yield  # noqa: RET504
+            yield
 
         stream = _AsyncIteratorStream(iterator=gen())
         with pytest.raises(EndOfStream):
@@ -374,13 +374,12 @@ class TestCompressionWarning:
 
         with (
             patch("jumpstarter.client.flasher._http_url_adapter", return_value=mock_http),
-            patch.object(client, "call", return_value=None),
+            patch.object(client, "call", return_value=None),warnings.catch_warnings(record=True) as w
         ):
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                client._flash_single("https://example.com/image.bin", target=None, compression="zstd")
-                assert len(w) == 1
-                assert "compression parameter is ignored" in str(w[0].message)
+            warnings.simplefilter("always")
+            client._flash_single("https://example.com/image.bin", target=None, compression="zstd")
+            assert len(w) == 1
+            assert "compression parameter is ignored" in str(w[0].message)
 
     def test_flash_local_with_compression_no_warning(self, tmp_path):
         from unittest.mock import MagicMock
@@ -397,12 +396,11 @@ class TestCompressionWarning:
 
         with (
             patch("jumpstarter.client.flasher._local_file_adapter", return_value=mock_local),
-            patch.object(client, "call", return_value=None),
+            patch.object(client, "call", return_value=None),warnings.catch_warnings(record=True) as w
         ):
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                client._flash_single(str(test_file), target=None, compression="zstd")
-                assert len(w) == 0
+            warnings.simplefilter("always")
+            client._flash_single(str(test_file), target=None, compression="zstd")
+            assert len(w) == 0
 
     def test_dump_http_with_compression_warns(self):
         from unittest.mock import MagicMock
@@ -417,13 +415,12 @@ class TestCompressionWarning:
 
         with (
             patch("jumpstarter.client.flasher._http_url_adapter", return_value=mock_http),
-            patch.object(client, "call", return_value=None),
+            patch.object(client, "call", return_value=None),warnings.catch_warnings(record=True) as w
         ):
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                client.dump("https://example.com/dump.bin", target=None, compression="zstd")
-                assert len(w) == 1
-                assert "compression parameter is ignored" in str(w[0].message)
+            warnings.simplefilter("always")
+            client.dump("https://example.com/dump.bin", target=None, compression="zstd")
+            assert len(w) == 1
+            assert "compression parameter is ignored" in str(w[0].message)
 
 
 class TestFlasherClientCli:
@@ -695,12 +692,14 @@ class TestStreamingFlasherClient:
         statuses_data = [{"phase": "complete", "message": "done"}]
         client.streamingcall = MagicMock(return_value=iter(statuses_data))
 
-        with patch("jumpstarter.client.flasher._http_url_adapter", return_value=mock_adapter):
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                list(client.flash_stream("https://example.com/fw.bin", compression="zstd"))
-                assert len(w) == 1
-                assert "compression parameter is ignored" in str(w[0].message)
+        with (
+            patch("jumpstarter.client.flasher._http_url_adapter", return_value=mock_adapter),
+            warnings.catch_warnings(record=True) as w,
+        ):
+            warnings.simplefilter("always")
+            list(client.flash_stream("https://example.com/fw.bin", compression="zstd"))
+            assert len(w) == 1
+            assert "compression parameter is ignored" in str(w[0].message)
 
     def test_flash_returns_last_status(self, tmp_path):
         client = self._make_client()
@@ -733,9 +732,11 @@ class TestStreamingFlasherClient:
         statuses_data = [{"phase": "step", "message": ""}]
         client.streamingcall = MagicMock(return_value=iter(statuses_data))
 
-        with patch("jumpstarter.client.flasher._local_file_adapter", return_value=mock_adapter):
-            with pytest.raises(RuntimeError, match="flash did not complete"):
-                client.flash(str(test_file))
+        with (
+            patch("jumpstarter.client.flasher._local_file_adapter", return_value=mock_adapter),
+            pytest.raises(RuntimeError, match="flash did not complete"),
+        ):
+            client.flash(str(test_file))
 
     def test_flash_raises_on_no_statuses(self, tmp_path):
         client = self._make_client()
@@ -748,9 +749,11 @@ class TestStreamingFlasherClient:
 
         client.streamingcall = MagicMock(return_value=iter([]))
 
-        with patch("jumpstarter.client.flasher._local_file_adapter", return_value=mock_adapter):
-            with pytest.raises(RuntimeError, match="without status updates"):
-                client.flash(str(test_file))
+        with (
+            patch("jumpstarter.client.flasher._local_file_adapter", return_value=mock_adapter),
+            pytest.raises(RuntimeError, match="without status updates"),
+        ):
+            client.flash(str(test_file))
 
     def test_flash_dict_raises_argument_error(self):
         from jumpstarter.common.exceptions import ArgumentError

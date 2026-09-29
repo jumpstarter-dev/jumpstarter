@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
-from typing import Annotated, ClassVar, Literal, Optional, Self
+from typing import Annotated, ClassVar, Literal, Self
 
 import grpc
 import yaml
@@ -155,11 +155,10 @@ class ClientConfigV1Alpha1(BaseSettings):
         lease_name: str | None = None,
         duration: timedelta = timedelta(minutes=30),
     ):
-        with start_blocking_portal() as portal:
-            with portal.wrap_async_context_manager(
-                self.lease_async(selector, exporter_name, lease_name, duration, portal)
-            ) as lease:
-                yield lease
+        with start_blocking_portal() as portal, portal.wrap_async_context_manager(
+            self.lease_async(selector, exporter_name, lease_name, duration, portal)
+        ) as lease:
+            yield lease
 
     @_blocking_compat
     @_handle_connection_error
@@ -230,11 +229,10 @@ class ClientConfigV1Alpha1(BaseSettings):
         leases_response = await self._collect_all_leases(svc, page_size=page_size)
         lease_map = {}
         for lease in leases_response.leases:
-            if lease.exporter and lease.effective_begin_time:
-                if lease.conditions:
-                    latest_condition = lease.conditions[-1]
-                    if latest_condition.type == "Ready" and latest_condition.status == "True":
-                        lease_map[lease.exporter] = lease
+            if lease.exporter and lease.effective_begin_time and lease.conditions:
+                latest_condition = lease.conditions[-1]
+                if latest_condition.type == "Ready" and latest_condition.status == "True":
+                    lease_map[lease.exporter] = lease
 
         result.include_leases = True
         result.exporters = [
@@ -255,6 +253,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         tags: dict[str, str] | None = None,
         allow_disabled: bool = False,
         context: dict[str, str] | None = None,
+        shared_with: list[str] | None = None,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.CreateLease(
@@ -266,6 +265,7 @@ class ClientConfigV1Alpha1(BaseSettings):
             tags=tags,
             allow_disabled=allow_disabled,
             context=context,
+            shared_with=shared_with,
         )
 
     @_blocking_compat
@@ -312,9 +312,18 @@ class ClientConfigV1Alpha1(BaseSettings):
         duration: timedelta | None = None,
         begin_time: datetime | None = None,
         client: str | None = None,
+        add_shared_with: list[str] | None = None,
+        remove_shared_with: list[str] | None = None,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        return await svc.UpdateLease(name=name, duration=duration, begin_time=begin_time, client=client)
+        return await svc.UpdateLease(
+            name=name,
+            duration=duration,
+            begin_time=begin_time,
+            client=client,
+            add_shared_with=add_shared_with,
+            remove_shared_with=remove_shared_with,
+        )
 
     @_blocking_compat
     @_handle_connection_error
@@ -422,7 +431,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         return cls.from_file(path)
 
     @classmethod
-    def save(cls, config: Self, path: Optional[os.PathLike] = None) -> Path:
+    def save(cls, config: Self, path: str | os.PathLike | None = None) -> Path:
         """Saves a client config as YAML."""
         # Ensure the clients dir exists
         if path is None:
@@ -523,7 +532,7 @@ class ClientConfigV1Alpha1(BaseSettings):
 
 class ClientConfigListV1Alpha1(BaseModel):
     api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
-    current_config: Optional[str] = Field(alias="currentConfig")
+    current_config: str | None = Field(alias="currentConfig")
     items: list[ClientConfigV1Alpha1]
     kind: Literal["ClientConfigList"] = Field(default="ClientConfigList")
 

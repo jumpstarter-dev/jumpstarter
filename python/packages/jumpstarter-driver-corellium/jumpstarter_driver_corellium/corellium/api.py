@@ -1,4 +1,3 @@
-from typing import Optional
 
 import requests
 import requests.exceptions
@@ -30,7 +29,7 @@ class ApiClient:
         """
         return f'https://{self.host}/api'
 
-    def get_project(self, project_ref: str = 'Default Project') -> Optional[Project]:
+    def get_project(self, project_ref: str = 'Default Project') -> Project | None:
         """
         Retrieve a project based on project_ref, which is either its id or name.
         """
@@ -51,7 +50,7 @@ class ApiClient:
 
         return None
 
-    def get_device(self, model: str) -> Optional[Device]:
+    def get_device(self, model: str) -> Device | None:
         """
         Get a device spec from Corellium's list based on the model name.
 
@@ -98,7 +97,7 @@ class ApiClient:
 
         return Instance(**data) # ty: ignore[missing-argument]
 
-    def get_instance(self, instance_ref: str) -> Optional[Instance]:
+    def get_instance(self, instance_ref: str) -> Instance | None:
         """
         Retrieve an existing instance by its name.
 
@@ -166,7 +165,7 @@ class ApiClient:
 
             raise CorelliumApiException(msgerr) from e
 
-    def get_instance_console_id(self, instance: Instance, console_name: str) -> Optional[str]:
+    def get_instance_console_id(self, instance: Instance, console_name: str) -> str | None:
         """
         Retrieve an instance's console id by its name.
 
@@ -189,7 +188,7 @@ class ApiClient:
 
         return None
 
-    def get_instance_console_url(self, instance: Instance, console_id: str) -> Optional[str]:
+    def get_instance_console_url(self, instance: Instance, console_id: str) -> str | None:
         """
         Get a console URL (websocket) to stream logs from.
         """

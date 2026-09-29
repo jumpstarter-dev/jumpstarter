@@ -134,7 +134,7 @@ def _can_nat_between_namespaces() -> bool:
 
         result = _run("ping -c 1 -W 2 172.31.1.1", ns=src_ns, check=False)
         return result.returncode == 0
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
     finally:
         for handle in fwd_handles:

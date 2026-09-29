@@ -8,6 +8,7 @@ BASEDOMAIN=${BASEDOMAIN:-"jumpstarter.${IP}.nip.io"}
 IMG=${IMG:-quay.io/jumpstarter-dev/jumpstarter-controller:latest}
 OPERATOR_IMG=${OPERATOR_IMG:-$(make -C deploy/operator --no-print-directory -s print-img 2>/dev/null || echo "quay.io/jumpstarter-dev/jumpstarter-operator:latest")}
 EXPORTER_SET_CONTROLLER_IMG=${EXPORTER_SET_CONTROLLER_IMG:-quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest}
+TELEMETRY_IMG=${TELEMETRY_IMG:-quay.io/jumpstarter-dev/jumpstarter-telemetry:latest}
 EXPORTER_IMG=${EXPORTER_IMG:-quay.io/jumpstarter-dev/jumpstarter:latest}
 QEMU_RUNTIME_IMG=${QEMU_RUNTIME_IMG:-quay.io/jumpstarter-dev/virtual/qemu-runtime:latest}
 
@@ -48,6 +49,7 @@ export IMAGE_TAG
 export IMG
 export OPERATOR_IMG
 export EXPORTER_SET_CONTROLLER_IMG
+export TELEMETRY_IMG
 export EXPORTER_IMG
 export QEMU_RUNTIME_IMG
 

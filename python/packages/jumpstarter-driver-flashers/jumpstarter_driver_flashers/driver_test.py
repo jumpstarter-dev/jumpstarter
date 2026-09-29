@@ -137,7 +137,5 @@ def test_drivers_flashers_get_bootcmd_variant_switching(complete_flasher):
 
 def test_drivers_flashers_get_bootcmd_invalid_variant(complete_flasher):
     """Test that get_bootcmd raises DriverInvalidArgument for invalid DTB variant"""
-    with serve(complete_flasher) as client:
-        # Set an invalid variant
-        with pytest.raises(DriverInvalidArgument):
-            client.call("use_dtb_variant", "noexists")
+    with serve(complete_flasher) as client, pytest.raises(DriverInvalidArgument):
+        client.call("use_dtb_variant", "noexists")

@@ -1,6 +1,6 @@
 import os
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -179,23 +179,15 @@ def test_client_config_load():
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write("")
         f.close()
-        with patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as get_path_mock:
-            with patch.object(
-                ClientConfigV1Alpha1,
-                "from_file",
-                return_value=ClientConfigV1Alpha1(
-                    alias="another",
-                    metadata=ObjectMeta(namespace="default", name="another"),
-                    endpoint="abc",
-                    token="123",
-                    drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False),
-                ),
-            ) as from_file_mock:
-                value = ClientConfigV1Alpha1.load("another")
-                assert value.alias == "another"
-                get_path_mock.assert_called_once_with("another")
-                from_file_mock.assert_called_once_with(Path(f.name))
-                os.unlink(f.name)
+        with (
+            patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as get_path_mock,
+            patch.object( ClientConfigV1Alpha1, "from_file", return_value=ClientConfigV1Alpha1( alias="another", metadata=ObjectMeta(namespace="default", name="another"), endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False), ), ) as from_file_mock,  # noqa: E501
+        ):
+            value = ClientConfigV1Alpha1.load("another")
+            assert value.alias == "another"
+            get_path_mock.assert_called_once_with("another")
+            from_file_mock.assert_called_once_with(Path(f.name))
+            os.unlink(f.name)
 
 
 def test_client_config_load_not_found_raises():
@@ -232,12 +224,14 @@ shell:
         shell=ShellConfigV1Alpha1(use_profiles=False),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        with patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as _get_path_mock:
-            with patch.object(ClientConfigV1Alpha1, "ensure_exists"):
-                ClientConfigV1Alpha1.save(config)
-                with open(f.name) as loaded:
-                    value = loaded.read()
-                    assert value == CLIENT_CONFIG
+        with (
+            patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as _get_path_mock,
+            patch.object(ClientConfigV1Alpha1, "ensure_exists"),
+        ):
+            ClientConfigV1Alpha1.save(config)
+            with open(f.name) as loaded:
+                value = loaded.read()
+                assert value == CLIENT_CONFIG
         _get_path_mock.assert_called_once_with("testclient")
         os.unlink(f.name)
 
@@ -399,13 +393,15 @@ def test_client_config_list_not_found_returns_empty(monkeypatch: pytest.MonkeyPa
 
 
 def test_client_config_delete():
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        with patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as _get_path_mock:
-            f.write("")
-            f.close()
-            ClientConfigV1Alpha1.delete("testclient")
-            _get_path_mock.assert_called_once_with("testclient")
-            assert os.path.exists(f.name) is False
+    with (
+        tempfile.NamedTemporaryFile(mode="w", delete=False) as f,
+        patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as _get_path_mock,
+    ):
+        f.write("")
+        f.close()
+        ClientConfigV1Alpha1.delete("testclient")
+        _get_path_mock.assert_called_once_with("testclient")
+        assert os.path.exists(f.name) is False
 
 
 def test_client_config_delete_does_not_exist_raises():
@@ -449,6 +445,7 @@ async def test_create_lease_passes_exporter_name():
         tags=None,
         allow_disabled=False,
         context=None,
+        shared_with=None,
     )
 
 
@@ -694,7 +691,7 @@ async def test_list_exporters_with_leases_preserves_exporter_fields():
         duration=timedelta(hours=1),
         client="c",
         exporter="exporter-a",
-        effective_begin_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        effective_begin_time=datetime(2026, 1, 1, tzinfo=UTC),
         conditions=[condition],
     )
 

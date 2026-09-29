@@ -1,0 +1,8 @@
+# CI-only runtime image for the jumpstarter-telemetry binary.
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8-1790555810@sha256:beeada7dd17903dfb69fd5f6916c054720bf28a52daaa2f7a1910a1394244bd2 AS certs
+FROM registry.access.redhat.com/ubi9/ubi-micro:9.8-1789345812@sha256:7a0454cbd9bd847e8f6a63b6f0254a6efbeb6e0ed71a5d824a4f6cccbe626650
+WORKDIR /
+COPY --from=certs /etc/pki/tls/certs/ca-bundle.crt /etc/pki/tls/certs/ca-bundle.crt
+COPY telemetry /telemetry
+USER 65532:65532
+ENTRYPOINT ["/telemetry"]

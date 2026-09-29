@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from io import StringIO
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -18,6 +18,7 @@ from jumpstarter.client.grpc import (
     add_display_columns,
     add_exporter_row,
 )
+from jumpstarter.common.enums import ExporterStatus
 
 
 class TestWithOptions:
@@ -38,7 +39,7 @@ class TestAddDisplayColumns:
         add_display_columns(table)
 
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "LABELS"]
+        assert columns == ["NAME", " ", "LABELS"]
 
     def test_with_online_column(self):
         table = Table()
@@ -46,7 +47,7 @@ class TestAddDisplayColumns:
         add_display_columns(table, options)
 
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "ONLINE", "LABELS"]
+        assert columns == ["NAME", " ", "ONLINE", "LABELS"]
 
     def test_with_leases_columns(self):
         table = Table()
@@ -54,7 +55,7 @@ class TestAddDisplayColumns:
         add_display_columns(table, options)
 
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "LABELS", "LEASED BY", "LEASE STATUS", "RELEASE TIME"]
+        assert columns == ["NAME", " ", "LABELS", "LEASED BY", "LEASE STATUS", "RELEASE TIME"]
 
     def test_with_all_columns(self):
         table = Table()
@@ -62,7 +63,25 @@ class TestAddDisplayColumns:
         add_display_columns(table, options)
 
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "ONLINE", "LABELS", "LEASED BY", "LEASE STATUS", "RELEASE TIME"]
+        assert columns == ["NAME", " ", "ONLINE", "LABELS", "LEASED BY", "LEASE STATUS", "RELEASE TIME"]
+
+    def test_with_status_suppresses_icon_column(self):
+        table = Table()
+        options = WithOptions(show_status=True)
+        add_display_columns(table, options)
+
+        columns = [col.header for col in table.columns]
+        assert columns == ["NAME", "STATUS", "LABELS"]
+        assert " " not in columns
+
+    def test_with_status_and_online(self):
+        table = Table()
+        options = WithOptions(show_status=True, show_online=True)
+        add_display_columns(table, options)
+
+        columns = [col.header for col in table.columns]
+        assert columns == ["NAME", "ONLINE", "STATUS", "LABELS"]
+        assert " " not in columns
 
 
 class TestAddExporterRow:
@@ -80,7 +99,7 @@ class TestAddExporterRow:
 
         # Just verify a row was added and correct number of columns
         assert len(table.rows) == 1
-        assert len(table.columns) == 2  # NAME, LABELS
+        assert len(table.columns) == 3  # NAME, icon, LABELS
 
     def test_row_with_lease_info(self):
         table = Table()
@@ -92,7 +111,7 @@ class TestAddExporterRow:
         add_exporter_row(table, exporter, options, lease_info)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 6  # NAME, icon, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
     def test_row_with_lease_info_available(self):
         table = Table()
@@ -104,7 +123,7 @@ class TestAddExporterRow:
         add_exporter_row(table, exporter, options, lease_info)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 5
+        assert len(table.columns) == 6  # NAME, icon, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
     def test_row_with_all_options(self):
         table = Table()
@@ -116,7 +135,7 @@ class TestAddExporterRow:
         add_exporter_row(table, exporter, options, lease_info)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 6  # NAME, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 7  # NAME, icon, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
 
 class TestWithDisabledOption:
@@ -125,7 +144,7 @@ class TestWithDisabledOption:
         options = WithOptions(show_disabled=True)
         add_display_columns(table, options)
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "ENABLED", "LABELS"]
+        assert columns == ["NAME", " ", "ENABLED", "LABELS"]
 
     def test_show_disabled_adds_enabled_value_to_row(self):
         table = Table()
@@ -134,7 +153,64 @@ class TestWithDisabledOption:
         exporter = Exporter(namespace="default", name="test", labels={}, enabled=False)
         add_exporter_row(table, exporter, options)
         assert len(table.rows) == 1
-        assert len(table.columns) == 3  # NAME, ENABLED, LABELS
+        assert len(table.columns) == 4  # NAME, icon, ENABLED, LABELS
+
+
+class TestExporterStatusIconDelegation:
+    """Verify Exporter.status_icon() delegates to the status module."""
+
+    @patch("jumpstarter.client.status._use_emoji", return_value=True)
+    def test_emoji_icon_appears_in_table_output(self, _mock):
+        """Verify the emoji icon column is rendered in table output."""
+        exporter = Exporter(namespace="default", name="my-exporter", labels={}, status=ExporterStatus.AVAILABLE)
+        table = Table()
+        Exporter.rich_add_columns(table)
+        exporter.rich_add_rows(table)
+
+        columns = [col.header for col in table.columns]
+        assert columns[0] == "NAME"
+        assert columns[1] == " "
+
+        console = Console(file=(buf := StringIO()), width=80)
+        console.print(table)
+        output = buf.getvalue()
+        assert "🟢" in output
+        assert "my-exporter" in output
+
+    @patch("jumpstarter.client.status._use_emoji", return_value=False)
+    def test_ascii_icon_appears_in_table_output(self, _mock):
+        """Verify the ASCII icon column is rendered in table output."""
+        exporter = Exporter(namespace="default", name="my-exporter", labels={}, status=ExporterStatus.AVAILABLE)
+        table = Table()
+        Exporter.rich_add_columns(table)
+        exporter.rich_add_rows(table)
+
+        console = Console(file=(buf := StringIO()), width=80)
+        console.print(table)
+        output = buf.getvalue()
+        assert "+" in output
+        assert "my-exporter" in output
+
+    @patch("jumpstarter.client.status._use_emoji", return_value=False)
+    def test_icon_column_suppressed_when_show_status(self, _mock):
+        """When show_status=True, icon column is replaced by STATUS column."""
+        exporter = Exporter(
+            namespace="default", name="my-exporter", labels={}, status=ExporterStatus.AVAILABLE
+        )
+        table = Table()
+        options = WithOptions(show_status=True)
+        Exporter.rich_add_columns(table, options)
+        exporter.rich_add_rows(table, options)
+
+        columns = [col.header for col in table.columns]
+        assert " " not in columns
+        assert "STATUS" in columns
+
+        console = Console(file=(buf := StringIO()), width=80)
+        console.print(table)
+        output = buf.getvalue()
+        assert "AVAILABLE" in output
+        assert "my-exporter" in output
 
 
 class TestExporterList:
@@ -142,7 +218,7 @@ class TestExporterList:
         self,
         client="test-client",
         status="Active",
-        effective_begin_time=datetime(2023, 1, 1, 10, 0, 0),
+        effective_begin_time=datetime(2023, 1, 1, 10, 0, 0, tzinfo=UTC),
         effective_duration=timedelta(hours=1),
         begin_time=None,
         duration=timedelta(hours=1),
@@ -166,7 +242,7 @@ class TestExporterList:
         exporter.rich_add_rows(table)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 2  # NAME, LABELS
+        assert len(table.columns) == 3  # NAME, icon, LABELS
 
     def test_exporter_with_lease_no_display(self):
         lease = self.create_test_lease()
@@ -180,7 +256,7 @@ class TestExporterList:
 
         # Should not show lease info when show_leases=False
         assert len(table.rows) == 1
-        assert len(table.columns) == 2  # NAME, LABELS
+        assert len(table.columns) == 3  # NAME, icon, LABELS
 
     def test_exporter_with_lease_display(self):
         lease = self.create_test_lease()
@@ -194,12 +270,12 @@ class TestExporterList:
         exporter.rich_add_rows(table, options)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 6  # NAME, icon, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
         # Test actual table content by rendering it
-        console = Console(file=StringIO(), width=120)
+        console = Console(file=(buf := StringIO()), width=120)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
 
         # Check that the actual content is present in the rendered output
         assert "test-exporter" in output
@@ -217,12 +293,12 @@ class TestExporterList:
         exporter.rich_add_rows(table, options)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 6  # NAME, icon, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
         # Test actual table content by rendering it
-        console = Console(file=StringIO(), width=120)
+        console = Console(file=(buf := StringIO()), width=120)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
 
         # Check that the actual content shows "Available" status
         assert "test-exporter" in output
@@ -249,12 +325,12 @@ class TestExporterList:
         exporter_offline.rich_add_rows(table, options)
 
         assert len(table.rows) == 2
-        assert len(table.columns) == 3  # NAME, ONLINE, LABELS
+        assert len(table.columns) == 4  # NAME, icon, ONLINE, LABELS
 
         # Test actual table content by rendering it
-        console = Console(file=StringIO(), width=120)
+        console = Console(file=(buf := StringIO()), width=120)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
 
         # Check that the actual content shows correct online status indicators
         assert "online-exporter" in output
@@ -287,12 +363,12 @@ class TestExporterList:
         exporter_offline_no_lease.rich_add_rows(table, options)
 
         assert len(table.rows) == 2
-        assert len(table.columns) == 6  # NAME, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 7  # NAME, icon, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
         # Test actual table content by rendering it
-        console = Console(file=StringIO(), width=150)
+        console = Console(file=(buf := StringIO()), width=150)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
 
         # Verify all content is present
         assert "online-with-lease" in output
@@ -311,7 +387,7 @@ class TestExporterList:
         lease = self.create_test_lease(
             client="my-client",
             status="Expired",
-            effective_end_time=datetime(2023, 1, 1, 11, 0, 0),  # Ended after 1 hour
+            effective_end_time=datetime(2023, 1, 1, 11, 0, 0, tzinfo=UTC),  # Ended after 1 hour
         )
         exporter = Exporter(
             namespace="default", name="test-exporter", labels={"type": "device"}, online=True, lease=lease
@@ -371,7 +447,7 @@ class TestExporterList:
             status="Scheduled",
             effective_begin_time=None,  # Not started yet
             effective_duration=None,  # Not started yet
-            begin_time=datetime(2023, 1, 1, 10, 0, 0),
+            begin_time=datetime(2023, 1, 1, 10, 0, 0, tzinfo=UTC),
             duration=timedelta(hours=1),
         )
         exporter = Exporter(
@@ -384,14 +460,14 @@ class TestExporterList:
         Exporter.rich_add_columns(table, options)
         exporter.rich_add_rows(table, options)
 
-        # Should have 5 columns: NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
-        assert len(table.columns) == 5
+        # Should have 6 columns: NAME, icon, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 6
         assert len(table.rows) == 1
 
         # Test actual table content by rendering it
-        console = Console(file=StringIO(), width=120)
+        console = Console(file=(buf := StringIO()), width=120)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
 
         # Verify the scheduled lease displays expected release time
         assert "test-exporter" in output
@@ -444,8 +520,9 @@ class TestExporterListDisabledFiltering:
         el.rich_add_columns(table)
         el.rich_add_rows(table)
         assert len(table.rows) == 2
-        # Should have ENABLED column when include_disabled is set
+        # Should have icon column and ENABLED column when include_disabled is set
         columns = [col.header for col in table.columns]
+        assert " " in columns
         assert "ENABLED" in columns
 
     def test_rich_add_names_skips_disabled(self):
@@ -556,7 +633,7 @@ class TestLeaseRichDisplay:
         table = Table()
         Lease.rich_add_columns(table)
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "SELECTOR", "EXPIRES AT", "REMAINING", "CLIENT", "EXPORTER", "TAGS"]
+        assert columns == ["NAME", "SELECTOR", "EXPIRES AT", "REMAINING", "CLIENT", "EXPORTER", "TAGS", "SHARED WITH"]
 
     def test_rich_add_columns_excludes_begin_time_and_duration(self):
         table = Table()
@@ -567,82 +644,82 @@ class TestLeaseRichDisplay:
 
     def test_compute_expires_at_from_effective_end_time(self):
         lease = self.create_lease(
-            effective_end_time=datetime(2023, 1, 1, 11, 0, 0),
+            effective_end_time=datetime(2023, 1, 1, 11, 0, 0, tzinfo=UTC),
         )
-        assert lease._compute_expires_at() == datetime(2023, 1, 1, 11, 0, 0)
+        assert lease._compute_expires_at() == datetime(2023, 1, 1, 11, 0, 0, tzinfo=UTC)
 
     def test_compute_expires_at_from_effective_begin_and_duration(self):
         lease = self.create_lease(
-            effective_begin_time=datetime(2023, 6, 15, 14, 30, 0),
+            effective_begin_time=datetime(2023, 6, 15, 14, 30, 0, tzinfo=UTC),
             duration=timedelta(hours=2),
         )
-        assert lease._compute_expires_at() == datetime(2023, 6, 15, 16, 30, 0)
+        assert lease._compute_expires_at() == datetime(2023, 6, 15, 16, 30, 0, tzinfo=UTC)
 
     def test_compute_expires_at_from_begin_time_and_duration(self):
         lease = self.create_lease(
-            begin_time=datetime(2023, 3, 10, 8, 0, 0),
+            begin_time=datetime(2023, 3, 10, 8, 0, 0, tzinfo=UTC),
             duration=timedelta(minutes=30),
         )
-        assert lease._compute_expires_at() == datetime(2023, 3, 10, 8, 30, 0)
+        assert lease._compute_expires_at() == datetime(2023, 3, 10, 8, 30, 0, tzinfo=UTC)
 
     def test_compute_expires_at_none_when_no_begin_time(self):
         lease = self.create_lease()
         assert lease._compute_expires_at() is None
 
     def test_format_remaining_expired(self):
-        past = datetime(2020, 1, 1, 0, 0, 0)
+        past = datetime(2020, 1, 1, 0, 0, 0, tzinfo=UTC)
         assert Lease._format_remaining(past) == "expired"
 
     def test_format_remaining_none(self):
         assert Lease._format_remaining(None) == ""
 
     def test_format_remaining_days_hours_minutes(self):
-        now = datetime(2023, 1, 1, 0, 0, 0)
-        expires_at = datetime(2023, 1, 3, 3, 45, 0)
+        now = datetime(2023, 1, 1, 0, 0, 0, tzinfo=UTC)
+        expires_at = datetime(2023, 1, 3, 3, 45, 0, tzinfo=UTC)
         with patch("jumpstarter.client.grpc.datetime", wraps=datetime) as mock_dt:
             mock_dt.now.return_value = now
             assert Lease._format_remaining(expires_at) == "2d 3h 45m"
 
     def test_format_remaining_hours_and_minutes(self):
-        now = datetime(2023, 1, 1, 0, 0, 0)
-        expires_at = datetime(2023, 1, 1, 5, 30, 0)
+        now = datetime(2023, 1, 1, 0, 0, 0, tzinfo=UTC)
+        expires_at = datetime(2023, 1, 1, 5, 30, 0, tzinfo=UTC)
         with patch("jumpstarter.client.grpc.datetime", wraps=datetime) as mock_dt:
             mock_dt.now.return_value = now
             assert Lease._format_remaining(expires_at) == "5h 30m"
 
     def test_format_remaining_minutes_only(self):
-        now = datetime(2023, 1, 1, 0, 0, 0)
-        expires_at = datetime(2023, 1, 1, 0, 15, 0)
+        now = datetime(2023, 1, 1, 0, 0, 0, tzinfo=UTC)
+        expires_at = datetime(2023, 1, 1, 0, 15, 0, tzinfo=UTC)
         with patch("jumpstarter.client.grpc.datetime", wraps=datetime) as mock_dt:
             mock_dt.now.return_value = now
             assert Lease._format_remaining(expires_at) == "15m"
 
     def test_format_remaining_zero_minutes_shows_0m(self):
-        now = datetime(2023, 1, 1, 0, 0, 0)
-        expires_at = datetime(2023, 1, 1, 0, 0, 30)
+        now = datetime(2023, 1, 1, 0, 0, 0, tzinfo=UTC)
+        expires_at = datetime(2023, 1, 1, 0, 0, 30, tzinfo=UTC)
         with patch("jumpstarter.client.grpc.datetime", wraps=datetime) as mock_dt:
             mock_dt.now.return_value = now
             assert Lease._format_remaining(expires_at) == "0m"
 
     def test_format_remaining_days_only(self):
-        now = datetime(2023, 1, 1, 0, 0, 0)
-        expires_at = datetime(2023, 1, 4, 0, 0, 0)
+        now = datetime(2023, 1, 1, 0, 0, 0, tzinfo=UTC)
+        expires_at = datetime(2023, 1, 4, 0, 0, 0, tzinfo=UTC)
         with patch("jumpstarter.client.grpc.datetime", wraps=datetime) as mock_dt:
             mock_dt.now.return_value = now
             assert Lease._format_remaining(expires_at) == "3d"
 
     def test_rich_add_rows_shows_expires_at(self):
         lease = self.create_lease(
-            effective_begin_time=datetime(2023, 1, 1, 10, 0, 0),
-            effective_end_time=datetime(2023, 1, 1, 11, 0, 0),
+            effective_begin_time=datetime(2023, 1, 1, 10, 0, 0, tzinfo=UTC),
+            effective_end_time=datetime(2023, 1, 1, 11, 0, 0, tzinfo=UTC),
         )
         table = Table()
         Lease.rich_add_columns(table)
         lease.rich_add_rows(table)
 
-        console = Console(file=StringIO(), width=200)
+        console = Console(file=(buf := StringIO()), width=200)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
         assert "2023-01-01 11:00:00" in output
 
     def test_rich_add_rows_empty_when_no_timing_data(self):
@@ -651,9 +728,9 @@ class TestLeaseRichDisplay:
         Lease.rich_add_columns(table)
         lease.rich_add_rows(table)
 
-        console = Console(file=StringIO(), width=200)
+        console = Console(file=(buf := StringIO()), width=200)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
         assert "test-lease" in output
         assert "test-client" in output
 
@@ -663,9 +740,9 @@ class TestLeaseRichDisplay:
         table = Table()
         Lease.rich_add_columns(table)
         lease.rich_add_rows(table)
-        console = Console(file=StringIO(), force_terminal=True)
+        console = Console(file=(buf := StringIO()), force_terminal=True)
         console.print(table)
-        output = console.file.getvalue()
+        output = buf.getvalue()
         assert "team=devops" in output
         assert "ci-job=12345" in output
 
@@ -711,12 +788,91 @@ class TestLeaseListFilterBySelector:
         with patch(
             "jumpstarter.client.grpc.selector_contains",
             side_effect=ValueError("unknown label selector operator: 'bogus'"),
-        ):
-            with caplog.at_level(logging.WARNING, logger="jumpstarter.client.grpc"):
-                leases.filter_by_selector("board in rpi")
+        ), caplog.at_level(logging.WARNING, logger="jumpstarter.client.grpc"):
+            leases.filter_by_selector("board in rpi")
         assert "bad" in caplog.text
         assert "board in rpi" in caplog.text
         assert "unknown label selector operator: 'bogus'" in caplog.text
+
+
+class TestLeaseAccessControl:
+    def create_lease(self, *, client="owner", shared=None, effective=None):
+        return Lease(
+            namespace="default",
+            name="test-lease",
+            selector="board=rpi",
+            duration=timedelta(hours=1),
+            client=client,
+            exporter="test-exporter",
+            conditions=[],
+            shared_with=shared or [],
+            effective_shared_with=effective or [],
+        )
+
+    def test_owner_is_always_accessible(self):
+        lease = self.create_lease(client="owner")
+        assert lease.is_accessible_by("owner")
+
+    def test_effective_shared_client_is_accessible(self):
+        lease = self.create_lease(shared=["alice"], effective=["alice"])
+        assert lease.is_accessible_by("alice")
+
+    def test_desired_but_not_effective_is_denied(self):
+        # alice is in the owner's intent but was filtered out by policy.
+        lease = self.create_lease(shared=["alice"], effective=[])
+        assert not lease.is_accessible_by("alice")
+
+    def test_unrelated_client_is_denied(self):
+        lease = self.create_lease(shared=["alice"], effective=["alice"])
+        assert not lease.is_accessible_by("mallory")
+
+    def test_filter_by_client_uses_effective_set(self):
+        owned = self.create_lease(client="me")
+        shared_ok = Lease(
+            namespace="default",
+            name="shared-ok",
+            selector="board=rpi",
+            duration=timedelta(hours=1),
+            client="other",
+            exporter="e",
+            conditions=[],
+            shared_with=["me"],
+            effective_shared_with=["me"],
+        )
+        shared_denied = Lease(
+            namespace="default",
+            name="shared-denied",
+            selector="board=rpi",
+            duration=timedelta(hours=1),
+            client="other",
+            exporter="e",
+            conditions=[],
+            shared_with=["me"],
+            effective_shared_with=[],
+        )
+        result = LeaseList(leases=[owned, shared_ok, shared_denied], next_page_token=None).filter_by_client("me")
+        assert [lease.name for lease in result.leases] == ["test-lease", "shared-ok"]
+
+
+@pytest.mark.asyncio
+async def test_lease_from_protobuf_parses_shared_with_fields():
+    from jumpstarter_protocol import client_pb2
+
+    pb = client_pb2.Lease(
+        name="namespaces/default/leases/test",
+        selector="board=rpi",
+        client="namespaces/default/clients/owner",
+    )
+    pb.duration.FromTimedelta(timedelta(hours=1))
+    pb.shared_with.extend(["alice", "bob"])
+    pb.effective_shared_with.extend(["alice"])
+
+    lease = Lease.from_protobuf(pb)
+    assert lease.shared_with == ["alice", "bob"]
+    assert lease.effective_shared_with == ["alice"]
+    # bob was requested but denied → not accessible; alice survived filtering.
+    assert lease.is_accessible_by("alice")
+    assert not lease.is_accessible_by("bob")
 
 
 @pytest.mark.asyncio
@@ -907,3 +1063,103 @@ async def test_lease_from_protobuf_empty_deprecated_labels():
 
     lease = Lease.from_protobuf(proto_lease)
     assert lease.deprecated_labels == {}
+
+
+@pytest.mark.anyio
+async def test_update_lease_with_share_add():
+    from jumpstarter_protocol import client_pb2
+
+    mock_channel = Mock()
+
+    response_lease = client_pb2.Lease(
+        selector="board=rpi4",
+        client="namespaces/default/clients/test-client",
+    )
+    response_lease.name = "namespaces/default/leases/test-lease"
+    response_lease.duration.FromTimedelta(timedelta(hours=1))
+    response_lease.shared_with.extend(["alice", "bob"])
+
+    mock_stub = Mock()
+    mock_stub.UpdateLease = AsyncMock(return_value=response_lease)
+
+    svc = ClientService(channel=mock_channel, namespace="default")
+    svc.stub = mock_stub
+
+    result = await svc.UpdateLease(
+        name="test-lease",
+        duration=timedelta(hours=1),
+        add_shared_with=["alice", "bob"],
+    )
+
+    call_args = mock_stub.UpdateLease.call_args[0][0]
+    assert list(call_args.add_shared_with) == ["alice", "bob"]
+    assert result.shared_with == ["alice", "bob"]
+
+
+@pytest.mark.anyio
+async def test_update_lease_with_share_remove():
+    from jumpstarter_protocol import client_pb2
+
+    mock_channel = Mock()
+
+    response_lease = client_pb2.Lease(
+        selector="board=rpi4",
+        client="namespaces/default/clients/test-client",
+    )
+    response_lease.name = "namespaces/default/leases/test-lease"
+    response_lease.duration.FromTimedelta(timedelta(hours=1))
+
+    mock_stub = Mock()
+    mock_stub.UpdateLease = AsyncMock(return_value=response_lease)
+
+    svc = ClientService(channel=mock_channel, namespace="default")
+    svc.stub = mock_stub
+
+    await svc.UpdateLease(
+        name="test-lease",
+        duration=timedelta(hours=1),
+        remove_shared_with=["alice"],
+    )
+
+    call_args = mock_stub.UpdateLease.call_args[0][0]
+    assert list(call_args.remove_shared_with) == ["alice"]
+
+
+@pytest.mark.anyio
+async def test_update_lease_share_only_no_update_mask():
+    from jumpstarter_protocol import client_pb2
+
+    mock_channel = Mock()
+
+    response_lease = client_pb2.Lease(
+        selector="board=rpi4",
+        client="namespaces/default/clients/test-client",
+    )
+    response_lease.name = "namespaces/default/leases/test-lease"
+    response_lease.duration.FromTimedelta(timedelta(hours=1))
+    response_lease.shared_with.extend(["alice"])
+
+    mock_stub = Mock()
+    mock_stub.UpdateLease = AsyncMock(return_value=response_lease)
+
+    svc = ClientService(channel=mock_channel, namespace="default")
+    svc.stub = mock_stub
+
+    await svc.UpdateLease(
+        name="test-lease",
+        add_shared_with=["alice"],
+    )
+
+    call_args = mock_stub.UpdateLease.call_args[0][0]
+    assert list(call_args.update_mask.paths) == []
+    assert list(call_args.add_shared_with) == ["alice"]
+
+
+@pytest.mark.anyio
+async def test_update_lease_raises_when_no_changes():
+    mock_channel = Mock()
+
+    svc = ClientService(channel=mock_channel, namespace="default")
+
+    with pytest.raises(ValueError, match="At least one of"):
+        await svc.UpdateLease(name="test-lease")

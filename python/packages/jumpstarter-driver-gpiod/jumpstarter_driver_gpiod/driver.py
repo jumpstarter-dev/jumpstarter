@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import time
 from collections.abc import Generator
 from dataclasses import dataclass, field
@@ -39,14 +40,12 @@ class _GPIOBase(Driver):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
 
-    def close(self):
-        try:
+    def close(self):  # pragma: no cover
+        with contextlib.suppress(Exception):
             if hasattr(self, "_line") and self._line:
                 self._line.release()
             if hasattr(self, "_chip") and self._chip:
                 self._chip.close()
-        except Exception:
-            pass
         super().close()
 
     @export

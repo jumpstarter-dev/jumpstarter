@@ -1,3 +1,4 @@
+import contextlib
 import json
 import time
 from collections import deque
@@ -227,10 +228,8 @@ class BtPeer(Driver):
                 await self._device.set_connectable(True)
         except Exception:
             if self._device is not None:
-                try:
+                with contextlib.suppress(Exception):
                     await self._device.power_off()
-                except Exception:
-                    pass
                 self._device = None
             self._avdtp_listener = None
             if self._transport is not None:
@@ -261,13 +260,13 @@ class BtPeer(Driver):
         try:
             if device is not None:
                 await device.power_off()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             first_error = exc
         finally:
             try:
                 if transport is not None:
                     await transport.close()
-            except Exception as exc:
+            except Exception as exc:  # pragma: no cover  # noqa: BLE001
                 if first_error is None:
                     first_error = exc
 

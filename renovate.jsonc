@@ -442,7 +442,19 @@
       ]
     },
     {
-      "description": "Group compat-test targets (latest released controller tag + published PyPI client)",
+      "description": "jumpstarter packages are published to pkg.jumpstarter.dev",
+      "matchDatasources": [
+        "pypi"
+      ],
+      "matchDepNames": [
+        "/jumpstarter/"
+      ],
+      "registryUrls": [
+        "https://pkg.jumpstarter.dev/simple/"
+      ]
+    },
+    {
+      "description": "Group compat-test targets (latest released controller tag + published client)",
       "groupName": "compat-test-targets",
       "matchManagers": [
         "custom.regex"

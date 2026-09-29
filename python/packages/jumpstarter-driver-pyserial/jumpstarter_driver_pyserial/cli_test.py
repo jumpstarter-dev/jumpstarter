@@ -56,21 +56,19 @@ def test_pipe_command_with_output_file(pyserial_client):
     runner = CliRunner()
     cli = pyserial_client.cli()
 
-    with runner.isolated_filesystem():
-        # Mock the portal.call to prevent actual execution
-        with patch.object(pyserial_client.portal, "call") as mock_call:
-            mock_call.side_effect = KeyboardInterrupt  # Simulate Ctrl+C to exit
+    with runner.isolated_filesystem(), patch.object(pyserial_client.portal, "call") as mock_call:
+        mock_call.side_effect = KeyboardInterrupt  # Simulate Ctrl+C to exit
 
-            # Use --no-input to explicitly disable input detection
-            runner.invoke(cli, ["pipe", "-o", "test.log", "--no-input"])
+        # Use --no-input to explicitly disable input detection
+        runner.invoke(cli, ["pipe", "-o", "test.log", "--no-input"])
 
-            # Should have attempted to call _pipe_serial
-            assert mock_call.called
-            # Check the arguments passed
-            args = mock_call.call_args[0]
-            assert args[1] == "test.log"  # output file
-            assert args[2] is False  # input_enabled
-            assert args[3] is False  # append
+        # Should have attempted to call _pipe_serial
+        assert mock_call.called
+        # Check the arguments passed
+        args = mock_call.call_args[0]
+        assert args[1] == "test.log"  # output file
+        assert args[2] is False  # input_enabled
+        assert args[3] is False  # append
 
 
 def test_pipe_command_with_append(pyserial_client):
@@ -78,16 +76,15 @@ def test_pipe_command_with_append(pyserial_client):
     runner = CliRunner()
     cli = pyserial_client.cli()
 
-    with runner.isolated_filesystem():
-        with patch.object(pyserial_client.portal, "call") as mock_call:
-            mock_call.side_effect = KeyboardInterrupt
+    with runner.isolated_filesystem(), patch.object(pyserial_client.portal, "call") as mock_call:
+        mock_call.side_effect = KeyboardInterrupt
 
-            runner.invoke(cli, ["pipe", "-o", "test.log", "-a"])
+        runner.invoke(cli, ["pipe", "-o", "test.log", "-a"])
 
-            assert mock_call.called
-            args = mock_call.call_args[0]
-            assert args[1] == "test.log"  # output file
-            assert args[3] is True  # append
+        assert mock_call.called
+        args = mock_call.call_args[0]
+        assert args[1] == "test.log"  # output file
+        assert args[3] is True  # append
 
 
 def test_pipe_command_with_input_flag(pyserial_client):
@@ -230,18 +227,17 @@ def test_pipe_command_with_file_and_input(pyserial_client):
     runner = CliRunner()
     cli = pyserial_client.cli()
 
-    with runner.isolated_filesystem():
-        with patch.object(pyserial_client.portal, "call") as mock_call:
-            mock_call.side_effect = KeyboardInterrupt
+    with runner.isolated_filesystem(), patch.object(pyserial_client.portal, "call") as mock_call:
+        mock_call.side_effect = KeyboardInterrupt
 
-            with patch("sys.stdin.isatty", return_value=False):
-                runner.invoke(cli, ["pipe", "-o", "test.log"])
+        with patch("sys.stdin.isatty", return_value=False):
+            runner.invoke(cli, ["pipe", "-o", "test.log"])
 
-                assert mock_call.called
-                args = mock_call.call_args[0]
-                assert args[1] == "test.log"  # output file
-                assert args[2] is True  # input_enabled (auto-detected)
-                assert args[3] is False  # append
+            assert mock_call.called
+            args = mock_call.call_args[0]
+            assert args[1] == "test.log"  # output file
+            assert args[2] is True  # input_enabled (auto-detected)
+            assert args[3] is False  # append
 
 
 def test_pipe_command_keyboard_interrupt_handling(pyserial_client):
@@ -397,7 +393,7 @@ async def test_serial_to_output_receives_data_then_end_of_stream(pyserial_client
         await pyserial_client._serial_to_output(mock_stream, "test.log", False)
 
         # Verify the file contains the data
-        with open("test.log", "rb") as f:
+        with open("test.log", "rb") as f:  # noqa: ASYNC230
             content = f.read()
             assert content == b"HelloWorld"
 

@@ -115,8 +115,7 @@ def _parse_registries_for_url(oci_url: str) -> tuple[str, ...]:
     configured ``unqualified-search-registries``.
     """
     url = oci_url
-    if url.startswith("oci://"):
-        url = url[len("oci://") :]
+    url = url.removeprefix("oci://")
 
     # Strip digest references before parsing — "ubuntu@sha256:abc" would
     # otherwise have the colon corrupt port/tag disambiguation.
@@ -136,9 +135,12 @@ def _parse_registries_for_url(oci_url: str) -> tuple[str, ...]:
     else:
         # namespace/image form (e.g. "library/ubuntu") — first segment has
         # no dot and isn't localhost, so it's not a registry hostname.
-        if "." not in registry and registry != "localhost":
-            if ":" not in registry or not registry.split(":", 1)[1].isdigit():
-                return _get_unqualified_search_registries()
+        if (
+            "." not in registry
+            and registry != "localhost"
+            and (":" not in registry or not registry.split(":", 1)[1].isdigit())
+        ):
+            return _get_unqualified_search_registries()
 
     return (registry,)
 
@@ -249,7 +251,7 @@ def _lookup_credentials_in_auth_data(auth_data: dict[str, Any], registry: str) -
                     decoded = base64.b64decode(auth_b64, validate=True).decode("utf-8")
                     username, password = decoded.split(":", 1)
                     if username and password:
-                        return OciCredentials(username=username, password=password)
+                        return OciCredentials(username=username, password=SecretStr(password))
                 except (binascii.Error, ValueError, UnicodeDecodeError) as e:
                     logger.warning("Failed to decode auth entry for %s: %s", key, e)
 
@@ -330,7 +332,7 @@ def resolve_oci_credentials(
     # Level 1: Explicit arguments
     if username is not None or password is not None:
         try:
-            creds = OciCredentials(username=username, password=password)
+            creds = OciCredentials(username=username, password=SecretStr(password) if password is not None else None)
         except ValidationError:
             raise ValueError("OCI authentication requires both username and password") from None
         if creds.is_authenticated:
@@ -342,7 +344,10 @@ def resolve_oci_credentials(
 
     if env_username is not None or env_password is not None:
         try:
-            creds = OciCredentials(username=env_username, password=env_password)
+            creds = OciCredentials(
+                username=env_username,
+                password=SecretStr(env_password) if env_password is not None else None,
+            )
         except ValidationError:
             logger.warning(
                 "Only one of OCI_USERNAME/OCI_PASSWORD is set; "

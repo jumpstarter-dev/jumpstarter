@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import Field
 
@@ -12,14 +12,14 @@ class V1Alpha1JumpstarterInstance(JsonBaseModel):
     api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
     kind: Literal["JumpstarterInstance"] = Field(default="JumpstarterInstance")
     installed: bool
-    version: Optional[str] = None
-    namespace: Optional[str] = None
-    status: Optional[str] = None
+    version: str | None = None
+    namespace: str | None = None
+    status: str | None = None
     has_crds: bool = Field(alias="hasCrds", default=False)
-    error: Optional[str] = None
-    basedomain: Optional[str] = None
-    controller_endpoint: Optional[str] = Field(alias="controllerEndpoint", default=None)
-    router_endpoint: Optional[str] = Field(alias="routerEndpoint", default=None)
+    error: str | None = None
+    basedomain: str | None = None
+    controller_endpoint: str | None = Field(alias="controllerEndpoint", default=None)
+    router_endpoint: str | None = Field(alias="routerEndpoint", default=None)
 
 
 class V1Alpha1ClusterInfo(JsonBaseModel):
@@ -35,9 +35,9 @@ class V1Alpha1ClusterInfo(JsonBaseModel):
     is_current: bool = Field(alias="isCurrent")
     type: Literal["kind", "minikube", "remote"]
     accessible: bool
-    version: Optional[str] = None
+    version: str | None = None
     jumpstarter: V1Alpha1JumpstarterInstance
-    error: Optional[str] = None
+    error: str | None = None
 
     @classmethod
     def rich_add_columns(cls, table, **kwargs):

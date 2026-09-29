@@ -1,4 +1,4 @@
-from typing import Optional
+
 
 import click
 from jumpstarter_cli_common.blocking import blocking
@@ -13,6 +13,7 @@ from jumpstarter_cli_common.opt import (
     opt_output_path_only,
 )
 from jumpstarter_kubernetes import ClientsV1Alpha1Api, ExportersV1Alpha1Api
+from jumpstarter_kubernetes.exceptions import JumpstarterKubernetesError
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config.config_exception import ConfigException
 
@@ -55,12 +56,12 @@ def import_res():
 async def import_client(
     name: str,
     namespace: str,
-    kubeconfig: Optional[str],
-    context: Optional[str],
+    kubeconfig: str | None,
+    context: str | None,
     insecure_tls: bool,
-    allow: Optional[str],
+    allow: str | None,
     unsafe: bool,
-    out: Optional[str],
+    out: str | None,
     output: PathOutputType,
     nointeractive: bool,
 ):
@@ -92,6 +93,8 @@ async def import_client(
                 click.echo(f"Client configuration successfully saved to {config_path}")
             else:
                 click.echo(config_path)
+    except JumpstarterKubernetesError as e:
+        raise click.ClickException(str(e)) from e
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:
@@ -115,9 +118,9 @@ async def import_client(
 async def import_exporter(
     name: str,
     namespace: str,
-    out: Optional[str],
-    kubeconfig: Optional[str],
-    context: Optional[str],
+    out: str | None,
+    kubeconfig: str | None,
+    context: str | None,
     insecure_tls: bool,
     output: PathOutputType,
     nointeractive: bool,
@@ -141,6 +144,8 @@ async def import_exporter(
                 click.echo(f"Exporter configuration successfully saved to {config_path}")
             else:
                 click.echo(config_path)
+    except JumpstarterKubernetesError as e:
+        raise click.ClickException(str(e)) from e
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:

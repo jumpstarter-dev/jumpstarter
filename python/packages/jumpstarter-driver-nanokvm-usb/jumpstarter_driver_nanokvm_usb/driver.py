@@ -17,13 +17,7 @@ from .mouse import MouseButton, resolve_button
 from .vnc_server import RfbServer, is_loopback_bind
 from jumpstarter.driver import Driver, export, exportstream
 
-__all__ = [
-    "NanoKVMUSBVideo",
-    "NanoKVMUSBHID",
-    "NanoKVMUSB",
-    "NanoKVMUSBVNC",
-    "MouseButton",
-]
+__all__ = ["MouseButton", "NanoKVMUSB", "NanoKVMUSBHID", "NanoKVMUSBVNC", "NanoKVMUSBVideo"]
 
 
 @dataclass(kw_only=True)
@@ -77,7 +71,7 @@ class NanoKVMUSBDriverBase(Driver):
         if self._owns_device and self.device is not None:
             try:
                 self.device.close()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 self.logger.debug(f"Error closing device: {exc}")
 
 
@@ -187,7 +181,7 @@ class NanoKVMUSBHID(NanoKVMUSBDriverBase):
                 device.press_key(key)
 
         await to_thread.run_sync(_press)
-        self.logger.debug(f"Pressed key: {repr(key)}")
+        self.logger.debug(f"Pressed key: {key!r}")
 
     @export
     async def reset_hid(self):
@@ -373,5 +367,5 @@ class NanoKVMUSB(Composite):
             self._vnc_dir = None
         try:
             self._shared_device.close()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self.logger.debug(f"Error closing shared device: {exc}")

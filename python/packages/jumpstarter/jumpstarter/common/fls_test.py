@@ -51,13 +51,15 @@ def test_get_fls_binary_custom_url_security_check():
 
 
 def test_get_fls_binary_with_version():
-    with patch("jumpstarter.common.fls.download_fls", return_value="/tmp/fls-0.1.9") as mock_download:
-        with patch("jumpstarter.common.fls.get_fls_github_url", return_value="https://github.com/...") as mock_url:
-            result = get_fls_binary(fls_version="0.1.9")
+    with (
+        patch("jumpstarter.common.fls.download_fls", return_value="/tmp/fls-0.1.9") as mock_download,
+        patch("jumpstarter.common.fls.get_fls_github_url", return_value="https://github.com/...") as mock_url,
+    ):
+        result = get_fls_binary(fls_version="0.1.9")
 
-            mock_url.assert_called_once_with("0.1.9")
-            mock_download.assert_called_once()
-            assert result == "/tmp/fls-0.1.9"
+        mock_url.assert_called_once_with("0.1.9")
+        mock_download.assert_called_once()
+        assert result == "/tmp/fls-0.1.9"
 
 
 def test_get_fls_binary_falls_back_to_path():
@@ -73,26 +75,30 @@ def test_download_fls_success():
     mock_response.__enter__ = MagicMock(return_value=mock_response)
     mock_response.__exit__ = MagicMock(return_value=None)
 
-    with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
-        with patch("tempfile.mkstemp", return_value=(99, "/tmp/fls-test")):
-            with patch("os.close") as mock_close:
-                with patch("pathlib.Path.chmod") as mock_chmod:
-                    with patch("os.replace") as mock_replace:
-                        with patch("builtins.open", mock_open()):
-                            with patch("os.fsync"):
-                                result = download_fls("https://example.com/fls")
+    with (
+        patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen,
+        patch("tempfile.mkstemp", return_value=(99, "/tmp/fls-test")),
+        patch("os.close") as mock_close,
+        patch("pathlib.Path.chmod") as mock_chmod,
+        patch("os.replace") as mock_replace,
+        patch("builtins.open", mock_open()),
+        patch("os.fsync"),
+    ):
+        result = download_fls("https://example.com/fls")
 
-                                mock_close.assert_called_once_with(99)
-                                mock_urlopen.assert_called_once_with("https://example.com/fls", timeout=30.0)
-                                mock_chmod.assert_called_once_with(0o755)
-                                mock_replace.assert_called_once_with("/tmp/fls-test.part", "/tmp/fls-test")
-                                assert result == "/tmp/fls-test"
+        mock_close.assert_called_once_with(99)
+        mock_urlopen.assert_called_once_with("https://example.com/fls", timeout=30.0)
+        mock_chmod.assert_called_once_with(0o755)
+        mock_replace.assert_called_once_with("/tmp/fls-test.part", "/tmp/fls-test")
+        assert result == "/tmp/fls-test"
 
 
 def test_download_fls_failure():
-    with patch("urllib.request.urlopen", side_effect=Exception("Network error")):
-        with patch("tempfile.mkstemp", return_value=(99, "/tmp/fls-test")):
-            with patch("os.close"):
-                with patch("pathlib.Path.unlink"):
-                    with pytest.raises(RuntimeError, match="Failed to download FLS"):
-                        download_fls("https://example.com/fls")
+    with (
+        patch("urllib.request.urlopen", side_effect=Exception("Network error")),
+        patch("tempfile.mkstemp", return_value=(99, "/tmp/fls-test")),
+        patch("os.close"),
+        patch("pathlib.Path.unlink"),
+        pytest.raises(RuntimeError, match="Failed to download FLS"),
+    ):
+        download_fls("https://example.com/fls")

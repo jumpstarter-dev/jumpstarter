@@ -1,15 +1,23 @@
 """Tests for session GetReport with descriptions and methods_description"""
 
 import logging
+from contextlib import asynccontextmanager
 
 import grpc
 import pytest
+from anyio import BrokenResourceError, CancelScope, connect_tcp, fail_after, sleep_forever
 from google.protobuf import empty_pb2
+from jumpstarter_protocol import router_pb2_grpc
 
+from jumpstarter.common import TemporaryTcpListener
+from jumpstarter.common.resources import ResourceMetadata
+from jumpstarter.common.streams import ResourceStreamRequest, StreamRequestMetadata
 from jumpstarter.common.utils import serve
 from jumpstarter.driver import Driver
 from jumpstarter.exporter.auth import PASSPHRASE_METADATA_KEY, PassphraseInterceptor
 from jumpstarter.exporter.session import Session
+from jumpstarter.streams.common import forward_stream
+from jumpstarter.streams.router import RouterStream
 
 
 class SimpleDriver(Driver):
@@ -195,20 +203,22 @@ def test_client_fetches_motd_via_getreport():
 
     driver = SimpleDriver()
 
-    with start_blocking_portal() as portal:
-        with ExitStack() as stack:
-            with Session(
-                uuid=driver.uuid,
-                labels=driver.labels,
-                root_device=driver,
-                motd="Welcome to my-exporter!",
-            ) as session:
-                with portal.wrap_async_context_manager(session.serve_unix_async()) as path:
-                    with portal.wrap_async_context_manager(
-                        client_from_path(path, portal, stack, allow=[], unsafe=True)
-                    ) as client:
-                        report = portal.call(lambda: client.stub.GetReport(empty_pb2.Empty()))
-                        assert report.motd == "Welcome to my-exporter!"
+    with (
+        start_blocking_portal() as portal,
+        ExitStack() as stack,
+        Session(
+            uuid=driver.uuid,
+            labels=driver.labels,
+            root_device=driver,
+            motd="Welcome to my-exporter!",
+        ) as session,
+        portal.wrap_async_context_manager(session.serve_unix_async()) as path,
+        portal.wrap_async_context_manager(
+            client_from_path(path, portal, stack, allow=[], unsafe=True)
+        ) as client,
+    ):
+        report = portal.call(lambda: client.stub.GetReport(empty_pb2.Empty()))
+        assert report.motd == "Welcome to my-exporter!"
 
 
 def test_description_override_in_exporter_config():
@@ -462,7 +472,7 @@ async def test_serve_tcp_passphrase_rejected():
                 stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
                 with pytest.raises(grpc.aio.AioRpcError) as exc_info:
                     await stub.GetReport(empty_pb2.Empty(), metadata=metadata)
-                assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
+                assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED  # type: ignore[attr-defined]
 
 
 @pytest.mark.anyio
@@ -476,12 +486,11 @@ async def test_serve_tcp_passphrase_missing():
     with session:
         async with session.serve_tcp_async(
             "127.0.0.1", 0, interceptors=[PassphraseInterceptor(passphrase)]
-        ) as bound_port:
-            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
-                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
-                with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-                    await stub.GetReport(empty_pb2.Empty())
-                assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
+        ) as bound_port, grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
+            stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+            with pytest.raises(grpc.aio.AioRpcError) as exc_info:
+                await stub.GetReport(empty_pb2.Empty())
+            assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED  # type: ignore[attr-defined]
 
 
 # ============================================================================
@@ -504,9 +513,11 @@ async def test_serve_tcp_passphrase_rejected_logs_warning(caplog):
             metadata = ((PASSPHRASE_METADATA_KEY, "wrong-passphrase"),)
             async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
                 stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
-                with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.auth"):
-                    with pytest.raises(grpc.aio.AioRpcError):
-                        await stub.GetReport(empty_pb2.Empty(), metadata=metadata)
+                with (
+                    caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.auth"),
+                    pytest.raises(grpc.aio.AioRpcError),
+                ):
+                    await stub.GetReport(empty_pb2.Empty(), metadata=metadata)
 
     # The interceptor should have emitted a WARNING log with the method name.
     auth_warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "authentication failed" in r.message]
@@ -534,12 +545,13 @@ async def test_serve_tcp_passphrase_missing_logs_warning(caplog):
     with session:
         async with session.serve_tcp_async(
             "127.0.0.1", 0, interceptors=[PassphraseInterceptor(passphrase)]
-        ) as bound_port:
-            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
-                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
-                with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.auth"):
-                    with pytest.raises(grpc.aio.AioRpcError):
-                        await stub.GetReport(empty_pb2.Empty())
+        ) as bound_port, grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
+            stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+            with (
+                caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.auth"),
+                pytest.raises(grpc.aio.AioRpcError),
+            ):
+                await stub.GetReport(empty_pb2.Empty())
 
     auth_warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "authentication failed" in r.message]
     assert len(auth_warnings) >= 1, f"expected auth failure warning log, got: {[r.message for r in caplog.records]}"
@@ -618,24 +630,26 @@ async def test_log_stream_returns_enriched_fields():
 
         session._logging_handler.emit(record)
 
-        async with session.serve_tcp_async("127.0.0.1", 0) as bound_port:
-            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
-                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+        async with (
+            session.serve_tcp_async("127.0.0.1", 0) as bound_port,
+            grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel,
+        ):
+            stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
 
-                log_stream = stub.LogStream(empty_pb2.Empty())
+            log_stream = stub.LogStream(empty_pb2.Empty())
 
-                msg = await log_stream.read()
+            msg = await log_stream.read()
 
-                assert msg.message == "Power on completed"
-                assert msg.severity == "INFO"
-                assert msg.driver_type == "power"
-                assert msg.operation == "power_on"
-                assert msg.HasField("timestamp")
-                assert msg.timestamp.seconds > 0
-                assert msg.structured_fields["result"] == "success"
-                assert msg.structured_fields["lease_id"] == "lease-123"
+            assert msg.message == "Power on completed"
+            assert msg.severity == "INFO"
+            assert msg.driver_type == "power"
+            assert msg.operation == "power_on"
+            assert msg.HasField("timestamp")
+            assert msg.timestamp.seconds > 0
+            assert msg.structured_fields["result"] == "success"
+            assert msg.structured_fields["lease_id"] == "lease-123"
 
-                log_stream.cancel()
+            log_stream.cancel()
 
 
 @pytest.mark.anyio
@@ -658,18 +672,109 @@ async def test_log_stream_without_enriched_fields():
         test_logger.setLevel(logging.INFO)
         test_logger.info("Simple message")
 
-        async with session.serve_tcp_async("127.0.0.1", 0) as bound_port:
-            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
-                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+        async with (
+            session.serve_tcp_async("127.0.0.1", 0) as bound_port,
+            grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel,
+        ):
+            stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
 
-                log_stream = stub.LogStream(empty_pb2.Empty())
-                msg = await log_stream.read()
+            log_stream = stub.LogStream(empty_pb2.Empty())
+            msg = await log_stream.read()
 
-                assert msg.message == "Simple message"
-                assert msg.severity == "INFO"
-                assert not msg.HasField("driver_type")
-                assert not msg.HasField("operation")
-                assert msg.HasField("timestamp")
-                assert len(msg.structured_fields) == 0
+            assert msg.message == "Simple message"
+            assert msg.severity == "INFO"
+            assert not msg.HasField("driver_type")
+            assert not msg.HasField("operation")
+            assert msg.HasField("timestamp")
+            assert len(msg.structured_fields) == 0
 
-                log_stream.cancel()
+            log_stream.cancel()
+
+
+# ============================================================================
+# Resource uploads
+# ============================================================================
+
+
+@asynccontextmanager
+async def _resource_upload(session: Session, driver: Driver):
+    """Start a client resource upload to ``driver`` through a relay the test can sever.
+
+    The relay stands in for the exporter's router bridge, which closes its
+    connection to the session socket when the router transport fails. Yields the
+    client call, the handle the driver reads the upload from, and a function
+    that severs the relay. It uses TCP because anyio's Unix socket streams can
+    report a spurious InvalidStateError to the event loop when cancelled mid-read.
+    """
+    relays: list[CancelScope] = []
+
+    async def relay(client):
+        with CancelScope() as scope:
+            relays.append(scope)
+            async with await connect_tcp("127.0.0.1", session_port) as upstream, forward_stream(client, upstream):
+                await sleep_forever()
+
+    def sever():
+        for scope in relays:
+            scope.cancel()
+
+    async with (
+        session.serve_tcp_async("127.0.0.1", 0) as session_port,
+        TemporaryTcpListener(relay) as (relay_host, relay_port),
+        grpc.aio.insecure_channel(f"{relay_host}:{relay_port}") as channel,
+    ):
+        call = router_pb2_grpc.RouterServiceStub(channel).Stream(
+            metadata=StreamRequestMetadata.model_construct(request=ResourceStreamRequest(uuid=driver.uuid))
+            .model_dump(mode="json", round_trip=True)
+            .items()
+        )
+        try:
+            metadata = ResourceMetadata(**dict(list(await call.initial_metadata())))  # type: ignore[call-arg]
+            yield call, metadata.resource.model_dump(mode="json"), sever
+        finally:
+            # Finish the call on this test's event loop before it closes.
+            call.cancel()
+            with fail_after(5):
+                await call.code()
+
+
+@pytest.mark.anyio
+async def test_resource_upload_clean_eof_ends_driver_read():
+    driver = SimpleDriver()
+    with Session(root_device=driver) as session, fail_after(10):
+        async with _resource_upload(session, driver) as (call, handle, _sever):
+            upload = RouterStream(context=call)
+            await upload.send(b"whole ")
+            await upload.send(b"image")
+            await upload.send_eof()
+
+            async with driver.resource(handle) as resource:
+                received = [chunk async for chunk in resource]
+
+            assert b"".join(received) == b"whole image"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure", ["router_transport_lost", "client_call_cancelled"])
+async def test_resource_upload_transport_failure_fails_driver_read(failure):
+    """A truncated upload must fail the driver's read, not end it like a whole one."""
+    driver = SimpleDriver()
+    with Session(root_device=driver) as session, fail_after(10):
+        async with _resource_upload(session, driver) as (call, handle, sever):
+            upload = RouterStream(context=call)
+            await upload.send(b"partial")
+
+            async with driver.resource(handle) as resource:
+                received = [await resource.receive()]
+
+                match failure:
+                    case "router_transport_lost":
+                        sever()
+                    case "client_call_cancelled":
+                        call.cancel()
+
+                with pytest.raises(BrokenResourceError):
+                    async for chunk in resource:
+                        received.append(chunk)
+
+            assert received == [b"partial"]

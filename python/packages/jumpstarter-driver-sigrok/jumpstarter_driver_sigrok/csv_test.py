@@ -197,7 +197,7 @@ def test_csv_format_analog_channels(demo_client: SigrokClient):
     assert len(first_sample.values) > 0
 
     # Analog values should be floats (voltages)
-    for _channel, value in first_sample.values.items():
+    for value in first_sample.values.values():
         assert isinstance(value, (int, float))
 
 

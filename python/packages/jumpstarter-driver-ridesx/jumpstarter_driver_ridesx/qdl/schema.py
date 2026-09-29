@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -70,7 +70,7 @@ class FastbootStep(StepBase):
 
 
 Step = Annotated[
-    Union[SetModeStep, SleepStep, QdlStep, FastbootStep],
+    SetModeStep | SleepStep | QdlStep | FastbootStep,
     Field(discriminator=None),
 ]
 

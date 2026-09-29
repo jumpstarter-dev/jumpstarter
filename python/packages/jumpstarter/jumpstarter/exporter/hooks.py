@@ -6,12 +6,14 @@ import select
 import stat
 import tempfile
 import time
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Literal
+from typing import TYPE_CHECKING, Literal
 
 import anyio
-from anyio import CancelScope
+import anyio.lowlevel
+from anyio import CancelScope, to_thread
 
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus, LogSource
 from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_MOTD_FILE, JUMPSTARTER_HOST
@@ -257,7 +259,7 @@ class HookExecutor:
             logger.warning("%s (on_failure=warn, continuing)", error_msg)
             return error_msg
 
-        logger.error("%s (on_failure=%s, raising exception)", error_msg, on_failure)
+        logger.exception("%s (on_failure=%s, raising exception)", error_msg, on_failure)
 
         error = HookExecutionError(
             message=error_msg,
@@ -309,7 +311,7 @@ class HookExecutor:
             try:
                 parent_fd, child_fd = pty.openpty()
             except Exception as e:
-                logger.error("Failed to create PTY: %s", e, exc_info=True)
+                logger.error("Failed to create PTY: %s", e)
                 raise
             logger.debug("PTY created: parent_fd=%d, child_fd=%d", parent_fd, child_fd)
 
@@ -347,7 +349,7 @@ class HookExecutor:
 
                 logger.debug("Spawning subprocess with command: %s", cmd)
                 try:
-                    process = subprocess.Popen(
+                    process = subprocess.Popen(  # noqa: ASYNC220
                         cmd,
                         stdin=child_fd,
                         stdout=child_fd,
@@ -356,8 +358,8 @@ class HookExecutor:
                         start_new_session=True,  # Equivalent to os.setsid()
                         close_fds=True,  # Close inherited fds to prevent interference with gRPC connections
                     )
-                except Exception as e:
-                    logger.error("Failed to spawn subprocess: %s", e, exc_info=True)
+                except Exception:
+                    logger.exception("Failed to spawn subprocess")
                     raise
                 logger.debug("Subprocess spawned with PID %d", process.pid)
                 # Close child fd in parent process - subprocess has it now
@@ -428,7 +430,7 @@ class HookExecutor:
                                 logger.debug("read_pty_output: OSError in loop: %s", e)
                                 break
 
-                            except Exception as e:
+                            except Exception as e:  # noqa: BLE001
                                 logger.debug("read_pty_output: unexpected error in loop: %s", e)
                                 break
 
@@ -499,7 +501,7 @@ class HookExecutor:
                     """
                     logger.debug("wait_for_process: waiting for PID %d", process.pid)
                     try:
-                        result = await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
+                        result = await to_thread.run_sync(process.wait, abandon_on_cancel=True)
                         logger.debug("wait_for_process: PID %d exited with code %d", process.pid, result)
                         return result
                     finally:
@@ -518,8 +520,8 @@ class HookExecutor:
                                     logger.debug("wait_for_process: force killing PID %d", process.pid)
                                     process.kill()
                                 # Final reap with non-abandoning wait
-                                await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=False)
-                            except Exception as e:
+                                await to_thread.run_sync(process.wait, abandon_on_cancel=False)
+                            except Exception as e:  # noqa: BLE001
                                 logger.debug("wait_for_process: error during cleanup: %s", e)
 
                 # Use move_on_after for timeout
@@ -528,7 +530,7 @@ class HookExecutor:
 
                 # Yield to event loop to ensure other tasks can progress
                 # This helps prevent race conditions in task scheduling
-                await anyio.sleep(0)
+                await anyio.lowlevel.checkpoint()
 
                 with anyio.move_on_after(timeout) as cancel_scope:
                     # Run output reading and process waiting concurrently
@@ -553,23 +555,19 @@ class HookExecutor:
                 if cancel_scope.cancelled_caught:
                     timed_out = True
                     error_msg = f"Hook timed out after {timeout} seconds"
-                    logger.error(error_msg)
+                    logger.exception(error_msg)
                     # Terminate the process
                     if process and process.poll() is None:
                         process.terminate()
                         # Give it a moment to terminate gracefully
-                        try:
+                        with suppress(Exception):
                             with anyio.move_on_after(5):
-                                await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
-                        except Exception:
-                            pass
+                                await to_thread.run_sync(process.wait, abandon_on_cancel=True)
                         # Force kill if still running
                         if process.poll() is None:
                             process.kill()
-                            try:
-                                await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
-                            except Exception:
-                                pass
+                            with suppress(Exception):
+                                await to_thread.run_sync(process.wait, abandon_on_cancel=True)
 
                 elif returncode == 0:
                     logger.debug("Hook executed successfully")
@@ -577,10 +575,10 @@ class HookExecutor:
                 else:
                     error_msg = f"Hook failed with exit code {returncode}"
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 error_msg = f"Error executing hook: {e}"
                 cause = e
-                logger.error(error_msg, exc_info=True)
+                logger.error(error_msg)
             finally:
                 # Clean up file descriptors - only close those still open to avoid
                 # closing an unrelated fd that reused the same number.
@@ -658,8 +656,8 @@ class HookExecutor:
         if request_lease_release:
             try:
                 await request_lease_release()
-            except Exception as e:
-                logger.error("Failed to request lease release: %s", e, exc_info=True)
+            except Exception:
+                logger.exception("Failed to request lease release")
 
     async def _wait_for_lease_ready(
         self,
@@ -684,7 +682,7 @@ class HookExecutor:
                 return False
             if elapsed >= timeout:
                 error_msg = "Timeout waiting for lease scope to be ready"
-                logger.error(error_msg)
+                logger.exception(error_msg)
                 await report_status(ExporterStatus.BEFORE_LEASE_HOOK_FAILED, error_msg)
                 lease_scope.before_lease_hook.set()
                 return False
@@ -784,8 +782,8 @@ class HookExecutor:
                     f"beforeLease hook failed (on_failure=endLease): {e}",
                 )
 
-        except Exception as e:
-            logger.error("beforeLease hook failed with unexpected error: %s", e, exc_info=True)
+        except Exception as e:  # noqa: BLE001
+            logger.error("beforeLease hook failed with unexpected error: %s", e)
             await report_status(
                 ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
                 f"beforeLease hook failed: {e}",
@@ -862,7 +860,7 @@ class HookExecutor:
         except HookExecutionError as e:
             if e.should_shutdown_exporter():
                 # on_failure='exit' - shut down the entire exporter
-                logger.error("afterLease hook failed with on_failure='exit': %s", e)
+                logger.exception("afterLease hook failed with on_failure='exit'")
                 await report_status(
                     ExporterStatus.AFTER_LEASE_HOOK_FAILED,
                     f"afterLease hook failed (on_failure=exit, shutting down): {e}",
@@ -887,11 +885,11 @@ class HookExecutor:
                     f"afterLease hook failed (on_failure=endLease): {e}",
                 )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             # Unexpected errors: report failure but do not shut down.
             # Same transient status - the lease is released and the exporter
             # accepts new leases after the finally block completes.
-            logger.error("afterLease hook failed with unexpected error: %s", e, exc_info=True)
+            logger.error("afterLease hook failed with unexpected error: %s", e)
             await report_status(
                 ExporterStatus.AFTER_LEASE_HOOK_FAILED,
                 f"afterLease hook failed: {e}",
@@ -906,5 +904,5 @@ class HookExecutor:
             if request_lease_release and not shutdown_called:
                 try:
                     await request_lease_release()
-                except Exception as e:
-                    logger.error("Failed to request lease release: %s", e, exc_info=True)
+                except Exception:
+                    logger.exception("Failed to request lease release")

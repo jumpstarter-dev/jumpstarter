@@ -202,7 +202,7 @@ class Handler:
 
         except asyncio.CancelledError:
             ctx.log.debug("Telemetry push task cancelled")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             ctx.log.error(f"Telemetry push error: {e}")
 
 

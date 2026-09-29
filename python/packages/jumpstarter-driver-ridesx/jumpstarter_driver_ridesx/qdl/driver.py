@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import re
 import shutil
 import subprocess
-import sys
 import tarfile
 import tempfile
 import time
@@ -127,9 +127,8 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
 
     @staticmethod
     def _safe_extractall(archive: tarfile.TarFile, extract_root: Path) -> None:
-        if sys.version_info >= (3, 12):
-            archive.extractall(path=extract_root, filter="data")
-            return
+        archive.extractall(path=extract_root, filter="data")
+        return
         destination = extract_root.resolve()
         for member in archive.getmembers():
             QualcommFlasher._validate_member(member, destination)
@@ -212,25 +211,25 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
     @staticmethod
     def _extract_source_url(source: Any) -> str | None:
         """Extract the URL from a PresignedRequestResource handle, or None."""
-        try:
+        with contextlib.suppress(Exception):
             handle = TypeAdapter(Resource).validate_python(source)
             if isinstance(handle, PresignedRequestResource) and handle.method == "GET":
                 return handle.url
-        except Exception:
-            pass
         return None
 
     @staticmethod
     async def _http_head_metadata(url: str) -> dict[str, str]:
         """Fetch ETag/Last-Modified/Content-Length via a HEAD request."""
         metadata: dict[str, str] = {}
-        async with aiohttp.ClientSession() as session:
-            async with session.head(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                if resp.status == 200:
-                    for key in ("ETag", "Last-Modified", "Content-Length"):
-                        value = resp.headers.get(key)
-                        if value:
-                            metadata[key] = value
+        async with (
+            aiohttp.ClientSession() as session,
+            session.head(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=15)) as resp,
+        ):
+            if resp.status == 200:
+                for key in ("ETag", "Last-Modified", "Content-Length"):
+                    value = resp.headers.get(key)
+                    if value:
+                        metadata[key] = value
         return metadata
 
     @staticmethod
@@ -278,7 +277,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
             return True
         try:
             current = await self._http_head_metadata(url)
-        except Exception:
+        except Exception:  # noqa: BLE001
             logger.debug("HEAD request failed for cache freshness check; assuming fresh")
             return True
         for key in ("ETag", "Last-Modified", "Content-Length"):
@@ -354,7 +353,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
             return None
         try:
             return await self._http_head_metadata(source_url)
-        except Exception:
+        except Exception:  # noqa: BLE001
             logger.debug("Failed to collect HTTP metadata for cache marker")
             return None
 
@@ -477,7 +476,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         decompress_flag = QualcommFlasher._detect_compression(header)
         tar_cmd = QualcommFlasher._build_tar_cmd(extract_root, decompress_flag)
         logger.info("Running: %s", " ".join(tar_cmd))
-        stderr_file = tempfile.TemporaryFile()
+        stderr_file = tempfile.TemporaryFile()  # noqa: SIM115
         return subprocess.Popen(
             tar_cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=stderr_file,
         )
@@ -655,7 +654,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
                 ctx.manifest, ctx.firmware_root,
             ):
                 yield status
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             yield FlashStatus(phase=FlashPhase.ERROR, message=str(exc))
             if ctx.cache_dir is not None and not self._cache_is_valid(ctx.cache_dir):
                 shutil.rmtree(ctx.cache_dir, ignore_errors=True)

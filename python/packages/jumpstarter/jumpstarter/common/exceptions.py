@@ -42,13 +42,11 @@ class JumpstarterException(Exception):
 class ConnectionError(JumpstarterException):
     """Raised when a connection to a jumpstarter server fails."""
 
-    pass
 
 
 class ExporterOfflineError(ConnectionError):
     """Raised when the connection to the exporter is lost during a lease."""
 
-    pass
 
 
 class ExporterUnreachableError(JumpstarterException):
@@ -57,38 +55,32 @@ class ExporterUnreachableError(JumpstarterException):
     Signals that the lease should be released and re-acquired.
     """
 
-    pass
 
 
 class ConfigurationError(JumpstarterException):
     """Raised when a configuration error exists."""
 
-    pass
 
 
 class ArgumentError(JumpstarterException):
     """Raised when a cli argument is not valid."""
 
-    pass
 
 
 
 class FileNotFoundError(JumpstarterException, FileNotFoundError):
     """Raised when a file is not found."""
 
-    pass
 
 
 class ReauthenticationFailed(JumpstarterException):
     """Raised when a re-authentication fails."""
 
-    pass
 
 
 class EnvironmentVariableNotSetError(JumpstarterException):
     """Raised when a environment variable is not set."""
 
-    pass
 
 
 class MissingDriverError(JumpstarterException):

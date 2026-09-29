@@ -93,12 +93,11 @@ class Config:
     async def configuration(self):
         ssl_context: ssl.SSLContext | bool = False if self.insecure_tls else _get_ssl_context()
         connector = aiohttp.TCPConnector(ssl=ssl_context)
-        async with aiohttp.ClientSession(connector=connector) as session:
-            async with session.get(
-                URL(self.issuer).joinpath(".well-known", "openid-configuration"),
-                raise_for_status=True,
-            ) as response:
-                return await response.json()
+        async with aiohttp.ClientSession(connector=connector) as session, session.get(
+            URL(self.issuer).joinpath(".well-known", "openid-configuration"),
+            raise_for_status=True,
+        ) as response:
+            return await response.json()
 
     def _scopes(self) -> list[str]:
         if self.offline_access:
@@ -192,7 +191,7 @@ class Config:
             await runner.cleanup()
             raise click.ClickException(f"Failed to start callback server on port {port}: {e}") from None
 
-        redirect_uri = "http://localhost:%d/callback" % site._server.sockets[0].getsockname()[1]
+        redirect_uri = f"http://localhost:{site._server.sockets[0].getsockname()[1]}/callback"
 
         client = self.client(redirect_uri=redirect_uri)
 
@@ -201,7 +200,7 @@ class Config:
         if prompt:
             auth_params["prompt"] = prompt
 
-        uri, state = client.create_authorization_url(config["authorization_endpoint"], **auth_params)
+        uri, _state = client.create_authorization_url(config["authorization_endpoint"], **auth_params)
 
         print("Please open the URL in browser: ", uri)
 
@@ -329,7 +328,7 @@ class Config:
 def decode_jwt(token: str):
     try:
         return json.loads(extract_compact(token.encode()).payload)
-    except (ValueError, KeyError, TypeError, JoseError) as e:
+    except (ValueError, KeyError, TypeError, JoseError) as e:  # pragma: no cover
         raise ValueError(f"Invalid JWT format: {e}") from e
 
 

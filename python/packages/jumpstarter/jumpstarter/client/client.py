@@ -109,7 +109,7 @@ async def client_from_channel(
     reports = {}
     clients = OrderedDict()
 
-    stub = MultipathExporterStub([channel])
+    stub = MultipathExporterStub([channel])  # type: ignore[arg-type]
 
     response = await stub.GetReport(empty_pb2.Empty())
 

@@ -9,10 +9,8 @@ from jumpstarter.streams.common import forward_stream
 
 
 async def handler(client, method, conn):
-    async with conn:
-        async with client.stream_async(method) as stream:
-            async with forward_stream(conn, stream):
-                pass
+    async with conn, client.stream_async(method) as stream, forward_stream(conn, stream):
+        pass
 
 
 @blocking

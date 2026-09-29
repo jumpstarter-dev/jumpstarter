@@ -84,52 +84,52 @@ __all__ = [
     # Types
     "ClusterType",
     "KubectlContext",
-    # Common utilities
-    "extract_host_from_ssh",
-    "validate_cluster_name",
-    "validate_cluster_type",
-    "format_cluster_name",
-    "get_extra_certs_path",
-    # k3s operations
-    "k3s_reachable",
-    "k3s_cluster_exists",
-    "create_k3s_cluster",
-    "delete_k3s_cluster",
-    "fetch_k3s_kubeconfig",
-    # Kind operations
-    "kind_installed",
-    "kind_cluster_exists",
-    "create_kind_cluster",
-    "delete_kind_cluster",
-    "list_kind_clusters",
-    # Minikube operations
-    "minikube_installed",
-    "minikube_cluster_exists",
-    "create_minikube_cluster",
-    "delete_minikube_cluster",
-    "list_minikube_clusters",
-    "get_minikube_cluster_ip",
-    # Operator operations
-    "install_jumpstarter_operator",
-    # Kubectl operations
-    "check_kubernetes_access",
-    "get_kubectl_contexts",
-    "list_kubectl_contexts",
-    "check_jumpstarter_installation",
-    "get_cluster_info",
-    "list_clusters",
     # Detection and configuration
     "auto_detect_cluster_type",
-    "detect_cluster_type",
-    "detect_existing_cluster_type",
-    "get_ip_generic",
+    "check_jumpstarter_installation",
+    # Kubectl operations
+    "check_kubernetes_access",
     "configure_endpoints",
     # High-level operations
     "create_cluster_and_install",
     "create_cluster_only",
+    "create_k3s_cluster",
+    "create_kind_cluster",
+    "create_minikube_cluster",
     "delete_cluster_by_name",
-    "validate_cluster_type_selection",
+    "delete_k3s_cluster",
+    "delete_kind_cluster",
+    "delete_minikube_cluster",
+    "detect_cluster_type",
+    "detect_existing_cluster_type",
+    # Common utilities
+    "extract_host_from_ssh",
+    "fetch_k3s_kubeconfig",
+    "format_cluster_name",
+    "get_cluster_info",
+    "get_extra_certs_path",
+    "get_ip_generic",
+    "get_kubectl_contexts",
+    "get_minikube_cluster_ip",
+    # Operator operations
+    "install_jumpstarter_operator",
+    "k3s_cluster_exists",
+    # k3s operations
+    "k3s_reachable",
+    "kind_cluster_exists",
+    # Kind operations
+    "kind_installed",
+    "list_clusters",
+    "list_kind_clusters",
+    "list_kubectl_contexts",
+    "list_minikube_clusters",
+    "minikube_cluster_exists",
+    # Minikube operations
+    "minikube_installed",
     # Utility functions
     "run_command",
     "run_command_with_output",
+    "validate_cluster_name",
+    "validate_cluster_type",
+    "validate_cluster_type_selection",
 ]

@@ -8,6 +8,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Self
 
 import anyio
+import anyio.lowlevel
 import grpc
 from anyio import (
     AsyncContextManagerMixin,
@@ -18,6 +19,7 @@ from anyio import (
     create_task_group,
     move_on_after,
     sleep,
+    to_thread,
 )
 from anyio.abc import TaskGroup
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
@@ -115,7 +117,7 @@ def shutdown_runtime_sidecar(
     socket is configured (non-sidecar / InPlaceReuse hosts) or shutdown failed.
 
     Callers on the async event loop must offload this via
-    ``await anyio.to_thread.run_sync(shutdown_runtime_sidecar)``.
+    ``await to_thread.run_sync(shutdown_runtime_sidecar)``.
     """
     import os
     import subprocess
@@ -651,11 +653,12 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     )
                     await anyio.sleep(backoff)
                     continue
-                logger.error("Failed to %s: %s", description, e)
+                logger.exception("Failed to %s", description)
                 return False, e.code()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error("Failed to %s: %s", description, e)
                 return False, None
+        return False, None
 
     async def _send_report_status_rpc(self, request: jumpstarter_pb2.ReportStatusRequest) -> bool:
         """Send ReportStatus RPC to the controller with retry on transient errors.
@@ -823,8 +826,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 finally:
                     with CancelScope(shield=True):
                         await channel.close()
-        except Exception as e:
-            logger.error("Error during controller unregistration: %s", e, exc_info=True)
+        except Exception as e:  # noqa: BLE001
+            logger.error("Error during controller unregistration: %s", e)
 
     @asynccontextmanager
     async def __asynccontextmanager__(self) -> AsyncGenerator[Self]:
@@ -833,8 +836,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         finally:
             try:
                 await self._unregister_with_controller()
-            except Exception as e:
-                logger.error("Error during exporter cleanup: %s", e, exc_info=True)
+            except Exception:
+                logger.exception("Error during exporter cleanup")
                 # Don't re-raise to avoid masking the original exception
 
     async def _handle_client_conn(
@@ -864,7 +867,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 logger.debug("Connected to session, bridging to router at %s", endpoint)
                 async with connect_router_stream(endpoint, token, stream, tls_config, grpc_options):
                     logger.debug("Router stream established, forwarding traffic")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Failed to handle client connection: %s", e)
 
     async def _handle_end_session(self, lease_context: LeaseContext) -> None:
@@ -927,7 +930,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 else:
                     logger.debug("No afterLease hook configured or no client, transitioning to AVAILABLE")
                 await self._report_status(ExporterStatus.AVAILABLE, "Available for new lease")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Error running afterLease hook via EndSession: %s", e)
         finally:
             # Signal that the hook is done (whether it ran or not)
@@ -1097,7 +1100,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             # before serve() gets a chance to set lease_ended (anyio's receive()
             # always checkpoints, even when data is buffered). Inside the try so
             # cancellation here still runs fallback cleanup.
-            await anyio.sleep(0)
+            await anyio.lowlevel.checkpoint()
 
             # Fast path: if the lease is already ended (stale lease from backlog
             # when the exporter couldn't keep up with lease churn), skip session
@@ -1222,7 +1225,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             # _lease_context. This task only sets events on its own LeaseContext
             # and posts one message; it never clears the slot or replays status
             # itself, so there is no second writer to race.
-            with CancelScope(shield=True):
+            with CancelScope(shield=True):  # noqa: ASYNC100
                 if not lease_scope.before_lease_hook.is_set():
                     lease_scope.before_lease_hook.set()
                 if not lease_scope.after_lease_hook_done.is_set():
@@ -1269,7 +1272,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 # Ensure the runtime container exits whenever this exporter is
                 # configured for ExitAndReplace (covers hook on_failure=exit and
                 # other stop paths that skip the lease-end branch above).
-                await anyio.to_thread.run_sync(shutdown_runtime_sidecar)
+                await to_thread.run_sync(shutdown_runtime_sidecar)
             self._tg = None
             self._status_drain_active = False
             clear_log_context()

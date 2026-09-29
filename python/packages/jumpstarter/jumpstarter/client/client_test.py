@@ -313,12 +313,11 @@ class TestClientFromPathExporterUnreachable:
         with patch(
             "jumpstarter.client.client.client_from_channel",
             side_effect=MockAioRpcError(grpc.StatusCode.UNAVAILABLE, "connection refused"),
-        ):
-            with pytest.raises(ExporterUnreachableError, match="did not respond"):
-                async with client_from_path(
-                    "/tmp/test.sock", mock_portal, mock_stack, allow=[], unsafe=True
-                ):
-                    pass
+        ), pytest.raises(ExporterUnreachableError, match="did not respond"):
+            async with client_from_path(
+                "/tmp/test.sock", mock_portal, mock_stack, allow=[], unsafe=True
+            ):
+                pass
 
     async def test_deadline_exceeded_raises_exporter_unreachable(self):
         """GetReport failing with DEADLINE_EXCEEDED is converted to ExporterUnreachableError."""
@@ -328,12 +327,11 @@ class TestClientFromPathExporterUnreachable:
         with patch(
             "jumpstarter.client.client.client_from_channel",
             side_effect=MockAioRpcError(grpc.StatusCode.DEADLINE_EXCEEDED, "timed out"),
-        ):
-            with pytest.raises(ExporterUnreachableError, match="did not respond"):
-                async with client_from_path(
-                    "/tmp/test.sock", mock_portal, mock_stack, allow=[], unsafe=True
-                ):
-                    pass
+        ), pytest.raises(ExporterUnreachableError, match="did not respond"):
+            async with client_from_path(
+                "/tmp/test.sock", mock_portal, mock_stack, allow=[], unsafe=True
+            ):
+                pass
 
     async def test_other_grpc_errors_propagate_unchanged(self):
         """Non-connection gRPC errors are not converted to ExporterUnreachableError."""
@@ -343,10 +341,9 @@ class TestClientFromPathExporterUnreachable:
         with patch(
             "jumpstarter.client.client.client_from_channel",
             side_effect=MockAioRpcError(grpc.StatusCode.INTERNAL, "internal error"),
-        ):
-            with pytest.raises(MockAioRpcError):
-                async with client_from_path(
-                    "/tmp/test.sock", mock_portal, mock_stack, allow=[], unsafe=True
-                ):
-                    pass
+        ), pytest.raises(MockAioRpcError):
+            async with client_from_path(
+                "/tmp/test.sock", mock_portal, mock_stack, allow=[], unsafe=True
+            ):
+                pass
 

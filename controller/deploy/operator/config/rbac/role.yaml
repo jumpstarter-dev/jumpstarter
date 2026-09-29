@@ -172,6 +172,17 @@ rules:
   - patch
   - update
 - apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - operator.jumpstarter.dev
   resources:
   - jumpstarters

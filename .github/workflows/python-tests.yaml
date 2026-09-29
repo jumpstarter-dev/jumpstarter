@@ -26,10 +26,13 @@ jobs:
         id: filter
         with:
           base: ${{ github.base_ref || github.event.merge_group.base_ref || 'main' }}
+          # Required for the '!...' exclusion patterns below to work; with the
+          # default 'some' quantifier a negated pattern matches every file it
+          # does NOT cover, so docs-only PRs would still trigger the tests.
+          predicate-quantifier: some-with-excludes
           filters: |
             python:
               - 'python/**'
-              - '!docs/**'
               - '!python/**/*.md'
               - '.github/workflows/python-tests.yaml'
             renode_driver:
@@ -55,9 +58,9 @@ jobs:
     env:
       # renovate: datasource=custom.fedora-cloud-qcow2 depName=fedora-cloud-base-generic
       FEDORA_CLOUD_VERSION: 43-1.6
-      # Building packages like grpcio and scipy from source (required for
-      # Python 3.14 until upstream ships wheels) can exceed the default 300s
-      # uv lock timeout. 30 minutes gives enough headroom.
+      # Extra headroom for uv lock resolution; constraint-dependencies in
+      # python/pyproject.toml now steer the resolver to cp314-wheel versions,
+      # but keep a generous timeout as a safety net.
       UV_LOCK_TIMEOUT: 1800
     strategy:
       matrix:

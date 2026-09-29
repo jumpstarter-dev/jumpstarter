@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Optional
 
 import obd
 
@@ -29,12 +28,12 @@ class OBD(Driver):
 
     driver_type = "automotive"
 
-    port: Optional[str] = field(default=None)
+    port: str | None = field(default=None)
     baudrate: int = field(default=38400)
     # fast mode is quicker but flaky on cheap clone adapters, so it defaults off
     fast: bool = field(default=False)
 
-    _connection: Optional[obd.OBD] = field(init=False, default=None)
+    _connection: obd.OBD | None = field(init=False, default=None)
 
     @classmethod
     def client(cls) -> str:
@@ -54,7 +53,7 @@ class OBD(Driver):
         super().close()
 
     @export
-    def query(self, command_name: str) -> Optional[str]:
+    def query(self, command_name: str) -> str | None:
         """Query a PID by name (e.g. 'RPM', 'SPEED', 'COOLANT_TEMP').
 
         Returns None if the ECU doesn't answer. Destructive commands such as

@@ -1,3 +1,3 @@
 from .client import VNClient
 
-VNClient = VNClient
+__all__ = ["VNClient"]

@@ -37,6 +37,7 @@ dev = [
     "jumpstarter-driver-power",
     "jumpstarter-driver-network",
     "jumpstarter-driver-composite",
+    "types-protobuf>=5.29.1",
 ]
 
 [tool.coverage.run]
@@ -59,3 +60,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.hooks.pin_jumpstarter]
 name = "pin_jumpstarter"
+
+[tool.ty.rules]
+call-non-callable = "warn"
+unresolved-reference = "warn"

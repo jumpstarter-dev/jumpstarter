@@ -52,6 +52,7 @@ from jumpstarter.streams.common import create_memory_stream
 from jumpstarter.streams.encoding import Compression, compress_stream
 from jumpstarter.streams.metadata import MetadataStream
 from jumpstarter.streams.progress import ProgressStream
+from jumpstarter.streams.upload import create_upload_stream
 
 # Ordered most-specific first: ConnectionError is an OSError subclass.
 _DRIVER_CALL_ERRORS: tuple[tuple[type[BaseException], ErrorType, StatusCode], ...] = (
@@ -246,7 +247,7 @@ class Driver(
             # Propagate context.abort() from lookup/handlers without recording
             # metrics (avoids client-controlled operation label cardinality).
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             await self._handle_driver_exception(e, op, started, context)
 
     async def StreamingDriverCall(self, request, context):
@@ -289,7 +290,7 @@ class Driver(
             # Propagate context.abort() from lookup/handlers without recording
             # metrics (avoids client-controlled operation label cardinality).
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             await self._handle_driver_exception(e, op, started, context)
 
     @asynccontextmanager
@@ -305,7 +306,7 @@ class Driver(
                     yield stream
 
             case ResourceStreamRequest():
-                remote, resource = create_memory_stream()
+                remote, resource = create_upload_stream()
 
                 resource_uuid = uuid4()
 
@@ -377,7 +378,7 @@ class Driver(
         """Redact query parameters from a URL to avoid leaking credentials in logs."""
         parsed = urlparse(url)
         if parsed.query:
-            return urlunparse(parsed._replace(query="[REDACTED]"))
+            return urlunparse(parsed._replace(query="[REDACTED]"))  # type: ignore[return-value]
         return url
 
     _SENSITIVE_HEADER_PREFIXES = ("authorization", "cookie", "proxy-authorization", "x-amz-", "x-ms-", "x-goog-")
@@ -436,9 +437,8 @@ class Driver(
                     async with aiohttp.request(
                         method, self._make_url(url), headers=headers, raise_for_status=True,
                         data=remote, timeout=client_timeout,
-                    ) as _resp:
-                        async with stream:
-                            yield ProgressStream(stream=stream, logging=True)
+                    ) as _resp, stream:
+                        yield ProgressStream(stream=stream, logging=True)
                 case _:
                     # INVARIANT: method is always one of GET or PUT, see PresignedRequestResource
                     raise ValueError("unreachable")

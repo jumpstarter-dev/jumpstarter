@@ -90,6 +90,7 @@ type JumpstarterReconciler struct {
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 
 // Networking resources
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;update;patch;delete
@@ -242,7 +243,7 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile ConfigMaps (after deployments and services, before secrets)
+	// Reconcile ConfigMaps (after deployments and services)
 	if err := r.reconcileConfigMaps(ctx, &jumpstarter, desiredConfigMap); err != nil {
 		log.Error(err, "Failed to reconcile ConfigMaps")
 		return ctrl.Result{}, err

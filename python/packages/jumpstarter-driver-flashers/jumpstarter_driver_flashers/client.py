@@ -1047,7 +1047,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             self.logger.info(f"Uploading image to storage: {filename}")
             to_storage.write_from_path(filename, src_path, src_operator)
 
-            metadata, metadata_json = self._create_metadata_and_json(
+            _metadata, metadata_json = self._create_metadata_and_json(
                 src_operator, src_path, file_hash, original_url, headers
             )
             metadata_file = filename + ".metadata"
@@ -1086,7 +1086,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     "etag": metadata.etag,
                 }
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             # TODO(bennyz): remove when opendal issue is sorted out
             # https://github.com/apache/opendal/discussions/6418
             # fallback to request if we're using a custom certificate
@@ -1106,7 +1106,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
                     metadata_dict.update(http_metadata)
                     self.logger.info("Successfully got HTTP metadata using requests fallback")
-                except Exception as http_e:
+                except Exception as http_e:  # noqa: BLE001
                     self.logger.error(f"Error getting HTTP metadata with requests fallback: {http_e}")
             else:
                 self.logger.error(f"Error getting metadata: {e}")
@@ -1253,23 +1253,20 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     def use_dtb(self, path: PathBuf, operator: Operator | None = None):
         """Use DTB file"""
         if operator is None:
-            path, operator, operator_scheme = operator_for_path(path)
+            path, operator, _operator_scheme = operator_for_path(path)
 
-        ...
 
     def use_initram(self, path: PathBuf, operator: Operator | None = None):
         """Use initramfs file"""
         if operator is None:
-            path, operator, operator_scheme = operator_for_path(path)
+            path, operator, _operator_scheme = operator_for_path(path)
 
-        ...
 
     def use_kernel(self, path: PathBuf, operator: Operator | None = None):
         """Use kernel file"""
         if operator is None:
-            path, operator, operator_scheme = operator_for_path(path)
+            path, operator, _operator_scheme = operator_for_path(path)
 
-        ...
 
     @property
     def manifest(self):
@@ -1317,7 +1314,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     def _prepare_headers(self, headers: dict[str, str] | None, bearer_token: str | None) -> str:
         all_headers = headers.copy() if headers else {}
         if bearer_token:
-            if any(k.lower() == "authorization" for k in all_headers.keys()):
+            if any(k.lower() == "authorization" for k in all_headers):
                 self.logger.warning("Authorization header provided - ignoring bearer token")
             else:
                 all_headers["Authorization"] = f"Bearer {bearer_token}"
@@ -1348,7 +1345,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
     def _resolve_oci_credentials(
         self, path: PathBuf, username: str | None, password: str | None
-    ) -> "OciCredentials":
+    ) -> OciCredentials:
         from jumpstarter.common.oci import OciCredentials, resolve_oci_credentials
 
         if username is not None or password is not None or str(path).startswith("oci://"):
@@ -1486,7 +1483,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         @driver_click_group(self)
         def base():
             """Software-defined flasher interface"""
-            pass
 
         @base.command()
         @click.argument("file", required=False)

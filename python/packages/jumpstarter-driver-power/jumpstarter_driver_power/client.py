@@ -39,7 +39,6 @@ class PowerClient(DriverClient):
         @driver_click_group(self)
         def base():
             """Generic power"""
-            pass
 
         @base.command()
         def on():

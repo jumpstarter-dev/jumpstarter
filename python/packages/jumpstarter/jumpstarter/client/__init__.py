@@ -17,15 +17,15 @@ from .introspect import (
 from .lease import DirectLease, Lease
 
 __all__ = [
-    "DriverClient",
     "DirectLease",
+    "DriverClient",
     "FlashStatus",
     "FlasherClient",
     "FlasherClientInterface",
+    "Lease",
     "StreamingFlasherClient",
     "StreamingFlasherClientInterface",
     "client_from_path",
-    "Lease",
     "describe_client",
     "describe_devices",
     "describe_devices_async",

@@ -11,6 +11,7 @@ from contextlib import nullcontext
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import anyio
+import anyio.lowlevel
 import grpc
 import pytest
 from anyio import Event, create_memory_object_stream, create_task_group, fail_after
@@ -114,9 +115,9 @@ class TestLeaseEndDuringHook:
             nonlocal after_lease_started_before_hook_done
             if not lease_ctx.before_lease_hook.is_set():
                 after_lease_started_before_hook_done = True
-            return await original_run_after(*args, **kwargs)
+            return await original_run_after(*args, **kwargs)  # type: ignore[call-arg]
 
-        hook_executor.run_after_lease_hook = tracking_run_after
+        hook_executor.run_after_lease_hook = tracking_run_after  # type: ignore[method-assign]
 
         exporter = make_exporter(lease_ctx, hook_executor)
 
@@ -298,18 +299,18 @@ class TestConsecutiveLeaseOrdering:
 
         async def tracking_before(*args, **kwargs):
             events.append("before_start")
-            result = await original_run_before(*args, **kwargs)
+            result = await original_run_before(*args, **kwargs)  # type: ignore[call-arg]
             events.append("before_end")
             return result
 
         async def tracking_after(*args, **kwargs):
             events.append("after_start")
-            result = await original_run_after(*args, **kwargs)
+            result = await original_run_after(*args, **kwargs)  # type: ignore[call-arg]
             events.append("after_end")
             return result
 
-        hook_executor.run_before_lease_hook = tracking_before
-        hook_executor.run_after_lease_hook = tracking_after
+        hook_executor.run_before_lease_hook = tracking_before  # type: ignore[method-assign]
+        hook_executor.run_after_lease_hook = tracking_after  # type: ignore[method-assign]
 
         lease_ctx_1 = make_lease_context(lease_name="lease-1")
         exporter = make_exporter(lease_ctx_1, hook_executor)
@@ -455,9 +456,9 @@ class TestIdempotentLeaseEnd:
         async def counting_run_after(*args, **kwargs):
             nonlocal after_hook_call_count
             after_hook_call_count += 1
-            return await original_run_after(*args, **kwargs)
+            return await original_run_after(*args, **kwargs)  # type: ignore[call-arg]
 
-        hook_executor.run_after_lease_hook = counting_run_after
+        hook_executor.run_after_lease_hook = counting_run_after  # type: ignore[method-assign]
 
         lease_ctx = make_lease_context()
         lease_ctx.before_lease_hook.set()
@@ -563,9 +564,11 @@ class TestReportStatusGrpcErrorHandling:
         )
         mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=error)
 
-        with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
-            with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"):
-                await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+        with (
+            patch.object(exporter, "_controller_stub", return_value=stub_ctx),
+            caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"),
+        ):
+            await exporter._report_status(ExporterStatus.AVAILABLE, "test")
 
         warning_msgs = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert any("ReportStatus not supported" in r.message for r in warning_msgs), (
@@ -592,10 +595,12 @@ class TestReportStatusGrpcErrorHandling:
         )
         mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=error)
 
-        with patch.object(exporter, "_controller_stub", return_value=stub_ctx), \
-                patch("anyio.sleep") as mock_sleep:
-            with caplog.at_level(logging.DEBUG, logger="jumpstarter.exporter.exporter"):
-                await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+        with (
+            patch.object(exporter, "_controller_stub", return_value=stub_ctx),
+            patch("anyio.sleep") as mock_sleep,
+            caplog.at_level(logging.DEBUG, logger="jumpstarter.exporter.exporter"),
+        ):
+            await exporter._report_status(ExporterStatus.AVAILABLE, "test")
 
         # Should log retry warnings (_RPC_MAX_RETRIES)
         warning_msgs = [r for r in caplog.records if r.levelno == logging.WARNING]
@@ -649,7 +654,7 @@ class TestReportStatusGrpcErrorHandling:
             # Third attempt succeeds
             delivered_statuses.append(ExporterStatus.from_proto(request.status))
 
-        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=fail_twice_then_succeed)
+        _mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=fail_twice_then_succeed)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), \
                 patch("anyio.sleep") as mock_sleep:
@@ -1350,7 +1355,7 @@ class TestApplyStatus:
 
         async with create_task_group() as tg:
             await exporter._apply_status(status, tg)
-            await anyio.sleep(0)
+            await anyio.lowlevel.checkpoint()
             tg.cancel_scope.cancel()
 
         assert exporter._lease_context is not None
@@ -1521,7 +1526,7 @@ class TestHandleLeaseConnections:
         with fail_after(5):
             async with create_task_group() as tg:
                 tg.start_soon(exporter.handle_lease, "cancel-lease", tg, lease_ctx)
-                await anyio.sleep(0)
+                await anyio.lowlevel.checkpoint()
                 tg.cancel_scope.cancel()
 
         msg = status_rx.receive_nowait()
@@ -1748,7 +1753,7 @@ def _wire_handle_lease(exporter):
     async def fake_handle_lease(lease_name, tg, lease_ctx):
         await lease_ctx.lease_ended.wait()
         lease_ctx.after_lease_hook_done.set()
-        await anyio.sleep(0)
+        await anyio.lowlevel.checkpoint()
         if exporter._control_tx is not None:
             await exporter._control_tx.send(LeaseFinished(lease_ctx))
 
@@ -1786,7 +1791,7 @@ class TestExitOnLeaseEnd:
                 tg.start_soon(exporter.serve)
                 await statuses_sent.wait()
                 # Yield so serve() can process the queued status.
-                await anyio.sleep(0)
+                await anyio.lowlevel.checkpoint()
                 assert exporter._stop_requested is False
                 tg.cancel_scope.cancel()
 
@@ -2057,7 +2062,7 @@ class TestOnLeaseReleased:
 
         async with create_task_group() as tg:
             await exporter._apply_status(status, tg)
-            await anyio.sleep(0)
+            await anyio.lowlevel.checkpoint()
             tg.cancel_scope.cancel()
 
         assert spawned == [lease_ctx]

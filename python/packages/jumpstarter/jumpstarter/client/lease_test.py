@@ -2,7 +2,7 @@ import asyncio
 import logging
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
 import anyio
@@ -102,17 +102,16 @@ class TestLeaseAcquisitionSpinner:
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
 
-            with patch.object(spinner.console, "status") as mock_status:
-                with spinner as ctx_spinner:
-                    assert ctx_spinner is spinner
-                    assert spinner.start_time is not None
-                    mock_status.assert_not_called()
+            with patch.object(spinner.console, "status") as mock_status, spinner as ctx_spinner:
+                assert ctx_spinner is spinner
+                assert spinner.start_time is not None
+                mock_status.assert_not_called()
 
     def test_update_status_with_console(self):
         """Test status update when console is available."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
+            spinner.start_time = datetime.now(tz=UTC)
 
             mock_spinner = Mock()
             spinner.spinner = mock_spinner
@@ -129,7 +128,7 @@ class TestLeaseAcquisitionSpinner:
         """Test status update when console is not available (should log)."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
+            spinner.start_time = datetime.now(tz=UTC)
 
             with caplog.at_level(logging.INFO):
                 spinner.update_status("Test message")
@@ -141,7 +140,7 @@ class TestLeaseAcquisitionSpinner:
         """Test tick update when console is available and message exists."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
+            spinner.start_time = datetime.now(tz=UTC)
             spinner._current_message = "[blue]Test message[/blue]"
 
             mock_spinner = Mock()
@@ -158,7 +157,7 @@ class TestLeaseAcquisitionSpinner:
         """Test tick update when console is not available (should not log)."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
+            spinner.start_time = datetime.now(tz=UTC)
             spinner._current_message = "[blue]Test message[/blue]"
 
             # Should not raise any exceptions or log anything
@@ -168,7 +167,7 @@ class TestLeaseAcquisitionSpinner:
         """Test tick update when no current message exists."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
+            spinner.start_time = datetime.now(tz=UTC)
             spinner._current_message = None
 
             mock_spinner = Mock()
@@ -183,7 +182,7 @@ class TestLeaseAcquisitionSpinner:
         """Test that elapsed time is formatted correctly."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now() - timedelta(seconds=65)  # 1:05
+            spinner.start_time = datetime.now(tz=UTC) - timedelta(seconds=65)  # 1:05
             spinner._current_message = "[blue]Test message[/blue]"
 
             mock_spinner = Mock()
@@ -226,7 +225,7 @@ class TestLeaseAcquisitionSpinner:
         """Test that the base message is preserved across multiple ticks."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
+            spinner.start_time = datetime.now(tz=UTC)
 
             # Set up mock before calling update_status
             mock_spinner = Mock()
@@ -262,7 +261,7 @@ class TestLeaseAcquisitionSpinner:
         """Test that the first update is always logged when console is not available."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
+            spinner.start_time = datetime.now(tz=UTC)
 
             with caplog.at_level(logging.INFO):
                 spinner.update_status("First message")
@@ -274,8 +273,8 @@ class TestLeaseAcquisitionSpinner:
         """Test that updates within 5 minutes are not logged."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
-            spinner._last_log_time = datetime.now() - timedelta(minutes=2)  # 2 minutes ago
+            spinner.start_time = datetime.now(tz=UTC)
+            spinner._last_log_time = datetime.now(tz=UTC) - timedelta(minutes=2)  # 2 minutes ago
 
             with caplog.at_level(logging.INFO):
                 spinner.update_status("Second message")
@@ -287,8 +286,8 @@ class TestLeaseAcquisitionSpinner:
         """Test that updates after 5 minutes are logged."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
-            spinner._last_log_time = datetime.now() - timedelta(minutes=6)  # 6 minutes ago
+            spinner.start_time = datetime.now(tz=UTC)
+            spinner._last_log_time = datetime.now(tz=UTC) - timedelta(minutes=6)  # 6 minutes ago
 
             with caplog.at_level(logging.INFO):
                 spinner.update_status("After interval message")
@@ -300,8 +299,8 @@ class TestLeaseAcquisitionSpinner:
         """Test that forced updates are always logged regardless of throttle interval."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
-            spinner._last_log_time = datetime.now() - timedelta(minutes=1)  # 1 minute ago
+            spinner.start_time = datetime.now(tz=UTC)
+            spinner._last_log_time = datetime.now(tz=UTC) - timedelta(minutes=1)  # 1 minute ago
 
             with caplog.at_level(logging.INFO):
                 spinner.update_status("Forced message", force=True)
@@ -313,7 +312,7 @@ class TestLeaseAcquisitionSpinner:
         """Test that multiple rapid updates only log at appropriate intervals."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
+            spinner.start_time = datetime.now(tz=UTC)
 
             with caplog.at_level(logging.INFO):
                 # First update should be logged
@@ -321,7 +320,7 @@ class TestLeaseAcquisitionSpinner:
                 assert "Message 1" in caplog.text
 
                 # Set last log time to recent
-                spinner._last_log_time = datetime.now() - timedelta(minutes=1)
+                spinner._last_log_time = datetime.now(tz=UTC) - timedelta(minutes=1)
 
                 # Second update should not be logged (within interval)
                 spinner.update_status("Message 2")
@@ -332,7 +331,7 @@ class TestLeaseAcquisitionSpinner:
                 assert "Message 3" not in caplog.text
 
                 # Set last log time to past the interval
-                spinner._last_log_time = datetime.now() - timedelta(minutes=6)
+                spinner._last_log_time = datetime.now(tz=UTC) - timedelta(minutes=6)
 
                 # Fourth update should be logged (past interval)
                 spinner.update_status("Message 4")
@@ -342,7 +341,7 @@ class TestLeaseAcquisitionSpinner:
         """Test that throttling is not applied when console is available."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
+            spinner.start_time = datetime.now(tz=UTC)
 
             mock_spinner = Mock()
             spinner.spinner = mock_spinner
@@ -353,7 +352,7 @@ class TestLeaseAcquisitionSpinner:
             spinner.update_status("Message 3")
 
             # All should be called even if we set a recent last_log_time
-            spinner._last_log_time = datetime.now() - timedelta(minutes=1)
+            spinner._last_log_time = datetime.now(tz=UTC) - timedelta(minutes=1)
             spinner.update_status("Message 4")
 
             assert mock_spinner.update.call_count == 4
@@ -374,10 +373,32 @@ class TestRequestAsyncOwnership:
     async def test_raises_when_lease_belongs_to_different_client(self):
         """request_async should raise LeaseError when the lease belongs to another client."""
         lease = self._make_lease(client_name="my-client")
-        lease.get.return_value = Mock(client="other-client", selector=None, effective_end_time=None)
+        # Not accessible: not the owner and not in the effective share set.
+        lease.get.return_value = Mock(
+            client="other-client",
+            selector=None,
+            effective_end_time=None,
+            is_accessible_by=Mock(return_value=False),
+        )
 
         with pytest.raises(LeaseError, match="belongs to client 'other-client'"):
             await lease.request_async()
+
+    @pytest.mark.anyio
+    async def test_allows_when_client_has_shared_access(self):
+        """request_async should proceed when the client has effective shared access."""
+        lease = self._make_lease(client_name="my-client")
+        # Owned by someone else, but my-client is in the effective share set.
+        lease.get.return_value = Mock(
+            client="other-client",
+            selector=None,
+            effective_end_time=None,
+            is_accessible_by=Mock(return_value=True),
+        )
+        lease._acquire = AsyncMock(return_value=lease)
+
+        result = await lease.request_async()
+        assert result is lease
 
     @pytest.mark.anyio
     async def test_skips_check_when_client_name_is_none(self):
@@ -499,7 +520,7 @@ class TestGetLeaseEndTime:
     def test_returns_none_when_no_duration(self):
         lease = self._make_lease()
         response = Mock(
-            effective_begin_time=datetime.now(tz=timezone.utc),
+            effective_begin_time=datetime.now(tz=UTC),
             duration=None,
             effective_end_time=None,
         )
@@ -508,9 +529,9 @@ class TestGetLeaseEndTime:
 
     def test_returns_effective_end_time_when_present(self):
         lease = self._make_lease()
-        end_time = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+        end_time = datetime(2025, 6, 1, 12, 0, 0, tzinfo=UTC)
         response = Mock(
-            effective_begin_time=datetime(2025, 6, 1, 11, 0, 0, tzinfo=timezone.utc),
+            effective_begin_time=datetime(2025, 6, 1, 11, 0, 0, tzinfo=UTC),
             duration=timedelta(hours=1),
             effective_end_time=end_time,
         )
@@ -519,7 +540,7 @@ class TestGetLeaseEndTime:
 
     def test_returns_effective_end_time_even_without_begin_or_duration(self):
         lease = self._make_lease()
-        end_time = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+        end_time = datetime(2025, 6, 1, 12, 0, 0, tzinfo=UTC)
         response = Mock(
             effective_begin_time=None,
             duration=None,
@@ -530,7 +551,7 @@ class TestGetLeaseEndTime:
 
     def test_calculates_end_time_when_no_effective_end(self):
         lease = self._make_lease()
-        begin = datetime(2025, 6, 1, 11, 0, 0, tzinfo=timezone.utc)
+        begin = datetime(2025, 6, 1, 11, 0, 0, tzinfo=UTC)
         duration = timedelta(hours=2)
         response = Mock(
             effective_begin_time=begin,
@@ -564,9 +585,9 @@ class TestMonitorAsyncError:
             nonlocal call_count
             call_count += 1
             if call_count <= 2:
-                raise Exception("transient error")
+                raise Exception("transient error")  # noqa: TRY002
             # Third call: return expired lease to exit the loop
-            end_time = datetime.now(tz=timezone.utc) - timedelta(seconds=10)
+            end_time = datetime.now(tz=UTC) - timedelta(seconds=10)
             return Mock(
                 effective_begin_time=end_time - timedelta(hours=1),
                 effective_duration=timedelta(hours=1),
@@ -589,7 +610,7 @@ class TestMonitorAsyncError:
         lease.lease_ending_callback = callback
 
         # End time slightly in the future so the monitor caches it and sleeps
-        future_end = datetime.now(tz=timezone.utc) + timedelta(milliseconds=50)
+        future_end = datetime.now(tz=UTC) + timedelta(milliseconds=50)
         call_count = 0
 
         async def get_then_fail():
@@ -602,7 +623,7 @@ class TestMonitorAsyncError:
                     effective_end_time=None,
                     duration=timedelta(hours=1),
                 )
-            raise Exception("server unavailable")
+            raise Exception("server unavailable")  # noqa: TRY002
 
         lease.get = get_then_fail
 
@@ -744,7 +765,7 @@ class TestRequestAsyncExpiredLease:
         """request_async should raise LeaseError when the lease has already ended."""
         lease = self._make_lease()
         lease.get.return_value = Mock(
-            effective_end_time=datetime.now(timezone.utc),
+            effective_end_time=datetime.now(UTC),
             client="my-client",
             selector=None,
         )
@@ -848,16 +869,18 @@ class TestServeUnixAsync:
             router_stream_calls.append((endpoint, token, tls_config, grpc_options))
             yield
 
-        with patch.object(lease, "_dial_with_retry", side_effect=mock_dial_with_retry):
-            with patch("jumpstarter.client.lease.connect_router_stream", side_effect=mock_connect_router_stream):
-                async with lease.serve_unix_async() as socket_path:
-                    # Readiness check should have been called
-                    assert dial_calls == 1
+        with (
+            patch.object(lease, "_dial_with_retry", side_effect=mock_dial_with_retry),
+            patch("jumpstarter.client.lease.connect_router_stream", side_effect=mock_connect_router_stream),
+        ):
+            async with lease.serve_unix_async() as socket_path:
+                # Readiness check should have been called
+                assert dial_calls == 1
 
-                    # Connect to the Unix socket
-                    async with await anyio.connect_unix(socket_path):
-                        # Give the handler time to process
-                        await anyio.sleep(0.1)
+                # Connect to the Unix socket
+                async with await anyio.connect_unix(socket_path):
+                    # Give the handler time to process
+                    await anyio.sleep(0.1)
 
         # Verify per-connection Dial was called
         assert dial_calls == 2
@@ -892,8 +915,8 @@ class TestServeUnixAsync:
                 return Mock(router_endpoint="test-endpoint", router_token="test-token")
             raise AioRpcError(
                 code=StatusCode.UNAVAILABLE,
-                initial_metadata=None,
-                trailing_metadata=None,
+                initial_metadata=None,  # type: ignore[arg-type]
+                trailing_metadata=None,  # type: ignore[arg-type]
                 details="exporter offline",
             )
 
@@ -902,11 +925,10 @@ class TestServeUnixAsync:
         # The ExceptionGroup surfaces when the TemporaryUnixListener task group
         # tears down, so pytest.raises must wrap the entire serve_unix_async block.
         with pytest.raises(BaseExceptionGroup) as exc_info:
-            async with lease.serve_unix_async() as socket_path:
-                async with await anyio.connect_unix(socket_path):
-                    await anyio.sleep(1)
+            async with lease.serve_unix_async() as socket_path, await anyio.connect_unix(socket_path):
+                await anyio.sleep(1)
 
-        exceptions = exc_info.value.exceptions
+        exceptions = exc_info.value.exceptions  # type: ignore[attr-defined]
         assert len(exceptions) == 1
         assert isinstance(exceptions[0], ExporterUnreachableError)
         assert "Per-connection Dial failed" in str(exceptions[0])
@@ -934,8 +956,8 @@ class TestServeUnixAsync:
             if calls["count"] == 2:
                 raise AioRpcError(
                     code=StatusCode.UNAVAILABLE,
-                    initial_metadata=None,
-                    trailing_metadata=None,
+                    initial_metadata=None,  # type: ignore[arg-type]
+                    trailing_metadata=None,  # type: ignore[arg-type]
                     details="transient",
                 )
             return Mock(router_endpoint="test-endpoint", router_token="test-token")
@@ -950,9 +972,8 @@ class TestServeUnixAsync:
             yield
 
         with patch("jumpstarter.client.lease.connect_router_stream", side_effect=mock_connect_router_stream):
-            async with lease.serve_unix_async() as socket_path:
-                async with await anyio.connect_unix(socket_path):
-                    await anyio.sleep(1)
+            async with lease.serve_unix_async() as socket_path, await anyio.connect_unix(socket_path):
+                await anyio.sleep(1)
 
         # The connection was served despite the blip
         assert router_stream_calls == ["test-endpoint"]

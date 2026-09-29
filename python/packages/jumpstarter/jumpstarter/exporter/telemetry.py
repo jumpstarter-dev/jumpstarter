@@ -3,7 +3,7 @@
 import logging
 import sys
 from collections import deque
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog.contextvars
 from anyio import sleep
@@ -78,7 +78,7 @@ class TelemetryLogHandler(logging.Handler):
         2. LogRecord extra attributes — set via logger.info(..., extra={...})
         """
         ts = Timestamp()
-        ts.FromDatetime(datetime.fromtimestamp(record.created, tz=timezone.utc))
+        ts.FromDatetime(datetime.fromtimestamp(record.created, tz=UTC))
 
         entry = telemetry_pb2.LogEntry(
             timestamp=ts,
@@ -121,7 +121,7 @@ class TelemetryLogHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             self._queue.append(self.prepare(record))
-        except Exception:
+        except Exception:  # noqa: BLE001
             self.handleError(record)
 
     async def flush_loop(self) -> None:
@@ -147,7 +147,7 @@ class TelemetryLogHandler(logging.Handler):
                 timeout=_PUSH_TIMEOUT,
                 metadata=metadata,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             # Avoid recursive logging: write directly to stderr.
             print(f"[telemetry] PushLogs failed, {len(batch)} entries dropped: {exc}", file=sys.stderr)
 

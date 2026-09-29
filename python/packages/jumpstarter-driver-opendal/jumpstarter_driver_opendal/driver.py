@@ -17,6 +17,7 @@ from pydantic import validate_call
 from .adapter import AsyncFileStream
 from .common import Capability, HashAlgo, Metadata, Mode, PresignedRequest
 from jumpstarter.driver import Driver, export
+from jumpstarter.streams.encoding import AutoDecompressIterator
 
 
 @dataclass(kw_only=True)
@@ -58,7 +59,7 @@ class Opendal(Driver):
     async def open(self, /, path: str, mode: Mode) -> UUID:
         try:
             metadata = await self._operator.stat(path)
-        except Exception:
+        except Exception:  # noqa: BLE001
             metadata = None
 
         file = await self._operator.open(path, mode)
@@ -222,13 +223,15 @@ class Opendal(Driver):
         """Copy a file from the exporter to the target path.
         This function is intended to be used on the exporter side to copy files to the target path.
         """
-        async with await AsyncOperator("fs", root=source.parent.as_posix()).open(source.name, "rb") as src:
-            async with await self._operator.open(target, "wb") as dst:
-                while True:
-                    data = await src.read(size=65536)
-                    if len(data) == 0:
-                        break
-                    await dst.write(bs=data)
+        async with (
+            await AsyncOperator("fs", root=source.parent.as_posix()).open(source.name, "rb") as src,
+            await self._operator.open(target, "wb") as dst,
+        ):
+            while True:
+                data = await src.read(size=65536)
+                if len(data) == 0:
+                    break
+                await dst.write(bs=data)
 
         # Always track path creation (assume pre-existing files are just uncleaned remnants)
         self._created_paths.add(self._normalize_path(target))
@@ -299,7 +302,7 @@ class Opendal(Driver):
                     else:
                         os.remove(full_path)
                         self.logger.debug(f"Removed created file: {path}")
-            except Exception as e:
+            except Exception as e:  # pragma: no cover  # noqa: BLE001
                 self.logger.error(f"Failed to remove path {path}: {e}")
 
 
@@ -328,17 +331,15 @@ class MockFlasher(FlasherInterface, Driver):
 
     @export
     async def flash(self, source, partition: str | None = None):
-        async with await FileWriteStream.from_path(self.__path(partition)) as stream:
-            async with self.resource(source) as res:
-                async for chunk in res:
-                    await stream.send(chunk)
+        async with await FileWriteStream.from_path(self.__path(partition)) as stream, self.resource(source) as res:
+            async for chunk in res:
+                await stream.send(chunk)
 
     @export
     async def dump(self, target, partition: str | None = None):
-        async with await FileReadStream.from_path(self.__path(partition)) as stream:
-            async with self.resource(target) as res:
-                async for chunk in stream:
-                    await res.send(chunk)
+        async with await FileReadStream.from_path(self.__path(partition)) as stream, self.resource(target) as res:
+            async for chunk in stream:
+                await res.send(chunk)
 
 
 class StorageMuxInterface(metaclass=ABCMeta):
@@ -388,17 +389,17 @@ class MockStorageMux(StorageMuxInterface, Driver):
 
     @export
     async def write(self, src: str):
-        async with await FileWriteStream.from_path(self.file.name) as stream:
-            async with self.resource(src) as res:
-                async for chunk in res:
-                    await stream.send(chunk)
+        async with await FileWriteStream.from_path(self.file.name) as stream, self.resource(src) as res:
+            # match write_to_storage_device: compressed images are
+            # detected by file signature and decompressed transparently
+            async for chunk in AutoDecompressIterator(source=res):
+                await stream.send(chunk)
 
     @export
     async def read(self, dst: str):
-        async with await FileReadStream.from_path(self.file.name) as stream:
-            async with self.resource(dst) as res:
-                async for chunk in stream:
-                    await res.send(chunk)
+        async with await FileReadStream.from_path(self.file.name) as stream, self.resource(dst) as res:
+            async for chunk in stream:
+                await res.send(chunk)
 
 
 @dataclass

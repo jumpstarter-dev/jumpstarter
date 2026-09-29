@@ -1,6 +1,7 @@
 """Tests for common cluster utilities and types."""
 
 import asyncio
+import asyncio.subprocess
 import os
 import tempfile
 from unittest.mock import AsyncMock, patch
@@ -171,7 +172,7 @@ class TestValidateClusterName:
 
         # This would be caught by type checking, but test runtime behavior
         with pytest.raises(ClusterNameValidationError, match="Cluster name cannot be empty"):
-            validate_cluster_name(None)
+            validate_cluster_name(None)  # type: ignore[arg-type]
 
     def test_validate_cluster_name_with_special_chars(self):
         result = validate_cluster_name("test-cluster_123")
@@ -218,9 +219,11 @@ class TestRunCommand:
 
     @pytest.mark.asyncio
     async def test_run_command_not_found(self):
-        with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError("command not found")):
-            with pytest.raises(RuntimeError, match="Command not found: nonexistent"):
-                await run_command(["nonexistent"])
+        with (
+            patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError("command not found")),
+            pytest.raises(RuntimeError, match="Command not found: nonexistent"),
+        ):
+            await run_command(["nonexistent"])
 
     @pytest.mark.asyncio
     async def test_run_command_with_output_success(self):
@@ -236,9 +239,11 @@ class TestRunCommand:
 
     @pytest.mark.asyncio
     async def test_run_command_with_output_not_found(self):
-        with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError("command not found")):
-            with pytest.raises(RuntimeError, match="Command not found: nonexistent"):
-                await run_command_with_output(["nonexistent"])
+        with (
+            patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError("command not found")),
+            pytest.raises(RuntimeError, match="Command not found: nonexistent"),
+        ):
+            await run_command_with_output(["nonexistent"])
 
     @pytest.mark.asyncio
     async def test_run_command_with_output_failure(self):

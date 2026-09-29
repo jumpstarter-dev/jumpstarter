@@ -108,7 +108,7 @@ async def test_rotate_client_token_non_404_raises():
 
     with pytest.raises(ApiException) as exc_info:
         await api.rotate_client_token("test-client")
-    assert exc_info.value.status == 403
+    assert exc_info.value.status == 403  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio

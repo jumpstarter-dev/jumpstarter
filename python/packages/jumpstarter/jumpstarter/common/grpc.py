@@ -4,8 +4,9 @@ import logging
 import os
 import socket
 import ssl
+from collections.abc import Sequence
 from contextlib import contextmanager
-from typing import Any, Sequence, Tuple
+from typing import Any
 from urllib.parse import urlparse
 
 import grpc
@@ -94,7 +95,7 @@ async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc
                         ip_address, port, ssl_context, parsed.hostname, timeout
                     )
                     return (ip_address, result, None)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     return (ip_address, None, e)
 
             tasks = []
@@ -133,8 +134,7 @@ async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc
                         task.cancel()
     except TimeoutError as e:
         raise ConnectionError(
-            f"Timeout connecting to {parsed.hostname}:{port} after {timeout}s "
-            f"(resolved to {', '.join(resolved_ips)})"
+            f"Timeout connecting to {parsed.hostname}:{port} after {timeout}s (resolved to {', '.join(resolved_ips)})"
         ) from e
 
 
@@ -164,7 +164,7 @@ def aio_secure_channel(
     )
 
 
-def _override_default_grpc_options(grpc_options: dict[str, str | int] | None) -> Sequence[Tuple[str, Any]]:
+def _override_default_grpc_options(grpc_options: dict[str, str | int] | None) -> Sequence[tuple[str, Any]]:
     defaults = (
         ("grpc.lb_policy_name", "round_robin"),
         # we keep a low keepalive time to avoid idle timeouts on cloud load balancers
@@ -190,11 +190,13 @@ def translate_grpc_exceptions():
         if e.code().name == "UNKNOWN":
             # an error returned from our functions
             raise ConnectionError(f"grpc controller responded: {e.details()}") from None
+        if e.code().name == "FAILED_PRECONDITION":
+            raise ConnectionError(e.details() or "") from None
         else:
             raise ConnectionError("grpc error") from e
     except grpc.RpcError as e:
         raise ConnectionError("grpc error") from e
     except ValueError as e:
         raise ConfigurationError("grpc error") from e
-    except Exception as e:
-        raise e
+    except Exception:
+        raise

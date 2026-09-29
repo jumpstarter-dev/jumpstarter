@@ -1,3 +1,4 @@
+import contextlib
 import os
 import socket
 import subprocess
@@ -18,30 +19,31 @@ from jumpstarter.common.utils import serve
 async def echo_handler(stream):
     async with stream:
         while True:
-            try:
+            with contextlib.suppress(Exception):
                 await stream.send(await stream.receive())
-            except Exception:
-                pass
 
 
 def test_tcp_network_portforward(tcp_echo_server):
-    with serve(TcpNetwork(host=tcp_echo_server[0], port=tcp_echo_server[1])) as client:
-        with TcpPortforwardAdapter(client=client) as addr:
-            stream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            stream.connect(addr)
-            stream.send(b"hello")
-            assert stream.recv(5) == b"hello"
+    with (
+        serve(TcpNetwork(host=tcp_echo_server[0], port=tcp_echo_server[1])) as client,
+        TcpPortforwardAdapter(client=client) as addr,
+    ):
+        stream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        stream.connect(addr)
+        stream.send(b"hello")
+        assert stream.recv(5) == b"hello"
 
 
 def test_unix_network_portforward():
-    with start_blocking_portal() as portal:
-        with portal.wrap_async_context_manager(TemporaryUnixListener(echo_handler)) as inner:
-            with serve(UnixNetwork(path=inner)) as client:
-                with UnixPortforwardAdapter(client=client) as addr:
-                    stream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                    stream.connect(str(addr))
-                    stream.send(b"hello")
-                    assert stream.recv(5) == b"hello"
+    with (
+        start_blocking_portal() as portal,
+        portal.wrap_async_context_manager(TemporaryUnixListener(echo_handler)) as inner,
+        serve(UnixNetwork(path=inner)) as client,UnixPortforwardAdapter(client=client) as addr
+    ):
+        stream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        stream.connect(str(addr))
+        stream.send(b"hello")
+        assert stream.recv(5) == b"hello"
 
 
 def test_udp_network():
@@ -50,26 +52,25 @@ def test_udp_network():
             host="127.0.0.1",
             port=8001,
         )
-    ) as client:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.bind(("127.0.0.1", 8001))
+    ) as client, socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.bind(("127.0.0.1", 8001))
 
-            with client.stream() as stream:
-                stream.send(b"hello")
-                assert s.recv(5) == b"hello"
+        with client.stream() as stream:
+            stream.send(b"hello")
+            assert s.recv(5) == b"hello"
 
 
 def test_unix_network():
-    with start_blocking_portal() as portal:
-        with portal.wrap_async_context_manager(TemporaryUnixListener(echo_handler)) as path:
-            with serve(
-                UnixNetwork(
-                    path=path,
-                )
-            ) as client:
-                with client.stream() as stream:
-                    stream.send(b"hello")
-                    assert stream.receive() == b"hello"
+    with (
+        start_blocking_portal() as portal,
+        portal.wrap_async_context_manager(TemporaryUnixListener(echo_handler)) as path,serve(
+        UnixNetwork(
+            path=path,
+        )
+    ) as client, client.stream() as stream
+    ):
+        stream.send(b"hello")
+        assert stream.receive() == b"hello"
 
 
 @pytest.mark.skipif(which("iperf3") is None, reason="iperf3 not available")
@@ -100,6 +101,7 @@ def test_tcp_network_performance():
                 ],
                 stdout=sys.stdout,
                 stderr=sys.stderr,
+                check=False,
             )
 
         server.terminate()
@@ -119,14 +121,12 @@ def test_udp_network_direct():
         assert addr in ["udp://127.0.0.1:5201", "udp://localhost:5201"]
 
 def test_tcp_network_direct_disabled():
-    with serve(TcpNetwork(host="127.0.0.1", port=5201, enable_address=False)) as client:
-        with pytest.raises(ValueError):
-            client.address()
+    with serve(TcpNetwork(host="127.0.0.1", port=5201, enable_address=False)) as client, pytest.raises(ValueError):
+        client.address()
 
 def test_udp_network_direct_disabled():
-    with serve(UdpNetwork(host="127.0.0.1", port=5201, enable_address=False)) as client:
-        with pytest.raises(ValueError):
-            client.address()
+    with serve(UdpNetwork(host="127.0.0.1", port=5201, enable_address=False)) as client, pytest.raises(ValueError):
+        client.address()
 
 
 @pytest.mark.skipif(
@@ -143,8 +143,7 @@ def test_dbus_network_system(monkeypatch):
             subprocess.run(
                 ["busctl", "list", "--system", "--no-pager"],
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
             )
         assert oldvar == os.getenv("DBUS_SYSTEM_BUS_ADDRESS")
 
@@ -163,8 +162,7 @@ def test_dbus_network_session(monkeypatch):
             subprocess.run(
                 ["busctl", "list", "--user", "--no-pager"],
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
             )
         assert oldvar == os.getenv("DBUS_SESSION_BUS_ADDRESS")
 

@@ -1,5 +1,4 @@
 from os import PathLike
-from typing import Optional
 
 import click
 from jumpstarter_cli_common.exceptions import handle_exceptions
@@ -85,7 +84,7 @@ def create_client_config(
     unsafe: bool,
     insecure_tls: bool,
     nointeractive: bool,
-    out: Optional[PathLike],
+    out: PathLike | None,
     output: PathOutputType,
 ):
     """Create a Jumpstarter client configuration."""

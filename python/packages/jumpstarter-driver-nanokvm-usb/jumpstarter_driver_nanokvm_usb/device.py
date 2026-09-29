@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from typing import Self
 
 from .frame_pump import FramePump
 from .keyboard import KeyboardReport, resolve_key_code
@@ -260,7 +261,7 @@ class NanoKVMUSBDevice:
             self.capture_frame_jpeg()
         return self.capture_frame_jpeg()
 
-    def __enter__(self) -> NanoKVMUSBDevice:
+    def __enter__(self) -> Self:
         self.connect()
         return self
 

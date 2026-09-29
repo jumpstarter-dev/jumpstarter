@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import shutil
 import socket
@@ -75,10 +76,9 @@ class RenodeFlasher(FlasherInterface, Driver):
             raise ValueError(f"unsupported load_command {load_command!r}, allowed: {sorted(_ALLOWED_LOAD_COMMANDS)}")
 
         firmware_path = self.parent._tmp_dir.name + "/firmware"
-        async with await FileWriteStream.from_path(firmware_path) as stream:
-            async with self.resource(source) as res:
-                async for chunk in res:
-                    await stream.send(chunk)
+        async with await FileWriteStream.from_path(firmware_path) as stream, self.resource(source) as res:
+            async for chunk in res:
+                await stream.send(chunk)
 
         if load_command is not None:
             cmd = load_command
@@ -142,7 +142,7 @@ class RenodePower(PowerInterface, Driver):
         ]
 
         self.logger.info("starting Renode: %s", " ".join(cmdline))
-        self._process = Popen(cmdline, stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
+        self._process = Popen(cmdline, stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)  # noqa: ASYNC220
 
         self._monitor = RenodeMonitor()
         try:
@@ -180,10 +180,8 @@ class RenodePower(PowerInterface, Driver):
             return
 
         if self._monitor is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await self._monitor.execute("quit")
-            except Exception:
-                pass
             await self._monitor.disconnect()
             self._monitor = None
 

@@ -33,10 +33,10 @@ class TestRetryCounterResetsAfterReceivingData:
             call_count += 1
             if call_count <= data_cycles:
                 yield f"item-{call_count}"
-            raise Exception("connection lost")
+            raise Exception("connection lost")  # noqa: TRY002
 
         exporter = _make_exporter()
-        send_tx, send_rx = create_memory_object_stream[str](100)
+        send_tx, _send_rx = create_memory_object_stream[str](100)
 
         with pytest.raises(Exception, match="connection lost"):
             await exporter._retry_stream(
@@ -58,11 +58,11 @@ class TestRetryCounterResetsAfterReceivingData:
         async def stream_factory(controller):
             nonlocal call_count
             call_count += 1
-            raise Exception("UNAVAILABLE")
+            raise Exception("UNAVAILABLE")  # noqa: TRY002
             yield  # make it an async generator
 
         exporter = _make_exporter()
-        send_tx, send_rx = create_memory_object_stream[str](100)
+        send_tx, _send_rx = create_memory_object_stream[str](100)
 
         with pytest.raises(Exception, match="UNAVAILABLE"):
             await exporter._retry_stream(
@@ -85,11 +85,11 @@ class TestExporterFailsFastOnPersistentErrors:
         async def stream_factory(controller):
             nonlocal call_count
             call_count += 1
-            raise Exception("permanently unreachable")
+            raise Exception("permanently unreachable")  # noqa: TRY002
             yield
 
         exporter = _make_exporter()
-        send_tx, send_rx = create_memory_object_stream[str](100)
+        send_tx, _send_rx = create_memory_object_stream[str](100)
 
         with pytest.raises(Exception, match="permanently unreachable"):
             await exporter._retry_stream(
@@ -111,12 +111,12 @@ class TestExporterFailsFastOnPersistentErrors:
             nonlocal call_count
             call_count += 1
             if call_count == 3:
-                raise Exception("third failure")
-            raise Exception("failure")
+                raise Exception("third failure")  # noqa: TRY002
+            raise Exception("failure")  # noqa: TRY002
             yield
 
         exporter = _make_exporter()
-        send_tx, send_rx = create_memory_object_stream[str](100)
+        send_tx, _send_rx = create_memory_object_stream[str](100)
 
         with pytest.raises(Exception, match="failure"):
             await exporter._retry_stream(
@@ -141,20 +141,22 @@ class TestRetryCounterResetLogging:
             call_count += 1
             if call_count <= 1:
                 yield f"item-{call_count}"
-            raise Exception("connection lost")
+            raise Exception("connection lost")  # noqa: TRY002
 
         exporter = _make_exporter()
-        send_tx, send_rx = create_memory_object_stream[str](100)
+        send_tx, _send_rx = create_memory_object_stream[str](100)
 
-        with caplog.at_level(logging.DEBUG, logger="jumpstarter.exporter.exporter"):
-            with pytest.raises(Exception, match="connection lost"):
-                await exporter._retry_stream(
-                    stream_name="test",
-                    stream_factory=stream_factory,
-                    send_tx=send_tx,
-                    retries=retries,
-                    backoff=0.0,
-                )
+        with (
+            caplog.at_level(logging.DEBUG, logger="jumpstarter.exporter.exporter"),
+            pytest.raises(Exception, match="connection lost"),
+        ):
+            await exporter._retry_stream(
+                stream_name="test",
+                stream_factory=stream_factory,
+                send_tx=send_tx,
+                retries=retries,
+                backoff=0.0,
+            )
 
         reset_messages = [r for r in caplog.records if "retry counter reset" in r.message.lower()]
         assert len(reset_messages) == 1

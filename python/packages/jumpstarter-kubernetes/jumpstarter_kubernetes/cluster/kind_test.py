@@ -135,8 +135,8 @@ class TestCreateKindCluster:
         with pytest.raises(ClusterAlreadyExistsError) as exc_info:
             await create_kind_cluster("kind", "test-cluster")
 
-        assert exc_info.value.cluster_name == "test-cluster"
-        assert exc_info.value.cluster_type == "kind"
+        assert exc_info.value.cluster_name == "test-cluster"  # type: ignore[attr-defined]
+        assert exc_info.value.cluster_type == "kind"  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")

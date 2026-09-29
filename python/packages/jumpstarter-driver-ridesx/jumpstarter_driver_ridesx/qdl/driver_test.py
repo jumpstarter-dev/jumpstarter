@@ -96,8 +96,10 @@ def test_safe_extractall_rejects_path_traversal(tmp_path):
 
         archive.addfile(info, io.BytesIO(b"evil"))
 
-    with tarfile.open(archive_path, "r") as archive:
+    with (
+        tarfile.open(archive_path, "r") as archive,
         # Python 3.12+ filter="data" raises OutsideDestinationError (a FilterError),
         # while our 3.11 fallback raises ExtractError.  Both are subclasses of TarError.
-        with pytest.raises(tarfile.TarError):
-            QualcommFlasher._safe_extractall(archive, extract_root)
+        pytest.raises(tarfile.TarError),
+    ):
+        QualcommFlasher._safe_extractall(archive, extract_root)

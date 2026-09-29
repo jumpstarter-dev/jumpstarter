@@ -458,7 +458,7 @@ def test_categorize_exception_preserves_cause_for_wrapped_exceptions():
     """Test that wrapped unknown exceptions preserve the cause chain"""
     client = MockFlasherClient()
 
-    original = IOError("File not found")
+    original = OSError("File not found")
     result = client._categorize_exception(original)
 
     assert isinstance(result, FlashRetryableError)

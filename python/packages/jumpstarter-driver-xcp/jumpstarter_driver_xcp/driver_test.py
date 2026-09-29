@@ -66,9 +66,8 @@ def client(mock_master):
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=mock_master,
-    ):
-        with serve(instance) as client:
-            yield client
+    ), serve(instance) as client:
+        yield client
 
 
 # =============================================================================
@@ -279,84 +278,77 @@ def test_unlock_with_resources(client, mock_master):
 def test_connect_timeout(mock_master):
     mock_master.connect.side_effect = TimeoutError("No response from ECU")
 
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=mock_master,
-    ):
-        with serve(instance) as client:
-            with pytest.raises(DriverError, match="No response from ECU"):
-                client.connect()
+    ), serve(instance) as client, pytest.raises(DriverError, match="No response from ECU"):
+        client.connect()
 
 
 def test_upload_error(mock_master):
     mock_master.shortUpload.side_effect = RuntimeError("XCP ERR_ACCESS_DENIED")
 
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=mock_master,
-    ):
-        with serve(instance) as client:
-            client.connect()
-            with pytest.raises(DriverError, match="ERR_ACCESS_DENIED"):
-                client.upload(4, 0x1000, 0)
+    ), serve(instance) as client:
+        client.connect()
+        with pytest.raises(DriverError, match="ERR_ACCESS_DENIED"):
+            client.upload(4, 0x1000, 0)
 
 
 def test_download_error(mock_master):
     mock_master.download.side_effect = RuntimeError("XCP ERR_OUT_OF_RANGE")
 
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=mock_master,
-    ):
-        with serve(instance) as client:
-            client.connect()
-            with pytest.raises(DriverError, match="ERR_OUT_OF_RANGE"):
-                client.download(0x2000, b"\x01\x02", 0)
+    ), serve(instance) as client:
+        client.connect()
+        with pytest.raises(DriverError, match="ERR_OUT_OF_RANGE"):
+            client.download(0x2000, b"\x01\x02", 0)
 
 
 def test_program_clear_error(mock_master):
     mock_master.programClear.side_effect = RuntimeError("Erase failed")
 
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=mock_master,
-    ):
-        with serve(instance) as client:
-            client.connect()
-            with pytest.raises(DriverError, match="Erase failed"):
-                client.program_clear(0x10000)
+    ), serve(instance) as client:
+        client.connect()
+        with pytest.raises(DriverError, match="Erase failed"):
+            client.program_clear(0x10000)
 
 
 def test_unlock_error(mock_master):
     mock_master.cond_unlock.side_effect = RuntimeError("Seed & key failed")
 
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=mock_master,
-    ):
-        with serve(instance) as client:
-            client.connect()
-            with pytest.raises(DriverError, match="Seed & key failed"):
-                client.unlock()
+    ), serve(instance) as client:
+        client.connect()
+        with pytest.raises(DriverError, match="Seed & key failed"):
+            client.unlock()
 
 
 def test_get_daq_info_error(mock_master):
     mock_master.getDaqInfo.side_effect = RuntimeError("DAQ not supported")
 
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=mock_master,
-    ):
-        with serve(instance) as client:
-            client.connect()
-            with pytest.raises(DriverError, match="DAQ not supported"):
-                client.get_daq_info()
+    ), serve(instance) as client:
+        client.connect()
+        with pytest.raises(DriverError, match="DAQ not supported"):
+            client.get_daq_info()
 
 
 # =============================================================================
@@ -428,13 +420,12 @@ def test_custom_config_forwarded(mock_create):
 
 def _stateful_client_ctx(stateful_master):
     """Context manager helper: serve() an Xcp driver backed by the stateful mock."""
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=stateful_master,
-    ):
-        with serve(instance) as c:
-            yield c
+    ), serve(instance) as c:
+        yield c
 
 
 @pytest.fixture
@@ -608,29 +599,27 @@ def test_stateful_full_programming_flow(stateful_client, stateful_master):
 
 def test_stateful_program_clear_before_start_raises(stateful_master):
     """programClear without programStart should fail."""
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=stateful_master,
-    ):
-        with serve(instance) as c:
-            c.connect()
-            with pytest.raises(DriverError, match="programStart must be called"):
-                c.program_clear(0x10000)
+    ), serve(instance) as c:
+        c.connect()
+        with pytest.raises(DriverError, match="programStart must be called"):
+            c.program_clear(0x10000)
 
 
 def test_stateful_program_before_clear_raises(stateful_master):
     """program without programClear should fail."""
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=stateful_master,
-    ):
-        with serve(instance) as c:
-            c.connect()
-            c.program_start()
-            with pytest.raises(DriverError, match="programClear must be called"):
-                c.program(b"\x00" * 8)
+    ), serve(instance) as c:
+        c.connect()
+        c.program_start()
+        with pytest.raises(DriverError, match="programClear must be called"):
+            c.program(b"\x00" * 8)
 
 
 # - end-to-end calibration workflow ------------------------------------------
@@ -668,14 +657,12 @@ def test_stateful_calibration_workflow(stateful_client):
 
 def test_stateful_operations_before_connect_raise(stateful_master):
     """Methods called before connect() should fail."""
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=stateful_master,
-    ):
-        with serve(instance) as c:
-            with pytest.raises(DriverError, match="Not connected"):
-                c.get_id()
+    ), serve(instance) as c, pytest.raises(DriverError, match="Not connected"):
+        c.get_id()
 
 
 def test_stateful_reconnect_after_disconnect(stateful_client, stateful_master):

@@ -5,6 +5,7 @@ IMG ?= quay.io/jumpstarter-dev/jumpstarter-controller:latest
 DOCKER_REPO = $(shell echo $(IMG) | cut -d: -f1)
 DOCKER_TAG  = $(shell echo $(IMG) | cut -d: -f2)
 EXPORTER_SET_CONTROLLER_IMG ?= quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest
+TELEMETRY_IMG ?= quay.io/jumpstarter-dev/jumpstarter-telemetry:latest
 QEMU_RUNTIME_IMG ?= quay.io/jumpstarter-dev/virtual/qemu-runtime:latest
 EXPORTER_IMG ?= quay.io/jumpstarter-dev/jumpstarter:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
@@ -124,6 +125,7 @@ build: manifests generate fmt vet ## Build manager binary.
 	go build -ldflags "$(LDFLAGS)" -o bin/manager cmd/main.go
 	go build -ldflags "$(LDFLAGS)" -o bin/router ./cmd/router
 	go build -ldflags "$(LDFLAGS)" -o bin/exporter-set-controller cmd/exporter-set-controller/main.go
+	go build -ldflags "$(LDFLAGS)" -o bin/telemetry cmd/telemetry/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -132,6 +134,10 @@ run: manifests generate fmt vet ## Run a controller from your host.
 .PHONY: run-router
 run-router: manifests generate fmt vet ## Run a router from your host.
 	go run ./cmd/router
+
+.PHONY: run-telemetry
+run-telemetry: manifests generate fmt vet ## Run the telemetry service from your host.
+	go run ./cmd/telemetry/main.go
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -146,12 +152,19 @@ docker-build: ## Build docker image with the manager.
 
 .PHONY: docker-build-ci
 docker-build-ci: ## Build docker images from pre-compiled host binaries (fast CI path).
-	rm -rf bin/ci-stage && mkdir -p bin/ci-stage/controller bin/ci-stage/esc
+	rm -rf bin/ci-stage && mkdir -p bin/ci-stage/controller bin/ci-stage/esc bin/ci-stage/telemetry
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/controller/manager cmd/main.go
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/controller/router ./cmd/router
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/esc/exporter-set-controller cmd/exporter-set-controller/main.go
 	$(CONTAINER_TOOL) build --build-arg BIN=manager -t $(IMG) -f Containerfile.prebuilt bin/ci-stage/controller
 	$(CONTAINER_TOOL) build --build-arg BIN=exporter-set-controller -t $(EXPORTER_SET_CONTROLLER_IMG) -f Containerfile.prebuilt bin/ci-stage/esc
+	$(MAKE) docker-build-telemetry-ci
+
+.PHONY: docker-build-telemetry-ci
+docker-build-telemetry-ci: ## CI-optimized: host-compiled telemetry binary, no multi-stage build.
+	rm -rf bin/ci-stage/telemetry && mkdir -p bin/ci-stage/telemetry
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/telemetry/telemetry cmd/telemetry/main.go
+	$(CONTAINER_TOOL) build -t $(TELEMETRY_IMG) -f Containerfile.telemetry.prebuilt bin/ci-stage/telemetry
 
 .PHONY: docker-build-exporter-set-controller-ci
 docker-build-exporter-set-controller-ci: ## CI-optimized: host-compiled ESC binary, no multi-stage build.
@@ -226,6 +239,7 @@ deploy: cluster grpcurl ## Deploy controller using the operator. Set SKIP_BUILD=
 ifeq ($(SKIP_BUILD),)
 	$(MAKE) docker-build
 	$(MAKE) docker-build-exporter-set-controller
+	$(MAKE) docker-build-telemetry-ci
 	$(MAKE) build-operator
 endif
 	./hack/deploy_with_operator.sh
@@ -236,7 +250,7 @@ deploy-ci: cluster grpcurl $(if $(SKIP_BUILD),,docker-build-ci build-operator-ci
 
 
 .PHONY: deploy-operator
-deploy-operator: docker-build docker-build-exporter-set-controller build-operator cluster grpcurl ## Deploy only the operator (without Jumpstarter CR)
+deploy-operator: docker-build docker-build-exporter-set-controller docker-build-telemetry-ci build-operator cluster grpcurl ## Deploy only the operator (without Jumpstarter CR)
 	NETWORKING_MODE=ingress DEPLOY_JUMPSTARTER=false ./hack/deploy_with_operator.sh
 
 .PHONY: deploy-operator-ci

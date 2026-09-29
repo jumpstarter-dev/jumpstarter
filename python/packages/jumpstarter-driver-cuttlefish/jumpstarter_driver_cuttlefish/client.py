@@ -30,7 +30,7 @@ def _run_with_progress(label: str, fn):
     def worker():
         try:
             result[0] = fn()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             error[0] = e
 
     t = threading.Thread(target=worker)

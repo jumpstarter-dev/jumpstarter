@@ -2,12 +2,24 @@ package v1
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	cpb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/client/v1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/service/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apiserver/pkg/authentication/authenticator"
+	"k8s.io/apiserver/pkg/authentication/user"
+	"k8s.io/apiserver/pkg/authorization/authorizer"
+	kclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestValidateLeaseTarget(t *testing.T) {
@@ -66,6 +78,85 @@ func TestValidateLeaseTarget(t *testing.T) {
 			t.Fatalf("unexpected message: %q", st.Message())
 		}
 	})
+}
+
+// TestValidateExplicitExporter verifies the RPC preflight lookup and transport.
+func TestValidateExplicitExporter(t *testing.T) {
+	disabled := false
+	enabled := true
+	scheme := runtime.NewScheme()
+	if err := jumpstarterdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add scheme: %v", err)
+	}
+
+	client := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(
+			&jumpstarterdevv1alpha1.Exporter{
+				ObjectMeta: metav1.ObjectMeta{Name: "disabled-exporter", Namespace: "default"},
+				Spec:       jumpstarterdevv1alpha1.ExporterSpec{Enabled: &disabled},
+			},
+			&jumpstarterdevv1alpha1.Exporter{
+				ObjectMeta: metav1.ObjectMeta{Name: "enabled-exporter", Namespace: "default"},
+				Spec:       jumpstarterdevv1alpha1.ExporterSpec{Enabled: &enabled},
+			},
+		).Build()
+	svc := &ClientService{Client: client}
+
+	tests := []struct {
+		name          string
+		exporterName  string
+		allowDisabled bool
+		wantCode      codes.Code
+		wantMessage   string
+	}{
+		{
+			name:         "rejects disabled exporter without override",
+			exporterName: "disabled-exporter",
+			wantCode:     codes.FailedPrecondition,
+			wantMessage:  "requested exporter disabled-exporter is disabled.",
+		},
+		{
+			name:          "allows disabled exporter with override",
+			exporterName:  "disabled-exporter",
+			allowDisabled: true,
+		},
+		{
+			name:         "allows enabled exporter",
+			exporterName: "enabled-exporter",
+		},
+		{
+			name:         "allows missing exporter for asynchronous reconciliation",
+			exporterName: "missing-exporter",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exporterName := tt.exporterName
+			err := svc.validateExplicitExporter(
+				context.Background(),
+				"default",
+				&cpb.Lease{ExporterName: &exporterName, AllowDisabled: tt.allowDisabled},
+			)
+			if tt.wantCode == codes.OK {
+				if err != nil {
+					t.Fatalf("expected no error, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected disabled exporter to be rejected")
+			}
+			if status.Code(err) != tt.wantCode {
+				t.Fatalf("expected %v, got %v", tt.wantCode, status.Code(err))
+			}
+			message := status.Convert(err).Message()
+			if !strings.Contains(message, tt.wantMessage) {
+				t.Fatalf("expected message to contain %q, got %q", tt.wantMessage, message)
+			}
+		})
+	}
 }
 
 func TestDeleteLeaseRejectsAlreadyReleasedLease(t *testing.T) {
@@ -328,4 +419,308 @@ func TestCreateLeaseRejectsNilRequest(t *testing.T) {
 	if st.Message() != "request is required" {
 		t.Fatalf("unexpected message: %q", st.Message())
 	}
+}
+
+func testScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
+	_ = jumpstarterdevv1alpha1.AddToScheme(s)
+	return s
+}
+
+func testFakeClient(objs ...kclient.Object) kclient.Client {
+	return fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(objs...).
+		Build()
+}
+
+func TestApplySharedWithChanges(t *testing.T) {
+	alice := &jumpstarterdevv1alpha1.Client{
+		ObjectMeta: metav1.ObjectMeta{Name: "alice", Namespace: "default",
+			Labels: map[string]string{"team": "devops"}},
+	}
+	bob := &jumpstarterdevv1alpha1.Client{
+		ObjectMeta: metav1.ObjectMeta{Name: "bob", Namespace: "default",
+			Labels: map[string]string{"team": "devops"}},
+	}
+
+	baseLease := func(owner string, shared ...string) *jumpstarterdevv1alpha1.Lease {
+		return &jumpstarterdevv1alpha1.Lease{
+			ObjectMeta: metav1.ObjectMeta{Name: "lease1", Namespace: "default"},
+			Spec: jumpstarterdevv1alpha1.LeaseSpec{
+				ClientRef:  corev1.LocalObjectReference{Name: owner},
+				SharedWith: shared,
+			},
+		}
+	}
+
+	t.Run("add single client", func(t *testing.T) {
+		svc := &ClientService{Client: testFakeClient(alice)}
+		lease := baseLease("owner")
+
+		result, err := svc.applySharedWithChanges(context.Background(), lease, "default",
+			[]string{"alice"}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(result) != 1 || result[0] != "alice" {
+			t.Fatalf("expected [alice], got %v", result)
+		}
+	})
+
+	t.Run("remove single client", func(t *testing.T) {
+		svc := &ClientService{Client: testFakeClient(alice)}
+		lease := baseLease("owner", "alice")
+
+		result, err := svc.applySharedWithChanges(context.Background(), lease, "default",
+			nil, []string{"alice"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(result) != 0 {
+			t.Fatalf("expected empty, got %v", result)
+		}
+	})
+
+	t.Run("add and remove in same call", func(t *testing.T) {
+		svc := &ClientService{Client: testFakeClient(alice, bob)}
+		lease := baseLease("owner", "alice")
+
+		result, err := svc.applySharedWithChanges(context.Background(), lease, "default",
+			[]string{"bob"}, []string{"alice"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(result) != 1 || result[0] != "bob" {
+			t.Fatalf("expected [bob], got %v", result)
+		}
+	})
+
+	t.Run("reject owner in add list", func(t *testing.T) {
+		svc := &ClientService{Client: testFakeClient()}
+		lease := baseLease("owner")
+
+		_, err := svc.applySharedWithChanges(context.Background(), lease, "default",
+			[]string{"owner"}, nil)
+		if err == nil {
+			t.Fatal("expected error when adding owner")
+		}
+	})
+
+	t.Run("reject nonexistent client", func(t *testing.T) {
+		svc := &ClientService{Client: testFakeClient()}
+		lease := baseLease("owner")
+
+		_, err := svc.applySharedWithChanges(context.Background(), lease, "default",
+			[]string{"ghost"}, nil)
+		if err == nil {
+			t.Fatal("expected error for nonexistent client")
+		}
+	})
+
+	t.Run("skip duplicate add", func(t *testing.T) {
+		svc := &ClientService{Client: testFakeClient(alice)}
+		lease := baseLease("owner", "alice")
+
+		result, err := svc.applySharedWithChanges(context.Background(), lease, "default",
+			[]string{"alice"}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(result) != 1 {
+			t.Fatalf("expected [alice] (deduped), got %v", result)
+		}
+	})
+
+	t.Run("reject exceeding max 10", func(t *testing.T) {
+		var clients []kclient.Object
+		var names []string
+		for i := range 11 {
+			name := "client" + string(rune('a'+i))
+			names = append(names, name)
+			clients = append(clients, &jumpstarterdevv1alpha1.Client{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+			})
+		}
+		svc := &ClientService{Client: testFakeClient(clients...)}
+		lease := baseLease("owner")
+
+		_, err := svc.applySharedWithChanges(context.Background(), lease, "default",
+			names, nil)
+		if err == nil {
+			t.Fatal("expected error for exceeding max entries")
+		}
+	})
+
+	t.Run("policy denial blocks add when exporter assigned", func(t *testing.T) {
+		policy := &jumpstarterdevv1alpha1.ExporterAccessPolicy{
+			ObjectMeta: metav1.ObjectMeta{Name: "policy1", Namespace: "default"},
+			Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+				ExporterSelector: metav1.LabelSelector{
+					MatchLabels: map[string]string{"board": "rpi4"},
+				},
+				Policies: []jumpstarterdevv1alpha1.Policy{{
+					From: []jumpstarterdevv1alpha1.From{{
+						ClientSelector: metav1.LabelSelector{
+							MatchLabels: map[string]string{"team": "security"},
+						},
+					}},
+				}},
+			},
+		}
+		exporter := &jumpstarterdevv1alpha1.Exporter{
+			ObjectMeta: metav1.ObjectMeta{Name: "exp1", Namespace: "default",
+				Labels: map[string]string{"board": "rpi4"}},
+		}
+		svc := &ClientService{Client: testFakeClient(alice, policy, exporter)}
+		lease := baseLease("owner")
+		lease.Status.ExporterRef = &corev1.LocalObjectReference{Name: "exp1"}
+
+		_, err := svc.applySharedWithChanges(context.Background(), lease, "default",
+			[]string{"alice"}, nil)
+		if err == nil {
+			t.Fatal("expected policy denial error")
+		}
+	})
+
+	t.Run("policy allows client with matching labels", func(t *testing.T) {
+		policy := &jumpstarterdevv1alpha1.ExporterAccessPolicy{
+			ObjectMeta: metav1.ObjectMeta{Name: "policy1", Namespace: "default"},
+			Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+				ExporterSelector: metav1.LabelSelector{
+					MatchLabels: map[string]string{"board": "rpi4"},
+				},
+				Policies: []jumpstarterdevv1alpha1.Policy{{
+					From: []jumpstarterdevv1alpha1.From{{
+						ClientSelector: metav1.LabelSelector{
+							MatchLabels: map[string]string{"team": "devops"},
+						},
+					}},
+				}},
+			},
+		}
+		exporter := &jumpstarterdevv1alpha1.Exporter{
+			ObjectMeta: metav1.ObjectMeta{Name: "exp1", Namespace: "default",
+				Labels: map[string]string{"board": "rpi4"}},
+		}
+		svc := &ClientService{Client: testFakeClient(alice, policy, exporter)}
+		lease := baseLease("owner")
+		lease.Status.ExporterRef = &corev1.LocalObjectReference{Name: "exp1"}
+
+		result, err := svc.applySharedWithChanges(context.Background(), lease, "default",
+			[]string{"alice"}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(result) != 1 || result[0] != "alice" {
+			t.Fatalf("expected [alice], got %v", result)
+		}
+	})
+}
+
+// stubContextAuthenticator satisfies authentication.ContextAuthenticator and
+// always authenticates successfully with the supplied response.
+type stubContextAuthenticator struct{ resp *authenticator.Response }
+
+func (s stubContextAuthenticator) AuthenticateContext(_ context.Context) (*authenticator.Response, bool, error) {
+	return s.resp, true, nil
+}
+
+// stubAttributesGetter satisfies authorization.ContextAttributesGetter and
+// returns fixed attributes identifying the authenticated Client object.
+type stubAttributesGetter struct{ attrs authorizer.Attributes }
+
+func (s stubAttributesGetter) ContextAttributes(_ context.Context, _ user.Info) (authorizer.Attributes, error) {
+	return s.attrs, nil
+}
+
+// stubAuthorizer satisfies authorizer.Authorizer and always allows.
+type stubAuthorizer struct{}
+
+func (stubAuthorizer) Authorize(_ context.Context, _ authorizer.Attributes) (authorizer.Decision, string, error) {
+	return authorizer.DecisionAllow, "", nil
+}
+
+// authedClientService builds a ClientService whose auth layer authenticates
+// every request as owner/namespace, backed by fc for all object lookups.
+func authedClientService(owner, namespace string, fc kclient.Client) *ClientService {
+	resp := &authenticator.Response{
+		User: &user.DefaultInfo{Name: "system:serviceaccount:" + namespace + ":" + owner},
+	}
+	attrs := authorizer.AttributesRecord{
+		User:            resp.User,
+		Resource:        "Client",
+		Name:            owner,
+		Namespace:       namespace,
+		ResourceRequest: true,
+	}
+	a := auth.NewAuth(fc, stubContextAuthenticator{resp: resp}, stubAuthorizer{}, stubAttributesGetter{attrs: attrs})
+	return &ClientService{Client: fc, Auth: *a}
+}
+
+func namedClients(namespace string, names ...string) []kclient.Object {
+	objs := make([]kclient.Object, 0, len(names))
+	for _, name := range names {
+		objs = append(objs, &jumpstarterdevv1alpha1.Client{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		})
+	}
+	return objs
+}
+
+func createLeaseReq(namespace string, sharedWith []string) *cpb.CreateLeaseRequest {
+	return &cpb.CreateLeaseRequest{
+		Parent: "namespaces/" + namespace,
+		Lease: &cpb.Lease{
+			Selector:   "board=rpi4",
+			Duration:   durationpb.New(time.Hour),
+			SharedWith: sharedWith,
+		},
+	}
+}
+
+func TestCreateLeaseSharedWithDedupBeforeLimit(t *testing.T) {
+	const ns = "default"
+
+	t.Run("raw length over limit but dedup fits is accepted", func(t *testing.T) {
+		// 12 raw entries, all "alice", dedup to a single entry (<= max).
+		objs := namedClients(ns, "owner", "alice")
+		svc := authedClientService("owner", ns, testFakeClient(objs...))
+
+		var shared []string
+		for range 12 {
+			shared = append(shared, "alice")
+		}
+
+		result, err := svc.CreateLease(context.Background(), createLeaseReq(ns, shared))
+		if err != nil {
+			t.Fatalf("expected dedup within limit to be accepted, got error: %v", err)
+		}
+		if len(result.SharedWith) != 1 || result.SharedWith[0] != "alice" {
+			t.Fatalf("expected deduped shared_with [alice], got %v", result.SharedWith)
+		}
+	})
+
+	t.Run("dedup still exceeding limit is rejected", func(t *testing.T) {
+		// 11 unique clients plus a duplicate of the first: 12 raw, 11 deduped,
+		// which still exceeds the maximum of 10.
+		var names []string
+		for i := range 11 {
+			names = append(names, "client"+string(rune('a'+i)))
+		}
+		objs := append(namedClients(ns, "owner"), namedClients(ns, names...)...)
+		svc := authedClientService("owner", ns, testFakeClient(objs...))
+
+		shared := append([]string{}, names...)
+		shared = append(shared, names[0]) // duplicate -> 12 raw / 11 deduped
+
+		_, err := svc.CreateLease(context.Background(), createLeaseReq(ns, shared))
+		if err == nil {
+			t.Fatal("expected deduped list exceeding the limit to be rejected")
+		}
+		st, ok := status.FromError(err)
+		if !ok || st.Code() != codes.InvalidArgument {
+			t.Fatalf("expected InvalidArgument, got %v", err)
+		}
+	})
 }

@@ -386,7 +386,7 @@ def test_decode_vcd_format(demo_client):
         assert len(sample.values) > 0
 
         # Values should be integers for digital channels
-        for _channel, value in sample.values.items():
+        for value in sample.values.values():
             assert isinstance(value, int)
 
 
@@ -467,7 +467,7 @@ def test_decode_analog_csv(demo_client):
     assert len(first_sample.values) > 0
 
     # Analog values should be floats (voltages)
-    for _channel, value in first_sample.values.items():
+    for value in first_sample.values.values():
         assert isinstance(value, (int, float))
 
 
@@ -725,13 +725,17 @@ class TestTimeoutEnforcement:
 
     def test_scan_timeout_propagated(self):
         driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli", timeout=10)
-        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="sigrok-cli", timeout=10)):
-            with pytest.raises(subprocess.TimeoutExpired):
-                driver.scan()
+        with (
+            patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="sigrok-cli", timeout=10)),
+            pytest.raises(subprocess.TimeoutExpired),
+        ):
+            driver.scan()
 
     def test_capture_timeout_propagated(self):
         driver = Sigrok(driver="demo", executable="/usr/bin/sigrok-cli", timeout=10)
         cfg = CaptureConfig(sample_rate="1M", samples=100)
-        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="sigrok-cli", timeout=10)):
-            with pytest.raises(subprocess.TimeoutExpired):
-                driver.capture(cfg)
+        with (
+            patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="sigrok-cli", timeout=10)),
+            pytest.raises(subprocess.TimeoutExpired),
+        ):
+            driver.capture(cfg)
