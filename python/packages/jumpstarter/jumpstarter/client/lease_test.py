@@ -12,7 +12,7 @@ from grpc.aio import AioRpcError
 from rich.console import Console
 
 from jumpstarter.client.exceptions import LeaseError
-from jumpstarter.client.lease import Lease, LeaseAcquisitionSpinner, _ControllerDialTimeout
+from jumpstarter.client.lease import Lease, LeaseAcquisitionSpinner
 from jumpstarter.common.exceptions import ExporterUnreachableError
 
 
@@ -789,11 +789,11 @@ class TestDialWithRetry:
         lease.controller.Dial.assert_awaited_once()
 
     @pytest.mark.anyio
-    @pytest.mark.parametrize(("codes", "controller_last"), [
-        ([grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.FAILED_PRECONDITION], False),
-        ([grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.UNAVAILABLE], True),
+    @pytest.mark.parametrize("codes", [
+        [grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.FAILED_PRECONDITION],
+        [grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.UNAVAILABLE],
     ])
-    async def test_timeout_uses_last_failure_to_choose_shell_action(self, codes, controller_last):
+    async def test_timeout_after_mixed_recovery_errors(self, codes):
         lease = self._make_lease_for_dial()
         lease.dial_timeout = 0.5
         details = {
@@ -813,7 +813,7 @@ class TestDialWithRetry:
             pytest.raises(ExporterUnreachableError) as caught,
         ):
             await lease._dial_with_retry()
-        assert isinstance(caught.value, _ControllerDialTimeout) is controller_last
+        assert type(caught.value) is ExporterUnreachableError
         assert clock.monotonic.return_value == lease.dial_timeout
         assert lease.controller.Dial.await_count == 2
 
@@ -987,6 +987,22 @@ class TestServeUnixAsync:
     """Unit tests for Lease.serve_unix_async."""
 
     @pytest.mark.anyio
+    async def test_initial_offline_dial_still_propagates(self):
+        lease = object.__new__(Lease)
+        lease.name = "test-lease"
+        lease.exporter_name = "test-exporter"
+        lease.dial_timeout = 0.5
+        lease.controller = Mock()
+        lease.controller.Dial = AsyncMock(
+            side_effect=MockAioRpcError(grpc.StatusCode.FAILED_PRECONDITION, "exporter is offline")
+        )
+
+        with pytest.raises(ExporterUnreachableError, match="exporter is offline"):
+            async with lease.serve_unix_async():
+                pytest.fail("Listener started despite initial Dial failure")
+        lease.controller.Dial.assert_awaited_once()
+
+    @pytest.mark.anyio
     async def test_serve_unix_async_readiness_check_and_per_connection_dial(self):
         """serve_unix_async calls readiness check once, then per-connection Dial for each socket connection."""
 
@@ -1038,12 +1054,15 @@ class TestServeUnixAsync:
         assert grpc_options is lease.grpc_options
 
     @pytest.mark.anyio
-    @pytest.mark.parametrize(("code", "details"), [
-        (grpc.StatusCode.NOT_FOUND, "lease not found"),
-        (grpc.StatusCode.FAILED_PRECONDITION, "exporter is offline"),
+    @pytest.mark.parametrize(("code", "details", "transferred"), [
+        (grpc.StatusCode.NOT_FOUND, "lease not found", False),
+        (grpc.StatusCode.FAILED_PRECONDITION, "exporter is offline", False),
+        (grpc.StatusCode.PERMISSION_DENIED, "permission denied", True),
     ])
-    async def test_serve_unix_async_per_connection_dial_failure_wrapped(self, code, details):
-        """A permanent per-connection Dial failure still terminates the session."""
+    async def test_serve_unix_async_per_connection_failure_preserves_listener(
+        self, code, details, transferred, caplog
+    ):
+        """A failed command closes its socket, and a later command can connect."""
         lease = object.__new__(Lease)
         lease.name = "test-lease"
         lease.exporter_name = "test-exporter"
@@ -1051,13 +1070,14 @@ class TestServeUnixAsync:
         lease.grpc_options = {}
         lease.controller = Mock()
         lease.dial_timeout = 0.5
+        lease.lease_transferred = False
 
-        # Readiness check succeeds, every per-connection Dial after it fails
+        # Readiness succeeds, the first command fails, and the next recovers.
         calls = {"count": 0}
 
         async def mock_dial(request):
             calls["count"] += 1
-            if calls["count"] == 1:
+            if calls["count"] != 2:
                 return Mock(router_endpoint="test-endpoint", router_token="test-token")
             raise AioRpcError(
                 code=code,
@@ -1067,18 +1087,30 @@ class TestServeUnixAsync:
             )
 
         lease.controller.Dial = mock_dial
+        served = anyio.Event()
 
-        # The ExceptionGroup surfaces when the TemporaryUnixListener task group
-        # tears down, so pytest.raises must wrap the entire serve_unix_async block.
-        with pytest.raises(BaseExceptionGroup) as exc_info:
-            async with lease.serve_unix_async() as socket_path, await anyio.connect_unix(socket_path):
-                await anyio.sleep(1)
+        @asynccontextmanager
+        async def mock_connect_router_stream(*args):
+            served.set()
+            yield
 
-        exceptions = exc_info.value.exceptions  # type: ignore[attr-defined]
-        assert len(exceptions) == 1
-        assert isinstance(exceptions[0], ExporterUnreachableError)
-        assert "Per-connection Dial failed" in str(exceptions[0])
-        assert calls["count"] == 2
+        with (
+            patch("jumpstarter.client.lease.connect_router_stream", mock_connect_router_stream),
+            anyio.fail_after(2),
+            caplog.at_level(logging.WARNING, logger="jumpstarter.client.lease"),
+        ):
+            async with lease.serve_unix_async() as socket_path:
+                async with await anyio.connect_unix(socket_path) as stream:
+                    with pytest.raises(anyio.EndOfStream):
+                        await stream.receive()
+                async with await anyio.connect_unix(socket_path):
+                    await served.wait()
+
+        assert calls["count"] == 3
+        assert lease.lease_transferred is transferred
+        assert any("Closing connection after Dial failure" in record.message for record in caplog.records)
+        if transferred:
+            assert any("transferred to another client" in record.message for record in caplog.records)
 
     @pytest.mark.anyio
     async def test_serve_unix_async_per_connection_dial_survives_transient_failure(self):

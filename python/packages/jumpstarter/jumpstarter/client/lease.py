@@ -42,10 +42,6 @@ logger = logging.getLogger(__name__)
 _DIAL_ATTEMPT_TIMEOUT = 10.0
 
 
-class _ControllerDialTimeout(ExporterUnreachableError):
-    """The controller remained unavailable through this connection's Dial budget."""
-
-
 @dataclass(kw_only=True)
 class DirectLease(ContextManagerMixin, AsyncContextManagerMixin):
     """Lease-like object for direct connection to an exporter (no controller).
@@ -351,29 +347,27 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         logger.debug("Dialing controller for lease %s", self.name)
         delay = 0.3
         deadline = time.monotonic() + self.dial_timeout
-        last_error_was_controller = False
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                timeout_error = _ControllerDialTimeout if last_error_was_controller else ExporterUnreachableError
-                raise timeout_error(
+                raise ExporterUnreachableError(
                     f"Exporter {self.exporter_name} unreachable after {self.dial_timeout:.0f}s"
                 )
             try:
                 with fail_after(min(_DIAL_ATTEMPT_TIMEOUT, remaining)):
                     return await self.controller.Dial(jumpstarter_pb2.DialRequest(lease_name=self.name))
             except TimeoutError:
-                last_error_was_controller = True
+                controller_unavailable = True
                 retry_reason = "Controller Dial timed out"
             except AioRpcError as e:
                 details = e.details() or ""
                 # These readiness responses come from
                 # controller/internal/service/controller_service.go.
-                # "exporter is offline" means
-                # the shell must release this lease and re-acquire another.
+                # An initial "exporter is offline" Dial must fail so the shell
+                # can release this lease and re-acquire another.
                 exporter_recovering = e.code() == grpc.StatusCode.FAILED_PRECONDITION and "not ready" in details
-                last_error_was_controller = is_controller_unavailable(e)
-                if not (last_error_was_controller or exporter_recovering):
+                controller_unavailable = is_controller_unavailable(e)
+                if not (controller_unavailable or exporter_recovering):
                     if "permission denied" in details.lower():
                         self.lease_transferred = True
                         raise ExporterUnreachableError(
@@ -386,7 +380,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
             remaining = deadline - time.monotonic()
             if remaining > 0:
                 logger.log(
-                    logging.WARNING if last_error_was_controller else logging.DEBUG,
+                    logging.WARNING if controller_unavailable else logging.DEBUG,
                     "%s, retrying Dial (%.1fs remaining)",
                     retry_reason,
                     remaining,
@@ -402,18 +396,14 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         await self._dial_with_retry()
 
         async def _tunnel_handler(stream):
-            # Each command has a bounded wait, but a transport timeout must not
-            # cancel the listener that future commands in this shell need.
+            # A failed per-command Dial closes only this socket. The listener
+            # must stay up so later commands can work after recovery.
             try:
                 response = await self._dial_with_retry()
-            except _ControllerDialTimeout as e:
-                logger.warning("Closing connection after Dial timeout: %s", e)
+            except ExporterUnreachableError as e:
+                logger.warning("Closing connection after Dial failure: %s", e)
                 await stream.aclose()
                 return
-            except ExporterUnreachableError as e:
-                raise ExporterUnreachableError(
-                    f"Per-connection Dial failed for {self.exporter_name}: {e}"
-                ) from e
             async with connect_router_stream(
                 response.router_endpoint,
                 response.router_token,
