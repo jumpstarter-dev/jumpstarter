@@ -1,5 +1,7 @@
 """Tests for NanoKVM-USB driver."""
 
+import shutil
+import tempfile
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -12,6 +14,14 @@ from .keyboard import MODIFIER_BITS, KeyboardReport
 from .mouse import MouseButton, resolve_button
 from .v4l2_ctl_mjpeg import V4L2CtlMjpegCapture, _extract_jpegs
 from jumpstarter.common.utils import serve
+
+
+@pytest.fixture
+def short_tmp():
+    """Short temp dir for AF_UNIX sockets (macOS sun_path limit is 104 bytes)."""
+    d = tempfile.mkdtemp(prefix="jnk-")
+    yield Path(d)
+    shutil.rmtree(d, ignore_errors=True)
 
 
 def _jpeg_bytes(width: int = 640, height: int = 480) -> bytes:
@@ -289,7 +299,7 @@ def test_des_encrypt_nist_vector():
     assert len(response) == 16
 
 
-def test_rfb_handshake_and_input(tmp_path):
+def test_rfb_handshake_and_input(short_tmp):
     import socket
     import struct
     import time
@@ -301,7 +311,7 @@ def test_rfb_handshake_and_input(tmp_path):
     pump = FramePump(lambda: jpeg, fps=20)
     pump.start()
     hid = MagicMock()
-    sock_path = str(tmp_path / "vnc.sock")
+    sock_path = str(short_tmp / "vnc.sock")
     server = RfbServer(sock_path, pump, hid, width=64, height=48)
     server.start()
     try:
@@ -345,7 +355,7 @@ def test_rfb_handshake_and_input(tmp_path):
         pump.stop()
 
 
-def test_rfb_vnc_auth(tmp_path):
+def test_rfb_vnc_auth(short_tmp):
     import socket
     import struct
     import time
@@ -356,7 +366,7 @@ def test_rfb_vnc_auth(tmp_path):
     jpeg = _jpeg_bytes(16, 16)
     pump = FramePump(lambda: jpeg, fps=10)
     pump.start()
-    sock_path = str(tmp_path / "vnc-auth.sock")
+    sock_path = str(short_tmp / "vnc-auth.sock")
     server = RfbServer(sock_path, pump, MagicMock(), width=16, height=16, password="secret")
     server.start()
     try:
@@ -389,7 +399,7 @@ def test_is_loopback_bind():
     assert not is_loopback_bind("192.168.1.10")
 
 
-def test_rfb_tcp_handshake(tmp_path):
+def test_rfb_tcp_handshake(short_tmp):
     import socket
     import struct
     import time
@@ -400,7 +410,7 @@ def test_rfb_tcp_handshake(tmp_path):
     jpeg = _jpeg_bytes(16, 16)
     pump = FramePump(lambda: jpeg, fps=10)
     pump.start()
-    sock_path = str(tmp_path / "vnc-tcp.sock")
+    sock_path = str(short_tmp / "vnc-tcp.sock")
     server = RfbServer(
         sock_path,
         pump,
@@ -470,7 +480,7 @@ def test_pack_rgb_frame_bgrx_matches_rgbx():
     assert packed_bgrx == packed_rgb
 
 
-def test_rfb_max_clients(tmp_path):
+def test_rfb_max_clients(short_tmp):
     import socket
     import time
 
@@ -480,7 +490,7 @@ def test_rfb_max_clients(tmp_path):
     jpeg = _jpeg_bytes(16, 16)
     pump = FramePump(lambda: jpeg, fps=10)
     pump.start()
-    sock_path = str(tmp_path / "vnc-max.sock")
+    sock_path = str(short_tmp / "vnc-max.sock")
     server = RfbServer(
         sock_path,
         pump,
@@ -572,7 +582,7 @@ def _read_framebuffer_update(client, *, expect_pixels: bool):
     return nrects
 
 
-def test_rfb_skips_invalid_jpeg_and_sends_next_frame(tmp_path):
+def test_rfb_skips_invalid_jpeg_and_sends_next_frame(short_tmp):
     import struct
     import threading
     import time
@@ -590,7 +600,7 @@ def test_rfb_skips_invalid_jpeg_and_sends_next_frame(tmp_path):
 
     pump = FramePump(capture, fps=20)
     pump.start()
-    sock_path = str(tmp_path / "vnc-bad-jpeg.sock")
+    sock_path = str(short_tmp / "vnc-bad-jpeg.sock")
     server = RfbServer(sock_path, pump, MagicMock(), width=16, height=16)
     server.start()
     client = None
@@ -608,7 +618,7 @@ def test_rfb_skips_invalid_jpeg_and_sends_next_frame(tmp_path):
         pump.stop()
 
 
-def test_rfb_non_incremental_sends_full_frame(tmp_path):
+def test_rfb_non_incremental_sends_full_frame(short_tmp):
     import struct
 
     from .frame_pump import FramePump
@@ -617,7 +627,7 @@ def test_rfb_non_incremental_sends_full_frame(tmp_path):
     jpeg = _jpeg_bytes(16, 16)
     pump = FramePump(lambda: jpeg, fps=20)
     pump.start()
-    sock_path = str(tmp_path / "vnc-incremental.sock")
+    sock_path = str(short_tmp / "vnc-incremental.sock")
     server = RfbServer(sock_path, pump, MagicMock(), width=16, height=16)
     server.start()
     client = None
