@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from typing import Self
@@ -15,11 +16,14 @@ from .mouse import (
     resolve_button,
 )
 from .protocol import CmdEvent, CmdPacket, InfoPacket
-from .serial_conn import SerialConnection
+from .serial_conn import READ_TIMEOUT_S, SerialConnection
 from .video import VideoCapture
+
+logger = logging.getLogger(__name__)
 
 INTER_KEY_DELAY = 0.05
 KEY_HOLD_DELAY = 0.02
+ACK_TIMEOUT_S = 0.05
 
 
 class NanoKVMUSBDevice:
@@ -118,15 +122,38 @@ class NanoKVMUSBDevice:
             self._connected = False
 
     def get_info(self) -> InfoPacket:
-        packet = CmdPacket(addr=self._addr, cmd=CmdEvent.GET_INFO)
+        with self._hid_lock:
+            packet = CmdPacket(addr=self._addr, cmd=CmdEvent.GET_INFO)
+            response = self._transact(packet, timeout=READ_TIMEOUT_S)
+            if response is None:
+                raise ConnectionError("Timed out waiting for NanoKVM-USB info")
+            return InfoPacket.from_data(response.data)
+
+    def _transact(self, packet: CmdPacket, timeout: float = ACK_TIMEOUT_S) -> CmdPacket | None:
+        """Write ``packet`` and wait for the CH9329 ACK with the same command."""
+        self._serial.reset_input_buffer()
         self._serial.write(packet.encode())
-        response = self._serial.read(14)
-        response_packet = CmdPacket.decode(response)
-        return InfoPacket.from_data(response_packet.data)
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            response = self._serial.read_packet(remaining)
+            if response is None:
+                break
+            if response.cmd == packet.cmd:
+                return response
+            logger.debug(
+                "ignoring serial packet cmd=0x%02x while waiting for 0x%02x",
+                response.cmd,
+                packet.cmd,
+            )
+        logger.warning("serial ACK timeout for cmd=0x%02x", packet.cmd)
+        return None
 
     def _send_keyboard(self, report: list[int]) -> None:
         packet = CmdPacket(addr=self._addr, cmd=CmdEvent.SEND_KB_GENERAL_DATA, data=report)
-        self._serial.write(packet.encode())
+        self._transact(packet)
 
     def press_key(self, key: str, hold: float = KEY_HOLD_DELAY) -> None:
         with self._hid_lock:
@@ -167,7 +194,7 @@ class NanoKVMUSBDevice:
     def _send_mouse(self, report: list[int]) -> None:
         cmd = CmdEvent.SEND_MS_REL_DATA if report[0] == 0x01 else CmdEvent.SEND_MS_ABS_DATA
         packet = CmdPacket(addr=self._addr, cmd=cmd, data=report)
-        self._serial.write(packet.encode())
+        self._transact(packet)
 
     def mouse_move_abs(self, x: float, y: float) -> None:
         with self._hid_lock:

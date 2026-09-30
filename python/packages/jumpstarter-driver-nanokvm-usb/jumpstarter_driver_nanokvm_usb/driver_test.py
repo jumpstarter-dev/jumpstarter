@@ -3,11 +3,14 @@
 import shutil
 import sys
 import tempfile
+import time
 from io import BytesIO
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
+import serial
 from PIL import Image
 
 from .driver import NanoKVMUSB, NanoKVMUSBHID, NanoKVMUSBVideo, NanoKVMUSBVNC
@@ -206,6 +209,119 @@ def test_protocol_packet_roundtrip():
     assert decoded.addr == packet.addr
     assert decoded.cmd == packet.cmd
     assert decoded.data == packet.data
+
+
+class _FakeSerialPort:
+    def __init__(self) -> None:
+        self.is_open = True
+        self.timeout = 0.0
+        self.writes: list[bytes] = []
+        self._rx = bytearray()
+        self._replies: list[bytes] = []
+
+    def queue_reply(self, data: bytes) -> None:
+        self._replies.append(data)
+
+    def reset_input_buffer(self) -> None:
+        self._rx.clear()
+
+    def write(self, data: bytes) -> int:
+        self.writes.append(bytes(data))
+        if self._replies:
+            self._rx.extend(self._replies.pop(0))
+        return len(data)
+
+    def flush(self) -> None:
+        return None
+
+    def read(self, size: int) -> bytes:
+        if self._rx:
+            chunk = bytes(self._rx[:size])
+            del self._rx[:size]
+            return chunk
+        time.sleep(self.timeout or 0)
+        return b""
+
+
+def _device_with_fake_serial(port: _FakeSerialPort):
+    from .device import NanoKVMUSBDevice
+
+    device = NanoKVMUSBDevice(serial_port="/dev/null", video_device=None)
+    device._serial._port = cast(serial.Serial, port)
+    return device
+
+
+def test_hid_transact_consumes_matching_ack():
+    from .protocol import CmdEvent, CmdPacket
+
+    port = _FakeSerialPort()
+    device = _device_with_fake_serial(port)
+    port.queue_reply(CmdPacket(cmd=CmdEvent.SEND_KB_GENERAL_DATA, data=[0]).encode())
+    port.queue_reply(CmdPacket(cmd=CmdEvent.SEND_MS_ABS_DATA, data=[0]).encode())
+
+    device._send_keyboard([0, 0, 4, 0, 0, 0, 0, 0])
+    device._send_mouse([0x02, 0, 0, 0, 0, 0, 0])
+
+    assert len(port.writes) == 2
+    assert CmdPacket.decode(port.writes[0]).cmd == CmdEvent.SEND_KB_GENERAL_DATA
+    assert CmdPacket.decode(port.writes[1]).cmd == CmdEvent.SEND_MS_ABS_DATA
+    assert port._rx == bytearray()
+
+
+def test_hid_transact_skips_unrelated_packet():
+    from .protocol import CmdEvent, CmdPacket
+
+    port = _FakeSerialPort()
+    device = _device_with_fake_serial(port)
+    noise = CmdPacket(cmd=CmdEvent.GET_INFO, data=[0x30, 1, 0]).encode()
+    ack = CmdPacket(cmd=CmdEvent.SEND_KB_GENERAL_DATA, data=[0]).encode()
+    port.queue_reply(noise + ack)
+
+    device._send_keyboard([0, 0, 0, 0, 0, 0, 0, 0])
+    assert port._rx == bytearray()
+
+
+def test_hid_ack_timeout_keeps_port_usable():
+    from .protocol import CmdEvent, CmdPacket
+
+    port = _FakeSerialPort()
+    device = _device_with_fake_serial(port)
+
+    device._send_keyboard([0, 0, 0, 0, 0, 0, 0, 0])
+    port.queue_reply(CmdPacket(cmd=CmdEvent.SEND_KB_GENERAL_DATA, data=[0]).encode())
+    device._send_keyboard([0, 0, 4, 0, 0, 0, 0, 0])
+
+    assert len(port.writes) == 2
+    assert port._rx == bytearray()
+
+
+def test_get_info_reads_framed_response():
+    from .protocol import CmdEvent, CmdPacket
+
+    port = _FakeSerialPort()
+    device = _device_with_fake_serial(port)
+    port.queue_reply(CmdPacket(cmd=CmdEvent.GET_INFO, data=[0x30, 1, 0, 0, 0, 0, 0, 0]).encode())
+
+    info = device.get_info()
+    assert info.chip_version == "V1.0"
+    assert info.is_connected
+    assert port._rx == bytearray()
+
+
+def test_read_packet_skips_leading_garbage():
+    from .protocol import CmdEvent, CmdPacket
+    from .serial_conn import SerialConnection
+
+    port = _FakeSerialPort()
+    packet = CmdPacket(cmd=CmdEvent.SEND_KB_GENERAL_DATA, data=[0]).encode()
+    port._rx.extend(b"\x00\xff" + packet)
+    conn = SerialConnection()
+    conn._port = cast(serial.Serial, port)
+
+    decoded = conn.read_packet(0.2)
+    assert decoded is not None
+    assert decoded.cmd == CmdEvent.SEND_KB_GENERAL_DATA
+    assert decoded.data == [0]
 
 
 def test_frame_pump_fans_out_jpeg():
