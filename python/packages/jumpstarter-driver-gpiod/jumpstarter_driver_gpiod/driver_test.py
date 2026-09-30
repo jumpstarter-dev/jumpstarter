@@ -379,11 +379,6 @@ class TestDriverMethods:
             ({"drive": "push_pull"}, "PUSH_PULL"),
             ({"drive": "open_drain"}, "OPEN_DRAIN"),
             ({"drive": "open_source"}, "OPEN_SOURCE"),
-            # ``mode`` never set the drive; configs using it must load and behave as before.
-            ({"mode": "push_pull"}, "PUSH_PULL"),
-            ({"mode": "open_drain"}, "PUSH_PULL"),
-            ({"mode": "anything"}, "PUSH_PULL"),
-            ({"mode": "open_drain", "drive": "open_source"}, "OPEN_SOURCE"),
         ],
     )
     @patch("jumpstarter_driver_gpiod.driver.gpiod")

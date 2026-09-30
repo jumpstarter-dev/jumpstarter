@@ -88,7 +88,6 @@ what doesn't.
 | active_low     | Whether the pin is active low (True) or active high (False)                                                                                         | bool | no | False | All |
 | bias           | The bias configuration for the GPIO line. Options: "as_is", "pull_up", "pull_down", "disabled"                                                      | str | no | null | All |
 | initial_value  | The initial value for output pins. Options: "active", "inactive", "on", "off", "preserve", True, False. "preserve" claims the line without changing its level, see below | str/bool | no | "inactive" | DigitalOutput, PowerSwitch |
-| mode           | Not used; the drive mode comes from `drive`. Accepted so existing configs load                                                                   | str | no | "push_pull" | PowerSwitch |
 
 ## Usage
 

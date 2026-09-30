@@ -286,9 +286,6 @@ class PowerSwitch(PowerInterface, DigitalOutput):
     inherits ``initial_value: preserve`` from DigitalOutput.
     """
 
-    # Not used: the line's drive comes from ``drive``. Kept so existing configs load.
-    mode: str = "push_pull"
-
     @export
     def on(self) -> None:
         """Switch on the power"""
