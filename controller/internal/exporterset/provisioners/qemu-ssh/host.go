@@ -25,6 +25,12 @@ const (
 	// AnnotationHost is the annotation key on Exporter CRs that
 	// records which remote host an instance was assigned to.
 	AnnotationHost = "qemu-ssh.jumpstarter.dev/host"
+
+	// defaultSSHUser is used when no user is specified.
+	defaultSSHUser = "root"
+
+	// defaultSSHPort is used when no port is specified.
+	defaultSSHPort = 22
 )
 
 // HostConfig describes the single remote lab host for an ExporterSet
@@ -36,24 +42,21 @@ type HostConfig struct {
 	// Name is the FQDN or IP of the remote host.
 	Name string `json:"name"`
 
-	// Port is the SSH port. Defaults to the parameters-level SSH port
-	// or 22 if unset.
+	// Port is the SSH port (default: 22).
 	Port int `json:"port,omitempty"`
 
-	// User is a per-host SSH user override. Falls back to the
-	// parameters-level SSH user.
+	// User is the SSH username (default: "root").
 	User string `json:"user,omitempty"`
 }
 
-// SSHConfig holds parameters-level SSH defaults parsed from merged
-// parameters.
-type SSHConfig struct {
-	User string `json:"user,omitempty"`
-	Port int    `json:"port,omitempty"`
-}
-
-// ParseHost extracts the single host from merged parameters.
-// Expected structure: parameters.host: {name, port?, user?}
+// ParseHost extracts the host config from merged parameters and
+// applies defaults. The expected YAML structure is:
+//
+//	parameters:
+//	  host:
+//	    name: lab-host-01.example.com
+//	    user: root       # optional, default "root"
+//	    port: 22         # optional, default 22
 func ParseHost(mergedParameters map[string]any) (HostConfig, error) {
 	hostRaw, ok := mergedParameters["host"]
 	if !ok {
@@ -74,50 +77,14 @@ func ParseHost(mergedParameters map[string]any) (HostConfig, error) {
 		return HostConfig{}, fmt.Errorf("parameters.host.name is required")
 	}
 
+	if host.User == "" {
+		host.User = defaultSSHUser
+	}
+	if host.Port == 0 {
+		host.Port = defaultSSHPort
+	}
+
 	return host, nil
-}
-
-// ParseSSHConfig extracts parameters-level SSH defaults from merged
-// parameters.
-func ParseSSHConfig(mergedParameters map[string]any) (SSHConfig, error) {
-	var cfg SSHConfig
-	sshRaw, ok := mergedParameters["ssh"]
-	if !ok {
-		return cfg, nil
-	}
-
-	data, err := json.Marshal(sshRaw)
-	if err != nil {
-		return cfg, fmt.Errorf("marshal ssh config: %w", err)
-	}
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return cfg, fmt.Errorf("unmarshal ssh config: %w", err)
-	}
-	return cfg, nil
-}
-
-// ResolveSSHUser returns the effective SSH user for a host, falling
-// back to parameters-level defaults.
-func ResolveSSHUser(host HostConfig, ssh SSHConfig) string {
-	if host.User != "" {
-		return host.User
-	}
-	if ssh.User != "" {
-		return ssh.User
-	}
-	return "root"
-}
-
-// ResolveSSHPort returns the effective SSH port for a host, falling
-// back to parameters-level defaults, then 22.
-func ResolveSSHPort(host HostConfig, ssh SSHConfig) int {
-	if host.Port > 0 {
-		return host.Port
-	}
-	if ssh.Port > 0 {
-		return ssh.Port
-	}
-	return 22
 }
 
 // ParseRuntimeConfig extracts runtime-specific settings from merged
