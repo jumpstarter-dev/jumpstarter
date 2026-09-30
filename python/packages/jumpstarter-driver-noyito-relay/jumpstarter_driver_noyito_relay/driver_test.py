@@ -106,6 +106,34 @@ def test_read_not_supported(mock_serial_cls):
         list(client.read())
 
 
+@pytest.mark.parametrize("driver", [NoyitoPowerSerial, NoyitoPowerHID])
+def test_drivers_keep_their_client(driver):
+    """Older clients load their own NoyitoPowerClient, which has status, so keep naming it."""
+    assert driver.client() == "jumpstarter_driver_noyito_relay.client.NoyitoPowerClient"
+
+
+def test_noyito_power_client_adds_nothing_to_power_client():
+    """status and its CLI command come from the base PowerClient."""
+    from jumpstarter_driver_power.client import PowerClient
+
+    from .client import NoyitoPowerClient
+
+    assert issubclass(NoyitoPowerClient, PowerClient)
+    assert "status" not in vars(NoyitoPowerClient)
+    assert "cli" not in vars(NoyitoPowerClient)
+
+
+@patch("jumpstarter_driver_noyito_relay.driver.serial.Serial")
+def test_status_cli(mock_serial_cls, capsys):
+    mock_ser = _make_serial_mock()
+    mock_ser.read.return_value = b"CH1:ON \r\nCH2:OFF \r\n"
+    mock_serial_cls.return_value = mock_ser
+
+    with serve(NoyitoPowerSerial(port="/dev/ttyUSB0", channel=1)) as client:
+        client.cli().main(["status"], standalone_mode=False)
+        assert capsys.readouterr().out.strip() == "on"
+
+
 @patch("jumpstarter_driver_noyito_relay.driver.serial.Serial")
 def test_status_ch1(mock_serial_cls):
     mock_ser = _make_serial_mock()
