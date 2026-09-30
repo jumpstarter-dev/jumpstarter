@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import IntEnum
 
@@ -41,7 +42,7 @@ class CmdPacket:
     @classmethod
     def decode(cls, buf: bytes | list[int]) -> CmdPacket:
         data = list(buf)
-        header_idx = _find_header(data)
+        header_idx = find_header(data)
         if header_idx < 0:
             raise ValueError("Cannot find packet header [0x57, 0xAB]")
 
@@ -70,7 +71,7 @@ class CmdPacket:
         return cls(addr=addr, cmd=cmd, data=payload)
 
 
-def _find_header(data: list[int]) -> int:
+def find_header(data: Sequence[int]) -> int:
     for i in range(len(data) - 1):
         if data[i] == HEAD1 and data[i + 1] == HEAD2:
             return i

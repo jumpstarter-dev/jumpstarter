@@ -421,6 +421,7 @@ def test_des_encrypt_nist_vector():
 def test_rfb_handshake_and_input(short_tmp):
     import socket
     import struct
+    import threading
     import time
 
     from .frame_pump import FramePump
@@ -453,6 +454,18 @@ def test_rfb_handshake_and_input(short_tmp):
         assert (width, height) == (64, 48)
         name_len = struct.unpack("!I", _recvexact(client, 4))[0]
         assert _recvexact(client, name_len) == b"NanoKVM-USB"
+
+        # The server pushes RAW frames to this client; drain them or its
+        # sendall blocks on the full socket buffer and input is never read.
+        def _drain() -> None:
+            while True:
+                try:
+                    if not client.recv(65536):
+                        break
+                except OSError:
+                    break
+
+        threading.Thread(target=_drain, daemon=True).start()
         client.sendall(b"\x02\x00" + struct.pack("!H", 1) + struct.pack("!i", 0))
         client.sendall(b"\x03\x00" + struct.pack("!HHHH", 0, 0, 64, 48))
         # KeyEvent: down, pad, keysym 'a'

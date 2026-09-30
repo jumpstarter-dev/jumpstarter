@@ -7,18 +7,11 @@ import time
 import serial
 import serial.tools.list_ports
 
-from .protocol import HEAD1, HEAD2, CmdPacket
+from .protocol import HEAD1, CmdPacket, find_header
 
 DEFAULT_BAUD_RATE = 57600
 READ_TIMEOUT_S = 0.5
 _MAX_PACKET_DATA = 64
-
-
-def _find_header(buf: bytearray) -> int:
-    for index in range(len(buf) - 1):
-        if buf[index] == HEAD1 and buf[index + 1] == HEAD2:
-            return index
-    return -1
 
 
 def _pop_frame(buf: bytearray) -> CmdPacket | None:
@@ -48,7 +41,7 @@ def _pop_frame(buf: bytearray) -> CmdPacket | None:
 def _take_packet(buf: bytearray) -> CmdPacket | None:
     """Pop one framed packet from ``buf``, or return None if more bytes are needed."""
     while True:
-        start = _find_header(buf)
+        start = find_header(buf)
         if start < 0:
             if buf and buf[-1] == HEAD1:
                 del buf[:-1]
@@ -118,25 +111,6 @@ class SerialConnection:
             chunk = self._port.read(5 + _MAX_PACKET_DATA + 1)
             if chunk:
                 self._rx_buf.extend(chunk)
-
-    def read(self, min_size: int, timeout: float = READ_TIMEOUT_S) -> list[int]:
-        if not self._port or not self._port.is_open:
-            raise ConnectionError("Serial port not open")
-
-        result: list[int] = []
-        deadline = time.monotonic() + timeout
-
-        while len(result) < min_size:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-
-            self._port.timeout = min(remaining, 0.1)
-            chunk = self._port.read(min_size - len(result))
-            if chunk:
-                result.extend(chunk)
-
-        return result
 
     @staticmethod
     def list_ports():
