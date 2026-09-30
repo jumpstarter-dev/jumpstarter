@@ -20,7 +20,7 @@ import (
 	"testing"
 )
 
-func TestParseHost_valid(t *testing.T) {
+func TestParseHost_full(t *testing.T) {
 	params := map[string]any{
 		"host": map[string]any{
 			"name": "bench-01.lab.example.com",
@@ -38,14 +38,14 @@ func TestParseHost_valid(t *testing.T) {
 		t.Errorf("host.Name = %q", host.Name)
 	}
 	if host.Port != 2222 {
-		t.Errorf("host.Port = %d", host.Port)
+		t.Errorf("host.Port = %d, want 2222", host.Port)
 	}
 	if host.User != "admin" {
-		t.Errorf("host.User = %q", host.User)
+		t.Errorf("host.User = %q, want admin", host.User)
 	}
 }
 
-func TestParseHost_nameOnly(t *testing.T) {
+func TestParseHost_defaults(t *testing.T) {
 	params := map[string]any{
 		"host": map[string]any{
 			"name": "bench-01.lab.example.com",
@@ -59,15 +59,18 @@ func TestParseHost_nameOnly(t *testing.T) {
 	if host.Name != "bench-01.lab.example.com" {
 		t.Errorf("host.Name = %q", host.Name)
 	}
-	if host.Port != 0 || host.User != "" {
-		t.Errorf("expected empty port/user overrides, got %+v", host)
+	if host.User != "root" {
+		t.Errorf("host.User = %q, want root (default)", host.User)
+	}
+	if host.Port != 22 {
+		t.Errorf("host.Port = %d, want 22 (default)", host.Port)
 	}
 }
 
 func TestParseHost_missingHostKey(t *testing.T) {
 	_, err := ParseHost(map[string]any{})
 	if err == nil {
-		t.Fatal("ParseHost() expected error for missing host key")
+		t.Fatal("expected error for missing host key")
 	}
 }
 
@@ -80,90 +83,7 @@ func TestParseHost_missingName(t *testing.T) {
 
 	_, err := ParseHost(params)
 	if err == nil {
-		t.Fatal("ParseHost() expected error for missing name")
-	}
-}
-
-func TestParseSSHConfig(t *testing.T) {
-	params := map[string]any{
-		"ssh": map[string]any{
-			"user": "jumpstarter",
-			"port": float64(2222),
-		},
-	}
-
-	cfg, err := ParseSSHConfig(params)
-	if err != nil {
-		t.Fatalf("ParseSSHConfig() error = %v", err)
-	}
-	if cfg.User != "jumpstarter" {
-		t.Errorf("User = %q, want jumpstarter", cfg.User)
-	}
-	if cfg.Port != 2222 {
-		t.Errorf("Port = %d, want 2222", cfg.Port)
-	}
-}
-
-func TestParseSSHConfig_missing(t *testing.T) {
-	cfg, err := ParseSSHConfig(map[string]any{})
-	if err != nil {
-		t.Fatalf("ParseSSHConfig() error = %v", err)
-	}
-	if cfg.User != "" || cfg.Port != 0 {
-		t.Errorf("expected zero SSHConfig, got %+v", cfg)
-	}
-}
-
-func TestParseSSHConfig_invalidType(t *testing.T) {
-	params := map[string]any{
-		"ssh": map[string]any{
-			"user": 12345,
-		},
-	}
-
-	_, err := ParseSSHConfig(params)
-	if err == nil {
-		t.Fatal("ParseSSHConfig() expected error for invalid user type")
-	}
-}
-
-func TestResolveSSHUser(t *testing.T) {
-	cases := []struct {
-		name     string
-		host     HostConfig
-		ssh      SSHConfig
-		wantUser string
-	}{
-		{"host override", HostConfig{User: "admin"}, SSHConfig{User: "default"}, "admin"},
-		{"ssh default", HostConfig{}, SSHConfig{User: "default"}, "default"},
-		{"fallback root", HostConfig{}, SSHConfig{}, "root"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := ResolveSSHUser(tc.host, tc.ssh); got != tc.wantUser {
-				t.Errorf("ResolveSSHUser() = %q, want %q", got, tc.wantUser)
-			}
-		})
-	}
-}
-
-func TestResolveSSHPort(t *testing.T) {
-	cases := []struct {
-		name     string
-		host     HostConfig
-		ssh      SSHConfig
-		wantPort int
-	}{
-		{"host override", HostConfig{Port: 2222}, SSHConfig{Port: 3333}, 2222},
-		{"ssh default", HostConfig{}, SSHConfig{Port: 3333}, 3333},
-		{"fallback 22", HostConfig{}, SSHConfig{}, 22},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := ResolveSSHPort(tc.host, tc.ssh); got != tc.wantPort {
-				t.Errorf("ResolveSSHPort() = %d, want %d", got, tc.wantPort)
-			}
-		})
+		t.Fatal("expected error for missing name")
 	}
 }
 
