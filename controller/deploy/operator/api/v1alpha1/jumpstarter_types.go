@@ -341,7 +341,10 @@ type TelemetryMetricsConfig struct {
 
 	// Max wait for parallel exporter MetricsStream responses during a /metrics fan-out.
 	// Should be lower than the Prometheus scrape_timeout.
+	// JEP-0013 specifies the 7s default and no maximum. 60s bounds the fan-out
+	// wait and the HTTP write timeout that grows with this value.
 	// +kubebuilder:default="7s"
+	// +kubebuilder:validation:XValidation:rule="duration(self) > duration('0s') && duration(self) <= duration('60s')",message="scrapeTimeout must be greater than 0 and at most 60s"
 	ScrapeTimeout *metav1.Duration `json:"scrapeTimeout,omitempty"`
 }
 

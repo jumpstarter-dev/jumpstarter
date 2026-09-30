@@ -2197,7 +2197,14 @@ spec:
                         description: |-
                           Max wait for parallel exporter MetricsStream responses during a /metrics fan-out.
                           Should be lower than the Prometheus scrape_timeout.
+                          JEP-0013 specifies the 7s default and no maximum. 60s bounds the fan-out
+                          wait and the HTTP write timeout that grows with this value.
                         type: string
+                        x-kubernetes-validations:
+                        - message: scrapeTimeout must be greater than 0 and at most
+                            60s
+                          rule: duration(self) > duration('0s') && duration(self)
+                            <= duration('60s')
                     type: object
                   replicas:
                     default: 1
