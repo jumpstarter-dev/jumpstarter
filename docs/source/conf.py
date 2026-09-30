@@ -105,7 +105,7 @@ myst_substitutions = {
 
 doctest_test_doctest_blocks = ""
 
-html_js_files = ["js/theme-toggle.js", "js/mermaid-theme.js", "js/glossary-tooltips.js", "js/asciinema-player.min.js"]
+html_js_files = ["js/theme-toggle.js", "js/mermaid-theme.js", "js/glossary-tooltips.js", "js/asciinema-player.min.js", "js/version-selector.js"]
 html_static_path = ["_static"]
 html_css_files = ["css/custom.css", "css/asciinema-player.css"]
 html_sidebars = {
