@@ -36,6 +36,7 @@ from jumpstarter.config.env import JMP_GRPC_INSECURE, JUMPSTARTER_GRPC_INSECURE
 from jumpstarter.config.tls import TLSConfigV1Alpha1
 from jumpstarter.exporter.hooks import HookExecutor
 from jumpstarter.exporter.lease_context import LeaseContext
+from jumpstarter.exporter.metrics_stream import MetricsStreamClient
 from jumpstarter.exporter.session import Session
 from jumpstarter.exporter.telemetry import TelemetryLogHandler
 from jumpstarter.logging import clear_log_context, set_log_context
@@ -200,6 +201,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
     # Public Configuration Fields
 
+    # JWT subject for this exporter, not Metadata.name. Register no longer
+    # carries jumpstarter.dev/name (#1058), so Metadata.name stays "unknown".
     exporter_name: str = "unknown"
 
     channel_factory: Callable[[], Awaitable[grpc.aio.Channel]]
@@ -381,6 +384,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     _telemetry_channel: grpc.aio.Channel | None = field(init=False, default=None)
     """gRPC channel to the telemetry service. Closed on exporter shutdown."""
 
+    _metrics_stream: MetricsStreamClient | None = field(init=False, default=None)
+    """Optional MetricsStream client. Started next to the log flush loop when telemetry is configured."""
+
     _status_drain_active: bool = field(init=False, default=False)
     """True only while serve()'s task group is running and the drain task is active.
 
@@ -560,8 +566,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         """Discover and connect to the optional telemetry service.
 
         Calls GetServiceEndpoints on the controller. When a telemetry endpoint is
-        returned, a gRPC channel is created and TelemetryLogHandler is attached
-        to the root Python logger. Safe to call multiple times; subsequent calls
+        returned, a gRPC channel is created, TelemetryLogHandler is attached
+        to the root Python logger, and a MetricsStreamClient is prepared for
+        reverse-scrape. Safe to call multiple times; subsequent calls
         are no-ops if a handler is already configured.
         """
         if self._telemetry_handler is not None:
@@ -611,6 +618,12 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         handler.setLevel(_severity_to_level(ep.min_severity))
         logging.getLogger().addHandler(handler)
         self._telemetry_handler = handler
+        self._metrics_stream = MetricsStreamClient(
+            stub,
+            # exporter_name is the JWT subject, not Metadata.name.
+            identity=self.exporter_name,
+            token=self.token,
+        )
         logger.info("Telemetry log handler attached")
 
     async def _retry_rpc(
@@ -945,7 +958,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         """
         with Session(
             uuid=self.uuid,
-            labels=self.labels,
+            labels=self._session_labels(),
             exporter_name=self.exporter_name,
             root_device=self.device_factory(),
             motd=self.motd,
@@ -982,7 +995,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         logger.info("Creating new session for lease")
         with Session(
             uuid=self.uuid,
-            labels=self.labels,
+            labels=self._session_labels(),
             exporter_name=self.exporter_name,
             root_device=self.device_factory(),
             motd=self.motd,
@@ -1285,6 +1298,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         if self._telemetry_channel is not None:
             await self._telemetry_channel.close()
             self._telemetry_channel = None
+        self._metrics_stream = None
 
     async def _run_control_plane(
         self,
@@ -1299,8 +1313,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             self._pending_status_request = None
             self._status_drain_active = True
             tg.start_soon(self._drain_status_reports)
-            if self._telemetry_handler is not None:
-                tg.start_soon(self._telemetry_handler.flush_loop)
+            self._start_telemetry_tasks(tg)
             tg.start_soon(
                 self._retry_stream,
                 "Status",
@@ -1317,6 +1330,17 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     continue
                 if await self._apply_status(message, tg):
                     break
+
+    def _session_labels(self) -> dict[str, str]:
+        """Labels for local Session/metrics. Not sent on Register (#1058)."""
+        return {**self.labels, "jumpstarter.dev/name": self.exporter_name}
+
+    def _start_telemetry_tasks(self, tg: TaskGroup) -> None:
+        """Start PushLogs flush and MetricsStream next to the control-plane tasks."""
+        if self._telemetry_handler is not None:
+            tg.start_soon(self._telemetry_handler.flush_loop)
+        if self._metrics_stream is not None:
+            tg.start_soon(self._metrics_stream.run)
 
     async def _apply_status(
         self,
@@ -1551,7 +1575,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             hook_path_str = str(hook_path)
             with Session(
                 uuid=self.uuid,
-                labels=self.labels,
+                labels=self._session_labels(),
                 exporter_name=self.exporter_name,
                 root_device=self.device_factory(),
                 motd=self.motd,
