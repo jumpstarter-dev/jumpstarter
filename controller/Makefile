@@ -126,7 +126,6 @@ build: manifests generate fmt vet ## Build manager binary.
 	go build -ldflags "$(LDFLAGS)" -o bin/router ./cmd/router
 	go build -ldflags "$(LDFLAGS)" -o bin/telemetry ./cmd/telemetry
 	go build -ldflags "$(LDFLAGS)" -o bin/exporter-set-controller cmd/exporter-set-controller/main.go
-	go build -ldflags "$(LDFLAGS)" -o bin/telemetry cmd/telemetry/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -138,7 +137,7 @@ run-router: manifests generate fmt vet ## Run a router from your host.
 
 .PHONY: run-telemetry
 run-telemetry: manifests generate fmt vet ## Run the telemetry service from your host.
-	go run ./cmd/telemetry/main.go
+	go run ./cmd/telemetry
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -165,7 +164,7 @@ docker-build-ci: ## Build docker images from pre-compiled host binaries (fast CI
 .PHONY: docker-build-telemetry-ci
 docker-build-telemetry-ci: ## CI-optimized: host-compiled telemetry binary, no multi-stage build.
 	rm -rf bin/ci-stage/telemetry && mkdir -p bin/ci-stage/telemetry
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/telemetry/telemetry cmd/telemetry/main.go
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/telemetry/telemetry ./cmd/telemetry
 	$(CONTAINER_TOOL) build -t $(TELEMETRY_IMG) -f Containerfile.telemetry.prebuilt bin/ci-stage/telemetry
 
 .PHONY: docker-build-exporter-set-controller-ci
