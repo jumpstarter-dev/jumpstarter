@@ -396,22 +396,21 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         await self._dial_with_retry()
 
         async def _tunnel_handler(stream):
-            # A failed per-command Dial closes only this socket. The listener
-            # must stay up so later commands can work after recovery.
+            # A failed command tunnel closes only this socket. The listener
+            # must stay up so other and later commands can keep working.
             try:
                 response = await self._dial_with_retry()
-            except ExporterUnreachableError as e:
-                logger.warning("Closing connection after Dial failure: %s", e)
+                async with connect_router_stream(
+                    response.router_endpoint,
+                    response.router_token,
+                    stream,
+                    self.tls_config,
+                    self.grpc_options,
+                ):
+                    pass
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Closing connection after tunnel failure: %s", e)
                 await stream.aclose()
-                return
-            async with connect_router_stream(
-                response.router_endpoint,
-                response.router_token,
-                stream,
-                self.tls_config,
-                self.grpc_options,
-            ):
-                pass
 
         async with TemporaryUnixListener(_tunnel_handler) as path:
             logger.debug("Serving Unix socket at %s", path)

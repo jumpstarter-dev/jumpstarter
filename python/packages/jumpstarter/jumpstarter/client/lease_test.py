@@ -1108,9 +1108,58 @@ class TestServeUnixAsync:
 
         assert calls["count"] == 3
         assert lease.lease_transferred is transferred
-        assert any("Closing connection after Dial failure" in record.message for record in caplog.records)
+        assert any("Closing connection after tunnel failure" in record.message for record in caplog.records)
         if transferred:
             assert any("transferred to another client" in record.message for record in caplog.records)
+
+    @pytest.mark.anyio
+    async def test_router_setup_failure_closes_only_its_connection(self, caplog):
+        lease = object.__new__(Lease)
+        lease.name = "test-lease"
+        lease.exporter_name = "test-exporter"
+        lease.tls_config = Mock()
+        lease.grpc_options = {}
+        response = Mock(router_endpoint="endpoint", router_token="token")
+        first_finished = anyio.Event()
+        release_first = anyio.Event()
+        router_calls = 0
+
+        @asynccontextmanager
+        async def connect_router(*args):
+            nonlocal router_calls
+            router_calls += 1
+            call = router_calls
+            stream = args[2]
+            if call == 2:
+                raise OSError("router setup failed")
+            await stream.send(b"active" if call == 1 else b"recovered")
+            try:
+                yield
+                if call == 1:
+                    await release_first.wait()
+            finally:
+                if call == 1:
+                    first_finished.set()
+
+        with (
+            patch.object(lease, "_dial_with_retry", new_callable=AsyncMock, return_value=response),
+            patch("jumpstarter.client.lease.connect_router_stream", connect_router),
+            caplog.at_level(logging.WARNING, logger="jumpstarter.client.lease"),
+            anyio.fail_after(2),
+        ):
+            async with lease.serve_unix_async() as socket_path, await anyio.connect_unix(socket_path) as first:
+                assert await first.receive() == b"active"
+                async with await anyio.connect_unix(socket_path) as failed:
+                    with pytest.raises(anyio.EndOfStream):
+                        await failed.receive()
+                assert not first_finished.is_set()
+                async with await anyio.connect_unix(socket_path) as recovered:
+                    assert await recovered.receive() == b"recovered"
+                release_first.set()
+                await first_finished.wait()
+
+        assert router_calls == 3
+        assert any("router setup failed" in record.message for record in caplog.records)
 
     @pytest.mark.anyio
     async def test_serve_unix_async_per_connection_dial_survives_transient_failure(self):
