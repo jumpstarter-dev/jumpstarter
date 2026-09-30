@@ -23,6 +23,9 @@ if TYPE_CHECKING:
     from jumpstarter.driver import Driver
 
 
+DEFAULT_STATUS_STREAM_RETRY_TIMEOUT = 30 * 60.0
+
+
 class HookInstanceConfigV1Alpha1(BaseModel):
     """Configuration for a specific lifecycle hook."""
 
@@ -186,6 +189,16 @@ class ExporterConfigV1Alpha1(BaseModel):
     failure_detection: FailureDetectionConfigV1Alpha1 = Field(
         default_factory=FailureDetectionConfigV1Alpha1,
         alias="failureDetection",
+    )
+    status_stream_retry_timeout: float = Field(
+        default=DEFAULT_STATUS_STREAM_RETRY_TIMEOUT,
+        gt=0,
+        alias="statusStreamRetryTimeout",
+        description=(
+            "Seconds to retry after the controller Status stream fails or ends without a new item "
+            "(default: 1800). On expiry, the exporter exits with status 75 so a service "
+            "manager can restart it."
+        ),
     )
     exit_on_lease_end: bool = Field(
         default=False,
@@ -361,8 +374,10 @@ class ExporterConfigV1Alpha1(BaseModel):
         async def channel_factory() -> grpc.aio.Channel:
             if self.endpoint is None or self.token is None:
                 raise ConfigurationError("endpoint or token not set in exporter config")
+            # The stream retry loop logs once per outage; per-IP discovery
+            # failures remain in the final exception and debug logs.
             credentials = grpc.composite_channel_credentials(
-                await ssl_channel_credentials(self.endpoint, self.tls),
+                await ssl_channel_credentials(self.endpoint, self.tls, log_connection_failures=False),
                 call_credentials("Exporter", self.metadata, self.token),
             )
             return aio_secure_channel(self.endpoint, credentials, self.grpcOptions)
@@ -396,6 +411,7 @@ class ExporterConfigV1Alpha1(BaseModel):
                 hook_executor=hook_executor,
                 motd=self.motd,
                 exit_on_lease_end=self.exit_on_lease_end,
+                status_stream_retry_timeout=self.status_stream_retry_timeout,
             )
             # Initialize the exporter (registration, etc.)
             await exporter.__aenter__()
