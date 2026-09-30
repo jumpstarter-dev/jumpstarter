@@ -131,7 +131,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		Expect(container.Image).To(Equal("quay.io/jumpstarter-dev/jumpstarter-telemetry:latest"))
 		Expect(container.ImagePullPolicy).To(Equal(corev1.PullIfNotPresent))
 		Expect(container.Command).To(Equal([]string{"/telemetry"}))
-		Expect(container.Args).To(ContainElement(fmt.Sprintf("--grpc-bind=:%d", telemetryPort)))
+		Expect(container.Args).To(ContainElement(fmt.Sprintf("-grpc-bind=:%d", telemetryPort)))
 
 		By("verifying labels")
 		Expect(deployment.Labels).To(HaveKeyWithValue("component", "telemetry"))
