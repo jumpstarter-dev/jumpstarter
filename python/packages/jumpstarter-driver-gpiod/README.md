@@ -64,6 +64,7 @@ export:
     type: jumpstarter_driver_gpiod.driver.PowerSwitch
     config:
       line: 26
+      drive: push_pull        # or open_drain / open_source, as the board needs
       active_low: true        # most relay HATs energize the coil on a LOW input
       initial_value: preserve # an exporter restart leaves the relay where it is
 ```
@@ -83,10 +84,11 @@ what doesn't.
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | -------- | ------- | ------------ |
 | device         | The GPIO device to use (can be integer or string like "/dev/gpiochip0")                                                                            | str | no | "/dev/gpiochip0" | All |
 | line            | The GPIO line number to use                                                                              | int | yes | | All |
-| drive          | The drive mode for the GPIO line. Options: "push_pull", "open_drain", "open_source"                                                                 | str | no | null | DigitalOutput, PowerSwitch |
+| drive          | The drive mode for the GPIO line. Options: "push_pull", "open_drain", "open_source". Unset means "push_pull"                                      | str | no | null | DigitalOutput, PowerSwitch |
 | active_low     | Whether the pin is active low (True) or active high (False)                                                                                         | bool | no | False | All |
 | bias           | The bias configuration for the GPIO line. Options: "as_is", "pull_up", "pull_down", "disabled"                                                      | str | no | null | All |
 | initial_value  | The initial value for output pins. Options: "active", "inactive", "on", "off", "preserve", True, False. "preserve" claims the line without changing its level, see below | str/bool | no | "inactive" | DigitalOutput, PowerSwitch |
+| mode           | Not used; the drive mode comes from `drive`. Accepted so existing configs load                                                                   | str | no | "push_pull" | PowerSwitch |
 
 ## Usage
 
@@ -137,7 +139,7 @@ power_switch.on()
 # Turn power off
 power_switch.off()
 
-# Read current power state: "on", "off", or "unknown" (best-effort, see Status)
+# Read current power state: "on", "off", or "unknown" (the level last commanded, see Status)
 state = power_switch.status()
 print(f"Power state: {state}")
 ```
@@ -146,16 +148,49 @@ print(f"Power state: {state}")
 
 #### Drive Modes
 
-- **push_pull**: Standard push-pull output (default)
-- **open_drain**: Open-drain output (useful for I2C, etc.)
-- **open_source**: Open-source output
+`drive` sets how the pin drives each level. It applies to `DigitalOutput` and
+`PowerSwitch`.
+
+- **push_pull** (default): drives both HIGH and LOW. Use it when the pin alone
+  sets the input it is wired to, as with most relay HATs.
+- **open_drain**: drives LOW, and lets go of the line (high impedance) for HIGH.
+  Use it when a pull-up on the far side sets the HIGH level: a reset or power
+  button line on a DUT, a line at a different voltage than the Pi's 3.3 V, or a
+  line other devices can also pull LOW.
+- **open_source**: the mirror image: drives HIGH, and lets go for LOW, which a
+  pull-down on the far side then sets.
+
+With `open_drain` or `open_source`, the released level comes from the pull (on
+the board, or from `bias`), not from the pin.
+
+For example, a power control line driven open-drain. With `active_low: false`,
+`on` releases the line (the pull-up takes it HIGH) and `off` pulls it LOW:
+
+```yaml
+export:
+  power:
+    type: jumpstarter_driver_gpiod.driver.DigitalOutput
+    config:
+      line: 23
+      drive: open_drain
+      initial_value: "on"
+```
 
 #### Bias Configuration
 
-- **as_is**: No bias (default)
-- **pull_up**: Internal pull-up resistor
-- **pull_down**: Internal pull-down resistor
-- **disabled**: Disable bias
+`bias` enables the SoC's internal pull resistor on the pin. It applies to all
+driver types.
+
+- **as_is** (default): leave the bias as it is already configured
+- **pull_up**: internal pull-up resistor
+- **pull_down**: internal pull-down resistor
+- **disabled**: no pull resistor
+
+On an input, the pull sets the level when nothing drives the line (a button
+wired to ground needs `pull_up`). On an `open_drain` or `open_source` output, it
+can supply the released level when the far side has no pull of its own. Internal
+pulls are weak (tens of kΩ on a Raspberry Pi), so use an external resistor for
+long wires or fast edges.
 
 #### Active Low vs Active High
 
@@ -175,19 +210,19 @@ starts.
 
 #### Status
 
-`status` returns `on`, `off`, or `unknown`. It is **best-effort**: it comes from
-the configured settings and the line's readback, never from the load.
+`status` returns `on`, `off`, or `unknown`: the level this driver last commanded,
+not a measurement.
 
 - **`on`** / **`off`**: the level last driven (by `on()`, `off()`, or the initial
   request), with `active_low` applied.
-- **`unknown`**: the driver can't vouch for the level, because a write or readback
-  failed, or a `push_pull` line read back a different level than it drives (a
-  shorted pin or dead pad; logged as a warning). The next `on()` or `off()` that
-  takes makes the state known again.
+- **`unknown`**: the last write raised. The next `on()` or `off()` that succeeds
+  makes the state known again.
 
-The readback check only applies to `push_pull` (the default). `open_drain` and
-`open_source` float for one of their levels, so their readback can't confirm what
-was driven. `read` on `DigitalOutputClient` always gives the raw pin read.
+`status` does not read the line back. Reading an output line can return either its
+output or its input buffer, depending on the controller, so a readback can differ
+from what was driven without meaning anything is wrong. A shorted pin or dead pad
+therefore still reports the commanded level. `read` on `DigitalOutputClient` gives
+the raw pin read when you want it.
 
 ### Power relays
 
@@ -243,12 +278,12 @@ confirm it.
     :members: on, off, read, status
 ```
 
-### PowerSwitchClient
+`PowerSwitch` uses the standard `jumpstarter_driver_power.client.PowerClient`
+(`on`, `off`, `cycle`, `status`).
 
-```{eval-rst}
-.. autoclass:: jumpstarter_driver_gpiod.client.PowerSwitchClient()
-    :members: on, off, cycle, status
-```
+`jumpstarter_driver_gpiod.client.PowerSwitchClient` is **deprecated**. It is kept
+so existing imports keep working, adds nothing to `PowerClient`, and emits a
+`DeprecationWarning` when created. Use `PowerClient` instead.
 
 ### DigitalInputClient
 

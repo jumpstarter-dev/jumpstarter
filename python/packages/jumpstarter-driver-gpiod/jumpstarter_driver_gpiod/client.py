@@ -1,3 +1,4 @@
+import warnings
 from dataclasses import dataclass
 from enum import Enum
 
@@ -34,10 +35,6 @@ class DigitalOutputClient(PowerClient):
         """Read gpio state."""
         return PinState(int(self.call("read_pin")))
 
-    def status(self) -> str:
-        """Return "on", "off", or "unknown": best-effort, from the settings and the line readback."""
-        return self.call("status")
-
     def cli(self):
         @driver_click_group(self)
         def gpio():
@@ -61,35 +58,24 @@ class DigitalOutputClient(PowerClient):
             """read pin."""
             print(self.read())
 
-        @gpio.command()
-        def status():
-            """Print on/off/unknown (best-effort, not a load measurement)."""
-            click.echo(self.status())
-
         return gpio
 
 
 @dataclass(kw_only=True)
 class PowerSwitchClient(PowerClient):
-    """A PowerClient for GPIO power switches, with ``status``.
+    """Deprecated: use ``jumpstarter_driver_power.client.PowerClient``.
 
-    ``read`` keeps PowerClient's meaning (power measurements), which a
-    dry-contact relay cannot provide; ``status`` reports a best-effort driven state.
+    ``PowerSwitch`` now uses ``PowerClient`` directly. This class adds nothing to it
+    and is kept only so existing imports keep working.
     """
 
-    def status(self) -> str:
-        """Return "on", "off", or "unknown": best-effort, from the settings and the line readback."""
-        return self.call("status")
-
-    def cli(self):
-        base = super().cli()
-
-        @base.command()
-        def status():
-            """Print on/off/unknown (best-effort, not a load measurement)."""
-            click.echo(self.status())
-
-        return base
+    def __post_init__(self):
+        warnings.warn(
+            "PowerSwitchClient is deprecated, use jumpstarter_driver_power.client.PowerClient",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__post_init__()
 
 
 @dataclass(kw_only=True)

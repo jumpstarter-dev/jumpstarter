@@ -98,8 +98,8 @@ class DigitalOutput(_GPIOBase):
     active_low: bool = field(default=False)
     bias: str | None = field(default=None)
     initial_value: str | bool = field(default="inactive")
-    # The level status() reports, or None for "unknown". Only ever holds a level we
-    # know the line took, so every path that loses that knowledge clears it.
+    # The level status() reports: the one last commanded, or None ("unknown") after
+    # a write that raised.
     _driven: gpiod.line.Value | None = field(init=False, default=None, repr=False)
 
     @classmethod
@@ -123,39 +123,12 @@ class DigitalOutput(_GPIOBase):
 
         # The request succeeded, so the line is ours and driving ``value``.
         self._driven = value
-        self._verify_driven()
 
     def _drive(self, value) -> None:
         """Drive the line to ``value``; a write that raises leaves the state unknown."""
         self._driven = None
         self._line.set_value(self.line, value)
         self._driven = value
-        self._verify_driven()
-
-    def _verify_driven(self) -> None:
-        """Read the pin back, and drop to unknown if it contradicts the driven level.
-
-        Only push-pull can be contradicted: open-drain and open-source float for one
-        of their levels, so their readback proves nothing. A failed readback is not
-        raised, since the write before it succeeded, but it leaves the state unknown.
-        """
-        try:
-            observed = self._line.get_value(self.line)
-        except OSError as e:  # a failed line ioctl; anything else is a bug, so let it raise
-            self.logger.warning(f"line {self.line} ({self._line_name}) readback failed ({e}); state is now unknown")
-            self._driven = None
-            return
-        self.logger.debug(f"line {self.line} ({self._line_name}) drove {self._driven}, pin reads {observed}")
-
-        if self.drive not in ["push_pull", None]:
-            return
-
-        if observed != self._driven:
-            self.logger.warning(
-                f"line {self.line} ({self._line_name}) drove {self._driven} but pin reads {observed}; "
-                "the line is not following this driver, so its state is now unknown"
-            )
-            self._driven = None
 
     def _request_preserving(self):
         """Claim the line as an output at the level it is already at.
@@ -198,6 +171,7 @@ class DigitalOutput(_GPIOBase):
         )
 
     def _output_line_settings(self, output_value):
+        # drive (push_pull/open_drain/open_source) and bias come from _line_settings()
         settings = self._line_settings()
         settings.direction = gpiod.line.Direction.OUTPUT
         settings.output_value = output_value
@@ -217,12 +191,13 @@ class DigitalOutput(_GPIOBase):
 
     @export
     def status(self) -> str:
-        """Return "on", "off", or "unknown" (best-effort, from the settings and the line readback).
+        """Return "on", "off", or "unknown": the level last commanded, not a pin read.
 
-        "on"/"off" is the level last driven, with ``active_low`` applied. "unknown"
-        means a write or readback failed, or a push-pull line read back the other
-        level; the next ``on()``/``off()`` that takes clears it. This reports what
-        the line drives, not whether a relay behind it switched.
+        "on"/"off" is the level last driven (by ``on()``, ``off()``, or the initial
+        request), with ``active_low`` applied. "unknown" means the last write raised;
+        the next ``on()``/``off()`` that succeeds clears it. Nothing reads the line
+        back to confirm the level, and nothing sees whether a relay behind it
+        switched; use ``read_pin`` for the pin's input buffer.
         """
         if self._driven is None:
             return "unknown"
@@ -307,13 +282,12 @@ class DigitalInput(_GPIOBase):
 class PowerSwitch(PowerInterface, DigitalOutput):
     """A GPIO line switching a load, e.g. one channel of a relay HAT.
 
-    Speaks PowerInterface (on/off/cycle) like the other relay drivers, adds
-    ``status``, and inherits ``initial_value: preserve`` from DigitalOutput.
+    Speaks PowerInterface (on/off/cycle/status) like the other relay drivers, and
+    inherits ``initial_value: preserve`` from DigitalOutput.
     """
 
-    @classmethod
-    def client(cls) -> str:
-        return "jumpstarter_driver_gpiod.client.PowerSwitchClient"
+    # Not used: the line's drive comes from ``drive``. Kept so existing configs load.
+    mode: str = "push_pull"
 
     @export
     def on(self) -> None:
