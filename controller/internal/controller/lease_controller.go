@@ -699,7 +699,7 @@ func orderApprovedExporters(exporters []ApprovedExporter) []ApprovedExporter {
 // filterOutLeasedExporters filters out the exporters that are already leased
 func filterOutLeasedExporters(exporters []ApprovedExporter) []ApprovedExporter {
 	// Exclude exporter that are already leased and non-takeable
-	return slices.DeleteFunc(exporters, func(ae ApprovedExporter) bool {
+	return slices.DeleteFunc(slices.Clone(exporters), func(ae ApprovedExporter) bool {
 		existingLease := ae.ExistingLease
 		if existingLease == nil {
 			return false
@@ -748,7 +748,7 @@ func filterOutDisabledExporters(exporters []jumpstarterdevv1alpha1.Exporter) []j
 // filterOutOfflineExporters filters out the exporters that are not online
 func filterOutOfflineExporters(approvedExporters []ApprovedExporter) []ApprovedExporter {
 	onlineExporters := slices.DeleteFunc(
-		approvedExporters,
+		slices.Clone(approvedExporters),
 		func(approvedExporter ApprovedExporter) bool {
 			return !meta.IsStatusConditionTrue(
 				approvedExporter.Exporter.Status.Conditions,

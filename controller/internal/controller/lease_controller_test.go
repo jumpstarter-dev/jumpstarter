@@ -301,7 +301,9 @@ var _ = Describe("Lease Controller", func() {
 			condition := meta.FindStatusCondition(updatedLease.Status.Conditions, string(jumpstarterdevv1alpha1.LeaseConditionTypePending))
 			Expect(condition).NotTo(BeNil())
 			Expect(condition.Reason).To(Equal("Offline"))
-			Expect(condition.Message).To(ContainSubstring("none of them are online"))
+			// The example exporter name must survive the online filter
+			Expect(condition.Message).To(MatchRegexp(
+				`^While there are 2 available exporters \(i\.e\. exporter[12]-dut-a\), none of them are online$`))
 
 			// Clean up
 			Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
@@ -670,7 +672,9 @@ var _ = Describe("Lease Controller", func() {
 			condition := meta.FindStatusCondition(updatedLease.Status.Conditions, string(jumpstarterdevv1alpha1.LeaseConditionTypePending))
 			Expect(condition).NotTo(BeNil())
 			Expect(condition.Reason).To(Equal("NotAvailable"))
-			Expect(condition.Message).To(ContainSubstring("but all of them are already leased"))
+			// The example exporter name must survive the leased filter
+			Expect(condition.Message).To(Equal(
+				"There are 1 approved exporters, (i.e. exporter3-dut-b) but all of them are already leased"))
 		})
 
 		It("should be acquired when a valid exporter lease times out", func() {
