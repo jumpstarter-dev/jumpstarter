@@ -332,11 +332,19 @@ type TelemetryGRPCConfig struct {
 // TelemetryMetricsConfig configures telemetry /metrics reverse-scrape behavior.
 type TelemetryMetricsConfig struct {
 	// Allowlist of keys to include in Prometheus exemplars. Unlisted keys are omitted.
+	// At most 16 keys. Each key is at most 32 characters, the same limit as
+	// Lease spec.context key names that may appear in this list.
 	// +kubebuilder:default={"client","lease_id"}
+	// +kubebuilder:validation:MaxItems=16
+	// +kubebuilder:validation:items:MaxLength=32
 	ExemplarKeys []string `json:"exemplarKeys,omitempty"`
 
 	// Allowed driver_type label values. Unlisted types are remapped to "other".
+	// At most 16 entries (the default set plus site-specific categories), each
+	// at most 32 characters.
 	// +kubebuilder:default={"power","storage","network","serial","console","video","composite"}
+	// +kubebuilder:validation:MaxItems=16
+	// +kubebuilder:validation:items:MaxLength=32
 	DriverTypeEnum []string `json:"driverTypeEnum,omitempty"`
 
 	// Max wait for parallel exporter MetricsStream responses during a /metrics fan-out.
