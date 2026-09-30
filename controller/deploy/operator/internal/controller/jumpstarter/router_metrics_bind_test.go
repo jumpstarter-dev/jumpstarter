@@ -39,7 +39,7 @@ var _ = Describe("createRouterDeployment metrics bind", func() {
 				Routers: operatorv1alpha1.RoutersConfig{
 					Image:           "example.com/router:test",
 					ImagePullPolicy: corev1.PullIfNotPresent,
-					Replicas:        1,
+					Replicas:        new(int32(1)),
 				},
 			},
 		}

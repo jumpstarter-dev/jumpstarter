@@ -522,7 +522,7 @@ provisioning:
 			}, jumpstarter)
 			Expect(err).NotTo(HaveOccurred())
 
-			jumpstarter.Spec.Controller.Replicas = 3
+			jumpstarter.Spec.Controller.Replicas = new(int32(3))
 			Expect(k8sClient.Update(ctx, jumpstarter)).To(Succeed())
 			DeferCleanup(func() {
 				restore := &operatorv1alpha1.Jumpstarter{}
@@ -533,7 +533,7 @@ provisioning:
 				if getErr != nil {
 					return
 				}
-				restore.Spec.Controller.Replicas = 1
+				restore.Spec.Controller.Replicas = new(int32(1))
 				_ = k8sClient.Update(ctx, restore)
 			})
 
@@ -732,7 +732,7 @@ provisioning:
 			}, jumpstarter)
 			Expect(err).NotTo(HaveOccurred())
 
-			jumpstarter.Spec.Routers.Replicas = 3
+			jumpstarter.Spec.Routers.Replicas = new(int32(3))
 			err = k8sClient.Update(ctx, jumpstarter)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -740,7 +740,7 @@ provisioning:
 			allRoutersDeploymentsCreated := func(g Gomega) bool {
 				deployment := &appsv1.Deployment{}
 
-				for i := 0; i < int(jumpstarter.Spec.Routers.Replicas); i++ {
+				for i := 0; i < int(*jumpstarter.Spec.Routers.Replicas); i++ {
 					err := k8sClient.Get(ctx, types.NamespacedName{
 						Name:      fmt.Sprintf("jumpstarter-router-%d", i),
 						Namespace: dynamicTestNamespace,
@@ -757,7 +757,7 @@ provisioning:
 			By("verifying the new router services were created")
 			allRoutersServicesCreated := func(g Gomega) bool {
 				service := &corev1.Service{}
-				for i := 0; i < int(jumpstarter.Spec.Routers.Replicas); i++ {
+				for i := 0; i < int(*jumpstarter.Spec.Routers.Replicas); i++ {
 					err := k8sClient.Get(ctx, types.NamespacedName{
 						Name:      fmt.Sprintf("jumpstarter-router-%d-np", i),
 						Namespace: dynamicTestNamespace,
@@ -789,7 +789,7 @@ provisioning:
 			}, jumpstarter)
 			Expect(err).NotTo(HaveOccurred())
 
-			jumpstarter.Spec.Routers.Replicas = 1
+			jumpstarter.Spec.Routers.Replicas = new(int32(1))
 			err = k8sClient.Update(ctx, jumpstarter)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -814,6 +814,113 @@ provisioning:
 				return len(serviceList.Items)
 			}
 			Eventually(routerServicesCount, 1*time.Minute).Should(Equal(1))
+		})
+
+		It("should suspend the controller deployment when replicas is set to 0", func() {
+			By("setting controller.replicas=0")
+			jumpstarter := &operatorv1alpha1.Jumpstarter{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "jumpstarter",
+				Namespace: dynamicTestNamespace,
+			}, jumpstarter)).To(Succeed())
+
+			jumpstarter.Spec.Controller.Replicas = new(int32(0))
+			Expect(k8sClient.Update(ctx, jumpstarter)).To(Succeed())
+
+			DeferCleanup(func() {
+				restore := &operatorv1alpha1.Jumpstarter{}
+				if getErr := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "jumpstarter",
+					Namespace: dynamicTestNamespace,
+				}, restore); getErr != nil {
+					return
+				}
+				restore.Spec.Controller.Replicas = new(int32(1))
+				_ = k8sClient.Update(ctx, restore)
+			})
+
+			By("verifying the controller Deployment still exists with 0 desired pods")
+			Eventually(func(g Gomega) {
+				dep := &appsv1.Deployment{}
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "jumpstarter-controller",
+					Namespace: dynamicTestNamespace,
+				}, dep)).To(Succeed())
+				g.Expect(dep.Spec.Replicas).NotTo(BeNil())
+				g.Expect(*dep.Spec.Replicas).To(Equal(int32(0)))
+			}, 2*time.Minute).Should(Succeed())
+
+			By("verifying status condition ControllerDeploymentReady has Suspended reason")
+			Eventually(func(g Gomega) {
+				js := &operatorv1alpha1.Jumpstarter{}
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "jumpstarter",
+					Namespace: dynamicTestNamespace,
+				}, js)).To(Succeed())
+				cond := meta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypeControllerDeploymentReady)
+				g.Expect(cond).NotTo(BeNil())
+				g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(cond.Reason).To(Equal("Suspended"))
+			}, 2*time.Minute).Should(Succeed())
+		})
+
+		It("should suspend router deployments when replicas is set to 0 and preserve Services", func() {
+			By("setting routers.replicas=0")
+			jumpstarter := &operatorv1alpha1.Jumpstarter{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "jumpstarter",
+				Namespace: dynamicTestNamespace,
+			}, jumpstarter)).To(Succeed())
+
+			jumpstarter.Spec.Routers.Replicas = new(int32(0))
+			Expect(k8sClient.Update(ctx, jumpstarter)).To(Succeed())
+
+			DeferCleanup(func() {
+				restore := &operatorv1alpha1.Jumpstarter{}
+				if getErr := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "jumpstarter",
+					Namespace: dynamicTestNamespace,
+				}, restore); getErr != nil {
+					return
+				}
+				restore.Spec.Routers.Replicas = new(int32(1))
+				_ = k8sClient.Update(ctx, restore)
+			})
+
+			By("verifying all router Deployments are scaled to 0 pods")
+			Eventually(func(g Gomega) {
+				depList := &appsv1.DeploymentList{}
+				g.Expect(k8sClient.List(ctx, depList,
+					client.InNamespace(dynamicTestNamespace),
+					client.MatchingLabels{"component": "router"},
+				)).To(Succeed())
+				g.Expect(depList.Items).NotTo(BeEmpty())
+				for i := range depList.Items {
+					g.Expect(depList.Items[i].Spec.Replicas).NotTo(BeNil())
+					g.Expect(*depList.Items[i].Spec.Replicas).To(Equal(int32(0)),
+						"router deployment %s should have 0 replicas", depList.Items[i].Name)
+				}
+			}, 2*time.Minute).Should(Succeed())
+
+			By("verifying router Services are preserved while suspended")
+			svc := &corev1.Service{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      fmt.Sprintf("%s-router-0-np", "jumpstarter"),
+				Namespace: dynamicTestNamespace,
+			}, svc)).To(Succeed(), "router Service should still exist while suspended")
+
+			By("verifying status condition RouterDeploymentsReady has Suspended reason")
+			Eventually(func(g Gomega) {
+				js := &operatorv1alpha1.Jumpstarter{}
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "jumpstarter",
+					Namespace: dynamicTestNamespace,
+				}, js)).To(Succeed())
+				cond := meta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypeRouterDeploymentsReady)
+				g.Expect(cond).NotTo(BeNil())
+				g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(cond.Reason).To(Equal("Suspended"))
+			}, 2*time.Minute).Should(Succeed())
 		})
 
 		It("should setup ingress for the controller and router for ingress mode", func() {
@@ -2059,7 +2166,7 @@ dSignatureRotatedSignatureRotatedSignatureRotatedSignatureRotatedSig==
 					Controller: operatorv1alpha1.ControllerConfig{
 						Image:           image,
 						ImagePullPolicy: corev1.PullIfNotPresent,
-						Replicas:        1,
+						Replicas:        new(int32(1)),
 						GRPC: operatorv1alpha1.GRPCConfig{
 							Endpoints: []operatorv1alpha1.Endpoint{
 								{Address: fmt.Sprintf("grpc.%s:8082", jwtCATestNamespace)},
@@ -2069,7 +2176,7 @@ dSignatureRotatedSignatureRotatedSignatureRotatedSignatureRotatedSig==
 					Routers: operatorv1alpha1.RoutersConfig{
 						Image:           image,
 						ImagePullPolicy: corev1.PullIfNotPresent,
-						Replicas:        1,
+						Replicas:        new(int32(1)),
 						GRPC: operatorv1alpha1.GRPCConfig{
 							Endpoints: []operatorv1alpha1.Endpoint{
 								{Address: fmt.Sprintf("router.%s:8083", jwtCATestNamespace)},
