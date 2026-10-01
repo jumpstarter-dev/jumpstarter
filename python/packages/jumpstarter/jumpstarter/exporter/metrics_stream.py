@@ -1,7 +1,8 @@
 """Exporter MetricsStream client — reverse-scrape snapshots for jumpstarter-telemetry.
 
-Does not replace the local HTTP GET /metrics loopback bind (CLI :0); reverse-scrape
-is an additional path using the same generate_latest() bytes.
+Does not replace the local HTTP GET /metrics loopback bind (CLI :0). Reverse-scrape
+is an additional path: ``families`` is the payload the hub merges, and ``metrics_text``
+is the same ``generate_latest()`` bytes as a local scrape.
 """
 
 from __future__ import annotations
@@ -10,10 +11,9 @@ import logging
 from typing import Any
 
 from anyio import sleep
-from google.protobuf.timestamp_pb2 import Timestamp
 from jumpstarter_protocol import telemetry_pb2, telemetry_pb2_grpc
 
-from jumpstarter.metrics import MetricsRegistry, get_registry
+from jumpstarter.metrics import MetricsRegistry, get_registry, scrape_response_from_registry
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +41,8 @@ class MetricsStreamClient:
         self._backoff_base = backoff_base
         self._backoff_cap = backoff_cap
 
-    def _metrics_text(self) -> bytes:
-        reg = self._registry if self._registry is not None else get_registry()
-        return reg.generate_latest()
+    def _registry_or_default(self) -> MetricsRegistry:
+        return self._registry if self._registry is not None else get_registry()
 
     def _call_kwargs(self) -> dict[str, Any]:
         if self.token:
@@ -57,7 +56,7 @@ class MetricsStreamClient:
             try:
                 await self._session()
                 delay = self._backoff_base
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — reconnect on any stream failure; counters stay local.
                 logger.debug("MetricsStream disconnected: %s; retry in %ss", exc, delay)
                 await sleep(delay)
                 delay = min(delay * 2, self._backoff_cap)
@@ -74,13 +73,8 @@ class MetricsStreamClient:
         async for resp in call:
             if resp.WhichOneof("msg") != "scrape_request":
                 continue
-            ts = Timestamp()
-            ts.GetCurrentTime()
             await call.write(
                 telemetry_pb2.MetricsStreamRequest(
-                    scrape_response=telemetry_pb2.MetricsScrapeResponse(
-                        metrics_text=self._metrics_text(),
-                        timestamp=ts,
-                    ),
+                    scrape_response=scrape_response_from_registry(self._registry_or_default()),
                 )
             )
