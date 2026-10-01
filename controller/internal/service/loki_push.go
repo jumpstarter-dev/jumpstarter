@@ -115,10 +115,14 @@ func normalizeLokiPushURL(raw string) (string, error) {
 	return u.String(), nil
 }
 
+func rejectLokiRedirect(*http.Request, []*http.Request) error {
+	return fmt.Errorf("loki push: redirects are not followed")
+}
+
 func lokiHTTPClient(cfg LokiConfig) (*http.Client, error) {
 	transport, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
-		return &http.Client{Timeout: lokiHTTPTimeout}, nil
+		return &http.Client{Timeout: lokiHTTPTimeout, CheckRedirect: rejectLokiRedirect}, nil
 	}
 	transport = transport.Clone()
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
@@ -142,7 +146,11 @@ func lokiHTTPClient(cfg LokiConfig) (*http.Client, error) {
 	if customTLS {
 		transport.TLSClientConfig = tlsCfg
 	}
-	return &http.Client{Timeout: lokiHTTPTimeout, Transport: transport}, nil
+	return &http.Client{
+		Timeout:       lokiHTTPTimeout,
+		Transport:     transport,
+		CheckRedirect: rejectLokiRedirect,
+	}, nil
 }
 
 // NewLokiPusher returns nil, nil when URL is empty (metrics-only).
