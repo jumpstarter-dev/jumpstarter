@@ -94,6 +94,13 @@ func normalizeQueueDepth(d int) int {
 	return d
 }
 
+func lokiCredentialsConfigured(cfg LokiConfig, u *url.URL) bool {
+	if cfg.Token != "" || cfg.Username != "" || cfg.Password != "" {
+		return true
+	}
+	return u != nil && u.User != nil
+}
+
 func normalizeLokiPushURL(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -138,7 +145,8 @@ func lokiHTTPClient(cfg LokiConfig) (*http.Client, error) {
 	return &http.Client{Timeout: lokiHTTPTimeout, Transport: transport}, nil
 }
 
-// NewLokiPusher returns nil, nil when URL is empty (metrics-only). grpc:// is rejected.
+// NewLokiPusher returns nil, nil when URL is empty (metrics-only).
+// grpc:// is rejected. HTTP is allowed only without credentials.
 func NewLokiPusher(cfg LokiConfig, dropped *prometheus.CounterVec) (*LokiPusher, error) {
 	raw := strings.TrimSpace(cfg.URL)
 	if raw == "" {
@@ -150,6 +158,9 @@ func NewLokiPusher(cfg LokiConfig, dropped *prometheus.CounterVec) (*LokiPusher,
 	}
 	if u.Scheme == "grpc" || u.Scheme == "grpcs" {
 		return nil, fmt.Errorf("loki gRPC scheme %q is not implemented; use http:// or https://", u.Scheme)
+	}
+	if u.Scheme == "http" && lokiCredentialsConfigured(cfg, u) {
+		return nil, fmt.Errorf("loki url: credentials require https")
 	}
 	pushURL, err := normalizeLokiPushURL(raw)
 	if err != nil {
