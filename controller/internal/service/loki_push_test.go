@@ -396,6 +396,53 @@ func TestLokiPush_BearerToken(t *testing.T) {
 	}
 }
 
+func TestLokiPush_DoesNotFollowRedirect(t *testing.T) {
+	var (
+		mu      sync.Mutex
+		gotAuth string
+		gotBody []byte
+	)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		gotAuth = r.Header.Get("Authorization")
+		gotBody = body
+		mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(target.Close)
+
+	// 307 resends the POST. Go forwards Authorization to the same host,
+	// including an https to http change.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(srv.Close)
+
+	p, err := NewLokiPusher(LokiConfig{
+		URL:                srv.URL,
+		Token:              "s3cret",
+		InsecureSkipVerify: true,
+		QueueDepth:         8,
+	}, testDroppedCounter())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Enqueue(logEntry("do not redirect"))
+	if err := p.Flush(context.Background()); err == nil {
+		t.Fatal("expected flush error when Loki redirects")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if gotAuth != "" || len(gotBody) != 0 {
+		t.Fatalf("redirect target received auth=%q body=%d bytes", gotAuth, len(gotBody))
+	}
+	queued := p.queued()
+	if len(queued) != 1 || queued[0].Message != "do not redirect" {
+		t.Fatalf("failed redirect must keep the buffer, queued = %v", messages(queued))
+	}
+}
+
 func TestDroppedTotalRegisteredOnMetrics(t *testing.T) {
 	svc := &TelemetryService{}
 	svc.initScrapeTimeouts()
