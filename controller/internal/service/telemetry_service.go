@@ -341,9 +341,10 @@ func (s *TelemetryService) Start(ctx context.Context) error {
 			s.Loki = pusher
 		}
 	}
-	if s.Loki != nil {
-		go s.Loki.Run(ctx)
-	}
+	// Not a child of ctx. Cancelling the process context stops HTTP and gRPC
+	// first; the final Loki flush starts only after that, from the defer.
+	stopLoki := startLokiRun(s.Loki)
+	defer stopLoki()
 
 	httpShutdown, err := s.startMetricsHTTP()
 	if err != nil {
@@ -392,6 +393,26 @@ func (s *TelemetryService) Start(ctx context.Context) error {
 		}
 		srv.Stop()
 		return err
+	}
+}
+
+// startLokiRun flushes until stop is called, then once more inside Run.
+// stop blocks until that flush returns. A nil pusher makes stop a no-op.
+func startLokiRun(p *LokiPusher) func() {
+	if p == nil {
+		return func() {}
+	}
+	// Independent of the process context so SIGTERM does not flush while
+	// PushLogs is still being accepted.
+	lokiCtx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		p.Run(lokiCtx)
+	}()
+	return func() {
+		cancel()
+		<-done
 	}
 }
 
