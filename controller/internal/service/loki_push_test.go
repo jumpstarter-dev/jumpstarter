@@ -66,6 +66,30 @@ func TestNewLokiPusher_EmptyURLIsNil(t *testing.T) {
 	}
 }
 
+func TestNewLokiPusher_RejectsCredentialsOverHTTP(t *testing.T) {
+	cases := []LokiConfig{
+		{URL: "http://loki:3100", Token: "s3cret"},
+		{URL: "http://loki:3100", Username: "loki", Password: "secret"},
+		{URL: "http://loki:3100", Password: "secret"},
+		{URL: "http://user:s3cret@loki:3100"},
+	}
+	for _, cfg := range cases {
+		p, err := NewLokiPusher(cfg, testDroppedCounter())
+		if err == nil || p != nil {
+			t.Errorf("NewLokiPusher(%q) created a pusher, want an error", cfg.URL)
+		}
+	}
+
+	plain, err := NewLokiPusher(LokiConfig{URL: "http://loki:3100"}, testDroppedCounter())
+	if err != nil || plain == nil {
+		t.Fatalf("http without credentials: pusher=%v err=%v", plain, err)
+	}
+	secure, err := NewLokiPusher(LokiConfig{URL: "https://loki:3100", Token: "s3cret"}, testDroppedCounter())
+	if err != nil || secure == nil {
+		t.Fatalf("https with token: pusher=%v err=%v", secure, err)
+	}
+}
+
 func TestNewLokiPusher_GRPCSchemeNotImplemented(t *testing.T) {
 	p, err := NewLokiPusher(LokiConfig{URL: "grpc://loki.monitoring.svc:9095"}, testDroppedCounter())
 	if p != nil {
@@ -159,7 +183,7 @@ func TestLokiPush_HTTPPostsOpenMetricsCompatibleJSON(t *testing.T) {
 		gotCT   string
 		gotBody []byte
 	)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		mu.Lock()
 		gotPath = r.URL.Path
@@ -173,10 +197,11 @@ func TestLokiPush_HTTPPostsOpenMetricsCompatibleJSON(t *testing.T) {
 
 	dropped := testDroppedCounter()
 	p, err := NewLokiPusher(LokiConfig{
-		URL:        srv.URL,
-		Username:   "loki",
-		Password:   "secret",
-		QueueDepth: 10,
+		URL:                srv.URL,
+		Username:           "loki",
+		Password:           "secret",
+		InsecureSkipVerify: true,
+		QueueDepth:         10,
 	}, dropped)
 	if err != nil {
 		t.Fatal(err)
@@ -347,13 +372,18 @@ func messages(entries []*pb.LogEntry) []string {
 
 func TestLokiPush_BearerToken(t *testing.T) {
 	var gotAuth string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	t.Cleanup(srv.Close)
 
-	p, err := NewLokiPusher(LokiConfig{URL: srv.URL, Token: "s3cret", QueueDepth: 8}, testDroppedCounter())
+	p, err := NewLokiPusher(LokiConfig{
+		URL:                srv.URL,
+		Token:              "s3cret",
+		InsecureSkipVerify: true,
+		QueueDepth:         8,
+	}, testDroppedCounter())
 	if err != nil {
 		t.Fatal(err)
 	}
