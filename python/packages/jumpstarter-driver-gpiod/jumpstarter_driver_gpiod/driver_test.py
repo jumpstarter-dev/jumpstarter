@@ -103,21 +103,6 @@ class TestDigitalOutputClient:
 
         assert PowerSwitch.client() == "jumpstarter_driver_power.client.PowerClient"
 
-    def test_power_switch_client_is_a_deprecated_power_client(self):
-        """PowerSwitchClient stays importable, adds nothing to PowerClient, and warns."""
-        from jumpstarter_driver_power.client import PowerClient
-
-        from jumpstarter_driver_gpiod.client import PowerSwitchClient
-
-        assert issubclass(PowerSwitchClient, PowerClient)
-        assert "status" not in vars(PowerSwitchClient)
-        assert "cli" not in vars(PowerSwitchClient)
-        with (
-            patch.object(PowerClient, "__post_init__", create=True),
-            pytest.warns(DeprecationWarning, match="PowerSwitchClient is deprecated"),
-        ):
-            PowerSwitchClient.__post_init__(MagicMock(spec=PowerSwitchClient))
-
 
 class TestDigitalInputClient:
     """Test the DigitalInputClient"""

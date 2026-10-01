@@ -280,10 +280,6 @@ confirm it.
 `PowerSwitch` uses the standard `jumpstarter_driver_power.client.PowerClient`
 (`on`, `off`, `cycle`, `status`).
 
-`jumpstarter_driver_gpiod.client.PowerSwitchClient` is **deprecated**. It is kept
-so existing imports keep working, adds nothing to `PowerClient`, and emits a
-`DeprecationWarning` when created. Use `PowerClient` instead.
-
 ### DigitalInputClient
 
 ```{eval-rst}

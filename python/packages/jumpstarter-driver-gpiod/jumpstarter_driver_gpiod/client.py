@@ -1,4 +1,3 @@
-import warnings
 from dataclasses import dataclass
 from enum import Enum
 
@@ -59,23 +58,6 @@ class DigitalOutputClient(PowerClient):
             print(self.read())
 
         return gpio
-
-
-@dataclass(kw_only=True)
-class PowerSwitchClient(PowerClient):
-    """Deprecated: use ``jumpstarter_driver_power.client.PowerClient``.
-
-    ``PowerSwitch`` now uses ``PowerClient`` directly. This class adds nothing to it
-    and is kept only so existing imports keep working.
-    """
-
-    def __post_init__(self):
-        warnings.warn(
-            "PowerSwitchClient is deprecated, use jumpstarter_driver_power.client.PowerClient",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__post_init__()
 
 
 @dataclass(kw_only=True)
