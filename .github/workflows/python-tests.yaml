@@ -207,10 +207,40 @@ jobs:
           fi
           uv run diff-cover $coverage_files --compare-branch=origin/${{ github.base_ref }} --fail-under=80 --exclude '*_pb2.py' '*_pb2_grpc.py' '**/conftest.py' '**/test_*.py' '**/*_test.py'
 
+  # Verify jumpstarter-all resolves under plain pip, the resolver end users get
+  # via install.sh. Runs on PRs too (unlike pytest-matrix, which only tests
+  # Python 3.14 on PRs).
+  pip-resolution:
+    needs: changes
+    if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Full history so hatch-vcs derives the same versions as elsewhere.
+          fetch-depth: 0
+      - id: uv
+        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: ${{ steps.uv.outputs.version }}
+          python-version: ${{ matrix.python-version }}
+      - name: Verify plain-pip dependency resolution
+        working-directory: python
+        run: |
+          uv build --all --out-dir dist
+          uv venv --python "${{ matrix.python-version }}" --seed .pip-resolve
+          # By path: dev versions are pre-releases, so a bare name would resolve to PyPI's release
+          ./.pip-resolve/bin/python -m pip install --dry-run --find-links dist dist/jumpstarter_all-*.whl
+
   # https://github.com/orgs/community/discussions/26822
   pytest:
     runs-on: ubuntu-latest
-    needs: [changes, pytest-matrix]
+    needs: [changes, pytest-matrix, pip-resolution]
     if: ${{ always() }}
     steps:
       - run: exit 1

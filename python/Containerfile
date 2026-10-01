@@ -53,5 +53,8 @@ FROM product
 RUN --mount=from=wheels,source=/src/python/dist,target=/dist \
     uv venv /jumpstarter && \
     VIRTUAL_ENV=/jumpstarter uv pip install /dist/*.whl
+# jumpstarter-driver-mitmproxy launches mitmdump as an external program and no
+# longer depends on it, so install it explicitly (on PATH for the driver).
+RUN UV_TOOL_DIR=/opt/uv-tools UV_TOOL_BIN_DIR=/usr/local/bin uv tool install "mitmproxy>=12"
 COPY --from=rust-builder /src/rust/target/release/jumpstarter-exec /jumpstarter/bin/jumpstarter-exec
 ENV PATH="/jumpstarter/bin:$PATH"

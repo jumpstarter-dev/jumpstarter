@@ -35,6 +35,7 @@ import json
 import logging
 import os
 import secrets
+import shutil
 import signal
 import socket
 import subprocess
@@ -53,6 +54,17 @@ from pydantic import BaseModel, model_validator
 from jumpstarter.driver import Driver, export, exportstream
 
 logger = logging.getLogger(__name__)
+
+def _verify_mitmproxy_binary(binary: str) -> str | None:
+    # mitmproxy is launched as an external program, not a Python dependency, so
+    # check it is on PATH up front rather than letting Popen raise a bare error.
+    if shutil.which(binary) is None:
+        return (
+            f"Error: '{binary}' not found on PATH. Install mitmproxy separately, "
+            f"e.g. `uv tool install mitmproxy` or `pipx install mitmproxy`."
+        )
+    return None
+
 
 # ── Capture export helpers ───────────────────────────────────
 
@@ -495,6 +507,10 @@ class MitmproxyDriver(Driver):
         # passthrough: no extra flags needed
 
         binary = cmd[0]
+        binary_error = _verify_mitmproxy_binary(binary)
+        if binary_error:
+            return binary_error
+
         logger.info("Starting %s: %s", binary, " ".join(cmd))
 
         self._process = subprocess.Popen(
