@@ -527,7 +527,6 @@ func TestTelemetryService_StartDrainsLokiAfterGRPCStops(t *testing.T) {
 	)
 	release := make(chan struct{})
 	releaseFlush := func() { releaseOnce.Do(func() { close(release) }) }
-	t.Cleanup(releaseFlush)
 	entered := make(chan struct{})
 	var enteredOnce sync.Once
 
@@ -549,7 +548,10 @@ func TestTelemetryService_StartDrainsLokiAfterGRPCStops(t *testing.T) {
 		<-release
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	// Last registered cleanup runs first. Release the handler before Close,
+	// which waits for that handler to return.
 	t.Cleanup(srv.Close)
+	t.Cleanup(releaseFlush)
 
 	pusher, err := NewLokiPusher(LokiConfig{URL: srv.URL, QueueDepth: 10}, nil)
 	if err != nil {
