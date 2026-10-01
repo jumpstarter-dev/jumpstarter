@@ -20,6 +20,8 @@ from __future__ import annotations
 import urllib.request
 from unittest.mock import MagicMock, patch
 
+import anyio
+import anyio.lowlevel
 import grpc
 import pytest
 from anyio import EndOfStream, create_memory_object_stream, create_task_group, fail_after, sleep
@@ -150,6 +152,37 @@ class TestMetricsStreamProtocol:
         assert scrape.scrape_response.metrics_text == expected
         assert scrape.scrape_response.HasField("timestamp")
         assert scrape.scrape_response.timestamp.seconds > 0
+        assert scrape.scrape_response.families
+
+    async def test_scrape_families_carry_exemplars(self):
+        reg = MetricsRegistry()
+        reg.record_operation(
+            exporter=IDENTITY,
+            operation="power",
+            result="success",
+            driver_type="power",
+            duration_seconds=0.05,
+            exemplars={"client": "ci-bot", "lease_id": "lease-xyz"},
+        )
+        expected = reg.generate_latest()
+
+        call = FakeMetricsCall()
+        client = MetricsStreamClient(RecordingStub(call), identity=IDENTITY, token=TOKEN, registry=reg)
+
+        async with create_task_group() as tg:
+            tg.start_soon(client.run)
+            await _wait_until(lambda: len(call.writes) >= 1)
+            await call.push_scrape()
+            await _wait_until(lambda: len(call.writes) >= 2)
+            tg.cancel_scope.cancel()
+
+        resp = call.writes[1].scrape_response
+        assert resp.metrics_text == expected
+        names = {fam.name: fam for fam in resp.families}
+        counter = names["jumpstarter_operations_total"]
+        ex_labels = {lp.name: lp.value for lp in counter.samples[0].exemplar.labels}
+        assert ex_labels["client"] == "ci-bot"
+        assert ex_labels["lease_id"] == "lease-xyz"
 
     async def test_empty_registry_still_sends_scrape_response(self):
         reg = MetricsRegistry()
@@ -176,7 +209,9 @@ class TestMetricsStreamProtocol:
         _record_op(reg)
         listen, shutdown = start_metrics_server("127.0.0.1:0", registry=reg)
         try:
-            http_body = urllib.request.urlopen(f"http://{listen}/metrics").read()
+            http_body = await anyio.to_thread.run_sync(
+                lambda: urllib.request.urlopen(f"http://{listen}/metrics").read()
+            )
         finally:
             assert shutdown is not None
             shutdown()
@@ -247,7 +282,7 @@ class TestMetricsStreamProtocol:
 
         async def fake_sleep(seconds: float) -> None:
             delays.append(seconds)
-            await sleep(0)
+            await anyio.lowlevel.checkpoint()
 
         call = FakeMetricsCall()
         attempts = {"n": 0}
