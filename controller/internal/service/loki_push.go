@@ -68,14 +68,15 @@ type lokiStream struct {
 
 // LokiPusher is a bounded ring buffer that POSTs LogEntry batches to Loki.
 type LokiPusher struct {
-	url        string
-	username   string
-	password   string
-	token      string
-	client     *http.Client
-	queueDepth int
-	dropped    prometheus.Counter
-	now        func() time.Time
+	url           string
+	username      string
+	password      string
+	token         string
+	client        *http.Client
+	queueDepth    int
+	flushInterval time.Duration
+	dropped       prometheus.Counter
+	now           func() time.Time
 
 	mu        sync.Mutex
 	entries   []*pb.LogEntry
@@ -163,14 +164,15 @@ func NewLokiPusher(cfg LokiConfig, dropped *prometheus.CounterVec) (*LokiPusher,
 		counter = dropped.WithLabelValues(droppedDestination)
 	}
 	return &LokiPusher{
-		url:        pushURL,
-		username:   cfg.Username,
-		password:   cfg.Password,
-		token:      cfg.Token,
-		client:     client,
-		queueDepth: normalizeQueueDepth(cfg.QueueDepth),
-		dropped:    counter,
-		now:        time.Now,
+		url:           pushURL,
+		username:      cfg.Username,
+		password:      cfg.Password,
+		token:         cfg.Token,
+		client:        client,
+		queueDepth:    normalizeQueueDepth(cfg.QueueDepth),
+		flushInterval: lokiFlushInterval,
+		dropped:       counter,
+		now:           time.Now,
 	}, nil
 }
 
@@ -327,7 +329,11 @@ func (p *LokiPusher) Run(ctx context.Context) {
 	if p == nil {
 		return
 	}
-	ticker := time.NewTicker(lokiFlushInterval)
+	interval := p.flushInterval
+	if interval <= 0 {
+		interval = lokiFlushInterval
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
