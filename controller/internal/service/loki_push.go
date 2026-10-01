@@ -249,13 +249,30 @@ func (p *LokiPusher) takeBatch() (entries []*pb.LogEntry, dropCount int, dropFir
 func (p *LokiPusher) restoreBatch(entries []*pb.LogEntry, dropCount int, dropFirst time.Time) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.entries = append(entries, p.entries...)
 	if dropCount > 0 {
 		if p.dropCount == 0 || (!dropFirst.IsZero() && (p.dropFirst.IsZero() || dropFirst.Before(p.dropFirst))) {
 			p.dropFirst = dropFirst
 		}
 		p.dropCount += dropCount
 	}
+	// Prepend the failed batch so it is retried before entries accepted while
+	// the request was in flight. Keep at most maxReal entries; the rest become
+	// the same drop marker Enqueue uses when the queue is full.
+	combined := make([]*pb.LogEntry, 0, len(entries)+len(p.entries))
+	combined = append(combined, entries...)
+	combined = append(combined, p.entries...)
+	limit := p.maxReal()
+	if overflow := len(combined) - limit; overflow > 0 {
+		combined = combined[:limit]
+		if p.dropCount == 0 {
+			p.dropFirst = p.now()
+		}
+		p.dropCount += overflow
+		if p.dropped != nil {
+			p.dropped.Add(float64(overflow))
+		}
+	}
+	p.entries = combined
 }
 
 // Flush POSTs queued entries to Loki. On HTTP failure the buffer is restored.

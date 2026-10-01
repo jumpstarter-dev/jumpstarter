@@ -255,6 +255,96 @@ func TestLokiPush_FlushFailureKeepsBuffer(t *testing.T) {
 	}
 }
 
+func TestLokiPush_FlushFailureKeepsInFlightEntriesThatFit(t *testing.T) {
+	var p *LokiPusher
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		p.Enqueue(logEntry("during"))
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+
+	dropped := testDroppedCounter()
+	var err error
+	p, err = NewLokiPusher(LokiConfig{URL: srv.URL, QueueDepth: 10}, dropped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Enqueue(logEntry("before"))
+	if err := p.Flush(context.Background()); err == nil {
+		t.Fatal("expected flush error")
+	}
+	queued := p.queued()
+	if len(queued) != 2 || queued[0].Message != "before" || queued[1].Message != "during" {
+		t.Fatalf("queued = %v, want before then during", messages(queued))
+	}
+	if got := counterValue(t, dropped, "loki"); got != 0 {
+		t.Errorf("dropped_total = %v, want 0", got)
+	}
+}
+
+func TestLokiPush_FlushFailureStaysWithinQueueDepth(t *testing.T) {
+	dropped := testDroppedCounter()
+	var p *LokiPusher
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Accepted while the failed batch is in flight. Depth 3 holds two real
+		// entries, so restoring both batches without a cap would grow to four.
+		p.Enqueue(logEntry("c"))
+		p.Enqueue(logEntry("d"))
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+
+	var err error
+	p, err = NewLokiPusher(LokiConfig{URL: srv.URL, QueueDepth: 3}, dropped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Enqueue(logEntry("a"))
+	p.Enqueue(logEntry("b"))
+
+	if err := p.Flush(context.Background()); err == nil {
+		t.Fatal("expected flush error")
+	}
+	queued := p.queued()
+	if len(queued) != 3 {
+		t.Fatalf("queued = %d, want 2 real entries + 1 drop marker", len(queued))
+	}
+	if queued[0].Message != "a" || queued[1].Message != "b" {
+		t.Fatalf("real entries = %q, %q; want a, b", queued[0].Message, queued[1].Message)
+	}
+	if queued[2].ExtraFields["count"] != "2" {
+		t.Errorf("marker count = %q, want 2", queued[2].ExtraFields["count"])
+	}
+	if got := counterValue(t, dropped, "loki"); got != 2 {
+		t.Errorf("dropped_total = %v, want 2", got)
+	}
+
+	if err := p.Flush(context.Background()); err == nil {
+		t.Fatal("expected second flush error")
+	}
+	queued = p.queued()
+	if len(queued) != 3 {
+		t.Fatalf("after second failure queued = %d, want queue depth 3", len(queued))
+	}
+	if queued[0].Message != "a" || queued[1].Message != "b" {
+		t.Fatalf("real entries = %q, %q; want the original batch", queued[0].Message, queued[1].Message)
+	}
+	if queued[2].ExtraFields["count"] != "4" {
+		t.Errorf("marker count = %q, want 4", queued[2].ExtraFields["count"])
+	}
+	if got := counterValue(t, dropped, "loki"); got != 4 {
+		t.Errorf("dropped_total = %v, want 4", got)
+	}
+}
+
+func messages(entries []*pb.LogEntry) []string {
+	out := make([]string, len(entries))
+	for i, e := range entries {
+		out[i] = e.Message
+	}
+	return out
+}
+
 func TestLokiPush_BearerToken(t *testing.T) {
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
