@@ -37,6 +37,7 @@ package main
 import (
 	"context"
 	"flag"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -70,6 +71,16 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
+}
+
+// lokiLogTarget is the scheme and host of a Loki URL. Userinfo, path, and
+// query can carry credentials, so they are left out of startup logs.
+func lokiLogTarget(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || u.Scheme == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 func main() {
@@ -147,7 +158,7 @@ func main() {
 		},
 	}
 	if lokiURL != "" {
-		logger.Info("Loki HTTP push configured", "url", lokiURL, "queueDepth", lokiQueueDepth)
+		logger.Info("Loki HTTP push configured", "url", lokiLogTarget(lokiURL), "queueDepth", lokiQueueDepth)
 	}
 
 	// Register signal handler before starting the service so no signal
