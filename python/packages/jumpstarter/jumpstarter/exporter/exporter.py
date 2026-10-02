@@ -962,7 +962,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         """
         with Session(
             uuid=self.uuid,
-            labels=self._session_labels(),
+            labels=self.labels,
             exporter_name=self.exporter_name,
             root_device=self.device_factory(),
             motd=self.motd,
@@ -999,7 +999,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         logger.info("Creating new session for lease")
         with Session(
             uuid=self.uuid,
-            labels=self._session_labels(),
+            labels=self.labels,
             exporter_name=self.exporter_name,
             root_device=self.device_factory(),
             motd=self.motd,
@@ -1338,10 +1338,6 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 if await self._apply_status(message, tg):
                     break
 
-    def _session_labels(self) -> dict[str, str]:
-        """Labels for local Session/metrics. Not sent on Register (#1058)."""
-        return {**self.labels, "jumpstarter.dev/name": self.exporter_name}
-
     def _start_telemetry_tasks(self, tg: TaskGroup) -> None:
         """Start PushLogs flush and MetricsStream next to the control-plane tasks."""
         if self._telemetry_handler is not None:
@@ -1582,7 +1578,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             hook_path_str = str(hook_path)
             with Session(
                 uuid=self.uuid,
-                labels=self._session_labels(),
+                labels=self.labels,
                 exporter_name=self.exporter_name,
                 root_device=self.device_factory(),
                 motd=self.motd,
