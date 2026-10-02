@@ -2,7 +2,9 @@
 
 import logging
 import sys
+import time
 from collections import deque
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 import structlog.contextvars
@@ -62,12 +64,14 @@ class TelemetryLogHandler(logging.Handler):
         self,
         stub: telemetry_pb2_grpc.TelemetryServiceStub,
         namespace: str = "",
-        token: str = "",
+        token: str | Callable[[], str] = "",
+        component: str = "exporter",
     ) -> None:
         super().__init__()
         self._stub = stub
         self._namespace = namespace
         self._token = token
+        self.component = component
         self._queue: deque[telemetry_pb2.LogEntry] = deque(maxlen=_MAX_QUEUE_SIZE)
 
     def prepare(self, record: logging.LogRecord) -> telemetry_pb2.LogEntry:
@@ -84,7 +88,7 @@ class TelemetryLogHandler(logging.Handler):
             timestamp=ts,
             severity=_severity(record.levelname),
             message=record.getMessage(),
-            component="exporter",
+            component=self.component,
             namespace=self._namespace,
         )
 
@@ -140,8 +144,12 @@ class TelemetryLogHandler(logging.Handler):
         if not batch:
             return
 
-        metadata = [("authorization", f"Bearer {self._token}")] if self._token else []
         try:
+            # Resolve per batch so a refreshed client token is used without a new channel.
+            # A provider error is a failed push: the batch is already popped and must not
+            # escape flush_loop, which shares the shell task group.
+            token = self._token() if callable(self._token) else self._token
+            metadata = [("authorization", f"Bearer {token}")] if token else []
             await self._stub.PushLogs(
                 telemetry_pb2.PushLogsRequest(entries=batch),
                 timeout=_PUSH_TIMEOUT,
@@ -152,7 +160,19 @@ class TelemetryLogHandler(logging.Handler):
             print(f"[telemetry] PushLogs failed, {len(batch)} entries dropped: {exc}", file=sys.stderr)
 
     async def close_async(self) -> None:
-        """Flush all remaining entries and close the handler."""
-        while self._queue:
+        """Flush remaining entries until the shutdown budget expires, then drop the rest.
+
+        ``_PUSH_TIMEOUT`` bounds shutdown as well as one RPC. A hung PushLogs
+        must not be retried once per queued batch.
+        """
+        deadline = time.monotonic() + _PUSH_TIMEOUT
+        while self._queue and time.monotonic() < deadline:
             await self._flush()
+        dropped = len(self._queue)
+        self._queue.clear()
+        if dropped:
+            print(
+                f"[telemetry] shutdown budget elapsed, {dropped} entries dropped",
+                file=sys.stderr,
+            )
         self.close()

@@ -1033,11 +1033,6 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 	}
 }
 
-//go:fix inline
-func boolPtr(b bool) *bool {
-	return new(b)
-}
-
 // buildControllerPodAnnotations builds the pod template annotations for the controller deployment.
 // Includes config/TLS hashes for rolling restart on changes, plus any user-provided pod annotations.
 func (r *JumpstarterReconciler) buildControllerPodAnnotations(jumpstarter *operatorv1alpha1.Jumpstarter, configMapHash, tlsSecretHash string) map[string]string {
@@ -1324,7 +1319,8 @@ func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *op
 		Keys: jumpstarter.Spec.DeprecatedLabels.Keys,
 	}
 
-	// Telemetry configuration.
+	// Telemetry configuration. When cert-manager is enabled, inline the CA so
+	// GetServiceEndpoints.certificate lets exporters verify telemetry TLS.
 	if jumpstarter.Spec.Telemetry != nil && jumpstarter.Spec.Telemetry.Enabled {
 		t := jumpstarter.Spec.Telemetry
 		telemetryCfg := &config.Telemetry{
@@ -1768,6 +1764,8 @@ func (r *JumpstarterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 					keys = append(keys, jumpstarter.Namespace+"/"+s)
 				}
 			}
+
+			keys = append(keys, lokiReferencedSecretKeys(jumpstarter)...)
 
 			return keys
 		},

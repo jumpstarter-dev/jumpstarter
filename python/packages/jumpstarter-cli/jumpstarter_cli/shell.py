@@ -38,6 +38,7 @@ from .login import relogin_client
 from jumpstarter.client import DirectLease
 from jumpstarter.client.client import client_from_path, fetch_motd
 from jumpstarter.client.exceptions import LeaseError
+from jumpstarter.client.telemetry import attach_client_telemetry
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus
 from jumpstarter.common.exceptions import (
     ConnectionError,
@@ -587,8 +588,13 @@ async def _shell_with_signal_handling(  # noqa: C901
             err.set_config(config)
             raise err
 
+    telemetry = None
     async with create_task_group() as tg:
         tg.start_soon(signal_handler, tg.cancel_scope)
+
+        telemetry = await attach_client_telemetry(config)
+        if telemetry is not None:
+            tg.start_soon(telemetry.handler.flush_loop)
 
         try:
             try:
@@ -697,6 +703,8 @@ async def _shell_with_signal_handling(  # noqa: C901
             if not tg.cancel_scope.cancel_called:
                 tg.cancel_scope.cancel()
 
+    if telemetry is not None:
+        await telemetry.aclose()
     return exit_code
 
 

@@ -550,7 +550,7 @@ func (r *JumpstarterReconciler) reconcileCAConfigMap(ctx context.Context, js *op
 		if selfSignedEnabled {
 			caSecretName := js.Name + caCertificateSuffix
 			caSecret := &corev1.Secret{}
-			err := r.Client.Get(ctx, types.NamespacedName{
+			err := r.Get(ctx, types.NamespacedName{
 				Name:      caSecretName,
 				Namespace: js.Namespace,
 			}, caSecret)
