@@ -51,12 +51,13 @@ def test_fleet_to_cvds_matches_host_orchestrator_shape():
         "webrtc_device_id": "cvd-1", "adb_serial": "0.0.0.0:6520", "adb_port": 6520,
     }]
     assert fleet_to_cvds(json.dumps({"groups": []})) == []
+    assert fleet_to_cvds(json.dumps(FLEET["groups"])) == cvds
+    assert fleet_to_cvds("[]") == []
     assert group_to_cvds(FLEET["groups"][0])[0]["adb_port"] == 6520
 
 
 @pytest.mark.parametrize("output", [
     "not json",
-    "[]",
     json.dumps({"groups": "x"}),
     json.dumps({"groups": [{}]}),
     json.dumps({"groups": [{"group_name": "cvd_1", "instances": [None]}]}),
