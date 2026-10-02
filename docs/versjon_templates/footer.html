@@ -1,0 +1,86 @@
+{# FORMAT_VERSION #}
+
+{% macro format_version(version) %}
+{% if page in version.html_files %}
+{% set version_path = page_root + docs_path[version.name] + "/" + page %}
+{% else %}
+{% set version_path = page_root + docs_path[version.name] %}
+{% endif %}
+{% if current == version.name %}
+<strong>
+    <dd><a href="{{ version_path }}">{{ version.name }}</a></dd>
+</strong>
+{% else %}
+<dd><a href="{{ version_path }}">{{ version.name }}</a></dd>
+{% endif %}
+{% endmacro %}
+
+<div id="versjon-overlay">
+    <button type="button" class="versjon"><i class="fa fa-book"></i> Version: {{current}}</button>
+    <div class="versjon-content">
+        <div class="versjon-content-inner">
+            <dl>
+                <dt>Versions</dt>
+                {% for version in (semver + other) %}
+                {% if version.name[:8] == 'release-' %}
+                {{ format_version(version) | indent(16) }}
+                {% endif %}
+                {% endfor %}
+            </dl>
+            <dl>
+                <dt>Development</dt>
+                {% for version in (semver + other) %}
+                {% if version.name[:8] != 'release-' %}
+                {{ format_version(version) | indent(16) }}
+                {% endif %}
+                {% endfor %}
+            </dl>
+        </div>
+    </div>
+</div>
+<script>
+    var coll = document.getElementsByClassName("versjon");
+    var i;
+
+    for (i = 0; i < coll.length; i++) {
+        coll[i].addEventListener("click", function () {
+            this.classList.toggle("active");
+            var content = this.nextElementSibling;
+            if (content.style.maxHeight) {
+                content.style.maxHeight = null;
+            } else {
+                content.style.maxHeight = content.scrollHeight + "px";
+            }
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        var overlay = document.getElementById('versjon-overlay');
+        if (!overlay) return;
+
+        var bottomOfPage = document.querySelector('.bottom-of-page');
+        var container = bottomOfPage ? bottomOfPage.parentNode : document.body;
+        var after = bottomOfPage ? bottomOfPage.nextSibling : null;
+
+        if (after) {
+            container.insertBefore(overlay, after);
+        } else {
+            container.appendChild(overlay);
+        }
+
+        overlay.classList.add('versjon-inline');
+
+        var sidebarDrawer = document.querySelector('.sidebar-drawer');
+        if (!sidebarDrawer) return;
+
+        function syncSidebarWidth() {
+            overlay.style.setProperty(
+                '--versjon-sidebar-width',
+                sidebarDrawer.getBoundingClientRect().right + 'px'
+            );
+        }
+
+        syncSidebarWidth();
+        window.addEventListener('resize', syncSidebarWidth);
+    });
+</script>
