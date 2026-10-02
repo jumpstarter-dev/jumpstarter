@@ -2,6 +2,7 @@
 
 import logging
 import sys
+import time
 from collections import deque
 from datetime import UTC, datetime
 
@@ -154,7 +155,19 @@ class TelemetryLogHandler(logging.Handler):
             print(f"[telemetry] PushLogs failed, {len(batch)} entries dropped: {exc}", file=sys.stderr)
 
     async def close_async(self) -> None:
-        """Flush all remaining entries and close the handler."""
-        while self._queue:
+        """Flush remaining entries until the shutdown budget expires, then drop the rest.
+
+        ``_PUSH_TIMEOUT`` bounds shutdown as well as one RPC. A hung PushLogs
+        must not be retried once per queued batch.
+        """
+        deadline = time.monotonic() + _PUSH_TIMEOUT
+        while self._queue and time.monotonic() < deadline:
             await self._flush()
+        dropped = len(self._queue)
+        self._queue.clear()
+        if dropped:
+            print(
+                f"[telemetry] shutdown budget elapsed, {dropped} entries dropped",
+                file=sys.stderr,
+            )
         self.close()
