@@ -142,17 +142,24 @@ func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest
 
 	var accepted uint32
 	for _, entry := range entries {
-		// Drop entries that claim to be from a different exporter or namespace
-		// than what the token authorises. Counted as dropped rather than failing
-		// the whole batch so valid entries in the same request are still written.
+		// Drop entries that claim an identity the token does not authorise.
+		// Counted as dropped rather than failing the whole batch so valid
+		// entries in the same request are still written. A client token
+		// authorises no exporter, so a non-empty Exporter is dropped too.
 		if id.kind == "exporter" {
 			if entry.Exporter != "" && entry.Exporter != claimedName {
 				dropped++
 				continue
 			}
-		} else if entry.Client != "" && entry.Client != claimedName {
-			dropped++
-			continue
+		} else {
+			if entry.Client != "" && entry.Client != claimedName {
+				dropped++
+				continue
+			}
+			if entry.Exporter != "" {
+				dropped++
+				continue
+			}
 		}
 		if entry.Namespace != "" && entry.Namespace != claimedNamespace {
 			dropped++
@@ -235,12 +242,12 @@ func prepareLogEntry(id telemetryIdentity, entry *pb.LogEntry) *pb.LogEntry {
 		Result:     entry.Result,
 		DriverType: entry.DriverType,
 		Namespace:  id.namespace,
-		Exporter:   entry.Exporter,
 	}
 	if id.kind == "exporter" {
 		out.Exporter = id.name
 	} else {
 		out.Client = id.name
+		out.Exporter = ""
 	}
 	if len(entry.ExtraFields) == 0 {
 		return out

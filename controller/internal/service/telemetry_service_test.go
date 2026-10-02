@@ -801,6 +801,43 @@ func TestTelemetryService_PushLogs_OverwritesClientFromToken(t *testing.T) {
 	}
 }
 
+func TestTelemetryService_PushLogs_DropsClientExporterClaim(t *testing.T) {
+	signer := testSigner(t)
+	pusher, err := NewLokiPusher(LokiConfig{URL: "http://127.0.0.1:1", QueueDepth: 8}, testDroppedCounter())
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &TelemetryService{BindAddr: ":0", Signer: signer, Loki: pusher}
+	ctx := authedCtx(t, signer, "client:jumpstarter:ci-client:uid1")
+
+	resp, err := svc.PushLogs(ctx, &pb.PushLogsRequest{Entries: []*pb.LogEntry{
+		{Severity: "info", Message: "ok", Component: "cli"},
+		{Severity: "info", Message: "spoofed", Component: "cli", Exporter: "spoofed"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Accepted != 1 {
+		t.Errorf("Accepted = %d, want 1", resp.Accepted)
+	}
+	if resp.Dropped != 1 {
+		t.Errorf("Dropped = %d, want 1", resp.Dropped)
+	}
+	queued := pusher.queued()
+	if len(queued) != 1 {
+		t.Fatalf("queued = %d, want 1", len(queued))
+	}
+	if queued[0].Message != "ok" {
+		t.Errorf("queued message = %q, want ok", queued[0].Message)
+	}
+	if queued[0].Exporter != "" {
+		t.Errorf("exporter = %q, want empty", queued[0].Exporter)
+	}
+	if queued[0].Client != "ci-client" {
+		t.Errorf("client = %q, want token identity ci-client", queued[0].Client)
+	}
+}
+
 func TestTelemetryService_PushLogs_RejectsWrongClient(t *testing.T) {
 	signer := testSigner(t)
 	svc := &TelemetryService{BindAddr: ":0", Signer: signer}
