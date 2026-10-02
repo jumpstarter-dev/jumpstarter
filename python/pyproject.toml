@@ -54,6 +54,8 @@ jumpstarter-driver-uds = { workspace = true }
 jumpstarter-driver-uds-can = { workspace = true }
 jumpstarter-driver-uds-doip = { workspace = true }
 jumpstarter-driver-iscsi = { workspace = true }
+jumpstarter-driver-iosdevice = { workspace = true }
+jumpstarter-driver-iossimulator = { workspace = true }
 jumpstarter-driver-mitmproxy = { workspace = true }
 jumpstarter-driver-ustreamer = { workspace = true }
 jumpstarter-driver-video = { workspace = true }
