@@ -98,3 +98,48 @@ async def test_attach_adds_cli_handler_without_replacing_stdout():
     finally:
         if session is not None:
             await session.aclose()
+
+
+def _record(msg: str) -> logging.LogRecord:
+    return logging.LogRecord(
+        name="jmp.shell",
+        level=logging.INFO,
+        pathname="shell.py",
+        lineno=1,
+        msg=msg,
+        args=(),
+        exc_info=None,
+    )
+
+
+async def test_attach_sends_token_current_at_flush():
+    resp = MagicMock()
+    resp.telemetry_endpoints = [make_endpoint()]
+    controller = AsyncMock()
+    controller.GetServiceEndpoints = AsyncMock(return_value=resp)
+    push = AsyncMock()
+    tel = MagicMock()
+    tel.PushLogs = push
+    config = make_config(token="old-token", insecure=True)
+
+    with (
+        patch("jumpstarter.client.telemetry.jumpstarter_pb2_grpc.ControllerServiceStub", return_value=controller),
+        patch("jumpstarter.client.telemetry.grpc.aio.insecure_channel") as insecure,
+        patch("jumpstarter.client.telemetry.telemetry_pb2_grpc.TelemetryServiceStub", return_value=tel),
+    ):
+        insecure.return_value = MagicMock()
+        session = await attach_client_telemetry(config)
+
+    assert session is not None
+    try:
+        session.handler.emit(_record("before refresh"))
+        await session.handler._flush()
+        config.token = "new-token"
+        session.handler.emit(_record("after refresh"))
+        await session.handler._flush()
+    finally:
+        await session.aclose()
+
+    assert push.await_count == 2
+    assert push.await_args_list[0].kwargs["metadata"] == [("authorization", "Bearer old-token")]
+    assert push.await_args_list[1].kwargs["metadata"] == [("authorization", "Bearer new-token")]

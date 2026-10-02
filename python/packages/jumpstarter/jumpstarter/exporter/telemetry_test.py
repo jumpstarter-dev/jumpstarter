@@ -3,6 +3,7 @@
 import contextlib
 import logging
 from collections import deque
+from collections.abc import Callable
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -38,7 +39,11 @@ def make_record(
     return record
 
 
-def make_handler(namespace: str = "", token: str = "", component: str = "exporter") -> TelemetryLogHandler:
+def make_handler(
+    namespace: str = "",
+    token: str | Callable[[], str] = "",
+    component: str = "exporter",
+) -> TelemetryLogHandler:
     stub = MagicMock()
     stub.PushLogs = AsyncMock()
     return TelemetryLogHandler(stub, namespace=namespace, token=token, component=component)
@@ -260,6 +265,34 @@ class TestFlush:
 
         _, kwargs = handler._stub.PushLogs.call_args
         assert kwargs["metadata"] == []
+
+    @pytest.mark.anyio
+    async def test_flush_resolves_token_callable_on_each_batch(self):
+        tokens = iter(["first-token", "second-token"])
+        handler = make_handler(token=lambda: next(tokens))
+        handler.emit(make_record("one"))
+        await handler._flush()
+
+        _, kwargs = handler._stub.PushLogs.call_args
+        assert kwargs["metadata"] == [("authorization", "Bearer first-token")]
+
+        handler.emit(make_record("two"))
+        await handler._flush()
+        _, kwargs = handler._stub.PushLogs.call_args
+        assert kwargs["metadata"] == [("authorization", "Bearer second-token")]
+
+    @pytest.mark.anyio
+    async def test_flush_drops_batch_when_token_provider_raises(self, capsys):
+        def boom() -> str:
+            raise RuntimeError("token unavailable")
+
+        handler = make_handler(token=boom)
+        handler.emit(make_record("one"))
+        await handler._flush()
+
+        handler._stub.PushLogs.assert_not_awaited()
+        assert handler._queue == deque()
+        assert "token unavailable" in capsys.readouterr().err
 
     @pytest.mark.anyio
     async def test_flush_sends_batch_to_stub(self):

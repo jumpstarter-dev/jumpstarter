@@ -4,6 +4,7 @@ import logging
 import sys
 import time
 from collections import deque
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 import structlog.contextvars
@@ -63,7 +64,7 @@ class TelemetryLogHandler(logging.Handler):
         self,
         stub: telemetry_pb2_grpc.TelemetryServiceStub,
         namespace: str = "",
-        token: str = "",
+        token: str | Callable[[], str] = "",
         component: str = "exporter",
     ) -> None:
         super().__init__()
@@ -143,8 +144,12 @@ class TelemetryLogHandler(logging.Handler):
         if not batch:
             return
 
-        metadata = [("authorization", f"Bearer {self._token}")] if self._token else []
         try:
+            # Resolve per batch so a refreshed client token is used without a new channel.
+            # A provider error is a failed push: the batch is already popped and must not
+            # escape flush_loop, which shares the shell task group.
+            token = self._token() if callable(self._token) else self._token
+            metadata = [("authorization", f"Bearer {token}")] if token else []
             await self._stub.PushLogs(
                 telemetry_pb2.PushLogsRequest(entries=batch),
                 timeout=_PUSH_TIMEOUT,

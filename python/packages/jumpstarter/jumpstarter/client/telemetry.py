@@ -69,7 +69,7 @@ async def attach_client_telemetry(config) -> ClientTelemetry | None:
             jumpstarter_pb2.GetServiceEndpointsRequest(),
             timeout=_RPC_TIMEOUT,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.debug("GetServiceEndpoints unavailable: %s", exc)
         return None
 
@@ -86,10 +86,14 @@ async def attach_client_telemetry(config) -> ClientTelemetry | None:
     metadata = getattr(config, "metadata", None)
     if metadata is not None:
         namespace = getattr(metadata, "namespace", "") or ""
+
+    def current_token() -> str:
+        return getattr(config, "token", None) or ""
+
     handler = TelemetryLogHandler(
         tel_stub,
         namespace=namespace,
-        token=getattr(config, "token", None) or "",
+        token=current_token,
         component="cli",
     )
     handler.setLevel(_severity_to_level(ep.min_severity))
