@@ -312,6 +312,10 @@ type TelemetryConfig struct {
 	// gRPC configuration for the telemetry service.
 	// Use this to configure TLS when not using cert-manager.
 	GRPC TelemetryGRPCConfig `json:"grpc,omitempty"`
+
+	// Metrics configures reverse-scrape fan-out and Prometheus exposition
+	// (JEP-0013). Loki and ServiceMonitor fields are later phases.
+	Metrics TelemetryMetricsConfig `json:"metrics,omitempty"`
 }
 
 // TelemetryGRPCConfig defines gRPC configuration for the telemetry service.
@@ -323,6 +327,33 @@ type TelemetryGRPCConfig struct {
 	// automatically managed by cert-manager.
 	// When spec.certManager.enabled is false, you can provide your own TLS secret here.
 	TLS TLSConfig `json:"tls,omitempty"`
+}
+
+// TelemetryMetricsConfig configures telemetry /metrics reverse-scrape behavior.
+type TelemetryMetricsConfig struct {
+	// Allowlist of keys to include in Prometheus exemplars. Unlisted keys are omitted.
+	// At most 16 keys. Each key is at most 32 characters, the same limit as
+	// Lease spec.context key names that may appear in this list.
+	// +kubebuilder:default={"client","lease_id"}
+	// +kubebuilder:validation:MaxItems=16
+	// +kubebuilder:validation:items:MaxLength=32
+	ExemplarKeys []string `json:"exemplarKeys,omitempty"`
+
+	// Allowed driver_type label values. Unlisted types are remapped to "other".
+	// At most 16 entries (the default set plus site-specific categories), each
+	// at most 32 characters.
+	// +kubebuilder:default={"power","storage","network","serial","console","video","composite"}
+	// +kubebuilder:validation:MaxItems=16
+	// +kubebuilder:validation:items:MaxLength=32
+	DriverTypeEnum []string `json:"driverTypeEnum,omitempty"`
+
+	// Max wait for parallel exporter MetricsStream responses during a /metrics fan-out.
+	// Should be lower than the Prometheus scrape_timeout.
+	// JEP-0013 specifies the 7s default and no maximum. 60s bounds the fan-out
+	// wait and the HTTP write timeout that grows with this value.
+	// +kubebuilder:default="7s"
+	// +kubebuilder:validation:XValidation:rule="duration(self) > duration('0s') && duration(self) <= duration('60s')",message="scrapeTimeout must be greater than 0 and at most 60s"
+	ScrapeTimeout *metav1.Duration `json:"scrapeTimeout,omitempty"`
 }
 
 // TelemetryLoggingConfig configures the log push path to the telemetry service.
