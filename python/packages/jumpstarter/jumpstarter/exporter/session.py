@@ -101,6 +101,7 @@ class Session(
         super().__init__(*args, **kwargs)
 
         self.root_device = root_device
+        self.root_device.propagate_log_level()
         self.exporter_name = exporter_name
         self.motd = motd
         self.mapping = {u: i for (u, _, _, i) in self.root_device.enumerate()}
