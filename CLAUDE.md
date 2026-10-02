@@ -14,6 +14,8 @@ Important project-specific rules and guidelines are located in the `.claude/rule
 
 - **`.claude/rules/jep-process.md`**: Process for creating Jumpstarter Enhancement Proposals (JEPs), including when to use them, numbering conventions, required sections, and the design decision format. Read this when proposing or reviewing cross-cutting changes or features that require community consensus.
 
+- **`.claude/rules/demo-recording.md`**: Conventions behind the asciicast demo on the documentation landing page: pacing and readability, how the narration is written, theme-safe colours, keeping personal paths and credentials out of the recording, and lease naming. Read this when changing `demo/`, the recording, or how it is played back.
+
 - **`.claude/rules/e2e-doc-sync.md`**: Rules for keeping `e2e/README.md` aligned with E2E tests, runners, and CI labels (mirrors `.cursor/rules/e2e-doc-sync.mdc`). Read this when changing E2E behavior or E2E documentation.
 
 ## When to Read These Rules
@@ -22,6 +24,7 @@ Important project-specific rules and guidelines are located in the `.claude/rule
 - **When creating drivers**: Read `creating-new-drivers.md` before creating, improving, or documenting driver packages
 - **When releasing the operator**: Read `releasing-operator.md` before preparing a new operator version for OLM
 - **When creating JEPs**: Read `jep-process.md` before proposing enhancements that affect multiple components, change public APIs, or require community discussion
+- **When touching the demo recording**: Read `demo-recording.md` before changing anything under `demo/`, re-recording `docs/source/_static/demo.cast`, or adjusting how the landing page plays it
 - **When modifying E2E tests or E2E docs**: Read `e2e-doc-sync.md` and keep `e2e/README.md` synchronized in the same PR
 - **When modifying structure**: Consult both files when making changes that affect project organization
 

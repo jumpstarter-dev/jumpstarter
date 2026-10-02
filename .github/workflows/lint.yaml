@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       controller: ${{ steps.filter.outputs.controller }}
+      demo: ${{ steps.filter.outputs.demo }}
       protocol: ${{ steps.filter.outputs.protocol }}
       python: ${{ steps.filter.outputs.python }}
       rust: ${{ steps.filter.outputs.rust }}
@@ -27,6 +28,9 @@ jobs:
           filters: |
             controller:
               - 'controller/**'
+              - '.github/workflows/lint.yaml'
+            demo:
+              - 'demo/**'
               - '.github/workflows/lint.yaml'
             protocol:
               - 'protocol/**'
@@ -93,6 +97,39 @@ jobs:
         with:
           src: './python'
           version-file: python/pyproject.toml
+
+  # The demo scripts talk to real hardware, so CI can only check them
+  # statically here. demo-cast.yaml runs them against the lab.
+  lint-demo:
+    needs: changes
+    if: needs.changes.outputs.demo == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Run ruff
+        uses: astral-sh/ruff-action@278981a28ce3188b1e39527901f38254bf3aac89 # v4.1.0
+        with:
+          src: './demo'
+          version-file: python/pyproject.toml
+      - name: Check shell scripts
+        run: shellcheck demo/workload/*.sh
+      - name: Check the recordings parse
+        run: |
+          # demo/casts/ holds optional working recordings and may not exist;
+          # without nullglob the loop would run once on the literal pattern.
+          # The cast the documentation plays is always checked.
+          shopt -s nullglob
+          for cast in docs/source/_static/demo.cast demo/casts/*.cast; do
+            python3 -c '
+          import json, sys
+          with open(sys.argv[1]) as f:
+              json.loads(f.readline())
+              for line in f:
+                  if line.strip():
+                      json.loads(line)
+          print(f"{sys.argv[1]}: ok")
+          ' "${cast}"
+          done
 
   type-check-python:
     needs: changes

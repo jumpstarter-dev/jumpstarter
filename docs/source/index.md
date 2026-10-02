@@ -39,14 +39,11 @@ See Jumpstarter in action:
       autoPlay: false,
       poster: 'npt:0:05',
       loop: true,
-      speed: 1.5,
-      rows: 25,
-      markers: [
-        [16.7, "lease device"],
-        [24.0, "power cycle"],
-        [34.3, "serial start"],
-        [41.5, "pytest"]
-      ]
+      // The recording is already paced to be readable, so play it as recorded.
+      speed: 1,
+      rows: 25
+      // Chapter markers are embedded in the recording itself, so they cannot
+      // drift out of step with it. See demo/README.md.
     });
   });
 </script>

@@ -1,0 +1,121 @@
+name: Demo Cast
+
+# Runs demo/board_demo.py against real lab hardware. The script asserts on the
+# output of every step, so this both verifies that the demonstrated workflow
+# still works and regenerates docs/source/_static/demo.cast.
+#
+# Requires a self-hosted runner with network access to the lab, sshfs, and a
+# JUMPSTARTER_CLIENT_CONFIG secret holding a client config for it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      selector:
+        description: Board type to lease. Empty uses vars.DEMO_SELECTOR, then the script default.
+        type: string
+      image:
+        description: Disk image to flash. Empty uses vars.DEMO_IMAGE, then the script default.
+        type: string
+      os_name:
+        description: String expected in /etc/os-release once the image has booted.
+        type: string
+      commit:
+        description: Commit the regenerated cast back to this branch
+        type: boolean
+        default: false
+  schedule:
+    # Mondays at 04:17 UTC, to catch the demo rotting.
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+# One board, one run at a time.
+concurrency:
+  group: demo-cast
+  cancel-in-progress: false
+
+jobs:
+  record:
+    if: github.repository_owner == 'jumpstarter-dev'
+    runs-on: [self-hosted, jumpstarter-lab]
+    timeout-minutes: 120
+    permissions:
+      # Only exercised by the commit step below.
+      contents: write
+    steps:
+      # This job runs code from the repository, so do not leave the checkout
+      # credentials lying around in .git/config for it to pick up. The commit
+      # step below authenticates on its own, only when it is actually used.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - id: uv
+        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: ${{ steps.uv.outputs.version }}
+          python-version-file: .py-version
+
+      - name: Install the Jumpstarter CLI from this checkout
+        working-directory: python
+        run: |
+          uv sync --all-packages
+          echo "${PWD}/.venv/bin" >> "${GITHUB_PATH}"
+
+      - name: Check the runner can drive the demo
+        run: |
+          jmp version
+          command -v sshfs
+          command -v fusermount3
+
+      - name: Write the client config
+        env:
+          CLIENT_CONFIG: ${{ secrets.JUMPSTARTER_CLIENT_CONFIG }}
+        run: |
+          if [ -z "${CLIENT_CONFIG}" ]; then
+            echo "::error::JUMPSTARTER_CLIENT_CONFIG secret is not set"
+            exit 1
+          fi
+          install -m 600 /dev/null "${RUNNER_TEMP}/client.yaml"
+          printf '%s' "${CLIENT_CONFIG}" > "${RUNNER_TEMP}/client.yaml"
+          echo "JMP_CLIENT_CONFIG=${RUNNER_TEMP}/client.yaml" >> "${GITHUB_ENV}"
+
+      # What to run against is configured outside this file: a manual input
+      # wins, then the repository variable, then the script's own default.
+      # Unset values are left out so the script picks the default itself.
+      - name: Record and verify the demo
+        run: ./demo/board_demo.py
+        env:
+          DEMO_SELECTOR: ${{ inputs.selector || vars.DEMO_SELECTOR }}
+          DEMO_IMAGE: ${{ inputs.image || vars.DEMO_IMAGE }}
+          DEMO_OS_NAME: ${{ inputs.os_name || vars.DEMO_OS_NAME }}
+
+      - name: Upload the recording
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: demo-cast
+          path: docs/source/_static/demo.cast
+          if-no-files-found: warn
+
+      - name: Commit the regenerated cast
+        if: inputs.commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet -- docs/source/_static/demo.cast; then
+            echo "recording is unchanged, nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/source/_static/demo.cast
+          git commit -m "docs: regenerate the demo recording
+
+          Recorded by ${GITHUB_WORKFLOW} run ${GITHUB_RUN_ID}."
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:${GITHUB_REF_NAME}"
