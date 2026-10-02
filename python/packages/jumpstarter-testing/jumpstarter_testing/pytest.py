@@ -50,13 +50,19 @@ class JumpstarterTest:
 
     selector: ClassVar[str]
 
+    # Declared as a classmethod because the fixture is class scoped: pytest
+    # builds a fresh instance for every test but runs the fixture once, so an
+    # instance method here would be operating on an object the tests never
+    # see. Instance-method fixtures at class scope are deprecated and are
+    # removed in pytest 10.
     @pytest.fixture(scope="class")
-    def client(self):
+    @classmethod
+    def client(cls):
         try:
             with env() as client:
                 yield client
         except RuntimeError:
-            selector = getattr(self, "selector", None)
+            selector = getattr(cls, "selector", None)
             config = ClientConfigV1Alpha1.load("default")
             with config.lease(selector=selector) as lease, lease.connect() as client:
                 yield client
