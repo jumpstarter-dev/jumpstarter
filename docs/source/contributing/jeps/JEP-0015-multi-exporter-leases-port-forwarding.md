@@ -1964,35 +1964,6 @@ The following work builds on this JEP:
   backed by a lease.
 - **On-demand members:** provision JEP-0014 pool instances to satisfy a lease.
 
-## Implementation History
-
-- 2026-09-01: Drafted the JEP. Manually verified shared and federated
-  rootcanal configurations and L4 projection with stand-in relays (DD-9,
-  DD-10).
-- 2026-09-02: Verified a CVD-to-Bumble lease over Jumpstarter's router,
-  measured single-node latency, and identified stream-recovery requirements.
-  Updated `Auto` to prefer direct connections for same-zone peers.
-- 2026-09-04: Consolidated rationale and prototype notes; clarified scope,
-  implementation requirements, and remaining verification.
-- 2026-09-04: Submitted for discussion in
-  [PR #1069](https://github.com/jumpstarter-dev/jumpstarter/pull/1069).
-- 2026-09-05: Resolved review questions around optional endpoints, explicit
-  one-member response shape, port and name uniqueness, protobuf setup
-  messages, router claim binding, direct-path encryption, and reconnect
-  semantics. Recorded Kubernetes Pod Certificates and broader exporter mTLS
-  authentication as future paths.
-- 2026-09-24: Added a scope summary, reserved port attachments for physical
-  media (DD-14), removed the undefined client-relay forward mode, and recorded
-  shared infrastructure exporters as a follow-on proposal. Recorded the
-  extension points for a future `Device` resource (DD-15), and added
-  exclusion groups for DUTs served by several exporters (DD-16).
-- 2026-09-26: Moved forward-looking material from the body into Future
-  Possibilities; the body describes only what this JEP delivers.
-- 2026-09-26: Replaced the dictionary-based Python API with typed
-  `LeaseMembers` classes, renamed explicit forward endpoints to `src`/`dest`, and removed
-  the Test Plan, Acceptance Criteria, and Graduation Criteria pending
-  review of the design.
-
 ## References
 
 - [JEP-0014: Virtual Scalable Exporters](JEP-0014-virtual-scalable-exporters.md)
