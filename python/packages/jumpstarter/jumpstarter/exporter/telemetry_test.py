@@ -296,6 +296,31 @@ class TestFlush:
         handler._stub.PushLogs.assert_awaited_once()
 
     @pytest.mark.anyio
+    async def test_close_async_discards_queue_after_shutdown_budget(self):
+        """A hung PushLogs must not drain the queue one timeout at a time."""
+        from anyio import sleep
+
+        from jumpstarter.exporter.telemetry import _BATCH_SIZE
+
+        handler = make_handler()
+        for i in range(_BATCH_SIZE + 1):
+            handler.emit(make_record(f"msg-{i}"))
+
+        calls = 0
+
+        async def hung_push(*_args, **_kwargs):
+            nonlocal calls
+            calls += 1
+            await sleep(0.2)
+
+        handler._stub.PushLogs = AsyncMock(side_effect=hung_push)
+        with patch("jumpstarter.exporter.telemetry._PUSH_TIMEOUT", 0.05):
+            await handler.close_async()
+
+        assert calls == 1
+        assert len(handler._queue) == 0
+
+    @pytest.mark.anyio
     async def test_flush_loop_flushes_when_queue_has_entries(self):
         """flush_loop calls _flush when the queue is non-empty."""
         handler = make_handler()
