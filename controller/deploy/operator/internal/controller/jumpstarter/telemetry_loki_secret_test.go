@@ -133,6 +133,53 @@ func TestReconcileTelemetryDeploymentKeepsUnauthenticatedLoki(t *testing.T) {
 	}
 }
 
+func TestReconcileTelemetryDeploymentOmitsLokiWhenCASecretMissing(t *testing.T) {
+	js := lokiPushJS()
+	js.Spec.Telemetry.Loki.SecretRef = "loki-credentials"
+	js.Spec.Telemetry.Loki.TLS.CASecretRef = "loki-ca-bundle"
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "loki-credentials", Namespace: "ns"},
+		Data:       map[string][]byte{"token": []byte("s3cret")},
+	}
+	r, c, rec := lokiTestReconciler(t, secret)
+
+	if err := r.reconcileTelemetryDeployment(context.Background(), js); err != nil {
+		t.Fatal(err)
+	}
+	dep := getTelemetryDep(t, c)
+	if hasLokiURL(dep) {
+		t.Fatal("missing CA Secret must omit the Loki URL")
+	}
+	if hasLokiCAVolume(dep) {
+		t.Fatal("missing CA Secret must not mount the loki-ca volume")
+	}
+	events := eventText(rec)
+	if !strings.Contains(events, "LokiCredentialsMissing") || !strings.Contains(events, "ns/loki-ca-bundle") {
+		t.Fatalf("expected LokiCredentialsMissing for the CA Secret, got %q", events)
+	}
+}
+
+func TestReconcileTelemetryDeploymentKeepsCredentialReasonWhenCASecretMissing(t *testing.T) {
+	js := lokiPushJS()
+	js.Spec.Telemetry.Loki.SecretRef = "loki-credentials"
+	js.Spec.Telemetry.Loki.TLS.CASecretRef = "loki-ca-bundle"
+	r, c, rec := lokiTestReconciler(t)
+
+	if err := r.reconcileTelemetryDeployment(context.Background(), js); err != nil {
+		t.Fatal(err)
+	}
+	if hasLokiURL(getTelemetryDep(t, c)) {
+		t.Fatal("missing credential and CA Secrets must omit the Loki URL")
+	}
+	events := eventText(rec)
+	if !strings.Contains(events, "ns/loki-credentials") {
+		t.Fatalf("expected the credential Secret in the disable reason, got %q", events)
+	}
+	if strings.Contains(events, "loki-ca-bundle") {
+		t.Fatalf("credential disable reason must stay when the CA Secret is also missing, got %q", events)
+	}
+}
+
 func TestReconcileTelemetryDeploymentRollsWhenLokiSecretChanges(t *testing.T) {
 	js := lokiPushJS()
 	js.Spec.Telemetry.Loki.SecretRef = "loki-credentials"
@@ -225,6 +272,28 @@ func hasLokiURL(dep *appsv1.Deployment) bool {
 		}
 	}
 	return false
+}
+
+func hasLokiCAVolume(dep *appsv1.Deployment) bool {
+	for _, vol := range dep.Spec.Template.Spec.Volumes {
+		if vol.Name == lokiCAVolumeName {
+			return true
+		}
+	}
+	return false
+}
+
+func eventText(rec *record.FakeRecorder) string {
+	var b strings.Builder
+	for {
+		select {
+		case event := <-rec.Events:
+			b.WriteString(event)
+			b.WriteByte('\n')
+		default:
+			return b.String()
+		}
+	}
 }
 
 func hasEventReason(rec *record.FakeRecorder) bool {
