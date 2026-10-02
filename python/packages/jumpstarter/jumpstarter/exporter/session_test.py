@@ -46,7 +46,11 @@ def test_session_unbinds_exporter_log_context():
     driver = SimpleDriver()
     with Session(uuid=driver.uuid, root_device=driver, exporter_name="test-exporter") as session:
         assert session.exporter_name == "test-exporter"
+        assert session.name == "test-exporter"
+        assert "jumpstarter.dev/name" not in session.labels
         assert structlog.contextvars.get_contextvars().get("exporter") == "test-exporter"
+    # Driver names still come from the label, not the session property.
+    assert driver.name == "unknown"
     assert "exporter" not in structlog.contextvars.get_contextvars()
 
 

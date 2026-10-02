@@ -86,6 +86,12 @@ def _make_base_exporter(**overrides):
     return exporter
 
 
+def test_exporter_name_property_reads_exporter_name():
+    exporter = _make_base_exporter()
+    assert exporter.labels == {}
+    assert exporter.name == "test-exporter"
+
+
 def make_exporter(lease_ctx, hook_executor=None):
     return _make_base_exporter(
         _lease_context=lease_ctx,

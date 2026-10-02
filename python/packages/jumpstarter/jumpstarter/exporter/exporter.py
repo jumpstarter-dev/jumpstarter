@@ -201,8 +201,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
     # Public Configuration Fields
 
-    # JWT subject for this exporter, not Metadata.name. Register no longer
-    # carries jumpstarter.dev/name (#1058), so Metadata.name stays "unknown".
+    # JWT subject for this exporter. Register no longer carries
+    # jumpstarter.dev/name (#1058), so the name is not stored in labels.
     exporter_name: str = "unknown"
 
     channel_factory: Callable[[], Awaitable[grpc.aio.Channel]]
@@ -403,6 +403,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
     _status_rpc_event: Event = field(init=False, default_factory=Event)
     """Signals the drain task that a new status update is pending."""
+
+    @property
+    def name(self) -> str:
+        return self.exporter_name
 
     @property
     def _lease_state(self) -> LeaseState:
@@ -620,7 +624,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         self._telemetry_handler = handler
         self._metrics_stream = MetricsStreamClient(
             stub,
-            # exporter_name is the JWT subject, not Metadata.name.
+            # JWT subject. Not the jumpstarter.dev/name label (#1058).
             identity=self.exporter_name,
             token=self.token,
         )
