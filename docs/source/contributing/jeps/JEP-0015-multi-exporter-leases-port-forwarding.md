@@ -8,7 +8,7 @@
 | **Status**        | Discussion                                               |
 | **Type**          | Standards Track                                          |
 | **Created**       | 2026-09-01                                               |
-| **Updated**       | 2026-09-05                                               |
+| **Updated**       | 2026-09-26                                               |
 | **Discussion**    | [PR #1069](https://github.com/jumpstarter-dev/jumpstarter/pull/1069) |
 | **Requires**      | JEP-0014                                                 |
 | **Supersedes**    |                                                          |
@@ -18,15 +18,18 @@
 
 ## Abstract
 
-This JEP extends `Lease` to acquire multiple exporters together and forward
-traffic between their named driver ports. Optional `spec.members[]` assigns
-roles to exporters, and `spec.forwards[]` declares connections between them
-without exposing local addresses. All member claims are committed in one
-status update, and the members share a lease lifetime. Forwards reuse the
-existing port-forwarding primitives and router, with mutually authenticated,
-encrypted direct connections preferred within a network zone. The examples focus on phone
-projection, but the same model supports CAN, serial, and other socket-based
-connections.
+This JEP extends `Lease` to acquire multiple exporters together and to
+forward socket traffic between their named driver ports. Optional
+`spec.members[]` assigns roles to exporters, and `spec.forwards[]` declares
+connections between them without exposing local addresses. All member claims
+are committed in one status update, and the members share a lease lifetime.
+Forwards reuse the existing port-forwarding primitives and router, with
+mutually authenticated, encrypted direct connections preferred within a
+network zone. The same lease serves virtual devices, where forwards carry
+the simulated radio medium between Pods, and physical devices, which share
+a real radio or cable while the lease coordinates their access.
+Forwards carry socket traffic only. Ports that describe a physical cable or
+radio are reported but cannot be forwarded (DD-14).
 
 ## Motivation
 
@@ -37,11 +40,11 @@ If one request succeeds while another waits, a test holds hardware it cannot
 use; concurrent tests can each hold a device the other needs.
 
 An exporter remains the unit of allocation. It owns a DUT and its harness,
-which may include several physically connected devices. Leasing those devices
-separately could give different clients control of the same assembly. This
-proposal instead joins independently managed exporters into one lease,
-called a **bench**. A pool of N phones and M head units can then support N×M
-pairings without pre-wiring each pair.
+which may include several physically connected devices. Leasing those
+devices separately could give different clients control of the same
+assembly. This proposal instead joins independently managed exporters into
+one lease. A pool of N phones and M head units can then
+support N×M pairings without pre-wiring each pair.
 
 Phone projection illustrates the need: a test must control both a phone and
 a head unit, pair them over Bluetooth, and observe the handover to Wi-Fi.
@@ -53,47 +56,96 @@ Separate leases leave four gaps:
 
 - **Acquisition:** there is no all-or-nothing claim across exporters.
 - **Lifetime:** devices can expire or be released independently.
-- **Policy and observability:** requests have no shared bench identity.
+- **Policy and observability:** requests have no shared lease identity.
 - **Connectivity:** existing streams connect clients to exporters, with no
   managed exporter-to-exporter path.
 
-For virtual devices, connectivity is also constrained by host-local simulator
-interfaces. Cuttlefish instances can share rootcanal, netsim, and `wmediumd`
-on one host. Separately scheduled exporter Pods need a path between those
-interfaces. HCI over TCP can use a byte forward; interfaces such as
-vhost-user require a local bridge as well (DD-9, DD-10).
+### Virtual and physical devices
 
-The initial scope covers two virtual devices or two physical devices.
-Physical radio peers must remain within RF range even when their exporters
-run on different hosts. Connecting physical and simulated radios requires
-additional hardware and is deferred (DD-11).
+Leases of virtual and physical devices use the same members, exclusivity,
+and lifetime. They differ in where the medium between devices lives, and so
+in what a forward carries:
+
+| | Virtual devices | Physical devices |
+| --- | --- | --- |
+| **Example** | A Cuttlefish phone and head unit in separate Pods | A real phone and head unit on two lab hosts |
+| **Medium between devices** | Simulator sockets on each exporter: rootcanal HCI, netsim, `wmediumd` | A real radio or cable |
+| **What joins the devices** | A forward carries the simulated medium | The air or the harness; the lease coordinates access |
+| **What forwards carry** | Bluetooth HCI and link layer; projection over ADB or the guest's Wi-Fi address | Only socket-bridged traffic, such as CAN through `socketcand` or a serial bridge |
+| **Placement** | Anywhere reachable; forwards cross nodes | Within RF range or on one harness, chosen through exporter labels |
+| **Goal** | Run multi-device tests on every change without lab hardware | Run the same tests on real stacks and radios |
+
+A test written against roles can run against either kind of device; the
+lease's selectors and forwards decide which. Virtual devices have one further
+constraint: simulator interfaces are host-local. HCI over TCP can use a byte
+forward, while interfaces such as vhost-user also need a local bridge (DD-9,
+DD-10). A lease does not pair a virtual device with a physical radio
+(DD-11). *Scope* below lists what is in and out.
 
 ### User Stories
 
-- A projection test acquires a phone and head unit together, controls both
-  by role, and retains access to surviving devices for diagnostics if one
-  fails.
-- A CI test pairs virtual devices in separate Pods and runs a projection
-  session without physical phone or head unit hardware.
-- A lab test joins exporters on different hosts, such as two ECUs connected
-  through a CAN-over-TCP bridge.
+- **As a** test engineer, **I want to** acquire a phone and a head unit in
+  one lease and control each by role, **so that** my projection test never
+  holds one device while waiting for the other, and I keep the surviving
+  device for diagnostics if one fails.
+- **As a** CI maintainer, **I want to** pair virtual devices running in
+  separate Pods, **so that** projection sessions run on every change without
+  physical phone or head unit hardware.
+- **As a** validation engineer, **I want to** run the same projection test
+  on a real phone and head unit within RF range of each other, **so that**
+  real radios and vendor stacks are checked by the test that CI already
+  runs.
+- **As a** lab engineer, **I want to** connect exporters on different hosts,
+  such as two ECUs through a CAN-over-TCP bridge, **so that** a test can use
+  devices that are not wired to the same machine.
+- **As a** lab administrator, **I want to** attach two exporters to one head
+  unit, one for power and the serial console and one for cameras and CAN,
+  **so that** a test can lease either or both while no other test can reach
+  that head unit through the other exporter.
 
 ## Proposal
 
-The proposal adds three concepts to existing resources:
+### Scope
 
-- **Members.** A lease gains optional `spec.members[]`, each a role name plus
-  the same `selector` / `exporterRef` fields a single-exporter lease already
-  uses. A lease binds all required members or holds none.
-- **Ports.** A driver may declare named ports it **provides** (a service
-  listening locally) or **requires** (a socket it will dial). Ports travel in
-  the exporter's existing report; addresses never leave the exporter.
-- **Forwards.** A lease gains optional `spec.forwards[]`, each joining a
-  provided port on one member to a required port on another. The exporters
-  establish the forward themselves over the existing router.
+This JEP adds four concepts to existing resources:
 
-A bench appears in `jmp get leases` and uses the existing expiry and
-`spec.release` behavior.
+| Concept | Where | What it does |
+| --- | --- | --- |
+| **Members** | `Lease.spec.members[]` | Role names, each with the existing `selector` / `exporterRef`. A lease binds every required member or holds none. |
+| **Ports** | Exporter config, reported in `DriverInstanceReport` | Named connection points a driver **provides** (a local service) or **requires** (a socket it dials). Addresses never leave the exporter. |
+| **Forwards** | `Lease.spec.forwards[]` | Join a provided port on one member to a required port on another. Exporters establish them over the existing router, or directly within a network zone. |
+| **Exclusion groups** | `Exporter.spec.exclusionGroup` | Set by an administrator on exporters that serve one DUT; at most one lease holds the group (DD-16). |
+
+A lease with members appears in `jmp get leases` and uses the existing
+expiry and `spec.release` behavior. Scalar leases are unchanged.
+
+**In scope:**
+
+- All-or-nothing binding of up to eight members, with per-member access
+  policy (DD-1, DD-12).
+- Exclusive access to a DUT that several exporters serve, through an
+  admin-assigned exclusion group (DD-16).
+- TCP byte forwards between two socket ports, with direction checks and an
+  optional protocol tag (DD-4 to DD-8).
+- Client, CLI, and `JumpstarterTest` support for member-form leases, and
+  Mobly export.
+- Reference topologies, delivered in order: Phase 1 virtual Bluetooth,
+  Phase 2 virtual projection, Phase 3 physical devices across hosts, and
+  Phase 4 virtual Wi-Fi.
+
+**Not covered, and how this JEP behaves instead:**
+
+| Not covered | Behavior in this JEP |
+| --- | --- |
+| Switching physical links (Ethernet, CAN, LIN, FlexRay) through relays, switches, or signal gateways | `wired` and `wireless` ports are reported; a forward that names one is `Invalid` (DD-14) |
+| Choosing co-located devices during binding | Placement comes from exporter labels in member selectors |
+| Shared power supplies and other devices serving several exporters | Not modeled |
+| Pairing a virtual device with a physical radio | Not supported (DD-11) |
+| Datagram transport and forwards with more than two endpoints | TCP byte streams between exactly two ports |
+| Rejecting unsuitable exporters during selection | Ports are validated after binding (DD-12) |
+| Leasing one DUT out of several on an exporter | Members bind whole exporters (DD-15) |
+
+*Future Possibilities* describes work that builds on this JEP.
 
 ### Ports
 
@@ -141,13 +193,18 @@ The `bt-peer` driver still dials `127.0.0.1:7300`. The exporter forwards that
 connection to the remote rootcanal; using the forward requires no changes to
 the driver's Python code.
 
-### Declaring a bench
+Every port also has an `attachment` describing how it connects. It defaults
+to `socket`, the only value a forward accepts. Drivers may report `wired` or
+`wireless` for physical connection points; these appear in the exporter
+report, and a forward that names one is rejected (DD-14).
+
+### Declaring a multi-exporter lease
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: Lease
 metadata:
-  name: projection-bench
+  name: projection
   namespace: jumpstarter-lab
 spec:
   clientRef:
@@ -205,7 +262,7 @@ spec:
 The controller checks that both ports exist, their directions complement
 each other, and any declared protocols agree.
 
-### Acquiring and using a bench
+### Acquiring and using a multi-exporter lease
 
 The existing commands take members and forwards; there is no parallel
 command set.
@@ -216,11 +273,11 @@ $ jmp create lease \
     --member headunit=device-type=headunit \
     --forward bt=headunit.rootcanal:phone.controller \
     --duration 45m
-projection-bench
+projection
 
-$ jmp get lease projection-bench
+$ jmp get lease projection
 NAME                 ENDED   CLIENT      EXPORTER                       AGE
-projection-bench   false   ci-runner   phone=rack3-phone-4,            12s
+projection   false   ci-runner   phone=rack3-phone-4,            12s
                                          headunit=virt-hu-7b2c
 ```
 
@@ -234,62 +291,109 @@ $ jmp get exporter virt-hu-7b2c -o json | jq '.status.devices[].ports'
 In a shell, roles become top-level names alongside the usual driver clients:
 
 ```console
-$ jmp shell --lease projection-bench
-jumpstarter ⚡ projection-bench ➤ j phone adb shell getprop ro.product.model
+$ jmp shell --lease projection
+jumpstarter ⚡ projection ➤ j phone adb shell getprop ro.product.model
 phone-under-test
-jumpstarter ⚡ projection-bench ➤ j headunit power on
-jumpstarter ⚡ projection-bench ➤ j forward status
-NAME   FROM                  TO                  MODE     STATE       A→B       B→A
+jumpstarter ⚡ projection ➤ j headunit power on
+jumpstarter ⚡ projection ➤ j forward status
+NAME   SRC                   DEST                MODE     STATE       A→B       B→A
 bt     headunit.rootcanal    phone.controller    direct   connected   1.2 MiB   0.9 MiB
 ```
 
-In Python, the existing `lease()` context manager grows `members` and
-`forwards`, and a lease requested through `members` yields a bench whose
-`members` mapping contains the same client objects a scalar lease yields
-directly. Roles are deliberately not installed as arbitrary object
-attributes: mapping access safely supports names such as `head-unit` without
-allowing a role such as `__class__` or `forwards` to shadow client state:
+In Python, a multi-exporter lease is declared as a class. Each member is an
+attribute annotated with the driver clients the test expects on that
+exporter, and each forward is an attribute naming two `role.port`
+endpoints:
 
 ```python
+from datetime import timedelta
+
+from jumpstarter.client.lease import LeaseMembers, forward, member
 from jumpstarter.config.client import ClientConfigV1Alpha1
+from jumpstarter_driver_adb.client import AdbClient
+from jumpstarter_driver_bt_peer.client import BtPeerClient
+from jumpstarter_driver_composite.client import CompositeClient
+from jumpstarter_driver_power.client import PowerClient
+
+
+class Phone(CompositeClient):
+    adb: AdbClient
+    bt_peer: BtPeerClient
+
+
+class Headunit(CompositeClient):
+    power: PowerClient
+
+
+class Projection(LeaseMembers):
+    phone: Phone = member(selector="device-type=phone")
+    headunit: Headunit = member(selector="device-type=headunit")
+    bt = forward("headunit.rootcanal", "phone.controller")
+
 
 config = ClientConfigV1Alpha1.load("default")
 
-with config.lease(
-    members={"phone": "device-type=phone", "headunit": "device-type=headunit"},
-    forwards=[Forward("bt", frm=("headunit", "rootcanal"), to=("phone", "controller"))],
-    duration=timedelta(minutes=45),
-) as lease:
-    with lease.connect() as bench:
-        phone = bench.members["phone"]
-        headunit = bench.members["headunit"]
-
-        headunit.power.on()
-        phone.adb.wait_for_device()
-
-        # Wait for the forward before starting the peer.
-        bench.forwards["bt"].wait_connected(timeout=30)
-        phone.bt_peer.start({"name": "Bumble-Phone"})
-        phone.bt_peer.wait_connection(timeout=60)
-
-        assert phone.adb.shell("dumpsys bluetooth_manager | grep -c Connected") == "1"
+with config.lease(Projection, duration=timedelta(minutes=45)) as lease:
+    with lease.connect() as members:          # members: Projection
+        members.headunit.power.on()           # PowerClient.on
+        members.bt.wait_connected(timeout=30) # Forward handle
+        members.phone.bt_peer.start_peer('{"name": "Bumble-Phone"}')
+        members.phone.bt_peer.wait_connection(timeout=60)
 ```
 
-`config.lease(selector=...)` keeps its existing scalar behavior, with
-`connect()` yielding a single driver client. Explicit `members`, including a
-list with exactly one entry, always uses `status.members` and yields the bench
-shape with a role mapping (DD-2).
+A type checker sees `members.phone` as `Phone` and `members.bt` as `Forward`.
+It reports an undeclared member, a driver the member's protocol does not
+list, and a wrong call signature. The rules are:
 
-`JumpstarterTest` grows `members` and `forwards` class variables next to
-`selector`, so existing pytest suites extend without a second base class.
+- **Members.** `member()` takes exactly one of `selector=` or `exporter=`;
+  its overloads reject both or neither. The role is the attribute name with
+  `_` replaced by `-`, or an explicit `role=`. `optional=True` requires a
+  `| None` annotation, and a `| None` annotation requires `optional=True`,
+  so the checker forces tests to handle an omitted member.
+- **Driver shape.** The annotation is a `CompositeClient` subclass whose
+  annotated attributes are driver names typed as client classes. A nested
+  `CompositeClient` subclass describes a composite driver, and `| None`
+  marks a driver that may be absent; reading an absent optional driver
+  returns `None`. Annotations do not change `CompositeClient`'s constructor
+  or its child lookup, so the class is an ordinary client of the member's
+  exporter. Each client class implements a driver interface, which JEP-0011
+  names by proto package, so the whole shape can be written without Python.
+  `connect()` checks each bound member against it using the client class
+  the exporter reports, and raises `TypeError` naming the role and driver on
+  a mismatch.
+- **Forwards.** `forward(a, b)` names two endpoints in any order, and the
+  controller resolves direction (DD-13). `forward(src=..., dest=...)` pins
+  `src` to the `provides` port and `dest` to the `requires` port. Either
+  form takes `mode="auto" | "router" | "direct"`. Class creation rejects an
+  endpoint whose role is not declared on the class.
+- **Dynamic access.** `LeaseMembers.by_role` is a read-only mapping from
+  role to client, for generic tooling such as the Mobly export.
+
+`config.lease` is overloaded on its first argument. A `LeaseMembers`
+subclass `M` yields `Lease[M]`, whose `connect()` yields an `M`. A selector string, or the
+existing `selector=` and `exporter_name=` keywords, keeps the scalar
+behavior, and `connect()` yields a single driver client. The request form
+determines the response shape (DD-2).
+
+`JumpstarterTest` accepts a `members` class next to `selector`. Its existing
+`client` fixture then yields an instance of that class instead of a single
+driver client:
+
+```python
+class TestProjection(JumpstarterTest):
+    members = Projection
+
+    def test_pairs(self, client: Projection) -> None:
+        client.headunit.power.on()
+```
 
 ### Running existing multi-device suites
 
-A bench with ADB-capable members can be exported as a Mobly testbed:
+A lease with ADB-capable members can be exported as a Mobly testbed:
 
 ```console
-$ jmp get lease projection-bench -o mobly > testbed.yml
-$ mobly_test.py -c testbed.yml --test_bed projection-bench
+$ jmp get lease projection -o mobly > testbed.yml
+$ mobly_test.py -c testbed.yml --test_bed projection
 ```
 
 The exported `AndroidDevice` controllers use locally forwarded ADB endpoints
@@ -317,7 +421,7 @@ The exporter reuses `TemporaryTcpListener` and `forward_stream()` from
 
 ```{mermaid}
 flowchart TD
-    lease["Lease: projection-bench"]
+    lease["Lease: projection"]
     phone["Exporter: rack3-phone-4<br/>bt_peer · requires: controller<br/>Listens on 127.0.0.1:7300"]
     headunit["Exporter: virt-hu-7b2c<br/>cuttlefish · provides: rootcanal<br/>Dials 127.0.0.1:7300"]
     router["RouterService"]
@@ -359,11 +463,12 @@ DD-9). Some interfaces also need protocol handling at the endpoint: netsim's
 `PacketStreamer` requires a gRPC call carrying `ChipInfo`, so its consumer
 must implement that handshake.
 
-Virtual radio benches forward simulator traffic. Physical radio peers
-communicate over the air and may need only the shared lease; forwards can
-still carry wired traffic such as CAN or serial.
+Leases of virtual radios forward simulator traffic. Physical radio peers
+communicate over the air and need only the shared lease. Physical wired
+media reach a forward only through a socket bridge, such as `socketcand`.
+Switching the physical wiring itself is out of scope (DD-14).
 
-### Projection example
+### Projection example: virtual and physical
 
 **Virtual.** A Cuttlefish phone exporter runs a vendor phone image with the
 projection app and its developer-mode server. A `projection-rx` driver runs
@@ -389,9 +494,23 @@ spec:
 `projection` reaches it over ADB. The test chooses which path to exercise
 (DD-13). Neither forward alone tests the Bluetooth-to-Wi-Fi handover (DD-10).
 
-**Physical.** A phone and head unit on different exporters pair over the air.
-The lease coordinates their access and lifetime; forwards can carry wired
-connections such as a CAN segment feeding the head unit.
+**Physical.** A real phone and head unit pair over the air and project over
+the head unit's own Wi-Fi access point. The lease needs no forwards; it
+gives the test both devices for the same lifetime. Placement comes
+from exporter labels:
+
+```yaml
+spec:
+  members:
+    - name: phone
+      selector: { matchLabels: { device-type: phone, rf-domain: rack-3 } }
+    - name: headunit
+      selector: { matchLabels: { device-type: aaos-headunit, rf-domain: rack-3 } }
+```
+
+Naming the rack keeps the devices within range but limits the pool to that
+rack. A socket bridge can still carry a wired segment, such as CAN, to the
+head unit.
 
 ### API / Protocol Changes
 
@@ -403,20 +522,29 @@ simply cannot participate in forwards (DD-7):
 
 ```protobuf
 message DriverInstanceReport {
-  // ... fields 1-5 unchanged ...
-  repeated PortReport ports = 6;   // NEW, optional
+  // ... fields 1-5 unchanged; 6 and 7 are reserved by JEP-0011 and the
+  // native-gRPC proposal (file_descriptor_proto, native_services) ...
+  repeated PortReport ports = 8;   // NEW, optional
 }
 
 message PortReport {
   string name = 1;                 // "rootcanal", "controller"
   PortDirection direction = 2;     // PROVIDES | REQUIRES
   optional string protocol = 3;    // free-form; compared only if both ends set it
+  PortAttachment attachment = 4;   // UNSPECIFIED is treated as SOCKET (DD-14)
 }
 
 enum PortDirection {
   PORT_DIRECTION_UNSPECIFIED = 0;
   PORT_DIRECTION_PROVIDES = 1;
   PORT_DIRECTION_REQUIRES = 2;
+}
+
+enum PortAttachment {
+  PORT_ATTACHMENT_UNSPECIFIED = 0; // socket
+  PORT_ATTACHMENT_SOCKET = 1;      // forwardable byte stream
+  PORT_ATTACHMENT_WIRED = 2;       // physical cable or bus; not forwardable
+  PORT_ATTACHMENT_WIRELESS = 3;    // over-the-air medium; not forwardable
 }
 ```
 
@@ -452,7 +580,7 @@ type LeaseSpec struct {
 // +kubebuilder:validation:XValidation:rule="self.name != 'forward' && self.name != 'forwards'",message="member name is reserved"
 type LeaseMember struct {
     // DNS-label syntax keeps names usable in the CLI and generated formats.
-    // Python accesses them only through bench.members[name].
+    // Python maps role names to LeaseMembers attributes, "-" becoming "_".
     // +kubebuilder:validation:MaxLength=63
     // +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
     Name          string                       `json:"name"`
@@ -474,10 +602,10 @@ type LeaseForward struct {
 
     // Explicit form: use when the wiring should be pinned regardless of what
     // the exporters report. Mutually exclusive with Between.
-    From *ForwardEndpoint `json:"from,omitempty"`  // must resolve to `provides`
-    To   *ForwardEndpoint `json:"to,omitempty"`    // must resolve to `requires`
+    Src  *ForwardEndpoint `json:"src,omitempty"`   // must resolve to `provides`
+    Dest *ForwardEndpoint `json:"dest,omitempty"`  // must resolve to `requires`
 
-    // Auto (default) | Router | Direct | ClientRelay.
+    // Auto (default) | Router | Direct.
     // Auto prefers a direct peer connection when both members are in the
     // same network zone and falls back to the router; Direct fails rather
     // than falling back; Router never attempts a direct dial (DD-4).
@@ -530,13 +658,27 @@ optional fields used only to decide direct eligibility:
     NetworkZone  string `json:"networkZone,omitempty"`
 ```
 
+`ExporterSpec` gains one optional, admin-owned field, and `LeaseStatus`
+records the groups a lease holds (DD-16):
+
+```go
+    // ExporterSpec: exporters that share a non-empty value serve the same DUT.
+    // At most one lease holds the group at a time. Set by an administrator,
+    // never by the exporter's own registration.
+    // +kubebuilder:validation:MaxLength=63
+    ExclusionGroup string `json:"exclusionGroup,omitempty"`
+
+    // LeaseStatus: groups held by this lease, recorded at bind time.
+    ExclusionGroups []string `json:"exclusionGroups,omitempty"`
+```
+
 The existing CEL rules are extended, not replaced. The current top-level
 "one of selector or exporterRef is required" rule gains a `members` arm and
 mutual exclusion. Per-member CEL requires exactly one *non-empty* `selector`
 or `exporterRef.name`; both set and both unset are rejected. Additional rules
 enforce unique and immutable member names, unique forward names, forwards
 referencing declared members, member immutability (mirroring `tags` and
-`context`), and exactly one of `between` or `from`+`to` per forward. Duplicate
+`context`), and exactly one of `between` or `src`+`dest` per forward. Duplicate
 forward names are thus rejected before the controller derives stream subjects
 or creates status maps.
 
@@ -549,7 +691,7 @@ enum LeaseForwardMode {
   LEASE_FORWARD_MODE_AUTO = 1;
   LEASE_FORWARD_MODE_ROUTER = 2;
   LEASE_FORWARD_MODE_DIRECT = 3;
-  LEASE_FORWARD_MODE_CLIENT_RELAY = 4;
+  reserved 4;
 }
 
 enum LeaseForwardState {
@@ -588,8 +730,8 @@ message LeaseForwardBetween {
 }
 
 message LeaseForwardDirected {
-  ForwardEndpoint from = 1; // Must resolve to PROVIDES.
-  ForwardEndpoint to = 2;   // Must resolve to REQUIRES.
+  ForwardEndpoint src = 1;  // Must resolve to PROVIDES.
+  ForwardEndpoint dest = 2; // Must resolve to REQUIRES.
 }
 
 message LeaseForward {
@@ -702,8 +844,8 @@ fields 3 and 4 are absent. For setup or teardown, only the corresponding
 optional message is populated. An old exporter reports no ports, so it cannot
 be selected for a forward and never receives fields 3 or 4 of
 `ListenResponse`. A new exporter checks those fields before treating fields 1
-and 2 as a client connection. Unknown fields remain safe under proto3. `ReleaseLeaseRequest` and `ListLeasesRequest` are
-untouched. `RouterService.Stream` and its protobuf remain unchanged, but its
+and 2 as a client connection. Unknown fields remain safe under proto3.
+`ReleaseLeaseRequest` and `ListLeasesRequest` are untouched. `RouterService.Stream` and its protobuf remain unchanged, but its
 token validation changes as described in DD-5.
 
 **CLI surface** — existing commands, new flags:
@@ -719,19 +861,19 @@ token validation changes as described in DD-5.
 
 ### Hardware Considerations
 
-- **Hardware:** virtual benches need KVM-capable hosts but no physical
-  radios. Physical benches use existing devices and harnesses. Mixed radio
-  benches require additional adapters and are deferred (DD-11).
+- **Hardware:** virtual devices need KVM-capable hosts but no physical
+  radios. Physical devices use existing harnesses. Leases that mix a
+  virtual device with a physical radio are not supported (DD-11).
 - **RF range and isolation:** physical radio peers must be within range.
   Shared labs may need shielded enclosures or channel planning. Exporter
-  labels such as `rf-domain: rack-3` express placement constraints for
-  selectors; the controller does not measure RF interference.
+  labels such as `rf-domain: rack-3` pin placement through selectors; the
+  controller does not measure RF interference.
 - **Bluetooth latency:** HCI flow control and audio buffering can be more
   sensitive than supervision timeouts. Measure both router and direct paths
   against the intended workloads (DD-4).
 - **Wi-Fi simulation:** vhost-user needs a frame bridge, and TCP adds
   head-of-line blocking that may affect medium timing (DD-10).
-- **Projection receiver:** virtual benches use a software receiver, such as
+- **Projection receiver:** virtual head units use a software receiver, such as
   Google's Desktop Head Unit (see *Projection example*).
 - **Listener isolation:** fixed `requires` addresses rely on each exporter
   owning its network namespace. Multiple host-networked exporters sharing
@@ -766,9 +908,8 @@ select a member when dialing.
 
 This atomic write does **not** guarantee exclusivity across leases. Two
 reconcilers can read stale claims and write conflicting selections to
-different lease objects. That race already exists; larger benches create
-more opportunities to encounter it. A global scheduler remains separate
-work, as noted in the controller's existing TODO.
+different lease objects. That race already exists; leases with more members create
+more opportunities to encounter it. This JEP does not change it.
 
 ### DD-2: Keep `status.exporterRef` scalar; add `status.members[]` alongside
 
@@ -792,14 +933,14 @@ list would require every consumer to migrate.
 
 `GetLeaseResponse.exporter_uuid` follows the same convention. A scalar-form
 lease returns a bare driver client. An explicit one-member or multi-member
-lease returns a bench with `members[role]` and member status. The request
+lease returns a `LeaseMembers` instance with one attribute per role. The request
 form, rather than the number of bound exporters, therefore determines a
 stable response shape.
 
 `DialRequest.member_name` selects a role. Omitting it for any member-form
 lease returns `INVALID_ARGUMENT` listing the available roles.
 
-### DD-3: Partial-bench behavior when a member is lost mid-lease
+### DD-3: Behavior when a member is lost mid-lease
 
 **Alternatives considered:**
 
@@ -830,7 +971,7 @@ acquisition remains all-or-nothing.
 **Rationale:** The router connects exporters that cannot reach each other, including
 edge devices behind NAT. Direct connections avoid router load and reduce
 latency where peers are reachable. Client relay adds a dependency on the
-client's network and lifetime; it remains an explicit debug mode.
+client's network and lifetime and is not offered as a mode.
 
 In `Auto` mode, same-zone pairs attempt a direct connection first, then fall
 back to the router after a bounded timeout. `Router` forces the router path
@@ -1038,9 +1179,9 @@ The prototypes identified these implementation requirements:
 3. **Forward the projection session at L4** — carry the projection's own TCP
    connection, over the guest's real Wi-Fi NIC, and simulate no radio.
 
-**Decision:** Deliver option 3 in Phase 2. Defer simulated Wi-Fi and the
-Bluetooth-to-Wi-Fi handover to Phase 4, using netsim where supported or a
-frame bridge for `mac80211_hwsim`/`wmediumd`.
+**Decision:** Deliver option 3 in Phase 2. Phase 4 adds simulated Wi-Fi and
+the Bluetooth-to-Wi-Fi handover, using netsim where supported or a frame
+bridge for `mac80211_hwsim`/`wmediumd`.
 
 **Rationale:** An L4 forward exercises projection version negotiation, TLS,
 service discovery, video, audio, and input. It does not exercise Bluetooth
@@ -1073,26 +1214,23 @@ a phone-side server restart. The phone joined Wi-Fi only after its validated
 Ethernet connection was removed. These requirements belong in the reference
 drivers.
 
-### DD-11: Mixed physical/virtual benches — deferred
+### DD-11: A lease's devices are all virtual or all physical
 
 **Alternatives considered:**
 
-1. **Defer** — v1 supports homogeneous benches only: two virtual devices or
-   two physical devices.
-2. **In scope now**, via a gateway exporter owning a real radio adapter,
+1. **Homogeneous leases:** two virtual devices or two physical devices.
+2. **Mixed leases**, via a gateway exporter owning a real radio adapter,
    presented as a `provides` port that the virtual side attaches to as it
    would to any other controller.
 
-**Decision:** Option 1 — defer.
+**Decision:** Option 1.
 
-**Rationale:** Joining physical and simulated radios requires a nearby hardware
-adapter and a way to allocate that shared RF resource. Bluetooth may use a
-USB HCI adapter; Wi-Fi needs suitable radio hardware. Requiring this now
-would add hardware integration to the lease and forwarding work.
-
-A future gateway exporter can own the adapter and expose a provided port.
-Its allocation model remains open (Future Possibilities). A software model
-of a physical peer is useful but does not test the physical device's stack.
+**Rationale:** Joining physical and simulated radios requires a nearby
+hardware adapter and a way to allocate that shared RF resource. Bluetooth
+may use a USB HCI adapter; Wi-Fi needs suitable radio hardware. Option 2
+adds hardware integration to the lease and forwarding work. A software
+model of a physical peer is useful but does not test the physical device's
+stack.
 
 ### DD-12: Access policy and port validation timing
 
@@ -1103,10 +1241,9 @@ of a physical peer is useful but does not test the physical device's stack.
    would be; forwards are validated against the bound exporters' reports.
 2. **Selection-time port validation** — ports surfaced as exporter CR labels
    so member selectors only match exporters that have the required ports.
-3. **A bench-shaped policy CRD** with rules over lease shape, size, and count.
+3. **A multi-exporter policy CRD** with rules over lease shape, size, and count.
 
-**Decision:** Option 1 for v1; option 2 recorded as a follow-on that depends
-on JEP-0017; option 3 deferred.
+**Decision:** Option 1.
 
 **Rationale:** Each member must satisfy the same access policy as an independent
 lease request. Lease priority is the minimum member priority, and duration
@@ -1114,14 +1251,13 @@ is bounded by the minimum per-member `maximumDuration`.
 `status.members[].priority` preserves the individual values for inspection.
 
 The existing selector pipeline matches exporter CR metadata labels, while
-ports are reported in `ExporterStatus.Devices[]`. V1 therefore validates
-ports after selecting and binding exporters. An invalid forward leaves the
-members held for inspection until release or expiry.
+ports are reported in `ExporterStatus.Devices[]`. The controller therefore
+validates ports after selecting and binding exporters. An invalid forward
+leaves the members held for inspection until release or expiry.
 
-Selection-time validation would avoid holding exporters whose ports cannot
-satisfy the request. JEP-0017 proposes exposing reported device information
-through selectable labels. Bench-level policy and quota are deferred until
-there is operational experience with multi-member leases.
+Option 2 needs reported ports to be selectable, which the selector pipeline
+does not support. Option 3 adds a policy CRD before there is operational
+experience with multi-member leases.
 
 ### DD-13: Infer direction, never infer topology
 
@@ -1132,7 +1268,7 @@ there is operational experience with multi-member leases.
    `requires` from the reported ports. Which ports are joined stays explicit.
 2. **Infer topology too** — auto-forward every `provides`/`requires` pair the
    bound exporters happen to expose, with no `forwards` stanza at all.
-3. **Infer nothing** — the author states `from` and `to` on every forward.
+3. **Infer nothing** — the author states `src` and `dest` on every forward.
 
 **Decision:** Option 1, with option 3 retained as an explicit form.
 
@@ -1145,10 +1281,172 @@ Automatic topology would make connections depend on the ports exposed by
 whichever exporters were selected. Multiple possible matches would be
 ambiguous and could create data paths the test did not request.
 
-Explicit `from`/`to` remains available when a test requires a particular
+Explicit `src`/`dest` remains available when a test requires a particular
 direction; the controller validates it against the report. CLI shorthand may
 expand into explicit `spec.forwards[]` entries before submission so the
 stored topology remains inspectable.
+
+### DD-14: Forwards carry socket ports only
+
+**Alternatives considered:**
+
+1. **Report the attachment; forward sockets only.** Add an `attachment`
+   field (`socket | wired | wireless`) to `PortReport`. Forwards accept only
+   `socket` ports; other values are reported but rejected.
+2. **Route physical media.** Add a controller-driven exporter class that
+   switches relays, VLANs, or signal gateways between members' ports.
+3. **Omit physical ports.** Describe only socket ports and leave physical
+   connection points undeclared.
+
+**Decision:** Option 1.
+
+**Rationale:** Physical routing needs mechanisms that byte forwarding does
+not: devices that serve several exporters at once, allocation of their
+channels across leases, fail-closed isolation at release, electrical
+compatibility checks, and placement constraints during binding. Shared
+power supplies and other lab infrastructure need the same mechanisms. They
+are outside this JEP.
+
+A physical CAN port and a `socketcand` bridge to it are different
+connection points. Joining the physical port with a byte forward would
+silently give up bus timing, so the controller rejects it. With option 3,
+the controller could not tell the two apart, and exporters could not report
+their physical ports.
+
+The attachment describes how a port connects, not whether the device is
+simulated: a physical ECU behind `socketcand` has a `socket` port and can be
+forwarded to a virtual ECU.
+
+### DD-15: Members bind whole exporters
+
+**Alternatives considered:**
+
+1. **Bind exporters.** A member binds one exporter and every DUT behind it.
+2. **Bind individual DUTs.** Add an inventory of the DUTs behind each
+   exporter and let a member bind one of them.
+
+**Decision:** Option 1.
+
+**Rationale:** Multi-DUT setups have several devices behind one exporter,
+each with its own firmware, software, and configuration. Binding one of
+them requires device identity, a model of which devices share a harness,
+and per-device claims. None of these are needed to bind whole exporters.
+
+The lease format has these properties:
+
+- **Member selection is a `oneof`.** The CEL rule requires exactly one
+  selection source, so each member has one unambiguous source.
+- **Member status is additive.** `status.members[]` records the bound
+  exporter, and clients ignore status fields they do not recognize.
+- **Stored references use names, not UUIDs.** Driver instance UUIDs are
+  generated each time the exporter starts. They appear only in runtime setup
+  instructions. Lease specs and statuses refer to exporters, drivers, and
+  ports by name, which stays stable across restarts.
+- **Ports belong to driver instances.** A DUT is a subtree of the exporter's
+  drivers, and each port names exactly one driver instance.
+- **"Device" keeps its current meaning.** `ExporterStatus.Devices[]` lists
+  reported driver instances. This JEP adds ports to those reports and uses
+  *DUT*, not *device*, for the hardware under test.
+
+Software state on an exporter can be selected through dynamic labels
+(JEP-0017).
+
+### DD-16: A DUT served by several exporters is claimed as one
+
+**Alternatives considered:**
+
+1. **Admin-assigned exclusion group.** Exporters that share a
+   `spec.exclusionGroup` serve the same DUT. At most one lease holds the
+   group; that lease may bind any subset of its exporters.
+2. **Always lease the whole group together.** Binding one exporter in a
+   group binds all of them into the lease.
+3. **A DUT inventory.** Add a resource that lists the exporters attached to
+   each DUT.
+4. **Exporter-reported group label.** Each exporter declares its group in
+   its registration labels.
+
+**Decision:** Option 1.
+
+**Rationale:** Two exporters attached to one DUT can already be leased by
+two clients. One client might power-cycle the DUT while another is
+flashing it through the second exporter. Multi-exporter leases make this
+more common: labs split a DUT across exporters so that tests can combine
+them. Option 3 needs the device identity and claims that DD-15 leaves out; a
+group needs one field.
+
+The group constrains who may hold the DUT, not which exporters a test
+uses. A test that needs only power and console binds that one exporter;
+the others stay unavailable to other leases until release. Option 2 would
+add unrequested exporters to the lease and its forwards, and a missing
+exporter in the group would block every lease on the DUT.
+
+The group is an admin-owned spec field, not a label. Exporters overwrite
+their `jumpstarter.dev/` labels at every registration, so option 4 would
+let a compromised exporter join another DUT's group and make that DUT
+unavailable whenever the compromised exporter is leased.
+
+Group checks reuse the existing claim data: bound exporters on active
+leases, plus the groups each lease recorded at binding. The existing
+cross-lease race applies to groups as it does to exporters (DD-1).
+
+Exclusion groups are the opposite of shared infrastructure (DD-14). A group
+is several exporters for one DUT and one lease. A shared infrastructure
+exporter is one exporter serving many DUTs and leases.
+
+### DD-17: Declare multi-exporter leases as typed classes
+
+**Alternatives considered:**
+
+1. **A `LeaseMembers` subclass.** Members are annotated class attributes
+   created with `member()`, and forwards are attributes created with
+   `forward()`. `config.lease(Members)` yields that class from `connect()`.
+2. **Keyword dictionaries.** `config.lease(members={...}, forwards=[...])`
+   and a `members["role"]` mapping.
+3. **Dynamic attributes.** Roles installed on the connected object at
+   connect time.
+
+**Decision:** Option 1.
+
+**Rationale:** Driver clients are already typed classes, such as
+`PowerClient` and `AdbClient`, but a lease's `connect()` yields an untyped
+tree whose children are found by attribute lookup at runtime. Option 2
+keeps that: a misspelled role or driver fails only when the test reaches
+that line. With a class, a type checker resolves `members.phone.adb` to
+`AdbClient` and reports an unknown role, a missing driver, or a wrong call
+before the lease is requested.
+
+The class is also the lease request. Roles, selectors, and forwards come
+from one declaration that tests share, and endpoint names are checked
+against declared roles when the class is created. `connect()` checks that
+each bound exporter provides the drivers the member's class declares, so a
+misconfigured exporter fails with the role and driver named rather than as
+an `AttributeError` later in the test.
+
+Option 3 gives no static types and lets a role shadow client attributes.
+Class attributes cannot collide that way: `by_role` is the only reserved
+name. Roles that are not valid identifiers map from underscores, as in
+`head_unit` for `head-unit`, or use `member(role=...)`.
+
+Each member is typed as a `CompositeClient` subclass, the same base that
+exporter client trees and hand-written composite clients such as
+`QemuClient` already use. Its annotations give the type checker the
+children that `CompositeClient.__getattr__` resolves at runtime. The same
+class is what the per-exporter codegen pipeline emits: one subclass per
+member, one annotation per driver. Hand-written and generated member types
+therefore have one shape, and a test can move from one to the other
+without changing call sites. A `Protocol` would describe the same shape
+but could not be instantiated, so `connect()` would return the untyped
+tree and the checker's view would diverge from the runtime object.
+
+The class holds only data: roles, each member's selector or exporter name
+and `optional` flag, driver names mapped to client classes, and forwards
+with their endpoints and mode. Every item has a language-neutral form. The
+first four and the forwards are exactly `RequestLeaseRequest.members` and
+`forwards`. Driver shapes stay on the client and become JEP-0011 proto
+packages, because each client class implements one driver interface.
+Member classes add annotations only; methods belong on driver clients. The
+limit lets a code generator produce the same typed lease in other languages
+without changing this API (see *Future Possibilities*).
 
 ## Design Details
 
@@ -1184,7 +1482,7 @@ The existing `reconcileStatusExporterRef` generalizes to
 ```{mermaid}
 flowchart TD
     select["Select policy-approved exporters<br/>matching the member selector"]
-    filter["Exclude offline exporters, active claims,<br/>earlier picks, and exporters still cleaning up"]
+    filter["Exclude offline exporters, active claims,<br/>exporters whose exclusion group another lease holds,<br/>earlier picks, and exporters still cleaning up"]
     candidate["Keep the best candidate in memory<br/>Write no claims yet"]
     more{"More members?"}
     complete{"Every required member<br/>has a candidate?"}
@@ -1204,13 +1502,20 @@ Candidates remain in memory until every required member resolves. The
 selection pass excludes exporters already assigned to another member, so
 two roles with the same selector receive distinct exporters.
 
+Exclusion groups extend the claim check (DD-16). A candidate is excluded if
+another active lease holds its group, either by binding an exporter in it or
+through the groups recorded in that lease's `status.exclusionGroups`. Several
+members of one lease may bind exporters in the same group. The binding write
+records every group touched by the lease's bound exporters, so later
+membership edits cannot silently release a DUT mid-lease. Spot-access
+takeover follows the existing rules and applies to the whole group.
+
 The scalar path uses the same selection code with a synthetic member and
 writes the result to `status.exporterRef` (DD-2).
 
 The existing cross-lease race remains: reconcilers can read stale claims
 and commit conflicting selections to different lease objects. A later
-reconcile detects the conflict and rebinds; a global scheduler is separate
-work (DD-1).
+reconcile detects the conflict and rebinds (DD-1).
 
 ### Lease state
 
@@ -1260,9 +1565,11 @@ exists belongs to a bound exporter, not to a selector (DD-12). For each
    exporter-wide unique names.
 3. **Direction resolves.** For a `between` forward, exactly one endpoint must
    report `PROVIDES` and the other `REQUIRES`; the controller assigns the
-   roles accordingly (DD-13). For an explicit `from`/`to` forward, the stated
+   roles accordingly (DD-13). For an explicit `src`/`dest` forward, the stated
    roles must match what the exporters report.
-4. If both ports declare `protocol`, the values are equal (DD-8).
+4. Both ports have attachment `socket`; `wired` and `wireless` ports cannot
+   be forwarded in this JEP (DD-14).
+5. If both ports declare `protocol`, the values are equal (DD-8).
 
 A failure sets `Invalid`, names the forward and reason, and leaves members
 bound for inspection. A disabled optional-member forward is not a validation
@@ -1305,8 +1612,9 @@ from the stream, without probing the service.
 | --- | --- |
 | Named port absent on a bound exporter | Lease `Invalid`; members stay bound for inspection |
 | Both endpoints `provides`, or both `requires` | Lease `Invalid`; direction cannot resolve (DD-6, DD-13) |
-| Explicit `from`/`to` contradicts the reported directions | Lease `Invalid` naming the forward and the reported roles |
+| Explicit `src`/`dest` contradicts the reported directions | Lease `Invalid` naming the forward and the reported roles |
 | Declared protocols disagree | Lease `Invalid` (DD-8) |
+| A port's attachment is `wired` or `wireless` | Lease `Invalid` naming the port and its attachment (DD-14) |
 | Protocols differ and at least one tag is absent | Validation passes; protocol errors may occur when data is exchanged (DD-8) |
 | Forward references an undeclared member | Rejected by CEL at admission; lease never created |
 | Forward references an omitted optional member | Forward `Disabled` naming the role; no setup or token; lease may become `Ready` |
@@ -1365,6 +1673,11 @@ Provisioner ordering remains an unresolved question.
 - **Port exposure:** only declared ports can participate in forwards. A
   `requires` listener uses an exporter-configured address and exists only
   while leased.
+- **DUT exclusivity:** holding an exclusion group does not grant access to
+  the group's unbound exporters. They cannot be dialed through the lease
+  and do not receive `status.leaseRef`, so they cannot release it. Only
+  administrators assign groups; an exporter cannot join a group through its
+  own registration labels, so it cannot block unrelated exporters (DD-16).
 - **Direct authentication and confidentiality:** the optional peer listener
   is disabled by default and accepts only controller-issued, short-lived
   per-forward mTLS credentials. Both sides verify the expected exporter and
@@ -1373,15 +1686,6 @@ Provisioner ordering remains an unresolved question.
   should allow the authenticated peer port while blocking peer access to
   unauthenticated simulator ports. JEP-0016 is expected to supply this policy
   with exporter Pods.
-- **Broader exporter authentication:** mTLS is also a stronger future
-  authentication mechanism for exporter-to-controller and exporter-to-router
-  connections. Unlike the current bearer token, it proves possession of a
-  private key while protecting the channel and can bind the certificate
-  identity to one `Exporter`. Lease and forward authorization still apply;
-  possession of an exporter certificate alone never grants access to a port.
-  Kubernetes Pod Certificates are one possible source of this workload
-  identity, while physical and non-Kubernetes exporters require an equivalent
-  issuer and enrollment path.
 - **Membership:** `members` is immutable after creation.
 - **Physical RF:** devices in a shared lab are audible to others in range;
   lease authorization does not isolate radio traffic.
@@ -1408,226 +1712,28 @@ Where netsim supplies the simulated medium, `jumpstarter-driver-netsim` can
 start, stop, and download pcap captures through its REST control API. These
 captures can be attached to test results alongside forward metrics.
 
-## Test Plan
-
-### Unit Tests
-
-- `LeaseSpec` CEL validation: extended top-level one-of rule,
-  members/scalar mutual exclusion, per-member rejection when both or neither
-  of `selector` and `exporterRef` are usable, DNS-label and reserved role-name
-  checks, unique member and forward names, forwards referencing declared
-  members, and member immutability.
-- Member selection: all-or-nothing binding, no self-collision, correct
-  `Unsatisfiable` role naming, and — the property DD-1 rests on — that a
-  reconcile which cannot satisfy every member writes **no** member claims.
-- Scalar-form regression: existing lease controller tests pass unmodified
-  and retain `status.exporterRef`. An explicit one-member lease instead
-  populates one `status.members` entry and leaves `status.exporterRef` nil.
-- Aggregation: priority = min(member priorities), duration clamped to
-  min(member `maximumDuration`).
-- Port report round-trip: driver-declared ports reach
-  `ExporterStatus.Devices[].Ports`; an exporter reporting none is treated as
-  non-forwardable; a report with no `ports` field is accepted unchanged; and
-  duplicate names across two driver reports reject registration.
-- Forward validation: missing port, `provides→provides`,
-  `requires→requires`, protocol disagreement, and `listen` collision each
-  produce `Invalid` with the offending forward named. A forward with an
-  omitted optional endpoint instead becomes `Disabled` and does not gate
-  lease readiness.
-- `Dial` without `member_name` on any member-form lease returns
-  `INVALID_ARGUMENT` listing roles; with a valid role, routes correctly.
-- `DialPeer` token issuance: identical unique `sub` for both ends, reciprocal
-  member/exporter and complementary side claims, stability across reconciles,
-  expiry clamped to lease end, and rejection when the caller is not bound to
-  the named member. Router tests reject unrelated or same-side tokens that
-  carry the same subject.
-- `ListenResponse`: forward setup and teardown decode alongside the unchanged
-  client-connection fields; setup carries the resolved local driver UUID;
-  old exporters never receive forward instructions.
-- Python client: scalar `connect()` returns a bare client; explicit one-member
-  and multi-member requests both return a bench with `members[...]`; arbitrary
-  role attributes are not exposed; `bench.forwards[...]` reports state; and
-  calls into a `Degraded` role raise.
-
-### Integration Tests
-
-Against a kind cluster with the controller and mock exporters (`e2e/`):
-
-- Two mock exporters, one two-member lease, one forward between an
-  `EchoNetwork` provides-port and a requires-port — end-to-end establishment
-  through the real router with no device-specific code.
-- Contention: more concurrent multi-member leases than capacity, asserting
-  every lease is either fully bound or holding nothing.
-- Lease expiry, explicit release, and client disconnect; assert no leaked
-  router streams, no exporters left claimed, and no listeners left bound.
-- Router-mode vs. direct-mode selection: `Auto` picks direct for two
-  same-zone exporters only after mutual TLS identity verification, never
-  sends `peer_token` before the encrypted handshake, falls back to the router
-  when the peer dial is blocked, records the mode actually used, and never
-  falls back under `mode: direct`.
-- `jmp get lease -o mobly` output validated against Mobly's testbed schema.
-- **Compatibility**: an N-1 client against an N controller for the full
-  single-exporter workflow; an N client issuing a single-exporter lease
-  against an N-1 controller; an N-1 *exporter* (reporting no ports)
-  registering against an N controller.
-
-### Hardware-in-the-Loop Tests
-
-- **Virtual devices:** two Cuttlefish exporters in separate Pods pair over
-  forwarded rootcanal ports. Phase 4 adds Wi-Fi association and netsim pcap
-  capture where supported. Run on KVM-capable CI nodes.
-- **Virtual device and peer:** connect a Cuttlefish exporter to `bt-peer`.
-  Assert pairing and `avdtp_connected`; with HFP Audio Gateway enabled,
-  assert that an incoming call reaches the head unit's telephony stack.
-  This test needs only one guest and should run on each merge.
-- **Virtual projection:** connect a phone CVD and `projection-rx` in separate
-  Pods through `projection-wifi`. Assert that the receiver reaches the
-  launcher and matches an expected screenshot.
-- **Physical devices:** run a phone and head unit on exporters on different
-  lab hosts, using a labeled runner with the required hardware.
-- **Latency:** publish HCI round-trip distributions for router, direct, and
-  host-local paths. Include cross-node, sustained A2DP, and physical-controller
-  tests to establish supported workloads.
-- **Forward resilience:** cut a live stream through a router restart or
-  ingress reload. Assert that the affected local TCP connection closes, a
-  later local connection receives a new peer stream, metrics and events are
-  emitted, and an endpoint-driver recovery hook restores protocols that do
-  not reconnect themselves.
-
-### Manual Verification
-
-- `jmp shell --lease` ergonomics: role-prefixed driver calls,
-  `j forward status`, Ctrl+C teardown leaving no held leases.
-- `jmp get exporter` port discovery: a user who has never seen an exporter's
-  config can construct a working forward from its output alone.
-- An existing Mobly multi-device suite run unmodified against an exported
-  testbed.
-- `jmp get leases` and `kubectl get leases` on a mixed set of single- and
-  multi-member leases.
-
-## Acceptance Criteria
-
-**Lease plane**
-
-- [ ] `spec.members[]` / `status.members[]` on `Lease`, with extended CEL
-      validation and member immutability
-- [ ] Binding is one `Status().Update`: a reconcile that cannot satisfy every
-      required member writes no member claims (verified by test)
-- [ ] Two members with identical selectors bind two distinct exporters
-- [ ] Contention test: concurrent multi-member leases over insufficient
-      capacity leave no lease partially holding devices
-- [ ] `ExporterAccessPolicy` evaluated per member; a multi-member lease
-      cannot reach an exporter its client could not lease directly
-- [ ] Lease priority = min(member priorities); duration clamped to
-      min(member `maximumDuration`)
-- [ ] `status.exporterRef` unchanged for scalar-form leases and nil for every
-      member-form lease, including an explicit one-member list; existing
-      scalar controller tests pass unmodified
-- [ ] Scalar Python connections return a bare client; explicit one-member and
-      multi-member connections return `bench.members[...]`
-- [ ] `Dial` without `member_name` on a member-form lease returns
-      `INVALID_ARGUMENT` naming the roles
-
-**Ports and forwards**
-
-- [ ] `PortReport` is optional on `DriverInstanceReport`; exporters reporting
-      no ports register and operate unchanged
-- [ ] Port names are exporter-wide unique; duplicate names across driver
-      instances reject registration, and setup names the resolved driver UUID
-- [ ] Declared ports appear in `ExporterStatus.Devices[].Ports` and in
-      `jmp get exporter` output
-- [ ] `listen` addresses never appear in any report, CR status, or lease spec
-- [ ] Admission rejects duplicate forward names before deriving router
-      subjects, and rejects member selection with both/neither source set
-- [ ] Forward validation rejects missing ports, `provides→provides`,
-      `requires→requires`, and declared-protocol mismatch, naming the forward
-- [ ] A forward whose optional endpoint is omitted is `Disabled`, receives no
-      credentials, and does not prevent lease readiness
-- [ ] Additive `ListenResponse` setup and teardown instructions identify the
-      lease, forward, side, local driver UUID, and ports; credentials are
-      returned only by authenticated `DialPeer`; old exporters receive neither
-- [ ] Forwards establish over `RouterService` with no `router.proto` change;
-      its authorization pairs only reciprocal claims under a unique subject
-- [ ] Direct fast path uses per-forward mTLS, verifies peer identity before
-      sending `peer_token`, falls back automatically, and is observable
-      (mode + fallback-rate metrics)
-- [ ] `Auto` resolves to a direct peer connection for two same-zone
-      in-cluster exporters with peer listeners; router fallback is recorded
-- [ ] `bt-peer` participates as a `requires` endpoint with **no Python
-      changes** — exporter configuration only, relying on its existing
-      `open_transport(self.transport)` passthrough
-- [ ] Phase 1 reuses network drivers for byte forwarding, with rootcanal
-      join, address assignment, and recovery handled by endpoint drivers (DD-9)
-- [ ] A Bumble-based shared controller exists as a driver exposing a
-      `provides` port, for benches outside Cuttlefish and for N-way media
-- [ ] After a peer-stream cut, the endpoint closes the associated local TCP
-      connection and re-establishes the peer path with backoff; a reconnecting
-      driver obtains a new splice, while protocols without reconnect behavior
-      recover through an explicit endpoint-driver hook. No replacement stream
-      is attached to an existing local TCP connection
-- [ ] A second exporter process registering under a live identity is
-      detected and refused
-- [ ] Byte fidelity and reset semantics verified by the `EchoNetwork`
-      integration test
-
-**Topologies** (each a phase gate, in order)
-
-- [ ] **Phase 1 — Virtual Bluetooth:** two CVDs in Pods on separate nodes
-      complete BR/EDR discovery and pairing through federated rootcanals or
-      a shared HCI instance, in CI
-- [ ] **Phase 2 — Virtual projection:** a phone CVD and `projection-rx` in
-      separate Pods reach the projection launcher over a forwarded port,
-      in CI without lab hardware
-- [ ] **Phase 3 — Physical devices across hosts:** a phone and head unit on
-      exporters on different lab hosts complete a projection session
-- [ ] **Phase 4 — Virtual Wi-Fi medium:** two CVDs in separate Pods associate
-      through bridged `mac80211_hwsim`/`wmediumd` or a shared netsim 802.11
-      chip and complete the Bluetooth-to-Wi-Fi projection handover
-- [ ] Publish router-forward HCI latency measurements and supported workload
-      limits, including cross-node and sustained A2DP tests
-
-DD-9 and DD-10 record the manual prototype results. Automated CI, CVD-to-CVD
-forwarding over the router, and multi-node verification remain outstanding.
-
-## Graduation Criteria
-
-### Experimental
-
-`members`, `forwards`, and port reporting ship behind a controller feature
-gate after Phases 1–3 are complete. Collect feedback on member counts,
-direct-connection and fallback rates, the eight-member limit, listener
-collisions, scalar-field compatibility, and bind-time port validation.
-
-### Stable
-
-- Phases 1–4 complete, with Phase 4 green in CI for 30 consecutive days
-- At least two `requires`-side drivers outside this JEP's reference set
-  (evidence the port model generalizes)
-- No API changes to `members` / `forwards` / `PortReport` for one release
-  cycle
-- Selection-time port validation either shipped on JEP-0017 or explicitly
-  deferred with a rationale
-
 ## Backward Compatibility
 
 The schema and protocol changes are additive. DD-2 defines compatibility
 for `status.exporterRef`.
 
-- **CRD**: `Lease` gains two optional spec lists and two optional status
-  lists; `ExporterStatus.Devices[]` gains an optional `ports` list. No
-  existing field changes type, meaning, or default. `Exporter`,
-  `ExporterAccessPolicy`, `ExporterSet`, and `VirtualTargetClass` are
-  otherwise untouched. Every lease that exists today validates unchanged.
+- **CRD**: `Lease` gains two optional spec lists and three optional status
+  lists (`members`, `forwards`, `exclusionGroups`); `ExporterStatus.Devices[]`
+  gains an optional `ports` list, and `ExporterStatus` gains optional
+  `peerEndpoint` and `networkZone`. No existing field changes type, meaning,
+  or default. `Exporter` gains one optional spec field, `exclusionGroup`;
+  exporters without it behave as today. `ExporterAccessPolicy`, `ExporterSet`, and `VirtualTargetClass` are
+  untouched. Every lease that exists today validates unchanged.
 - **`status.exporterRef`**: unchanged for every lease that does not pass
   `members`. Every member-form lease, including an explicit one-member list,
   leaves it nil, which existing consumers already read as "not bound yet"
   (DD-2), so the JEP-0016 façade, `jmp get leases`, `Dial` and JEP-0013
-  telemetry keep working; they change only to *support* benches.
+  telemetry keep working; they change only to *support* member-form leases.
 - **Driver report and drivers**: `ports` is a new optional repeated field, so
   an exporter built before this JEP reports none and is treated as
-  unable to participate in forwards. Ports are declared in exporter
-  configuration; `bt-peer` needs no Python changes to use a forwarded HCI
-  endpoint.
+  unable to participate in forwards. An unset `attachment` means `socket`.
+  Ports are declared in exporter configuration; `bt-peer` needs no Python
+  changes to use a forwarded HCI endpoint.
 - **Protocol**: new fields on existing messages and one new RPC.
   Unknown fields are ignored by proto3, so an N-1 client talks to an N
   controller unchanged. An N client requesting `members` from an N-1
@@ -1688,19 +1794,19 @@ for `status.exporterRef`.
 - **Deployment isolation:** shared network namespaces can cause listener
   collisions and simulator resets across leases. Enforce the documented
   deployment assumptions and report bind failures clearly.
-- **Binding contention:** larger benches have more opportunities to hit the
-  existing cross-lease race. `MaxItems=8` bounds bench size; a global scheduler
-  remains the full solution.
+- **Binding contention:** leases with more members have more opportunities
+  to hit the existing cross-lease race. `MaxItems=8` bounds member count, and a later
+  reconcile rebinds a conflicting lease (DD-1).
 - **Consumer compatibility:** readers may assume every bound lease has
-  `status.exporterRef`. Cover known consumers in compatibility tests.
+  `status.exporterRef`. Existing consumers must be checked before release.
 - **Upstream interfaces:** netsim and vhost-user integration may change.
   Pin runtime images and track upstream compatibility.
 - **Capacity:** per-member policy and the eight-member limit bound access;
-  bench-level quota remains future work.
+  there is no quota across a lease's members.
 
 ## Rejected Alternatives
 
-DD-1 through DD-13 record the API and transport alternatives. Higher-level
+DD-1 through DD-17 record the API and transport alternatives. Higher-level
 alternatives are:
 
 - **Keep client-managed leases:** leaves partial acquisition, independent
@@ -1708,14 +1814,14 @@ alternatives are:
 - **Add `LeaseGroup` or `LeaseSet`:** child leases require partial-acquisition
   recovery (DD-1). `LeaseSet` also suggests the interchangeable replicas of
   `ExporterSet`, rather than members with distinct roles.
-- **Lease devices independently inside one exporter:** can divide control
-  of a physically connected harness. A composite DUT behind one exporter
-  remains supported.
+- **Lease devices independently inside one exporter:** without an inventory
+  of the DUTs and their shared harness, this could divide control of a
+  physically connected assembly. A composite DUT behind one exporter remains
+  supported (DD-15).
 - **Build a multi-device test runner:** existing runners can consume the
   leased devices. This proposal supplies allocation and connectivity.
 - **Adopt a mobile test framework as the fleet layer:** this would require
-  adapting its device and allocation model to Jumpstarter. Integration
-  through a device or Mobly controller shim remains possible.
+  adapting its device and allocation model to Jumpstarter.
 
 ## Prior Art
 
@@ -1768,19 +1874,71 @@ To resolve during implementation:
 
 ## Future Possibilities
 
-These are outside the initial scope:
+The following work builds on this JEP:
 
-- **Mixed radio benches:** a gateway exporter owns a physical radio adapter.
-  Decide whether it is a separate leased member or part of the physical
-  device's exporter (DD-11).
+- **Shared infrastructure exporters:** exporters that serve several other
+  exporters and leases, such as network switches, relay matrices, signal
+  gateways, RF enclosures, and programmable power supplies. Such an exporter
+  maps its channels to other exporters' ports, allocates them per lease, and
+  isolates them at release. This work would allow forwards over `wired` and
+  `wireless` ports, including buses with more than two endpoints and a
+  fidelity level that separates electrical connections from frame-forwarding
+  gateways. It would also add scoped access to shared channels, such as one
+  power output (DD-14).
+- **Co-location constraints:** let a member require placement in the same
+  RF domain or harness as another member, so that a lease can choose any
+  rack where both roles fit instead of naming one.
+- **`Device` resource:** an inventory of the DUTs behind each exporter,
+  each with its own firmware, software, and configuration. Lease members
+  could select a DUT by its installed software, and a DUT that does not
+  share a harness could be leased on its own. The lease format already
+  supports this addition (DD-15): a device-scoped source can join the
+  selection `oneof`, member status can gain a device reference, a `Device`
+  can own the ports of the drivers under it, and binding stays all-or-nothing
+  with one status write. A `Device` could also list the exporters attached to
+  it, replacing `spec.exclusionGroup` with the device name (DD-16). That work
+  must reconcile the name with the existing `ExporterStatus.Devices[]`.
+- **Mixed radio leases:** a gateway exporter owns a physical radio adapter
+  and exposes it as a provided port. Decide whether it is a separate leased
+  member or part of the physical device's exporter, and how the shared RF
+  resource is allocated (DD-11).
 - **Selection-time port validation:** expose reported ports through JEP-0017
   labels so an unsatisfiable request holds no exporters (DD-12).
+- **Lease templates and polyglot codegen:** a lease template is a
+  language-neutral file for a reusable declaration. It has the lease's
+  `members` and `forwards`, plus a client-only `drivers` map per member from
+  driver name to JEP-0011 proto package:
+
+  ```yaml
+  kind: LeaseTemplate
+  metadata: { name: projection }
+  spec:
+    members:
+      - name: phone
+        selector: { matchLabels: { device-type: phone } }
+        drivers: { adb: jumpstarter.driver.adb.v1, bt_peer: jumpstarter.driver.bt_peer.v1 }
+      - name: headunit
+        selector: { matchLabels: { device-type: headunit } }
+        drivers: { power: jumpstarter.driver.power.v1 }
+    forwards:
+      - { name: bt, between: [{ member: headunit, port: rootcanal }, { member: phone, port: controller }] }
+  ```
+
+  The codegen pipeline that produces per-interface clients from JEP-0011
+  protos can generate the typed lease from it: the Python `Projection`
+  class above, or a TypeScript, Java, Kotlin, or Rust type with one
+  accessor per role and per forward. Names follow each language's
+  convention, for example `bt_peer` becomes `btPeer`. A template can also
+  be emitted from a Python class, as JEP-0011 does for interfaces, and can
+  be applied from the CLI (`jmp create lease --template projection`).
+  Generated clients request the lease with `RequestLeaseRequest` and dial
+  each role with `DialRequest.member_name`.
 - **Global scheduling:** resolve the existing cross-lease binding race.
 - **Fan-out forwards:** connect one provided port to several required ports,
   including shared media such as Bumble relay rooms.
 - **Ephemeral listeners:** allocate addresses dynamically if shared network
   namespaces are supported later.
-- **Bench policy and quota:** add limits across members and support individual
+- **Multi-exporter policy and quota:** add limits across members and support individual
   member release if needed.
 - **Kubernetes-native mTLS identity:** Kubernetes 1.37 graduates Pod
   Certificates and ClusterTrustBundles to Stable. Exporter Pods could mount a
@@ -1792,14 +1950,18 @@ These are outside the initial scope:
   a configured signer (Kubernetes 1.37 does not ship a production signer in
   core), live certificate reload, an identity-to-`Exporter` binding, and a
   platform-neutral fallback for exporters outside Kubernetes.
+- **Broader exporter mTLS:** use mTLS for exporter-to-controller and
+  exporter-to-router connections. Unlike the current bearer token, it proves
+  possession of a private key while protecting the channel, and it can bind
+  the certificate identity to one `Exporter`. Lease and forward
+  authorization would still apply. Physical and non-Kubernetes exporters
+  need an issuer and enrollment path.
 - **Datagram transport:** define a separate protocol extension for framed
   traffic, avoiding TCP head-of-line blocking in the Phase 4 bridge.
 - **Vehicle-bus simulation:** integrate a restbus simulator as a provided
   socket alongside existing CAN, DoIP, SOME/IP, UDS, XCP, and OBD drivers.
 - **Test-framework integration:** supply a device or Mobly-controller shim
   backed by a lease.
-- **Bench templates:** define reusable named topologies that instantiate
-  ordinary leases.
 - **On-demand members:** provision JEP-0014 pool instances to satisfy a lease.
 
 ## Implementation History
@@ -1807,7 +1969,7 @@ These are outside the initial scope:
 - 2026-09-01: Drafted the JEP. Manually verified shared and federated
   rootcanal configurations and L4 projection with stand-in relays (DD-9,
   DD-10).
-- 2026-09-02: Verified a CVD-to-Bumble bench over Jumpstarter's router,
+- 2026-09-02: Verified a CVD-to-Bumble lease over Jumpstarter's router,
   measured single-node latency, and identified stream-recovery requirements.
   Updated `Auto` to prefer direct connections for same-zone peers.
 - 2026-09-04: Consolidated rationale and prototype notes; clarified scope,
@@ -1819,6 +1981,17 @@ These are outside the initial scope:
   messages, router claim binding, direct-path encryption, and reconnect
   semantics. Recorded Kubernetes Pod Certificates and broader exporter mTLS
   authentication as future paths.
+- 2026-09-24: Added a scope summary, reserved port attachments for physical
+  media (DD-14), removed the undefined client-relay forward mode, and recorded
+  shared infrastructure exporters as a follow-on proposal. Recorded the
+  extension points for a future `Device` resource (DD-15), and added
+  exclusion groups for DUTs served by several exporters (DD-16).
+- 2026-09-26: Moved forward-looking material from the body into Future
+  Possibilities; the body describes only what this JEP delivers.
+- 2026-09-26: Replaced the dictionary-based Python API with typed
+  `LeaseMembers` classes, renamed explicit forward endpoints to `src`/`dest`, and removed
+  the Test Plan, Acceptance Criteria, and Graduation Criteria pending
+  review of the design.
 
 ## References
 
@@ -1832,6 +2005,10 @@ These are outside the initial scope:
 - [JEP-0013: Metrics, Tracing, and Log Observability](JEP-0013-observability-telemetry-logs.md)
 - [JEP-0011: Protobuf Introspection and Interface Generation](JEP-0011-protobuf-introspection-interface-generation.md)
   — the introspection direction port reporting extends
+- Native gRPC Services (draft, not yet submitted) — reserves
+  `DriverInstanceReport` field 7 (`native_services`)
+- Polyglot Typed Device Wrappers (draft, not yet submitted) — the per-exporter
+  codegen pipeline a lease template extends to multi-exporter leases
 - [Cuttlefish: test connectivity of multiple devices](https://source.android.com/docs/devices/cuttlefish/connectivity)
 - [Mobly](https://github.com/google/mobly) — [testbed tutorial](https://github.com/google/mobly/blob/master/docs/tutorial.md)
 - [Bumble, a Python Bluetooth stack](https://google.github.io/bumble/) —
