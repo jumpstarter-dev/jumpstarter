@@ -84,6 +84,15 @@ $ jmp config client list            # List available client configs
 $ jmp config client delete <alias>  # Remove a client config locally
 ```
 
+**Python API compatibility**: `ClientConfigV1Alpha1.save(config)` now uses
+`config.path` when it is set, preserving the location of a loaded configuration.
+Previously, omitting the destination always saved to the alias path in the
+clients directory. New configurations with `path=None` still use the alias
+path, and an explicit `path` argument takes precedence. Callers that require
+the previous behavior should explicitly pass
+`ClientConfigV1Alpha1.CLIENT_CONFIGS_PATH / f"{config.alias}.yaml"` as the
+destination.
+
 ## Exporter Configuration
 
 **File**: All valid {term}`exporter` configuration files with a `.yaml` extension  

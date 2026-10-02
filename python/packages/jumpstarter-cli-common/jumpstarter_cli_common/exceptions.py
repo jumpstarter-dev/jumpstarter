@@ -257,7 +257,7 @@ def _handle_connection_error_with_reauth(exc, login_func):
     surfaced as ``ClickExceptionRed`` directly.
     """
     if "expired" in str(exc).lower():
-        click.echo(click.style("Token is expired, triggering re-authentication", fg="yellow"))
+        click.echo(click.style("Token is expired, triggering re-authentication", fg="yellow"), err=True)
         config = exc.get_config()
         try:
             login_func(config)
@@ -352,7 +352,7 @@ def handle_exceptions_with_reauthentication(login_func):
             if not needs_retry:
                 return result
 
-            click.echo(click.style("Re-authenticated, retrying...", fg="yellow"))
+            click.echo(click.style("Re-authenticated, retrying...", fg="yellow"), err=True)
             result, _ = _call_with_exception_handling(
                 func, args, kwargs, login_func, allow_reauth=False
             )
