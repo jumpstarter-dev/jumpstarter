@@ -436,6 +436,9 @@ func (r *JumpstarterReconciler) telemetryLokiPodPlan(ctx context.Context, js *op
 		}
 		if secret != nil {
 			plan.caHash = secretDataHash(secret)
+		} else if t.Loki.URL != "" && !plan.disablePush {
+			plan.disablePush = true
+			plan.disableReason = fmt.Sprintf("Loki push disabled: secret %s/%s not found", js.Namespace, t.Loki.TLS.CASecretRef)
 		}
 	}
 	return plan, nil
@@ -459,9 +462,10 @@ func telemetryPodAnnotations(tlsSecretHash string, loki telemetryLokiPod) map[st
 }
 
 // telemetryLokiPod carries pod-template inputs derived from Loki Secrets.
-// disablePush is set only when secretRef is configured but the Secret is
-// missing or has no token, username, or password. An empty secretRef stays
-// a valid unauthenticated endpoint.
+// disablePush is set when a referenced Loki Secret is missing or the
+// credential Secret has no token, username, or password. A credential
+// reason is kept when the CA Secret is also missing. An empty secretRef
+// stays a valid unauthenticated endpoint.
 type telemetryLokiPod struct {
 	credentialHash string
 	caHash         string
