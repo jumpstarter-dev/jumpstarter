@@ -440,3 +440,54 @@ hooks:
   override (e.g. `exec: /bin/bash` for bash-specific syntax).
 - The `j` CLI is available in {term}`hook` scripts because `JUMPSTARTER_HOST` is set
   automatically. No additional configuration is needed.
+
+## Driver Scripts
+
+A driver can also declare `j` scripts in its own config, for site-specific
+procedures that fixed configuration can't express (entering a boot mode
+through an unusual power arrangement, a vendor serial dialogue). A driver
+script runs with the same runner as {term}`hook`s, so `script`, `exec`, and
+`timeout` mean the same thing, Bash and Python are both supported, and the
+script can reach **every** driver in the {term}`exporter` with `j` or `env()`,
+using the paths from the exporter config:
+
+```yaml
+export:
+  pdu:
+    type: ...
+  dut1:
+    type: jumpstarter_driver_fastboot.driver.FastbootFlasher
+    config:
+      entry:
+        - name: bench-script
+          script: |
+            set -e
+            j pdu outlet3 off
+            j $JMP_DRIVER_PATH power on
+          timeout: 60
+          block_self: true   # default
+          # self_path: dut1  # optional, found in the exporter if unset
+          # env: {VARIANT: b}
+```
+
+| Field | Description | Default |
+| --- | --- | --- |
+| `script`, `exec`, `timeout` | As for {term}`hook`s | `timeout: 120` |
+| `block_self` | Refuse calls to the declaring driver while its script runs (its children and other drivers stay callable), so a script can't re-enter or deadlock it. The driver can exempt read-only methods its scripts need, such as the fastboot driver's `wait-present` | `true` |
+| `self_path` | The declaring driver's `j` path, dotted or space separated | found in the exporter tree |
+| `env` | Extra environment variables | none |
+
+Besides the variables `j` needs (`JUMPSTARTER_HOST`, `JMP_DRIVERS_ALLOW`), the
+script gets `JMP_DRIVER_PATH`, the declaring driver's own `j` path (e.g.
+`bench dut1`), so `j $JMP_DRIVER_PATH <child> ...` stays portable across
+benches. Unlike a {term}`hook`, a driver script runs when its driver calls it,
+outside the {term}`lease` lifecycle: there are no `LEASE_NAME`/`CLIENT_NAME`
+variables and no `onFailure` (a failure is an error returned to the driver).
+The driver serves the exporter's live drivers on a private socket for the
+script's duration only; it doesn't reset or close any driver.
+
+Driver authors opt in with `jumpstarter.driver.scripts`: add a `DriverScript`
+field to the driver's config, mix `ScriptRunnerMixin` in before `Driver`, and
+call `await self.run_script(cfg)`. List the driver's own methods that its
+scripts may still call under `block_self` in `script_callable_methods`.
+Nothing changes for drivers that don't opt in.
