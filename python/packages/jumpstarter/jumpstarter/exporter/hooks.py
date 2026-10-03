@@ -113,7 +113,6 @@ class HookExecutor:
             to prevent SSL frame corruption when hook j commands access the session
             concurrently with client LogStream connections.
         """
-        hook_env = os.environ.copy()
         # Use dedicated hook socket to prevent SSL corruption
         # Falls back to main socket if hook socket not available (backward compatibility)
         socket_path = lease_scope.hook_socket_path or lease_scope.socket_path
@@ -129,23 +128,10 @@ class HookExecutor:
                 "(may cause SSL issues if client is connected)",
                 socket_path,
             )
-        hook_env.update(
-            {
-                JUMPSTARTER_HOST: str(socket_path),
-                JMP_DRIVERS_ALLOW: "UNSAFE",  # Allow all drivers for local access
-                "LEASE_NAME": lease_scope.lease_name,
-                "CLIENT_NAME": lease_scope.client_name,
-                # Signal noninteractive mode to the child process.
-                # Even though hooks run in a PTY (for line-buffered output), they
-                # are not interactive sessions. These variables prevent programs
-                # from displaying prompts or interactive UI.
-                "TERM": "dumb",
-                "DEBIAN_FRONTEND": "noninteractive",
-                "GIT_TERMINAL_PROMPT": "0",
-            }
+        hook_env = script_env(
+            str(socket_path),
+            {"LEASE_NAME": lease_scope.lease_name, "CLIENT_NAME": lease_scope.client_name},
         )
-        # Remove PS1 so the shell does not emit a prompt
-        hook_env.pop("PS1", None)
         return hook_env
 
     async def _execute_hook(
@@ -273,7 +259,7 @@ class HookExecutor:
         else:
             raise error
 
-    async def _execute_hook_process(  # noqa: C901
+    async def _execute_hook_process(
         self,
         hook_config: HookInstanceConfigV1Alpha1,
         lease_scope: "LeaseContext",
@@ -282,324 +268,25 @@ class HookExecutor:
         logging_session: Session,
         hook_type: Literal["before_lease", "after_lease"],
     ) -> str | None:
-        """Execute the hook process with the given environment and logging session.
-
-        Uses subprocess with a PTY to force line buffering in the subprocess,
-        ensuring logs stream in real-time rather than being block-buffered.
+        """Run the hook with :func:`run_script` and apply its ``on_failure`` policy.
 
         Returns:
             Warning message string if hook failed with on_failure='warn', None otherwise
         """
-        import pty
-        import subprocess
-
-        command = hook_config.script
-        timeout = hook_config.timeout
-        on_failure = hook_config.on_failure
-
-        # Exception handling
-        error_msg: str | None = None
-        cause: Exception | None = None
-        timed_out = False
-
         # Route hook output logs to the client via the session's log stream
         logger.debug("Entering log source context for %s", log_source)
         with logging_session.context_log_source(__name__, log_source):
-            # Create a PTY pair - this forces line buffering in the subprocess
-            logger.debug("Starting hook subprocess...")
-            logger.debug("Creating PTY pair...")
-            try:
-                parent_fd, child_fd = pty.openpty()
-            except Exception as e:
-                logger.error("Failed to create PTY: %s", e)
-                raise
-            logger.debug("PTY created: parent_fd=%d, child_fd=%d", parent_fd, child_fd)
-
-            pty_state = PtyState()
-
-            process: subprocess.Popen | None = None
-            try:
-                # Use subprocess.Popen with the PTY child as stdin/stdout/stderr
-                # This avoids the issues with os.fork() in async contexts
-                # Determine interpreter and invocation mode
-                script_stripped = command.strip()
-                is_file = "\n" not in script_stripped and os.path.isfile(script_stripped)
-
-                interpreter = hook_config.exec_
-                if is_file and interpreter is None:
-                    # Auto-detect interpreter from file extension
-                    import sys
-
-                    ext = os.path.splitext(script_stripped)[1].lower()
-                    if ext == ".py":
-                        interpreter = sys.executable
-                        logger.debug("Auto-detected Python script: %s (interpreter: %s)", script_stripped, interpreter)
-                    else:
-                        interpreter = "/bin/sh"
-                        logger.debug("Detected script file: %s (interpreter: %s)", script_stripped, interpreter)
-                elif interpreter is None:
-                    interpreter = "/bin/sh"
-
-                if is_file:
-                    logger.debug("Executing script file: %s (interpreter: %s)", script_stripped, interpreter)
-                    cmd = [interpreter, script_stripped]
-                else:
-                    logger.debug("Executing inline script (interpreter: %s)", interpreter)
-                    cmd = [interpreter, "-c", command]
-
-                logger.debug("Spawning subprocess with command: %s", cmd)
-                try:
-                    process = subprocess.Popen(  # noqa: ASYNC220
-                        cmd,
-                        stdin=child_fd,
-                        stdout=child_fd,
-                        stderr=child_fd,
-                        env=hook_env,
-                        start_new_session=True,  # Equivalent to os.setsid()
-                        close_fds=True,  # Close inherited fds to prevent interference with gRPC connections
-                    )
-                except Exception:
-                    logger.exception("Failed to spawn subprocess")
-                    raise
-                logger.debug("Subprocess spawned with PID %d", process.pid)
-                # Close child fd in parent process - subprocess has it now
-                os.close(child_fd)
-                pty_state.child_fd_open = False
-                logger.debug("Closed child_fd in parent process")
-
-                output_lines: list[str] = []
-
-                # Set parent fd to non-blocking mode
-                import fcntl
-
-                flags = fcntl.fcntl(parent_fd, fcntl.F_GETFL)
-                fcntl.fcntl(parent_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-                logger.debug("Parent fd set to non-blocking")
-
-                async def read_pty_output() -> None:  # noqa: C901
-                    """Read from PTY parent fd line by line using non-blocking I/O."""
-                    logger.debug("read_pty_output task started")
-                    buffer = b""
-                    read_count = 0
-                    last_heartbeat = 0
-
-                    start_time = _monotonic()
-                    try:
-                        while not pty_state.reader_stop:
-                            try:
-                                # Wait for fd to be readable with timeout
-                                with anyio.move_on_after(0.1):
-                                    await anyio.wait_readable(parent_fd)
-
-                                # Check stop flag immediately after timeout
-                                # (main task may have signaled us to stop)
-                                if pty_state.reader_stop:
-                                    logger.debug("read_pty_output: stop flag set, exiting")
-                                    break
-
-                                read_count += 1
-                                # Log heartbeat every 2 seconds
-                                elapsed = _monotonic() - start_time
-                                if elapsed - last_heartbeat >= 2.0:
-                                    logger.debug(
-                                        "read_pty_output: heartbeat at %.1fs, iterations=%d", elapsed, read_count
-                                    )
-                                    last_heartbeat = elapsed
-
-                                # Read available data (non-blocking)
-                                try:
-                                    chunk = os.read(parent_fd, 4096)
-                                    if not chunk:
-                                        # EOF
-                                        logger.debug("read_pty_output: EOF received")
-                                        break
-                                    buffer += chunk
-                                except BlockingIOError:
-                                    # No data available right now, continue loop
-                                    continue
-                                except OSError as e:
-                                    # PTY closed or error
-                                    logger.debug("read_pty_output: OSError on read: %s", e)
-                                    break
-
-                                # Process complete lines
-                                buffer = _flush_lines(buffer, output_lines)
-
-                            except OSError as e:
-                                # PTY closed or read error
-                                logger.debug("read_pty_output: OSError in loop: %s", e)
-                                break
-
-                            except Exception as e:  # noqa: BLE001
-                                logger.debug("read_pty_output: unexpected error in loop: %s", e)
-                                break
-
-                    finally:
-                        # Drain any remaining data from the PTY buffer.
-                        # On macOS, PTY output may still be in the kernel buffer
-                        # after the subprocess exits and the stop flag is set.
-                        # Use select() with a timeout to poll for readability
-                        # instead of immediately breaking on BlockingIOError,
-                        # giving the macOS PTY kernel buffer time to deliver
-                        # remaining data.
-                        # Bound the drain to prevent spinning indefinitely if a
-                        # grandchild process holds the PTY slave fd open.
-                        try:
-                            drain_deadline = _monotonic() + DRAIN_TIMEOUT_SECONDS
-                            drained = 0
-                            consecutive_empty = 0
-                            while drained < MAX_DRAIN_BYTES and _monotonic() < drain_deadline:
-                                # Poll for readability with a short timeout.
-                                # This avoids the race where a non-blocking read
-                                # raises BlockingIOError because the macOS PTY
-                                # kernel buffer hasn't delivered the data yet.
-                                remaining = drain_deadline - _monotonic()
-                                if remaining <= 0:
-                                    break
-                                timeout_s = min(remaining, 0.1)
-                                try:
-                                    readable, _, _ = select.select([parent_fd], [], [], timeout_s)
-                                except (ValueError, OSError):
-                                    # fd closed or invalid
-                                    break
-                                if not readable:
-                                    # On macOS, data may not be available on the
-                                    # first select() call even though the subprocess
-                                    # has already written and exited.  Keep retrying
-                                    # until we see several consecutive empty polls,
-                                    # which indicates the buffer is truly drained.
-                                    consecutive_empty += 1
-                                    if consecutive_empty >= DRAIN_MAX_EMPTY_POLLS:
-                                        break
-                                    continue
-                                consecutive_empty = 0
-                                try:
-                                    chunk = os.read(parent_fd, 4096)
-                                    if not chunk:
-                                        break
-                                    buffer += chunk
-                                    drained += len(chunk)
-                                except (BlockingIOError, OSError):
-                                    break
-
-                            buffer = _flush_lines(buffer, output_lines)
-                        except Exception:
-                            logger.debug("read_pty_output: error during drain", exc_info=True)
-
-                        logger.debug("read_pty_output: exiting, processed %d iterations", read_count)
-                        if buffer:
-                            line_decoded = buffer.decode(errors="replace").rstrip()
-                            if line_decoded:
-                                output_lines.append(line_decoded)
-                                logger.info("%s", line_decoded)
-
-                async def wait_for_process() -> int:
-                    """Wait for the subprocess to complete.
-
-                    Ensures the subprocess is properly reaped even if cancelled,
-                    preventing zombie processes.
-                    """
-                    logger.debug("wait_for_process: waiting for PID %d", process.pid)
-                    try:
-                        result = await to_thread.run_sync(process.wait, abandon_on_cancel=True)
-                        logger.debug("wait_for_process: PID %d exited with code %d", process.pid, result)
-                        return result
-                    finally:
-                        # Ensure subprocess is reaped on cancellation to prevent zombies
-                        if process.poll() is None:
-                            logger.debug("wait_for_process: cleaning up still-running PID %d", process.pid)
-                            try:
-                                process.terminate()
-                                # Give it a moment to terminate gracefully
-                                for _ in range(10):
-                                    if process.poll() is not None:
-                                        break
-                                    await anyio.sleep(0.1)
-                                # Force kill if still running
-                                if process.poll() is None:
-                                    logger.debug("wait_for_process: force killing PID %d", process.pid)
-                                    process.kill()
-                                # Final reap with non-abandoning wait
-                                await to_thread.run_sync(process.wait, abandon_on_cancel=False)
-                            except Exception as e:  # noqa: BLE001
-                                logger.debug("wait_for_process: error during cleanup: %s", e)
-
-                # Use move_on_after for timeout
-                returncode: int | None = None
-                logger.debug("Starting PTY output reader and process waiter (timeout=%d)", timeout)
-
-                # Yield to event loop to ensure other tasks can progress
-                # This helps prevent race conditions in task scheduling
-                await anyio.lowlevel.checkpoint()
-
-                with anyio.move_on_after(timeout) as cancel_scope:
-                    # Run output reading and process waiting concurrently
-                    async with anyio.create_task_group() as tg:
-                        logger.debug("Task group created, starting tasks...")
-                        tg.start_soon(read_pty_output)
-                        logger.debug("Waiting for subprocess to complete...")
-                        returncode = await wait_for_process()
-                        logger.debug("Subprocess completed with code: %s", returncode)
-                        # Give a brief moment for any final output to be read
-                        await anyio.sleep(0.2)
-                        # Signal the read task to stop via the dedicated stop flag.
-                        # The read task checks this flag after each 0.1s timeout
-                        # and also receives EOF when the subprocess exits.
-                        # Note: pty_state.parent_fd_open stays True so the finally block
-                        # properly closes parent_fd.
-                        pty_state.reader_stop = True
-                        logger.debug("Stop flag set, waiting for read task to exit")
-                        # Don't cancel - let the task exit naturally via EOF or flag check
-                        # Cancellation can cause unexpected side effects on gRPC connections
-
-                if cancel_scope.cancelled_caught:
-                    timed_out = True
-                    error_msg = f"Hook timed out after {timeout} seconds"
-                    logger.exception(error_msg)
-                    # Terminate the process
-                    if process and process.poll() is None:
-                        process.terminate()
-                        # Give it a moment to terminate gracefully
-                        with suppress(Exception):
-                            with anyio.move_on_after(5):
-                                await to_thread.run_sync(process.wait, abandon_on_cancel=True)
-                        # Force kill if still running
-                        if process.poll() is None:
-                            process.kill()
-                            with suppress(Exception):
-                                await to_thread.run_sync(process.wait, abandon_on_cancel=True)
-
-                elif returncode == 0:
-                    logger.debug("Hook executed successfully")
-                    return None
-                else:
-                    error_msg = f"Hook failed with exit code {returncode}"
-
-            except Exception as e:  # noqa: BLE001
-                error_msg = f"Error executing hook: {e}"
-                cause = e
-                logger.error(error_msg)
-            finally:
-                # Clean up file descriptors - only close those still open to avoid
-                # closing an unrelated fd that reused the same number.
-                if pty_state.parent_fd_open:
-                    try:
-                        os.close(parent_fd)
-                    except OSError:
-                        pass
-                if pty_state.child_fd_open:
-                    try:
-                        os.close(child_fd)
-                    except OSError:
-                        pass
-
+            result = await run_script(
+                hook_config.script, env=hook_env, timeout=hook_config.timeout, exec_=hook_config.exec_
+            )
             # Handle failure inside context_log_source so the WARNING log is
             # routed to the client as a hook log (visible without --exporter-logs).
-            if error_msg is not None:
+            if result.error is not None:
+                cause = result.cause
                 # For timeout, create a TimeoutError as the cause
-                if timed_out and cause is None:
-                    cause = TimeoutError(error_msg)
-                return self._handle_hook_failure(error_msg, on_failure, hook_type, cause)
+                if result.timed_out and cause is None:
+                    cause = TimeoutError(result.error)
+                return self._handle_hook_failure(result.error, hook_config.on_failure, hook_type, cause)
         return None
 
     async def execute_before_lease_hook(self, lease_scope: "LeaseContext") -> str | None:
@@ -906,3 +593,367 @@ class HookExecutor:
                     await request_lease_release()
                 except Exception:
                     logger.exception("Failed to request lease release")
+
+
+# -- the j script runner, shared by lease hooks and driver scripts ------------
+
+
+def script_env(socket_path: str, extra: dict[str, str] | None = None) -> dict[str, str]:
+    """The environment for a ``j`` script: the exporter's own, plus access to the drivers at ``socket_path``."""
+    env = os.environ.copy()
+    env.update(
+        {
+            JUMPSTARTER_HOST: str(socket_path),
+            JMP_DRIVERS_ALLOW: "UNSAFE",  # Allow all drivers for local access
+            # Signal noninteractive mode to the child process.
+            # Even though scripts run in a PTY (for line-buffered output), they
+            # are not interactive sessions. These variables prevent programs
+            # from displaying prompts or interactive UI.
+            "TERM": "dumb",
+            "DEBIAN_FRONTEND": "noninteractive",
+            "GIT_TERMINAL_PROMPT": "0",
+            **(extra or {}),
+        }
+    )
+    # Remove PS1 so the shell does not emit a prompt
+    env.pop("PS1", None)
+    return env
+
+
+@dataclass(frozen=True)
+class ScriptRunResult:
+    """Outcome of :func:`run_script`."""
+
+    returncode: int | None
+    """The exit code, or ``None`` if the script timed out or could not be started."""
+    output: list[str]
+    """The non-empty lines the script printed (stdout and stderr together)."""
+    error: str | None = None
+    """``None`` on success, else why it failed (e.g. ``Hook failed with exit code 3``)."""
+    cause: Exception | None = None
+    """The exception behind ``error``, if one was raised."""
+    timed_out: bool = False
+
+    @property
+    def ok(self) -> bool:
+        return self.error is None
+
+
+async def run_script(  # noqa: C901
+    script: str,
+    *,
+    env: dict[str, str],
+    timeout: float,
+    exec_: str | None = None,
+    label: str = "Hook",
+) -> ScriptRunResult:
+    """Run a ``j`` script: the common runner for lease hooks and driver scripts.
+
+    ``script`` is inline text, or the path of a script file; ``exec_`` is the
+    interpreter (when unset, a ``.py`` file runs with the exporter's Python and
+    anything else with ``/bin/sh``). The script runs in its own session on a PTY,
+    which forces line buffering so its output streams in real time; each line is
+    logged at INFO on this module's logger (callers route it to a client with
+    ``Session.context_log_source``) and returned in the result. Past ``timeout``
+    seconds it is terminated, then killed.
+
+    ``env`` is the complete environment (see :func:`script_env`). ``label`` names
+    the script in messages. Failures are returned, not raised, except when no PTY
+    can be created.
+    """
+    import pty
+    import subprocess
+
+    command = script
+    error_msg: str | None = None
+    cause: Exception | None = None
+    timed_out = False
+    returncode: int | None = None
+    output_lines: list[str] = []
+
+    # Create a PTY pair - this forces line buffering in the subprocess
+    logger.debug("Starting hook subprocess...")
+    logger.debug("Creating PTY pair...")
+    try:
+        parent_fd, child_fd = pty.openpty()
+    except Exception as e:
+        logger.error("Failed to create PTY: %s", e)
+        raise
+    logger.debug("PTY created: parent_fd=%d, child_fd=%d", parent_fd, child_fd)
+
+    pty_state = PtyState()
+
+    process: subprocess.Popen | None = None
+    try:
+        # Use subprocess.Popen with the PTY child as stdin/stdout/stderr
+        # This avoids the issues with os.fork() in async contexts
+        # Determine interpreter and invocation mode
+        script_stripped = command.strip()
+        is_file = "\n" not in script_stripped and os.path.isfile(script_stripped)
+
+        interpreter = exec_
+        if is_file and interpreter is None:
+            # Auto-detect interpreter from file extension
+            import sys
+
+            ext = os.path.splitext(script_stripped)[1].lower()
+            if ext == ".py":
+                interpreter = sys.executable
+                logger.debug("Auto-detected Python script: %s (interpreter: %s)", script_stripped, interpreter)
+            else:
+                interpreter = "/bin/sh"
+                logger.debug("Detected script file: %s (interpreter: %s)", script_stripped, interpreter)
+        elif interpreter is None:
+            interpreter = "/bin/sh"
+
+        if is_file:
+            logger.debug("Executing script file: %s (interpreter: %s)", script_stripped, interpreter)
+            cmd = [interpreter, script_stripped]
+        else:
+            logger.debug("Executing inline script (interpreter: %s)", interpreter)
+            cmd = [interpreter, "-c", command]
+
+        logger.debug("Spawning subprocess with command: %s", cmd)
+        try:
+            process = subprocess.Popen(  # noqa: ASYNC220
+                cmd,
+                stdin=child_fd,
+                stdout=child_fd,
+                stderr=child_fd,
+                env=env,
+                start_new_session=True,  # Equivalent to os.setsid()
+                close_fds=True,  # Close inherited fds to prevent interference with gRPC connections
+            )
+        except Exception:
+            logger.exception("Failed to spawn subprocess")
+            raise
+        logger.debug("Subprocess spawned with PID %d", process.pid)
+        # Close child fd in parent process - subprocess has it now
+        os.close(child_fd)
+        pty_state.child_fd_open = False
+        logger.debug("Closed child_fd in parent process")
+
+        # Set parent fd to non-blocking mode
+        import fcntl
+
+        flags = fcntl.fcntl(parent_fd, fcntl.F_GETFL)
+        fcntl.fcntl(parent_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+        logger.debug("Parent fd set to non-blocking")
+
+        async def read_pty_output() -> None:  # noqa: C901
+            """Read from PTY parent fd line by line using non-blocking I/O."""
+            logger.debug("read_pty_output task started")
+            buffer = b""
+            read_count = 0
+            last_heartbeat = 0
+
+            start_time = _monotonic()
+            try:
+                while not pty_state.reader_stop:
+                    try:
+                        # Wait for fd to be readable with timeout
+                        with anyio.move_on_after(0.1):
+                            await anyio.wait_readable(parent_fd)
+
+                        # Check stop flag immediately after timeout
+                        # (main task may have signaled us to stop)
+                        if pty_state.reader_stop:
+                            logger.debug("read_pty_output: stop flag set, exiting")
+                            break
+
+                        read_count += 1
+                        # Log heartbeat every 2 seconds
+                        elapsed = _monotonic() - start_time
+                        if elapsed - last_heartbeat >= 2.0:
+                            logger.debug("read_pty_output: heartbeat at %.1fs, iterations=%d", elapsed, read_count)
+                            last_heartbeat = elapsed
+
+                        # Read available data (non-blocking)
+                        try:
+                            chunk = os.read(parent_fd, 4096)
+                            if not chunk:
+                                # EOF
+                                logger.debug("read_pty_output: EOF received")
+                                break
+                            buffer += chunk
+                        except BlockingIOError:
+                            # No data available right now, continue loop
+                            continue
+                        except OSError as e:
+                            # PTY closed or error
+                            logger.debug("read_pty_output: OSError on read: %s", e)
+                            break
+
+                        # Process complete lines
+                        buffer = _flush_lines(buffer, output_lines)
+
+                    except OSError as e:
+                        # PTY closed or read error
+                        logger.debug("read_pty_output: OSError in loop: %s", e)
+                        break
+
+                    except Exception as e:  # noqa: BLE001
+                        logger.debug("read_pty_output: unexpected error in loop: %s", e)
+                        break
+
+            finally:
+                # Drain any remaining data from the PTY buffer.
+                # On macOS, PTY output may still be in the kernel buffer
+                # after the subprocess exits and the stop flag is set.
+                # Use select() with a timeout to poll for readability
+                # instead of immediately breaking on BlockingIOError,
+                # giving the macOS PTY kernel buffer time to deliver
+                # remaining data.
+                # Bound the drain to prevent spinning indefinitely if a
+                # grandchild process holds the PTY slave fd open.
+                try:
+                    drain_deadline = _monotonic() + DRAIN_TIMEOUT_SECONDS
+                    drained = 0
+                    consecutive_empty = 0
+                    while drained < MAX_DRAIN_BYTES and _monotonic() < drain_deadline:
+                        # Poll for readability with a short timeout.
+                        # This avoids the race where a non-blocking read
+                        # raises BlockingIOError because the macOS PTY
+                        # kernel buffer hasn't delivered the data yet.
+                        remaining = drain_deadline - _monotonic()
+                        if remaining <= 0:
+                            break
+                        timeout_s = min(remaining, 0.1)
+                        try:
+                            readable, _, _ = select.select([parent_fd], [], [], timeout_s)
+                        except (ValueError, OSError):
+                            # fd closed or invalid
+                            break
+                        if not readable:
+                            # On macOS, data may not be available on the
+                            # first select() call even though the subprocess
+                            # has already written and exited.  Keep retrying
+                            # until we see several consecutive empty polls,
+                            # which indicates the buffer is truly drained.
+                            consecutive_empty += 1
+                            if consecutive_empty >= DRAIN_MAX_EMPTY_POLLS:
+                                break
+                            continue
+                        consecutive_empty = 0
+                        try:
+                            chunk = os.read(parent_fd, 4096)
+                            if not chunk:
+                                break
+                            buffer += chunk
+                            drained += len(chunk)
+                        except (BlockingIOError, OSError):
+                            break
+
+                    buffer = _flush_lines(buffer, output_lines)
+                except Exception:
+                    logger.debug("read_pty_output: error during drain", exc_info=True)
+
+                logger.debug("read_pty_output: exiting, processed %d iterations", read_count)
+                if buffer:
+                    line_decoded = buffer.decode(errors="replace").rstrip()
+                    if line_decoded:
+                        output_lines.append(line_decoded)
+                        logger.info("%s", line_decoded)
+
+        async def wait_for_process() -> int:
+            """Wait for the subprocess to complete.
+
+            Ensures the subprocess is properly reaped even if cancelled,
+            preventing zombie processes.
+            """
+            logger.debug("wait_for_process: waiting for PID %d", process.pid)
+            try:
+                result = await to_thread.run_sync(process.wait, abandon_on_cancel=True)
+                logger.debug("wait_for_process: PID %d exited with code %d", process.pid, result)
+                return result
+            finally:
+                # Ensure subprocess is reaped on cancellation to prevent zombies
+                if process.poll() is None:
+                    logger.debug("wait_for_process: cleaning up still-running PID %d", process.pid)
+                    try:
+                        process.terminate()
+                        # Give it a moment to terminate gracefully
+                        for _ in range(10):
+                            if process.poll() is not None:
+                                break
+                            await anyio.sleep(0.1)
+                        # Force kill if still running
+                        if process.poll() is None:
+                            logger.debug("wait_for_process: force killing PID %d", process.pid)
+                            process.kill()
+                        # Final reap with non-abandoning wait
+                        await to_thread.run_sync(process.wait, abandon_on_cancel=False)
+                    except Exception as e:  # noqa: BLE001
+                        logger.debug("wait_for_process: error during cleanup: %s", e)
+
+        # Use move_on_after for timeout
+        logger.debug("Starting PTY output reader and process waiter (timeout=%d)", timeout)
+
+        # Yield to event loop to ensure other tasks can progress
+        # This helps prevent race conditions in task scheduling
+        await anyio.lowlevel.checkpoint()
+
+        with anyio.move_on_after(timeout) as cancel_scope:
+            # Run output reading and process waiting concurrently
+            async with anyio.create_task_group() as tg:
+                logger.debug("Task group created, starting tasks...")
+                tg.start_soon(read_pty_output)
+                logger.debug("Waiting for subprocess to complete...")
+                returncode = await wait_for_process()
+                logger.debug("Subprocess completed with code: %s", returncode)
+                # Give a brief moment for any final output to be read
+                await anyio.sleep(0.2)
+                # Signal the read task to stop via the dedicated stop flag.
+                # The read task checks this flag after each 0.1s timeout
+                # and also receives EOF when the subprocess exits.
+                # Note: pty_state.parent_fd_open stays True so the finally block
+                # properly closes parent_fd.
+                pty_state.reader_stop = True
+                logger.debug("Stop flag set, waiting for read task to exit")
+                # Don't cancel - let the task exit naturally via EOF or flag check
+                # Cancellation can cause unexpected side effects on gRPC connections
+
+        if cancel_scope.cancelled_caught:
+            timed_out = True
+            error_msg = f"{label} timed out after {timeout} seconds"
+            logger.exception(error_msg)
+            # Terminate the process
+            if process and process.poll() is None:
+                process.terminate()
+                # Give it a moment to terminate gracefully
+                with suppress(Exception):
+                    with anyio.move_on_after(5):
+                        await to_thread.run_sync(process.wait, abandon_on_cancel=True)
+                # Force kill if still running
+                if process.poll() is None:
+                    process.kill()
+                    with suppress(Exception):
+                        await to_thread.run_sync(process.wait, abandon_on_cancel=True)
+
+        elif returncode == 0:
+            logger.debug("Hook executed successfully")
+            return ScriptRunResult(returncode=0, output=output_lines)
+        else:
+            error_msg = f"{label} failed with exit code {returncode}"
+
+    except Exception as e:  # noqa: BLE001
+        error_msg = f"Error executing {label.lower()}: {e}"
+        cause = e
+        logger.error(error_msg)
+    finally:
+        # Clean up file descriptors - only close those still open to avoid
+        # closing an unrelated fd that reused the same number.
+        if pty_state.parent_fd_open:
+            try:
+                os.close(parent_fd)
+            except OSError:
+                pass
+        if pty_state.child_fd_open:
+            try:
+                os.close(child_fd)
+            except OSError:
+                pass
+
+    return ScriptRunResult(
+        returncode=returncode, output=output_lines, error=error_msg, cause=cause, timed_out=timed_out
+    )

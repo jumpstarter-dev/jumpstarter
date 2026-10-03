@@ -16,6 +16,8 @@ from jumpstarter.exporter.hooks import (
     HookExecutor,
     _flush_lines,
     _monotonic,
+    run_script,
+    script_env,
 )
 
 pytestmark = pytest.mark.anyio
@@ -1822,3 +1824,37 @@ class TestBeforeLeaseHookLeaseEndedGuard:
         assert lease_scope.before_lease_hook.is_set(), (
             "before_lease_hook event must be set to unblock downstream waiters"
         )
+
+
+class TestRunScript:
+    """The j script runner shared by lease hooks and driver scripts."""
+
+    def test_script_env(self, monkeypatch) -> None:
+        monkeypatch.setenv("PS1", "$ ")
+        env = script_env("/tmp/sock", {"EXTRA": "1"})
+        assert env["JUMPSTARTER_HOST"] == "/tmp/sock"
+        assert env["JMP_DRIVERS_ALLOW"] == "UNSAFE"
+        assert env["TERM"] == "dumb" and env["EXTRA"] == "1"
+        assert "PS1" not in env
+
+    @macos_pty_xfail
+    async def test_returns_output_and_status(self) -> None:
+        env = script_env("/tmp/unused")
+        ok = await run_script("echo one; echo two >&2", env=env, timeout=10)
+        assert ok.ok and ok.returncode == 0 and ok.output == ["one", "two"]
+
+        failed = await run_script("echo boom; exit 3", env=env, timeout=10, label="Script")
+        assert not failed.ok and failed.returncode == 3
+        assert failed.error == "Script failed with exit code 3"
+        assert failed.output == ["boom"]
+
+    async def test_timeout_and_missing_interpreter(self) -> None:
+        env = script_env("/tmp/unused")
+        slow = await run_script("sleep 30", env=env, timeout=1)
+        assert slow.timed_out and slow.returncode is None
+        assert slow.error == "Hook timed out after 1 seconds"
+
+        missing = await run_script("true", env=env, timeout=10, exec_="/nonexistent/sh", label="Script")
+        assert missing.error is not None and missing.error.startswith("Error executing script:")
+        assert isinstance(missing.cause, FileNotFoundError)
+
