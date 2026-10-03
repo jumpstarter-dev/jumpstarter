@@ -77,6 +77,7 @@ def _make_base_exporter(**overrides):
         "_request_lease_release": AsyncMock(),
         "_telemetry_handler": None,
         "_telemetry_channel": None,
+        "_deferred_available": None,
     }
     defaults.update(overrides)
     exporter = Exporter.__new__(Exporter)
@@ -2215,3 +2216,77 @@ class TestContextPropagation:
 
         assert calls == [{"client": "ci-bot"}]
         clear_log_context()
+
+
+class TestExporterLongRunningTasks:
+    """Long-running driver tasks (jumpstarter.driver.tasks) hold off new leases and the end of the lease."""
+
+    @staticmethod
+    def _exporter():
+        from unittest.mock import AsyncMock
+
+        exporter = _make_exporter_for_report_status()
+        exporter._send_report_status_rpc = AsyncMock(return_value=True)
+        return exporter
+
+    @staticmethod
+    def _sent(exporter):
+        return [
+            (ExporterStatus.from_proto(call.args[0].status), call.args[0].message)
+            for call in exporter._send_report_status_rpc.await_args_list
+        ]
+
+    @staticmethod
+    def _lease():
+        lease = LeaseContext(lease_name="lease-1", before_lease_hook=Event())
+        lease.before_lease_hook.set()
+        return lease
+
+    async def test_lease_end_waits_for_tasks_then_becomes_available(self):
+        from jumpstarter.driver.tasks import start_task
+
+        exporter = self._exporter()
+        lease = self._lease()
+        order = []
+
+        async def flash():
+            await anyio.sleep(0.5)
+            order.append("flash done")
+
+        await start_task("flash", "flash job 1", flash, timeout=60)
+        logcat = await start_task("logcat", "log capture", anyio.sleep, 60, timeout=600, on_lease_end="kill")
+        with fail_after(30):
+            await exporter._cleanup_after_lease(lease)
+        order.append("lease torn down")
+        assert order == ["flash done", "lease torn down"] and logcat.stopped
+        assert self._sent(exporter) == [
+            (ExporterStatus.AFTER_LEASE_HOOK, "draining: flash job 1"),
+            (ExporterStatus.AVAILABLE, "Available for new lease"),
+        ]
+
+    async def test_available_is_postponed_while_a_task_runs(self):
+        from jumpstarter.driver.tasks import start_task
+
+        exporter = self._exporter()
+        task = await start_task("flash", "flash job 2", anyio.sleep, 0.5, timeout=60)
+        await exporter._report_status(ExporterStatus.AVAILABLE, "Available for new lease")
+        assert self._sent(exporter) == [(ExporterStatus.AFTER_LEASE_HOOK, "draining: flash job 2")]
+        async with create_task_group() as tg:
+            tg.start_soon(exporter._watch_tasks, 0.05)
+            await task.wait(10)
+            with fail_after(5):
+                while self._sent(exporter)[-1][0] != ExporterStatus.AVAILABLE:
+                    await anyio.sleep(0.05)
+            tg.cancel_scope.cancel()
+        assert self._sent(exporter)[-1] == (ExporterStatus.AVAILABLE, "Available for new lease")
+
+    async def test_a_stopping_exporter_does_not_wait(self):
+        from jumpstarter.driver.tasks import start_task
+
+        exporter = self._exporter()
+        exporter._stop_requested = True
+        task = await start_task("flash", "flash", anyio.sleep, 60, timeout=600)
+        with fail_after(5):
+            await exporter._cleanup_after_lease(self._lease())
+        task.cancel()  # (the exporter's event loop ending does this for real)
+        await task.wait(10)

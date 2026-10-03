@@ -54,14 +54,61 @@ The {term}`exporter` transitions through these states during a {term}`lease`:
    drivers.
 4. **Client {term}`session`** - The client uses drivers normally.
 5. **{term}`Session` ends** - The client disconnects or the {term}`lease` is released.
-6. **`AFTER_LEASE_HOOK`** - The `afterLease` script runs. The {term}`session` remains
-   open so `j` commands can still interact with drivers.
+6. **`AFTER_LEASE_HOOK`** - First, [long-running driver work](#long-running-driver-work)
+   still in progress finishes or is stopped (`draining: ...`). Then the `afterLease`
+   script runs.
+   The {term}`session` remains open so `j` commands can still interact with drivers.
 7. **`AVAILABLE`** - The {term}`hook` completed and the {term}`lease` is released. The
    {term}`exporter` is ready for the next {term}`lease`.
 
 ```{note}
 If no {term}`hook`s are configured, the {term}`exporter` transitions directly from {term}`lease`
 assignment to `LEASE_READY` and from {term}`session` end to `AVAILABLE`.
+```
+
+### Long-running driver work
+
+Some device work must not be interrupted by the {term}`lease` lifecycle: a
+fastboot flash, a firmware update. Drivers run it as a **task**, a coroutine
+started with `jumpstarter.driver.tasks.start_task()` that runs on in the
+{term}`exporter` independently of the call that started it. While a task runs,
+the exporter protects it, with nothing to configure:
+
+- **No new {term}`lease`.** The exporter reports `AFTER_LEASE_HOOK` with a
+  `draining: <reason>` message instead of `AVAILABLE`.
+- **When the {term}`lease` ends**, the task's `on_lease_end` decides:
+  - `wait` (the default): the exporter waits for the task to complete or time
+    out before it runs the `afterLease` hook and tears down the
+    {term}`session`. The session and its drivers stay up meanwhile, so the task
+    can still use them. A hook that powers the {term}`device` off can't
+    interrupt the task, and doesn't need to wait for it. Clients see the
+    `draining: ...` status.
+  - `kill`: the exporter cancels the task right away.
+- **A required timeout.** At its timeout a task is cancelled. Work blocked in a
+  worker thread can't be cancelled; the exporter stops waiting for it a little
+  after the timeout, so a hung task can't wedge the exporter.
+
+Tasks live in the exporter process, so they end if the exporter stops or
+crashes. Work that has to pick up again afterwards keeps its own record of
+progress, for example a flash that journals every step and resumes from the
+first unfinished one.
+
+```python
+from jumpstarter.driver import Driver, export
+from jumpstarter.driver.tasks import start_task
+
+
+class Updater(Driver):
+    @export
+    async def update(self, image: str) -> None:
+        await start_task(
+            f"ota-{self.uuid}", "OTA update", self._push_update, image,
+            timeout=1800,            # required
+            on_lease_end="wait",     # or "kill"
+        )
+
+    async def _push_update(self, image: str) -> None:
+        ...
 ```
 
 ## Configuration

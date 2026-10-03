@@ -2,7 +2,7 @@ import logging
 import math
 import os
 from collections.abc import AsyncGenerator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import partial
@@ -31,12 +31,13 @@ from jumpstarter_protocol import (
     telemetry_pb2_grpc,
 )
 
-from jumpstarter.common import ExporterStatus, Metadata, TemporarySocket
+from jumpstarter.common import ExporterStatus, LogSource, Metadata, TemporarySocket
 from jumpstarter.common.exceptions import CertificateDiscoveryError
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.config.env import JMP_GRPC_INSECURE, JUMPSTARTER_GRPC_INSECURE
 from jumpstarter.config.exporter import DEFAULT_STATUS_STREAM_RETRY_TIMEOUT
 from jumpstarter.config.tls import TLSConfigV1Alpha1
+from jumpstarter.driver.tasks import Task, blocking_tasks, draining_message, settle
 from jumpstarter.exporter.hooks import HookExecutor
 from jumpstarter.exporter.lease_context import LeaseContext
 from jumpstarter.exporter.session import Session
@@ -329,6 +330,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     Manages streams and connection handling tasks. Used to cancel all tasks
     when stopping. Set during serve() and cleared when done.
     """
+
+    _deferred_available: str | None = field(init=False, default=None)
+    """An AVAILABLE report postponed while long-running driver tasks run; reported once they end."""
 
     _exporter_status: ExporterStatus = field(init=False, default=ExporterStatus.OFFLINE)
     """Current status of the exporter.
@@ -743,8 +747,52 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     request.message,
                 )
 
+    async def _watch_tasks(self, interval: float = 1.0) -> None:
+        """Report a postponed AVAILABLE once long-running driver tasks have ended."""
+        while True:
+            await anyio.sleep(interval)
+            message = self._deferred_available
+            if message is not None and not blocking_tasks() and self._deferred_available == message:
+                await self._report_status(ExporterStatus.AVAILABLE, message)
+
+    async def _settle_tasks(self, lease: LeaseContext) -> None:
+        """At lease end, before the afterLease hook: stop ``kill`` tasks and wait for ``wait`` tasks.
+
+        Long-running driver tasks (``jumpstarter.driver.tasks``) run in this
+        process. The lease's session, and so its drivers, stay up while the
+        exporter waits, and the afterLease hook can't interrupt them. Skipped when
+        the exporter is stopping: its tasks end with it.
+        """
+        if self._stop_requested:
+            return
+
+        async def report(waiting: list[Task]) -> None:
+            message = draining_message(waiting)
+            log_context = (
+                lease.session.context_log_source(__name__, LogSource.AFTER_LEASE_HOOK)
+                if lease.session is not None
+                else nullcontext()
+            )
+            with log_context:
+                logger.info("Lease ended; waiting for long-running work to finish first (%s)", message)
+            await self._report_status(ExporterStatus.AFTER_LEASE_HOOK, message)
+
+        await settle(report)
+
     async def _report_status(self, status: ExporterStatus, message: str = ""):
-        """Report the exporter status with the controller and session."""
+        """Report the exporter status with the controller and session.
+
+        AVAILABLE is postponed while long-running driver tasks run
+        (``jumpstarter.driver.tasks``): AFTER_LEASE_HOOK (``draining: ...``) is
+        reported instead, which keeps the controller from assigning a new lease,
+        and ``_watch_tasks`` reports AVAILABLE once they end.
+        """
+        if status == ExporterStatus.AVAILABLE and (waiting := blocking_tasks()):
+            self._deferred_available = message or "Available for new lease"
+            status, message = ExporterStatus.AFTER_LEASE_HOOK, draining_message(waiting)
+            logger.info("Holding exporter out of scheduling (%s)", message)
+        else:
+            self._deferred_available = None
         self._exporter_status = status
 
         # Update status in lease context (handles session update internally)
@@ -963,6 +1011,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             # Mark hook as started to prevent duplicate execution
             logger.debug("Marking afterLease hook as started")
             lease_context.after_lease_hook_started.set()
+            with CancelScope(shield=True):
+                await self._settle_tasks(lease_context)
 
             if self.hook_executor and lease_context.has_client() and not lease_context.skip_after_lease_hook:
                 logger.debug("Calling run_after_lease_hook")
@@ -1073,6 +1123,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
             if not lease_scope.after_lease_hook_started.is_set():
                 lease_scope.after_lease_hook_started.set()
+                await self._settle_tasks(lease_scope)
                 if (self.hook_executor
                         and (lease_scope.has_client() or self._standalone)
                         and not lease_scope.skip_after_lease_hook):
@@ -1350,6 +1401,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             self._pending_status_request = None
             self._status_drain_active = True
             tg.start_soon(self._drain_status_reports)
+            tg.start_soon(self._watch_tasks)
             if self._telemetry_handler is not None:
                 tg.start_soon(self._telemetry_handler.flush_loop)
             tg.start_soon(partial(
@@ -1623,6 +1675,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                         async with create_task_group() as tg:
                             self._tg = tg
                             tg.start_soon(self._handle_end_session, lease_scope)
+                            tg.start_soon(self._watch_tasks)
 
                             if self.hook_executor:
                                 await self.hook_executor.run_before_lease_hook(

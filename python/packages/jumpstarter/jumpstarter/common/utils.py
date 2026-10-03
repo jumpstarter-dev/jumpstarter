@@ -8,6 +8,7 @@ from functools import partial
 from subprocess import Popen
 from typing import TYPE_CHECKING
 
+import anyio
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 
 from jumpstarter.client import client_from_path
@@ -41,12 +42,20 @@ async def serve_async(root_device: "Driver", portal: BlockingPortal, stack: Exit
             # For local testing, set status to LEASE_READY since there's no lease/hook flow
             session.update_status(ExporterStatus.LEASE_READY)
             # SAFETY: the root_device instance is constructed locally thus considered trusted
-            async with client_from_path(path, portal, stack, allow=[], unsafe=True) as client:
-                try:
-                    yield client
-                finally:
-                    if hasattr(client, "close"):
-                        client.close()
+            try:
+                async with client_from_path(path, portal, stack, allow=[], unsafe=True) as client:
+                    try:
+                        yield client
+                    finally:
+                        if hasattr(client, "close"):
+                            client.close()
+            finally:
+                # Like a lease ending on an exporter: long-running driver tasks are
+                # stopped or waited for before the session (and its drivers) go away.
+                from jumpstarter.driver.tasks import settle
+
+                with anyio.CancelScope(shield=True):
+                    await settle()
 
 
 @contextmanager
