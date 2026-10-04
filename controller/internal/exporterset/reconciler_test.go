@@ -18,6 +18,7 @@ package exporterset
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -2084,8 +2086,79 @@ func TestExporterLabels_survivesNilTemplateLabels(t *testing.T) {
 		es.Spec.Template.Metadata.Labels = nil
 	})
 	r, _ := newReconciler(t, es, makeVTC())
-	labels := r.exporterLabels(es)
+	labels := r.exporterLabels(context.Background(), es)
 	if labels[labelExporterSetName] != "demo-set" {
 		t.Errorf("expected set name label, got %v", labels)
+	}
+}
+
+func TestExporterLabels_identityWinsOverTemplate(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.Template.Metadata.Labels = map[string]string{
+			labelExporterSetName: "spoofed",
+			"board":              "rpi4",
+		}
+	})
+	r, _ := newReconciler(t, es, makeVTC())
+	labels := r.exporterLabels(context.Background(), es)
+	if labels[labelExporterSetName] != "demo-set" {
+		t.Errorf("template must not override pool membership, got %q", labels[labelExporterSetName])
+	}
+	if labels["board"] != "rpi4" {
+		t.Errorf("unrelated template label lost: %v", labels)
+	}
+}
+
+func TestIdentityLabels_skipsInvalidLabelValues(t *testing.T) {
+	// Object names may be up to 253 characters; label values only 63.
+	longClass := strings.Repeat("c", 64)
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.VirtualTargetClassName = longClass
+	})
+	r, _ := newReconciler(t, es)
+	labels := r.identityLabels(context.Background(), es)
+	if _, ok := labels[labelVirtualTargetClass]; ok {
+		t.Errorf("class label should be omitted for an invalid value, got %v", labels)
+	}
+	if labels[labelExporterSetName] != "demo-set" {
+		t.Errorf("valid labels should still be set, got %v", labels)
+	}
+}
+
+func TestReconcileExporterLabels_continuesPastPatchFailure(t *testing.T) {
+	es := makeExporterSet()
+	a := makeExporter("demo-set-a", true, false, true)
+	b := makeExporter("demo-set-b", true, false, true)
+
+	scheme := newScheme(t)
+	patchErr := errors.New("boom")
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(es, makeVTC(), a, b).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(ctx context.Context, cl client.WithWatch, obj client.Object,
+				patch client.Patch, opts ...client.PatchOption) error {
+				if obj.GetName() == "demo-set-a" {
+					return patchErr
+				}
+				return cl.Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+	r := &ExporterSetReconciler{Client: c, Scheme: scheme, Provisioner: qemu.New("dev")}
+
+	owned := listExporters(t, c)
+	err := r.reconcileExporterLabels(context.Background(), es, owned)
+	if !errors.Is(err, patchErr) {
+		t.Fatalf("expected the patch error to be returned, got %v", err)
+	}
+
+	var got jumpstarterdevv1alpha1.Exporter
+	if err := c.Get(context.Background(),
+		types.NamespacedName{Name: "demo-set-b", Namespace: nsDefault}, &got); err != nil {
+		t.Fatalf("get exporter: %v", err)
+	}
+	if got.Labels[labelExporterSetName] != "demo-set" {
+		t.Errorf("exporter after the failed one should still be labelled: %v", got.Labels)
 	}
 }

@@ -192,6 +192,7 @@ type JumpstarterSpec struct {
 	LeasePolicy LeasePolicyConfig `json:"leasePolicy,omitempty"`
 
 	// Hidden labels configuration for hiding specific label keys from exporter listings.
+	// +kubebuilder:default={}
 	// +optional
 	HiddenLabels HiddenLabelsConfig `json:"hiddenLabels,omitempty"`
 
@@ -216,7 +217,13 @@ type JumpstarterSpec struct {
 // HiddenLabelsConfig defines label keys to hide from exporter listings by default.
 type HiddenLabelsConfig struct {
 	// List of exact label keys to hide from ListExporters/GetExporter responses.
-	// Clients can pass show_hidden_labels=true to see all labels.
+	// Clients can pass show_hidden_labels=true to see all labels. Hidden labels
+	// remain usable in label selectors.
+	//
+	// Defaults to the ExporterSet identity labels, which every pool member
+	// carries. Setting this field replaces the default list rather than adding
+	// to it; set it to [] to show every label.
+	// +kubebuilder:default={"exporterset.jumpstarter.dev/name","exporterset.jumpstarter.dev/class","exporterset.jumpstarter.dev/provisioner"}
 	// +optional
 	Keys []string `json:"keys,omitempty"`
 }

@@ -34,6 +34,7 @@ package exporterset
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"sync"
@@ -48,6 +49,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -68,10 +70,14 @@ const (
 	// lives only in ownerReferences, which the client API does not expose.
 	labelExporterSetName = "exporterset.jumpstarter.dev/name"
 
-	// The VirtualTargetClass backing the pool, and the provisioner that
-	// class names, so clients can tell how an exporter is provisioned without
-	// cluster access. The provisioner is a property of the class, which a
-	// client cannot read, so it has to be carried here.
+	// The VirtualTargetClass backing the pool, and the provisioner named by
+	// that class. Together they let clients tell how an exporter is
+	// provisioned without cluster access: the provisioner is a property of
+	// the class, which a client cannot read, so it is carried on the Exporter.
+	//
+	// All three identity labels are client-visible by default. The operator
+	// lists them in hiddenLabels.keys so they stay out of `jmp get exporters`
+	// unless --show-hidden-labels is passed; they remain usable in selectors.
 	labelVirtualTargetClass = "exporterset.jumpstarter.dev/class"
 	labelProvisioner        = "exporterset.jumpstarter.dev/provisioner"
 
@@ -384,7 +390,7 @@ func (r *ExporterSetReconciler) scaleUp(
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: es.Name + "-",
 				Namespace:    es.Namespace,
-				Labels:       r.exporterLabels(es),
+				Labels:       r.exporterLabels(ctx, es),
 				Annotations:  maps.Clone(es.Spec.Template.Metadata.Annotations),
 			},
 			Spec: jumpstarterdevv1alpha1.ExporterSpec{
@@ -971,29 +977,53 @@ func (r *ExporterSetReconciler) clearSurplusAnnotation(ctx context.Context, es *
 // identityLabels mark which pool an exporter belongs to and how it is
 // provisioned. Reconcile has already established that the referenced class
 // names this reconciler's provisioner, so it is the provisioner in effect.
+//
+// A value that is not a valid label value (object names may be up to 253
+// characters, label values only 63) is left out rather than set: patching it
+// would fail with a 422 on every reconcile and never converge.
 func (r *ExporterSetReconciler) identityLabels(
+	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
 ) map[string]string {
-	labels := map[string]string{labelExporterSetName: es.Name}
+	candidates := map[string]string{labelExporterSetName: es.Name}
 	if es.Spec.VirtualTargetClassName != "" {
-		labels[labelVirtualTargetClass] = es.Spec.VirtualTargetClassName
+		candidates[labelVirtualTargetClass] = es.Spec.VirtualTargetClassName
 	}
 	if r.Provisioner != nil {
-		labels[labelProvisioner] = r.Provisioner.Name()
+		candidates[labelProvisioner] = r.Provisioner.Name()
+	}
+
+	labels := make(map[string]string, len(candidates))
+	for key, value := range candidates {
+		if errs := validation.IsValidLabelValue(value); len(errs) > 0 {
+			log.FromContext(ctx).Info("skipping exporter set label with invalid value",
+				"label", key, "value", value, "reason", errs)
+			continue
+		}
+		labels[key] = value
 	}
 	return labels
 }
 
 // exporterLabels are the labels an Exporter of this set carries: the set's
-// template labels plus the identity labels above.
+// template labels plus the identity labels above. Identity labels win on a
+// key collision: the exporterset.jumpstarter.dev/ prefix is reserved for this
+// controller, and a template value there would misreport pool membership.
 func (r *ExporterSetReconciler) exporterLabels(
+	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
 ) map[string]string {
 	labels := maps.Clone(es.Spec.Template.Metadata.Labels)
 	if labels == nil {
 		labels = map[string]string{}
 	}
-	maps.Copy(labels, r.identityLabels(es))
+	for key, value := range r.identityLabels(ctx, es) {
+		if prev, ok := labels[key]; ok && prev != value {
+			log.FromContext(ctx).Info("template label overridden by exporter set identity label",
+				"label", key, "template", prev, "identity", value)
+		}
+		labels[key] = value
+	}
 	return labels
 }
 
@@ -1007,8 +1037,11 @@ func (r *ExporterSetReconciler) reconcileExporterLabels(
 ) error {
 	logger := log.FromContext(ctx)
 
-	desired := r.identityLabels(es)
+	desired := r.identityLabels(ctx, es)
 
+	// Label every exporter we can this cycle: one failed patch should not
+	// leave the rest of the pool unlabeled until the next reconcile.
+	var errs []error
 	for i := range owned {
 		exporter := &owned[i]
 		missing := map[string]string{}
@@ -1027,11 +1060,13 @@ func (r *ExporterSetReconciler) reconcileExporterLabels(
 		}
 		maps.Copy(exporter.Labels, missing)
 		if err := r.Patch(ctx, exporter, patch); err != nil {
-			return fmt.Errorf("unable to label Exporter %s: %w", exporter.Name, err)
+			logger.Error(err, "unable to label exporter", "exporter", exporter.Name)
+			errs = append(errs, fmt.Errorf("unable to label Exporter %s: %w", exporter.Name, err))
+			continue
 		}
 		logger.Info("stamped exporter set labels", "exporter", exporter.Name, "labels", missing)
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func (r *ExporterSetReconciler) listOwnedExporters(
