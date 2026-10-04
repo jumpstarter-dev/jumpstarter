@@ -39,7 +39,8 @@ from jumpstarter.config.tls import TLSConfigV1Alpha1
 
 logger = logging.getLogger(__name__)
 
-_DIAL_ATTEMPT_TIMEOUT = 10.0
+# Allow the controller's 30-second exporter readiness wait to finish.
+_DIAL_ATTEMPT_TIMEOUT = 35.0
 
 
 @dataclass(kw_only=True)
@@ -354,11 +355,11 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     f"Exporter {self.exporter_name} unreachable after {self.dial_timeout:.0f}s"
                 )
             try:
-                with fail_after(min(_DIAL_ATTEMPT_TIMEOUT, remaining)):
-                    return await self.controller.Dial(jumpstarter_pb2.DialRequest(lease_name=self.name))
-            except TimeoutError:
-                controller_unavailable = True
-                retry_reason = "Controller Dial timed out"
+                # Unary grpc.aio calls need timeout=; AnyIO timeouts can leak CancelledError.
+                return await self.controller.Dial(
+                    jumpstarter_pb2.DialRequest(lease_name=self.name),
+                    timeout=min(_DIAL_ATTEMPT_TIMEOUT, remaining),
+                )
             except AioRpcError as e:
                 details = e.details() or ""
                 # These readiness responses come from

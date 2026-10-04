@@ -9,6 +9,7 @@ import anyio
 import grpc
 import pytest
 from grpc.aio import AioRpcError
+from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
 from rich.console import Console
 
 from jumpstarter.client.exceptions import LeaseError
@@ -641,6 +642,24 @@ class TestMonitorAsyncError:
         assert remain_arg == timedelta(0)
 
 
+@asynccontextmanager
+async def _dial_controller(dial):
+    class Controller(jumpstarter_pb2_grpc.ControllerServiceServicer):
+        async def Dial(self, request, context):
+            return await dial(request, context)
+
+    server = grpc.aio.server()
+    jumpstarter_pb2_grpc.add_ControllerServiceServicer_to_server(Controller(), server)
+    port = server.add_insecure_port("127.0.0.1:0")
+    await server.start()
+    try:
+        async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel:
+            await asyncio.wait_for(channel.channel_ready(), timeout=2)
+            yield jumpstarter_pb2_grpc.ControllerServiceStub(channel)
+    finally:
+        await server.stop(grace=None)
+
+
 class TestDialWithRetry:
     """Tests for Lease._dial_with_retry UNAVAILABLE retry behavior."""
 
@@ -659,7 +678,7 @@ class TestDialWithRetry:
         lease = self._make_lease_for_dial()
         dial_call_count = 0
 
-        async def mock_dial(request):
+        async def mock_dial(request, *, timeout):
             nonlocal dial_call_count
             dial_call_count += 1
             if dial_call_count == 1:
@@ -682,7 +701,7 @@ class TestDialWithRetry:
         lease.dial_timeout = 0.5
         dial_call_count = 0
 
-        async def mock_dial(request):
+        async def mock_dial(request, *, timeout):
             nonlocal dial_call_count
             dial_call_count += 1
             raise MockAioRpcError(grpc.StatusCode.UNAVAILABLE, "permanently unavailable")
@@ -702,7 +721,7 @@ class TestDialWithRetry:
         lease.dial_timeout = 0.5
         dial_call_count = 0
 
-        async def mock_dial(request):
+        async def mock_dial(request, *, timeout):
             nonlocal dial_call_count
             dial_call_count += 1
             raise MockAioRpcError(grpc.StatusCode.FAILED_PRECONDITION, "not ready")
@@ -732,7 +751,7 @@ class TestDialWithRetry:
 
         lease = self._make_lease_for_dial()
 
-        async def mock_dial(request):
+        async def mock_dial(request, *, timeout):
             raise MockAioRpcError(grpc.StatusCode.PERMISSION_DENIED, "permission denied")
 
         lease.controller.Dial = mock_dial
@@ -749,7 +768,7 @@ class TestDialWithRetry:
 
         lease = self._make_lease_for_dial()
 
-        async def mock_dial(request):
+        async def mock_dial(request, *, timeout):
             raise MockAioRpcError(grpc.StatusCode.INTERNAL, "something broke")
 
         lease.controller.Dial = mock_dial
@@ -850,22 +869,97 @@ class TestDialWithRetry:
         assert retry_records[0].levelno == logging.WARNING
 
     @pytest.mark.anyio
+    async def test_dial_deadline_allows_controller_readiness_wait(self):
+        lease = self._make_lease_for_dial()
+        lease.dial_timeout = 40
+        deadlines = []
+        response = jumpstarter_pb2.DialResponse(router_endpoint="endpoint", router_token="token")
+
+        async def dial(request, context):
+            deadlines.append(context.time_remaining())
+            return response
+
+        async with _dial_controller(dial) as lease.controller:
+            assert await asyncio.wait_for(lease._dial_with_retry(), timeout=2) == response
+
+        assert len(deadlines) == 1
+        assert 30 < deadlines[0] < lease.dial_timeout
+
+    @pytest.mark.anyio
+    async def test_hung_dial_is_retried_after_grpc_deadline(self, monkeypatch):
+        monkeypatch.setattr("jumpstarter.client.lease._DIAL_ATTEMPT_TIMEOUT", 0.05)
+        lease = self._make_lease_for_dial()
+        cancelled = asyncio.Event()
+        calls = 0
+        response = jumpstarter_pb2.DialResponse(router_endpoint="endpoint", router_token="token")
+
+        async def dial(request, context):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                try:
+                    await anyio.sleep_forever()
+                finally:
+                    cancelled.set()
+            return response
+
+        async with _dial_controller(dial) as lease.controller:
+            assert await asyncio.wait_for(lease._dial_with_retry(), timeout=2) == response
+            await asyncio.wait_for(cancelled.wait(), timeout=1)
+
+        assert calls == 2
+
+    @pytest.mark.anyio
     async def test_hung_dial_is_bounded_by_remaining_budget(self):
         lease = self._make_lease_for_dial()
-        lease.dial_timeout = 0.02
-        cancelled = False
+        lease.dial_timeout = 0.05
+        cancelled = asyncio.Event()
+        calls = 0
 
-        async def hung_dial(request):
-            nonlocal cancelled
+        async def dial(request, context):
+            nonlocal calls
+            calls += 1
             try:
                 await anyio.sleep_forever()
             finally:
-                cancelled = True
+                cancelled.set()
 
-        lease.controller.Dial = hung_dial
-        with anyio.fail_after(1), pytest.raises(ExporterUnreachableError):
-            await lease._dial_with_retry()
-        assert cancelled
+        async with _dial_controller(dial) as lease.controller:
+            with pytest.raises(ExporterUnreachableError):
+                await asyncio.wait_for(lease._dial_with_retry(), timeout=1)
+            await asyncio.wait_for(cancelled.wait(), timeout=1)
+
+        assert calls == 1
+
+    @pytest.mark.anyio
+    async def test_caller_cancellation_is_not_retried(self):
+        lease = self._make_lease_for_dial()
+        started = asyncio.Event()
+        cancelled = asyncio.Event()
+        calls = 0
+
+        async def dial(request, context):
+            nonlocal calls
+            calls += 1
+            started.set()
+            try:
+                await anyio.sleep_forever()
+            finally:
+                cancelled.set()
+
+        async with _dial_controller(dial) as lease.controller:
+            task = asyncio.create_task(lease._dial_with_retry())
+            try:
+                await asyncio.wait_for(started.wait(), timeout=1)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+                await asyncio.wait_for(cancelled.wait(), timeout=1)
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+        assert calls == 1
 
     @pytest.mark.anyio
     async def test_recovery_errors_share_one_deadline(self):
@@ -1075,7 +1169,7 @@ class TestServeUnixAsync:
         # Readiness succeeds, the first command fails, and the next recovers.
         calls = {"count": 0}
 
-        async def mock_dial(request):
+        async def mock_dial(request, *, timeout):
             calls["count"] += 1
             if calls["count"] != 2:
                 return Mock(router_endpoint="test-endpoint", router_token="test-token")
@@ -1176,7 +1270,7 @@ class TestServeUnixAsync:
 
         calls = {"count": 0}
 
-        async def mock_dial(request):
+        async def mock_dial(request, *, timeout):
             calls["count"] += 1
             # readiness check, then one blip, then success
             if calls["count"] == 2:
@@ -1218,7 +1312,7 @@ async def test_dial_timeout_does_not_poison_next_shell_connection():
     recovered = False
     served = anyio.Event()
 
-    async def dial(request):
+    async def dial(request, *, timeout):
         nonlocal calls
         calls += 1
         if calls != 1 and not recovered:
