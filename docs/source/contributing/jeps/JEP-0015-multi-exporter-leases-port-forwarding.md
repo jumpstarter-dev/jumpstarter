@@ -1448,6 +1448,35 @@ Member classes add annotations only; methods belong on driver clients. The
 limit lets a code generator produce the same typed lease in other languages
 without changing this API (see *Future Possibilities*).
 
+### DD-18: Assign members by augmenting paths, not first fit
+
+**Alternatives considered:**
+
+1. **First fit.** Each member, in order, takes its best remaining candidate.
+2. **First fit, fewest candidates first.** Sort members by candidate count,
+   then apply first fit.
+3. **Augmenting paths.** Each member takes its best free candidate; if none
+   is free, earlier members move along the shortest chain of alternative
+   candidates to free one (bipartite matching).
+4. **Minimum-cost assignment** (Hungarian algorithm) over candidate rank or
+   policy priority.
+
+**Decision:** Option 3.
+
+**Rationale:** First fit can fail a lease that has a valid assignment. If
+member A qualifies for exporters `x` and `y` and member B only for `x`, A
+takes `x` and B is never bound. Candidate order is total and deterministic,
+so every requeue repeats the choice: the lease waits indefinitely while both
+exporters sit idle. An optional member listed before a required one can
+starve it the same way. Sorting by candidate count makes this rarer but not
+impossible. Augmenting paths bind whenever any assignment exists, keep first
+fit's choice whenever first fit would bind every member, and leave a search
+tree on failure that names the roles competing for too few exporters.
+Minimum-cost assignment would also optimize rank, but it changes picks in
+uncontended cases and is harder to explain from a status message. A lease has
+at most eight members, so the cost is a few small breadth-first searches per
+reconcile.
+
 ## Design Details
 
 ### Deployment assumptions
@@ -1477,30 +1506,75 @@ router (DD-4).
 ### Binding: one pass, one write
 
 The existing `reconcileStatusExporterRef` generalizes to
-`reconcileStatusMembers`, keeping its selection pipeline intact per member:
+`reconcileStatusMembers`. Each member's candidates come from the existing
+pipeline, run once per member with its own selector or `exporterRef`. The
+controller then assigns all members distinct exporters together (DD-18) and
+commits the result in one write:
 
 ```{mermaid}
 flowchart TD
-    select["Select policy-approved exporters<br/>matching the member selector"]
-    filter["Exclude offline exporters, active claims,<br/>exporters whose exclusion group another lease holds,<br/>earlier picks, and exporters still cleaning up"]
-    candidate["Keep the best candidate in memory<br/>Write no claims yet"]
-    more{"More members?"}
-    complete{"Every required member<br/>has a candidate?"}
-    pending["Set Pending / Unsatisfiable<br/>Name the failing role; write no claims"]
+    resolve["Per member: resolve exporterRef or selector,<br/>drop disabled and policy-denied exporters"]
+    precheck{"Every required member<br/>has a candidate?"}
+    reject["Set that member's existing reason<br/>(NoAccess, ExporterNotFound, ...)<br/>Write no claims"]
+    filter["Per member: drop offline, claimed, group-held,<br/>cleaning-up, and spot-held exporters<br/>Rank with orderApprovedExporters"]
+    assign["Assign required members, then optional members<br/>Shortest augmenting path per member"]
+    complete{"Every required member<br/>assigned?"}
+    classify["Report the first filter stage at which the<br/>required members cannot all be assigned<br/>Name the competing roles; write no claims"]
     requeue["Requeue"]
-    bind["Set status.members to all candidates<br/>Set priority to the minimum member priority"]
+    bind["Set status.members<br/>Set priority to the minimum member priority"]
     commit["Commit one atomic Status().Update()"]
 
-    select --> filter --> candidate --> more
-    more -->|"Yes: next member"| select
-    more -->|No| complete
-    complete -->|No| pending --> requeue
+    resolve --> precheck
+    precheck -->|No| reject
+    precheck -->|Yes| filter --> assign --> complete
+    complete -->|No| classify --> requeue
     complete -->|Yes| bind --> commit
 ```
 
-Candidates remain in memory until every required member resolves. The
-selection pass excludes exporters already assigned to another member, so
-two roles with the same selector receive distinct exporters.
+**Per-member checks.** The checks that look at one member alone run
+unchanged and report their existing reasons, naming the role:
+`ExporterNotFound`, `SelectorMismatch`, `ExporterDisabled`, `AllDisabled`,
+`NoAccess`, and the spot-access `Unsatisfiable`. An optional member that
+fails one is omitted with that reason instead of failing the lease.
+
+**Assignment.** Members are processed in spec order, required members first.
+Each member takes its best-ranked free candidate, which is the scalar path's
+choice today. Only when none is free does the controller search
+breadth-first for the shortest chain of already-assigned members that can
+each move to another of their own candidates and free one up (an augmenting
+path). Assigned members can be moved but are never unassigned, so an
+optional member never displaces a required one. The result:
+
+- binds whenever any assignment of the required members exists;
+- binds as many optional members as any assignment allows, with spec order
+  deciding which;
+- is identical to taking each member's best free candidate in order whenever
+  that binds every member, and moves the fewest members otherwise;
+- is deterministic, because candidate order is total (name breaks ties).
+
+The scalar path is the one-member case, so its choice is unchanged.
+
+**Failure classification.** Each stage of the filter pipeline keeps a subset
+of the previous stage's candidates. If the required members cannot all be
+assigned, the controller reruns the assignment against each stage in turn
+and reports the first stage that fails:
+
+| Stage: candidates that are also... | Condition | Reason |
+| --- | --- | --- |
+| Matching, enabled, policy-approved | `Unsatisfiable` | `InsufficientExporters` |
+| Registered and online | `Pending` | `Offline` |
+| Not claimed by another lease or its exclusion group | `Pending` | `NotAvailable` |
+| `Available`, not cleaning up | `Pending` | `NotReady` |
+| Not held under spot access | `Pending` | `NotAvailable` |
+
+With one member this reduces to "the first stage with no candidates", which
+is today's behavior. `InsufficientExporters` only arises with several
+members, for example two roles whose `exporterRef` names the same exporter,
+and no requeue can resolve it. The message comes from the failed search: the
+roles it reached qualify, between them, only for the exporters it visited,
+one fewer than the roles. For example: *roles `phone`, `phone-2` need 2
+distinct exporters; only 1 is available: `px-01`.* This names the actual
+competitors, not whichever role happened to be processed last.
 
 Exclusion groups extend the claim check (DD-16). A candidate is excluded if
 another active lease holds its group, either by binding an exporter in it or
@@ -1513,9 +1587,10 @@ takeover follows the existing rules and applies to the whole group.
 The scalar path uses the same selection code with a synthetic member and
 writes the result to `status.exporterRef` (DD-2).
 
-The existing cross-lease race remains: reconcilers can read stale claims
-and commit conflicting selections to different lease objects. A later
-reconcile detects the conflict and rebinds (DD-1).
+Assignment is per lease; it does not arbitrate between leases. The existing
+cross-lease race remains: reconcilers can read stale claims and commit
+conflicting selections to different lease objects. A later reconcile detects
+the conflict and rebinds (DD-1).
 
 ### Lease state
 
@@ -1767,6 +1842,10 @@ for `status.exporterRef`.
 - Bind-time port validation holds devices even when a forward is invalid.
   Omitted protocol tags allow compatibility errors to surface at runtime.
 - Individual members cannot be released early.
+- Freeing an exporter for a later member can move an earlier member to a
+  lower-ranked candidate, which can lower the lease's priority (the minimum
+  member priority). Binding with lower priority is preferred to not binding
+  (DD-18).
 - Forwarding adds local listeners and, optionally, an authenticated peer
   listener to exporters.
 - Timing-sensitive protocols and Wi-Fi simulation require further testing
@@ -1806,8 +1885,8 @@ for `status.exporterRef`.
 
 ## Rejected Alternatives
 
-DD-1 through DD-17 record the API and transport alternatives. Higher-level
-alternatives are:
+DD-1 through DD-18 record the API, transport, and binding alternatives.
+Higher-level alternatives are:
 
 - **Keep client-managed leases:** leaves partial acquisition, independent
   lifetimes, and unmanaged device connections.
@@ -1876,6 +1955,9 @@ To resolve during implementation:
 
 The following work builds on this JEP:
 
+- **Priority-aware assignment:** when several complete assignments exist,
+  prefer the one with the highest minimum member priority (bottleneck
+  matching) rather than the fewest moves (DD-18).
 - **Shared infrastructure exporters:** exporters that serve several other
   exporters and leases, such as network switches, relay matrices, signal
   gateways, RF enclosures, and programmable power supplies. Such an exporter
