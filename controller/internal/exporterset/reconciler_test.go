@@ -19,6 +19,7 @@ package exporterset
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -2116,12 +2117,90 @@ func TestIdentityLabels_skipsInvalidLabelValues(t *testing.T) {
 		es.Spec.VirtualTargetClassName = longClass
 	})
 	r, _ := newReconciler(t, es)
-	labels := r.identityLabels(context.Background(), es)
-	if _, ok := labels[labelVirtualTargetClass]; ok {
-		t.Errorf("class label should be omitted for an invalid value, got %v", labels)
+	set, remove := r.identityLabels(context.Background(), es)
+	if _, ok := set[labelVirtualTargetClass]; ok {
+		t.Errorf("class label should be omitted for an invalid value, got %v", set)
 	}
-	if labels[labelExporterSetName] != "demo-set" {
-		t.Errorf("valid labels should still be set, got %v", labels)
+	if !slices.Contains(remove, labelVirtualTargetClass) {
+		t.Errorf("class label should be marked for removal, got %v", remove)
+	}
+	if set[labelExporterSetName] != "demo-set" {
+		t.Errorf("valid labels should still be set, got %v", set)
+	}
+}
+
+func TestExporterLabels_dropsReservedTemplateKeyWhenOmitted(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.VirtualTargetClassName = strings.Repeat("c", 64)
+		es.Spec.Template.Metadata.Labels = map[string]string{
+			labelVirtualTargetClass: "misleading",
+			"board":                 "rpi4",
+		}
+	})
+	r, _ := newReconciler(t, es)
+	labels := r.exporterLabels(context.Background(), es)
+	if v, ok := labels[labelVirtualTargetClass]; ok {
+		t.Errorf("template must not supply an omitted identity label, got %q", v)
+	}
+	if labels["board"] != "rpi4" {
+		t.Errorf("unrelated template label lost: %v", labels)
+	}
+}
+
+func TestReconcileExporterLabels_removesStaleIdentityLabel(t *testing.T) {
+	// The set moved to a class whose name can't be a label value; the old
+	// class label must not linger on existing exporters.
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.VirtualTargetClassName = strings.Repeat("c", 64)
+	})
+	existing := makeExporter("demo-set-old", true, false, true)
+	existing.Labels[labelVirtualTargetClass] = "qemu-class"
+	existing.Labels[labelExporterSetName] = "demo-set"
+
+	r, c := newReconciler(t, es, existing)
+	if err := r.reconcileExporterLabels(context.Background(), es, listExporters(t, c)); err != nil {
+		t.Fatalf("reconcileExporterLabels: %v", err)
+	}
+
+	var got jumpstarterdevv1alpha1.Exporter
+	if err := c.Get(context.Background(),
+		types.NamespacedName{Name: "demo-set-old", Namespace: nsDefault}, &got); err != nil {
+		t.Fatalf("get exporter: %v", err)
+	}
+	if v, ok := got.Labels[labelVirtualTargetClass]; ok {
+		t.Errorf("stale class label should be removed, got %q", v)
+	}
+	if got.Labels["exporterset"] != "demo-set" {
+		t.Errorf("non-identity labels must be preserved: %v", got.Labels)
+	}
+}
+
+func TestReconcile_selectorConflictingWithIdentityLabelsStopsScaling(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 2
+		// Pins a class value the controller will overwrite with "qemu-class".
+		es.Spec.Selector.MatchLabels = map[string]string{
+			"exporterset":           "demo-set",
+			labelVirtualTargetClass: "something-else",
+		}
+		es.Spec.Template.Metadata.Labels = map[string]string{
+			"exporterset":           "demo-set",
+			labelVirtualTargetClass: "something-else",
+		}
+	})
+	r, c := newReconciler(t, es, makeVTC())
+	for range 3 {
+		reconcileOnce(t, r)
+	}
+
+	if n := len(listExporters(t, c)); n != 0 {
+		t.Fatalf("expected no exporters to be created, got %d", n)
+	}
+	got := getExporterSet(t, c)
+	cond := meta.FindStatusCondition(got.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionAvailable))
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "SelectorMismatch" {
+		t.Fatalf("expected Available=False/SelectorMismatch, got %+v", cond)
 	}
 }
 
