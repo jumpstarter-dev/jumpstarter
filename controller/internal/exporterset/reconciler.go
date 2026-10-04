@@ -1043,7 +1043,7 @@ func (r *ExporterSetReconciler) selectorMismatch(
 
 // reportUnavailable records a spec problem that stops reconciliation: it
 // refreshes status counts, marks the set not Available with the given reason,
-// and returns without requeueing (a spec change retriggers reconcile).
+// and returns without requeuing (a spec change retriggers reconcile).
 func (r *ExporterSetReconciler) reportUnavailable(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
