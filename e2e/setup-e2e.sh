@@ -63,7 +63,7 @@ CFSSL_VERSION="1.6.5"
 # renovate: datasource=github-releases depName=mikefarah/yq
 YQ_VERSION="v4.53.6"
 # renovate: datasource=helm depName=dex
-DEX_CHART_VERSION="0.24.1"
+DEX_CHART_VERSION="0.25.2"
 
 # SHA256 checksums for prebuilt binaries (from upstream release assets)
 get_expected_sha256() {
