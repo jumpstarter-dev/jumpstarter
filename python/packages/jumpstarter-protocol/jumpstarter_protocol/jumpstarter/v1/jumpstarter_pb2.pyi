@@ -3,987 +3,1184 @@
 isort:skip_file
 Copyright 2024 The Jumpstarter Authors"""
 
-import builtins
-import collections.abc
-import google.protobuf.descriptor
-import google.protobuf.duration_pb2
-import google.protobuf.internal.containers
-import google.protobuf.message
-import google.protobuf.struct_pb2
-import google.protobuf.timestamp_pb2
-import jumpstarter.v1.common_pb2
-import jumpstarter.v1.kubernetes_pb2
+from collections import abc as _abc
+from google.protobuf import descriptor as _descriptor
+from google.protobuf import duration_pb2 as _duration_pb2
+from google.protobuf import message as _message
+from google.protobuf import struct_pb2 as _struct_pb2
+from google.protobuf import timestamp_pb2 as _timestamp_pb2
+from google.protobuf.internal import containers as _containers
+from jumpstarter.v1 import common_pb2 as _common_pb2
+from jumpstarter.v1 import kubernetes_pb2 as _kubernetes_pb2
+import builtins as _builtins
 import sys
-import typing
+import typing as _typing
 
-if sys.version_info >= (3, 10):
-    import typing as typing_extensions
+if sys.version_info >= (3, 11):
+    from typing import TypeAlias as _TypeAlias, Never as _Never
 else:
-    import typing_extensions
+    from typing_extensions import TypeAlias as _TypeAlias, Never as _Never
 
-DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
+DESCRIPTOR: _descriptor.FileDescriptor
 
-@typing.final
-class RegisterRequest(google.protobuf.message.Message):
+@_typing.final
+class RegisterRequest(_message.Message):
     """Registration request sent by an exporter to the controller."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    @typing.final
-    class LabelsEntry(google.protobuf.message.Message):
-        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    @_typing.final
+    class LabelsEntry(_message.Message):
+        DESCRIPTOR: _descriptor.Descriptor
 
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.str
+        KEY_FIELD_NUMBER: _builtins.int
+        VALUE_FIELD_NUMBER: _builtins.int
+        key: _builtins.str
+        value: _builtins.str
         def __init__(
             self,
             *,
-            key: builtins.str = ...,
-            value: builtins.str = ...,
+            key: _builtins.str = ...,
+            value: _builtins.str = ...,
         ) -> None: ...
-        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+        _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+        def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+        _ClearFieldArgType: _TypeAlias = _typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+        def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-    LABELS_FIELD_NUMBER: builtins.int
-    REPORTS_FIELD_NUMBER: builtins.int
-    @property
-    def labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+    LABELS_FIELD_NUMBER: _builtins.int
+    REPORTS_FIELD_NUMBER: _builtins.int
+    @_builtins.property
+    def labels(self) -> _containers.ScalarMap[_builtins.str, _builtins.str]:
         """Key-value metadata labels."""
 
-    @property
-    def reports(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___DriverInstanceReport]:
+    @_builtins.property
+    def reports(self) -> _containers.RepeatedCompositeFieldContainer[Global___DriverInstanceReport]:
         """Driver instance reports for this exporter."""
 
     def __init__(
         self,
         *,
-        labels: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
-        reports: collections.abc.Iterable[Global___DriverInstanceReport] | None = ...,
+        labels: _abc.Mapping[_builtins.str, _builtins.str] | None = ...,
+        reports: _abc.Iterable[Global___DriverInstanceReport] | None = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["labels", b"labels", "reports", b"reports"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["labels", b"labels", "reports", b"reports"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___RegisterRequest: typing_extensions.TypeAlias = RegisterRequest
+Global___RegisterRequest: _TypeAlias = RegisterRequest  # noqa: Y015
 
-@typing.final
-class DriverInstanceReport(google.protobuf.message.Message):
+@_typing.final
+class DriverInstanceReport(_message.Message):
     """Report describing a single driver instance on an exporter."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    @typing.final
-    class LabelsEntry(google.protobuf.message.Message):
-        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    @_typing.final
+    class LabelsEntry(_message.Message):
+        DESCRIPTOR: _descriptor.Descriptor
 
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.str
+        KEY_FIELD_NUMBER: _builtins.int
+        VALUE_FIELD_NUMBER: _builtins.int
+        key: _builtins.str
+        value: _builtins.str
         def __init__(
             self,
             *,
-            key: builtins.str = ...,
-            value: builtins.str = ...,
+            key: _builtins.str = ...,
+            value: _builtins.str = ...,
         ) -> None: ...
-        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+        _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+        def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+        _ClearFieldArgType: _TypeAlias = _typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+        def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-    @typing.final
-    class MethodsDescriptionEntry(google.protobuf.message.Message):
-        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    @_typing.final
+    class MethodsDescriptionEntry(_message.Message):
+        DESCRIPTOR: _descriptor.Descriptor
 
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.str
+        KEY_FIELD_NUMBER: _builtins.int
+        VALUE_FIELD_NUMBER: _builtins.int
+        key: _builtins.str
+        value: _builtins.str
         def __init__(
             self,
             *,
-            key: builtins.str = ...,
-            value: builtins.str = ...,
+            key: _builtins.str = ...,
+            value: _builtins.str = ...,
         ) -> None: ...
-        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+        _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+        def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+        _ClearFieldArgType: _TypeAlias = _typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+        def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-    UUID_FIELD_NUMBER: builtins.int
-    PARENT_UUID_FIELD_NUMBER: builtins.int
-    LABELS_FIELD_NUMBER: builtins.int
-    DESCRIPTION_FIELD_NUMBER: builtins.int
-    METHODS_DESCRIPTION_FIELD_NUMBER: builtins.int
-    uuid: builtins.str
+    UUID_FIELD_NUMBER: _builtins.int
+    PARENT_UUID_FIELD_NUMBER: _builtins.int
+    LABELS_FIELD_NUMBER: _builtins.int
+    DESCRIPTION_FIELD_NUMBER: _builtins.int
+    METHODS_DESCRIPTION_FIELD_NUMBER: _builtins.int
+    uuid: _builtins.str
     """Unique identifier within the exporter."""
-    parent_uuid: builtins.str
+    parent_uuid: _builtins.str
     """Parent device UUID, if this is a child device."""
-    description: builtins.str
+    description: _builtins.str
     """Custom driver description for CLI display."""
-    @property
-    def labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+    @_builtins.property
+    def labels(self) -> _containers.ScalarMap[_builtins.str, _builtins.str]:
         """Key-value metadata labels."""
 
-    @property
-    def methods_description(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+    @_builtins.property
+    def methods_description(self) -> _containers.ScalarMap[_builtins.str, _builtins.str]:
         """Method name to help text mapping for CLI."""
 
     def __init__(
         self,
         *,
-        uuid: builtins.str = ...,
-        parent_uuid: builtins.str | None = ...,
-        labels: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
-        description: builtins.str | None = ...,
-        methods_description: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
+        uuid: _builtins.str = ...,
+        parent_uuid: _builtins.str | None = ...,
+        labels: _abc.Mapping[_builtins.str, _builtins.str] | None = ...,
+        description: _builtins.str | None = ...,
+        methods_description: _abc.Mapping[_builtins.str, _builtins.str] | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["_description", b"_description", "_parent_uuid", b"_parent_uuid", "description", b"description", "parent_uuid", b"parent_uuid"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_description", b"_description", "_parent_uuid", b"_parent_uuid", "description", b"description", "labels", b"labels", "methods_description", b"methods_description", "parent_uuid", b"parent_uuid", "uuid", b"uuid"]) -> None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_description", b"_description"]) -> typing.Literal["description"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_parent_uuid", b"_parent_uuid"]) -> typing.Literal["parent_uuid"] | None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_description", b"_description", "_parent_uuid", b"_parent_uuid", "description", b"description", "parent_uuid", b"parent_uuid"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_description", b"_description", "_parent_uuid", b"_parent_uuid", "description", b"description", "labels", b"labels", "methods_description", b"methods_description", "parent_uuid", b"parent_uuid", "uuid", b"uuid"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__description: _TypeAlias = _typing.Literal["description"]  # noqa: Y015
+    _WhichOneofArgType__description: _TypeAlias = _typing.Literal["_description", b"_description"]  # noqa: Y015
+    _WhichOneofReturnType__parent_uuid: _TypeAlias = _typing.Literal["parent_uuid"]  # noqa: Y015
+    _WhichOneofArgType__parent_uuid: _TypeAlias = _typing.Literal["_parent_uuid", b"_parent_uuid"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__description) -> _WhichOneofReturnType__description | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__parent_uuid) -> _WhichOneofReturnType__parent_uuid | None: ...
 
-Global___DriverInstanceReport: typing_extensions.TypeAlias = DriverInstanceReport
+Global___DriverInstanceReport: _TypeAlias = DriverInstanceReport  # noqa: Y015
 
-@typing.final
-class RegisterResponse(google.protobuf.message.Message):
+@_typing.final
+class RegisterResponse(_message.Message):
     """Registration response returned by the controller."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    UUID_FIELD_NUMBER: builtins.int
-    uuid: builtins.str
+    UUID_FIELD_NUMBER: _builtins.int
+    uuid: _builtins.str
     """Assigned exporter UUID."""
     def __init__(
         self,
         *,
-        uuid: builtins.str = ...,
+        uuid: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["uuid", b"uuid"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["uuid", b"uuid"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___RegisterResponse: typing_extensions.TypeAlias = RegisterResponse
+Global___RegisterResponse: _TypeAlias = RegisterResponse  # noqa: Y015
 
-@typing.final
-class UnregisterRequest(google.protobuf.message.Message):
+@_typing.final
+class UnregisterRequest(_message.Message):
     """Request to unregister an exporter from the controller."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    REASON_FIELD_NUMBER: builtins.int
-    reason: builtins.str
+    REASON_FIELD_NUMBER: _builtins.int
+    reason: _builtins.str
     """Reason for unregistering."""
     def __init__(
         self,
         *,
-        reason: builtins.str = ...,
+        reason: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["reason", b"reason"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["reason", b"reason"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___UnregisterRequest: typing_extensions.TypeAlias = UnregisterRequest
+Global___UnregisterRequest: _TypeAlias = UnregisterRequest  # noqa: Y015
 
-@typing.final
-class UnregisterResponse(google.protobuf.message.Message):
+@_typing.final
+class UnregisterResponse(_message.Message):
     """Response to an unregister request."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
     def __init__(
         self,
     ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___UnregisterResponse: typing_extensions.TypeAlias = UnregisterResponse
+Global___UnregisterResponse: _TypeAlias = UnregisterResponse  # noqa: Y015
 
-@typing.final
-class ListenRequest(google.protobuf.message.Message):
+@_typing.final
+class ListenRequest(_message.Message):
     """Request to listen for incoming client connections on a lease."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    LEASE_NAME_FIELD_NUMBER: builtins.int
-    lease_name: builtins.str
+    LEASE_NAME_FIELD_NUMBER: _builtins.int
+    lease_name: _builtins.str
     """Name of the lease to listen on."""
     def __init__(
         self,
         *,
-        lease_name: builtins.str = ...,
+        lease_name: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["lease_name", b"lease_name"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["lease_name", b"lease_name"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___ListenRequest: typing_extensions.TypeAlias = ListenRequest
+Global___ListenRequest: _TypeAlias = ListenRequest  # noqa: Y015
 
-@typing.final
-class ListenResponse(google.protobuf.message.Message):
+@_typing.final
+class ListenResponse(_message.Message):
     """Response containing router connection details for an incoming client."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    ROUTER_ENDPOINT_FIELD_NUMBER: builtins.int
-    ROUTER_TOKEN_FIELD_NUMBER: builtins.int
-    router_endpoint: builtins.str
+    ROUTER_ENDPOINT_FIELD_NUMBER: _builtins.int
+    ROUTER_TOKEN_FIELD_NUMBER: _builtins.int
+    router_endpoint: _builtins.str
     """The router gRPC endpoint URL."""
-    router_token: builtins.str
+    router_token: _builtins.str
     """Authentication token for the router."""
     def __init__(
         self,
         *,
-        router_endpoint: builtins.str = ...,
-        router_token: builtins.str = ...,
+        router_endpoint: _builtins.str = ...,
+        router_token: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["router_endpoint", b"router_endpoint", "router_token", b"router_token"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["router_endpoint", b"router_endpoint", "router_token", b"router_token"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___ListenResponse: typing_extensions.TypeAlias = ListenResponse
+Global___ListenResponse: _TypeAlias = ListenResponse  # noqa: Y015
 
-@typing.final
-class StatusRequest(google.protobuf.message.Message):
+@_typing.final
+class StatusRequest(_message.Message):
     """Request to subscribe to exporter lease status updates."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
     def __init__(
         self,
     ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___StatusRequest: typing_extensions.TypeAlias = StatusRequest
+Global___StatusRequest: _TypeAlias = StatusRequest  # noqa: Y015
 
-@typing.final
-class StatusResponse(google.protobuf.message.Message):
+@_typing.final
+class StatusResponse(_message.Message):
     """Lease status update for an exporter."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    @typing.final
-    class ContextEntry(google.protobuf.message.Message):
-        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    @_typing.final
+    class ContextEntry(_message.Message):
+        DESCRIPTOR: _descriptor.Descriptor
 
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.str
+        KEY_FIELD_NUMBER: _builtins.int
+        VALUE_FIELD_NUMBER: _builtins.int
+        key: _builtins.str
+        value: _builtins.str
         def __init__(
             self,
             *,
-            key: builtins.str = ...,
-            value: builtins.str = ...,
+            key: _builtins.str = ...,
+            value: _builtins.str = ...,
         ) -> None: ...
-        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+        _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+        def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+        _ClearFieldArgType: _TypeAlias = _typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+        def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-    LEASED_FIELD_NUMBER: builtins.int
-    LEASE_NAME_FIELD_NUMBER: builtins.int
-    CLIENT_NAME_FIELD_NUMBER: builtins.int
-    CONTEXT_FIELD_NUMBER: builtins.int
-    leased: builtins.bool
+    LEASED_FIELD_NUMBER: _builtins.int
+    LEASE_NAME_FIELD_NUMBER: _builtins.int
+    CLIENT_NAME_FIELD_NUMBER: _builtins.int
+    CONTEXT_FIELD_NUMBER: _builtins.int
+    leased: _builtins.bool
     """Whether the exporter is currently leased."""
-    lease_name: builtins.str
+    lease_name: _builtins.str
     """Name of the active lease, if any."""
-    client_name: builtins.str
+    client_name: _builtins.str
     """Name of the connected client, if any."""
-    @property
-    def context(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+    @_builtins.property
+    def context(self) -> _containers.ScalarMap[_builtins.str, _builtins.str]:
         """User-defined lease context metadata."""
 
     def __init__(
         self,
         *,
-        leased: builtins.bool = ...,
-        lease_name: builtins.str | None = ...,
-        client_name: builtins.str | None = ...,
-        context: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
+        leased: _builtins.bool = ...,
+        lease_name: _builtins.str | None = ...,
+        client_name: _builtins.str | None = ...,
+        context: _abc.Mapping[_builtins.str, _builtins.str] | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["_client_name", b"_client_name", "_lease_name", b"_lease_name", "client_name", b"client_name", "lease_name", b"lease_name"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_client_name", b"_client_name", "_lease_name", b"_lease_name", "client_name", b"client_name", "context", b"context", "lease_name", b"lease_name", "leased", b"leased"]) -> None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_client_name", b"_client_name"]) -> typing.Literal["client_name"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_lease_name", b"_lease_name"]) -> typing.Literal["lease_name"] | None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_client_name", b"_client_name", "_lease_name", b"_lease_name", "client_name", b"client_name", "lease_name", b"lease_name"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_client_name", b"_client_name", "_lease_name", b"_lease_name", "client_name", b"client_name", "context", b"context", "lease_name", b"lease_name", "leased", b"leased"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__client_name: _TypeAlias = _typing.Literal["client_name"]  # noqa: Y015
+    _WhichOneofArgType__client_name: _TypeAlias = _typing.Literal["_client_name", b"_client_name"]  # noqa: Y015
+    _WhichOneofReturnType__lease_name: _TypeAlias = _typing.Literal["lease_name"]  # noqa: Y015
+    _WhichOneofArgType__lease_name: _TypeAlias = _typing.Literal["_lease_name", b"_lease_name"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__client_name) -> _WhichOneofReturnType__client_name | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__lease_name) -> _WhichOneofReturnType__lease_name | None: ...
 
-Global___StatusResponse: typing_extensions.TypeAlias = StatusResponse
+Global___StatusResponse: _TypeAlias = StatusResponse  # noqa: Y015
 
-@typing.final
-class DialRequest(google.protobuf.message.Message):
+@_typing.final
+class DialRequest(_message.Message):
     """Request to dial an exporter through the router."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    LEASE_NAME_FIELD_NUMBER: builtins.int
-    lease_name: builtins.str
+    LEASE_NAME_FIELD_NUMBER: _builtins.int
+    lease_name: _builtins.str
     """Name of the lease to connect through."""
     def __init__(
         self,
         *,
-        lease_name: builtins.str = ...,
+        lease_name: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["lease_name", b"lease_name"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["lease_name", b"lease_name"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___DialRequest: typing_extensions.TypeAlias = DialRequest
+Global___DialRequest: _TypeAlias = DialRequest  # noqa: Y015
 
-@typing.final
-class DialResponse(google.protobuf.message.Message):
+@_typing.final
+class DialResponse(_message.Message):
     """Response containing router connection details for the dialed exporter."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    ROUTER_ENDPOINT_FIELD_NUMBER: builtins.int
-    ROUTER_TOKEN_FIELD_NUMBER: builtins.int
-    router_endpoint: builtins.str
+    ROUTER_ENDPOINT_FIELD_NUMBER: _builtins.int
+    ROUTER_TOKEN_FIELD_NUMBER: _builtins.int
+    router_endpoint: _builtins.str
     """The router gRPC endpoint URL."""
-    router_token: builtins.str
+    router_token: _builtins.str
     """Authentication token for the router."""
     def __init__(
         self,
         *,
-        router_endpoint: builtins.str = ...,
-        router_token: builtins.str = ...,
+        router_endpoint: _builtins.str = ...,
+        router_token: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["router_endpoint", b"router_endpoint", "router_token", b"router_token"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["router_endpoint", b"router_endpoint", "router_token", b"router_token"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___DialResponse: typing_extensions.TypeAlias = DialResponse
+Global___DialResponse: _TypeAlias = DialResponse  # noqa: Y015
 
-@typing.final
-class ReportStatusRequest(google.protobuf.message.Message):
+@_typing.final
+class ReportStatusRequest(_message.Message):
     """Request to report exporter status to the controller."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    STATUS_FIELD_NUMBER: builtins.int
-    MESSAGE_FIELD_NUMBER: builtins.int
-    RELEASE_LEASE_FIELD_NUMBER: builtins.int
-    status: jumpstarter.v1.common_pb2.ExporterStatus.ValueType
+    STATUS_FIELD_NUMBER: _builtins.int
+    MESSAGE_FIELD_NUMBER: _builtins.int
+    RELEASE_LEASE_FIELD_NUMBER: _builtins.int
+    status: _common_pb2.ExporterStatus.ValueType
     """Current exporter status."""
-    message: builtins.str
+    message: _builtins.str
     """Optional human-readable status message."""
-    release_lease: builtins.bool
+    release_lease: _builtins.bool
     """When true, controller should release the active lease."""
     def __init__(
         self,
         *,
-        status: jumpstarter.v1.common_pb2.ExporterStatus.ValueType = ...,
-        message: builtins.str | None = ...,
-        release_lease: builtins.bool | None = ...,
+        status: _common_pb2.ExporterStatus.ValueType = ...,
+        message: _builtins.str | None = ...,
+        release_lease: _builtins.bool | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["_message", b"_message", "_release_lease", b"_release_lease", "message", b"message", "release_lease", b"release_lease"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_message", b"_message", "_release_lease", b"_release_lease", "message", b"message", "release_lease", b"release_lease", "status", b"status"]) -> None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_message", b"_message"]) -> typing.Literal["message"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_release_lease", b"_release_lease"]) -> typing.Literal["release_lease"] | None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_message", b"_message", "_release_lease", b"_release_lease", "message", b"message", "release_lease", b"release_lease"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_message", b"_message", "_release_lease", b"_release_lease", "message", b"message", "release_lease", b"release_lease", "status", b"status"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__message: _TypeAlias = _typing.Literal["message"]  # noqa: Y015
+    _WhichOneofArgType__message: _TypeAlias = _typing.Literal["_message", b"_message"]  # noqa: Y015
+    _WhichOneofReturnType__release_lease: _TypeAlias = _typing.Literal["release_lease"]  # noqa: Y015
+    _WhichOneofArgType__release_lease: _TypeAlias = _typing.Literal["_release_lease", b"_release_lease"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__message) -> _WhichOneofReturnType__message | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__release_lease) -> _WhichOneofReturnType__release_lease | None: ...
 
-Global___ReportStatusRequest: typing_extensions.TypeAlias = ReportStatusRequest
+Global___ReportStatusRequest: _TypeAlias = ReportStatusRequest  # noqa: Y015
 
-@typing.final
-class ReportStatusResponse(google.protobuf.message.Message):
+@_typing.final
+class ReportStatusResponse(_message.Message):
     """Response to a status report request."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
     def __init__(
         self,
     ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___ReportStatusResponse: typing_extensions.TypeAlias = ReportStatusResponse
+Global___ReportStatusResponse: _TypeAlias = ReportStatusResponse  # noqa: Y015
 
-@typing.final
-class GetReportResponse(google.protobuf.message.Message):
+@_typing.final
+class GetReportResponse(_message.Message):
     """Response containing the exporter driver report."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    @typing.final
-    class LabelsEntry(google.protobuf.message.Message):
-        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    @_typing.final
+    class LabelsEntry(_message.Message):
+        DESCRIPTOR: _descriptor.Descriptor
 
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.str
+        KEY_FIELD_NUMBER: _builtins.int
+        VALUE_FIELD_NUMBER: _builtins.int
+        key: _builtins.str
+        value: _builtins.str
         def __init__(
             self,
             *,
-            key: builtins.str = ...,
-            value: builtins.str = ...,
+            key: _builtins.str = ...,
+            value: _builtins.str = ...,
         ) -> None: ...
-        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+        _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+        def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+        _ClearFieldArgType: _TypeAlias = _typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+        def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-    UUID_FIELD_NUMBER: builtins.int
-    LABELS_FIELD_NUMBER: builtins.int
-    REPORTS_FIELD_NUMBER: builtins.int
-    ALTERNATIVE_ENDPOINTS_FIELD_NUMBER: builtins.int
-    MOTD_FIELD_NUMBER: builtins.int
-    uuid: builtins.str
+    UUID_FIELD_NUMBER: _builtins.int
+    LABELS_FIELD_NUMBER: _builtins.int
+    REPORTS_FIELD_NUMBER: _builtins.int
+    ALTERNATIVE_ENDPOINTS_FIELD_NUMBER: _builtins.int
+    MOTD_FIELD_NUMBER: _builtins.int
+    uuid: _builtins.str
     """Exporter UUID."""
-    motd: builtins.str
+    motd: _builtins.str
     """Message of the day shown to clients when entering a shell."""
-    @property
-    def labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+    @_builtins.property
+    def labels(self) -> _containers.ScalarMap[_builtins.str, _builtins.str]:
         """Key-value metadata labels."""
 
-    @property
-    def reports(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___DriverInstanceReport]:
+    @_builtins.property
+    def reports(self) -> _containers.RepeatedCompositeFieldContainer[Global___DriverInstanceReport]:
         """Driver instance reports."""
 
-    @property
-    def alternative_endpoints(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___Endpoint]:
+    @_builtins.property
+    def alternative_endpoints(self) -> _containers.RepeatedCompositeFieldContainer[Global___Endpoint]:
         """Alternative connection endpoints."""
 
     def __init__(
         self,
         *,
-        uuid: builtins.str = ...,
-        labels: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
-        reports: collections.abc.Iterable[Global___DriverInstanceReport] | None = ...,
-        alternative_endpoints: collections.abc.Iterable[Global___Endpoint] | None = ...,
-        motd: builtins.str = ...,
+        uuid: _builtins.str = ...,
+        labels: _abc.Mapping[_builtins.str, _builtins.str] | None = ...,
+        reports: _abc.Iterable[Global___DriverInstanceReport] | None = ...,
+        alternative_endpoints: _abc.Iterable[Global___Endpoint] | None = ...,
+        motd: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["alternative_endpoints", b"alternative_endpoints", "labels", b"labels", "motd", b"motd", "reports", b"reports", "uuid", b"uuid"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["alternative_endpoints", b"alternative_endpoints", "labels", b"labels", "motd", b"motd", "reports", b"reports", "uuid", b"uuid"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___GetReportResponse: typing_extensions.TypeAlias = GetReportResponse
+Global___GetReportResponse: _TypeAlias = GetReportResponse  # noqa: Y015
 
-@typing.final
-class Endpoint(google.protobuf.message.Message):
+@_typing.final
+class Endpoint(_message.Message):
     """Connection endpoint with TLS credentials."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    ENDPOINT_FIELD_NUMBER: builtins.int
-    CERTIFICATE_FIELD_NUMBER: builtins.int
-    CLIENT_CERTIFICATE_FIELD_NUMBER: builtins.int
-    CLIENT_PRIVATE_KEY_FIELD_NUMBER: builtins.int
-    endpoint: builtins.str
+    ENDPOINT_FIELD_NUMBER: _builtins.int
+    CERTIFICATE_FIELD_NUMBER: _builtins.int
+    CLIENT_CERTIFICATE_FIELD_NUMBER: _builtins.int
+    CLIENT_PRIVATE_KEY_FIELD_NUMBER: _builtins.int
+    endpoint: _builtins.str
     """The endpoint URL."""
-    certificate: builtins.str
+    certificate: _builtins.str
     """Server TLS certificate."""
-    client_certificate: builtins.str
+    client_certificate: _builtins.str
     """Client TLS certificate."""
-    client_private_key: builtins.str
+    client_private_key: _builtins.str
     """Client TLS private key."""
     def __init__(
         self,
         *,
-        endpoint: builtins.str = ...,
-        certificate: builtins.str = ...,
-        client_certificate: builtins.str = ...,
-        client_private_key: builtins.str = ...,
+        endpoint: _builtins.str = ...,
+        certificate: _builtins.str = ...,
+        client_certificate: _builtins.str = ...,
+        client_private_key: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["certificate", b"certificate", "client_certificate", b"client_certificate", "client_private_key", b"client_private_key", "endpoint", b"endpoint"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["certificate", b"certificate", "client_certificate", b"client_certificate", "client_private_key", b"client_private_key", "endpoint", b"endpoint"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___Endpoint: typing_extensions.TypeAlias = Endpoint
+Global___Endpoint: _TypeAlias = Endpoint  # noqa: Y015
 
-@typing.final
-class DriverCallRequest(google.protobuf.message.Message):
+@_typing.final
+class DriverCallRequest(_message.Message):
     """Request to invoke a method on a driver instance."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    UUID_FIELD_NUMBER: builtins.int
-    METHOD_FIELD_NUMBER: builtins.int
-    ARGS_FIELD_NUMBER: builtins.int
-    uuid: builtins.str
+    UUID_FIELD_NUMBER: _builtins.int
+    METHOD_FIELD_NUMBER: _builtins.int
+    ARGS_FIELD_NUMBER: _builtins.int
+    uuid: _builtins.str
     """UUID of the driver instance."""
-    method: builtins.str
+    method: _builtins.str
     """Method name to invoke."""
-    @property
-    def args(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[google.protobuf.struct_pb2.Value]:
+    @_builtins.property
+    def args(self) -> _containers.RepeatedCompositeFieldContainer[_struct_pb2.Value]:
         """Arguments for the method call."""
 
     def __init__(
         self,
         *,
-        uuid: builtins.str = ...,
-        method: builtins.str = ...,
-        args: collections.abc.Iterable[google.protobuf.struct_pb2.Value] | None = ...,
+        uuid: _builtins.str = ...,
+        method: _builtins.str = ...,
+        args: _abc.Iterable[_struct_pb2.Value] | None = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["args", b"args", "method", b"method", "uuid", b"uuid"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["args", b"args", "method", b"method", "uuid", b"uuid"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___DriverCallRequest: typing_extensions.TypeAlias = DriverCallRequest
+Global___DriverCallRequest: _TypeAlias = DriverCallRequest  # noqa: Y015
 
-@typing.final
-class DriverCallResponse(google.protobuf.message.Message):
+@_typing.final
+class DriverCallResponse(_message.Message):
     """Response from a driver method invocation."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    UUID_FIELD_NUMBER: builtins.int
-    RESULT_FIELD_NUMBER: builtins.int
-    uuid: builtins.str
+    UUID_FIELD_NUMBER: _builtins.int
+    RESULT_FIELD_NUMBER: _builtins.int
+    uuid: _builtins.str
     """UUID of the driver instance."""
-    @property
-    def result(self) -> google.protobuf.struct_pb2.Value:
+    @_builtins.property
+    def result(self) -> _struct_pb2.Value:
         """Return value from the method call."""
 
     def __init__(
         self,
         *,
-        uuid: builtins.str = ...,
-        result: google.protobuf.struct_pb2.Value | None = ...,
+        uuid: _builtins.str = ...,
+        result: _struct_pb2.Value | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["result", b"result"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["result", b"result", "uuid", b"uuid"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["result", b"result"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["result", b"result", "uuid", b"uuid"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___DriverCallResponse: typing_extensions.TypeAlias = DriverCallResponse
+Global___DriverCallResponse: _TypeAlias = DriverCallResponse  # noqa: Y015
 
-@typing.final
-class StreamingDriverCallRequest(google.protobuf.message.Message):
+@_typing.final
+class StreamingDriverCallRequest(_message.Message):
     """Request to invoke a streaming method on a driver instance."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    UUID_FIELD_NUMBER: builtins.int
-    METHOD_FIELD_NUMBER: builtins.int
-    ARGS_FIELD_NUMBER: builtins.int
-    uuid: builtins.str
+    UUID_FIELD_NUMBER: _builtins.int
+    METHOD_FIELD_NUMBER: _builtins.int
+    ARGS_FIELD_NUMBER: _builtins.int
+    uuid: _builtins.str
     """UUID of the driver instance."""
-    method: builtins.str
+    method: _builtins.str
     """Method name to invoke."""
-    @property
-    def args(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[google.protobuf.struct_pb2.Value]:
+    @_builtins.property
+    def args(self) -> _containers.RepeatedCompositeFieldContainer[_struct_pb2.Value]:
         """Arguments for the method call."""
 
     def __init__(
         self,
         *,
-        uuid: builtins.str = ...,
-        method: builtins.str = ...,
-        args: collections.abc.Iterable[google.protobuf.struct_pb2.Value] | None = ...,
+        uuid: _builtins.str = ...,
+        method: _builtins.str = ...,
+        args: _abc.Iterable[_struct_pb2.Value] | None = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["args", b"args", "method", b"method", "uuid", b"uuid"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["args", b"args", "method", b"method", "uuid", b"uuid"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___StreamingDriverCallRequest: typing_extensions.TypeAlias = StreamingDriverCallRequest
+Global___StreamingDriverCallRequest: _TypeAlias = StreamingDriverCallRequest  # noqa: Y015
 
-@typing.final
-class StreamingDriverCallResponse(google.protobuf.message.Message):
+@_typing.final
+class StreamingDriverCallResponse(_message.Message):
     """Response from a streaming driver method invocation."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    UUID_FIELD_NUMBER: builtins.int
-    RESULT_FIELD_NUMBER: builtins.int
-    uuid: builtins.str
+    UUID_FIELD_NUMBER: _builtins.int
+    RESULT_FIELD_NUMBER: _builtins.int
+    uuid: _builtins.str
     """UUID of the driver instance."""
-    @property
-    def result(self) -> google.protobuf.struct_pb2.Value:
+    @_builtins.property
+    def result(self) -> _struct_pb2.Value:
         """Return value from the method call."""
 
     def __init__(
         self,
         *,
-        uuid: builtins.str = ...,
-        result: google.protobuf.struct_pb2.Value | None = ...,
+        uuid: _builtins.str = ...,
+        result: _struct_pb2.Value | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["result", b"result"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["result", b"result", "uuid", b"uuid"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["result", b"result"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["result", b"result", "uuid", b"uuid"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___StreamingDriverCallResponse: typing_extensions.TypeAlias = StreamingDriverCallResponse
+Global___StreamingDriverCallResponse: _TypeAlias = StreamingDriverCallResponse  # noqa: Y015
 
-@typing.final
-class LogStreamResponse(google.protobuf.message.Message):
+@_typing.final
+class LogStreamResponse(_message.Message):
     """A log message from the exporter log stream."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    @typing.final
-    class StructuredFieldsEntry(google.protobuf.message.Message):
-        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    @_typing.final
+    class StructuredFieldsEntry(_message.Message):
+        DESCRIPTOR: _descriptor.Descriptor
 
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.str
+        KEY_FIELD_NUMBER: _builtins.int
+        VALUE_FIELD_NUMBER: _builtins.int
+        key: _builtins.str
+        value: _builtins.str
         def __init__(
             self,
             *,
-            key: builtins.str = ...,
-            value: builtins.str = ...,
+            key: _builtins.str = ...,
+            value: _builtins.str = ...,
         ) -> None: ...
-        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+        _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+        def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+        _ClearFieldArgType: _TypeAlias = _typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+        def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-    UUID_FIELD_NUMBER: builtins.int
-    SEVERITY_FIELD_NUMBER: builtins.int
-    MESSAGE_FIELD_NUMBER: builtins.int
-    SOURCE_FIELD_NUMBER: builtins.int
-    DRIVER_TYPE_FIELD_NUMBER: builtins.int
-    OPERATION_FIELD_NUMBER: builtins.int
-    TIMESTAMP_FIELD_NUMBER: builtins.int
-    STRUCTURED_FIELDS_FIELD_NUMBER: builtins.int
-    uuid: builtins.str
+    UUID_FIELD_NUMBER: _builtins.int
+    SEVERITY_FIELD_NUMBER: _builtins.int
+    MESSAGE_FIELD_NUMBER: _builtins.int
+    SOURCE_FIELD_NUMBER: _builtins.int
+    DRIVER_TYPE_FIELD_NUMBER: _builtins.int
+    OPERATION_FIELD_NUMBER: _builtins.int
+    TIMESTAMP_FIELD_NUMBER: _builtins.int
+    STRUCTURED_FIELDS_FIELD_NUMBER: _builtins.int
+    uuid: _builtins.str
     """UUID of the driver instance."""
-    severity: builtins.str
+    severity: _builtins.str
     """Log severity level."""
-    message: builtins.str
+    message: _builtins.str
     """Log message content."""
-    source: jumpstarter.v1.common_pb2.LogSource.ValueType
+    source: _common_pb2.LogSource.ValueType
     """Source of the log message."""
-    driver_type: builtins.str
+    driver_type: _builtins.str
     """Driver category when source=DRIVER (e.g. "power", "storage")."""
-    operation: builtins.str
+    operation: _builtins.str
     """Operation name when the log is part of a known operation."""
-    @property
-    def timestamp(self) -> google.protobuf.timestamp_pb2.Timestamp:
+    @_builtins.property
+    def timestamp(self) -> _timestamp_pb2.Timestamp:
         """Explicit timestamp of the log entry."""
 
-    @property
-    def structured_fields(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+    @_builtins.property
+    def structured_fields(self) -> _containers.ScalarMap[_builtins.str, _builtins.str]:
         """Additional structured key-value fields."""
 
     def __init__(
         self,
         *,
-        uuid: builtins.str = ...,
-        severity: builtins.str = ...,
-        message: builtins.str = ...,
-        source: jumpstarter.v1.common_pb2.LogSource.ValueType | None = ...,
-        driver_type: builtins.str | None = ...,
-        operation: builtins.str | None = ...,
-        timestamp: google.protobuf.timestamp_pb2.Timestamp | None = ...,
-        structured_fields: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
+        uuid: _builtins.str = ...,
+        severity: _builtins.str = ...,
+        message: _builtins.str = ...,
+        source: _common_pb2.LogSource.ValueType | None = ...,
+        driver_type: _builtins.str | None = ...,
+        operation: _builtins.str | None = ...,
+        timestamp: _timestamp_pb2.Timestamp | None = ...,
+        structured_fields: _abc.Mapping[_builtins.str, _builtins.str] | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["_driver_type", b"_driver_type", "_operation", b"_operation", "_source", b"_source", "_timestamp", b"_timestamp", "driver_type", b"driver_type", "operation", b"operation", "source", b"source", "timestamp", b"timestamp"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_driver_type", b"_driver_type", "_operation", b"_operation", "_source", b"_source", "_timestamp", b"_timestamp", "driver_type", b"driver_type", "message", b"message", "operation", b"operation", "severity", b"severity", "source", b"source", "structured_fields", b"structured_fields", "timestamp", b"timestamp", "uuid", b"uuid"]) -> None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_driver_type", b"_driver_type"]) -> typing.Literal["driver_type"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_operation", b"_operation"]) -> typing.Literal["operation"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_source", b"_source"]) -> typing.Literal["source"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_timestamp", b"_timestamp"]) -> typing.Literal["timestamp"] | None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_driver_type", b"_driver_type", "_operation", b"_operation", "_source", b"_source", "_timestamp", b"_timestamp", "driver_type", b"driver_type", "operation", b"operation", "source", b"source", "timestamp", b"timestamp"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_driver_type", b"_driver_type", "_operation", b"_operation", "_source", b"_source", "_timestamp", b"_timestamp", "driver_type", b"driver_type", "message", b"message", "operation", b"operation", "severity", b"severity", "source", b"source", "structured_fields", b"structured_fields", "timestamp", b"timestamp", "uuid", b"uuid"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__driver_type: _TypeAlias = _typing.Literal["driver_type"]  # noqa: Y015
+    _WhichOneofArgType__driver_type: _TypeAlias = _typing.Literal["_driver_type", b"_driver_type"]  # noqa: Y015
+    _WhichOneofReturnType__operation: _TypeAlias = _typing.Literal["operation"]  # noqa: Y015
+    _WhichOneofArgType__operation: _TypeAlias = _typing.Literal["_operation", b"_operation"]  # noqa: Y015
+    _WhichOneofReturnType__source: _TypeAlias = _typing.Literal["source"]  # noqa: Y015
+    _WhichOneofArgType__source: _TypeAlias = _typing.Literal["_source", b"_source"]  # noqa: Y015
+    _WhichOneofReturnType__timestamp: _TypeAlias = _typing.Literal["timestamp"]  # noqa: Y015
+    _WhichOneofArgType__timestamp: _TypeAlias = _typing.Literal["_timestamp", b"_timestamp"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__driver_type) -> _WhichOneofReturnType__driver_type | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__operation) -> _WhichOneofReturnType__operation | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__source) -> _WhichOneofReturnType__source | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__timestamp) -> _WhichOneofReturnType__timestamp | None: ...
 
-Global___LogStreamResponse: typing_extensions.TypeAlias = LogStreamResponse
+Global___LogStreamResponse: _TypeAlias = LogStreamResponse  # noqa: Y015
 
-@typing.final
-class ResetRequest(google.protobuf.message.Message):
+@_typing.final
+class ResetRequest(_message.Message):
     """Request to reset the exporter connection."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
     def __init__(
         self,
     ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___ResetRequest: typing_extensions.TypeAlias = ResetRequest
+Global___ResetRequest: _TypeAlias = ResetRequest  # noqa: Y015
 
-@typing.final
-class ResetResponse(google.protobuf.message.Message):
+@_typing.final
+class ResetResponse(_message.Message):
     """Response to a reset request."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
     def __init__(
         self,
     ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___ResetResponse: typing_extensions.TypeAlias = ResetResponse
+Global___ResetResponse: _TypeAlias = ResetResponse  # noqa: Y015
 
-@typing.final
-class GetLeaseRequest(google.protobuf.message.Message):
+@_typing.final
+class GetLeaseRequest(_message.Message):
     """Request to retrieve a lease by name."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    NAME_FIELD_NUMBER: builtins.int
-    name: builtins.str
+    NAME_FIELD_NUMBER: _builtins.int
+    name: _builtins.str
     """Name of the lease to retrieve."""
     def __init__(
         self,
         *,
-        name: builtins.str = ...,
+        name: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["name", b"name"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["name", b"name"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___GetLeaseRequest: typing_extensions.TypeAlias = GetLeaseRequest
+Global___GetLeaseRequest: _TypeAlias = GetLeaseRequest  # noqa: Y015
 
-@typing.final
-class GetLeaseResponse(google.protobuf.message.Message):
+@_typing.final
+class GetLeaseResponse(_message.Message):
     """Response containing lease details."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    DURATION_FIELD_NUMBER: builtins.int
-    SELECTOR_FIELD_NUMBER: builtins.int
-    BEGIN_TIME_FIELD_NUMBER: builtins.int
-    END_TIME_FIELD_NUMBER: builtins.int
-    EXPORTER_UUID_FIELD_NUMBER: builtins.int
-    CONDITIONS_FIELD_NUMBER: builtins.int
-    exporter_uuid: builtins.str
+    DURATION_FIELD_NUMBER: _builtins.int
+    SELECTOR_FIELD_NUMBER: _builtins.int
+    BEGIN_TIME_FIELD_NUMBER: _builtins.int
+    END_TIME_FIELD_NUMBER: _builtins.int
+    EXPORTER_UUID_FIELD_NUMBER: _builtins.int
+    CONDITIONS_FIELD_NUMBER: _builtins.int
+    exporter_uuid: _builtins.str
     """UUID of the assigned exporter, if any."""
-    @property
-    def duration(self) -> google.protobuf.duration_pb2.Duration:
+    @_builtins.property
+    def duration(self) -> _duration_pb2.Duration:
         """Requested lease duration."""
 
-    @property
-    def selector(self) -> jumpstarter.v1.kubernetes_pb2.LabelSelector:
+    @_builtins.property
+    def selector(self) -> _kubernetes_pb2.LabelSelector:
         """Label selector for matching exporters."""
 
-    @property
-    def begin_time(self) -> google.protobuf.timestamp_pb2.Timestamp:
+    @_builtins.property
+    def begin_time(self) -> _timestamp_pb2.Timestamp:
         """Lease start time, if active."""
 
-    @property
-    def end_time(self) -> google.protobuf.timestamp_pb2.Timestamp:
+    @_builtins.property
+    def end_time(self) -> _timestamp_pb2.Timestamp:
         """Lease end time, if active."""
 
-    @property
-    def conditions(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[jumpstarter.v1.kubernetes_pb2.Condition]:
+    @_builtins.property
+    def conditions(self) -> _containers.RepeatedCompositeFieldContainer[_kubernetes_pb2.Condition]:
         """Lease status conditions."""
 
     def __init__(
         self,
         *,
-        duration: google.protobuf.duration_pb2.Duration | None = ...,
-        selector: jumpstarter.v1.kubernetes_pb2.LabelSelector | None = ...,
-        begin_time: google.protobuf.timestamp_pb2.Timestamp | None = ...,
-        end_time: google.protobuf.timestamp_pb2.Timestamp | None = ...,
-        exporter_uuid: builtins.str | None = ...,
-        conditions: collections.abc.Iterable[jumpstarter.v1.kubernetes_pb2.Condition] | None = ...,
+        duration: _duration_pb2.Duration | None = ...,
+        selector: _kubernetes_pb2.LabelSelector | None = ...,
+        begin_time: _timestamp_pb2.Timestamp | None = ...,
+        end_time: _timestamp_pb2.Timestamp | None = ...,
+        exporter_uuid: _builtins.str | None = ...,
+        conditions: _abc.Iterable[_kubernetes_pb2.Condition] | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_end_time", b"_end_time", "_exporter_uuid", b"_exporter_uuid", "begin_time", b"begin_time", "duration", b"duration", "end_time", b"end_time", "exporter_uuid", b"exporter_uuid", "selector", b"selector"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_end_time", b"_end_time", "_exporter_uuid", b"_exporter_uuid", "begin_time", b"begin_time", "conditions", b"conditions", "duration", b"duration", "end_time", b"end_time", "exporter_uuid", b"exporter_uuid", "selector", b"selector"]) -> None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_begin_time", b"_begin_time"]) -> typing.Literal["begin_time"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_end_time", b"_end_time"]) -> typing.Literal["end_time"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_exporter_uuid", b"_exporter_uuid"]) -> typing.Literal["exporter_uuid"] | None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_begin_time", b"_begin_time", "_end_time", b"_end_time", "_exporter_uuid", b"_exporter_uuid", "begin_time", b"begin_time", "duration", b"duration", "end_time", b"end_time", "exporter_uuid", b"exporter_uuid", "selector", b"selector"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_begin_time", b"_begin_time", "_end_time", b"_end_time", "_exporter_uuid", b"_exporter_uuid", "begin_time", b"begin_time", "conditions", b"conditions", "duration", b"duration", "end_time", b"end_time", "exporter_uuid", b"exporter_uuid", "selector", b"selector"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__begin_time: _TypeAlias = _typing.Literal["begin_time"]  # noqa: Y015
+    _WhichOneofArgType__begin_time: _TypeAlias = _typing.Literal["_begin_time", b"_begin_time"]  # noqa: Y015
+    _WhichOneofReturnType__end_time: _TypeAlias = _typing.Literal["end_time"]  # noqa: Y015
+    _WhichOneofArgType__end_time: _TypeAlias = _typing.Literal["_end_time", b"_end_time"]  # noqa: Y015
+    _WhichOneofReturnType__exporter_uuid: _TypeAlias = _typing.Literal["exporter_uuid"]  # noqa: Y015
+    _WhichOneofArgType__exporter_uuid: _TypeAlias = _typing.Literal["_exporter_uuid", b"_exporter_uuid"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__begin_time) -> _WhichOneofReturnType__begin_time | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__end_time) -> _WhichOneofReturnType__end_time | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__exporter_uuid) -> _WhichOneofReturnType__exporter_uuid | None: ...
 
-Global___GetLeaseResponse: typing_extensions.TypeAlias = GetLeaseResponse
+Global___GetLeaseResponse: _TypeAlias = GetLeaseResponse  # noqa: Y015
 
-@typing.final
-class RequestLeaseRequest(google.protobuf.message.Message):
+@_typing.final
+class RequestLeaseRequest(_message.Message):
     """Request to create a new lease for an exporter."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    DURATION_FIELD_NUMBER: builtins.int
-    SELECTOR_FIELD_NUMBER: builtins.int
-    @property
-    def duration(self) -> google.protobuf.duration_pb2.Duration:
+    DURATION_FIELD_NUMBER: _builtins.int
+    SELECTOR_FIELD_NUMBER: _builtins.int
+    @_builtins.property
+    def duration(self) -> _duration_pb2.Duration:
         """Desired lease duration."""
 
-    @property
-    def selector(self) -> jumpstarter.v1.kubernetes_pb2.LabelSelector:
+    @_builtins.property
+    def selector(self) -> _kubernetes_pb2.LabelSelector:
         """Label selector for matching exporters."""
 
     def __init__(
         self,
         *,
-        duration: google.protobuf.duration_pb2.Duration | None = ...,
-        selector: jumpstarter.v1.kubernetes_pb2.LabelSelector | None = ...,
+        duration: _duration_pb2.Duration | None = ...,
+        selector: _kubernetes_pb2.LabelSelector | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["duration", b"duration", "selector", b"selector"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["duration", b"duration", "selector", b"selector"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["duration", b"duration", "selector", b"selector"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["duration", b"duration", "selector", b"selector"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___RequestLeaseRequest: typing_extensions.TypeAlias = RequestLeaseRequest
+Global___RequestLeaseRequest: _TypeAlias = RequestLeaseRequest  # noqa: Y015
 
-@typing.final
-class RequestLeaseResponse(google.protobuf.message.Message):
+@_typing.final
+class RequestLeaseResponse(_message.Message):
     """Response containing the name of the created lease."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    NAME_FIELD_NUMBER: builtins.int
-    name: builtins.str
+    NAME_FIELD_NUMBER: _builtins.int
+    name: _builtins.str
     """Name of the created lease."""
     def __init__(
         self,
         *,
-        name: builtins.str = ...,
+        name: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["name", b"name"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["name", b"name"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___RequestLeaseResponse: typing_extensions.TypeAlias = RequestLeaseResponse
+Global___RequestLeaseResponse: _TypeAlias = RequestLeaseResponse  # noqa: Y015
 
-@typing.final
-class ReleaseLeaseRequest(google.protobuf.message.Message):
+@_typing.final
+class ReleaseLeaseRequest(_message.Message):
     """Request to release an active lease."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    NAME_FIELD_NUMBER: builtins.int
-    name: builtins.str
+    NAME_FIELD_NUMBER: _builtins.int
+    name: _builtins.str
     """Name of the lease to release."""
     def __init__(
         self,
         *,
-        name: builtins.str = ...,
+        name: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["name", b"name"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["name", b"name"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___ReleaseLeaseRequest: typing_extensions.TypeAlias = ReleaseLeaseRequest
+Global___ReleaseLeaseRequest: _TypeAlias = ReleaseLeaseRequest  # noqa: Y015
 
-@typing.final
-class ReleaseLeaseResponse(google.protobuf.message.Message):
+@_typing.final
+class ReleaseLeaseResponse(_message.Message):
     """Response to a release lease request."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
     def __init__(
         self,
     ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___ReleaseLeaseResponse: typing_extensions.TypeAlias = ReleaseLeaseResponse
+Global___ReleaseLeaseResponse: _TypeAlias = ReleaseLeaseResponse  # noqa: Y015
 
-@typing.final
-class ListLeasesRequest(google.protobuf.message.Message):
+@_typing.final
+class ListLeasesRequest(_message.Message):
     """Request to list all leases."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
     def __init__(
         self,
     ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___ListLeasesRequest: typing_extensions.TypeAlias = ListLeasesRequest
+Global___ListLeasesRequest: _TypeAlias = ListLeasesRequest  # noqa: Y015
 
-@typing.final
-class ListLeasesResponse(google.protobuf.message.Message):
+@_typing.final
+class ListLeasesResponse(_message.Message):
     """Response containing the list of lease names."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    NAMES_FIELD_NUMBER: builtins.int
-    @property
-    def names(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
+    NAMES_FIELD_NUMBER: _builtins.int
+    @_builtins.property
+    def names(self) -> _containers.RepeatedScalarFieldContainer[_builtins.str]:
         """Names of all leases."""
 
     def __init__(
         self,
         *,
-        names: collections.abc.Iterable[builtins.str] | None = ...,
+        names: _abc.Iterable[_builtins.str] | None = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["names", b"names"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["names", b"names"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___ListLeasesResponse: typing_extensions.TypeAlias = ListLeasesResponse
+Global___ListLeasesResponse: _TypeAlias = ListLeasesResponse  # noqa: Y015
 
-@typing.final
-class GetStatusRequest(google.protobuf.message.Message):
+@_typing.final
+class GetStatusRequest(_message.Message):
     """Request to retrieve the current exporter status."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
     def __init__(
         self,
     ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___GetStatusRequest: typing_extensions.TypeAlias = GetStatusRequest
+Global___GetStatusRequest: _TypeAlias = GetStatusRequest  # noqa: Y015
 
-@typing.final
-class GetStatusResponse(google.protobuf.message.Message):
+@_typing.final
+class GetStatusResponse(_message.Message):
     """Response containing the current exporter status."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    STATUS_FIELD_NUMBER: builtins.int
-    MESSAGE_FIELD_NUMBER: builtins.int
-    STATUS_VERSION_FIELD_NUMBER: builtins.int
-    PREVIOUS_STATUS_FIELD_NUMBER: builtins.int
-    status: jumpstarter.v1.common_pb2.ExporterStatus.ValueType
+    STATUS_FIELD_NUMBER: _builtins.int
+    MESSAGE_FIELD_NUMBER: _builtins.int
+    STATUS_VERSION_FIELD_NUMBER: _builtins.int
+    PREVIOUS_STATUS_FIELD_NUMBER: _builtins.int
+    status: _common_pb2.ExporterStatus.ValueType
     """Current exporter status."""
-    message: builtins.str
+    message: _builtins.str
     """Human-readable status message."""
-    status_version: builtins.int
+    status_version: _builtins.int
     """Monotonic counter, increments on each status change."""
-    previous_status: jumpstarter.v1.common_pb2.ExporterStatus.ValueType
+    previous_status: _common_pb2.ExporterStatus.ValueType
     """Previous status for transition tracking."""
     def __init__(
         self,
         *,
-        status: jumpstarter.v1.common_pb2.ExporterStatus.ValueType = ...,
-        message: builtins.str | None = ...,
-        status_version: builtins.int = ...,
-        previous_status: jumpstarter.v1.common_pb2.ExporterStatus.ValueType | None = ...,
+        status: _common_pb2.ExporterStatus.ValueType = ...,
+        message: _builtins.str | None = ...,
+        status_version: _builtins.int = ...,
+        previous_status: _common_pb2.ExporterStatus.ValueType | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["_message", b"_message", "_previous_status", b"_previous_status", "message", b"message", "previous_status", b"previous_status"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_message", b"_message", "_previous_status", b"_previous_status", "message", b"message", "previous_status", b"previous_status", "status", b"status", "status_version", b"status_version"]) -> None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_message", b"_message"]) -> typing.Literal["message"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_previous_status", b"_previous_status"]) -> typing.Literal["previous_status"] | None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_message", b"_message", "_previous_status", b"_previous_status", "message", b"message", "previous_status", b"previous_status"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_message", b"_message", "_previous_status", b"_previous_status", "message", b"message", "previous_status", b"previous_status", "status", b"status", "status_version", b"status_version"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__message: _TypeAlias = _typing.Literal["message"]  # noqa: Y015
+    _WhichOneofArgType__message: _TypeAlias = _typing.Literal["_message", b"_message"]  # noqa: Y015
+    _WhichOneofReturnType__previous_status: _TypeAlias = _typing.Literal["previous_status"]  # noqa: Y015
+    _WhichOneofArgType__previous_status: _TypeAlias = _typing.Literal["_previous_status", b"_previous_status"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__message) -> _WhichOneofReturnType__message | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__previous_status) -> _WhichOneofReturnType__previous_status | None: ...
 
-Global___GetStatusResponse: typing_extensions.TypeAlias = GetStatusResponse
+Global___GetStatusResponse: _TypeAlias = GetStatusResponse  # noqa: Y015
 
-@typing.final
-class EndSessionRequest(google.protobuf.message.Message):
+@_typing.final
+class EndSessionRequest(_message.Message):
     """Request to end the current exporter session."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
     def __init__(
         self,
     ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___EndSessionRequest: typing_extensions.TypeAlias = EndSessionRequest
+Global___EndSessionRequest: _TypeAlias = EndSessionRequest  # noqa: Y015
 
-@typing.final
-class EndSessionResponse(google.protobuf.message.Message):
+@_typing.final
+class EndSessionResponse(_message.Message):
     """Response to an end session request."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    SUCCESS_FIELD_NUMBER: builtins.int
-    MESSAGE_FIELD_NUMBER: builtins.int
-    success: builtins.bool
+    SUCCESS_FIELD_NUMBER: _builtins.int
+    MESSAGE_FIELD_NUMBER: _builtins.int
+    success: _builtins.bool
     """Whether the session ended successfully."""
-    message: builtins.str
+    message: _builtins.str
     """Human-readable result message."""
     def __init__(
         self,
         *,
-        success: builtins.bool = ...,
-        message: builtins.str | None = ...,
+        success: _builtins.bool = ...,
+        message: _builtins.str | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["_message", b"_message", "message", b"message"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_message", b"_message", "message", b"message", "success", b"success"]) -> None: ...
-    def WhichOneof(self, oneof_group: typing.Literal["_message", b"_message"]) -> typing.Literal["message"] | None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_message", b"_message", "message", b"message"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_message", b"_message", "message", b"message", "success", b"success"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__message: _TypeAlias = _typing.Literal["message"]  # noqa: Y015
+    _WhichOneofArgType__message: _TypeAlias = _typing.Literal["_message", b"_message"]  # noqa: Y015
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__message) -> _WhichOneofReturnType__message | None: ...
 
-Global___EndSessionResponse: typing_extensions.TypeAlias = EndSessionResponse
+Global___EndSessionResponse: _TypeAlias = EndSessionResponse  # noqa: Y015
 
-@typing.final
-class GetServiceEndpointsRequest(google.protobuf.message.Message):
+@_typing.final
+class GetServiceEndpointsRequest(_message.Message):
     """Request to discover optional service endpoints."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
     def __init__(
         self,
     ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___GetServiceEndpointsRequest: typing_extensions.TypeAlias = GetServiceEndpointsRequest
+Global___GetServiceEndpointsRequest: _TypeAlias = GetServiceEndpointsRequest  # noqa: Y015
 
-@typing.final
-class GetServiceEndpointsResponse(google.protobuf.message.Message):
+@_typing.final
+class GetServiceEndpointsResponse(_message.Message):
     """Response containing optional service endpoint addresses."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    TELEMETRY_ENDPOINTS_FIELD_NUMBER: builtins.int
-    @property
-    def telemetry_endpoints(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___TelemetryEndpoint]:
+    TELEMETRY_ENDPOINTS_FIELD_NUMBER: _builtins.int
+    @_builtins.property
+    def telemetry_endpoints(self) -> _containers.RepeatedCompositeFieldContainer[Global___TelemetryEndpoint]:
         """Empty when no optional services (e.g. telemetry) are deployed."""
 
     def __init__(
         self,
         *,
-        telemetry_endpoints: collections.abc.Iterable[Global___TelemetryEndpoint] | None = ...,
+        telemetry_endpoints: _abc.Iterable[Global___TelemetryEndpoint] | None = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["telemetry_endpoints", b"telemetry_endpoints"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["telemetry_endpoints", b"telemetry_endpoints"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___GetServiceEndpointsResponse: typing_extensions.TypeAlias = GetServiceEndpointsResponse
+Global___GetServiceEndpointsResponse: _TypeAlias = GetServiceEndpointsResponse  # noqa: Y015
 
-@typing.final
-class TelemetryEndpoint(google.protobuf.message.Message):
+@_typing.final
+class TelemetryEndpoint(_message.Message):
     """Address of an optional telemetry service endpoint."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    ENDPOINT_FIELD_NUMBER: builtins.int
-    CERTIFICATE_FIELD_NUMBER: builtins.int
-    MIN_SEVERITY_FIELD_NUMBER: builtins.int
-    endpoint: builtins.str
+    ENDPOINT_FIELD_NUMBER: _builtins.int
+    CERTIFICATE_FIELD_NUMBER: _builtins.int
+    MIN_SEVERITY_FIELD_NUMBER: _builtins.int
+    endpoint: _builtins.str
     """gRPC address (host:port)."""
-    certificate: builtins.str
+    certificate: _builtins.str
     """Optional CA certificate PEM for TLS verification."""
-    min_severity: builtins.str
+    min_severity: _builtins.str
     """Minimum log severity to forward (e.g. "info", "warning")."""
     def __init__(
         self,
         *,
-        endpoint: builtins.str = ...,
-        certificate: builtins.str = ...,
-        min_severity: builtins.str = ...,
+        endpoint: _builtins.str = ...,
+        certificate: _builtins.str = ...,
+        min_severity: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["certificate", b"certificate", "endpoint", b"endpoint", "min_severity", b"min_severity"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["certificate", b"certificate", "endpoint", b"endpoint", "min_severity", b"min_severity"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___TelemetryEndpoint: typing_extensions.TypeAlias = TelemetryEndpoint
+Global___TelemetryEndpoint: _TypeAlias = TelemetryEndpoint  # noqa: Y015

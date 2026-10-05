@@ -3,797 +3,328 @@
 isort:skip_file
 Copyright 2024 The Jumpstarter Authors"""
 
-import abc
-import collections.abc
-import google.protobuf.empty_pb2
-import grpc
-import grpc.aio
-import jumpstarter.v1.jumpstarter_pb2
+from collections import abc as _abc
+from google.protobuf import empty_pb2 as _empty_pb2
+from grpc import aio as _aio
+from jumpstarter.v1 import jumpstarter_pb2 as _jumpstarter_pb2
+import abc as _abc_1
+import grpc as _grpc
 import sys
-import typing
+import typing as _typing
 
-if sys.version_info >= (3, 13):
-    import typing as typing_extensions
+if sys.version_info >= (3, 11):
+    from typing import Self as _Self
 else:
-    import typing_extensions
+    from typing_extensions import Self as _Self
 
-_T = typing.TypeVar("_T")
+_T = _typing.TypeVar("_T")
 
-class _MaybeAsyncIterator(collections.abc.AsyncIterator[_T], collections.abc.Iterator[_T], metaclass=abc.ABCMeta): ...
+class _MaybeAsyncIterator(_abc.AsyncIterator[_T], _abc.Iterator[_T], metaclass=_abc_1.ABCMeta): ...
 
-class _ServicerContext(grpc.ServicerContext, grpc.aio.ServicerContext):  # type: ignore[misc, type-arg]
+class _ServicerContext(_grpc.ServicerContext, _aio.ServicerContext):  # type: ignore[misc, type-arg]
     ...
 
 GRPC_GENERATED_VERSION: str
 GRPC_VERSION: str
-_ControllerServiceRegisterType = typing_extensions.TypeVar(
-    '_ControllerServiceRegisterType',
-    grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.RegisterRequest,
-        jumpstarter.v1.jumpstarter_pb2.RegisterResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.RegisterRequest,
-        jumpstarter.v1.jumpstarter_pb2.RegisterResponse,
-    ],
-    default=grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.RegisterRequest,
-        jumpstarter.v1.jumpstarter_pb2.RegisterResponse,
-    ],
-)
 
-_ControllerServiceUnregisterType = typing_extensions.TypeVar(
-    '_ControllerServiceUnregisterType',
-    grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.UnregisterRequest,
-        jumpstarter.v1.jumpstarter_pb2.UnregisterResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.UnregisterRequest,
-        jumpstarter.v1.jumpstarter_pb2.UnregisterResponse,
-    ],
-    default=grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.UnregisterRequest,
-        jumpstarter.v1.jumpstarter_pb2.UnregisterResponse,
-    ],
-)
-
-_ControllerServiceReportStatusType = typing_extensions.TypeVar(
-    '_ControllerServiceReportStatusType',
-    grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ReportStatusRequest,
-        jumpstarter.v1.jumpstarter_pb2.ReportStatusResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ReportStatusRequest,
-        jumpstarter.v1.jumpstarter_pb2.ReportStatusResponse,
-    ],
-    default=grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ReportStatusRequest,
-        jumpstarter.v1.jumpstarter_pb2.ReportStatusResponse,
-    ],
-)
-
-_ControllerServiceListenType = typing_extensions.TypeVar(
-    '_ControllerServiceListenType',
-    grpc.UnaryStreamMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ListenRequest,
-        jumpstarter.v1.jumpstarter_pb2.ListenResponse,
-    ],
-    grpc.aio.UnaryStreamMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ListenRequest,
-        jumpstarter.v1.jumpstarter_pb2.ListenResponse,
-    ],
-    default=grpc.UnaryStreamMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ListenRequest,
-        jumpstarter.v1.jumpstarter_pb2.ListenResponse,
-    ],
-)
-
-_ControllerServiceStatusType = typing_extensions.TypeVar(
-    '_ControllerServiceStatusType',
-    grpc.UnaryStreamMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.StatusRequest,
-        jumpstarter.v1.jumpstarter_pb2.StatusResponse,
-    ],
-    grpc.aio.UnaryStreamMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.StatusRequest,
-        jumpstarter.v1.jumpstarter_pb2.StatusResponse,
-    ],
-    default=grpc.UnaryStreamMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.StatusRequest,
-        jumpstarter.v1.jumpstarter_pb2.StatusResponse,
-    ],
-)
-
-_ControllerServiceDialType = typing_extensions.TypeVar(
-    '_ControllerServiceDialType',
-    grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.DialRequest,
-        jumpstarter.v1.jumpstarter_pb2.DialResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.DialRequest,
-        jumpstarter.v1.jumpstarter_pb2.DialResponse,
-    ],
-    default=grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.DialRequest,
-        jumpstarter.v1.jumpstarter_pb2.DialResponse,
-    ],
-)
-
-_ControllerServiceGetLeaseType = typing_extensions.TypeVar(
-    '_ControllerServiceGetLeaseType',
-    grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.GetLeaseRequest,
-        jumpstarter.v1.jumpstarter_pb2.GetLeaseResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.GetLeaseRequest,
-        jumpstarter.v1.jumpstarter_pb2.GetLeaseResponse,
-    ],
-    default=grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.GetLeaseRequest,
-        jumpstarter.v1.jumpstarter_pb2.GetLeaseResponse,
-    ],
-)
-
-_ControllerServiceRequestLeaseType = typing_extensions.TypeVar(
-    '_ControllerServiceRequestLeaseType',
-    grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.RequestLeaseRequest,
-        jumpstarter.v1.jumpstarter_pb2.RequestLeaseResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.RequestLeaseRequest,
-        jumpstarter.v1.jumpstarter_pb2.RequestLeaseResponse,
-    ],
-    default=grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.RequestLeaseRequest,
-        jumpstarter.v1.jumpstarter_pb2.RequestLeaseResponse,
-    ],
-)
-
-_ControllerServiceReleaseLeaseType = typing_extensions.TypeVar(
-    '_ControllerServiceReleaseLeaseType',
-    grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseRequest,
-        jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseRequest,
-        jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseResponse,
-    ],
-    default=grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseRequest,
-        jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseResponse,
-    ],
-)
-
-_ControllerServiceListLeasesType = typing_extensions.TypeVar(
-    '_ControllerServiceListLeasesType',
-    grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ListLeasesRequest,
-        jumpstarter.v1.jumpstarter_pb2.ListLeasesResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ListLeasesRequest,
-        jumpstarter.v1.jumpstarter_pb2.ListLeasesResponse,
-    ],
-    default=grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ListLeasesRequest,
-        jumpstarter.v1.jumpstarter_pb2.ListLeasesResponse,
-    ],
-)
-
-_ControllerServiceGetServiceEndpointsType = typing_extensions.TypeVar(
-    '_ControllerServiceGetServiceEndpointsType',
-    grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsRequest,
-        jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsRequest,
-        jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsResponse,
-    ],
-    default=grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsRequest,
-        jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsResponse,
-    ],
-)
-
-class ControllerServiceStub(typing.Generic[_ControllerServiceRegisterType, _ControllerServiceUnregisterType, _ControllerServiceReportStatusType, _ControllerServiceListenType, _ControllerServiceStatusType, _ControllerServiceDialType, _ControllerServiceGetLeaseType, _ControllerServiceRequestLeaseType, _ControllerServiceReleaseLeaseType, _ControllerServiceListLeasesType, _ControllerServiceGetServiceEndpointsType]):
+class ControllerServiceStub:
     """A service where an exporter can connect to make itself available."""
 
-    @typing.overload
-    def __init__(self: ControllerServiceStub[
-        grpc.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.RegisterRequest,
-            jumpstarter.v1.jumpstarter_pb2.RegisterResponse,
-        ],
-        grpc.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.UnregisterRequest,
-            jumpstarter.v1.jumpstarter_pb2.UnregisterResponse,
-        ],
-        grpc.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.ReportStatusRequest,
-            jumpstarter.v1.jumpstarter_pb2.ReportStatusResponse,
-        ],
-        grpc.UnaryStreamMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.ListenRequest,
-            jumpstarter.v1.jumpstarter_pb2.ListenResponse,
-        ],
-        grpc.UnaryStreamMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.StatusRequest,
-            jumpstarter.v1.jumpstarter_pb2.StatusResponse,
-        ],
-        grpc.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.DialRequest,
-            jumpstarter.v1.jumpstarter_pb2.DialResponse,
-        ],
-        grpc.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.GetLeaseRequest,
-            jumpstarter.v1.jumpstarter_pb2.GetLeaseResponse,
-        ],
-        grpc.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.RequestLeaseRequest,
-            jumpstarter.v1.jumpstarter_pb2.RequestLeaseResponse,
-        ],
-        grpc.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseRequest,
-            jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseResponse,
-        ],
-        grpc.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.ListLeasesRequest,
-            jumpstarter.v1.jumpstarter_pb2.ListLeasesResponse,
-        ],
-        grpc.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsRequest,
-            jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsResponse,
-        ],
-    ], channel: grpc.Channel) -> None: ...
-
-    @typing.overload
-    def __init__(self: ControllerServiceStub[
-        grpc.aio.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.RegisterRequest,
-            jumpstarter.v1.jumpstarter_pb2.RegisterResponse,
-        ],
-        grpc.aio.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.UnregisterRequest,
-            jumpstarter.v1.jumpstarter_pb2.UnregisterResponse,
-        ],
-        grpc.aio.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.ReportStatusRequest,
-            jumpstarter.v1.jumpstarter_pb2.ReportStatusResponse,
-        ],
-        grpc.aio.UnaryStreamMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.ListenRequest,
-            jumpstarter.v1.jumpstarter_pb2.ListenResponse,
-        ],
-        grpc.aio.UnaryStreamMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.StatusRequest,
-            jumpstarter.v1.jumpstarter_pb2.StatusResponse,
-        ],
-        grpc.aio.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.DialRequest,
-            jumpstarter.v1.jumpstarter_pb2.DialResponse,
-        ],
-        grpc.aio.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.GetLeaseRequest,
-            jumpstarter.v1.jumpstarter_pb2.GetLeaseResponse,
-        ],
-        grpc.aio.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.RequestLeaseRequest,
-            jumpstarter.v1.jumpstarter_pb2.RequestLeaseResponse,
-        ],
-        grpc.aio.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseRequest,
-            jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseResponse,
-        ],
-        grpc.aio.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.ListLeasesRequest,
-            jumpstarter.v1.jumpstarter_pb2.ListLeasesResponse,
-        ],
-        grpc.aio.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsRequest,
-            jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsResponse,
-        ],
-    ], channel: grpc.aio.Channel) -> None: ...
-
-    Register: _ControllerServiceRegisterType
+    @_typing.overload
+    def __new__(cls, channel: _grpc.Channel) -> _Self: ...
+    @_typing.overload
+    def __new__(cls, channel: _aio.Channel) -> ControllerServiceAsyncStub: ...
+    Register: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.RegisterRequest, _jumpstarter_pb2.RegisterResponse]
     """Register an exporter with the controller."""
-
-    Unregister: _ControllerServiceUnregisterType
+    Unregister: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.UnregisterRequest, _jumpstarter_pb2.UnregisterResponse]
     """Unregister an exporter from the controller.
     Disconnecting will invalidate any existing router tokens.
     """
-
-    ReportStatus: _ControllerServiceReportStatusType
+    ReportStatus: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.ReportStatusRequest, _jumpstarter_pb2.ReportStatusResponse]
     """Report exporter status to the controller."""
-
-    Listen: _ControllerServiceListenType
+    Listen: _grpc.UnaryStreamMultiCallable[_jumpstarter_pb2.ListenRequest, _jumpstarter_pb2.ListenResponse]
     """Listen for incoming client connections on a lease.
     Returns stream tokens for accepting incoming client connections.
     """
-
-    Status: _ControllerServiceStatusType
+    Status: _grpc.UnaryStreamMultiCallable[_jumpstarter_pb2.StatusRequest, _jumpstarter_pb2.StatusResponse]
     """Stream lease status updates for the exporter."""
-
-    Dial: _ControllerServiceDialType
+    Dial: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.DialRequest, _jumpstarter_pb2.DialResponse]
     """Dial an exporter through the router.
     Returns a stream token for connecting to the desired exporter.
     Leases are checked before token issuance.
     """
-
-    GetLease: _ControllerServiceGetLeaseType
+    GetLease: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.GetLeaseRequest, _jumpstarter_pb2.GetLeaseResponse]
     """Retrieve a lease by name."""
-
-    RequestLease: _ControllerServiceRequestLeaseType
+    RequestLease: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.RequestLeaseRequest, _jumpstarter_pb2.RequestLeaseResponse]
     """Request a new lease for an exporter."""
-
-    ReleaseLease: _ControllerServiceReleaseLeaseType
+    ReleaseLease: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.ReleaseLeaseRequest, _jumpstarter_pb2.ReleaseLeaseResponse]
     """Release an active lease."""
-
-    ListLeases: _ControllerServiceListLeasesType
+    ListLeases: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.ListLeasesRequest, _jumpstarter_pb2.ListLeasesResponse]
     """List all leases."""
-
-    GetServiceEndpoints: _ControllerServiceGetServiceEndpointsType
+    GetServiceEndpoints: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.GetServiceEndpointsRequest, _jumpstarter_pb2.GetServiceEndpointsResponse]
     """Discover optional service endpoints (e.g. telemetry).
     Exporters and clients call this after registration to find the telemetry service.
     Returns an empty list when no optional services are deployed.
     Older controllers return UNIMPLEMENTED; callers must treat that as an empty list.
     """
 
-ControllerServiceAsyncStub: typing_extensions.TypeAlias = ControllerServiceStub[
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.RegisterRequest,
-        jumpstarter.v1.jumpstarter_pb2.RegisterResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.UnregisterRequest,
-        jumpstarter.v1.jumpstarter_pb2.UnregisterResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ReportStatusRequest,
-        jumpstarter.v1.jumpstarter_pb2.ReportStatusResponse,
-    ],
-    grpc.aio.UnaryStreamMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ListenRequest,
-        jumpstarter.v1.jumpstarter_pb2.ListenResponse,
-    ],
-    grpc.aio.UnaryStreamMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.StatusRequest,
-        jumpstarter.v1.jumpstarter_pb2.StatusResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.DialRequest,
-        jumpstarter.v1.jumpstarter_pb2.DialResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.GetLeaseRequest,
-        jumpstarter.v1.jumpstarter_pb2.GetLeaseResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.RequestLeaseRequest,
-        jumpstarter.v1.jumpstarter_pb2.RequestLeaseResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseRequest,
-        jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ListLeasesRequest,
-        jumpstarter.v1.jumpstarter_pb2.ListLeasesResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsRequest,
-        jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsResponse,
-    ],
-]
-
-class ControllerServiceServicer(metaclass=abc.ABCMeta):
+@_typing.type_check_only
+class ControllerServiceAsyncStub(ControllerServiceStub):
     """A service where an exporter can connect to make itself available."""
 
-    @abc.abstractmethod
+    def __init__(self, channel: _aio.Channel) -> None: ...
+    Register: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.RegisterRequest, _jumpstarter_pb2.RegisterResponse]  # type: ignore[assignment]
+    """Register an exporter with the controller."""
+    Unregister: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.UnregisterRequest, _jumpstarter_pb2.UnregisterResponse]  # type: ignore[assignment]
+    """Unregister an exporter from the controller.
+    Disconnecting will invalidate any existing router tokens.
+    """
+    ReportStatus: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.ReportStatusRequest, _jumpstarter_pb2.ReportStatusResponse]  # type: ignore[assignment]
+    """Report exporter status to the controller."""
+    Listen: _aio.UnaryStreamMultiCallable[_jumpstarter_pb2.ListenRequest, _jumpstarter_pb2.ListenResponse]  # type: ignore[assignment]
+    """Listen for incoming client connections on a lease.
+    Returns stream tokens for accepting incoming client connections.
+    """
+    Status: _aio.UnaryStreamMultiCallable[_jumpstarter_pb2.StatusRequest, _jumpstarter_pb2.StatusResponse]  # type: ignore[assignment]
+    """Stream lease status updates for the exporter."""
+    Dial: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.DialRequest, _jumpstarter_pb2.DialResponse]  # type: ignore[assignment]
+    """Dial an exporter through the router.
+    Returns a stream token for connecting to the desired exporter.
+    Leases are checked before token issuance.
+    """
+    GetLease: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.GetLeaseRequest, _jumpstarter_pb2.GetLeaseResponse]  # type: ignore[assignment]
+    """Retrieve a lease by name."""
+    RequestLease: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.RequestLeaseRequest, _jumpstarter_pb2.RequestLeaseResponse]  # type: ignore[assignment]
+    """Request a new lease for an exporter."""
+    ReleaseLease: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.ReleaseLeaseRequest, _jumpstarter_pb2.ReleaseLeaseResponse]  # type: ignore[assignment]
+    """Release an active lease."""
+    ListLeases: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.ListLeasesRequest, _jumpstarter_pb2.ListLeasesResponse]  # type: ignore[assignment]
+    """List all leases."""
+    GetServiceEndpoints: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.GetServiceEndpointsRequest, _jumpstarter_pb2.GetServiceEndpointsResponse]  # type: ignore[assignment]
+    """Discover optional service endpoints (e.g. telemetry).
+    Exporters and clients call this after registration to find the telemetry service.
+    Returns an empty list when no optional services are deployed.
+    Older controllers return UNIMPLEMENTED; callers must treat that as an empty list.
+    """
+
+class ControllerServiceServicer(metaclass=_abc_1.ABCMeta):
+    """A service where an exporter can connect to make itself available."""
+
+    @_abc_1.abstractmethod
     def Register(
         self,
-        request: jumpstarter.v1.jumpstarter_pb2.RegisterRequest,
+        request: _jumpstarter_pb2.RegisterRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.RegisterResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.RegisterResponse]]:
+    ) -> _typing.Union[_jumpstarter_pb2.RegisterResponse, _abc.Awaitable[_jumpstarter_pb2.RegisterResponse]]:
         """Register an exporter with the controller."""
 
-    @abc.abstractmethod
+    @_abc_1.abstractmethod
     def Unregister(
         self,
-        request: jumpstarter.v1.jumpstarter_pb2.UnregisterRequest,
+        request: _jumpstarter_pb2.UnregisterRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.UnregisterResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.UnregisterResponse]]:
+    ) -> _typing.Union[_jumpstarter_pb2.UnregisterResponse, _abc.Awaitable[_jumpstarter_pb2.UnregisterResponse]]:
         """Unregister an exporter from the controller.
         Disconnecting will invalidate any existing router tokens.
         """
 
-    @abc.abstractmethod
+    @_abc_1.abstractmethod
     def ReportStatus(
         self,
-        request: jumpstarter.v1.jumpstarter_pb2.ReportStatusRequest,
+        request: _jumpstarter_pb2.ReportStatusRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.ReportStatusResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.ReportStatusResponse]]:
+    ) -> _typing.Union[_jumpstarter_pb2.ReportStatusResponse, _abc.Awaitable[_jumpstarter_pb2.ReportStatusResponse]]:
         """Report exporter status to the controller."""
 
-    @abc.abstractmethod
+    @_abc_1.abstractmethod
     def Listen(
         self,
-        request: jumpstarter.v1.jumpstarter_pb2.ListenRequest,
+        request: _jumpstarter_pb2.ListenRequest,
         context: _ServicerContext,
-    ) -> typing.Union[collections.abc.Iterator[jumpstarter.v1.jumpstarter_pb2.ListenResponse], collections.abc.AsyncIterator[jumpstarter.v1.jumpstarter_pb2.ListenResponse]]:
+    ) -> _typing.Union[_abc.Iterator[_jumpstarter_pb2.ListenResponse], _abc.AsyncIterator[_jumpstarter_pb2.ListenResponse]]:
         """Listen for incoming client connections on a lease.
         Returns stream tokens for accepting incoming client connections.
         """
 
-    @abc.abstractmethod
+    @_abc_1.abstractmethod
     def Status(
         self,
-        request: jumpstarter.v1.jumpstarter_pb2.StatusRequest,
+        request: _jumpstarter_pb2.StatusRequest,
         context: _ServicerContext,
-    ) -> typing.Union[collections.abc.Iterator[jumpstarter.v1.jumpstarter_pb2.StatusResponse], collections.abc.AsyncIterator[jumpstarter.v1.jumpstarter_pb2.StatusResponse]]:
+    ) -> _typing.Union[_abc.Iterator[_jumpstarter_pb2.StatusResponse], _abc.AsyncIterator[_jumpstarter_pb2.StatusResponse]]:
         """Stream lease status updates for the exporter."""
 
-    @abc.abstractmethod
+    @_abc_1.abstractmethod
     def Dial(
         self,
-        request: jumpstarter.v1.jumpstarter_pb2.DialRequest,
+        request: _jumpstarter_pb2.DialRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.DialResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.DialResponse]]:
+    ) -> _typing.Union[_jumpstarter_pb2.DialResponse, _abc.Awaitable[_jumpstarter_pb2.DialResponse]]:
         """Dial an exporter through the router.
         Returns a stream token for connecting to the desired exporter.
         Leases are checked before token issuance.
         """
 
-    @abc.abstractmethod
+    @_abc_1.abstractmethod
     def GetLease(
         self,
-        request: jumpstarter.v1.jumpstarter_pb2.GetLeaseRequest,
+        request: _jumpstarter_pb2.GetLeaseRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.GetLeaseResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.GetLeaseResponse]]:
+    ) -> _typing.Union[_jumpstarter_pb2.GetLeaseResponse, _abc.Awaitable[_jumpstarter_pb2.GetLeaseResponse]]:
         """Retrieve a lease by name."""
 
-    @abc.abstractmethod
+    @_abc_1.abstractmethod
     def RequestLease(
         self,
-        request: jumpstarter.v1.jumpstarter_pb2.RequestLeaseRequest,
+        request: _jumpstarter_pb2.RequestLeaseRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.RequestLeaseResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.RequestLeaseResponse]]:
+    ) -> _typing.Union[_jumpstarter_pb2.RequestLeaseResponse, _abc.Awaitable[_jumpstarter_pb2.RequestLeaseResponse]]:
         """Request a new lease for an exporter."""
 
-    @abc.abstractmethod
+    @_abc_1.abstractmethod
     def ReleaseLease(
         self,
-        request: jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseRequest,
+        request: _jumpstarter_pb2.ReleaseLeaseRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseResponse]]:
+    ) -> _typing.Union[_jumpstarter_pb2.ReleaseLeaseResponse, _abc.Awaitable[_jumpstarter_pb2.ReleaseLeaseResponse]]:
         """Release an active lease."""
 
-    @abc.abstractmethod
+    @_abc_1.abstractmethod
     def ListLeases(
         self,
-        request: jumpstarter.v1.jumpstarter_pb2.ListLeasesRequest,
+        request: _jumpstarter_pb2.ListLeasesRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.ListLeasesResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.ListLeasesResponse]]:
+    ) -> _typing.Union[_jumpstarter_pb2.ListLeasesResponse, _abc.Awaitable[_jumpstarter_pb2.ListLeasesResponse]]:
         """List all leases."""
 
-    @abc.abstractmethod
+    @_abc_1.abstractmethod
     def GetServiceEndpoints(
         self,
-        request: jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsRequest,
+        request: _jumpstarter_pb2.GetServiceEndpointsRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsResponse]]:
+    ) -> _typing.Union[_jumpstarter_pb2.GetServiceEndpointsResponse, _abc.Awaitable[_jumpstarter_pb2.GetServiceEndpointsResponse]]:
         """Discover optional service endpoints (e.g. telemetry).
         Exporters and clients call this after registration to find the telemetry service.
         Returns an empty list when no optional services are deployed.
         Older controllers return UNIMPLEMENTED; callers must treat that as an empty list.
         """
 
-def add_ControllerServiceServicer_to_server(servicer: ControllerServiceServicer, server: typing.Union[grpc.Server, grpc.aio.Server]) -> None: ...
+def add_ControllerServiceServicer_to_server(servicer: ControllerServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
 
-_ExporterServiceGetReportType = typing_extensions.TypeVar(
-    '_ExporterServiceGetReportType',
-    grpc.UnaryUnaryMultiCallable[
-        google.protobuf.empty_pb2.Empty,
-        jumpstarter.v1.jumpstarter_pb2.GetReportResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        google.protobuf.empty_pb2.Empty,
-        jumpstarter.v1.jumpstarter_pb2.GetReportResponse,
-    ],
-    default=grpc.UnaryUnaryMultiCallable[
-        google.protobuf.empty_pb2.Empty,
-        jumpstarter.v1.jumpstarter_pb2.GetReportResponse,
-    ],
-)
-
-_ExporterServiceDriverCallType = typing_extensions.TypeVar(
-    '_ExporterServiceDriverCallType',
-    grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.DriverCallRequest,
-        jumpstarter.v1.jumpstarter_pb2.DriverCallResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.DriverCallRequest,
-        jumpstarter.v1.jumpstarter_pb2.DriverCallResponse,
-    ],
-    default=grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.DriverCallRequest,
-        jumpstarter.v1.jumpstarter_pb2.DriverCallResponse,
-    ],
-)
-
-_ExporterServiceStreamingDriverCallType = typing_extensions.TypeVar(
-    '_ExporterServiceStreamingDriverCallType',
-    grpc.UnaryStreamMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallRequest,
-        jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallResponse,
-    ],
-    grpc.aio.UnaryStreamMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallRequest,
-        jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallResponse,
-    ],
-    default=grpc.UnaryStreamMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallRequest,
-        jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallResponse,
-    ],
-)
-
-_ExporterServiceLogStreamType = typing_extensions.TypeVar(
-    '_ExporterServiceLogStreamType',
-    grpc.UnaryStreamMultiCallable[
-        google.protobuf.empty_pb2.Empty,
-        jumpstarter.v1.jumpstarter_pb2.LogStreamResponse,
-    ],
-    grpc.aio.UnaryStreamMultiCallable[
-        google.protobuf.empty_pb2.Empty,
-        jumpstarter.v1.jumpstarter_pb2.LogStreamResponse,
-    ],
-    default=grpc.UnaryStreamMultiCallable[
-        google.protobuf.empty_pb2.Empty,
-        jumpstarter.v1.jumpstarter_pb2.LogStreamResponse,
-    ],
-)
-
-_ExporterServiceResetType = typing_extensions.TypeVar(
-    '_ExporterServiceResetType',
-    grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ResetRequest,
-        jumpstarter.v1.jumpstarter_pb2.ResetResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ResetRequest,
-        jumpstarter.v1.jumpstarter_pb2.ResetResponse,
-    ],
-    default=grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ResetRequest,
-        jumpstarter.v1.jumpstarter_pb2.ResetResponse,
-    ],
-)
-
-_ExporterServiceGetStatusType = typing_extensions.TypeVar(
-    '_ExporterServiceGetStatusType',
-    grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.GetStatusRequest,
-        jumpstarter.v1.jumpstarter_pb2.GetStatusResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.GetStatusRequest,
-        jumpstarter.v1.jumpstarter_pb2.GetStatusResponse,
-    ],
-    default=grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.GetStatusRequest,
-        jumpstarter.v1.jumpstarter_pb2.GetStatusResponse,
-    ],
-)
-
-_ExporterServiceEndSessionType = typing_extensions.TypeVar(
-    '_ExporterServiceEndSessionType',
-    grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.EndSessionRequest,
-        jumpstarter.v1.jumpstarter_pb2.EndSessionResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.EndSessionRequest,
-        jumpstarter.v1.jumpstarter_pb2.EndSessionResponse,
-    ],
-    default=grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.EndSessionRequest,
-        jumpstarter.v1.jumpstarter_pb2.EndSessionResponse,
-    ],
-)
-
-class ExporterServiceStub(typing.Generic[_ExporterServiceGetReportType, _ExporterServiceDriverCallType, _ExporterServiceStreamingDriverCallType, _ExporterServiceLogStreamType, _ExporterServiceResetType, _ExporterServiceGetStatusType, _ExporterServiceEndSessionType]):
+class ExporterServiceStub:
     """A service an exporter can share locally to be used without a server.
     Channel and call credentials are used to authenticate the client and route to the right exporter.
     """
 
-    @typing.overload
-    def __init__(self: ExporterServiceStub[
-        grpc.UnaryUnaryMultiCallable[
-            google.protobuf.empty_pb2.Empty,
-            jumpstarter.v1.jumpstarter_pb2.GetReportResponse,
-        ],
-        grpc.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.DriverCallRequest,
-            jumpstarter.v1.jumpstarter_pb2.DriverCallResponse,
-        ],
-        grpc.UnaryStreamMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallRequest,
-            jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallResponse,
-        ],
-        grpc.UnaryStreamMultiCallable[
-            google.protobuf.empty_pb2.Empty,
-            jumpstarter.v1.jumpstarter_pb2.LogStreamResponse,
-        ],
-        grpc.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.ResetRequest,
-            jumpstarter.v1.jumpstarter_pb2.ResetResponse,
-        ],
-        grpc.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.GetStatusRequest,
-            jumpstarter.v1.jumpstarter_pb2.GetStatusResponse,
-        ],
-        grpc.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.EndSessionRequest,
-            jumpstarter.v1.jumpstarter_pb2.EndSessionResponse,
-        ],
-    ], channel: grpc.Channel) -> None: ...
-
-    @typing.overload
-    def __init__(self: ExporterServiceStub[
-        grpc.aio.UnaryUnaryMultiCallable[
-            google.protobuf.empty_pb2.Empty,
-            jumpstarter.v1.jumpstarter_pb2.GetReportResponse,
-        ],
-        grpc.aio.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.DriverCallRequest,
-            jumpstarter.v1.jumpstarter_pb2.DriverCallResponse,
-        ],
-        grpc.aio.UnaryStreamMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallRequest,
-            jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallResponse,
-        ],
-        grpc.aio.UnaryStreamMultiCallable[
-            google.protobuf.empty_pb2.Empty,
-            jumpstarter.v1.jumpstarter_pb2.LogStreamResponse,
-        ],
-        grpc.aio.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.ResetRequest,
-            jumpstarter.v1.jumpstarter_pb2.ResetResponse,
-        ],
-        grpc.aio.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.GetStatusRequest,
-            jumpstarter.v1.jumpstarter_pb2.GetStatusResponse,
-        ],
-        grpc.aio.UnaryUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.EndSessionRequest,
-            jumpstarter.v1.jumpstarter_pb2.EndSessionResponse,
-        ],
-    ], channel: grpc.aio.Channel) -> None: ...
-
-    GetReport: _ExporterServiceGetReportType
+    @_typing.overload
+    def __new__(cls, channel: _grpc.Channel) -> _Self: ...
+    @_typing.overload
+    def __new__(cls, channel: _aio.Channel) -> ExporterServiceAsyncStub: ...
+    GetReport: _grpc.UnaryUnaryMultiCallable[_empty_pb2.Empty, _jumpstarter_pb2.GetReportResponse]
     """Retrieve the exporter driver report."""
-
-    DriverCall: _ExporterServiceDriverCallType
+    DriverCall: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.DriverCallRequest, _jumpstarter_pb2.DriverCallResponse]
     """Invoke a method on a driver instance."""
-
-    StreamingDriverCall: _ExporterServiceStreamingDriverCallType
+    StreamingDriverCall: _grpc.UnaryStreamMultiCallable[_jumpstarter_pb2.StreamingDriverCallRequest, _jumpstarter_pb2.StreamingDriverCallResponse]
     """Invoke a streaming method on a driver instance."""
-
-    LogStream: _ExporterServiceLogStreamType
+    LogStream: _grpc.UnaryStreamMultiCallable[_empty_pb2.Empty, _jumpstarter_pb2.LogStreamResponse]
     """Stream log messages from the exporter."""
-
-    Reset: _ExporterServiceResetType
+    Reset: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.ResetRequest, _jumpstarter_pb2.ResetResponse]
     """Reset the exporter connection."""
-
-    GetStatus: _ExporterServiceGetStatusType
+    GetStatus: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.GetStatusRequest, _jumpstarter_pb2.GetStatusResponse]
     """Retrieve the current exporter status."""
-
-    EndSession: _ExporterServiceEndSessionType
+    EndSession: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.EndSessionRequest, _jumpstarter_pb2.EndSessionResponse]
     """End the current session, triggering the afterLease hook.
     The client should keep the connection open to receive hook logs via LogStream.
     Returns after the afterLease hook completes.
     """
 
-ExporterServiceAsyncStub: typing_extensions.TypeAlias = ExporterServiceStub[
-    grpc.aio.UnaryUnaryMultiCallable[
-        google.protobuf.empty_pb2.Empty,
-        jumpstarter.v1.jumpstarter_pb2.GetReportResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.DriverCallRequest,
-        jumpstarter.v1.jumpstarter_pb2.DriverCallResponse,
-    ],
-    grpc.aio.UnaryStreamMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallRequest,
-        jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallResponse,
-    ],
-    grpc.aio.UnaryStreamMultiCallable[
-        google.protobuf.empty_pb2.Empty,
-        jumpstarter.v1.jumpstarter_pb2.LogStreamResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.ResetRequest,
-        jumpstarter.v1.jumpstarter_pb2.ResetResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.GetStatusRequest,
-        jumpstarter.v1.jumpstarter_pb2.GetStatusResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.EndSessionRequest,
-        jumpstarter.v1.jumpstarter_pb2.EndSessionResponse,
-    ],
-]
-
-class ExporterServiceServicer(metaclass=abc.ABCMeta):
+@_typing.type_check_only
+class ExporterServiceAsyncStub(ExporterServiceStub):
     """A service an exporter can share locally to be used without a server.
     Channel and call credentials are used to authenticate the client and route to the right exporter.
     """
 
-    @abc.abstractmethod
+    def __init__(self, channel: _aio.Channel) -> None: ...
+    GetReport: _aio.UnaryUnaryMultiCallable[_empty_pb2.Empty, _jumpstarter_pb2.GetReportResponse]  # type: ignore[assignment]
+    """Retrieve the exporter driver report."""
+    DriverCall: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.DriverCallRequest, _jumpstarter_pb2.DriverCallResponse]  # type: ignore[assignment]
+    """Invoke a method on a driver instance."""
+    StreamingDriverCall: _aio.UnaryStreamMultiCallable[_jumpstarter_pb2.StreamingDriverCallRequest, _jumpstarter_pb2.StreamingDriverCallResponse]  # type: ignore[assignment]
+    """Invoke a streaming method on a driver instance."""
+    LogStream: _aio.UnaryStreamMultiCallable[_empty_pb2.Empty, _jumpstarter_pb2.LogStreamResponse]  # type: ignore[assignment]
+    """Stream log messages from the exporter."""
+    Reset: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.ResetRequest, _jumpstarter_pb2.ResetResponse]  # type: ignore[assignment]
+    """Reset the exporter connection."""
+    GetStatus: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.GetStatusRequest, _jumpstarter_pb2.GetStatusResponse]  # type: ignore[assignment]
+    """Retrieve the current exporter status."""
+    EndSession: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.EndSessionRequest, _jumpstarter_pb2.EndSessionResponse]  # type: ignore[assignment]
+    """End the current session, triggering the afterLease hook.
+    The client should keep the connection open to receive hook logs via LogStream.
+    Returns after the afterLease hook completes.
+    """
+
+class ExporterServiceServicer(metaclass=_abc_1.ABCMeta):
+    """A service an exporter can share locally to be used without a server.
+    Channel and call credentials are used to authenticate the client and route to the right exporter.
+    """
+
+    @_abc_1.abstractmethod
     def GetReport(
         self,
-        request: google.protobuf.empty_pb2.Empty,
+        request: _empty_pb2.Empty,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.GetReportResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.GetReportResponse]]:
+    ) -> _typing.Union[_jumpstarter_pb2.GetReportResponse, _abc.Awaitable[_jumpstarter_pb2.GetReportResponse]]:
         """Retrieve the exporter driver report."""
 
-    @abc.abstractmethod
+    @_abc_1.abstractmethod
     def DriverCall(
         self,
-        request: jumpstarter.v1.jumpstarter_pb2.DriverCallRequest,
+        request: _jumpstarter_pb2.DriverCallRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.DriverCallResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.DriverCallResponse]]:
+    ) -> _typing.Union[_jumpstarter_pb2.DriverCallResponse, _abc.Awaitable[_jumpstarter_pb2.DriverCallResponse]]:
         """Invoke a method on a driver instance."""
 
-    @abc.abstractmethod
+    @_abc_1.abstractmethod
     def StreamingDriverCall(
         self,
-        request: jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallRequest,
+        request: _jumpstarter_pb2.StreamingDriverCallRequest,
         context: _ServicerContext,
-    ) -> typing.Union[collections.abc.Iterator[jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallResponse], collections.abc.AsyncIterator[jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallResponse]]:
+    ) -> _typing.Union[_abc.Iterator[_jumpstarter_pb2.StreamingDriverCallResponse], _abc.AsyncIterator[_jumpstarter_pb2.StreamingDriverCallResponse]]:
         """Invoke a streaming method on a driver instance."""
 
-    @abc.abstractmethod
+    @_abc_1.abstractmethod
     def LogStream(
         self,
-        request: google.protobuf.empty_pb2.Empty,
+        request: _empty_pb2.Empty,
         context: _ServicerContext,
-    ) -> typing.Union[collections.abc.Iterator[jumpstarter.v1.jumpstarter_pb2.LogStreamResponse], collections.abc.AsyncIterator[jumpstarter.v1.jumpstarter_pb2.LogStreamResponse]]:
+    ) -> _typing.Union[_abc.Iterator[_jumpstarter_pb2.LogStreamResponse], _abc.AsyncIterator[_jumpstarter_pb2.LogStreamResponse]]:
         """Stream log messages from the exporter."""
 
-    @abc.abstractmethod
+    @_abc_1.abstractmethod
     def Reset(
         self,
-        request: jumpstarter.v1.jumpstarter_pb2.ResetRequest,
+        request: _jumpstarter_pb2.ResetRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.ResetResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.ResetResponse]]:
+    ) -> _typing.Union[_jumpstarter_pb2.ResetResponse, _abc.Awaitable[_jumpstarter_pb2.ResetResponse]]:
         """Reset the exporter connection."""
 
-    @abc.abstractmethod
+    @_abc_1.abstractmethod
     def GetStatus(
         self,
-        request: jumpstarter.v1.jumpstarter_pb2.GetStatusRequest,
+        request: _jumpstarter_pb2.GetStatusRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.GetStatusResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.GetStatusResponse]]:
+    ) -> _typing.Union[_jumpstarter_pb2.GetStatusResponse, _abc.Awaitable[_jumpstarter_pb2.GetStatusResponse]]:
         """Retrieve the current exporter status."""
 
-    @abc.abstractmethod
+    @_abc_1.abstractmethod
     def EndSession(
         self,
-        request: jumpstarter.v1.jumpstarter_pb2.EndSessionRequest,
+        request: _jumpstarter_pb2.EndSessionRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.EndSessionResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.EndSessionResponse]]:
+    ) -> _typing.Union[_jumpstarter_pb2.EndSessionResponse, _abc.Awaitable[_jumpstarter_pb2.EndSessionResponse]]:
         """End the current session, triggering the afterLease hook.
         The client should keep the connection open to receive hook logs via LogStream.
         Returns after the afterLease hook completes.
         """
 
-def add_ExporterServiceServicer_to_server(servicer: ExporterServiceServicer, server: typing.Union[grpc.Server, grpc.aio.Server]) -> None: ...
+def add_ExporterServiceServicer_to_server(servicer: ExporterServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
