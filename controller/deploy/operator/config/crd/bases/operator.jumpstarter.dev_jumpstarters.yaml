@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.18.0
+    controller-gen.kubebuilder.io/version: v0.22.0
   name: jumpstarters.operator.jumpstarter.dev
 spec:
   group: operator.jumpstarter.dev
@@ -1087,7 +1087,8 @@ spec:
                       Number of controller replicas to run.
                       Currently only 1 replica is supported because the controller uses in-memory
                       state for gRPC stream coordination (Dial/Listen). Values greater than 1 will
-                      be clamped to 1 with a warning. See issue 1013 for HA controller support.
+                      be clamped to 1 with a warning. See https://github.com/jumpstarter-dev/jumpstarter/issues/1013
+                      for the tracking issue on HA controller support.
                     format: int32
                     minimum: 1
                     type: integer
@@ -2172,6 +2173,56 @@ spec:
                             - critical
                             type: string
                         type: object
+                    type: object
+                  metrics:
+                    description: |-
+                      Metrics configures reverse-scrape fan-out and Prometheus exposition
+                      (JEP-0013). Loki and ServiceMonitor fields are later phases.
+                    properties:
+                      driverTypeEnum:
+                        default:
+                        - power
+                        - storage
+                        - network
+                        - serial
+                        - console
+                        - video
+                        - composite
+                        description: |-
+                          Allowed driver_type label values. Unlisted types are remapped to "other".
+                          At most 16 entries (the default set plus site-specific categories), each
+                          at most 32 characters.
+                        items:
+                          maxLength: 32
+                          type: string
+                        maxItems: 16
+                        type: array
+                      exemplarKeys:
+                        default:
+                        - client
+                        - lease_id
+                        description: |-
+                          Allowlist of keys to include in Prometheus exemplars. Unlisted keys are omitted.
+                          At most 16 keys. Each key is at most 32 characters, the same limit as
+                          Lease spec.context key names that may appear in this list.
+                        items:
+                          maxLength: 32
+                          type: string
+                        maxItems: 16
+                        type: array
+                      scrapeTimeout:
+                        default: 7s
+                        description: |-
+                          Max wait for parallel exporter MetricsStream responses during a /metrics fan-out.
+                          Should be lower than the Prometheus scrape_timeout.
+                          JEP-0013 specifies the 7s default and no maximum. 60s bounds the fan-out
+                          wait and the HTTP write timeout that grows with this value.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: scrapeTimeout must be greater than 0 and at most
+                            60s
+                          rule: duration(self) > duration('0s') && duration(self)
+                            <= duration('60s')
                     type: object
                   replicas:
                     default: 1
