@@ -121,11 +121,6 @@ func (p *Provisioner) Deploy(
 		return fmt.Errorf("parse host: %w", err)
 	}
 
-	sshCfg, err := ParseSSHConfig(mergedParameters)
-	if err != nil {
-		return fmt.Errorf("parse ssh config: %w", err)
-	}
-
 	logger.Info("deploying exporter to host",
 		"exporter", exporter.Name,
 		"host", host.Name,
@@ -133,8 +128,8 @@ func (p *Provisioner) Deploy(
 
 	conn, err := Connect(SSHConnectConfig{
 		Host:       host.Name,
-		Port:       ResolveSSHPort(host, sshCfg),
-		User:       ResolveSSHUser(host, sshCfg),
+		Port:       host.Port,
+		User:       host.User,
 		PrivateKey: privateKey,
 	})
 	if err != nil {
@@ -203,13 +198,12 @@ func (p *Provisioner) Cleanup(
 	if vtc.Spec.Parameters != nil && vtc.Spec.Parameters.Raw != nil {
 		_ = sigsyaml.Unmarshal(vtc.Spec.Parameters.Raw, &mergedParams)
 	}
-	sshCfg, _ := ParseSSHConfig(mergedParams)
 	host, _ := ParseHost(mergedParams)
 
 	conn, err := Connect(SSHConnectConfig{
 		Host:       hostName,
-		Port:       ResolveSSHPort(host, sshCfg),
-		User:       ResolveSSHUser(host, sshCfg),
+		Port:       host.Port,
+		User:       host.User,
 		PrivateKey: privateKey,
 	})
 	if err != nil {
@@ -309,6 +303,24 @@ func (p *Provisioner) deployInstance(
 		return fmt.Errorf("create shared volume: exit %d: %s", res.ExitCode, res.Stderr)
 	}
 
+	// Stage jumpstarter-exec from the exporter image into the shared
+	// volume so the runtime container can use it as its entrypoint.
+	// This mirrors the in-cluster QEMU "copy-jumpstarter-exec" init
+	// container; for quadlets we do it with a one-shot podman run.
+	stageCmd := fmt.Sprintf(
+		"podman run --rm -v %s:%s:z %s sh -c 'cp %s %s && chmod 755 %s'",
+		volumeName, sharedMountPath,
+		exporterImage,
+		jmpExecSrcPath, jmpExecDstPath,
+		jmpExecDstPath,
+	)
+	if res, err := conn.RunCommand(ctx, stageCmd); err != nil {
+		return fmt.Errorf("stage jumpstarter-exec: %w", err)
+	} else if res.ExitCode != 0 {
+		return fmt.Errorf("stage jumpstarter-exec: exit %d: %s", res.ExitCode, res.Stderr)
+	}
+	logger.Info("jumpstarter-exec staged", "volume", volumeName, "src", jmpExecSrcPath)
+
 	if res, err := conn.RunCommand(ctx, "systemctl daemon-reload"); err != nil {
 		return fmt.Errorf("systemctl daemon-reload: %w", err)
 	} else if res.ExitCode != 0 {
@@ -318,8 +330,11 @@ func (p *Provisioner) deployInstance(
 	runtimeSvc := RuntimeServiceName(name)
 	exporterSvc := ExporterServiceName(name)
 
+	// Quadlet-generated units live under /run/systemd/generator/ and
+	// cannot be "enabled" (systemd rejects that with "transient or
+	// generated").  Use plain "start" instead.
 	if res, err := conn.RunCommand(ctx,
-		fmt.Sprintf("systemctl enable --now %s %s", runtimeSvc, exporterSvc)); err != nil {
+		fmt.Sprintf("systemctl start %s %s", runtimeSvc, exporterSvc)); err != nil {
 		return fmt.Errorf("start services: %w", err)
 	} else if res.ExitCode != 0 {
 		return fmt.Errorf("start services %s %s: exit %d: %s",
@@ -341,8 +356,9 @@ func (p *Provisioner) teardownInstance(
 	runtimeSvc := RuntimeServiceName(name)
 	exporterSvc := ExporterServiceName(name)
 
+	// Quadlet-generated units cannot be "disabled"; use "stop" instead.
 	if _, err := conn.RunCommand(ctx,
-		fmt.Sprintf("systemctl disable --now %s %s 2>/dev/null || true",
+		fmt.Sprintf("systemctl stop %s %s 2>/dev/null || true",
 			exporterSvc, runtimeSvc)); err != nil {
 		logger.Error(err, "failed to stop services", "exporter", name)
 	}
