@@ -192,6 +192,7 @@ type JumpstarterSpec struct {
 	LeasePolicy LeasePolicyConfig `json:"leasePolicy,omitempty"`
 
 	// Hidden labels configuration for hiding specific label keys from exporter listings.
+	// +kubebuilder:default={}
 	// +optional
 	HiddenLabels HiddenLabelsConfig `json:"hiddenLabels,omitempty"`
 
@@ -216,7 +217,13 @@ type JumpstarterSpec struct {
 // HiddenLabelsConfig defines label keys to hide from exporter listings by default.
 type HiddenLabelsConfig struct {
 	// List of exact label keys to hide from ListExporters/GetExporter responses.
-	// Clients can pass show_hidden_labels=true to see all labels.
+	// Clients can pass show_hidden_labels=true to see all labels. Hidden labels
+	// remain usable in label selectors.
+	//
+	// Defaults to the ExporterSet identity labels, which every pool member
+	// carries. Setting this field replaces the default list rather than adding
+	// to it; set it to [] to show every label.
+	// +kubebuilder:default={"exporterset.jumpstarter.dev/name","exporterset.jumpstarter.dev/class","exporterset.jumpstarter.dev/provisioner"}
 	// +optional
 	Keys []string `json:"keys,omitempty"`
 }
@@ -372,16 +379,27 @@ type TelemetryGRPCConfig struct {
 // TelemetryMetricsConfig configures telemetry /metrics reverse-scrape behavior.
 type TelemetryMetricsConfig struct {
 	// Allowlist of keys to include in Prometheus exemplars. Unlisted keys are omitted.
+	// At most 16 keys. Each key is at most 32 characters, the same limit as
+	// Lease spec.context key names that may appear in this list.
 	// +kubebuilder:default={"client","lease_id"}
+	// +kubebuilder:validation:MaxItems=16
+	// +kubebuilder:validation:items:MaxLength=32
 	ExemplarKeys []string `json:"exemplarKeys,omitempty"`
 
 	// Allowed driver_type label values. Unlisted types are remapped to "other".
+	// At most 16 entries (the default set plus site-specific categories), each
+	// at most 32 characters.
 	// +kubebuilder:default={"power","storage","network","serial","console","video","composite"}
+	// +kubebuilder:validation:MaxItems=16
+	// +kubebuilder:validation:items:MaxLength=32
 	DriverTypeEnum []string `json:"driverTypeEnum,omitempty"`
 
 	// Max wait for parallel exporter MetricsStream responses during a /metrics fan-out.
 	// Should be lower than the Prometheus scrape_timeout.
+	// JEP-0013 specifies the 7s default and no maximum. 60s bounds the fan-out
+	// wait and the HTTP write timeout that grows with this value.
 	// +kubebuilder:default="7s"
+	// +kubebuilder:validation:XValidation:rule="duration(self) > duration('0s') && duration(self) <= duration('60s')",message="scrapeTimeout must be greater than 0 and at most 60s"
 	ScrapeTimeout *metav1.Duration `json:"scrapeTimeout,omitempty"`
 }
 

@@ -7,6 +7,10 @@
     display: none !important;
 }
 
+#demo-player {
+    isolation: isolate;
+}
+
 #demo-player .ap-player {
     --term-color-background: var(--color-background-primary);
     --term-color-foreground: var(--color-foreground-primary);
@@ -30,6 +34,77 @@
     text-overflow: ellipsis;
 }
 
+
+/* Version selector: always fixed at viewport bottom, expands upward.
+   The overlay spans the full viewport width but is transparent on the left;
+   child elements use margin-left on desktop to start after the sidebar.
+   width:100% is required to override versjon's hardcoded width:250px. */
+#versjon-overlay.versjon-inline {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    z-index: 25;
+    display: flex;
+    flex-direction: column-reverse;
+}
+
+
+/* Cap the open dropdown so it cannot cover page content.
+   !important is required to override the inline maxHeight set by versjon's JS. */
+#versjon-overlay.versjon-inline .versjon.active + .versjon-content {
+    max-height: 50vh !important;
+    overflow-y: auto !important;
+}
+
+.bottom-of-page {
+    padding-bottom: 3rem;
+}
+
+#versjon-overlay.versjon-inline .versjon {
+    background-color: var(--color-sidebar-background);
+    color: var(--color-brand-primary, #4285f4);
+    border-top: 1px solid var(--color-background-border);
+    line-height: var(--sidebar-item-line-height, 1rem);
+    padding: var(--sidebar-item-spacing-vertical, 0.5rem) var(--sidebar-item-spacing-horizontal, 1rem);
+}
+
+#versjon-overlay.versjon-inline .versjon:hover {
+    background-color: var(--color-background-hover, rgba(0,0,0,0.05));
+}
+
+#versjon-overlay.versjon-inline .versjon:after {
+    color: var(--color-brand-primary, #4285f4);
+}
+
+#versjon-overlay.versjon-inline .versjon-content {
+    background-color: var(--color-sidebar-background);
+}
+
+#versjon-overlay.versjon-inline .versjon-content-inner dt {
+    color: var(--color-foreground-muted);
+}
+
+#versjon-overlay.versjon-inline .versjon-content-inner a {
+    color: var(--color-foreground-secondary);
+}
+
+#versjon-overlay.versjon-inline .versjon-content-inner a:hover {
+    color: var(--color-brand-primary);
+}
+
+/* On desktop: shift bar right of sidebar. JS sets --versjon-sidebar-width to the sidebar's
+   measured right edge (pixel-perfect, accounts for scrollbar width).
+   padding-right keeps the "+" toggle and dropdown links clear of the TOC (z-index:50).
+   This rule must appear after the padding shorthand above so padding-right wins the cascade. */
+@media (min-width: 64em) {
+    #versjon-overlay.versjon-inline .versjon,
+    #versjon-overlay.versjon-inline .versjon-content {
+        margin-left: var(--versjon-sidebar-width, 0px);
+        padding-right: 15em;
+    }
+}
 
 .glossary-term {
     border-bottom: 1px dotted var(--color-background-border);

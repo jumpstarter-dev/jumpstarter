@@ -202,7 +202,7 @@ class Config:
 
         uri, _state = client.create_authorization_url(config["authorization_endpoint"], **auth_params)
 
-        print("Please open the URL in browser: ", uri)
+        click.echo(f"Please open the URL in browser: {uri}", err=True)
 
         authorization_response = await rx.receive()
 
@@ -270,16 +270,19 @@ class Config:
             # Step 2: Display verification URI to user
             verification_uri_complete = device_data.get("verification_uri_complete")
             if verification_uri_complete:
-                click.echo(f"To sign in, open the following URL in your browser:\n\n  {verification_uri_complete}\n")
+                click.echo(
+                    f"To sign in, open the following URL in your browser:\n\n  {verification_uri_complete}\n", err=True
+                )
             else:
                 verification_uri = device_data.get("verification_uri")
                 user_code = device_data.get("user_code")
                 click.echo(
                     f"To sign in, open the following URL in your browser:\n\n  {verification_uri}\n\n"
-                    f"Then enter the code: {user_code}\n"
+                    f"Then enter the code: {user_code}\n",
+                    err=True,
                 )
 
-            click.echo("Waiting for authentication...")
+            click.echo("Waiting for authentication...", err=True)
 
             # Step 3: Poll the token endpoint
             deadline = time.monotonic() + expires_in

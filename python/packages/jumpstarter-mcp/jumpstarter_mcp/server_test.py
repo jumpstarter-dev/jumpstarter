@@ -28,7 +28,7 @@ from jumpstarter_mcp.tools.leases import _lease_status
 
 
 class FakePowerClient:
-    children: ClassVar[dict]= {}
+    children: ClassVar[dict] = {}
 
     def on(self) -> None:
         """Power on the device."""
@@ -50,7 +50,7 @@ class FakePowerClient:
 
 
 class FakeSerialClient:
-    children: ClassVar[dict]= {}
+    children: ClassVar[dict] = {}
 
     def open(self):
         """Open serial port."""
@@ -458,9 +458,7 @@ class TestSetupLogging:
                 _setup_logging()
 
             new_file_handlers = [
-                h
-                for h in root.handlers
-                if isinstance(h, logging.FileHandler) and h not in handlers_before
+                h for h in root.handlers if isinstance(h, logging.FileHandler) and h not in handlers_before
             ]
             assert len(new_file_handlers) == 1
             assert "mcp-server.log" in new_file_handlers[0].baseFilename
@@ -534,7 +532,7 @@ class TestStdoutIsolation:
 
             # Apply the same redirect pattern as run_server():
             sys.stdout.flush()
-            mcp_fd = os.dup(sys.stdout.fileno())   # save "real stdout" (pipe)
+            mcp_fd = os.dup(sys.stdout.fileno())  # save "real stdout" (pipe)
             os.dup2(sys.stderr.fileno(), sys.stdout.fileno())  # fd 1 -> stderr
             sys.stdout = sys.stderr
 
@@ -564,3 +562,48 @@ class TestStdoutIsolation:
             os.close(r_err)
             sys.stdout = saved_sys_stdout
             sys.stderr = saved_sys_stderr
+
+
+# ---------------------------------------------------------------------------
+# jmp_list_events
+# ---------------------------------------------------------------------------
+
+
+class TestListEvents:
+    @pytest.mark.asyncio
+    async def test_empty_queue_returns_empty_list(self):
+        import json
+
+        from jumpstarter_mcp.tools.commands import list_events
+
+        _, manager = create_server()
+        result = json.loads(await list_events(manager))
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_events_are_drained(self):
+        import json
+
+        from jumpstarter_mcp.tools.commands import list_events
+
+        _, manager = create_server()
+        manager._append_event("warning", "lease expiring", "conn-1")
+        result = json.loads(await list_events(manager))
+        assert len(result) == 1
+        assert result[0]["level"] == "warning"
+        assert result[0]["message"] == "lease expiring"
+        assert json.loads(await list_events(manager)) == []
+
+    @pytest.mark.asyncio
+    async def test_max_count_respected(self):
+        import json
+
+        from jumpstarter_mcp.tools.commands import list_events
+
+        _, manager = create_server()
+        for i in range(10):
+            manager._append_event("info", f"event {i}", "conn-1")
+        result = json.loads(await list_events(manager, max_count=3))
+        assert len(result) == 3
+        remaining = json.loads(await list_events(manager, max_count=100))
+        assert len(remaining) == 7

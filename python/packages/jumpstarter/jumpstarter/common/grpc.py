@@ -12,9 +12,26 @@ from urllib.parse import urlparse
 import grpc
 from anyio import fail_after
 
-from jumpstarter.common.exceptions import ConfigurationError, ConnectionError
+from jumpstarter.common.exceptions import CertificateDiscoveryError, ConfigurationError, ConnectionError
 
 logger = logging.getLogger(__name__)
+
+
+def is_controller_unavailable(error: Exception) -> bool:
+    if isinstance(error, CertificateDiscoveryError):
+        return True
+    if not isinstance(error, grpc.aio.AioRpcError):
+        return False
+    code = error.code()
+    details = error.details() or ""
+    if code in {grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED, grpc.StatusCode.CANCELLED}:
+        return True
+    if code == grpc.StatusCode.INTERNAL and "RST_STREAM" in details.upper():
+        return True
+    # Controllers can expose startup authentication failures as UNKNOWN.
+    return code == grpc.StatusCode.UNKNOWN and (
+        "oidc: authenticator not initialized" in details or details == "Stream removed"
+    )
 
 
 async def _try_connect_and_extract_cert(
@@ -45,7 +62,9 @@ async def _try_connect_and_extract_cert(
         writer.close()
 
 
-async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc.ChannelCredentials:  # noqa: C901
+async def _ssl_channel_credentials_insecure(  # noqa: C901
+    target: str, timeout: float, *, log_connection_failures: bool = True
+) -> grpc.ChannelCredentials:
     """
     Extract TLS certificates from server without verification (insecure mode).
 
@@ -54,6 +73,8 @@ async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc
 
     ``timeout`` applies independently to DNS resolution and connection, so
     worst-case wall time is approximately ``2 * timeout``.
+    ``log_connection_failures`` lets the exporter retry loop own outage-level
+    warnings while keeping per-IP diagnostics at debug level.
     """
     try:
         parsed = urlparse(f"//{target}")
@@ -76,9 +97,9 @@ async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc
         with fail_after(timeout):
             addr_info = await loop.getaddrinfo(parsed.hostname, port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM)
     except socket.gaierror as e:
-        raise ConnectionError(f"Failed resolving {parsed.hostname}") from e
+        raise CertificateDiscoveryError(f"Failed resolving {parsed.hostname}") from e
     except TimeoutError as e:
-        raise ConnectionError(f"Timeout resolving {parsed.hostname} after {timeout}s") from e
+        raise CertificateDiscoveryError(f"Timeout resolving {parsed.hostname} after {timeout}s") from e
 
     # Log resolved IPs
     resolved_ips = [sockaddr[0] for _, _, _, _, sockaddr in addr_info]
@@ -118,13 +139,20 @@ async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc
 
                     # This IP failed - log and continue trying other IPs
                     if isinstance(error, ssl.SSLError):
-                        logger.error(f"SSL error on {ip_address}:{port}: {error}")
+                        logger.log(
+                            logging.ERROR if log_connection_failures else logging.DEBUG,
+                            "SSL error on %s:%s: %s", ip_address, port, error,
+                        )
                     else:
-                        logger.warning(f"Failed to connect to {ip_address}:{port}: {type(error).__name__}: {error}")
+                        logger.log(
+                            logging.WARNING if log_connection_failures else logging.DEBUG,
+                            "Failed to connect to %s:%s: %s: %s",
+                            ip_address, port, type(error).__name__, error,
+                        )
                     errors[ip_address] = error
 
                 # All IPs failed
-                raise ConnectionError(
+                raise CertificateDiscoveryError(
                     f"Failed connecting to {parsed.hostname}:{port} - all IPs exhausted. Errors: {errors}"
                 )
             finally:
@@ -133,15 +161,17 @@ async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc
                     if not task.done():
                         task.cancel()
     except TimeoutError as e:
-        raise ConnectionError(
+        raise CertificateDiscoveryError(
             f"Timeout connecting to {parsed.hostname}:{port} after {timeout}s (resolved to {', '.join(resolved_ips)})"
         ) from e
 
 
-async def ssl_channel_credentials(target: str, tls_config, timeout=5):
+async def ssl_channel_credentials(target: str, tls_config, timeout=5, *, log_connection_failures: bool = True):
     """Get SSL channel credentials for gRPC connection."""
     if tls_config.insecure or os.getenv("JUMPSTARTER_GRPC_INSECURE") == "1" or os.getenv("JMP_GRPC_INSECURE") == "1":
-        return await _ssl_channel_credentials_insecure(target, timeout)
+        return await _ssl_channel_credentials_insecure(
+            target, timeout, log_connection_failures=log_connection_failures
+        )
     elif tls_config.ca != "":
         ca_certificate = base64.b64decode(tls_config.ca)
         return grpc.ssl_channel_credentials(ca_certificate)
