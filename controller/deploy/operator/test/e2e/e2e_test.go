@@ -479,7 +479,11 @@ grpc:
     minTime: 1s
     permitWithoutStream: true
 deprecatedLabels: {}
-hiddenLabels: {}
+hiddenLabels:
+  keys:
+  - exporterset.jumpstarter.dev/name
+  - exporterset.jumpstarter.dev/class
+  - exporterset.jumpstarter.dev/provisioner
 leasePolicy:
   maxTags: 10
 provisioning:

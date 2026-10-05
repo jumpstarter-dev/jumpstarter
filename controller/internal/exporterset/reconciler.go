@@ -34,6 +34,7 @@ package exporterset
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"sync"
@@ -48,6 +49,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -63,8 +65,21 @@ import (
 const (
 	annotationSurplusSince = "exporterset.jumpstarter.dev/surplus-since"
 
-	// Bridges the grandparent lookup (ExporterSet -> Exporter -> Pod).
+	// Bridges the grandparent lookup (ExporterSet -> Exporter -> Pod), and
+	// tells clients which pool an exporter came from: membership otherwise
+	// lives only in ownerReferences, which the client API does not expose.
 	labelExporterSetName = "exporterset.jumpstarter.dev/name"
+
+	// The VirtualTargetClass backing the pool, and the provisioner named by
+	// that class. Together they let clients tell how an exporter is
+	// provisioned without cluster access: the provisioner is a property of
+	// the class, which a client cannot read, so it is carried on the Exporter.
+	//
+	// All three identity labels are client-visible by default. The operator
+	// lists them in hiddenLabels.keys so they stay out of `jmp get exporters`
+	// unless --show-hidden-labels is passed; they remain usable in selectors.
+	labelVirtualTargetClass = "exporterset.jumpstarter.dev/class"
+	labelProvisioner        = "exporterset.jumpstarter.dev/provisioner"
 
 	defaultScaleDownCooldown = 5 * time.Minute
 
@@ -132,39 +147,8 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			logger.Info("VirtualTargetClass not found",
 				"virtualTargetClassName", exporterSet.Spec.VirtualTargetClassName)
 
-			prevAvailable := meta.IsStatusConditionTrue(
-				exporterSet.Status.Conditions,
-				string(virtualtargetv1alpha1.ExporterSetConditionAvailable),
-			)
-			prevDegraded := meta.IsStatusConditionTrue(
-				exporterSet.Status.Conditions,
-				string(virtualtargetv1alpha1.ExporterSetConditionDegraded),
-			)
-			prevProgressing := meta.IsStatusConditionTrue(
-				exporterSet.Status.Conditions,
-				string(virtualtargetv1alpha1.ExporterSetConditionProgressing),
-			)
-			prevScalingLimited := meta.IsStatusConditionTrue(
-				exporterSet.Status.Conditions,
-				string(virtualtargetv1alpha1.ExporterSetConditionScalingLimited),
-			)
-
-			if countErr := r.reconcileStatusCounts(ctx, &exporterSet); countErr != nil {
-				return ctrl.Result{}, countErr
-			}
-			r.reconcileConditions(&exporterSet)
-			meta.SetStatusCondition(&exporterSet.Status.Conditions, metav1.Condition{
-				Type:               string(virtualtargetv1alpha1.ExporterSetConditionAvailable),
-				Status:             metav1.ConditionFalse,
-				ObservedGeneration: exporterSet.Generation,
-				Reason:             "VirtualTargetClassNotFound",
-				Message:            fmt.Sprintf("VirtualTargetClass %q not found", exporterSet.Spec.VirtualTargetClassName),
-			})
-			if updateErr := r.Status().Update(ctx, &exporterSet); updateErr != nil {
-				return requeueConflict(logger, updateErr)
-			}
-			r.emitConditionEvents(&exporterSet, prevAvailable, prevProgressing, prevDegraded, prevScalingLimited)
-			return ctrl.Result{}, nil
+			return r.reportUnavailable(ctx, &exporterSet, "VirtualTargetClassNotFound",
+				fmt.Sprintf("VirtualTargetClass %q not found", exporterSet.Spec.VirtualTargetClassName))
 		}
 		return ctrl.Result{}, fmt.Errorf("unable to get VirtualTargetClass %q: %w",
 			exporterSet.Spec.VirtualTargetClassName, err)
@@ -205,8 +189,27 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		string(virtualtargetv1alpha1.ExporterSetConditionScalingLimited),
 	)
 
+	// Exporters are found through spec.selector. If the labels this set stamps
+	// on its exporters don't satisfy it (e.g. the selector pins an
+	// exporterset.jumpstarter.dev/* value the identity labels override), new
+	// exporters would be invisible to scaling and created without bound, and
+	// relabelling existing ones would orphan them. Stop until the spec is fixed.
+	if mismatch, err := r.selectorMismatch(ctx, &exporterSet); err != nil {
+		return ctrl.Result{}, err
+	} else if mismatch != "" {
+		logger.Info("ExporterSet selector does not match its exporter labels; not scaling",
+			"detail", mismatch)
+		return r.reportUnavailable(ctx, &exporterSet, "SelectorMismatch", mismatch)
+	}
+
 	ownedExporters, err := r.listOwnedExporters(ctx, &exporterSet)
 	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Keep identity labels current on exporters created before them, or after
+	// the set's class changed.
+	if err := r.reconcileExporterLabels(ctx, &exporterSet, ownedExporters); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -369,7 +372,7 @@ func (r *ExporterSetReconciler) scaleUp(
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: es.Name + "-",
 				Namespace:    es.Namespace,
-				Labels:       maps.Clone(es.Spec.Template.Metadata.Labels),
+				Labels:       r.exporterLabels(ctx, es),
 				Annotations:  maps.Clone(es.Spec.Template.Metadata.Annotations),
 			},
 			Spec: jumpstarterdevv1alpha1.ExporterSpec{
@@ -951,6 +954,180 @@ func (r *ExporterSetReconciler) clearSurplusAnnotation(ctx context.Context, es *
 	if err := r.Update(ctx, es); err != nil && !apierrors.IsConflict(err) {
 		log.FromContext(ctx).Error(err, "failed to clear surplus-since annotation")
 	}
+}
+
+// identityLabels mark which pool an exporter belongs to and how it is
+// provisioned. Reconcile has already established that the referenced class
+// names this reconciler's provisioner, so it is the provisioner in effect.
+//
+// It returns the labels to set and the identity keys to remove. A value that
+// is not a valid label value (object names may be up to 253 characters, label
+// values only 63) can't be set: patching it would fail with a 422 on every
+// reconcile. Its key is removed instead, so an exporter never keeps a stale
+// value (say, the class it had before the set moved to a long-named class).
+func (r *ExporterSetReconciler) identityLabels(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+) (set map[string]string, remove []string) {
+	candidates := map[string]string{
+		labelExporterSetName:    es.Name,
+		labelVirtualTargetClass: es.Spec.VirtualTargetClassName,
+	}
+	if r.Provisioner != nil {
+		candidates[labelProvisioner] = r.Provisioner.Name()
+	}
+
+	set = make(map[string]string, len(candidates))
+	for key, value := range candidates {
+		if value == "" {
+			remove = append(remove, key)
+			continue
+		}
+		if errs := validation.IsValidLabelValue(value); len(errs) > 0 {
+			log.FromContext(ctx).V(1).Info("omitting exporter set label with invalid value",
+				"label", key, "value", value, "reason", errs)
+			remove = append(remove, key)
+			continue
+		}
+		set[key] = value
+	}
+	return set, remove
+}
+
+// exporterLabels are the labels an Exporter of this set carries: the set's
+// template labels plus the identity labels above. The
+// exporterset.jumpstarter.dev/ identity keys are reserved for this controller:
+// they override template values and are dropped from the template when the
+// controller omits them, so a template can never misreport pool membership.
+func (r *ExporterSetReconciler) exporterLabels(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+) map[string]string {
+	labels := maps.Clone(es.Spec.Template.Metadata.Labels)
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	set, remove := r.identityLabels(ctx, es)
+	for _, key := range remove {
+		delete(labels, key)
+	}
+	for key, value := range set {
+		if prev, ok := labels[key]; ok && prev != value {
+			log.FromContext(ctx).V(1).Info("template label overridden by exporter set identity label",
+				"label", key, "template", prev, "identity", value)
+		}
+		labels[key] = value
+	}
+	return labels
+}
+
+// selectorMismatch reports, as a human-readable message, why the labels this
+// set gives its exporters don't satisfy its own selector. It returns "" when
+// they match.
+func (r *ExporterSetReconciler) selectorMismatch(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+) (string, error) {
+	selector, err := metav1.LabelSelectorAsSelector(&es.Spec.Selector)
+	if err != nil {
+		return "", fmt.Errorf("invalid label selector: %w", err)
+	}
+	exporterLabels := labels.Set(r.exporterLabels(ctx, es))
+	if selector.Matches(exporterLabels) {
+		return "", nil
+	}
+	return fmt.Sprintf("selector %q does not match exporter labels %q; "+
+		"exporterset.jumpstarter.dev/ label values are set by the controller",
+		selector.String(), exporterLabels.String()), nil
+}
+
+// reportUnavailable records a spec problem that stops reconciliation: it
+// refreshes status counts, marks the set not Available with the given reason,
+// and returns without requeuing (a spec change retriggers reconcile).
+func (r *ExporterSetReconciler) reportUnavailable(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+	reason, message string,
+) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	prevAvailable := meta.IsStatusConditionTrue(es.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionAvailable))
+	prevDegraded := meta.IsStatusConditionTrue(es.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionDegraded))
+	prevProgressing := meta.IsStatusConditionTrue(es.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionProgressing))
+	prevScalingLimited := meta.IsStatusConditionTrue(es.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionScalingLimited))
+
+	if err := r.reconcileStatusCounts(ctx, es); err != nil {
+		return ctrl.Result{}, err
+	}
+	r.reconcileConditions(es)
+	meta.SetStatusCondition(&es.Status.Conditions, metav1.Condition{
+		Type:               string(virtualtargetv1alpha1.ExporterSetConditionAvailable),
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: es.Generation,
+		Reason:             reason,
+		Message:            message,
+	})
+	if err := r.Status().Update(ctx, es); err != nil {
+		return requeueConflict(logger, err)
+	}
+	r.emitConditionEvents(es, prevAvailable, prevProgressing, prevDegraded, prevScalingLimited)
+	return ctrl.Result{}, nil
+}
+
+// reconcileExporterLabels keeps the identity labels on owned exporters current:
+// it stamps them on exporters that predate them, updates them after the set's
+// class changes, and removes identity keys the controller now omits.
+func (r *ExporterSetReconciler) reconcileExporterLabels(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+	owned []jumpstarterdevv1alpha1.Exporter,
+) error {
+	logger := log.FromContext(ctx)
+
+	set, remove := r.identityLabels(ctx, es)
+
+	// Label every exporter we can this cycle: one failed patch should not
+	// leave the rest of the pool unlabeled until the next reconcile.
+	var errs []error
+	for i := range owned {
+		exporter := &owned[i]
+		changed := map[string]string{}
+		for key, value := range set {
+			if exporter.Labels[key] != value {
+				changed[key] = value
+			}
+		}
+		var removed []string
+		for _, key := range remove {
+			if _, ok := exporter.Labels[key]; ok {
+				removed = append(removed, key)
+			}
+		}
+		if len(changed) == 0 && len(removed) == 0 {
+			continue
+		}
+
+		patch := client.MergeFrom(exporter.DeepCopy())
+		if exporter.Labels == nil {
+			exporter.Labels = map[string]string{}
+		}
+		maps.Copy(exporter.Labels, changed)
+		for _, key := range removed {
+			delete(exporter.Labels, key)
+		}
+		if err := r.Patch(ctx, exporter, patch); err != nil {
+			logger.Error(err, "unable to label exporter", "exporter", exporter.Name)
+			errs = append(errs, fmt.Errorf("unable to label Exporter %s: %w", exporter.Name, err))
+			continue
+		}
+		logger.Info("updated exporter set labels", "exporter", exporter.Name,
+			"set", changed, "removed", removed)
+	}
+	return errors.Join(errs...)
 }
 
 func (r *ExporterSetReconciler) listOwnedExporters(
