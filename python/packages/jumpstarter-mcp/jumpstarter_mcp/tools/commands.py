@@ -134,3 +134,14 @@ async def driver_methods(
     """Inspect methods on a specific driver."""
     conn = manager.get_connection(connection_id)
     return await anyio.to_thread.run_sync(get_driver_methods, conn.client, driver_path)
+
+
+async def list_events(
+    manager: ConnectionManager,
+    max_count: int = 50,
+) -> str:
+    """Drain and return buffered lease and connection events as JSON."""
+    import json
+
+    events = manager.drain_events(max_count)
+    return json.dumps(events, indent=2)

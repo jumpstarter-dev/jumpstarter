@@ -11,6 +11,10 @@ export:
     config:
       # CA certificate file path for HTTPS when flashing from a URL with a custom CA
       # cacert: "/etc/pki/tls/certs/internal-ca.crt"
+      # IP address the DUT should use to reach the exporter tftp/http servers
+      # (overrides the detected server IP, e.g. when the exporter is behind NAT
+      # or on a direct DUT link created by the dutnet driver)
+      # exporter_ip: "192.168.100.1"
     children:
       serial:
         ref: "serial"

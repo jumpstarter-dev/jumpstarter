@@ -9,9 +9,11 @@ import (
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	cpb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/client/v1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/service/auth"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/service/utils"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -723,4 +725,71 @@ func TestCreateLeaseSharedWithDedupBeforeLimit(t *testing.T) {
 			t.Fatalf("expected InvalidArgument, got %v", err)
 		}
 	})
+}
+
+func TestUpdateLeaseBeginTimeAfterStart(t *testing.T) {
+	const ns = "lab"
+	begin := time.Now().Add(time.Hour).Truncate(time.Second)
+	newBegin := begin.Add(time.Hour)
+
+	tests := []struct {
+		name      string
+		specBegin *time.Time // nil for an immediate lease
+		started   bool
+		reqBegin  time.Time
+		wantErr   bool
+	}{
+		{name: "rejects moving BeginTime once started", specBegin: &begin, started: true, reqBegin: newBegin, wantErr: true},
+		{name: "rejects setting BeginTime on a started immediate lease", started: true, reqBegin: newBegin, wantErr: true},
+		// Clients that echo back the full lease resend the unchanged BeginTime.
+		{name: "allows resending the same BeginTime once started", specBegin: &begin, started: true, reqBegin: begin},
+		// Control: the rejected request succeeds before start, so the rejection comes
+		// from the started guard and not from another validation.
+		{name: "allows moving BeginTime before start", specBegin: &begin, reqBegin: newBegin},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lease := &jumpstarterdevv1alpha1.Lease{
+				ObjectMeta: metav1.ObjectMeta{Name: "lease", Namespace: ns},
+				Spec: jumpstarterdevv1alpha1.LeaseSpec{
+					ClientRef: corev1.LocalObjectReference{Name: "owner"},
+					Duration:  &metav1.Duration{Duration: time.Hour},
+				},
+			}
+			if tt.specBegin != nil {
+				lease.Spec.BeginTime = &metav1.Time{Time: *tt.specBegin}
+			}
+			if tt.started {
+				lease.Status.ExporterRef = &corev1.LocalObjectReference{Name: "exporter"}
+			}
+			objs := append(namedClients(ns, "owner"), lease)
+			svc := authedClientService("owner", ns, testFakeClient(objs...))
+
+			got, err := svc.UpdateLease(context.Background(), &cpb.UpdateLeaseRequest{
+				Lease: &cpb.Lease{
+					Name:      utils.UnparseLeaseIdentifier(kclient.ObjectKey{Namespace: ns, Name: lease.Name}),
+					BeginTime: timestamppb.New(tt.reqBegin),
+					Duration:  durationpb.New(time.Hour),
+				},
+			})
+
+			if tt.wantErr {
+				st, ok := status.FromError(err)
+				if !ok || st.Code() != codes.FailedPrecondition {
+					t.Fatalf("expected FailedPrecondition, got %v", err)
+				}
+				if st.Message() != "cannot update BeginTime: lease has already started" {
+					t.Fatalf("unexpected message: %q", st.Message())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected update to succeed, got %v", err)
+			}
+			if !got.BeginTime.AsTime().Equal(tt.reqBegin) {
+				t.Fatalf("expected BeginTime %v, got %v", tt.reqBegin, got.BeginTime.AsTime())
+			}
+		})
+	}
 }

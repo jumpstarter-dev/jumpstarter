@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from typing import Self
 
+from .frame_pump import FramePump
 from .keyboard import KeyboardReport, resolve_key_code
 from .mouse import (
     MouseButton,
@@ -14,11 +16,14 @@ from .mouse import (
     resolve_button,
 )
 from .protocol import CmdEvent, CmdPacket, InfoPacket
-from .serial_conn import SerialConnection
+from .serial_conn import READ_TIMEOUT_S, SerialConnection
 from .video import VideoCapture
+
+logger = logging.getLogger(__name__)
 
 INTER_KEY_DELAY = 0.05
 KEY_HOLD_DELAY = 0.02
+ACK_TIMEOUT_S = 0.05
 
 
 class NanoKVMUSBDevice:
@@ -59,6 +64,12 @@ class NanoKVMUSBDevice:
         self._buttons = 0
         self._connected = False
         self._connect_lock = threading.RLock()
+        self._hid_lock = threading.RLock()
+        self._pump: FramePump | None = None
+
+    @property
+    def pump(self) -> FramePump | None:
+        return self._pump
 
     @property
     def is_connected(self) -> bool:
@@ -93,63 +104,122 @@ class NanoKVMUSBDevice:
                     )
 
                 self._connected = True
+                if self._video_device is not None:
+                    if self._pump is None:
+                        self._pump = FramePump(self.capture_frame_jpeg, fps=self._video_fps)
+                    self._pump.start()
                 return info
             except Exception:
                 self.close()
                 raise
 
     def close(self) -> None:
-        self._serial.close()
-        self._video.close()
-        self._connected = False
+        with self._connect_lock:
+            if self._pump is not None:
+                self._pump.stop()
+            self._serial.close()
+            self._video.close()
+            self._connected = False
 
     def get_info(self) -> InfoPacket:
-        packet = CmdPacket(addr=self._addr, cmd=CmdEvent.GET_INFO)
+        with self._hid_lock:
+            packet = CmdPacket(addr=self._addr, cmd=CmdEvent.GET_INFO)
+            response = self._transact(packet, timeout=READ_TIMEOUT_S)
+            if response is None:
+                raise ConnectionError("Timed out waiting for NanoKVM-USB info")
+            return InfoPacket.from_data(response.data)
+
+    def _transact(self, packet: CmdPacket, timeout: float = ACK_TIMEOUT_S) -> CmdPacket | None:
+        """Write ``packet`` and wait for the CH9329 ACK with the same command."""
+        self._serial.reset_input_buffer()
         self._serial.write(packet.encode())
-        response = self._serial.read(14)
-        response_packet = CmdPacket.decode(response)
-        return InfoPacket.from_data(response_packet.data)
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            response = self._serial.read_packet(remaining)
+            if response is None:
+                break
+            if response.cmd == packet.cmd:
+                return response
+            logger.debug(
+                "ignoring serial packet cmd=0x%02x while waiting for 0x%02x",
+                response.cmd,
+                packet.cmd,
+            )
+        logger.warning("serial ACK timeout for cmd=0x%02x", packet.cmd)
+        return None
 
     def _send_keyboard(self, report: list[int]) -> None:
         packet = CmdPacket(addr=self._addr, cmd=CmdEvent.SEND_KB_GENERAL_DATA, data=report)
-        self._serial.write(packet.encode())
+        self._transact(packet)
 
     def press_key(self, key: str, hold: float = KEY_HOLD_DELAY) -> None:
-        code = resolve_key_code(key)
-        report = self._keyboard.key_down(code)
-        self._send_keyboard(report)
-        time.sleep(hold)
-        report = self._keyboard.key_up(code)
-        self._send_keyboard(report)
+        with self._hid_lock:
+            code = resolve_key_code(key)
+            report = self._keyboard.key_down(code)
+            self._send_keyboard(report)
+            time.sleep(hold)
+            report = self._keyboard.key_up(code)
+            self._send_keyboard(report)
+
+    def hid_key(self, key: str, down: bool) -> None:
+        """Press or release a named key (used by the RFB server)."""
+        with self._hid_lock:
+            code = resolve_key_code(key)
+            report = self._keyboard.key_down(code) if down else self._keyboard.key_up(code)
+            self._send_keyboard(report)
+
+    def hid_char(self, key: str, modifiers: frozenset[str], down: bool) -> None:
+        """Type a printable character using DUT-layout HID modifiers (RFB)."""
+        with self._hid_lock:
+            report = self._keyboard.printable_down(key, modifiers) if down else self._keyboard.printable_up(key)
+            self._send_keyboard(report)
 
     def release_all_keys(self) -> None:
-        report = self._keyboard.reset()
-        self._send_keyboard(report)
+        with self._hid_lock:
+            report = self._keyboard.reset()
+            self._send_keyboard(report)
 
     def type_text(self, text: str, delay: float = INTER_KEY_DELAY) -> None:
-        for ch in text:
-            down, up = self._keyboard.char_to_report(ch)
-            self._send_keyboard(down)
-            time.sleep(KEY_HOLD_DELAY)
-            self._send_keyboard(up)
-            time.sleep(delay)
+        with self._hid_lock:
+            for ch in text:
+                down, up = self._keyboard.char_to_report(ch)
+                self._send_keyboard(down)
+                time.sleep(KEY_HOLD_DELAY)
+                self._send_keyboard(up)
+                time.sleep(delay)
 
     def _send_mouse(self, report: list[int]) -> None:
         cmd = CmdEvent.SEND_MS_REL_DATA if report[0] == 0x01 else CmdEvent.SEND_MS_ABS_DATA
         packet = CmdPacket(addr=self._addr, cmd=cmd, data=report)
-        self._serial.write(packet.encode())
+        self._transact(packet)
 
     def mouse_move_abs(self, x: float, y: float) -> None:
-        report = build_absolute_report(x, y, buttons=self._buttons)
-        self._send_mouse(report)
+        with self._hid_lock:
+            report = build_absolute_report(x, y, buttons=self._buttons)
+            self._send_mouse(report)
+
+    def mouse_pointer(self, x: float, y: float, buttons: int, wheel: int = 0) -> None:
+        """Absolute pointer update from the RFB server."""
+        with self._hid_lock:
+            self._buttons = buttons & 0x1F
+            report = build_absolute_report(x, y, buttons=self._buttons, wheel=wheel)
+            self._send_mouse(report)
 
     def mouse_move_to(self, x: float, y: float) -> None:
-        self.mouse_move_relative(-self.screen_width * 2, -self.screen_height * 2)
-        target_x = int(x * self.screen_width)
-        target_y = int(y * self.screen_height)
-        self.mouse_move_relative(target_x, target_y)
+        with self._hid_lock:
+            self._mouse_move_relative_locked(-self.screen_width * 2, -self.screen_height * 2)
+            target_x = int(x * self.screen_width)
+            target_y = int(y * self.screen_height)
+            self._mouse_move_relative_locked(target_x, target_y)
 
     def mouse_move_relative(self, dx: int, dy: int, step_delay: float = 0.005) -> None:
+        with self._hid_lock:
+            self._mouse_move_relative_locked(dx, dy, step_delay)
+
+    def _mouse_move_relative_locked(self, dx: int, dy: int, step_delay: float = 0.005) -> None:
         while dx != 0 or dy != 0:
             chunk_x = max(-127, min(127, dx))
             chunk_y = max(-127, min(127, dy))
@@ -169,33 +239,37 @@ class NanoKVMUSBDevice:
     ) -> None:
         btn_bit = resolve_button(button)
 
-        if x is not None and y is not None:
-            self.mouse_move_to(x, y)
-            self._buttons |= btn_bit
-            report = build_absolute_report(x, y, buttons=self._buttons)
-            self._send_mouse(report)
-            time.sleep(hold)
-            self._buttons &= ~btn_bit
-            report = build_absolute_report(x, y, buttons=self._buttons)
-            self._send_mouse(report)
-        else:
-            self._buttons |= btn_bit
-            report = build_relative_report(buttons=self._buttons)
-            self._send_mouse(report)
-            time.sleep(hold)
-            self._buttons &= ~btn_bit
-            report = build_relative_report(buttons=self._buttons)
-            self._send_mouse(report)
+        with self._hid_lock:
+            if x is not None and y is not None:
+                self._mouse_move_relative_locked(-self.screen_width * 2, -self.screen_height * 2)
+                self._mouse_move_relative_locked(int(x * self.screen_width), int(y * self.screen_height))
+                self._buttons |= btn_bit
+                report = build_absolute_report(x, y, buttons=self._buttons)
+                self._send_mouse(report)
+                time.sleep(hold)
+                self._buttons &= ~btn_bit
+                report = build_absolute_report(x, y, buttons=self._buttons)
+                self._send_mouse(report)
+            else:
+                self._buttons |= btn_bit
+                report = build_relative_report(buttons=self._buttons)
+                self._send_mouse(report)
+                time.sleep(hold)
+                self._buttons &= ~btn_bit
+                report = build_relative_report(buttons=self._buttons)
+                self._send_mouse(report)
 
     def mouse_scroll(self, dx: int, dy: int) -> None:
-        wheel = dy if dy != 0 else dx
-        report = build_relative_report(wheel=wheel, buttons=self._buttons)
-        self._send_mouse(report)
+        with self._hid_lock:
+            wheel = dy if dy != 0 else dx
+            report = build_relative_report(wheel=wheel, buttons=self._buttons)
+            self._send_mouse(report)
 
     def mouse_reset(self) -> None:
-        self._buttons = 0
-        report = build_relative_report(buttons=0)
-        self._send_mouse(report)
+        with self._hid_lock:
+            self._buttons = 0
+            report = build_relative_report(buttons=0)
+            self._send_mouse(report)
 
     def reset_hid(self) -> None:
         self.release_all_keys()
@@ -206,6 +280,13 @@ class NanoKVMUSBDevice:
         if self._video_discard_stale > 0:
             self._video.discard_stale_frames(self._video_discard_stale)
         return self._video.read_frame_jpeg(q)
+
+    def snapshot_jpeg(self, skip_frames: int = 3) -> bytes:
+        if self._pump is not None and self._pump.is_running:
+            return self._pump.wait_n_frames(max(1, int(skip_frames) + 1))
+        for _ in range(max(0, int(skip_frames))):
+            self.capture_frame_jpeg()
+        return self.capture_frame_jpeg()
 
     def __enter__(self) -> Self:
         self.connect()

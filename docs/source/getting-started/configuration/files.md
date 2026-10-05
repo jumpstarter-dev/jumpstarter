@@ -84,6 +84,15 @@ $ jmp config client list            # List available client configs
 $ jmp config client delete <alias>  # Remove a client config locally
 ```
 
+**Python API compatibility**: `ClientConfigV1Alpha1.save(config)` now uses
+`config.path` when it is set, preserving the location of a loaded configuration.
+Previously, omitting the destination always saved to the alias path in the
+clients directory. New configurations with `path=None` still use the alias
+path, and an explicit `path` argument takes precedence. Callers that require
+the previous behavior should explicitly pass
+`ClientConfigV1Alpha1.CLIENT_CONFIGS_PATH / f"{config.alias}.yaml"` as the
+destination.
+
 ## Exporter Configuration
 
 **File**: All valid {term}`exporter` configuration files with a `.yaml` extension  
@@ -113,6 +122,7 @@ token: "******************" # An authentication token
 motd: | # Optional message of the day shown to clients when they enter a shell
   Welcome to myexporter!
   Flash the device with: j storage flash
+statusStreamRetryTimeout: 1800 # Retry time after Status fails or ends (default: 1800s)
 export: # Configure drivers to expose to the clients
   power:
     type: "jumpstarter_driver_power.driver.PduPower" # The driver Python class path and type
@@ -142,6 +152,17 @@ hooks: # Optional lifecycle hooks that run at lease boundaries
 The optional `hooks` section configures lifecycle scripts that run at {term}`lease`
 boundaries. See [{term}`Hook`s](../../introduction/hooks.md) for full details on
 {term}`hook` configuration, environment variables, and failure handling.
+
+If the controller's Status stream fails or ends, and no new update arrives
+within `statusStreamRetryTimeout` seconds, `jmp run` exits with status `75`
+(`EX_TEMPFAIL`).
+The default is 30 minutes. A service manager can then restart the exporter and
+reload its configuration. Status `1` remains the intentional shutdown code for
+a hook configured with `onFailure: exit`; units using
+`RestartPreventExitStatus=1` should still restart on status `75`.
+`UNAUTHENTICATED` and `PERMISSION_DENIED` stream errors also exit with status
+`75`, so a restart can reload credentials or recover after controller access
+to the Kubernetes API is restored.
 
 **Environment Variables**:
 - `JUMPSTARTER_GRPC_INSECURE` / `JMP_GRPC_INSECURE` - Set to `1` to disable TLS verification

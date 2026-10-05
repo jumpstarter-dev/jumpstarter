@@ -59,6 +59,32 @@ def _make_async_cm(response):
     return cm
 
 
+@pytest.mark.asyncio
+async def test_authorization_code_prompt_uses_stderr(monkeypatch, capsys):
+    config = Config(issuer="https://auth.example.com", client_id="test")
+    discovery = {"authorization_endpoint": "https://auth.example.com/auth", "token_endpoint": "https://auth.example.com/token"}
+    monkeypatch.setattr(config, "configuration", AsyncMock(return_value=discovery))
+    client = MagicMock()
+    client.create_authorization_url.return_value = ("https://auth.example.com/auth?state=test", "test")
+    client.fetch_token.return_value = {"access_token": "new-token"}
+    monkeypatch.setattr(config, "client", lambda **kwargs: client)
+    receiver = AsyncMock()
+    receiver.receive.return_value = "http://localhost:12345/callback?code=test"
+    monkeypatch.setattr("jumpstarter_cli_common.oidc.create_memory_object_stream", lambda: (MagicMock(), receiver))
+    monkeypatch.setattr("jumpstarter_cli_common.oidc.web.AppRunner", lambda *args, **kwargs: AsyncMock())
+    site = MagicMock(start=AsyncMock(), stop=AsyncMock())
+    site._server.sockets[0].getsockname.return_value = ("localhost", 12345)
+    monkeypatch.setattr("jumpstarter_cli_common.oidc.web.TCPSite", lambda *args: site)
+
+    result = await config.authorization_code_grant()
+
+    assert result == {"access_token": "new-token"}
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Please open the URL in browser:" in captured.err
+    assert "https://auth.example.com/auth?state=test" in captured.err
+
+
 class TestDeviceAuthorizationGrant:
     @pytest.mark.asyncio
     async def test_raises_when_no_device_endpoint_in_discovery(self) -> None:
@@ -82,7 +108,8 @@ class TestDeviceAuthorizationGrant:
                 await config.device_authorization_grant()
 
     @pytest.mark.asyncio
-    async def test_successful_device_flow_with_verification_uri_complete(self) -> None:
+    @pytest.mark.parametrize("complete_uri", [True, False])
+    async def test_successful_device_flow(self, capsys, complete_uri) -> None:
         config = Config(issuer="https://auth.example.com", client_id="test")
 
         discovery = {
@@ -98,6 +125,8 @@ class TestDeviceAuthorizationGrant:
             "interval": 0.01,  # Speed up test
             "expires_in": 300,
         }
+        if not complete_uri:
+            device_response_data.pop("verification_uri_complete")
 
         token_data = {
             "access_token": "test-access-token",
@@ -143,6 +172,14 @@ class TestDeviceAuthorizationGrant:
         assert result["access_token"] == "test-access-token"
         assert result["refresh_token"] == "test-refresh-token"
         assert poll_count == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        verification_uri = device_response_data.get(
+            "verification_uri_complete", device_response_data["verification_uri"]
+        )
+        assert verification_uri in captured.err
+        assert "ABCD-EFGH" in captured.err
+        assert "Waiting for authentication..." in captured.err
 
     @pytest.mark.asyncio
     async def test_handles_slow_down_response(self) -> None:

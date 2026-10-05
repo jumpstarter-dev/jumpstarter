@@ -312,12 +312,12 @@ GRPCURL = $(LOCALBIN)/grpcurl
 
 ## Tool Versions
 # renovate: datasource=github-releases depName=kubernetes-sigs/kustomize extractVersion=^kustomize/(?<version>v\d+\.\d+\.\d+)$
-KUSTOMIZE_VERSION ?= v5.8.1
+KUSTOMIZE_VERSION ?= v5.8.2
 # renovate: datasource=github-releases depName=kubernetes-sigs/controller-tools extractVersion=^(?<version>v\d+\.\d+\.\d+)$
 CONTROLLER_TOOLS_VERSION ?= v0.22.0
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 # renovate: datasource=github-releases depName=golangci/golangci-lint
-GOLANGCI_LINT_VERSION ?= v2.13.2
+GOLANGCI_LINT_VERSION ?= v2.14.0
 # renovate: datasource=github-releases depName=kubernetes-sigs/kind
 KIND_VERSION ?= v0.33.0
 # renovate: datasource=github-releases depName=fullstorydev/grpcurl
@@ -334,7 +334,7 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
 
 # renovate: datasource=docker depName=docker.io/bufbuild/buf
-BUF_VERSION ?= 1.71.0
+BUF_VERSION ?= 1.73.0
 
 .PHONY: protobuf-gen
 protobuf-gen:

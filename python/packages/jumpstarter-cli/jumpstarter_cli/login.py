@@ -353,10 +353,8 @@ async def login(  # noqa: C901
         config.refresh_token = refresh_token
 
     save_config()
-    # Set the new client as the default if it's an alias-based client config.
-    # Path-based configs (--client-config <path>) aren't addressable by alias,
-    # so they can't be tracked as the user's "current client".
-    if config_kind == "client" and isinstance(config, ClientConfigV1Alpha1):
+    # The current client is stored by alias, so its config must be loadable by that alias.
+    if config_kind == "client" and isinstance(config, ClientConfigV1Alpha1) and config.is_alias_path():
         user_config = UserConfigV1Alpha1.load_or_create()
         user_config.use_client(config.alias)
         click.echo(f"Set '{config.alias}' as the default client.")

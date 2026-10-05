@@ -19,7 +19,7 @@ from rich.logging import RichHandler
 
 from jumpstarter.client.status_monitor import StatusMonitor
 from jumpstarter.common import ExporterStatus, LogSource, Metadata
-from jumpstarter.common.exceptions import JumpstarterException
+from jumpstarter.common.exceptions import CONSOLE_IN_USE_MARKER, JumpstarterException
 from jumpstarter.common.resources import ResourceMetadata
 from jumpstarter.common.serde import decode_value, encode_value
 from jumpstarter.common.streams import (
@@ -56,6 +56,14 @@ class ExporterNotReady(DriverError):
     """
     Raised when the exporter is not ready to accept driver calls
     """
+
+
+def _console_in_use_error(code: StatusCode, details: str | None) -> DriverError | None:
+    """Map an exclusive-console rejection to a DriverError with the marker stripped."""
+    details = details or ""
+    if code == StatusCode.FAILED_PRECONDITION and CONSOLE_IN_USE_MARKER in details:
+        return DriverError(details.split(CONSOLE_IN_USE_MARKER, 1)[1].strip())
+    return None
 
 
 @dataclass(kw_only=True)
@@ -430,7 +438,18 @@ class AsyncDriverClient(
             .model_dump(mode="json", round_trip=True)
             .items(),
         )
-        metadata = dict(list(await context.initial_metadata()))
+        try:
+            metadata = dict(list(await context.initial_metadata()))
+        except AioRpcError as exc:
+            if error := _console_in_use_error(exc.code(), exc.details()):
+                raise error from None
+            raise
+        # An exporter that aborts before sending headers (e.g. console in use)
+        # resolves initial_metadata() empty rather than raising; the status only
+        # surfaces on the first read, which RouterStream turns into a generic
+        # BrokenResourceError. Check it here while it is still inspectable.
+        if context.done() and (error := _console_in_use_error(await context.code(), await context.details())):
+            raise error
         async with MetadataStream(stream=RouterStream(context=context), metadata=metadata) as stream:
             yield stream
 

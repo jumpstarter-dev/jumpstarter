@@ -201,7 +201,7 @@ def _make_expired_connection_error():
     return exc, config
 
 
-def test_reauth_retries_on_success() -> None:
+def test_reauth_retries_on_success(capsys) -> None:
     """After successful re-auth the decorator retries and returns the result (TS-NS-1)."""
     call_count = 0
 
@@ -215,11 +215,16 @@ def test_reauth_retries_on_success() -> None:
         if call_count == 1:
             exc, _ = _make_expired_connection_error()
             raise exc
+        click.echo("lease-id")
         return "sentinel"
 
     result = fn()
     assert result == "sentinel"
     assert call_count == 2
+    captured = capsys.readouterr()
+    assert captured.out == "lease-id\n"
+    assert "Token is expired, triggering re-authentication" in captured.err
+    assert "Re-authenticated, retrying..." in captured.err
 
 
 def test_reauth_failure_raises_click_exception() -> None:

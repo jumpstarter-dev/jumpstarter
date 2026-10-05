@@ -70,9 +70,7 @@ class V4L2CtlMjpegCapture:
         requested = self._v4l2_ctl_executable or "v4l2-ctl"
         executable = resolve_v4l2_ctl_executable(self._v4l2_ctl_executable)
         if executable is None:
-            raise OSError(
-                f"v4l2-ctl not found: {requested!r} (install v4l-utils or fix v4l2_ctl_executable)"
-            )
+            raise OSError(f"v4l2-ctl not found: {requested!r} (install v4l-utils or fix v4l2_ctl_executable)")
 
         if self.is_open:
             self.close()
@@ -88,10 +86,7 @@ class V4L2CtlMjpegCapture:
             proc = self._start_process()
             time.sleep(_STARTUP_POLL_S)
             if proc.poll() is not None:
-                raise OSError(
-                    f"v4l2-ctl exited immediately while opening {self._device} "
-                    f"(exit code {proc.returncode})"
-                )
+                raise OSError(f"v4l2-ctl exited immediately while opening {self._device} (exit code {proc.returncode})")
         except OSError:
             self._cleanup_process()
             raise

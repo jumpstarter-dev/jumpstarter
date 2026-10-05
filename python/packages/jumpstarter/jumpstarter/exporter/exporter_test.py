@@ -1738,7 +1738,7 @@ def _wire_status_stream(exporter, statuses, sent: Event | None = None):
     matching production behavior where status streams are long-lived.
     If ``sent`` is provided, it is set after all statuses have been queued.
     """
-    async def fake_retry_stream(name, factory, tx, **kwargs):
+    async def fake_retry_stream(name, factory, tx, backoff=0.5, outage_budget=None):
         for s in statuses:
             await tx.send(s)
         if sent is not None:
