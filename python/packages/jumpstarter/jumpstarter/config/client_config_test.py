@@ -236,6 +236,26 @@ shell:
         os.unlink(f.name)
 
 
+@pytest.mark.parametrize("override_path", [False, True])
+def test_client_config_save_loaded_path(tmp_path, monkeypatch, override_path):
+    clients = tmp_path / "clients"
+    monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", clients)
+    source = tmp_path / "external" / "client.yaml"
+    config = ClientConfigV1Alpha1(metadata=ObjectMeta(namespace="test", name="test"), token="old-token")
+    ClientConfigV1Alpha1.save(config, source)
+    loaded = ClientConfigV1Alpha1.from_file(source)
+    loaded.token = "new-token"
+    destination = tmp_path / "copy" / "client.yaml" if override_path else source
+
+    saved = ClientConfigV1Alpha1.save(loaded, destination if override_path else None)
+
+    assert saved == destination
+    assert ClientConfigV1Alpha1.from_file(destination).token == "new-token"
+    assert not (clients / "client.yaml").exists()
+    if override_path:
+        assert ClientConfigV1Alpha1.from_file(source).token == "old-token"
+
+
 def test_client_config_save_explicit_path():
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
