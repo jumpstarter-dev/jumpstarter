@@ -159,6 +159,27 @@ def test_exhausted_retries_leave_device_in_fastboot(fake_fastboot, tmp_path, bun
     assert "continue:" not in state["commands"]
 
 
+def test_getvar_tells_a_missing_device_from_an_undefined_variable(fake_fastboot, tmp_path):
+    with serve(make_driver(fake_fastboot, tmp_path)) as client:
+        assert client.getvar("no-such-variable") is None  # the bootloader doesn't define it
+        with fake_fastboot.edit() as state:
+            state["device"]["present"] = False
+        with pytest.raises(Exception, match="no fastboot device on USB port usb:1-2"):
+            client.getvar("product")  # not an empty answer: there is nothing to ask
+
+
+def test_jobs_lists_recent_jobs_from_the_client(fake_fastboot, tmp_path, bundle):
+    # `limit` crosses gRPC as a protobuf number, which decodes as a float; it must still slice.
+    with serve(make_driver(fake_fastboot, tmp_path)) as client:
+        assert client.jobs() == []
+        first = client.flash(manifest=str(bundle / "manifest.yaml"))
+        with fake_fastboot.edit() as state:  # the bundle ends with `finally: continue`, which boots the device
+            state["device"].update(present=True, mode="bootloader")
+        second = client.flash(manifest=str(bundle / "manifest.yaml"))
+        assert [j["job_id"] for j in client.jobs()] == [first["job_id"], second["job_id"]]
+        assert [j["job_id"] for j in client.jobs(limit=1)] == [second["job_id"]]
+
+
 def test_lease_end_waits_for_the_flash(fake_fastboot, tmp_path, bundle):
     with fake_fastboot.edit() as state:
         state["flash_delay"] = 0.5

@@ -521,7 +521,7 @@ $$ j fastboot resume JOB           # rerun an interrupted job (device back in fa
 $$ j fastboot wait-idle
 $$ j fastboot enter --strategy buttons
 $$ j fastboot wait-present --timeout 30   # exit 1 if the device isn't in fastboot by then
-$$ j fastboot getvar current-slot
+$$ j fastboot getvar current-slot          # exit 1 if no device is in fastboot; empty if it isn't defined
 $$ j fastboot reboot bootloader
 ```
 

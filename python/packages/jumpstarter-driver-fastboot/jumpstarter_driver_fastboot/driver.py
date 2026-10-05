@@ -431,8 +431,13 @@ class FastbootFlasher(ScriptRunnerMixin, Driver):
 
     @export
     async def getvar(self, name: str) -> str | None:
-        """Read a bootloader variable (refused while a job owns the device)."""
+        """Read a bootloader variable (refused while a job owns the device).
+
+        Raises if no device is in fastboot on the bench port, so a missing device is never
+        mistaken for a variable the bootloader doesn't define, which returns ``None``.
+        """
         self._guard()
+        await self._fb.resolve()
         return await self._fb.getvar(name)
 
     @export
@@ -821,7 +826,8 @@ class FastbootFlasher(ScriptRunnerMixin, Driver):
 
     @export
     async def jobs(self, limit: int = 20) -> list[dict[str, Any]]:
-        return [self._jobs.info(j) for j in self._my_jobs()[-limit:]]
+        # Call arguments cross gRPC as protobuf numbers, which always decode as floats (20 -> 20.0).
+        return [self._jobs.info(j) for j in self._my_jobs()[-int(limit) :]]
 
     @export
     async def cancel(self, job_id: str) -> dict[str, Any]:
