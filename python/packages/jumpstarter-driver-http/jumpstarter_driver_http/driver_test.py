@@ -51,6 +51,16 @@ def test_http_server_host_config(tmp_path):
     assert server.get_host() == custom_host
 
 
+def test_http_server_advertised_host(tmp_path):
+    server = HttpServer(root_dir=str(tmp_path), host="127.0.0.1", advertised_host="192.168.100.1")
+    assert server.get_host() == "192.168.100.1"
+    assert server.get_url().startswith("http://192.168.100.1:")
+    # without advertised_host, get_host/get_url return the bind host
+    server = HttpServer(root_dir=str(tmp_path), host="127.0.0.1")
+    assert server.get_host() == "127.0.0.1"
+    assert server.get_url().startswith("http://127.0.0.1:")
+
+
 def test_http_server_root_directory_creation(tmp_path):
     new_dir = tmp_path / "new_http_root"
     _ = HttpServer(root_dir=str(new_dir))
