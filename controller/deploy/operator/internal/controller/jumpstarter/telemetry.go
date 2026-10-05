@@ -298,10 +298,7 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSec
 	t := jumpstarter.Spec.Telemetry
 	labels := telemetryLabels(jumpstarter)
 
-	replicas := int32(1)
-	if t.Replicas != nil {
-		replicas = *t.Replicas
-	}
+	replicas := telemetryReplicas(t)
 
 	// Build pod annotations for TLS hash (triggers rolling restart on cert renewal)
 	var podAnnotations map[string]string
