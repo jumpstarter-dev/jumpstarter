@@ -47,6 +47,12 @@ Or install all Python components:
 pip install --extra-index-url https://pkg.jumpstarter.dev/ jumpstarter-all
 ```
 
+### Upgrade the CLI
+
+```shell
+jmp self update
+```
+
 ### Deploy the Service
 
 To install the Jumpstarter Service in your Kubernetes cluster, see the

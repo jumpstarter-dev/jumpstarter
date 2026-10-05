@@ -5,7 +5,7 @@ description = ""
 authors = [{ name = "Kirk Brauer", email = "kbrauer@hatci.com" }]
 readme = "README.md"
 license = "Apache-2.0"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
   "googleapis-common-protos>=1.69.1",
   "grpcio>=1.66.1",
@@ -37,3 +37,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.hooks.pin_jumpstarter]
 name = "pin_jumpstarter"
+
+[tool.ty.src]
+exclude = [
+  "jumpstarter_protocol/jumpstarter/**/*_pb2.py",
+  "jumpstarter_protocol/jumpstarter/**/*_pb2_grpc.py",
+  "jumpstarter_protocol/jumpstarter/**/*_pb2.pyi",
+  "jumpstarter_protocol/jumpstarter/**/*_pb2_grpc.pyi",
+]

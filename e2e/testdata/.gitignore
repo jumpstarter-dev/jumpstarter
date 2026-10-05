@@ -1,0 +1,3 @@
+# Guest images for ExporterSet QEMU e2e (downloaded / copied by ensure-qemu-guest-image.sh).
+*
+!.gitignore

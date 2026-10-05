@@ -79,12 +79,12 @@ class DurationParamType(click.ParamType):
                 param,
                 ctx,
             )
-            raise  # satisfy ty: self.fail is NoReturn but ty cannot verify it
+            raise  # pragma: no cover  # noqa: PLE0704  # satisfy ty: self.fail is NoReturn but ty cannot verify it
 
         if self.minimum is not None and td < self.minimum:
             min_seconds = int(self.minimum.total_seconds())
             self.fail(f"{value!r} must be at least {min_seconds} seconds", param, ctx)
-            raise  # satisfy ty: self.fail is NoReturn but ty cannot verify it
+            raise  # pragma: no cover  # noqa: PLE0704  # satisfy ty: self.fail is NoReturn but ty cannot verify it
 
         return td
 
@@ -157,6 +157,27 @@ opt_retry_timeout = partial(
         "Override retry timeout for unreachable exporters (e.g., '5m', '30s', "
         "'0' to disable). Env: JMP_RETRY_TIMEOUT. Default: 5m."
     ),
+)
+
+DIAL_TIMEOUT = DurationParamType(minimum=timedelta(seconds=5))
+
+opt_dial_timeout = partial(
+    click.option,
+    "--dial-timeout",
+    "dial_timeout",
+    type=DIAL_TIMEOUT,
+    default=None,
+    help=(
+        "Override dial timeout for slow exporters (e.g., '60s', '2m', "
+        "'90s'). Env: JMP_DIAL_TIMEOUT. Default: 60s."
+    ),
+)
+
+opt_allow_disabled = click.option(
+    "--allow-disabled",
+    is_flag=True,
+    default=False,
+    help="Allow leasing a disabled exporter (only effective with --name/-n)",
 )
 
 opt_begin_time = click.option(

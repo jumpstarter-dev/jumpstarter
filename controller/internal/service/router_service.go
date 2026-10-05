@@ -18,8 +18,6 @@ package service
 
 import (
 	"context"
-	"crypto/tls"
-	"fmt"
 	"net"
 	"os"
 	"sync"
@@ -31,7 +29,6 @@ import (
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -127,36 +124,13 @@ func (s *RouterService) Start(ctx context.Context) error {
 		return err
 	}
 
-	// Handle external certificate if provided via environment variables.
-	// Environment variables EXTERNAL_CERT_PEM and EXTERNAL_KEY_PEM should contain the PEM-encoded
-	// certificate and private key respectively. If both are set, they are used; otherwise
-	// a self-signed certificate is generated.
-	var cert *tls.Certificate
-	certPEMPath := os.Getenv("EXTERNAL_CERT_PEM")
-	keyPEMPath := os.Getenv("EXTERNAL_KEY_PEM")
-	if certPEMPath != "" && keyPEMPath != "" {
-		certPEMBytes, err := os.ReadFile(certPEMPath)
-		if err != nil {
-			return fmt.Errorf("failed to read external certificate file: %w", err)
-		}
-		keyPEMBytes, err := os.ReadFile(keyPEMPath)
-		if err != nil {
-			return fmt.Errorf("failed to read external key file: %w", err)
-		}
-		parsedCert, err := tls.X509KeyPair(certPEMBytes, keyPEMBytes)
-		if err != nil {
-			return fmt.Errorf("failed to parse external certificate: %w", err)
-		}
-		cert = &parsedCert
-	} else {
-		cert, err = NewSelfSignedCertificate("jumpstarter router", dnsnames, ipaddresses)
-		if err != nil {
-			return err
-		}
+	tlsCreds, _, err := LoadTLSCredentials("jumpstarter router", dnsnames, ipaddresses)
+	if err != nil {
+		return err
 	}
 
 	opts := []grpc.ServerOption{
-		grpc.Creds(credentials.NewServerTLSFromCert(cert)),
+		grpc.Creds(tlsCreds),
 		grpc.ChainUnaryInterceptor(recovery.UnaryServerInterceptor()),
 		grpc.ChainStreamInterceptor(recovery.StreamServerInterceptor()),
 	}

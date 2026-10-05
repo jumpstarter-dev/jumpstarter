@@ -209,7 +209,7 @@ class TestDriverLocalNtp:
         mock_nft.apply_ntp_redirect.assert_not_called()
 
     def test_ntp_enabled_starts_server_and_redirect(self, tmp_path):
-        driver, _, mock_nft, _, mock_ntp_cls = _make_driver(tmp_path, local_ntp=True)
+        _driver, _, mock_nft, _, mock_ntp_cls = _make_driver(tmp_path, local_ntp=True)
         mock_ntp_cls.assert_called_once_with("192.168.100.1")
         mock_ntp_cls.return_value.start.assert_called_once()
         mock_nft.apply_ntp_redirect.assert_called_once_with(

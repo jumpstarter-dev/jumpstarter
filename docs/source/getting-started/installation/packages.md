@@ -44,6 +44,14 @@ If you have the repository cloned locally:
 | Release candidate | `./install.sh -s rc` | Install latest release candidate (when available) |
 | Custom directory | `./install.sh -d /opt/jumpstarter` | Install to custom directory |
 
+##### Built-in installer
+
+If you have the jumpstarter python packages installed and want to upgrade:
+
+```{code-block} console
+jmp self update
+```
+
 ##### Installation Directory Structure
 
 After installation, the following structure is created:

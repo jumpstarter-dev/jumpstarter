@@ -162,6 +162,15 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
+              sharedWith:
+                description: |-
+                  List of client names that have shared access to this lease.
+                  Only the lease owner can modify this list.
+                items:
+                  type: string
+                maxItems: 10
+                type: array
+                x-kubernetes-list-type: set
               tags:
                 additionalProperties:
                   type: string
@@ -278,6 +287,15 @@ spec:
                 description: Priority is the effective priority of the lease from
                   the access policy.
                 type: integer
+              sharedWith:
+                description: |-
+                  SharedWith is the effective set of client names granted shared access to
+                  this lease. It is derived by the controller from Spec.SharedWith after
+                  evaluating exporter access policies; Spec.SharedWith remains the owner's
+                  desired intent and is never mutated by the controller.
+                items:
+                  type: string
+                type: array
               spotAccess:
                 description: SpotAccess indicates whether this lease was granted with
                   spot (preemptible) access.

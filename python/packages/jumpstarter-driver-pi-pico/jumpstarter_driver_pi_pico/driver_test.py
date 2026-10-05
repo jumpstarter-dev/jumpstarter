@@ -257,7 +257,7 @@ def test_drivers_pi_pico_flash_via_gpio(monkeypatch, tmp_path):
 
 
 def test_drivers_pi_pico_no_children_raises(monkeypatch):
-    monkeypatch.setattr("jumpstarter_driver_pi_pico.driver.find_all_bootloader_mounts", lambda: [])
+    monkeypatch.setattr("jumpstarter_driver_pi_pico.driver.find_all_bootloader_mounts", list)
     driver = PiPicoFlasher()
     with pytest.raises(NotImplementedError, match="GPIO children.*serial"):
         driver.enter_bootloader()

@@ -42,19 +42,15 @@ class SilentCallback:
 
     def progress(self, message: str) -> None:
         """Does nothing."""
-        pass
 
     def success(self, message: str) -> None:
         """Does nothing."""
-        pass
 
     def warning(self, message: str) -> None:
         """Does nothing."""
-        pass
 
     def error(self, message: str) -> None:
         """Does nothing."""
-        pass
 
     def confirm(self, prompt: str) -> bool:
         """Always returns True (auto-confirm)."""
@@ -67,7 +63,7 @@ class LoggingCallback:
     Useful for server applications or when you want structured logging.
     """
 
-    def __init__(self, logger: logging.Logger = None):
+    def __init__(self, logger: logging.Logger | None = None):
         """Initialize with optional logger. If None, uses root logger."""
         self.logger = logger or logging.getLogger(__name__)
 
@@ -99,7 +95,7 @@ class ForceCallback:
     Skips all confirmations and produces minimal output.
     """
 
-    def __init__(self, output_callback: OutputCallback = None):
+    def __init__(self, output_callback: OutputCallback | None = None):
         """Initialize with optional output callback for messages."""
         self.output_callback = output_callback or SilentCallback()
 

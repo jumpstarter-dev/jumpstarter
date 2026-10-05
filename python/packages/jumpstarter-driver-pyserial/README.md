@@ -48,6 +48,7 @@ export:
 | disable_hupcl  | Disable HUPCL on POSIX systems to avoid toggling DTR/RTS on close (can prevent MCU reset on serial disconnect)                                       | bool  | no       | False   |
 | power_control_ref | Explicit power device name from DUT tree for Ctrl-] x3 hotkey (skips auto-discovery). Only needed in multi-power setups | str | no | None (auto-discover) |
 | power_control_method | Power cycle method sequence for Ctrl-] x3 hotkey. Supports method names (`cycle`, `reset`, `on`, `off`) and `sleep:N` delays. Set to `[]` or `null` to disable | list[str] | no | `["cycle"]` |
+| always_on      | Keep the serial port open even when no clients are connected. When false (the default), the port is opened on first client attach and closed when the last client detaches, freeing it for other tools (e.g. esptool). When true, the port stays open for the lifetime of the exporter, which can be useful to avoid HUPCL-triggered resets between sessions | bool  | no       | False   |
 
 ### NVDemuxSerial Driver
 
@@ -155,17 +156,25 @@ If these requirements are not met, the driver will raise a `ValueError` during i
 
 The pyserial driver provides two CLI commands for interacting with serial ports:
 
-### start_console
+### console
 
 Start an interactive serial console with direct terminal access.
 
 ```bash
-j serial start-console
+j serial console
 ```
 
 **Hotkeys:**
 - **CTRL+B x3**: Exit the console
 - **CTRL+] x3**: Power cycle the board (if a power driver is available in the DUT tree)
+
+Use `--observe` to attach in read-only (watch-only) mode. Observers receive
+serial output but cannot write, so they can watch a session another client is
+driving without interfering:
+
+```bash
+j serial console --observe
+```
 
 ### pipe
 
@@ -208,12 +217,69 @@ cat commands.txt | j serial pipe --no-output
 - `--no-input`: Disable stdin to serial port, even if stdin is piped
 - `-a, --append`: Append to output file instead of overwriting
 - `--no-output`: Disable serial output handling (stdin -> serial only, exits at EOF)
+- `--observe`: Watch-only mode (read-only). Use when another session holds exclusive write access.
 
 Notes:
 - `--no-output` cannot be combined with `--output` or `--append`.
 - `--no-output` requires stdin input (piped stdin or `--input`).
+- `--observe` cannot be combined with `--input` or `--no-output`.
 
 Exit with Ctrl+C.
+
+## Serial console sharing and observe mode
+
+The serial console fans out to multiple clients so that several holders of a
+shared lease can attach to the same port at once. This pairs well with
+[lease sharing](https://jumpstarter.dev/main/getting-started/guides/examples/lease-sharing.html):
+the lease owner shares access, and everyone can watch the console while one
+client drives it.
+
+Access is coordinated by an exclusive **write token**:
+
+- The first client to open an interactive session (`console` or `pipe` with
+  input) acquires the write token and may write to the port.
+- Additional clients attach as **observers**, receiving all serial output
+  (including a replay of recent scrollback on attach) but unable to write. A
+  client observes when it passes `--observe`, or when a `pipe` has no stdin to
+  forward (a plain logging/monitoring pipe never takes the write token, so it
+  cannot lock out an interactive user).
+- There is no silent fallback for interactive sessions: running `console` (or
+  `pipe -i`) while another client holds the token fails with an error telling
+  you to retry with `--observe`. Running an interactive command means you intend
+  to type, so we surface the conflict instead of quietly dropping you to
+  read-only.
+- When the write-token holder disconnects, the token is released and another
+  client may take it.
+
+### release-console
+
+Force-release the write token if the holder disconnected uncleanly and left it
+stuck, freeing another client to take over writing:
+
+```bash
+j serial release-console
+```
+
+### console-status
+
+Inspect the current session: whether the write token is held, how many
+observers are attached, and how much scrollback is buffered:
+
+```bash
+j serial console-status
+```
+
+```console
+Write token held: yes
+Observers: 2
+Total clients: 3
+Reader running: True
+Scrollback: 4096 bytes
+```
+
+With `always_on: false`, disconnecting or kicking the last client closes the
+serial port and clears the scrollback. Closing the port can toggle DTR and
+reset some boards unless `disable_hupcl` is set.
 
 ## API Reference
 

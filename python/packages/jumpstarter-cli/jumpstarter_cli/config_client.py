@@ -1,5 +1,4 @@
 from os import PathLike
-from typing import Optional
 
 import click
 from jumpstarter_cli_common.exceptions import handle_exceptions
@@ -85,7 +84,7 @@ def create_client_config(
     unsafe: bool,
     insecure_tls: bool,
     nointeractive: bool,
-    out: Optional[PathLike],
+    out: PathLike | None,
     output: PathOutputType,
 ):
     """Create a Jumpstarter client configuration."""
@@ -144,9 +143,16 @@ def delete_client_config(name: str, output: PathOutputType):
 
 @config_client.command("list", short_help="List available client configurations.")
 @opt_output_all
+@click.option(
+    "--show-credentials",
+    is_flag=True,
+    default=False,
+    help="Include tokens in json/yaml output instead of redacting them.",
+)
 @handle_exceptions
-def list_client_configs(output: OutputType):
+def list_client_configs(output: OutputType, show_credentials: bool):
     configs = ClientConfigV1Alpha1.list()
+    configs.include_credentials = show_credentials
 
     model_print(configs, output)
 

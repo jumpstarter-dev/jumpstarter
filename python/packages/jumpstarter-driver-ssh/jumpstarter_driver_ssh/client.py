@@ -1,3 +1,4 @@
+import contextlib
 import os
 import shlex
 import subprocess
@@ -157,9 +158,8 @@ class SSHWrapperClient(CompositeClient):
         temp_file = None
         if ssh_identity:
             try:
-                temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='_ssh_key')
-                temp_file.write(ssh_identity)
-                temp_file.close()
+                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='_ssh_key') as temp_file:
+                    temp_file.write(ssh_identity)
                 # Set proper permissions (600) for SSH key
                 os.chmod(temp_file.name, 0o600)
                 identity_file = temp_file.name
@@ -167,10 +167,8 @@ class SSHWrapperClient(CompositeClient):
             except Exception as e:
                 self.logger.error("Failed to create temporary identity file: %s", e)
                 if temp_file:
-                    try:
+                    with contextlib.suppress(Exception):
                         os.unlink(temp_file.name)
-                    except Exception:
-                        pass
                 raise
 
         try:
@@ -191,7 +189,7 @@ class SSHWrapperClient(CompositeClient):
                 try:
                     os.unlink(identity_file)
                     self.logger.debug("Cleaned up temporary identity file: %s", identity_file)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     self.logger.warning("Failed to clean up temporary identity file %s: %s", identity_file, str(e))
 
     def _build_ssh_command_args(self, port, identity_file, args):
@@ -288,7 +286,9 @@ class SSHWrapperClient(CompositeClient):
     def _execute_ssh_command(self, ssh_args, options: SSHCommandRunOptions) -> SSHCommandRunResult:
         """Execute the SSH command and return the result"""
         try:
-            result = subprocess.run(ssh_args, capture_output=options.capture_output, text=options.capture_as_text)
+            result = subprocess.run(
+                ssh_args, capture_output=options.capture_output, text=options.capture_as_text, check=False
+            )
             return SSHCommandRunResult.from_completed_process(result)
         except FileNotFoundError:
             self.logger.error(

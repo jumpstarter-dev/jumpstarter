@@ -29,12 +29,16 @@ class PinJumpstarter(BuildHookInterface):
                     req.specifier &= SpecifierSet(f"=={self.metadata.version}")
                     metadata["project"]["dependencies"][i] = str(req)
 
-        f = NamedTemporaryFile(delete=False)
-        tomli_w.dump(metadata, f)
-        f.close()
+        with NamedTemporaryFile(delete=False) as f:  # pragma: no cover
+            tomli_w.dump(metadata, f)
 
         build_data["__hatch_pin_jumpstarter_tempfile"] = f
-        build_data["force_include"][f.name] = "pyproject.toml"
+        # Drop hatchling's own pyproject.toml entry (force_include is keyed by
+        # source) so ours is the only copy; otherwise both land in the sdist.
+        force_include = build_data["force_include"]
+        for source in [s for s, target in force_include.items() if target == "pyproject.toml"]:
+            del force_include[source]
+        force_include[f.name] = "pyproject.toml"
 
     def finalize(self, version, build_data, artifact_path):
         if self.target_name != "sdist":

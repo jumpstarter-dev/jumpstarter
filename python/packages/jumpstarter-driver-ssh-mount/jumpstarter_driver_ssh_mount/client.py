@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import subprocess
@@ -15,10 +16,28 @@ from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 
 from jumpstarter.client.core import DriverMethodNotImplemented
 from jumpstarter.client.decorators import driver_click_command
+from jumpstarter.common.display import display_options
 
 SUBPROCESS_TIMEOUT = 120
 MOUNT_POLL_INTERVAL = 0.5
 MOUNT_POLL_TIMEOUT = 10
+
+
+def _tag_mount_ps1(ps1: str, mount_tag: str, remote_path: str, no_icons: bool) -> str:
+    """Insert *mount_tag* before the jmp prompt arrow in *ps1*.
+
+    Falls back to prefixing the prompt with ``[sshfs:remote_path]`` when
+    the jmp prompt arrow is not present.
+    """
+    arrow = ">" if no_icons else "➤"
+    if arrow in ps1:
+        if no_icons:
+            # ">" is a common character in custom prompts, so only tag the
+            # last occurrence (the prompt arrow).
+            idx = ps1.rfind(arrow)
+            return ps1[:idx] + mount_tag + ps1[idx:]
+        return ps1.replace(arrow, f"{mount_tag}{arrow}")
+    return f"[sshfs:{remote_path}] {ps1}"
 
 
 @dataclass(kw_only=True)
@@ -257,45 +276,51 @@ class SSHMountClient(CompositeClient):
         shell = os.environ.get("SHELL", "/bin/sh")
         shell_name = os.path.basename(shell)
         env = os.environ.copy()
+        opts = display_options()
+        no_icons = opts.no_icons
+        no_color = opts.no_color
 
         mount_tag = "(mount)"
+        bolt = "^" if no_icons else "⚡"
+        arrow = ">" if no_icons else "➤"
         try:
             if shell_name.endswith("bash"):
-                ps1 = env.get("PS1", r"\$ ")
-                if "➤" in ps1:
-                    ps1 = ps1.replace("➤", f"{mount_tag}➤")
-                else:
-                    ps1 = f"[sshfs:{remote_path}] {ps1}"
-                env["PS1"] = ps1
+                env["PS1"] = _tag_mount_ps1(env.get("PS1", r"\$ "), mount_tag, remote_path, no_icons)
                 subprocess.run(
                     [shell, "--norc", "--noprofile", "-i"],
                     env=env,
+                    check=False,
                 )
             elif shell_name == "fish":
-                fish_fn = (
-                    "function fish_prompt; "
-                    "set_color grey; "
-                    'printf "%s" (basename $PWD); '
-                    "set_color yellow; "
-                    'printf "⚡"; '
-                    "set_color white; "
-                    f'printf "{mount_tag}"; '
-                    "set_color yellow; "
-                    'printf "➤ "; '
-                    "set_color normal; "
-                    "end"
-                )
-                subprocess.run([shell, "--init-command", fish_fn], env=env)
-            elif shell_name == "zsh":
-                ps1 = env.get("PS1", "%# ")
-                if "➤" in ps1:
-                    ps1 = ps1.replace("➤", f"{mount_tag}➤")
+                if no_color:
+                    fish_fn = (
+                        "function fish_prompt; "
+                        'printf "%s " (basename $PWD); '
+                        f'printf "{bolt}"; '
+                        f'printf "{mount_tag}"; '
+                        f'printf "{arrow} "; '
+                        "end"
+                    )
                 else:
-                    ps1 = f"[sshfs:{remote_path}] {ps1}"
-                env["PS1"] = ps1
-                subprocess.run([shell, "--no-rcs", "-i"], env=env)
+                    fish_fn = (
+                        "function fish_prompt; "
+                        "set_color grey; "
+                        'printf "%s " (basename $PWD); '
+                        "set_color yellow; "
+                        f'printf "{bolt}"; '
+                        "set_color white; "
+                        f'printf "{mount_tag}"; '
+                        "set_color yellow; "
+                        f'printf "{arrow} "; '
+                        "set_color normal; "
+                        "end"
+                    )
+                subprocess.run([shell, "--init-command", fish_fn], env=env, check=False)
+            elif shell_name == "zsh":
+                env["PS1"] = _tag_mount_ps1(env.get("PS1", "%# "), mount_tag, remote_path, no_icons)
+                subprocess.run([shell, "--no-rcs", "-i"], env=env, check=False)
             else:
-                subprocess.run([shell, "-i"], env=env)
+                subprocess.run([shell, "-i"], env=env, check=False)
         except FileNotFoundError as err:
             raise click.ClickException(
                 f"Shell '{shell}' not found. Set the SHELL environment variable to a valid shell."
@@ -355,22 +380,18 @@ class SSHMountClient(CompositeClient):
         except Exception as e:
             self.logger.error("Failed to create temporary identity file: %s", e)
             if fd is not None:
-                try:
+                with contextlib.suppress(Exception):
                     os.close(fd)
-                except Exception:
-                    pass
             if temp_path:
-                try:
+                with contextlib.suppress(Exception):
                     os.unlink(temp_path)
-                except Exception:
-                    pass
             raise
 
     def _cleanup_identity_file(self, identity_file: str | None) -> None:
         if identity_file:
             try:
                 os.unlink(identity_file)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 self.logger.warning("Failed to clean up identity file %s: %s", identity_file, e)
 
     def umount(self, mountpoint: str, *, lazy: bool = False) -> None:
@@ -379,7 +400,7 @@ class SSHMountClient(CompositeClient):
         cmd = self._build_umount_cmd(mountpoint, lazy=lazy)
 
         self.logger.debug("Running unmount command: %s", cmd)
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT, check=False)
 
         if result.returncode != 0:
             stderr = result.stderr.strip()
@@ -390,11 +411,11 @@ class SSHMountClient(CompositeClient):
     def _force_umount(self, mountpoint: str) -> None:
         cmd = self._build_umount_cmd(mountpoint, lazy=False)
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT, check=False)
             if result.returncode != 0:
                 self.logger.debug("Force umount of %s returned %d: %s",
                                   mountpoint, result.returncode, result.stderr.strip())
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.debug("Force umount of %s failed: %s", mountpoint, e)
 
     def _build_umount_cmd(self, mountpoint: str, *, lazy: bool = False) -> list[str]:

@@ -1,0 +1,330 @@
+# Cuttlefish Driver
+
+`jumpstarter-driver-cuttlefish` manages
+[Android Cuttlefish](https://source.android.com/docs/devices/cuttlefish)
+virtual devices through either the
+[Host Orchestrator](https://github.com/google/android-cuttlefish) REST API or
+the `cvd` CLI over a `jumpstarter-exec` launcher socket.
+It provides full CVD (Cuttlefish Virtual Device) lifecycle management through
+standard Jumpstarter interfaces: `VirtualPowerInterface` for on/off/cycle,
+plus cuttlefish-specific operations (powerwash and restart).
+
+For managed Kubernetes exporters, see the [Cuttlefish ExporterSet deployment guide](https://github.com/jumpstarter-dev/jumpstarter/blob/main/controller/internal/exporterset/provisioners/cuttlefish/README.md)
+for service accounts/SCCs, network isolation, resource budgets, pinned images,
+private VSOCK, storage access modes, and failure recovery.
+
+## Installation
+
+```{code-block} console
+:substitutions:
+$ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-cuttlefish
+```
+
+### Prerequisites
+
+- Host Orchestrator backend: a running Host Orchestrator (port 2080 by default)
+- Exec backend: `cvd` in the runtime container and a reachable
+  `jumpstarter-exec` launcher socket. The managed ExporterSet provisioner
+  supplies the launcher.
+
+## Host Setup
+
+A `cvd-images` named volume mounted at `/home/vsoc-01/fetch` persists
+fetched AOSP images across container restarts. Instance state (`/var/tmp/cvd`)
+is deliberately kept ephemeral — restarting the container gives you a clean
+slate with no orphaned instance directories.
+
+```bash
+# 1. Pull the orchestration image
+podman pull us-docker.pkg.dev/android-cuttlefish-artifacts/cuttlefish-orchestration/cuttlefish-orchestration:stable
+
+# 2. Create a named volume for AOSP images
+podman volume create cvd-images
+
+# 3. Start the container
+#    --network=host: netsim and rootcanal bind to 127.0.0.1 inside the
+#    container, so without host networking they'd be unreachable from
+#    outside. Host networking shares the VM's network namespace directly.
+#
+#    Security note: --privileged + --network=host gives the container full
+#    access to the VM's network stack. HO, netsim, and rootcanal have no
+#    auth — only deploy on dedicated, non-public hosts.
+podman run -d \
+  --name cuttlefish-orchestrator \
+  --restart=always \
+  --privileged \
+  --network=host \
+  -v cvd-images:/home/vsoc-01/fetch:Z \
+  -v /opt/cuttlefish:/opt/cuttlefish:Z \
+  us-docker.pkg.dev/android-cuttlefish-artifacts/cuttlefish-orchestration/cuttlefish-orchestration:stable
+
+# 4. Fix permissions
+podman exec cuttlefish-orchestrator chown -R httpcvd:httpcvd /home/vsoc-01/fetch
+
+# 5. Fetch AOSP images (one-time, ~2 minutes)
+podman exec cuttlefish-orchestrator cvd fetch \
+  --default_build=aosp-android-latest-release/aosp_cf_x86_64_auto-userdebug \
+  --target_directory=/home/vsoc-01/fetch
+
+# 6. Verify
+curl -s http://localhost:2080/_debug/statusz  # should return 200
+curl -s http://localhost:2080/cvds             # should return {"cvds":[]}
+```
+
+### Ports
+
+After a CVD boots, the following ports are available on the host.
+All per-instance ports use the same offset: `base + instance_num - 1`.
+
+| Service | Base port | Instance 1 | Instance 2 |
+|---------|-----------|------------|------------|
+| Host Orchestrator | 2080 | 2080 (fixed) | 2080 (fixed) |
+| ADB | 6520 | 6520 | 6521 |
+| Netsim REST | 7681 | 7681 | 7682 |
+| Rootcanal HCI | 7300 | 7300 | 7301 |
+
+When using `instance_num > 1`, update the netsim `port` and bt_peer
+`hci_port` in the exporter config to match.
+
+### SSH tunnel (local development only)
+
+For local development, when running the exporter on your workstation
+instead of as a pod, tunnel ports from the VM. This works because
+`--network=host` places netsim and rootcanal on the VM's loopback -
+the tunnel's `localhost` target reaches them directly.
+
+```bash
+ssh -L 2080:localhost:2080 \
+    -L 6520:localhost:6520 \
+    -L 7681:localhost:7681 \
+    -L 7300:localhost:7300 \
+    fedora@<vm-ip> -p 22000 -N
+```
+
+In production, the exporter runs as a pod and the `host` config
+points to the cuttlefish VM's address directly - no tunnel needed.
+
+### Resetting stale state
+
+If CVDs get stuck or orphaned, clear stale state inside the container:
+
+```bash
+podman exec cuttlefish-orchestrator bash -c '
+    rm -rf /var/tmp/cvd/[0-9]* /var/tmp/cvd/lock/* /tmp/cf_avd_* /tmp/vsock_*
+    chown -R httpcvd:httpcvd /var/tmp/cvd/
+'
+```
+
+Or restart the container - ephemeral `/var/tmp/cvd` means a restart is
+equivalent to a full reset. Fetched images in the `cvd-images` volume
+are preserved.
+
+### Teardown
+
+Delete CVDs when done to avoid accumulation:
+
+```bash
+j power off --destroy          # deletes the CVD
+```
+
+## Configuration
+
+Example exporter configuration:
+
+```yaml
+export:
+  cuttlefish:
+    type: jumpstarter_driver_cuttlefish.driver.Cuttlefish
+    config:
+      host: localhost
+      port: 2080
+      instance_num: 1
+      env_config:
+        instances:
+          - disk:
+              default_build: /home/vsoc-01/fetch
+        common:
+          host_package: /home/vsoc-01/fetch
+  netsim:
+    type: jumpstarter_driver_netsim.driver.Netsim
+    config:
+      host: localhost
+      port: 7681       # 7681 + instance_num - 1
+  bt_peer:
+    type: jumpstarter_driver_bt_peer.driver.BtPeer
+    config:
+      hci_host: 127.0.0.1
+      hci_port: 7300    # 7300 + instance_num - 1
+  power:
+    ref: cuttlefish.power
+  adb:
+    ref: cuttlefish.adb
+```
+
+### Configuration Parameters
+
+| Parameter       | Description                         | Type | Required | Default     |
+| --------------- | ----------------------------------- | ---- | -------- | ----------- |
+| host            | Host Orchestrator hostname          | str  | no       | "localhost" |
+| port            | Host Orchestrator HTTP port         | int  | no       | 2080        |
+| group           | CVD group name passed to `cvd load`. HO auto-assigns a different group name (e.g. `cvd_1`); the driver tracks the assigned name internally. | str  | no       | "cvd"       |
+| name            | CVD instance name within the group  | str  | no       | "1"         |
+| instance_num    | CVD instance number (determines ADB/netsim/HCI ports). Must match HO's assigned slot. Pinning avoids drift (see `env_config` example). | int  | no       | 1           |
+| adb_server_port | ADB server port on the exporter     | int  | no       | 15037       |
+| boot_timeout    | Seconds to wait for boot on power on| int  | no       | 300         |
+| env_config      | Default env_config for CVD creation | dict | no       | {}          |
+| launcher_socket | Exec backend: `jumpstarter-exec` launcher socket shared with the Cuttlefish runtime container. When set, every operation runs `cvd` there instead of calling Host Orchestrator. Injected by the ExporterSet provisioner with `backend: exec`. | str | no | "" |
+| cvd_user        | Exec backend: non-root user that runs `jumpstarter-exec serve` and its `cvd` children in the runtime container. Must match the owner of CVD state; Host Orchestrator uses `httpcvd`. | str | no | "" |
+
+This is a **composite driver** with three children:
+- **power** — `VirtualPowerInterface`: `j power on`, `j power off [--destroy]`, `j power cycle`
+- **storage** — `FlasherInterface`: not yet implemented (planned: HO artifact upload API)
+- **adb** — ADB server for device communication
+
+The exporter config also typically includes sibling drivers:
+- **netsim** (`jumpstarter-driver-netsim`) — virtual radio control (BLE, WiFi, UWB) via netsim REST API
+- **bt_peer** (`jumpstarter-driver-bt-peer`) — Bluetooth peer device via bumble + rootcanal HCI
+
+Use `ref:` entries in the exporter config to expose children at the top level.
+
+### Backends
+
+The driver has two interchangeable backends behind the same exported methods:
+
+- **Host Orchestrator (HTTP)**: the default. Operations are REST actions that
+  return asynchronous operations; the driver waits on them. Works against any
+  host running the orchestration image, in or outside the cluster.
+- **cvd CLI over jumpstarter-exec**: selected when `launcher_socket` is set.
+  Operations map one-to-one onto `cvd` subcommands run in the runtime container:
+  `cvd load <env_config>` creates, `cvd fleet` lists, and `start`, `stop`,
+  `restart`, `powerwash`, `powerbtn`, `remove` and `reset -y` do the rest.
+  Inventory documents are normalized to the Host Orchestrator shape, so clients
+  see the same `group`, `name`, `status` and `adb_port` fields. `list_operations`
+  is unavailable because `cvd` runs synchronously.
+
+The exec backend is only meaningful inside a managed Pod, where the ExporterSet
+provisioner stages `jumpstarter-exec` and the socket on a shared volume and does
+not start Host Orchestrator at all; see the deployment guide linked above.
+
+## Usage
+
+### CLI
+
+```bash
+# Power on (creates CVD if none exists, starts if stopped)
+j power on
+
+# Power off (stops CVD, keeps state)
+j power off
+
+# Power off and delete CVD entirely
+j power off --destroy
+
+# Power cycle
+j power cycle
+
+# Health check
+j cuttlefish status
+
+# List all CVDs
+j cuttlefish list
+
+# Get this CVD's details
+j cuttlefish get
+
+# Restart the CVD
+j cuttlefish restart
+
+# Factory reset
+j cuttlefish powerwash
+
+# Simulate power button press
+j cuttlefish powerbtn
+
+# List running operations
+j cuttlefish ops
+
+```
+
+### Python API
+
+```python
+from jumpstarter.common.utils import serve
+from jumpstarter_driver_cuttlefish.driver import Cuttlefish
+
+driver = Cuttlefish(
+    host="localhost",
+    port=2080,
+    env_config={
+        "instances": [{"disk": {"default_build": "/home/vsoc-01/fetch"}}],
+        "common": {"host_package": "/home/vsoc-01/fetch"},
+    },
+)
+with serve(driver) as client:
+    # Check Host Orchestrator is reachable
+    print(client.status())  # "OK"
+
+    # Power on (creates CVD from env_config)
+    client.power.on()
+
+    # List CVDs
+    cvds = client.list_cvds()
+    print(cvds)
+
+    # Cleanup
+    client.power.off(destroy=True)
+```
+
+## Architecture
+
+```text
+┌────────────┐     gRPC      ┌────────────────┐    HTTP     ┌──────────────────┐
+│ jmp shell  │──────────────►│ Exporter       │────────────►│ Host             │
+│ (client)   │               │  ├─ cuttlefish │  :2080      │ Orchestrator     │
+│            │               │  │  ├─ power   │             │                  │
+│            │               │  │  ├─ storage │             │  cvd create/     │
+│            │               │  │  └─ adb     │             │  start/stop      │
+│            │               │  ├─ netsim ────│── :7681 ──►│  netsim REST     │
+│            │               │  └─ bt_peer ───│── :7300 ──►│  rootcanal HCI   │
+└────────────┘               └────────────────┘             └────────┬─────────┘
+                                                                     │
+                                                                     ▼
+                                                            ┌──────────────────┐
+                                                            │ Cuttlefish VM    │
+                                                            │ (Android guest)  │
+                                                            │  ADB :6520       │
+                                                            └──────────────────┘
+```
+
+The driver is a thin REST client that translates Jumpstarter driver calls into
+Host Orchestrator API requests. Long-running operations (create, start, stop,
+delete) are handled asynchronously - the driver polls the `/operations/:wait`
+endpoint until completion or timeout.
+
+`power.on()` waits for full boot by default (`boot_timeout=300`). It polls
+`adb connect` + `adb devices` until the device is online, then waits for
+`sys.boot_completed=1`. Set `boot_timeout: 0` to skip the wait.
+
+### CVD Build Sources
+
+The `env_config` supports two build source formats in `disk.default_build`:
+
+- **Android CI**: `@ab/<branch>/<target>` - fetches images from Android Build servers.
+  Example: `@ab/aosp-android-latest-release/aosp_cf_x86_64_auto-userdebug` (AAOS)
+- **Local path**: `/path/to/android/build` - uses pre-fetched images on the host.
+
+## API Reference
+
+### Driver
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_cuttlefish.driver.Cuttlefish()
+   :members:
+```
+
+### Client
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_cuttlefish.client.CuttlefishClient()
+   :members:
+```

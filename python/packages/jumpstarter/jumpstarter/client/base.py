@@ -100,7 +100,8 @@ class DriverClient(AsyncDriverClient):
         """
         Close the open stream session without a context manager.
         """
-        self.stack.close()
+        if hasattr(self, "stack"):
+            self.stack.close()
 
     def __del__(self):
         self.close()
@@ -133,7 +134,7 @@ class StubDriverClient(DriverClient):
         """Invoke streaming driver call - raises ImportError since driver is not installed."""
         self._raise_missing_error()
         # Unreachable yield to make this a generator function for type checking
-        while False:  # noqa: SIM114
+        while False:
             yield
 
     @contextmanager

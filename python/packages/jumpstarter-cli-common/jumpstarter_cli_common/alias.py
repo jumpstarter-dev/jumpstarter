@@ -1,10 +1,12 @@
+from typing import ClassVar
+
 import click
 
 
 class AliasedGroup(click.Group):
     """An aliased command group."""
 
-    common_aliases: dict[str, list[str]] = {
+    common_aliases: ClassVar[dict[str, list[str]]]= {
         "remove": ["rm"],
         "list": ["ls"],
         "create": ["c"],
@@ -19,6 +21,7 @@ class AliasedGroup(click.Group):
         "move": ["mv"],
         "config": ["conf"],
         "delete": ["del", "d"],
+        "describe": ["desc"],
         "shell": ["sh", "s"],
         "exporter": ["exporters", "e"],
         "exporters": ["exporter"],

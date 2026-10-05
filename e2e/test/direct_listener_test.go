@@ -26,7 +26,7 @@ import (
 	. "github.com/onsi/gomega"    //nolint:revive
 )
 
-var _ = Describe("Direct Listener E2E Tests", Label("direct-listener"), Ordered, func() {
+var _ = Describe("Direct Listener E2E Tests", Label("direct-listener"), Ordered, ContinueOnFailure, func() {
 	var (
 		tracker      *ProcessTracker
 		listenerPort = 19090

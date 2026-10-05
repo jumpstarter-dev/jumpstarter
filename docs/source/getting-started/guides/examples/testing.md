@@ -277,7 +277,10 @@ hardware-test:
 **Lease acquisition times out**
 : Verify that an {term}`exporter` matching your `selector` labels is running and
   registered with the {term}`controller`. Check available {term}`exporter`s with
-  `jmp get exporters`.
+  `jmp get exporters`, and `jmp describe exporter <name>` for one exporter's
+  labels and the {term}`lease` currently holding it. If the {term}`lease` was
+  created but never became ready, `jmp describe lease <name>` reports its
+  conditions.
 
 **`client` fixture setup fails**
 : Confirm that `jumpstarter-testing` is installed, and either: `JUMPSTARTER_HOST`

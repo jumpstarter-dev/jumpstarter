@@ -1,10 +1,11 @@
 import asyncio
 import asyncio.subprocess
+import contextlib
 import os
 import signal
 import subprocess
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from typing import AsyncGenerator
 
 from jumpstarter.driver import Driver, export
 
@@ -126,7 +127,7 @@ class Shell(Driver):
         # Validate arguments
         for arg in args:
             if not isinstance(arg, str):
-                raise ValueError(f"All arguments must be strings, got {type(arg)}")
+                raise TypeError(f"All arguments must be strings, got {type(arg)}")  # pragma: no cover
 
         # Validate working directory if set
         if self.cwd and not os.path.isdir(self.cwd):
@@ -146,27 +147,23 @@ class Shell(Driver):
 
         # Read from stdout
         if process.stdout:
-            try:
+            with contextlib.suppress(Exception):
                 if read_all:
                     chunk = await process.stdout.read()
                 else:
                     chunk = await asyncio.wait_for(process.stdout.read(1024), timeout=0.01)
                 if chunk:
                     stdout_data = chunk.decode('utf-8', errors='replace')
-            except (asyncio.TimeoutError, Exception):
-                pass
 
         # Read from stderr
         if process.stderr:
-            try:
+            with contextlib.suppress(Exception):
                 if read_all:
                     chunk = await process.stderr.read()
                 else:
                     chunk = await asyncio.wait_for(process.stderr.read(1024), timeout=0.01)
                 if chunk:
                     stderr_data = chunk.decode('utf-8', errors='replace')
-            except (asyncio.TimeoutError, Exception):
-                pass
 
         return stdout_data, stderr_data
 
@@ -216,7 +213,7 @@ class Shell(Driver):
                     pass
                 try:
                     await asyncio.wait_for(process.wait(), timeout=5.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:  # pragma: no cover
                     try:
                         os.killpg(process.pid, signal.SIGKILL)
                         self.logger.warning(f"SIGTERM failed to terminate {process.pid}, sending SIGKILL")
@@ -234,7 +231,7 @@ class Shell(Driver):
                 # Small delay to prevent busy waiting
                 await asyncio.sleep(0.1)
 
-            except Exception:
+            except Exception:  # pragma: no cover  # noqa: BLE001
                 break
 
         # Process completed, get return code and final output

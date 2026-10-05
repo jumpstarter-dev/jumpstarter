@@ -21,7 +21,7 @@ Release input: $ARGUMENTS
 - **FLS tags** do NOT use a `v` prefix: `0.3.0`, `0.4.0` (repo: `jumpstarter-dev/fls`)
 - Python packages are versioned automatically from git tags via `hatch-vcs` — no manual version files.
 - The `bundle/` directory is NOT committed to the repo.
-- `GITHUB_USER` env var controls the fork for community-operators (defaults to `mangelajo`).
+- `GITHUB_USER` env var controls the fork for community-operators and for pushing version-bump PRs. Auto-detected via `gh api user -q .login` if not set.
 - Do NOT modify `controller/deploy/operator/api/v1alpha1/jumpstarter_types.go` — the operator resolves `:latest` image defaults to its own version at runtime.
 
 ## Ordering constraint
@@ -36,9 +36,12 @@ If a new FLS version is needed, release FLS first so binaries exist before Jumps
 
 ### 1. Gather context and determine release type
 
-Fetch the latest remote state first, then inspect:
+Fetch the latest remote state and detect the GitHub user early:
 
 ```bash
+GITHUB_USER="${GITHUB_USER:-$(gh api user -q .login)}"
+echo "GitHub user: $GITHUB_USER"
+
 git fetch origin --tags
 git branch --show-current
 git branch -r | grep 'origin/release-'
@@ -127,7 +130,7 @@ Using the git state and `$ARGUMENTS` (if provided), ask the user:
    | SemVer(`CARGO`) != SemVer(`LATEST`) and `AHEAD == 0` | Warn: `Cargo.toml` version does not match the published release tag — ask the user before proceeding. |
    | Pin files disagree with each other | Warn and fix pins to a single version before tagging. |
 
-   Present the recommendation with the supporting numbers (`PINNED`, `LATEST`, `CARGO`, `AHEAD`), then ask the user to confirm or override.
+   Present the recommendation with the supporting numbers (`PINNED`, `LATEST`, `CARGO`, `AHEAD`) and the detected `GITHUB_USER` (so the user can override via `export GITHUB_USER=...` if needed), then ask the user to confirm or override.
 
 ### 2A. Create a new release branch
 
@@ -257,10 +260,41 @@ git pull origin release-X.Y
    make manifests generate
    ```
 
-4. **Commit and push** the changes to the release branch. Files to include:
+4. **Commit and push via PR** — release branches are protected and require merge queue, so direct pushes will be rejected. Files to include:
    - `controller/deploy/operator/Makefile`
    - Any files changed by `make manifests generate`
    - FLS pin files (if bumped): `python/Containerfile`, `python/packages/jumpstarter-driver-flashers/jumpstarter_driver_flashers/client.py`
+
+   Push to the user's fork and create a PR targeting the release branch:
+
+   ```bash
+   BUMP_BRANCH="release-X.Y-version-bump-X.Y.Z"
+   git checkout -b "$BUMP_BRANCH"
+   git add -A
+   git commit -m "chore: bump version to X.Y.Z"
+
+   # Push to fork — use the remote pointing to GITHUB_USER's fork.
+   # Common names: "upstream" or the user's username. Check with `git remote -v`.
+   git push <fork-remote> "$BUMP_BRANCH"
+
+   gh pr create \
+     --title "chore: bump version to X.Y.Z" \
+     --body "Version bump for release X.Y.Z" \
+     --head "${GITHUB_USER}:${BUMP_BRANCH}" \
+     --base release-X.Y
+   ```
+
+   Wait for the merge queue to complete. Monitor with `gh pr view <PR_URL> --json state,mergeStateStatus` or watch for the merge notification.
+
+#### Phase 1.5: Sync local branch after merge
+
+After the merge queue merges the PR, the local branch diverges from the merge commit. Sync before tagging:
+
+```bash
+git checkout release-X.Y
+git fetch origin
+git reset --hard origin/release-X.Y
+```
 
 #### Phase 2: Tag and GitHub Release
 
@@ -325,6 +359,20 @@ gh run list --workflow=build-images.yaml --limit 5
 
 The user can also check `quay.io/jumpstarter-dev/jumpstarter-controller:X.Y.Z` directly.
 
+#### Verify correct branch state
+
+During long CI waits, the user may have switched branches. Before generating the bundle, verify the branch and version are correct — `make bundle` silently uses whatever is checked out:
+
+```bash
+CURRENT_BRANCH=$(git branch --show-current)
+CURRENT_VERSION=$(grep '^VERSION ?= ' controller/deploy/operator/Makefile | awk '{print $3}')
+if [ "$CURRENT_BRANCH" != "release-X.Y" ] || [ "$CURRENT_VERSION" != "X.Y.Z" ]; then
+  echo "ERROR: Expected branch release-X.Y with VERSION=X.Y.Z"
+  echo "Got branch=$CURRENT_BRANCH VERSION=$CURRENT_VERSION"
+  git checkout release-X.Y && git pull origin release-X.Y
+fi
+```
+
 #### Generate the OLM bundle
 
 ```bash
@@ -346,14 +394,27 @@ Show the output to the user and ask them to confirm it looks correct before cont
 
 #### Contribute to community-operators
 
+**Note:** `make contribute` depends on `make bundle` internally and will re-run bundle generation. This means the branch state guard above is critical — if the wrong branch is checked out, `make contribute` will silently produce a wrong bundle.
+
+**Pre-check: Ensure forks exist** under `GITHUB_USER`. If they don't, `make contribute` will fail mid-way:
+
+```bash
+for REPO in k8s-operatorhub/community-operators redhat-openshift-ecosystem/community-operators-prod; do
+  if ! gh repo view "${GITHUB_USER}/$(basename $REPO)" &>/dev/null; then
+    echo "Forking $REPO..."
+    gh repo fork "$REPO" --clone=false
+  fi
+done
+```
+
+Then run the contribute script:
+
 ```bash
 cd controller/deploy/operator
 
-# Set GITHUB_USER if different from default (mangelajo):
-# export GITHUB_USER=yourusername
-
+# GITHUB_USER controls which fork the contribute script uses
 # AUTO_CONFIRM=1 skips the interactive y/N prompt
-AUTO_CONFIRM=1 make contribute
+GITHUB_USER="${GITHUB_USER}" AUTO_CONFIRM=1 make contribute
 ```
 
 After the script completes, push to the fork and create PRs using `gh`:
@@ -376,17 +437,17 @@ cd controller/deploy/operator/contribute/community-operators
 gh pr create --repo k8s-operatorhub/community-operators \
   --title "operator jumpstarter-operator (X.Y.Z)" \
   --body "Release X.Y.Z of the jumpstarter-operator for the alpha channel." \
-  --head ${GITHUB_USER:-mangelajo}:$BRANCH --base main
+  --head ${GITHUB_USER}:$BRANCH --base main
 
 # PR for community-operators-prod
 cd ../community-operators-prod
 gh pr create --repo redhat-openshift-ecosystem/community-operators-prod \
   --title "operator jumpstarter-operator (X.Y.Z)" \
   --body "Release X.Y.Z of the jumpstarter-operator for the alpha channel." \
-  --head ${GITHUB_USER:-mangelajo}:$BRANCH --base main
+  --head ${GITHUB_USER}:$BRANCH --base main
 ```
 
-Replace `GITHUB_USER` with the actual GitHub username (default: `mangelajo`).
+The `GITHUB_USER` variable was detected in step 1 and is used throughout.
 
 ### 3. Post-release steps
 

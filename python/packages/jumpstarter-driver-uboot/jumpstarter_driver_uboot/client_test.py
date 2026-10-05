@@ -36,10 +36,11 @@ def test_reboot_to_console_retries_limits_attempts() -> None:
     client.logger = logging.getLogger("test_uboot")
 
     prompt_value = "=> "
-    with patch.object(type(client), "prompt", new_callable=lambda: property(lambda self: prompt_value)):
-        with pytest.raises(RuntimeError, match="Failed to get U-Boot prompt"):
-            with client.reboot_to_console(retries=3):
-                pass
+    with (
+        patch.object(type(client), "prompt", new_callable=lambda: property(lambda self: prompt_value)),
+        pytest.raises(RuntimeError, match="Failed to get U-Boot prompt"),client.reboot_to_console(retries=3)
+    ):
+        pass
 
     assert mock_pexpect_process.send.call_count == 3
     mock_pexpect_process.send.assert_has_calls([call(ESC)] * 3)
@@ -92,10 +93,11 @@ def test_reboot_to_console_retries_zero_raises_immediately() -> None:
     client.logger = logging.getLogger("test_uboot")
 
     prompt_value = "=> "
-    with patch.object(type(client), "prompt", new_callable=lambda: property(lambda self: prompt_value)):
-        with pytest.raises(RuntimeError, match="Failed to get U-Boot prompt"):
-            with client.reboot_to_console(retries=0):
-                pass
+    with (
+        patch.object(type(client), "prompt", new_callable=lambda: property(lambda self: prompt_value)),
+        pytest.raises(RuntimeError, match="Failed to get U-Boot prompt"),client.reboot_to_console(retries=0)
+    ):
+        pass
 
     mock_pexpect_process.send.assert_not_called()
     mock_power.cycle.assert_called_once()

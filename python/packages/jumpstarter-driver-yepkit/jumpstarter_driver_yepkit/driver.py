@@ -48,7 +48,7 @@ class Ykush(PowerInterface, Driver):
         with _USB_DEVS_LOCK:
             # another instance already claimed this device?
             if self.serial is None and len(_USB_DEVS.keys()) > 0:
-                self.serial = list(_USB_DEVS.keys())[0]
+                self.serial = next(iter(_USB_DEVS.keys()))
                 self.dev = _USB_DEVS[self.serial]
                 return
 

@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Literal
 
 import click
 from jumpstarter_cli_common.blocking import blocking
@@ -11,6 +12,9 @@ from jumpstarter_cli_common.oidc import (
     format_duration,
     get_token_remaining_seconds,
 )
+from jumpstarter_cli_common.opt import DataOutputType, opt_output_json_yaml
+from jumpstarter_cli_common.print import model_print
+from pydantic import BaseModel, ConfigDict, Field
 
 from jumpstarter.config.client import ClientConfigV1Alpha1
 
@@ -18,6 +22,64 @@ from jumpstarter.config.client import ClientConfigV1Alpha1
 @click.group()
 def auth():
     """Authentication and token management commands."""
+
+
+class AuthStatusV1Alpha1(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
+    kind: Literal["AuthStatus"] = Field(default="AuthStatus")
+
+    status: Literal["valid", "expiring-soon", "expired", "no-expiry", "no-token", "invalid-token"]
+    expires_at: datetime | None = Field(alias="expiresAt", default=None)
+    remaining_seconds: float | None = Field(alias="remainingSeconds", default=None)
+    subject: str | None = None
+    issuer: str | None = None
+    issued_at: datetime | None = Field(alias="issuedAt", default=None)
+    auth_time: datetime | None = Field(alias="authTime", default=None)
+    refresh_token_stored: bool = Field(alias="refreshTokenStored", default=False)
+    error: str | None = None
+
+
+def _timestamp_claim(payload: dict, claim: str) -> datetime | None:
+    value = payload.get(claim)
+    if not isinstance(value, int):
+        return None
+    return datetime.fromtimestamp(value, tz=UTC)
+
+
+def _collect_auth_status(config) -> AuthStatusV1Alpha1:
+    refresh_token_stored = bool(getattr(config, "refresh_token", None))
+
+    token_str = getattr(config, "token", None)
+    if not token_str:
+        return AuthStatusV1Alpha1(status="no-token", refresh_token_stored=refresh_token_stored)
+
+    try:
+        payload = decode_jwt(token_str)
+    except ValueError as e:
+        return AuthStatusV1Alpha1(status="invalid-token", error=str(e), refresh_token_stored=refresh_token_stored)
+
+    remaining = get_token_remaining_seconds(token_str)
+    if remaining is None:
+        status = "no-expiry"
+    elif remaining < 0:
+        status = "expired"
+    elif remaining < TOKEN_EXPIRY_WARNING_SECONDS:
+        status = "expiring-soon"
+    else:
+        status = "valid"
+
+    return AuthStatusV1Alpha1(
+        status=status,
+        expires_at=_timestamp_claim(payload, "exp"),
+        remaining_seconds=remaining,
+        subject=payload.get("sub"),
+        issuer=payload.get("iss"),
+        issued_at=_timestamp_claim(payload, "iat"),
+        auth_time=_timestamp_claim(payload, "auth_time"),
+        refresh_token_stored=refresh_token_stored,
+    )
 
 
 def _print_token_status(remaining: float) -> None:
@@ -50,7 +112,7 @@ def _print_subject_issuer(payload: dict) -> None:
 def _print_timestamp(label: str, value: int | None) -> None:
     if value is None:
         return
-    dt = datetime.fromtimestamp(value, tz=timezone.utc)
+    dt = datetime.fromtimestamp(value, tz=UTC)
     click.echo(f"{label}: {dt.strftime('%Y-%m-%d %H:%M:%S %Z')}")
 
 
@@ -68,9 +130,14 @@ def _print_verbose_details(payload: dict, config) -> None:
 
 @auth.command(name="status")
 @click.option("-v", "--verbose", is_flag=True, help="Show additional token details")
+@opt_output_json_yaml
 @opt_config(exporter=False)
-def token_status(config, verbose: bool):
+def token_status(config, verbose: bool, output: DataOutputType):
     """Display token status and expiry information."""
+    if output:
+        model_print(_collect_auth_status(config), output)
+        return
+
     token_str = getattr(config, "token", None)
 
     if not token_str:
@@ -89,7 +156,7 @@ def token_status(config, verbose: bool):
         return
 
     exp = payload.get("exp")
-    exp_dt = datetime.fromtimestamp(exp, tz=timezone.utc)
+    exp_dt = datetime.fromtimestamp(exp, tz=UTC)
     click.echo(f"Token expiry: {exp_dt.strftime('%Y-%m-%d %H:%M:%S %Z')}")
 
     _print_token_status(remaining)
@@ -163,7 +230,7 @@ async def rotate_token(config):
         duration = format_duration(new_remaining)
         exp = payload.get("exp")
         if exp:
-            exp_dt = datetime.fromtimestamp(exp, tz=timezone.utc)
+            exp_dt = datetime.fromtimestamp(exp, tz=UTC)
             click.echo(f"Token rotated. New expiry: {exp_dt.strftime('%Y-%m-%d %H:%M:%S %Z')} ({duration} remaining)")
         else:
             click.echo(f"Token rotated. {duration} remaining.")

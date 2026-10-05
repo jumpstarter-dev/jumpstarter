@@ -34,11 +34,10 @@ async def test_http_server(http, tmp_path):
     files = list(http.storage.list("/"))
     assert filename in files
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(uploaded_url) as response:
-            assert response.status == 200
-            retrieved_content = await response.read()
-            assert retrieved_content == test_content
+    async with aiohttp.ClientSession() as session, session.get(uploaded_url) as response:
+        assert response.status == 200
+        retrieved_content = await response.read()
+        assert retrieved_content == test_content
 
     http.storage.delete(filename)
 
@@ -50,6 +49,16 @@ def test_http_server_host_config(tmp_path):
     custom_host = "192.168.1.1"
     server = HttpServer(root_dir=str(tmp_path), host=custom_host)
     assert server.get_host() == custom_host
+
+
+def test_http_server_advertised_host(tmp_path):
+    server = HttpServer(root_dir=str(tmp_path), host="127.0.0.1", advertised_host="192.168.100.1")
+    assert server.get_host() == "192.168.100.1"
+    assert server.get_url().startswith("http://192.168.100.1:")
+    # without advertised_host, get_host/get_url return the bind host
+    server = HttpServer(root_dir=str(tmp_path), host="127.0.0.1")
+    assert server.get_host() == "127.0.0.1"
+    assert server.get_url().startswith("http://127.0.0.1:")
 
 
 def test_http_server_root_directory_creation(tmp_path):
@@ -65,23 +74,22 @@ async def test_opendal_tracking_on_http_server_close(tmp_path, unused_tcp_port, 
     test_content = b"test content for tracking"
 
     # Set up logging to capture debug messages
-    with caplog.at_level(logging.DEBUG):
-        with serve(HttpServer(root_dir=str(tmp_path), port=unused_tcp_port)) as client:
-            client.start()
+    with caplog.at_level(logging.DEBUG), serve(HttpServer(root_dir=str(tmp_path), port=unused_tcp_port)) as client:
+        client.start()
 
-            # Write a file through the HTTP server (which uses OpenDAL internally)
-            (tmp_path / "src").write_bytes(test_content)
-            client.put_file(filename, tmp_path / "src")
+        # Write a file through the HTTP server (which uses OpenDAL internally)
+        (tmp_path / "src").write_bytes(test_content)
+        client.put_file(filename, tmp_path / "src")
 
-            # Verify the file was written
-            files = list(client.storage.list("/"))
-            assert filename in files
+        # Verify the file was written
+        files = list(client.storage.list("/"))
+        assert filename in files
 
-            # Get the tracking info before close
-            created_resources = client.storage.get_created_resources()
-            assert filename in created_resources
+        # Get the tracking info before close
+        created_resources = client.storage.get_created_resources()
+        assert filename in created_resources
 
-            client.stop()
+        client.stop()
         # When exiting the context manager, HttpServer.close() is called,
         # which calls super().close(), which calls OpenDAL.close()
 
@@ -124,9 +132,8 @@ async def test_http_server_close_releases_port(tmp_path, unused_tcp_port):
         url = client.get_url()
         assert str(unused_tcp_port) in url
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{url}/test.txt") as response:
-                assert response.status == 200
+        async with aiohttp.ClientSession() as session, session.get(f"{url}/test.txt") as response:
+            assert response.status == 200
 
         client.stop()
 
@@ -136,9 +143,8 @@ async def test_http_server_close_releases_port(tmp_path, unused_tcp_port):
         url = client.get_url()
         assert str(unused_tcp_port) in url
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{url}/test.txt") as response:
-                assert response.status == 200
+        async with aiohttp.ClientSession() as session, session.get(f"{url}/test.txt") as response:
+            assert response.status == 200
 
         client.stop()
 
@@ -157,9 +163,8 @@ async def test_http_server_port_zero(tmp_path):
         url = client.get_url()
         assert str(port) in url
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{url}/test.txt") as response:
-                assert response.status == 200
+        async with aiohttp.ClientSession() as session, session.get(f"{url}/test.txt") as response:
+            assert response.status == 200
 
         client.stop()
 
@@ -272,6 +277,7 @@ async def test_async_cleanup_error_path(tmp_path, unused_tcp_port):
         await server._async_cleanup()
 
     # Clean up the real runner so the port is released
+    assert real_runner is not None
     await real_runner.cleanup()
 
 
@@ -304,6 +310,7 @@ async def test_close_cleanup_failure_logs_warning(tmp_path, unused_tcp_port, cap
     assert server._bound_port == 0
 
     # Clean up the real runner so the port is released
+    assert real_runner is not None
     await real_runner.cleanup()
 
 

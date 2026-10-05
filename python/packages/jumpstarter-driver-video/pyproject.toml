@@ -1,0 +1,47 @@
+[project]
+name = "jumpstarter-driver-video"
+dynamic = ["version", "urls"]
+description = "Video source drivers for Jumpstarter: common video interface and HTTP/MJPEG camera support"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    { name = "Benny Zlotnik", email = "bzlotnik@protonmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "aiohttp>=3.9.0",
+    "anyio>=4.10.0",
+    "click>=8.3.1",
+    "jumpstarter",
+    "pillow>=10.0.0",
+]
+
+[project.entry-points."jumpstarter.drivers"]
+HttpVideo = "jumpstarter_driver_video.driver:HttpVideo"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../../'}
+
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/jumpstarter/archive/{commit_hash}.zip"
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-report=html --cov-report=xml"
+log_cli = true
+log_cli_level = "INFO"
+testpaths = ["jumpstarter_driver_video"]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=6.0.0",
+    "pytest>=8.3.3",
+]

@@ -28,7 +28,7 @@ def _start_console(client, on_power_cycle=None):
             console = Console(serial_client=client, on_power_cycle=on_power_cycle)
             try:
                 console.run()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - test infrastructure captures all exceptions from console thread
                 result["exc"] = e
         slave_file.close()
 

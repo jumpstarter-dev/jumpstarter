@@ -35,6 +35,15 @@ export:
           password: "secret"
 ```
 
+For devices that require HTTP Digest Auth instead, replace the `basic` block with `digest`:
+
+```yaml
+      auth:
+        digest:
+          user: "admin"
+          password: "secret"
+```
+
 ### Example configuration for Shelly Smart Plug (Gen1):
 
 ```yaml
@@ -102,6 +111,10 @@ voltage=236.6 V  current=0.0 A  apparent_power=0.0 VA
 | power_read | HTTP endpoint config for reading power measurements. When unset, `read()` raises rather than returning a fake zero measurement | HttpEndpointConfig | no | None |
 | auth | Authentication configuration | HttpAuthConfig | no | None |
 | auth.basic | Basic authentication credentials | HttpBasicAuth | no | None |
+| auth.digest | Digest authentication credentials | HttpDigestAuth | no | None |
+
+`auth.basic` and `auth.digest` are mutually exclusive; configuring both raises an
+error at exporter startup.
 
 #### HttpEndpointConfig parameters
 
@@ -119,6 +132,13 @@ voltage=236.6 V  current=0.0 A  apparent_power=0.0 VA
 |-----------|-------------|------|----------|---------|
 | user | Username for basic authentication | str | yes | |
 | password | Password for basic authentication | str | yes | |
+
+#### HttpDigestAuth parameters
+
+| Parameter | Description | Type | Required | Default |
+|-----------|-------------|------|----------|---------|
+| user | Username for digest authentication | str | yes | |
+| password | Password for digest authentication | str | yes | |
 
 ## API Reference
 
@@ -153,5 +173,5 @@ configured path that isn't found raises an error.
 ```
 
 ```{note}
-Authentication is optional and supports HTTP Basic Auth only.
+Authentication is optional and supports HTTP Basic Auth and HTTP Digest Auth.
 ```

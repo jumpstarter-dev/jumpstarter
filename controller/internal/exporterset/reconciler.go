@@ -34,12 +34,14 @@ package exporterset
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -47,6 +49,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -62,8 +65,21 @@ import (
 const (
 	annotationSurplusSince = "exporterset.jumpstarter.dev/surplus-since"
 
-	// Bridges the grandparent lookup (ExporterSet -> Exporter -> Pod).
+	// Bridges the grandparent lookup (ExporterSet -> Exporter -> Pod), and
+	// tells clients which pool an exporter came from: membership otherwise
+	// lives only in ownerReferences, which the client API does not expose.
 	labelExporterSetName = "exporterset.jumpstarter.dev/name"
+
+	// The VirtualTargetClass backing the pool, and the provisioner named by
+	// that class. Together they let clients tell how an exporter is
+	// provisioned without cluster access: the provisioner is a property of
+	// the class, which a client cannot read, so it is carried on the Exporter.
+	//
+	// All three identity labels are client-visible by default. The operator
+	// lists them in hiddenLabels.keys so they stay out of `jmp get exporters`
+	// unless --show-hidden-labels is passed; they remain usable in selectors.
+	labelVirtualTargetClass = "exporterset.jumpstarter.dev/class"
+	labelProvisioner        = "exporterset.jumpstarter.dev/provisioner"
 
 	defaultScaleDownCooldown = 5 * time.Minute
 
@@ -88,6 +104,7 @@ type ExporterSetReconciler struct {
 	LastScaleDownAction map[types.NamespacedName]time.Time
 }
 
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=exportersets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=exportersets/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=exportersets/finalizers,verbs=update
@@ -130,39 +147,8 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			logger.Info("VirtualTargetClass not found",
 				"virtualTargetClassName", exporterSet.Spec.VirtualTargetClassName)
 
-			prevAvailable := meta.IsStatusConditionTrue(
-				exporterSet.Status.Conditions,
-				string(virtualtargetv1alpha1.ExporterSetConditionAvailable),
-			)
-			prevDegraded := meta.IsStatusConditionTrue(
-				exporterSet.Status.Conditions,
-				string(virtualtargetv1alpha1.ExporterSetConditionDegraded),
-			)
-			prevProgressing := meta.IsStatusConditionTrue(
-				exporterSet.Status.Conditions,
-				string(virtualtargetv1alpha1.ExporterSetConditionProgressing),
-			)
-			prevScalingLimited := meta.IsStatusConditionTrue(
-				exporterSet.Status.Conditions,
-				string(virtualtargetv1alpha1.ExporterSetConditionScalingLimited),
-			)
-
-			if countErr := r.reconcileStatusCounts(ctx, &exporterSet); countErr != nil {
-				return ctrl.Result{}, countErr
-			}
-			r.reconcileConditions(&exporterSet)
-			meta.SetStatusCondition(&exporterSet.Status.Conditions, metav1.Condition{
-				Type:               string(virtualtargetv1alpha1.ExporterSetConditionAvailable),
-				Status:             metav1.ConditionFalse,
-				ObservedGeneration: exporterSet.Generation,
-				Reason:             "VirtualTargetClassNotFound",
-				Message:            fmt.Sprintf("VirtualTargetClass %q not found", exporterSet.Spec.VirtualTargetClassName),
-			})
-			if updateErr := r.Status().Update(ctx, &exporterSet); updateErr != nil {
-				return requeueConflict(logger, updateErr)
-			}
-			r.emitConditionEvents(&exporterSet, prevAvailable, prevProgressing, prevDegraded, prevScalingLimited)
-			return ctrl.Result{}, nil
+			return r.reportUnavailable(ctx, &exporterSet, "VirtualTargetClassNotFound",
+				fmt.Sprintf("VirtualTargetClass %q not found", exporterSet.Spec.VirtualTargetClassName))
 		}
 		return ctrl.Result{}, fmt.Errorf("unable to get VirtualTargetClass %q: %w",
 			exporterSet.Spec.VirtualTargetClassName, err)
@@ -171,6 +157,10 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Only reconcile ExporterSets whose class matches our provisioner
 	if vtc.Spec.Provisioner != r.Provisioner.Name() {
 		return ctrl.Result{}, nil
+	}
+
+	if err := r.syncNetworkPolicy(ctx, &exporterSet); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	logger.Info("reconciling ExporterSet",
@@ -199,16 +189,56 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		string(virtualtargetv1alpha1.ExporterSetConditionScalingLimited),
 	)
 
+	// Exporters are found through spec.selector. If the labels this set stamps
+	// on its exporters don't satisfy it (e.g. the selector pins an
+	// exporterset.jumpstarter.dev/* value the identity labels override), new
+	// exporters would be invisible to scaling and created without bound, and
+	// relabelling existing ones would orphan them. Stop until the spec is fixed.
+	if mismatch, err := r.selectorMismatch(ctx, &exporterSet); err != nil {
+		return ctrl.Result{}, err
+	} else if mismatch != "" {
+		logger.Info("ExporterSet selector does not match its exporter labels; not scaling",
+			"detail", mismatch)
+		return r.reportUnavailable(ctx, &exporterSet, "SelectorMismatch", mismatch)
+	}
+
 	ownedExporters, err := r.listOwnedExporters(ctx, &exporterSet)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	// Clean up drained (disabled+unleased) exporters before computing state.
+	// Keep identity labels current on exporters created before them, or after
+	// the set's class changed.
+	if err := r.reconcileExporterLabels(ctx, &exporterSet, ownedExporters); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Single Pod List shared by terminal cleanup and ensureExporterPods.
+	podsByExporter, err := r.listPodsGroupedByExporter(ctx, &exporterSet)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Clean up drained (disabled+unleased) exporters and ExitAndReplace
+	// terminal pods (Succeeded/Failed) before computing pool state.
 	if deleted, err := r.cleanupDisabledExporters(ctx, &exporterSet, ownedExporters); err != nil {
 		return ctrl.Result{}, err
 	} else if deleted {
 		// Update status and return; the next scale-down step fires on RequeueAfter.
+		if err := r.reconcileStatusCounts(ctx, &exporterSet); err != nil {
+			return ctrl.Result{}, err
+		}
+		r.reconcileConditions(&exporterSet)
+		if err := r.Status().Update(ctx, &exporterSet); err != nil {
+			return requeueConflict(logger, err)
+		}
+		r.emitConditionEvents(&exporterSet, prevAvailable, prevProgressing, prevDegraded, prevScalingLimited)
+		return ctrl.Result{}, nil
+	}
+
+	if deleted, err := r.cleanupTerminalExporters(ctx, &exporterSet, ownedExporters, podsByExporter); err != nil {
+		return ctrl.Result{}, err
+	} else if deleted {
 		if err := r.reconcileStatusCounts(ctx, &exporterSet); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -246,7 +276,7 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Phase 2: create config Secrets + Pods for Exporters that now have credentials.
 	// Returns true when some Exporters are still waiting; we requeue to retry
 	// rather than relying solely on the Owns(&Exporter{}) watch event.
-	waiting, ensureErr := r.ensureExporterPods(ctx, &exporterSet, &vtc, mergedParameters, ownedExporters)
+	waiting, ensureErr := r.ensureExporterPods(ctx, &exporterSet, &vtc, mergedParameters, ownedExporters, podsByExporter)
 	if ensureErr != nil {
 		return ctrl.Result{}, ensureErr
 	}
@@ -265,6 +295,34 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	r.emitConditionEvents(&exporterSet, prevAvailable, prevProgressing, prevDegraded, prevScalingLimited)
 
 	return result, nil
+}
+
+// NetworkPolicyProvisioner isolates backend listeners before any workload Pod is created.
+type NetworkPolicyProvisioner interface {
+	RenderNetworkPolicy(*virtualtargetv1alpha1.ExporterSet) *networkingv1.NetworkPolicy
+}
+
+func (r *ExporterSetReconciler) syncNetworkPolicy(ctx context.Context, es *virtualtargetv1alpha1.ExporterSet) error {
+	provisioner, ok := r.Provisioner.(NetworkPolicyProvisioner)
+	if !ok {
+		return nil
+	}
+	desired := provisioner.RenderNetworkPolicy(es)
+	policy := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: desired.Name, Namespace: desired.Namespace}}
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, policy, func() error {
+		if !policy.CreationTimestamp.IsZero() && !metav1.IsControlledBy(policy, es) {
+			return fmt.Errorf("network policy %s is not owned by ExporterSet", policy.Name)
+		}
+		if err := ctrl.SetControllerReference(es, policy, r.Scheme); err != nil {
+			return err
+		}
+		policy.Spec = *desired.Spec.DeepCopy()
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("ensure runtime network isolation: %w", err)
+	}
+	return nil
 }
 
 type poolState struct {
@@ -309,16 +367,16 @@ func (r *ExporterSetReconciler) scaleUp(
 ) error {
 	logger := log.FromContext(ctx)
 
-	for i := int32(0); i < count; i++ {
+	for range count {
 		exporter := &jumpstarterdevv1alpha1.Exporter{
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: es.Name + "-",
 				Namespace:    es.Namespace,
-				Labels:       maps.Clone(es.Spec.Template.Metadata.Labels),
+				Labels:       r.exporterLabels(ctx, es),
 				Annotations:  maps.Clone(es.Spec.Template.Metadata.Annotations),
 			},
 			Spec: jumpstarterdevv1alpha1.ExporterSpec{
-				Enabled: boolPtr(true),
+				Enabled: new(true),
 			},
 		}
 
@@ -345,19 +403,43 @@ func (r *ExporterSetReconciler) scaleUp(
 // has credentials but no Pod yet. Config Secrets are always synced so token
 // rotation takes effect without a Pod restart (Kubernetes refreshes Secret-backed
 // volume mounts automatically).
+//
+// For off-cluster provisioners (those implementing Deployer), this method
+// calls Deploy instead of creating a Pod — see ensureExporterDeployments.
+//
 // Returns true if any Exporter is still waiting for its credential Secret.
 func (r *ExporterSetReconciler) ensureExporterPods(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
 	vtc *virtualtargetv1alpha1.VirtualTargetClass,
-	mergedParameters map[string]interface{},
+	mergedParameters map[string]any,
 	ownedExporters []jumpstarterdevv1alpha1.Exporter,
+	podsByExporter map[string][]corev1.Pod,
+) (waiting bool, err error) {
+	// Off-cluster provisioners manage instances via SSH/API instead of Pods.
+	if deployer, ok := r.Provisioner.(Deployer); ok {
+		return r.ensureExporterDeployments(ctx, es, vtc, mergedParameters, ownedExporters, deployer)
+	}
+
+	return r.ensureExporterPodsInCluster(ctx, es, vtc, mergedParameters, ownedExporters, podsByExporter)
+}
+
+// ensureExporterPodsInCluster is the in-cluster Pod path (unchanged from
+// original ensureExporterPods logic).
+func (r *ExporterSetReconciler) ensureExporterPodsInCluster(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+	vtc *virtualtargetv1alpha1.VirtualTargetClass,
+	mergedParameters map[string]any,
+	ownedExporters []jumpstarterdevv1alpha1.Exporter,
+	podsByExporter map[string][]corev1.Pod,
 ) (waiting bool, err error) {
 	logger := log.FromContext(ctx)
 
-	podsByExporter, err := r.listPodsByExporter(ctx, es)
-	if err != nil {
-		return false, err
+	// Existence set derived from the shared Reconcile Pod list (no second List).
+	exportersWithPod := make(map[string]struct{}, len(podsByExporter))
+	for name := range podsByExporter {
+		exportersWithPod[name] = struct{}{}
 	}
 
 	// CA bundle is read lazily — only when at least one exporter needs it.
@@ -390,12 +472,73 @@ func (r *ExporterSetReconciler) ensureExporterPods(
 			return waiting, err
 		}
 
-		if _, hasPod := podsByExporter[exp.Name]; hasPod {
+		if _, hasPod := exportersWithPod[exp.Name]; hasPod {
 			continue
 		}
 
 		if err := r.createExporterPod(ctx, es, vtc, mergedParameters, mergeImages(vtc.Spec.Images, es.Spec.Images), exp); err != nil {
 			return waiting, err
+		}
+	}
+
+	return waiting, nil
+}
+
+// ensureExporterDeployments is the off-cluster path: calls Deployer.Deploy
+// for exporters that have credentials but haven't been deployed yet.
+func (r *ExporterSetReconciler) ensureExporterDeployments(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+	vtc *virtualtargetv1alpha1.VirtualTargetClass,
+	mergedParameters map[string]any,
+	ownedExporters []jumpstarterdevv1alpha1.Exporter,
+	deployer Deployer,
+) (waiting bool, err error) {
+	logger := log.FromContext(ctx)
+
+	var caBundle string
+	var caRead bool
+
+	images := mergeImages(vtc.Spec.Images, es.Spec.Images)
+
+	for i := range ownedExporters {
+		exp := &ownedExporters[i]
+
+		if !exp.IsEnabled() {
+			continue
+		}
+
+		if exp.Status.Credential == nil || exp.Status.Endpoint == "" {
+			logger.V(1).Info("waiting for credential", "exporter", exp.Name)
+			waiting = true
+			continue
+		}
+
+		if !caRead {
+			caBundle, err = r.readCABundle(ctx, vtc)
+			if err != nil {
+				return false, err
+			}
+			caRead = true
+		}
+
+		deployed, err := deployer.IsDeployed(ctx, exp)
+		if err != nil {
+			return waiting, fmt.Errorf("check deployment for %s: %w", exp.Name, err)
+		}
+		if deployed {
+			continue
+		}
+
+		if err := deployer.Deploy(ctx, es, vtc, mergedParameters, images, exp, caBundle); err != nil {
+			return waiting, fmt.Errorf("deploy %s: %w", exp.Name, err)
+		}
+
+		logger.Info("deployed exporter on remote host", "exporter", exp.Name)
+
+		if r.Recorder != nil {
+			r.Recorder.Eventf(es, corev1.EventTypeNormal, "Deployed",
+				"Deployed Exporter %s on remote host", exp.Name)
 		}
 	}
 
@@ -409,7 +552,7 @@ func (r *ExporterSetReconciler) syncConfigSecret(
 	es *virtualtargetv1alpha1.ExporterSet,
 	exp *jumpstarterdevv1alpha1.Exporter,
 	caBundle string,
-	mergedParameters map[string]interface{},
+	mergedParameters map[string]any,
 ) error {
 	configSecret, err := r.buildExporterConfigSecret(ctx, es, exp, caBundle, mergedParameters)
 	if err != nil {
@@ -440,7 +583,7 @@ func (r *ExporterSetReconciler) createExporterPod(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
 	vtc *virtualtargetv1alpha1.VirtualTargetClass,
-	mergedParameters map[string]interface{},
+	mergedParameters map[string]any,
 	images *virtualtargetv1alpha1.ImageOverrides,
 	exp *jumpstarterdevv1alpha1.Exporter,
 ) error {
@@ -540,11 +683,11 @@ func (r *ExporterSetReconciler) readCredentialToken(
 	return string(token), nil
 }
 
-// listPodsByExporter returns a set of Exporter names that already have a Pod.
-func (r *ExporterSetReconciler) listPodsByExporter(
+// listPodsGroupedByExporter maps Exporter names to their owned Pods.
+func (r *ExporterSetReconciler) listPodsGroupedByExporter(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
-) (map[string]struct{}, error) {
+) (map[string][]corev1.Pod, error) {
 	var podList corev1.PodList
 	if err := r.List(ctx, &podList,
 		client.InNamespace(es.Namespace),
@@ -553,11 +696,13 @@ func (r *ExporterSetReconciler) listPodsByExporter(
 		return nil, fmt.Errorf("list Pods for ExporterSet %s: %w", es.Name, err)
 	}
 
-	byExporter := make(map[string]struct{}, len(podList.Items))
+	byExporter := make(map[string][]corev1.Pod)
 	for i := range podList.Items {
-		for _, ref := range podList.Items[i].OwnerReferences {
+		pod := podList.Items[i]
+		for _, ref := range pod.OwnerReferences {
 			if ref.Kind == kindExporter && ref.Controller != nil && *ref.Controller {
-				byExporter[ref.Name] = struct{}{}
+				byExporter[ref.Name] = append(byExporter[ref.Name], pod)
+				break
 			}
 		}
 	}
@@ -577,16 +722,24 @@ func injectConfigVolume(pod *corev1.Pod, exporterName string) bool {
 		},
 	})
 
+	mount := corev1.VolumeMount{
+		Name:      configVolumeName,
+		MountPath: configMountPath,
+		ReadOnly:  true,
+	}
+
+	// Exporter is the main container (default logs / ExitAndReplace lifecycle).
+	for i := range pod.Spec.Containers {
+		if pod.Spec.Containers[i].Name == exporterContainerName {
+			pod.Spec.Containers[i].VolumeMounts = append(pod.Spec.Containers[i].VolumeMounts, mount)
+			return true
+		}
+	}
+
+	// Backward-compatible: older Pod templates ran exporter as a native sidecar.
 	for i := range pod.Spec.InitContainers {
 		if pod.Spec.InitContainers[i].Name == exporterContainerName {
-			pod.Spec.InitContainers[i].VolumeMounts = append(
-				pod.Spec.InitContainers[i].VolumeMounts,
-				corev1.VolumeMount{
-					Name:      configVolumeName,
-					MountPath: configMountPath,
-					ReadOnly:  true,
-				},
-			)
+			pod.Spec.InitContainers[i].VolumeMounts = append(pod.Spec.InitContainers[i].VolumeMounts, mount)
 			return true
 		}
 	}
@@ -651,6 +804,112 @@ func (r *ExporterSetReconciler) cleanupDisabledExporters(
 	}
 
 	return deleted, nil
+}
+
+// cleanupTerminalExporters deletes unleased exporters whose lifecycle has
+// ended. This is the ExitAndReplace recycle path: the exporter completes its
+// work, then the controller deletes the Exporter CR so scale-up can refill
+// minAvailableReplicas. Without this, Offline/Succeeded instances inflate
+// replicas, block warm-buffer refill at maxReplicas, and leave stale
+// resources behind.
+//
+// For in-cluster provisioners the terminal signal is a Pod in
+// Succeeded/Failed phase. For off-cluster provisioners (Deployer), it is
+// an exporter that was deployed but has gone offline — meaning the remote
+// container exited after the lease ended.
+//
+// InPlaceReuse skips this path entirely.
+// podsByExporter comes from a single List in Reconcile.
+func (r *ExporterSetReconciler) cleanupTerminalExporters(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+	exporters []jumpstarterdevv1alpha1.Exporter,
+	podsByExporter map[string][]corev1.Pod,
+) (bool, error) {
+	if es.Spec.RecycleStrategy == virtualtargetv1alpha1.RecycleStrategyInPlaceReuse {
+		return false, nil
+	}
+
+	logger := log.FromContext(ctx)
+	deployer, isOffCluster := r.Provisioner.(Deployer)
+
+	deleted := false
+	for i := range exporters {
+		exp := &exporters[i]
+		if exp.Status.LeaseRef != nil {
+			continue
+		}
+
+		terminal := false
+
+		if isOffCluster {
+			// Off-cluster: terminal means "deployed but went offline". The
+			// Online condition is set to True when the exporter registers
+			// heartbeats, then flipped to False when they stop. If the
+			// condition doesn't exist at all the exporter never registered
+			// so we leave it alone (still starting up).
+			deployed, err := deployer.IsDeployed(ctx, exp)
+			if err != nil {
+				return deleted, fmt.Errorf("check deployment for %s: %w", exp.Name, err)
+			}
+			terminal = deployed && isExporterOffline(exp)
+		} else {
+			// In-cluster: terminal means all Pods reached Succeeded/Failed.
+			pods := podsByExporter[exp.Name]
+			terminal = allPodsTerminal(pods)
+		}
+
+		if !terminal {
+			continue
+		}
+
+		if err := r.Provisioner.Cleanup(ctx, es, exp); err != nil {
+			return deleted, fmt.Errorf("unable to cleanup Exporter %s: %w", exp.Name, err)
+		}
+
+		if err := r.Delete(ctx, exp); err != nil && !apierrors.IsNotFound(err) {
+			return deleted, fmt.Errorf("unable to delete Exporter %s: %w", exp.Name, err)
+		}
+
+		logger.Info("deleted terminal Exporter (ExitAndReplace)",
+			"exporter", exp.Name, "offCluster", isOffCluster)
+
+		if r.Recorder != nil {
+			r.Recorder.Eventf(es, corev1.EventTypeNormal, "Recycle",
+				"Deleted Exporter %s after terminal lifecycle", exp.Name)
+		}
+		deleted = true
+	}
+
+	return deleted, nil
+}
+
+// isExporterOffline reports whether the exporter's Online condition has been
+// explicitly set to False. Returns false when the condition doesn't exist
+// (exporter never registered) to avoid cleaning up exporters that are still
+// starting.
+func isExporterOffline(exp *jumpstarterdevv1alpha1.Exporter) bool {
+	cond := meta.FindStatusCondition(
+		exp.Status.Conditions,
+		string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+	)
+	return cond != nil && cond.Status == metav1.ConditionFalse
+}
+
+func allPodsTerminal(pods []corev1.Pod) bool {
+	if len(pods) == 0 {
+		return false
+	}
+	for i := range pods {
+		if !isTerminalPodPhase(pods[i].Status.Phase) {
+			return false
+		}
+	}
+	return true
+}
+
+func isTerminalPodPhase(phase corev1.PodPhase) bool {
+	return phase == corev1.PodSucceeded || phase == corev1.PodFailed
 }
 
 // reconcileScaleUp evaluates the three scale-up rules in priority order and
@@ -768,7 +1027,7 @@ func (r *ExporterSetReconciler) reconcileScaleDown(
 				continue
 			}
 
-			exp.Spec.Enabled = boolPtr(false)
+			exp.Spec.Enabled = new(false)
 			if err := r.Update(ctx, exp); err != nil {
 				return ctrl.Result{}, fmt.Errorf("unable to disable Exporter %s: %w", exp.Name, err)
 			}
@@ -813,6 +1072,180 @@ func (r *ExporterSetReconciler) clearSurplusAnnotation(ctx context.Context, es *
 	if err := r.Update(ctx, es); err != nil && !apierrors.IsConflict(err) {
 		log.FromContext(ctx).Error(err, "failed to clear surplus-since annotation")
 	}
+}
+
+// identityLabels mark which pool an exporter belongs to and how it is
+// provisioned. Reconcile has already established that the referenced class
+// names this reconciler's provisioner, so it is the provisioner in effect.
+//
+// It returns the labels to set and the identity keys to remove. A value that
+// is not a valid label value (object names may be up to 253 characters, label
+// values only 63) can't be set: patching it would fail with a 422 on every
+// reconcile. Its key is removed instead, so an exporter never keeps a stale
+// value (say, the class it had before the set moved to a long-named class).
+func (r *ExporterSetReconciler) identityLabels(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+) (set map[string]string, remove []string) {
+	candidates := map[string]string{
+		labelExporterSetName:    es.Name,
+		labelVirtualTargetClass: es.Spec.VirtualTargetClassName,
+	}
+	if r.Provisioner != nil {
+		candidates[labelProvisioner] = r.Provisioner.Name()
+	}
+
+	set = make(map[string]string, len(candidates))
+	for key, value := range candidates {
+		if value == "" {
+			remove = append(remove, key)
+			continue
+		}
+		if errs := validation.IsValidLabelValue(value); len(errs) > 0 {
+			log.FromContext(ctx).V(1).Info("omitting exporter set label with invalid value",
+				"label", key, "value", value, "reason", errs)
+			remove = append(remove, key)
+			continue
+		}
+		set[key] = value
+	}
+	return set, remove
+}
+
+// exporterLabels are the labels an Exporter of this set carries: the set's
+// template labels plus the identity labels above. The
+// exporterset.jumpstarter.dev/ identity keys are reserved for this controller:
+// they override template values and are dropped from the template when the
+// controller omits them, so a template can never misreport pool membership.
+func (r *ExporterSetReconciler) exporterLabels(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+) map[string]string {
+	labels := maps.Clone(es.Spec.Template.Metadata.Labels)
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	set, remove := r.identityLabels(ctx, es)
+	for _, key := range remove {
+		delete(labels, key)
+	}
+	for key, value := range set {
+		if prev, ok := labels[key]; ok && prev != value {
+			log.FromContext(ctx).V(1).Info("template label overridden by exporter set identity label",
+				"label", key, "template", prev, "identity", value)
+		}
+		labels[key] = value
+	}
+	return labels
+}
+
+// selectorMismatch reports, as a human-readable message, why the labels this
+// set gives its exporters don't satisfy its own selector. It returns "" when
+// they match.
+func (r *ExporterSetReconciler) selectorMismatch(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+) (string, error) {
+	selector, err := metav1.LabelSelectorAsSelector(&es.Spec.Selector)
+	if err != nil {
+		return "", fmt.Errorf("invalid label selector: %w", err)
+	}
+	exporterLabels := labels.Set(r.exporterLabels(ctx, es))
+	if selector.Matches(exporterLabels) {
+		return "", nil
+	}
+	return fmt.Sprintf("selector %q does not match exporter labels %q; "+
+		"exporterset.jumpstarter.dev/ label values are set by the controller",
+		selector.String(), exporterLabels.String()), nil
+}
+
+// reportUnavailable records a spec problem that stops reconciliation: it
+// refreshes status counts, marks the set not Available with the given reason,
+// and returns without requeuing (a spec change retriggers reconcile).
+func (r *ExporterSetReconciler) reportUnavailable(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+	reason, message string,
+) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	prevAvailable := meta.IsStatusConditionTrue(es.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionAvailable))
+	prevDegraded := meta.IsStatusConditionTrue(es.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionDegraded))
+	prevProgressing := meta.IsStatusConditionTrue(es.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionProgressing))
+	prevScalingLimited := meta.IsStatusConditionTrue(es.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionScalingLimited))
+
+	if err := r.reconcileStatusCounts(ctx, es); err != nil {
+		return ctrl.Result{}, err
+	}
+	r.reconcileConditions(es)
+	meta.SetStatusCondition(&es.Status.Conditions, metav1.Condition{
+		Type:               string(virtualtargetv1alpha1.ExporterSetConditionAvailable),
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: es.Generation,
+		Reason:             reason,
+		Message:            message,
+	})
+	if err := r.Status().Update(ctx, es); err != nil {
+		return requeueConflict(logger, err)
+	}
+	r.emitConditionEvents(es, prevAvailable, prevProgressing, prevDegraded, prevScalingLimited)
+	return ctrl.Result{}, nil
+}
+
+// reconcileExporterLabels keeps the identity labels on owned exporters current:
+// it stamps them on exporters that predate them, updates them after the set's
+// class changes, and removes identity keys the controller now omits.
+func (r *ExporterSetReconciler) reconcileExporterLabels(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+	owned []jumpstarterdevv1alpha1.Exporter,
+) error {
+	logger := log.FromContext(ctx)
+
+	set, remove := r.identityLabels(ctx, es)
+
+	// Label every exporter we can this cycle: one failed patch should not
+	// leave the rest of the pool unlabeled until the next reconcile.
+	var errs []error
+	for i := range owned {
+		exporter := &owned[i]
+		changed := map[string]string{}
+		for key, value := range set {
+			if exporter.Labels[key] != value {
+				changed[key] = value
+			}
+		}
+		var removed []string
+		for _, key := range remove {
+			if _, ok := exporter.Labels[key]; ok {
+				removed = append(removed, key)
+			}
+		}
+		if len(changed) == 0 && len(removed) == 0 {
+			continue
+		}
+
+		patch := client.MergeFrom(exporter.DeepCopy())
+		if exporter.Labels == nil {
+			exporter.Labels = map[string]string{}
+		}
+		maps.Copy(exporter.Labels, changed)
+		for _, key := range removed {
+			delete(exporter.Labels, key)
+		}
+		if err := r.Patch(ctx, exporter, patch); err != nil {
+			logger.Error(err, "unable to label exporter", "exporter", exporter.Name)
+			errs = append(errs, fmt.Errorf("unable to label Exporter %s: %w", exporter.Name, err))
+			continue
+		}
+		logger.Info("updated exporter set labels", "exporter", exporter.Name,
+			"set", changed, "removed", removed)
+	}
+	return errors.Join(errs...)
 }
 
 func (r *ExporterSetReconciler) listOwnedExporters(
@@ -1163,7 +1596,7 @@ func filterOwnedExporters(
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ExporterSetReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&virtualtargetv1alpha1.ExporterSet{}).
 		Owns(&jumpstarterdevv1alpha1.Exporter{}).
 		Watches(
@@ -1178,8 +1611,11 @@ func (r *ExporterSetReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&jumpstarterdevv1alpha1.Lease{},
 			handler.EnqueueRequestsFromMapFunc(r.findExporterSetsForLease),
 		).
-		Named("exporterset").
-		Complete(r)
+		Named("exporterset")
+	if _, ok := r.Provisioner.(NetworkPolicyProvisioner); ok {
+		builder = builder.Owns(&networkingv1.NetworkPolicy{})
+	}
+	return builder.Complete(r)
 }
 
 // findExporterSetForPod bridges the ExporterSet→Exporter→Pod grandchild gap via label.
@@ -1333,8 +1769,6 @@ func isOwnedByKind(obj client.Object, kind string) bool {
 	return false
 }
 
-func boolPtr(b bool) *bool { return &b }
-
 func atMaxReplicas(es *virtualtargetv1alpha1.ExporterSet, current int32) bool {
 	return es.Spec.MaxReplicas > 0 && current >= es.Spec.MaxReplicas
 }
@@ -1350,7 +1784,7 @@ func maxScaleUp(es *virtualtargetv1alpha1.ExporterSet, current int32) int32 {
 	return room
 }
 
-func requeueConflict(logger interface{ Info(string, ...interface{}) }, err error) (ctrl.Result, error) {
+func requeueConflict(logger interface{ Info(string, ...any) }, err error) (ctrl.Result, error) {
 	if apierrors.IsConflict(err) {
 		logger.Info("conflict on status update, will retry")
 	}
@@ -1361,9 +1795,9 @@ func requeueConflict(logger interface{ Info(string, ...interface{}) }, err error
 func deepMergeParameters(
 	classParams *apiextensionsv1.JSON,
 	setParams *apiextensionsv1.JSON,
-) (map[string]interface{}, error) {
-	base := make(map[string]interface{})
-	override := make(map[string]interface{})
+) (map[string]any, error) {
+	base := make(map[string]any)
+	override := make(map[string]any)
 
 	if classParams != nil && classParams.Raw != nil {
 		if err := json.Unmarshal(classParams.Raw, &base); err != nil {
@@ -1380,14 +1814,12 @@ func deepMergeParameters(
 	return deepMerge(base, override), nil
 }
 
-func deepMerge(base, override map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{}, len(base)+len(override))
-	for k, v := range base {
-		result[k] = v
-	}
+func deepMerge(base, override map[string]any) map[string]any {
+	result := make(map[string]any, len(base)+len(override))
+	maps.Copy(result, base)
 	for k, v := range override {
-		if baseMap, ok := result[k].(map[string]interface{}); ok {
-			if overrideMap, ok := v.(map[string]interface{}); ok {
+		if baseMap, ok := result[k].(map[string]any); ok {
+			if overrideMap, ok := v.(map[string]any); ok {
 				result[k] = deepMerge(baseMap, overrideMap)
 				continue
 			}

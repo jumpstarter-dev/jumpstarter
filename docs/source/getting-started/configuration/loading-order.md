@@ -17,9 +17,9 @@ precedence (highest to lowest):
 
 For client operations, Jumpstarter processes configurations in this order:
 
-1. **Command-line options** such as `--endpoint` or `--client-config`
-2. **Environment variables** such as `JMP_ENDPOINT`, `JMP_TOKEN`, or
-   `JMP_CLIENT_CONFIG`
+1. **Command-line options** such as `--endpoint`, `--client-config`, `--retry-timeout`, or `--dial-timeout`
+2. **Environment variables** such as `JMP_ENDPOINT`, `JMP_TOKEN`,
+   `JMP_CLIENT_CONFIG`, `JMP_RETRY_TIMEOUT`, or `JMP_DIAL_TIMEOUT`
 3. **Current client** defined in `${HOME}/.config/jumpstarter/config.yaml`
 4. **Specific client file** in `${HOME}/.config/jumpstarter/clients/<n>.yaml`
 

@@ -46,7 +46,6 @@ class ShellClient(DriverClient):
         @driver_click_group(self)
         def base():
             """Shell command executor"""
-            pass
 
         # Get available methods from the driver
         if self._methods is None:

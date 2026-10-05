@@ -25,12 +25,20 @@ mosquitto = "mosquitto"
 # ser is short for "serialize" in variable names like ser_json_timedelta
 ser = "ser"
 
+# abl is a Qualcomm bootloader component (Application Boot Loader)
+abl = "abl"
+
 # iif/oif are standard nftables keywords (input/output interface)
 iif = "iif"
 oif = "oif"
 
 # AKS is Azure Kubernetes Service
 AKS = "AKS"
+
+# parm/PARM are V4L2 API terms (VIDIOC_G_PARM, VIDIOC_S_PARM, v4l2_streamparm)
+parm = "parm"
+Parm = "Parm"
+PARM = "PARM"
 
 [type.gomod]
 # Exclude go.mod and go.sum from spell checking

@@ -2,7 +2,8 @@
 Client-side Click group helpers for building driver CLIs.
 """
 
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import click
 
@@ -37,15 +38,14 @@ def driver_click_group(client: "DriverClient", **kwargs: Any) -> Callable:
 
     def decorator(f: Callable) -> DriverClickGroup:
         # Use function docstring if no help= provided
-        if "help" not in kwargs or kwargs["help"] is None:
-            if f.__doc__:
-                kwargs["help"] = f.__doc__.strip()
+        if ("help" not in kwargs or kwargs["help"] is None) and f.__doc__:
+            kwargs["help"] = f.__doc__.strip()
 
         # Server description overrides Click defaults
         if getattr(client, "description", None):
             kwargs["help"] = client.description
 
-        group = DriverClickGroup(client, name=f.__name__, callback=f, **kwargs)
+        group = DriverClickGroup(client, name=f.__name__, callback=f, **kwargs)  # type: ignore[attr-defined]
 
         # Transfer Click parameters attached by decorators like @click.option
         group.params = getattr(f, "__click_params__", [])
@@ -89,16 +89,35 @@ class DriverClickGroup(click.Group):
         self.client = client
 
     def command(self, *args: Any, **kwargs: Any) -> Callable:
-        """Command decorator with server methods_description override support."""
+        """Command decorator with server methods_description override and alias support.
+
+        Pass ``aliases=["name", ...]`` to register additional names for the
+        same command.  Aliases are hidden from ``--help`` so they don't clutter
+        the output, but work exactly like the canonical name.
+        """
+        aliases: list[str] = kwargs.pop("aliases", [])
 
         def decorator(f: Callable) -> click.Command:
             name = kwargs.get("name")
             if not name:
-                name = f.__name__.lower().replace("_", "-")
+                name = f.__name__.lower().replace("_", "-")  # type: ignore[attr-defined]
 
             if name in self.client.methods_description:
                 kwargs["help"] = self.client.methods_description[name]
 
-            return super(DriverClickGroup, self).command(*args, **kwargs)(f)
+            cmd: click.Command = super(DriverClickGroup, self).command(*args, **kwargs)(f)
+
+            # Register hidden aliases that point to the same callback
+            for alias in aliases:
+                alias_cmd = click.Command(
+                    name=alias,
+                    callback=cmd.callback,
+                    params=list(cmd.params),
+                    help=cmd.help,
+                    hidden=True,
+                )
+                self.add_command(alias_cmd)
+
+            return cmd
 
         return decorator

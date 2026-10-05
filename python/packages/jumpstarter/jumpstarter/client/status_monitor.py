@@ -171,7 +171,7 @@ class StatusMonitor:
                     return False
                 # Other errors - connection might still work, continue waiting
                 logger.debug("GetStatus error during verification: %s", e.code())
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.debug("GetStatus error during verification: %s", e)
                 return False
 
@@ -254,7 +254,7 @@ class StatusMonitor:
                     return None
                 # Other errors - connection might still work, continue waiting
                 logger.debug("GetStatus error during verification: %s", e.code())
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.debug("GetStatus error during verification: %s", e)
                 return None
 
@@ -377,7 +377,7 @@ class StatusMonitor:
                     for callback in self._on_status_change:
                         try:
                             await callback(new_status, old_status)
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             logger.error(f"Status change callback error: {e}")
 
             except NotImplementedError:
@@ -424,7 +424,7 @@ class StatusMonitor:
                         logger.debug("GetStatus timed out (attempt %d), retrying...", deadline_retries)
                     continue
                 logger.debug(f"GetStatus poll error: {e.code()}")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.debug(f"GetStatus poll error: {e}")
 
             # Wait for next poll or stop signal

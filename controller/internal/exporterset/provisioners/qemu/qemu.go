@@ -30,6 +30,7 @@ import (
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/disk"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -57,6 +58,10 @@ const (
 	// container cannot exhaust node ephemeral storage.
 	sharedVolumeSizeLimit = "100Mi"
 
+	// runtimeContainerName is the native sidecar that runs jumpstarter-exec /
+	// QEMU. Kept as a const so scheduling and RenderPod stay in sync.
+	runtimeContainerName = "target-runtime"
+
 	// jmpExecBinaryPath is the location of jumpstarter-exec inside
 	// the exporter image (installed by the Rust builder stage).
 	jmpExecBinaryPath = "/jumpstarter/bin/jumpstarter-exec"
@@ -66,9 +71,15 @@ const (
 	// the QEMU runtime container.
 	launcherSocketPath = "/shared/launcher.sock"
 
-	// configMountPath is where the ExporterConfig Secret is mounted
-	// inside the exporter sidecar.
-	configMountPath = "/etc/jumpstarter/exporters"
+	// exporterNonRootUID is the UID for the exporter main container.
+	// The runtime sidecar runs as root so it can read exporter-created
+	// paths on the shared volume without world-writable permissions.
+	exporterNonRootUID int64 = 65532
+
+	// exporterConfigPath is the jmp run config path. Must match
+	// exporterset.ExporterConfigMountPath + "/" + exporterConfigKey
+	// (cannot import the parent package — test import cycle).
+	exporterConfigPath = "/etc/jumpstarter/exporters/config.yaml"
 
 	// QEMU driver type for identification during enrichment.
 	qemuDriverType = "jumpstarter_driver_qemu.driver.Qemu"
@@ -134,12 +145,20 @@ func (p *Provisioner) resolveImageSpec(spec *virtualtargetv1alpha1.ImageSpec, de
 // using the native sidecar pattern (KEP-753):
 //
 //   - copy-jumpstarter-exec (regular init container) copies the
-//     jumpstarter-exec binary onto the shared volume and exits.
-//   - Exporter sidecar (init container with restartPolicy: Always)
-//     starts next and drains last; registers with the controller.
-//   - QEMU runtime (main container) runs the virtual machine.
-//   - Shared emptyDir volume for Unix socket communication
-//     (QMP, serial console, launcher socket).
+//     jumpstarter-exec binary from the exporter image onto the
+//     shared volume and exits.
+//   - target-runtime (native sidecar, restartPolicy: Always) starts
+//     next so launcher.sock is ready before the exporter; runs
+//     jumpstarter-exec serve / QEMU.
+//   - exporter (main container) runs `jmp run` — default kubectl logs
+//     target; when it exits (exitOnLeaseEnd / ExitAndReplace),
+//     Kubernetes terminates sidecars and the Pod completes.
+//     Pod restartPolicy is Never so a clean exporter exit is not
+//     restarted in-place (ExporterSet replaces the instance instead).
+//   - Shared emptyDir for Unix sockets (QMP, serial, launcher).
+//   - Guest disk volume at /disk (ephemeral PVC when
+//     parameters.storage.storageClassName is set, otherwise sized
+//     emptyDir with ephemeral-storage requests/limits).
 //
 // The caller (reconciler) is responsible for setting
 // OwnerReferences on the Pod and injecting the config volume.
@@ -147,12 +166,20 @@ func (p *Provisioner) RenderPod(
 	ctx context.Context,
 	exporterSet *virtualtargetv1alpha1.ExporterSet,
 	vtc *virtualtargetv1alpha1.VirtualTargetClass,
-	mergedParameters map[string]interface{},
+	mergedParameters map[string]any,
 	images *virtualtargetv1alpha1.ImageOverrides,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) (*corev1.Pod, error) {
 	restartAlways := corev1.ContainerRestartPolicyAlways
 	sizeLimit := resource.MustParse(sharedVolumeSizeLimit)
+	runAsRoot := int64(0)
+	runAsExporter := exporterNonRootUID
+	exporterNonRoot := true
+
+	diskSpec, err := disk.FromParameters(mergedParameters)
+	if err != nil {
+		return nil, err
+	}
 
 	var exporterSpec, runtimeSpec *virtualtargetv1alpha1.ImageSpec
 	if images != nil {
@@ -176,6 +203,8 @@ func (p *Provisioner) RenderPod(
 		})
 	}
 
+	diskMount := disk.Mount()
+
 	podMeta := metav1.ObjectMeta{
 		Namespace:   exporterSet.Namespace,
 		Labels:      maps.Clone(exporterSet.Spec.Template.Metadata.Labels),
@@ -190,6 +219,9 @@ func (p *Provisioner) RenderPod(
 	pod := &corev1.Pod{
 		ObjectMeta: podMeta,
 		Spec: corev1.PodSpec{
+			// Never: ExitAndReplace relies on exporter (main) exit completing
+			// the Pod. Always would restart jmp run in-place and skip recycle.
+			RestartPolicy: corev1.RestartPolicyNever,
 			InitContainers: []corev1.Container{
 				{
 					Name:            "copy-jumpstarter-exec",
@@ -208,36 +240,54 @@ func (p *Provisioner) RenderPod(
 					},
 				},
 				{
+					// Native sidecar: starts before the main exporter so
+					// launcher.sock exists when jmp run begins. Torn down
+					// automatically when the exporter (main) container exits.
+					// Runs as root so QEMU can use KVM devices and read
+					// exporter-owned paths on the shared volume.
+					Name:            runtimeContainerName,
+					Image:           runtimeImage,
+					ImagePullPolicy: runtimePullPolicy,
+					RestartPolicy:   &restartAlways,
+					Env:             runtimeEnv,
+					SecurityContext: &corev1.SecurityContext{
+						RunAsUser:    &runAsRoot,
+						RunAsNonRoot: new(false),
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      sharedVolumeName,
+							MountPath: sharedMountPath,
+						},
+						diskMount,
+					},
+				},
+			},
+			Containers: []corev1.Container{
+				{
 					Name:            "exporter",
 					Image:           exporterImage,
 					ImagePullPolicy: exporterPullPolicy,
-					RestartPolicy:   &restartAlways,
-					Command:         []string{"jmp", "run", "--exporter-config", configMountPath + "/config.yaml"},
+					Command: []string{
+						"jmp", "run", "--exporter-config",
+						exporterConfigPath,
+					},
 					Env: []corev1.EnvVar{
 						{
 							Name:  "JUMPSTARTER_LAUNCHER_SOCKET",
 							Value: launcherSocketPath,
 						},
 					},
-					VolumeMounts: []corev1.VolumeMount{
-						{
-							Name:      sharedVolumeName,
-							MountPath: sharedMountPath,
-						},
+					SecurityContext: &corev1.SecurityContext{
+						RunAsUser:    &runAsExporter,
+						RunAsNonRoot: &exporterNonRoot,
 					},
-				},
-			},
-			Containers: []corev1.Container{
-				{
-					Name:            "target-runtime",
-					Image:           runtimeImage,
-					ImagePullPolicy: runtimePullPolicy,
-					Env:             runtimeEnv,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      sharedVolumeName,
 							MountPath: sharedMountPath,
 						},
+						diskMount,
 					},
 				},
 			},
@@ -254,6 +304,8 @@ func (p *Provisioner) RenderPod(
 		},
 	}
 
+	pod.Spec.Volumes = append(pod.Spec.Volumes, disk.Volume(diskSpec))
+
 	// Apply scheduling from VirtualTargetClass.
 	// Clone maps and slices to avoid mutating the VTC's fields.
 	if vtc.Spec.Scheduling != nil {
@@ -264,8 +316,31 @@ func (p *Provisioner) RenderPod(
 			pod.Spec.Tolerations = append([]corev1.Toleration(nil), vtc.Spec.Scheduling.Tolerations...)
 		}
 		if vtc.Spec.Scheduling.Resources != nil {
-			// Apply resource requirements to target-runtime
-			pod.Spec.Containers[0].Resources = *vtc.Spec.Scheduling.Resources.DeepCopy()
+			// CPU/memory belong on the runtime sidecar (where QEMU runs).
+			for i := range pod.Spec.InitContainers {
+				if pod.Spec.InitContainers[i].Name == runtimeContainerName {
+					pod.Spec.InitContainers[i].Resources = *vtc.Spec.Scheduling.Resources.DeepCopy()
+					break
+				}
+			}
+		}
+	}
+
+	if diskSpec.UsePVC() {
+		// fsGroup so the non-root exporter can write the ephemeral claim.
+		if pod.Spec.SecurityContext == nil {
+			pod.Spec.SecurityContext = &corev1.PodSecurityContext{}
+		}
+		pod.Spec.SecurityContext.FSGroup = &runAsExporter
+	} else {
+		// emptyDir guest disks consume node ephemeral storage. Reserve capacity
+		// on one container only — the scheduler sums requests from all containers
+		// (including restartable init containers / native sidecars).
+		for i := range pod.Spec.InitContainers {
+			if pod.Spec.InitContainers[i].Name == runtimeContainerName {
+				disk.SetEphemeralStorage(&pod.Spec.InitContainers[i].Resources, diskSpec.VolumeSize)
+				break
+			}
 		}
 	}
 
@@ -280,7 +355,7 @@ func (p *Provisioner) RenderPod(
 // - Auto-injects tcp wrapper driver entry
 func (p *Provisioner) EnrichExporterExport(
 	drivers []virtualtargetv1alpha1.DriverConfig,
-	mergedParameters map[string]interface{},
+	mergedParameters map[string]any,
 ) ([]virtualtargetv1alpha1.DriverConfig, error) {
 	result := make([]virtualtargetv1alpha1.DriverConfig, 0, len(drivers)+1)
 	hasTCP := false
@@ -305,7 +380,7 @@ func (p *Provisioner) EnrichExporterExport(
 		result = append(result, virtualtargetv1alpha1.DriverConfig{
 			Name: "tcp",
 			Type: tcpDriverType,
-			Config: mustJSON(map[string]interface{}{
+			Config: mustJSON(map[string]any{
 				"host": "127.0.0.1",
 				"port": 2222,
 			}),
@@ -316,8 +391,8 @@ func (p *Provisioner) EnrichExporterExport(
 }
 
 // enrichQemuDriver applies QEMU-specific defaults to a driver config entry.
-func enrichQemuDriver(d virtualtargetv1alpha1.DriverConfig, params map[string]interface{}) (virtualtargetv1alpha1.DriverConfig, error) {
-	config := make(map[string]interface{})
+func enrichQemuDriver(d virtualtargetv1alpha1.DriverConfig, params map[string]any) (virtualtargetv1alpha1.DriverConfig, error) {
+	config := make(map[string]any)
 	if d.Config != nil && d.Config.Raw != nil {
 		if err := json.Unmarshal(d.Config.Raw, &config); err != nil {
 			return d, fmt.Errorf("unmarshal QEMU driver config: %w", err)
@@ -331,7 +406,7 @@ func enrichQemuDriver(d virtualtargetv1alpha1.DriverConfig, params map[string]in
 	setDefault(config, "arch", params, "arch")
 	setDefault(config, "smp", params, "resources.cpu")
 	setDefault(config, "mem", params, "resources.memory")
-	setDefault(config, "disk_size", params, "resources.storage")
+	setDefault(config, "disk_size", params, "storage.size")
 
 	// Inject default_partitions based on arch unless user explicitly set them.
 	if _, hasPartitions := config["default_partitions"]; !hasPartitions {
@@ -340,12 +415,12 @@ func enrichQemuDriver(d virtualtargetv1alpha1.DriverConfig, params map[string]in
 	}
 
 	// Inject hostfwd.ssh if not already present.
-	hostfwd, _ := config["hostfwd"].(map[string]interface{})
+	hostfwd, _ := config["hostfwd"].(map[string]any)
 	if hostfwd == nil {
-		hostfwd = make(map[string]interface{})
+		hostfwd = make(map[string]any)
 	}
 	if _, hasSSH := hostfwd["ssh"]; !hasSSH {
-		hostfwd["ssh"] = map[string]interface{}{
+		hostfwd["ssh"] = map[string]any{
 			"hostaddr":  "127.0.0.1",
 			"hostport":  2222,
 			"guestport": 22,
@@ -376,15 +451,15 @@ func defaultPartitionsForArch(arch string) map[string]string {
 
 // setDefault sets config[key] from params[paramPath] if not already set.
 // paramPath supports one level of nesting with dot notation.
-func setDefault(config map[string]interface{}, key string, params map[string]interface{}, paramPath string) {
+func setDefault(config map[string]any, key string, params map[string]any, paramPath string) {
 	if _, exists := config[key]; exists {
 		return
 	}
 
 	parts := splitDot(paramPath)
-	var val interface{} = params
+	var val any = params
 	for _, p := range parts {
-		m, ok := val.(map[string]interface{})
+		m, ok := val.(map[string]any)
 		if !ok {
 			return
 		}
@@ -392,7 +467,30 @@ func setDefault(config map[string]interface{}, key string, params map[string]int
 	}
 
 	if val != nil {
+		// Kubernetes resource quantities use binary suffixes (Gi, Mi);
+		// the QEMU driver expects qemu-img style sizes (G, M).
+		if key == "disk_size" || key == "mem" {
+			val = normalizeQemuSize(val)
+		}
 		config[key] = val
+	}
+}
+
+// normalizeQemuSize converts Kubernetes binary quantity strings (e.g. "10Gi")
+// to the form expected by the QEMU driver / qemu-img (e.g. "10G").
+func normalizeQemuSize(v any) any {
+	s, ok := v.(string)
+	if !ok || len(s) < 2 {
+		return v
+	}
+	if s[len(s)-1] != 'i' {
+		return v
+	}
+	switch s[len(s)-2] {
+	case 'K', 'M', 'G', 'T', 'k', 'm', 'g', 't':
+		return s[:len(s)-1]
+	default:
+		return v
 	}
 }
 
@@ -409,7 +507,7 @@ func splitDot(s string) []string {
 	return result
 }
 
-func mustJSON(v interface{}) *apiextensionsv1.JSON {
+func mustJSON(v any) *apiextensionsv1.JSON {
 	raw, _ := json.Marshal(v)
 	return &apiextensionsv1.JSON{Raw: raw}
 }

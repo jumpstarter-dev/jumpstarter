@@ -26,6 +26,9 @@ RUN dnf install --setopt=install_weak_deps=False -y \
         virtiofsd && \
     dnf clean all
 
+# Default image USER is non-root; ExporterSet QEMU pods override target-runtime
+# to runAsUser 0 via Pod securityContext so QEMU can access devices and shared
+# volume paths owned by the exporter container.
 USER 65532:65532
 
 ENTRYPOINT ["/shared/jumpstarter-exec"]

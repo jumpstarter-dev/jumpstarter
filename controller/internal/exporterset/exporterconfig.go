@@ -44,10 +44,14 @@ const (
 	// configVolumeName is the volume name for the ExporterConfig Secret.
 	configVolumeName = "exporter-config"
 
-	// configMountPath is where the ExporterConfig Secret is mounted.
-	configMountPath = "/etc/jumpstarter/exporters"
+	// ExporterConfigMountPath is where the ExporterConfig Secret is mounted
+	// inside the exporter container (QEMU provisioner and injectConfigVolume).
+	ExporterConfigMountPath = "/etc/jumpstarter/exporters"
 
-	// exporterContainerName is the init-container name in the sidecar Pod.
+	// configMountPath is the unexported alias used within this package.
+	configMountPath = ExporterConfigMountPath
+
+	// exporterContainerName is the main container that runs jmp run.
 	exporterContainerName = "exporter"
 )
 
@@ -74,8 +78,9 @@ type exporterConfigTLS struct {
 }
 
 type exporterConfigDriver struct {
-	Type     string                          `json:"type"`
-	Config   interface{}                     `json:"config,omitempty"`
+	Type     string                          `json:"type,omitempty"`
+	Ref      string                          `json:"ref,omitempty"`
+	Config   any                             `json:"config,omitempty"`
 	Children map[string]exporterConfigDriver `json:"children,omitempty"`
 }
 
@@ -87,7 +92,7 @@ func (r *ExporterSetReconciler) buildExporterConfigSecret(
 	es *virtualtargetv1alpha1.ExporterSet,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 	caBundle string,
-	mergedParameters map[string]interface{},
+	mergedParameters map[string]any,
 ) (*corev1.Secret, error) {
 	token, err := r.readCredentialToken(ctx, exporter)
 	if err != nil {
@@ -157,7 +162,14 @@ func buildExportMap(drivers []virtualtargetv1alpha1.DriverConfig) (map[string]ex
 			return nil, fmt.Errorf("duplicate driver key %q in ExporterSet drivers", name)
 		}
 
-		var config interface{}
+		if d.Ref != "" {
+			exportMap[name] = exporterConfigDriver{
+				Ref: d.Ref,
+			}
+			continue
+		}
+
+		var config any
 		if d.Config != nil && d.Config.Raw != nil {
 			if err := json.Unmarshal(d.Config.Raw, &config); err != nil {
 				return nil, fmt.Errorf("unmarshal config for driver %q: %w", name, err)

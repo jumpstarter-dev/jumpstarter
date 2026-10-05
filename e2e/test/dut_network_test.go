@@ -51,7 +51,27 @@ func sudoArgs(args ...string) (string, []string) {
 	return args[0], args[1:]
 }
 
-var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, func() {
+// Serial: builds veth pairs, bridges and nftables rules in the host network
+// namespace, and drives dnsmasq. There is only one host to share.
+//
+// Baseline topology (created by setupNetworkNamespaces):
+//
+//   netns: jmp-e2e-dut              HOST (exporter)                netns: jmp-e2e-ext
+//  ┌─────────────────┐   ┌──────────────────────────────┐   ┌──────────────────────┐
+//  │                 │   │                              │   │                      │
+//  │  jmp-vdut       │   │  jmp-vhost    jmp-vup        │   │  jmp-vext            │
+//  │  192.168.200.10 │◄─►│  (DUT iface)  10.99.0.2/24   │◄─►│  10.99.0.1/24        │
+//  │                 │   │  02:00:...:01                │   │                      │
+//  │  default via    │   │       │                      │   │  route: 192.168.200  │
+//  │  192.168.200.1  │   │  nftables: masquerade        │   │    .0/24 via 10.99   │
+//  │                 │   │  dnsmasq: DHCP on jmp-vhost  │   │    .0.2              │
+//  └─────────────────┘   └──────────────────────────────┘   └──────────────────────┘
+//       veth pair                                                veth pair
+//     jmp-vdut ◄─► jmp-vhost                               jmp-vup ◄─► jmp-vext
+//
+// VLAN/PBR tests add per-test overlays on top of this baseline.
+// See the diagram above each test for details.
+var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, ContinueOnFailure, Serial, func() {
 	var (
 		tracker      *ProcessTracker
 		listenerPort = 19091
@@ -59,18 +79,43 @@ var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, func() 
 	)
 
 	const (
-		dutNs      = "jmp-e2e-dut"
-		extNs      = "jmp-e2e-ext"
-		vethHost   = "jmp-vhost"
-		vethDut    = "jmp-vdut"
-		vethUp     = "jmp-vup"
-		vethExt    = "jmp-vext"
-		nftTable   = "jumpstarter_jmp_vhost"
-		dutIP      = "192.168.200.10"
-		gatewayIP  = "192.168.200.1"
-		extIP      = "10.99.0.1"
-		upstreamIP = "10.99.0.2"
+		// Namespaces
+		dutNs = "jmp-e2e-dut" // simulates the DUT side of the network
+		extNs = "jmp-e2e-ext" // simulates the external/LAN side
+
+		// Veth pairs
+		vethHost = "jmp-vhost" // host-side DUT interface (exporter manages this)
+		vethDut  = "jmp-vdut"  // DUT-side end (lives in dutNs)
+		vethUp   = "jmp-vup"   // host-side upstream interface
+		vethExt  = "jmp-vext"  // ext-side end (lives in extNs)
+
+		// nftables
+		nftTable = "jumpstarter_jmp_vhost" // driver's nft table name
+
+		// Baseline IPs
+		dutIP      = "192.168.200.10"  // pre-configured DUT address
+		gatewayIP  = "192.168.200.1"   // gateway on the DUT interface
+		extIP      = "10.99.0.1"       // external network address (ext-ns)
+		upstreamIP = "10.99.0.2"       // upstream address (host-side)
 		subnet     = "192.168.200.0/24"
+
+		// VLAN PBR test (vlan_id=100)
+		vlanID    = 100
+		vlanDutIP = "192.168.200.50" // DUT private IP for VLAN test
+		vlanPubIP = "10.100.0.50"    // public IP alias on VLAN sub-iface
+		vlanExtIP = "10.100.0.1"     // ext-ns address on VLAN 100
+
+		// Untagged PBR test
+		pbrDutIP  = "192.168.200.51" // DUT IP with source-IP PBR
+		pbrOnlyIP = "10.99.1.1"      // destination reachable only via PBR
+
+		// No-PBR VLAN test (vlan_id=101, no public_gateway)
+		noPbrVlan  = 101
+		noPbrDutIP = "192.168.200.52" // DUT IP on VLAN without PBR
+		noPbrExtIP = "10.101.0.1"     // ext-ns address on VLAN 101
+
+		// Unregistered DUT test
+		unregisteredIP = "192.168.200.60" // IP never added via add-address
 	)
 
 	setupNetworkNamespaces := func() {
@@ -167,6 +212,17 @@ var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, func() 
 		return raw[start:]
 	}
 
+	addDutAddr := func(ip string) {
+		runInNs(dutNs, "ip", "addr", "replace", ip+"/24", "dev", vethDut)
+	}
+	delDutAddr := func(ip string) {
+		_, _ = runInNsCapture(dutNs, "ip", "addr", "del", ip+"/24", "dev", vethDut)
+	}
+
+	setupExtVLAN := func(id int, cidr string) string {
+		return setupVLANInNs(extNs, vethExt, id, cidr)
+	}
+
 	Context("Network status", func() {
 		It("should report network status via CLI", func() {
 			out, err := jmpShell("j", "dut-network", "status")
@@ -200,11 +256,7 @@ var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, func() 
 
 	Context("Connectivity", func() {
 		It("should allow DUT to reach external via NAT", func() {
-			Eventually(func() error {
-				_, err := runInNsCapture(dutNs, "ping", "-c", "1", "-W", "2", extIP)
-				return err
-			}, 10*time.Second, 1*time.Second).Should(Succeed(),
-				"DUT should be able to ping external IP %s via NAT", extIP)
+			expectPingNS(dutNs, "", extIP)
 		})
 	})
 
@@ -253,39 +305,429 @@ var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, func() 
 
 	Context("TCP connectivity", func() {
 		It("should allow TCP connections from DUT to external via NAT", func() {
-			serverScript := "import socket; " +
-				"s=socket.socket(); " +
-				"s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); " +
-				"s.bind(('',9998)); " +
-				"s.listen(1); " +
-				"s.settimeout(10); " +
-				"conn,_=s.accept(); " +
-				"conn.sendall(b'E2E_OK'); " +
-				"conn.close(); " +
-				"s.close()"
+			expectTCPEcho(dutNs, extNs, "", extIP, 9998)
+		})
+	})
 
-			fullArgs := []string{"ip", "netns", "exec", extNs, "python3", "-c", serverScript}
-			bin, cmdArgs := sudoArgs(fullArgs...)
-			listener := exec.Command(bin, cmdArgs...) //nolint:gosec
-			listener.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-			Expect(listener.Start()).To(Succeed())
+	Context("VLAN and policy-based routing", func() {
+		// Test: VLAN PBR (tagged traffic with public IP + gateway)
+		//
+		//   DUT ns                    HOST                         ext ns
+		//  ┌──────────────┐   ┌────────────────────────┐   ┌────────────────────┐
+		//  │ .200.50/24   │   │  jmp-vup.100           │   │  jmp-vext.100      │
+		//  │ (vlanDutIP)  │──►│  10.100.0.50/24        │◄─►│  10.100.0.1/24     │
+		//  │              │   │  (public_ip alias)     │   │  (vlanExtIP)       │
+		//  │ ip rule:     │   │                        │   │                    │
+		//  │  from .200.50│   │  PBR table 100:        │   │  TCP echo server   │
+		//  │  lookup 100  │   │  default via 10.100.0.1│   │  on :9998          │
+		//  └──────────────┘   └────────────────────────┘   └────────────────────┘
+		//
+		//  Traffic: .200.50 → SNAT to 10.100.0.50 → PBR table 100
+		//           → via 10.100.0.1 (VLAN gateway) → ext ns → echo OK
+		It("should allow TCP from DUT via VLAN PBR", func() {
+			extVlan := setupExtVLAN(vlanID, vlanExtIP+"/24")
+			defer deleteLinkInNs(extNs, extVlan)
+
+			out, err := jmpShell("j", "dut-network", "add-address",
+				vlanDutIP, "--public-ip", vlanPubIP,
+				"--vlan-id", fmt.Sprintf("%d", vlanID), "--public-gateway", vlanExtIP)
+			Expect(err).NotTo(HaveOccurred(), out)
+
+			addDutAddr(vlanDutIP)
 			defer func() {
-				_ = syscall.Kill(-listener.Process.Pid, syscall.SIGKILL)
-				_ = listener.Wait()
+				delDutAddr(vlanDutIP)
+				_, _ = jmpShell("j", "dut-network", "remove-address", vlanDutIP)
 			}()
 
-			time.Sleep(500 * time.Millisecond)
+			expectTCPEcho(dutNs, extNs, vlanDutIP, vlanExtIP, 9998)
+		})
 
-			clientScript := fmt.Sprintf(
-				"import socket; "+
-					"s=socket.create_connection(('%s',9998),timeout=5); "+
-					"data=s.recv(10); "+
-					"s.close(); "+
-					"print(data.decode())",
-				extIP)
-			out, err := runInNsCapture(dutNs, "python3", "-c", clientScript)
-			Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("TCP connection failed: %s", out))
-			Expect(out).To(ContainSubstring("E2E_OK"))
+		// Test: Untagged source-IP PBR (no VLAN, gateway on upstream)
+		//
+		//   DUT ns                    HOST                        ext ns
+		//  ┌──────────────┐   ┌──────────────────────┐   ┌──────────────────┐
+		//  │ .200.51/24   │   │  jmp-vup             │   │  jmp-vext        │
+		//  │ (pbrDutIP)   │──►│  10.99.0.2/24        │◄─►│  10.99.0.1/24    │
+		//  │              │   │  (upstream, untagged)│   │  lo: 10.99.1.1   │
+		//  │ ip rule:     │   │                      │   │  (pbrOnlyIP)     │
+		//  │  from .200.51│   │  PBR table N:        │   │                  │
+		//  │  lookup N    │   │  default via 10.99.0.│   │  TCP echo on     │
+		//  └──────────────┘   └──────────────────────┘   │  :9998 binds     │
+		//                                                │  10.99.1.1       │
+		//  N = int(192.168.200.51) = 3232286771          └──────────────────┘
+		//
+		//  10.99.1.1 is on ext-ns loopback — NO route in host main table.
+		//  Only the PBR table (default via 10.99.0.1) can reach it.
+		//
+		//  Positive: .200.51 → PBR → via 10.99.0.1 → ext ns lo → echo OK
+		//  Negative: .200.10 (no PBR rule) → main table → no route → FAIL
+		It("should allow TCP from DUT via untagged source-IP PBR", func() {
+			// 10.99.1.1 on ext-ns loopback: reachable ONLY through PBR.
+			runInNs(extNs, "ip", "addr", "add", pbrOnlyIP+"/32", "dev", "lo")
+			defer func() {
+				_, _ = runInNsCapture(extNs, "ip", "addr", "del", pbrOnlyIP+"/32", "dev", "lo")
+			}()
+
+			out, err := jmpShell("j", "dut-network", "add-address",
+				pbrDutIP, "--public-gateway", extIP)
+			Expect(err).NotTo(HaveOccurred(), out)
+
+			addDutAddr(pbrDutIP)
+			defer func() {
+				delDutAddr(pbrDutIP)
+				_, _ = jmpShell("j", "dut-network", "remove-address", pbrDutIP)
+			}()
+
+			// PBR source: traffic from pbrDutIP uses the PBR table
+			// whose default route goes via extIP (10.99.0.1) — the
+			// ext namespace delivers 10.99.1.1 locally on its loopback.
+			expectTCPEcho(dutNs, extNs, pbrDutIP, pbrOnlyIP, 9998)
+
+			// Non-PBR source: the main DUT IP has no PBR rule, so
+			// 10.99.1.1 is unreachable through the main routing table.
+			Expect(pingNS(dutNs, dutIP, pbrOnlyIP)).To(HaveOccurred(),
+				"main DUT IP should NOT reach %s without PBR", pbrOnlyIP)
+		})
+
+		// Test: VLAN without PBR (negative — proves gateway is required)
+		//
+		//   DUT ns                    HOST                        ext ns
+		//  ┌──────────────┐   ┌──────────────────────┐   ┌──────────────────┐
+		//  │ .200.52/24   │   │  jmp-vup.101         │   │  jmp-vext.101    │
+		//  │ (noPbrDutIP) │──►│  (no IP, no gateway) │◄─►│  10.101.0.1/24   │
+		//  │              │   │                      │   │  (noPbrExtIP)    │
+		//  │ NO ip rule   │   │  NO PBR table        │   │                  │
+		//  │ for .200.52  │   │  for VLAN 101        │   │                  │
+		//  └──────────────┘   └──────────────────────┘   └──────────────────┘
+		//
+		//  VLAN 101 exists but has no public_gateway → no PBR route.
+		//  Ping .200.52 → 10.101.0.1: FAIL (no route through VLAN)
+		//  Ping .200.52 → 10.99.0.1:  OK   (falls back to upstream masquerade)
+		It("should not reach a VLAN-only peer without public_gateway", func() {
+			extVlan := setupExtVLAN(noPbrVlan, noPbrExtIP+"/24")
+			defer deleteLinkInNs(extNs, extVlan)
+
+			out, err := jmpShell("j", "dut-network", "add-address",
+				noPbrDutIP, "--vlan-id", fmt.Sprintf("%d", noPbrVlan))
+			Expect(err).NotTo(HaveOccurred(), out)
+
+			addDutAddr(noPbrDutIP)
+			defer func() {
+				delDutAddr(noPbrDutIP)
+				_, _ = jmpShell("j", "dut-network", "remove-address", noPbrDutIP)
+			}()
+
+			Expect(pingNS(dutNs, noPbrDutIP, noPbrExtIP)).To(HaveOccurred(),
+				"DUT should not reach VLAN-only %s without public_gateway/PBR", noPbrExtIP)
+			expectPingNS(dutNs, noPbrDutIP, extIP)
+		})
+
+		// Test: Unregistered DUT still masqueraded when VLAN is active
+		//
+		//   DUT ns                    HOST                        ext ns
+		//  ┌──────────────┐   ┌───────────────────────┐   ┌─────────────────┐
+		//  │ .200.50/24   │   │  jmp-vup.100          │   │  jmp-vext.100   │
+		//  │ (registered, │──►│  10.100.0.50/24       │◄─►│  10.100.0.1/24  │
+		//  │  VLAN PBR)   │   │  PBR table 100        │   │                 │
+		//  │              │   │                       │   │                 │
+		//  │ .200.60/24   │   │  jmp-vup              │   │  jmp-vext       │
+		//  │ (unregistered│──►│  10.99.0.2/24         │◄─►│  10.99.0.1/24   │
+		//  │  no add-addr)│   │  masquerade (upstream)│   │                 │
+		//  └──────────────┘   └───────────────────────┘   └─────────────────┘
+		//
+		//  .200.50 is registered with VLAN 100 → TCP echo via PBR: OK
+		//  .200.60 is never add-address'd → must still reach 10.99.0.1
+		//  via upstream masquerade (upstream always in outbound list)
+		It("should masquerade unregistered DUT alongside VLAN-registered DUT", func() {
+			extVlan := setupExtVLAN(vlanID, vlanExtIP+"/24")
+			defer deleteLinkInNs(extNs, extVlan)
+
+			out, err := jmpShell("j", "dut-network", "add-address",
+				vlanDutIP, "--public-ip", vlanPubIP,
+				"--vlan-id", fmt.Sprintf("%d", vlanID), "--public-gateway", vlanExtIP)
+			Expect(err).NotTo(HaveOccurred(), out)
+
+			addDutAddr(vlanDutIP)
+			defer func() {
+				delDutAddr(vlanDutIP)
+				_, _ = jmpShell("j", "dut-network", "remove-address", vlanDutIP)
+			}()
+
+			// The registered VLAN DUT should work through PBR.
+			expectTCPEcho(dutNs, extNs, vlanDutIP, vlanExtIP, 9998)
+
+			// An unregistered DUT IP on the same bridge — never added via
+			// add-address — should still reach external via upstream masquerade.
+			addDutAddr(unregisteredIP)
+			defer delDutAddr(unregisteredIP)
+
+			expectPingNS(dutNs, unregisteredIP, extIP)
+		})
+	})
+})
+
+// startTCPServer starts a one-shot TCP listener in the given network namespace.
+// It accepts a single connection, sends payload, and exits.  The function
+// waits for a "READY" line on stdout (emitted after listen()) so callers
+// know the port is actually open before sending traffic.  Returns the
+// *exec.Cmd so the caller can clean up via process-group kill.
+func startTCPServer(ns string, port int, payload string) *exec.Cmd {
+	serverScript := fmt.Sprintf(
+		"import socket,sys; "+
+			"s=socket.socket(); "+
+			"s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); "+
+			"s.bind(('', %d)); "+
+			"s.listen(1); "+
+			"print('READY',flush=True); "+
+			"s.settimeout(15); "+
+			"conn,_=s.accept(); "+
+			"conn.sendall(b'%s'); "+
+			"conn.close(); "+
+			"s.close()", port, payload)
+	fullArgs := []string{"ip", "netns", "exec", ns, "python3", "-u", "-c", serverScript}
+	bin, cmdArgs := sudoArgs(fullArgs...)
+	cmd := exec.Command(bin, cmdArgs...) //nolint:gosec
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	stdout, err := cmd.StdoutPipe()
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	ExpectWithOffset(1, cmd.Start()).To(Succeed())
+
+	readyCh := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 64)
+		n, readErr := stdout.Read(buf)
+		if readErr != nil {
+			readyCh <- fmt.Errorf("server stdout read failed: %w", readErr)
+			return
+		}
+		if !strings.Contains(string(buf[:n]), "READY") {
+			readyCh <- fmt.Errorf("unexpected server output: %s", string(buf[:n]))
+			return
+		}
+		readyCh <- nil
+	}()
+
+	select {
+	case readyErr := <-readyCh:
+		ExpectWithOffset(1, readyErr).NotTo(HaveOccurred(),
+			fmt.Sprintf("TCP server on port %d failed to become ready", port))
+	case <-time.After(5 * time.Second):
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		_ = cmd.Wait()
+		Fail(fmt.Sprintf("TCP server on port %d did not become ready within 5s", port))
+	}
+
+	return cmd
+}
+
+// killCmd sends SIGKILL to the process group and waits for exit.
+func killCmd(cmd *exec.Cmd) {
+	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	_ = cmd.Wait()
+}
+
+// tcpConnect attempts a TCP connection from the given namespace to host:port
+// and returns whatever the server sends.
+func tcpConnect(ns string, host string, port int, timeoutSec int) (string, error) {
+	clientScript := fmt.Sprintf(
+		"import socket; "+
+			"s=socket.create_connection(('%s',%d),timeout=%d); "+
+			"data=s.recv(64); "+
+			"s.close(); "+
+			"print(data.decode())",
+		host, port, timeoutSec)
+	return runInNsCapture(ns, "python3", "-c", clientScript)
+}
+
+// dnsQuery sends a raw DNS A-record query from the given namespace to the
+// given DNS server and returns the resolved IP.
+func dnsQuery(ns string, name string, server string) (string, error) {
+	script := fmt.Sprintf(
+		"import socket, struct, random\n"+
+			"qid = random.randint(0, 65535)\n"+
+			"name = b''.join(bytes([len(p)]) + p.encode() for p in '%s'.split('.')) + b'\\x00'\n"+
+			"q = struct.pack('>HHHHHH', qid, 0x0100, 1, 0, 0, 0) + name + struct.pack('>HH', 1, 1)\n"+
+			"s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"+
+			"s.settimeout(3)\n"+
+			"s.sendto(q, ('%s', 53))\n"+
+			"data, _ = s.recvfrom(512)\n"+
+			"if struct.unpack('>H', data[6:8])[0] < 1:\n"+
+			"    raise SystemExit('no DNS answer')\n"+
+			"print(socket.inet_ntoa(data[-4:]))",
+		name, server)
+	return runInNsCapture(ns, "python3", "-c", script)
+}
+
+// Serial: reuses the same veth topology as the base dut-network tests but
+// starts the exporter with a filter config that restricts egress to a single
+// TCP port.  Verifies that allowed traffic passes and everything else is dropped.
+var _ = Describe("DUT Network Filter E2E Tests", Label("dut-network"), Ordered, ContinueOnFailure, Serial, func() {
+	var (
+		tracker      *ProcessTracker
+		listenerPort = 19092
+		exporterDir  string
+	)
+
+	const (
+		dutNs       = "jmp-e2e-dut"
+		extNs       = "jmp-e2e-ext"
+		vethHost    = "jmp-vhost"
+		vethDut     = "jmp-vdut"
+		vethUp      = "jmp-vup"
+		vethExt     = "jmp-vext"
+		nftTable    = "jumpstarter_jmp_vhost"
+		dutIP       = "192.168.200.10"
+		gatewayIP   = "192.168.200.1"
+		extIP       = "10.99.0.1"
+		upstreamIP  = "10.99.0.2"
+		subnet      = "192.168.200.0/24"
+		allowedPort = 9997
+		blockedPort = 9998
+	)
+
+	setupNetworkNamespaces := func() {
+		runOrFail("ip", "netns", "add", dutNs)
+		runOrFail("ip", "netns", "add", extNs)
+		runOrFail("ip", "link", "add", vethHost, "type", "veth", "peer", "name", vethDut)
+		runOrFail("ip", "link", "set", vethDut, "netns", dutNs)
+		runOrFail("ip", "link", "set", vethHost, "address", "02:00:00:00:00:01")
+		runOrFail("ip", "link", "add", vethUp, "type", "veth", "peer", "name", vethExt)
+		runOrFail("ip", "link", "set", vethExt, "netns", extNs)
+		runOrFail("ip", "addr", "add", upstreamIP+"/24", "dev", vethUp)
+		runOrFail("ip", "link", "set", vethUp, "up")
+		runInNs(extNs, "ip", "addr", "add", extIP+"/24", "dev", vethExt)
+		runInNs(extNs, "ip", "link", "set", vethExt, "up")
+		runInNs(extNs, "ip", "link", "set", "lo", "up")
+		runInNs(extNs, "ip", "route", "add", subnet, "via", upstreamIP)
+		runInNs(dutNs, "ip", "addr", "add", dutIP+"/24", "dev", vethDut)
+		runInNs(dutNs, "ip", "link", "set", vethDut, "up")
+		runInNs(dutNs, "ip", "link", "set", "lo", "up")
+		runInNs(dutNs, "ip", "route", "add", "default", "via", gatewayIP)
+	}
+
+	teardownNetworkNamespaces := func() {
+		runIgnoreErr("ip", "link", "del", vethHost)
+		runIgnoreErr("ip", "link", "del", vethUp)
+		runIgnoreErr("ip", "netns", "del", dutNs)
+		runIgnoreErr("ip", "netns", "del", extNs)
+		runIgnoreErr("nft", "delete", "table", "ip", nftTable)
+		runIgnoreErr("rm", "-rf", "/tmp/jmp-e2e-dut-network-filter")
+	}
+
+	BeforeAll(func() {
+		if runtime.GOOS != "linux" {
+			Skip("requires Linux")
+		}
+		if !hasPrivileges() {
+			Skip("requires root or passwordless sudo")
+		}
+		tracker = NewProcessTracker()
+		exporterDir = filepath.Join(RepoRoot(), "e2e", "exporters")
+		teardownNetworkNamespaces()
+		setupNetworkNamespaces()
+
+		configPath := filepath.Join(exporterDir, "exporter-dut-network-filter.yaml")
+		tracker.StartDirectExporter(configPath, listenerPort, "", false)
+		WaitForDirectExporterReady(listenerPort, "")
+	})
+
+	AfterAll(func() {
+		tracker.StopAll()
+		teardownNetworkNamespaces()
+
+		Eventually(func() error {
+			conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", listenerPort), 500*time.Millisecond)
+			if err != nil {
+				return nil
+			}
+			conn.Close()
+			return fmt.Errorf("port %d is still open", listenerPort)
+		}, 10*time.Second, 500*time.Millisecond).Should(Succeed(),
+			"port %d should be closed after stopping exporter", listenerPort)
+
+		tracker.Cleanup()
+	})
+
+	BeforeEach(func() {
+		tracker.WriteLogMarker(CurrentSpecReport().FullText())
+	})
+
+	AfterEach(func() {
+		if CurrentSpecReport().Failed() {
+			tracker.DumpLogs(250)
+		}
+	})
+
+	jmpShell := func(args ...string) (string, error) {
+		shellArgs := []string{"shell", "--tls-grpc", fmt.Sprintf("127.0.0.1:%d", listenerPort),
+			"--tls-grpc-insecure", "--"}
+		shellArgs = append(shellArgs, args...)
+		return Jmp(shellArgs...)
+	}
+
+	Context("Filter rules visible in NAT output", func() {
+		It("should show filter rules in nftables output", func() {
+			out, err := jmpShell("j", "dut-network", "nat-rules")
+			Expect(err).NotTo(HaveOccurred(), out)
+			// The forward chain policy is always accept; the egress drop
+			// policy is enforced by a catch-all drop rule on the
+			// DUT -> upstream interface pair.
+			Expect(out).To(ContainSubstring(fmt.Sprintf("iifname %q oifname %q drop", vethHost, vethUp)))
+			Expect(out).To(ContainSubstring(fmt.Sprintf("dport %d", allowedPort)))
+		})
+	})
+
+	Context("Allowed traffic passes through filter", func() {
+		It("should allow TCP to the permitted port", func() {
+			srv := startTCPServer(extNs, allowedPort, "FILTER_OK")
+			defer killCmd(srv)
+
+			out, err := tcpConnect(dutNs, extIP, allowedPort, 5)
+			Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("allowed TCP failed: %s", out))
+			Expect(out).To(ContainSubstring("FILTER_OK"))
+		})
+	})
+
+	Context("Blocked traffic is dropped by filter", func() {
+		It("should block TCP to a non-allowed port", func() {
+			srv := startTCPServer(extNs, blockedPort, "SHOULD_NOT_ARRIVE")
+			defer killCmd(srv)
+
+			_, err := tcpConnect(dutNs, extIP, blockedPort, 3)
+			Expect(err).To(HaveOccurred(), "connection to blocked port should fail")
+		})
+
+		It("should block ICMP ping when egress policy is drop", func() {
+			Consistently(func() error {
+				_, err := runInNsCapture(dutNs, "ping", "-c", "1", "-W", "1", extIP)
+				return err
+			}, 3*time.Second, 1*time.Second).Should(HaveOccurred(),
+				"ping should be blocked by egress drop policy")
+		})
+	})
+
+	Context("DNS responder is before filtering", func() {
+		It("should resolve DNS entries despite egress drop policy", func() {
+			out, err := jmpShell("j", "dut-network", "add-dns", "e2e-filter.lab.local", "10.0.0.42")
+			Expect(err).NotTo(HaveOccurred(), out)
+			Expect(out).To(ContainSubstring("Added"))
+			defer func() {
+				removeOut, removeErr := jmpShell("j", "dut-network", "remove-dns", "e2e-filter.lab.local")
+				Expect(removeErr).NotTo(HaveOccurred(), removeOut)
+			}()
+
+			// The dnsmasq responder sits on the gateway (host-local IP), so
+			// queries and answers bypass the FORWARD filter chain: DNS must
+			// keep working even though egress policy is drop.
+			var resolved string
+			Eventually(func() error {
+				var qErr error
+				resolved, qErr = dnsQuery(dutNs, "e2e-filter.lab.local", gatewayIP)
+				return qErr
+			}, 10*time.Second, 1*time.Second).Should(Succeed(),
+				fmt.Sprintf("DNS resolution through gateway failed: %s", resolved))
+			Expect(resolved).To(ContainSubstring("10.0.0.42"))
 		})
 	})
 })
@@ -319,4 +761,114 @@ func runInNsCapture(ns string, args ...string) (string, error) {
 	cmd := exec.Command(bin, cmdArgs...) //nolint:gosec
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+func deleteLinkInNs(ns, name string) {
+	_, _ = runInNsCapture(ns, "ip", "link", "del", name)
+}
+
+func setupVLANInNs(ns, parent string, id int, cidr string) string {
+	name := fmt.Sprintf("%s.%d", parent, id)
+	deleteLinkInNs(ns, name)
+	runInNs(ns, "ip", "link", "add", "link", parent, "name", name,
+		"type", "vlan", "id", fmt.Sprintf("%d", id))
+	runInNs(ns, "ip", "addr", "replace", cidr, "dev", name)
+	runInNs(ns, "ip", "link", "set", name, "up")
+	return name
+}
+
+func pingNS(ns, src, dst string) error {
+	args := []string{"ping", "-c", "1", "-W", "2"}
+	if src != "" {
+		args = append(args, "-I", src)
+	}
+	args = append(args, dst)
+	_, err := runInNsCapture(ns, args...)
+	return err
+}
+
+func expectPingNS(ns, src, dst string) {
+	GinkgoHelper()
+	Eventually(func() error {
+		return pingNS(ns, src, dst)
+	}, 10*time.Second, 1*time.Second).Should(Succeed(),
+		"namespace %s src %q should ping %s", ns, src, dst)
+}
+
+func tcpEchoServerScript(bind string, port int) string {
+	return fmt.Sprintf(
+		"import socket; "+
+			"s=socket.socket(); "+
+			"s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); "+
+			"s.bind(('%s',%d)); "+
+			"s.listen(1); "+
+			"s.settimeout(10); "+
+			"conn,_=s.accept(); "+
+			"conn.sendall(b'E2E_OK'); "+
+			"conn.close(); "+
+			"s.close()",
+		bind, port)
+}
+
+func tcpEchoClientScript(src, dst string, port int) string {
+	if src == "" {
+		return fmt.Sprintf(
+			"import socket; "+
+				"s=socket.create_connection(('%s',%d),timeout=5); "+
+				"data=s.recv(10); "+
+				"s.close(); "+
+				"print(data.decode())",
+			dst, port)
+	}
+	return fmt.Sprintf(
+		"import socket; "+
+			"s=socket.socket(); "+
+			"s.settimeout(5); "+
+			"s.bind(('%s',0)); "+
+			"s.connect(('%s',%d)); "+
+			"data=s.recv(10); "+
+			"s.close(); "+
+			"print(data.decode())",
+		src, dst, port)
+}
+
+func startPythonInNs(ns, script string) (*exec.Cmd, error) {
+	fullArgs := []string{"ip", "netns", "exec", ns, "python3", "-c", script}
+	bin, cmdArgs := sudoArgs(fullArgs...)
+	cmd := exec.Command(bin, cmdArgs...) //nolint:gosec
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	return cmd, nil
+}
+
+func stopProcessGroup(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	_ = cmd.Wait()
+}
+
+func tcpEchoBetweenNS(dutNs, extNs, src, dst string, port int) (string, error) {
+	bind := ""
+	if src != "" {
+		bind = dst
+	}
+	listener, err := startPythonInNs(extNs, tcpEchoServerScript(bind, port))
+	if err != nil {
+		return "", err
+	}
+	defer stopProcessGroup(listener)
+	time.Sleep(500 * time.Millisecond)
+	return runInNsCapture(dutNs, "python3", "-c", tcpEchoClientScript(src, dst, port))
+}
+
+func expectTCPEcho(dutNs, extNs, src, dst string, port int) {
+	GinkgoHelper()
+	out, err := tcpEchoBetweenNS(dutNs, extNs, src, dst, port)
+	Expect(err).NotTo(HaveOccurred(),
+		fmt.Sprintf("TCP %s -> %s:%d failed: %s", src, dst, port, out))
+	Expect(out).To(ContainSubstring("E2E_OK"))
 }

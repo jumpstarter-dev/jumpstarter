@@ -86,6 +86,7 @@ type ControllerService struct {
 	HiddenLabels     *config.HiddenLabels
 	DeprecatedLabels *config.DeprecatedLabels
 	Signer           *oidc.Signer
+	TelemetryConfig  *config.Telemetry
 	listenQueues     sync.Map
 	leaseLocks       sync.Map
 	authOnce         sync.Once
@@ -309,6 +310,36 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 	return &pb.RegisterResponse{
 		Uuid: string(exporter.UID),
 	}, nil
+}
+
+// GetServiceEndpoints returns optional service endpoints (e.g. telemetry) for the caller to discover.
+// Exporters call this after registration to find the telemetry service.
+// An empty list means no optional services are deployed.
+func (s *ControllerService) GetServiceEndpoints(
+	ctx context.Context,
+	req *pb.GetServiceEndpointsRequest,
+) (*pb.GetServiceEndpointsResponse, error) {
+	// Require a valid exporter token — endpoint discovery is not public.
+	if _, err := s.authenticateExporter(ctx); err != nil {
+		return nil, err
+	}
+
+	resp := &pb.GetServiceEndpointsResponse{}
+
+	if s.TelemetryConfig != nil && s.TelemetryConfig.Enabled {
+		// Endpoint is resolved at config-load time (ConfigMap value or GRPC_TELEMETRY_ENDPOINT
+		// env var fallback), so TelemetryConfig.Endpoint is always the complete value here.
+		if s.TelemetryConfig.Endpoint == "" {
+			return nil, status.Error(codes.FailedPrecondition, "telemetry is enabled but no endpoint is configured; set telemetry.endpoint in the ConfigMap or GRPC_TELEMETRY_ENDPOINT on the controller pod")
+		}
+		resp.TelemetryEndpoints = append(resp.TelemetryEndpoints, &pb.TelemetryEndpoint{
+			Endpoint:    s.TelemetryConfig.Endpoint,
+			Certificate: s.TelemetryConfig.Certificate,
+			MinSeverity: cmp.Or(s.TelemetryConfig.Logging.Filter.MinSeverity, "info"),
+		})
+	}
+
+	return resp, nil
 }
 
 func (s *ControllerService) Unregister(
@@ -801,9 +832,9 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		return nil, err
 	}
 
-	if lease.Spec.ClientRef.Name != client.Name {
-		err := fmt.Errorf("permission denied")
-		logger.Error(err, "lease not held by client")
+	if !lease.IsAccessibleBy(client.Name) {
+		err := status.Errorf(codes.PermissionDenied, "permission denied")
+		logger.Error(err, "lease not accessible by client")
 		return nil, err
 	}
 
@@ -934,7 +965,7 @@ func (s *ControllerService) GetLease(
 		return nil, err
 	}
 
-	if lease.Spec.ClientRef.Name != client.Name {
+	if !lease.IsAccessibleBy(client.Name) {
 		return nil, fmt.Errorf("GetLease permission denied")
 	}
 
@@ -1112,8 +1143,10 @@ func (s *ControllerService) ReleaseLease(
 		return nil, err
 	}
 
-	if lease.Spec.ClientRef.Name != jclient.Name {
-		return nil, fmt.Errorf("ReleaseLease permission denied")
+	// Release is destructive and ends the lease for everyone, so it is restricted
+	// to the owner. Shared clients keep read/list/dial access via IsAccessibleBy.
+	if !lease.IsOwnedBy(jclient.Name) {
+		return nil, status.Errorf(codes.PermissionDenied, "ReleaseLease permission denied: only lease owner can release")
 	}
 
 	// Idempotent: already ended or marked for release
@@ -1152,7 +1185,7 @@ func (s *ControllerService) ListLeases(
 
 	var leaseNames []string
 	for _, lease := range leases.Items {
-		if lease.Spec.ClientRef.Name == jclient.Name {
+		if lease.IsAccessibleBy(jclient.Name) {
 			leaseNames = append(leaseNames, lease.Name)
 		}
 	}
@@ -1170,32 +1203,9 @@ func (s *ControllerService) Start(ctx context.Context) error {
 		return err
 	}
 
-	// Load external certificate if provided via environment variables.
-	// Environment variables EXTERNAL_CERT_PEM and EXTERNAL_KEY_PEM should contain the PEM-encoded
-	// certificate and private key respectively. If both are set, they are used; otherwise
-	// a self-signed certificate is generated.
-	var cert *tls.Certificate
-	certPEMPath := os.Getenv("EXTERNAL_CERT_PEM")
-	keyPEMPath := os.Getenv("EXTERNAL_KEY_PEM")
-	if certPEMPath != "" && keyPEMPath != "" {
-		certPEMBytes, err := os.ReadFile(certPEMPath)
-		if err != nil {
-			return fmt.Errorf("failed to read external certificate file: %w", err)
-		}
-		keyPEMBytes, err := os.ReadFile(keyPEMPath)
-		if err != nil {
-			return fmt.Errorf("failed to read external key file: %w", err)
-		}
-		parsedCert, err := tls.X509KeyPair(certPEMBytes, keyPEMBytes)
-		if err != nil {
-			return fmt.Errorf("failed to parse external certificate: %w", err)
-		}
-		cert = &parsedCert
-	} else {
-		cert, err = NewSelfSignedCertificate("jumpstarter controller", dnsnames, ipaddresses)
-		if err != nil {
-			return err
-		}
+	cert, _, err := LoadTLSCertificate("jumpstarter controller", dnsnames, ipaddresses)
+	if err != nil {
+		return err
 	}
 
 	opts := append(s.ServerOptions,
@@ -1238,8 +1248,11 @@ func (s *ControllerService) Start(ctx context.Context) error {
 	// Register gRPC gateway
 	gwmux := gwruntime.NewServeMux()
 
+	// The controller multiplexes gRPC (h2) and REST (http/1.1) on a single port,
+	// so it needs NextProtos — which LoadTLSCredentials doesn't expose.
 	listener, err := tls.Listen("tcp", ":8082", &tls.Config{
 		Certificates: []tls.Certificate{*cert},
+		MinVersion:   tls.VersionTLS12,
 		NextProtos:   []string{"http/1.1", "h2"},
 	})
 	if err != nil {

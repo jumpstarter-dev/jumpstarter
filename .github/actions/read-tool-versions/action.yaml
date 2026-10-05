@@ -1,0 +1,7 @@
+name: Read tool versions from Makefile
+description: Export KIND_VERSION, KUSTOMIZE_VERSION, and GRPCURL_VERSION from controller/Makefile into $GITHUB_ENV
+runs:
+  using: composite
+  steps:
+    - run: sed -nE 's/^(KIND_VERSION|KUSTOMIZE_VERSION|GRPCURL_VERSION) \?= (.*)/\1=\2/p' controller/Makefile >> "$GITHUB_ENV"
+      shell: bash

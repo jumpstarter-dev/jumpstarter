@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import collections
 import logging
 import shutil
 import sys
 import sysconfig
 import uuid
-from collections.abc import Awaitable, Callable
 from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import anyio
 import anyio.abc
@@ -34,7 +34,7 @@ class Connection:
 
     @property
     def uptime_seconds(self) -> float:
-        return (datetime.now() - self.created_at).total_seconds()
+        return (datetime.now(tz=UTC) - self.created_at).total_seconds()
 
 
 def _unwrap_exception(exc: BaseException) -> BaseException:
@@ -44,14 +44,25 @@ def _unwrap_exception(exc: BaseException) -> BaseException:
     return exc
 
 
+class _StartedTracker:
+    """Wraps a TaskStatus, remembering whether .started() was ever called."""
+
+    def __init__(self, task_status: anyio.abc.TaskStatus) -> None:
+        self._task_status = task_status
+        self.called = False
+
+    def started(self, value=None) -> None:
+        self.called = True
+        self._task_status.started(value)
+
+
 def _check_lease_error(lease) -> None:
     """Raise a descriptive ConnectionError if the lease was transferred or expired."""
     if lease is None:
         return
     if lease.lease_transferred:
         raise ConnectionError(
-            f"Lease {lease.name} has been transferred to another client. "
-            "The session is no longer valid."
+            f"Lease {lease.name} has been transferred to another client. The session is no longer valid."
         ) from None
     if lease.lease_ended:
         raise ConnectionError(f"Lease {lease.name} has expired.") from None
@@ -66,22 +77,25 @@ class ConnectionManager:
         self._portals: dict[str, BlockingPortal] = {}
         self._stacks: dict[str, ExitStack] = {}
         self._cleanup_events: dict[str, anyio.Event] = {}
-        self._log_callback: Callable[[str, str], Awaitable[None]] | None = None
+        self._events: collections.deque[dict] = collections.deque(maxlen=200)
 
-    def set_log_callback(self, callback: Callable[[str, str], Awaitable[None]]) -> None:
-        """Set an async callback for sending MCP log notifications.
+    def _append_event(self, level: str, message: str, connection_id: str) -> None:
+        """Record a lease or connection event for later polling by the client."""
+        self._events.append(
+            {
+                "timestamp": datetime.now(tz=UTC).isoformat(),
+                "level": level,
+                "message": message,
+                "connection_id": connection_id,
+            }
+        )
 
-        Signature: async def callback(level: str, message: str) -> None
-        """
-        self._log_callback = callback
-
-    async def _send_log(self, level: str, message: str) -> None:
-        """Send a log notification via MCP if a callback is configured."""
-        if self._log_callback is not None:
-            try:
-                await self._log_callback(level, message)
-            except Exception:
-                logger.debug("Failed to send MCP log notification: %s", message)
+    def drain_events(self, max_count: int = 50) -> list[dict]:
+        """Pop and return up to max_count events from the front of the queue."""
+        batch = []
+        for _ in range(min(max_count, len(self._events))):
+            batch.append(self._events.popleft())
+        return batch
 
     @property
     def connections(self) -> dict[str, Connection]:
@@ -93,20 +107,21 @@ class ConnectionManager:
         connection_id: str,
         event: anyio.Event,
     ) -> None:
-        """Forward lease ending notifications from the sync callback to MCP."""
+        """Forward lease ending notifications from the sync callback to the event queue."""
         async for name, exporter, remaining in notify_recv:
             if remaining <= timedelta(0):
-                await self._send_log(
+                self._append_event(
                     "error",
-                    f"Lease {name} for {exporter} has expired. "
-                    f"Connection {connection_id} is no longer valid.",
+                    f"Lease {name} for {exporter} has expired. Connection {connection_id} is no longer valid.",
+                    connection_id,
                 )
                 event.set()
             else:
                 mins = max(1, int(remaining.total_seconds() // 60))
-                await self._send_log(
+                self._append_event(
                     "warning",
                     f"Lease {name} for {exporter} will expire in ~{mins} minute(s).",
+                    connection_id,
                 )
 
     async def _watch_lease_transfer(
@@ -116,14 +131,15 @@ class ConnectionManager:
         connection_id: str,
         event: anyio.Event,
     ) -> None:
-        """Poll for lease transfer and notify via MCP when detected."""
+        """Poll for lease transfer and record an event when detected."""
         while not event.is_set():
             if lease.lease_transferred:
-                await self._send_log(
+                self._append_event(
                     "error",
                     f"Lease {lease.name} for {conn.exporter_name} "
                     f"has been transferred to another client. "
                     f"Connection {connection_id} is no longer valid.",
+                    connection_id,
                 )
                 event.set()
                 return
@@ -145,12 +161,16 @@ class ConnectionManager:
         connection_id = str(uuid.uuid4())[:8]
         logger.info(
             "Connecting %s (lease=%s, selector=%s, exporter=%s)",
-            connection_id, lease_name, selector, exporter_name,
+            connection_id,
+            lease_name,
+            selector,
+            exporter_name,
         )
         event = anyio.Event()
 
         async def _run_connection(task_status=anyio.TASK_STATUS_IGNORED):
             lease_ref = None
+            tracker = _StartedTracker(task_status)
             try:
                 async with anyio.from_thread.BlockingPortal() as portal:
                     self._portals[connection_id] = portal
@@ -163,12 +183,32 @@ class ConnectionManager:
                     ) as lease:
                         lease_ref = lease
                         conn = await self._setup_connection(
-                            config, lease, portal, connection_id, event, task_status,
+                            config,
+                            lease,
+                            portal,
+                            connection_id,
+                            event,
+                            tracker,
                         )
                         logger.info("Connection %s tearing down (%s)", connection_id, conn.exporter_name)
-            except BaseException:
-                _check_lease_error(lease_ref)
-                raise
+            except BaseException as exc:
+                if isinstance(exc, anyio.get_cancelled_exc_class()):
+                    # Never treat cancellation (e.g. shared task group shutdown)
+                    # as a connection failure; let it propagate untouched so the
+                    # task group can unwind normally.
+                    raise
+                if not tracker.called:
+                    # Pre-startup: a lease-related error takes priority over the
+                    # raw exception, then the original failure propagates to the
+                    # connect() caller as usual.
+                    _check_lease_error(lease_ref)
+                    raise
+                # Post-startup: isolate the failure to this connection; do not
+                # cancel siblings sharing the task group.
+                unwrapped = _unwrap_exception(exc)
+                logger.exception("Connection %s failed", connection_id)
+                self._append_event("error", f"Connection {connection_id} failed: {unwrapped}", connection_id)
+                return
             finally:
                 self._connections.pop(connection_id, None)
                 self._portals.pop(connection_id, None)
@@ -182,7 +222,7 @@ class ConnectionManager:
 
         try:
             conn = await self._task_group.start(_run_connection)
-        except BaseException as exc:
+        except BaseException as exc:  # noqa: BLE001
             self._cleanup_events.pop(connection_id, None)
             unwrapped = _unwrap_exception(exc)
             if isinstance(unwrapped, ConnectionError):
@@ -204,52 +244,65 @@ class ConnectionManager:
 
         def _on_lease_ending(lease_obj, remaining):
             try:
-                notify_send.send_nowait((
-                    lease_obj.name,
-                    getattr(lease_obj, "exporter_name", "unknown"),
-                    remaining,
-                ))
+                notify_send.send_nowait(
+                    (
+                        lease_obj.name,
+                        getattr(lease_obj, "exporter_name", "unknown"),
+                        remaining,
+                    )
+                )
             except (anyio.WouldBlock, anyio.ClosedResourceError):
                 pass
 
         lease.lease_ending_callback = _on_lease_ending
 
-        async with lease.serve_unix_async() as path:
-            async with lease.monitor_async():
-                with ExitStack() as stack:
-                    self._stacks[connection_id] = stack
-                    async with client_from_path(
-                        path, portal, stack,
-                        allow=lease.allow, unsafe=lease.unsafe,
-                    ) as client:
-                        conn = Connection(
-                            id=connection_id,
-                            lease_name=lease.name,
-                            exporter_name=lease.exporter_name,
-                            socket_path=str(path),
-                            allow=lease.allow,
-                            unsafe=lease.unsafe,
-                            created_at=datetime.now(),
-                            client=client,
-                        )
-                        self._connections[connection_id] = conn
-                        logger.info(
-                            "Connected %s to exporter %s (socket=%s)",
-                            connection_id, lease.exporter_name, path,
-                        )
+        async with lease.serve_unix_async() as path, lease.monitor_async():
+            with ExitStack() as stack:
+                self._stacks[connection_id] = stack
+                async with client_from_path(
+                    path,
+                    portal,
+                    stack,
+                    allow=lease.allow,
+                    unsafe=lease.unsafe,
+                ) as client:
+                    conn = Connection(
+                        id=connection_id,
+                        lease_name=lease.name,
+                        exporter_name=lease.exporter_name,
+                        socket_path=str(path),
+                        allow=lease.allow,
+                        unsafe=lease.unsafe,
+                        created_at=datetime.now(tz=UTC),
+                        client=client,
+                    )
+                    self._connections[connection_id] = conn
+                    logger.info(
+                        "Connected %s to exporter %s (socket=%s)",
+                        connection_id,
+                        lease.exporter_name,
+                        path,
+                    )
 
-                        async with anyio.create_task_group() as notify_tg:
-                            notify_tg.start_soon(
-                                self._forward_lease_notifications, notify_recv, connection_id, event,
-                            )
-                            notify_tg.start_soon(
-                                self._watch_lease_transfer, lease, conn, connection_id, event,
-                            )
-                            task_status.started(conn)
-                            await event.wait()
-                            notify_tg.cancel_scope.cancel()
+                    async with anyio.create_task_group() as notify_tg:
+                        notify_tg.start_soon(
+                            self._forward_lease_notifications,
+                            notify_recv,
+                            connection_id,
+                            event,
+                        )
+                        notify_tg.start_soon(
+                            self._watch_lease_transfer,
+                            lease,
+                            conn,
+                            connection_id,
+                            event,
+                        )
+                        task_status.started(conn)
+                        await event.wait()
+                        notify_tg.cancel_scope.cancel()
 
-                        await notify_send.aclose()
+                    await notify_send.aclose()
         return conn
 
     async def disconnect(self, connection_id: str) -> None:
@@ -301,11 +354,11 @@ class ConnectionManager:
         }
 
         python_example = (
-            'from jumpstarter.utils.env import env\n'
-            '\n'
-            'with env() as client:\n'
-            '    client.power.on()\n'
-            '    client.power.off()\n'
+            "from jumpstarter.utils.env import env\n"
+            "\n"
+            "with env() as client:\n"
+            "    client.power.on()\n"
+            "    client.power.off()\n"
         )
 
         return {

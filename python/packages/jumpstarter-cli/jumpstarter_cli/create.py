@@ -7,7 +7,8 @@ from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentic
 from jumpstarter_cli_common.opt import OutputType, opt_output_all
 from jumpstarter_cli_common.print import model_print
 
-from .common import opt_begin_time, opt_duration_partial, opt_exporter_name, opt_selector
+from .common import opt_allow_disabled, opt_begin_time, opt_duration_partial, opt_exporter_name, opt_selector
+from .formatter import RSTStrippingCommand
 from .login import relogin_client
 
 
@@ -42,7 +43,7 @@ def create():
     """
 
 
-@create.command(name="lease")
+@create.command(name="lease", cls=RSTStrippingCommand)
 @opt_config(exporter=False)
 @opt_selector
 @opt_exporter_name
@@ -60,18 +61,20 @@ def create():
     multiple=True,
     help="Tag to set on the lease (key=value format, can be specified multiple times)",
 )
-@click.option(
-    "--allow-disabled",
-    is_flag=True,
-    default=False,
-    help="Allow leasing a disabled exporter (only effective with --name/-n)",
-)
+@opt_allow_disabled
 @click.option(
     "--context",
     "context_entries",
     multiple=True,
     help="Context metadata for the lease (key=value format, can be specified multiple times). "
     "Used for observability correlation (e.g. build_id=abc123, image_digest=sha256:...).",
+)
+@click.option(
+    "--share",
+    "share_with",
+    type=str,
+    default=None,
+    help="Comma-separated list of client names to share the lease with.",
 )
 @opt_output_all
 @handle_exceptions_with_reauthentication(relogin_client)
@@ -85,6 +88,7 @@ def create_lease(
     tags: tuple[str, ...],
     allow_disabled: bool,
     context_entries: tuple[str, ...],
+    share_with: str | None,
     output: OutputType,
 ):
     """
@@ -133,6 +137,12 @@ def create_lease(
         context_entries, "context", max_key_len=32, max_value_len=64, max_entries=8,
     )
 
+    shared_clients = None
+    if share_with:
+        shared_clients = [s.strip() for s in share_with.split(",")]
+        if any(not name for name in shared_clients):
+            raise click.UsageError("--share must not contain empty client names")
+
     lease = config.create_lease(
         selector=selector,
         exporter_name=exporter_name,
@@ -142,6 +152,7 @@ def create_lease(
         tags=parsed_tags or None,
         allow_disabled=allow_disabled,
         context=parsed_context or None,
+        shared_with=shared_clients,
     )
 
     for label_key, message in lease.deprecated_labels.items():

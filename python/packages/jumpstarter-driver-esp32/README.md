@@ -42,7 +42,7 @@ export:
 The ESP32 driver requires a `serial` child driver (PySerial) for serial port
 access. DTR/RTS control signals and the serial port path are managed through
 the child driver. Use a `ref` proxy to share the serial driver with the
-top-level composite, enabling both `j serial start-console` and
+top-level composite, enabling both `j serial console` and
 `j storage flash` to work.
 
 ## Usage
@@ -65,7 +65,7 @@ $ j serial
 Usage: j serial [OPTIONS] COMMAND [ARGS]...
 
 Commands:
-  start-console  Start serial port console
+  console        Start serial port console
   pipe           Pipe serial port data to stdout or file
 ```
 
@@ -88,7 +88,7 @@ j storage erase
 j storage reset
 
 # Open serial console
-j serial start-console
+j serial console
 
 # Read serial output
 j serial pipe

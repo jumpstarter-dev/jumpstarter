@@ -75,11 +75,13 @@ class QemuFlasher(FlasherInterface, Driver):
                 pass
             return
 
-        async with await FileWriteStream.from_path(self.parent.validate_partition(partition)) as stream:
-            async with self.resource(source) as res:
-                # Wrap with auto-decompression to handle .gz, .xz, .bz2, .zstd files
-                async for chunk in AutoDecompressIterator(source=res):
-                    await stream.send(chunk)
+        async with (
+            await FileWriteStream.from_path(self.parent.validate_partition(partition)) as stream,
+            self.resource(source) as res,
+        ):
+            # Wrap with auto-decompression to handle .gz, .xz, .bz2, .zstd files
+            async for chunk in AutoDecompressIterator(source=res):
+                await stream.send(chunk)
 
     @export
     async def flash_oci(
@@ -164,7 +166,7 @@ class QemuFlasher(FlasherInterface, Driver):
                 remaining = self.parent.flash_timeout - elapsed
                 try:
                     name, text = await asyncio.wait_for(output_queue.get(), timeout=min(remaining, 30))
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
 
                 if text is None:
@@ -194,12 +196,11 @@ class QemuFlasher(FlasherInterface, Driver):
 
     @export
     async def dump(self, target, partition: str | None = None):
-        async with await FileReadStream.from_path(
+        async with await FileReadStream.from_path(  # pragma: no cover
             self.parent.validate_partition(partition, use_default_partitions=True)
-        ) as stream:
-            async with self.resource(target) as res:
-                async for chunk in stream:
-                    await res.send(chunk)
+        ) as stream, self.resource(target) as res:
+            async for chunk in stream:
+                await res.send(chunk)
 
 
 @dataclass(kw_only=True)
@@ -211,6 +212,15 @@ class QemuPower(PowerInterface, Driver):
         if hasattr(self, "_process"):
             self.logger.warning("already powered on, ignoring request")
             return
+
+        # The mmio transport exists to boot AIB aboot images via u-boot, whose
+        # DTB (e.g. qemu-tcg.dtb) hardcodes a 4G memory layout. A smaller -m
+        # silently fails to boot, so fail loudly instead
+        if self.parent.virtio_transport == "mmio" and self.parent._parse_size(self.parent.mem) < 4 * 1024**3:
+            raise RuntimeError(
+                f"virtio_transport='mmio' boots AIB aboot images whose DTB hardcodes a 4G "
+                f"memory layout; mem={self.parent.mem} is too small — set mem to at least 4G."
+            )
 
         root = self.parent.validate_partition("root", use_default_partitions=True)
         bios = self.parent.validate_partition("bios", use_default_partitions=True)
@@ -268,30 +278,35 @@ class QemuPower(PowerInterface, Driver):
             ",".join(
                 ["user", "id=eth0"]
                 + [
-                    "hostfwd={}:{}:{}-:{}".format(v.protocol, v.hostaddr, v.hostport, v.guestport)
+                    f"hostfwd={v.protocol}:{v.hostaddr}:{v.hostport}-:{v.guestport}"
                     for k, v in self.parent.hostfwd.items()
                 ]
             ),
         ]
 
+        net_device = "virtio-net-device" if self.parent.virtio_transport == "mmio" else "virtio-net-pci"
+        blk_device = "virtio-blk-device" if self.parent.virtio_transport == "mmio" else "virtio-blk-pci"
+
         devices = [
-            "virtio-net-pci,netdev=eth0",
+            f"{net_device},netdev=eth0",
             "virtio-gpu-pci",
         ]
 
         if _vsock_available():
-            devices.append("vhost-vsock-pci,guest-cid={}".format(self.parent._cid))
+            devices.append(f"vhost-vsock-pci,guest-cid={self.parent._cid}")
 
         for device in devices:
             cmdline += ["-device", device]
 
-        if bios.exists():
+        if bios.exists() or self.parent._runtime_firmware_path(bios):
             cmdline += [
                 "-bios",
                 str(bios),
             ]
 
-        if ovmf_code.exists() and ovmf_vars.exists():
+        if (ovmf_code.exists() or self.parent._runtime_firmware_path(ovmf_code)) and (
+            ovmf_vars.exists() or self.parent._runtime_firmware_path(ovmf_vars)
+        ):
             cmdline += [
                 "-drive",
                 f"file={ovmf_code},if=pflash,format=raw,unit=0,readonly=on",
@@ -351,24 +366,31 @@ class QemuPower(PowerInterface, Driver):
                 "-blockdev",
                 f"driver={image_driver},node-name=rootfs,file.driver=file,file.filename={root}",
                 "-device",
-                "virtio-blk-pci,drive=rootfs,bootindex=1",
+                f"{blk_device},drive=rootfs,bootindex=1",
             ]
 
-        self._cidata = self.parent.cidata()
+        # aboot images (mmio transport) boot via u-boot, whose bootcmd probes a
+        # single virtio device (devnum=0). QEMU assigns virtio-mmio devices in
+        # reverse command-line order, so a cloud-init CIDATA disk (vvfat, no GPT)
+        # would take virtio 0 and shadow the real boot disk. Skip it, matching
+        # `air --aboot`, which attaches no cidata (aboot images carry their
+        # config baked in from the AIB manifest).
+        if self.parent.virtio_transport != "mmio":
+            self._cidata = self.parent.cidata()
 
-        cmdline += [
-            "-blockdev",
-            f"driver=vvfat,node-name=cidata,read-only=on,dir={self._cidata.name},label=CIDATA",
-            "-device",
-            "virtio-blk-pci,drive=cidata",
-        ]
+            cmdline += [
+                "-blockdev",
+                f"driver=vvfat,node-name=cidata,read-only=on,dir={self._cidata.name},label=CIDATA",
+                "-device",
+                f"{blk_device},drive=cidata",
+            ]
 
-        self._process = Popen(self.parent._wrap_command(cmdline), stdin=PIPE)
+        self._process = Popen(self.parent._wrap_command(cmdline), stdin=PIPE)  # noqa: ASYNC220
 
         qmp = QMPClient(self.parent.hostname)
 
         logging.getLogger(
-            "qemu.qmp.protocol.{}".format(self.parent.hostname),
+            f"qemu.qmp.protocol.{self.parent.hostname}",
         ).addFilter(QmpLogFilter())
 
         with fail_after(10):
@@ -436,6 +458,13 @@ class Qemu(Driver):
 
     default_partitions: dict[str, Path] = field(default_factory=dict)
 
+    # "pci" matches UEFI/OVMF boot (default). Boards booting a non-UEFI "bios"
+    # firmware (e.g. u-boot for an aboot-partition image, as produced by
+    # automotive-image-builder's abootqemu/abootqemukvm targets) generally can't
+    # enumerate PCI that early, so the disk and network devices need to be
+    # MMIO-attached ("mmio") for that firmware to see them at all.
+    virtio_transport: Literal["pci", "mmio"] = "pci"
+
     hostfwd: dict[str, Hostfwd] = field(default_factory=dict)
 
     # FLS configuration for OCI flashing
@@ -482,8 +511,24 @@ class Qemu(Driver):
 
     @property
     def _work_dir(self) -> str:
+        """Directory for sockets and jumpstarter-exec in sidecar mode."""
         if self.launcher_socket:
-            return "/shared"
+            # Sidecar: QEMU only sees the shared volume. Derive from the
+            # socket path so production (/shared/launcher.sock) and tests
+            # (tmpdir/shared/launcher.sock) both place cidata correctly.
+            return str(Path(self.launcher_socket).parent)
+        return self._tmp_dir.name
+
+    @property
+    def _disk_dir(self) -> str:
+        """Directory for flashable guest disk images (root, bios, …)."""
+        if self.launcher_socket:
+            work = Path(self._work_dir)
+            # Production sidecar: shared volume for sockets, separate mount for guest disk.
+            # Keep in sync with Go constants in exporterset/provisioners/qemu and disk packages.
+            if work == Path("/shared"):
+                return "/disk"
+            return str(work)
         return self._tmp_dir.name
 
     @property
@@ -515,6 +560,10 @@ class Qemu(Driver):
     def _cid(self) -> int:
         return randbits(32)
 
+    def _runtime_firmware_path(self, path: Path) -> bool:
+        """True when path is a default firmware path that lives in the runtime image."""
+        return self.launcher_socket is not None and path in self.default_partitions.values()
+
     def validate_partition(
         self,
         partition: str | None = None,
@@ -522,13 +571,13 @@ class Qemu(Driver):
     ) -> Path:
         match partition:
             case "root" | None:
-                path = Path(self._work_dir) / "root"
+                path = Path(self._disk_dir) / "root"
             case "OVMF_CODE.fd":
-                path = Path(self._work_dir) / "OVMF_CODE.fd"
+                path = Path(self._disk_dir) / "OVMF_CODE.fd"
             case "OVMF_VARS.fd":
-                path = Path(self._work_dir) / "OVMF_VARS.fd"
+                path = Path(self._disk_dir) / "OVMF_VARS.fd"
             case "bios":
-                path = Path(self._work_dir) / "bios"
+                path = Path(self._disk_dir) / "bios"
             case _:
                 raise ValueError(f"invalid partition name: {partition}")
 
@@ -538,9 +587,13 @@ class Qemu(Driver):
         return path
 
     def cidata(self) -> TemporaryDirectory:
-        tmp = TemporaryDirectory()
-
+        # In sidecar mode QEMU runs in the runtime container and can only
+        # see paths on the shared volume — never the exporter's /tmp.
+        # Runtime runs as root (pod securityContext); TemporaryDirectory's
+        # default 0o700 is fine for cross-container read access.
+        tmp = TemporaryDirectory(dir=self._work_dir)
         path = Path(tmp.name)
+
         (path / "meta-data").write_text(
             yaml.safe_dump(
                 {

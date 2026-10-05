@@ -44,7 +44,7 @@ jobs:
       - name: Request hardware lease
         run: |
           jmp config client use ci-client
-          LEASE_ID=$(jmp create lease --selector project=myproject --wait 300 -o name)
+          LEASE_ID=$(jmp create lease --selector project=myproject --duration 30m -o name)
       - name: Run tests
         run: jmp shell --lease ${LEASE_ID} pytest tests/hardware_tests/
       - name: Release hardware lease
@@ -61,7 +61,7 @@ hardware-test:
     - self-hosted
   script:
     - jmp config client use ci-client
-    - LEASE_ID=$(jmp create lease --selector project=myproject --wait 300 -o name)
+    - LEASE_ID=$(jmp create lease --selector project=myproject --duration 30m -o name)
     - jmp shell --lease ${LEASE_ID} pytest tests/hardware_tests/
   after_script:
     - jmp delete lease ${LEASE_ID}

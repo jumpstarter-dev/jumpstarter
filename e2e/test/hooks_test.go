@@ -26,11 +26,13 @@ import (
 	. "github.com/onsi/gomega"    //nolint:revive
 )
 
-var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
+var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, ContinueOnFailure, func() {
 	var (
 		tracker            *ProcessTracker
-		ns                 string
 		exporterConfigPath string
+		// runningConfig is the overlay the exporter currently running in loop
+		// mode was started with, or "" when no reusable exporter is running.
+		runningConfig string
 	)
 
 	exporterOverlay := func(configFile string) string {
@@ -39,21 +41,38 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 
 	// startHooksExporter stops the previous exporter, applies the config overlay,
 	// and starts the exporter in a restart loop.
+	//
+	// Restarting costs several seconds per spec, so an exporter already running
+	// in loop mode with the same overlay is reused. The specs leave no state
+	// behind that outlives a lease, so the only thing that has to match is the
+	// config. Exit-mode specs clear runningConfig because they deliberately
+	// leave the exporter dead.
 	startHooksExporter := func(configFile string) {
+		if runningConfig == configFile {
+			WaitForExporter("test-exporter-hooks")
+			return
+		}
+
+		runningConfig = ""
 		tracker.StopAll()
-		time.Sleep(time.Second)
+		// The controller must observe the old exporter leave before we wait for
+		// the new one; otherwise WaitForExporter is satisfied by the conditions
+		// the dead process left behind.
+		WaitForExporterOffline("test-exporter-hooks")
 
 		ClearHooksConfig(exporterConfigPath)
 		MergeExporterConfig(exporterConfigPath, exporterOverlay(configFile))
 
 		tracker.StartExporterLoop("test-exporter-hooks")
 		WaitForExporter("test-exporter-hooks")
+		runningConfig = configFile
 	}
 
 	// startHooksExporterSingle starts without a restart loop (for exit-mode tests).
 	startHooksExporterSingle := func(configFile string) {
 		tracker.StopAll()
-		time.Sleep(time.Second)
+		WaitForExporterOffline("test-exporter-hooks")
+		runningConfig = ""
 
 		ClearHooksConfig(exporterConfigPath)
 		MergeExporterConfig(exporterConfigPath, exporterOverlay(configFile))
@@ -64,34 +83,19 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 
 	BeforeAll(func() {
 		tracker = NewProcessTracker()
-		ns = Namespace()
 		exporterConfigPath = SystemExporterConfigPath("test-exporter-hooks")
 
-		// Create client and exporter for hooks tests
-		MustJmp("admin", "create", "client", "-n", ns, "test-client-hooks",
-			"--unsafe", "--nointeractive", "--oidc-username", "dex:test-client-hooks")
-
-		MustJmp("admin", "create", "exporter", "-n", ns, "test-exporter-hooks",
-			"--nointeractive", "--oidc-username", "dex:test-exporter-hooks",
-			"--label", "example.com/board=hooks")
-
-		MustJmp("login", "--client", "test-client-hooks",
-			"--endpoint", Endpoint(), "--namespace", ns, "--name", "test-client-hooks",
-			"--issuer", "https://dex.dex.svc.cluster.local:5556",
-			"--username", "test-client-hooks@example.com", "--password", "password", "--unsafe")
-
-		MustJmp("login", "--exporter-config", SystemExporterConfigPath("test-exporter-hooks"),
-			"--endpoint", Endpoint(), "--namespace", ns, "--name", "test-exporter-hooks",
-			"--issuer", "https://dex.dex.svc.cluster.local:5556",
-			"--username", "test-exporter-hooks@example.com", "--password", "password")
+		CreateOIDCClient("test-client-hooks")
+		CreateOIDCExporter("test-exporter-hooks", "example.com/board=hooks")
+		LoginOIDCClient("test-client-hooks")
+		LoginOIDCExporter("test-exporter-hooks")
 	})
 
 	AfterAll(func() {
 		tracker.StopAll()
 
-		// Clean up CRDs
-		_, _ = Jmp("admin", "delete", "client", "--namespace", ns, "test-client-hooks", "--delete")
-		_, _ = Jmp("admin", "delete", "exporter", "--namespace", ns, "test-exporter-hooks", "--delete")
+		DeleteClient("test-client-hooks")
+		DeleteExporter("test-exporter-hooks")
 
 		tracker.Cleanup()
 	})
@@ -143,6 +147,20 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 	// ====================================================================
 	// Group B: beforeLease Failure Modes
 	// ====================================================================
+
+	// beforeLeaseFailureOutput matches every client-visible outcome of a failing
+	// beforeLease hook.
+	//
+	// The client and the exporter race here: the exporter ends the lease the
+	// moment the hook fails, so which message the client prints depends on how
+	// far it got first. It may have seen the hook's own output, the shutdown
+	// notice, a dropped connection, or — if the exporter tore the lease down
+	// before the client's very first RPC — nothing at all, in which case the
+	// client reports the exporter as unreachable. All of these mean the hook
+	// failed and the lease ended, which is what these specs assert.
+	const beforeLeaseFailureOutput = `(beforeLease hook fail|Exporter shutting down|Connection to exporter lost|` +
+		`did not respond to initial status check|unreachable after)`
+
 	Context("Group B: beforeLease Failure Modes", func() {
 		It("B1: beforeLease onFailure=warn allows shell to proceed", func() {
 			startHooksExporter("exporter-hooks-before-fail-warn.yaml")
@@ -162,7 +180,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err).To(HaveOccurred())
-			Expect(out).To(MatchRegexp(`(beforeLease hook fail|Exporter shutting down|Connection to exporter lost)`))
+			Expect(out).To(MatchRegexp(beforeLeaseFailureOutput))
 
 			WaitForExporter("test-exporter-hooks")
 		})
@@ -175,7 +193,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err).To(HaveOccurred())
-			Expect(out).To(MatchRegexp(`(beforeLease hook fail|Connection to exporter lost)`))
+			Expect(out).To(MatchRegexp(beforeLeaseFailureOutput))
 
 			// The exporter should release the lease and return to Available
 			WaitForExporter("test-exporter-hooks")
@@ -186,7 +204,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err2).To(HaveOccurred())
-			Expect(out2).To(MatchRegexp(`(beforeLease hook fail|Connection to exporter lost)`))
+			Expect(out2).To(MatchRegexp(beforeLeaseFailureOutput))
 
 			// Exporter should recover again
 			WaitForExporter("test-exporter-hooks")
@@ -212,7 +230,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err).To(HaveOccurred())
-			Expect(out).To(MatchRegexp(`(beforeLease hook fail|Exporter shutting down|Connection to exporter lost)`))
+			Expect(out).To(MatchRegexp(beforeLeaseFailureOutput))
 
 			// Exporter process should have exited (allow extra time on slower runners like ARM)
 			Eventually(func() bool {

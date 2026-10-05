@@ -25,7 +25,10 @@ fi
 INSTALL_DIR="${INSTALL_DIR:-${HOME}/.local/jumpstarter}"
 VENV_DIR="${VENV_DIR:-${INSTALL_DIR}/venv}"
 SET_SCRIPT="${INSTALL_DIR}/set"
-DEFAULT_SOURCE="release-0.8"
+
+INSTALL_SOURCE_FILE="${INSTALL_DIR}/install_source"
+DEFAULT_SOURCE="release-0.9"
+
 
 # Function to print colored output
 print_info() {
@@ -52,9 +55,9 @@ Jumpstarter Installer
 Usage: $0 [OPTIONS]
 
 OPTIONS:
-    -s, --source SOURCE    Installation source (default: release-0.8)
+    -s, --source SOURCE    Installation source (default: release-0.9)
                           Available sources:
-                          - release-0.8: Stable release 0.8 (recommended)
+                          - release-0.9: Stable release (recommended)
                           - latest: Latest stable release (when available)
                           - rc: Latest release candidate (when available)
                           - main: Latest development version
@@ -62,7 +65,7 @@ OPTIONS:
     -h, --help            Show this help message
 
 EXAMPLES:
-    $0                    # Install stable release 0.8 (recommended)
+    $0                    # Install stable release 0.9 (recommended)
     $0 -s release-0.8    # Install stable release 0.8
     $0 -s main           # Install latest development version
     $0 -s rc             # Install latest release candidate (when available)
@@ -124,18 +127,18 @@ get_latest_version() {
     echo "${latest_version}"
 }
 
-# Function to check if Python 3.11+ is available
+# Function to check if Python 3.12+ is available
 check_python() {
     if command -v python3 >/dev/null 2>&1; then
         local version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
         local major=$(echo ${version} | cut -d. -f1)
         local minor=$(echo ${version} | cut -d. -f2)
 
-        if [ "${major}" -eq 3 ] && [ "${minor}" -ge 11 ]; then
+        if [ "${major}" -eq 3 ] && [ "${minor}" -ge 12 ]; then
             print_success "Found Python ${version}"
             return 0
         else
-            print_error "Python 3.11+ required, found ${version}"
+            print_error "Python 3.12+ required, found ${version}"
             return 1
         fi
     else
@@ -179,6 +182,7 @@ create_venv() {
     print_success "Virtual environment created"
 }
 
+
 # Function to install jumpstarter-all
 install_jumpstarter() {
     local source="$1"
@@ -199,7 +203,13 @@ install_jumpstarter() {
     # Activate virtual environment and install
     source "${VENV_DIR}/bin/activate"
 
-    # We don't upgrade pip here, because it might break the installation
+    # Older pip resolvers can reject this dependency tree even when a solution exists.
+    print_info "Updating pip in the virtual environment..."
+    if ! python3 -m pip install --upgrade pip; then
+        print_error "Failed to update pip in ${VENV_DIR}"
+        exit 1
+    fi
+
     # Install jumpstarter-all with specific version and index URL
     print_info "Installing jumpstarter-all==${version}..."
     if ! python3 -m pip install --extra-index-url "${index_url}" "jumpstarter-all==${version}"; then
@@ -207,6 +217,10 @@ install_jumpstarter() {
         print_error "This might be due to network issues or the package not being available"
         exit 1
     fi
+
+    cat > "${INSTALL_SOURCE_FILE}" << EOF
+${source}
+EOF
 
     print_success "jumpstarter-all==${version} installed successfully"
 }
@@ -288,6 +302,7 @@ while [[ $# -gt 0 ]]; do
             INSTALL_DIR="$2"
             VENV_DIR="${INSTALL_DIR}/venv"
             SET_SCRIPT="${INSTALL_DIR}/set"
+            INSTALL_SOURCE_FILE="${INSTALL_DIR}/install_source"
             shift 2
             ;;
         -h|--help)
@@ -302,6 +317,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Set cached source from file
+if [[ -z "${SOURCE}" && -f "${INSTALL_SOURCE_FILE}" ]]; then
+    SOURCE=$(<"${INSTALL_SOURCE_FILE}")
+fi
 # Set default source if not specified
 SOURCE="${SOURCE:-${DEFAULT_SOURCE}}"
 

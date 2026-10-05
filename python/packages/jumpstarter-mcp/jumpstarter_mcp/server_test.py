@@ -7,19 +7,13 @@ import asyncio.subprocess
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import click
 import pytest
 
 from jumpstarter_mcp.connections import Connection, ConnectionManager
-from jumpstarter_mcp.introspect import (
-    _get_public_method_names,
-    get_driver_methods,
-    list_drivers,
-    walk_click_tree,
-)
 from jumpstarter_mcp.server import (
     TOKEN_REFRESH_THRESHOLD_SECONDS,
     _ensure_fresh_token,
@@ -34,7 +28,7 @@ from jumpstarter_mcp.tools.leases import _lease_status
 
 
 class FakePowerClient:
-    children: dict = {}
+    children: ClassVar[dict] = {}
 
     def on(self) -> None:
         """Power on the device."""
@@ -56,7 +50,7 @@ class FakePowerClient:
 
 
 class FakeSerialClient:
-    children: dict = {}
+    children: ClassVar[dict] = {}
 
     def open(self):
         """Open serial port."""
@@ -95,7 +89,7 @@ def _make_connection(
         socket_path=socket_path,
         allow=[],
         unsafe=True,
-        created_at=datetime.now(),
+        created_at=datetime.now(tz=UTC),
         client=client or FakeCompositeClient(),
     )
 
@@ -112,135 +106,20 @@ class FakeLease:
 
 
 # ---------------------------------------------------------------------------
-# walk_click_tree
+# Introspection re-exports
 # ---------------------------------------------------------------------------
 
 
-class TestWalkClickTree:
-    def test_simple_command(self):
-        @click.command("hello")
-        @click.option("--name", help="Your name")
-        def hello(name):
-            """Say hello."""
+class TestIntrospectReexports:
+    def test_reexports_core_implementation(self):
+        import jumpstarter_mcp.introspect as shim
 
-        result = walk_click_tree(hello)
-        assert result["name"] == "hello"
-        assert result["help"] == "Say hello."
-        assert len(result["params"]) == 1
-        assert result["params"][0]["name"] == "name"
-        assert result["params"][0]["help"] == "Your name"
-        assert "subcommands" not in result
+        import jumpstarter.client.introspect as core
 
-    def test_group_with_subcommands(self):
-        @click.group("root")
-        def root():
-            """Root group."""
-
-        @root.command("sub1")
-        def sub1():
-            """First sub."""
-
-        @root.command("sub2")
-        @click.option("--count", type=int, default=5)
-        def sub2(count):
-            """Second sub."""
-
-        result = walk_click_tree(root)
-        assert result["name"] == "root"
-        assert "subcommands" in result
-        assert "sub1" in result["subcommands"]
-        assert "sub2" in result["subcommands"]
-        assert result["subcommands"]["sub2"]["params"][0]["name"] == "count"
-        assert result["subcommands"]["sub2"]["params"][0]["default"] == 5
-
-    def test_hidden_params_excluded(self):
-        @click.command("cmd")
-        @click.option("--visible", help="shown")
-        @click.option("--secret", hidden=True)
-        def cmd(visible, secret):
-            pass
-
-        result = walk_click_tree(cmd)
-        names = [p["name"] for p in result["params"]]
-        assert "visible" in names
-        assert "secret" not in names
-
-
-# Introspection tests
-# ---------------------------------------------------------------------------
-
-
-class TestGetPublicMethodNames:
-    def test_filters_private_and_base_methods(self):
-        names = _get_public_method_names(FakePowerClient())
-        assert "on" in names
-        assert "off" in names
-        assert "cycle" in names
-        assert "_private" not in names
-        assert "call" not in names
-        assert "check_exporter_status" not in names
-
-
-class TestListDrivers:
-    def test_flat_tree(self):
-        client = FakeCompositeClient()
-        result = list_drivers(client)
-        paths = [d["path"] for d in result]
-        assert "client" in paths
-        assert "client.power" in paths
-        assert "client.serial" in paths
-
-    def test_driver_path_field(self):
-        client = FakeCompositeClient()
-        result = list_drivers(client)
-        root = next(d for d in result if d["path"] == "client")
-        assert root["driver_path"] == []
-        power = next(d for d in result if d["path"] == "client.power")
-        assert power["driver_path"] == ["power"]
-
-    def test_methods_populated(self):
-        client = FakeCompositeClient()
-        result = list_drivers(client)
-        power = next(d for d in result if d["path"] == "client.power")
-        assert "on" in power["methods"]
-        assert "off" in power["methods"]
-
-
-class TestGetDriverMethods:
-    def test_returns_method_details(self):
-        client = FakeCompositeClient()
-        result = get_driver_methods(client, ["power"])
-        assert result["driver_path"] == ["power"]
-        method_names = [m["name"] for m in result["methods"]]
-        assert "on" in method_names
-        assert "off" in method_names
-        assert "cycle" in method_names
-
-    def test_call_example_uses_dot_notation(self):
-        client = FakeCompositeClient()
-        result = get_driver_methods(client, ["power"])
-        cycle = next(m for m in result["methods"] if m["name"] == "cycle")
-        assert "client.power.cycle(" in cycle["call_example"]
-        assert 'children["power"]' not in cycle["call_example"]
-
-    def test_invalid_path_raises(self):
-        client = FakeCompositeClient()
-        with pytest.raises(KeyError, match="nonexistent"):
-            get_driver_methods(client, ["nonexistent"])
-
-    def test_docstrings_captured(self):
-        client = FakeCompositeClient()
-        result = get_driver_methods(client, ["power"])
-        on_method = next(m for m in result["methods"] if m["name"] == "on")
-        assert on_method["docstring"] == "Power on the device."
-
-    def test_parameters_captured(self):
-        client = FakeCompositeClient()
-        result = get_driver_methods(client, ["power"])
-        cycle = next(m for m in result["methods"] if m["name"] == "cycle")
-        assert len(cycle["parameters"]) == 1
-        assert cycle["parameters"][0]["name"] == "wait"
-        assert cycle["parameters"][0]["default"] == "2"
+        assert shim.walk_click_tree is core.walk_click_tree
+        assert shim.list_drivers is core.list_drivers
+        assert shim.get_driver_methods is core.get_driver_methods
+        assert shim._get_public_method_names is core._get_public_method_names
 
 
 # ---------------------------------------------------------------------------
@@ -579,9 +458,7 @@ class TestSetupLogging:
                 _setup_logging()
 
             new_file_handlers = [
-                h
-                for h in root.handlers
-                if isinstance(h, logging.FileHandler) and h not in handlers_before
+                h for h in root.handlers if isinstance(h, logging.FileHandler) and h not in handlers_before
             ]
             assert len(new_file_handlers) == 1
             assert "mcp-server.log" in new_file_handlers[0].baseFilename
@@ -655,7 +532,7 @@ class TestStdoutIsolation:
 
             # Apply the same redirect pattern as run_server():
             sys.stdout.flush()
-            mcp_fd = os.dup(sys.stdout.fileno())   # save "real stdout" (pipe)
+            mcp_fd = os.dup(sys.stdout.fileno())  # save "real stdout" (pipe)
             os.dup2(sys.stderr.fileno(), sys.stdout.fileno())  # fd 1 -> stderr
             sys.stdout = sys.stderr
 
@@ -685,3 +562,48 @@ class TestStdoutIsolation:
             os.close(r_err)
             sys.stdout = saved_sys_stdout
             sys.stderr = saved_sys_stderr
+
+
+# ---------------------------------------------------------------------------
+# jmp_list_events
+# ---------------------------------------------------------------------------
+
+
+class TestListEvents:
+    @pytest.mark.asyncio
+    async def test_empty_queue_returns_empty_list(self):
+        import json
+
+        from jumpstarter_mcp.tools.commands import list_events
+
+        _, manager = create_server()
+        result = json.loads(await list_events(manager))
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_events_are_drained(self):
+        import json
+
+        from jumpstarter_mcp.tools.commands import list_events
+
+        _, manager = create_server()
+        manager._append_event("warning", "lease expiring", "conn-1")
+        result = json.loads(await list_events(manager))
+        assert len(result) == 1
+        assert result[0]["level"] == "warning"
+        assert result[0]["message"] == "lease expiring"
+        assert json.loads(await list_events(manager)) == []
+
+    @pytest.mark.asyncio
+    async def test_max_count_respected(self):
+        import json
+
+        from jumpstarter_mcp.tools.commands import list_events
+
+        _, manager = create_server()
+        for i in range(10):
+            manager._append_event("info", f"event {i}", "conn-1")
+        result = json.loads(await list_events(manager, max_count=3))
+        assert len(result) == 3
+        remaining = json.loads(await list_events(manager, max_count=100))
+        assert len(remaining) == 7

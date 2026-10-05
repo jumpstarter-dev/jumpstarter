@@ -54,12 +54,11 @@ def import_class(class_path: str, allow: list[str], unsafe: bool):
     while `import_class("example_package.some_module.fooclass", allow=["notexample_package.*"], unsafe=false)`
     throws MissingDriverError due to not matching the allow list
     """
-    if not unsafe:
-        if not any(fnmatchcase(class_path, pattern) for pattern in allow):
-            raise MissingDriverError(
-                message=f"{class_path} doesn't match any of the allowed patterns",
-                class_path=class_path,
-            )
+    if not unsafe and not any(fnmatchcase(class_path, pattern) for pattern in allow):
+        raise MissingDriverError(
+            message=f"{class_path} doesn't match any of the allowed patterns",
+            class_path=class_path,
+        )
     try:
         module_path, class_name = class_path.rsplit(".", 1)
     except ValueError as e:

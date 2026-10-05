@@ -88,3 +88,38 @@ def test_create_client_config_insecure_tls_abort(tmp_path):
     )
     assert result.exit_code != 0
     assert not out.exists()
+
+
+def _patch_client_list():
+    from unittest.mock import patch
+
+    from jumpstarter.config.client import ClientConfigListV1Alpha1
+    from jumpstarter.config.common import ObjectMeta
+
+    config = ClientConfigV1Alpha1(
+        alias=CLIENT_ALIAS,
+        metadata=ObjectMeta(namespace=CLIENT_NAMESPACE, name=CLIENT_NAME),
+        endpoint=CLIENT_ENDPOINT,
+        token="secret-token",
+        refresh_token="secret-refresh-token",
+    )
+    configs = ClientConfigListV1Alpha1(current_config=CLIENT_ALIAS, items=[config])
+    return patch.object(ClientConfigV1Alpha1, "list", return_value=configs)
+
+
+def test_list_client_configs_redacts_credentials():
+    runner = CliRunner()
+    with _patch_client_list():
+        result = runner.invoke(config_client, ["list", "-o", "json"])
+    assert result.exit_code == 0, result.output
+    assert CLIENT_ALIAS in result.output
+    assert "secret-token" not in result.output
+    assert "secret-refresh-token" not in result.output
+
+
+def test_list_client_configs_show_credentials():
+    runner = CliRunner()
+    with _patch_client_list():
+        result = runner.invoke(config_client, ["list", "-o", "json", "--show-credentials"])
+    assert result.exit_code == 0, result.output
+    assert "secret-token" in result.output

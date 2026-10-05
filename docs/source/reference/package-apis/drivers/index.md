@@ -29,6 +29,7 @@ Drivers that provide various communication interfaces:
 
 - {doc}`ADB <adb>` (`jumpstarter-driver-adb`) - Android Debug Bridge tunneling
 - {doc}`BLE <ble>` (`jumpstarter-driver-ble`) - Bluetooth Low Energy communication
+- {doc}`BT Peer <bt-peer>` (`jumpstarter-driver-bt-peer`) - Bluetooth peer device powered by bumble
 - {doc}`CAN <can>` (`jumpstarter-driver-can`) - Controller Area Network communication
 - {doc}`HTTP <http>` (`jumpstarter-driver-http`) - HTTP communication
 - {doc}`mitmproxy <mitmproxy>` (`jumpstarter-driver-mitmproxy`) - HTTP/HTTPS interception, mocking, and traffic recording
@@ -55,7 +56,8 @@ Drivers that control storage devices and manage data:
 Drivers that handle media streams:
 
 - {doc}`uStreamer <ustreamer>` (`jumpstarter-driver-ustreamer`) - Video streaming
-
+- {doc}`Video <video>` (`jumpstarter-driver-video`) - Video interface and HTTP/MJPEG camera sources
+- {doc}`NanoKVM-USB <nanokvm-usb>` (`jumpstarter-driver-nanokvm-usb`) - NanoKVM-USB KVM over local USB serial and UVC
 ### Automotive Diagnostics
 
 Drivers for automotive diagnostic protocols:
@@ -77,7 +79,7 @@ Drivers for flashing firmware and programming devices:
 - {doc}`Probe-RS <probe-rs>` (`jumpstarter-driver-probe-rs`) - Debug probe support
 - {doc}`ST-LINK MSD <stlink-msd>` (`jumpstarter-driver-stlink-msd`) - ST-LINK mass storage flasher for STM32
 - {doc}`U-Boot <uboot>` (`jumpstarter-driver-uboot`) - Universal Bootloader interface
-- {doc}`RideSX <ridesx>` (`jumpstarter-driver-ridesx`) - Flashing and power management for Qualcomm RideSX
+- {doc}`RideSX <ridesx>` (`jumpstarter-driver-ridesx`) - RideSX fastboot flashing, QDL platform updates, and power management for Qualcomm automotive SoCs
 
 ### Emulation
 
@@ -87,6 +89,14 @@ Drivers for virtual and emulated targets:
 - {doc}`QEMU <qemu>` (`jumpstarter-driver-qemu`) - QEMU virtual machine management
 - {doc}`Renode <renode>` (`jumpstarter-driver-renode`) - Renode embedded systems emulation
 - {doc}`Corellium <corellium>` (`jumpstarter-driver-corellium`) - Corellium virtualization platform
+- {doc}`Cuttlefish <cuttlefish>` (`jumpstarter-driver-cuttlefish`) - Android Cuttlefish virtual device management
+- {doc}`Netsim <netsim>` (`jumpstarter-driver-netsim`) - Android netsim virtual radio control (Bluetooth, WiFi, UWB)
+
+### Test and Measurement
+
+Drivers for signal capture, analysis, and protocol decoding:
+
+- {doc}`Sigrok <sigrok>` (`jumpstarter-driver-sigrok`) - Logic analyzer and oscilloscope capture via sigrok-cli
 
 ### Utility
 
@@ -101,8 +111,10 @@ General-purpose utility drivers:
 adb.md
 androidemulator.md
 ble.md
+bt-peer.md
 can.md
 corellium.md
+cuttlefish.md
 doip.md
 dut-network.md
 dutlink.md
@@ -114,7 +126,9 @@ http.md
 http-power.md
 iscsi.md
 mitmproxy.md
+netsim.md
 network.md
+nanokvm-usb.md
 noyito-relay.md
 obd.md
 opendal.md
@@ -127,6 +141,7 @@ renode.md
 ridesx.md
 sdwire.md
 shell.md
+sigrok.md
 snmp.md
 someip.md
 ssh.md
@@ -141,6 +156,7 @@ uds.md
 uds-can.md
 uds-doip.md
 ustreamer.md
+video.md
 vnc.md
 xcp.md
 yepkit.md

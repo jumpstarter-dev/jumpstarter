@@ -65,39 +65,38 @@ class TestTcpdumpConfig:
 
     def test_tcpdump_missing_binary_raises_when_enabled(self, tmp_path: Path):
         """When enable_tcpdump is True but tcpdump is not installed, raise."""
-        with pytest.raises(RuntimeError, match="tcpdump"):
-            with patch(f"{_DRIVER_MODULE}.sys") as mock_sys, \
+        with pytest.raises(RuntimeError, match="tcpdump"), patch(f"{_DRIVER_MODULE}.sys") as mock_sys, \
                  patch(f"{_DRIVER_MODULE}.shutil") as mock_shutil, \
                  patch(f"{_DRIVER_MODULE}.iproute") as mock_iproute, \
                  patch(f"{_DRIVER_MODULE}.nftables") as mock_nftables, \
                  patch(f"{_DRIVER_MODULE}.dnsmasq") as mock_dnsmasq:
-                mock_sys.platform = "linux"
+            mock_sys.platform = "linux"
 
-                def which_side_effect(cmd):
-                    if cmd == "tcpdump":
-                        return None
-                    return "/usr/bin/fake"
+            def which_side_effect(cmd):
+                if cmd == "tcpdump":
+                    return None
+                return "/usr/bin/fake"
 
-                mock_shutil.which.side_effect = which_side_effect
-                mock_dnsmasq.state_dir_for_interface.return_value = tmp_path
-                mock_dnsmasq.start.return_value = MagicMock()
-                mock_iproute.detect_upstream_interface.return_value = "eth-up"
-                mock_iproute.interface_exists.return_value = False
-                mock_iproute.get_interface_addresses.return_value = []
-                mock_iproute.get_interface_forwarding.return_value = "0"
-                mock_iproute.get_interface_prefix_len.return_value = 24
-                mock_nftables.ensure_filter_forward.return_value = []
-                mock_nftables.list_rules.return_value = ""
-                mock_nftables._table_name_for.return_value = "jumpstarter_eth_dut"
-                DutNetwork(
-                    interface="eth-dut",
-                    subnet="192.168.100.0/24",
-                    gateway_ip="192.168.100.1",
-                    upstream_interface="eth-up",
-                    nat_mode="masquerade",
-                    enable_tcpdump=True,
-                    state_dir=str(tmp_path),
-                )  # type: ignore[missing-argument]
+            mock_shutil.which.side_effect = which_side_effect
+            mock_dnsmasq.state_dir_for_interface.return_value = tmp_path
+            mock_dnsmasq.start.return_value = MagicMock()
+            mock_iproute.detect_upstream_interface.return_value = "eth-up"
+            mock_iproute.interface_exists.return_value = False
+            mock_iproute.get_interface_addresses.return_value = []
+            mock_iproute.get_interface_forwarding.return_value = "0"
+            mock_iproute.get_interface_prefix_len.return_value = 24
+            mock_nftables.ensure_filter_forward.return_value = []
+            mock_nftables.list_rules.return_value = ""
+            mock_nftables._table_name_for.return_value = "jumpstarter_eth_dut"
+            DutNetwork(
+                interface="eth-dut",
+                subnet="192.168.100.0/24",
+                gateway_ip="192.168.100.1",
+                upstream_interface="eth-up",
+                nat_mode="masquerade",
+                enable_tcpdump=True,
+                state_dir=str(tmp_path),
+            )  # type: ignore[missing-argument]
 
     def test_tcpdump_missing_binary_ok_when_disabled(self, tmp_path: Path):
         """When enable_tcpdump is False, missing tcpdump binary is fine."""
@@ -275,11 +274,10 @@ class TestTcpdumpMethod:
         mock_proc.wait = AsyncMock()
 
         with patch(f"{_DRIVER_MODULE}.asyncio.subprocess.create_subprocess_exec",
-                   return_value=mock_proc):
-            with pytest.raises(asyncio.CancelledError):
-                asyncio.run(
-                    _consume_async_gen(driver.tcpdump())
-                )
+                   return_value=mock_proc), pytest.raises(asyncio.CancelledError):
+            asyncio.run(
+                _consume_async_gen(driver.tcpdump())
+            )
 
         # Verify the process was terminated
         mock_proc.terminate.assert_called_once()

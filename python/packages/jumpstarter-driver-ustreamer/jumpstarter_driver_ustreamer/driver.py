@@ -12,6 +12,7 @@ from tempfile import TemporaryDirectory
 
 from aiohttp import ClientSession, UnixConnector
 from anyio import connect_unix
+from jumpstarter_driver_video.driver import VideoInterface
 
 from .common import UStreamerState
 from jumpstarter.driver import Driver, export, exportstream
@@ -53,9 +54,7 @@ def _get_preexec_fn() -> Callable[[], None] | None:
 
 
 @dataclass(kw_only=True)
-class UStreamer(Driver):
-    driver_type = "video"
-
+class UStreamer(VideoInterface, Driver):
     executable: str = field(default_factory=find_ustreamer)
     args: dict[str, str] = field(default_factory=dict)
     tempdir: TemporaryDirectory = field(default_factory=TemporaryDirectory)
@@ -81,7 +80,7 @@ class UStreamer(Driver):
             cmdline,
             stdout=sys.stdout,
             stderr=sys.stderr,
-            preexec_fn=_get_preexec_fn(),
+            preexec_fn=_get_preexec_fn(),  # noqa: PLW1509
         )
 
     def close(self):
@@ -92,21 +91,29 @@ class UStreamer(Driver):
             self.process.kill()
 
     @export
-    async def state(self):
-        async with ClientSession(connector=UnixConnector(path=self.socketp)) as session:
-            async with session.get("http://localhost/state") as r:
-                json = await r.json()
-                self.logger.debug(f"state: {json}")
-                return UStreamerState.model_validate(json)
+    async def state(self):  # pragma: no cover
+        async with (
+            ClientSession(connector=UnixConnector(path=self.socketp)) as session,
+            session.get("http://localhost/state") as r,
+        ):
+            json = await r.json()
+            self.logger.debug(f"state: {json}")
+            return UStreamerState.model_validate(json)
 
     @export
-    async def snapshot(self):
-        async with ClientSession(connector=UnixConnector(path=self.socketp)) as session:
-            async with session.get("http://localhost/snapshot") as r:
-                data = await r.read()
-                length = len(data)
-                self.logger.debug(f"snapshot: {length} bytes")
-                return b64encode(data).decode("ascii")
+    async def snapshot(self):  # pragma: no cover
+        async with (
+            ClientSession(connector=UnixConnector(path=self.socketp)) as session,
+            session.get("http://localhost/snapshot") as r,
+        ):
+            data = await r.read()
+            length = len(data)
+            self.logger.debug(f"snapshot: {length} bytes")
+            return b64encode(data).decode("ascii")
+
+    @export
+    def stream_path(self) -> str:
+        return "/stream"
 
     @exportstream
     @asynccontextmanager

@@ -7,7 +7,7 @@ license = "Apache-2.0"
 authors = [
     { name = "Kirk Brauer", email = "kbrauer@hatci.com" }
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "jumpstarter",
     "jumpstarter-driver-adb",

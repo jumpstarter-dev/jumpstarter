@@ -19,7 +19,9 @@ package jumpstarter
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
+	"slices"
 	"time"
 
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
@@ -111,6 +113,13 @@ func (r *JumpstarterReconciler) reconcileCertificates(ctx context.Context, js *o
 	for i := int32(0); i < js.Spec.Routers.Replicas; i++ {
 		if err := r.reconcileRouterCertificate(ctx, js, issuerRef, i); err != nil {
 			return fmt.Errorf("failed to reconcile router %d certificate: %w", i, err)
+		}
+	}
+
+	// Create telemetry certificate if telemetry is enabled
+	if js.Spec.Telemetry != nil && js.Spec.Telemetry.Enabled {
+		if err := r.reconcileTelemetryCertificate(ctx, js, issuerRef); err != nil {
+			return fmt.Errorf("failed to reconcile telemetry certificate: %w", err)
 		}
 	}
 
@@ -287,7 +296,7 @@ func (r *JumpstarterReconciler) reconcileServerCertificate(
 	adjustedRenewBefore := renewBefore
 	if renewBefore >= certDuration {
 		adjustedRenewBefore = certDuration / 2
-		logFields := []interface{}{
+		logFields := []any{
 			"component", component,
 			"configured", renewBefore,
 			"certDuration", certDuration,
@@ -302,9 +311,7 @@ func (r *JumpstarterReconciler) reconcileServerCertificate(
 		"app.kubernetes.io/managed-by": "jumpstarter-operator",
 		"component":                    component,
 	}
-	for k, v := range extraLabels {
-		labels[k] = v
-	}
+	maps.Copy(labels, extraLabels)
 
 	// Separate IP addresses from DNS names for cert-manager v1 compatibility
 	var dns []string
@@ -367,6 +374,28 @@ func (r *JumpstarterReconciler) reconcileRouterCertificate(ctx context.Context, 
 		"router-index": fmt.Sprintf("%d", replicaIndex),
 	}
 	return r.reconcileServerCertificate(ctx, js, issuerRef, certName, "router", dnsNames, extraLabels)
+}
+
+// reconcileTelemetryCertificate creates the TLS certificate for the telemetry service.
+func (r *JumpstarterReconciler) reconcileTelemetryCertificate(ctx context.Context, js *operatorv1alpha1.Jumpstarter, issuerRef cmmeta.ObjectReference) error {
+	certName := GetTelemetryCertSecretName(js)
+	includeInternalNames := !isExternalIssuer(js)
+	dnsNames := r.collectTelemetryDNSNames(js, includeInternalNames)
+	return r.reconcileServerCertificate(ctx, js, issuerRef, certName, "telemetry", dnsNames, nil)
+}
+
+// collectTelemetryDNSNames collects all DNS names for the telemetry certificate.
+func (r *JumpstarterReconciler) collectTelemetryDNSNames(js *operatorv1alpha1.Jumpstarter, includeInternalNames bool) []string {
+	var dnsNames []string
+	if includeInternalNames {
+		dnsNames = append(dnsNames,
+			telemetryServiceName,
+			fmt.Sprintf("%s.%s", telemetryServiceName, js.Namespace),
+			fmt.Sprintf("%s.%s.svc", telemetryServiceName, js.Namespace),
+			fmt.Sprintf("%s.%s.svc.cluster.local", telemetryServiceName, js.Namespace),
+		)
+	}
+	return dnsNames
 }
 
 // collectControllerDNSNames collects all DNS names for the controller certificate.
@@ -623,10 +652,5 @@ func isExternalIssuer(js *operatorv1alpha1.Jumpstarter) bool {
 
 // contains checks if a string slice contains a specific string.
 func contains(slice []string, str string) bool {
-	for _, s := range slice {
-		if s == str {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, str)
 }

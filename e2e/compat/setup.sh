@@ -26,8 +26,10 @@ export JS_NAMESPACE="${JS_NAMESPACE:-jumpstarter-lab}"
 
 # Scenario configuration
 COMPAT_SCENARIO="${COMPAT_SCENARIO:-old-controller}"
-COMPAT_CONTROLLER_TAG="${COMPAT_CONTROLLER_TAG:-v0.8.1}"
-COMPAT_CLIENT_VERSION="${COMPAT_CLIENT_VERSION:-0.7.4}"
+# renovate: datasource=github-releases depName=jumpstarter-dev/jumpstarter
+COMPAT_CONTROLLER_TAG="${COMPAT_CONTROLLER_TAG:-v0.9.0}"
+# renovate: datasource=pypi depName=jumpstarter
+COMPAT_CLIENT_VERSION="${COMPAT_CLIENT_VERSION:-0.9.0}"
 
 # Color output
 RED='\033[0;31m'
@@ -214,8 +216,9 @@ install_old_client() {
     # Create a separate venv for old client
     uv venv "$OLD_JMP_DIR/.venv" --python "$(cat "$REPO_ROOT/.py-version")"
 
-    # Install old packages from PyPI
+    # Install old packages from PyPI and the jumpstarter package index
     uv pip install --python "$OLD_JMP_DIR/.venv/bin/python" \
+        --extra-index-url https://pkg.jumpstarter.dev/simple/ \
         "jumpstarter-cli==${COMPAT_CLIENT_VERSION}" \
         "jumpstarter==${COMPAT_CLIENT_VERSION}" \
         "jumpstarter-driver-composite==${COMPAT_CLIENT_VERSION}" \

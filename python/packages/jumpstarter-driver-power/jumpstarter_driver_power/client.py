@@ -5,7 +5,14 @@ import click
 
 from .common import PowerReading
 from jumpstarter.client import DriverClient
+from jumpstarter.client.core import DriverMethodNotImplemented
 from jumpstarter.client.decorators import driver_click_group
+
+
+def _require_status(state: str | None) -> str:
+    if state is None:
+        raise click.ClickException("this power driver does not report its state")
+    return state
 
 
 class PowerClient(DriverClient):
@@ -29,6 +36,17 @@ class PowerClient(DriverClient):
         self.on()
         self.logger.info("Power cycle sequence complete")
 
+    def status(self) -> str | None:
+        """Return the power state reported by the driver, e.g. "on", "off" or "unknown".
+
+        Optional for power drivers: returns None when the driver cannot report its
+        state, so callers can tell "no status" apart from a real state.
+        """
+        try:
+            return self.call("status")
+        except DriverMethodNotImplemented:
+            return None
+
     def read(self) -> Generator[PowerReading, None, None]:
         """Read power data from the device."""
 
@@ -39,7 +57,6 @@ class PowerClient(DriverClient):
         @driver_click_group(self)
         def base():
             """Generic power"""
-            pass
 
         @base.command()
         def on():
@@ -57,6 +74,11 @@ class PowerClient(DriverClient):
             """Power cycle"""
             click.echo(f"Power cycling with {wait} seconds wait time...")
             self.cycle(wait)
+
+        @base.command()
+        def status():
+            """Print the power state"""
+            click.echo(_require_status(self.status()))
 
         @base.command()
         @click.option("--count", "-n", default=1, help="Number of readings (0 = infinite)", show_default=True)

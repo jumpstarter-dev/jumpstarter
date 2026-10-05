@@ -108,7 +108,7 @@ VirtualTargetClass  ←── referenced by ──  ExporterSet
                                               │
                                               ▼
                                          Exporter ──► Pod
-                              (exporter sidecar + target runtime)
+                              (exporter main + target-runtime sidecar)
 ```
 
 - **`VirtualTargetClass`** — **namespaced** configuration for a backend
@@ -163,10 +163,12 @@ spec:
     resources:
       cpu: 4
       memory: 4Gi
-      storage: 16Gi
+    storage:
+      size: 16Gi
+      fsOverhead: "10%"
+    # storage:
+    #   storageClassName: gp3        # omit → sized emptyDir at /disk
 ```
-
-**Example: ExporterSet (generic scaling resource)**
 
 ```yaml
 apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
@@ -183,7 +185,7 @@ spec:
   virtualTargetClassName: qemu-rpi4  # same-namespace VirtualTargetClass name
   parameters:                        # optional; deep-merged over class parameters
     resources:
-      memory: 8Gi                    # override only memory; cpu/storage inherited
+      memory: 8Gi                    # override only memory; cpu inherited
   selector:
     matchLabels:
       board: rpi4
@@ -292,39 +294,54 @@ unresolved; see *Unresolved Questions*.
 ```yaml
 # rendered by qemu.jumpstarter.dev provisioner
 spec:
+  restartPolicy: Never               # exporter exit completes the Pod (ExitAndReplace)
   initContainers:
-    - name: exporter                 # native sidecar (starts first, drains last)
-      restartPolicy: Always
+    - name: copy-jumpstarter-exec    # one-shot: stage binary onto shared volume
       image: quay.io/jumpstarter-dev/jumpstarter:latest
-  containers:
-    - name: target-runtime           # QEMU/Cuttlefish — independent image
-      image: quay.io/jumpstarter-dev/virtual/qemu-runtime:latest
       volumeMounts:
-        - name: os
-          mountPath: /os
         - name: shared
           mountPath: /shared
+    - name: target-runtime           # native sidecar (starts before exporter)
+      restartPolicy: Always
+      image: quay.io/jumpstarter-dev/virtual/qemu-runtime:latest
+      volumeMounts:
+        - name: shared
+          mountPath: /shared
+        - name: disk
+          mountPath: /disk
+  containers:
+    - name: exporter                 # main — default logs; exit tears Pod down
+      image: quay.io/jumpstarter-dev/jumpstarter:latest
+      volumeMounts:
+        - name: shared
+          mountPath: /shared
+        - name: disk
+          mountPath: /disk
   volumes:
-    - name: os
-      image:
-        reference: registry.example.com/os/rpi4:latest   # OS as OCI artifact
     - name: shared
-      emptyDir: {}
+      emptyDir:
+        sizeLimit: 100Mi             # sockets / cidata / jumpstarter-exec
+    - name: disk
+      emptyDir:
+        sizeLimit: 16Gi              # guest disk; or ephemeral volumeClaimTemplate
 ```
 
 Benefits:
 
 - **Independent release cadence** — exporter, runtime, and OS image version
   independently.
-- **Fault isolation** — exporter survives target-runtime crashes and can drain
-  or report failure.
+- **Natural teardown** — exporter is the main container, so ExitAndReplace is
+  simply process exit; Kubernetes terminates the runtime sidecar automatically.
+- **Default logs** — `kubectl logs` shows the exporter without `-c`.
+- **Socket ready first** — runtime sidecar starts before the exporter so
+  `launcher.sock` exists when `jmp run` begins.
 - **Standard interfaces** — drivers attach over virtio (serial/SPI/CAN/GPIO) or
   Unix sockets on shared volumes; same driver code works physical + virtual.
 - **Unprivileged Pods** — virtio-backed guests avoid privileged containers when
   the host supports it.
 
-The exporter sidecar communicates with the target-runtime container via Unix
-sockets on a shared `emptyDir` volume (QMP for QEMU control, serial console,
+The exporter (main container) communicates with the target-runtime sidecar via
+Unix sockets on a shared `emptyDir` volume (QMP for QEMU control, serial console,
 launcher socket for dynamic argv). API-backed provisioners (`corellium`, `ec2`)
 and off-cluster provisioners (`qemu-baremetal.jumpstarter.dev`) skip the
 in-cluster runtime container — see *External and Off-Cluster Provisioning*.
@@ -371,7 +388,7 @@ VirtualTargetClass  ←── referenced by ──  ExporterSet
                                               │
                                               ▼
                                          Exporter ──► Pod
-                              (exporter sidecar + QEMU runtime)
+                              (exporter main + QEMU runtime sidecar)
 ```
 
 Homogeneous QEMU pools configure **`VirtualTargetClass` + `ExporterSet` only**.
@@ -441,7 +458,9 @@ spec:
     resources:
       cpu: 4
       memory: 4Gi
-      storage: 16Gi
+    storage:
+      size: 16Gi
+      fsOverhead: "10%"
 ```
 
 2. Create an `ExporterSet` in the **same namespace** that references the class
@@ -505,11 +524,12 @@ spec:
    - Create an `Exporter` CR with labels from `spec.template.metadata` and
      drivers from `spec.template.spec`.
    - Render a Kubernetes Pod (sidecar pattern):
-     - **Exporter sidecar** (native sidecar, `restartPolicy: Always`) — starts
-       first, registers with `jumpstarter-controller`.
-     - **QEMU runtime container** — baseline virt machine from merged
+     - **QEMU runtime** (native sidecar, `restartPolicy: Always`) — starts
+       first so `launcher.sock` is ready; baseline virt machine from merged
        `parameters` (CPU, memory, firmware blob); **empty disk** ready for
        user flash at lease time.
+     - **Exporter** (main container) — registers with `jumpstarter-controller`;
+       default logs; exit drives ExitAndReplace Pod completion.
      - Exporter talks to runtime via Unix sockets on a shared `emptyDir` (QMP,
        serial, launcher).
    - Apply scheduling from `VirtualTargetClass.scheduling` to the Pod.
@@ -559,7 +579,7 @@ jmp lease -l board=rpi4,virtual=true
 **Result:** User holds an active lease on `rpi4-virtual-aaa`. Pool still
 maintains warm capacity via background scale-up.
 
-#### Phase 4 — User session: flash, boot, test (user + exporter sidecar)
+#### Phase 4 — User session: flash, boot, test (user + exporter)
 
 The warm pool provides **instant lease assignment**; image selection happens
 **after** lease — same workflow as a physical bench (DD-7). The pool does not
@@ -575,12 +595,12 @@ with env() as client:
     # ... run tests ...
 ```
 
-**Exporter sidecar actions:**
+**Exporter actions:**
 
-- `storage.flash` writes the image to shared storage (or tells QEMU runtime via
-  QMP/`blockdev-add`).
+- `storage.flash` writes the image to `/disk` on the guest-disk volume (or tells
+  QEMU runtime via QMP/`blockdev-add`).
 - `power.on` sends QEMU start via QMP or launcher socket on shared volume.
-- Serial/network drivers proxy to the QEMU runtime container.
+- Serial/network drivers proxy to the QEMU runtime sidecar.
 
 **Controller actions:** None during the session (lease is held).
 
@@ -601,10 +621,12 @@ jmp delete-lease <lease-id>    # or lease TTL expires
 
 1. Observe exporter is unleased; update `availableReplicas` / `leasedReplicas`.
 2. Apply `recycleStrategy`:
-   - **ExitAndReplace (default):** exporter sidecar exits after cleanup → Pod
-     terminates → controller deletes `Exporter` CR → creates a fresh replacement
-     with empty baseline storage to maintain `minAvailableReplicas` (next lessee
-     flashes again).
+   - **ExitAndReplace (default):** exporter (main) exits after cleanup → Pod
+     reaches `Succeeded`/`Failed` → controller deletes the unleased `Exporter`
+     CR (OwnerReference cascade removes the Completed Pod) → warm-buffer
+     scale-up creates a fresh replacement with empty baseline storage to
+     maintain `minAvailableReplicas` (next lessee flashes again). With
+     `maxReplicas` tight, delete must happen before create.
    - **InPlaceReuse:** exporter resets QEMU state in place → same Pod returns
      to Ready without restart (lessee may re-flash before next session).
 3. If `availableReplicas > minAvailableReplicas` for longer than
@@ -824,10 +846,10 @@ spec:
       limits:
         devices.kubevirt.io/kvm: "1"
   images:                            # optional; overrides default container images
-    exporter:                        # exporter sidecar image
+    exporter:                        # exporter (main container) image
       image: <string>               # e.g. quay.io/jumpstarter-dev/jumpstarter:v0.9.0
       imagePullPolicy: <Always|Never|IfNotPresent>
-    runtime:                         # provisioner-specific runtime image
+    runtime:                         # provisioner-specific runtime sidecar image
       image: <string>               # e.g. quay.io/jumpstarter-dev/virtual/qemu-runtime:v0.9.0
       imagePullPolicy: <Always|Never|IfNotPresent>
 ```
@@ -870,8 +892,8 @@ Both `VirtualTargetClass` and `ExporterSet` expose an `spec.images` field with
 typed sub-fields for overriding the default container images used by the
 provisioner:
 
-- **`images.exporter`** — the exporter sidecar container image.
-- **`images.runtime`** — the provisioner-specific runtime container image
+- **`images.exporter`** — the exporter (main container) image.
+- **`images.runtime`** — the provisioner-specific runtime sidecar image
   (e.g. QEMU runtime for `qemu.jumpstarter.dev`).
 
 Each sub-field is an `ImageSpec` with:
@@ -928,7 +950,9 @@ mergedParameters = deepMerge(VirtualTargetClass.spec.parameters,
 resources:
   cpu: 4
   memory: 4Gi
-  storage: 16Gi
+storage:
+  size: 16Gi
+  fsOverhead: "10%"
 firmware:
   url: registry.example.com/firmware/rpi4:v1
   digest: sha256:abc...
@@ -941,11 +965,37 @@ resources:
 resources:
   cpu: 4              # inherited from class
   memory: 8Gi         # overridden by set
-  storage: 16Gi       # inherited from class
+storage:              # unchanged — set did not specify storage
+  size: 16Gi
+  fsOverhead: "10%"
 firmware:             # unchanged — set did not specify firmware
   url: registry.example.com/firmware/rpi4:v1
   digest: sha256:abc...
 ```
+
+**Guest disk (`qemu.jumpstarter.dev`):** `parameters.storage.size` is the
+guest disk size (also mapped to the QEMU driver's `disk_size`). Optional
+`parameters.storage.fsOverhead` (default `"10%"`, use `"0%"` to disable) inflates
+the Kubernetes volume request to leave filesystem headroom for flashing.
+`parameters.storage` also selects the Kubernetes volume backend:
+
+```yaml
+parameters:
+  storage:
+    size: 16Gi
+    fsOverhead: "10%"
+    storageClassName: gp3          # omit or "" → sized emptyDir
+    accessModes: ["ReadWriteOnce"] # default ReadWriteOnce
+```
+
+When `storageClassName` is set, the provisioner attaches a [generic ephemeral
+volume](https://kubernetes.io/docs/concepts/storage/ephemeral-volumes/#generic-ephemeral-volumes)
+(`volumeClaimTemplate`) at `/disk` so the claim is created and deleted with the
+Pod (ExitAndReplace). When it is omitted, `/disk` is a sized `emptyDir` and
+the provisioner sets `ephemeral-storage` requests/limits on the runtime sidecar
+for scheduler accounting. Unix sockets stay on the separate 100Mi `/shared` volume.
+ExporterSet `parameters.storage` deep-merges over the class; an empty
+`storageClassName` on the set forces emptyDir.
 
 **Status subresource (ExporterSet):**
 
@@ -1414,10 +1464,15 @@ it straightforward to correlate Pods, Exporters, and their logs.
 **`exitOnLeaseEnd` derivation:** The `exitOnLeaseEnd` flag in the generated
 `ExporterConfig` is derived from `ExporterSet.spec.recycleStrategy`:
 
-- `ExitAndReplace` (default) → `exitOnLeaseEnd: true` — the exporter process
-  exits when its lease ends, causing the Pod to terminate and be replaced.
+- `ExitAndReplace` (default) → `exitOnLeaseEnd: true` — the exporter (main
+  container) exits when its lease ends. The Pod uses `restartPolicy: Never`
+  so that exit completes the Pod (rather than restarting `jmp run` in place);
+  Kubernetes then terminates the `target-runtime` native sidecar. The
+  ExporterSet controller replaces the instance. The exporter also best-effort
+  calls `jumpstarter-exec shutdown` for a clean runtime exit before process
+  death.
 - `InPlaceReuse` → `exitOnLeaseEnd: false` — the exporter stays running and
-  transitions back to available.
+  transitions back to available (runtime sidecar is left alone).
 
 ### Component Interaction
 
@@ -1447,14 +1502,17 @@ it straightforward to correlate Pods, Exporters, and their logs.
 
 ## Test Plan
 
-<!-- TODO: Detail specific test cases -->
-
 ### Unit Tests
 Unit tests should meet the project test coverage requirements.
 
 ### Integration Tests
 
-- End-to-end lease lifecycle with QEMU provisioner in a test cluster
+- Kind e2e suite labeled `exporterset-qemu` (`e2e/test/exporterset_qemu_test.go`,
+  part of `make e2e-run` / CI `e2e-tests`): apply kind-friendly
+  `VirtualTargetClass` + `ExporterSet`, wait for Exporter/Pod Ready, lease,
+  flash Alpine UEFI tiny, expect a serial-console boot marker. Guest disk is a
+  sized emptyDir (or ephemeral PVC when `parameters.storage.storageClassName` is
+  set). Use `make e2e-exporterset-qemu` for a focused local run.
 - Mixed physical/virtual lease orchestration
 - Provisioner failure and recovery scenarios
 - Parameter deep-merge and provisioner-side validation
@@ -1647,8 +1705,8 @@ flash-at-lease workflow (DD-7).
 - [ ] Deployment-style status + `scale` subresource
 - [ ] Watch Leases and Exporters for scaling decisions
 - [ ] Add `exporterSets` section to `Jumpstarter` operator CR
-- [ ] Integration test: deploy `ExporterSet`, lease, flash, boot, release,
-      observe scaling
+- [x] Integration test: deploy `ExporterSet`, lease, flash, boot, release,
+      observe scaling (`exporterset-qemu` e2e)
 
 ### Phase 3: External / off-cluster provisioning
 
@@ -1706,6 +1764,10 @@ claim CRDs.
 - 2026-07-28: Made `DriverConfig.name` mandatory (no longer derived from type);
   removed `wait-for-binary.sh` script in favor of direct `jumpstarter-exec`
   entrypoint in `qemu-runtime` container; updated all examples
+- 2026-09-01: Guest disk at `/disk` via `parameters.storage.size` (logical size),
+  optional `parameters.storage.fsOverhead` (default `"10%"`), and optional
+  `parameters.storage.storageClassName` (generic ephemeral PVC or sized emptyDir);
+  sockets remain on `/shared`
 
 ## References
 

@@ -303,7 +303,7 @@ TEST_EXPORTER = V1Alpha1Exporter(
     status=V1Alpha1ExporterStatus(
         endpoint="grpc://example.com:443",
         credential=V1ObjectReference(name="test-credential"),
-        devices=[],
+        devices=[],  # type: ignore[call-arg]
         exporter_status="Available",
     ),
 )
@@ -400,7 +400,7 @@ TEST_EXPORTER_DEVICES = V1Alpha1Exporter(
     status=V1Alpha1ExporterStatus(
         endpoint="grpc://example.com:443",
         credential=V1ObjectReference(name="test-credential"),
-        devices=[
+        devices=[  # type: ignore[call-arg]
             V1Alpha1ExporterDevice(labels={"hardware": "rpi4"}, uuid="82a8ac0d-d7ff-4009-8948-18a3c5c607b1"),
             V1Alpha1ExporterDevice(labels={"hardware": "rpi4"}, uuid="f7cd30ac-64a3-42c6-ba31-b25f033b97c1"),
         ],
@@ -523,7 +523,7 @@ EXPORTERS_LIST = V1Alpha1ExporterList(
             status=V1Alpha1ExporterStatus(
                 endpoint="grpc://example.com:443",
                 credential=V1ObjectReference(name="test-credential"),
-                devices=[],
+                devices=[],  # type: ignore[call-arg]
                 exporter_status="Available",
             ),
         ),
@@ -534,7 +534,7 @@ EXPORTERS_LIST = V1Alpha1ExporterList(
             status=V1Alpha1ExporterStatus(
                 endpoint="grpc://example.com:443",
                 credential=V1ObjectReference(name="another-credential"),
-                devices=[],
+                devices=[],  # type: ignore[call-arg]
                 exporter_status="Available",
             ),
         ),
@@ -677,7 +677,7 @@ EXPORTER_DEVICES_LIST = V1Alpha1ExporterList(
             status=V1Alpha1ExporterStatus(
                 endpoint="grpc://example.com:443",
                 credential=V1ObjectReference(name="test-credential"),
-                devices=[
+                devices=[  # type: ignore[call-arg]
                     V1Alpha1ExporterDevice(labels={"hardware": "rpi4"}, uuid="82a8ac0d-d7ff-4009-8948-18a3c5c607b1")
                 ],
                 exporter_status="Available",
@@ -690,7 +690,7 @@ EXPORTER_DEVICES_LIST = V1Alpha1ExporterList(
             status=V1Alpha1ExporterStatus(
                 endpoint="grpc://example.com:443",
                 credential=V1ObjectReference(name="another-credential"),
-                devices=[
+                devices=[  # type: ignore[call-arg]
                     V1Alpha1ExporterDevice(labels={"hardware": "rpi4"}, uuid="f7cd30ac-64a3-42c6-ba31-b25f033b97c1"),
                 ],
                 exporter_status="Available",

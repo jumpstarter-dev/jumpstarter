@@ -4,16 +4,34 @@ import logging
 import os
 import socket
 import ssl
+from collections.abc import Sequence
 from contextlib import contextmanager
-from typing import Any, Sequence, Tuple
+from typing import Any
 from urllib.parse import urlparse
 
 import grpc
 from anyio import fail_after
 
-from jumpstarter.common.exceptions import ConfigurationError, ConnectionError
+from jumpstarter.common.exceptions import CertificateDiscoveryError, ConfigurationError, ConnectionError
 
 logger = logging.getLogger(__name__)
+
+
+def is_controller_unavailable(error: Exception) -> bool:
+    if isinstance(error, CertificateDiscoveryError):
+        return True
+    if not isinstance(error, grpc.aio.AioRpcError):
+        return False
+    code = error.code()
+    details = error.details() or ""
+    if code in {grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED, grpc.StatusCode.CANCELLED}:
+        return True
+    if code == grpc.StatusCode.INTERNAL and "RST_STREAM" in details.upper():
+        return True
+    # Controllers can expose startup authentication failures as UNKNOWN.
+    return code == grpc.StatusCode.UNKNOWN and (
+        "oidc: authenticator not initialized" in details or details == "Stream removed"
+    )
 
 
 async def _try_connect_and_extract_cert(
@@ -44,12 +62,19 @@ async def _try_connect_and_extract_cert(
         writer.close()
 
 
-async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc.ChannelCredentials:  # noqa: C901
+async def _ssl_channel_credentials_insecure(  # noqa: C901
+    target: str, timeout: float, *, log_connection_failures: bool = True
+) -> grpc.ChannelCredentials:
     """
     Extract TLS certificates from server without verification (insecure mode).
 
     Tries to connect to all resolved IPs in parallel and returns credentials
     from the first successful connection.
+
+    ``timeout`` applies independently to DNS resolution and connection, so
+    worst-case wall time is approximately ``2 * timeout``.
+    ``log_connection_failures`` lets the exporter retry loop own outage-level
+    warnings while keeping per-IP diagnostics at debug level.
     """
     try:
         parsed = urlparse(f"//{target}")
@@ -57,24 +82,31 @@ async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc
     except ValueError as e:
         raise ConfigurationError(f"Failed parsing {target}") from e
 
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+
+    # Resolve all IP addresses for the hostname.
+    #
+    # Resolution gets its own budget, separate from the connect budget below. A
+    # slow or rate-limited resolver would otherwise consume the whole timeout and
+    # surface as "Timeout connecting to <host>:<port>" with no per-IP errors,
+    # pointing at the server when the name was never resolved in the first place.
+    loop = asyncio.get_running_loop()
     try:
         with fail_after(timeout):
-            ssl_context = ssl.create_default_context()
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
+            addr_info = await loop.getaddrinfo(parsed.hostname, port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM)
+    except socket.gaierror as e:
+        raise CertificateDiscoveryError(f"Failed resolving {parsed.hostname}") from e
+    except TimeoutError as e:
+        raise CertificateDiscoveryError(f"Timeout resolving {parsed.hostname} after {timeout}s") from e
 
-            # Resolve all IP addresses for the hostname
-            loop = asyncio.get_running_loop()
-            addr_info = await loop.getaddrinfo(
-                parsed.hostname, port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM
-            )
+    # Log resolved IPs
+    resolved_ips = [sockaddr[0] for _, _, _, _, sockaddr in addr_info]
+    logger.debug(f"Resolved {parsed.hostname} to {len(resolved_ips)} IP(s): {', '.join(resolved_ips)}")
 
-            # Log resolved IPs
-            resolved_ips = [sockaddr[0] for _, _, _, _, sockaddr in addr_info]
-            logger.debug(
-                f"Resolved {parsed.hostname} to {len(resolved_ips)} IP(s): {', '.join(resolved_ips)}"
-            )
-
+    try:
+        with fail_after(timeout):
             # Try all IPs in parallel - race for first success
             # Wrap tasks to include IP info with results/exceptions
             async def try_with_ip(ip_address: str):
@@ -84,7 +116,7 @@ async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc
                         ip_address, port, ssl_context, parsed.hostname, timeout
                     )
                     return (ip_address, result, None)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     return (ip_address, None, e)
 
             tasks = []
@@ -107,13 +139,20 @@ async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc
 
                     # This IP failed - log and continue trying other IPs
                     if isinstance(error, ssl.SSLError):
-                        logger.error(f"SSL error on {ip_address}:{port}: {error}")
+                        logger.log(
+                            logging.ERROR if log_connection_failures else logging.DEBUG,
+                            "SSL error on %s:%s: %s", ip_address, port, error,
+                        )
                     else:
-                        logger.warning(f"Failed to connect to {ip_address}:{port}: {type(error).__name__}: {error}")
+                        logger.log(
+                            logging.WARNING if log_connection_failures else logging.DEBUG,
+                            "Failed to connect to %s:%s: %s: %s",
+                            ip_address, port, type(error).__name__, error,
+                        )
                     errors[ip_address] = error
 
                 # All IPs failed
-                raise ConnectionError(
+                raise CertificateDiscoveryError(
                     f"Failed connecting to {parsed.hostname}:{port} - all IPs exhausted. Errors: {errors}"
                 )
             finally:
@@ -121,16 +160,18 @@ async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc
                 for task in tasks:
                     if not task.done():
                         task.cancel()
-    except socket.gaierror as e:
-        raise ConnectionError(f"Failed resolving {parsed.hostname}") from e
     except TimeoutError as e:
-        raise ConnectionError(f"Timeout connecting to {parsed.hostname}:{port}") from e
+        raise CertificateDiscoveryError(
+            f"Timeout connecting to {parsed.hostname}:{port} after {timeout}s (resolved to {', '.join(resolved_ips)})"
+        ) from e
 
 
-async def ssl_channel_credentials(target: str, tls_config, timeout=5):
+async def ssl_channel_credentials(target: str, tls_config, timeout=5, *, log_connection_failures: bool = True):
     """Get SSL channel credentials for gRPC connection."""
     if tls_config.insecure or os.getenv("JUMPSTARTER_GRPC_INSECURE") == "1" or os.getenv("JMP_GRPC_INSECURE") == "1":
-        return await _ssl_channel_credentials_insecure(target, timeout)
+        return await _ssl_channel_credentials_insecure(
+            target, timeout, log_connection_failures=log_connection_failures
+        )
     elif tls_config.ca != "":
         ca_certificate = base64.b64decode(tls_config.ca)
         return grpc.ssl_channel_credentials(ca_certificate)
@@ -153,7 +194,7 @@ def aio_secure_channel(
     )
 
 
-def _override_default_grpc_options(grpc_options: dict[str, str | int] | None) -> Sequence[Tuple[str, Any]]:
+def _override_default_grpc_options(grpc_options: dict[str, str | int] | None) -> Sequence[tuple[str, Any]]:
     defaults = (
         ("grpc.lb_policy_name", "round_robin"),
         # we keep a low keepalive time to avoid idle timeouts on cloud load balancers
@@ -179,11 +220,13 @@ def translate_grpc_exceptions():
         if e.code().name == "UNKNOWN":
             # an error returned from our functions
             raise ConnectionError(f"grpc controller responded: {e.details()}") from None
+        if e.code().name == "FAILED_PRECONDITION":
+            raise ConnectionError(e.details() or "") from None
         else:
             raise ConnectionError("grpc error") from e
     except grpc.RpcError as e:
         raise ConnectionError("grpc error") from e
     except ValueError as e:
         raise ConfigurationError("grpc error") from e
-    except Exception as e:
-        raise e
+    except Exception:
+        raise

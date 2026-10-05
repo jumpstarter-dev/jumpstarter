@@ -94,7 +94,7 @@ def opt_config_inner(  # noqa: C901
         except click.ClickException:
             raise
         except Exception as e:
-            raise click.ClickException("Failed to load config: {}".format(e)) from e
+            raise click.ClickException(f"Failed to load config: {e}") from e
 
         return f(*args, **kwds, config=config)
 

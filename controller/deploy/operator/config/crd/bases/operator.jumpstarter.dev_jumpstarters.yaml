@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.18.0
+    controller-gen.kubebuilder.io/version: v0.22.0
   name: jumpstarters.operator.jumpstarter.dev
 spec:
   group: operator.jumpstarter.dev
@@ -1076,11 +1076,19 @@ spec:
                             type: string
                         type: object
                     type: object
+                  podAnnotations:
+                    additionalProperties:
+                      type: string
+                    description: Custom annotations to add to controller pod templates.
+                    type: object
                   replicas:
-                    default: 2
+                    default: 1
                     description: |-
                       Number of controller replicas to run.
-                      Must be a positive integer. Minimum recommended value is 2 for high availability.
+                      Currently only 1 replica is supported because the controller uses in-memory
+                      state for gRPC stream coordination (Dial/Listen). Values greater than 1 will
+                      be clamped to 1 with a warning. See https://github.com/jumpstarter-dev/jumpstarter/issues/1013
+                      for the tracking issue on HA controller support.
                     format: int32
                     minimum: 1
                     type: integer
@@ -1535,13 +1543,23 @@ spec:
                     type: object
                 type: object
               hiddenLabels:
+                default: {}
                 description: Hidden labels configuration for hiding specific label
                   keys from exporter listings.
                 properties:
                   keys:
+                    default:
+                    - exporterset.jumpstarter.dev/name
+                    - exporterset.jumpstarter.dev/class
+                    - exporterset.jumpstarter.dev/provisioner
                     description: |-
                       List of exact label keys to hide from ListExporters/GetExporter responses.
-                      Clients can pass show_hidden_labels=true to see all labels.
+                      Clients can pass show_hidden_labels=true to see all labels. Hidden labels
+                      remain usable in label selectors.
+
+                      Defaults to the ExporterSet identity labels, which every pool member
+                      carries. Setting this field replaces the default list rather than adding
+                      to it; set it to [] to show every label.
                     items:
                       type: string
                     type: array
@@ -1833,6 +1851,11 @@ spec:
                     - IfNotPresent
                     - Never
                     type: string
+                  podAnnotations:
+                    additionalProperties:
+                      type: string
+                    description: Custom annotations to add to router pod templates.
+                    type: object
                   replicas:
                     default: 3
                     description: |-
@@ -2079,6 +2102,197 @@ spec:
                       - whenUnsatisfiable
                       type: object
                     type: array
+                type: object
+              telemetry:
+                description: |-
+                  Telemetry configuration for the optional telemetry service.
+                  When enabled, the operator deploys a jumpstarter-telemetry service that receives
+                  structured log entries from exporters via gRPC. The controller advertises the
+                  telemetry endpoint to exporters so they can push logs without cluster credentials.
+                properties:
+                  enabled:
+                    default: false
+                    description: |-
+                      Enable the telemetry service deployment.
+                      When enabled, the operator deploys a jumpstarter-telemetry pod and a ClusterIP
+                      Service, and configures the controller to advertise the endpoint to exporters.
+                    type: boolean
+                  grpc:
+                    description: |-
+                      gRPC configuration for the telemetry service.
+                      Use this to configure TLS when not using cert-manager.
+                    properties:
+                      tls:
+                        description: |-
+                          TLS configuration for secure gRPC communication with the telemetry service.
+                          When spec.certManager.enabled is true, this is ignored and certificates are
+                          automatically managed by cert-manager.
+                          When spec.certManager.enabled is false, you can provide your own TLS secret here.
+                        properties:
+                          certSecret:
+                            description: |-
+                              Name of the Kubernetes secret containing the TLS certificate and private key.
+                              The secret must contain 'tls.crt' and 'tls.key' keys.
+                              If spec.certManager.enabled is true, this secret will be automatically managed and
+                              configured by cert-manager.
+                            pattern: ^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
+                            type: string
+                        type: object
+                    type: object
+                  image:
+                    default: quay.io/jumpstarter-dev/jumpstarter-telemetry:latest
+                    description: Container image for the telemetry pod in 'registry/repository/image:tag'
+                      format.
+                    type: string
+                  imagePullPolicy:
+                    default: IfNotPresent
+                    description: Image pull policy for the telemetry container.
+                    enum:
+                    - Always
+                    - IfNotPresent
+                    - Never
+                    type: string
+                  logging:
+                    description: Logging configuration for the telemetry log ingestion
+                      path.
+                    properties:
+                      filter:
+                        description: Filter controls which log entries are forwarded
+                          to the telemetry service.
+                        properties:
+                          minSeverity:
+                            default: info
+                            description: |-
+                              Minimum log severity to forward.
+                              Accepted values: debug, info, warning, error, critical. Defaults to "info".
+                            enum:
+                            - debug
+                            - info
+                            - warning
+                            - error
+                            - critical
+                            type: string
+                        type: object
+                    type: object
+                  metrics:
+                    description: |-
+                      Metrics configures reverse-scrape fan-out and Prometheus exposition
+                      (JEP-0013). Loki and ServiceMonitor fields are later phases.
+                    properties:
+                      driverTypeEnum:
+                        default:
+                        - power
+                        - storage
+                        - network
+                        - serial
+                        - console
+                        - video
+                        - composite
+                        description: |-
+                          Allowed driver_type label values. Unlisted types are remapped to "other".
+                          At most 16 entries (the default set plus site-specific categories), each
+                          at most 32 characters.
+                        items:
+                          maxLength: 32
+                          type: string
+                        maxItems: 16
+                        type: array
+                      exemplarKeys:
+                        default:
+                        - client
+                        - lease_id
+                        description: |-
+                          Allowlist of keys to include in Prometheus exemplars. Unlisted keys are omitted.
+                          At most 16 keys. Each key is at most 32 characters, the same limit as
+                          Lease spec.context key names that may appear in this list.
+                        items:
+                          maxLength: 32
+                          type: string
+                        maxItems: 16
+                        type: array
+                      scrapeTimeout:
+                        default: 7s
+                        description: |-
+                          Max wait for parallel exporter MetricsStream responses during a /metrics fan-out.
+                          Should be lower than the Prometheus scrape_timeout.
+                          JEP-0013 specifies the 7s default and no maximum. 60s bounds the fan-out
+                          wait and the HTTP write timeout that grows with this value.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: scrapeTimeout must be greater than 0 and at most
+                            60s
+                          rule: duration(self) > duration('0s') && duration(self)
+                            <= duration('60s')
+                    type: object
+                  replicas:
+                    default: 1
+                    description: |-
+                      Number of telemetry replicas to run.
+                      Multiple replicas provide HA; each exporter connects to exactly one replica
+                      via a persistent MetricsStream, so Prometheus sum-by queries across replicas
+                      yield exact totals without double-counting (see JEP-0013 DD-8).
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  resources:
+                    description: Resource requirements for the telemetry pod.
+                    properties:
+                      claims:
+                        description: |-
+                          Claims lists the names of resources, defined in spec.resourceClaims,
+                          that are used by this container.
+
+                          This field depends on the
+                          DynamicResourceAllocation feature gate.
+
+                          This field is immutable. It can only be set for containers.
+                        items:
+                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                          properties:
+                            name:
+                              description: |-
+                                Name must match the name of one entry in pod.spec.resourceClaims of
+                                the Pod where this field is used. It makes that resource available
+                                inside a container.
+                              type: string
+                            request:
+                              description: |-
+                                Request is the name chosen for a request in the referenced claim.
+                                If empty, everything from the claim is made available, otherwise
+                                only the result of this request.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Limits describes the maximum amount of compute resources allowed.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Requests describes the minimum amount of compute resources required.
+                          If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                          otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                    type: object
                 type: object
             type: object
           status:

@@ -1,16 +1,15 @@
 import logging
 import os
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from io import StringIO
+from datetime import UTC, datetime, timedelta
 
 from anyio import TypedAttributeSet, typed_attribute
 from anyio.abc import ObjectStream
-from rich.console import Console
 from rich.progress import (
     BarColumn,
     DownloadColumn,
     Progress,
+    Task,
     TaskID,
     TextColumn,
     TimeElapsedColumn,
@@ -19,6 +18,25 @@ from rich.progress import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _fmt_bytes(n: float) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if abs(n) < 1000:
+            return f"{n:.1f} {unit}" if unit != "B" else f"{n:.0f} {unit}"
+        n /= 1000
+    return f"{n:.1f} TB"
+
+
+def _log_progress(task: Task) -> str:
+    pct_str = f"{task.percentage:.1f}%" if task.total else "?"
+    total_str = _fmt_bytes(task.total) if task.total is not None else "?"
+    speed_str = f"{_fmt_bytes(task.speed)}/s" if task.speed else "?"
+    elapsed_str = str(timedelta(seconds=int(task.elapsed or 0)))
+    return (
+        f"transfer: {pct_str} | {_fmt_bytes(task.completed)} / {total_str}"
+        f" | {speed_str} | elapsed {elapsed_str}"
+    )
 
 
 class ProgressAttribute(TypedAttributeSet):
@@ -33,7 +51,7 @@ class ProgressStream(ObjectStream[bytes]):
     __prog: Progress | None = field(init=False, default=None)
     __recv: TaskID | None = field(init=False, default=None)
     __send: TaskID | None = field(init=False, default=None)
-    __last: datetime = field(init=False, default_factory=datetime.now)
+    __last: datetime = field(init=False, default_factory=lambda: datetime.now(tz=UTC))
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -66,11 +84,9 @@ class ProgressStream(ObjectStream[bytes]):
         item = await self.stream.receive()
 
         self.__prog.advance(self.__recv, len(item))
-        if self.logging and (datetime.now() - self.__last > timedelta(seconds=2)):
-            self.__last = datetime.now()
-            console = Console(file=StringIO())
-            console.print(self.__prog.get_renderable())
-            logger.info(console.file.getvalue().rstrip())
+        if self.logging and (datetime.now(tz=UTC) - self.__last > timedelta(seconds=2)):
+            self.__last = datetime.now(tz=UTC)
+            logger.info(_log_progress(self.__prog.tasks[self.__recv]))
 
         return item
 
@@ -82,12 +98,10 @@ class ProgressStream(ObjectStream[bytes]):
                 total=self.stream.extra(ProgressAttribute.total, None),
             )
 
-        self.__prog.advance(self.__recv, len(item))
-        if self.logging and (datetime.now() - self.__last > timedelta(seconds=2)):
-            self.__last = datetime.now()
-            console = Console(file=StringIO())
-            console.print(self.__prog.get_renderable())
-            logger.info(console.file.getvalue().rstrip())
+        self.__prog.advance(self.__send, len(item))
+        if self.logging and (datetime.now(tz=UTC) - self.__last > timedelta(seconds=2)):
+            self.__last = datetime.now(tz=UTC)
+            logger.info(_log_progress(self.__prog.tasks[self.__send]))
 
         await self.stream.send(item)
 

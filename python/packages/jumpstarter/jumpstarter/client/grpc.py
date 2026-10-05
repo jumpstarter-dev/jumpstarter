@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections import OrderedDict
 from dataclasses import InitVar, dataclass, field
 from datetime import datetime, timedelta
@@ -10,11 +11,14 @@ from google.protobuf import duration_pb2, field_mask_pb2, json_format, timestamp
 from grpc import ChannelConnectivity
 from grpc.aio import Channel
 from jumpstarter_protocol import client_pb2, client_pb2_grpc, jumpstarter_pb2_grpc, kubernetes_pb2, router_pb2_grpc
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer
 
 from jumpstarter.client.selectors import extract_match_labels_filter, selector_contains
+from jumpstarter.client.status import status_icon
 from jumpstarter.common import ExporterStatus
 from jumpstarter.common.grpc import translate_grpc_exceptions
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -25,10 +29,12 @@ class WithOptions:
     show_disabled: bool = False
 
 
-def add_display_columns(table, options: WithOptions = None):
+def add_display_columns(table, options: WithOptions | None = None):
     if options is None:
         options = WithOptions()
     table.add_column("NAME")
+    if not options.show_status:
+        table.add_column(" ")
     if options.show_disabled:
         table.add_column("ENABLED")
     if options.show_online:
@@ -42,11 +48,15 @@ def add_display_columns(table, options: WithOptions = None):
         table.add_column("RELEASE TIME")
 
 
-def add_exporter_row(table, exporter, options: WithOptions = None, lease_info: tuple[str, str, str] | None = None):
+def add_exporter_row(
+    table, exporter, options: WithOptions | None = None, lease_info: tuple[str, str, str] | None = None
+):
     if options is None:
         options = WithOptions()
     row_data = []
     row_data.append(exporter.name)
+    if not options.show_status:
+        row_data.append(exporter.status_icon())
     if options.show_disabled:
         row_data.append("yes" if exporter.enabled else "no")
     if options.show_online:
@@ -55,7 +65,7 @@ def add_exporter_row(table, exporter, options: WithOptions = None, lease_info: t
         status_str = str(exporter.status) if exporter.status else "UNKNOWN"
         row_data.append(status_str)
     labels = exporter.labels
-    row_data.append(",".join(("{}={}".format(k, v) for k, v in sorted(labels.items()))))
+    row_data.append(",".join((f"{k}={v}" for k, v in sorted(labels.items()))))
     if options.show_leases:
         if lease_info:
             lease_client, lease_status, expected_release = lease_info
@@ -69,11 +79,11 @@ def add_exporter_row(table, exporter, options: WithOptions = None, lease_info: t
 def parse_identifier(identifier: str, kind: str) -> tuple[str, str]:
     segments = identifier.split("/")
     if len(segments) != 4:
-        raise ValueError("incorrect number of segments in identifier, expecting 4, got {}".format(len(segments)))
+        raise ValueError(f"incorrect number of segments in identifier, expecting 4, got {len(segments)}")
     if segments[0] != "namespaces":
-        raise ValueError("incorrect first segment in identifier, expecting namespaces, got {}".format(segments[0]))
+        raise ValueError(f"incorrect first segment in identifier, expecting namespaces, got {segments[0]}")
     if segments[2] != kind:
-        raise ValueError("incorrect third segment in identifier, expecting {}, got {}".format(kind, segments[2]))
+        raise ValueError(f"incorrect third segment in identifier, expecting {kind}, got {segments[2]}")
     return segments[1], segments[3]
 
 
@@ -99,6 +109,11 @@ class Exporter(BaseModel):
     lease: Lease | None = None
     deprecated_labels: dict[str, str] = Field(default_factory=dict)
 
+    @field_serializer("status", when_used="json")
+    def serialize_status(self, status: ExporterStatus | None):
+        # emit the status name instead of the raw protobuf integer
+        return status.name if status is not None else None
+
     @classmethod
     def from_protobuf(cls, data: client_pb2.Exporter) -> Exporter:
         namespace, name = parse_exporter_identifier(data.name)
@@ -116,10 +131,10 @@ class Exporter(BaseModel):
         )
 
     @classmethod
-    def rich_add_columns(cls, table, options: WithOptions = None):
+    def rich_add_columns(cls, table, options: WithOptions | None = None):
         add_display_columns(table, options)
 
-    def rich_add_rows(self, table, options: WithOptions = None):
+    def rich_add_rows(self, table, options: WithOptions | None = None):
         lease_info = None
         if options and options.show_leases and self.lease:
             lease_client = self.lease.client
@@ -141,6 +156,14 @@ class Exporter(BaseModel):
             lease_info = ("", "Available", "")
         add_exporter_row(table, self, options, lease_info)
 
+    def status_icon(self) -> str:
+        """Return an icon representing the exporter's runtime status.
+
+        Delegates to :func:`jumpstarter.client.status.status_icon` which
+        selects emoji or ASCII based on terminal capabilities.
+        """
+        return status_icon(self.status)
+
     def rich_add_names(self, names):
         names.append(self.name)
 
@@ -161,6 +184,14 @@ class Lease(BaseModel):
     effective_begin_time: datetime | None = None
     effective_end_time: datetime | None = None
     deprecated_labels: dict[str, str] = Field(default_factory=dict)
+    # The owner's desired sharing intent (Lease.spec.sharedWith). May include names
+    # that were denied by exporter access policy or that don't exist. Use this only
+    # when surfacing intent (e.g. `jmp share list`); route access decisions through
+    # effective_shared_with / is_accessible_by instead.
+    shared_with: list[str] = Field(default_factory=list)
+    # The controller-derived set actually granted access (Lease.status.sharedWith),
+    # after policy/existence filtering. A name in shared_with but not here was denied.
+    effective_shared_with: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -219,10 +250,22 @@ class Lease(BaseModel):
             effective_end_time=effective_end_time,
             conditions=data.conditions,
             deprecated_labels=dict(data.deprecated_labels),
+            shared_with=list(data.shared_with),
+            effective_shared_with=list(data.effective_shared_with),
         )
 
+    def is_accessible_by(self, client_name: str) -> bool:
+        """Whether client_name may actually connect to this lease.
+
+        Mirrors the controller's Lease.IsAccessibleBy: the owner always has
+        access, and shared clients have access only if they survived policy
+        filtering (i.e. appear in effective_shared_with, not merely the owner's
+        desired shared_with intent).
+        """
+        return client_name == self.client or client_name in self.effective_shared_with
+
     @classmethod
-    def rich_add_columns(cls, table):
+    def rich_add_columns(cls, table, **kwargs):
         table.add_column("NAME", no_wrap=True)
         table.add_column("SELECTOR")
         table.add_column("EXPIRES AT")
@@ -230,6 +273,7 @@ class Lease(BaseModel):
         table.add_column("CLIENT")
         table.add_column("EXPORTER")
         table.add_column("TAGS")
+        table.add_column("SHARED WITH")
 
     def _compute_expires_at(self):
         if self.effective_end_time:
@@ -260,25 +304,39 @@ class Lease(BaseModel):
             parts.append(f"{minutes}m")
         return " ".join(parts)
 
-    def rich_add_rows(self, table):
+    def rich_add_rows(self, table, viewer: str | None = None):
         expires_at = self._compute_expires_at()
         expires_at_str = expires_at.strftime("%Y-%m-%d %H:%M:%S") if expires_at else ""
         remaining_str = self._format_remaining(expires_at)
 
         tags_str = ",".join(f"{k}={v}" for k, v in sorted(self.tags.items()))
+        # Show the effective (granted) set here: this overview should reflect who
+        # actually has access, not unfiltered intent. `jmp share list` renders both.
+        shared_str = ",".join(self.effective_shared_with)
+
+        client_str = self.client
+        if viewer and viewer != self.client and self.is_accessible_by(viewer):
+            client_str = f"{self.client} (shared)"
 
         table.add_row(
             self.name,
             self.selector,
             expires_at_str,
             remaining_str,
-            self.client,
+            client_str,
             self.exporter,
             tags_str,
+            shared_str,
         )
 
     def rich_add_names(self, names):
         names.append(self.name)
+
+    @computed_field  # ty: ignore[invalid-argument-type]
+    @property
+    def status(self) -> str:
+        """Derived lease status, also included in serialized output"""
+        return self.get_status()
 
     def get_status(self) -> str:
         """Get the lease status based on conditions"""
@@ -377,9 +435,13 @@ class ExporterList(BaseModel):
         if not self.include_disabled:
             exclude_fields.add("enabled")
 
+        caller_exclude = kwargs.pop("exclude", None)
+        if caller_exclude:
+            exclude_fields |= set(caller_exclude)
+
         return {
             "exporters": [
-                self._dump_exporter(exporter, exclude_fields)
+                self._dump_exporter(exporter, exclude_fields, **kwargs)
                 for exporter in self._visible_exporters()
             ]
         }
@@ -397,12 +459,12 @@ class LeaseList(BaseModel):
         )
 
     @classmethod
-    def rich_add_columns(cls, table):
-        Lease.rich_add_columns(table)
+    def rich_add_columns(cls, table, **kwargs):
+        Lease.rich_add_columns(table, **kwargs)
 
-    def rich_add_rows(self, table):
+    def rich_add_rows(self, table, viewer: str | None = None):
         for lease in self.leases:
-            lease.rich_add_rows(table)
+            lease.rich_add_rows(table, viewer=viewer)
 
     def rich_add_names(self, names):
         for lease in self.leases:
@@ -416,11 +478,23 @@ class LeaseList(BaseModel):
         """
         if not filter_selector:
             return self
-        filtered = [lease for lease in self.leases if selector_contains(lease.selector, filter_selector)]
+        filtered = []
+        for lease in self.leases:
+            try:
+                if selector_contains(lease.selector, filter_selector):
+                    filtered.append(lease)
+            except ValueError as error:
+                logger.warning(
+                    "skipping lease %s: cannot evaluate filter %r against selector %r: %s",
+                    lease.name,
+                    filter_selector,
+                    lease.selector,
+                    error,
+                )
         return LeaseList(leases=filtered, next_page_token=None)
 
     def filter_by_client(self, client_name: str) -> LeaseList:
-        filtered = [lease for lease in self.leases if lease.client == client_name]
+        filtered = [lease for lease in self.leases if lease.is_accessible_by(client_name)]
         return LeaseList(leases=filtered, next_page_token=None)
 
 
@@ -437,7 +511,7 @@ class ClientService:
         with translate_grpc_exceptions():
             exporter = await self.stub.GetExporter(
                 client_pb2.GetExporterRequest(
-                    name="namespaces/{}/exporters/{}".format(self.namespace, name),
+                    name=f"namespaces/{self.namespace}/exporters/{name}",
                     show_hidden_labels=show_hidden_labels,
                 )
             )
@@ -453,11 +527,11 @@ class ClientService:
     ):
         with translate_grpc_exceptions():
             exporters = await self.stub.ListExporters(
-                client_pb2.ListExportersRequest(
-                    parent="namespaces/{}".format(self.namespace),
-                    page_size=page_size,
-                    page_token=page_token,
-                    filter=filter,
+                client_pb2.ListExportersRequest(  # type: ignore[call-arg]
+                    parent=f"namespaces/{self.namespace}",
+                    page_size=page_size,  # type: ignore[arg-type]
+                    page_token=page_token,  # type: ignore[arg-type]
+                    filter=filter,  # type: ignore[arg-type]
                     show_hidden_labels=show_hidden_labels,
                 )
             )
@@ -467,7 +541,7 @@ class ClientService:
         with translate_grpc_exceptions():
             lease = await self.stub.GetLease(
                 client_pb2.GetLeaseRequest(
-                    name="namespaces/{}/leases/{}".format(self.namespace, name),
+                    name=f"namespaces/{self.namespace}/leases/{name}",
                 )
             )
         return Lease.from_protobuf(lease)
@@ -483,11 +557,11 @@ class ClientService:
     ):
         with translate_grpc_exceptions():
             leases = await self.stub.ListLeases(
-                client_pb2.ListLeasesRequest(
-                    parent="namespaces/{}".format(self.namespace),
-                    page_size=page_size,
-                    page_token=page_token,
-                    filter=extract_match_labels_filter(filter),
+                client_pb2.ListLeasesRequest(  # type: ignore[call-arg]
+                    parent=f"namespaces/{self.namespace}",
+                    page_size=page_size,  # type: ignore[arg-type]
+                    page_token=page_token,  # type: ignore[arg-type]
+                    filter=extract_match_labels_filter(filter),  # type: ignore[arg-type]
                     only_active=only_active,
                     tag_filter=tag_filter or "",
                 )
@@ -505,6 +579,7 @@ class ClientService:
         tags: dict[str, str] | None = None,
         allow_disabled: bool = False,
         context: dict[str, str] | None = None,
+        shared_with: list[str] | None = None,
     ):
         duration_pb = duration_pb2.Duration()
         duration_pb.FromTimedelta(duration)
@@ -524,6 +599,9 @@ class ClientService:
             for k, v in context.items():
                 lease_pb.context[k] = v
 
+        if shared_with:
+            lease_pb.shared_with.extend(shared_with)
+
         if begin_time:
             timestamp_pb = timestamp_pb2.Timestamp()
             timestamp_pb.FromDatetime(begin_time)
@@ -532,7 +610,7 @@ class ClientService:
         with translate_grpc_exceptions():
             lease = await self.stub.CreateLease(
                 client_pb2.CreateLeaseRequest(
-                    parent="namespaces/{}".format(self.namespace),
+                    parent=f"namespaces/{self.namespace}",
                     lease=lease_pb,
                     lease_id=lease_id or "",
                 )
@@ -546,9 +624,11 @@ class ClientService:
         duration: timedelta | None = None,
         begin_time: datetime | None = None,
         client: str | None = None,
+        add_shared_with: list[str] | None = None,
+        remove_shared_with: list[str] | None = None,
     ):
         lease_pb = client_pb2.Lease(
-            name="namespaces/{}/leases/{}".format(self.namespace, name),
+            name=f"namespaces/{self.namespace}/leases/{name}",
         )
 
         update_fields = []
@@ -569,26 +649,35 @@ class ClientService:
             lease_pb.client = client
             update_fields.append("client")
 
-        if not update_fields:
-            raise ValueError("At least one of duration, begin_time, or client must be provided")
+        has_share_changes = bool(add_shared_with) or bool(remove_shared_with)
+
+        if not update_fields and not has_share_changes:
+            raise ValueError(
+                "At least one of duration, begin_time, client, add_shared_with, or remove_shared_with must be provided"
+            )
 
         update_mask = field_mask_pb2.FieldMask()
-        update_mask.FromJsonString(",".join(update_fields))
+        if update_fields:
+            update_mask.FromJsonString(",".join(update_fields))
+
+        req = client_pb2.UpdateLeaseRequest(
+            lease=lease_pb,
+            update_mask=update_mask,
+        )
+        if add_shared_with:
+            req.add_shared_with.extend(add_shared_with)
+        if remove_shared_with:
+            req.remove_shared_with.extend(remove_shared_with)
 
         with translate_grpc_exceptions():
-            lease = await self.stub.UpdateLease(
-                client_pb2.UpdateLeaseRequest(
-                    lease=lease_pb,
-                    update_mask=update_mask,
-                )
-            )
+            lease = await self.stub.UpdateLease(req)
         return Lease.from_protobuf(lease)
 
     async def DeleteLease(self, *, name: str):
         with translate_grpc_exceptions():
             await self.stub.DeleteLease(
                 client_pb2.DeleteLeaseRequest(
-                    name="namespaces/{}/leases/{}".format(self.namespace, name),
+                    name=f"namespaces/{self.namespace}/leases/{name}",
                 )
             )
 
@@ -596,7 +685,7 @@ class ClientService:
         with translate_grpc_exceptions():
             response = await self.stub.RotateToken(
                 client_pb2.RotateTokenRequest(
-                    parent="namespaces/{}".format(self.namespace),
+                    parent=f"namespaces/{self.namespace}",
                 )
             )
         return response.token
@@ -619,8 +708,8 @@ class MultipathExporterStub:
     def __post_init__(self, channels):
         for channel in channels:
             stub = SimpleNamespace()
-            jumpstarter_pb2_grpc.ExporterServiceStub.__init__(stub, channel)
-            router_pb2_grpc.RouterServiceStub.__init__(stub, channel)
+            jumpstarter_pb2_grpc.ExporterServiceStub.__init__(stub, channel)  # type: ignore[arg-type]
+            router_pb2_grpc.RouterServiceStub.__init__(stub, channel)  # type: ignore[arg-type]
             self.__stubs[channel] = stub
 
     def __getattr__(self, name):

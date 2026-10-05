@@ -7,6 +7,7 @@ from jumpstarter_cli_common.print import model_print
 
 from .common import opt_selector
 from .login import relogin_client
+from jumpstarter.client.status import status_help_text
 
 
 @click.group(cls=AliasedGroup)
@@ -16,7 +17,16 @@ def get():
     """
 
 
-@get.command(name="exporters")
+class _ExportersCommand(click.Command):
+    """Command subclass that appends a dynamic status-icon legend to --help."""
+
+    def format_epilog(self, ctx, formatter):
+        formatter.write_paragraph()
+        with formatter.indentation():
+            formatter.write_text(status_help_text())
+
+
+@get.command(name="exporters", cls=_ExportersCommand)
 @opt_config(exporter=False)
 @opt_selector
 @opt_output_all
@@ -65,21 +75,12 @@ def get_exporters(
         page_size=page_size,
     )
 
-    for exp in exporters.exporters:
-        for label_key, message in exp.deprecated_labels.items():
-            warning = f"label '{label_key}' on exporter '{exp.name}' is deprecated"
-            if message:
-                warning += f": {message}"
-            click.echo(
-                click.style("Warning: ", fg="yellow") + warning,
-                err=True,
-            )
-
     model_print(exporters, output)
 
 
 @get.command(name="leases")
 @opt_config(exporter=False)
+@click.argument("name", required=False, default=None)
 @opt_selector
 @opt_output_all
 @click.option("-a", "--all", "show_all", is_flag=True, default=False, help="Include expired leases")
@@ -101,10 +102,18 @@ def get_leases(
     all_clients: bool,
     tag_filter: str | None,
     page_size: int,
+    name: str | None = None,
 ):
     """
     Display one or many leases
     """
+
+    if name:
+        if selector or tag_filter:
+            raise click.UsageError("NAME cannot be combined with --selector or --tag-filter")
+        lease = config.get_lease(name=name)
+        model_print(lease, output)
+        return
 
     leases = config.list_leases(
         filter=selector, only_active=not show_all, tag_filter=tag_filter, page_size=page_size
@@ -113,14 +122,4 @@ def get_leases(
     if not all_clients:
         leases = leases.filter_by_client(config.metadata.name)
 
-    for lease in leases.leases:
-        for label_key, message in lease.deprecated_labels.items():
-            warning = f"selector label '{label_key}' on lease '{lease.name}' is deprecated"
-            if message:
-                warning += f": {message}"
-            click.echo(
-                click.style("Warning: ", fg="yellow") + warning,
-                err=True,
-            )
-
-    model_print(leases, output)
+    model_print(leases, output, viewer=config.metadata.name)

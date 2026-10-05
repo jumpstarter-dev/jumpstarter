@@ -1,6 +1,5 @@
 import os
 from dataclasses import dataclass, field
-from typing import Optional
 
 import anyio
 import anyio.from_thread
@@ -25,10 +24,13 @@ class HttpServer(Driver):
     root_dir: str = "/var/www"
     host: str | None = field(default=None)
     port: int = 8080
+    # IP address to advertise to clients via get_host()/get_url() without
+    # binding to it. Defaults to the bind host.
+    advertised_host: str | None = field(default=None)
     timeout: int = field(default=600)
     remove_created_on_close: bool = True  # Clean up temporary web files by default
     app: web.Application = field(init=False, default_factory=web.Application)
-    runner: Optional[web.AppRunner] = field(init=False, default=None)
+    runner: web.AppRunner | None = field(init=False, default=None)
     _bound_port: int = field(init=False, default=0)
 
     def __post_init__(self):
@@ -68,7 +70,7 @@ class HttpServer(Driver):
             self.logger.warning("Cleaning up stale HTTP server runner before starting.")
             try:
                 await self.runner.cleanup()
-            except Exception as e:
+            except Exception as e:  # pragma: no cover  # noqa: BLE001
                 self.logger.warning(f"Failed to clean up stale runner: {e}")
             self.runner = None
             self._bound_port = 0
@@ -113,7 +115,7 @@ class HttpServer(Driver):
         Returns:
             str: Base URL of the HTTP server.
         """
-        return f"http://{self.host}:{self._bound_port}"
+        return f"http://{self.advertised_host or self.host}:{self._bound_port}"
 
     @export
     def get_host(self) -> str | None:
@@ -121,9 +123,9 @@ class HttpServer(Driver):
         Get the host IP address of the HTTP server.
 
         Returns:
-            str: Host IP address.
+            str: Advertised host IP address, or the bind host.
         """
-        return self.host
+        return self.advertised_host or self.host
 
     @export
     def get_port(self) -> int:
@@ -139,7 +141,7 @@ class HttpServer(Driver):
         if self.runner:
             try:
                 anyio.from_thread.run(self._async_cleanup)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 self._force_close_sockets()
             finally:
                 self.runner = None
@@ -160,7 +162,7 @@ class HttpServer(Driver):
                     if hasattr(site, "_server") and site._server:
                         site._server.close()
             self.logger.info("HTTP server sockets force-closed.")
-        except Exception as e:
+        except Exception as e:  # pragma: no cover  # noqa: BLE001
             self.logger.warning(f"HTTP server force-close failed: {e}")
 
     async def _async_cleanup(self):

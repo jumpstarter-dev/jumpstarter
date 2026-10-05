@@ -1,0 +1,48 @@
+[project]
+name = "jumpstarter-driver-netsim"
+dynamic = ["version", "urls"]
+description = "Android netsim driver for controlling virtual radio interfaces"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }]
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.0.0",
+    "jumpstarter",
+    "requests>=2.28.0",
+]
+
+[project.entry-points."jumpstarter.drivers"]
+Netsim = "jumpstarter_driver_netsim.driver:Netsim"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../../' }
+
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+
+[tool.pytest.ini_options]
+addopts = "--cov=jumpstarter_driver_netsim --cov-report=html --cov-report=xml -m 'not live'"
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["jumpstarter_driver_netsim"]
+markers = [
+    "live: tests that require a real netsim instance (use -m live to run)",
+]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=6.0.0",
+    "pytest>=8.3.3",
+    "pytest-asyncio>=0.24.0",
+    "requests-mock>=1.12.0",
+]
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"

@@ -54,7 +54,7 @@ export:
 
     config = ExporterConfigV1Alpha1.load("test")
 
-    assert config == ExporterConfigV1Alpha1(
+    assert config == ExporterConfigV1Alpha1(  # type: ignore[call-arg]
         alias="test",
         apiVersion="jumpstarter.dev/v1alpha1",
         kind="ExporterConfig",
@@ -63,9 +63,9 @@ export:
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
         tls=TLSConfigV1Alpha1(ca="cacertificatedata", insecure=True),
         export={
-            "power": ExporterConfigV1Alpha1DriverInstance(
-                type="jumpstarter_driver_power.driver.PduPower",
-                config={
+            "power": ExporterConfigV1Alpha1DriverInstance.model_validate({
+                "type": "jumpstarter_driver_power.driver.PduPower",
+                "config": {
                     "host": "192.168.1.111",
                     "port": 1234,
                     "auth": {
@@ -73,27 +73,27 @@ export:
                         "password": "secret",
                     },
                 },
-            ),
-            "serial": ExporterConfigV1Alpha1DriverInstance(
-                type="jumpstarter_driver_pyserial.driver.Pyserial",
-                config={
+            }),
+            "serial": ExporterConfigV1Alpha1DriverInstance.model_validate({
+                "type": "jumpstarter_driver_pyserial.driver.Pyserial",
+                "config": {
                     "port": "/dev/ttyUSB0",
                     "baudrate": 115200,
                 },
-            ),
-            "nested": ExporterConfigV1Alpha1DriverInstance(
-                children={
-                    "custom": ExporterConfigV1Alpha1DriverInstance(
-                        type="vendorpackage.CustomDriver",
-                        children={},
-                        config={
+            }),
+            "nested": ExporterConfigV1Alpha1DriverInstance.model_validate({
+                "children": {
+                    "custom": {
+                        "type": "vendorpackage.CustomDriver",
+                        "children": {},
+                        "config": {
                             "hello": "world",
                         },
-                    )
+                    }
                 },
-            ),
+            }),
         },
-        config={},
+        config={},  # type: ignore[call-arg]
         path=path,
     )
 
@@ -102,6 +102,20 @@ export:
     ExporterConfigV1Alpha1.save(config)
 
     assert config == ExporterConfigV1Alpha1.load("test")
+
+
+def test_status_stream_retry_timeout_config():
+    config = ExporterConfigV1Alpha1.model_validate({
+        "metadata": {"namespace": "default", "name": "test"},
+        "statusStreamRetryTimeout": 120,
+    })
+    assert config.status_stream_retry_timeout == 120
+    assert ExporterConfigV1Alpha1.model_validate(config.model_dump(by_alias=True)).status_stream_retry_timeout == 120
+    with pytest.raises(ValueError):
+        ExporterConfigV1Alpha1.model_validate({
+            "metadata": {"namespace": "default", "name": "test"},
+            "statusStreamRetryTimeout": 0,
+        })
 
 
 def test_exporter_config_with_motd(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):

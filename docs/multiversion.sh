@@ -21,6 +21,8 @@ resolve_docs_dir() {
   fi
 }
 
+DEFAULT_PYTHON="3.12"
+
 for BRANCH in "${BRANCHES[@]}"; do
   WORKTREE="${OUTPUT_DIR}/.worktree/tmp-docs-${BRANCH}"
 
@@ -29,20 +31,24 @@ for BRANCH in "${BRANCHES[@]}"; do
 
   DOCS_DIR="$(resolve_docs_dir "${WORKTREE}")"
 
+  if [[ -f "${WORKTREE}/.py-version" ]]; then
+    PYTHON_VERSION="$(cat "${WORKTREE}/.py-version")"
+  else
+    PYTHON_VERSION="${DEFAULT_PYTHON}"
+  fi
+  UV_RUN=(uv run --project "${WORKTREE}/python" --isolated --all-packages --group docs --python "${PYTHON_VERSION}")
+
   CRD_SCRIPT="${DOCS_DIR}/source/reference/generate-crd-docs.py"
   if [[ -f "${CRD_SCRIPT}" ]]; then
-    uv run --project "${WORKTREE}/python" --isolated --all-packages --group docs \
-      python3 "${CRD_SCRIPT}"
+    "${UV_RUN[@]}" python3 "${CRD_SCRIPT}"
   fi
 
   GRPC_SCRIPT="${DOCS_DIR}/source/reference/generate_grpc_docs.py"
   if [[ -f "${GRPC_SCRIPT}" ]]; then
-    uv run --project "${WORKTREE}/python" --isolated --all-packages --group docs \
-      python3 "${GRPC_SCRIPT}"
+    "${UV_RUN[@]}" python3 "${GRPC_SCRIPT}"
   fi
 
-  uv run --project "${WORKTREE}/python" --isolated --all-packages --group docs \
-    make -C "${DOCS_DIR}" html SPHINXOPTS="-D version=${BRANCH}"
+  "${UV_RUN[@]}" make -C "${DOCS_DIR}" html SPHINXOPTS="-D version=${BRANCH}"
 
   cp -r "${DOCS_DIR}/build/html" "${OUTPUT_DIR}/${BRANCH}"
 

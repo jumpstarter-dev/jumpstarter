@@ -27,6 +27,18 @@ runs:
         name: exporterset-controller-image-${{ inputs.arch }}
         path: /tmp/artifacts
 
+    - name: Download exporter image
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      with:
+        name: exporter-image-${{ inputs.arch }}
+        path: /tmp/artifacts
+
+    - name: Download qemu-runtime image
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      with:
+        name: qemu-runtime-image-${{ inputs.arch }}
+        path: /tmp/artifacts
+
     - name: Download python wheels
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
       with:
@@ -39,5 +51,7 @@ runs:
         docker load < /tmp/artifacts/controller-image.tar
         docker load < /tmp/artifacts/operator-image.tar
         docker load < /tmp/artifacts/exporterset-controller-image.tar
+        docker load < /tmp/artifacts/exporter-image.tar
+        docker load < /tmp/artifacts/qemu-runtime-image.tar
         mkdir -p controller/deploy/operator/dist
         cp /tmp/artifacts/operator-install.yaml controller/deploy/operator/dist/install.yaml

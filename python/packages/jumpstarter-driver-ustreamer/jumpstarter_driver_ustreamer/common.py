@@ -1,7 +1,8 @@
-from pydantic import BaseModel
+from jumpstarter_driver_video.common import VideoState
+from pydantic import BaseModel, model_validator
 
 
-class UStreamerState(BaseModel):
+class UStreamerState(VideoState):
     class Result(BaseModel):
         class Encoder(BaseModel):
             type: str
@@ -31,3 +32,12 @@ class UStreamerState(BaseModel):
     ok: bool
 
     result: Result
+
+    @model_validator(mode="after")
+    def _fill_common_state(self):
+        """Populate the common VideoState fields from ustreamer's own shape."""
+        self.online = self.result.source.online
+        self.width = self.result.source.resolution.width
+        self.height = self.result.source.resolution.height
+        self.fps = self.result.source.captured_fps
+        return self

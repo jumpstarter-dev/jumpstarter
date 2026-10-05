@@ -10,9 +10,12 @@ from .completion import completion
 from .config import config
 from .create import create
 from .delete import delete
+from .describe import describe
 from .get import get
 from .login import login
 from .run import run
+from .self import self
+from .share import share
 from .shell import shell
 from .update import update
 
@@ -30,6 +33,8 @@ jmp.add_command(create)
 jmp.add_command(delete)
 jmp.add_command(update)
 jmp.add_command(get)
+jmp.add_command(describe)
+jmp.add_command(share)
 jmp.add_command(shell)
 jmp.add_command(run)
 jmp.add_command(login)
@@ -37,6 +42,7 @@ jmp.add_command(config)
 
 jmp.add_command(driver)
 jmp.add_command(admin)
+jmp.add_command(self)
 jmp.add_command(version)
 
 try:

@@ -98,14 +98,13 @@ def test_driver_power_on_error(monkeypatch, mock_data):
     root = Corellium(project_id='1', device_name='jmp', device_flavor='kronos', device_os='1.0')
     power = CorelliumPower(parent=root)
 
-    with pytest.raises((CorelliumApiException, ValueError)):
-        with (patch.object(root.api, 'get_project',
-                           **mock_data.get('get_project', {'return_value': project})),
-              patch.object(root.api, 'get_instance',
-                           **mock_data.get('get_instance', {'return_value': instance})),
-              patch.object(root.api, 'create_instance',
-                           **mock_data.get('create_instance', {'return_value': instance}))):
-            power.on()
+    with (pytest.raises((CorelliumApiException, ValueError)), patch.object(root.api, 'get_project',
+                       **mock_data.get('get_project', {'return_value': project})),
+          patch.object(root.api, 'get_instance',
+                       **mock_data.get('get_instance', {'return_value': instance})),
+          patch.object(root.api, 'create_instance',
+                       **mock_data.get('create_instance', {'return_value': instance}))):
+        power.on()
 
 
 def test_driver_power_off_ok(monkeypatch):
@@ -138,14 +137,13 @@ def test_driver_power_off_error(monkeypatch, mock_data):
     root = Corellium(project_id='1', device_name='jmp', device_flavor='kronos', device_os='1.0')
     power = CorelliumPower(parent=root)
 
-    with pytest.raises((CorelliumApiException, ValueError)):
-        with (patch.object(root.api, 'get_project',
-                           **mock_data.get('get_project', {'return_value': project})),
-              patch.object(root.api, 'get_instance',
-                           **mock_data.get('get_instance', {'side_effect': [instance, None]})),
-              patch.object(root.api, 'destroy_instance',
-                           **mock_data.get('destroy_instance', {'return_value': instance}))):
-            power.off()
+    with (pytest.raises((CorelliumApiException, ValueError)), patch.object(root.api, 'get_project',
+                       **mock_data.get('get_project', {'return_value': project})),
+          patch.object(root.api, 'get_instance',
+                       **mock_data.get('get_instance', {'side_effect': [instance, None]})),
+          patch.object(root.api, 'destroy_instance',
+                       **mock_data.get('destroy_instance', {'return_value': instance}))):
+        power.off()
 
 
 def test_driver_console_get_url_ok(monkeypatch):
@@ -179,13 +177,12 @@ def test_driver_console_get_url_error(monkeypatch, mock_data):
     root = Corellium(project_id='1', device_name='jmp', device_flavor='kronos', device_os='1.0')
     console = CorelliumConsole(parent=root, url='')
 
-    with pytest.raises((CorelliumApiException, ValueError)):
-        with (patch.object(root.api, 'get_project',
-                           **mock_data.get('get_project', {'return_value': project})),
-              patch.object(root.api, 'get_instance',
-                           **mock_data.get('get_instance', {'side_effect': [instance, None]})),
-              patch.object(root.api, 'get_instance_console_id',
-                           **mock_data.get('get_instance_console_id', {'return_value': 'uart7-cons'})),
-              patch.object(root.api, 'get_instance_console_id',
-                           **mock_data.get('get_instance_console_url', {'return_value': 'ws://mock'}))):
-            assert console.url
+    with (pytest.raises((CorelliumApiException, ValueError)), patch.object(root.api, 'get_project',
+                       **mock_data.get('get_project', {'return_value': project})),
+          patch.object(root.api, 'get_instance',
+                       **mock_data.get('get_instance', {'side_effect': [instance, None]})),
+          patch.object(root.api, 'get_instance_console_id',
+                       **mock_data.get('get_instance_console_id', {'return_value': 'uart7-cons'})),
+          patch.object(root.api, 'get_instance_console_id',
+                       **mock_data.get('get_instance_console_url', {'return_value': 'ws://mock'}))):
+        assert console.url

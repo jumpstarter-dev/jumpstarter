@@ -35,17 +35,16 @@ def create_stub_client(class_path: str) -> StubDriverClient:
 def test_missing_driver_logs_warning_and_creates_stub(caplog):
     """Test that a missing driver logs a warning and creates a StubDriverClient."""
     expected_class_path = "nonexistent_driver_package.client.NonExistentClient"
-    with caplog.at_level(logging.WARNING):
-        with serve(MissingClientDriver()) as client:
-            # Should have logged a warning with the exact class path from MissingDriverError
-            assert f"Driver client '{expected_class_path}' is not available." in caplog.text
+    with caplog.at_level(logging.WARNING), serve(MissingClientDriver()) as client:
+        # Should have logged a warning with the exact class path from MissingDriverError
+        assert f"Driver client '{expected_class_path}' is not available." in caplog.text
 
-            # Should have created a StubDriverClient
-            assert isinstance(client, StubDriverClient)
+        # Should have created a StubDriverClient
+        assert isinstance(client, StubDriverClient)
 
-            # Using the stub should raise an error
-            with pytest.raises(ImportError):
-                client.call("some_method")
+        # Using the stub should raise an error
+        with pytest.raises(ImportError):
+            client.call("some_method")
 
 
 def test_stub_driver_client_streamingcall_raises():
@@ -60,18 +59,16 @@ def test_stub_driver_client_streamingcall_raises():
 def test_stub_driver_client_stream_raises():
     """Test that stream() raises ImportError with driver info."""
     stub = create_stub_client("missing_driver.client.Client")
-    with pytest.raises(ImportError) as exc_info:
-        with stub.stream():
-            pass
+    with pytest.raises(ImportError) as exc_info, stub.stream():
+        pass
     assert "missing_driver" in str(exc_info.value)
 
 
 def test_stub_driver_client_log_stream_raises():
     """Test that log_stream() raises ImportError with driver info."""
     stub = create_stub_client("missing_driver.client.Client")
-    with pytest.raises(ImportError) as exc_info:
-        with stub.log_stream():
-            pass
+    with pytest.raises(ImportError) as exc_info, stub.log_stream():
+        pass
     assert "missing_driver" in str(exc_info.value)
 
 

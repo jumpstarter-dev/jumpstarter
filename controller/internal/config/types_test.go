@@ -276,6 +276,97 @@ func TestDeprecatedLabelsOmitEmpty(t *testing.T) {
 	}
 }
 
+func TestTelemetryEndpointResolution(t *testing.T) {
+	tests := []struct {
+		name         string
+		cfg          *Telemetry
+		envValue     string
+		wantNil      bool
+		wantEndpoint string
+		wantErr      bool
+	}{
+		{
+			name:    "nil config returns nil",
+			cfg:     nil,
+			wantNil: true,
+		},
+		{
+			name:    "disabled config returns nil",
+			cfg:     &Telemetry{Enabled: false, Endpoint: "telemetry:9093"},
+			wantNil: true,
+		},
+		{
+			name:         "env var takes precedence over ConfigMap",
+			cfg:          &Telemetry{Enabled: true, Endpoint: "telemetry.ns.svc:9093"},
+			envValue:     "env-telemetry:9093",
+			wantEndpoint: "env-telemetry:9093",
+		},
+		{
+			name:         "ConfigMap fallback when env var is empty",
+			cfg:          &Telemetry{Enabled: true, Endpoint: "telemetry.ns.svc:9093"},
+			wantEndpoint: "telemetry.ns.svc:9093",
+		},
+		{
+			name:         "both empty yields empty endpoint (no error)",
+			cfg:          &Telemetry{Enabled: true},
+			wantEndpoint: "",
+		},
+		{
+			name:    "malformed ConfigMap value is rejected",
+			cfg:     &Telemetry{Enabled: true, Endpoint: "no-port"},
+			wantErr: true,
+		},
+		{
+			name:     "malformed env var is rejected",
+			cfg:      &Telemetry{Enabled: true},
+			envValue: "garbage-no-port",
+			wantErr:  true,
+		},
+		{
+			name:    "port-only ConfigMap value is rejected",
+			cfg:     &Telemetry{Enabled: true, Endpoint: ":9093"},
+			wantErr: true,
+		},
+		{
+			name:     "port-only env var is rejected",
+			cfg:      &Telemetry{Enabled: true},
+			envValue: ":9093",
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("GRPC_TELEMETRY_ENDPOINT", tt.envValue)
+
+			resolved, err := resolveTelemetryConfig(tt.cfg)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected validation error, got nil (resolved=%+v)", resolved)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.wantNil {
+				if resolved != nil {
+					t.Fatalf("expected nil, got %+v", resolved)
+				}
+				return
+			}
+			var gotEndpoint string
+			if resolved != nil {
+				gotEndpoint = resolved.Endpoint
+			}
+			if gotEndpoint != tt.wantEndpoint {
+				t.Errorf("resolved.Endpoint = %q, want %q", gotEndpoint, tt.wantEndpoint)
+			}
+		})
+	}
+}
+
 func TestParseDuration(t *testing.T) {
 	tests := []struct {
 		input    string

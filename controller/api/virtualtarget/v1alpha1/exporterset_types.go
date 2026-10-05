@@ -32,17 +32,32 @@ const (
 )
 
 // DriverConfig defines a single driver entry in an exporter template.
+// +kubebuilder:validation:XValidation:rule="has(self.type) || has(self.ref)",message="either type or ref must be set"
+// +kubebuilder:validation:XValidation:rule="!(has(self.type) && has(self.ref))",message="type and ref are mutually exclusive"
+// +kubebuilder:validation:XValidation:rule="!has(self.ref) || !has(self.config)",message="ref entries must not have config"
+// +kubebuilder:validation:XValidation:rule="has(self.name) && size(self.name) > 0",message="name is required"
 type DriverConfig struct {
 	// Name is the key used in the ExporterConfig export map.
 	Name string `json:"name"`
 
 	// Type is the fully qualified Python driver class name.
-	Type string `json:"type"`
+	// Mutually exclusive with Ref.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	Type string `json:"type,omitempty"`
+
+	// Ref is a dot-separated path referencing a nested child driver
+	// to surface at the root level. Mutually exclusive with Type.
+	// Segments must be non-empty (no leading/trailing/consecutive dots).
+	// +optional
+	// +kubebuilder:validation:Pattern=^[^.]+([.][^.]+)*$
+	Ref string `json:"ref,omitempty"`
 
 	// Config holds driver-specific configuration.
 	// +optional
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Schemaless
+	// +kubebuilder:validation:Type=object
 	Config *apiextensionsv1.JSON `json:"config,omitempty"`
 }
 

@@ -5,7 +5,7 @@ import os
 import tempfile
 from contextlib import asynccontextmanager, contextmanager, suppress
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 
 import grpc
 import yaml
@@ -21,6 +21,9 @@ from jumpstarter.common.importlib import import_class
 
 if TYPE_CHECKING:
     from jumpstarter.driver import Driver
+
+
+DEFAULT_STATUS_STREAM_RETRY_TIMEOUT = 30 * 60.0
 
 
 class HookInstanceConfigV1Alpha1(BaseModel):
@@ -109,7 +112,7 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
         | ExporterConfigV1Alpha1DriverInstanceProxy
     )
 
-    def instantiate(self) -> "Driver":
+    def instantiate(self) -> Driver:
         match self.root:
             case ExporterConfigV1Alpha1DriverInstanceBase():
                 try:
@@ -139,6 +142,8 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
                 from jumpstarter_driver_composite.driver import Proxy
 
                 return Proxy(ref=self.root.ref)
+            case _:
+                raise ValueError(f"Unknown driver instance type: {type(self.root)}")
 
     @classmethod
     def from_path(cls, path: str) -> ExporterConfigV1Alpha1DriverInstance:
@@ -184,6 +189,16 @@ class ExporterConfigV1Alpha1(BaseModel):
     failure_detection: FailureDetectionConfigV1Alpha1 = Field(
         default_factory=FailureDetectionConfigV1Alpha1,
         alias="failureDetection",
+    )
+    status_stream_retry_timeout: float = Field(
+        default=DEFAULT_STATUS_STREAM_RETRY_TIMEOUT,
+        gt=0,
+        alias="statusStreamRetryTimeout",
+        description=(
+            "Seconds to retry after the controller Status stream fails or ends without a new item "
+            "(default: 1800). On expiry, the exporter exits with status 75 so a service "
+            "manager can restart it."
+        ),
     )
     exit_on_lease_end: bool = Field(
         default=False,
@@ -274,7 +289,7 @@ class ExporterConfigV1Alpha1(BaseModel):
         )
 
     @classmethod
-    def save(cls, config: Self, path: Optional[str] = None) -> Path:
+    def save(cls, config: Self, path: str | None = None) -> Path:
         """Save the config to disk, defaulting to the user config dir when no path is given."""
         # Set the config path before saving
         if path is None:
@@ -327,11 +342,11 @@ class ExporterConfigV1Alpha1(BaseModel):
         from jumpstarter.exporter import Session
 
         with Session(
-            root_device=ExporterConfigV1Alpha1DriverInstance(
-                type="jumpstarter_driver_composite.driver.Composite",
-                description=self.description,
-                children=self.export,
-            ).instantiate(),
+            root_device=ExporterConfigV1Alpha1DriverInstance.model_validate({
+                "type": "jumpstarter_driver_composite.driver.Composite",
+                "description": self.description,
+                "children": self.export,
+            }).instantiate(),
             motd=self.motd,
         ) as session:
             async with session.serve_unix_async() as path:
@@ -341,9 +356,8 @@ class ExporterConfigV1Alpha1(BaseModel):
 
     @contextmanager
     def serve_unix(self):
-        with start_blocking_portal() as portal:
-            with portal.wrap_async_context_manager(self.serve_unix_async()) as path:
-                yield path
+        with start_blocking_portal() as portal, portal.wrap_async_context_manager(self.serve_unix_async()) as path:
+            yield path
 
     @asynccontextmanager
     async def create_exporter(self, *, standalone: bool = False):
@@ -360,8 +374,10 @@ class ExporterConfigV1Alpha1(BaseModel):
         async def channel_factory() -> grpc.aio.Channel:
             if self.endpoint is None or self.token is None:
                 raise ConfigurationError("endpoint or token not set in exporter config")
+            # The stream retry loop logs once per outage; per-IP discovery
+            # failures remain in the final exception and debug logs.
             credentials = grpc.composite_channel_credentials(
-                await ssl_channel_credentials(self.endpoint, self.tls),
+                await ssl_channel_credentials(self.endpoint, self.tls, log_connection_failures=False),
                 call_credentials("Exporter", self.metadata, self.token),
             )
             return aio_secure_channel(self.endpoint, credentials, self.grpcOptions)
@@ -382,17 +398,20 @@ class ExporterConfigV1Alpha1(BaseModel):
         entered = False
         try:
             exporter = Exporter(
+                token=self.token or "",
+                exporter_name=self.metadata.name,
                 channel_factory=dummy_channel_factory if standalone else channel_factory,
-                device_factory=ExporterConfigV1Alpha1DriverInstance(
-                    type="jumpstarter_driver_composite.driver.Composite",
-                    description=self.description,
-                    children=self.export,
-                ).instantiate,
+                device_factory=ExporterConfigV1Alpha1DriverInstance.model_validate({
+                    "type": "jumpstarter_driver_composite.driver.Composite",
+                    "description": self.description,
+                    "children": self.export,
+                }).instantiate,
                 tls=self.tls,
                 grpc_options=self.grpcOptions,
                 hook_executor=hook_executor,
                 motd=self.motd,
                 exit_on_lease_end=self.exit_on_lease_end,
+                status_stream_retry_timeout=self.status_stream_retry_timeout,
             )
             # Initialize the exporter (registration, etc.)
             await exporter.__aenter__()

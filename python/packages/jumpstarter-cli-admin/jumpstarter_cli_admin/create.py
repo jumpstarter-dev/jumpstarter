@@ -1,4 +1,3 @@
-from typing import Optional
 
 import click
 from jumpstarter_cli_common.alias import AliasedGroup
@@ -76,16 +75,16 @@ def create():
 @opt_output_all
 @blocking
 async def create_client(
-    name: Optional[str],
-    kubeconfig: Optional[str],
-    context: Optional[str],
+    name: str | None,
+    kubeconfig: str | None,
+    context: str | None,
     insecure_tls: bool,
     namespace: str,
     labels: dict[str, str],
     save: bool,
-    allow: Optional[str],
+    allow: str | None,
     unsafe: bool,
-    out: Optional[str],
+    out: str | None,
     oidc_username: str | None,
     nointeractive: bool,
     output: OutputType,
@@ -154,14 +153,14 @@ async def create_client(
 @opt_output_all
 @blocking
 async def create_exporter(
-    name: Optional[str],
-    kubeconfig: Optional[str],
-    context: Optional[str],
+    name: str | None,
+    kubeconfig: str | None,
+    context: str | None,
     insecure_tls: bool,
     namespace: str,
     labels: dict[str, str],
     save: bool,
-    out: Optional[str],
+    out: str | None,
     oidc_username: str | None,
     nointeractive: bool,
     output: OutputType,
@@ -244,23 +243,23 @@ async def create_exporter(
 @blocking
 async def create_cluster(
     name: str,
-    kind: Optional[str],
-    minikube: Optional[str],
-    k3s: Optional[str],
+    kind: str | None,
+    minikube: str | None,
+    k3s: str | None,
     force_recreate: bool,
     kind_extra_args: str,
     minikube_extra_args: str,
-    extra_certs: Optional[str],
+    extra_certs: str | None,
     skip_install: bool,
-    operator_installer: Optional[str],
+    operator_installer: str | None,
     namespace: str,
-    ip: Optional[str],
-    basedomain: Optional[str],
-    grpc_endpoint: Optional[str],
-    router_endpoint: Optional[str],
-    version: Optional[str],
-    kubeconfig: Optional[str],
-    context: Optional[str],
+    ip: str | None,
+    basedomain: str | None,
+    grpc_endpoint: str | None,
+    router_endpoint: str | None,
+    version: str | None,
+    kubeconfig: str | None,
+    context: str | None,
     nointeractive: bool,
     output: OutputType,
 ):

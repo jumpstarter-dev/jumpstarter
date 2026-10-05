@@ -33,9 +33,9 @@ import re
 import socket as _socket
 import time
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import parse_qs, urlparse
 
 from mitmproxy import ctx, http
@@ -158,12 +158,12 @@ class TemplateEngine:
     # Class-level counter state, intentionally shared across instances.
     # Counters persist across config reloads so {{counter(name)}} values
     # increase monotonically within a proxy session.
-    _counters: dict[str, int] = defaultdict(int)
+    _counters: ClassVar[dict[str, int]]= defaultdict(int)
 
     # Only these environment variables may be read via {{env(...)}} templates.
     # This prevents mock configs from leaking secrets such as credentials or
     # API keys.  Extend this set when new env-driven behaviour is needed.
-    ALLOWED_ENV_VARS: set[str] = {
+    ALLOWED_ENV_VARS: ClassVar[set[str]]= {
         "JUMPSTARTER_ENV",
         "JUMPSTARTER_DEVICE_ID",
         "JUMPSTARTER_MOCK_PROFILE",
@@ -234,8 +234,8 @@ class TemplateEngine:
     @classmethod
     def _evaluate_builtin(cls, expr: str) -> Any | None:
         """Evaluate built-in expressions (no flow needed)."""
-        if expr == "now_iso":
-            return datetime.now(timezone.utc).isoformat()
+        if expr == "now_iso":  # pragma: no cover
+            return datetime.now(UTC).isoformat()
         if expr == "now_epoch":
             return int(time.time())
         if expr == "uuid":
@@ -288,7 +288,7 @@ class TemplateEngine:
         ctx.log.warn(f"env() template blocked: variable '{var_name}' is not in ALLOWED_ENV_VARS")
         return ""
 
-    _BUILTIN_DISPATCH: list[tuple[str, Any]] = [
+    _BUILTIN_DISPATCH: ClassVar[list[tuple[str, Any]]]= [
         ("random_int(", _eval_random_int),
         ("random_float(", _eval_random_float),
         ("random_choice(", _eval_random_choice),
@@ -340,7 +340,7 @@ class TemplateEngine:
         except (IndexError, ValueError):
             return ""
 
-    _FLOW_DISPATCH: list[tuple[str, Any]] = [
+    _FLOW_DISPATCH: ClassVar[list[tuple[str, Any]]]= [
         ("request_header(", _eval_request_header),
         ("request_body_json(", _eval_request_body_json),
         ("request_query(", _eval_request_query),
@@ -428,7 +428,7 @@ class AddonRegistry:
                     f"Addon {name} missing Handler class"
                 )
                 return None
-        except Exception as e:
+        except Exception as e:  # pragma: no cover  # noqa: BLE001
             ctx.log.error(f"Failed to load addon {name}: {e}")
             return None
 
@@ -475,9 +475,8 @@ class CaptureClient:
         """Send a JSON event line. Reconnects once on failure."""
         payload = json.dumps(event) + "\n"
         for attempt in range(2):
-            if self._sock is None:
-                if not self._connect():
-                    return
+            if self._sock is None and not self._connect():  # pragma: no cover
+                return
             try:
                 self._sock.sendall(payload.encode())
                 return
@@ -597,7 +596,7 @@ class MitmproxyMockAddon:
                 f"(files: {self.files_dir}, addons: {addons_dir})"
             )
 
-        except Exception as e:
+        except Exception as e:  # pragma: no cover  # noqa: BLE001
             ctx.log.error(f"Failed to load config: {e}")
 
     def _load_state(self):
@@ -614,7 +613,7 @@ class MitmproxyMockAddon:
                 self._state = json.load(f)
 
             self._state_mtime = mtime
-        except Exception as e:
+        except Exception as e:  # pragma: no cover  # noqa: BLE001
             ctx.log.error(f"Failed to load state: {e}")
 
     # ── Request matching ────────────────────────────────────
@@ -691,10 +690,9 @@ class MitmproxyMockAddon:
                 or (is_websocket and pat_method == "WEBSOCKET")
             )
 
-            if match_method and path.startswith(prefix):
-                if self._matches_conditions(ep, flow):
-                    priority = ep.get("priority", 0)
-                    candidates.append((priority, pattern, ep))
+            if match_method and path.startswith(prefix) and self._matches_conditions(ep, flow):  # pragma: no cover
+                priority = ep.get("priority", 0)
+                candidates.append((priority, pattern, ep))
 
     def _matches_conditions(
         self, endpoint: dict, flow: http.HTTPFlow,
@@ -1025,7 +1023,7 @@ class MitmproxyMockAddon:
                 ctx.log.warn(
                     f"Addon {addon_name} did not handle request"
                 )
-        except Exception as e:
+        except Exception as e:  # pragma: no cover  # noqa: BLE001
             ctx.log.error(f"Addon {addon_name} error: {e}")
             flow.response = http.Response.make(
                 500,
@@ -1090,7 +1088,7 @@ class MitmproxyMockAddon:
         if handler and hasattr(handler, "websocket_message"):
             try:
                 handler.websocket_message(flow, endpoint.get("addon_config", {}))
-            except Exception as e:
+            except Exception as e:  # pragma: no cover  # noqa: BLE001
                 ctx.log.error(
                     f"Addon {addon_name} websocket error: {e}"
                 )

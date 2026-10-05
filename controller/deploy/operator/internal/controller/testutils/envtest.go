@@ -37,7 +37,7 @@ import (
 func GetFirstFoundEnvTestBinaryDir(depth int) string {
 	// Build the path based on depth
 	pathComponents := make([]string, 0, depth+2)
-	for i := 0; i < depth; i++ {
+	for range depth {
 		pathComponents = append(pathComponents, "..")
 	}
 	pathComponents = append(pathComponents, "bin", "k8s")

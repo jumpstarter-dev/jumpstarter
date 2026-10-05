@@ -1,5 +1,9 @@
+import bz2
+import gzip
 import hashlib
+import lzma
 import os
+import sys
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -10,6 +14,11 @@ from unittest import mock
 
 import pytest
 from opendal import Operator
+
+if sys.version_info >= (3, 14):
+    from compression import zstd
+else:
+    from backports import zstd
 
 from .common import PresignedRequest
 from .driver import MockFlasher, MockStorageMux, MockStorageMuxFlasher, Opendal
@@ -177,38 +186,89 @@ def test_driver_mock_storage_mux_flasher(tmp_path):
             assert (tmp_path / "dump.img").read_bytes() == b"hello"
 
 
+@pytest.mark.parametrize(
+    "compress",
+    [gzip.compress, lambda data: lzma.compress(data, format=lzma.FORMAT_XZ), bz2.compress, zstd.compress],
+    ids=["gzip", "xz", "bz2", "zstd"],
+)
+def test_driver_mock_storage_mux_flasher_auto_decompress(tmp_path, compress):
+    original = b"hello compressed world" * 1024
+    with serve(MockStorageMuxFlasher()) as flasher:
+        (tmp_path / "disk.img").write_bytes(compress(original))
+
+        flasher.flash(tmp_path / "disk.img")
+        flasher.dump(tmp_path / "dump.img")
+
+        assert (tmp_path / "dump.img").read_bytes() == original
+
+
+def test_driver_mock_storage_mux_flasher_http_auto_decompress(tmp_path):
+    """Flashing a compressed image from a direct HTTP URL must auto-decompress (issue #54)."""
+    original = b"hello compressed world" * 1024
+    compressed = lzma.compress(original, format=lzma.FORMAT_XZ)
+
+    class CompressedHandler(BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header("content-length", str(len(compressed)))
+            self.end_headers()
+
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("content-length", str(len(compressed)))
+            self.end_headers()
+            self.wfile.write(compressed)
+
+        def log_message(self, format, *args):
+            pass
+
+    with serve(MockStorageMuxFlasher()) as flasher:
+        server = HTTPServer(("127.0.0.1", 0), CompressedHandler)
+        port = server.server_address[1]
+        server_thread = Thread(target=server.serve_forever)
+        server_thread.daemon = True
+        server_thread.start()
+        try:
+            flasher.flash(f"http://127.0.0.1:{port}/image.raw.xz")
+            flasher.dump(tmp_path / "dump.img")
+
+            assert (tmp_path / "dump.img").read_bytes() == original
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
 def test_drivers_mock_storage_mux_fs(monkeypatch: pytest.MonkeyPatch):
-    with serve(MockStorageMux()) as client:
-        with TemporaryDirectory() as tempdir:
-            # original file on the client to be pushed to the exporter
-            original = Path(tempdir) / "original"
-            # new file read back from the exporter to the client
-            readback = Path(tempdir) / "readback"
+    with serve(MockStorageMux()) as client, TemporaryDirectory() as tempdir:
+        # original file on the client to be pushed to the exporter
+        original = Path(tempdir) / "original"
+        # new file read back from the exporter to the client
+        readback = Path(tempdir) / "readback"
 
-            # test accessing files with absolute path
+        # test accessing files with absolute path
 
-            # fill the original file with random bytes
-            original.write_bytes(randbytes(1024 * 1024 * 10))
-            # write the file to the storage on the exporter
-            client.write_local_file(str(original))
-            # read the storage on the exporter to a local file
-            client.read_local_file(str(readback))
-            # ensure the contents are equal
+        # fill the original file with random bytes
+        original.write_bytes(randbytes(1024 * 1024 * 10))
+        # write the file to the storage on the exporter
+        client.write_local_file(str(original))
+        # read the storage on the exporter to a local file
+        client.read_local_file(str(readback))
+        # ensure the contents are equal
+        assert original.read_bytes() == readback.read_bytes()
+
+        # test accessing files with relative path
+        with monkeypatch.context() as m:
+            m.chdir(tempdir)
+
+            original.write_bytes(randbytes(1024 * 1024 * 1))
+            client.write_local_file("original")
+            client.read_local_file("readback")
             assert original.read_bytes() == readback.read_bytes()
 
-            # test accessing files with relative path
-            with monkeypatch.context() as m:
-                m.chdir(tempdir)
-
-                original.write_bytes(randbytes(1024 * 1024 * 1))
-                client.write_local_file("original")
-                client.read_local_file("readback")
-                assert original.read_bytes() == readback.read_bytes()
-
-                original.write_bytes(randbytes(1024 * 1024 * 1))
-                client.write_local_file("./original")
-                client.read_local_file("./readback")
-                assert original.read_bytes() == readback.read_bytes()
+            original.write_bytes(randbytes(1024 * 1024 * 1))
+            client.write_local_file("./original")
+            client.read_local_file("./readback")
+            assert original.read_bytes() == readback.read_bytes()
 
 
 def test_drivers_mock_storage_mux_http():
@@ -376,13 +436,13 @@ def test_operator_for_path_strips_query_params():
     from .client import operator_for_path
 
     # HTTP URL without query parameters
-    path, operator, scheme = operator_for_path("https://cdn.example.com/images/image.raw.xz")
+    path, _, scheme = operator_for_path("https://cdn.example.com/images/image.raw.xz")
     assert scheme == "http"
     assert path == Path("/images/image.raw.xz")
 
     # HTTP URL with query parameters - query params are stripped because
     # signed URL downloads use original_url passthrough instead
-    path, operator, scheme = operator_for_path(
+    path, _, scheme = operator_for_path(
         "https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
     )
     assert scheme == "http"
@@ -390,7 +450,7 @@ def test_operator_for_path_strips_query_params():
 
     # Filesystem path (use resolve() for the expected value since macOS
     # resolves /tmp to /private/tmp)
-    path, operator, scheme = operator_for_path("/tmp/image.raw.xz")
+    path, _operator, scheme = operator_for_path("/tmp/image.raw.xz")
     assert scheme == "fs"
     assert path == Path("/tmp/image.raw.xz").resolve()
 
@@ -444,22 +504,23 @@ def test_write_from_path_http_with_explicit_operator(tmp_path):
     guard, otherwise the HTTP URL goes through OpenDAL presign_read which mangles it
     into a double-host path like endpoint/https%3A/host/path.
     """
-    with serve(Opendal(scheme="fs", kwargs={"root": str(tmp_path)})) as client:
-        with _http_path_recording_server() as (port, received_paths):
-            url = f"http://127.0.0.1:{port}/path%40encoded/file.bin"
-            explicit_operator = Operator("http", endpoint=f"http://127.0.0.1:{port}")
-            client.write_from_path("dest.bin", url, operator=explicit_operator)
-            _assert_encoding_preserved(received_paths)
+    with (
+        serve(Opendal(scheme="fs", kwargs={"root": str(tmp_path)})) as client,
+        _http_path_recording_server() as (port, received_paths),
+    ):
+        url = f"http://127.0.0.1:{port}/path%40encoded/file.bin"
+        explicit_operator = Operator("http", endpoint=f"http://127.0.0.1:{port}")
+        client.write_from_path("dest.bin", url, operator=explicit_operator)
+        _assert_encoding_preserved(received_paths)
 
 
 def test_flash_http_with_explicit_operator():
     """FlasherClient.flash must use original_url bypass even when operator is passed explicitly."""
-    with serve(MockFlasher()) as flasher:
-        with _http_path_recording_server() as (port, received_paths):
-            url = f"http://127.0.0.1:{port}/path%40encoded/file.bin"
-            explicit_operator = Operator("http", endpoint=f"http://127.0.0.1:{port}")
-            flasher.flash(url, operator=explicit_operator)
-            _assert_encoding_preserved(received_paths)
+    with serve(MockFlasher()) as flasher, _http_path_recording_server() as (port, received_paths):
+        url = f"http://127.0.0.1:{port}/path%40encoded/file.bin"
+        explicit_operator = Operator("http", endpoint=f"http://127.0.0.1:{port}")
+        flasher.flash(url, operator=explicit_operator)
+        _assert_encoding_preserved(received_paths)
 
 
 def test_flash_http_url_preserves_percent_encoding():

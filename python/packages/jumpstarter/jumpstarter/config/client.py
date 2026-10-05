@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
-from typing import Annotated, ClassVar, Literal, Optional, Self
+from typing import Annotated, ClassVar, Literal, Self
 
 import grpc
 import yaml
@@ -24,11 +24,11 @@ from pydantic import (
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from .common import CONFIG_PATH, ObjectMeta
-from .env import JMP_LEASE, JMP_RETRY_TIMEOUT
+from .env import JMP_DIAL_TIMEOUT, JMP_LEASE, JMP_RETRY_TIMEOUT
 from .grpc import call_credentials
 from .shell import ShellConfigV1Alpha1
 from .tls import TLSConfigV1Alpha1
-from jumpstarter.client.grpc import ClientService, Exporter
+from jumpstarter.client.grpc import ClientService
 from jumpstarter.common.exceptions import (
     ConfigurationError,
     ConnectionError,
@@ -100,10 +100,9 @@ class ClientConfigV1Alpha1Lease(BaseSettings):
         ge=5,  # Must be at least 5 seconds (polling interval)
     )
     dial_timeout: float = Field(
-        default=30.0,
+        default=60.0,
         description="Timeout in seconds for Dial retry loop when exporter not ready",
-        gt=0,
-        exclude=True,  # Internal field, not serialized to config files
+        ge=5,
     )
     retry_timeout: float = Field(
         default=300.0,
@@ -156,11 +155,10 @@ class ClientConfigV1Alpha1(BaseSettings):
         lease_name: str | None = None,
         duration: timedelta = timedelta(minutes=30),
     ):
-        with start_blocking_portal() as portal:
-            with portal.wrap_async_context_manager(
-                self.lease_async(selector, exporter_name, lease_name, duration, portal)
-            ) as lease:
-                yield lease
+        with start_blocking_portal() as portal, portal.wrap_async_context_manager(
+            self.lease_async(selector, exporter_name, lease_name, duration, portal)
+        ) as lease:
+            yield lease
 
     @_blocking_compat
     @_handle_connection_error
@@ -231,26 +229,16 @@ class ClientConfigV1Alpha1(BaseSettings):
         leases_response = await self._collect_all_leases(svc, page_size=page_size)
         lease_map = {}
         for lease in leases_response.leases:
-            if lease.exporter and lease.effective_begin_time:
-                if lease.conditions:
-                    latest_condition = lease.conditions[-1]
-                    if latest_condition.type == "Ready" and latest_condition.status == "True":
-                        lease_map[lease.exporter] = lease
+            if lease.exporter and lease.effective_begin_time and lease.conditions:
+                latest_condition = lease.conditions[-1]
+                if latest_condition.type == "Ready" and latest_condition.status == "True":
+                    lease_map[lease.exporter] = lease
 
-        exporters_with_leases = []
-        for exporter in result.exporters:
-            lease = lease_map.get(exporter.name)
-            exporter_with_lease = Exporter(
-                namespace=exporter.namespace,
-                name=exporter.name,
-                labels=exporter.labels,
-                online=exporter.online,
-                enabled=exporter.enabled,
-                lease=lease,
-            )
-            exporters_with_leases.append(exporter_with_lease)
         result.include_leases = True
-        result.exporters = exporters_with_leases
+        result.exporters = [
+            exporter.model_copy(update={"lease": lease_map.get(exporter.name)})
+            for exporter in result.exporters
+        ]
         return result
 
     @_blocking_compat
@@ -265,6 +253,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         tags: dict[str, str] | None = None,
         allow_disabled: bool = False,
         context: dict[str, str] | None = None,
+        shared_with: list[str] | None = None,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.CreateLease(
@@ -276,6 +265,7 @@ class ClientConfigV1Alpha1(BaseSettings):
             tags=tags,
             allow_disabled=allow_disabled,
             context=context,
+            shared_with=shared_with,
         )
 
     @_blocking_compat
@@ -286,6 +276,17 @@ class ClientConfigV1Alpha1(BaseSettings):
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         await svc.DeleteLease(
+            name=name,
+        )
+
+    @_blocking_compat
+    @_handle_connection_error
+    async def get_lease(
+        self,
+        name: str,
+    ):
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        return await svc.GetLease(
             name=name,
         )
 
@@ -311,9 +312,18 @@ class ClientConfigV1Alpha1(BaseSettings):
         duration: timedelta | None = None,
         begin_time: datetime | None = None,
         client: str | None = None,
+        add_shared_with: list[str] | None = None,
+        remove_shared_with: list[str] | None = None,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        return await svc.UpdateLease(name=name, duration=duration, begin_time=begin_time, client=client)
+        return await svc.UpdateLease(
+            name=name,
+            duration=duration,
+            begin_time=begin_time,
+            client=client,
+            add_shared_with=add_shared_with,
+            remove_shared_with=remove_shared_with,
+        )
 
     @_blocking_compat
     @_handle_connection_error
@@ -331,6 +341,8 @@ class ClientConfigV1Alpha1(BaseSettings):
         portal: BlockingPortal,
         acquisition_timeout: timedelta | None = None,
         retry_timeout: timedelta | None = None,
+        dial_timeout: timedelta | None = None,
+        allow_disabled: bool = False,
     ):
         from jumpstarter.client import Lease
 
@@ -350,6 +362,11 @@ class ClientConfigV1Alpha1(BaseSettings):
                 if retry_timeout is not None
                 else float(os.environ.get(JMP_RETRY_TIMEOUT, self.leases.retry_timeout))
             )
+            dial_timeout_seconds = (
+                dial_timeout.total_seconds()
+                if dial_timeout is not None
+                else float(os.environ.get(JMP_DIAL_TIMEOUT, self.leases.dial_timeout))
+            )
             async with Lease(
                 channel=await self.channel(),
                 namespace=self.metadata.namespace,
@@ -364,8 +381,9 @@ class ClientConfigV1Alpha1(BaseSettings):
                 tls_config=self.tls,
                 grpc_options=self.grpcOptions,
                 client_name=self.metadata.name,
+                allow_disabled=allow_disabled,
                 acquisition_timeout=acquisition_timeout_seconds,
-                dial_timeout=self.leases.dial_timeout,
+                dial_timeout=dial_timeout_seconds,
                 retry_timeout=retry_timeout_seconds,
             ) as lease:
                 yield lease
@@ -404,6 +422,10 @@ class ClientConfigV1Alpha1(BaseSettings):
         """Get the regular path of a client config given an alias."""
         return cls.CLIENT_CONFIGS_PATH / f"{alias}.yaml"
 
+    def is_alias_path(self) -> bool:
+        """Whether this config's path resolves to its registered alias path."""
+        return self.path is not None and self.path.resolve() == self._get_path(self.alias).resolve()
+
     @classmethod
     def load(cls, alias: str) -> Self:
         """Load a client config by alias."""
@@ -413,8 +435,10 @@ class ClientConfigV1Alpha1(BaseSettings):
         return cls.from_file(path)
 
     @classmethod
-    def save(cls, config: Self, path: Optional[os.PathLike] = None) -> Path:
-        """Saves a client config as YAML."""
+    def save(cls, config: Self, path: str | os.PathLike | None = None) -> Path:
+        """Save to an explicit path, the loaded path, or the alias path."""
+        if path is None:
+            path = config.path
         # Ensure the clients dir exists
         if path is None:
             cls.ensure_exists()
@@ -514,15 +538,27 @@ class ClientConfigV1Alpha1(BaseSettings):
 
 class ClientConfigListV1Alpha1(BaseModel):
     api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
-    current_config: Optional[str] = Field(alias="currentConfig")
+    current_config: str | None = Field(alias="currentConfig")
     items: list[ClientConfigV1Alpha1]
     kind: Literal["ClientConfigList"] = Field(default="ClientConfigList")
+
+    include_credentials: bool = Field(default=False, exclude=True)
+
+    def _redact_credentials(self, kwargs: dict) -> dict:
+        if not self.include_credentials and "exclude" not in kwargs:
+            kwargs["exclude"] = {"items": {"__all__": {"token", "refresh_token"}}}
+        return kwargs
+
+    def model_dump(self, **kwargs):
+        return super().model_dump(**self._redact_credentials(kwargs))
+
+    def model_dump_json(self, **kwargs):
+        return super().model_dump_json(**self._redact_credentials(kwargs))
 
     def dump_json(self):
         return self.model_dump_json(
             indent=4,
             by_alias=True,
-            exclude={"items": {"__all__": {"refresh_token"}}},
         )
 
     def dump_yaml(self):
@@ -530,7 +566,6 @@ class ClientConfigListV1Alpha1(BaseModel):
             self.model_dump(
                 mode="json",
                 by_alias=True,
-                exclude={"items": {"__all__": {"refresh_token"}}},
             ),
             indent=2,
         )

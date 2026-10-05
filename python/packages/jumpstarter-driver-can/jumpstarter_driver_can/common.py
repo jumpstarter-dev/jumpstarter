@@ -1,4 +1,3 @@
-from typing import Optional
 
 import isotp
 from isotp.address import AddressingMode
@@ -15,9 +14,9 @@ class CanMessage(BaseModel):
     is_extended_id: bool
     is_remote_frame: bool
     is_error_frame: bool
-    channel: Optional[int | str]
-    dlc: Optional[int]
-    data: Optional[Base64Bytes]
+    channel: int | str | None
+    dlc: int | None
+    data: Base64Bytes | None
     is_fd: bool
     is_rx: bool
     bitrate_switch: bool
@@ -88,7 +87,7 @@ class IsoTpMessage(BaseModel):
     An ISO-TP CAN message.
     """
 
-    data: Optional[Base64Bytes]
+    data: Base64Bytes | None
 
 
 class IsoTpAddress(BaseModel):

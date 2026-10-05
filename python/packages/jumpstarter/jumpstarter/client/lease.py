@@ -9,7 +9,7 @@ from contextlib import (
     contextmanager,
 )
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, Self
 
 import grpc
@@ -17,7 +17,6 @@ from anyio import (
     AsyncContextManagerMixin,
     CancelScope,
     ContextManagerMixin,
-    connect_unix,
     create_task_group,
     fail_after,
     sleep,
@@ -33,12 +32,15 @@ from jumpstarter.client import client_from_path
 from jumpstarter.client.grpc import ClientService
 from jumpstarter.common import TemporaryUnixListener
 from jumpstarter.common.condition import condition_false, condition_message, condition_present_and_equal, condition_true
-from jumpstarter.common.exceptions import ConnectionError
-from jumpstarter.common.grpc import translate_grpc_exceptions
+from jumpstarter.common.exceptions import ConnectionError, ExporterUnreachableError
+from jumpstarter.common.grpc import is_controller_unavailable, translate_grpc_exceptions
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.config.tls import TLSConfigV1Alpha1
 
 logger = logging.getLogger(__name__)
+
+# Allow the controller's 30-second exporter readiness wait to finish.
+_DIAL_ATTEMPT_TIMEOUT = 35.0
 
 
 @dataclass(kw_only=True)
@@ -92,8 +94,9 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     tls_config: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
     grpc_options: dict[str, Any] = field(default_factory=dict)
     client_name: str | None = None  # Name of the current client, used for ownership validation
+    allow_disabled: bool = False  # Allow leasing a disabled exporter (only effective with exporter_name)
     acquisition_timeout: int = field(default=7200)  # Timeout in seconds for lease acquisition, polled in 5s intervals
-    dial_timeout: float = field(default=30.0)  # Timeout in seconds for Dial retry loop when exporter not ready
+    dial_timeout: float = field(default=60.0)  # Timeout in seconds for Dial retry loop when exporter not ready
     retry_timeout: float = field(default=300.0)  # Retry timeout for unreachable exporter (0 to disable)
     exporter_name: str = field(default="remote", init=False)  # Populated during acquisition
     exporter_labels: dict[str, str] = field(default_factory=dict, init=False)  # Populated during acquisition
@@ -102,6 +105,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     )  # Called when lease is ending
     lease_ended: bool = field(default=False, init=False)  # Set when lease expires naturally
     lease_transferred: bool = field(default=False, init=False)  # Set when lease is transferred to another client
+    lease_revoked: bool = field(default=False, init=False)  # Set when this (shared) client loses shared access
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -123,15 +127,20 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     async def _create(self):
         logger.debug("Creating lease request for selector %s for duration %s", self.selector, self.duration)
         with translate_grpc_exceptions():
-            self.name = (
-                await self.svc.CreateLease(
-                    selector=self.selector,
-                    exporter_name=self.requested_exporter_name,
-                    duration=self.duration,
-                    lease_id=self.name,
-                    tags=self.tags or None,
-                )
-            ).name
+            lease = await self.svc.CreateLease(
+                selector=self.selector,
+                exporter_name=self.requested_exporter_name,
+                duration=self.duration,
+                lease_id=self.name,
+                tags=self.tags or None,
+                allow_disabled=self.allow_disabled,
+            )
+            self.name = lease.name
+            for label_key, message in lease.deprecated_labels.items():
+                warning = f"selector label '{label_key}' is deprecated"
+                if message:
+                    warning += f": {message}"
+                logger.warning(warning)
         logger.info("Acquiring lease %s for selector %s for duration %s", self.name, self.selector, self.duration)
 
     async def get(self):
@@ -182,7 +191,11 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
             existing_lease = await self.get()
             if existing_lease.effective_end_time:
                 raise LeaseError(f"lease {self.name} has already ended")
-            if self.client_name and existing_lease.client != self.client_name:
+            if (
+                self.client_name
+                and existing_lease.client != self.client_name
+                and not existing_lease.is_accessible_by(self.client_name)
+            ):
                 raise LeaseError(
                     f"lease {self.name} belongs to client '{existing_lease.client}', "
                     f"not the current client '{self.client_name}'"
@@ -207,7 +220,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         try:
             exporter = await self.svc.GetExporter(name=self.exporter_name)
             self.exporter_labels = exporter.labels
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.exporter_labels = {}
             logger.warning("Could not fetch labels for exporter %s: %s", self.exporter_name, e)
 
@@ -318,7 +331,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                             )
                     except TimeoutError:
                         logger.warning("Timeout while deleting lease %s during cleanup", self.name)
-                    except Exception:
+                    except Exception:  # noqa: BLE001
                         logger.debug("Error during lease cleanup for %s (likely already expired)", self.name)
 
     @contextmanager
@@ -326,104 +339,83 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         with self.portal.wrap_async_context_manager(self) as value:
             yield value
 
-    async def handle_async(self, stream):
-        logger.debug("Connecting to Lease with name %s", self.name)
-        # Retry Dial with exponential backoff for transient "exporter not ready" errors.
-        # This handles the race condition where the client acquires a lease before
-        # the exporter has transitioned to LEASE_READY status.
-        # Uses time-based retry bounded by dial_timeout instead of fixed retry count.
-        base_delay = 0.3
-        max_delay = 2.0
+    async def _dial_with_retry(self):
+        """Dial the controller with exponential backoff, waiting for the exporter to be ready.
+
+        Returns DialResponse on success.
+        Raises ExporterUnreachableError on timeout or unrecoverable error.
+        """
+        logger.debug("Dialing controller for lease %s", self.name)
+        delay = 0.3
         deadline = time.monotonic() + self.dial_timeout
-        attempt = 0
         while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ExporterUnreachableError(
+                    f"Exporter {self.exporter_name} unreachable after {self.dial_timeout:.0f}s"
+                )
             try:
-                response = await self.controller.Dial(jumpstarter_pb2.DialRequest(lease_name=self.name))
-                break
+                # Unary grpc.aio calls need timeout=; AnyIO timeouts can leak CancelledError.
+                return await self.controller.Dial(
+                    jumpstarter_pb2.DialRequest(lease_name=self.name),
+                    timeout=min(_DIAL_ATTEMPT_TIMEOUT, remaining),
+                )
             except AioRpcError as e:
-                if e.code() == grpc.StatusCode.FAILED_PRECONDITION and "not ready" in str(e.details()):
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        logger.debug(
-                            "Exporter not ready and dial timeout (%.1fs) exceeded after %d attempts",
-                            self.dial_timeout,
-                            attempt + 1,
-                        )
-                        raise
-                    delay = min(base_delay * (2 ** min(attempt, 10)), max_delay, remaining)
-                    logger.debug(
-                        "Exporter not ready, retrying Dial in %.1fs (attempt %d, %.1fs remaining)",
-                        delay,
-                        attempt + 1,
-                        remaining,
-                    )
-                    await sleep(delay)
-                    attempt += 1
-                    continue
-                if e.code() == grpc.StatusCode.UNAVAILABLE:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        logger.warning(
-                            "Exporter unavailable and dial timeout (%.1fs) exceeded after %d attempts",
-                            self.dial_timeout,
-                            attempt + 1,
-                        )
-                        raise
-                    delay = min(base_delay * (2 ** min(attempt, 10)), max_delay, remaining)
-                    logger.warning(
-                        "Exporter unavailable, retrying Dial in %.1fs (attempt %d, %.1fs remaining)",
-                        delay,
-                        attempt + 1,
-                        remaining,
-                    )
-                    await sleep(delay)
-                    attempt += 1
-                    continue
-                # Exporter went offline or lease ended - log and exit gracefully
-                if "permission denied" in str(e.details()).lower():
-                    self.lease_transferred = True
-                    logger.warning(
-                        "Lease %s has been transferred to another client. Your session is no longer valid.",
-                        self.name,
-                    )
-                else:
-                    logger.warning("Connection to exporter lost: %s", e.details())
-                return
-        async with connect_router_stream(
-            response.router_endpoint, response.router_token, stream, self.tls_config, self.grpc_options
-        ):
-            pass
+                details = e.details() or ""
+                # These readiness responses come from
+                # controller/internal/service/controller_service.go.
+                # An initial "exporter is offline" Dial must fail so the shell
+                # can release this lease and re-acquire another.
+                exporter_recovering = e.code() == grpc.StatusCode.FAILED_PRECONDITION and "not ready" in details
+                controller_unavailable = is_controller_unavailable(e)
+                if not (controller_unavailable or exporter_recovering):
+                    if "permission denied" in details.lower():
+                        self.lease_transferred = True
+                        raise ExporterUnreachableError(
+                            f"Lease {self.name} transferred to another client"
+                        ) from e
+                    raise ExporterUnreachableError(
+                        f"Connection to exporter {self.exporter_name} lost: {details}"
+                    ) from e
+                retry_reason = details
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                logger.log(
+                    logging.WARNING if controller_unavailable else logging.DEBUG,
+                    "%s, retrying Dial (%.1fs remaining)",
+                    retry_reason,
+                    remaining,
+                )
+                await sleep(min(delay, remaining))
+                delay = min(delay * 2, 2.0)
 
     @asynccontextmanager
     async def serve_unix_async(self):
-        async with TemporaryUnixListener(self.handle_async) as path:
-            logger.debug("Serving Unix socket at %s", path)
-            await self._wait_for_ready_connection(path)
-            yield path
+        # Wait for exporter readiness before accepting connections.
+        # The response is intentionally discarded — each connection needs
+        # its own Dial to get a unique router tunnel.
+        await self._dial_with_retry()
 
-    async def _wait_for_ready_connection(self, path: str):
-        """Wait for the Unix socket listener to be ready.
-
-        This only verifies that the Unix socket is accepting connections.
-        It does NOT create a gRPC channel or call Dial, which would create
-        a spurious router connection that can interfere with the real
-        connection established later by client_from_path.
-        """
-        retries_left = 5
-        logger.info("Waiting for ready connection at %s", path)
-        while True:
+        async def _tunnel_handler(stream):
+            # A failed command tunnel closes only this socket. The listener
+            # must stay up so other and later commands can keep working.
             try:
-                stream = await connect_unix(path)
+                response = await self._dial_with_retry()
+                async with connect_router_stream(
+                    response.router_endpoint,
+                    response.router_token,
+                    stream,
+                    self.tls_config,
+                    self.grpc_options,
+                ):
+                    pass
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Closing connection after tunnel failure: %s", e)
                 await stream.aclose()
-                logger.debug("Socket is ready at %s", path)
-                break
-            except (OSError, ConnectionRefusedError) as e:
-                if retries_left > 1:
-                    retries_left -= 1
-                    logger.debug("Socket not ready at %s, retrying (%d left)", path, retries_left)
-                    await sleep(1)
-                else:
-                    raise ConnectionError("Socket not ready at %s" % path) from e
+
+        async with TemporaryUnixListener(_tunnel_handler) as path:
+            logger.debug("Serving Unix socket at %s", path)
+            yield path
 
     def _notify_lease_ending(self, remaining: timedelta) -> None:
         """Set lease_ended flag and invoke the ending callback if set."""
@@ -448,11 +440,11 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
             while True:
                 try:
                     lease = await self.get()
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning("Failed to check lease %s status: %s", self.name, e)
                     # If we know when the lease should end, use it to bound the sleep
                     if last_known_end_time is not None:
-                        remain = (last_known_end_time - datetime.now().astimezone()).total_seconds()
+                        remain = (last_known_end_time - datetime.now(tz=UTC).astimezone()).total_seconds()
                         if remain <= 0:
                             logger.info(
                                 "Lease %s estimated to have ended at %s (unable to confirm with server)",
@@ -472,18 +464,16 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     continue
 
                 last_known_end_time = end_time
-                remain = end_time - datetime.now().astimezone()
+                remain = end_time - datetime.now(tz=UTC).astimezone()
                 if remain < timedelta(0):
-                    logger.info("Lease {} ended at {}".format(self.name, end_time))
+                    logger.info(f"Lease {self.name} ended at {end_time}")
                     self._notify_lease_ending(timedelta(0))
                     break
 
                 # Log once when entering the threshold window
                 if threshold - timedelta(seconds=check_interval) <= remain < threshold:
                     logger.info(
-                        "Lease {} ending in {} minutes at {}".format(
-                            self.name, int((remain.total_seconds() + 30) // 60), end_time
-                        )
+                        f"Lease {self.name} ending in {int((remain.total_seconds() + 30) // 60)} minutes at {end_time}"
                     )
                     self._notify_lease_ending(remain)
                 await sleep(min(remain.total_seconds(), check_interval))
@@ -497,15 +487,16 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
 
     @asynccontextmanager
     async def connect_async(self, stack):
-        async with self.serve_unix_async() as path:
-            async with client_from_path(path, self.portal, stack, allow=self.allow, unsafe=self.unsafe) as client:
-                yield client
+        async with (
+            self.serve_unix_async() as path,
+            client_from_path(path, self.portal, stack, allow=self.allow, unsafe=self.unsafe) as client,
+        ):
+            yield client
 
     @contextmanager
     def connect(self):
-        with ExitStack() as stack:
-            with self.portal.wrap_async_context_manager(self.connect_async(stack)) as client:
-                yield client
+        with ExitStack() as stack, self.portal.wrap_async_context_manager(self.connect_async(stack)) as client:
+            yield client
 
     @contextmanager
     def serve_unix(self):
@@ -545,7 +536,7 @@ class LeaseAcquisitionSpinner:
         )
 
     def __enter__(self):
-        self.start_time = datetime.now()
+        self.start_time = datetime.now(tz=UTC)
         if self._should_show_spinner:
             self.spinner = self.console.status(
                 f"Acquiring lease {self.lease_name or '...'}...", spinner="dots", spinner_style="blue"
@@ -565,13 +556,13 @@ class LeaseAcquisitionSpinner:
         """
         if self.spinner and self._should_show_spinner:
             self._current_message = f"[blue]{message}[/blue]"
-            elapsed = datetime.now() - self.start_time
+            elapsed = datetime.now(tz=UTC) - self.start_time
             elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
             self.spinner.update(f"{self._current_message} [dim]({elapsed_str})[/dim]")
         else:
             # Log info message when no console is available
             # Throttle updates to at most every 5 minutes unless forced
-            now = datetime.now()
+            now = datetime.now(tz=UTC)
             should_log = (
                 force or self._last_log_time is None or (now - self._last_log_time) >= self._log_throttle_interval
             )
@@ -585,7 +576,7 @@ class LeaseAcquisitionSpinner:
     def tick(self):
         """Update the spinner with current elapsed time without changing the message."""
         if self.spinner and self._should_show_spinner and self._current_message:
-            elapsed = datetime.now() - self.start_time
+            elapsed = datetime.now(tz=UTC) - self.start_time
             elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
             # Use the stored current message and update with new elapsed time
             self.spinner.update(f"{self._current_message} [dim]({elapsed_str})[/dim]")

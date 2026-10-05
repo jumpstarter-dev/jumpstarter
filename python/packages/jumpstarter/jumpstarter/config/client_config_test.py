@@ -1,15 +1,17 @@
 import os
 import tempfile
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 import yaml
+from jumpstarter_protocol import kubernetes_pb2
 from pydantic import ValidationError
 
 from jumpstarter.common.exceptions import FileNotFoundError
 from jumpstarter.config.client import (
+    ClientConfigListV1Alpha1,
     ClientConfigV1Alpha1,
     ClientConfigV1Alpha1Drivers,
     ClientConfigV1Alpha1Lease,
@@ -177,23 +179,15 @@ def test_client_config_load():
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write("")
         f.close()
-        with patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as get_path_mock:
-            with patch.object(
-                ClientConfigV1Alpha1,
-                "from_file",
-                return_value=ClientConfigV1Alpha1(
-                    alias="another",
-                    metadata=ObjectMeta(namespace="default", name="another"),
-                    endpoint="abc",
-                    token="123",
-                    drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False),
-                ),
-            ) as from_file_mock:
-                value = ClientConfigV1Alpha1.load("another")
-                assert value.alias == "another"
-                get_path_mock.assert_called_once_with("another")
-                from_file_mock.assert_called_once_with(Path(f.name))
-                os.unlink(f.name)
+        with (
+            patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as get_path_mock,
+            patch.object( ClientConfigV1Alpha1, "from_file", return_value=ClientConfigV1Alpha1( alias="another", metadata=ObjectMeta(namespace="default", name="another"), endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False), ), ) as from_file_mock,  # noqa: E501
+        ):
+            value = ClientConfigV1Alpha1.load("another")
+            assert value.alias == "another"
+            get_path_mock.assert_called_once_with("another")
+            from_file_mock.assert_called_once_with(Path(f.name))
+            os.unlink(f.name)
 
 
 def test_client_config_load_not_found_raises():
@@ -230,14 +224,36 @@ shell:
         shell=ShellConfigV1Alpha1(use_profiles=False),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        with patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as _get_path_mock:
-            with patch.object(ClientConfigV1Alpha1, "ensure_exists"):
-                ClientConfigV1Alpha1.save(config)
-                with open(f.name) as loaded:
-                    value = loaded.read()
-                    assert value == CLIENT_CONFIG
+        with (
+            patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as _get_path_mock,
+            patch.object(ClientConfigV1Alpha1, "ensure_exists"),
+        ):
+            ClientConfigV1Alpha1.save(config)
+            with open(f.name) as loaded:
+                value = loaded.read()
+                assert value == CLIENT_CONFIG
         _get_path_mock.assert_called_once_with("testclient")
         os.unlink(f.name)
+
+
+@pytest.mark.parametrize("override_path", [False, True])
+def test_client_config_save_loaded_path(tmp_path, monkeypatch, override_path):
+    clients = tmp_path / "clients"
+    monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", clients)
+    source = tmp_path / "external" / "client.yaml"
+    config = ClientConfigV1Alpha1(metadata=ObjectMeta(namespace="test", name="test"), token="old-token")
+    ClientConfigV1Alpha1.save(config, source)
+    loaded = ClientConfigV1Alpha1.from_file(source)
+    loaded.token = "new-token"
+    destination = tmp_path / "copy" / "client.yaml" if override_path else source
+
+    saved = ClientConfigV1Alpha1.save(loaded, destination if override_path else None)
+
+    assert saved == destination
+    assert ClientConfigV1Alpha1.from_file(destination).token == "new-token"
+    assert not (clients / "client.yaml").exists()
+    if override_path:
+        assert ClientConfigV1Alpha1.from_file(source).token == "old-token"
 
 
 def test_client_config_save_explicit_path():
@@ -332,6 +348,7 @@ shell:
   use_profiles: false
 leases:
   acquisition_timeout: 3600
+  dial_timeout: 60.0
   retry_timeout: 300.0
 """
     config = ClientConfigV1Alpha1(
@@ -396,13 +413,15 @@ def test_client_config_list_not_found_returns_empty(monkeypatch: pytest.MonkeyPa
 
 
 def test_client_config_delete():
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        with patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as _get_path_mock:
-            f.write("")
-            f.close()
-            ClientConfigV1Alpha1.delete("testclient")
-            _get_path_mock.assert_called_once_with("testclient")
-            assert os.path.exists(f.name) is False
+    with (
+        tempfile.NamedTemporaryFile(mode="w", delete=False) as f,
+        patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as _get_path_mock,
+    ):
+        f.write("")
+        f.close()
+        ClientConfigV1Alpha1.delete("testclient")
+        _get_path_mock.assert_called_once_with("testclient")
+        assert os.path.exists(f.name) is False
 
 
 def test_client_config_delete_does_not_exist_raises():
@@ -446,7 +465,30 @@ async def test_create_lease_passes_exporter_name():
         tags=None,
         allow_disabled=False,
         context=None,
+        shared_with=None,
     )
+
+
+@pytest.mark.asyncio
+async def test_get_lease_calls_get_lease():
+    config = ClientConfigV1Alpha1(
+        alias="testclient",
+        metadata=ObjectMeta(namespace="default", name="testclient"),
+        endpoint="jumpstarter.my-lab.com:1443",
+        token="token",
+        drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*"], unsafe=False),
+    )
+    mock_service = Mock()
+    mock_service.GetLease = AsyncMock(return_value="lease")
+
+    with (
+        patch("jumpstarter.config.client.ClientConfigV1Alpha1.channel", AsyncMock(return_value=Mock())),
+        patch("jumpstarter.config.client.ClientService", return_value=mock_service),
+    ):
+        result = await config.get_lease(name="01a0153c-277c-7992-9476-8ff0f68ba6f8")
+
+    assert result == "lease"
+    mock_service.GetLease.assert_awaited_once_with(name="01a0153c-277c-7992-9476-8ff0f68ba6f8")
 
 
 @pytest.mark.asyncio
@@ -611,3 +653,102 @@ async def test_list_exporters_with_leases_propagates_page_size():
 
     lease_calls = mock_service.ListLeases.call_args_list
     assert lease_calls[0].kwargs["page_size"] == 50
+
+
+def test_client_config_list_redacts_credentials_by_default():
+    config = ClientConfigV1Alpha1(
+        alias="testclient",
+        metadata=ObjectMeta(namespace="default", name="testclient"),
+        endpoint="jumpstarter.my-lab.com:1443",
+        token="secret-token",
+        refresh_token="secret-refresh-token",
+        drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*"], unsafe=False),
+    )
+    configs = ClientConfigListV1Alpha1(current_config="testclient", items=[config])
+
+    dumped = configs.model_dump(mode="json", by_alias=True)
+    assert "token" not in dumped["items"][0]
+    assert "refresh_token" not in dumped["items"][0]
+    assert "secret-token" not in configs.model_dump_json()
+    assert "secret-token" not in configs.dump_json()
+    assert "secret-token" not in configs.dump_yaml()
+
+    configs.include_credentials = True
+    dumped = configs.model_dump(mode="json", by_alias=True)
+    assert dumped["items"][0]["token"] == "secret-token"
+    assert dumped["items"][0]["refresh_token"] == "secret-refresh-token"
+
+
+@pytest.mark.asyncio
+async def test_list_exporters_with_leases_preserves_exporter_fields():
+    from jumpstarter.client.grpc import Exporter, ExporterList, Lease, LeaseList
+    from jumpstarter.common.enums import ExporterStatus
+
+    exp = Exporter(
+        namespace="default",
+        name="exporter-a",
+        labels={"env": "test"},
+        online=True,
+        status=ExporterStatus.LEASE_READY,
+        enabled=True,
+        deprecated_labels={"old": "label"},
+        lease=None,
+    )
+    unleased = Exporter(
+        namespace="default",
+        name="exporter-b",
+        labels={},
+        online=False,
+        status=ExporterStatus.OFFLINE,
+        enabled=False,
+        lease=None,
+    )
+    condition = kubernetes_pb2.Condition(type="Ready", status="True")
+    lease = Lease(
+        namespace="default",
+        name="lease-a",
+        selector="env=test",
+        duration=timedelta(hours=1),
+        client="c",
+        exporter="exporter-a",
+        effective_begin_time=datetime(2026, 1, 1, tzinfo=UTC),
+        conditions=[condition],
+    )
+
+    exporter_page = ExporterList(exporters=[exp, unleased], next_page_token="")
+    lease_page = LeaseList(leases=[lease], next_page_token="")
+
+    config = ClientConfigV1Alpha1(
+        alias="testclient",
+        metadata=ObjectMeta(namespace="default", name="testclient"),
+        endpoint="jumpstarter.my-lab.com:1443",
+        token="token",
+        drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*"], unsafe=False),
+    )
+
+    mock_service = Mock()
+    mock_service.ListExporters = AsyncMock(return_value=exporter_page)
+    mock_service.ListLeases = AsyncMock(return_value=lease_page)
+
+    with (
+        patch("jumpstarter.config.client.ClientConfigV1Alpha1.channel", AsyncMock(return_value=Mock())),
+        patch("jumpstarter.config.client.ClientService", return_value=mock_service),
+    ):
+        result = await config.list_exporters(
+            filter=None, include_leases=True, include_online=True, include_status=True
+        )
+
+    leased, offline = result.exporters
+    assert leased.lease is not None and leased.lease.name == "lease-a"
+    assert leased.status == ExporterStatus.LEASE_READY
+    assert leased.enabled is True
+    assert leased.online is True
+    assert leased.labels == {"env": "test"}
+    assert leased.deprecated_labels == {"old": "label"}
+    assert offline.lease is None
+    assert offline.status == ExporterStatus.OFFLINE
+    assert offline.enabled is False
+
+    dumped = result.model_dump(mode="json")["exporters"][0]
+    assert dumped["status"] is not None
+    assert dumped["lease"]["name"] == "lease-a"

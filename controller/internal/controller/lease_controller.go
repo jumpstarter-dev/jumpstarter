@@ -24,6 +24,7 @@ import (
 	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	jmpmetrics "github.com/jumpstarter-dev/jumpstarter/controller/internal/metrics"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -82,7 +83,7 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		)
 	}
 
-	leaseLogValues := []interface{}{"lease_id", lease.Name, "client", lease.Spec.ClientRef.Name}
+	leaseLogValues := []any{"lease_id", lease.Name, "client", lease.Spec.ClientRef.Name}
 	if lease.Spec.ExporterRef != nil {
 		leaseLogValues = append(leaseLogValues, "exporter", lease.Spec.ExporterRef.Name)
 	}
@@ -93,6 +94,12 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	ctx = ctrl.LoggerInto(ctx, logger)
 
 	var result ctrl.Result
+	priorExporterRef := lease.Status.ExporterRef
+	priorUnsatisfiable := meta.IsStatusConditionTrue(
+		lease.Status.Conditions,
+		string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+	)
+
 	if err := r.reconcileStatusExporterRef(ctx, &result, &lease); err != nil {
 		return result, err
 	}
@@ -105,9 +112,19 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return result, err
 	}
 
+	// Recompute the effective shared-with set before persisting status so the
+	// derived Status.SharedWith is saved by the single Status().Update below.
+	if err := r.reconcileSharedWithPolicies(ctx, &lease); err != nil {
+		return result, err
+	}
+
 	if err := r.Status().Update(ctx, &lease); err != nil {
 		return RequeueConflict(logger, result, err)
 	}
+
+	// Record acquisition only after status is persisted so a failed Update
+	// cannot double-count on requeue (success or failure).
+	recordLeaseAcquisitionTransition(ctx, &lease, priorExporterRef, priorUnsatisfiable)
 
 	if lease.Labels == nil {
 		lease.Labels = make(map[string]string)
@@ -196,7 +213,7 @@ func (r *LeaseReconciler) reconcileStatusBeginEndTimes(
 	return nil
 }
 
-// Also manages LeaseConditionTypeUnsatisfiable and LeaseConditionTypePending
+// reconcileStatusExporterRef manages LeaseConditionTypeUnsatisfiable and LeaseConditionTypePending.
 func (r *LeaseReconciler) reconcileStatusExporterRef(
 	ctx context.Context,
 	result *ctrl.Result,
@@ -260,14 +277,11 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 				)
 				return nil
 			}
-			// Check if the explicitly requested exporter is disabled
-			if !exporter.IsEnabled() && !lease.Spec.AllowDisabled {
+			if err := jumpstarterdevv1alpha1.ValidateExporterEnabledForLease(&exporter, lease.Spec.AllowDisabled); err != nil {
 				lease.SetStatusUnsatisfiable(
 					"ExporterDisabled",
-					"Requested exporter %s is disabled. "+
-						"To lease a disabled exporter, set spec.allowDisabled: true on the Lease, "+
-						"or use --allow-disabled with jmp create lease",
-					exporter.Name,
+					"%s",
+					err.Error(),
 				)
 				return nil
 			}
@@ -395,6 +409,55 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 	return nil
 }
 
+// leaseAcquisitionTransitionResult returns the metric result for a persisted
+// status transition, or ("", false) when no acquisition should be recorded.
+// Recording is based on the pre-reconcile persisted snapshot so requeues after
+// a successful Status().Update do not double-count.
+func leaseAcquisitionTransitionResult(
+	priorExporterRef *corev1.LocalObjectReference,
+	priorUnsatisfiable bool,
+	lease *jumpstarterdevv1alpha1.Lease,
+) (string, bool) {
+	if lease == nil {
+		return "", false
+	}
+	if priorExporterRef == nil && lease.Status.ExporterRef != nil {
+		return jmpmetrics.ResultSuccess, true
+	}
+	nowUnsatisfiable := meta.IsStatusConditionTrue(
+		lease.Status.Conditions,
+		string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+	)
+	if !priorUnsatisfiable && nowUnsatisfiable {
+		return jmpmetrics.ResultFailure, true
+	}
+	return "", false
+}
+
+func recordLeaseAcquisitionTransition(
+	ctx context.Context,
+	lease *jumpstarterdevv1alpha1.Lease,
+	priorExporterRef *corev1.LocalObjectReference,
+	priorUnsatisfiable bool,
+) {
+	result, ok := leaseAcquisitionTransitionResult(priorExporterRef, priorUnsatisfiable, lease)
+	if !ok {
+		return
+	}
+	recordLeaseAcquisition(ctx, lease, result)
+}
+
+func recordLeaseAcquisition(ctx context.Context, lease *jumpstarterdevv1alpha1.Lease, result string) {
+	exemplars := map[string]string{}
+	if lease != nil {
+		exemplars["lease_id"] = lease.Name
+		if lease.Spec.ClientRef.Name != "" {
+			exemplars["client"] = lease.Spec.ClientRef.Name
+		}
+	}
+	jmpmetrics.Default.RecordAcquisition(ctx, result, exemplars)
+}
+
 // attachMatchingPolicies attaches the matching policies to the list of online exporters
 // if the exporter matches the policy and the client matches the policy's client selector
 // the exporter is approved for leasing
@@ -479,6 +542,74 @@ func (r *LeaseReconciler) attachMatchingPolicies(ctx context.Context, lease *jum
 		}
 	}
 	return approvedExporters, unmatchedDescriptions, nil
+}
+
+func (r *LeaseReconciler) reconcileSharedWithPolicies(
+	ctx context.Context,
+	lease *jumpstarterdevv1alpha1.Lease,
+) error {
+	// Status.SharedWith is derived state: the effective, policy-filtered access
+	// set. It is recomputed on every reconcile so the controller never mutates the
+	// owner-controlled Spec.SharedWith.
+	if len(lease.Spec.SharedWith) == 0 || lease.Status.Ended {
+		lease.Status.SharedWith = nil
+		return nil
+	}
+
+	// Without an assigned exporter, exporter-scoped policies cannot be evaluated
+	// yet; grant the desired set for now. It is filtered once an exporter is bound.
+	if lease.Status.ExporterRef == nil {
+		lease.Status.SharedWith = slices.Clone(lease.Spec.SharedWith)
+		return nil
+	}
+
+	var policies jumpstarterdevv1alpha1.ExporterAccessPolicyList
+	if err := r.List(ctx, &policies, client.InNamespace(lease.Namespace)); err != nil {
+		return fmt.Errorf("reconcileSharedWithPolicies: failed to list policies: %w", err)
+	}
+
+	// No policies configured means sharing is unrestricted.
+	if len(policies.Items) == 0 {
+		lease.Status.SharedWith = slices.Clone(lease.Spec.SharedWith)
+		return nil
+	}
+
+	var exporter jumpstarterdevv1alpha1.Exporter
+	if err := r.Get(ctx, types.NamespacedName{
+		Namespace: lease.Namespace,
+		Name:      lease.Status.ExporterRef.Name,
+	}, &exporter); err != nil {
+		return fmt.Errorf("reconcileSharedWithPolicies: failed to get exporter: %w", err)
+	}
+
+	logger := log.FromContext(ctx)
+	var allowed []string
+	for _, clientName := range lease.Spec.SharedWith {
+		var jclient jumpstarterdevv1alpha1.Client
+		if err := r.Get(ctx, types.NamespacedName{
+			Namespace: lease.Namespace,
+			Name:      clientName,
+		}, &jclient); err != nil {
+			if k8serrors.IsNotFound(err) {
+				logger.Info("excluding shared client from effective access: not found", "client", clientName)
+				continue
+			}
+			return fmt.Errorf("reconcileSharedWithPolicies: failed to get shared client %s: %w", clientName, err)
+		}
+		allowedByPolicy, err := jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies.Items, &exporter, &jclient)
+		if err != nil {
+			// A malformed policy selector must not silently exclude the shared client;
+			// return the error so the reconcile is retried and the misconfiguration surfaces.
+			return fmt.Errorf("reconcileSharedWithPolicies: failed to evaluate access policy for client %s: %w", clientName, err)
+		}
+		if allowedByPolicy {
+			allowed = append(allowed, clientName)
+		} else {
+			logger.Info("excluding shared client from effective access: denied by policy", "client", clientName)
+		}
+	}
+	lease.Status.SharedWith = allowed
+	return nil
 }
 
 // ListMatchingExporters returns a list of exporters that match the selector of the lease
@@ -568,7 +699,7 @@ func orderApprovedExporters(exporters []ApprovedExporter) []ApprovedExporter {
 // filterOutLeasedExporters filters out the exporters that are already leased
 func filterOutLeasedExporters(exporters []ApprovedExporter) []ApprovedExporter {
 	// Exclude exporter that are already leased and non-takeable
-	return slices.DeleteFunc(exporters, func(ae ApprovedExporter) bool {
+	return slices.DeleteFunc(slices.Clone(exporters), func(ae ApprovedExporter) bool {
 		existingLease := ae.ExistingLease
 		if existingLease == nil {
 			return false
@@ -617,7 +748,7 @@ func filterOutDisabledExporters(exporters []jumpstarterdevv1alpha1.Exporter) []j
 // filterOutOfflineExporters filters out the exporters that are not online
 func filterOutOfflineExporters(approvedExporters []ApprovedExporter) []ApprovedExporter {
 	onlineExporters := slices.DeleteFunc(
-		approvedExporters,
+		slices.Clone(approvedExporters),
 		func(approvedExporter ApprovedExporter) bool {
 			return !meta.IsStatusConditionTrue(
 				approvedExporter.Exporter.Status.Conditions,

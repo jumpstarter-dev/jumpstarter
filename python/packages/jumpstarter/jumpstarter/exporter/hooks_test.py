@@ -195,8 +195,8 @@ class TestHookExecutor:
             await executor.execute_before_lease_hook(lease_scope)
 
         assert "exit code 1" in str(exc_info.value)
-        assert exc_info.value.on_failure == "endLease"
-        assert exc_info.value.hook_type == "before_lease"
+        assert exc_info.value.on_failure == "endLease"  # type: ignore[attr-defined]
+        assert exc_info.value.hook_type == "before_lease"  # type: ignore[attr-defined]
 
     async def test_hook_timeout(self, lease_scope) -> None:
         timeout_config = HookConfigV1Alpha1(
@@ -208,7 +208,7 @@ class TestHookExecutor:
             await executor.execute_before_lease_hook(lease_scope)
 
         assert "timed out after 1 seconds" in str(exc_info.value)
-        assert exc_info.value.on_failure == "exit"
+        assert exc_info.value.on_failure == "exit"  # type: ignore[attr-defined]
 
     @macos_pty_xfail
     async def test_hook_environment_variables(self, lease_scope) -> None:
@@ -419,7 +419,7 @@ class TestHookExecutor:
             warning_logged_in_context = context_active
             return original_handle(error_msg, on_failure, hook_type, cause)
 
-        executor._handle_hook_failure = tracking_handle
+        executor._handle_hook_failure = tracking_handle  # type: ignore[method-assign]
 
         result = await executor.execute_before_lease_hook(lease_scope)
         assert result is not None
@@ -1041,6 +1041,33 @@ class TestHookExecutor:
         ):
             result = await executor.execute_before_lease_hook(lease_scope)
             assert result is None
+
+    @macos_pty_xfail
+    async def test_main_loop_non_oserror_is_caught(self, lease_scope) -> None:
+        """Verify that a non-OSError exception in the main read loop is caught
+        by the except-Exception handler and does not propagate to the caller.
+        """
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="echo MAIN_LOOP_ERROR",
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        def flush_lines_always_error(buffer, output_lines):
+            raise ValueError("simulated non-OSError")
+
+        with (
+              patch("jumpstarter.exporter.hooks._flush_lines", side_effect=flush_lines_always_error),
+              patch("jumpstarter.exporter.hooks.logger") as mock_logger,
+          ):
+              result = await executor.execute_before_lease_hook(lease_scope)
+              assert result is None
+              debug_calls = [str(c) for c in mock_logger.debug.call_args_list]
+              assert any("unexpected error in loop" in c for c in debug_calls), (
+                  f"Expected main-loop exception handler to log, got: {debug_calls}"
+              )
 
     @macos_pty_xfail
     async def test_drain_retries_empty_select_then_captures_data(self, lease_scope) -> None:

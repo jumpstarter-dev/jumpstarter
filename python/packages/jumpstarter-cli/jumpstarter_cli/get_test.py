@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 
 import click
@@ -188,7 +188,7 @@ class TestGetExportersLogic:
         # This test verifies that the new parse_with function would reject unknown options
         # The actual CLI behavior now validates input, so unknown options cause failures
         # This test documents the expected behavior change
-        pass  # Test is no longer relevant since parse_with now validates input
+        # Test is no longer relevant since parse_with now validates input
 
     def test_exporter_list_creation_basic(self):
         """Test creating ExporterList with basic exporters"""
@@ -207,102 +207,6 @@ class TestGetExportersLogic:
         assert len(exporters.exporters) == 2
         assert exporters.include_online is True
         assert exporters.include_leases is True
-
-
-class TestGetExportersDeprecatedLabelsWarning:
-    def test_deprecated_labels_emit_warnings_with_message(self):
-        from unittest.mock import patch
-
-        exporters = ExporterList(
-            exporters=[
-                Exporter(
-                    namespace="default",
-                    name="test-exp",
-                    labels={"board": "rpi4", "old-key": "val"},
-                    deprecated_labels={"old-key": "Use new-key instead"},
-                ),
-            ],
-            next_page_token=None,
-        )
-
-        config = Mock()
-        config.list_exporters.return_value = exporters
-
-        from jumpstarter_cli.get import get_exporters
-
-        with patch("jumpstarter_cli.get.model_print"), patch("jumpstarter_cli.get.click") as mock_click:
-            mock_click.style.side_effect = lambda text, **kwargs: text
-            get_exporters.callback.__wrapped__.__wrapped__(
-                config=config, selector=None, output="text", with_options=[], allow_disabled=False,
-                show_hidden_labels=False, page_size=100,
-            )
-
-        mock_click.echo.assert_called_once()
-        warning_msg = mock_click.echo.call_args[0][0]
-        assert "old-key" in warning_msg
-        assert "test-exp" in warning_msg
-        assert "deprecated" in warning_msg
-        assert "Use new-key instead" in warning_msg
-
-    def test_deprecated_labels_emit_warnings_without_message(self):
-        from unittest.mock import patch
-
-        exporters = ExporterList(
-            exporters=[
-                Exporter(
-                    namespace="default",
-                    name="test-exp",
-                    labels={"board": "rpi4", "old-key": "val"},
-                    deprecated_labels={"old-key": ""},
-                ),
-            ],
-            next_page_token=None,
-        )
-
-        config = Mock()
-        config.list_exporters.return_value = exporters
-
-        from jumpstarter_cli.get import get_exporters
-
-        with patch("jumpstarter_cli.get.model_print"), patch("jumpstarter_cli.get.click") as mock_click:
-            mock_click.style.side_effect = lambda text, **kwargs: text
-            get_exporters.callback.__wrapped__.__wrapped__(
-                config=config, selector=None, output="text", with_options=[], allow_disabled=False,
-                show_hidden_labels=False, page_size=100,
-            )
-
-        mock_click.echo.assert_called_once()
-        warning_msg = mock_click.echo.call_args[0][0]
-        assert "old-key" in warning_msg
-        assert "deprecated" in warning_msg
-        assert "Use new-key instead" not in warning_msg
-
-    def test_no_warnings_when_no_deprecated_labels(self):
-        from unittest.mock import patch
-
-        exporters = ExporterList(
-            exporters=[
-                Exporter(
-                    namespace="default",
-                    name="test-exp",
-                    labels={"board": "rpi4"},
-                ),
-            ],
-            next_page_token=None,
-        )
-
-        config = Mock()
-        config.list_exporters.return_value = exporters
-
-        from jumpstarter_cli.get import get_exporters
-
-        with patch("jumpstarter_cli.get.model_print"), patch("jumpstarter_cli.get.click") as mock_click:
-            get_exporters.callback.__wrapped__.__wrapped__(
-                config=config, selector=None, output="text", with_options=[], allow_disabled=False,
-                show_hidden_labels=False, page_size=100,
-            )
-
-        mock_click.echo.assert_not_called()
 
 
 class TestGetExportersCallsPaginatedMethod:
@@ -446,7 +350,7 @@ class TestGetLeasesLogic:
         active_lease = self.create_test_lease(
             name="active-lease",
             status="In-Use",
-            effective_begin_time=datetime(2023, 1, 1, 10, 0, 0)
+            effective_begin_time=datetime(2023, 1, 1, 10, 0, 0, tzinfo=UTC)
         )
 
         leases_from_server = LeaseList(leases=[active_lease], next_page_token=None)
@@ -461,13 +365,13 @@ class TestGetLeasesLogic:
         active_lease = self.create_test_lease(
             name="active-lease",
             status="In-Use",
-            effective_begin_time=datetime(2023, 1, 1, 10, 0, 0)
+            effective_begin_time=datetime(2023, 1, 1, 10, 0, 0, tzinfo=UTC)
         )
         expired_lease = self.create_test_lease(
             name="expired-lease",
             status="Expired",
-            effective_begin_time=datetime(2023, 1, 1, 8, 0, 0),
-            effective_end_time=datetime(2023, 1, 1, 9, 0, 0)
+            effective_begin_time=datetime(2023, 1, 1, 8, 0, 0, tzinfo=UTC),
+            effective_end_time=datetime(2023, 1, 1, 9, 0, 0, tzinfo=UTC)
         )
 
         leases_from_server = LeaseList(leases=[active_lease, expired_lease], next_page_token=None)
@@ -482,17 +386,17 @@ class TestGetLeasesLogic:
         lease1 = self.create_test_lease(
             name="lease-1",
             status="In-Use",
-            effective_begin_time=datetime(2023, 1, 1, 10, 0, 0)
+            effective_begin_time=datetime(2023, 1, 1, 10, 0, 0, tzinfo=UTC)
         )
         lease2 = self.create_test_lease(
             name="lease-2",
             status="Waiting",
-            effective_begin_time=datetime(2023, 1, 1, 11, 0, 0)
+            effective_begin_time=datetime(2023, 1, 1, 11, 0, 0, tzinfo=UTC)
         )
         lease3 = self.create_test_lease(
             name="lease-3",
             status="In-Use",
-            effective_begin_time=datetime(2023, 1, 1, 12, 0, 0)
+            effective_begin_time=datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
         )
 
         leases_from_server = LeaseList(leases=[lease1, lease2, lease3], next_page_token=None)
@@ -506,12 +410,12 @@ class TestGetLeasesLogic:
         expired1 = self.create_test_lease(
             name="expired-1",
             status="Expired",
-            effective_end_time=datetime(2023, 1, 1, 8, 0, 0)
+            effective_end_time=datetime(2023, 1, 1, 8, 0, 0, tzinfo=UTC)
         )
         expired2 = self.create_test_lease(
             name="expired-2",
             status="Expired",
-            effective_end_time=datetime(2023, 1, 1, 9, 0, 0)
+            effective_end_time=datetime(2023, 1, 1, 9, 0, 0, tzinfo=UTC)
         )
 
         leases_from_server = LeaseList(leases=[expired1, expired2], next_page_token=None)
@@ -526,84 +430,6 @@ class TestGetLeasesLogic:
         assert len(leases_from_server.leases) == 0
 
 
-class TestGetLeasesDeprecatedLabelsWarning:
-    def _make_lease(self, name="test-lease", deprecated_labels=None):
-        return Lease(
-            namespace="default",
-            name=name,
-            selector="legacy-board=rpi4",
-            exporter_name=None,
-            duration=timedelta(minutes=30),
-            effective_duration=None,
-            begin_time=None,
-            client="test-client",
-            exporter="test-exporter",
-            conditions=[],
-            effective_begin_time=None,
-            effective_end_time=None,
-            deprecated_labels=deprecated_labels or {},
-        )
-
-    def _make_config(self, leases):
-        config = Mock()
-        config.metadata = type("Metadata", (), {"name": "test-client"})()
-        config.list_leases = Mock(return_value=LeaseList(leases=leases, next_page_token=None))
-        return config
-
-    def test_deprecated_labels_emit_warnings_with_message(self):
-        from unittest.mock import patch
-
-        lease = self._make_lease(deprecated_labels={"legacy-board": "Use board instead"})
-        config = self._make_config([lease])
-
-        with patch("jumpstarter_cli.get.model_print"), patch("jumpstarter_cli.get.click") as mock_click:
-            mock_click.style.side_effect = lambda text, **kwargs: text
-            _unwrapped_get_leases(
-                config=config, selector=None, output=None, show_all=False, all_clients=False, tag_filter=None,
-                page_size=100,
-            )
-
-        mock_click.echo.assert_called_once()
-        warning_msg = mock_click.echo.call_args[0][0]
-        assert "legacy-board" in warning_msg
-        assert "test-lease" in warning_msg
-        assert "deprecated" in warning_msg
-        assert "Use board instead" in warning_msg
-
-    def test_deprecated_labels_emit_warnings_without_message(self):
-        from unittest.mock import patch
-
-        lease = self._make_lease(deprecated_labels={"legacy-board": ""})
-        config = self._make_config([lease])
-
-        with patch("jumpstarter_cli.get.model_print"), patch("jumpstarter_cli.get.click") as mock_click:
-            mock_click.style.side_effect = lambda text, **kwargs: text
-            _unwrapped_get_leases(
-                config=config, selector=None, output=None, show_all=False, all_clients=False, tag_filter=None,
-                page_size=100,
-            )
-
-        mock_click.echo.assert_called_once()
-        warning_msg = mock_click.echo.call_args[0][0]
-        assert "legacy-board" in warning_msg
-        assert "deprecated" in warning_msg
-        assert "Use board instead" not in warning_msg
-
-    def test_no_warnings_when_no_deprecated_labels(self):
-        from unittest.mock import patch
-
-        lease = self._make_lease()
-        config = self._make_config([lease])
-
-        with patch("jumpstarter_cli.get.model_print"), patch("jumpstarter_cli.get.click") as mock_click:
-            _unwrapped_get_leases(
-                config=config, selector=None, output=None, show_all=False, all_clients=False, tag_filter=None,
-                page_size=100,
-            )
-
-        mock_click.echo.assert_not_called()
-
-
 class TestGetLeasesShortFlags:
     def test_get_leases_accepts_short_a_flag(self):
         from .get import get_leases
@@ -612,6 +438,12 @@ class TestGetLeasesShortFlags:
             param for param in get_leases.params if param.name == "show_all"
         )
         assert "-a" in all_option.opts
+
+    def test_get_leases_accepts_optional_name_argument(self):
+        from .get import get_leases
+
+        name_arg = next(param for param in get_leases.params if param.name == "name")
+        assert name_arg.required is False
 
 
 _unwrapped_get_leases = get_leases.callback.__wrapped__.__wrapped__
@@ -709,3 +541,86 @@ class TestGetLeasesClientFiltering:
         printed_leases = mock_print.call_args[0][0]
         assert len(printed_leases.leases) == 2
         config.list_leases.assert_called_once_with(filter=None, only_active=False, tag_filter=None, page_size=100)
+
+
+class TestGetLeaseByName:
+    def _make_lease(self, name, client="my-client"):
+        return Lease(
+            namespace="default",
+            name=name,
+            selector="board-type=qc8775",
+            exporter_name=None,
+            duration=timedelta(minutes=30),
+            effective_duration=None,
+            begin_time=None,
+            client=client,
+            exporter="qti-snapdragon-ride4-sa8775p-03",
+            conditions=[],
+            effective_begin_time=None,
+            effective_end_time=None,
+        )
+
+    def _make_config(self, lease):
+        config = Mock()
+        config.metadata = type("Metadata", (), {"name": "my-client"})()
+        config.get_lease = Mock(return_value=lease)
+        config.list_leases = Mock()
+        return config
+
+    def test_get_lease_by_name_calls_get_lease(self):
+        from unittest.mock import patch
+
+        lease = self._make_lease("01a0153c-277c-7992-9476-8ff0f68ba6f8")
+        config = self._make_config(lease)
+
+        with patch("jumpstarter_cli.get.model_print") as mock_print:
+            _unwrapped_get_leases(
+                config=config, selector=None, output="yaml", show_all=False, all_clients=False,
+                tag_filter=None, page_size=100, name=lease.name,
+            )
+
+        config.get_lease.assert_called_once_with(name=lease.name)
+        config.list_leases.assert_not_called()
+        printed = mock_print.call_args[0][0]
+        assert printed is lease
+        assert printed.exporter == "qti-snapdragon-ride4-sa8775p-03"
+
+    def test_get_lease_by_name_shows_other_clients_lease(self):
+        from unittest.mock import patch
+
+        lease = self._make_lease("other-lease", client="other-client")
+        config = self._make_config(lease)
+
+        with patch("jumpstarter_cli.get.model_print") as mock_print:
+            _unwrapped_get_leases(
+                config=config, selector=None, output=None, show_all=False, all_clients=False,
+                tag_filter=None, page_size=100, name=lease.name,
+            )
+
+        printed = mock_print.call_args[0][0]
+        assert printed.client == "other-client"
+        config.list_leases.assert_not_called()
+
+    def test_get_lease_by_name_rejects_selector(self):
+        config = self._make_config(self._make_lease("lease-1"))
+
+        with pytest.raises(click.UsageError, match="NAME cannot be combined"):
+            _unwrapped_get_leases(
+                config=config, selector="board-type=qc8775", output=None, show_all=False,
+                all_clients=False, tag_filter=None, page_size=100, name="lease-1",
+            )
+
+        config.get_lease.assert_not_called()
+        config.list_leases.assert_not_called()
+
+    def test_get_lease_by_name_rejects_tag_filter(self):
+        config = self._make_config(self._make_lease("lease-1"))
+
+        with pytest.raises(click.UsageError, match="NAME cannot be combined"):
+            _unwrapped_get_leases(
+                config=config, selector=None, output=None, show_all=False,
+                all_clients=False, tag_filter="build=1234", page_size=100, name="lease-1",
+            )
+
+        config.get_lease.assert_not_called()
+        config.list_leases.assert_not_called()

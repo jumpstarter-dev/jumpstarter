@@ -19,7 +19,7 @@ from rich.logging import RichHandler
 
 from jumpstarter.client.status_monitor import StatusMonitor
 from jumpstarter.common import ExporterStatus, LogSource, Metadata
-from jumpstarter.common.exceptions import JumpstarterException
+from jumpstarter.common.exceptions import CONSOLE_IN_USE_MARKER, JumpstarterException
 from jumpstarter.common.resources import ResourceMetadata
 from jumpstarter.common.serde import decode_value, encode_value
 from jumpstarter.common.streams import (
@@ -58,6 +58,14 @@ class ExporterNotReady(DriverError):
     """
 
 
+def _console_in_use_error(code: StatusCode, details: str | None) -> DriverError | None:
+    """Map an exclusive-console rejection to a DriverError with the marker stripped."""
+    details = details or ""
+    if code == StatusCode.FAILED_PRECONDITION and CONSOLE_IN_USE_MARKER in details:
+        return DriverError(details.split(CONSOLE_IN_USE_MARKER, 1)[1].strip())
+    return None
+
+
 @dataclass(kw_only=True)
 class AsyncDriverClient(
     Metadata,
@@ -94,7 +102,7 @@ class AsyncDriverClient(
         message = f"DriverCall '{method}' failed with gRPC {error.code().name}: {details}"
         try:
             debug = error.debug_error_string()
-        except Exception:
+        except Exception:  # noqa: BLE001
             debug = ""
         if debug:
             self.logger.debug("gRPC debug for %s: %s", method, debug)
@@ -167,7 +175,7 @@ class AsyncDriverClient(
             try:
                 status = await self.get_status_async()
                 self.logger.debug("[POLL %d] GetStatus returned: %s", poll_count, status)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 # Connection error - keep trying
                 self.logger.debug("[POLL %d] Error getting status, will retry: %s", poll_count, e)
                 await anyio.sleep(poll_interval)
@@ -238,7 +246,7 @@ class AsyncDriverClient(
                 return True
             raise DriverError(f"Failed to end session: {e.details()}") from e
 
-    async def wait_for_hook_status(self, target_status: "ExporterStatus", timeout: float = 60.0) -> bool:
+    async def wait_for_hook_status(self, target_status: ExporterStatus, timeout: float = 60.0) -> bool:
         """Wait for exporter to reach a target status using polling.
 
         Used after end_session_async() to wait for afterLease hook completion
@@ -384,7 +392,7 @@ class AsyncDriverClient(
             error_message = self._format_rpc_error(method, e)
             match e.code():
                 case StatusCode.FAILED_PRECONDITION:
-                    raise ExporterNotReady(e.details()) from None
+                    raise ExporterNotReady(e.details() or "") from None
                 case StatusCode.NOT_FOUND:
                     raise DriverMethodNotImplemented(error_message) from None
                 case StatusCode.UNIMPLEMENTED:
@@ -413,15 +421,15 @@ class AsyncDriverClient(
         except AioRpcError as e:
             match e.code():
                 case StatusCode.FAILED_PRECONDITION:
-                    raise ExporterNotReady(e.details()) from None
+                    raise ExporterNotReady(e.details() or "") from None
                 case StatusCode.UNIMPLEMENTED:
-                    raise DriverMethodNotImplemented(e.details()) from None
+                    raise DriverMethodNotImplemented(e.details() or "") from None
                 case StatusCode.INVALID_ARGUMENT:
-                    raise DriverInvalidArgument(e.details()) from None
+                    raise DriverInvalidArgument(e.details() or "") from None
                 case StatusCode.UNKNOWN:
-                    raise DriverError(e.details()) from None
+                    raise DriverError(e.details() or "") from None
                 case _:
-                    raise DriverError(e.details()) from e
+                    raise DriverError(e.details() or "") from e
 
     @asynccontextmanager
     async def stream_async(self, method):
@@ -430,7 +438,18 @@ class AsyncDriverClient(
             .model_dump(mode="json", round_trip=True)
             .items(),
         )
-        metadata = dict(list(await context.initial_metadata()))
+        try:
+            metadata = dict(list(await context.initial_metadata()))
+        except AioRpcError as exc:
+            if error := _console_in_use_error(exc.code(), exc.details()):
+                raise error from None
+            raise
+        # An exporter that aborts before sending headers (e.g. console in use)
+        # resolves initial_metadata() empty rather than raising; the status only
+        # surfaces on the first read, which RouterStream turns into a generic
+        # BrokenResourceError. Check it here while it is still inspectable.
+        if context.done() and (error := _console_in_use_error(await context.code(), await context.details())):
+            raise error
         async with MetadataStream(stream=RouterStream(context=context), metadata=metadata) as stream:
             yield stream
 
@@ -449,9 +468,9 @@ class AsyncDriverClient(
         )
         metadata = dict(list(await context.initial_metadata()))
         async with MetadataStream(stream=RouterStream(context=context), metadata=metadata) as rstream:
-            metadata = ResourceMetadata(**rstream.extra(MetadataStreamAttributes.metadata))
+            metadata = ResourceMetadata(**rstream.extra(MetadataStreamAttributes.metadata))  # type: ignore[call-arg]
             if metadata.x_jmp_accept_encoding is None:
-                stream = compress_stream(stream, content_encoding)
+                stream = compress_stream(stream, content_encoding)  # type: ignore[arg-type]
 
             async with forward_stream(ProgressStream(stream=stream), rstream):
                 yield metadata.resource.model_dump(mode="json")
@@ -527,7 +546,7 @@ class AsyncDriverClient(
                     else:
                         self.logger.debug("Log stream error: %s", e.code())
 
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     # Other errors - log and try to reconnect
                     self.logger.debug("Log stream error: %s", e)
 

@@ -9,7 +9,7 @@ authors = [
 ]
 readme = "README.md"
 license = "Apache-2.0"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "jumpstarter-protocol",
     "pyyaml>=6.0.2",
@@ -24,6 +24,7 @@ dependencies = [
     "backports-zstd>=1.1.0 ; python_full_version < '3.14'",
     "click>=8.1.7.2",
     "structlog>=24.1.0",
+    "prometheus-client>=0.21.0",
 ]
 
 [dependency-groups]
@@ -36,6 +37,7 @@ dev = [
     "jumpstarter-driver-power",
     "jumpstarter-driver-network",
     "jumpstarter-driver-composite",
+    "types-protobuf>=5.29.1",
 ]
 
 [tool.coverage.run]
@@ -58,3 +60,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.hooks.pin_jumpstarter]
 name = "pin_jumpstarter"
+
+[tool.ty.rules]
+call-non-callable = "warn"
+unresolved-reference = "warn"

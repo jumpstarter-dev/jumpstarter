@@ -43,19 +43,18 @@ class BleWriteNotifyStreamClient(DriverClient):
         with PexpectAdapter(client=self) as adapter:
             yield adapter
 
-    def cli(self):  # noqa: C901
+    def cli(self):
         @driver_click_group(self)
         def base():
             """ble client"""
-            pass
 
         @base.command()
         def info():
             """Get target information"""
             print(self.info())
 
-        @base.command()
-        def start_console():
+        @base.command(aliases=["start-console"])
+        def console():
             """Start BLE console"""
             click.echo(
                 "\nStarting ble console ... exit with CTRL+B x 3 times\n")

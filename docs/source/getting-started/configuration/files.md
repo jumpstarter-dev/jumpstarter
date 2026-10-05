@@ -46,6 +46,10 @@ token: "******************" # An authentication token
 drivers:
   allow: ["jumpstarter_drivers_*", "vendorpackage.*"] # Driver packages the client can dynamically load
   unsafe: false # Allow any driver package to load dynamically
+leases:
+  acquisition_timeout: 7200 # Timeout in seconds for lease acquisition (default: 7200)
+  dial_timeout: 60 # Time limit for the exporter to become ready after lease is acquired (default: 60)
+  retry_timeout: 300 # Time limit for re-attempting a lease when the exporter becomes unreachable (default: 300, 0 to disable)
 ```
 
 **Environment Variables**:
@@ -59,6 +63,18 @@ drivers:
 - `JMP_TOKEN` - Auth token (overrides config file)
 - `JMP_DRIVERS_ALLOW` - Comma-separated list of allowed driver namespaces
 - `JUMPSTARTER_FORCE_SYSTEM_CERTS` - Set to `1` to force system CA certificates
+- `JMP_RETRY_TIMEOUT` - Retry timeout in seconds for unreachable exporters (overrides config, default: 300)
+- `JMP_DIAL_TIMEOUT` - Dial timeout in seconds for slow exporters (overrides config, default: 60)
+- `JMP_OIDC_CALLBACK_PORT` - Local port for the OIDC callback during `jmp login` (useful for SSH tunneling; default: OS-assigned)
+- `JMP_GRPC_PASSPHRASE` - Shared passphrase for authenticating against passphrase-protected exporters
+- `NO_COLOR` - Set to any value (including empty) to disable ANSI color sequences in the `jmp shell` prompt (see [no-color.org](https://no-color.org/); does not affect status icons)
+- `NO_ICONS` - Set to any value (including empty) to force ASCII status icons and the `jmp shell` prompt (e.g. `jumpstarter ^<exporter> >`)
+
+**Shell Session Variables** (automatically set by `jmp shell`):
+
+- `JMP_LEASE` - Active lease name (enables reconnection via `JMP_LEASE=<name> jmp shell`)
+- `JMP_EXPORTER` - Name of the connected exporter
+- `JMP_EXPORTER_LABELS` - Connected exporter's labels as comma-separated `key=value` pairs
 
 **CLI Commands**:
 ```{code-block}  console
@@ -67,6 +83,15 @@ $ jmp config client use <alias>     # Switch to a different client config
 $ jmp config client list            # List available client configs
 $ jmp config client delete <alias>  # Remove a client config locally
 ```
+
+**Python API compatibility**: `ClientConfigV1Alpha1.save(config)` now uses
+`config.path` when it is set, preserving the location of a loaded configuration.
+Previously, omitting the destination always saved to the alias path in the
+clients directory. New configurations with `path=None` still use the alias
+path, and an explicit `path` argument takes precedence. Callers that require
+the previous behavior should explicitly pass
+`ClientConfigV1Alpha1.CLIENT_CONFIGS_PATH / f"{config.alias}.yaml"` as the
+destination.
 
 ## Exporter Configuration
 
@@ -97,6 +122,7 @@ token: "******************" # An authentication token
 motd: | # Optional message of the day shown to clients when they enter a shell
   Welcome to myexporter!
   Flash the device with: j storage flash
+statusStreamRetryTimeout: 1800 # Retry time after Status fails or ends (default: 1800s)
 export: # Configure drivers to expose to the clients
   power:
     type: "jumpstarter_driver_power.driver.PduPower" # The driver Python class path and type
@@ -127,12 +153,24 @@ The optional `hooks` section configures lifecycle scripts that run at {term}`lea
 boundaries. See [{term}`Hook`s](../../introduction/hooks.md) for full details on
 {term}`hook` configuration, environment variables, and failure handling.
 
+If the controller's Status stream fails or ends, and no new update arrives
+within `statusStreamRetryTimeout` seconds, `jmp run` exits with status `75`
+(`EX_TEMPFAIL`).
+The default is 30 minutes. A service manager can then restart the exporter and
+reload its configuration. Status `1` remains the intentional shutdown code for
+a hook configured with `onFailure: exit`; units using
+`RestartPreventExitStatus=1` should still restart on status `75`.
+`UNAUTHENTICATED` and `PERMISSION_DENIED` stream errors also exit with status
+`75`, so a restart can reload credentials or recover after controller access
+to the Kubernetes API is restored.
+
 **Environment Variables**:
 - `JUMPSTARTER_GRPC_INSECURE` / `JMP_GRPC_INSECURE` - Set to `1` to disable TLS verification
 - `JMP_ENDPOINT` - {term}`gRPC` endpoint (overrides config file)
 - `JMP_TOKEN` - Auth token (overrides config file)
 - `JMP_NAMESPACE` - Namespace in the {term}`controller`
 - `JMP_NAME` - {term}`Exporter` name
+- `JMP_DISABLE_COMPRESSION` - Set to `1` to disable stream compression (gzip, xz, bz2, zstd) for driver data transfers
 
 **CLI Commands**:
 ```{code-block}  console

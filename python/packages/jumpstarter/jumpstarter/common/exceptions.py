@@ -1,5 +1,12 @@
 import sys
 
+# Machine-readable marker prefixed to the wire message of an exclusive-console
+# rejection (ExclusiveSessionActive). It travels in the gRPC status details, so
+# the CLI can recognize the error by the FAILED_PRECONDITION code plus this
+# stable token instead of matching the human-readable wording (which may be
+# reworded or localized). The CLI strips it before display. Keep it stable.
+CONSOLE_IN_USE_MARKER = "[jumpstarter:console-in-use]"
+
 
 class JumpstarterException(Exception):
     """Base class for jumpstarter-specific errors.
@@ -42,13 +49,15 @@ class JumpstarterException(Exception):
 class ConnectionError(JumpstarterException):
     """Raised when a connection to a jumpstarter server fails."""
 
-    pass
+
+
+class CertificateDiscoveryError(ConnectionError):
+    """TLS certificate discovery failed before a gRPC channel was created."""
 
 
 class ExporterOfflineError(ConnectionError):
     """Raised when the connection to the exporter is lost during a lease."""
 
-    pass
 
 
 class ExporterUnreachableError(JumpstarterException):
@@ -57,38 +66,32 @@ class ExporterUnreachableError(JumpstarterException):
     Signals that the lease should be released and re-acquired.
     """
 
-    pass
 
 
 class ConfigurationError(JumpstarterException):
     """Raised when a configuration error exists."""
 
-    pass
 
 
 class ArgumentError(JumpstarterException):
     """Raised when a cli argument is not valid."""
 
-    pass
 
 
 
 class FileNotFoundError(JumpstarterException, FileNotFoundError):
     """Raised when a file is not found."""
 
-    pass
 
 
 class ReauthenticationFailed(JumpstarterException):
     """Raised when a re-authentication fails."""
 
-    pass
 
 
 class EnvironmentVariableNotSetError(JumpstarterException):
     """Raised when a environment variable is not set."""
 
-    pass
 
 
 class MissingDriverError(JumpstarterException):

@@ -1,6 +1,5 @@
 """High-level cluster operations and orchestration."""
 
-from typing import Optional
 
 from ..callbacks import OutputCallback, SilentCallback
 from ..exceptions import (
@@ -32,7 +31,7 @@ from .operator import install_jumpstarter_operator
 
 
 def validate_cluster_type_selection(
-    kind: Optional[str], minikube: Optional[str], k3s: Optional[str] = None
+    kind: str | None, minikube: str | None, k3s: str | None = None
 ) -> ClusterType:
     """Validate cluster type selection and return the cluster type."""
     selected = sum(1 for x in [kind, minikube, k3s] if x is not None)
@@ -52,9 +51,9 @@ def validate_cluster_type_selection(
 
 async def delete_cluster_by_name(  # noqa: C901
     cluster_name: str,
-    cluster_type: Optional[str] = None,
+    cluster_type: str | None = None,
     force: bool = False,
-    callback: Optional[OutputCallback] = None,
+    callback: OutputCallback | None = None,
 ) -> None:
     """Delete a cluster by name, with auto-detection if type not specified."""
     if callback is None:
@@ -94,12 +93,11 @@ async def delete_cluster_by_name(  # noqa: C901
         raise ClusterTypeValidationError(cluster_type, ["kind", "minikube"])
 
     # Confirm deletion unless force is specified
-    if not force:
-        if not callback.confirm(
-            f'This will permanently delete the "{cluster_name}" {cluster_type} cluster and ALL its data. Continue?'
-        ):
-            callback.progress("Cluster deletion cancelled.")
-            return
+    if not force and not callback.confirm(
+        f'This will permanently delete the "{cluster_name}" {cluster_type} cluster and ALL its data. Continue?'
+    ):
+        callback.progress("Cluster deletion cancelled.")
+        return
 
     # Delete the cluster
     if cluster_type == "kind":
@@ -118,19 +116,19 @@ async def create_cluster_and_install(  # noqa: C901
     minikube_extra_args: str,
     kind: str,
     minikube: str,
-    extra_certs: Optional[str] = None,
+    extra_certs: str | None = None,
     install_jumpstarter: bool = True,
     namespace: str = "jumpstarter-lab",
-    version: Optional[str] = None,
-    kubeconfig: Optional[str] = None,
-    context: Optional[str] = None,
-    ip: Optional[str] = None,
-    basedomain: Optional[str] = None,
-    grpc_endpoint: Optional[str] = None,
-    router_endpoint: Optional[str] = None,
-    callback: Optional[OutputCallback] = None,
-    k3s_ssh_host: Optional[str] = None,
-    operator_installer: Optional[str] = None,
+    version: str | None = None,
+    kubeconfig: str | None = None,
+    context: str | None = None,
+    ip: str | None = None,
+    basedomain: str | None = None,
+    grpc_endpoint: str | None = None,
+    router_endpoint: str | None = None,
+    callback: OutputCallback | None = None,
+    k3s_ssh_host: str | None = None,
+    operator_installer: str | None = None,
 ) -> None:
     """Create a cluster and optionally install Jumpstarter."""
     if callback is None:
@@ -184,7 +182,7 @@ async def create_cluster_and_install(  # noqa: C901
             ip = extract_host_from_ssh(k3s_ssh_host)
 
         # Configure endpoints
-        actual_ip, actual_basedomain, actual_grpc, actual_router = await configure_endpoints(
+        _actual_ip, actual_basedomain, actual_grpc, actual_router = await configure_endpoints(
             cluster_type, minikube, cluster_name, ip, basedomain, grpc_endpoint, router_endpoint
         )
 
@@ -219,8 +217,8 @@ async def create_cluster_only(
     minikube_extra_args: str,
     kind: str,
     minikube: str,
-    custom_certs: Optional[str] = None,
-    callback: Optional[OutputCallback] = None,
+    custom_certs: str | None = None,
+    callback: OutputCallback | None = None,
 ) -> None:
     """Create a cluster without installing Jumpstarter."""
     await create_cluster_and_install(

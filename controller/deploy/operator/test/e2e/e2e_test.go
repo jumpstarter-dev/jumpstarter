@@ -116,7 +116,7 @@ var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 			req := clientset.CoreV1().Pods(namespace).GetLogs(controllerPodName, &corev1.PodLogOptions{})
 			podLogs, err := req.Stream(ctx)
 			if err == nil {
-				defer podLogs.Close()
+				defer func() { _ = podLogs.Close() }()
 				buf := new(bytes.Buffer)
 				_, _ = io.Copy(buf, podLogs)
 				_, _ = fmt.Fprintf(GinkgoWriter, "Controller logs:\n %s", buf.String())
@@ -144,7 +144,7 @@ var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 			req = clientset.CoreV1().Pods(namespace).GetLogs("curl-metrics", &corev1.PodLogOptions{})
 			metricsLogs, err := req.Stream(ctx)
 			if err == nil {
-				defer metricsLogs.Close()
+				defer func() { _ = metricsLogs.Close() }()
 				buf := new(bytes.Buffer)
 				_, _ = io.Copy(buf, metricsLogs)
 				_, _ = fmt.Fprintf(GinkgoWriter, "Metrics logs:\n %s", buf.String())
@@ -251,8 +251,7 @@ var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 			Expect(err).NotTo(HaveOccurred(), "Metrics service should exist")
 
 			By("getting the service account token")
-			token, err := serviceAccountToken()
-			Expect(err).NotTo(HaveOccurred())
+			token := serviceAccountToken()
 			Expect(token).NotTo(BeEmpty())
 
 			By("waiting for the metrics endpoint to be ready")
@@ -282,7 +281,7 @@ var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 				req := clientset.CoreV1().Pods(namespace).GetLogs(controllerPodName, &corev1.PodLogOptions{})
 				podLogs, err := req.Stream(ctx)
 				g.Expect(err).NotTo(HaveOccurred())
-				defer podLogs.Close()
+				defer func() { _ = podLogs.Close() }()
 				buf := new(bytes.Buffer)
 				_, _ = io.Copy(buf, podLogs)
 				g.Expect(buf.String()).To(ContainSubstring("controller-runtime.metrics\tServing metrics server"),
@@ -480,7 +479,11 @@ grpc:
     minTime: 1s
     permitWithoutStream: true
 deprecatedLabels: {}
-hiddenLabels: {}
+hiddenLabels:
+  keys:
+  - exporterset.jumpstarter.dev/name
+  - exporterset.jumpstarter.dev/class
+  - exporterset.jumpstarter.dev/provisioner
 leasePolicy:
   maxTags: 10
 provisioning:
@@ -495,7 +498,7 @@ provisioning:
 				actualRouter := cm.Data["router"]
 
 				// Unmarshal and compare as map[string]interface{} for robustness to field ordering
-				var actualConfigObj, expectedConfigObj map[string]interface{}
+				var actualConfigObj, expectedConfigObj map[string]any
 				err = yaml.Unmarshal([]byte(actualConfig), &actualConfigObj)
 				g.Expect(err).NotTo(HaveOccurred())
 
@@ -503,7 +506,7 @@ provisioning:
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(actualConfigObj).To(Equal(expectedConfigObj), "config map 'config' entry did not match expected")
 
-				var actualRouterObj, expectedRouterObj map[string]interface{}
+				var actualRouterObj, expectedRouterObj map[string]any
 				err = yaml.Unmarshal([]byte(actualRouter), &actualRouterObj)
 				g.Expect(err).NotTo(HaveOccurred())
 
@@ -514,8 +517,8 @@ provisioning:
 			Eventually(verifyConfigMap, 1*time.Minute).Should(Succeed())
 		})
 
-		It("should emit controller update events when controller spec changes", func() {
-			By("updating Jumpstarter controller replicas to trigger a deployment update")
+		It("should clamp controller replicas > 1 to 1 with a warning event", func() {
+			By("updating Jumpstarter controller replicas to 3")
 			jumpstarter := &operatorv1alpha1.Jumpstarter{}
 			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      "jumpstarter",
@@ -523,8 +526,7 @@ provisioning:
 			}, jumpstarter)
 			Expect(err).NotTo(HaveOccurred())
 
-			originalReplicas := jumpstarter.Spec.Controller.Replicas
-			jumpstarter.Spec.Controller.Replicas = originalReplicas + 1
+			jumpstarter.Spec.Controller.Replicas = 3
 			Expect(k8sClient.Update(ctx, jumpstarter)).To(Succeed())
 			DeferCleanup(func() {
 				restore := &operatorv1alpha1.Jumpstarter{}
@@ -535,11 +537,11 @@ provisioning:
 				if getErr != nil {
 					return
 				}
-				restore.Spec.Controller.Replicas = originalReplicas
+				restore.Spec.Controller.Replicas = 1
 				_ = k8sClient.Update(ctx, restore)
 			})
 
-			By("verifying the controller deployment reflects the updated replica count")
+			By("verifying the controller deployment still has 1 replica (clamped)")
 			Eventually(func(g Gomega) {
 				deployment := &appsv1.Deployment{}
 				getErr := k8sClient.Get(ctx, types.NamespacedName{
@@ -548,7 +550,65 @@ provisioning:
 				}, deployment)
 				g.Expect(getErr).NotTo(HaveOccurred())
 				g.Expect(deployment.Spec.Replicas).NotTo(BeNil())
-				g.Expect(*deployment.Spec.Replicas).To(Equal(originalReplicas + 1))
+				g.Expect(*deployment.Spec.Replicas).To(Equal(int32(1)))
+			}, 2*time.Minute).Should(Succeed())
+
+			By("verifying ReplicasClamped warning event was emitted")
+			Eventually(func(g Gomega) {
+				eventList := &corev1.EventList{}
+				listErr := k8sClient.List(ctx, eventList, client.InNamespace(dynamicTestNamespace))
+				g.Expect(listErr).NotTo(HaveOccurred())
+
+				found := false
+				for _, event := range eventList.Items {
+					if event.InvolvedObject.Kind == "Jumpstarter" &&
+						event.InvolvedObject.Name == "jumpstarter" &&
+						event.Reason == "ReplicasClamped" &&
+						event.Type == "Warning" {
+						found = true
+						break
+					}
+				}
+				g.Expect(found).To(BeTrue(), "expected ReplicasClamped warning event for jumpstarter")
+			}, 2*time.Minute).Should(Succeed())
+		})
+
+		It("should emit controller update events when controller spec changes", func() {
+			By("adding a pod annotation to trigger a controller deployment update")
+			jumpstarter := &operatorv1alpha1.Jumpstarter{}
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "jumpstarter",
+				Namespace: dynamicTestNamespace,
+			}, jumpstarter)
+			Expect(err).NotTo(HaveOccurred())
+
+			if jumpstarter.Spec.Controller.PodAnnotations == nil {
+				jumpstarter.Spec.Controller.PodAnnotations = map[string]string{}
+			}
+			jumpstarter.Spec.Controller.PodAnnotations["e2e-test/trigger"] = "deployment-update"
+			Expect(k8sClient.Update(ctx, jumpstarter)).To(Succeed())
+			DeferCleanup(func() {
+				restore := &operatorv1alpha1.Jumpstarter{}
+				getErr := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "jumpstarter",
+					Namespace: dynamicTestNamespace,
+				}, restore)
+				if getErr != nil {
+					return
+				}
+				delete(restore.Spec.Controller.PodAnnotations, "e2e-test/trigger")
+				_ = k8sClient.Update(ctx, restore)
+			})
+
+			By("verifying the controller deployment reflects the new pod annotation")
+			Eventually(func(g Gomega) {
+				deployment := &appsv1.Deployment{}
+				getErr := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "jumpstarter-controller",
+					Namespace: dynamicTestNamespace,
+				}, deployment)
+				g.Expect(getErr).NotTo(HaveOccurred())
+				g.Expect(deployment.Spec.Template.Annotations).To(HaveKeyWithValue("e2e-test/trigger", "deployment-update"))
 			}, 2*time.Minute).Should(Succeed())
 
 			By("verifying ControllerDeploymentUpdated event was emitted on Jumpstarter resource")
@@ -611,8 +671,12 @@ provisioning:
 				current := &jumpstarterdevv1alpha1.Exporter{}
 				getErr := k8sClient.Get(ctx, types.NamespacedName{Name: exporterName, Namespace: dynamicTestNamespace}, current)
 				g.Expect(getErr).NotTo(HaveOccurred())
-				g.Expect(meta.IsStatusConditionTrue(current.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline))).To(BeTrue())
-				g.Expect(meta.IsStatusConditionTrue(current.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered))).To(BeTrue())
+				g.Expect(meta.IsStatusConditionTrue(
+					current.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+				)).To(BeTrue())
+				g.Expect(meta.IsStatusConditionTrue(
+					current.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
+				)).To(BeTrue())
 			}, 2*time.Minute).Should(Succeed())
 
 			By("forcing exporter into offline state by setting an old lastSeen timestamp")
@@ -632,7 +696,9 @@ provisioning:
 			}, 2*time.Minute).Should(Succeed())
 
 			By("capturing baseline ExporterOnline event count before reconnect")
-			onlineEventCountBeforeReconnect := countEventReasonForObject(dynamicTestNamespace, "Exporter", exporterName, "ExporterOnline")
+			onlineEventCountBeforeReconnect := countEventReasonForObject(
+				dynamicTestNamespace, "Exporter", exporterName, "ExporterOnline",
+			)
 
 			By("setting exporter back to online state")
 			Eventually(func(g Gomega) {
@@ -655,9 +721,9 @@ provisioning:
 
 		It("should allow access to grpc endpoints", func() {
 			By("checking endpoint grpc access to controller")
-			waitForGRPCEndpoint("grpc.jumpstarter.127.0.0.1.nip.io:8082", 1*time.Minute)
+			waitForGRPCEndpoint("grpc.jumpstarter.127.0.0.1.nip.io:8082")
 			By("checking endpoint grpc access to router")
-			waitForGRPCEndpoint("router.jumpstarter.127.0.0.1.nip.io:8083", 1*time.Minute)
+			waitForGRPCEndpoint("router.jumpstarter.127.0.0.1.nip.io:8083")
 		})
 
 		It("should create new routers if the number of replicas is increased", func() {
@@ -858,21 +924,21 @@ provisioning:
 				}, configmap)
 				g.Expect(err).NotTo(HaveOccurred())
 
-				var configObj map[string]interface{}
+				var configObj map[string]any
 				err = yaml.Unmarshal([]byte(configmap.Data["config"]), &configObj)
 				g.Expect(err).NotTo(HaveOccurred())
 
-				provisioning, ok := configObj["provisioning"].(map[string]interface{})
+				provisioning, ok := configObj["provisioning"].(map[string]any)
 				g.Expect(ok).To(BeTrue())
-				g.Expect(provisioning["enabled"]).To(Equal(true))
+				g.Expect(provisioning["enabled"]).To(BeTrue())
 			}, 1*time.Minute).Should(Succeed())
 		})
 
 		It("should allow access to ingress grpc endpoints", func() {
 			By("checking endpoint grpc access to controller")
-			waitForGRPCEndpoint("grpc.jumpstarter.127.0.0.1.nip.io:5443", 1*time.Minute)
+			waitForGRPCEndpoint("grpc.jumpstarter.127.0.0.1.nip.io:5443")
 			By("checking endpoint grpc access to router")
-			waitForGRPCEndpoint("router.jumpstarter.127.0.0.1.nip.io:5443", 1*time.Minute)
+			waitForGRPCEndpoint("router.jumpstarter.127.0.0.1.nip.io:5443")
 		})
 
 		AfterAll(func() {
@@ -960,7 +1026,9 @@ spec:
           nodeport:
             enabled: true
             port: 30041
-`, jumpstarterName, loginTLSTestNamespace, baseDomain, image, baseDomain, loginTLSSecretName, baseDomain, image, baseDomain)
+`,
+				jumpstarterName, loginTLSTestNamespace, baseDomain, image, baseDomain,
+				loginTLSSecretName, baseDomain, image, baseDomain)
 
 			err = applyYAML(jumpstarterYAML)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create Jumpstarter CR with login TLS config")
@@ -1506,7 +1574,7 @@ spec:
 				g.Expect(cert.Spec.IsCA).To(BeTrue())
 			}, 1*time.Minute).Should(Succeed())
 
-			waitForCertificateReady(certManagerTestNamespace, caCertName, 2*time.Minute)
+			waitForCertificateReady(certManagerTestNamespace, caCertName)
 		})
 
 		It("should create the CA issuer", func() {
@@ -1538,7 +1606,7 @@ spec:
 				g.Expect(cert.Spec.IsCA).To(BeFalse())
 			}, 1*time.Minute).Should(Succeed())
 
-			waitForCertificateReady(certManagerTestNamespace, controllerCertName, 2*time.Minute)
+			waitForCertificateReady(certManagerTestNamespace, controllerCertName)
 
 			By("verifying the controller TLS secret exists")
 			verifyTLSSecret(certManagerTestNamespace, controllerCertName)
@@ -1557,7 +1625,7 @@ spec:
 				g.Expect(cert.Spec.IsCA).To(BeFalse())
 			}, 1*time.Minute).Should(Succeed())
 
-			waitForCertificateReady(certManagerTestNamespace, routerCertName, 2*time.Minute)
+			waitForCertificateReady(certManagerTestNamespace, routerCertName)
 
 			By("verifying the router TLS secret exists")
 			verifyTLSSecret(certManagerTestNamespace, routerCertName)
@@ -1871,7 +1939,7 @@ spec:
 				g.Expect(cert.Spec.DNSNames).To(ContainElement("grpc." + baseDomain))
 			}, 1*time.Minute).Should(Succeed())
 
-			waitForCertificateReady(externalIssuerTestNamespace, controllerCertName, 2*time.Minute)
+			waitForCertificateReady(externalIssuerTestNamespace, controllerCertName)
 
 			By("verifying the controller TLS secret exists")
 			verifyTLSSecret(externalIssuerTestNamespace, controllerCertName)
@@ -1897,7 +1965,7 @@ spec:
 				g.Expect(cert.Spec.DNSNames).To(ContainElement("router-0." + baseDomain))
 			}, 1*time.Minute).Should(Succeed())
 
-			waitForCertificateReady(externalIssuerTestNamespace, routerCertName, 2*time.Minute)
+			waitForCertificateReady(externalIssuerTestNamespace, routerCertName)
 
 			By("verifying the router TLS secret exists")
 			verifyTLSSecret(externalIssuerTestNamespace, routerCertName)
@@ -2093,7 +2161,7 @@ dSignatureRotatedSignatureRotatedSignatureRotatedSignatureRotatedSig==
 
 // serviceAccountToken returns a token for the specified service account in the given namespace.
 // It uses the Kubernetes TokenRequest API to generate a token by directly calling the API.
-func serviceAccountToken() (string, error) {
+func serviceAccountToken() string {
 	var token string
 	verifyTokenCreation := func(g Gomega) {
 		// Create a token request for the service account
@@ -2117,7 +2185,7 @@ func serviceAccountToken() (string, error) {
 	}
 	Eventually(verifyTokenCreation).Should(Succeed())
 
-	return token, nil
+	return token
 }
 
 // getMetricsOutput retrieves and returns the logs from the curl pod used to access the metrics endpoint.
@@ -2126,7 +2194,7 @@ func getMetricsOutput() string {
 	req := clientset.CoreV1().Pods(namespace).GetLogs("curl-metrics", &corev1.PodLogOptions{})
 	podLogs, err := req.Stream(ctx)
 	Expect(err).NotTo(HaveOccurred(), "Failed to retrieve logs from curl pod")
-	defer podLogs.Close()
+	defer func() { _ = podLogs.Close() }()
 
 	buf := new(bytes.Buffer)
 	_, _ = io.Copy(buf, podLogs)
@@ -2181,10 +2249,7 @@ func applyYAML(yamlContent string) error {
 
 // waitForGRPCEndpoint waits for a gRPC endpoint to be ready by attempting to list services using grpcurl.
 // It uses Eventually from Gomega to poll the endpoint until it responds or times out.
-// Args:
-//   - endpoint: the gRPC endpoint address (e.g., "grpc.jumpstarter.127.0.0.1.nip.io:8082")
-//   - timeout: maximum time to wait for the endpoint to be ready (default is used from Eventually if not specified)
-func waitForGRPCEndpoint(endpoint string, timeout time.Duration) {
+func waitForGRPCEndpoint(endpoint string) {
 	By(fmt.Sprintf("waiting for gRPC endpoint %s to be ready", endpoint))
 
 	// Get grpcurl path from environment or use default
@@ -2205,7 +2270,7 @@ func waitForGRPCEndpoint(endpoint string, timeout time.Duration) {
 		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("gRPC endpoint %s is not ready", endpoint))
 	}
 
-	Eventually(checkEndpoint, timeout, 2*time.Second).Should(Succeed())
+	Eventually(checkEndpoint, 1*time.Minute, 2*time.Second).Should(Succeed())
 }
 
 // verifyCondition checks if a Jumpstarter resource has a specific condition with the expected status.
@@ -2220,6 +2285,10 @@ func verifyCondition(js *operatorv1alpha1.Jumpstarter, condType string, expected
 
 // waitForCondition waits for a Jumpstarter resource to have a specific condition with the expected status.
 // It polls the resource until the condition is met or the timeout is reached.
+//
+// resource-condition helper, not a single-scenario one; hardcoding the name would misrepresent it.
+//
+//nolint:unparam // name is only exercised with one value today, but this is a generic
 func waitForCondition(namespace, name, condType string, expectedStatus metav1.ConditionStatus, timeout time.Duration) {
 	By(fmt.Sprintf("waiting for condition %s to be %s", condType, expectedStatus))
 
@@ -2330,7 +2399,7 @@ func waitForClusterIssuerReady(name string, timeout time.Duration) {
 }
 
 // waitForCertificateReady waits for a Certificate to have a Ready condition.
-func waitForCertificateReady(namespace, name string, timeout time.Duration) {
+func waitForCertificateReady(namespace, name string) {
 	By(fmt.Sprintf("waiting for Certificate %s to be ready", name))
 
 	checkReady := func(g Gomega) {
@@ -2352,7 +2421,7 @@ func waitForCertificateReady(namespace, name string, timeout time.Duration) {
 		g.Expect(false).To(BeTrue(), fmt.Sprintf("Certificate %s has no Ready condition", name))
 	}
 
-	Eventually(checkReady, timeout, 2*time.Second).Should(Succeed())
+	Eventually(checkReady, 2*time.Minute, 2*time.Second).Should(Succeed())
 }
 
 // verifyTLSSecret checks that a TLS secret exists and has the expected keys.
@@ -2415,6 +2484,32 @@ func verifyDeploymentHasTLSMount(g Gomega, namespace, name string) {
 	}
 	g.Expect(hasCertEnv).To(BeTrue(), fmt.Sprintf("deployment %s missing EXTERNAL_CERT_PEM env var", name))
 	g.Expect(hasKeyEnv).To(BeTrue(), fmt.Sprintf("deployment %s missing EXTERNAL_KEY_PEM env var", name))
+}
+
+// verifyDeploymentHasControllerKey checks that a deployment sources CONTROLLER_KEY from
+// jumpstarter-controller-secret. PushLogs bearer-token verification requires the same
+// signing seed as the controller.
+func verifyDeploymentHasControllerKey(g Gomega, namespace, name string) {
+	deployment := &appsv1.Deployment{}
+	err := k8sClient.Get(ctx, types.NamespacedName{
+		Name:      name,
+		Namespace: namespace,
+	}, deployment)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(deployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
+
+	var found bool
+	for _, env := range deployment.Spec.Template.Spec.Containers[0].Env {
+		if env.Name != "CONTROLLER_KEY" {
+			continue
+		}
+		g.Expect(env.ValueFrom).NotTo(BeNil())
+		g.Expect(env.ValueFrom.SecretKeyRef).NotTo(BeNil())
+		g.Expect(env.ValueFrom.SecretKeyRef.Name).To(Equal("jumpstarter-controller-secret"))
+		g.Expect(env.ValueFrom.SecretKeyRef.Key).To(Equal("key"))
+		found = true
+	}
+	g.Expect(found).To(BeTrue(), fmt.Sprintf("deployment %s missing CONTROLLER_KEY env var", name))
 }
 
 // verifyDeploymentHasNoTLSMount checks that a deployment does NOT have TLS configuration.

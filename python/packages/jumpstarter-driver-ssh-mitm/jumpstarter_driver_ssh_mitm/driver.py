@@ -15,7 +15,6 @@ import threading
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import paramiko
 from anyio import get_cancelled_exc_class
@@ -80,7 +79,7 @@ class StreamSocket:
                 except (BrokenPipeError, OSError):
                     break
             self._running = False
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             socket_logger.debug("recv loop stopped: %s", exc)
 
     def _forward_send(self):
@@ -95,13 +94,13 @@ class StreamSocket:
                         self.portal.call(self.send_stream.send, data)
                     else:
                         break
-                except socket.timeout:
+                except TimeoutError:
                     # Allow loop to check _running and exit cleanly
                     continue
                 except (BrokenPipeError, OSError):
                     break
             self._running = False
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             socket_logger.debug("send loop stopped: %s", exc)
 
     def get_paramiko_socket(self):
@@ -116,22 +115,14 @@ class StreamSocket:
             self.portal.call(self.recv_stream.aclose)
         with suppress(Exception):
             self.portal.call(self.send_stream.aclose)
-        try:
+        with suppress(Exception):
             self.client_sock.shutdown(socket.SHUT_RDWR)
-        except Exception:
-            pass
-        try:
+        with suppress(Exception):
             self.server_sock.shutdown(socket.SHUT_RDWR)
-        except Exception:
-            pass
-        try:
+        with suppress(Exception):
             self.client_sock.close()
-        except Exception:
-            pass
-        try:
+        with suppress(Exception):
             self.server_sock.close()
-        except Exception:
-            pass
         self._recv_thread.join(timeout=5)
         self._send_thread.join(timeout=5)
         if self._recv_thread.is_alive() or self._send_thread.is_alive():
@@ -156,9 +147,7 @@ class MITMServerInterface(paramiko.ServerInterface):
         self.pty_term: str = "xterm"
 
     def _check_username(self, username: str | None) -> bool:
-        if self.allowed_username and username and username != self.allowed_username:
-            return False
-        return True
+        return not (self.allowed_username and username and username != self.allowed_username)
 
     def check_channel_request(self, kind, chanid):
         if kind == "session":
@@ -220,7 +209,7 @@ class SSHMITM(Driver):
     default_pty_width: int = 80
     default_pty_height: int = 24
 
-    _host_key: Optional[paramiko.RSAKey] = field(init=False, default=None)
+    _host_key: paramiko.RSAKey | None = field(init=False, default=None)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -249,7 +238,7 @@ class SSHMITM(Driver):
         if self.ssh_identity_file:
             try:
                 return Path(self.ssh_identity_file).expanduser().read_text()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 raise ConfigurationError(f"Failed to read ssh_identity_file '{self.ssh_identity_file}': {e}") from None
         return None
 
@@ -325,13 +314,11 @@ class SSHMITM(Driver):
                     if not data:
                         break
                     dst.sendall(data)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 self.logger.debug("Channel %s ended: %s", name, e)
             finally:
-                try:
+                with suppress(Exception):
                     dst.close()
-                except Exception:
-                    pass
 
         t1 = threading.Thread(target=forward, args=(client_channel, dut_channel, "client→dut"), daemon=True)
         t2 = threading.Thread(target=forward, args=(dut_channel, client_channel, "dut→client"), daemon=True)
@@ -362,7 +349,7 @@ class SSHMITM(Driver):
 
         return dut_client, channel
 
-    def _handle_session(self, transport: paramiko.Transport):  # noqa: C901
+    def _handle_session(self, transport: paramiko.Transport):
         """Handle incoming SSH session: accept client, connect to DUT, proxy."""
         server = MITMServerInterface(self.default_username, default_dut_username=self.default_username)
 
@@ -394,28 +381,21 @@ class SSHMITM(Driver):
             self._proxy_channels(client_channel, dut_channel)
 
             if server.exec_command:
-                try:
+                with suppress(Exception):
                     exit_status = dut_channel.recv_exit_status()
                     client_channel.send_exit_status(exit_status)
-                except Exception:
-                    pass
-                finally:
-                    client_channel.close()
+                client_channel.close()
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.error("Failed to connect to DUT: %s", e)
             client_channel.close()
         finally:
             if dut_channel:
-                try:
+                with suppress(Exception):
                     dut_channel.close()
-                except Exception:
-                    pass
             if dut_client:
-                try:
+                with suppress(Exception):
                     dut_client.close()
-                except Exception:
-                    pass
             transport.close()
 
     @exportstream
@@ -448,7 +428,7 @@ class SSHMITM(Driver):
 
             try:
                 yield client_stream
-            except (cancelled_exc, Exception) as e:
+            except (cancelled_exc, Exception) as e:  # noqa: BLE001
                 if isinstance(e, cancelled_exc):
                     self.logger.debug("SSH stream cancelled by client")
                 else:

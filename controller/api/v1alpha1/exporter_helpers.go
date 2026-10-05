@@ -1,12 +1,12 @@
 package v1alpha1
 
 import (
+	"fmt"
 	"strings"
 
 	cpb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/client/v1"
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/service/utils"
-	"google.golang.org/protobuf/proto"
 	"k8s.io/apimachinery/pkg/api/meta"
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -15,6 +15,21 @@ import (
 // Returns true if Enabled is nil (backward compatibility) or explicitly set to true.
 func (e *Exporter) IsEnabled() bool {
 	return e.Spec.Enabled == nil || *e.Spec.Enabled
+}
+
+// ValidateExporterEnabledForLease rejects disabled exporters unless the lease
+// explicitly allows them. Callers can apply their own error transport around
+// the returned validation error.
+func ValidateExporterEnabledForLease(exporter *Exporter, allowDisabled bool) error {
+	if exporter == nil || exporter.IsEnabled() || allowDisabled {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"requested exporter %s is disabled. To lease a disabled exporter, set spec.allowDisabled: true on the Lease, "+
+			"or use --allow-disabled with jmp create lease or jmp shell",
+		exporter.Name,
+	)
 }
 
 func (e *Exporter) InternalSubject() string {
@@ -39,10 +54,10 @@ func (e *Exporter) ToProtobuf() *cpb.Exporter {
 	return &cpb.Exporter{
 		Name:          utils.UnparseExporterIdentifier(kclient.ObjectKeyFromObject(e)),
 		Labels:        e.Labels,
-		Online:        isOnline,
+		Online:        isOnline, //nolint:staticcheck // populated for older clients still reading this field
 		Status:        stringToProtoStatus(e.Status.ExporterStatusValue),
 		StatusMessage: e.Status.StatusMessage,
-		Enabled:       proto.Bool(e.IsEnabled()),
+		Enabled:       new(e.IsEnabled()),
 	}
 }
 

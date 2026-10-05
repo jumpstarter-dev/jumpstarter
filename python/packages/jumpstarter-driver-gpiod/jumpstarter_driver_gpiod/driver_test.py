@@ -95,6 +95,13 @@ class TestDigitalOutputClient:
         assert "on" in cli_group.commands
         assert "off" in cli_group.commands
         assert "read" in cli_group.commands
+        assert "status" in cli_group.commands
+
+    def test_power_switch_uses_the_power_client(self):
+        """PowerSwitch gets on/off/cycle/status from the base PowerClient."""
+        from jumpstarter_driver_gpiod.driver import PowerSwitch
+
+        assert PowerSwitch.client() == "jumpstarter_driver_power.client.PowerClient"
 
 
 class TestDigitalInputClient:
@@ -141,7 +148,7 @@ class TestDriverMethods:
     def test_digital_output_initialization(self, mock_gpiod):
         """Test DigitalOutput driver initialization with mocked gpiod"""
         # Set up common mocks
-        mock_chip, mock_line, mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
+        _mock_chip, _mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
 
         # Import and test the driver
         from jumpstarter_driver_gpiod.driver import DigitalOutput
@@ -164,7 +171,7 @@ class TestDriverMethods:
     def test_digital_input_initialization(self, mock_gpiod):
         """Test DigitalInput driver initialization with mocked gpiod"""
         # Set up common mocks
-        mock_chip, mock_line, mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=17)
+        _mock_chip, _mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=17)
 
         # Import and test the driver
         from jumpstarter_driver_gpiod.driver import DigitalInput
@@ -187,7 +194,7 @@ class TestDriverMethods:
     def test_digital_output_methods(self, mock_gpiod):
         """Test DigitalOutput driver methods with mocked gpiod"""
         # Set up common mocks
-        mock_chip, mock_line, mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
+        _mock_chip, _mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
 
         # Import and test the driver
         from jumpstarter_driver_gpiod.driver import DigitalOutput
@@ -213,11 +220,167 @@ class TestDriverMethods:
         assert result.value == 0
         assert str(result) == "inactive"
 
+    @pytest.mark.parametrize("held", [0, 1])
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
+    def test_preserve_keeps_the_level_the_line_is_at(self, mock_gpiod, held):
+        """A restart with initial_value=preserve must never drive a new level.
+
+        The regression this guards: a plain output request drives initial_value,
+        so every exporter restart switched the relay (and the DUT's power).
+        """
+        mock_chip, mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=26)
+        mock_gpiod.LineSettings.side_effect = lambda **kw: MagicMock(**kw)
+        mock_line.get_value.return_value = held
+
+        from jumpstarter_driver_gpiod.driver import DigitalOutput
+
+        DigitalOutput(line=26, active_low=True, bias="pull_up", initial_value="preserve")
+
+        # The claim itself must not make the line an output (that would drive it).
+        probe = mock_chip.request_lines.call_args.kwargs["config"][26]
+        assert getattr(probe, "direction", None) != mock_gpiod.line.Direction.OUTPUT
+
+        # Only then is it reconfigured, as an output at exactly the level read.
+        mock_line.reconfigure_lines.assert_called_once()
+        settings = mock_line.reconfigure_lines.call_args.kwargs["config"][26]
+        assert settings.direction == mock_gpiod.line.Direction.OUTPUT
+        assert settings.output_value == held
+        mock_line.set_value.assert_not_called()
+
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
+    def test_status_reports_the_level_driven(self, mock_gpiod):
+        """status() reports the level last commanded, whatever the pin reads back."""
+        _mock_chip, mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=26)
+        mock_line.get_value.return_value = mock_gpiod.line.Value.ACTIVE  # never consulted
+
+        from jumpstarter_driver_gpiod.driver import DigitalOutput
+
+        driver = DigitalOutput(line=26, active_low=True)
+        assert driver.status() == "off"  # initial_value defaults to inactive
+
+        driver.on()
+        assert driver.status() == "on"
+        driver.off()
+        assert driver.status() == "off"
+
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
+    def test_status_is_unknown_after_a_failed_write(self, mock_gpiod):
+        """A write that raises leaves the state unknown, not at the previous level."""
+        _mock_chip, mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=26)
+
+        from jumpstarter_driver_gpiod.driver import DigitalOutput
+
+        driver = DigitalOutput(line=26)
+        assert driver.status() == "off"
+
+        mock_line.set_value.side_effect = OSError("EIO")
+        with pytest.raises(OSError, match="EIO"):
+            driver.on()
+        assert driver.status() == "unknown"
+
+    @pytest.mark.parametrize(
+        ("fail", "error"),
+        [
+            ("get_value", OSError("EIO")),
+            ("reconfigure_lines", OSError("EINVAL")),
+            ("bad_bias", None),
+        ],
+    )
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
+    def test_preserve_releases_the_line_when_it_fails(self, mock_gpiod, fail, error):
+        """A preserve start that fails after claiming the line must not leave it claimed.
+
+        The request isn't stored until the claim finishes, so close() never sees it;
+        without an explicit release the line stays busy for the next exporter.
+        """
+        _mock_chip, mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=26)
+        mock_gpiod.LineSettings.side_effect = lambda **kw: MagicMock(**kw)
+        mock_line.get_value.return_value = 1
+        kwargs = {}
+        if fail == "bad_bias":
+            kwargs["bias"] = "sideways"
+            expected = ValueError
+        else:
+            getattr(mock_line, fail).side_effect = error
+            expected = type(error)
+
+        from jumpstarter_driver_gpiod.driver import DigitalOutput
+
+        with pytest.raises(expected):
+            DigitalOutput(line=26, initial_value="preserve", **kwargs)
+        mock_line.release.assert_called_once()
+
+    @pytest.mark.parametrize(
+        ("held", "expected"),
+        [(0, "off"), (1, "on")],
+    )
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
+    def test_status_after_preserve_reports_the_preserved_level(self, mock_gpiod, held, expected):
+        """A preserve start has driven the probed level, so status() reports it."""
+        _mock_chip, mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=26)
+        mock_gpiod.LineSettings.side_effect = lambda **kw: MagicMock(**kw)
+        mock_line.get_value.return_value = held
+
+        from jumpstarter_driver_gpiod.driver import DigitalOutput
+
+        driver = DigitalOutput(line=26, initial_value="preserve")
+        assert driver.status() == expected
+
+    @pytest.mark.parametrize("initial_value", ["on", "off", "preserve"])
+    @pytest.mark.parametrize(
+        ("drive", "bias"),
+        [
+            (None, None),
+            ("push_pull", "pull_up"),
+            ("open_drain", "pull_up"),
+            ("open_drain", None),
+            ("open_source", "pull_down"),
+            ("push_pull", "disabled"),
+            ("open_drain", "as_is"),
+        ],
+    )
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
+    def test_digital_output_drive_and_bias(self, mock_gpiod, drive, bias, initial_value):
+        """The output line is configured with the drive and bias from the config, preserve included."""
+        mock_chip, mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=23)
+        mock_gpiod.LineSettings.side_effect = lambda **kw: MagicMock(**kw)
+        mock_line.get_value.return_value = mock_gpiod.line.Value.ACTIVE
+
+        from jumpstarter_driver_gpiod.driver import DigitalOutput
+
+        DigitalOutput(line=23, drive=drive, bias=bias, initial_value=initial_value)
+
+        # preserve probes first, then sets the output settings in the reconfigure
+        configure = mock_line.reconfigure_lines if initial_value == "preserve" else mock_chip.request_lines
+        settings = configure.call_args.kwargs["config"][23]
+        assert settings.direction == mock_gpiod.line.Direction.OUTPUT
+        assert settings.drive == getattr(mock_gpiod.line.Drive, (drive or "push_pull").upper())
+        assert settings.bias == getattr(mock_gpiod.line.Bias, (bias or "as_is").upper())
+
+    @pytest.mark.parametrize(
+        ("config", "drive"),
+        [
+            ({}, "PUSH_PULL"),
+            ({"drive": "push_pull"}, "PUSH_PULL"),
+            ({"drive": "open_drain"}, "OPEN_DRAIN"),
+            ({"drive": "open_source"}, "OPEN_SOURCE"),
+        ],
+    )
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
+    def test_power_switch_drive(self, mock_gpiod, config, drive):
+        """PowerSwitch requests the line with the configured drive."""
+        setup_gpiod_mocks(mock_gpiod, line_number=26)
+
+        from jumpstarter_driver_gpiod.driver import PowerSwitch
+
+        PowerSwitch(line=26, **config)
+        assert mock_gpiod.LineSettings.call_args.kwargs["drive"] == getattr(mock_gpiod.line.Drive, drive)
+
     @patch("jumpstarter_driver_gpiod.driver.gpiod")
     def test_digital_input_methods(self, mock_gpiod):
         """Test DigitalInput driver methods with mocked gpiod"""
         # Set up common mocks
-        mock_chip, mock_line, mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=17)
+        _mock_chip, _mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=17)
 
         # Import and test the driver
         from jumpstarter_driver_gpiod.driver import DigitalInput
@@ -299,7 +462,7 @@ class TestErrorHandling:
     def test_line_request_error(self, mock_gpiod):
         """Test handling of line request error"""
         # Set up common mocks
-        mock_chip, mock_line, mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
+        mock_chip, _mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
 
         # Set up the error condition
         mock_chip.request_lines.side_effect = Exception("Cannot request line")
@@ -313,7 +476,7 @@ class TestErrorHandling:
     def test_invalid_drive_value(self, mock_gpiod):
         """Test initialization with invalid drive value"""
         # Set up common mocks
-        mock_chip, mock_line, mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
+        _mock_chip, _mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
 
         from jumpstarter_driver_gpiod.driver import DigitalOutput
 
@@ -324,7 +487,7 @@ class TestErrorHandling:
     def test_invalid_bias_value(self, mock_gpiod):
         """Test initialization with invalid bias value"""
         # Set up common mocks
-        mock_chip, mock_line, mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
+        _mock_chip, _mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
 
         from jumpstarter_driver_gpiod.driver import DigitalOutput
 
@@ -335,7 +498,7 @@ class TestErrorHandling:
     def test_invalid_initial_value(self, mock_gpiod):
         """Test initialization with invalid initial value"""
         # Set up common mocks
-        mock_chip, mock_line, mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
+        _mock_chip, _mock_line, _mock_settings = setup_gpiod_mocks(mock_gpiod, line_number=18)
 
         from jumpstarter_driver_gpiod.driver import DigitalOutput
 

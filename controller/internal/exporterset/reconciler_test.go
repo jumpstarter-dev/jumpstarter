@@ -18,6 +18,8 @@ package exporterset
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -107,11 +110,11 @@ func makeExporter(name string, online bool, leased bool, enabled bool) *jumpstar
 				Kind:       kindExporterSet,
 				Name:       "demo-set",
 				UID:        testExporterSetUID,
-				Controller: boolPtr(true),
+				Controller: new(true),
 			}},
 		},
 		Spec: jumpstarterdevv1alpha1.ExporterSpec{
-			Enabled: boolPtr(enabled),
+			Enabled: new(enabled),
 		},
 	}
 
@@ -198,14 +201,17 @@ func makePod(name string, phase corev1.PodPhase) *corev1.Pod {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: nsDefault,
-			Labels:    map[string]string{"exporterset": "demo-set"},
+			Labels: map[string]string{
+				"exporterset":        "demo-set",
+				labelExporterSetName: "demo-set",
+			},
 			// Pods are owned by Exporters, not ExporterSets directly.
 			OwnerReferences: []metav1.OwnerReference{{
 				APIVersion: "jumpstarter.dev/v1alpha1",
 				Kind:       kindExporter,
 				Name:       name,
 				UID:        types.UID(name + "-uid"),
-				Controller: boolPtr(true),
+				Controller: new(true),
 			}},
 		},
 		Status: corev1.PodStatus{Phase: phase},
@@ -580,6 +586,185 @@ func TestReconcile_scaleDown_doesNotDeleteLeasedDisabledExporter(t *testing.T) {
 	}
 }
 
+func TestReconcile_exitAndReplace_deletesSucceededUnleasedExporter(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 0
+		es.Spec.MaxReplicas = 1
+		es.Spec.MinAvailableReplicas = 1
+		es.Spec.RecycleStrategy = virtualtargetv1alpha1.RecycleStrategyExitAndReplace
+	})
+
+	// Offline exporter with Succeeded Pod (exitOnLeaseEnd completed).
+	r, c := newReconciler(t,
+		es, makeVTC(),
+		makeExporter("exp-dead", false, false, true),
+		makePod("exp-dead", corev1.PodSucceeded),
+	)
+
+	reconcileOnce(t, r)
+
+	exporters := listExporters(t, c)
+	if len(exporters) != 0 {
+		t.Fatalf("expected Succeeded exporter deleted for ExitAndReplace, got %d", len(exporters))
+	}
+}
+
+func TestReconcile_exitAndReplace_deletesFailedUnleasedExporter(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 0
+		es.Spec.MaxReplicas = 1
+		es.Spec.MinAvailableReplicas = 1
+	})
+
+	r, c := newReconciler(t,
+		es, makeVTC(),
+		makeExporter("exp-crash", false, false, true),
+		makePod("exp-crash", corev1.PodFailed),
+	)
+
+	reconcileOnce(t, r)
+
+	exporters := listExporters(t, c)
+	if len(exporters) != 0 {
+		t.Fatalf("expected Failed exporter deleted, got %d", len(exporters))
+	}
+}
+
+func TestReconcile_exitAndReplace_keepsRunningExporter(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 0
+		es.Spec.MaxReplicas = 1
+		es.Spec.MinAvailableReplicas = 1
+	})
+
+	r, c := newReconciler(t,
+		es, makeVTC(),
+		makeExporter("exp-live", true, false, true),
+		makePod("exp-live", corev1.PodRunning),
+	)
+
+	reconcileOnce(t, r)
+
+	exporters := listExporters(t, c)
+	if len(exporters) != 1 {
+		t.Fatalf("expected Running exporter kept, got %d", len(exporters))
+	}
+}
+
+func TestReconcile_exitAndReplace_keepsLeasedTerminalExporter(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 0
+		es.Spec.MaxReplicas = 1
+		es.Spec.MinAvailableReplicas = 1
+	})
+
+	r, c := newReconciler(t,
+		es, makeVTC(),
+		makeExporter("exp-leased-dead", false, true, true),
+		makePod("exp-leased-dead", corev1.PodSucceeded),
+	)
+
+	reconcileOnce(t, r)
+
+	exporters := listExporters(t, c)
+	if len(exporters) != 1 {
+		t.Fatalf("expected leased terminal exporter kept until lease clears, got %d", len(exporters))
+	}
+}
+
+func TestReconcile_inPlaceReuse_keepsFailedUnleasedExporter(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 0
+		es.Spec.MaxReplicas = 1
+		es.Spec.MinAvailableReplicas = 1
+		es.Spec.RecycleStrategy = virtualtargetv1alpha1.RecycleStrategyInPlaceReuse
+	})
+
+	r, c := newReconciler(t,
+		es, makeVTC(),
+		makeExporter("exp-oom", false, false, true),
+		makePod("exp-oom", corev1.PodFailed),
+	)
+
+	reconcileOnce(t, r)
+
+	exporters := listExporters(t, c)
+	if len(exporters) != 1 {
+		t.Fatalf("expected InPlaceReuse Failed exporter kept, got %d", len(exporters))
+	}
+}
+
+func TestReconcile_exitAndReplace_keepsExporterWithNoPods(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 0
+		es.Spec.MaxReplicas = 1
+		es.Spec.MinAvailableReplicas = 1
+		es.Spec.RecycleStrategy = virtualtargetv1alpha1.RecycleStrategyExitAndReplace
+	})
+
+	// Fresh exporter awaiting Pod creation must not be deleted: allPodsTerminal
+	// returns false for an empty pod slice.
+	r, c := newReconciler(t,
+		es, makeVTC(),
+		makeExporter("exp-new", false, false, true),
+	)
+
+	reconcileOnce(t, r)
+
+	exporters := listExporters(t, c)
+	if len(exporters) != 1 {
+		t.Fatalf("expected exporter with no pods kept, got %d", len(exporters))
+	}
+}
+
+func TestAllPodsTerminal_emptyReturnsFalse(t *testing.T) {
+	if allPodsTerminal(nil) {
+		t.Fatal("allPodsTerminal(nil) = true, want false")
+	}
+	if allPodsTerminal([]corev1.Pod{}) {
+		t.Fatal("allPodsTerminal([]) = true, want false")
+	}
+}
+
+func TestReconcile_exitAndReplace_maxReplicasRefillsAfterDelete(t *testing.T) {
+	caCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      caConfigMapName,
+			Namespace: nsDefault,
+		},
+		Data: map[string]string{
+			caConfigMapKey: "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n",
+		},
+	}
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 0
+		es.Spec.MaxReplicas = 1
+		es.Spec.MinAvailableReplicas = 1
+	})
+
+	r, c := newReconciler(t,
+		es, makeVTC(), caCM,
+		makeExporter("exp-dead", false, false, true),
+		makePod("exp-dead", corev1.PodSucceeded),
+	)
+
+	// First reconcile: delete terminal exporter (frees the maxReplicas slot).
+	reconcileOnce(t, r)
+	if got := len(listExporters(t, c)); got != 0 {
+		t.Fatalf("after cleanup: expected 0 exporters, got %d", got)
+	}
+
+	// Second reconcile: warm buffer scale-up creates a replacement.
+	reconcileOnce(t, r)
+	exporters := listExporters(t, c)
+	if len(exporters) != 1 {
+		t.Fatalf("after refill: expected 1 exporter, got %d", len(exporters))
+	}
+	if exporters[0].Name == "exp-dead" {
+		t.Fatal("replacement should be a new Exporter, not exp-dead")
+	}
+}
+
 func TestReconcile_scaleDown_respectsMinReplicas(t *testing.T) {
 	cooldown := 1 * time.Second
 	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
@@ -814,44 +999,48 @@ func TestComputePoolState(t *testing.T) {
 // --- Deep merge tests ---
 
 func TestDeepMerge_mapsRecursive(t *testing.T) {
-	base := map[string]interface{}{
-		"resources": map[string]interface{}{
-			"cpu":     "4",
-			"memory":  "4Gi",
-			"storage": "16Gi",
+	base := map[string]any{
+		"resources": map[string]any{
+			"cpu":    "4",
+			"memory": "4Gi",
 		},
-		"firmware": map[string]interface{}{
+		"storage": map[string]any{
+			"size": "16Gi",
+		},
+		"firmware": map[string]any{
 			"url": "registry.example.com/fw:v1",
 		},
 	}
-	override := map[string]interface{}{
-		"resources": map[string]interface{}{
+	override := map[string]any{
+		"resources": map[string]any{
 			"memory": "8Gi",
 		},
 	}
 
 	result := deepMerge(base, override)
 
-	resources := result["resources"].(map[string]interface{})
+	resources := result["resources"].(map[string]any)
 	if resources["cpu"] != "4" {
 		t.Errorf("cpu = %v, want 4", resources["cpu"])
 	}
 	if resources["memory"] != "8Gi" {
 		t.Errorf("memory = %v, want 8Gi", resources["memory"])
 	}
-	if resources["storage"] != "16Gi" {
-		t.Errorf("storage = %v, want 16Gi", resources["storage"])
+
+	storage := result["storage"].(map[string]any)
+	if storage["size"] != "16Gi" {
+		t.Errorf("storage.size = %v, want 16Gi", storage["size"])
 	}
 
-	firmware := result["firmware"].(map[string]interface{})
+	firmware := result["firmware"].(map[string]any)
 	if firmware["url"] != "registry.example.com/fw:v1" {
 		t.Errorf("firmware.url = %v, want original", firmware["url"])
 	}
 }
 
 func TestDeepMerge_scalarReplace(t *testing.T) {
-	base := map[string]interface{}{"machineType": "virt"}
-	override := map[string]interface{}{"machineType": "q35"}
+	base := map[string]any{"machineType": "virt"}
+	override := map[string]any{"machineType": "q35"}
 
 	result := deepMerge(base, override)
 	if result["machineType"] != "q35" {
@@ -860,11 +1049,11 @@ func TestDeepMerge_scalarReplace(t *testing.T) {
 }
 
 func TestDeepMerge_listReplace(t *testing.T) {
-	base := map[string]interface{}{"ports": []interface{}{22, 80}}
-	override := map[string]interface{}{"ports": []interface{}{443}}
+	base := map[string]any{"ports": []any{22, 80}}
+	override := map[string]any{"ports": []any{443}}
 
 	result := deepMerge(base, override)
-	ports := result["ports"].([]interface{})
+	ports := result["ports"].([]any)
 	if len(ports) != 1 || ports[0] != 443 {
 		t.Errorf("ports = %v, want [443]", ports)
 	}
@@ -1729,7 +1918,7 @@ func TestEnsureExporterPods_skipsDisabledExporters(t *testing.T) {
 	exp2 := makeExporter("exp-2", false, false, true)
 	exp2.Status.Credential = &corev1.LocalObjectReference{Name: "exp-2-exporter"}
 	exp2.Status.Endpoint = testEndpoint
-	exp2.Spec.Enabled = boolPtr(false)
+	exp2.Spec.Enabled = new(false)
 	credSecret := makeCredentialSecret("exp-2")
 
 	r, _ := newReconciler(t, es, makeVTC(), makeCACM(), exp2, credSecret)
@@ -1830,5 +2019,266 @@ func TestMergeImages_esOverridesVtc(t *testing.T) {
 	}
 	if got.Runtime == nil || got.Runtime.Image != "es-runtime:2" {
 		t.Errorf("runtime should be overridden by es, got %v", got.Runtime)
+	}
+}
+
+// --- client-visible identity labels -----------------------------------------
+
+func TestScaleUp_stampsIdentityLabels(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 1
+		es.Spec.MinAvailableReplicas = 0
+	})
+	r, c := newReconciler(t, es, makeVTC())
+	reconcileOnce(t, r)
+
+	exporters := listExporters(t, c)
+	if len(exporters) != 1 {
+		t.Fatalf("expected 1 exporter, got %d", len(exporters))
+	}
+	// Set membership otherwise lives only in ownerReferences, which the client
+	// API never exposes.
+	if got := exporters[0].Labels[labelExporterSetName]; got != "demo-set" {
+		t.Errorf("%s = %q, want %q", labelExporterSetName, got, "demo-set")
+	}
+	if got := exporters[0].Labels[labelVirtualTargetClass]; got != "qemu-class" {
+		t.Errorf("%s = %q, want %q", labelVirtualTargetClass, got, "qemu-class")
+	}
+	// The provisioner lives on the class, which a client cannot read.
+	if got := exporters[0].Labels[labelProvisioner]; got != qemu.ProvisionerName {
+		t.Errorf("%s = %q, want %q", labelProvisioner, got, qemu.ProvisionerName)
+	}
+	// Template labels still come through.
+	if got := exporters[0].Labels["exporterset"]; got != "demo-set" {
+		t.Errorf("template label lost: got %q", got)
+	}
+}
+
+func TestReconcile_backfillsIdentityLabelsOnExistingExporters(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 1
+		es.Spec.MinAvailableReplicas = 0
+	})
+	// An exporter from before these labels existed.
+	existing := makeExporter("demo-set-old", true, false, true)
+	delete(existing.Labels, labelExporterSetName)
+
+	r, c := newReconciler(t, es, makeVTC(), existing)
+	reconcileOnce(t, r)
+
+	var got jumpstarterdevv1alpha1.Exporter
+	if err := c.Get(context.Background(),
+		types.NamespacedName{Name: "demo-set-old", Namespace: nsDefault}, &got); err != nil {
+		t.Fatalf("get exporter: %v", err)
+	}
+	if got.Labels[labelExporterSetName] != "demo-set" {
+		t.Errorf("existing exporter not labelled: %v", got.Labels)
+	}
+	if got.Labels[labelVirtualTargetClass] != "qemu-class" {
+		t.Errorf("existing exporter missing class label: %v", got.Labels)
+	}
+	if got.Labels[labelProvisioner] != qemu.ProvisionerName {
+		t.Errorf("existing exporter missing provisioner label: %v", got.Labels)
+	}
+}
+
+func TestExporterLabels_survivesNilTemplateLabels(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.Template.Metadata.Labels = nil
+	})
+	r, _ := newReconciler(t, es, makeVTC())
+	labels := r.exporterLabels(context.Background(), es)
+	if labels[labelExporterSetName] != "demo-set" {
+		t.Errorf("expected set name label, got %v", labels)
+	}
+}
+
+func TestExporterLabels_identityWinsOverTemplate(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.Template.Metadata.Labels = map[string]string{
+			labelExporterSetName: "spoofed",
+			"board":              "rpi4",
+		}
+	})
+	r, _ := newReconciler(t, es, makeVTC())
+	labels := r.exporterLabels(context.Background(), es)
+	if labels[labelExporterSetName] != "demo-set" {
+		t.Errorf("template must not override pool membership, got %q", labels[labelExporterSetName])
+	}
+	if labels["board"] != "rpi4" {
+		t.Errorf("unrelated template label lost: %v", labels)
+	}
+}
+
+func TestIdentityLabels_skipsInvalidLabelValues(t *testing.T) {
+	// Object names may be up to 253 characters; label values only 63.
+	longClass := strings.Repeat("c", 64)
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.VirtualTargetClassName = longClass
+	})
+	r, _ := newReconciler(t, es)
+	set, remove := r.identityLabels(context.Background(), es)
+	if _, ok := set[labelVirtualTargetClass]; ok {
+		t.Errorf("class label should be omitted for an invalid value, got %v", set)
+	}
+	if !slices.Contains(remove, labelVirtualTargetClass) {
+		t.Errorf("class label should be marked for removal, got %v", remove)
+	}
+	if set[labelExporterSetName] != "demo-set" {
+		t.Errorf("valid labels should still be set, got %v", set)
+	}
+}
+
+func TestExporterLabels_dropsReservedTemplateKeyWhenOmitted(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.VirtualTargetClassName = strings.Repeat("c", 64)
+		es.Spec.Template.Metadata.Labels = map[string]string{
+			labelVirtualTargetClass: "misleading",
+			"board":                 "rpi4",
+		}
+	})
+	r, _ := newReconciler(t, es)
+	labels := r.exporterLabels(context.Background(), es)
+	if v, ok := labels[labelVirtualTargetClass]; ok {
+		t.Errorf("template must not supply an omitted identity label, got %q", v)
+	}
+	if labels["board"] != "rpi4" {
+		t.Errorf("unrelated template label lost: %v", labels)
+	}
+}
+
+func TestReconcileExporterLabels_removesStaleIdentityLabel(t *testing.T) {
+	// The set moved to a class whose name can't be a label value; the old
+	// class label must not linger on existing exporters.
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.VirtualTargetClassName = strings.Repeat("c", 64)
+	})
+	existing := makeExporter("demo-set-old", true, false, true)
+	existing.Labels[labelVirtualTargetClass] = "qemu-class"
+	existing.Labels[labelExporterSetName] = "demo-set"
+
+	r, c := newReconciler(t, es, existing)
+	if err := r.reconcileExporterLabels(context.Background(), es, listExporters(t, c)); err != nil {
+		t.Fatalf("reconcileExporterLabels: %v", err)
+	}
+
+	var got jumpstarterdevv1alpha1.Exporter
+	if err := c.Get(context.Background(),
+		types.NamespacedName{Name: "demo-set-old", Namespace: nsDefault}, &got); err != nil {
+		t.Fatalf("get exporter: %v", err)
+	}
+	if v, ok := got.Labels[labelVirtualTargetClass]; ok {
+		t.Errorf("stale class label should be removed, got %q", v)
+	}
+	if got.Labels["exporterset"] != "demo-set" {
+		t.Errorf("non-identity labels must be preserved: %v", got.Labels)
+	}
+}
+
+func TestReconcile_selectorConflictingWithIdentityLabelsStopsScaling(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 2
+		// Pins a class value the controller will overwrite with "qemu-class".
+		es.Spec.Selector.MatchLabels = map[string]string{
+			"exporterset":           "demo-set",
+			labelVirtualTargetClass: "something-else",
+		}
+		es.Spec.Template.Metadata.Labels = map[string]string{
+			"exporterset":           "demo-set",
+			labelVirtualTargetClass: "something-else",
+		}
+	})
+	r, c := newReconciler(t, es, makeVTC())
+	for range 3 {
+		reconcileOnce(t, r)
+	}
+
+	if n := len(listExporters(t, c)); n != 0 {
+		t.Fatalf("expected no exporters to be created, got %d", n)
+	}
+	got := getExporterSet(t, c)
+	cond := meta.FindStatusCondition(got.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionAvailable))
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "SelectorMismatch" {
+		t.Fatalf("expected Available=False/SelectorMismatch, got %+v", cond)
+	}
+}
+
+func TestReconcileExporterLabels_continuesPastPatchFailure(t *testing.T) {
+	es := makeExporterSet()
+	a := makeExporter("demo-set-a", true, false, true)
+	b := makeExporter("demo-set-b", true, false, true)
+
+	scheme := newScheme(t)
+	patchErr := errors.New("boom")
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(es, makeVTC(), a, b).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(ctx context.Context, cl client.WithWatch, obj client.Object,
+				patch client.Patch, opts ...client.PatchOption) error {
+				if obj.GetName() == "demo-set-a" {
+					return patchErr
+				}
+				return cl.Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+	r := &ExporterSetReconciler{Client: c, Scheme: scheme, Provisioner: qemu.New("dev")}
+
+	owned := listExporters(t, c)
+	err := r.reconcileExporterLabels(context.Background(), es, owned)
+	if !errors.Is(err, patchErr) {
+		t.Fatalf("expected the patch error to be returned, got %v", err)
+	}
+
+	var got jumpstarterdevv1alpha1.Exporter
+	if err := c.Get(context.Background(),
+		types.NamespacedName{Name: "demo-set-b", Namespace: nsDefault}, &got); err != nil {
+		t.Fatalf("get exporter: %v", err)
+	}
+	if got.Labels[labelExporterSetName] != "demo-set" {
+		t.Errorf("exporter after the failed one should still be labelled: %v", got.Labels)
+	}
+}
+
+func TestIsExporterOffline_noCondition(t *testing.T) {
+	exp := &jumpstarterdevv1alpha1.Exporter{
+		Status: jumpstarterdevv1alpha1.ExporterStatus{},
+	}
+	if isExporterOffline(exp) {
+		t.Fatal("expected false when Online condition doesn't exist (exporter never registered)")
+	}
+}
+
+func TestIsExporterOffline_online(t *testing.T) {
+	exp := &jumpstarterdevv1alpha1.Exporter{
+		Status: jumpstarterdevv1alpha1.ExporterStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:   string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+					Status: metav1.ConditionTrue,
+				},
+			},
+		},
+	}
+	if isExporterOffline(exp) {
+		t.Fatal("expected false when exporter is online")
+	}
+}
+
+func TestIsExporterOffline_offline(t *testing.T) {
+	exp := &jumpstarterdevv1alpha1.Exporter{
+		Status: jumpstarterdevv1alpha1.ExporterStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:   string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+					Status: metav1.ConditionFalse,
+				},
+			},
+		},
+	}
+	if !isExporterOffline(exp) {
+		t.Fatal("expected true when exporter is offline")
 	}
 }

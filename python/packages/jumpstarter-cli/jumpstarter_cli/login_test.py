@@ -14,7 +14,12 @@ from jumpstarter_cli.login import (
     _warn_exporter_client_only_flags,
     fetch_auth_config,
     parse_login_argument,
+    relogin_client,
 )
+
+from jumpstarter.config.client import ClientConfigV1Alpha1
+from jumpstarter.config.common import ObjectMeta
+from jumpstarter.config.user import UserConfigV1Alpha1
 
 
 def test_parse_login_argument_supports_client_and_endpoint() -> None:
@@ -279,3 +284,244 @@ def test_login_maps_ssl_cert_error_during_oidc_to_friendly_message(monkeypatch) 
     assert result.exit_code != 0
     assert "TLS certificate validation failed" in result.output
     assert "Traceback" not in result.output
+
+
+def test_login_uses_device_flow_when_flag_is_passed(monkeypatch, tmp_path) -> None:
+    """When --device-flow is passed, device_authorization_grant is called instead of authorization_code_grant."""
+    auth_config = {
+        "grpcEndpoint": "grpc.example.com:443",
+        "namespace": "default",
+        "oidc": [{"issuer": "https://auth.example.com", "clientId": "test-client"}],
+    }
+
+    async def fake_fetch_auth_config(*args, **kwargs):
+        return auth_config
+
+    device_flow_called = False
+    auth_code_called = False
+
+    class FakeOidcConfig:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def device_authorization_grant(self):
+            nonlocal device_flow_called
+            device_flow_called = True
+            return {"access_token": "test-token"}
+
+        async def authorization_code_grant(self, **kwargs):
+            nonlocal auth_code_called
+            auth_code_called = True
+            return {"access_token": "test-token"}
+
+    monkeypatch.setattr("jumpstarter_cli.login.fetch_auth_config", fake_fetch_auth_config)
+    monkeypatch.setattr("jumpstarter_cli.login.Config", FakeOidcConfig)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        jmp,
+        [
+            "login",
+            "test-client@login.example.com",
+            "--client-config",
+            str(tmp_path / "nonexistent-client.yaml"),
+            "--nointeractive",
+            "--unsafe",
+            "--device-flow",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert device_flow_called is True
+    assert auth_code_called is False
+
+
+def test_login_uses_device_flow_when_env_var_is_set(monkeypatch, tmp_path) -> None:
+    """When JMP_OIDC_DEVICE_FLOW=1, device_authorization_grant is called automatically."""
+    auth_config = {
+        "grpcEndpoint": "grpc.example.com:443",
+        "namespace": "default",
+        "oidc": [{"issuer": "https://auth.example.com", "clientId": "test-client"}],
+    }
+
+    async def fake_fetch_auth_config(*args, **kwargs):
+        return auth_config
+
+    device_flow_called = False
+    auth_code_called = False
+
+    class FakeOidcConfig:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def device_authorization_grant(self):
+            nonlocal device_flow_called
+            device_flow_called = True
+            return {"access_token": "test-token"}
+
+        async def authorization_code_grant(self, **kwargs):
+            nonlocal auth_code_called
+            auth_code_called = True
+            return {"access_token": "test-token"}
+
+    monkeypatch.setattr("jumpstarter_cli.login.fetch_auth_config", fake_fetch_auth_config)
+    monkeypatch.setattr("jumpstarter_cli.login.Config", FakeOidcConfig)
+    monkeypatch.setenv("JMP_OIDC_DEVICE_FLOW", "1")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        jmp,
+        [
+            "login",
+            "test-client@login.example.com",
+            "--client-config",
+            str(tmp_path / "nonexistent-client.yaml"),
+            "--nointeractive",
+            "--unsafe",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert device_flow_called is True
+    assert auth_code_called is False
+
+
+def test_login_uses_auth_code_flow_without_device_flow_signals(monkeypatch, tmp_path) -> None:
+    """Without --device-flow or JMP_OIDC_DEVICE_FLOW, authorization_code_grant is used (no regression)."""
+    auth_config = {
+        "grpcEndpoint": "grpc.example.com:443",
+        "namespace": "default",
+        "oidc": [{"issuer": "https://auth.example.com", "clientId": "test-client"}],
+    }
+
+    async def fake_fetch_auth_config(*args, **kwargs):
+        return auth_config
+
+    device_flow_called = False
+    auth_code_called = False
+
+    class FakeOidcConfig:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def device_authorization_grant(self):
+            nonlocal device_flow_called
+            device_flow_called = True
+            return {"access_token": "test-token"}
+
+        async def authorization_code_grant(self, **kwargs):
+            nonlocal auth_code_called
+            auth_code_called = True
+            return {"access_token": "test-token"}
+
+    monkeypatch.setattr("jumpstarter_cli.login.fetch_auth_config", fake_fetch_auth_config)
+    monkeypatch.setattr("jumpstarter_cli.login.Config", FakeOidcConfig)
+    monkeypatch.delenv("JMP_OIDC_DEVICE_FLOW", raising=False)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        jmp,
+        [
+            "login",
+            "test-client@login.example.com",
+            "--client-config",
+            str(tmp_path / "nonexistent-client.yaml"),
+            "--nointeractive",
+            "--unsafe",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert auth_code_called is True
+    assert device_flow_called is False
+
+
+def test_env_py_contains_jmp_oidc_device_flow_constant() -> None:
+    """The JMP_OIDC_DEVICE_FLOW constant must exist in env.py."""
+    from jumpstarter.config.env import JMP_OIDC_DEVICE_FLOW
+
+    assert JMP_OIDC_DEVICE_FLOW == "JMP_OIDC_DEVICE_FLOW"
+
+
+def _login_config_path(path, config_location, tmp_path, monkeypatch):
+    if config_location == "relative_alias_path":
+        monkeypatch.chdir(tmp_path)
+        return path.relative_to(tmp_path)
+    if config_location == "symlink_alias_path":
+        linked_clients = tmp_path / "linked-clients"
+        linked_clients.symlink_to(path.parent, target_is_directory=True)
+        return linked_clients / path.name
+    return path
+
+
+@pytest.mark.parametrize(
+    "mode", ["login", "login_without_refresh_token", "auth_refresh", "relogin", "relogin_without_refresh_token"]
+)
+@pytest.mark.parametrize(
+    "config_location",
+    ["explicit_path", "explicit_path_alias_collision", "default_path", "relative_alias_path", "symlink_alias_path"],
+)
+def test_authentication_preserves_client_config_path(tmp_path, monkeypatch, mode, config_location) -> None:
+    clients = tmp_path / "clients"
+    monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", clients)
+    monkeypatch.setattr(UserConfigV1Alpha1, "BASE_CONFIG_PATH", tmp_path)
+    monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", tmp_path / "config.yaml")
+    alias_path = config_location in {"default_path", "relative_alias_path", "symlink_alias_path"}
+    path = (clients if alias_path else tmp_path) / "client.yaml"
+    config = ClientConfigV1Alpha1(
+        alias="client",
+        metadata=ObjectMeta(namespace="test", name="test"),
+        endpoint="localhost:1",
+        token="old-token",
+        refresh_token=None if mode.endswith("without_refresh_token") else "old-refresh-token",
+    )
+    previous = config.model_copy(update={"alias": "previous", "token": "previous-token"})
+    ClientConfigV1Alpha1.save(previous)
+    UserConfigV1Alpha1.load_or_create().use_client("previous")
+    user_config_before = UserConfigV1Alpha1.USER_CONFIG_PATH.read_bytes()
+    if config_location == "explicit_path_alias_collision":
+        ClientConfigV1Alpha1.save(config.model_copy(update={"token": "unrelated-token"}))
+        unrelated_before = (clients / "client.yaml").read_bytes()
+    ClientConfigV1Alpha1.save(config, path)
+    path = _login_config_path(path, config_location, tmp_path, monkeypatch)
+    tokens = {"access_token": "new-token", "refresh_token": "new-refresh-token"}
+    refresh = AsyncMock(return_value=tokens)
+    authorize = AsyncMock(return_value=tokens)
+    monkeypatch.setattr("jumpstarter_cli.login.decode_jwt_issuer", lambda token: "https://issuer.invalid")
+    monkeypatch.setattr("jumpstarter_cli.auth.decode_jwt_issuer", lambda token: "https://issuer.invalid")
+    monkeypatch.setattr("jumpstarter_cli.login.Config.refresh_token_grant", refresh)
+    monkeypatch.setattr("jumpstarter_cli.login.Config.authorization_code_grant", authorize)
+    monkeypatch.setattr("jumpstarter_cli.login.should_use_device_flow", lambda *args, **kwargs: False)
+
+    if mode in {"login", "login_without_refresh_token"}:
+        result = CliRunner().invoke(jmp, ["login", "--nointeractive", "--client-config", str(path)])
+        assert result.exit_code == 0, result.output
+        if mode == "login":
+            assert "Refreshed access token" in result.output
+    elif mode == "auth_refresh":
+        result = CliRunner().invoke(jmp, ["auth", "refresh", "--client-config", str(path)])
+        assert result.exit_code == 0, result.output
+        assert "Access token refreshed" in result.output
+    else:
+        relogin_client(ClientConfigV1Alpha1.from_file(path))
+
+    if mode.endswith("without_refresh_token"):
+        refresh.assert_not_awaited()
+        if mode == "login_without_refresh_token":
+            authorize.assert_awaited_once_with(callback_port=None)
+        else:
+            authorize.assert_awaited_once_with()
+    else:
+        refresh.assert_awaited_once_with("old-refresh-token")
+        authorize.assert_not_awaited()
+    reloaded = ClientConfigV1Alpha1.from_file(path)
+    assert reloaded.token == "new-token"
+    assert reloaded.refresh_token == "new-refresh-token"
+    if config_location == "explicit_path":
+        assert not (clients / "client.yaml").exists()
+    elif config_location == "explicit_path_alias_collision":
+        assert (clients / "client.yaml").read_bytes() == unrelated_before
+    if mode == "login_without_refresh_token" and alias_path:
+        assert UserConfigV1Alpha1.load().config.current_client.path.resolve() == path.resolve()
+    else:
+        assert UserConfigV1Alpha1.USER_CONFIG_PATH.read_bytes() == user_config_before

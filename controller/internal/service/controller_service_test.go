@@ -30,6 +30,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/config"
 	jlog "github.com/jumpstarter-dev/jumpstarter/controller/internal/log"
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc"
@@ -39,9 +40,11 @@ import (
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -670,7 +673,7 @@ func TestListenQueueStaleReaderConsumesDialToken(t *testing.T) {
 func TestListenQueueStaleReaderAlwaysDetectsSupersession(t *testing.T) {
 	iterations := 100
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		svc := &ControllerService{}
 		leaseName := "test-lease-concurrent"
 
@@ -744,7 +747,7 @@ func TestDialRejectsSupersededQueue(t *testing.T) {
 func TestDialWithPreSwapReferenceNeverSendsToStaleQueue(t *testing.T) {
 	iterations := 500
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		svc := &ControllerService{}
 		leaseName := "test-lease-pre-swap-ref"
 
@@ -890,7 +893,7 @@ func TestDialSendToListenerSerializesWithSwap(t *testing.T) {
 	// This tests the scenario where the swap completes before the send.
 	iterations := 500
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		svc := &ControllerService{}
 		leaseName := "test-lease-serialized"
 
@@ -946,7 +949,7 @@ func TestDialSendToListenerConcurrentWithSwapNeverLandsOnSuperseded(t *testing.T
 	sentToG2 := 0
 	rejected := 0
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		svc := &ControllerService{}
 		leaseName := "test-lease-concurrent-serial"
 
@@ -1252,10 +1255,8 @@ func TestListenQueueConcurrentDialDuringReconnection(t *testing.T) {
 	var g2 *listenQueue
 	g2ListenerDone := make(chan struct{})
 
-	for i := 0; i < dialAttempts; i++ {
-		dialWg.Add(1)
-		go func() {
-			defer dialWg.Done()
+	for i := range dialAttempts {
+		dialWg.Go(func() {
 			ctx := context.Background()
 			err := svc.sendToListener(ctx, leaseName, &pb.ListenResponse{
 				RouterEndpoint: "ep", RouterToken: testRouterToken,
@@ -1269,7 +1270,7 @@ func TestListenQueueConcurrentDialDuringReconnection(t *testing.T) {
 			sentMu.Lock()
 			sentCount++
 			sentMu.Unlock()
-		}()
+		})
 
 		if i == 25 {
 			g2 = &listenQueue{
@@ -1372,7 +1373,7 @@ func TestListenQueueListenLoopDeliversTokensAndExitsOnDone(t *testing.T) {
 	wrapper.ch <- &pb.ListenResponse{RouterEndpoint: "ep1", RouterToken: "tok1"}
 	wrapper.ch <- &pb.ListenResponse{RouterEndpoint: "ep2", RouterToken: "tok2"}
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		select {
 		case msg := <-delivered:
 			if msg.RouterEndpoint == "" || msg.RouterToken == "" {
@@ -1414,7 +1415,7 @@ func TestSendToListenerReturnsResourceExhaustedWithCancelledContextAndBufferFull
 	}
 	svc.swapListenQueue(leaseName, q)
 
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		q.ch <- &pb.ListenResponse{RouterEndpoint: "fill", RouterToken: "fill"}
 	}
 
@@ -1447,7 +1448,7 @@ func TestSendToListenerReturnsImmediatelyDuringBackpressure(t *testing.T) {
 	}
 	svc.swapListenQueue(leaseName, q)
 
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		q.ch <- &pb.ListenResponse{RouterEndpoint: "fill", RouterToken: "fill"}
 	}
 
@@ -1541,13 +1542,11 @@ func TestLeaseLockRefCountConcurrentAcquireRelease(t *testing.T) {
 	var wg sync.WaitGroup
 	goroutines := 100
 
-	for i := 0; i < goroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range goroutines {
+		wg.Go(func() {
 			svc.acquireLeaseLock(leaseName)
 			svc.releaseLeaseLock(leaseName)
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -1567,10 +1566,8 @@ func TestLeaseLockRefCountConcurrentOverlappingListeners(t *testing.T) {
 	allAcquired := sync.WaitGroup{}
 	allAcquired.Add(goroutines)
 
-	for i := 0; i < goroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range goroutines {
+		wg.Go(func() {
 			mu := svc.acquireLeaseLock(leaseName)
 			defer svc.releaseLeaseLock(leaseName)
 
@@ -1580,7 +1577,7 @@ func TestLeaseLockRefCountConcurrentOverlappingListeners(t *testing.T) {
 			mu.Lock()
 			counter++
 			mu.Unlock()
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -1666,7 +1663,7 @@ func TestSendToListenerReturnsResourceExhaustedWhenBufferFull(t *testing.T) {
 	}
 	svc.swapListenQueue(leaseName, q)
 
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		q.ch <- &pb.ListenResponse{RouterEndpoint: "fill", RouterToken: "fill"}
 	}
 
@@ -1696,7 +1693,7 @@ func TestSendToListenerDoesNotBlockMutexWhenBufferFull(t *testing.T) {
 	}
 	svc.swapListenQueue(leaseName, q)
 
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		q.ch <- &pb.ListenResponse{RouterEndpoint: "fill", RouterToken: "fill"}
 	}
 
@@ -1745,7 +1742,7 @@ func TestSwapNotBlockedWhenBufferFull(t *testing.T) {
 	}
 	svc.swapListenQueue(leaseName, g1)
 
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		g1.ch <- &pb.ListenResponse{RouterEndpoint: "fill", RouterToken: "fill"}
 	}
 
@@ -2059,6 +2056,57 @@ type noopAuthorizer struct{}
 
 func (noopAuthorizer) Authorize(_ context.Context, _ authorizer.Attributes) (authorizer.Decision, string, error) {
 	return authorizer.DecisionNoOpinion, "", nil
+}
+
+// passingAuthenticator always authenticates successfully with a fixed user name.
+type passingAuthenticator struct{ userName string }
+
+func (p *passingAuthenticator) AuthenticateContext(_ context.Context) (*authenticator.Response, bool, error) {
+	return &authenticator.Response{User: &user.DefaultInfo{Name: p.userName}}, true, nil
+}
+
+// exporterAttributesGetter returns attributes that identify a fixed Exporter object.
+type exporterAttributesGetter struct{ namespace, name string }
+
+func (e *exporterAttributesGetter) ContextAttributes(_ context.Context, u user.Info) (authorizer.Attributes, error) {
+	return authorizer.AttributesRecord{
+		User:      u,
+		Namespace: e.namespace,
+		Resource:  "Exporter",
+		Name:      e.name,
+	}, nil
+}
+
+// passingAuthorizer always allows.
+type passingAuthorizer struct{}
+
+func (passingAuthorizer) Authorize(_ context.Context, _ authorizer.Attributes) (authorizer.Decision, string, error) {
+	return authorizer.DecisionAllow, "", nil
+}
+
+// authSuccessServiceCtx builds a ControllerService whose authentication always
+// succeeds. A pre-populated Exporter object is stored in the fake client so
+// that VerifyExporterObjectToken can fetch it.
+func authSuccessServiceCtx(t *testing.T, cfg *config.Telemetry) (*ControllerService, context.Context) {
+	t.Helper()
+
+	scheme := k8sruntime.NewScheme()
+	if err := jumpstarterdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add scheme: %v", err)
+	}
+	exporter := &jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-exporter", Namespace: "default"},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(exporter).Build()
+
+	svc := &ControllerService{
+		Client:          fakeClient,
+		Authn:           &passingAuthenticator{userName: "test-user"},
+		Authz:           passingAuthorizer{},
+		Attr:            &exporterAttributesGetter{namespace: "default", name: "test-exporter"},
+		TelemetryConfig: cfg,
+	}
+	return svc, context.Background()
 }
 
 // authFailureServiceCtx builds a ControllerService whose authentication always

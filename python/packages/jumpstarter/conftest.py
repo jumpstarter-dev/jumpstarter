@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from ipaddress import IPv4Address
-from typing import Tuple
 from uuid import uuid4
 
 import grpc
@@ -44,11 +43,11 @@ class MockRouter(router_pb2_grpc.RouterServiceServicer):
 @dataclass(kw_only=True)
 class MockController(jumpstarter_pb2_grpc.ControllerServiceServicer):
     router_endpoint: str
-    status: Tuple[
+    status: tuple[
         MemoryObjectSendStream[jumpstarter_pb2.StatusResponse],
         MemoryObjectReceiveStream[jumpstarter_pb2.StatusResponse],
     ] = field(init=False, default_factory=lambda: create_memory_object_stream[jumpstarter_pb2.StatusResponse](32))
-    queue: Tuple[MemoryObjectSendStream[str], MemoryObjectReceiveStream[str]] = field(
+    queue: tuple[MemoryObjectSendStream[str], MemoryObjectReceiveStream[str]] = field(
         init=False, default_factory=lambda: create_memory_object_stream[str](32)
     )
     leases: dict[str, int | str] = field(init=False, default_factory=dict)
@@ -86,8 +85,8 @@ cert = (
     .issuer_name(x509.Name([]))
     .public_key(key.public_key())
     .serial_number(x509.random_serial_number())
-    .not_valid_before(datetime.now())
-    .not_valid_after(datetime.now() + timedelta(days=365))
+    .not_valid_before(datetime.now(tz=UTC))
+    .not_valid_after(datetime.now(tz=UTC) + timedelta(days=365))
     .add_extension(x509.SubjectAlternativeName([x509.IPAddress(IPv4Address("127.0.0.1"))]), critical=False)
     .sign(private_key=key, algorithm=hashes.SHA256(), backend=default_backend())
 )

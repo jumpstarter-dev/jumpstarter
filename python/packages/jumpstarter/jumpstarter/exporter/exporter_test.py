@@ -11,9 +11,10 @@ from contextlib import nullcontext
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import anyio
+import anyio.lowlevel
 import grpc
 import pytest
-from anyio import Event, create_task_group
+from anyio import Event, create_memory_object_stream, create_task_group, fail_after
 
 from jumpstarter.common import ExporterStatus
 from jumpstarter.exporter.exporter import (
@@ -21,6 +22,8 @@ from jumpstarter.exporter.exporter import (
     _RPC_BACKOFF_CAP,
     _RPC_MAX_RETRIES,
     _RPC_TIMEOUT,
+    LeaseFinished,
+    LeaseState,
 )
 from jumpstarter.exporter.lease_context import LeaseContext
 
@@ -41,18 +44,52 @@ def make_lease_context(lease_name="test-lease", client_name="test-client"):
     return ctx
 
 
-def make_exporter(lease_ctx, hook_executor=None):
+def _make_base_exporter(**overrides):
+    """Shared exporter factory: initializes all fields that handle_lease,
+    _apply_status, and serve() may touch so test helpers stay in sync
+    when new init=False fields are added."""
     from jumpstarter.exporter.exporter import Exporter
 
+    defaults = {
+        "_exporter_status": ExporterStatus.AVAILABLE,
+        "_lease_context": None,
+        "_stop_requested": False,
+        "_standalone": False,
+        "_started": False,
+        "_tg": None,
+        "_registered": False,
+        "_unregister": False,
+        "_deferred_unregister": True,
+        "_exit_code": None,
+        "_release_lease_unsupported": False,
+        "hook_executor": None,
+        "exit_on_lease_end": False,
+        "labels": {},
+        "exporter_name": "test-exporter",
+        "_last_completed_lease": None,
+        "_pending_lease_status": None,
+        "_control_tx": None,
+        "_status_drain_active": False,
+        "_pending_status_request": None,
+        "_status_rpc_event": Event(),
+        "_fatal_stream_error": None,
+        "_report_status": AsyncMock(),
+        "_request_lease_release": AsyncMock(),
+        "_telemetry_handler": None,
+        "_telemetry_channel": None,
+    }
+    defaults.update(overrides)
     exporter = Exporter.__new__(Exporter)
-    exporter._exporter_status = ExporterStatus.AVAILABLE
-    exporter._lease_context = lease_ctx
-    exporter._stop_requested = False
-    exporter._standalone = False
-    exporter.hook_executor = hook_executor
-    exporter._report_status = AsyncMock()
-    exporter._request_lease_release = AsyncMock()
+    for k, v in defaults.items():
+        setattr(exporter, k, v)
     return exporter
+
+
+def make_exporter(lease_ctx, hook_executor=None):
+    return _make_base_exporter(
+        _lease_context=lease_ctx,
+        hook_executor=hook_executor,
+    )
 
 
 class TestLeaseEndDuringHook:
@@ -78,9 +115,9 @@ class TestLeaseEndDuringHook:
             nonlocal after_lease_started_before_hook_done
             if not lease_ctx.before_lease_hook.is_set():
                 after_lease_started_before_hook_done = True
-            return await original_run_after(*args, **kwargs)
+            return await original_run_after(*args, **kwargs)  # type: ignore[call-arg]
 
-        hook_executor.run_after_lease_hook = tracking_run_after
+        hook_executor.run_after_lease_hook = tracking_run_after  # type: ignore[method-assign]
 
         exporter = make_exporter(lease_ctx, hook_executor)
 
@@ -262,18 +299,18 @@ class TestConsecutiveLeaseOrdering:
 
         async def tracking_before(*args, **kwargs):
             events.append("before_start")
-            result = await original_run_before(*args, **kwargs)
+            result = await original_run_before(*args, **kwargs)  # type: ignore[call-arg]
             events.append("before_end")
             return result
 
         async def tracking_after(*args, **kwargs):
             events.append("after_start")
-            result = await original_run_after(*args, **kwargs)
+            result = await original_run_after(*args, **kwargs)  # type: ignore[call-arg]
             events.append("after_end")
             return result
 
-        hook_executor.run_before_lease_hook = tracking_before
-        hook_executor.run_after_lease_hook = tracking_after
+        hook_executor.run_before_lease_hook = tracking_before  # type: ignore[method-assign]
+        hook_executor.run_after_lease_hook = tracking_after  # type: ignore[method-assign]
 
         lease_ctx_1 = make_lease_context(lease_name="lease-1")
         exporter = make_exporter(lease_ctx_1, hook_executor)
@@ -419,9 +456,9 @@ class TestIdempotentLeaseEnd:
         async def counting_run_after(*args, **kwargs):
             nonlocal after_hook_call_count
             after_hook_call_count += 1
-            return await original_run_after(*args, **kwargs)
+            return await original_run_after(*args, **kwargs)  # type: ignore[call-arg]
 
-        hook_executor.run_after_lease_hook = counting_run_after
+        hook_executor.run_after_lease_hook = counting_run_after  # type: ignore[method-assign]
 
         lease_ctx = make_lease_context()
         lease_ctx.before_lease_hook.set()
@@ -438,14 +475,16 @@ class TestIdempotentLeaseEnd:
 
 
 def _make_exporter_for_report_status():
-    """Create an Exporter with real _report_status for testing gRPC error handling."""
+    """Create an Exporter with real methods for testing gRPC error handling.
+
+    Unlike the other factories, this restores the real _report_status and
+    _request_lease_release so tests can verify retry logic and error paths.
+    """
     from jumpstarter.exporter.exporter import Exporter
 
-    exporter = Exporter.__new__(Exporter)
-    exporter._exporter_status = ExporterStatus.AVAILABLE
-    exporter._lease_context = None
-    exporter._standalone = False
-    exporter._release_lease_unsupported = False
+    exporter = _make_base_exporter()
+    exporter._report_status = Exporter._report_status.__get__(exporter, Exporter)
+    exporter._request_lease_release = Exporter._request_lease_release.__get__(exporter, Exporter)
     return exporter
 
 
@@ -525,9 +564,11 @@ class TestReportStatusGrpcErrorHandling:
         )
         mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=error)
 
-        with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
-            with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"):
-                await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+        with (
+            patch.object(exporter, "_controller_stub", return_value=stub_ctx),
+            caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"),
+        ):
+            await exporter._report_status(ExporterStatus.AVAILABLE, "test")
 
         warning_msgs = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert any("ReportStatus not supported" in r.message for r in warning_msgs), (
@@ -554,10 +595,12 @@ class TestReportStatusGrpcErrorHandling:
         )
         mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=error)
 
-        with patch.object(exporter, "_controller_stub", return_value=stub_ctx), \
-                patch("anyio.sleep") as mock_sleep:
-            with caplog.at_level(logging.DEBUG, logger="jumpstarter.exporter.exporter"):
-                await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+        with (
+            patch.object(exporter, "_controller_stub", return_value=stub_ctx),
+            patch("anyio.sleep") as mock_sleep,
+            caplog.at_level(logging.DEBUG, logger="jumpstarter.exporter.exporter"),
+        ):
+            await exporter._report_status(ExporterStatus.AVAILABLE, "test")
 
         # Should log retry warnings (_RPC_MAX_RETRIES)
         warning_msgs = [r for r in caplog.records if r.levelno == logging.WARNING]
@@ -611,7 +654,7 @@ class TestReportStatusGrpcErrorHandling:
             # Third attempt succeeds
             delivered_statuses.append(ExporterStatus.from_proto(request.status))
 
-        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=fail_twice_then_succeed)
+        _mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=fail_twice_then_succeed)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), \
                 patch("anyio.sleep") as mock_sleep:
@@ -1113,32 +1156,565 @@ class TestHandleLeaseStaleSkip:
         )
 
 
+class TestApplyStatus:
+    """Tests for _apply_status state machine transitions."""
+
+    def _make_idle_exporter(self, hook_executor=None):
+        return _make_base_exporter(hook_executor=hook_executor)
+
+    async def test_reassignment_signals_old_lease_ended(self):
+        """When already LEASED with lease A, receiving lease B signals teardown
+        and stashes the new status for replay."""
+        exporter = self._make_idle_exporter()
+        lease_ctx = make_lease_context(lease_name="lease-A")
+        exporter._lease_context = lease_ctx
+
+        assert exporter._lease_state == LeaseState.LEASED
+
+        status = MagicMock()
+        status.leased = True
+        status.lease_name = "lease-B"
+        status.client_name = "other-client"
+        status.context = {}
+
+        async with create_task_group() as tg:
+            result = await exporter._apply_status(status, tg)
+            tg.cancel_scope.cancel()
+
+        assert result is False
+        assert lease_ctx.lease_ended.is_set()
+        assert exporter._lease_context.lease_name == "lease-A"
+        assert exporter._pending_lease_status is status
+
+    async def test_reassignment_idempotent_no_duplicate_log(self, caplog):
+        """Repeated ticks for the new lease don't re-log the warning."""
+        exporter = self._make_idle_exporter()
+        lease_ctx = make_lease_context(lease_name="lease-A")
+        lease_ctx.lease_ended.set()
+        exporter._lease_context = lease_ctx
+
+        status = MagicMock()
+        status.leased = True
+        status.lease_name = "lease-B"
+        status.client_name = "other-client"
+        status.context = {}
+
+        with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"):
+            async with create_task_group() as tg:
+                await exporter._apply_status(status, tg)
+                tg.cancel_scope.cancel()
+
+        assert "reassigned" not in caplog.text
+
+    async def test_overlap_same_lease_name_not_rejected(self):
+        """Re-receiving the same lease name is a normal update, not rejected."""
+        exporter = self._make_idle_exporter()
+        exporter._lease_context = make_lease_context(lease_name="lease-A")
+
+        status = MagicMock()
+        status.leased = True
+        status.lease_name = "lease-A"
+        status.client_name = "updated-client"
+        status.context = {}
+
+        async with create_task_group() as tg:
+            result = await exporter._apply_status(status, tg)
+            tg.cancel_scope.cancel()
+
+        assert result is False
+        assert exporter._lease_context.client_name == "updated-client"
+
+    async def test_idle_to_leased_spawns_handle_lease(self):
+        """IDLE → LEASED spawns handle_lease via _on_lease_acquired."""
+        exporter = self._make_idle_exporter()
+        handle_lease_called = []
+        handle_lease_ran = Event()
+
+        async def fake_handle_lease(lease_name, tg, lease_scope):
+            handle_lease_called.append(lease_name)
+            handle_lease_ran.set()
+
+        exporter.handle_lease = fake_handle_lease
+
+        status = MagicMock()
+        status.leased = True
+        status.lease_name = "new-lease"
+        status.client_name = "ci-bot"
+        status.context = {}
+
+        async with create_task_group() as tg:
+            result = await exporter._apply_status(status, tg)
+            with fail_after(5):
+                await handle_lease_ran.wait()
+            tg.cancel_scope.cancel()
+
+        assert result is False
+        assert exporter._lease_context is not None
+        assert exporter._lease_context.lease_name == "new-lease"
+        assert handle_lease_called == ["new-lease"]
+
+    async def test_idle_to_leased_with_hook_executor(self):
+        """IDLE → LEASED with hook_executor spawns before_lease_hook task."""
+        hook_executor = MagicMock()
+        hook_calls = []
+        hook_ran = Event()
+
+        async def fake_before_hook(lease_scope, report_status, shutdown, request_release):
+            hook_calls.append(lease_scope.lease_name)
+            lease_scope.before_lease_hook.set()
+            hook_ran.set()
+
+        hook_executor.run_before_lease_hook = fake_before_hook
+
+        exporter = self._make_idle_exporter(hook_executor=hook_executor)
+        handle_lease_called = []
+        handle_lease_ran = Event()
+
+        async def fake_handle_lease(lease_name, tg, lease_scope):
+            handle_lease_called.append(lease_name)
+            handle_lease_ran.set()
+
+        exporter.handle_lease = fake_handle_lease
+
+        status = MagicMock()
+        status.leased = True
+        status.lease_name = "hooked-lease"
+        status.client_name = "ci-bot"
+        status.context = {"env": "staging"}
+
+        async with create_task_group() as tg:
+            await exporter._apply_status(status, tg)
+            with fail_after(5):
+                await hook_ran.wait()
+                await handle_lease_ran.wait()
+            tg.cancel_scope.cancel()
+
+        assert hook_calls == ["hooked-lease"]
+        assert handle_lease_called == ["hooked-lease"]
+
+    async def test_leased_to_idle_calls_on_lease_released(self):
+        """LEASED → IDLE transitions through _on_lease_released."""
+        exporter = self._make_idle_exporter()
+        lease_ctx = make_lease_context(lease_name="ending-lease")
+        lease_ctx.after_lease_hook_done.set()
+        exporter._lease_context = lease_ctx
+        exporter._started = True
+
+        status = MagicMock()
+        status.leased = False
+        status.lease_name = ""
+        status.client_name = ""
+        status.context = {}
+
+        async with create_task_group() as tg:
+            await exporter._apply_status(status, tg)
+            tg.cancel_scope.cancel()
+
+        # _on_lease_released only signals teardown; the loop keeps the slot
+        # until handle_lease posts LeaseFinished (_on_lease_finished clears it).
+        assert lease_ctx.lease_ended.is_set()
+        assert exporter._lease_context is lease_ctx
+        assert exporter._last_completed_lease is None
+
+    async def test_trailing_tick_for_completed_lease_ignored(self):
+        """After handle_lease completes, a trailing leased=true tick for the same lease is skipped."""
+        exporter = self._make_idle_exporter()
+        exporter._last_completed_lease = "old-lease"
+        exporter._started = True
+
+        status = MagicMock()
+        status.leased = True
+        status.lease_name = "old-lease"
+        status.client_name = "test-client"
+        status.context = {}
+
+        async with create_task_group() as tg:
+            result = await exporter._apply_status(status, tg)
+            tg.cancel_scope.cancel()
+
+        assert result is False
+        assert exporter._lease_context is None
+
+    async def test_new_lease_after_completed_lease_accepted(self):
+        """A different lease arriving after a completed one is accepted normally."""
+        exporter = self._make_idle_exporter()
+        exporter._last_completed_lease = "old-lease"
+        exporter._started = True
+        handle_lease_called = []
+
+        async def fake_handle_lease(lease_name, tg, lease_scope):
+            handle_lease_called.append(lease_name)
+
+        exporter.handle_lease = fake_handle_lease
+
+        status = MagicMock()
+        status.leased = True
+        status.lease_name = "new-lease"
+        status.client_name = "test-client"
+        status.context = {}
+
+        async with create_task_group() as tg:
+            await exporter._apply_status(status, tg)
+            await anyio.lowlevel.checkpoint()
+            tg.cancel_scope.cancel()
+
+        assert exporter._lease_context is not None
+        assert exporter._lease_context.lease_name == "new-lease"
+        assert handle_lease_called == ["new-lease"]
+
+    async def test_not_leased_clears_last_completed(self):
+        """A leased=false tick clears the trailing-tick guard."""
+        exporter = self._make_idle_exporter()
+        exporter._last_completed_lease = "old-lease"
+        exporter._started = True
+
+        status = MagicMock()
+        status.leased = False
+        status.lease_name = ""
+        status.client_name = ""
+        status.context = {}
+
+        async with create_task_group() as tg:
+            await exporter._apply_status(status, tg)
+            tg.cancel_scope.cancel()
+
+        assert exporter._last_completed_lease is None
+
+
+class TestHandleLeaseConnections:
+    """Tests for handle_lease connection handling and finally block."""
+
+    async def test_handle_lease_processes_connections(self):
+        """handle_lease sets up Listen stream, processes connections, and cleans up."""
+        from contextlib import asynccontextmanager
+
+        lease_ctx = make_lease_context(lease_name="conn-lease")
+        exporter = make_exporter(lease_ctx)
+        exporter.tls = None
+        exporter.grpc_options = []
+        exporter._started = True
+
+        mock_session = MagicMock()
+        mock_session.context_log_source.return_value = nullcontext()
+        mock_session.update_status = MagicMock()
+        mock_session.lease_context = None
+
+        @asynccontextmanager
+        async def fake_session_for_lease():
+            yield (mock_session, "/tmp/main.sock", "/tmp/hook.sock")
+
+        exporter.session_for_lease = fake_session_for_lease
+
+        conn_handled = []
+        conn_arrived = Event()
+
+        async def fake_handle_client_conn(socket_path, router_endpoint, router_token, tls, grpc_options):
+            conn_handled.append(router_endpoint)
+            conn_arrived.set()
+
+        exporter._handle_client_conn = fake_handle_client_conn
+        exporter._handle_end_session = AsyncMock()
+
+        async def fake_retry_stream(name, factory, tx, **kwargs):
+            conn_request = MagicMock()
+            conn_request.router_endpoint = "router.example.com:443"
+            conn_request.router_token = "tok123"
+            await tx.send(conn_request)
+            await anyio.sleep_forever()
+
+        exporter._retry_stream = fake_retry_stream
+        exporter._listen_stream_factory = MagicMock(return_value=MagicMock())
+        exporter._skip_stale_lease = AsyncMock(return_value=False)
+        cleanup_done = Event()
+
+        async def fake_cleanup_after_lease(lease_scope):
+            cleanup_done.set()
+
+        exporter._cleanup_after_lease = AsyncMock(side_effect=fake_cleanup_after_lease)
+
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.handle_lease, "conn-lease", tg, lease_ctx)
+            with fail_after(5):
+                await conn_arrived.wait()
+            lease_ctx.lease_ended.set()
+            with fail_after(5):
+                await cleanup_done.wait()
+            tg.cancel_scope.cancel()
+
+        assert conn_handled == ["router.example.com:443"]
+        exporter._cleanup_after_lease.assert_awaited_once()
+
+    async def test_handle_lease_finally_sets_before_lease_hook_fallback(self):
+        """When no hook_executor, finally block sets before_lease_hook if unset."""
+        from contextlib import asynccontextmanager
+
+        lease_ctx = make_lease_context(lease_name="fallback-lease")
+        exporter = make_exporter(lease_ctx)
+        exporter.tls = None
+        exporter.grpc_options = []
+        exporter._started = True
+
+        mock_session = MagicMock()
+        mock_session.context_log_source.return_value = nullcontext()
+        mock_session.update_status = MagicMock()
+        mock_session.lease_context = None
+
+        @asynccontextmanager
+        async def fake_session_for_lease():
+            yield (mock_session, "/tmp/main.sock", "/tmp/hook.sock")
+
+        exporter.session_for_lease = fake_session_for_lease
+        exporter._handle_end_session = AsyncMock()
+        exporter._handle_client_conn = AsyncMock()
+        exporter._skip_stale_lease = AsyncMock(return_value=False)
+        cleanup_done = Event()
+
+        async def fake_cleanup_after_lease(lease_scope):
+            cleanup_done.set()
+
+        exporter._cleanup_after_lease = AsyncMock(side_effect=fake_cleanup_after_lease)
+
+        async def fake_retry_stream(name, factory, tx, **kwargs):
+            await tx.aclose()
+
+        exporter._retry_stream = fake_retry_stream
+        exporter._listen_stream_factory = MagicMock(return_value=MagicMock())
+
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.handle_lease, "fallback-lease", tg, lease_ctx)
+            with fail_after(5):
+                await lease_ctx.before_lease_hook.wait()
+            lease_ctx.lease_ended.set()
+            with fail_after(5):
+                await cleanup_done.wait()
+            tg.cancel_scope.cancel()
+
+        assert lease_ctx.before_lease_hook.is_set()
+        exporter._cleanup_after_lease.assert_awaited_once()
+
+    async def test_handle_lease_finally_posts_lease_finished(self):
+        """handle_lease's finally posts LeaseFinished and leaves the slot alone.
+
+        The control-plane loop is the sole writer of _lease_context; handle_lease
+        hands the slot back via the message rather than clearing it itself."""
+        lease_ctx = make_lease_context(lease_name="cleanup-lease")
+        exporter = make_exporter(lease_ctx)
+        exporter._skip_stale_lease = AsyncMock(return_value=True)
+        status_tx, status_rx = create_memory_object_stream(max_buffer_size=1)
+        exporter._control_tx = status_tx
+
+        async with create_task_group() as tg:
+            await exporter.handle_lease("cleanup-lease", tg, lease_ctx)
+
+        msg = status_rx.receive_nowait()
+        assert isinstance(msg, LeaseFinished)
+        assert msg.lease_ctx is lease_ctx
+        assert exporter._lease_context is lease_ctx  # handle_lease never clears it
+        assert lease_ctx.after_lease_hook_done.is_set()
+        await status_tx.aclose()
+        await status_rx.aclose()
+
+    async def test_handle_lease_posts_lease_finished_even_when_cancelled(self):
+        """The finally is shielded, so cancellation still posts LeaseFinished —
+        the loop's finalize trigger is never lost."""
+        lease_ctx = make_lease_context(lease_name="cancel-lease")
+        exporter = make_exporter(lease_ctx)
+        exporter._skip_stale_lease = AsyncMock(return_value=True)
+        status_tx, status_rx = create_memory_object_stream(max_buffer_size=1)
+        exporter._control_tx = status_tx
+
+        with fail_after(5):
+            async with create_task_group() as tg:
+                tg.start_soon(exporter.handle_lease, "cancel-lease", tg, lease_ctx)
+                await anyio.lowlevel.checkpoint()
+                tg.cancel_scope.cancel()
+
+        msg = status_rx.receive_nowait()
+        assert isinstance(msg, LeaseFinished)
+        assert msg.lease_ctx is lease_ctx
+        await status_tx.aclose()
+        await status_rx.aclose()
+
+    async def test_on_lease_finished_clears_slot(self):
+        """The loop's LeaseFinished handler releases the slot and records the
+        completed lease name."""
+        owner_ctx = make_lease_context(lease_name="lease-A")
+        exporter = make_exporter(owner_ctx)
+
+        stop = await exporter._on_lease_finished(owner_ctx)
+
+        assert stop is False
+        assert exporter._lease_context is None
+        assert exporter._last_completed_lease == "lease-A"
+
+    async def test_on_lease_finished_noop_when_slot_not_owned(self, caplog):
+        """LeaseFinished for a context that no longer owns the slot is a no-op.
+
+        Because the loop is the only writer, this only happens for a lease that
+        never took the slot; it must not wipe whoever owns it now, and it must
+        not warn — there is no race to report."""
+        ctx_a = make_lease_context(lease_name="lease-A")
+        ctx_b = make_lease_context(lease_name="lease-B")
+        exporter = make_exporter(ctx_b)
+        with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"):
+            stop = await exporter._on_lease_finished(ctx_a)
+        assert stop is False
+        assert exporter._lease_context is ctx_b
+        assert exporter._last_completed_lease is None
+        assert caplog.text == ""
+
+    async def test_on_lease_finished_sets_stop_when_exit_on_lease_end(self):
+        """Fallback: if the leased=false tick never reached _on_lease_released
+        (cancellation / stale lease), the loop still sets _stop_requested when it
+        releases the slot."""
+        lease_ctx = make_lease_context(lease_name="exit-lease")
+        exporter = make_exporter(lease_ctx)
+        exporter.exit_on_lease_end = True
+
+        stop = await exporter._on_lease_finished(lease_ctx)
+
+        assert stop is True
+        assert exporter._stop_requested is True
+        assert exporter._lease_context is None
+
+    async def test_on_lease_finished_replays_pending_reassignment(self):
+        """After releasing the slot, the loop replays a stashed reassignment so
+        the next lease is acquired on the following iteration."""
+        lease_ctx = make_lease_context(lease_name="lease-A")
+        exporter = make_exporter(lease_ctx)
+        pending = MagicMock()
+        pending.lease_name = "lease-B"
+        exporter._pending_lease_status = pending
+        status_tx, status_rx = create_memory_object_stream(max_buffer_size=1)
+        exporter._control_tx = status_tx
+
+        await exporter._on_lease_finished(lease_ctx)
+
+        assert status_rx.receive_nowait() is pending
+        assert exporter._pending_lease_status is None
+        assert exporter._lease_context is None
+        await status_tx.aclose()
+        await status_rx.aclose()
+
+    async def test_on_lease_finished_ignores_closed_control_channel(self):
+        """Shutdown may close the control channel before the replay send; that
+        must not leak ClosedResourceError out of the loop."""
+        lease_ctx = make_lease_context(lease_name="lease-A")
+        exporter = make_exporter(lease_ctx)
+        pending = MagicMock()
+        pending.lease_name = "lease-B"
+        exporter._pending_lease_status = pending
+        status_tx, status_rx = create_memory_object_stream(max_buffer_size=1)
+        await status_tx.aclose()
+        exporter._control_tx = status_tx
+
+        await exporter._on_lease_finished(lease_ctx)  # must not raise
+
+        assert exporter._pending_lease_status is None
+        assert exporter._lease_context is None
+        await status_rx.aclose()
+
+    async def test_completed_lease_suppresses_trailing_status(self):
+        """Once the loop has finalized a lease, a trailing leased=true tick for
+        the same name is dropped instead of spawning a dead handle_lease."""
+        lease_ctx = make_lease_context(lease_name="lease-A")
+        exporter = make_exporter(lease_ctx)
+        await exporter._on_lease_finished(lease_ctx)
+        assert exporter._last_completed_lease == "lease-A"
+
+        spawned = []
+
+        async def fake_handle_lease(lease_name, tg, lease_scope):
+            spawned.append(lease_name)
+
+        exporter.handle_lease = fake_handle_lease
+        exporter._started = True
+
+        status = MagicMock()
+        status.leased = True
+        status.lease_name = "lease-A"
+        status.client_name = "test-client"
+        status.context = {}
+
+        async with create_task_group() as tg:
+            await exporter._apply_status(status, tg)
+            tg.cancel_scope.cancel()
+
+        assert spawned == []
+        assert exporter._lease_context is None
+
+    async def test_handle_lease_closes_listen_streams_when_stale_during_setup(self):
+        """Stale-lease return during session setup must close the Listen streams."""
+        from contextlib import asynccontextmanager
+
+        from jumpstarter.exporter import exporter as exporter_mod
+
+        lease_ctx = make_lease_context(lease_name="stale-setup")
+        exporter = make_exporter(lease_ctx)
+        exporter.tls = None
+        exporter.grpc_options = []
+        exporter._started = True
+
+        mock_session = MagicMock()
+        mock_session.context_log_source.return_value = nullcontext()
+        mock_session.update_status = MagicMock()
+        mock_session.lease_context = None
+
+        @asynccontextmanager
+        async def fake_session_for_lease():
+            yield (mock_session, "/tmp/main.sock", "/tmp/hook.sock")
+
+        exporter.session_for_lease = fake_session_for_lease
+        exporter._cleanup_after_lease = AsyncMock()
+
+        skip_calls = {"n": 0}
+
+        async def fake_skip(*_args, **_kwargs):
+            skip_calls["n"] += 1
+            return skip_calls["n"] > 1
+
+        exporter._skip_stale_lease = fake_skip
+
+        closed = []
+        original_create = exporter_mod.create_memory_object_stream
+
+        class TrackingFactory:
+            def __getitem__(self, _spec):
+                return self
+
+            def __call__(self, *args, **kwargs):
+                tx, rx = original_create(*args, **kwargs)
+                orig_tx, orig_rx = tx.aclose, rx.aclose
+
+                async def close_tx():
+                    closed.append("tx")
+                    await orig_tx()
+
+                async def close_rx():
+                    closed.append("rx")
+                    await orig_rx()
+
+                tx.aclose = close_tx
+                rx.aclose = close_rx
+                return tx, rx
+
+        with patch.object(exporter_mod, "create_memory_object_stream", TrackingFactory()):
+            async with create_task_group() as tg:
+                await exporter.handle_lease("stale-setup", tg, lease_ctx)
+
+        assert skip_calls["n"] == 2
+        assert "tx" in closed
+        assert "rx" in closed
+
+
 def _make_serve_exporter(exit_on_lease_end=False):
     """Build an Exporter suitable for serve() tests with mocked I/O."""
     from contextlib import asynccontextmanager
 
-    from jumpstarter.exporter.exporter import Exporter
-
-    exporter = Exporter.__new__(Exporter)
-    exporter._exporter_status = ExporterStatus.AVAILABLE
-    exporter._lease_context = None
-    exporter._stop_requested = False
-    exporter._standalone = False
-    exporter._previous_leased = False
-    exporter._tg = None
-    exporter._started = False
-    exporter._registered = True
-    exporter._unregister = False
-    exporter._deferred_unregister = True
-    exporter._exit_code = None
-    exporter.hook_executor = None
-    exporter.exit_on_lease_end = exit_on_lease_end
-    exporter.labels = {"jumpstarter.dev/name": "test-exporter"}
-    exporter._report_status = AsyncMock()
-    exporter._request_lease_release = AsyncMock()
-    exporter._status_drain_active = False
-    exporter._pending_status_request = None
-    exporter._status_rpc_event = Event()
+    exporter = _make_base_exporter(
+        exit_on_lease_end=exit_on_lease_end,
+        _registered=True,
+    )
 
     @asynccontextmanager
     async def fake_session():
@@ -1148,15 +1724,18 @@ def _make_serve_exporter(exit_on_lease_end=False):
     return exporter
 
 
-def _wire_status_stream(exporter, statuses):
+def _wire_status_stream(exporter, statuses, sent: Event | None = None):
     """Replace _retry_stream with a function that feeds statuses into tx.
 
     The stream sends the provided statuses then waits indefinitely (until cancelled),
     matching production behavior where status streams are long-lived.
+    If ``sent`` is provided, it is set after all statuses have been queued.
     """
-    async def fake_retry_stream(name, factory, tx, **kwargs):
+    async def fake_retry_stream(name, factory, tx, backoff=0.5, outage_budget=None):
         for s in statuses:
             await tx.send(s)
+        if sent is not None:
+            sent.set()
         # Don't close - wait until task group cancels us (matches production)
         await anyio.sleep_forever()
 
@@ -1164,10 +1743,19 @@ def _wire_status_stream(exporter, statuses):
 
 
 def _wire_handle_lease(exporter):
-    """Replace handle_lease with a minimal mock that satisfies lifecycle events."""
+    """Replace handle_lease with a minimal mock that satisfies lifecycle events.
+
+    Mirrors the real ordering: afterLease hook completes, session teardown
+    finishes, then handle_lease's finally posts LeaseFinished so the
+    control-plane loop releases the slot."""
+    from jumpstarter.exporter.exporter import LeaseFinished
+
     async def fake_handle_lease(lease_name, tg, lease_ctx):
         await lease_ctx.lease_ended.wait()
         lease_ctx.after_lease_hook_done.set()
+        await anyio.lowlevel.checkpoint()
+        if exporter._control_tx is not None:
+            await exporter._control_tx.send(LeaseFinished(lease_ctx))
 
     exporter.handle_lease = fake_handle_lease
 
@@ -1183,7 +1771,9 @@ class TestExitOnLeaseEnd:
         ])
         _wire_handle_lease(exporter)
 
-        await exporter.serve()
+        with patch("jumpstarter.exporter.exporter.shutdown_runtime_sidecar") as shutdown:
+            await exporter.serve()
+            shutdown.assert_called()
 
         assert exporter._stop_requested is True
 
@@ -1191,37 +1781,332 @@ class TestExitOnLeaseEnd:
         """serve() does NOT set _stop_requested on startup when no lease
         has been served yet (previous_leased is False)."""
         exporter = _make_serve_exporter(exit_on_lease_end=True)
+        statuses_sent = Event()
         _wire_status_stream(exporter, [
             MagicMock(leased=False, lease_name="", client_name=""),
-        ])
+        ], sent=statuses_sent)
 
-        async with create_task_group() as tg:
-            tg.start_soon(exporter.serve)
-            # Give serve time to process the status
-            await anyio.sleep(0.1)
-            # Check that _stop_requested was NOT set
-            assert exporter._stop_requested is False
-            # Clean exit
-            tg.cancel_scope.cancel()
+        with patch("jumpstarter.exporter.exporter.shutdown_runtime_sidecar"):
+            async with create_task_group() as tg:
+                tg.start_soon(exporter.serve)
+                await statuses_sent.wait()
+                # Yield so serve() can process the queued status.
+                await anyio.lowlevel.checkpoint()
+                assert exporter._stop_requested is False
+                tg.cancel_scope.cancel()
 
     async def test_serve_continues_when_disabled(self):
         """serve() does NOT set _stop_requested after lease ends when
         exit_on_lease_end is False — the exporter loops for next lease."""
         exporter = _make_serve_exporter(exit_on_lease_end=False)
+        statuses_sent = Event()
         _wire_status_stream(exporter, [
             MagicMock(leased=True, lease_name="test-lease", client_name="test"),
             MagicMock(leased=False, lease_name="", client_name=""),
-        ])
+        ], sent=statuses_sent)
         _wire_handle_lease(exporter)
 
+        with patch("jumpstarter.exporter.exporter.shutdown_runtime_sidecar") as shutdown:
+            async with create_task_group() as tg:
+                tg.start_soon(exporter.serve)
+                await statuses_sent.wait()
+                # Wait until the lease→unleased transition has been applied.
+                with anyio.fail_after(2):
+                    while not exporter._started or exporter._lease_context is not None:
+                        await anyio.sleep(0.01)
+                assert exporter._stop_requested is False
+                shutdown.assert_not_called()
+                tg.cancel_scope.cancel()
+
+
+
+class TestShutdownRuntimeSidecar:
+    def test_noop_without_socket_env(self, monkeypatch):
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        monkeypatch.delenv("JUMPSTARTER_LAUNCHER_SOCKET", raising=False)
+        assert shutdown_runtime_sidecar() is False
+
+    def test_runs_shutdown_command(self, monkeypatch, tmp_path):
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")  # path only; connect is mocked via subprocess
+        binary = tmp_path / "jumpstarter-exec"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        with patch("subprocess.run") as run:
+            run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            assert shutdown_runtime_sidecar(binary=str(binary)) is True
+            run.assert_called_once()
+            args = run.call_args.args[0]
+            assert args[0] == str(binary)
+            assert args[1] == "shutdown"
+            assert "--socket" in args
+            assert str(sock) in args
+
+    def test_falls_back_to_binary_beside_socket(self, monkeypatch, tmp_path):
+        """When the default path is missing, use jumpstarter-exec next to the socket."""
+        from pathlib import Path
+
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")
+        binary = tmp_path / "jumpstarter-exec"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        real_is_file = Path.is_file
+
+        def is_file_no_default(self):
+            # Treat the packaged default path as absent so we exercise fallback.
+            if str(self) == "/shared/jumpstarter-exec":
+                return False
+            return real_is_file(self)
+
+        with (
+            patch.object(Path, "is_file", is_file_no_default),
+            patch("subprocess.run") as run,
+        ):
+            run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            assert shutdown_runtime_sidecar() is True
+            assert run.call_args.args[0][0] == str(binary)
+
+        monkeypatch.delenv("JUMPSTARTER_LAUNCHER_SOCKET", raising=False)
+        with (
+            patch.object(Path, "is_file", is_file_no_default),
+            patch("subprocess.run") as run,
+        ):
+            run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            assert shutdown_runtime_sidecar(socket_path=str(sock)) is True
+            assert run.call_args.args[0][0] == str(binary)
+
+    def test_missing_binary_returns_false(self, monkeypatch, tmp_path):
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        missing = tmp_path / "does-not-exist"
+        assert shutdown_runtime_sidecar(binary=str(missing)) is False
+
+    def test_file_not_found_returns_false(self, monkeypatch, tmp_path):
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")
+        binary = tmp_path / "jumpstarter-exec"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        with patch("subprocess.run", side_effect=FileNotFoundError):
+            assert shutdown_runtime_sidecar(binary=str(binary)) is False
+
+    def test_permission_error_returns_false(self, monkeypatch, tmp_path):
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")
+        binary = tmp_path / "jumpstarter-exec"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        with patch("subprocess.run", side_effect=PermissionError("denied")):
+            assert shutdown_runtime_sidecar(binary=str(binary)) is False
+
+    def test_timeout_returns_false(self, monkeypatch, tmp_path):
+        import subprocess
+
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")
+        binary = tmp_path / "jumpstarter-exec"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        with patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd=["jumpstarter-exec"], timeout=1),
+        ):
+            assert shutdown_runtime_sidecar(binary=str(binary), timeout=1.0) is False
+
+    def test_nonzero_exit_returns_false(self, monkeypatch, tmp_path):
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")
+        binary = tmp_path / "jumpstarter-exec"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        with patch("subprocess.run") as run:
+            run.return_value = MagicMock(returncode=1, stdout="", stderr="boom")
+            assert shutdown_runtime_sidecar(binary=str(binary)) is False
+
+
+class TestOnLeaseReleased:
+    """_on_lease_released reacts to a leased=false tick without touching the
+    slot: it flags lease_ended (and, under exit_on_lease_end, _stop_requested)
+    and returns immediately. The slot is released later by the loop when the
+    matching LeaseFinished arrives — see the TestHandleLeaseFinally /
+    _on_lease_finished tests for the release half of the handshake."""
+
+    async def test_signals_lease_ended_without_clearing_slot(self):
+        """A leased=false tick flags the lease as ended so handle_lease can run
+        its afterLease hook, but must NOT clear _lease_context. The loop keeps
+        the slot (so _report_status still reaches the client session during the
+        hook) until handle_lease posts LeaseFinished."""
+        exporter = _make_serve_exporter()
+        lease_ctx = make_lease_context(lease_name="lease-A")
+        exporter._lease_context = lease_ctx
+        exporter._started = True
+
+        status = MagicMock()
+        status.leased = False
+        status.lease_name = ""
+        status.client_name = ""
+        status.context = {}
+
         async with create_task_group() as tg:
-            tg.start_soon(exporter.serve)
-            # Give serve time to process both statuses
-            await anyio.sleep(0.2)
-            # Check that _stop_requested was NOT set (exit_on_lease_end is False)
-            assert exporter._stop_requested is False
-            # Clean exit
+            result = await exporter._apply_status(status, tg)
             tg.cancel_scope.cancel()
+
+        assert result is False  # loop keeps running until LeaseFinished arrives
+        assert lease_ctx.lease_ended.is_set()
+        assert exporter._lease_context is lease_ctx
+        assert exporter._last_completed_lease is None
+
+    async def test_exit_on_lease_end_sets_stop_immediately(self):
+        """Refuse new leases the moment the lease ends — do not wait for the
+        afterLease hook or session teardown. The slot is still held until
+        LeaseFinished so serve()'s shutdown runs only after the hook completes."""
+        exporter = _make_serve_exporter(exit_on_lease_end=True)
+        lease_ctx = make_lease_context(lease_name="ending-lease")
+        exporter._lease_context = lease_ctx
+        exporter._started = True
+
+        status = MagicMock()
+        status.leased = False
+        status.lease_name = ""
+        status.client_name = ""
+        status.context = {}
+
+        async with create_task_group() as tg:
+            result = await exporter._apply_status(status, tg)
+            tg.cancel_scope.cancel()
+
+        assert exporter._stop_requested is True
+        assert result is False  # do not break the loop before LeaseFinished
+        assert exporter._lease_context is lease_ctx
+
+    async def test_does_not_call_shutdown_itself(self):
+        """exit_on_lease_end flips _stop_requested but must not call
+        shutdown_runtime_sidecar; serve()'s finally is the single authoritative
+        call site, reached only after handle_lease's afterLease hook completes."""
+        exporter = _make_serve_exporter(exit_on_lease_end=True)
+        lease_ctx = make_lease_context(lease_name="ending-lease")
+        exporter._lease_context = lease_ctx
+        exporter._started = True
+
+        status = MagicMock()
+        status.leased = False
+        status.lease_name = ""
+        status.client_name = ""
+        status.context = {}
+
+        shutdown_calls = []
+
+        def tracking_shutdown(*_args, **_kwargs):
+            shutdown_calls.append(True)
+
+        with patch("jumpstarter.exporter.exporter.shutdown_runtime_sidecar", tracking_shutdown):
+            async with create_task_group() as tg:
+                await exporter._apply_status(status, tg)
+                tg.cancel_scope.cancel()
+
+        assert shutdown_calls == []
+        assert exporter._stop_requested is True
+
+    async def test_spawns_watchdog_on_lease_end(self):
+        """A leased=false tick starts the LeaseFinished watchdog so a wedged
+        teardown is eventually logged."""
+        exporter = _make_serve_exporter()
+        lease_ctx = make_lease_context(lease_name="lease-A")
+        exporter._lease_context = lease_ctx
+        exporter._started = True
+
+        spawned = []
+
+        async def tracking_watchdog(ctx):
+            spawned.append(ctx)
+
+        exporter._lease_finished_watchdog = tracking_watchdog
+
+        status = MagicMock()
+        status.leased = False
+        status.lease_name = ""
+        status.client_name = ""
+        status.context = {}
+
+        async with create_task_group() as tg:
+            await exporter._apply_status(status, tg)
+            await anyio.lowlevel.checkpoint()
+            tg.cancel_scope.cancel()
+
+        assert spawned == [lease_ctx]
+
+
+class TestLeaseFinishedWatchdog:
+    """The watchdog only logs a stuck Ending state; it never releases the slot,
+    so the loop's no-timeout wait for LeaseFinished stays a real happens-before
+    edge rather than a disguised timer."""
+
+    async def test_warns_when_teardown_stalls(self, caplog):
+        """If LeaseFinished never arrives, the watchdog logs once and leaves the
+        slot untouched."""
+        exporter = _make_serve_exporter()
+        lease_ctx = make_lease_context(lease_name="wedged")
+        exporter._lease_context = lease_ctx
+
+        with (
+            caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"),
+            patch("jumpstarter.exporter.exporter._LEASE_FINISHED_WATCHDOG", 0.01),
+        ):
+            await exporter._lease_finished_watchdog(lease_ctx)
+
+        assert "stuck in Ending" in caplog.text
+        assert "wedged" in caplog.text
+        assert exporter._lease_context is lease_ctx  # never released by the watchdog
+
+    async def test_silent_after_lease_finished(self, caplog):
+        """Once _on_lease_finished has released the slot, the watchdog stays
+        quiet when it wakes."""
+        exporter = _make_serve_exporter()
+        lease_ctx = make_lease_context(lease_name="clean")
+        exporter._lease_context = lease_ctx
+
+        with (
+            caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"),
+            patch("jumpstarter.exporter.exporter._LEASE_FINISHED_WATCHDOG", 0.05),
+        ):
+            async with create_task_group() as tg:
+                tg.start_soon(exporter._lease_finished_watchdog, lease_ctx)
+                await exporter._on_lease_finished(lease_ctx)
+
+        assert exporter._lease_context is None
+        assert caplog.text == ""
 
 
 class TestContextPropagation:
@@ -1239,10 +2124,10 @@ class TestContextPropagation:
         exporter._lease_context = None
         exporter._stop_requested = False
         exporter._standalone = False
-        exporter._previous_leased = False
         exporter._started = False
         exporter.hook_executor = None
-        exporter.labels = {"jumpstarter.dev/name": "lab-exporter-01"}
+        exporter.labels = {}
+        exporter.exporter_name = "lab-exporter-01"
         exporter._report_status = AsyncMock()
         exporter._request_lease_release = AsyncMock()
 
@@ -1271,10 +2156,7 @@ class TestContextPropagation:
                     before_lease_hook=Event(),
                 )
                 exporter._lease_context = lease_scope
-                log_ctx = {"lease_id": status.lease_name, "exporter": exporter.name}
-                if status.context:
-                    log_ctx.update(status.context)
-                tracking_set(**log_ctx)
+                tracking_set(**exporter._lease_log_context(status))
 
         assert len(calls) >= 1
         first_call = calls[0]

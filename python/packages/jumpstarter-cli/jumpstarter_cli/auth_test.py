@@ -4,9 +4,13 @@ import time
 from contextlib import ExitStack
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from jumpstarter_cli.auth import auth
+
+from jumpstarter.config.client import ClientConfigV1Alpha1
+from jumpstarter.config.common import ObjectMeta
 
 
 def _make_jwt(exp_offset_seconds=3600, sub="test-subject", iss="https://localhost:8085"):
@@ -83,6 +87,57 @@ class TestAuthStatus:
         assert result.exit_code == 0
         assert "Refresh token stored: yes" in result.output
 
+    def test_status_invalid_token(self):
+        config = _mock_config(token="not-a-jwt")
+        with _patch_config(config):
+            result = self.runner.invoke(auth, ["status"])
+        assert result.exit_code == 0
+        assert "Failed to decode token" in result.output
+
+    def test_status_valid_token_json(self):
+        token = _make_jwt(exp_offset_seconds=7200)
+        config = _mock_config(token=token, refresh_token="fake-refresh")
+        with _patch_config(config):
+            result = self.runner.invoke(auth, ["status", "-o", "json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["kind"] == "AuthStatus"
+        assert data["status"] == "valid"
+        assert data["subject"] == "test-subject"
+        assert data["issuer"] == "https://localhost:8085"
+        assert data["refreshTokenStored"] is True
+        assert data["remainingSeconds"] > 3600
+        assert data["expiresAt"] is not None
+        assert token not in result.output
+
+    def test_status_expired_token_json(self):
+        token = _make_expired_jwt()
+        config = _mock_config(token=token)
+        with _patch_config(config):
+            result = self.runner.invoke(auth, ["status", "-o", "json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["status"] == "expired"
+        assert data["remainingSeconds"] < 0
+
+    def test_status_no_token_json(self):
+        config = _mock_config(token=None)
+        with _patch_config(config):
+            result = self.runner.invoke(auth, ["status", "-o", "json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["status"] == "no-token"
+        assert data["expiresAt"] is None
+
+    def test_status_invalid_token_json(self):
+        config = _mock_config(token="not-a-jwt")
+        with _patch_config(config):
+            result = self.runner.invoke(auth, ["status", "-o", "json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["status"] == "invalid-token"
+        assert data["error"]
+
 
 class TestAuthRotate:
     def setup_method(self):
@@ -112,3 +167,26 @@ class TestAuthRotate:
         assert result.exit_code == 0
         assert "rotated" in result.output.lower()
         assert config.token == new_token
+
+    @pytest.mark.parametrize("explicit_path", [True, False])
+    def test_rotate_preserves_config_path(self, tmp_path, monkeypatch, explicit_path):
+        clients = tmp_path / "clients"
+        monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", clients)
+        path = (tmp_path if explicit_path else clients) / "client.yaml"
+        config = ClientConfigV1Alpha1(
+            alias="client",
+            metadata=ObjectMeta(namespace="test", name="test"),
+            token=_make_jwt(),
+        )
+        ClientConfigV1Alpha1.save(config, path)
+        new_token = _make_jwt(exp_offset_seconds=86400)
+        rotate = AsyncMock(return_value=new_token)
+        monkeypatch.setattr(ClientConfigV1Alpha1, "rotate_token", rotate)
+
+        result = self.runner.invoke(auth, ["rotate", "--client-config", str(path)])
+
+        assert result.exit_code == 0, result.output
+        rotate.assert_awaited_once_with()
+        assert ClientConfigV1Alpha1.from_file(path).token == new_token
+        if explicit_path:
+            assert not (clients / "client.yaml").exists()

@@ -46,6 +46,9 @@ const (
 	// provisioner controller deployments are available
 	ConditionTypeExporterSetControllersReady = "ExporterSetControllersReady"
 
+	// ConditionTypeTelemetryDeploymentReady indicates whether the telemetry deployment is available
+	ConditionTypeTelemetryDeploymentReady = "TelemetryDeploymentReady"
+
 	// ConditionTypeReady indicates whether the overall Jumpstarter system is ready
 	ConditionTypeReady = "Ready"
 )
@@ -189,6 +192,7 @@ type JumpstarterSpec struct {
 	LeasePolicy LeasePolicyConfig `json:"leasePolicy,omitempty"`
 
 	// Hidden labels configuration for hiding specific label keys from exporter listings.
+	// +kubebuilder:default={}
 	// +optional
 	HiddenLabels HiddenLabelsConfig `json:"hiddenLabels,omitempty"`
 
@@ -201,12 +205,25 @@ type JumpstarterSpec struct {
 	// Deprecated labels configuration for warning users about label keys that should no longer be used.
 	// +optional
 	DeprecatedLabels DeprecatedLabelsConfig `json:"deprecatedLabels,omitempty"`
+
+	// Telemetry configuration for the optional telemetry service.
+	// When enabled, the operator deploys a jumpstarter-telemetry service that receives
+	// structured log entries from exporters via gRPC. The controller advertises the
+	// telemetry endpoint to exporters so they can push logs without cluster credentials.
+	// +optional
+	Telemetry *TelemetryConfig `json:"telemetry,omitempty"`
 }
 
 // HiddenLabelsConfig defines label keys to hide from exporter listings by default.
 type HiddenLabelsConfig struct {
 	// List of exact label keys to hide from ListExporters/GetExporter responses.
-	// Clients can pass show_hidden_labels=true to see all labels.
+	// Clients can pass show_hidden_labels=true to see all labels. Hidden labels
+	// remain usable in label selectors.
+	//
+	// Defaults to the ExporterSet identity labels, which every pool member
+	// carries. Setting this field replaces the default list rather than adding
+	// to it; set it to [] to show every label.
+	// +kubebuilder:default={"exporterset.jumpstarter.dev/name","exporterset.jumpstarter.dev/class","exporterset.jumpstarter.dev/provisioner"}
 	// +optional
 	Keys []string `json:"keys,omitempty"`
 }
@@ -266,6 +283,101 @@ type DeprecatedLabelsConfig struct {
 	Keys map[string]string `json:"keys,omitempty"`
 }
 
+// TelemetryConfig defines configuration for the telemetry service deployment.
+// When enabled, the operator creates a Deployment and ClusterIP Service for
+// jumpstarter-telemetry, which receives structured log entries from exporters.
+type TelemetryConfig struct {
+	// Enable the telemetry service deployment.
+	// When enabled, the operator deploys a jumpstarter-telemetry pod and a ClusterIP
+	// Service, and configures the controller to advertise the endpoint to exporters.
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Container image for the telemetry pod in 'registry/repository/image:tag' format.
+	// +kubebuilder:default="quay.io/jumpstarter-dev/jumpstarter-telemetry:latest"
+	Image string `json:"image,omitempty"`
+
+	// Image pull policy for the telemetry container.
+	// +kubebuilder:default="IfNotPresent"
+	// +kubebuilder:validation:Enum=Always;IfNotPresent;Never
+	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+
+	// Number of telemetry replicas to run.
+	// Multiple replicas provide HA; each exporter connects to exactly one replica
+	// via a persistent MetricsStream, so Prometheus sum-by queries across replicas
+	// yield exact totals without double-counting (see JEP-0013 DD-8).
+	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum=1
+	Replicas *int32 `json:"replicas,omitempty"`
+
+	// Resource requirements for the telemetry pod.
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// Logging configuration for the telemetry log ingestion path.
+	Logging TelemetryLoggingConfig `json:"logging,omitempty"`
+
+	// gRPC configuration for the telemetry service.
+	// Use this to configure TLS when not using cert-manager.
+	GRPC TelemetryGRPCConfig `json:"grpc,omitempty"`
+
+	// Metrics configures reverse-scrape fan-out and Prometheus exposition
+	// (JEP-0013). Loki and ServiceMonitor fields are later phases.
+	Metrics TelemetryMetricsConfig `json:"metrics,omitempty"`
+}
+
+// TelemetryGRPCConfig defines gRPC configuration for the telemetry service.
+// This is a simplified version of GRPCConfig since telemetry is internal-only
+// (ClusterIP) and doesn't need external endpoints or keepalive settings.
+type TelemetryGRPCConfig struct {
+	// TLS configuration for secure gRPC communication with the telemetry service.
+	// When spec.certManager.enabled is true, this is ignored and certificates are
+	// automatically managed by cert-manager.
+	// When spec.certManager.enabled is false, you can provide your own TLS secret here.
+	TLS TLSConfig `json:"tls,omitempty"`
+}
+
+// TelemetryMetricsConfig configures telemetry /metrics reverse-scrape behavior.
+type TelemetryMetricsConfig struct {
+	// Allowlist of keys to include in Prometheus exemplars. Unlisted keys are omitted.
+	// At most 16 keys. Each key is at most 32 characters, the same limit as
+	// Lease spec.context key names that may appear in this list.
+	// +kubebuilder:default={"client","lease_id"}
+	// +kubebuilder:validation:MaxItems=16
+	// +kubebuilder:validation:items:MaxLength=32
+	ExemplarKeys []string `json:"exemplarKeys,omitempty"`
+
+	// Allowed driver_type label values. Unlisted types are remapped to "other".
+	// At most 16 entries (the default set plus site-specific categories), each
+	// at most 32 characters.
+	// +kubebuilder:default={"power","storage","network","serial","console","video","composite"}
+	// +kubebuilder:validation:MaxItems=16
+	// +kubebuilder:validation:items:MaxLength=32
+	DriverTypeEnum []string `json:"driverTypeEnum,omitempty"`
+
+	// Max wait for parallel exporter MetricsStream responses during a /metrics fan-out.
+	// Should be lower than the Prometheus scrape_timeout.
+	// JEP-0013 specifies the 7s default and no maximum. 60s bounds the fan-out
+	// wait and the HTTP write timeout that grows with this value.
+	// +kubebuilder:default="7s"
+	// +kubebuilder:validation:XValidation:rule="duration(self) > duration('0s') && duration(self) <= duration('60s')",message="scrapeTimeout must be greater than 0 and at most 60s"
+	ScrapeTimeout *metav1.Duration `json:"scrapeTimeout,omitempty"`
+}
+
+// TelemetryLoggingConfig configures the log push path to the telemetry service.
+type TelemetryLoggingConfig struct {
+	// Filter controls which log entries are forwarded to the telemetry service.
+	Filter TelemetryLoggingFilterConfig `json:"filter,omitempty"`
+}
+
+// TelemetryLoggingFilterConfig controls which log entries are forwarded to the telemetry service.
+type TelemetryLoggingFilterConfig struct {
+	// Minimum log severity to forward.
+	// Accepted values: debug, info, warning, error, critical. Defaults to "info".
+	// +kubebuilder:default="info"
+	// +kubebuilder:validation:Enum=debug;info;warning;error;critical
+	MinSeverity string `json:"minSeverity,omitempty"`
+}
+
 // LeasePolicyConfig defines policy constraints for leases.
 type LeasePolicyConfig struct {
 	// Maximum number of user-defined tags allowed per lease.
@@ -298,6 +410,9 @@ type RoutersConfig struct {
 	// +kubebuilder:validation:Minimum=1
 	Replicas int32 `json:"replicas,omitempty"`
 
+	// Custom annotations to add to router pod templates.
+	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
+
 	// Topology spread constraints for router pod distribution.
 	// Ensures router pods are distributed evenly across nodes and zones.
 	// Useful for high availability and fault tolerance.
@@ -328,10 +443,16 @@ type ControllerConfig struct {
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// Number of controller replicas to run.
-	// Must be a positive integer. Minimum recommended value is 2 for high availability.
-	// +kubebuilder:default=2
+	// Currently only 1 replica is supported because the controller uses in-memory
+	// state for gRPC stream coordination (Dial/Listen). Values greater than 1 will
+	// be clamped to 1 with a warning. See https://github.com/jumpstarter-dev/jumpstarter/issues/1013
+	// for the tracking issue on HA controller support.
+	// +kubebuilder:default=1
 	// +kubebuilder:validation:Minimum=1
 	Replicas int32 `json:"replicas,omitempty"`
+
+	// Custom annotations to add to controller pod templates.
+	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
 
 	// Exporter options configuration.
 	// Controls how exporters connect and behave when communicating with the controller.

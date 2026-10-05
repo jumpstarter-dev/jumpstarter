@@ -4,9 +4,11 @@ dynamic = ["version", "urls"]
 description = "Jumpstarter driver for mitmproxy HTTP(S) interception, mocking, and traffic recording"
 readme = "README.md"
 authors = [{ name = "Kirk Brauer", email = "kbrauer@hatci.com" }]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = "Apache-2.0"
-dependencies = ["jumpstarter", "mitmproxy>=10.0"]
+# mitmproxy is launched as an external program, not imported, so it is not a runtime
+# dependency; install it separately (e.g. `uv tool install mitmproxy`). See README.
+dependencies = ["jumpstarter"]
 
 [project.entry-points."jumpstarter.drivers"]
 MitmproxyDriver = "jumpstarter_driver_mitmproxy.driver:MitmproxyDriver"
@@ -22,7 +24,7 @@ testpaths = [
 ]
 
 [dependency-groups]
-dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3", "requests>=2.28.0"]
+dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3", "requests>=2.28.0", "mitmproxy>=12.0"]
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"

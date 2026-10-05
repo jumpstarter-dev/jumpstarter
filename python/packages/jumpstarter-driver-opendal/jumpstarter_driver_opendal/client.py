@@ -123,16 +123,20 @@ class OpendalFile:
     @validate_call(validate_return=True)
     def write_bytes(self, data: bytes) -> None:
         buf = BytesIO(data)
-        with self.client.portal.wrap_async_context_manager(BytesIOStream(buf=buf)) as stream:
-            with self.client.portal.wrap_async_context_manager(self.client.resource_async(stream)) as handle:
-                self.__write(handle)
+        with (
+            self.client.portal.wrap_async_context_manager(BytesIOStream(buf=buf)) as stream,
+            self.client.portal.wrap_async_context_manager(self.client.resource_async(stream)) as handle,
+        ):
+            self.__write(handle)
 
     @validate_call(validate_return=True)
     def read_bytes(self) -> bytes:
         buf = BytesIO()
-        with self.client.portal.wrap_async_context_manager(BytesIOStream(buf=buf)) as stream:
-            with self.client.portal.wrap_async_context_manager(self.client.resource_async(stream)) as handle:
-                self.__read(handle)
+        with (
+            self.client.portal.wrap_async_context_manager(BytesIOStream(buf=buf)) as stream,
+            self.client.portal.wrap_async_context_manager(self.client.resource_async(stream)) as handle,
+        ):
+            self.__read(handle)
         return buf.getvalue()
 
     @validate_call(validate_return=True)
@@ -441,7 +445,6 @@ class OpendalClient(DriverClient):
         @driver_click_group(self)
         def base():
             """Opendal Storage"""
-            pass
 
         @base.command
         @arg_path
@@ -577,7 +580,6 @@ class FlasherClientInterface(metaclass=ABCMeta):
         @driver_click_group(self)
         def base():
             """Generic flasher interface"""
-            pass
 
         @base.command()
         @click.argument("file", nargs=-1, required=False)
@@ -642,7 +644,7 @@ class FlasherClient(FlasherClientInterface, DriverClient):
 
             storage_hash = storage.hash(filename)
             return storage_hash != src_hash
-        except Exception:
+        except Exception:  # pragma: no cover  # noqa: BLE001
             return True
 
     def _flash_single(
@@ -752,7 +754,6 @@ class StorageMuxClient(DriverClient):
             @driver_click_group(self)
             def base():
                 """Storage operations"""
-                pass
 
         @base.command()
         def host():
@@ -786,7 +787,11 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
         operator: Operator | None = None,
         compression: Compression | None = None,
     ):
-        """Flash image to DUT"""
+        """Flash image to DUT
+
+        gzip, xz, bz2 and zstd compressed images are detected from their
+        file signature and decompressed transparently on the exporter.
+        """
         if target is not None:
             raise ArgumentError(f"target is not supported for StorageMuxFlasherClient, {target} provided")
 

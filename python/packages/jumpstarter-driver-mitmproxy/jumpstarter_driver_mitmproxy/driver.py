@@ -35,6 +35,7 @@ import json
 import logging
 import os
 import secrets
+import shutil
 import signal
 import socket
 import subprocess
@@ -53,6 +54,17 @@ from pydantic import BaseModel, model_validator
 from jumpstarter.driver import Driver, export, exportstream
 
 logger = logging.getLogger(__name__)
+
+def _verify_mitmproxy_binary(binary: str) -> str | None:
+    # mitmproxy is launched as an external program, not a Python dependency, so
+    # check it is on PATH up front rather than letting Popen raise a bare error.
+    if shutil.which(binary) is None:
+        return (
+            f"Error: '{binary}' not found on PATH. Install mitmproxy separately, "
+            f"e.g. `uv tool install mitmproxy` or `pipx install mitmproxy`."
+        )
+    return None
+
 
 # ── Capture export helpers ───────────────────────────────────
 
@@ -216,8 +228,7 @@ def _write_captured_file(
     clean = "/".join(p for p in clean.split("/") if p not in ("", ".", ".."))
     if not clean:
         clean = "root"
-    if clean.endswith(ext):
-        clean = clean[:-len(ext)]
+    clean = clean.removesuffix(ext)  # pragma: no cover
     rel = f"responses/{method}/{clean}{ext}"
     base = files_dir.resolve()
     dest = (files_dir / rel).resolve()
@@ -298,7 +309,7 @@ class DirectoriesConfig(BaseModel):
     files: str = ""
 
     @model_validator(mode="after")
-    def _resolve_defaults(self) -> "DirectoriesConfig":
+    def _resolve_defaults(self) -> DirectoriesConfig:
         if not self.data:
             import getpass
             import tempfile
@@ -496,6 +507,10 @@ class MitmproxyDriver(Driver):
         # passthrough: no extra flags needed
 
         binary = cmd[0]
+        binary_error = _verify_mitmproxy_binary(binary)
+        if binary_error:
+            return binary_error
+
         logger.info("Starting %s: %s", binary, " ".join(cmd))
 
         self._process = subprocess.Popen(
@@ -554,7 +569,7 @@ class MitmproxyDriver(Driver):
             try:
                 self._load_startup_mocks()
                 self._write_mock_config()
-            except Exception as e:
+            except Exception as e:  # pragma: no cover  # noqa: BLE001
                 self._stop_capture_server()
                 return f"Failed to initialize mock mode: {e}"
 
@@ -1413,7 +1428,7 @@ class MitmproxyDriver(Driver):
         if not src.exists():
             raise FileNotFoundError(f"Flow file not found: {name}")
         chunk_size = 2 * 1024 * 1024
-        with open(src, "rb") as f:
+        with open(src, "rb") as f:  # pragma: no cover  # noqa: ASYNC230
             while True:
                 chunk = f.read(chunk_size)
                 if not chunk:
@@ -1766,7 +1781,7 @@ class MitmproxyDriver(Driver):
             return
         # 2 MB raw → ~2.7 MB base64, well under the 4 MB gRPC limit
         chunk_size = 2 * 1024 * 1024
-        with open(src, "rb") as f:
+        with open(src, "rb") as f:  # pragma: no cover  # noqa: ASYNC230
             while True:
                 chunk = f.read(chunk_size)
                 if not chunk:
@@ -1880,7 +1895,7 @@ class MitmproxyDriver(Driver):
                 )
                 t.start()
                 self._capture_reader_threads.append(t)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 break

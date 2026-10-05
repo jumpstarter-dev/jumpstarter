@@ -26,19 +26,29 @@ class BaseFlasher(Driver):
     tftp_dir: str = field(default="/var/lib/tftpboot")
     http_dir: str = field(default="/var/www/html")
     cacert: str | None = field(default=None)
+    exporter_ip: str | None = field(default=None)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
 
         # Ensure required children are present if not already instantiated
-        # in configuration
+        # in configuration. When exporter_ip is configured, the auto-created
+        # children advertise it to the DUT without binding to it.
         if "tftp" not in self.children:
-            self.children["tftp"] = Tftp(root_dir=self.tftp_dir, remove_created_on_close=True)
+            self.children["tftp"] = Tftp(
+                root_dir=self.tftp_dir,
+                remove_created_on_close=True,
+                advertised_host=self.exporter_ip,
+            )
         self.tftp = self.children["tftp"]
 
         if "http" not in self.children:
-            self.children["http"] = HttpServer(root_dir=self.http_dir, remove_created_on_close=True)
+            self.children["http"] = HttpServer(
+                root_dir=self.http_dir,
+                remove_created_on_close=True,
+                advertised_host=self.exporter_ip,
+            )
         self.http = self.children["http"]
 
         # Ensure required children are present, the following are not auto-created
@@ -77,7 +87,7 @@ class BaseFlasher(Driver):
         """Return the CA certificate contents if configured"""
         if not self.cacert:
             return None
-        with open(self.cacert) as f:
+        with open(self.cacert) as f:  # noqa: ASYNC230
             return f.read()
 
     @export
@@ -187,7 +197,7 @@ class BaseFlasher(Driver):
     @export
     async def get_flasher_manifest_yaml(self) -> str:
         """Return the manifest yaml as a string for client side consumption"""
-        with open(await self._get_file_path(self.manifest)) as f:
+        with open(await self._get_file_path(self.manifest)) as f:  # noqa: ASYNC230
             return f.read()
 
     async def get_flasher_manifest(self) -> FlasherBundleManifestV1Alpha1:

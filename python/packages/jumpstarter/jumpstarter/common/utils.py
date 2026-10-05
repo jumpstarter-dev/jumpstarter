@@ -1,3 +1,4 @@
+import logging
 import os
 import signal
 import sys
@@ -10,6 +11,7 @@ from typing import TYPE_CHECKING
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 
 from jumpstarter.client import client_from_path
+from jumpstarter.common.display import display_options
 from jumpstarter.config.env import (
     JMP_DRIVERS_ALLOW,
     JMP_EXPORTER,
@@ -26,6 +28,8 @@ if TYPE_CHECKING:
     from jumpstarter.driver import Driver
 
 __all__ = ["ExporterMetadata", "env", "env_with_metadata"]
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -47,14 +51,16 @@ async def serve_async(root_device: "Driver", portal: BlockingPortal, stack: Exit
 
 @contextmanager
 def serve(root_device: "Driver"):
-    with start_blocking_portal() as portal:
-        with ExitStack() as stack:
-            with portal.wrap_async_context_manager(serve_async(root_device, portal, stack)) as client:
-                try:
-                    yield client
-                finally:
-                    if hasattr(client, "close"):
-                        client.close()
+    with (
+        start_blocking_portal() as portal,
+        ExitStack() as stack,
+        portal.wrap_async_context_manager(serve_async(root_device, portal, stack)) as client,
+    ):
+        try:
+            yield client
+        finally:
+            if hasattr(client, "close"):
+                client.close()
 
 
 ANSI_GRAY = "\\[\\e[90m\\]"
@@ -99,7 +105,16 @@ def _run_process(
         return 126
     if lease is not None:
         lease.lease_ending_callback = partial(lease_ending_handler, process)
-    return process.wait()
+    returncode = process.wait()
+    if returncode < 0:
+        # wait() reports signal deaths as -N; report them as a shell does. Log
+        # the signal too: 137 alone cannot be told from a command exiting 137.
+        signum = -returncode
+        returncode = 128 + signum
+        logger.debug("command %s killed by signal %d, reporting %d", cmd[0], signum, returncode)
+    else:
+        logger.debug("command %s exited with %d", cmd[0], returncode)
+    return returncode
 
 
 def _lease_env_vars(lease) -> dict[str, str]:
@@ -137,6 +152,52 @@ def _build_common_env(
     if lease is not None:
         env.update(_lease_env_vars(lease))
     return env
+
+
+def _bash_ps1(context: str, bolt: str, arrow: str, no_color: bool) -> str:
+    """Build the bash ``PS1`` for the jmp shell prompt."""
+    if no_color:
+        return f"{PROMPT_CWD} {bolt} {context} {arrow} "
+    return (
+        f"{ANSI_GRAY}{PROMPT_CWD} "
+        f"{ANSI_YELLOW}{bolt}"
+        f"{ANSI_WHITE}{context} "
+        f"{ANSI_YELLOW}{arrow}"
+        f"{ANSI_RESET} "
+    )
+
+
+def _fish_prompt_fn(context: str, bolt: str, arrow: str, no_color: bool) -> str:
+    """Build the fish ``fish_prompt`` function for the jmp shell prompt."""
+    if no_color:
+        return (
+            "function fish_prompt; "
+            'printf "%s " (basename $PWD); '
+            f'printf "{bolt}"; '
+            f'printf "{context}"; '
+            f'printf "{arrow} "; '
+            "end"
+        )
+    return (
+        "function fish_prompt; "
+        "set_color grey; "
+        'printf "%s " (basename $PWD); '
+        "set_color yellow; "
+        f'printf "{bolt}"; '
+        "set_color white; "
+        f'printf "{context}"; '
+        "set_color yellow; "
+        f'printf "{arrow} "; '
+        "set_color normal; "
+        "end"
+    )
+
+
+def _zsh_ps1(context: str, bolt: str, arrow: str, no_color: bool) -> str:
+    """Build the zsh ``PS1`` for the jmp shell prompt."""
+    if no_color:
+        return f"%1~ {bolt} {context} {arrow} "
+    return f"%F{{8}}%1~ %F{{yellow}}{bolt}%F{{white}}{context} %F{{yellow}}{arrow}%f "
 
 
 def launch_shell(
@@ -181,36 +242,23 @@ def launch_shell(
     if motd:
         print(motd, flush=True)
 
+    opts = display_options()
+    bolt = "^" if opts.no_icons else "⚡"
+    arrow = ">" if opts.no_icons else "➤"
+
     if shell_name.endswith("bash"):
-        env = common_env | {
-            "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
-        }
+        env = common_env | {"PS1": _bash_ps1(context, bolt, arrow, opts.no_color)}
         cmd = [shell]
         if not use_profiles:
             cmd.extend(["--norc", "--noprofile"])
         return _run_process(cmd, env, lease)
 
     elif shell_name == "fish":
-        fish_fn = (
-            "function fish_prompt; "
-            "set_color grey; "
-            'printf "%s" (basename $PWD); '
-            "set_color yellow; "
-            'printf "⚡"; '
-            "set_color white; "
-            f'printf "{context}"; '
-            "set_color yellow; "
-            'printf "➤ "; '
-            "set_color normal; "
-            "end"
-        )
-        cmd = [shell, "--init-command", fish_fn]
+        cmd = [shell, "--init-command", _fish_prompt_fn(context, bolt, arrow, opts.no_color)]
         return _run_process(cmd, common_env, lease)
 
     elif shell_name == "zsh":
-        env = common_env | {
-            "PS1": f"%F{{8}}%1~ %F{{yellow}}⚡%F{{white}}{context} %F{{yellow}}➤%f ",
-        }
+        env = common_env | {"PS1": _zsh_ps1(context, bolt, arrow, opts.no_color)}
         if "HISTFILE" not in env:
             env["HISTFILE"] = os.path.join(os.path.expanduser("~"), ".zsh_history")
 

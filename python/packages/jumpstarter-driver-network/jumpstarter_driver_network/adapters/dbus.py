@@ -13,10 +13,8 @@ def DbusAdapter(*, client: "DbusNetworkClient"):
     match client.kind:
         case "system":
             varname = "DBUS_SYSTEM_BUS_ADDRESS"
-            pass
         case "session":
             varname = "DBUS_SESSION_BUS_ADDRESS"
-            pass
         case _:
             raise ValueError(f"invalid bus type: {client.kind}")
 

@@ -1,10 +1,11 @@
 import logging
 import sys
 from functools import partial
-from typing import Literal, Optional
+from typing import Literal
 
 import click
 from rich import traceback
+from rich.console import Console
 from rich.logging import RichHandler
 
 
@@ -28,6 +29,49 @@ class SourcePrefixFormatter(logging.Formatter):
         return super().format(record)
 
 
+def _handler_stream(handler: logging.Handler):
+    """The stream a handler writes to, or None when it cannot be determined."""
+    stream = getattr(handler, "stream", None)
+    if stream is not None:
+        return stream
+    # RichHandler writes through a Console rather than holding a stream.
+    console = getattr(handler, "console", None)
+    return getattr(console, "file", None)
+
+
+def _detach_stdout_handlers(root: logging.Logger) -> None:
+    """Remove root handlers that write to stdout.
+
+    basicConfig does nothing at all when the root logger already has handlers,
+    so configuring ours is not enough: a handler installed before the CLI ran
+    would keep writing log lines into the payload that -o json/yaml puts on
+    stdout. Only stdout writers are detached — anything else on the root
+    logger belongs to whoever put it there.
+    """
+    for handler in list(root.handlers):
+        if _handler_stream(handler) is sys.stdout:
+            root.removeHandler(handler)
+
+
+class _CliLogHandler(RichHandler):
+    """The handler the CLI installs, tagged so it is only ever added once."""
+
+
+def _ensure_cli_handler(root: logging.Logger) -> None:
+    """Attach the CLI's stderr handler if it is not already there.
+
+    logging.basicConfig would do this, but only when the root logger has no
+    handlers at all. A handler left by whatever embedded the CLI would
+    therefore mean no output on stderr and no log level applied either, which
+    is a confusing way for --log-level to do nothing.
+    """
+    if any(isinstance(handler, _CliLogHandler) for handler in root.handlers):
+        return
+    handler = _CliLogHandler(console=Console(stderr=True), show_path=False)
+    handler.setFormatter(SourcePrefixFormatter())
+    root.addHandler(handler)
+
+
 def _opt_log_level_callback(ctx, param, value):
     traceback.install()
     # there is no way to determine if the command is invoked for jmp run or something else at this
@@ -39,14 +83,12 @@ def _opt_log_level_callback(ctx, param, value):
         level = logging.getLevelName(value.upper()) if value else logging.INFO
         setup_logging(component="exporter", log_format=_log_format_value, level=level)
     else:
-        handler = RichHandler(show_path=False)
-        handler.setFormatter(SourcePrefixFormatter())
-        basicConfig = partial(logging.basicConfig, handlers=[handler])
-
-        if value:
-            basicConfig(level=value.upper())
-        else:
-            basicConfig(level=logging.INFO)
+        # Logs go to stderr so they never interleave with the machine-readable
+        # payload that -o json/yaml writes to stdout.
+        root = logging.getLogger()
+        _detach_stdout_handlers(root)
+        _ensure_cli_handler(root)
+        root.setLevel(value.upper() if value else logging.INFO)
 
 
 opt_log_level = click.option(
@@ -93,7 +135,7 @@ def _opt_labels_callback(ctx, param, value):
     for label in value:
         k, sep, v = label.partition("=")
         if sep == "":
-            raise click.BadParameter("Invalid label '{}', should be formatted as 'key=value'".format(k))
+            raise click.BadParameter(f"Invalid label '{k}', should be formatted as 'key=value'")
         labels[k] = v
 
     return labels
@@ -123,19 +165,18 @@ opt_insecure_tls_config = opt_insecure_tls
 
 
 def confirm_insecure_tls(insecure_tls: bool, nointeractive: bool):
-    if nointeractive is False and insecure_tls:
-        if not click.confirm(
-            "Insecure TLS mode is enabled. Certificate verification will be"
-            " disabled for HTTPS connections. Continue?"
-        ):
-            click.echo("Aborting.")
-            raise click.Abort()
+    if nointeractive is False and insecure_tls and not click.confirm(
+        "Insecure TLS mode is enabled. Certificate verification will be"
+        " disabled for HTTPS connections. Continue?"
+    ):
+        click.echo("Aborting.")
+        raise click.Abort()
 
 
 confirm_insecure = confirm_insecure_tls
 
 
-def validate_name(name: Optional[str]) -> None:
+def validate_name(name: str | None) -> None:
     if not name or not name.strip():
         raise click.UsageError("Missing required argument 'NAME'.")
 
@@ -147,7 +188,7 @@ class OutputMode(str):
     PATH = "path"
 
 
-OutputType = Optional[OutputMode]
+OutputType = OutputMode | None
 
 opt_output_all = click.option(
     "-o",
@@ -157,7 +198,17 @@ opt_output_all = click.option(
     help='Output mode. Use "-o name" for shorter output (resource/name).',
 )
 
-NameOutputType = Optional[Literal["name"]]
+DataOutputType = Literal["json", "yaml"] | None
+
+opt_output_json_yaml = click.option(
+    "-o",
+    "--output",
+    type=click.Choice([OutputMode.JSON, OutputMode.YAML]),
+    default=None,
+    help='Output mode. Use "-o json" or "-o yaml" for machine-readable output.',
+)
+
+NameOutputType = Literal["name"] | None
 
 opt_output_name_only = click.option(
     "-o",
@@ -167,7 +218,7 @@ opt_output_name_only = click.option(
     help='Output mode. Use "-o name" for shorter output (resource/name).',
 )
 
-PathOutputType = Optional[Literal["path"]]
+PathOutputType = Literal["path"] | None
 
 opt_output_path_only = click.option(
     "-o",

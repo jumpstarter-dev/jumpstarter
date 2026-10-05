@@ -5,10 +5,12 @@ IMG ?= quay.io/jumpstarter-dev/jumpstarter-controller:latest
 DOCKER_REPO = $(shell echo $(IMG) | cut -d: -f1)
 DOCKER_TAG  = $(shell echo $(IMG) | cut -d: -f2)
 EXPORTER_SET_CONTROLLER_IMG ?= quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest
+TELEMETRY_IMG ?= quay.io/jumpstarter-dev/jumpstarter-telemetry:latest
 QEMU_RUNTIME_IMG ?= quay.io/jumpstarter-dev/virtual/qemu-runtime:latest
 EXPORTER_IMG ?= quay.io/jumpstarter-dev/jumpstarter:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.30.0
+# renovate: datasource=github-releases depName=kubernetes-sigs/controller-tools extractVersion=^envtest-v(?<version>.+)$
+ENVTEST_K8S_VERSION = 1.37.0
 
 # Version information
 GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "unknown")
@@ -26,6 +28,8 @@ GOBIN=$(shell go env GOPATH)/bin
 else
 GOBIN=$(shell go env GOBIN)
 endif
+
+GOARCH ?= $(shell go env GOARCH)
 
 # CONTAINER_TOOL defines the container tool to be used for building images.
 # Be aware that the target commands are only tested with Docker which is
@@ -108,12 +112,19 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 ##@ Build
 .PHONY: build-operator
 build-operator:
-	make -C deploy/operator build-installer docker-build
+	$(MAKE) -C deploy/operator build-installer
+	$(MAKE) -C deploy/operator docker-build
+
+.PHONY: build-operator-ci
+build-operator-ci:
+	$(MAKE) -C deploy/operator build-installer
+	$(MAKE) -C deploy/operator docker-build-ci
 
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
 	go build -ldflags "$(LDFLAGS)" -o bin/manager cmd/main.go
-	go build -ldflags "$(LDFLAGS)" -o bin/router cmd/router/main.go
+	go build -ldflags "$(LDFLAGS)" -o bin/router ./cmd/router
+	go build -ldflags "$(LDFLAGS)" -o bin/telemetry ./cmd/telemetry
 	go build -ldflags "$(LDFLAGS)" -o bin/exporter-set-controller cmd/exporter-set-controller/main.go
 
 .PHONY: run
@@ -122,7 +133,11 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: run-router
 run-router: manifests generate fmt vet ## Run a router from your host.
-	go run ./cmd/router/main.go
+	go run ./cmd/router
+
+.PHONY: run-telemetry
+run-telemetry: manifests generate fmt vet ## Run the telemetry service from your host.
+	go run ./cmd/telemetry
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -134,6 +149,29 @@ docker-build: ## Build docker image with the manager.
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
 		-t ${IMG} -f Containerfile .
+
+.PHONY: docker-build-ci
+docker-build-ci: ## Build docker images from pre-compiled host binaries (fast CI path).
+	rm -rf bin/ci-stage && mkdir -p bin/ci-stage/controller bin/ci-stage/esc bin/ci-stage/telemetry
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/controller/manager cmd/main.go
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/controller/router ./cmd/router
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/controller/telemetry ./cmd/telemetry
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/esc/exporter-set-controller cmd/exporter-set-controller/main.go
+	$(CONTAINER_TOOL) build --build-arg BIN=manager -t $(IMG) -f Containerfile.prebuilt bin/ci-stage/controller
+	$(CONTAINER_TOOL) build --build-arg BIN=exporter-set-controller -t $(EXPORTER_SET_CONTROLLER_IMG) -f Containerfile.prebuilt bin/ci-stage/esc
+	$(MAKE) docker-build-telemetry-ci
+
+.PHONY: docker-build-telemetry-ci
+docker-build-telemetry-ci: ## CI-optimized: host-compiled telemetry binary, no multi-stage build.
+	rm -rf bin/ci-stage/telemetry && mkdir -p bin/ci-stage/telemetry
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/telemetry/telemetry ./cmd/telemetry
+	$(CONTAINER_TOOL) build -t $(TELEMETRY_IMG) -f Containerfile.telemetry.prebuilt bin/ci-stage/telemetry
+
+.PHONY: docker-build-exporter-set-controller-ci
+docker-build-exporter-set-controller-ci: ## CI-optimized: host-compiled ESC binary, no multi-stage build.
+	rm -rf bin/ci-stage/esc && mkdir -p bin/ci-stage/esc
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/esc/exporter-set-controller cmd/exporter-set-controller/main.go
+	$(CONTAINER_TOOL) build --build-arg BIN=exporter-set-controller -t $(EXPORTER_SET_CONTROLLER_IMG) -f Containerfile.prebuilt bin/ci-stage/esc
 
 .PHONY: docker-build-exporter-set-controller
 docker-build-exporter-set-controller: ## Build docker image for the exporter-set-controller.
@@ -202,18 +240,32 @@ deploy: cluster grpcurl ## Deploy controller using the operator. Set SKIP_BUILD=
 ifeq ($(SKIP_BUILD),)
 	$(MAKE) docker-build
 	$(MAKE) docker-build-exporter-set-controller
+	$(MAKE) docker-build-telemetry-ci
 	$(MAKE) build-operator
 endif
 	./hack/deploy_with_operator.sh
 
+.PHONY: deploy-ci
+deploy-ci: cluster grpcurl $(if $(SKIP_BUILD),,docker-build-ci build-operator-ci) ## CI-optimized deploy: host-compiled binaries, no multi-stage container builds.
+	./hack/deploy_with_operator.sh
+
 
 .PHONY: deploy-operator
-deploy-operator: docker-build docker-build-exporter-set-controller build-operator cluster grpcurl ## Deploy only the operator (without Jumpstarter CR)
+deploy-operator: docker-build docker-build-exporter-set-controller docker-build-telemetry-ci build-operator cluster grpcurl ## Deploy only the operator (without Jumpstarter CR)
+	NETWORKING_MODE=ingress DEPLOY_JUMPSTARTER=false ./hack/deploy_with_operator.sh
+
+.PHONY: deploy-operator-ci
+deploy-operator-ci: docker-build-ci build-operator-ci cluster grpcurl ## CI-optimized: host-compiled binaries, no multi-stage container builds.
 	NETWORKING_MODE=ingress DEPLOY_JUMPSTARTER=false ./hack/deploy_with_operator.sh
 
 .PHONY: test-operator-e2e
 test-operator-e2e: grpcurl deploy-operator
-	make -C deploy/operator test-e2e
+	$(MAKE) -C deploy/operator test-e2e
+
+.PHONY: test-operator-e2e-ci
+test-operator-e2e-ci: grpcurl deploy-operator-ci ## CI-optimized e2e test (host-compiled Go, cached modules).
+	$(MAKE) -C deploy/operator test-e2e
+
 .PHONY: operator-logs
 operator-logs:
 	kubectl logs -n jumpstarter-operator-system -l app.kubernetes.io/name=jumpstarter-operator -f
@@ -260,12 +312,17 @@ KIND = $(LOCALBIN)/kind
 GRPCURL = $(LOCALBIN)/grpcurl
 
 ## Tool Versions
-KUSTOMIZE_VERSION ?= v5.4.1
-CONTROLLER_TOOLS_VERSION ?= v0.18.0
+# renovate: datasource=github-releases depName=kubernetes-sigs/kustomize extractVersion=^kustomize/(?<version>v\d+\.\d+\.\d+)$
+KUSTOMIZE_VERSION ?= v5.8.2
+# renovate: datasource=github-releases depName=kubernetes-sigs/controller-tools extractVersion=^(?<version>v\d+\.\d+\.\d+)$
+CONTROLLER_TOOLS_VERSION ?= v0.22.0
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
-GOLANGCI_LINT_VERSION ?= v2.5.0
-KIND_VERSION ?= v0.27.0
-GRPCURL_VERSION ?= v1.9.2
+# renovate: datasource=github-releases depName=golangci/golangci-lint
+GOLANGCI_LINT_VERSION ?= v2.14.0
+# renovate: datasource=github-releases depName=kubernetes-sigs/kind
+KIND_VERSION ?= v0.33.0
+# renovate: datasource=github-releases depName=fullstorydev/grpcurl
+GRPCURL_VERSION ?= v1.9.4
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -277,9 +334,12 @@ controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessar
 $(CONTROLLER_GEN): $(LOCALBIN)
 	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
 
+# renovate: datasource=docker depName=docker.io/bufbuild/buf
+BUF_VERSION ?= 1.73.0
+
 .PHONY: protobuf-gen
 protobuf-gen:
-	podman run --volume "$(shell cd .. && pwd):/workspace" --workdir /workspace/controller docker.io/bufbuild/buf:latest generate
+	podman run --volume "$(shell cd .. && pwd):/workspace" --workdir /workspace/controller docker.io/bufbuild/buf:$(BUF_VERSION) generate
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.

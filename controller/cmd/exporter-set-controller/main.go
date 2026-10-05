@@ -29,6 +29,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -36,7 +37,9 @@ import (
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/cuttlefish"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/qemu"
+	qemussh "github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/qemu-ssh"
 )
 
 var (
@@ -101,13 +104,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Select the provisioner implementation based on the flag
-	prov, err := selectProvisioner(provisioner)
-	if err != nil {
-		setupLog.Error(err, "unsupported provisioner", "provisioner", provisioner)
-		os.Exit(1)
-	}
-
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Cache: cache.Options{
@@ -125,6 +121,16 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
+
+	// Select the provisioner implementation based on the flag.
+	// Some provisioners (e.g. qemu-ssh) need a Kubernetes client for
+	// reading Secrets and updating annotations, so we create them after
+	// the manager is initialized.
+	prov, err := selectProvisioner(provisioner, mgr.GetClient())
+	if err != nil {
+		setupLog.Error(err, "unsupported provisioner", "provisioner", provisioner)
 		os.Exit(1)
 	}
 
@@ -157,11 +163,18 @@ func main() {
 
 // selectProvisioner returns the Provisioner implementation for the given name.
 // Add new provisioners here as they are implemented.
-func selectProvisioner(name string) (exporterset.Provisioner, error) {
+func selectProvisioner(name string, c client.Client) (exporterset.Provisioner, error) {
 	switch name {
+	case cuttlefish.ProvisionerName:
+		return cuttlefish.New(version), nil
 	case qemu.ProvisionerName:
 		return qemu.New(version), nil
+	case qemussh.ProvisionerName:
+		return qemussh.New(version, c), nil
 	default:
-		return nil, fmt.Errorf("unknown provisioner %q; supported: %s", name, qemu.ProvisionerName)
+		return nil, fmt.Errorf(
+			"unknown provisioner %q; supported: %s, %s, %s",
+			name, qemu.ProvisionerName, cuttlefish.ProvisionerName, qemussh.ProvisionerName,
+		)
 	}
 }

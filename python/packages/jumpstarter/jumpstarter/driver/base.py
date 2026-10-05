@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from abc import ABCMeta, abstractmethod
 from contextlib import asynccontextmanager
 from dataclasses import field
@@ -16,6 +17,7 @@ from urllib.parse import urlparse, urlunparse
 from uuid import UUID, uuid4
 
 import aiohttp
+import grpc.aio
 import yarl
 from anyio import BrokenResourceError, to_thread
 from grpc import StatusCode
@@ -38,11 +40,28 @@ from jumpstarter.common.streams import (
 )
 from jumpstarter.config.env import JMP_DISABLE_COMPRESSION
 from jumpstarter.exporter.logging import get_logger
+from jumpstarter.metrics.registry import (
+    ErrorType,
+    OperationResult,
+    exemplars_from_log_context,
+    exporter_from_log_context,
+    get_registry,
+)
 from jumpstarter.streams.aiohttp import AiohttpStreamReaderStream
 from jumpstarter.streams.common import create_memory_stream
 from jumpstarter.streams.encoding import Compression, compress_stream
 from jumpstarter.streams.metadata import MetadataStream
 from jumpstarter.streams.progress import ProgressStream
+from jumpstarter.streams.upload import create_upload_stream
+
+# Ordered most-specific first: ConnectionError is an OSError subclass.
+_DRIVER_CALL_ERRORS: tuple[tuple[type[BaseException], ErrorType, StatusCode], ...] = (
+    (NotImplementedError, "not_implemented", StatusCode.UNIMPLEMENTED),
+    (ValueError, "validation_error", StatusCode.INVALID_ARGUMENT),
+    (TimeoutError, "timeout", StatusCode.DEADLINE_EXCEEDED),
+    (ConnectionError, "connection_error", StatusCode.UNAVAILABLE),
+    (OSError, "device_error", StatusCode.INTERNAL),
+)
 
 SUPPORTED_CONTENT_ENCODINGS = (
     {}
@@ -99,6 +118,24 @@ class Driver(
         for child in self.children.values():
             child.close()
 
+    def shutdown(self):
+        """Session-end teardown hook, run by the exporter before close().
+
+        Defaults to a no-op that just recurses to children, so ordinary drivers
+        keep releasing their resources in close() as before. Drivers whose
+        exported close() has non-teardown semantics (e.g. a fan-out console
+        whose close() only kicks clients) override this to perform the real
+        teardown that must not be reachable from a remote client.
+
+        A failing child does not stop its siblings: their close() may no longer
+        release resources, so skipping shutdown() could leak e.g. a serial port.
+        """
+        for name, child in self.children.items():
+            try:
+                child.shutdown()
+            except Exception:
+                self.logger.warning("Error during shutdown of child %s", name, exc_info=True)
+
     def reset(self):
         for child in self.children.values():
             child.reset()
@@ -113,11 +150,87 @@ class Driver(
     def extra_labels(self) -> dict[str, str]:
         return {}
 
+    def _record_operation_metrics(
+        self,
+        *,
+        operation: str,
+        result: OperationResult,
+        duration_seconds: float,
+        error_type: ErrorType | None = None,
+    ) -> None:
+        # Metrics must never discard a computed gRPC response or change the
+        # abort status: keep recording failures isolated from the RPC path.
+        try:
+            get_registry().record_operation(
+                exporter=exporter_from_log_context(default=self.name if hasattr(self, "name") else "unknown"),
+                operation=operation,
+                result=result,
+                driver_type=self.driver_type,
+                duration_seconds=duration_seconds,
+                exemplars=exemplars_from_log_context(),
+                error_type=error_type,
+            )
+        except Exception:
+            self.logger.warning(
+                "Failed to record operation metrics",
+                extra={
+                    "operation": operation,
+                    "driver_type": self.driver_type,
+                    "result": result,
+                    "error_type": error_type,
+                },
+                exc_info=True,
+            )
+
+    async def _handle_driver_exception(
+        self,
+        exc: BaseException,
+        op: str,
+        started: float,
+        context: grpc.aio.ServicerContext,
+    ) -> None:
+        for exc_type, error_type, status in _DRIVER_CALL_ERRORS:
+            if isinstance(exc, exc_type):
+                self._record_operation_metrics(
+                    operation=op,
+                    result="failure",
+                    duration_seconds=time.perf_counter() - started,
+                    error_type=error_type,
+                )
+                self.logger.warning(
+                    "Operation failed",
+                    extra={
+                        "operation": op,
+                        "driver_type": self.driver_type,
+                        "result": "failure",
+                        "error_type": error_type,
+                    },
+                )
+                await context.abort(status, str(exc))
+                return
+        self._record_operation_metrics(
+            operation=op,
+            result="failure",
+            duration_seconds=time.perf_counter() - started,
+            error_type="internal_error",
+        )
+        self.logger.warning(
+            "Operation failed",
+            extra={
+                "operation": op,
+                "driver_type": self.driver_type,
+                "result": "failure",
+                "error_type": "internal_error",
+            },
+        )
+        await context.abort(StatusCode.UNKNOWN, str(exc))
+
     async def DriverCall(self, request, context):
         """
         :meta private:
         """
         op = request.method
+        started = time.perf_counter()
         self.logger.info(
             "Operation started",
             extra={"operation": op, "driver_type": self.driver_type},
@@ -132,62 +245,35 @@ class Driver(
             else:
                 result = await to_thread.run_sync(method, *args)
 
+            # Encode before recording success so serialization failures are
+            # counted only as failures (not success then failure).
+            response = jumpstarter_pb2.DriverCallResponse(
+                uuid=str(uuid4()),
+                result=encode_value(result),
+            )
+            self._record_operation_metrics(
+                operation=op,
+                result="success",
+                duration_seconds=time.perf_counter() - started,
+            )
             self.logger.info(
                 "Operation completed",
                 extra={"operation": op, "driver_type": self.driver_type, "result": "success"},
             )
-            return jumpstarter_pb2.DriverCallResponse(
-                uuid=str(uuid4()),
-                result=encode_value(result),
-            )
-        except NotImplementedError as e:
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "not_implemented"},
-            )
-            await context.abort(StatusCode.UNIMPLEMENTED, str(e))
-        except ValueError as e:
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "validation_error"},
-            )
-            await context.abort(StatusCode.INVALID_ARGUMENT, str(e))
-        except TimeoutError as e:
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "timeout"},
-            )
-            await context.abort(StatusCode.DEADLINE_EXCEEDED, str(e))
-        except ConnectionError as e:
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "connection_error"},
-            )
-            await context.abort(StatusCode.UNAVAILABLE, str(e))
-        except OSError as e:
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "device_error"},
-            )
-            await context.abort(StatusCode.INTERNAL, str(e))
-        except Exception as e:
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "internal_error"},
-            )
-            await context.abort(StatusCode.UNKNOWN, str(e))
+            return response
+        except grpc.aio.AbortError:
+            # Propagate context.abort() from lookup/handlers without recording
+            # metrics (avoids client-controlled operation label cardinality).
+            raise
+        except Exception as e:  # noqa: BLE001
+            await self._handle_driver_exception(e, op, started, context)
 
     async def StreamingDriverCall(self, request, context):
         """
         :meta private:
         """
         op = request.method
+        started = time.perf_counter()
         self.logger.info(
             "Operation started",
             extra={"operation": op, "driver_type": self.driver_type},
@@ -209,52 +295,21 @@ class Driver(
                         uuid=str(uuid4()),
                         result=encode_value(result),
                     )
+            self._record_operation_metrics(
+                operation=op,
+                result="success",
+                duration_seconds=time.perf_counter() - started,
+            )
             self.logger.info(
                 "Operation completed",
                 extra={"operation": op, "driver_type": self.driver_type, "result": "success"},
             )
-        except NotImplementedError as e:
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "not_implemented"},
-            )
-            await context.abort(StatusCode.UNIMPLEMENTED, str(e))
-        except ValueError as e:
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "validation_error"},
-            )
-            await context.abort(StatusCode.INVALID_ARGUMENT, str(e))
-        except TimeoutError as e:
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "timeout"},
-            )
-            await context.abort(StatusCode.DEADLINE_EXCEEDED, str(e))
-        except ConnectionError as e:
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "connection_error"},
-            )
-            await context.abort(StatusCode.UNAVAILABLE, str(e))
-        except OSError as e:
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "device_error"},
-            )
-            await context.abort(StatusCode.INTERNAL, str(e))
-        except Exception as e:
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "internal_error"},
-            )
-            await context.abort(StatusCode.UNKNOWN, str(e))
+        except grpc.aio.AbortError:
+            # Propagate context.abort() from lookup/handlers without recording
+            # metrics (avoids client-controlled operation label cardinality).
+            raise
+        except Exception as e:  # noqa: BLE001
+            await self._handle_driver_exception(e, op, started, context)
 
     @asynccontextmanager
     async def Stream(self, request, context):
@@ -269,7 +324,7 @@ class Driver(
                     yield stream
 
             case ResourceStreamRequest():
-                remote, resource = create_memory_stream()
+                remote, resource = create_upload_stream()
 
                 resource_uuid = uuid4()
 
@@ -341,7 +396,7 @@ class Driver(
         """Redact query parameters from a URL to avoid leaking credentials in logs."""
         parsed = urlparse(url)
         if parsed.query:
-            return urlunparse(parsed._replace(query="[REDACTED]"))
+            return urlunparse(parsed._replace(query="[REDACTED]"))  # type: ignore[return-value]
         return url
 
     _SENSITIVE_HEADER_PREFIXES = ("authorization", "cookie", "proxy-authorization", "x-amz-", "x-ms-", "x-goog-")
@@ -373,7 +428,9 @@ class Driver(
                 timeout=timeout, allow_redirects=False,
             ) as resp:
                 if resp.status not in (301, 302, 303, 307, 308):
-                    async with AiohttpStreamReaderStream(reader=resp.content) as stream:
+                    async with AiohttpStreamReaderStream(
+                        reader=resp.content, content_length=resp.content_length,
+                    ) as stream:
                         yield ProgressStream(stream=stream, logging=True)
                         return
                 location = resp.headers.get("Location", "")
@@ -398,9 +455,8 @@ class Driver(
                     async with aiohttp.request(
                         method, self._make_url(url), headers=headers, raise_for_status=True,
                         data=remote, timeout=client_timeout,
-                    ) as _resp:
-                        async with stream:
-                            yield ProgressStream(stream=stream, logging=True)
+                    ) as _resp, stream:
+                        yield ProgressStream(stream=stream, logging=True)
                 case _:
                     # INVARIANT: method is always one of GET or PUT, see PresignedRequestResource
                     raise ValueError("unreachable")
