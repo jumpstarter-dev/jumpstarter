@@ -110,18 +110,17 @@ drivers:
   - jumpstarter.drivers.*
   - vendorpackage.*
 """
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        f.write(CLIENT_CONFIG)
-        f.close()
-        config = ClientConfigV1Alpha1.from_file(f.name)
-        assert config.alias == f.name.split("/")[-1]
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "my.client.yaml"
+        path.write_text(CLIENT_CONFIG)
+        config = ClientConfigV1Alpha1.from_file(path)
+        assert config.alias == "my.client"
         assert config.metadata.namespace == "default"
         assert config.metadata.name == "testclient"
         assert config.endpoint == "jumpstarter.my-lab.com:1443"
         assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
         assert config.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
         assert config.drivers.unsafe is False
-        os.unlink(f.name)
 
 
 @pytest.mark.parametrize("invalid_field", ["apiVersion", "kind"])

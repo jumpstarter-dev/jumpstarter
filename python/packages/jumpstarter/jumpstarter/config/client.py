@@ -397,7 +397,7 @@ class ClientConfigV1Alpha1(BaseSettings):
     def from_file(cls, path: os.PathLike):
         with open(path) as f:
             v = cls.model_validate(yaml.safe_load(f))
-            v.alias = os.path.basename(path).split(".")[0]
+            v.alias = Path(path).stem
             v.path = Path(path)
             return v
 
