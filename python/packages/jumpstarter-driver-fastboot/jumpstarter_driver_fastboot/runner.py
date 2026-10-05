@@ -74,8 +74,10 @@ class Runner:
         self.fb = Fastboot(
             usb_port=self.config.get("usb_port"),
             serial=self.config.get("serial"),
+            address=self.config.get("address"),
             binary=self.config["binary"],
             command_timeout=self.config["command_timeout"],
+            probe_timeout=self.config.get("probe_timeout", 5.0),
         )
 
     def record(self, event: str, /, **fields: Any) -> None:

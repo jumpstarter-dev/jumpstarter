@@ -2,7 +2,8 @@
 
 `jumpstarter-driver-fastboot` flashes any device whose bootloader speaks the
 Android fastboot protocol: phones, tablets, automotive head units, and U-Boot
-boards with `fastboot usb`.
+boards with `fastboot usb`, over USB or [over TCP](#fastboot-over-tcp) (userspace
+`fastbootd` on a network).
 
 A flash is a job on the exporter, not a call: a bundle is staged on the
 exporter first, then committed by a job that is journaled, interlocked, and
@@ -46,7 +47,9 @@ The exporter host needs:
   an entry strategy uses it.
 - USB access to the device in bootloader **and** fastbootd modes. In a
   container, the device re-enumerates between modes, so pass `/dev` through
-  (for example `--privileged -v /dev:/dev -v /run/udev:/run/udev:ro`).
+  (for example `--privileged -v /dev:/dev -v /run/udev:/run/udev:ro`). Not
+  needed for a device addressed [over TCP](#fastboot-over-tcp), which needs
+  network access to it instead.
 - A persistent `state_dir` (default `/var/lib/jumpstarter/fastboot`). In a
   container it **must** be a host-mounted volume, or jobs can't be resumed after
   a container restart.
@@ -54,13 +57,55 @@ The exporter host needs:
 ## Configuration
 
 The device is pinned the same way as the [ADB driver](adb.md) pins one: by
-exactly one of `usb_port`, the bench USB port (preferred), or `serial`.
+exactly one of `usb_port`, the bench USB port (preferred), `serial`, or
+`address` for a device on [TCP](#fastboot-over-tcp).
 `usb_port` is the `usb:` field that `fastboot devices -l` (or `adb devices -l`;
 it is the same port) prints, with or without the `usb:` prefix. On macOS, copy
 it verbatim, `X` suffix included. The device's serial is looked up from the
 port before every command, and commands are addressed with `-s SERIAL`. Because
 identity is the bench port, swapping hardware needs no config change. Nothing
 ever uses "the first device found".
+
+### Fastboot over TCP
+
+A device whose fastboot listens on TCP, such as userspace `fastbootd` reachable
+over a network, is pinned with `address` instead: `host`, `host:port`, or `[ipv6]:port`, with or without a
+`tcp:` prefix. The port defaults to 5554, fastboot's own. Commands go out as
+`fastboot -s tcp:HOST:PORT …`.
+
+```yaml
+export:
+  fastboot:
+    type: jumpstarter_driver_fastboot.driver.FastbootFlasher
+    config:
+      address: "192.0.2.20"      # or "192.0.2.20:5554"
+```
+
+`fastboot devices` never lists a network device, so the driver asks the device
+itself whether it is in fastboot: a `getvar version` that something speaking the
+fastboot protocol has to answer, bounded by `probe_timeout`. It does not just
+try to connect, so a forwarded port with nothing behind it is correctly "not
+present":
+
+```yaml
+      # adb forward tcp:15554 tcp:5554   (run by an entry script, or on the bench host)
+      address: "127.0.0.1:15554"
+```
+
+Everything else works as it does over USB: staging, journaled jobs, the
+interlocks, the per-step `serialno` check (a different device answering at the
+same address aborts the job), and `enter`/`wait-present`. Entry scripts and the
+exit script get `FASTBOOT_ADDRESS`, with `FASTBOOT_USB_PORT` and
+`FASTBOOT_SERIAL` empty.
+
+- **The address must survive mode switches.** `reboot: fastboot` and
+  `reboot: bootloader` steps (and `fastboot reboot` itself) drop the connection;
+  the runner waits up to `reenumerate_timeout` for the device to answer at the
+  *same* address again. If the device comes back elsewhere, the job ends
+  `interrupted`, exactly as a device that never re-enumerates on USB does.
+- **Fastboot over TCP has no authentication.** Anyone who can reach the port can
+  flash the device. Keep it on a bench network, loopback, or behind a forward.
+- **TCP only.** `udp:` addresses are refused.
 
 ### Entry strategies
 
@@ -110,7 +155,7 @@ The script's environment:
 | Variable | Value |
 | --- | --- |
 | `JMP_DRIVER_PATH` | The flasher's own `j` path, e.g. `bench dut1`. `j $JMP_DRIVER_PATH <child> …` reaches its children, so a script works unchanged on every bench and on multi-device exporters. |
-| `FASTBOOT_USB_PORT`, `FASTBOOT_SERIAL` | The device pinning from the flasher's config (one is empty). `FASTBOOT_USB_PORT` includes the `usb:` prefix, which `adb -s` and `fastboot -s` both accept. |
+| `FASTBOOT_USB_PORT`, `FASTBOOT_SERIAL`, `FASTBOOT_ADDRESS` | The device pinning from the flasher's config (one is set, the others empty). `FASTBOOT_USB_PORT` includes the `usb:` prefix, which `adb -s` and `fastboot -s` both accept; `FASTBOOT_ADDRESS` is the normalized `tcp:HOST:PORT` selector. |
 | `JUMPSTARTER_HOST`, `JMP_DRIVERS_ALLOW` | How `j` and `env()` reach the drivers (set for you). |
 
 - **Hold until something happens.** `j $JMP_DRIVER_PATH wait-present --timeout N`
@@ -266,7 +311,7 @@ fails if it failed. `wait-idle` waits for it too. The job's `status` shows it as
 error and last output lines of a failed script.
 
 The script's environment is that of an entry strategy (`JMP_DRIVER_PATH`,
-`FASTBOOT_USB_PORT`, `FASTBOOT_SERIAL`, the script's `env`), plus
+`FASTBOOT_USB_PORT`, `FASTBOOT_SERIAL`, `FASTBOOT_ADDRESS`, the script's `env`), plus
 `FLASH_JOB_ID` and `FLASH_JOB_STATE` (`succeeded`, `failed_partial`, …).
 With `when: success` (the default) it runs only after successful jobs, leaving
 a device whose flash failed in fastboot for the next attempt. If the flash is
@@ -277,8 +322,9 @@ finishes.
 
 | Parameter | Description | Default |
 | --- | --- | --- |
-| `usb_port` | The bench USB port, as `fastboot devices -l` reports it (preferred) | one of `usb_port`/`serial` |
-| `serial` | An explicit device serial, for hardware with no usable USB devpath | one of `usb_port`/`serial` |
+| `usb_port` | The bench USB port, as `fastboot devices -l` reports it (preferred) | exactly one of `usb_port`/`serial`/`address` |
+| `serial` | An explicit device serial, for hardware with no usable USB devpath | exactly one of `usb_port`/`serial`/`address` |
+| `address` | A device whose fastboot listens on TCP: `host[:port]` ([Fastboot over TCP](#fastboot-over-tcp)) | exactly one of `usb_port`/`serial`/`address` |
 | `entry` | Entry strategies into fastboot (above): a list, or `{fastboot: [...]}` | `[]` (device must already be in fastboot) |
 | `exit` | A script that brings the device out of fastboot after a job, run by the exporter (above) | none |
 | `variant` | Board variant used to select manifest entries | none |
@@ -289,7 +335,8 @@ finishes.
 | `allowed_oem_commands` | Exact `oem` commands bundles may run (`oem lock/unlock` are never allowed) | `[]` |
 | `step_retries` | Re-attempts per step after a transport failure | `3` |
 | `stall_timeout` | Seconds without fastboot output before a step attempt is killed and retried | `300` |
-| `reenumerate_timeout` | Seconds to wait for the device to come back on USB | `120` |
+| `reenumerate_timeout` | Seconds to wait for the device to come back (on USB, or at its TCP `address`) | `120` |
+| `probe_timeout` | For an `address`: seconds to wait for the device to answer when asking whether it is in fastboot | `5` |
 | `max_job_duration` | Hard bound on one runner invocation | `7200` |
 | `stage_cache_bytes` | LRU cap for staged content not used by an unfinished job | 20 GiB |
 | `free_space_reserve_bytes` | Space kept free in `state_dir` | 1 GiB |

@@ -21,7 +21,7 @@ out of fastboot when the job is done. Phases 1-3 are ordinary, cancellable
 calls; phase 4 is not cancellable once the first write has started.
 
 The bundle format is :mod:`.manifest`; the device is pinned by bench USB port
-(or serial), like the ADB driver.
+(or serial), like the ADB driver, or addressed over TCP.
 """
 
 from __future__ import annotations
@@ -113,7 +113,14 @@ class FastbootFlasher(ScriptRunnerMixin, Driver):
     usb_port: str | None = None
     """The bench USB port, as ``fastboot devices -l`` / ``adb devices -l`` report it (preferred)."""
     serial: str | None = None
-    """An explicit device serial, for hardware with no usable USB devpath. Exactly one of the two."""
+    """An explicit device serial, for hardware with no usable USB devpath."""
+    address: str | None = None
+    """A device whose fastboot (usually fastbootd) listens on TCP: ``host[:port]``, port 5554 by default.
+
+    For userspace fastboot (``fastbootd``) on a network; a forwarded
+    port works too (``adb forward tcp:15554 tcp:5554``, then ``127.0.0.1:15554``).
+    Exactly one of ``usb_port``, ``serial`` and ``address``.
+    """
     fastboot_path: str = "fastboot"
     state_dir: str = "/var/lib/jumpstarter/fastboot"
     entry: list[EntryStrategy] = field(default_factory=list)
@@ -130,6 +137,8 @@ class FastbootFlasher(ScriptRunnerMixin, Driver):
     allow_active_slot_critical: bool = False
     allowed_oem_commands: list[str] = field(default_factory=list)
     command_timeout: float = 30.0
+    probe_timeout: float = 5.0
+    """For an ``address``: how long to wait for the device to answer when asking whether it is in fastboot."""
     mode_switch_settle: float = 2.0
     step_retries: int = 3
     stall_timeout: float = 300.0
@@ -170,12 +179,15 @@ class FastbootFlasher(ScriptRunnerMixin, Driver):
             self._fb = Fastboot(
                 usb_port=self.usb_port,
                 serial=self.serial,
+                address=self.address,
                 binary=self.fastboot_path,
                 command_timeout=self.command_timeout,
+                probe_timeout=self.probe_timeout,
             )
         except ValueError as exc:
             raise ConfigurationError(str(exc)) from exc
         self.usb_port = self._fb.usb_port  # normalized to usb:<path>
+        self.address = self._fb.address  # normalized to tcp:<host>:<port>
 
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
@@ -209,7 +221,7 @@ class FastbootFlasher(ScriptRunnerMixin, Driver):
 
     @property
     def device(self) -> str:
-        """Bench identity used for job ownership and locking: the USB port, or the serial."""
+        """Bench identity used for job ownership and locking: the USB port, TCP address, or serial."""
         return self._fb.label
 
     async def identity(self) -> dict[str, Any]:
@@ -231,8 +243,12 @@ class FastbootFlasher(ScriptRunnerMixin, Driver):
         return "The device is now in fastboot."
 
     def script_env(self) -> dict[str, str]:
-        """Extra environment for entry and exit scripts (the device's port)."""
-        return {"FASTBOOT_USB_PORT": self.usb_port or "", "FASTBOOT_SERIAL": self.serial or ""}
+        """Extra environment for entry and exit scripts (how the device is pinned; two of three are empty)."""
+        return {
+            "FASTBOOT_USB_PORT": self.usb_port or "",
+            "FASTBOOT_SERIAL": self.serial or "",
+            "FASTBOOT_ADDRESS": self.address or "",
+        }
 
     def synthesize(self, targets: list[tuple[str, str]], name: str) -> dict[str, Any]:
         """Images without a manifest (``-t boot:boot.img``, ``fls``-style OCI): flashed in order, then booted."""
@@ -247,8 +263,10 @@ class FastbootFlasher(ScriptRunnerMixin, Driver):
         return {
             "usb_port": self._fb.usb_port,
             "serial": self._fb.serial,
+            "address": self._fb.address,
             "binary": self._fb.binary,
             "command_timeout": self.command_timeout,
+            "probe_timeout": self.probe_timeout,
             "mode_switch_settle": self.mode_switch_settle,
             "expected_serial": identity.get("serialno"),
             "finally": options.finally_,

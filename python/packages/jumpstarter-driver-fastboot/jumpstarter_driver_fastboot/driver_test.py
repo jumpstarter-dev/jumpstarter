@@ -53,10 +53,11 @@ def make_driver(fake, tmp_path, **config):
         "reenumerate_timeout": 5,
         "stall_timeout": 3,
         "command_timeout": 5,
+        "probe_timeout": 2,
         "step_retries": 2,
         "mode_switch_settle": 0.1,
     }
-    if "serial" not in config:
+    if "serial" not in config and "address" not in config:
         config.setdefault("usb_port", "1-2")  # bench port, without the usb: prefix
     return FastbootFlasher(**(defaults | config))
 
@@ -859,3 +860,92 @@ def test_exit_script_sees_the_job(fake_fastboot, tmp_path, bundle):
     with serve(make_driver(fake_fastboot, tmp_path, exit=exit_script)) as client:
         info = client.flash(manifest=str(bundle / "manifest.yaml"), job_id="job-7")
     assert marker.read_text().strip() == "job-7 succeeded usb:1-2" and info["exit"]["state"] == "succeeded"
+
+
+# -- fastboot over TCP --------------------------------------------------------------
+
+TCP = "tcp:127.0.0.1:5554"
+
+
+def tcp_driver(fake, tmp_path, **config):
+    """A device on the network (usermode fastbootd, say): addressed by host, never listed by `devices -l`."""
+    fake.use_tcp(TCP)
+    return make_driver(fake, tmp_path, address="127.0.0.1", **config)
+
+
+def test_address_pinning_config(fake_fastboot, tmp_path):
+    driver = tcp_driver(fake_fastboot, tmp_path)
+    assert driver.address == TCP and driver.usb_port is None and driver.device == TCP  # normalized, with the port
+    assert driver.script_env() == {"FASTBOOT_USB_PORT": "", "FASTBOOT_SERIAL": "", "FASTBOOT_ADDRESS": TCP}
+    for pins in ({"usb_port": "1-2"}, {"serial": "SER123"}):
+        with pytest.raises(ConfigurationError, match="exactly one of 'usb_port'.*'address'"):
+            make_driver(fake_fastboot, tmp_path, address="127.0.0.1", **pins)
+    with pytest.raises(ConfigurationError, match="invalid port"):
+        make_driver(fake_fastboot, tmp_path, address="127.0.0.1:nope")
+    with pytest.raises(ConfigurationError, match="TCP only"):
+        make_driver(fake_fastboot, tmp_path, address="udp:127.0.0.1")
+
+
+def test_flash_over_tcp(fake_fastboot, tmp_path, bundle):
+    marker = tmp_path / "exit.txt"
+    exit_script = {"script": f'echo "[$FASTBOOT_ADDRESS][$FASTBOOT_USB_PORT]" > {marker}', "timeout": 10}
+    with serve(tcp_driver(fake_fastboot, tmp_path, exit=exit_script)) as client:
+        assert client.getvar("product") == "testdev"  # before the flash: `finally: continue` boots the device away
+        info = client.flash(manifest=str(bundle / "manifest.yaml"))
+    assert info["state"] == "succeeded"
+    # The same plan as over USB, including the bootloader/fastbootd switches, run by the detached runner.
+    assert fake_fastboot.written() == INACTIVE_SLOT_WRITES
+    assert [c for c in fake_fastboot.state["commands"] if c.startswith("reboot")] == [
+        "reboot fastboot", "reboot bootloader"]
+    assert set(fake_fastboot.state["selectors"]) == {TCP}  # every command, the runner's included: -s tcp:HOST:PORT
+    assert marker.read_text().strip() == f"[{TCP}][]"
+
+
+def test_tcp_identity_is_rechecked_before_every_step(fake_fastboot, tmp_path, bundle):
+    with fake_fastboot.edit() as state:
+        state["device"]["swap_serial_after_writes"] = 1  # another board answers at the same address
+    with serve(tcp_driver(fake_fastboot, tmp_path)) as client:
+        job = client.flash(manifest=str(bundle / "manifest.yaml"), wait=False)
+        info = finish(client, job["job_id"])
+    assert info["state"] == "failed_partial" and "identity mismatch" in info["message"]
+    assert len(fake_fastboot.written()) == 1
+
+
+def test_tcp_device_that_is_not_there_says_where(fake_fastboot, tmp_path, bundle):
+    with fake_fastboot.edit() as state:
+        state["device"]["present"] = False
+    with serve(tcp_driver(fake_fastboot, tmp_path, probe_timeout=1)) as client:
+        assert client.wait_present(0) is False
+        with pytest.raises(Exception, match=r"no fastboot device at tcp:127\.0\.0\.1:5554.*check the forward"):
+            client.enter()
+        with pytest.raises(Exception, match="no fastboot device at tcp:127.0.0.1:5554"):
+            client.getvar("product")  # not an empty answer
+        with pytest.raises(Exception, match="no fastboot device at tcp:127.0.0.1:5554"):
+            client.flash(manifest=str(bundle / "manifest.yaml"))
+    assert fake_fastboot.written() == []
+
+
+def test_tcp_device_is_entered_by_a_script_that_waits_for_it(fake_fastboot, tmp_path):
+    from jumpstarter_driver_composite.driver import Composite
+
+    with fake_fastboot.edit() as state:
+        state["device"]["present"] = False
+
+    class Boot(MockPower):
+        @export
+        async def on(self):
+            with fake_fastboot.edit() as state:
+                state["device"]["present"] = True
+
+    strategy = {"name": "boot", "script": "j $JMP_DRIVER_PATH power on", "timeout": 60, "wait": 10}
+    flasher = tcp_driver(fake_fastboot, tmp_path, entry=[strategy], children={"power": Boot()})
+    with serve(Composite(children={"dut": flasher})) as client:
+        result = client.dut.enter()
+    assert result["strategy"] == "boot" and result["serialno"] == "SER123"
+
+
+def test_tcp_device_answering_an_error_is_still_in_fastboot(fake_fastboot, tmp_path):
+    with fake_fastboot.edit() as state:
+        del state["vars"]["version"]  # the bootloader refuses the probe variable, but it answered
+    with serve(tcp_driver(fake_fastboot, tmp_path)) as client:
+        assert client.wait_present(0) is True

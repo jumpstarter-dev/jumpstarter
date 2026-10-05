@@ -17,6 +17,9 @@ export:
     type: jumpstarter_driver_fastboot.driver.FastbootFlasher
     config:
       usb_port: "1-4.2"
+      # A device whose fastboot listens on TCP (userspace fastbootd on a network) is pinned
+      # with `address` instead of usb_port: host[:port], port 5554 by default.
+      #   address: "192.0.2.20"
       state_dir: /var/lib/jumpstarter/fastboot
       critical_partitions: ["xbl*", "abl*", "tz*", "hyp*", "aop*", "devcfg*", "keymaster*", "bootloader*", "cdt"]
       entry:

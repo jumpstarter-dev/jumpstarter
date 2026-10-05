@@ -61,7 +61,7 @@ swap = dev.get("swap_serial_after_writes")
 serial_now = "OTHER" if swap is not None and len(state["written"]) >= swap else dev["serial"]
 
 if args == ["devices", "-l"]:
-    if present(dev):
+    if present(dev) and not dev.get("tcp"):  # a network device never shows up here, as with the real fastboot
         sys.stdout.write(f"{serial_now}\t fastboot {dev['usb']}\n")
     for extra in state.get("other_devices", []):
         sys.stdout.write(f"{extra[0]}\t fastboot {extra[1]}\n")
@@ -69,7 +69,7 @@ if args == ["devices", "-l"]:
     sys.exit(0)
 
 state["selectors"] = state.get("selectors", []) + [selector]
-if selector != serial_now or not present(dev):
+if selector != (dev.get("tcp") or serial_now) or not present(dev):
     save(fd, state)
     out(f"< waiting for {selector} >")
     time.sleep(3600)
@@ -192,6 +192,11 @@ class FakeDevice:
         with self.edit() as state:
             state.setdefault(table, {})[key] = count
 
+    def use_tcp(self, address: str = "tcp:127.0.0.1:5554") -> None:
+        """Make this a network device: addressed by ``-s <address>``, not listed by ``devices -l``."""
+        with self.edit() as state:
+            state["device"]["tcp"] = address
+
 
 MIB = 1024 * 1024
 
@@ -203,7 +208,13 @@ def fake_fastboot(tmp_path, monkeypatch):
         json.dumps(
             {
                 "device": {"serial": "SER123", "usb": "usb:1-2", "present": True, "mode": "bootloader"},
-                "vars": {"product": "testdev", "slot-count": "2", "current-slot": "a", "unlocked": "yes"},
+                "vars": {
+                    "product": "testdev",
+                    "slot-count": "2",
+                    "current-slot": "a",
+                    "unlocked": "yes",
+                    "version": "0.4",
+                },
                 "partitions": {
                     "abl_a": 4 * MIB,
                     "abl_b": 4 * MIB,
