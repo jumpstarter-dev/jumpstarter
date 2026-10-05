@@ -25,6 +25,7 @@ dependencies = [
   "jumpstarter-driver-dutlink",
   "jumpstarter-driver-energenie",
   "jumpstarter-driver-esp32",
+  "jumpstarter-driver-fastboot",
   "jumpstarter-driver-flashers",
   "jumpstarter-driver-http",
   "jumpstarter-driver-http-power",

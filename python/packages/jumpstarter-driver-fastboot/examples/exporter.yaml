@@ -1,0 +1,56 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: android-phone-01
+endpoint: grpc.jumpstarter.example.com:443
+token: "<token>"
+hooks:
+  # Safe as is: when a lease ends mid-flash, the exporter waits for the flash
+  # (and the flasher's exit script) before it runs this hook.
+  afterLease:
+    script: j power off
+    timeout: 60
+    onFailure: warn
+export:
+  fastboot:
+    type: jumpstarter_driver_fastboot.driver.FastbootFlasher
+    config:
+      usb_port: "1-4.2"
+      state_dir: /var/lib/jumpstarter/fastboot
+      critical_partitions: ["xbl*", "abl*", "tz*", "hyp*", "aop*", "devcfg*", "keymaster*", "bootloader*", "cdt"]
+      entry:
+        # Strategies are j scripts (bash or Python), tried in order.
+        - name: adb
+          script: adb -s "$FASTBOOT_USB_PORT" reboot bootloader
+          env: { ANDROID_ADB_SERVER_PORT: "15037" }   # use the exporter's AdbServer
+          wait: 30                                    # then wait this long for fastboot
+        - name: buttons
+          script: |
+            set -e
+            j $JMP_DRIVER_PATH power off
+            sleep 3
+            j $JMP_DRIVER_PATH volume_down on
+            j $JMP_DRIVER_PATH power on
+            j $JMP_DRIVER_PATH wait-present --timeout 30   # hold it until fastboot shows up
+          cleanup: j $JMP_DRIVER_PATH volume_down off     # always runs, even on failure
+          timeout: 60
+    children:
+      power:
+        ref: power
+      volume_down:
+        ref: volume_down
+  adb:
+    type: jumpstarter_driver_adb.driver.AdbServer
+  # Every power driver in this exporter is interlocked while a flash is writing
+  # (interlock_power: all, the default; list driver paths to narrow it).
+  power:
+    type: jumpstarter_driver_yepkit.driver.Ykush
+    config:
+      serial: "YK112233"
+      port: "1"
+  volume_down:
+    type: jumpstarter_driver_gpiod.driver.DigitalOutput
+    config:
+      device: /dev/gpiochip0
+      line: 17

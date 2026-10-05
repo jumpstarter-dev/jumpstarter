@@ -47,6 +47,7 @@ members = [
     "jumpstarter-driver-dutlink",
     "jumpstarter-driver-energenie",
     "jumpstarter-driver-esp32",
+    "jumpstarter-driver-fastboot",
     "jumpstarter-driver-flashers",
     "jumpstarter-driver-gpiod",
     "jumpstarter-driver-http",
@@ -2100,6 +2101,7 @@ dependencies = [
     { name = "jumpstarter-driver-dutlink" },
     { name = "jumpstarter-driver-energenie" },
     { name = "jumpstarter-driver-esp32" },
+    { name = "jumpstarter-driver-fastboot" },
     { name = "jumpstarter-driver-flashers" },
     { name = "jumpstarter-driver-gpiod" },
     { name = "jumpstarter-driver-http" },
@@ -2167,6 +2169,7 @@ requires-dist = [
     { name = "jumpstarter-driver-dutlink", editable = "packages/jumpstarter-driver-dutlink" },
     { name = "jumpstarter-driver-energenie", editable = "packages/jumpstarter-driver-energenie" },
     { name = "jumpstarter-driver-esp32", editable = "packages/jumpstarter-driver-esp32" },
+    { name = "jumpstarter-driver-fastboot", editable = "packages/jumpstarter-driver-fastboot" },
     { name = "jumpstarter-driver-flashers", editable = "packages/jumpstarter-driver-flashers" },
     { name = "jumpstarter-driver-gpiod", editable = "packages/jumpstarter-driver-gpiod" },
     { name = "jumpstarter-driver-http", editable = "packages/jumpstarter-driver-http" },
@@ -2779,6 +2782,53 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-fastboot"
+source = { editable = "packages/jumpstarter-driver-fastboot" }
+dependencies = [
+    { name = "anyio" },
+    { name = "click" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-power" },
+    { name = "oras" },
+    { name = "pydantic" },
+    { name = "pyyaml", version = "6.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
+    { name = "pyyaml", version = "6.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+    { name = "zstandard" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "jumpstarter-cli" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-pyserial" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.10.0" },
+    { name = "click", specifier = ">=8.1.7" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
+    { name = "oras", specifier = ">=0.2.25" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
+    { name = "zstandard", specifier = ">=0.23.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "jumpstarter-cli", editable = "packages/jumpstarter-cli" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-asyncio", specifier = ">=0.0.0" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 

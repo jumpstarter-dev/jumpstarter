@@ -90,8 +90,8 @@ the exporter protects it, with nothing to configure:
 
 Tasks live in the exporter process, so they end if the exporter stops or
 crashes. Work that has to pick up again afterwards keeps its own record of
-progress, for example a flash that journals every step and resumes from the
-first unfinished one.
+progress: the {doc}`fastboot driver <../reference/package-apis/drivers/fastboot>`
+journals every step of a flash and resumes from the first unfinished one.
 
 ```python
 from jumpstarter.driver import Driver, export

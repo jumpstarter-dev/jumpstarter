@@ -22,6 +22,19 @@ export:
       # Add required config parameters here
 ```
 
+## Flashing interlock
+
+Exporters that flash devices with the {doc}`fastboot driver <fastboot>` protect
+power drivers (anything implementing `PowerInterface` or
+`VirtualPowerInterface`) while a flash is writing. `off` and other switching
+calls are refused, session-start `reset()` is skipped, and session-end
+`close()` is deferred until the flash is safe. By default every power driver in
+the exporter is protected; on an exporter that powers several devices, set each
+flasher's `interlock_power` to its device's power driver path (e.g.
+`["pdu.outlet3"]`) so the others stay usable. Declare anything that switches a
+DUT's supply as a power driver (for a relay channel, gpiod `PowerSwitch` rather
+than `DigitalOutput`) so it is recognized.
+
 ## API Reference
 
 ```{eval-rst}

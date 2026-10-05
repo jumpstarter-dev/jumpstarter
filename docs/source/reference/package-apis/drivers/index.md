@@ -74,6 +74,7 @@ Drivers for automotive diagnostic protocols:
 Drivers for flashing firmware and programming devices:
 
 - {doc}`ESP32 <esp32>` (`jumpstarter-driver-esp32`) - ESP32 flashing via esptool
+- {doc}`Fastboot <fastboot>` (`jumpstarter-driver-fastboot`) - Generic fastboot flashing with exporter-side staging and lease-independent flash jobs
 - {doc}`Flashers <flashers>` (`jumpstarter-driver-flashers`) - Flash memory programming tools
 - {doc}`Pi Pico <pi-pico>` (`jumpstarter-driver-pi-pico`) - Raspberry Pi Pico UF2 flashing via BOOTSEL
 - {doc}`Probe-RS <probe-rs>` (`jumpstarter-driver-probe-rs`) - Debug probe support
@@ -120,6 +121,7 @@ dut-network.md
 dutlink.md
 energenie.md
 esp32.md
+fastboot.md
 flashers.md
 gpiod.md
 http.md
