@@ -94,7 +94,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     tls_config: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
     grpc_options: dict[str, Any] = field(default_factory=dict)
     client_name: str | None = None  # Name of the current client, used for ownership validation
-    allow_disabled: bool = False  # Allow leasing a disabled exporter (only effective with exporter_name)
+    allow_disabled: bool = False  # Allow leasing a disabled exporter (works with exporter_name and selector)
     acquisition_timeout: int = field(default=7200)  # Timeout in seconds for lease acquisition, polled in 5s intervals
     dial_timeout: float = field(default=60.0)  # Timeout in seconds for Dial retry loop when exporter not ready
     retry_timeout: float = field(default=300.0)  # Retry timeout for unreachable exporter (0 to disable)
