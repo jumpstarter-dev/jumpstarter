@@ -3,129 +3,80 @@
 isort:skip_file
 Copyright 2026 The Jumpstarter Authors"""
 
-import abc
-import collections.abc
-import grpc
-import grpc.aio
-import jumpstarter.v1.telemetry_pb2
+from collections import abc as _abc
+from grpc import aio as _aio
+from jumpstarter.v1 import telemetry_pb2 as _telemetry_pb2
+import abc as _abc_1
+import grpc as _grpc
 import sys
-import typing
+import typing as _typing
 
-if sys.version_info >= (3, 13):
-    import typing as typing_extensions
+if sys.version_info >= (3, 11):
+    from typing import Self as _Self
 else:
-    import typing_extensions
+    from typing_extensions import Self as _Self
 
-_T = typing.TypeVar("_T")
+_T = _typing.TypeVar("_T")
 
-class _MaybeAsyncIterator(collections.abc.AsyncIterator[_T], collections.abc.Iterator[_T], metaclass=abc.ABCMeta): ...
+class _MaybeAsyncIterator(_abc.AsyncIterator[_T], _abc.Iterator[_T], metaclass=_abc_1.ABCMeta): ...
 
-class _ServicerContext(grpc.ServicerContext, grpc.aio.ServicerContext):  # type: ignore[misc, type-arg]
+class _ServicerContext(_grpc.ServicerContext, _aio.ServicerContext):  # type: ignore[misc, type-arg]
     ...
 
 GRPC_GENERATED_VERSION: str
 GRPC_VERSION: str
-_TelemetryServiceMetricsStreamType = typing_extensions.TypeVar(
-    '_TelemetryServiceMetricsStreamType',
-    grpc.StreamStreamMultiCallable[
-        jumpstarter.v1.telemetry_pb2.MetricsStreamRequest,
-        jumpstarter.v1.telemetry_pb2.MetricsStreamResponse,
-    ],
-    grpc.aio.StreamStreamMultiCallable[
-        jumpstarter.v1.telemetry_pb2.MetricsStreamRequest,
-        jumpstarter.v1.telemetry_pb2.MetricsStreamResponse,
-    ],
-    default=grpc.StreamStreamMultiCallable[
-        jumpstarter.v1.telemetry_pb2.MetricsStreamRequest,
-        jumpstarter.v1.telemetry_pb2.MetricsStreamResponse,
-    ],
-)
 
-_TelemetryServicePushLogsType = typing_extensions.TypeVar(
-    '_TelemetryServicePushLogsType',
-    grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.telemetry_pb2.PushLogsRequest,
-        jumpstarter.v1.telemetry_pb2.PushLogsResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.telemetry_pb2.PushLogsRequest,
-        jumpstarter.v1.telemetry_pb2.PushLogsResponse,
-    ],
-    default=grpc.UnaryUnaryMultiCallable[
-        jumpstarter.v1.telemetry_pb2.PushLogsRequest,
-        jumpstarter.v1.telemetry_pb2.PushLogsResponse,
-    ],
-)
-
-class TelemetryServiceStub(typing.Generic[_TelemetryServiceMetricsStreamType, _TelemetryServicePushLogsType]):
+class TelemetryServiceStub:
     """A service that reverse-scrapes exporter metrics and receives structured logs.
     Implemented by jumpstarter-telemetry; not part of the controller.
     """
 
-    @typing.overload
-    def __init__(self: TelemetryServiceStub[
-        grpc.StreamStreamMultiCallable[
-            jumpstarter.v1.telemetry_pb2.MetricsStreamRequest,
-            jumpstarter.v1.telemetry_pb2.MetricsStreamResponse,
-        ],
-        grpc.UnaryUnaryMultiCallable[
-            jumpstarter.v1.telemetry_pb2.PushLogsRequest,
-            jumpstarter.v1.telemetry_pb2.PushLogsResponse,
-        ],
-    ], channel: grpc.Channel) -> None: ...
-
-    @typing.overload
-    def __init__(self: TelemetryServiceStub[
-        grpc.aio.StreamStreamMultiCallable[
-            jumpstarter.v1.telemetry_pb2.MetricsStreamRequest,
-            jumpstarter.v1.telemetry_pb2.MetricsStreamResponse,
-        ],
-        grpc.aio.UnaryUnaryMultiCallable[
-            jumpstarter.v1.telemetry_pb2.PushLogsRequest,
-            jumpstarter.v1.telemetry_pb2.PushLogsResponse,
-        ],
-    ], channel: grpc.aio.Channel) -> None: ...
-
-    MetricsStream: _TelemetryServiceMetricsStreamType
+    @_typing.overload
+    def __new__(cls, channel: _grpc.Channel) -> _Self: ...
+    @_typing.overload
+    def __new__(cls, channel: _aio.Channel) -> TelemetryServiceAsyncStub: ...
+    MetricsStream: _grpc.StreamStreamMultiCallable[_telemetry_pb2.MetricsStreamRequest, _telemetry_pb2.MetricsStreamResponse]
     """Persistent bidirectional stream: telemetry sends scrape requests,
     exporter responds with metric snapshots (structured families plus optional OpenMetrics text).
     """
-
-    PushLogs: _TelemetryServicePushLogsType
+    PushLogs: _grpc.UnaryUnaryMultiCallable[_telemetry_pb2.PushLogsRequest, _telemetry_pb2.PushLogsResponse]
     """Push structured log entries to the telemetry service for Loki ingest."""
 
-TelemetryServiceAsyncStub: typing_extensions.TypeAlias = TelemetryServiceStub[
-    grpc.aio.StreamStreamMultiCallable[
-        jumpstarter.v1.telemetry_pb2.MetricsStreamRequest,
-        jumpstarter.v1.telemetry_pb2.MetricsStreamResponse,
-    ],
-    grpc.aio.UnaryUnaryMultiCallable[
-        jumpstarter.v1.telemetry_pb2.PushLogsRequest,
-        jumpstarter.v1.telemetry_pb2.PushLogsResponse,
-    ],
-]
-
-class TelemetryServiceServicer(metaclass=abc.ABCMeta):
+@_typing.type_check_only
+class TelemetryServiceAsyncStub(TelemetryServiceStub):
     """A service that reverse-scrapes exporter metrics and receives structured logs.
     Implemented by jumpstarter-telemetry; not part of the controller.
     """
 
-    @abc.abstractmethod
+    def __init__(self, channel: _aio.Channel) -> None: ...
+    MetricsStream: _aio.StreamStreamMultiCallable[_telemetry_pb2.MetricsStreamRequest, _telemetry_pb2.MetricsStreamResponse]  # type: ignore[assignment]
+    """Persistent bidirectional stream: telemetry sends scrape requests,
+    exporter responds with metric snapshots (structured families plus optional OpenMetrics text).
+    """
+    PushLogs: _aio.UnaryUnaryMultiCallable[_telemetry_pb2.PushLogsRequest, _telemetry_pb2.PushLogsResponse]  # type: ignore[assignment]
+    """Push structured log entries to the telemetry service for Loki ingest."""
+
+class TelemetryServiceServicer(metaclass=_abc_1.ABCMeta):
+    """A service that reverse-scrapes exporter metrics and receives structured logs.
+    Implemented by jumpstarter-telemetry; not part of the controller.
+    """
+
+    @_abc_1.abstractmethod
     def MetricsStream(
         self,
-        request_iterator: _MaybeAsyncIterator[jumpstarter.v1.telemetry_pb2.MetricsStreamRequest],
+        request_iterator: _MaybeAsyncIterator[_telemetry_pb2.MetricsStreamRequest],
         context: _ServicerContext,
-    ) -> typing.Union[collections.abc.Iterator[jumpstarter.v1.telemetry_pb2.MetricsStreamResponse], collections.abc.AsyncIterator[jumpstarter.v1.telemetry_pb2.MetricsStreamResponse]]:
+    ) -> _typing.Union[_abc.Iterator[_telemetry_pb2.MetricsStreamResponse], _abc.AsyncIterator[_telemetry_pb2.MetricsStreamResponse]]:
         """Persistent bidirectional stream: telemetry sends scrape requests,
         exporter responds with metric snapshots (structured families plus optional OpenMetrics text).
         """
 
-    @abc.abstractmethod
+    @_abc_1.abstractmethod
     def PushLogs(
         self,
-        request: jumpstarter.v1.telemetry_pb2.PushLogsRequest,
+        request: _telemetry_pb2.PushLogsRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.v1.telemetry_pb2.PushLogsResponse, collections.abc.Awaitable[jumpstarter.v1.telemetry_pb2.PushLogsResponse]]:
+    ) -> _typing.Union[_telemetry_pb2.PushLogsResponse, _abc.Awaitable[_telemetry_pb2.PushLogsResponse]]:
         """Push structured log entries to the telemetry service for Loki ingest."""
 
-def add_TelemetryServiceServicer_to_server(servicer: TelemetryServiceServicer, server: typing.Union[grpc.Server, grpc.aio.Server]) -> None: ...
+def add_TelemetryServiceServicer_to_server(servicer: TelemetryServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...

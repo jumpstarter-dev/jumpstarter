@@ -3,169 +3,201 @@
 isort:skip_file
 Copyright 2024 The Jumpstarter Authors"""
 
-import builtins
-import collections.abc
-import google.protobuf.descriptor
-import google.protobuf.internal.containers
-import google.protobuf.message
+from collections import abc as _abc
+from google.protobuf import descriptor as _descriptor
+from google.protobuf import message as _message
+from google.protobuf.internal import containers as _containers
+import builtins as _builtins
 import sys
-import typing
+import typing as _typing
 
-if sys.version_info >= (3, 10):
-    import typing as typing_extensions
+if sys.version_info >= (3, 11):
+    from typing import TypeAlias as _TypeAlias, Never as _Never
 else:
-    import typing_extensions
+    from typing_extensions import TypeAlias as _TypeAlias, Never as _Never
 
-DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
+DESCRIPTOR: _descriptor.FileDescriptor
 
-@typing.final
-class LabelSelectorRequirement(google.protobuf.message.Message):
+@_typing.final
+class LabelSelectorRequirement(_message.Message):
     """A label selector requirement with key, operator, and values."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    KEY_FIELD_NUMBER: builtins.int
-    OPERATOR_FIELD_NUMBER: builtins.int
-    VALUES_FIELD_NUMBER: builtins.int
-    key: builtins.str
+    KEY_FIELD_NUMBER: _builtins.int
+    OPERATOR_FIELD_NUMBER: _builtins.int
+    VALUES_FIELD_NUMBER: _builtins.int
+    key: _builtins.str
     """The label key that the selector applies to."""
-    operator: builtins.str
+    operator: _builtins.str
     """The operator (In, NotIn, Exists, DoesNotExist) relating the key to values."""
-    @property
-    def values(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
+    @_builtins.property
+    def values(self) -> _containers.RepeatedScalarFieldContainer[_builtins.str]:
         """The set of values for the operator to match against."""
 
     def __init__(
         self,
         *,
-        key: builtins.str = ...,
-        operator: builtins.str = ...,
-        values: collections.abc.Iterable[builtins.str] | None = ...,
+        key: _builtins.str = ...,
+        operator: _builtins.str = ...,
+        values: _abc.Iterable[_builtins.str] | None = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["key", b"key", "operator", b"operator", "values", b"values"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["key", b"key", "operator", b"operator", "values", b"values"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___LabelSelectorRequirement: typing_extensions.TypeAlias = LabelSelectorRequirement
+Global___LabelSelectorRequirement: _TypeAlias = LabelSelectorRequirement  # noqa: Y015
 
-@typing.final
-class LabelSelector(google.protobuf.message.Message):
+@_typing.final
+class LabelSelector(_message.Message):
     """Reference: https://kubernetes.io/docs/reference/kubernetes-api/common-definitions/label-selector/"""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    @typing.final
-    class MatchLabelsEntry(google.protobuf.message.Message):
-        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    @_typing.final
+    class MatchLabelsEntry(_message.Message):
+        DESCRIPTOR: _descriptor.Descriptor
 
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.str
+        KEY_FIELD_NUMBER: _builtins.int
+        VALUE_FIELD_NUMBER: _builtins.int
+        key: _builtins.str
+        value: _builtins.str
         def __init__(
             self,
             *,
-            key: builtins.str = ...,
-            value: builtins.str = ...,
+            key: _builtins.str = ...,
+            value: _builtins.str = ...,
         ) -> None: ...
-        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+        _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+        def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+        _ClearFieldArgType: _TypeAlias = _typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+        def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-    MATCH_EXPRESSIONS_FIELD_NUMBER: builtins.int
-    MATCH_LABELS_FIELD_NUMBER: builtins.int
-    @property
-    def match_expressions(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___LabelSelectorRequirement]:
+    MATCH_EXPRESSIONS_FIELD_NUMBER: _builtins.int
+    MATCH_LABELS_FIELD_NUMBER: _builtins.int
+    @_builtins.property
+    def match_expressions(self) -> _containers.RepeatedCompositeFieldContainer[Global___LabelSelectorRequirement]:
         """A list of label selector requirements combined by AND."""
 
-    @property
-    def match_labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+    @_builtins.property
+    def match_labels(self) -> _containers.ScalarMap[_builtins.str, _builtins.str]:
         """A map of key-value pairs that must match exactly."""
 
     def __init__(
         self,
         *,
-        match_expressions: collections.abc.Iterable[Global___LabelSelectorRequirement] | None = ...,
-        match_labels: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
+        match_expressions: _abc.Iterable[Global___LabelSelectorRequirement] | None = ...,
+        match_labels: _abc.Mapping[_builtins.str, _builtins.str] | None = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["match_expressions", b"match_expressions", "match_labels", b"match_labels"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["match_expressions", b"match_expressions", "match_labels", b"match_labels"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___LabelSelector: typing_extensions.TypeAlias = LabelSelector
+Global___LabelSelector: _TypeAlias = LabelSelector  # noqa: Y015
 
-@typing.final
-class Time(google.protobuf.message.Message):
+@_typing.final
+class Time(_message.Message):
     """Timestamp in seconds and nanoseconds since the Unix epoch.
     Reference: https://github.com/kubernetes/kubernetes/blob/v1.31.1/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/generated.proto
     """
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    SECONDS_FIELD_NUMBER: builtins.int
-    NANOS_FIELD_NUMBER: builtins.int
-    seconds: builtins.int
+    SECONDS_FIELD_NUMBER: _builtins.int
+    NANOS_FIELD_NUMBER: _builtins.int
+    seconds: _builtins.int
     """Seconds since the Unix epoch."""
-    nanos: builtins.int
+    nanos: _builtins.int
     """Non-negative fractions of a second at nanosecond resolution."""
     def __init__(
         self,
         *,
-        seconds: builtins.int | None = ...,
-        nanos: builtins.int | None = ...,
+        seconds: _builtins.int | None = ...,
+        nanos: _builtins.int | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["_nanos", b"_nanos", "_seconds", b"_seconds", "nanos", b"nanos", "seconds", b"seconds"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_nanos", b"_nanos", "_seconds", b"_seconds", "nanos", b"nanos", "seconds", b"seconds"]) -> None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_nanos", b"_nanos"]) -> typing.Literal["nanos"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_seconds", b"_seconds"]) -> typing.Literal["seconds"] | None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_nanos", b"_nanos", "_seconds", b"_seconds", "nanos", b"nanos", "seconds", b"seconds"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_nanos", b"_nanos", "_seconds", b"_seconds", "nanos", b"nanos", "seconds", b"seconds"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__nanos: _TypeAlias = _typing.Literal["nanos"]  # noqa: Y015
+    _WhichOneofArgType__nanos: _TypeAlias = _typing.Literal["_nanos", b"_nanos"]  # noqa: Y015
+    _WhichOneofReturnType__seconds: _TypeAlias = _typing.Literal["seconds"]  # noqa: Y015
+    _WhichOneofArgType__seconds: _TypeAlias = _typing.Literal["_seconds", b"_seconds"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__nanos) -> _WhichOneofReturnType__nanos | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__seconds) -> _WhichOneofReturnType__seconds | None: ...
 
-Global___Time: typing_extensions.TypeAlias = Time
+Global___Time: _TypeAlias = Time  # noqa: Y015
 
-@typing.final
-class Condition(google.protobuf.message.Message):
+@_typing.final
+class Condition(_message.Message):
     """A Kubernetes-style status condition."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    TYPE_FIELD_NUMBER: builtins.int
-    STATUS_FIELD_NUMBER: builtins.int
-    OBSERVEDGENERATION_FIELD_NUMBER: builtins.int
-    LASTTRANSITIONTIME_FIELD_NUMBER: builtins.int
-    REASON_FIELD_NUMBER: builtins.int
-    MESSAGE_FIELD_NUMBER: builtins.int
-    type: builtins.str
+    TYPE_FIELD_NUMBER: _builtins.int
+    STATUS_FIELD_NUMBER: _builtins.int
+    OBSERVEDGENERATION_FIELD_NUMBER: _builtins.int
+    LASTTRANSITIONTIME_FIELD_NUMBER: _builtins.int
+    REASON_FIELD_NUMBER: _builtins.int
+    MESSAGE_FIELD_NUMBER: _builtins.int
+    type: _builtins.str
     """The type of condition."""
-    status: builtins.str
+    status: _builtins.str
     """The status of the condition (True, False, Unknown)."""
-    observedGeneration: builtins.int
+    observedGeneration: _builtins.int
     """The generation observed by the controller."""
-    reason: builtins.str
+    reason: _builtins.str
     """A machine-readable reason for the condition."""
-    message: builtins.str
+    message: _builtins.str
     """A human-readable description of the condition."""
-    @property
+    @_builtins.property
     def lastTransitionTime(self) -> Global___Time:
         """The last time the condition transitioned."""
 
     def __init__(
         self,
         *,
-        type: builtins.str | None = ...,
-        status: builtins.str | None = ...,
-        observedGeneration: builtins.int | None = ...,
+        type: _builtins.str | None = ...,
+        status: _builtins.str | None = ...,
+        observedGeneration: _builtins.int | None = ...,
         lastTransitionTime: Global___Time | None = ...,
-        reason: builtins.str | None = ...,
-        message: builtins.str | None = ...,
+        reason: _builtins.str | None = ...,
+        message: _builtins.str | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["_lastTransitionTime", b"_lastTransitionTime", "_message", b"_message", "_observedGeneration", b"_observedGeneration", "_reason", b"_reason", "_status", b"_status", "_type", b"_type", "lastTransitionTime", b"lastTransitionTime", "message", b"message", "observedGeneration", b"observedGeneration", "reason", b"reason", "status", b"status", "type", b"type"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_lastTransitionTime", b"_lastTransitionTime", "_message", b"_message", "_observedGeneration", b"_observedGeneration", "_reason", b"_reason", "_status", b"_status", "_type", b"_type", "lastTransitionTime", b"lastTransitionTime", "message", b"message", "observedGeneration", b"observedGeneration", "reason", b"reason", "status", b"status", "type", b"type"]) -> None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_lastTransitionTime", b"_lastTransitionTime"]) -> typing.Literal["lastTransitionTime"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_message", b"_message"]) -> typing.Literal["message"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_observedGeneration", b"_observedGeneration"]) -> typing.Literal["observedGeneration"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_reason", b"_reason"]) -> typing.Literal["reason"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_status", b"_status"]) -> typing.Literal["status"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_type", b"_type"]) -> typing.Literal["type"] | None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_lastTransitionTime", b"_lastTransitionTime", "_message", b"_message", "_observedGeneration", b"_observedGeneration", "_reason", b"_reason", "_status", b"_status", "_type", b"_type", "lastTransitionTime", b"lastTransitionTime", "message", b"message", "observedGeneration", b"observedGeneration", "reason", b"reason", "status", b"status", "type", b"type"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_lastTransitionTime", b"_lastTransitionTime", "_message", b"_message", "_observedGeneration", b"_observedGeneration", "_reason", b"_reason", "_status", b"_status", "_type", b"_type", "lastTransitionTime", b"lastTransitionTime", "message", b"message", "observedGeneration", b"observedGeneration", "reason", b"reason", "status", b"status", "type", b"type"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__lastTransitionTime: _TypeAlias = _typing.Literal["lastTransitionTime"]  # noqa: Y015
+    _WhichOneofArgType__lastTransitionTime: _TypeAlias = _typing.Literal["_lastTransitionTime", b"_lastTransitionTime"]  # noqa: Y015
+    _WhichOneofReturnType__message: _TypeAlias = _typing.Literal["message"]  # noqa: Y015
+    _WhichOneofArgType__message: _TypeAlias = _typing.Literal["_message", b"_message"]  # noqa: Y015
+    _WhichOneofReturnType__observedGeneration: _TypeAlias = _typing.Literal["observedGeneration"]  # noqa: Y015
+    _WhichOneofArgType__observedGeneration: _TypeAlias = _typing.Literal["_observedGeneration", b"_observedGeneration"]  # noqa: Y015
+    _WhichOneofReturnType__reason: _TypeAlias = _typing.Literal["reason"]  # noqa: Y015
+    _WhichOneofArgType__reason: _TypeAlias = _typing.Literal["_reason", b"_reason"]  # noqa: Y015
+    _WhichOneofReturnType__status: _TypeAlias = _typing.Literal["status"]  # noqa: Y015
+    _WhichOneofArgType__status: _TypeAlias = _typing.Literal["_status", b"_status"]  # noqa: Y015
+    _WhichOneofReturnType__type: _TypeAlias = _typing.Literal["type"]  # noqa: Y015
+    _WhichOneofArgType__type: _TypeAlias = _typing.Literal["_type", b"_type"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__lastTransitionTime) -> _WhichOneofReturnType__lastTransitionTime | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__message) -> _WhichOneofReturnType__message | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__observedGeneration) -> _WhichOneofReturnType__observedGeneration | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__reason) -> _WhichOneofReturnType__reason | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__status) -> _WhichOneofReturnType__status | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__type) -> _WhichOneofReturnType__type | None: ...
 
-Global___Condition: typing_extensions.TypeAlias = Condition
+Global___Condition: _TypeAlias = Condition  # noqa: Y015

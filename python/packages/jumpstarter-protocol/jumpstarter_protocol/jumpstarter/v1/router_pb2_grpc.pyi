@@ -3,45 +3,30 @@
 isort:skip_file
 Copyright 2024 The Jumpstarter Authors"""
 
-import abc
-import collections.abc
-import grpc
-import grpc.aio
-import jumpstarter.v1.router_pb2
+from collections import abc as _abc
+from grpc import aio as _aio
+from jumpstarter.v1 import router_pb2 as _router_pb2
+import abc as _abc_1
+import grpc as _grpc
 import sys
-import typing
+import typing as _typing
 
-if sys.version_info >= (3, 13):
-    import typing as typing_extensions
+if sys.version_info >= (3, 11):
+    from typing import Self as _Self
 else:
-    import typing_extensions
+    from typing_extensions import Self as _Self
 
-_T = typing.TypeVar("_T")
+_T = _typing.TypeVar("_T")
 
-class _MaybeAsyncIterator(collections.abc.AsyncIterator[_T], collections.abc.Iterator[_T], metaclass=abc.ABCMeta): ...
+class _MaybeAsyncIterator(_abc.AsyncIterator[_T], _abc.Iterator[_T], metaclass=_abc_1.ABCMeta): ...
 
-class _ServicerContext(grpc.ServicerContext, grpc.aio.ServicerContext):  # type: ignore[misc, type-arg]
+class _ServicerContext(_grpc.ServicerContext, _aio.ServicerContext):  # type: ignore[misc, type-arg]
     ...
 
 GRPC_GENERATED_VERSION: str
 GRPC_VERSION: str
-_RouterServiceStreamType = typing_extensions.TypeVar(
-    '_RouterServiceStreamType',
-    grpc.StreamStreamMultiCallable[
-        jumpstarter.v1.router_pb2.StreamRequest,
-        jumpstarter.v1.router_pb2.StreamResponse,
-    ],
-    grpc.aio.StreamStreamMultiCallable[
-        jumpstarter.v1.router_pb2.StreamRequest,
-        jumpstarter.v1.router_pb2.StreamResponse,
-    ],
-    default=grpc.StreamStreamMultiCallable[
-        jumpstarter.v1.router_pb2.StreamRequest,
-        jumpstarter.v1.router_pb2.StreamResponse,
-    ],
-)
 
-class RouterServiceStub(typing.Generic[_RouterServiceStreamType]):
+class RouterServiceStub:
     """Router service for multiplexing bidirectional streams between clients and exporters.
     Claims:
     iss: jumpstarter controller
@@ -50,33 +35,15 @@ class RouterServiceStub(typing.Generic[_RouterServiceStreamType]):
     stream: stream id.
     """
 
-    @typing.overload
-    def __init__(self: RouterServiceStub[
-        grpc.StreamStreamMultiCallable[
-            jumpstarter.v1.router_pb2.StreamRequest,
-            jumpstarter.v1.router_pb2.StreamResponse,
-        ],
-    ], channel: grpc.Channel) -> None: ...
-
-    @typing.overload
-    def __init__(self: RouterServiceStub[
-        grpc.aio.StreamStreamMultiCallable[
-            jumpstarter.v1.router_pb2.StreamRequest,
-            jumpstarter.v1.router_pb2.StreamResponse,
-        ],
-    ], channel: grpc.aio.Channel) -> None: ...
-
-    Stream: _RouterServiceStreamType
+    @_typing.overload
+    def __new__(cls, channel: _grpc.Channel) -> _Self: ...
+    @_typing.overload
+    def __new__(cls, channel: _aio.Channel) -> RouterServiceAsyncStub: ...
+    Stream: _grpc.StreamStreamMultiCallable[_router_pb2.StreamRequest, _router_pb2.StreamResponse]
     """Stream connects caller to another caller of the same stream."""
 
-RouterServiceAsyncStub: typing_extensions.TypeAlias = RouterServiceStub[
-    grpc.aio.StreamStreamMultiCallable[
-        jumpstarter.v1.router_pb2.StreamRequest,
-        jumpstarter.v1.router_pb2.StreamResponse,
-    ],
-]
-
-class RouterServiceServicer(metaclass=abc.ABCMeta):
+@_typing.type_check_only
+class RouterServiceAsyncStub(RouterServiceStub):
     """Router service for multiplexing bidirectional streams between clients and exporters.
     Claims:
     iss: jumpstarter controller
@@ -85,12 +52,25 @@ class RouterServiceServicer(metaclass=abc.ABCMeta):
     stream: stream id.
     """
 
-    @abc.abstractmethod
+    def __init__(self, channel: _aio.Channel) -> None: ...
+    Stream: _aio.StreamStreamMultiCallable[_router_pb2.StreamRequest, _router_pb2.StreamResponse]  # type: ignore[assignment]
+    """Stream connects caller to another caller of the same stream."""
+
+class RouterServiceServicer(metaclass=_abc_1.ABCMeta):
+    """Router service for multiplexing bidirectional streams between clients and exporters.
+    Claims:
+    iss: jumpstarter controller
+    aud: jumpstarter router
+    sub: jumpstarter client/exporter
+    stream: stream id.
+    """
+
+    @_abc_1.abstractmethod
     def Stream(
         self,
-        request_iterator: _MaybeAsyncIterator[jumpstarter.v1.router_pb2.StreamRequest],
+        request_iterator: _MaybeAsyncIterator[_router_pb2.StreamRequest],
         context: _ServicerContext,
-    ) -> typing.Union[collections.abc.Iterator[jumpstarter.v1.router_pb2.StreamResponse], collections.abc.AsyncIterator[jumpstarter.v1.router_pb2.StreamResponse]]:
+    ) -> _typing.Union[_abc.Iterator[_router_pb2.StreamResponse], _abc.AsyncIterator[_router_pb2.StreamResponse]]:
         """Stream connects caller to another caller of the same stream."""
 
-def add_RouterServiceServicer_to_server(servicer: RouterServiceServicer, server: typing.Union[grpc.Server, grpc.aio.Server]) -> None: ...
+def add_RouterServiceServicer_to_server(servicer: RouterServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...

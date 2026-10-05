@@ -9,89 +9,110 @@ Copyright 2024 The Jumpstarter Authors
 (-- api-linter: core::0191::java-multiple-files=disabled
 """
 
-import builtins
-import collections.abc
-import google.protobuf.descriptor
-import google.protobuf.duration_pb2
-import google.protobuf.field_mask_pb2
-import google.protobuf.internal.containers
-import google.protobuf.message
-import google.protobuf.timestamp_pb2
-import jumpstarter.v1.common_pb2
-import jumpstarter.v1.kubernetes_pb2
+from collections import abc as _abc
+from google.protobuf import descriptor as _descriptor
+from google.protobuf import duration_pb2 as _duration_pb2
+from google.protobuf import field_mask_pb2 as _field_mask_pb2
+from google.protobuf import message as _message
+from google.protobuf import timestamp_pb2 as _timestamp_pb2
+from google.protobuf.internal import containers as _containers
+from jumpstarter.v1 import common_pb2 as _common_pb2
+from jumpstarter.v1 import kubernetes_pb2 as _kubernetes_pb2
+import builtins as _builtins
 import sys
-import typing
+import typing as _typing
 
-if sys.version_info >= (3, 10):
-    import typing as typing_extensions
+if sys.version_info >= (3, 11):
+    from typing import TypeAlias as _TypeAlias, Never as _Never
 else:
-    import typing_extensions
+    from typing_extensions import TypeAlias as _TypeAlias, Never as _Never
 
-DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
+if sys.version_info >= (3, 13):
+    from warnings import deprecated as _deprecated
+else:
+    from typing_extensions import deprecated as _deprecated
 
-@typing.final
-class Exporter(google.protobuf.message.Message):
+DESCRIPTOR: _descriptor.FileDescriptor
+
+@_typing.final
+class Exporter(_message.Message):
     """An exporter resource representing a registered device provider."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    @typing.final
-    class LabelsEntry(google.protobuf.message.Message):
-        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    @_typing.final
+    class LabelsEntry(_message.Message):
+        DESCRIPTOR: _descriptor.Descriptor
 
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.str
+        KEY_FIELD_NUMBER: _builtins.int
+        VALUE_FIELD_NUMBER: _builtins.int
+        key: _builtins.str
+        value: _builtins.str
         def __init__(
             self,
             *,
-            key: builtins.str = ...,
-            value: builtins.str = ...,
+            key: _builtins.str = ...,
+            value: _builtins.str = ...,
         ) -> None: ...
-        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+        _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+        def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+        _ClearFieldArgType: _TypeAlias = _typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+        def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-    @typing.final
-    class DeprecatedLabelsEntry(google.protobuf.message.Message):
-        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    @_typing.final
+    class DeprecatedLabelsEntry(_message.Message):
+        DESCRIPTOR: _descriptor.Descriptor
 
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.str
+        KEY_FIELD_NUMBER: _builtins.int
+        VALUE_FIELD_NUMBER: _builtins.int
+        key: _builtins.str
+        value: _builtins.str
         def __init__(
             self,
             *,
-            key: builtins.str = ...,
-            value: builtins.str = ...,
+            key: _builtins.str = ...,
+            value: _builtins.str = ...,
         ) -> None: ...
-        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+        _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+        def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+        _ClearFieldArgType: _TypeAlias = _typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+        def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-    NAME_FIELD_NUMBER: builtins.int
-    LABELS_FIELD_NUMBER: builtins.int
-    ONLINE_FIELD_NUMBER: builtins.int
-    STATUS_FIELD_NUMBER: builtins.int
-    STATUS_MESSAGE_FIELD_NUMBER: builtins.int
-    ENABLED_FIELD_NUMBER: builtins.int
-    DEPRECATED_LABELS_FIELD_NUMBER: builtins.int
-    name: builtins.str
+    NAME_FIELD_NUMBER: _builtins.int
+    LABELS_FIELD_NUMBER: _builtins.int
+    ONLINE_FIELD_NUMBER: _builtins.int
+    STATUS_FIELD_NUMBER: _builtins.int
+    STATUS_MESSAGE_FIELD_NUMBER: _builtins.int
+    ENABLED_FIELD_NUMBER: _builtins.int
+    DEPRECATED_LABELS_FIELD_NUMBER: _builtins.int
+    name: _builtins.str
     """The resource name of the exporter."""
-    online: builtins.bool
-    """Whether the exporter is currently online. Deprecated in favor of the status field."""
-    status: jumpstarter.v1.common_pb2.ExporterStatus.ValueType
+    @_builtins.property
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def online(self) -> _builtins.bool:
+        """Whether the exporter is currently online. Deprecated in favor of the status field."""
+
+    @online.setter
+    @_deprecated("""This field has been marked as deprecated using proto field options.""")
+    def online(self, value: _builtins.bool) -> None:
+        """Whether the exporter is currently online. Deprecated in favor of the status field."""
+
+    status: _common_pb2.ExporterStatus.ValueType
     """The current status of the exporter."""
-    status_message: builtins.str
+    status_message: _builtins.str
     """A human-readable message providing details about the exporter status."""
-    enabled: builtins.bool
+    enabled: _builtins.bool
     """Whether the exporter is enabled for lease assignment.
     When false, the controller will not assign new leases to this exporter.
     """
-    @property
-    def labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+    @_builtins.property
+    def labels(self) -> _containers.ScalarMap[_builtins.str, _builtins.str]:
         """The set of labels associated with the exporter."""
 
-    @property
-    def deprecated_labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+    @_builtins.property
+    def deprecated_labels(self) -> _containers.ScalarMap[_builtins.str, _builtins.str]:
         """Label keys on this exporter that the controller has marked as deprecated.
         Keys are the deprecated label names; values are optional human-readable messages.
         """
@@ -99,154 +120,170 @@ class Exporter(google.protobuf.message.Message):
     def __init__(
         self,
         *,
-        name: builtins.str = ...,
-        labels: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
-        online: builtins.bool = ...,
-        status: jumpstarter.v1.common_pb2.ExporterStatus.ValueType = ...,
-        status_message: builtins.str = ...,
-        enabled: builtins.bool | None = ...,
-        deprecated_labels: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
+        name: _builtins.str = ...,
+        labels: _abc.Mapping[_builtins.str, _builtins.str] | None = ...,
+        online: _builtins.bool = ...,
+        status: _common_pb2.ExporterStatus.ValueType = ...,
+        status_message: _builtins.str = ...,
+        enabled: _builtins.bool | None = ...,
+        deprecated_labels: _abc.Mapping[_builtins.str, _builtins.str] | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["_enabled", b"_enabled", "enabled", b"enabled"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_enabled", b"_enabled", "deprecated_labels", b"deprecated_labels", "enabled", b"enabled", "labels", b"labels", "name", b"name", "online", b"online", "status", b"status", "status_message", b"status_message"]) -> None: ...
-    def WhichOneof(self, oneof_group: typing.Literal["_enabled", b"_enabled"]) -> typing.Literal["enabled"] | None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_enabled", b"_enabled", "enabled", b"enabled"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_enabled", b"_enabled", "deprecated_labels", b"deprecated_labels", "enabled", b"enabled", "labels", b"labels", "name", b"name", "online", b"online", "status", b"status", "status_message", b"status_message"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__enabled: _TypeAlias = _typing.Literal["enabled"]  # noqa: Y015
+    _WhichOneofArgType__enabled: _TypeAlias = _typing.Literal["_enabled", b"_enabled"]  # noqa: Y015
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__enabled) -> _WhichOneofReturnType__enabled | None: ...
 
-Global___Exporter: typing_extensions.TypeAlias = Exporter
+Global___Exporter: _TypeAlias = Exporter  # noqa: Y015
 
-@typing.final
-class Lease(google.protobuf.message.Message):
+@_typing.final
+class Lease(_message.Message):
     """A lease resource representing a reservation of an exporter."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    @typing.final
-    class TagsEntry(google.protobuf.message.Message):
-        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    @_typing.final
+    class TagsEntry(_message.Message):
+        DESCRIPTOR: _descriptor.Descriptor
 
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.str
+        KEY_FIELD_NUMBER: _builtins.int
+        VALUE_FIELD_NUMBER: _builtins.int
+        key: _builtins.str
+        value: _builtins.str
         def __init__(
             self,
             *,
-            key: builtins.str = ...,
-            value: builtins.str = ...,
+            key: _builtins.str = ...,
+            value: _builtins.str = ...,
         ) -> None: ...
-        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+        _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+        def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+        _ClearFieldArgType: _TypeAlias = _typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+        def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-    @typing.final
-    class ContextEntry(google.protobuf.message.Message):
-        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    @_typing.final
+    class ContextEntry(_message.Message):
+        DESCRIPTOR: _descriptor.Descriptor
 
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.str
+        KEY_FIELD_NUMBER: _builtins.int
+        VALUE_FIELD_NUMBER: _builtins.int
+        key: _builtins.str
+        value: _builtins.str
         def __init__(
             self,
             *,
-            key: builtins.str = ...,
-            value: builtins.str = ...,
+            key: _builtins.str = ...,
+            value: _builtins.str = ...,
         ) -> None: ...
-        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+        _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+        def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+        _ClearFieldArgType: _TypeAlias = _typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+        def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-    @typing.final
-    class DeprecatedLabelsEntry(google.protobuf.message.Message):
-        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    @_typing.final
+    class DeprecatedLabelsEntry(_message.Message):
+        DESCRIPTOR: _descriptor.Descriptor
 
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.str
+        KEY_FIELD_NUMBER: _builtins.int
+        VALUE_FIELD_NUMBER: _builtins.int
+        key: _builtins.str
+        value: _builtins.str
         def __init__(
             self,
             *,
-            key: builtins.str = ...,
-            value: builtins.str = ...,
+            key: _builtins.str = ...,
+            value: _builtins.str = ...,
         ) -> None: ...
-        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+        _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+        def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+        _ClearFieldArgType: _TypeAlias = _typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+        def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-    NAME_FIELD_NUMBER: builtins.int
-    SELECTOR_FIELD_NUMBER: builtins.int
-    DURATION_FIELD_NUMBER: builtins.int
-    EFFECTIVE_DURATION_FIELD_NUMBER: builtins.int
-    BEGIN_TIME_FIELD_NUMBER: builtins.int
-    EFFECTIVE_BEGIN_TIME_FIELD_NUMBER: builtins.int
-    END_TIME_FIELD_NUMBER: builtins.int
-    EFFECTIVE_END_TIME_FIELD_NUMBER: builtins.int
-    CLIENT_FIELD_NUMBER: builtins.int
-    EXPORTER_FIELD_NUMBER: builtins.int
-    CONDITIONS_FIELD_NUMBER: builtins.int
-    EXPORTER_NAME_FIELD_NUMBER: builtins.int
-    TAGS_FIELD_NUMBER: builtins.int
-    ALLOW_DISABLED_FIELD_NUMBER: builtins.int
-    CONTEXT_FIELD_NUMBER: builtins.int
-    DEPRECATED_LABELS_FIELD_NUMBER: builtins.int
-    SHARED_WITH_FIELD_NUMBER: builtins.int
-    EFFECTIVE_SHARED_WITH_FIELD_NUMBER: builtins.int
-    name: builtins.str
+    NAME_FIELD_NUMBER: _builtins.int
+    SELECTOR_FIELD_NUMBER: _builtins.int
+    DURATION_FIELD_NUMBER: _builtins.int
+    EFFECTIVE_DURATION_FIELD_NUMBER: _builtins.int
+    BEGIN_TIME_FIELD_NUMBER: _builtins.int
+    EFFECTIVE_BEGIN_TIME_FIELD_NUMBER: _builtins.int
+    END_TIME_FIELD_NUMBER: _builtins.int
+    EFFECTIVE_END_TIME_FIELD_NUMBER: _builtins.int
+    CLIENT_FIELD_NUMBER: _builtins.int
+    EXPORTER_FIELD_NUMBER: _builtins.int
+    CONDITIONS_FIELD_NUMBER: _builtins.int
+    EXPORTER_NAME_FIELD_NUMBER: _builtins.int
+    TAGS_FIELD_NUMBER: _builtins.int
+    ALLOW_DISABLED_FIELD_NUMBER: _builtins.int
+    CONTEXT_FIELD_NUMBER: _builtins.int
+    DEPRECATED_LABELS_FIELD_NUMBER: _builtins.int
+    SHARED_WITH_FIELD_NUMBER: _builtins.int
+    EFFECTIVE_SHARED_WITH_FIELD_NUMBER: _builtins.int
+    name: _builtins.str
     """The resource name of the lease."""
-    selector: builtins.str
+    selector: _builtins.str
     """The label selector expression used to match an exporter."""
-    client: builtins.str
+    client: _builtins.str
     """The resource name of the client that owns this lease."""
-    exporter: builtins.str
+    exporter: _builtins.str
     """The resource name of the exporter assigned to this lease."""
-    exporter_name: builtins.str
+    exporter_name: _builtins.str
     """The name of a specific exporter to target for the lease."""
-    allow_disabled: builtins.bool
+    allow_disabled: _builtins.bool
     """Allow leasing a disabled exporter. Only effective when exporter_name is set.
     Useful for investigating broken exporters that have been administratively disabled.
     """
-    @property
-    def duration(self) -> google.protobuf.duration_pb2.Duration:
+    @_builtins.property
+    def duration(self) -> _duration_pb2.Duration:
         """The requested duration of the lease."""
 
-    @property
-    def effective_duration(self) -> google.protobuf.duration_pb2.Duration:
+    @_builtins.property
+    def effective_duration(self) -> _duration_pb2.Duration:
         """The server-computed effective duration of the lease."""
 
-    @property
-    def begin_time(self) -> google.protobuf.timestamp_pb2.Timestamp:
+    @_builtins.property
+    def begin_time(self) -> _timestamp_pb2.Timestamp:
         """The requested begin time of the lease."""
 
-    @property
-    def effective_begin_time(self) -> google.protobuf.timestamp_pb2.Timestamp:
+    @_builtins.property
+    def effective_begin_time(self) -> _timestamp_pb2.Timestamp:
         """The server-computed effective begin time of the lease."""
 
-    @property
-    def end_time(self) -> google.protobuf.timestamp_pb2.Timestamp:
+    @_builtins.property
+    def end_time(self) -> _timestamp_pb2.Timestamp:
         """The requested end time of the lease."""
 
-    @property
-    def effective_end_time(self) -> google.protobuf.timestamp_pb2.Timestamp:
+    @_builtins.property
+    def effective_end_time(self) -> _timestamp_pb2.Timestamp:
         """The server-computed effective end time of the lease."""
 
-    @property
-    def conditions(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[jumpstarter.v1.kubernetes_pb2.Condition]:
+    @_builtins.property
+    def conditions(self) -> _containers.RepeatedCompositeFieldContainer[_kubernetes_pb2.Condition]:
         """The list of conditions reflecting the current state of the lease."""
 
-    @property
-    def tags(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+    @_builtins.property
+    def tags(self) -> _containers.ScalarMap[_builtins.str, _builtins.str]:
         """The set of tags associated with the lease."""
 
-    @property
-    def context(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+    @_builtins.property
+    def context(self) -> _containers.ScalarMap[_builtins.str, _builtins.str]:
         """User-defined context metadata for the lease (e.g. build_id, image_digest, VCS ref)."""
 
-    @property
-    def deprecated_labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+    @_builtins.property
+    def deprecated_labels(self) -> _containers.ScalarMap[_builtins.str, _builtins.str]:
         """Selector keys on this lease that the controller has marked as deprecated.
         Keys are the deprecated label names; values are optional human-readable messages.
         """
 
-    @property
-    def shared_with(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
+    @_builtins.property
+    def shared_with(self) -> _containers.RepeatedScalarFieldContainer[_builtins.str]:
         """The requested list of client names to share this lease with (desired intent)."""
 
-    @property
-    def effective_shared_with(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
+    @_builtins.property
+    def effective_shared_with(self) -> _containers.RepeatedScalarFieldContainer[_builtins.str]:
         """The server-computed effective set of client names actually granted shared
         access, after the controller evaluates exporter access policies and client
         existence. A name present in shared_with but absent here was denied by
@@ -256,333 +293,392 @@ class Lease(google.protobuf.message.Message):
     def __init__(
         self,
         *,
-        name: builtins.str = ...,
-        selector: builtins.str = ...,
-        duration: google.protobuf.duration_pb2.Duration | None = ...,
-        effective_duration: google.protobuf.duration_pb2.Duration | None = ...,
-        begin_time: google.protobuf.timestamp_pb2.Timestamp | None = ...,
-        effective_begin_time: google.protobuf.timestamp_pb2.Timestamp | None = ...,
-        end_time: google.protobuf.timestamp_pb2.Timestamp | None = ...,
-        effective_end_time: google.protobuf.timestamp_pb2.Timestamp | None = ...,
-        client: builtins.str | None = ...,
-        exporter: builtins.str | None = ...,
-        conditions: collections.abc.Iterable[jumpstarter.v1.kubernetes_pb2.Condition] | None = ...,
-        exporter_name: builtins.str | None = ...,
-        tags: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
-        allow_disabled: builtins.bool = ...,
-        context: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
-        deprecated_labels: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
-        shared_with: collections.abc.Iterable[builtins.str] | None = ...,
-        effective_shared_with: collections.abc.Iterable[builtins.str] | None = ...,
+        name: _builtins.str = ...,
+        selector: _builtins.str = ...,
+        duration: _duration_pb2.Duration | None = ...,
+        effective_duration: _duration_pb2.Duration | None = ...,
+        begin_time: _timestamp_pb2.Timestamp | None = ...,
+        effective_begin_time: _timestamp_pb2.Timestamp | None = ...,
+        end_time: _timestamp_pb2.Timestamp | None = ...,
+        effective_end_time: _timestamp_pb2.Timestamp | None = ...,
+        client: _builtins.str | None = ...,
+        exporter: _builtins.str | None = ...,
+        conditions: _abc.Iterable[_kubernetes_pb2.Condition] | None = ...,
+        exporter_name: _builtins.str | None = ...,
+        tags: _abc.Mapping[_builtins.str, _builtins.str] | None = ...,
+        allow_disabled: _builtins.bool = ...,
+        context: _abc.Mapping[_builtins.str, _builtins.str] | None = ...,
+        deprecated_labels: _abc.Mapping[_builtins.str, _builtins.str] | None = ...,
+        shared_with: _abc.Iterable[_builtins.str] | None = ...,
+        effective_shared_with: _abc.Iterable[_builtins.str] | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "begin_time", b"begin_time", "client", b"client", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "allow_disabled", b"allow_disabled", "begin_time", b"begin_time", "client", b"client", "conditions", b"conditions", "context", b"context", "deprecated_labels", b"deprecated_labels", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "effective_shared_with", b"effective_shared_with", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name", "name", b"name", "selector", b"selector", "shared_with", b"shared_with", "tags", b"tags"]) -> None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_begin_time", b"_begin_time"]) -> typing.Literal["begin_time"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_client", b"_client"]) -> typing.Literal["client"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_duration", b"_duration"]) -> typing.Literal["duration"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_effective_begin_time", b"_effective_begin_time"]) -> typing.Literal["effective_begin_time"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_effective_end_time", b"_effective_end_time"]) -> typing.Literal["effective_end_time"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_end_time", b"_end_time"]) -> typing.Literal["end_time"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_exporter", b"_exporter"]) -> typing.Literal["exporter"] | None: ...
-    @typing.overload
-    def WhichOneof(self, oneof_group: typing.Literal["_exporter_name", b"_exporter_name"]) -> typing.Literal["exporter_name"] | None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "begin_time", b"begin_time", "client", b"client", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "allow_disabled", b"allow_disabled", "begin_time", b"begin_time", "client", b"client", "conditions", b"conditions", "context", b"context", "deprecated_labels", b"deprecated_labels", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "effective_shared_with", b"effective_shared_with", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name", "name", b"name", "selector", b"selector", "shared_with", b"shared_with", "tags", b"tags"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__begin_time: _TypeAlias = _typing.Literal["begin_time"]  # noqa: Y015
+    _WhichOneofArgType__begin_time: _TypeAlias = _typing.Literal["_begin_time", b"_begin_time"]  # noqa: Y015
+    _WhichOneofReturnType__client: _TypeAlias = _typing.Literal["client"]  # noqa: Y015
+    _WhichOneofArgType__client: _TypeAlias = _typing.Literal["_client", b"_client"]  # noqa: Y015
+    _WhichOneofReturnType__duration: _TypeAlias = _typing.Literal["duration"]  # noqa: Y015
+    _WhichOneofArgType__duration: _TypeAlias = _typing.Literal["_duration", b"_duration"]  # noqa: Y015
+    _WhichOneofReturnType__effective_begin_time: _TypeAlias = _typing.Literal["effective_begin_time"]  # noqa: Y015
+    _WhichOneofArgType__effective_begin_time: _TypeAlias = _typing.Literal["_effective_begin_time", b"_effective_begin_time"]  # noqa: Y015
+    _WhichOneofReturnType__effective_end_time: _TypeAlias = _typing.Literal["effective_end_time"]  # noqa: Y015
+    _WhichOneofArgType__effective_end_time: _TypeAlias = _typing.Literal["_effective_end_time", b"_effective_end_time"]  # noqa: Y015
+    _WhichOneofReturnType__end_time: _TypeAlias = _typing.Literal["end_time"]  # noqa: Y015
+    _WhichOneofArgType__end_time: _TypeAlias = _typing.Literal["_end_time", b"_end_time"]  # noqa: Y015
+    _WhichOneofReturnType__exporter: _TypeAlias = _typing.Literal["exporter"]  # noqa: Y015
+    _WhichOneofArgType__exporter: _TypeAlias = _typing.Literal["_exporter", b"_exporter"]  # noqa: Y015
+    _WhichOneofReturnType__exporter_name: _TypeAlias = _typing.Literal["exporter_name"]  # noqa: Y015
+    _WhichOneofArgType__exporter_name: _TypeAlias = _typing.Literal["_exporter_name", b"_exporter_name"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__begin_time) -> _WhichOneofReturnType__begin_time | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__client) -> _WhichOneofReturnType__client | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__duration) -> _WhichOneofReturnType__duration | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__effective_begin_time) -> _WhichOneofReturnType__effective_begin_time | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__effective_end_time) -> _WhichOneofReturnType__effective_end_time | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__end_time) -> _WhichOneofReturnType__end_time | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__exporter) -> _WhichOneofReturnType__exporter | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__exporter_name) -> _WhichOneofReturnType__exporter_name | None: ...
 
-Global___Lease: typing_extensions.TypeAlias = Lease
+Global___Lease: _TypeAlias = Lease  # noqa: Y015
 
-@typing.final
-class GetExporterRequest(google.protobuf.message.Message):
+@_typing.final
+class GetExporterRequest(_message.Message):
     """Request to retrieve an exporter."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    NAME_FIELD_NUMBER: builtins.int
-    SHOW_HIDDEN_LABELS_FIELD_NUMBER: builtins.int
-    name: builtins.str
+    NAME_FIELD_NUMBER: _builtins.int
+    SHOW_HIDDEN_LABELS_FIELD_NUMBER: _builtins.int
+    name: _builtins.str
     """The resource name of the exporter."""
-    show_hidden_labels: builtins.bool
+    show_hidden_labels: _builtins.bool
     """When true, include labels hidden by controller configuration."""
     def __init__(
         self,
         *,
-        name: builtins.str = ...,
-        show_hidden_labels: builtins.bool = ...,
+        name: _builtins.str = ...,
+        show_hidden_labels: _builtins.bool = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["name", b"name", "show_hidden_labels", b"show_hidden_labels"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["name", b"name", "show_hidden_labels", b"show_hidden_labels"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___GetExporterRequest: typing_extensions.TypeAlias = GetExporterRequest
+Global___GetExporterRequest: _TypeAlias = GetExporterRequest  # noqa: Y015
 
-@typing.final
-class ListExportersRequest(google.protobuf.message.Message):
+@_typing.final
+class ListExportersRequest(_message.Message):
     """Request to list exporters."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    PARENT_FIELD_NUMBER: builtins.int
-    PAGE_SIZE_FIELD_NUMBER: builtins.int
-    PAGE_TOKEN_FIELD_NUMBER: builtins.int
-    FILTER_FIELD_NUMBER: builtins.int
-    SHOW_HIDDEN_LABELS_FIELD_NUMBER: builtins.int
-    parent: builtins.str
+    PARENT_FIELD_NUMBER: _builtins.int
+    PAGE_SIZE_FIELD_NUMBER: _builtins.int
+    PAGE_TOKEN_FIELD_NUMBER: _builtins.int
+    FILTER_FIELD_NUMBER: _builtins.int
+    SHOW_HIDDEN_LABELS_FIELD_NUMBER: _builtins.int
+    parent: _builtins.str
     """The parent resource name (namespace)."""
-    page_size: builtins.int
+    page_size: _builtins.int
     """Maximum number of results to return."""
-    page_token: builtins.str
+    page_token: _builtins.str
     """Token for retrieving the next page of results."""
-    filter: builtins.str
+    filter: _builtins.str
     """Filter expression for the results."""
-    show_hidden_labels: builtins.bool
+    show_hidden_labels: _builtins.bool
     """When true, include labels hidden by controller configuration."""
     def __init__(
         self,
         *,
-        parent: builtins.str = ...,
-        page_size: builtins.int = ...,
-        page_token: builtins.str = ...,
-        filter: builtins.str = ...,
-        show_hidden_labels: builtins.bool = ...,
+        parent: _builtins.str = ...,
+        page_size: _builtins.int = ...,
+        page_token: _builtins.str = ...,
+        filter: _builtins.str = ...,
+        show_hidden_labels: _builtins.bool = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["filter", b"filter", "page_size", b"page_size", "page_token", b"page_token", "parent", b"parent", "show_hidden_labels", b"show_hidden_labels"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["filter", b"filter", "page_size", b"page_size", "page_token", b"page_token", "parent", b"parent", "show_hidden_labels", b"show_hidden_labels"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___ListExportersRequest: typing_extensions.TypeAlias = ListExportersRequest
+Global___ListExportersRequest: _TypeAlias = ListExportersRequest  # noqa: Y015
 
-@typing.final
-class ListExportersResponse(google.protobuf.message.Message):
+@_typing.final
+class ListExportersResponse(_message.Message):
     """Response containing a list of exporters."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    EXPORTERS_FIELD_NUMBER: builtins.int
-    NEXT_PAGE_TOKEN_FIELD_NUMBER: builtins.int
-    next_page_token: builtins.str
+    EXPORTERS_FIELD_NUMBER: _builtins.int
+    NEXT_PAGE_TOKEN_FIELD_NUMBER: _builtins.int
+    next_page_token: _builtins.str
     """Token for the next page of results."""
-    @property
-    def exporters(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___Exporter]:
+    @_builtins.property
+    def exporters(self) -> _containers.RepeatedCompositeFieldContainer[Global___Exporter]:
         """The list of exporters."""
 
     def __init__(
         self,
         *,
-        exporters: collections.abc.Iterable[Global___Exporter] | None = ...,
-        next_page_token: builtins.str = ...,
+        exporters: _abc.Iterable[Global___Exporter] | None = ...,
+        next_page_token: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["exporters", b"exporters", "next_page_token", b"next_page_token"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["exporters", b"exporters", "next_page_token", b"next_page_token"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___ListExportersResponse: typing_extensions.TypeAlias = ListExportersResponse
+Global___ListExportersResponse: _TypeAlias = ListExportersResponse  # noqa: Y015
 
-@typing.final
-class GetLeaseRequest(google.protobuf.message.Message):
+@_typing.final
+class GetLeaseRequest(_message.Message):
     """Request to retrieve a lease."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    NAME_FIELD_NUMBER: builtins.int
-    name: builtins.str
+    NAME_FIELD_NUMBER: _builtins.int
+    name: _builtins.str
     """The resource name of the lease."""
     def __init__(
         self,
         *,
-        name: builtins.str = ...,
+        name: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["name", b"name"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["name", b"name"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___GetLeaseRequest: typing_extensions.TypeAlias = GetLeaseRequest
+Global___GetLeaseRequest: _TypeAlias = GetLeaseRequest  # noqa: Y015
 
-@typing.final
-class ListLeasesRequest(google.protobuf.message.Message):
+@_typing.final
+class ListLeasesRequest(_message.Message):
     """Request to list leases."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    PARENT_FIELD_NUMBER: builtins.int
-    PAGE_SIZE_FIELD_NUMBER: builtins.int
-    PAGE_TOKEN_FIELD_NUMBER: builtins.int
-    FILTER_FIELD_NUMBER: builtins.int
-    ONLY_ACTIVE_FIELD_NUMBER: builtins.int
-    TAG_FILTER_FIELD_NUMBER: builtins.int
-    parent: builtins.str
+    PARENT_FIELD_NUMBER: _builtins.int
+    PAGE_SIZE_FIELD_NUMBER: _builtins.int
+    PAGE_TOKEN_FIELD_NUMBER: _builtins.int
+    FILTER_FIELD_NUMBER: _builtins.int
+    ONLY_ACTIVE_FIELD_NUMBER: _builtins.int
+    TAG_FILTER_FIELD_NUMBER: _builtins.int
+    parent: _builtins.str
     """The parent resource name (namespace)."""
-    page_size: builtins.int
+    page_size: _builtins.int
     """Maximum number of results to return."""
-    page_token: builtins.str
+    page_token: _builtins.str
     """Token for retrieving the next page of results."""
-    filter: builtins.str
+    filter: _builtins.str
     """Filter expression for the results."""
-    only_active: builtins.bool
+    only_active: _builtins.bool
     """If true, return only active leases."""
-    tag_filter: builtins.str
+    tag_filter: _builtins.str
     """Filter expression for lease tags."""
     def __init__(
         self,
         *,
-        parent: builtins.str = ...,
-        page_size: builtins.int = ...,
-        page_token: builtins.str = ...,
-        filter: builtins.str = ...,
-        only_active: builtins.bool | None = ...,
-        tag_filter: builtins.str = ...,
+        parent: _builtins.str = ...,
+        page_size: _builtins.int = ...,
+        page_token: _builtins.str = ...,
+        filter: _builtins.str = ...,
+        only_active: _builtins.bool | None = ...,
+        tag_filter: _builtins.str = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["_only_active", b"_only_active", "only_active", b"only_active"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_only_active", b"_only_active", "filter", b"filter", "only_active", b"only_active", "page_size", b"page_size", "page_token", b"page_token", "parent", b"parent", "tag_filter", b"tag_filter"]) -> None: ...
-    def WhichOneof(self, oneof_group: typing.Literal["_only_active", b"_only_active"]) -> typing.Literal["only_active"] | None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_only_active", b"_only_active", "only_active", b"only_active"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_only_active", b"_only_active", "filter", b"filter", "only_active", b"only_active", "page_size", b"page_size", "page_token", b"page_token", "parent", b"parent", "tag_filter", b"tag_filter"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__only_active: _TypeAlias = _typing.Literal["only_active"]  # noqa: Y015
+    _WhichOneofArgType__only_active: _TypeAlias = _typing.Literal["_only_active", b"_only_active"]  # noqa: Y015
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__only_active) -> _WhichOneofReturnType__only_active | None: ...
 
-Global___ListLeasesRequest: typing_extensions.TypeAlias = ListLeasesRequest
+Global___ListLeasesRequest: _TypeAlias = ListLeasesRequest  # noqa: Y015
 
-@typing.final
-class ListLeasesResponse(google.protobuf.message.Message):
+@_typing.final
+class ListLeasesResponse(_message.Message):
     """Response containing a list of leases."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    LEASES_FIELD_NUMBER: builtins.int
-    NEXT_PAGE_TOKEN_FIELD_NUMBER: builtins.int
-    next_page_token: builtins.str
+    LEASES_FIELD_NUMBER: _builtins.int
+    NEXT_PAGE_TOKEN_FIELD_NUMBER: _builtins.int
+    next_page_token: _builtins.str
     """Token for the next page of results."""
-    @property
-    def leases(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___Lease]:
+    @_builtins.property
+    def leases(self) -> _containers.RepeatedCompositeFieldContainer[Global___Lease]:
         """The list of leases."""
 
     def __init__(
         self,
         *,
-        leases: collections.abc.Iterable[Global___Lease] | None = ...,
-        next_page_token: builtins.str = ...,
+        leases: _abc.Iterable[Global___Lease] | None = ...,
+        next_page_token: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["leases", b"leases", "next_page_token", b"next_page_token"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["leases", b"leases", "next_page_token", b"next_page_token"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___ListLeasesResponse: typing_extensions.TypeAlias = ListLeasesResponse
+Global___ListLeasesResponse: _TypeAlias = ListLeasesResponse  # noqa: Y015
 
-@typing.final
-class CreateLeaseRequest(google.protobuf.message.Message):
+@_typing.final
+class CreateLeaseRequest(_message.Message):
     """Request to create a lease."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    PARENT_FIELD_NUMBER: builtins.int
-    LEASE_ID_FIELD_NUMBER: builtins.int
-    LEASE_FIELD_NUMBER: builtins.int
-    parent: builtins.str
+    PARENT_FIELD_NUMBER: _builtins.int
+    LEASE_ID_FIELD_NUMBER: _builtins.int
+    LEASE_FIELD_NUMBER: _builtins.int
+    parent: _builtins.str
     """The parent resource name (namespace)."""
-    lease_id: builtins.str
+    lease_id: _builtins.str
     """The client-assigned identifier for the lease."""
-    @property
+    @_builtins.property
     def lease(self) -> Global___Lease:
         """The lease resource to create."""
 
     def __init__(
         self,
         *,
-        parent: builtins.str = ...,
-        lease_id: builtins.str = ...,
+        parent: _builtins.str = ...,
+        lease_id: _builtins.str = ...,
         lease: Global___Lease | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["lease", b"lease"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["lease", b"lease", "lease_id", b"lease_id", "parent", b"parent"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["lease", b"lease"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["lease", b"lease", "lease_id", b"lease_id", "parent", b"parent"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___CreateLeaseRequest: typing_extensions.TypeAlias = CreateLeaseRequest
+Global___CreateLeaseRequest: _TypeAlias = CreateLeaseRequest  # noqa: Y015
 
-@typing.final
-class UpdateLeaseRequest(google.protobuf.message.Message):
+@_typing.final
+class UpdateLeaseRequest(_message.Message):
     """Request to update a lease."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    LEASE_FIELD_NUMBER: builtins.int
-    UPDATE_MASK_FIELD_NUMBER: builtins.int
-    ADD_SHARED_WITH_FIELD_NUMBER: builtins.int
-    REMOVE_SHARED_WITH_FIELD_NUMBER: builtins.int
-    @property
+    LEASE_FIELD_NUMBER: _builtins.int
+    UPDATE_MASK_FIELD_NUMBER: _builtins.int
+    ADD_SHARED_WITH_FIELD_NUMBER: _builtins.int
+    REMOVE_SHARED_WITH_FIELD_NUMBER: _builtins.int
+    @_builtins.property
     def lease(self) -> Global___Lease:
         """The lease resource with updated fields."""
 
-    @property
-    def update_mask(self) -> google.protobuf.field_mask_pb2.FieldMask:
+    @_builtins.property
+    def update_mask(self) -> _field_mask_pb2.FieldMask:
         """The set of fields to update."""
 
-    @property
-    def add_shared_with(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
+    @_builtins.property
+    def add_shared_with(self) -> _containers.RepeatedScalarFieldContainer[_builtins.str]:
         """Client names to add to the lease's shared_with list. Only the lease owner can modify sharing."""
 
-    @property
-    def remove_shared_with(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
+    @_builtins.property
+    def remove_shared_with(self) -> _containers.RepeatedScalarFieldContainer[_builtins.str]:
         """Client names to remove from the lease's shared_with list. Only the lease owner can modify sharing."""
 
     def __init__(
         self,
         *,
         lease: Global___Lease | None = ...,
-        update_mask: google.protobuf.field_mask_pb2.FieldMask | None = ...,
-        add_shared_with: collections.abc.Iterable[builtins.str] | None = ...,
-        remove_shared_with: collections.abc.Iterable[builtins.str] | None = ...,
+        update_mask: _field_mask_pb2.FieldMask | None = ...,
+        add_shared_with: _abc.Iterable[_builtins.str] | None = ...,
+        remove_shared_with: _abc.Iterable[_builtins.str] | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["lease", b"lease", "update_mask", b"update_mask"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["add_shared_with", b"add_shared_with", "lease", b"lease", "remove_shared_with", b"remove_shared_with", "update_mask", b"update_mask"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["lease", b"lease", "update_mask", b"update_mask"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["add_shared_with", b"add_shared_with", "lease", b"lease", "remove_shared_with", b"remove_shared_with", "update_mask", b"update_mask"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___UpdateLeaseRequest: typing_extensions.TypeAlias = UpdateLeaseRequest
+Global___UpdateLeaseRequest: _TypeAlias = UpdateLeaseRequest  # noqa: Y015
 
-@typing.final
-class DeleteLeaseRequest(google.protobuf.message.Message):
+@_typing.final
+class DeleteLeaseRequest(_message.Message):
     """Request to delete a lease."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    NAME_FIELD_NUMBER: builtins.int
-    name: builtins.str
+    NAME_FIELD_NUMBER: _builtins.int
+    name: _builtins.str
     """The resource name of the lease."""
     def __init__(
         self,
         *,
-        name: builtins.str = ...,
+        name: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["name", b"name"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["name", b"name"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___DeleteLeaseRequest: typing_extensions.TypeAlias = DeleteLeaseRequest
+Global___DeleteLeaseRequest: _TypeAlias = DeleteLeaseRequest  # noqa: Y015
 
-@typing.final
-class RotateTokenRequest(google.protobuf.message.Message):
+@_typing.final
+class RotateTokenRequest(_message.Message):
     """Request to rotate the authentication token for a client."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    PARENT_FIELD_NUMBER: builtins.int
-    parent: builtins.str
+    PARENT_FIELD_NUMBER: _builtins.int
+    parent: _builtins.str
     """The parent resource name (namespace)."""
     def __init__(
         self,
         *,
-        parent: builtins.str = ...,
+        parent: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["parent", b"parent"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["parent", b"parent"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___RotateTokenRequest: typing_extensions.TypeAlias = RotateTokenRequest
+Global___RotateTokenRequest: _TypeAlias = RotateTokenRequest  # noqa: Y015
 
-@typing.final
-class RotateTokenResponse(google.protobuf.message.Message):
+@_typing.final
+class RotateTokenResponse(_message.Message):
     """Response containing the newly rotated token."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    TOKEN_FIELD_NUMBER: builtins.int
-    EXPIRY_FIELD_NUMBER: builtins.int
-    token: builtins.str
+    TOKEN_FIELD_NUMBER: _builtins.int
+    EXPIRY_FIELD_NUMBER: _builtins.int
+    token: _builtins.str
     """The new authentication token."""
-    @property
-    def expiry(self) -> google.protobuf.timestamp_pb2.Timestamp:
+    @_builtins.property
+    def expiry(self) -> _timestamp_pb2.Timestamp:
         """The expiration time of the new token."""
 
     def __init__(
         self,
         *,
-        token: builtins.str = ...,
-        expiry: google.protobuf.timestamp_pb2.Timestamp | None = ...,
+        token: _builtins.str = ...,
+        expiry: _timestamp_pb2.Timestamp | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["expiry", b"expiry"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["expiry", b"expiry", "token", b"token"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["expiry", b"expiry"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["expiry", b"expiry", "token", b"token"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___RotateTokenResponse: typing_extensions.TypeAlias = RotateTokenResponse
+Global___RotateTokenResponse: _TypeAlias = RotateTokenResponse  # noqa: Y015

@@ -2,13 +2,13 @@ version: v2
 managed:
   enabled: true
 plugins:
-  - remote: buf.build/protocolbuffers/python:v30.2
+  - remote: buf.build/protocolbuffers/python:v36.2
     out: ./packages/jumpstarter-protocol/jumpstarter_protocol
   - remote: buf.build/grpc/python
     out: ./packages/jumpstarter-protocol/jumpstarter_protocol
-  - remote: buf.build/community/nipunn1313-mypy:v3.7.0
+  - remote: buf.build/community/nipunn1313-mypy:v5.1.0
     out: ./packages/jumpstarter-protocol/jumpstarter_protocol
-  - remote: buf.build/community/nipunn1313-mypy-grpc:v3.7.0
+  - remote: buf.build/community/nipunn1313-mypy-grpc:v5.1.0
     out: ./packages/jumpstarter-protocol/jumpstarter_protocol
 inputs:
   - directory: ../protocol/proto

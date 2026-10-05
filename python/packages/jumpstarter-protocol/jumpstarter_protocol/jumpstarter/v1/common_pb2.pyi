@@ -3,25 +3,25 @@
 isort:skip_file
 Copyright 2024 The Jumpstarter Authors"""
 
-import builtins
-import google.protobuf.descriptor
-import google.protobuf.internal.enum_type_wrapper
+from google.protobuf import descriptor as _descriptor
+from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
+import builtins as _builtins
 import sys
-import typing
+import typing as _typing
 
 if sys.version_info >= (3, 10):
-    import typing as typing_extensions
+    from typing import TypeAlias as _TypeAlias
 else:
-    import typing_extensions
+    from typing_extensions import TypeAlias as _TypeAlias
 
-DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
+DESCRIPTOR: _descriptor.FileDescriptor
 
 class _ExporterStatus:
-    ValueType = typing.NewType("ValueType", builtins.int)
-    V: typing_extensions.TypeAlias = ValueType
+    ValueType = _typing.NewType("ValueType", _builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
 
-class _ExporterStatusEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_ExporterStatus.ValueType], builtins.type):
-    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+class _ExporterStatusEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_ExporterStatus.ValueType], _builtins.type):
+    DESCRIPTOR: _descriptor.EnumDescriptor
     EXPORTER_STATUS_UNSPECIFIED: _ExporterStatus.ValueType  # 0
     """Unspecified exporter status."""
     EXPORTER_STATUS_OFFLINE: _ExporterStatus.ValueType  # 1
@@ -61,14 +61,14 @@ EXPORTER_STATUS_BEFORE_LEASE_HOOK_FAILED: ExporterStatus.ValueType  # 6
 """Exporter before lease hook failed."""
 EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED: ExporterStatus.ValueType  # 7
 """Exporter after lease hook failed."""
-Global___ExporterStatus: typing_extensions.TypeAlias = ExporterStatus
+Global___ExporterStatus: _TypeAlias = ExporterStatus  # noqa: Y015
 
 class _LogSource:
-    ValueType = typing.NewType("ValueType", builtins.int)
-    V: typing_extensions.TypeAlias = ValueType
+    ValueType = _typing.NewType("ValueType", _builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
 
-class _LogSourceEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_LogSource.ValueType], builtins.type):
-    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+class _LogSourceEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_LogSource.ValueType], _builtins.type):
+    DESCRIPTOR: _descriptor.EnumDescriptor
     LOG_SOURCE_UNSPECIFIED: _LogSource.ValueType  # 0
     """Unspecified log source."""
     LOG_SOURCE_DRIVER: _LogSource.ValueType  # 1
@@ -93,4 +93,4 @@ LOG_SOURCE_AFTER_LEASE_HOOK: LogSource.ValueType  # 3
 """afterLease hook execution logs."""
 LOG_SOURCE_SYSTEM: LogSource.ValueType  # 4
 """System/exporter logs."""
-Global___LogSource: typing_extensions.TypeAlias = LogSource
+Global___LogSource: _TypeAlias = LogSource  # noqa: Y015
