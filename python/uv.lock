@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14' and platform_python_implementation != 'PyPy' and sys_platform == 'linux'",
@@ -3177,7 +3177,7 @@ dev = [
 requires-dist = [
     { name = "click", specifier = ">=8.1.7.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
-    { name = "opendal", specifier = ">=0.45.8,<0.46" },
+    { name = "opendal", specifier = ">=0.47.10,<0.48" },
 ]
 
 [package.metadata.requires-dev]
@@ -5129,26 +5129,28 @@ wheels = [
 
 [[package]]
 name = "opendal"
-version = "0.45.20"
+version = "0.47.10"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/2f/3f/927dfe1349ae58b9238b8eafba747af648d660a9425f486dda01a10f0b78/opendal-0.45.20.tar.gz", hash = "sha256:9f6f90d9e9f9d6e9e5a34aa7729169ef34d2f1869ad1e01ddc39b1c0ce0c9405", size = 990267, upload-time = "2025-05-26T07:02:11.819Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/50/a4/942f93e22e1bc52590cebc581816570f507315645c75cf7910f9623ff452/opendal-0.47.10.tar.gz", hash = "sha256:1d267dc292e671d0d0bb4d5c6192913560682b9d0faf9d51eab14c3af77b3cc6", size = 2097679, upload-time = "2026-09-22T06:30:40.843Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/84/77/6427e16b8630f0cc71f4a1b01648ed3264f1e04f1f6d9b5d09e5c6a4dd2f/opendal-0.45.20-cp311-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:35acdd8001e4a741532834fdbff3020ffb10b40028bb49fbe93c4f8197d66d8c", size = 26910966, upload-time = "2025-05-26T07:01:24.987Z" },
-    { url = "https://files.pythonhosted.org/packages/12/1f/83e415334739f1ab4dba55cdd349abf0b66612249055afb422a354b96ac8/opendal-0.45.20-cp311-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:629bfe8d384364bced6cbeb01f49b99779fa5151c68048a1869ff645ddcfcb25", size = 13002770, upload-time = "2025-05-26T07:01:30.385Z" },
-    { url = "https://files.pythonhosted.org/packages/49/94/c5de6ed54a02d7413636c2ccefa71d8dd09c2ada1cd6ecab202feb1fdeda/opendal-0.45.20-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d12cc5ac7e441fb93d86d1673112d9fb08580fc3226f864434f4a56a72efec53", size = 14387218, upload-time = "2025-05-26T07:01:33.017Z" },
-    { url = "https://files.pythonhosted.org/packages/c6/83/713a1e1de8cbbd69af50e26644bbdeef3c1068b89f442417376fa3c0f591/opendal-0.45.20-cp311-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:45a3adae1f473052234fc4054a6f210df3ded9aff10db8d545d0a37eff3b13cc", size = 13424302, upload-time = "2025-05-26T07:01:36.417Z" },
-    { url = "https://files.pythonhosted.org/packages/c7/78/c9651e753aaf6eb61887ca372a3f9c2ae57dae03c3159d24deaf018c26dc/opendal-0.45.20-cp311-abi3-musllinux_1_1_aarch64.whl", hash = "sha256:d8947857052c85a4b0e251d50e23f5f68f0cdd9e509e32e614a5e4b2fc7424c4", size = 13622483, upload-time = "2025-05-26T07:01:38.886Z" },
-    { url = "https://files.pythonhosted.org/packages/3c/9d/5d8c20c0fc93df5e349e5694167de30afdc54c5755704cc64764a6cbb309/opendal-0.45.20-cp311-abi3-musllinux_1_1_armv7l.whl", hash = "sha256:891d2f9114efeef648973049ed15e56477e8feb9e48b540bd8d6105ea22a253c", size = 13320229, upload-time = "2025-05-26T07:01:41.965Z" },
-    { url = "https://files.pythonhosted.org/packages/21/39/05262f748a2085522e0c85f03eab945589313dc9caedc002872c39162776/opendal-0.45.20-cp311-abi3-musllinux_1_1_x86_64.whl", hash = "sha256:539de9b825f6783d6289d88c0c9ac5415daa4d892d761e3540c565bda51e8997", size = 14574280, upload-time = "2025-05-26T07:01:44.413Z" },
-    { url = "https://files.pythonhosted.org/packages/74/83/cc7c6de29b0a7585cd445258d174ca204d37729c3874ad08e515b0bf331c/opendal-0.45.20-cp311-abi3-win_amd64.whl", hash = "sha256:145efd56aa33b493d5b652c3e4f5ae5097ab69d38c132d80f108e9f5c1e4d863", size = 14929888, upload-time = "2025-05-26T07:01:46.929Z" },
-    { url = "https://files.pythonhosted.org/packages/ab/a9/7a4ae9b309c5a675cfedd22c1d020b4f7d3a69a7a4db104d327391a0bf95/opendal-0.45.20-cp313-cp313t-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:1170ea1f3f082b9ccffe49b2483ddcccbf7cac1f3d2398391f7702e15ab5286a", size = 26874145, upload-time = "2025-05-26T07:01:49.71Z" },
-    { url = "https://files.pythonhosted.org/packages/95/61/3de0cbdcf95b7164e5701d83f621bb85ca3dd7a8c9835476a4904121d5a1/opendal-0.45.20-cp313-cp313t-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:7afc556fca1442f7c667bdebe38ab77d87bae7fa3dd9ac8a42525fd110b12095", size = 12995774, upload-time = "2025-05-26T07:01:52.983Z" },
-    { url = "https://files.pythonhosted.org/packages/c9/de/1ac5db8e66817d7526af2ecac6d7afca6949322d6a208dd436e87ea08007/opendal-0.45.20-cp313-cp313t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a8eb1da41f7d729ca0639e4ec6481515ad5b94ef016b0d5cf9e34b391ca0086c", size = 14402884, upload-time = "2025-05-26T07:01:55.478Z" },
-    { url = "https://files.pythonhosted.org/packages/bb/36/df5fe4db6bef0e008238df573227d84dfb1d57c03717dcc400920d96e2e7/opendal-0.45.20-cp313-cp313t-manylinux_2_28_aarch64.whl", hash = "sha256:b19a4428a2a5234f6dab569b36a1423f67ff243aafc36ab1958f709304a2b580", size = 13432874, upload-time = "2025-05-26T07:01:58.053Z" },
-    { url = "https://files.pythonhosted.org/packages/a1/ed/3b00e7ecef6fee7ce335aa5da2077855df6f2e1eac40d7f4a98a5de5f5e7/opendal-0.45.20-cp313-cp313t-musllinux_1_1_aarch64.whl", hash = "sha256:1d6fc2e24cdcb26c86d5db213f8034db41386a25343b70dca01e79874f849e4c", size = 13617539, upload-time = "2025-05-26T07:02:00.97Z" },
-    { url = "https://files.pythonhosted.org/packages/0c/c4/e2e89ac6d63f412dad51243184270f5095eb7c6ee00504b245df65957efb/opendal-0.45.20-cp313-cp313t-musllinux_1_1_armv7l.whl", hash = "sha256:ccf9a1cab13fa4f4c44a14f85fe42ec99ba2595808fae44d753ef2f9ba7b55e3", size = 13322070, upload-time = "2025-05-26T07:02:03.523Z" },
-    { url = "https://files.pythonhosted.org/packages/39/29/b02073b097915eb4c381e21bb48e5ae16dd5a6b6edb5995fb87607a82b0e/opendal-0.45.20-cp313-cp313t-musllinux_1_1_x86_64.whl", hash = "sha256:197239aa43221c8bc9b46cfeeeafbfd2e59eee7a0ec4cbe83d89a3efd53c24a3", size = 14571775, upload-time = "2025-05-26T07:02:06.605Z" },
-    { url = "https://files.pythonhosted.org/packages/01/ec/d149ed82a5cc175460e044e040d2e09e496c74e699112c6ee9d1828ff6a4/opendal-0.45.20-cp313-cp313t-win_amd64.whl", hash = "sha256:5af03824ffca796a2c77b570760bb7ddc754e9485f882fed5cc834aab4772cbf", size = 14951593, upload-time = "2025-05-26T07:02:09.722Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/24/75074b6d13bdc275030e51f5507e7b37510f7958bc2ffed417094c2e834d/opendal-0.47.10-cp311-abi3-macosx_10_12_x86_64.whl", hash = "sha256:f02d12f059c1acf85e13658885319a87cdb01e104e21dc05ca6de334743ac7f7", size = 18757242, upload-time = "2026-09-22T06:29:36.381Z" },
+    { url = "https://files.pythonhosted.org/packages/93/9f/c4f5a6294b59886c911cc11d0b79af86a3768256ceb21d24bf6850f08794/opendal-0.47.10-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:3b6d7ad0f2c24b8a0b27f637a35bd63685d657635eca7fe37f80505fd6d3cc7f", size = 17210329, upload-time = "2026-09-22T06:29:39.593Z" },
+    { url = "https://files.pythonhosted.org/packages/72/e5/56cbc681061f8fdb6893f225dbd795f1295d322c1ad6b835eb4017d2953c/opendal-0.47.10-cp311-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:0d0e1227d31eb681aa391b9b4ab0924f44cc0040647f76648e4ef534afb4e4e3", size = 17879557, upload-time = "2026-09-22T06:29:42.797Z" },
+    { url = "https://files.pythonhosted.org/packages/30/2a/7ce88edd25cf926005d5b4e4a958019fe2d6e814b85d727bf217fe57a908/opendal-0.47.10-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6be1af6dd5b17272bd791eb712d15fdd348d99ea51918ffd24d08a298e6ace2d", size = 19205920, upload-time = "2026-09-22T06:29:46.494Z" },
+    { url = "https://files.pythonhosted.org/packages/e9/e7/fff9d0a7aab3a11e96928acff2282abb6c017f6412695a95a7d5ee9bcf9b/opendal-0.47.10-cp311-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:fcb7a249ca997ce519b04d092322b66ac2116e0e488de59ab7d90eddfdef4f77", size = 18145117, upload-time = "2026-09-22T06:29:50.221Z" },
+    { url = "https://files.pythonhosted.org/packages/40/88/0f12338096fae50f9fd86d172be90fab1733e8cc23064a249043ab383f96/opendal-0.47.10-cp311-abi3-musllinux_1_1_aarch64.whl", hash = "sha256:868827f69345b3ce7795f9759bad27597258037fa161f64b02e4f68dcb720742", size = 18493656, upload-time = "2026-09-22T06:29:54.038Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/10/1b0ed5565a6f7b72298d1d7c08b8b4586af7a44908a93de78500123aaa5f/opendal-0.47.10-cp311-abi3-musllinux_1_1_armv7l.whl", hash = "sha256:39ea5a2a389b0bec8718206ea24f67464335f2c566297011b75897559af86d14", size = 18179209, upload-time = "2026-09-22T06:29:57.598Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/14/0efb7139cdec31d53c2f5164236ff37af4df1781532b9110211c11aec5da/opendal-0.47.10-cp311-abi3-musllinux_1_1_x86_64.whl", hash = "sha256:836adc6c2024a28a3c2a78fcad02b341618ddfdd7a689de74af947ac99e1c92b", size = 19428940, upload-time = "2026-09-22T06:30:01.526Z" },
+    { url = "https://files.pythonhosted.org/packages/11/40/69dbf8ec578c1cda7f7a2768530a0e91100bf747caf4280080a876056a7f/opendal-0.47.10-cp311-abi3-win_amd64.whl", hash = "sha256:0856195b5cae631f8d539d0233b1bbb5fe2f0625ea0eda0152d83d89c1276d44", size = 20522853, upload-time = "2026-09-22T06:30:05.447Z" },
+    { url = "https://files.pythonhosted.org/packages/0e/bb/f14a46e9ae9c64ba409a8947da3c4c19af884694dcbebc298709b650062f/opendal-0.47.10-cp314-cp314t-macosx_10_12_x86_64.whl", hash = "sha256:e21284e1c44d25090a4b89ce00329d5c456b80bf8f319b1cf03324c586755c74", size = 18759841, upload-time = "2026-09-22T06:30:09.111Z" },
+    { url = "https://files.pythonhosted.org/packages/94/b0/14cb7dbf1f23e3954dc8b2fd6dbe036aab334633646cd5b94aa69509e2bb/opendal-0.47.10-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:a24109299863d5ce5e98731f3a33b7c100efb96df850e306abb33c36a9aaa11e", size = 17186822, upload-time = "2026-09-22T06:30:12.368Z" },
+    { url = "https://files.pythonhosted.org/packages/cf/66/a804737c7e980db204ce83dcbc0867d0e0d2db8763caf34775817442a3fe/opendal-0.47.10-cp314-cp314t-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:8fa4ee52ea95ac0e80b08b94e8a96f086756861ed9d8180578453d820c186a51", size = 17870672, upload-time = "2026-09-22T06:30:16.125Z" },
+    { url = "https://files.pythonhosted.org/packages/9c/e1/60e4e78cff56a1ed4a01d1069ebc4baf7e3136ee7528af28ded197a3e5a4/opendal-0.47.10-cp314-cp314t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:77f03841eb3ae9528eabba6f7f8886ff26b29554c509de907f67bc9309a6be11", size = 19194067, upload-time = "2026-09-22T06:30:19.569Z" },
+    { url = "https://files.pythonhosted.org/packages/13/02/2625a5e1b29689ecf3b2fac52e9ceacab73239678db70be4f2cbe2b8c2a6/opendal-0.47.10-cp314-cp314t-manylinux_2_28_aarch64.whl", hash = "sha256:f6af64c4bf62cc3f6113966e43ce2316d95289bdc612517b9067543f7604582e", size = 18136003, upload-time = "2026-09-22T06:30:23.749Z" },
+    { url = "https://files.pythonhosted.org/packages/d4/bf/082c83e6246c28deae16103462b54751c5cb7c8998fed80b772420d28b57/opendal-0.47.10-cp314-cp314t-musllinux_1_1_aarch64.whl", hash = "sha256:fb5a51f12662dacb78c828996f81abb633ac86769db636473e54270b58ca760d", size = 18480046, upload-time = "2026-09-22T06:30:27.263Z" },
+    { url = "https://files.pythonhosted.org/packages/ad/07/ea5d6b3f3f30e26fe751ea5c80f63f793ce6fe3745bd09dac0bec7826969/opendal-0.47.10-cp314-cp314t-musllinux_1_1_armv7l.whl", hash = "sha256:678c989fd931f1e16c9b0a482f3631fd45bdff639886ba9be0478f405f6ffd30", size = 18167925, upload-time = "2026-09-22T06:30:30.701Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/b6/e7dcb600ae7816b4bd0bd40ee2a3c05534a742792f21c7a3e44b77ade527/opendal-0.47.10-cp314-cp314t-musllinux_1_1_x86_64.whl", hash = "sha256:d28b75bd87c272b670ca4f01dc2f5791def272cc599dfc45b844057e109dc0a9", size = 19410647, upload-time = "2026-09-22T06:30:34.362Z" },
+    { url = "https://files.pythonhosted.org/packages/07/4a/d99fa3042d597d460e3aaf81492cdd21d017392e667174ec164c0587cf38/opendal-0.47.10-cp314-cp314t-win_amd64.whl", hash = "sha256:19f06dc7ca913fb01e152ddd12133e590cff58aaa0b3eade12e05acac7b6fc2c", size = 20506099, upload-time = "2026-09-22T06:30:38.31Z" },
 ]
 
 [[package]]
