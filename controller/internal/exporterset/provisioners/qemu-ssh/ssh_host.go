@@ -338,7 +338,12 @@ func (h *SSHHost) writeFile(path, content string) error {
 }
 
 // isNotExist checks whether an SFTP error indicates "file not found".
+// It covers both the canonical sftp.StatusError path and the
+// os.ErrNotExist path that some SSH server implementations return.
 func isNotExist(err error) bool {
+	if os.IsNotExist(err) || errors.Is(err, os.ErrNotExist) {
+		return true
+	}
 	var statusErr *sftp.StatusError
 	if errors.As(err, &statusErr) {
 		return statusErr.FxCode() == sftp.ErrSSHFxNoSuchFile

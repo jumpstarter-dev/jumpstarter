@@ -17,8 +17,38 @@ limitations under the License.
 package qemussh
 
 import (
+	"fmt"
+	"os"
 	"testing"
+
+	"github.com/pkg/sftp"
 )
+
+func TestIsNotExist_osErrNotExist(t *testing.T) {
+	if !isNotExist(os.ErrNotExist) {
+		t.Error("os.ErrNotExist should be recognised as not-exist")
+	}
+	if !isNotExist(fmt.Errorf("wrap: %w", os.ErrNotExist)) {
+		t.Error("wrapped os.ErrNotExist should be recognised as not-exist")
+	}
+}
+
+func TestIsNotExist_sftpNoSuchFile(t *testing.T) {
+	// sftp.ErrSSHFxNoSuchFile is code 2.
+	sftpErr := &sftp.StatusError{Code: uint32(sftp.ErrSSHFxNoSuchFile)}
+	if !isNotExist(sftpErr) {
+		t.Error("sftp ErrSSHFxNoSuchFile should be recognised as not-exist")
+	}
+}
+
+func TestIsNotExist_otherErrors(t *testing.T) {
+	if isNotExist(fmt.Errorf("permission denied")) {
+		t.Error("permission-denied should not be recognised as not-exist")
+	}
+	if isNotExist(os.ErrPermission) {
+		t.Error("os.ErrPermission should not be recognised as not-exist")
+	}
+}
 
 func TestSanitizeDiff_redactsTokens(t *testing.T) {
 	cases := []struct {

@@ -39,6 +39,15 @@ const (
 
 	// launcherSocketPath is the Unix socket used by jumpstarter-exec.
 	launcherSocketPath = "/shared/launcher.sock"
+
+	// jmpExecSrcPath is where jumpstarter-exec lives inside the
+	// exporter image.
+	jmpExecSrcPath = "/jumpstarter/bin/jumpstarter-exec"
+
+	// jmpExecDstPath is where jumpstarter-exec is staged in the
+	// shared volume so the runtime container can use it as its
+	// entrypoint.
+	jmpExecDstPath = "/shared/jumpstarter-exec"
 )
 
 // QuadletConfig holds the parameters needed to generate quadlet
