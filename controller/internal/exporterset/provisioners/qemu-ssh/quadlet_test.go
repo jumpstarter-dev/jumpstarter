@@ -34,7 +34,7 @@ func TestRuntimeContainerFile_basic(t *testing.T) {
 	cfg := baseConfig()
 	got, err := RuntimeContainerFile(cfg)
 	if err != nil {
-		t.Fatalf("RuntimeContainerFile() error = %v", err)
+		t.Fatal(err)
 	}
 
 	mustContain(t, got, "[Unit]")
@@ -56,7 +56,7 @@ func TestRuntimeContainerFile_withKVM(t *testing.T) {
 	cfg.KVM = true
 	got, err := RuntimeContainerFile(cfg)
 	if err != nil {
-		t.Fatalf("RuntimeContainerFile() error = %v", err)
+		t.Fatal(err)
 	}
 
 	mustContain(t, got, "AddDevice=/dev/kvm")
@@ -67,7 +67,7 @@ func TestRuntimeContainerFile_withExtraDevices(t *testing.T) {
 	cfg.ExtraDevices = []string{"/dev/vhost-net", "/dev/net/tun"}
 	got, err := RuntimeContainerFile(cfg)
 	if err != nil {
-		t.Fatalf("RuntimeContainerFile() error = %v", err)
+		t.Fatal(err)
 	}
 
 	mustContain(t, got, "AddDevice=/dev/vhost-net")
@@ -94,7 +94,10 @@ func TestRuntimeContainerFile_rejectsTrailingBackslash(t *testing.T) {
 
 func TestExporterContainerFile_basic(t *testing.T) {
 	cfg := baseConfig()
-	got := ExporterContainerFile(cfg)
+	got, err := ExporterContainerFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	mustContain(t, got, "[Unit]")
 	mustContain(t, got, "Description=Jumpstarter Exporter for rpi4-virtual-abc12")
@@ -111,6 +114,24 @@ func TestExporterContainerFile_basic(t *testing.T) {
 	mustContain(t, got, "Restart=on-failure")
 	mustContain(t, got, "[Install]")
 	mustContain(t, got, "WantedBy=default.target")
+}
+
+func TestQuadletConfig_rejectsNewlines(t *testing.T) {
+	cfg := baseConfig()
+	cfg.RuntimeImage = "image:latest\nExec=evil"
+	_, err := RuntimeContainerFile(cfg)
+	if err == nil {
+		t.Fatal("expected error for newline in RuntimeImage")
+	}
+}
+
+func TestQuadletConfig_rejectsInvalidDevice(t *testing.T) {
+	cfg := baseConfig()
+	cfg.ExtraDevices = []string{"/tmp/not-a-device"}
+	_, err := RuntimeContainerFile(cfg)
+	if err == nil {
+		t.Fatal("expected error for non-/dev/ device path")
+	}
 }
 
 func TestFileNames(t *testing.T) {
