@@ -2,7 +2,7 @@
 #
 # Usage:
 #   cd python/packages/jumpstarter-driver-mitmproxy/demo
-#   jmp shell --exporter exporter.yaml
+#   jmp shell --exporter-config exporter.yaml
 #
 # Then inside the shell:
 #   j proxy start -m mock -w

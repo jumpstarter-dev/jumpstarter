@@ -3,10 +3,10 @@ pytest fixtures for DUT HiL tests with mitmproxy.
 
 These fixtures integrate the mitmproxy Jumpstarter driver into
 your test workflow. The proxy client is available as ``client.proxy``
-when using Jumpstarter's pytest plugin.
+inside a ``jmp shell`` session.
 
 Usage:
-    jmp start --exporter my-bench -- pytest tests/ -v
+    jmp shell --exporter my-bench -- pytest tests/ -v
 """
 
 from __future__ import annotations
@@ -14,7 +14,16 @@ from __future__ import annotations
 import pytest
 from jumpstarter_driver_mitmproxy.client import MitmproxyClient
 
+from jumpstarter.utils.env import env
+
 # - Proxy session fixtures --------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def client():
+    """The exporter client from the surrounding ``jmp shell`` session."""
+    with env() as client:
+        yield client
 
 
 @pytest.fixture(scope="session")
