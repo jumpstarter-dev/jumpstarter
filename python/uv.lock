@@ -2560,6 +2560,7 @@ dependencies = [
     { name = "jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power" },
     { name = "jumpstarter-driver-pyserial" },
+    { name = "requests" },
 ]
 
 [package.dev-dependencies]
@@ -2579,6 +2580,7 @@ requires-dist = [
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
     { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
+    { name = "requests", specifier = ">=2.32.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -2801,6 +2803,7 @@ dependencies = [
     { name = "jumpstarter-driver-tftp" },
     { name = "jumpstarter-driver-uboot" },
     { name = "oras" },
+    { name = "requests" },
 ]
 
 [package.dev-dependencies]
@@ -2820,6 +2823,7 @@ requires-dist = [
     { name = "jumpstarter-driver-tftp", editable = "packages/jumpstarter-driver-tftp" },
     { name = "jumpstarter-driver-uboot", editable = "packages/jumpstarter-driver-uboot" },
     { name = "oras", specifier = ">=0.2.25" },
+    { name = "requests", specifier = ">=2.32.0" },
 ]
 
 [package.metadata.requires-dev]
