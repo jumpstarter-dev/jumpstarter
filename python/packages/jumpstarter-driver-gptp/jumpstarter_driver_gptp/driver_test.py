@@ -409,9 +409,8 @@ class TestMockGptpErrorPaths:
     """2c. Error path tests."""
 
     def test_status_before_start(self):
-        with serve(MockGptp()) as client:
-            with pytest.raises(DriverError, match="not started"):
-                client.status()
+        with serve(MockGptp()) as client, pytest.raises(DriverError, match="not started"):
+            client.status()
 
     def test_double_start(self):
         with serve(MockGptp()) as client:
@@ -420,24 +419,20 @@ class TestMockGptpErrorPaths:
                 client.start()
 
     def test_stop_before_start(self):
-        with serve(MockGptp()) as client:
-            with pytest.raises(DriverError, match="not started"):
-                client.stop()
+        with serve(MockGptp()) as client, pytest.raises(DriverError, match="not started"):
+            client.stop()
 
     def test_get_offset_before_start(self):
-        with serve(MockGptp()) as client:
-            with pytest.raises(DriverError, match="not started"):
-                client.get_offset()
+        with serve(MockGptp()) as client, pytest.raises(DriverError, match="not started"):
+            client.get_offset()
 
     def test_is_synchronized_before_start(self):
-        with serve(MockGptp()) as client:
-            with pytest.raises(DriverError, match="not started"):
-                client.is_synchronized()
+        with serve(MockGptp()) as client, pytest.raises(DriverError, match="not started"):
+            client.is_synchronized()
 
     def test_set_priority_before_start(self):
-        with serve(MockGptp()) as client:
-            with pytest.raises(DriverError, match="not started"):
-                client.set_priority1(0)
+        with serve(MockGptp()) as client, pytest.raises(DriverError, match="not started"):
+            client.set_priority1(0)
 
 
 class TestClientCli:
@@ -519,7 +514,7 @@ class TestStatefulOperationOrdering:
     """2.5b. Operation ordering enforcement."""
 
     def test_stateful_operations_before_start_raise(self, stateful_client):
-        client, ptp = stateful_client
+        client, _ptp = stateful_client
         with pytest.raises(DriverError):
             client.status()
         with pytest.raises(DriverError):
@@ -528,18 +523,18 @@ class TestStatefulOperationOrdering:
             client.is_synchronized()
 
     def test_stateful_double_start_raises(self, stateful_client):
-        client, ptp = stateful_client
+        client, _ptp = stateful_client
         client.start()
         with pytest.raises(DriverError):
             client.start()
 
     def test_stateful_stop_before_start_raises(self, stateful_client):
-        client, ptp = stateful_client
+        client, _ptp = stateful_client
         with pytest.raises(DriverError):
             client.stop()
 
     def test_stateful_set_priority_before_start_raises(self, stateful_client):
-        client, ptp = stateful_client
+        client, _ptp = stateful_client
         with pytest.raises(DriverError):
             client.set_priority1(0)
 
@@ -685,7 +680,7 @@ class TestSoftwareTimestampingIntegration:
         for cmd in cmds:
             sp.run(cmd.split(), check=True)
         yield ("veth-m", "veth-s")
-        sp.run("ip link del veth-m".split(), check=False)
+        sp.run(["ip", "link", "del", "veth-m"], check=False)
 
     @pytest.fixture
     def ptp_master(self, veth_pair):

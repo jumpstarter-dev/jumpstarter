@@ -186,7 +186,6 @@ class GptpClient(DriverClient):
         @driver_click_group(self)
         def base():
             """gPTP/PTP time synchronization"""
-            pass
 
         @base.command()
         def start():
@@ -223,10 +222,12 @@ class GptpClient(DriverClient):
         def monitor(count):
             """Monitor PTP sync events."""
             for i, event in enumerate(self.monitor()):
+                offset_str = f"{event.offset_ns:.0f}ns" if event.offset_ns is not None else "N/A"
+                delay_str = f"{event.path_delay_ns:.0f}ns" if event.path_delay_ns is not None else "N/A"
                 click.echo(
                     f"[{event.event_type}] state={event.port_state} "
-                    f"offset={event.offset_ns:.0f}ns "
-                    f"delay={event.path_delay_ns:.0f}ns"
+                    f"offset={offset_str} "
+                    f"delay={delay_str}"
                 )
                 if i + 1 >= count:
                     break

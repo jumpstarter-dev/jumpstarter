@@ -6,7 +6,7 @@ Parameter ranges and defaults follow IEEE 802.1AS-2020 and IEEE 1588-2019.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
@@ -110,11 +110,11 @@ class GptpSyncEvent(BaseModel):
     """
 
     event_type: Literal["sync", "state_change", "fault"]
-    port_state: Optional[PortState] = None
-    servo_state: Optional[ServoState] = None
-    offset_ns: Optional[float] = None
-    path_delay_ns: Optional[float] = None
-    freq_ppb: Optional[float] = None
+    port_state: PortState | None = None
+    servo_state: ServoState | None = None
+    offset_ns: float | None = None
+    path_delay_ns: float | None = None
+    freq_ppb: float | None = None
     timestamp: float = 0.0
 
 

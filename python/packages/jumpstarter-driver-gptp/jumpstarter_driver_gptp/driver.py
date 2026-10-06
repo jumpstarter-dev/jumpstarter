@@ -8,7 +8,6 @@ import tempfile
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import field
-from typing import Optional
 
 from pydantic import ConfigDict, validate_call
 from pydantic.dataclasses import dataclass
@@ -47,15 +46,15 @@ class ParsedLogLine:
     """Result of parsing a single ptp4l log line."""
 
     def __init__(self):
-        self.offset_ns: Optional[float] = None
-        self.freq_ppb: Optional[float] = None
-        self.path_delay_ns: Optional[float] = None
-        self.servo_state: Optional[str] = None
-        self.port_state: Optional[str] = None
-        self.event: Optional[str] = None
+        self.offset_ns: float | None = None
+        self.freq_ppb: float | None = None
+        self.path_delay_ns: float | None = None
+        self.servo_state: str | None = None
+        self.port_state: str | None = None
+        self.event: str | None = None
 
 
-def parse_ptp4l_log_line(line: str) -> Optional[ParsedLogLine]:
+def parse_ptp4l_log_line(line: str) -> ParsedLogLine | None:
     """Parse a single ptp4l log line into structured data.
 
     Extracts offset/frequency/delay from sync lines and port state
@@ -173,13 +172,13 @@ class Gptp(Driver):
     sync_system_clock: bool = True
     ptp4l_extra_args: list[str] = field(default_factory=list)
 
-    _ptp4l_proc: Optional[asyncio.subprocess.Process] = field(
+    _ptp4l_proc: asyncio.subprocess.Process | None = field(
         init=False, default=None, repr=False
     )
-    _phc2sys_proc: Optional[asyncio.subprocess.Process] = field(
+    _phc2sys_proc: asyncio.subprocess.Process | None = field(
         init=False, default=None, repr=False
     )
-    _config_file_path: Optional[str] = field(
+    _config_file_path: str | None = field(
         init=False, default=None, repr=False
     )
     _port_state: str = field(init=False, default="INITIALIZING")
@@ -189,7 +188,7 @@ class Gptp(Driver):
     _last_freq_ppb: float = field(init=False, default=0.0)
     _priority1: int = field(init=False, default=128)
     _stats: dict[str, int] = field(init=False, default_factory=dict)
-    _reader_task: Optional[asyncio.Task] = field(
+    _reader_task: asyncio.Task | None = field(
         init=False, default=None, repr=False
     )
 
@@ -244,7 +243,7 @@ class Gptp(Driver):
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10.0)
             output = stdout.decode("utf-8", errors="replace")
             return "hardware-transmit" in output and "hardware-receive" in output
-        except (FileNotFoundError, asyncio.TimeoutError, OSError):
+        except (TimeoutError, FileNotFoundError, OSError):
             return False
 
     def _require_started(self) -> None:
@@ -319,7 +318,7 @@ class Gptp(Driver):
             self._ptp4l_proc.terminate()
             try:
                 await asyncio.wait_for(self._ptp4l_proc.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._ptp4l_proc.kill()
                 await self._ptp4l_proc.wait()
             self._ptp4l_proc = None
@@ -336,7 +335,7 @@ class Gptp(Driver):
             self._phc2sys_proc.terminate()
             try:
                 await asyncio.wait_for(self._phc2sys_proc.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._phc2sys_proc.kill()
                 await self._phc2sys_proc.wait()
             self._phc2sys_proc = None
@@ -693,7 +692,7 @@ class MockGptp(Driver):
         backend: Optional replacement backend for stateful testing.
     """
 
-    backend: Optional[MockGptpBackend] = field(default=None, repr=False)
+    backend: MockGptpBackend | None = field(default=None, repr=False)
 
     _internal_backend: MockGptpBackend = field(init=False, repr=False)
 

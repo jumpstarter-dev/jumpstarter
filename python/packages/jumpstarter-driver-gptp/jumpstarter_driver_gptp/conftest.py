@@ -12,19 +12,16 @@ from jumpstarter.common.utils import serve
 class PtpNotStartedError(RuntimeError):
     """Raised when an operation requires ptp4l to be running."""
 
-    pass
 
 
 class PtpAlreadyRunningError(RuntimeError):
     """Raised when attempting to start ptp4l while it is already running."""
 
-    pass
 
 
 class PtpStateError(RuntimeError):
     """Raised when an invalid PTP state transition is attempted."""
 
-    pass
 
 
 class StatefulPtp4l(MockGptpBackend):
