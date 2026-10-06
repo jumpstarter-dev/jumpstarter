@@ -9,7 +9,7 @@ from ..exceptions import ClusterOperationError
 from .common import GRPC_NODEPORT, LOGIN_NODEPORT, ROUTER_NODEPORT, run_command, run_command_with_output
 
 # renovate: datasource=github-releases depName=cert-manager/cert-manager
-CERTMANAGER_VERSION = "v1.19.2"
+CERTMANAGER_VERSION = "v1.21.2"
 OPERATOR_INSTALLER_URL_TEMPLATE = (
     "https://github.com/jumpstarter-dev/jumpstarter/releases/download/{version}/operator-installer.yaml"
 )
