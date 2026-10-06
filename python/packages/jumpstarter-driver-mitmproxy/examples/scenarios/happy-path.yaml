@@ -2,8 +2,6 @@
 # Use this as the base scenario for normal DUT operation.
 
 config:
-  files_dir: /opt/jumpstarter/mitmproxy/mock-files
-  addons_dir: /opt/jumpstarter/mitmproxy/addons
   default_latency_ms: 50
 
 endpoints:
