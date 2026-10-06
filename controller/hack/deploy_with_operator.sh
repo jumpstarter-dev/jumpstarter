@@ -260,6 +260,8 @@ ${ROUTER_ENDPOINT_CONFIG}
     provisioners:
       - name: qemu.jumpstarter.dev
         enabled: true
+      - name: qemu-ssh.jumpstarter.dev
+        enabled: true
 ${TELEMETRY_CONFIG}
 EOF
 
