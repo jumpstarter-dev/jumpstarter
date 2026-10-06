@@ -13,6 +13,12 @@ Supports the v2 mock configuration format:
 Loaded by mitmdump/mitmweb via:
     mitmdump -s mock_addon.py
 
+The driver installs this file with its own directories filled in. Run
+standalone, it keeps its files in a per-user temporary directory
+(``$TMPDIR/jumpstarter-mitmproxy-<user>``, the driver's default too),
+or under ``$MITMPROXY_DATA_DIR`` when that is set. ``$MITMPROXY_MOCK_DIR``
+overrides the mock directory alone.
+
 Configuration is read from:
     {mock_dir}/endpoints.json    (v1 flat format)
     {mock_dir}/*.json            (v2 format with "endpoints" key)
@@ -23,6 +29,7 @@ The addon hot-reloads config when the file changes on disk.
 from __future__ import annotations
 
 import asyncio
+import getpass
 import hashlib
 import importlib
 import importlib.util
@@ -31,6 +38,7 @@ import os
 import random
 import re
 import socket as _socket
+import tempfile
 import time
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -456,10 +464,35 @@ class AddonRegistry:
         return self.get_handler(name)
 
 
+# ── Paths ───────────────────────────────────────────────────
+
+#: Filled in by the driver when it installs this addon (see
+#: ``MitmproxyDriver._generate_default_addon``). ``None`` means the addon is
+#: running standalone and falls back to the defaults below.
+_DRIVER_MOCK_DIR: str | None = None
+_DRIVER_CAPTURE_SOCKET: str | None = None
+_DRIVER_CAPTURE_SPOOL_DIR: str | None = None
+
+
+def _standalone_data_dir() -> Path:
+    """Data directory used when no driver configured one.
+
+    Matches the driver's default. Not ``/opt``: on macOS and in CI a normal
+    user cannot create it.
+    """
+    if os.environ.get("MITMPROXY_DATA_DIR"):
+        return Path(os.environ["MITMPROXY_DATA_DIR"])
+    try:
+        user = getpass.getuser()
+    except Exception:  # noqa: BLE001 - no login name (e.g. arbitrary container UID)
+        user = str(os.getuid()) if hasattr(os, "getuid") else "default"
+    return Path(tempfile.gettempdir()) / f"jumpstarter-mitmproxy-{user}"
+
+
 # ── Capture client ──────────────────────────────────────────
 
-CAPTURE_SOCKET = "/opt/jumpstarter/mitmproxy/capture.sock"
-CAPTURE_SPOOL_DIR = "/opt/jumpstarter/mitmproxy/capture-spool"
+CAPTURE_SOCKET = _DRIVER_CAPTURE_SOCKET or str(_standalone_data_dir() / "capture.sock")
+CAPTURE_SPOOL_DIR = _DRIVER_CAPTURE_SPOOL_DIR or str(_standalone_data_dir() / "capture-spool")
 
 def _open_private(path: str, flags: int) -> int:
     """``open`` opener: a file that is mode 0600 before anything is written to it.
@@ -562,8 +595,8 @@ class MitmproxyMockAddon:
 
         {
           "config": {
-            "files_dir": "/opt/jumpstarter/mitmproxy/mock-files",
-            "addons_dir": "/opt/jumpstarter/mitmproxy/addons",
+            "files_dir": "{data}/mock-files",
+            "addons_dir": "{data}/addons",
             "default_latency_ms": 0
           },
           "endpoints": {
@@ -585,9 +618,11 @@ class MitmproxyMockAddon:
     Also supports the v1 flat format (just endpoints, no wrapper).
     """
 
-    # Default config directory - overridden by env var or config
-    MOCK_DIR = os.environ.get(
-        "MITMPROXY_MOCK_DIR", "/opt/jumpstarter/mitmproxy/mock-responses"
+    # Default config directory - overridden by env var or the driver
+    MOCK_DIR = (
+        os.environ.get("MITMPROXY_MOCK_DIR")
+        or _DRIVER_MOCK_DIR
+        or str(_standalone_data_dir() / "mock-responses")
     )
 
     def __init__(self):

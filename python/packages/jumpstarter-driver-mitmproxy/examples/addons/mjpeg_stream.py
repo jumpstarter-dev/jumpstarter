@@ -178,8 +178,11 @@ class Handler:
         frames_dir = camera_config.get(
             "frames_dir", config.get("frames_dir", "video/frames"),
         )
+        # The proxy passes files_dir in; fall back to {data}/mock-files beside
+        # the {data}/addons directory this script is installed in.
         files_dir = Path(
-            config.get("files_dir", "/opt/jumpstarter/mitmproxy/mock-files")
+            config.get("files_dir")
+            or Path(__file__).resolve().parent.parent / "mock-files"
         )
 
         if resource == "snapshot.jpg":
