@@ -399,6 +399,68 @@ class TestCaptureSpool:
         assert Path(req["response_body_file"]).read_bytes() == _BinaryHandler.body
 
 
+class TestTrafficShaping:
+    """Shaping applied through the client to a real mitmdump."""
+
+    @pytest.fixture
+    def upstream(self):
+        server = HTTPServer(("127.0.0.1", 0), _LocalHttpHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        yield server.server_address[1]
+        server.shutdown()
+
+    @pytest.fixture
+    def running(self, client, proxy_port):
+        client.start("passthrough")
+        assert _wait_for_port("127.0.0.1", proxy_port), (
+            f"mitmdump did not start on port {proxy_port}"
+        )
+        yield
+        client.stop()
+
+    @staticmethod
+    def _get(proxy_port, upstream):
+        return requests.get(
+            f"http://127.0.0.1:{upstream}/get",
+            proxies={"http": f"http://127.0.0.1:{proxy_port}"},
+            timeout=15,
+        )
+
+    def test_shape_refused_without_a_running_proxy(self, client):
+        with pytest.raises(RuntimeError, match="running proxy"):
+            client.shape(latency_ms=100)
+        assert client.get_shaping() == {}
+
+    def test_out_of_range_value_raises_value_error(self, client, running):
+        with pytest.raises(ValueError, match="drop_pct"):
+            client.shape(drop_pct=150)
+        assert client.get_shaping() == {}
+
+    def test_latency_is_added_and_cleared(self, client, running, proxy_port, upstream):
+        with client.shaping(latency_ms=600) as applied:
+            assert applied["latency_ms"] == 600
+            assert client.get_shaping()["latency_ms"] == 600
+            started = time.monotonic()
+            assert self._get(proxy_port, upstream).status_code == 200
+            assert time.monotonic() - started >= 0.55
+
+        assert client.get_shaping() == {}
+        assert client.clear_shaping() is False
+
+    def test_full_drop_fails_the_request(self, client, running, proxy_port, upstream):
+        with client.shaping(drop_pct=100), pytest.raises(requests.RequestException):
+            self._get(proxy_port, upstream)
+        assert self._get(proxy_port, upstream).status_code == 200
+
+    def test_stop_discards_shaping(self, client, proxy_port):
+        client.start("passthrough")
+        assert _wait_for_port("127.0.0.1", proxy_port)
+        client.shape(rate_kbit=400)
+        client.stop()
+        assert client.get_shaping() == {}
+
+
 class TestRequestCapture:
     """End-to-end tests for request capture via the proxy."""
 

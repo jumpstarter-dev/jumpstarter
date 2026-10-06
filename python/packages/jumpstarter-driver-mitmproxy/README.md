@@ -7,7 +7,8 @@ This driver manages a `mitmdump` or `mitmweb` process on the Jumpstarter exporte
 - **Backend mocking** - Return deterministic JSON responses for any API endpoint, with hot-reloadable definitions, wildcard path matching, conditional rules, sequences, templates, and custom addons
 - **SSL/TLS interception** - Inspect and modify HTTPS traffic from your DUT, with easy CA certificate retrieval for DUT provisioning
 - **Traffic recording & replay** - Capture a "golden" session against real servers, then replay it offline in CI
-- **Request capture** - Record every request the DUT makes and assert on them in your tests
+- **Request capture** - Record every request the DUT makes, assert on them in your tests, and read back response bodies
+- **Network condition emulation** - Throttle bandwidth, add latency and jitter, or drop requests to test the DUT on a weak link
 - **Browser-based UI** - Launch `mitmweb` for interactive traffic inspection, with TCP port forwarding through the Jumpstarter tunnel
 - **Scenario files** - Load complete mock configurations from YAML or JSON, swap between test scenarios instantly
 - **Full CLI** - Control the proxy interactively from `jmp shell` sessions
@@ -106,7 +107,7 @@ For HTTPS interception, the mitmproxy CA certificate must be installed on the DU
 
 ```console
 j proxy cert                             # writes ./mitmproxy-ca-cert.pem
-j proxy cert /tmp/ca.pem               # custom output path
+j proxy cert /tmp/ca.pem                 # custom output path
 ```
 
 #### From Python
@@ -177,6 +178,8 @@ j proxy mock load my-capture/            # load a saved capture directory
 ```console
 j proxy capture list                     # show captured requests
 j proxy capture clear                    # clear captured requests
+j proxy capture watch                    # stream requests live (Ctrl+C to stop)
+j proxy capture watch -f '/api/v1/*'     # stream only matching paths
 j proxy capture save ./my-capture        # export as scenario to directory
 j proxy capture save -f '/api/v1/*' ./my-capture  # with path filter
 j proxy capture save --exclude-mocked ./my-capture
@@ -196,7 +199,7 @@ j proxy flow save capture_20260101.bin /tmp/my.bin  # download to specific path
 j proxy web                              # forward mitmweb UI to localhost:8081
 j proxy web --port 9090                  # forward to a custom port
 j proxy cert                             # download CA cert to ./mitmproxy-ca-cert.pem
-j proxy cert /tmp/ca.pem                # download to a specific path
+j proxy cert /tmp/ca.pem                 # download to a specific path
 ```
 
 ### Mock Scenarios
@@ -301,10 +304,12 @@ Available context managers:
 | --------------- | ----------- |
 | `proxy.session(mode, web_ui)` | Start/stop the proxy |
 | `proxy.mock_endpoint(method, path, ...)` | Temporary mock endpoint |
+| `proxy.mock_patch_endpoint(method, path, patches)` | Temporary patch of a real response |
 | `proxy.mock_scenario(file)` | Load/clear a scenario file |
 | `proxy.mock_conditional(method, path, rules)` | Temporary conditional mock |
 | `proxy.recording()` | Record traffic to a flow file |
 | `proxy.capture()` | Capture and assert on requests |
+| `proxy.shaping(rate_kbit, latency_ms, ...)` | Temporary traffic shaping |
 
 #### Request Capture
 
@@ -322,6 +327,91 @@ def test_telemetry_sent(client):
     assert len(cap.requests) >= 1
     cap.assert_request_made("POST", "/api/v1/telemetry")
 ```
+
+`wait_for_request` matches the path exactly, or as a prefix when it ends in `*`.
+Pass `use_regex=True` to match it as a regular expression, `expected_status` to
+only accept a response with that status, and `"*"` as the method to accept any:
+
+```python
+proxy.wait_for_request("*", r"^/api/v1/devices/\d+$", use_regex=True)
+proxy.wait_for_request("POST", "/api/v1/telemetry", expected_status=202)
+```
+
+Matching does not consume the request, so the same capture can be waited for and
+then inspected.
+
+Captured response bodies stay on the exporter. Read one back without needing
+access to the exporter's filesystem:
+
+```python
+result = proxy.get_response_body(r"/api/v1/status")  # most recent match
+assert result["status"] == 200
+assert result["body"]["status"] == "active"           # parsed if JSON
+
+first = proxy.get_response_body(r"/api/v1/status", index=0)  # oldest match
+```
+
+`get_response_body` returns `body`, `path`, `status` and `truncated` (bodies are
+read up to 1 MiB) and raises `LookupError` when nothing matches.
+
+To keep every capture as a test artifact, export them with text response bodies
+inlined:
+
+```python
+import json
+from pathlib import Path
+
+captures = proxy.export_captured_requests(max_body_size=256 * 1024)
+Path("artifacts/captures.json").write_text(json.dumps(captures, indent=2))
+```
+
+Each body is capped at `max_body_size` bytes and marked
+`response_body_truncated` when cut off. Binary bodies are skipped. The whole
+export is kept under the gRPC message limit, so bodies are dropped first and
+the export stops early on a very large capture.
+
+The capture buffer itself is bounded the same way. Once it reaches about
+3.5 MB, the oldest entries are discarded to make room.
+
+#### Traffic Shaping
+
+Emulate a slow or unreliable network between the DUT and its backend. Shaping
+applies to all traffic through the proxy, takes effect immediately, and lasts
+for the current proxy session only. The proxy must be running, and stopping or
+restarting it clears the shaping.
+
+```python
+def test_survives_weak_link(client):
+    proxy = client.proxy
+
+    with proxy.session(mode="passthrough"):
+        with proxy.shaping(rate_kbit=400, latency_ms=250, jitter_ms=50):
+            # DUT now sees a 400 kbit/s link with 200-300 ms of added latency
+            assert_download_completes(client)
+        # shaping cleared here
+```
+
+Or without a context manager:
+
+```python
+proxy.shape(latency_ms=500, drop_pct=5)   # replaces any previous shaping
+proxy.get_shaping()  # {"rate_kbit": 0, "latency_ms": 500.0, "jitter_ms": 0.0, "drop_pct": 5.0}
+proxy.clear_shaping()
+```
+
+| Parameter | Description |
+| --------- | ----------- |
+| `rate_kbit` | Bandwidth cap in kilobits per second, applied to each direction separately. `0` for unlimited. |
+| `latency_ms` | Delay added once per request, up to 60000 ms. |
+| `jitter_ms` | Random spread of ± this many ms around `latency_ms`. Must not exceed `latency_ms`. |
+| `drop_pct` | Percentage of requests (0-100) to fail. The client sees a connection error, not an HTTP error status. |
+
+`shape` raises `ValueError` for out-of-range values and `RuntimeError` when the
+proxy is not running.
+
+Shaping works at the HTTP level: latency is per request, and loss drops whole
+requests rather than packets. To shape the link itself at the packet level, use
+a network-level tool on the exporter host instead.
 
 #### Advanced Mocking
 
@@ -409,21 +499,33 @@ all_state = proxy.get_all_state()       # {"auth_token": "...", "retries": 3}
 proxy.clear_state()
 ```
 
-## API Reference
+## Container Deployment
 
-```{eval-rst}
-.. autoclass:: jumpstarter_driver_mitmproxy.driver.MitmproxyDriver()
-```
-
-### Container Deployment
+The `quay.io/jumpstarter-dev/jumpstarter` image includes this driver and
+mitmproxy. Run an exporter from it with the exporter config mounted:
 
 ```bash
-podman build -t jumpstarter-mitmproxy:latest .
-
 podman run --rm -it --privileged \
   -v /dev:/dev \
   -v /etc/jumpstarter:/etc/jumpstarter:Z \
   -p 8080:8080 -p 8081:8081 \
-  jumpstarter-mitmproxy:latest \
-  jmp exporter start my-bench
+  quay.io/jumpstarter-dev/jumpstarter:latest \
+  jmp run --exporter my-bench
+```
+
+To build the image yourself, run this from the repository root:
+
+```bash
+podman build -f python/Containerfile -t jumpstarter:latest .
+```
+
+## API Reference
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_mitmproxy.client.MitmproxyClient()
+    :members:
+```
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_mitmproxy.driver.MitmproxyDriver()
 ```
