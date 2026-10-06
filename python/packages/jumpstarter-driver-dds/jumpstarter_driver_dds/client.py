@@ -156,7 +156,6 @@ class DdsClient(DriverClient):
         @driver_click_group(self)
         def base():
             """DDS pub/sub communication"""
-            pass
 
         self._register_lifecycle_commands(base)
         self._register_data_commands(base)

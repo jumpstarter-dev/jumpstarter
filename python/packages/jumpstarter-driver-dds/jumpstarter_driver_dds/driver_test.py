@@ -376,9 +376,8 @@ class TestMockDdsErrorPaths:
                 client.connect()
 
     def test_disconnect_without_connect(self):
-        with serve(MockDds()) as client:
-            with pytest.raises(DriverError, match="Not connected"):
-                client.disconnect()
+        with serve(MockDds()) as client, pytest.raises(DriverError, match="Not connected"):
+            client.disconnect()
 
     def test_publish_nonexistent_topic(self):
         with serve(MockDds()) as client:
