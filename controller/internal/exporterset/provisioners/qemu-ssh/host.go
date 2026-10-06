@@ -87,30 +87,44 @@ func ParseHost(mergedParameters map[string]any) (HostConfig, error) {
 	return host, nil
 }
 
+// RuntimeConfig holds runtime-specific settings parsed from merged
+// parameters.
+type RuntimeConfig struct {
+	KVM          bool
+	ExtraDevices []string
+	HostNetwork  bool
+}
+
 // ParseRuntimeConfig extracts runtime-specific settings from merged
-// parameters (e.g. KVM enablement, extra devices).
-func ParseRuntimeConfig(mergedParameters map[string]any) (kvm bool, extraDevices []string) {
+// parameters (e.g. KVM enablement, extra devices, host networking).
+func ParseRuntimeConfig(mergedParameters map[string]any) RuntimeConfig {
 	runtimeRaw, ok := mergedParameters["runtime"]
 	if !ok {
-		return false, nil
+		return RuntimeConfig{}
 	}
 
 	runtimeMap, ok := runtimeRaw.(map[string]any)
 	if !ok {
-		return false, nil
+		return RuntimeConfig{}
 	}
 
+	var cfg RuntimeConfig
+
 	if v, ok := runtimeMap["kvm"].(bool); ok {
-		kvm = v
+		cfg.KVM = v
+	}
+
+	if v, ok := runtimeMap["host_network"].(bool); ok {
+		cfg.HostNetwork = v
 	}
 
 	if devs, ok := runtimeMap["devices"].([]any); ok {
 		for _, d := range devs {
 			if s, ok := d.(string); ok {
-				extraDevices = append(extraDevices, s)
+				cfg.ExtraDevices = append(cfg.ExtraDevices, s)
 			}
 		}
 	}
 
-	return kvm, extraDevices
+	return cfg
 }

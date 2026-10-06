@@ -185,6 +185,21 @@ arch detected via `qemu-guest-arch.sh`; Alpine guest image ensured via
 
 ---
 
+## Lane: `exporterset-qemu-ssh` (`exporterset_qemu_ssh_test.go`)
+
+Prereq: exporterset-controller (qemu-ssh) Deployment running; SSH + Podman on the CI
+runner (set up by `setup-qemu-ssh-e2e.sh`); exporter + runtime images loaded into
+Podman; Secret `e2e-qemu-ssh-key`; OIDC client `test-client-exporterset-qemu-ssh`;
+applies `manifests/exporterset-qemu-ssh-kind.yaml` (VTC + ExporterSet targeting
+localhost via SSH).
+
+| Test Name | Steps | Pass Check |
+|---|---|---|
+| brings an Exporter Online via SSH-deployed Podman containers | wait for ExporterSet-created Exporter, wait Online/Registered/Available | exporter reaches Available state |
+| can lease, power on, and power off through the SSH-deployed exporter | `jmp shell` → `j qemu power on && sleep 5 && j qemu power off` | no error |
+
+---
+
 ## Lane: `auth-logging` (`auth_logging_test.go`)
 
 Prereq: self-contained — creates its own legacy client/exporter
@@ -248,7 +263,8 @@ venv/binary isn't found.
 - **Lanes = Ginkgo `Label(...)`** on each top-level `Describe`; selected via
   `GINKGO_LABEL_FILTER` / `--label-filter` (see `e2e/run-e2e.sh` header comment).
   CI's `e2e-tests` job runs `make e2e-run`, which defaults to
-  `--label-filter '!lease-churn'` (still includes `exporterset-qemu`).
+  `--label-filter '!lease-churn'` (still includes `exporterset-qemu` and
+  `exporterset-qemu-ssh`).
   `e2e-compat-old-controller`/`e2e-compat-old-client` jobs run
   only on merge-queue/dispatch via `compat/run.sh`. PRs run amd64 only;
   merge-queue and `workflow_dispatch` also run arm64.
@@ -264,4 +280,5 @@ venv/binary isn't found.
   parent Ordered suite already sequences it against other core lease specs.
 - Failure log dumping is lane-specific infrastructure (for example: core and
   exit-on-lease-end dump exporter + controller logs; exporterset-qemu dumps
-  exporterset/QEMU pod logs).
+  exporterset/QEMU pod logs; exporterset-qemu-ssh dumps qemu-ssh controller
+  and Podman container logs).
