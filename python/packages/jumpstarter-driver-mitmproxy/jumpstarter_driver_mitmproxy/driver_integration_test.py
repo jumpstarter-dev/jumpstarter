@@ -11,10 +11,12 @@ Requires mitmdump to be installed and on PATH.
 from __future__ import annotations
 
 import json
+import shutil
 import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
 import pytest
 import requests
@@ -320,6 +322,75 @@ class TestPassthrough:
             assert "headers" in data
         finally:
             client.stop()
+
+
+class _BinaryHandler(BaseHTTPRequestHandler):
+    """Serves a body large and binary enough to be spooled, not inlined."""
+
+    body = bytes(range(256)) * 2048  # 512 KiB
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(len(self.body)))
+        self.end_headers()
+        self.wfile.write(self.body)
+
+    def log_message(self, format, *args):
+        pass
+
+
+class TestCaptureSpool:
+    """Large and binary response bodies are spooled to the driver's data dir."""
+
+    @pytest.fixture
+    def upstream(self):
+        server = HTTPServer(("127.0.0.1", 0), _BinaryHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        yield server.server_address[1]
+        server.shutdown()
+
+    @pytest.fixture(autouse=True)
+    def _running(self, client, proxy_port):
+        client.start("passthrough")
+        assert _wait_for_port("127.0.0.1", proxy_port)
+        client.clear_captured_requests()
+        yield
+        client.stop()
+
+    @staticmethod
+    def _fetch(proxy_port, upstream, path):
+        response = requests.get(
+            f"http://127.0.0.1:{upstream}{path}",
+            proxies={"http": f"http://127.0.0.1:{proxy_port}"},
+            timeout=15,
+        )
+        assert response.content == _BinaryHandler.body
+        return response
+
+    def test_body_is_spooled_and_exported(self, client, proxy_port, upstream):
+        self._fetch(proxy_port, upstream, "/bin/first")
+        req = client.wait_for_request("GET", "/bin/first")
+
+        spooled = Path(req["response_body_file"])
+        assert spooled.parent.name == "capture-spool"
+        assert spooled.read_bytes() == _BinaryHandler.body
+
+        _, files = client.export_captured_scenario(filter_pattern="/bin/*")
+        assert len(files) == 1
+        assert client.get_captured_file(files[0]) == _BinaryHandler.body
+
+    def test_spool_dir_is_recreated_after_removal(self, client, proxy_port, upstream):
+        self._fetch(proxy_port, upstream, "/bin/first")
+        spool_dir = Path(client.wait_for_request("GET", "/bin/first")["response_body_file"]).parent
+        shutil.rmtree(spool_dir)
+
+        self._fetch(proxy_port, upstream, "/bin/second")
+        req = client.wait_for_request("GET", "/bin/second")
+
+        assert req["response_body_file"], "the body was dropped instead of spooled"
+        assert Path(req["response_body_file"]).read_bytes() == _BinaryHandler.body
 
 
 class TestRequestCapture:
