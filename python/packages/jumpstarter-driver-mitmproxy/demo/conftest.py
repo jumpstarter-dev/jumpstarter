@@ -3,7 +3,7 @@
 Run via::
 
     cd python/packages/jumpstarter-driver-mitmproxy/demo
-    jmp shell --exporter exporter.yaml -- pytest . -v
+    jmp shell --exporter-config exporter.yaml -- pytest . -v
 """
 
 from __future__ import annotations
@@ -16,6 +16,8 @@ from http.server import HTTPServer
 import pytest
 import requests
 from backend import DemoBackendHandler  # ty: ignore[unresolved-import]
+
+from jumpstarter.utils.env import env
 
 BACKEND_PORT = 9000
 PROXY_PORT = 8080
@@ -53,11 +55,18 @@ def backend_server():
 
 
 @pytest.fixture(scope="session")
+def client():
+    """The exporter client from the surrounding ``jmp shell`` session."""
+    with env() as client:
+        yield client
+
+
+@pytest.fixture(scope="session")
 def proxy(client):
     """Start the mitmproxy driver in mock mode.
 
-    The ``client`` fixture is injected by Jumpstarter when tests
-    run inside ``jmp shell --exporter exporter.yaml -- pytest``.
+    Uses the ``client`` fixture above, which connects to the exporter
+    started by ``jmp shell --exporter-config exporter.yaml -- pytest``.
     """
     proxy = client.proxy
     proxy.start("mock")
