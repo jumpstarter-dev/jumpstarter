@@ -38,6 +38,7 @@ import (
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/cuttlefish"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/kubevirt"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/qemu"
 	qemussh "github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/qemu-ssh"
 )
@@ -167,14 +168,16 @@ func selectProvisioner(name string, c client.Client) (exporterset.Provisioner, e
 	switch name {
 	case cuttlefish.ProvisionerName:
 		return cuttlefish.New(version), nil
+	case kubevirt.ProvisionerName:
+		return kubevirt.New(version, c), nil
 	case qemu.ProvisionerName:
 		return qemu.New(version), nil
 	case qemussh.ProvisionerName:
 		return qemussh.New(version, c), nil
 	default:
 		return nil, fmt.Errorf(
-			"unknown provisioner %q; supported: %s, %s, %s",
-			name, qemu.ProvisionerName, cuttlefish.ProvisionerName, qemussh.ProvisionerName,
+			"unknown provisioner %q; supported: %s, %s, %s, %s",
+			name, qemu.ProvisionerName, cuttlefish.ProvisionerName, qemussh.ProvisionerName, kubevirt.ProvisionerName,
 		)
 	}
 }

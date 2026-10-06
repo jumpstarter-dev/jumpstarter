@@ -87,8 +87,11 @@ func (p *Provisioner) RenderPod(
 // EnrichExporterExport adjusts driver config for off-cluster
 // deployment (launcher_socket, defaults, firmware paths, hostfwd).
 func (p *Provisioner) EnrichExporterExport(
+	_ context.Context,
+	_ *virtualtargetv1alpha1.VirtualTargetClass,
 	drivers []virtualtargetv1alpha1.DriverConfig,
 	mergedParameters map[string]any,
+	_ *jumpstarterdevv1alpha1.Exporter,
 ) ([]virtualtargetv1alpha1.DriverConfig, error) {
 	return enrichExporterExport(drivers, mergedParameters)
 }
