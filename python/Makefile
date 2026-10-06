@@ -51,7 +51,7 @@ pkg-test-%: packages/%
 endif
 
 pkg-ty-%: packages/%
-	uv run --isolated --directory $< ty check .
+	uv run --isolated --directory $< --with ty ty check .
 
 pkg-test-all: sync $(addprefix pkg-test-,$(PKG_TARGETS))
 

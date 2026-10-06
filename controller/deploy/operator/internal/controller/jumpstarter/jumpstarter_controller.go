@@ -127,7 +127,7 @@ type JumpstarterReconciler struct {
 
 // virtualtarget.jumpstarter.dev CRD resources (needed to grant permissions to managed
 // exporter-set provisioner controllers, see exporterSetPolicyRules)
-// +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=exportersets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=exportersets,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=exportersets/status;exportersets/scale,verbs=get;update;patch
 // +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=exportersets/finalizers,verbs=update
 // +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=virtualtargetclasses,verbs=get;list;watch
@@ -1324,7 +1324,8 @@ func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *op
 		Keys: jumpstarter.Spec.DeprecatedLabels.Keys,
 	}
 
-	// Telemetry configuration.
+	// Telemetry configuration. When cert-manager is enabled, inline the CA so
+	// GetServiceEndpoints.certificate lets exporters verify telemetry TLS.
 	if jumpstarter.Spec.Telemetry != nil && jumpstarter.Spec.Telemetry.Enabled {
 		t := jumpstarter.Spec.Telemetry
 		telemetryCfg := &config.Telemetry{

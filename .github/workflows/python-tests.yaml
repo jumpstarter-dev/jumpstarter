@@ -213,7 +213,7 @@ jobs:
   pip-resolution:
     needs: changes
     if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     strategy:
       matrix:
         python-version: ["3.12", "3.13", "3.14"]
