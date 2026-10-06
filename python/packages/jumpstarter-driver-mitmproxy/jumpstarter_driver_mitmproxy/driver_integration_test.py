@@ -399,6 +399,76 @@ class TestCaptureSpool:
         assert Path(req["response_body_file"]).read_bytes() == _BinaryHandler.body
 
 
+class TestCaptureQueries:
+    """get_response_body and export_captured_requests, through the client."""
+
+    @pytest.fixture
+    def json_upstream(self):
+        server = HTTPServer(("127.0.0.1", 0), _LocalHttpHandler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        yield server.server_address[1]
+        server.shutdown()
+
+    @pytest.fixture
+    def binary_upstream(self):
+        server = HTTPServer(("127.0.0.1", 0), _BinaryHandler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        yield server.server_address[1]
+        server.shutdown()
+
+    @pytest.fixture(autouse=True)
+    def _running(self, client, proxy_port):
+        client.start("passthrough")
+        assert _wait_for_port("127.0.0.1", proxy_port)
+        client.clear_captured_requests()
+        yield
+        client.stop()
+
+    @staticmethod
+    def _fetch(proxy_port, upstream, path):
+        return requests.get(
+            f"http://127.0.0.1:{upstream}{path}",
+            proxies={"http": f"http://127.0.0.1:{proxy_port}"},
+            timeout=15,
+        )
+
+    def test_get_response_body_returns_the_parsed_body(
+        self, client, proxy_port, json_upstream,
+    ):
+        self._fetch(proxy_port, json_upstream, "/items/1")
+        self._fetch(proxy_port, json_upstream, "/items/2")
+        client.wait_for_request("GET", "/items/2")
+
+        latest = client.get_response_body(r"^/items/\d+$")
+        oldest = client.get_response_body(r"^/items/\d+$", index=0)
+
+        assert latest["body"]["url"] == "/items/2"
+        assert oldest["body"]["url"] == "/items/1"
+        assert latest["status"] == 200
+        assert latest["truncated"] is False
+
+    def test_get_response_body_raises_when_nothing_matches(self, client):
+        with pytest.raises(LookupError, match="No captured response"):
+            client.get_response_body(r"^/nothing-here$")
+
+    def test_export_inlines_text_bodies_and_skips_binary(
+        self, client, proxy_port, json_upstream, binary_upstream,
+    ):
+        self._fetch(proxy_port, json_upstream, "/items/1")
+        self._fetch(proxy_port, binary_upstream, "/bin/1")
+        client.wait_for_request("GET", "/bin/1")
+
+        by_path = {e["path"]: e for e in client.export_captured_requests()}
+
+        assert json.loads(by_path["/items/1"]["response_body"])["url"] == "/items/1"
+        assert by_path["/bin/1"]["response_body"] is None
+        assert by_path["/bin/1"]["response_body_skipped"] == "binary content type"
+
+    def test_export_rejects_a_non_positive_body_cap(self, client):
+        with pytest.raises(ValueError, match="greater than zero"):
+            client.export_captured_requests(max_body_size=0)
+
+
 class TestTrafficShaping:
     """Shaping applied through the client to a real mitmdump."""
 

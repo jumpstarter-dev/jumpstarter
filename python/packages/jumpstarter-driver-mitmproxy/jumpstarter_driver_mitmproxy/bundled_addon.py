@@ -96,7 +96,7 @@ def _deep_merge_patch(target, patch):
     """Deep-merge a patch dict into a target dict/list in-place.
 
     - Dict patch values recurse into the matching target key.
-    - Keys with ``[N]`` suffix target array elements: ``"modules[0]"``
+    - Keys with ``[N]`` suffix target array elements: ``"devices[0]"``
       navigates to ``target["modules"][0]``.  Missing arrays and
       out-of-range indices are auto-created (filled with empty dicts).
     - Scalar/list patch values replace the target value.

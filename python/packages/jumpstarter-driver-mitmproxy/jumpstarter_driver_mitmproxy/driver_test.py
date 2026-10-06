@@ -1272,12 +1272,12 @@ class TestPatchMocks:
         and _convert_url_endpoints correctly."""
         yaml_content = (
             "mocks:\n"
-            "  https://api.example.com/rest/v3/modules/nonPII:\n"
+            "  https://api.example.com/rest/v3/devices:\n"
             "  - method: GET\n"
             "    patch:\n"
-            "      ModuleListResponse:\n"
-            "        moduleList:\n"
-            "          modules[0]:\n"
+            "      DeviceListResponse:\n"
+            "        deviceList:\n"
+            "          devices[0]:\n"
             "            status: Inactive\n"
         )
         scenario_file = tmp_path / "mocks" / "roundtrip.yaml"
@@ -1288,10 +1288,10 @@ class TestPatchMocks:
 
         config = tmp_path / "mocks" / "endpoints.json"
         data = json.loads(config.read_text())
-        ep = data["endpoints"]["GET /rest/v3/modules/nonPII"]
+        ep = data["endpoints"]["GET /rest/v3/devices"]
         assert "patch" in ep
         assert (
-            ep["patch"]["ModuleListResponse"]["moduleList"]["modules[0]"]["status"]
+            ep["patch"]["DeviceListResponse"]["deviceList"]["devices[0]"]["status"]
             == "Inactive"
         )
 
@@ -1644,13 +1644,15 @@ class TestShapingArithmetic:
         import types
         from pathlib import Path
         pytest.importorskip("mitmproxy")
-        source = (
-            Path(__file__).parent / "bundled_addon.py"
-        ).read_text().replace(
+        addon_path = Path(__file__).parent / "bundled_addon.py"
+        source = addon_path.read_text().replace(
             "addons = [MitmproxyMockAddon(), TrafficShaper()]", "addons = []",
         )
         module = types.ModuleType("addon_under_test")
-        exec(compile(source, "bundled_addon.py", "exec"), module.__dict__)  # noqa: S102
+        # Compiled under the file's real path so coverage attributes these runs
+        # to bundled_addon.py; under a bare name, none of the addon's tests
+        # counted towards it.
+        exec(compile(source, str(addon_path), "exec"), module.__dict__)  # noqa: S102
         return module
 
     def test_a_full_bucket_lets_a_small_body_through(self):

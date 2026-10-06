@@ -629,11 +629,9 @@ class MitmproxyClient(DriverClient):
         body before delivery to the DUT.
 
         Args:
-            method: HTTP method (GET, POST, etc.). Use ``*`` to match
-                any method (wildcard).
+            method: HTTP method (GET, POST, etc.), or ``*`` for any method.
             path: URL path to match.
-            patches: Dict to deep-merge into the response body. Use
-                ``key[N]`` syntax for array indexing.
+            patches: Dict to deep-merge into the response body; ``key[N]`` indexes arrays.
             headers: Extra response headers to inject.
 
         Returns:
@@ -642,8 +640,8 @@ class MitmproxyClient(DriverClient):
         Example::
 
             proxy.set_mock_patch(
-                "GET", "/rest/v3/experience/modules/nonPII",
-                {"ModuleListResponse": {"moduleList": {"modules[0]": {
+                "GET", "/api/v1/devices",
+                {"DeviceListResponse": {"deviceList": {"devices[0]": {
                     "status": "Inactive"
                 }}}},
             )
@@ -792,9 +790,7 @@ class MitmproxyClient(DriverClient):
         Args:
             method: HTTP method.
             path: URL path.
-            rules: List of rule dicts, each with optional ``match``
-                conditions and response fields (``status``, ``body``,
-                ``body_template``, ``headers``, etc.).
+            rules: List of rule dicts: an optional ``match`` plus response fields.
 
         Returns:
             Confirmation message.
@@ -910,23 +906,17 @@ class MitmproxyClient(DriverClient):
         as :meth:`clear_shaping`.
 
         Args:
-            rate_kbit: Bandwidth cap in kilobits per second, applied to each
-                direction independently. 0 for unlimited.
-            latency_ms: Delay added once per request, in milliseconds
-                (at most 60000).
-            jitter_ms: Uniform spread of that delay, ± this many
-                milliseconds. Must not exceed ``latency_ms``.
-            drop_pct: Percentage of requests to fail, 0-100. A dropped
-                request is killed, so the client sees a connection error
-                rather than an HTTP error status.
+            rate_kbit: Bandwidth cap in kbit/s, applied to each direction; 0 for unlimited.
+            latency_ms: Delay added once per request, in ms (at most 60000).
+            jitter_ms: Uniform spread of that delay, plus or minus ms; at most ``latency_ms``.
+            drop_pct: Percentage of requests to fail, 0-100, as a connection error.
 
         Returns:
             The configuration now applied, empty if everything was zero.
 
         Raises:
             ValueError: A value is out of range.
-            RuntimeError: The proxy is not running, this session cannot
-                shape, or the configuration could not be written.
+            RuntimeError: Not running, no shaper in this session, or the write failed.
         """
         result = json.loads(
             self.call("shape", rate_kbit, latency_ms, jitter_ms, drop_pct)
@@ -1138,13 +1128,12 @@ class MitmproxyClient(DriverClient):
         """Wait for a matching request to be captured.
 
         Args:
-            method: HTTP method to match. Use ``*`` to match any method.
-            path: URL path to match. Supports ``*`` suffix wildcard,
-                or regex pattern when use_regex is True.
+            method: HTTP method to match, or ``*`` for any method.
+            path: URL path; a ``*`` suffix matches a prefix, or a regex if use_regex.
             timeout: Maximum seconds to wait.
             use_regex: If True, match path as a regex pattern.
-            expected_status: If non-zero, only match requests with this
-                HTTP response status code. Zero accepts any status.
+            expected_status: Only match this response status code; 0 accepts any.
+
         Returns:
             The matching captured request dict.
 
@@ -1337,8 +1326,8 @@ class MitmproxyClient(DriverClient):
         Example::
 
             with proxy.mock_patch_endpoint(
-                "GET", "/rest/v3/experience/modules/nonPII",
-                {"ModuleListResponse": {"moduleList": {"modules[0]": {
+                "GET", "/api/v1/devices",
+                {"DeviceListResponse": {"deviceList": {"devices[0]": {
                     "status": "Inactive"
                 }}}},
             ):
