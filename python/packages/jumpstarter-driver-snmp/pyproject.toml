@@ -12,7 +12,7 @@ dependencies = [
     "cryptography>=43.0.3",
     "jumpstarter",
     "jumpstarter-driver-power",
-    "pysnmp==7.1.29",
+    "pysnmp==7.1.30",
 ]
 
 [project.entry-points."jumpstarter.drivers"]
