@@ -7,34 +7,71 @@
 {% set version_path = page_root + docs_path[version.name] %}
 {% endif %}
 {% if current == version.name %}
-<strong>
-    <dd><a href="{{ version_path }}">{{ version.name }}</a></dd>
-</strong>
+<a class="versjon-current" href="{{ version_path }}">{{ version.name }}</a>
 {% else %}
-<dd><a href="{{ version_path }}">{{ version.name }}</a></dd>
+<a href="{{ version_path }}">{{ version.name }}</a>
 {% endif %}
 {% endmacro %}
 
+<style>
+  #versjon-overlay .versjon-group { margin-bottom: 8px; }
+  #versjon-overlay .versjon-group-label {
+    display: block;
+    font-size: 13px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #999;
+    margin-bottom: 4px;
+  }
+  #versjon-overlay .versjon-group-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  #versjon-overlay .versjon-group-links a {
+    display: inline-block;
+    padding: 2px 8px;
+    background: #ddd;
+    border-radius: 3px;
+    text-decoration: none;
+    font-size: 15px;
+    color: #333;
+    white-space: nowrap;
+  }
+  #versjon-overlay .versjon-group-links a:hover { background: #c8c8c8; }
+  #versjon-overlay .versjon-group-links a.versjon-current,
+  #versjon-overlay .versjon-group-links a.versjon-current:visited,
+  #versjon-overlay .versjon-group-links a.versjon-current:hover {
+    background: #555;
+    color: #fff;
+    text-decoration: none;
+  }
+</style>
 <div id="versjon-overlay">
     <button type="button" class="versjon"><i class="fa fa-book"></i> Version: {{current}}</button>
     <div class="versjon-content">
         <div class="versjon-content-inner">
-            <dl>
-                <dt>Versions</dt>
+            <div class="versjon-group">
+                <span class="versjon-group-label">Versions</span>
+                <div class="versjon-group-links">
                 {% for version in (semver + other) %}
                 {% if version.name[:8] == 'release-' %}
-                {{ format_version(version) | indent(16) }}
+                {{ format_version(version) }}
                 {% endif %}
                 {% endfor %}
-            </dl>
-            <dl>
-                <dt>Development</dt>
+                </div>
+            </div>
+            <div class="versjon-group">
+                <span class="versjon-group-label">Development</span>
+                <div class="versjon-group-links">
                 {% for version in (semver + other) %}
                 {% if version.name[:8] != 'release-' %}
-                {{ format_version(version) | indent(16) }}
+                {{ format_version(version) }}
                 {% endif %}
                 {% endfor %}
-            </dl>
+                </div>
+            </div>
         </div>
     </div>
 </div>
