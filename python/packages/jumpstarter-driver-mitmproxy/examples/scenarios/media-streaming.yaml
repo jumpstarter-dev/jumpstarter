@@ -1,10 +1,6 @@
 # Media-streaming scenario: audio, video, and WebSocket streaming endpoints.
 # Tests the DUT's media playback and real-time data capabilities.
 
-config:
-  files_dir: /opt/jumpstarter/mitmproxy/mock-files
-  addons_dir: /opt/jumpstarter/mitmproxy/addons
-
 endpoints:
   GET /api/v1/status:
     status: 200

@@ -60,7 +60,7 @@ export:
         host: "0.0.0.0"
         port: 8081           # mitmweb browser UI port
       directories:
-        data: /opt/jumpstarter/mitmproxy
+        data: /opt/jumpstarter/mitmproxy  # must be writable; omit for a per-user temp dir
       ssl_insecure: true     # Skip upstream cert verification
 
       # Auto-load a scenario on startup (relative to mocks dir)
@@ -81,7 +81,7 @@ export:
 | `listen.port` | Proxy listener port | int | `8080` |
 | `web.host` | mitmweb UI bind address | str | `0.0.0.0` |
 | `web.port` | mitmweb UI port | int | `8081` |
-| `directories.data` | Base data directory | str | `/opt/jumpstarter/mitmproxy` |
+| `directories.data` | Base data directory | str | `$TMPDIR/jumpstarter-mitmproxy-<user>` |
 | `directories.conf` | mitmproxy config/certs dir | str | `{data}/conf` |
 | `directories.flows` | Recorded flow files dir | str | `{data}/flows` |
 | `directories.addons` | Custom addon scripts dir | str | `{data}/addons` |
@@ -90,6 +90,11 @@ export:
 | `ssl_insecure` | Skip upstream SSL verification | bool | `true` |
 | `mock_scenario` | Scenario file to auto-load on startup | str | `""` |
 | `mocks` | Inline mock endpoint definitions | dict | `{}` |
+
+Leaving `directories.data` unset works anywhere, including macOS and CI
+runners where `/opt` is not writable, but temporary directories can be
+cleared. On a long-lived exporter host, set it to a persistent path the
+exporter's user can write to.
 
 See `examples/exporter.yaml` in the package source for a full exporter config with DUT Link, serial, and video drivers.
 
