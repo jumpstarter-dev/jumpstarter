@@ -1,7 +1,7 @@
 # Build the exporter-set-controller binary
 # Use --platform=$BUILDPLATFORM to run the Go compiler natively on the build host
 # instead of under QEMU emulation. Go cross-compiles via GOOS/GOARCH (CGO_ENABLED=0).
-FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:1.26.3 AS builder
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:1.26.7@sha256:d517b3c1043131d6d3cfa341beac96300302d9149504e452289d0bd904f5c3ab AS builder
 ARG TARGETOS
 ARG TARGETARCH
 ARG GIT_VERSION=unknown
