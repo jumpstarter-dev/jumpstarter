@@ -1,3 +1,4 @@
+import inspect
 import logging
 import math
 import os
@@ -41,6 +42,12 @@ from jumpstarter.exporter.hooks import HookExecutor
 from jumpstarter.exporter.lease_context import LeaseContext
 from jumpstarter.exporter.session import Session
 from jumpstarter.exporter.telemetry import TelemetryLogHandler
+from jumpstarter.exporter.token_refresh import (
+    DEFAULT_TOKEN_REFRESH_FRACTION,
+    DEFAULT_TOKEN_REFRESH_LEAD_TIME,
+    calculate_token_refresh_sleep,
+    is_internal_exporter_token,
+)
 from jumpstarter.logging import clear_log_context, set_log_context
 
 if TYPE_CHECKING:
@@ -57,6 +64,8 @@ _RPC_MAX_RETRIES = 20
 _RPC_BACKOFF_BASE = 1.0
 _RPC_BACKOFF_CAP = 30.0
 _RPC_TIMEOUT = 30
+_TOKEN_REFRESH_CHECK_INTERVAL = 3600.0
+_TOKEN_ROTATION_UNSUPPORTED_RETRY_INTERVAL = 3600.0
 _FAIL_FAST_STREAM_CODES = frozenset({
     grpc.StatusCode.UNAUTHENTICATED,
     grpc.StatusCode.PERMISSION_DENIED,
@@ -223,11 +232,11 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
     exporter_name: str = "unknown"
 
-    channel_factory: Callable[[], Awaitable[grpc.aio.Channel]]
+    channel_factory: Callable[[str], Awaitable[grpc.aio.Channel]]
     """Factory function for creating gRPC channels to communicate with the controller.
 
     Called multiple times throughout the exporter lifecycle to establish connections.
-    The factory should handle authentication, credentials, and channel configuration.
+    Receives the current token and handles authentication, credentials, and channel configuration.
     Used when creating controller stubs, unregistering, and establishing streams.
     """
 
@@ -285,6 +294,18 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     Set from ExporterConfigV1Alpha1.token so PushLogs calls can include
     the exporter's JWT as an Authorization header.
     """
+
+    on_token_rotated: Callable[[str], Awaitable[None] | None] | None = field(default=None)
+    """Optional callback invoked when the authentication token is rotated.
+
+    Passed the new token string. Can be async or sync.
+    """
+
+    token_refresh_lead_time: float = DEFAULT_TOKEN_REFRESH_LEAD_TIME
+    """Maximum lead time before expiry to attempt token refresh (default: 31 days)."""
+
+    token_refresh_fraction: float = DEFAULT_TOKEN_REFRESH_FRACTION
+    """Fraction of total token lifetime at which to trigger refresh (default: 0.2)."""
 
     # Internal State Fields
 
@@ -473,7 +494,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
         The underlying channel is automatically closed when the context exits.
         """
-        channel = await self.channel_factory()
+        channel = await self.channel_factory(self.token)
         try:
             yield jumpstarter_pb2_grpc.ControllerServiceStub(channel)
         finally:
@@ -659,6 +680,104 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         logging.getLogger().addHandler(handler)
         self._telemetry_handler = handler
         logger.info("Telemetry log handler attached")
+
+    async def rotate_token(self) -> str:
+        """Request a newly signed authentication token from the controller.
+
+        Updates self.token, updates the telemetry handler if attached, and invokes
+        the on_token_rotated callback if configured.
+
+        Returns:
+            The newly rotated token string.
+        """
+        async with self._controller_stub() as controller:
+            response: jumpstarter_pb2.RotateTokenResponse = await controller.RotateToken(
+                jumpstarter_pb2.RotateTokenRequest(),
+                timeout=_RPC_TIMEOUT,
+            )
+
+        new_token = response.token
+        self.token = new_token
+
+        if self._telemetry_handler is not None:
+            self._telemetry_handler.token = new_token
+
+        if self.on_token_rotated is not None:
+            try:
+                res = self.on_token_rotated(new_token)
+                if inspect.isawaitable(res):
+                    await res
+            except Exception:
+                logger.exception("Error in on_token_rotated callback")
+
+        return new_token
+
+    async def _token_refresh_loop(self) -> None:
+        """Monitor token expiration and request a new token when it is about to expire."""
+        if self._standalone or not self.token:
+            return
+
+        while True:
+            # The server also verifies the internal signature, issuer and exporter UID.
+            if not is_internal_exporter_token(self.token):
+                logger.debug("Token is not an internal exporter credential; automatic refresh disabled")
+                return
+            sleep_duration = calculate_token_refresh_sleep(
+                self.token,
+                lead_time=self.token_refresh_lead_time,
+                fraction=self.token_refresh_fraction,
+            )
+            if sleep_duration is None:
+                logger.debug("Token does not have an expiry claim; automatic refresh disabled")
+                return
+
+            if sleep_duration > 0:
+                logger.debug("Token refresh scheduled in %.1f seconds", sleep_duration)
+                await sleep(min(sleep_duration, _TOKEN_REFRESH_CHECK_INTERVAL))
+                continue
+
+            if not await self._rotate_token_with_retry():
+                return
+
+    async def _rotate_token_with_retry(self) -> bool:
+        attempt = 0
+        while True:
+            try:
+                logger.info("Token is about to expire; requesting new token from controller")
+                await self.rotate_token()
+                logger.info("Successfully refreshed exporter authentication token")
+                return True
+            except grpc.aio.AioRpcError as e:
+                if e.code() == grpc.StatusCode.UNIMPLEMENTED:
+                    logger.warning(
+                        "Controller does not support token rotation (UNIMPLEMENTED); retrying in one hour"
+                    )
+                    await sleep(_TOKEN_ROTATION_UNSUPPORTED_RETRY_INTERVAL)
+                    return True
+                elif e.code() in (grpc.StatusCode.UNAUTHENTICATED, grpc.StatusCode.PERMISSION_DENIED):
+                    logger.error("Failed to rotate token (%s): %s", e.code(), e.details())
+                    return False
+                else:
+                    attempt += 1
+                    backoff = min(_RPC_BACKOFF_BASE * (2 ** min(attempt - 1, 5)), _RPC_BACKOFF_CAP)
+                    logger.warning(
+                        "Transient failure rotating token (%s: %s); retrying in %.1fs (attempt %d)",
+                        e.code(),
+                        e.details(),
+                        backoff,
+                        attempt,
+                    )
+                    await sleep(backoff)
+            except Exception as e:  # noqa: BLE001 - keep retrying after unexpected refresh failures
+                attempt += 1
+                backoff = min(_RPC_BACKOFF_BASE * (2 ** min(attempt - 1, 5)), _RPC_BACKOFF_CAP)
+                logger.warning(
+                    "Unexpected failure rotating token (%s); retrying in %.1fs (attempt %d)",
+                    e,
+                    backoff,
+                    attempt,
+                )
+                await sleep(backoff)
 
     async def _retry_rpc(
         self,
@@ -863,7 +982,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         logger.info("Unregistering exporter with controller")
         try:
             with move_on_after(10):  # 10 second timeout
-                channel = await self.channel_factory()
+                channel = await self.channel_factory(self.token)
                 try:
                     controller = jumpstarter_pb2_grpc.ControllerServiceStub(channel)
                     await self._report_status(ExporterStatus.OFFLINE, "Exporter shutting down")
@@ -1360,6 +1479,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 backoff=0.5,
                 outage_budget=self.status_stream_retry_timeout,
             ))
+            tg.start_soon(self._token_refresh_loop)
             # One loop, one writer of _lease_context. Status ticks come from the
             # controller RPC; LeaseFinished comes from handle_lease when it has
             # torn a lease down. Both are handled here, sequentially.

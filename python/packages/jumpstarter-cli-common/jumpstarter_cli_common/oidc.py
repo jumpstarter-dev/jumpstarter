@@ -21,10 +21,9 @@ from anyio.to_thread import run_sync
 warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"authlib\.")
 
 from authlib.integrations.requests_client import OAuth2Session  # noqa: E402
-from joserfc.errors import JoseError  # noqa: E402
-from joserfc.jws import extract_compact  # noqa: E402
 from yarl import URL  # noqa: E402
 
+from jumpstarter.common.jwt import decode_jwt_payload as decode_jwt  # noqa: E402
 from jumpstarter.config.env import JMP_OIDC_CALLBACK_PORT, JMP_OIDC_DEVICE_FLOW  # noqa: E402
 
 
@@ -326,13 +325,6 @@ class Config:
             raise click.ClickException(
                 "Device authorization timed out waiting for user approval. Please try again."
             )
-
-
-def decode_jwt(token: str):
-    try:
-        return json.loads(extract_compact(token.encode()).payload)
-    except (ValueError, KeyError, TypeError, JoseError) as e:  # pragma: no cover
-        raise ValueError(f"Invalid JWT format: {e}") from e
 
 
 def decode_jwt_issuer(token: str):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import logging
 import os
 import tempfile
 from contextlib import asynccontextmanager, contextmanager, suppress
@@ -10,6 +11,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 import grpc
 import yaml
 from anyio.from_thread import start_blocking_portal
+from anyio.to_thread import run_sync
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 from .common import CONFIG_PATH, ObjectMeta
@@ -21,6 +23,8 @@ from jumpstarter.common.importlib import import_class
 
 if TYPE_CHECKING:
     from jumpstarter.driver import Driver
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_STATUS_STREAM_RETRY_TIMEOUT = 30 * 60.0
@@ -371,18 +375,18 @@ class ExporterConfigV1Alpha1(BaseModel):
 
         from jumpstarter.exporter import Exporter
 
-        async def channel_factory() -> grpc.aio.Channel:
-            if self.endpoint is None or self.token is None:
+        async def channel_factory(token: str) -> grpc.aio.Channel:
+            if self.endpoint is None or not token:
                 raise ConfigurationError("endpoint or token not set in exporter config")
             # The stream retry loop logs once per outage; per-IP discovery
             # failures remain in the final exception and debug logs.
             credentials = grpc.composite_channel_credentials(
                 await ssl_channel_credentials(self.endpoint, self.tls, log_connection_failures=False),
-                call_credentials("Exporter", self.metadata, self.token),
+                call_credentials("Exporter", self.metadata, token),
             )
             return aio_secure_channel(self.endpoint, credentials, self.grpcOptions)
 
-        async def dummy_channel_factory() -> grpc.aio.Channel:
+        async def dummy_channel_factory(token: str) -> grpc.aio.Channel:
             raise RuntimeError("channel_factory must not be called in standalone mode")
 
         # Create hook executor if hooks are configured
@@ -393,6 +397,15 @@ class ExporterConfigV1Alpha1(BaseModel):
             hook_executor = HookExecutor(
                 config=self.hooks,
             )
+
+        async def on_token_rotated(new_token: str):
+            self.token = new_token
+            if self.path is not None:
+                try:
+                    await run_sync(lambda: self.save(self, path=str(self.path)))
+                    logger.info("Saved rotated exporter token to %s", self.path)
+                except OSError as e:
+                    logger.warning("Could not save rotated token to %s: %s", self.path, e)
 
         exporter = None
         entered = False
@@ -412,6 +425,7 @@ class ExporterConfigV1Alpha1(BaseModel):
                 motd=self.motd,
                 exit_on_lease_end=self.exit_on_lease_end,
                 status_stream_retry_timeout=self.status_stream_retry_timeout,
+                on_token_rotated=on_token_rotated,
             )
             # Initialize the exporter (registration, etc.)
             await exporter.__aenter__()
