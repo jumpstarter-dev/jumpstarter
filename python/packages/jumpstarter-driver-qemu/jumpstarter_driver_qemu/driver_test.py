@@ -28,7 +28,7 @@ def ovmf(tmpdir_factory):
     tmp_path = tmpdir_factory.mktemp("ovmf")
 
     # renovate: datasource=github-releases depName=rust-osdev/ovmf-prebuilt
-    ver = "edk2-stable202408.01-r1"
+    ver = "edk2-stable202605-r1"
     url = f"https://github.com/rust-osdev/ovmf-prebuilt/releases/download/{ver}/{ver}-bin.tar.xz"
 
     with requests.get(url, stream=True) as r:

@@ -26,3 +26,7 @@ dev = [
 
 [project.entry-points.hatch]
 pin_jumpstarter = "hatch_pin_jumpstarter"
+
+[tool.pytest.ini_options]
+addopts = "--cov=hatch_pin_jumpstarter --cov-report=html --cov-report=xml"
+testpaths = ["tests"]

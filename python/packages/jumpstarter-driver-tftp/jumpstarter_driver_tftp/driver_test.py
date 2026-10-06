@@ -41,6 +41,14 @@ def test_tftp_host_config(tmp_path):
     assert server.get_host() == custom_host
 
 
+def test_tftp_advertised_host(tmp_path):
+    server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", advertised_host="192.168.100.1")
+    assert server.get_host() == "192.168.100.1"
+    # without advertised_host, get_host returns the bind host
+    server = Tftp(root_dir=str(tmp_path), host="127.0.0.1")
+    assert server.get_host() == "127.0.0.1"
+
+
 def test_tftp_root_directory_creation(tmp_path):
     new_dir = tmp_path / "new_tftp_root"
     server = Tftp(root_dir=str(new_dir))

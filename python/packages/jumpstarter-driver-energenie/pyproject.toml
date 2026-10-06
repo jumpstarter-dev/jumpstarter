@@ -11,7 +11,8 @@ requires-python = ">=3.12"
 dependencies = [
     "anyio>=4.10.0",
     "jumpstarter",
-    "jumpstarter-driver-power"
+    "jumpstarter-driver-power",
+    "requests"
 ]
 
 [project.entry-points."jumpstarter.drivers"]

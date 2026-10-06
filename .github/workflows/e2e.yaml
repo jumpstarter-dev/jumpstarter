@@ -204,7 +204,7 @@ jobs:
 
       - name: Cache exporter image
         id: cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/exporter-image.tar
           # Bust when exporter image inputs change: Containerfile, Python sources,
@@ -240,7 +240,7 @@ jobs:
 
       - name: Cache qemu-runtime image
         id: cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/qemu-runtime-image.tar
           # Bust when QEMU runtime inputs change.
@@ -262,7 +262,7 @@ jobs:
   build-python-wheels:
     needs: changes
     if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - name: Checkout repository
@@ -273,7 +273,7 @@ jobs:
       - id: uv
         run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
@@ -317,7 +317,7 @@ jobs:
       - id: uv
         run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
@@ -382,7 +382,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request'
       && (needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
       - name: Checkout repository
@@ -391,7 +391,7 @@ jobs:
       - id: uv
         run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
@@ -435,7 +435,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request'
       && (needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
       - name: Checkout repository
@@ -444,7 +444,7 @@ jobs:
       - id: uv
         run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version

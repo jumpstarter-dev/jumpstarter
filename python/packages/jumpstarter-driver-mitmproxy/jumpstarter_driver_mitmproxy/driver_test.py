@@ -20,6 +20,7 @@ from jumpstarter_driver_mitmproxy.driver import (
     ListenConfig,
     MitmproxyDriver,
     WebConfig,
+    _verify_mitmproxy_binary,
 )
 
 
@@ -203,6 +204,26 @@ class TestConnectWeb:
         """Verify connect_web is registered as an exported stream method."""
         assert hasattr(driver, "connect_web")
         assert callable(driver.connect_web)
+
+
+class TestBinaryVerification:
+    """Test the mitmproxy binary presence check."""
+
+    def test_missing_binary_returns_install_hint(self):
+        with patch("jumpstarter_driver_mitmproxy.driver.shutil.which",
+                   return_value=None):
+            result = _verify_mitmproxy_binary("mitmdump")
+        assert result is not None
+        assert "not found on PATH" in result
+        assert "install" in result.lower()
+
+    @patch("jumpstarter_driver_mitmproxy.driver.subprocess.Popen")
+    def test_start_aborts_when_binary_missing(self, mock_popen, driver):
+        with patch("jumpstarter_driver_mitmproxy.driver.shutil.which",
+                   return_value=None):
+            result = driver.start("mock", False, "")
+        assert "not found on PATH" in result
+        mock_popen.assert_not_called()
 
 
 class TestLifecycle:

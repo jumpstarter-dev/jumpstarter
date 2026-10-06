@@ -1543,13 +1543,23 @@ spec:
                     type: object
                 type: object
               hiddenLabels:
+                default: {}
                 description: Hidden labels configuration for hiding specific label
                   keys from exporter listings.
                 properties:
                   keys:
+                    default:
+                    - exporterset.jumpstarter.dev/name
+                    - exporterset.jumpstarter.dev/class
+                    - exporterset.jumpstarter.dev/provisioner
                     description: |-
                       List of exact label keys to hide from ListExporters/GetExporter responses.
-                      Clients can pass show_hidden_labels=true to see all labels.
+                      Clients can pass show_hidden_labels=true to see all labels. Hidden labels
+                      remain usable in label selectors.
+
+                      Defaults to the ExporterSet identity labels, which every pool member
+                      carries. Setting this field replaces the default list rather than adding
+                      to it; set it to [] to show every label.
                     items:
                       type: string
                     type: array
@@ -2219,26 +2229,41 @@ spec:
                         - console
                         - video
                         - composite
-                        description: Allowed driver_type label values. Unlisted types
-                          are remapped to "other".
+                        description: |-
+                          Allowed driver_type label values. Unlisted types are remapped to "other".
+                          At most 16 entries (the default set plus site-specific categories), each
+                          at most 32 characters.
                         items:
+                          maxLength: 32
                           type: string
+                        maxItems: 16
                         type: array
                       exemplarKeys:
                         default:
                         - client
                         - lease_id
-                        description: Allowlist of keys to include in Prometheus exemplars.
-                          Unlisted keys are omitted.
+                        description: |-
+                          Allowlist of keys to include in Prometheus exemplars. Unlisted keys are omitted.
+                          At most 16 keys. Each key is at most 32 characters, the same limit as
+                          Lease spec.context key names that may appear in this list.
                         items:
+                          maxLength: 32
                           type: string
+                        maxItems: 16
                         type: array
                       scrapeTimeout:
                         default: 7s
                         description: |-
                           Max wait for parallel exporter MetricsStream responses during a /metrics fan-out.
                           Should be lower than the Prometheus scrape_timeout.
+                          JEP-0013 specifies the 7s default and no maximum. 60s bounds the fan-out
+                          wait and the HTTP write timeout that grows with this value.
                         type: string
+                        x-kubernetes-validations:
+                        - message: scrapeTimeout must be greater than 0 and at most
+                            60s
+                          rule: duration(self) > duration('0s') && duration(self)
+                            <= duration('60s')
                     type: object
                   replicas:
                     default: 1

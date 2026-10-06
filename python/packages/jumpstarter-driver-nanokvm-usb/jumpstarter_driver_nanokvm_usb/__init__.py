@@ -1,5 +1,5 @@
-from .client import NanoKVMUSBClient, NanoKVMUSBHIDClient, NanoKVMUSBVideoClient
-from .driver import NanoKVMUSB, NanoKVMUSBHID, NanoKVMUSBVideo
+from .client import NanoKVMUSBClient, NanoKVMUSBHIDClient, NanoKVMUSBVideoClient, NanoKVMUSBVNCClient
+from .driver import NanoKVMUSB, NanoKVMUSBHID, NanoKVMUSBVideo, NanoKVMUSBVNC
 from .mouse import MouseButton
 
 __all__ = [
@@ -8,6 +8,8 @@ __all__ = [
     "NanoKVMUSBClient",
     "NanoKVMUSBHID",
     "NanoKVMUSBHIDClient",
+    "NanoKVMUSBVNC",
+    "NanoKVMUSBVNCClient",
     "NanoKVMUSBVideo",
     "NanoKVMUSBVideoClient",
 ]

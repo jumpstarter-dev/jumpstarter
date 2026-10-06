@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import partial
 from typing import TYPE_CHECKING, Any, Self
 
 import anyio
@@ -31,8 +32,10 @@ from jumpstarter_protocol import (
 )
 
 from jumpstarter.common import ExporterStatus, Metadata, TemporarySocket
+from jumpstarter.common.exceptions import CertificateDiscoveryError
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.config.env import JMP_GRPC_INSECURE, JUMPSTARTER_GRPC_INSECURE
+from jumpstarter.config.exporter import DEFAULT_STATUS_STREAM_RETRY_TIMEOUT
 from jumpstarter.config.tls import TLSConfigV1Alpha1
 from jumpstarter.exporter.hooks import HookExecutor
 from jumpstarter.exporter.lease_context import LeaseContext
@@ -54,6 +57,24 @@ _RPC_MAX_RETRIES = 20
 _RPC_BACKOFF_BASE = 1.0
 _RPC_BACKOFF_CAP = 30.0
 _RPC_TIMEOUT = 30
+_FAIL_FAST_STREAM_CODES = frozenset({
+    grpc.StatusCode.UNAUTHENTICATED,
+    grpc.StatusCode.PERMISSION_DENIED,
+    grpc.StatusCode.NOT_FOUND,
+    grpc.StatusCode.INVALID_ARGUMENT,
+    grpc.StatusCode.UNIMPLEMENTED,
+})
+_RESTARTABLE_STREAM_CODES = frozenset({
+    grpc.StatusCode.UNAUTHENTICATED,
+    grpc.StatusCode.PERMISSION_DENIED,
+})
+_TEMPORARY_STREAM_FAILURE_EXIT_CODE = 75  # EX_TEMPFAIL; service managers may restart this.
+
+
+def _is_retryable_stream_error(error: Exception) -> bool:
+    if isinstance(error, grpc.aio.AioRpcError):
+        return error.code() not in _FAIL_FAST_STREAM_CODES
+    return isinstance(error, (CertificateDiscoveryError, OSError))
 
 # How long after a lease ends to wait for handle_lease's LeaseFinished before
 # warning. The loop waits for LeaseFinished indefinitely (it is a real
@@ -255,6 +276,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     Triggers the existing _stop_requested mechanism after lease cleanup.
     """
 
+    status_stream_retry_timeout: float = DEFAULT_STATUS_STREAM_RETRY_TIMEOUT
+    """Maximum seconds without a Status item after an error or stream EOF."""
+
     token: str = field(default="")
     """Bearer token used to authenticate with the telemetry service.
 
@@ -317,10 +341,13 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     _exit_code: int | None = field(init=False, default=None)
     """Exit code to use when the exporter shuts down.
 
-    When set to a non-zero value, the exporter should terminate permanently
-    (not restart). This is used by hooks with on_failure='exit' to signal
-    that the exporter should shut down and not be restarted by the CLI.
+    Hook failures with on_failure='exit' use 1 to request shutdown. A Status
+    outage or an authentication/authorization error uses 75 to request a
+    service-manager restart.
     """
+
+    _controller_stream_failed: bool = field(init=False, default=False)
+    """Skip controller RPCs during cleanup after a fatal stream failure."""
 
     _standalone: bool = field(init=False, default=False)
     """When True, exporter runs without a controller (TCP listener only).
@@ -408,7 +435,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         Args:
             wait_for_lease_exit (bool): If True, wait for the current lease to exit before stopping.
             should_unregister (bool): If True, unregister from controller. Otherwise rely on heartbeat.
-            exit_code (int | None): If set, the exporter will exit with this code (non-zero means no restart).
+            exit_code (int | None): If set, the exporter will exit with this code.
         """
         # Set exit code if provided
         if exit_code is not None:
@@ -433,7 +460,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         """Get the exit code for the exporter.
 
         Returns:
-            The exit code if set, or None if the exporter should restart.
+            The requested exit code, or None if no explicit code was set.
         """
         return self._exit_code
 
@@ -457,50 +484,70 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         stream_name: str,
         stream_factory: Callable[[jumpstarter_pb2_grpc.ControllerServiceStub], AsyncGenerator],
         send_tx,
-        retries: int = 5,
-        backoff: float = 1.0,  # Reduced from 3.0 for faster recovery from transient errors
+        backoff: float = 0.5,
+        outage_budget: float | None = None,
     ):
-        """Generic retry wrapper for gRPC streaming calls.
-
-        Args:
-            stream_name: Name of the stream for logging purposes
-            stream_factory: Function that takes a controller stub and returns an async generator
-            send_tx: Transmission channel to send stream items to
-            retries: Maximum number of retry attempts
-            backoff: Seconds to wait between retries
-        """
-        retries_left = retries
+        """Reconnect a controller stream until data resumes or its outage budget expires."""
+        delay = backoff
+        outage_started = None
         while True:
-            received_data = False
+            deadline = math.inf
+            if outage_started is not None and outage_budget is not None:
+                deadline = outage_started + outage_budget
+            scope = CancelScope(deadline=deadline)
             try:
-                async with self._controller_stub() as controller:
-                    logger.debug("%s stream connected to controller", stream_name)
-                    async for item in stream_factory(controller):
-                        received_data = True
-                        logger.debug("%s stream received item", stream_name)
-                        await send_tx.send(item)
+                with scope:
+                    async with self._controller_stub() as controller:
+                        async for item in stream_factory(controller):
+                            if outage_started is not None:
+                                logger.info(
+                                    "%s stream reconnected after %.1fs",
+                                    stream_name,
+                                    anyio.current_time() - outage_started,
+                                )
+                                outage_started = None
+                                scope.deadline = math.inf
+                            delay = backoff
+                            await send_tx.send(item)
             except Exception as e:
-                if received_data:
-                    logger.debug("%s stream retry counter reset after receiving data", stream_name)
-                    retries_left = retries
-                if retries_left > 0:
-                    retries_left -= 1
-                    # Check for common transient errors that warrant faster retry
-                    error_str = str(e)
-                    is_transient = "Stream removed" in error_str or "UNAVAILABLE" in error_str
-                    retry_delay = 0.5 if is_transient else backoff
-                    logger.info(
-                        "%s stream interrupted, restarting in %ss, %s retries left: %s",
-                        stream_name,
-                        retry_delay,
-                        retries_left,
-                        e,
-                    )
-                    await sleep(retry_delay)
-                else:
+                if not _is_retryable_stream_error(e):
+                    if isinstance(e, grpc.aio.AioRpcError):
+                        self._controller_stream_failed = True
+                        # A new process reloads rotated credentials; PermissionDenied
+                        # can also mean the controller temporarily lost API access.
+                        self._exit_code = (
+                            _TEMPORARY_STREAM_FAILURE_EXIT_CODE
+                            if e.code() in _RESTARTABLE_STREAM_CODES else 1
+                        )
                     raise
+                reason = str(e)
             else:
-                retries_left = retries
+                reason = "stream ended" if not scope.cancelled_caught else "outage deadline reached"
+
+            now = anyio.current_time()
+            if outage_started is None:
+                outage_started = now
+                logger.warning("%s stream interrupted (%s); retrying", stream_name, reason)
+            else:
+                logger.debug("%s stream still unavailable: %s", stream_name, reason)
+
+            wait = min(delay, self._remaining_stream_budget(stream_name, now - outage_started, outage_budget))
+            # Keep the lease session alive until Status confirms release. EOF
+            # needs the same backoff as an error to avoid a busy reconnect loop.
+            await sleep(wait)
+            delay = min(delay * 2, 5.0)
+
+    def _remaining_stream_budget(self, stream_name: str, elapsed: float, budget: float | None) -> float:
+        if budget is None:
+            return math.inf
+        remaining = budget - elapsed
+        if remaining <= 0:
+            self._controller_stream_failed = True
+            self._exit_code = _TEMPORARY_STREAM_FAILURE_EXIT_CODE
+            message = f"{stream_name} stream unavailable for {elapsed:.1f}s (budget {budget:.1f}s)"
+            logger.error(message)
+            raise TimeoutError(message)
+        return remaining
 
     def _listen_stream_factory(
         self, lease_name: str
@@ -757,6 +804,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         Falls back to ReportStatus(release_lease=true) for old controllers that
         don't support exporter auth on ReleaseLease (deprecated path).
         """
+        if self._controller_stream_failed:
+            logger.info("Skipping lease-release RPC after controller stream failure")
+            return
         if not self._lease_context or not self._lease_context.lease_name:
             logger.debug("No active lease to release")
             return
@@ -1158,6 +1208,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                         async with create_task_group() as conn_tg:
                             # Start listening for connection requests with retry logic
                             # This is inside conn_tg so it gets cancelled when the lease ends
+                            # (including plain Listen errors that retry without a budget).
                             conn_tg.start_soon(
                                 self._retry_stream,
                                 "Listen",
@@ -1301,12 +1352,14 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             tg.start_soon(self._drain_status_reports)
             if self._telemetry_handler is not None:
                 tg.start_soon(self._telemetry_handler.flush_loop)
-            tg.start_soon(
+            tg.start_soon(partial(
                 self._retry_stream,
                 "Status",
                 self._status_stream_factory(),
                 status_tx,
-            )
+                backoff=0.5,
+                outage_budget=self.status_stream_retry_timeout,
+            ))
             # One loop, one writer of _lease_context. Status ticks come from the
             # controller RPC; LeaseFinished comes from handle_lease when it has
             # torn a lease down. Both are handled here, sequentially.

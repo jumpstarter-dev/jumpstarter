@@ -338,7 +338,7 @@ func telemetryContainerArgs(t *operatorv1alpha1.TelemetryConfig) []string {
 		keys = defaultTelemetryExemplarKeys
 	}
 	args := []string{
-		fmt.Sprintf("--grpc-bind=:%d", telemetryPort),
+		fmt.Sprintf("-grpc-bind=:%d", telemetryPort),
 		fmt.Sprintf("-metrics-bind-address=:%d", telemetryMetricsPort),
 		fmt.Sprintf("-scrape-timeout=%s", timeout),
 		fmt.Sprintf("-driver-type-enum=%s", strings.Join(enum, ",")),

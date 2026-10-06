@@ -1,3 +1,5 @@
+import os
+import stat
 import sys
 from contextlib import contextmanager
 
@@ -10,6 +12,21 @@ from pexpect.fdpexpect import fdspawn
 from .console import Console
 from jumpstarter.client import DriverClient
 from jumpstarter.client.decorators import driver_click_group
+
+
+def _stdin_supplies_data() -> bool:
+    """Whether stdin is a pipe, socket or regular file that can feed the console.
+
+    A TTY or a character device such as /dev/null (nohup, systemd, CI) is not:
+    auto-enabling input there would take the exclusive write token for a pipe
+    that hits EOF immediately and lock interactive users out.
+    """
+    try:
+        mode = os.fstat(sys.stdin.fileno()).st_mode
+    except (OSError, ValueError):
+        # No usable file descriptor (closed, or a test harness stream).
+        return not sys.stdin.isatty()
+    return stat.S_ISFIFO(mode) or stat.S_ISSOCK(mode) or stat.S_ISREG(mode)
 
 
 class PySerialClient(DriverClient):
@@ -57,7 +74,12 @@ class PySerialClient(DriverClient):
             no_output: If True, do not read serial output; only forward stdin to serial.
             observe: If True, use observe mode (read-only).
         """
-        method = "observe" if observe else "connect"
+        # Only take the exclusive write token when this invocation will actually
+        # write to the port. A plain logging/monitoring pipe (no stdin) must
+        # attach read-only so it never locks out an interactive user — e.g. a CI
+        # job tailing serial into a file while someone drives the console.
+        use_observe = observe or not input_enabled
+        method = "observe" if use_observe else "connect"
         async with self.stream_async(method=method) as stream:
             # Fire-and-forget mode: only forward stdin and exit when stdin reaches EOF.
             if no_output:
@@ -185,7 +207,7 @@ class PySerialClient(DriverClient):
             """Pipe serial port data to stdout or file.
 
             By default, reads from the serial port and writes to stdout.
-            Automatically detects if stdin is piped and enables bidirectional mode.
+            Automatically detects piped stdin unless --observe is selected.
 
             When stdin is used, commands are sent until EOF, then continues
             monitoring serial output until Ctrl+C.
@@ -227,8 +249,8 @@ class PySerialClient(DriverClient):
             if append and not output:
                 raise click.UsageError("--append requires --output")
 
-            # Auto-detect stdin: if it's not a TTY (i.e., piped or redirected), enable input
-            stdin_is_piped = not sys.stdin.isatty()
+            # Auto-detect stdin: enable input only when it is piped or redirected from a file
+            stdin_is_piped = _stdin_supplies_data()
 
             # Determine if input should be enabled
             if no_input:
@@ -236,7 +258,7 @@ class PySerialClient(DriverClient):
             elif input_flag:
                 input_enabled = True
             else:
-                input_enabled = stdin_is_piped
+                input_enabled = stdin_is_piped and not observe
 
             if no_output and not input_enabled:
                 raise click.UsageError("--no-output requires stdin input (pipe stdin or use --input)")
@@ -279,13 +301,13 @@ class PySerialClient(DriverClient):
         def console_status():
             """Show serial console session status"""
             status = self.call("console_status")
-            holder = status.get("write_token_holder")
+            held = status.get("write_token_held", False)
             observers = status.get("observer_count", 0)
             total = status.get("total_clients", 0)
             running = status.get("reader_running", False)
             scrollback = status.get("scrollback_bytes", 0)
 
-            click.echo(f"Write token holder: {holder or '(none)'}")
+            click.echo(f"Write token held: {'yes' if held else 'no'}")
             click.echo(f"Observers: {observers}")
             click.echo(f"Total clients: {total}")
             click.echo(f"Reader running: {running}")

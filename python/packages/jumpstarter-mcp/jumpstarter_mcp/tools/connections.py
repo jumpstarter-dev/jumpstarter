@@ -45,6 +45,7 @@ async def connect(
         client = conn.client
         if hasattr(client, "cli"):
             from anyio import to_thread
+
             cli_cmd = await to_thread.run_sync(client.cli)
             cli_tree = walk_click_tree(cli_cmd)
 

@@ -218,13 +218,20 @@ func TestStorageValidation(t *testing.T) {
 	}
 }
 
+func enrichExporterExportForTest(
+	drivers []virtualtargetv1alpha1.DriverConfig,
+	mergedParameters map[string]any,
+) ([]virtualtargetv1alpha1.DriverConfig, error) {
+	return New("dev").EnrichExporterExport(context.Background(), nil, drivers, mergedParameters, nil)
+}
+
 func TestEnrichExporterExport(t *testing.T) {
 	drivers := []virtualtargetv1alpha1.DriverConfig{
 		{Name: "cuttlefish", Type: cuttlefishDriverType},
 		{Name: "netsim", Type: netsimDriverType},
 		{Name: "bt_peer", Type: btPeerDriverType},
 	}
-	result, err := New("dev").EnrichExporterExport(drivers, map[string]any{
+	result, err := enrichExporterExportForTest(drivers, map[string]any{
 		"default_build": "aosp/test",
 		"gpu_mode":      "none",
 	})
@@ -261,7 +268,7 @@ func TestEnrichExporterExport(t *testing.T) {
 }
 
 func TestEnrichExporterExportDefaultsPodSafeGraphicsAndVM(t *testing.T) {
-	result, err := New("dev").EnrichExporterExport([]virtualtargetv1alpha1.DriverConfig{
+	result, err := enrichExporterExportForTest([]virtualtargetv1alpha1.DriverConfig{
 		{Name: "cuttlefish", Type: cuttlefishDriverType},
 	}, nil)
 	if err != nil {
@@ -279,7 +286,7 @@ func TestEnrichExporterExportDefaultsPodSafeGraphicsAndVM(t *testing.T) {
 func TestEnrichExporterExportRejectsExternalEndpoints(t *testing.T) {
 	for _, config := range []map[string]any{{"host": "custom-host"}, {"port": 9999}, {"instance_num": 2}, {"scheme": "https"}} {
 		driver := virtualtargetv1alpha1.DriverConfig{Name: "cuttlefish", Type: cuttlefishDriverType, Config: mustJSON(config)}
-		if _, err := New("dev").EnrichExporterExport([]virtualtargetv1alpha1.DriverConfig{driver}, nil); err == nil {
+		if _, err := enrichExporterExportForTest([]virtualtargetv1alpha1.DriverConfig{driver}, nil); err == nil {
 			t.Errorf("accepted external endpoint %v", config)
 		}
 	}
@@ -287,7 +294,7 @@ func TestEnrichExporterExportRejectsExternalEndpoints(t *testing.T) {
 	driver := virtualtargetv1alpha1.DriverConfig{Name: "cuttlefish", Type: cuttlefishDriverType, Config: mustJSON(map[string]any{
 		"host": "127.0.0.1", "port": 2081.0, "instance_num": 1, "scheme": "http",
 	})}
-	if _, err := New("dev").EnrichExporterExport([]virtualtargetv1alpha1.DriverConfig{driver}, nil); err != nil {
+	if _, err := enrichExporterExportForTest([]virtualtargetv1alpha1.DriverConfig{driver}, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -299,7 +306,7 @@ func TestEnrichExporterExportPinsSimulatorEndpoints(t *testing.T) {
 		{Name: "netsim", Type: netsimDriverType, Config: mustJSON(map[string]any{"port": 9999})},
 		{Name: "bt_peer", Type: btPeerDriverType, Config: mustJSON(map[string]any{"transport": "tcp-client:10.0.0.1:7300"})},
 	} {
-		if _, err := New("dev").EnrichExporterExport([]virtualtargetv1alpha1.DriverConfig{cuttlefish, driver}, nil); err == nil {
+		if _, err := enrichExporterExportForTest([]virtualtargetv1alpha1.DriverConfig{cuttlefish, driver}, nil); err == nil {
 			t.Errorf("accepted external %s endpoint", driver.Name)
 		}
 	}
@@ -309,7 +316,7 @@ func TestEnrichExporterExportPinsSimulatorEndpoints(t *testing.T) {
 		{Name: "netsim", Type: netsimDriverType, Config: mustJSON(map[string]any{"host": "127.0.0.1", "port": 7681.0})},
 		{Name: "bt_peer", Type: btPeerDriverType, Config: mustJSON(map[string]any{"address": "00:11:22:33:44:55"})},
 	}
-	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := enrichExporterExportForTest(drivers, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,23 +341,23 @@ func TestManagedContract(t *testing.T) {
 		{"env_config": map[string]any{"instances": []any{map[string]any{"vm": map[string]any{"crosvm": map[string]any{"vhost_user_vsock": true}}}}}},
 	} {
 		driver := virtualtargetv1alpha1.DriverConfig{Name: "cuttlefish", Type: cuttlefishDriverType, Config: mustJSON(config)}
-		if _, err := New("dev").EnrichExporterExport([]virtualtargetv1alpha1.DriverConfig{driver}, nil); err == nil {
+		if _, err := enrichExporterExportForTest([]virtualtargetv1alpha1.DriverConfig{driver}, nil); err == nil {
 			t.Errorf("accepted %v", config)
 		}
 	}
 	drivers := testExporterSet().Spec.Template.Spec.Drivers
-	if _, err := New("dev").EnrichExporterExport(nil, nil); err == nil {
+	if _, err := enrichExporterExportForTest(nil, nil); err == nil {
 		t.Fatal("accepted missing Cuttlefish driver")
 	}
-	if _, err := New("dev").EnrichExporterExport(append(drivers, drivers[0]), nil); err == nil {
+	if _, err := enrichExporterExportForTest(append(drivers, drivers[0]), nil); err == nil {
 		t.Fatal("accepted multiple Cuttlefish drivers")
 	}
 	for _, params := range []map[string]any{{"vm_memory_mb": 12.5}, {"vm_cpus": "4"}, {"vm_cpus": 0}} {
-		if _, err := New("dev").EnrichExporterExport(drivers, params); err == nil {
+		if _, err := enrichExporterExportForTest(drivers, params); err == nil {
 			t.Fatalf("accepted guest parameters %v", params)
 		}
 	}
-	enriched, err := New("dev").EnrichExporterExport(drivers, nil)
+	enriched, err := enrichExporterExportForTest(drivers, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -656,7 +663,7 @@ func TestBackendValidation(t *testing.T) {
 func TestEnrichExporterExportBackends(t *testing.T) {
 	driver := virtualtargetv1alpha1.DriverConfig{Name: "cuttlefish", Type: cuttlefishDriverType}
 	enrich := func(d virtualtargetv1alpha1.DriverConfig, params map[string]any) (map[string]any, error) {
-		result, err := New("dev").EnrichExporterExport([]virtualtargetv1alpha1.DriverConfig{d}, params)
+		result, err := enrichExporterExportForTest([]virtualtargetv1alpha1.DriverConfig{d}, params)
 		if err != nil {
 			return nil, err
 		}

@@ -110,18 +110,17 @@ drivers:
   - jumpstarter.drivers.*
   - vendorpackage.*
 """
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        f.write(CLIENT_CONFIG)
-        f.close()
-        config = ClientConfigV1Alpha1.from_file(f.name)
-        assert config.alias == f.name.split("/")[-1]
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "my.client.yaml"
+        path.write_text(CLIENT_CONFIG)
+        config = ClientConfigV1Alpha1.from_file(path)
+        assert config.alias == "my.client"
         assert config.metadata.namespace == "default"
         assert config.metadata.name == "testclient"
         assert config.endpoint == "jumpstarter.my-lab.com:1443"
         assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
         assert config.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
         assert config.drivers.unsafe is False
-        os.unlink(f.name)
 
 
 @pytest.mark.parametrize("invalid_field", ["apiVersion", "kind"])
@@ -234,6 +233,26 @@ shell:
                 assert value == CLIENT_CONFIG
         _get_path_mock.assert_called_once_with("testclient")
         os.unlink(f.name)
+
+
+@pytest.mark.parametrize("override_path", [False, True])
+def test_client_config_save_loaded_path(tmp_path, monkeypatch, override_path):
+    clients = tmp_path / "clients"
+    monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", clients)
+    source = tmp_path / "external" / "client.yaml"
+    config = ClientConfigV1Alpha1(metadata=ObjectMeta(namespace="test", name="test"), token="old-token")
+    ClientConfigV1Alpha1.save(config, source)
+    loaded = ClientConfigV1Alpha1.from_file(source)
+    loaded.token = "new-token"
+    destination = tmp_path / "copy" / "client.yaml" if override_path else source
+
+    saved = ClientConfigV1Alpha1.save(loaded, destination if override_path else None)
+
+    assert saved == destination
+    assert ClientConfigV1Alpha1.from_file(destination).token == "new-token"
+    assert not (clients / "client.yaml").exists()
+    if override_path:
+        assert ClientConfigV1Alpha1.from_file(source).token == "old-token"
 
 
 def test_client_config_save_explicit_path():

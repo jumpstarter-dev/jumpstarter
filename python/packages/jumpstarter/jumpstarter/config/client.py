@@ -397,7 +397,7 @@ class ClientConfigV1Alpha1(BaseSettings):
     def from_file(cls, path: os.PathLike):
         with open(path) as f:
             v = cls.model_validate(yaml.safe_load(f))
-            v.alias = os.path.basename(path).split(".")[0]
+            v.alias = Path(path).stem
             v.path = Path(path)
             return v
 
@@ -422,6 +422,10 @@ class ClientConfigV1Alpha1(BaseSettings):
         """Get the regular path of a client config given an alias."""
         return cls.CLIENT_CONFIGS_PATH / f"{alias}.yaml"
 
+    def is_alias_path(self) -> bool:
+        """Whether this config's path resolves to its registered alias path."""
+        return self.path is not None and self.path.resolve() == self._get_path(self.alias).resolve()
+
     @classmethod
     def load(cls, alias: str) -> Self:
         """Load a client config by alias."""
@@ -432,7 +436,9 @@ class ClientConfigV1Alpha1(BaseSettings):
 
     @classmethod
     def save(cls, config: Self, path: str | os.PathLike | None = None) -> Path:
-        """Saves a client config as YAML."""
+        """Save to an explicit path, the loaded path, or the alias path."""
+        if path is None:
+            path = config.path
         # Ensure the clients dir exists
         if path is None:
             cls.ensure_exists()

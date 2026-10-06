@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
 import os
@@ -12,7 +11,7 @@ from io import TextIOWrapper
 
 import anyio
 from anyio import ClosedResourceError
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from mcp.server.stdio import stdio_server
 
 from jumpstarter_mcp.connections import ConnectionManager
@@ -35,7 +34,8 @@ Typical workflow:
 2. jmp_connect with the lease ID to establish a persistent connection
 3. jmp_explore to discover what CLI commands are available for this device
 4. jmp_run to execute commands (power control, SSH, serial, storage, etc.)
-5. jmp_disconnect and jmp_delete_lease when done
+5. jmp_list_events periodically to receive lease expiry warnings and failure notices
+6. jmp_disconnect and jmp_delete_lease when done
 
 Each device type exposes different commands. Always explore before assuming
 what's available. Common patterns:
@@ -170,7 +170,7 @@ async def _get_config() -> ClientConfigV1Alpha1:
     return await _ensure_fresh_token(config)
 
 
-def _register_lease_tools(mcp: FastMCP) -> None:
+def _register_lease_tools(mcp: MCPServer) -> None:
     """Register lease and exporter management tools."""
 
     @mcp.tool()
@@ -247,25 +247,7 @@ def _register_lease_tools(mcp: FastMCP) -> None:
         return json.dumps(result, indent=2)
 
 
-def _capture_session_for_notifications(mcp: FastMCP, manager: ConnectionManager) -> None:
-    """Try to capture the MCP session so background tasks can send log notifications."""
-    if manager._log_callback is not None:
-        return
-    try:
-        ctx = mcp.get_context()
-        if ctx.request_context:
-            session = ctx.request_context.session
-
-            async def _log(level: str, message: str) -> None:
-                with contextlib.suppress(Exception):
-                    await session.send_log_message(level=level, data=message, logger="jumpstarter")
-
-            manager.set_log_callback(_log)
-    except (LookupError, AttributeError):
-        pass
-
-
-def _register_connection_tools(mcp: FastMCP, manager: ConnectionManager) -> None:
+def _register_connection_tools(mcp: MCPServer, manager: ConnectionManager) -> None:
     """Register connection management tools."""
 
     @mcp.tool()
@@ -286,7 +268,6 @@ def _register_connection_tools(mcp: FastMCP, manager: ConnectionManager) -> None
             exporter_name: Specific exporter name to create a new lease
             duration_seconds: Lease duration in seconds (default: 1800 = 30 minutes)
         """
-        _capture_session_for_notifications(mcp, manager)
         if not lease_id and not selector and not exporter_name:
             return json.dumps({"error": "One of lease_id, selector, or exporter_name is required"})
         config = await _get_config()
@@ -317,7 +298,7 @@ def _register_connection_tools(mcp: FastMCP, manager: ConnectionManager) -> None
         return json.dumps(result, indent=2)
 
 
-def _register_command_tools(mcp: FastMCP, manager: ConnectionManager) -> None:
+def _register_command_tools(mcp: MCPServer, manager: ConnectionManager) -> None:
     """Register command execution and environment tools."""
 
     @mcp.tool()
@@ -344,6 +325,20 @@ def _register_command_tools(mcp: FastMCP, manager: ConnectionManager) -> None:
         return json.dumps(result, indent=2)
 
     @mcp.tool()
+    async def jmp_list_events(max_count: int = 50) -> str:
+        """Drain and return buffered lease and connection events.
+
+        Returns events accumulated since the last call (up to max_count).
+        Poll this tool periodically to receive lease expiry warnings and
+        connection failure notifications.
+
+        Args:
+            max_count: Maximum number of events to return (default: 50)
+        """
+        result = await cmd_tools.list_events(manager, max_count)
+        return result
+
+    @mcp.tool()
     async def jmp_get_env(connection_id: str) -> str:
         """Get environment variables, paths, and code examples for this connection.
 
@@ -359,7 +354,7 @@ def _register_command_tools(mcp: FastMCP, manager: ConnectionManager) -> None:
         return json.dumps(result, indent=2)
 
 
-def _register_discovery_tools(mcp: FastMCP, manager: ConnectionManager) -> None:
+def _register_discovery_tools(mcp: MCPServer, manager: ConnectionManager) -> None:
     """Register discovery and introspection tools."""
 
     @mcp.tool()
@@ -409,12 +404,9 @@ def _register_discovery_tools(mcp: FastMCP, manager: ConnectionManager) -> None:
         return json.dumps(result, indent=2)
 
 
-def create_server() -> tuple[FastMCP, ConnectionManager]:
+def create_server() -> tuple[MCPServer, ConnectionManager]:
     """Create the MCP server and register all tools."""
-    mcp = FastMCP(
-        "jumpstarter",
-        instructions=SERVER_INSTRUCTIONS,
-    )
+    mcp = MCPServer("jumpstarter", instructions=SERVER_INSTRUCTIONS)
     manager = ConnectionManager()
 
     _register_lease_tools(mcp)
@@ -486,17 +478,15 @@ async def run_server():
     mcp, manager = create_server()
     try:
         async with manager.running():
-            mcp_stdout = anyio.wrap_file(
-                TextIOWrapper(os.fdopen(real_stdout_fd, "wb"), encoding="utf-8")
-            )
+            mcp_stdout = anyio.wrap_file(TextIOWrapper(os.fdopen(real_stdout_fd, "wb"), encoding="utf-8"))
             async with stdio_server(stdout=mcp_stdout) as (
                 read_stream,
                 write_stream,
             ):
-                await mcp._mcp_server.run(
+                await mcp._lowlevel_server.run(
                     read_stream,
                     write_stream,
-                    mcp._mcp_server.create_initialization_options(),
+                    mcp._lowlevel_server.create_initialization_options(),
                 )
     except asyncio.CancelledError:
         logger.info("MCP stdio session ended (cancelled)")

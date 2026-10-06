@@ -29,16 +29,13 @@ def flatten_properties(
     for name, prop in sorted(properties.items()):
         path = f"{prefix}{name}" if prefix else name
         typ = prop.get("type", "object")
-        desc = prop.get("description", "").split("\n")[0].strip()
+        desc = " ".join(prop.get("description", "").split())
         default = prop.get("default")
         enum = prop.get("enum")
 
         type_str = typ
         if enum:
             type_str = " | ".join(f"`{e}`" for e in enum)
-        if len(desc) > 120:
-            desc = desc[:117] + "..."
-
         if default is not None:
             desc += f" (default: `{default}`)"
 
@@ -48,9 +45,7 @@ def flatten_properties(
             continue
 
         if typ == "object" and "properties" in prop and depth < 2:
-            rows.extend(
-                flatten_properties(prop["properties"], f"{path}.", depth + 1)
-            )
+            rows.extend(flatten_properties(prop["properties"], f"{path}.", depth + 1))
         elif typ == "array" and "items" in prop:
             items = prop["items"]
             if items.get("type") == "object" and "properties" in items and depth < 2:
@@ -66,6 +61,7 @@ def render_table(rows: list[tuple[str, str, str]]) -> str:
         return "*No fields defined.*\n"
     lines = ["| Field | Type | Description |", "| --- | --- | --- |"]
     for field, typ, desc in rows:
+        typ = typ.replace("|", r"\|")
         desc = desc.replace("|", r"\|")
         lines.append(f"| {field} | {typ} | {desc} |")
     return "\n".join(lines) + "\n"
