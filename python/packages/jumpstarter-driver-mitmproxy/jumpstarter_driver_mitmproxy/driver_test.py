@@ -672,30 +672,49 @@ class TestConfigValidation:
             d._stop_capture_server()
 
 
+class TestBundledAddonImport:
+    """Importing the addon must not touch the filesystem (#1194)."""
+
+    def test_import_does_not_create_directories(self, monkeypatch):
+        import importlib
+        import sys
+
+        def refuse(self, *args, **kwargs):
+            raise PermissionError(13, "Permission denied", str(self))
+
+        monkeypatch.setattr(Path, "mkdir", refuse)
+        monkeypatch.delitem(
+            sys.modules, "jumpstarter_driver_mitmproxy.bundled_addon",
+            raising=False,
+        )
+        mod = importlib.import_module("jumpstarter_driver_mitmproxy.bundled_addon")
+        assert mod.addons  # ty: ignore[unresolved-attribute]
+
+    def test_spool_dir_is_created_on_first_spool(self, tmp_path):
+        import importlib
+
+        from mitmproxy.test import tflow
+
+        mod = importlib.import_module("jumpstarter_driver_mitmproxy.bundled_addon")
+        addon = mod.MitmproxyMockAddon()  # ty: ignore[unresolved-attribute]
+        addon._spool_dir = tmp_path / "missing" / "capture-spool"
+        flow = tflow.tflow(resp=True)
+        response = flow.response
+        assert response is not None
+        response.headers["content-type"] = "application/octet-stream"
+        response.content = b"\x00" * 16
+
+        result = addon._classify_response_body(flow)
+
+        assert Path(result["response_body_file"]).read_bytes() == b"\x00" * 16
+
+
 @pytest.fixture
 def deep_merge_patch():
-    """Import _deep_merge_patch lazily to avoid module-level side effects."""
+    """Import _deep_merge_patch lazily."""
     import importlib
-    import sys
-    # Temporarily mock Path.mkdir to prevent /opt/jumpstarter creation
-    original_mkdir = Path.mkdir
-
-    def safe_mkdir(self, *args, **kwargs):
-        if str(self).startswith("/opt/"):
-            return
-        return original_mkdir(self, *args, **kwargs)
-
-    Path.mkdir = safe_mkdir  # ty: ignore[invalid-assignment]
-    try:
-        if "jumpstarter_driver_mitmproxy.bundled_addon" in sys.modules:
-            mod = sys.modules["jumpstarter_driver_mitmproxy.bundled_addon"]
-        else:
-            mod = importlib.import_module(
-                "jumpstarter_driver_mitmproxy.bundled_addon"
-            )
-        return mod._deep_merge_patch  # ty: ignore[unresolved-attribute]
-    finally:
-        Path.mkdir = original_mkdir
+    mod = importlib.import_module("jumpstarter_driver_mitmproxy.bundled_addon")
+    return mod._deep_merge_patch  # ty: ignore[unresolved-attribute]
 
 
 @pytest.fixture

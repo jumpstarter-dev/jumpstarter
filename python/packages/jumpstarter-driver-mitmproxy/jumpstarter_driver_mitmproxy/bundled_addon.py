@@ -547,8 +547,9 @@ class MitmproxyMockAddon:
         self._state: dict = {}
         self._state_mtime: int = 0
         self._state_path = Path(self.MOCK_DIR) / "state.json"
+        # Created on first spool, not here: this runs at import time, where the
+        # default path may not exist or be writable (#1194).
         self._spool_dir = Path(CAPTURE_SPOOL_DIR)
-        self._spool_dir.mkdir(parents=True, exist_ok=True)
         self._spool_counter = 0
         self._load_config()
 
@@ -1165,6 +1166,7 @@ class MitmproxyMockAddon:
         spool_name = f"{self._spool_counter:06d}_{url_hash}.bin"
         spool_path = self._spool_dir / spool_name
         try:
+            self._spool_dir.mkdir(parents=True, exist_ok=True)
             spool_path.write_bytes(raw_body)
         except OSError as e:
             ctx.log.error(f"Failed to spool response body: {e}")
