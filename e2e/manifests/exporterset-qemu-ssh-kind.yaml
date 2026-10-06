@@ -1,0 +1,77 @@
+# VirtualTargetClass + ExporterSet for qemu-ssh E2E.
+#
+# Deploys a single tiny QEMU VM via SSH to localhost (the CI runner
+# itself). The exporter-set controller connects to 127.0.0.1 over
+# SSH and deploys Podman quadlet containers.
+#
+# Prerequisites (handled by e2e/scripts/setup-qemu-ssh-e2e.sh):
+#   - sshd running on the CI runner
+#   - SSH key in Secret "e2e-qemu-ssh-key"
+#   - Podman installed on the runner
+#   - Exporter + runtime images loaded into Podman
+#   - qemu-ssh.jumpstarter.dev provisioner enabled in Jumpstarter CR
+---
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
+kind: VirtualTargetClass
+metadata:
+  name: qemu-ssh-e2e
+  namespace: jumpstarter-lab
+spec:
+  provisioner: qemu-ssh.jumpstarter.dev
+  credentialsSecretRef:
+    name: e2e-qemu-ssh-key
+  bindingMode: Immediate
+  reclaimPolicy: Delete
+  images:
+    exporter:
+      image: quay.io/jumpstarter-dev/jumpstarter:latest
+      imagePullPolicy: IfNotPresent
+    runtime:
+      image: quay.io/jumpstarter-dev/virtual/qemu-runtime:latest
+      imagePullPolicy: IfNotPresent
+  parameters:
+    ssh:
+      user: runner
+      port: 22
+    runtime:
+      host_network: true
+    arch: x86_64
+    resources:
+      cpu: 1
+      memory: 512Mi
+    storage:
+      size: 4Gi
+---
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
+kind: ExporterSet
+metadata:
+  name: qemu-ssh-e2e
+  namespace: jumpstarter-lab
+spec:
+  minReplicas: 0
+  maxReplicas: 1
+  minAvailableReplicas: 1
+  scaleDownCooldown: 5m
+  recycleStrategy: ExitAndReplace
+  virtualTargetClassName: qemu-ssh-e2e
+  parameters:
+    host:
+      name: 127.0.0.1
+  selector:
+    matchLabels:
+      board: qemu-ssh-e2e
+  template:
+    metadata:
+      labels:
+        board: qemu-ssh-e2e
+        arch: x86_64
+        virtual: "true"
+    spec:
+      drivers:
+        - name: qemu
+          type: jumpstarter_driver_qemu.driver.Qemu
+          config:
+            arch: x86_64
+            smp: 1
+            mem: 512M
+            disk_size: 4G

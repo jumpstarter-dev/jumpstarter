@@ -156,6 +156,40 @@ func TestServiceNames(t *testing.T) {
 	}
 }
 
+func TestRuntimeContainerFile_hostNetwork(t *testing.T) {
+	cfg := baseConfig()
+	cfg.HostNetwork = true
+	got, err := RuntimeContainerFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, got, "Network=host")
+}
+
+func TestExporterContainerFile_hostNetwork(t *testing.T) {
+	cfg := baseConfig()
+	cfg.HostNetwork = true
+	got, err := ExporterContainerFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, got, "Network=host")
+}
+
+func TestContainerFiles_noHostNetworkByDefault(t *testing.T) {
+	cfg := baseConfig()
+	runtime, err := RuntimeContainerFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exporter, err := ExporterContainerFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustNotContain(t, runtime, "Network=host")
+	mustNotContain(t, exporter, "Network=host")
+}
+
 func TestPodmanVolumeName(t *testing.T) {
 	if got := PodmanVolumeName("rpi4-abc"); got != "jumpstarter-rpi4-abc-shared" {
 		t.Errorf("PodmanVolumeName = %q", got)

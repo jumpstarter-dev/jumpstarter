@@ -259,7 +259,7 @@ func (p *Provisioner) deployInstance(
 		logger.Info("exporter config written", "path", configPath, "diff", diff)
 	}
 
-	kvm, extraDevices := ParseRuntimeConfig(mergedParameters)
+	rtCfg := ParseRuntimeConfig(mergedParameters)
 	exporterImage, runtimeImage := p.resolveImages(images)
 
 	quadletCfg := QuadletConfig{
@@ -267,8 +267,9 @@ func (p *Provisioner) deployInstance(
 		Namespace:     es.Namespace,
 		ExporterImage: exporterImage,
 		RuntimeImage:  runtimeImage,
-		KVM:           kvm,
-		ExtraDevices:  extraDevices,
+		KVM:           rtCfg.KVM,
+		ExtraDevices:  rtCfg.ExtraDevices,
+		HostNetwork:   rtCfg.HostNetwork,
 	}
 
 	runtimeQuadlet, err := RuntimeContainerFile(quadletCfg)

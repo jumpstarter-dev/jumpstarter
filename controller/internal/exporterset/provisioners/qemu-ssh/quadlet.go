@@ -73,6 +73,11 @@ type QuadletConfig struct {
 	// ExtraDevices lists additional host devices to pass through to
 	// the runtime container (e.g. /dev/vhost-net).
 	ExtraDevices []string
+
+	// HostNetwork places the containers on the host network stack
+	// instead of Podman's default bridge. This is needed when the
+	// exporter must reach services on 127.0.0.1 (e.g. Kind in CI).
+	HostNetwork bool
 }
 
 // validateQuadletValue rejects values that contain newlines,
@@ -142,6 +147,9 @@ func RuntimeContainerFile(cfg QuadletConfig) (string, error) {
 	for _, dev := range cfg.ExtraDevices {
 		fmt.Fprintf(&b, "AddDevice=%s\n", dev)
 	}
+	if cfg.HostNetwork {
+		b.WriteString("Network=host\n")
+	}
 
 	b.WriteString("\n")
 
@@ -180,6 +188,9 @@ func ExporterContainerFile(cfg QuadletConfig) (string, error) {
 	fmt.Fprintf(&b, "Volume=%s:%s:ro\n", ExporterConfigDir, ExporterConfigDir)
 	fmt.Fprintf(&b, "Environment=JUMPSTARTER_LAUNCHER_SOCKET=%s\n", launcherSocketPath)
 	fmt.Fprintf(&b, "Exec=jmp run --exporter-config %s\n", configFile)
+	if cfg.HostNetwork {
+		b.WriteString("Network=host\n")
+	}
 	b.WriteString("\n")
 
 	b.WriteString("[Service]\n")
