@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import asyncio.subprocess
 import logging
 import os
 import re
+import subprocess
 import tempfile
 import time
 from collections.abc import AsyncGenerator
@@ -237,8 +239,8 @@ class Gptp(Driver):
         try:
             proc = await asyncio.create_subprocess_exec(
                 "ethtool", "-T", self.interface,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10.0)
             output = stdout.decode("utf-8", errors="replace")
@@ -395,9 +397,9 @@ class Gptp(Driver):
             self.logger.info("Starting ptp4l: %s", " ".join(cmd))
             try:
                 self._ptp4l_proc = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
+                    cmd[0], *cmd[1:],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
                     start_new_session=True,
                 )
             except FileNotFoundError as err:
@@ -425,9 +427,9 @@ class Gptp(Driver):
                 ]
                 self.logger.info("Starting phc2sys: %s", " ".join(phc2sys_cmd))
                 self._phc2sys_proc = await asyncio.create_subprocess_exec(
-                    *phc2sys_cmd,
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL,
+                    phc2sys_cmd[0], *phc2sys_cmd[1:],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                     start_new_session=True,
                 )
 

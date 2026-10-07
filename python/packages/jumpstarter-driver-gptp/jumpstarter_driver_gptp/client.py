@@ -14,6 +14,7 @@ from .common import (
     GptpSyncEvent,
 )
 from jumpstarter.client import DriverClient
+from jumpstarter.client.core import DriverError
 from jumpstarter.client.decorators import driver_click_group
 
 
@@ -142,9 +143,8 @@ class GptpClient(DriverClient):
         Args:
             timeout: Maximum time to wait in seconds.
             poll_interval: Polling interval in seconds.
-            threshold_ns: If provided, also require the absolute offset
-                from master to be below this value (in nanoseconds) before
-                returning True.
+            threshold_ns: If provided, also require ``abs(offset) < threshold_ns``
+                before returning True.
 
         Returns:
             True if synchronized before timeout, False otherwise.
@@ -159,7 +159,7 @@ class GptpClient(DriverClient):
                             time.sleep(poll_interval)
                             continue
                     return True
-            except RuntimeError:
+            except (RuntimeError, DriverError):
                 pass
             time.sleep(poll_interval)
         return False
