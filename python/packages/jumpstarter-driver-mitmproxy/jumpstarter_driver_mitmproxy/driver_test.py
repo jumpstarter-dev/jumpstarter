@@ -802,7 +802,8 @@ class TestSpoolDirectory:
 
         monkeypatch.setattr(Path, "mkdir", refuse)
 
-        result = addon._classify_response_body(self._binary_flow())
+        with caplog.at_level("ERROR"):
+            result = addon._classify_response_body(self._binary_flow())
 
         assert result["response_body_file"] is None
         assert result["response_body"] is None
@@ -854,14 +855,12 @@ class TestSpoolDirectory:
         url_hash = hashlib.sha256(flow.request.pretty_url.encode()).hexdigest()[:12]
         return f"000001_{url_hash}.bin"
 
-    def test_a_leftover_spool_file_and_dir_are_tightened_before_writing(
-        self, monkeypatch, tmp_path,
-    ):
+    def test_a_leftover_spool_file_and_dir_are_tightened_before_writing(self, tmp_path):
         """A crashed session or an older version leaves loose modes behind."""
         import os
         import stat
 
-        addon, _ = self._addon(monkeypatch, tmp_path)
+        addon = self._addon(tmp_path)
         flow = self._binary_flow()
         addon._spool_dir.mkdir()
         os.chmod(addon._spool_dir, 0o755)
@@ -877,12 +876,12 @@ class TestSpoolDirectory:
         assert stat.S_IMODE(addon._spool_dir.stat().st_mode) == 0o700
 
     def test_a_spool_file_that_cannot_be_tightened_is_never_written(
-        self, monkeypatch, tmp_path,
+        self, monkeypatch, tmp_path, caplog,
     ):
         """E.g. a file another user created in a shared directory."""
         import os
 
-        addon, log = self._addon(monkeypatch, tmp_path)
+        addon = self._addon(tmp_path)
         flow = self._binary_flow()
         addon._spool_dir.mkdir()
         target = addon._spool_dir / self._first_spool_name(flow)
@@ -894,11 +893,12 @@ class TestSpoolDirectory:
 
         monkeypatch.setattr(os, "fchmod", not_ours)
 
-        result = addon._classify_response_body(flow)
+        with caplog.at_level("ERROR"):
+            result = addon._classify_response_body(flow)
 
         assert result["response_body_file"] is None
         assert b"\x00" * 16 not in target.read_bytes(), "the body reached a file that was not ours"
-        assert "Failed to spool" in log.error.call_args.args[0]
+        assert "Failed to spool" in caplog.text
 
     @pytest.mark.skipif(
         not hasattr(__import__("os"), "O_NOFOLLOW"), reason="needs O_NOFOLLOW",
