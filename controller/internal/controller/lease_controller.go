@@ -293,7 +293,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 				return fmt.Errorf("reconcileStatusExporterRef: failed to list matching exporters: %w", err)
 			}
 			// Filter out disabled exporters from selector-based listing
-			matchingExporters = filterOutDisabledExporters(listed.Items)
+			matchingExporters = filterOutDisabledExporters(listed.Items, lease.Spec.AllowDisabled)
 			if len(matchingExporters) == 0 && len(listed.Items) > 0 {
 				lease.SetStatusUnsatisfiable(
 					"AllDisabled",
@@ -734,9 +734,13 @@ func filterOutNotReadyExporters(approvedExporters []ApprovedExporter) []Approved
 	)
 }
 
-// filterOutDisabledExporters removes exporters that have spec.enabled set to false.
-// Exporters with nil Enabled (backward compatibility) or Enabled=true are kept.
-func filterOutDisabledExporters(exporters []jumpstarterdevv1alpha1.Exporter) []jumpstarterdevv1alpha1.Exporter {
+// filterOutDisabledExporters removes exporters that have spec.enabled set to false,
+// unless allowDisabled is true. Exporters with nil Enabled (backward compatibility)
+// or Enabled=true are always kept.
+func filterOutDisabledExporters(exporters []jumpstarterdevv1alpha1.Exporter, allowDisabled bool) []jumpstarterdevv1alpha1.Exporter {
+	if allowDisabled {
+		return slices.Clone(exporters)
+	}
 	return slices.DeleteFunc(
 		slices.Clone(exporters),
 		func(exporter jumpstarterdevv1alpha1.Exporter) bool {
