@@ -899,6 +899,6 @@ class HookExecutor:
             await anyio.sleep(1.0)
 
             # Cleanup also runs on task cancellation and exporter shutdown.
-            # Those paths must not relinquish an active reservation.
+            # Those paths must not end an active reservation.
             if should_release:
                 await self._safe_release_lease(request_lease_release)
