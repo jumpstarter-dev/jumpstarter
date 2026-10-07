@@ -331,6 +331,8 @@ class TestFlush:
     @pytest.mark.anyio
     async def test_close_async_discards_queue_after_shutdown_budget(self):
         """A hung PushLogs must not drain the queue one timeout at a time."""
+        import time
+
         from anyio import sleep
 
         from jumpstarter.exporter.telemetry import _BATCH_SIZE
@@ -341,16 +343,53 @@ class TestFlush:
 
         calls = 0
 
-        async def hung_push(*_args, **_kwargs):
+        async def hung_push(*_args, **kwargs):
             nonlocal calls
             calls += 1
-            await sleep(0.2)
+            await sleep(kwargs["timeout"])
 
         handler._stub.PushLogs = AsyncMock(side_effect=hung_push)
+        started = time.monotonic()
         with patch("jumpstarter.exporter.telemetry._PUSH_TIMEOUT", 0.05):
             await handler.close_async()
+        elapsed = time.monotonic() - started
 
         assert calls == 1
+        assert elapsed < 0.15
+        assert len(handler._queue) == 0
+
+    @pytest.mark.anyio
+    async def test_close_async_limits_a_late_push_to_the_remaining_budget(self):
+        """A second shutdown push gets only the time still left, not a fresh timeout."""
+        import time
+
+        from anyio import sleep
+
+        from jumpstarter.exporter.telemetry import _BATCH_SIZE
+
+        handler = make_handler()
+        for i in range(_BATCH_SIZE + 1):
+            handler.emit(make_record(f"msg-{i}"))
+
+        timeouts: list[float] = []
+
+        async def push(*_args, **kwargs):
+            timeout = kwargs["timeout"]
+            timeouts.append(timeout)
+            if len(timeouts) == 1:
+                await sleep(0.12)
+                return
+            await sleep(timeout)
+
+        handler._stub.PushLogs = AsyncMock(side_effect=push)
+        started = time.monotonic()
+        with patch("jumpstarter.exporter.telemetry._PUSH_TIMEOUT", 0.2):
+            await handler.close_async()
+        elapsed = time.monotonic() - started
+
+        assert len(timeouts) == 2
+        assert timeouts[1] < 0.12
+        assert elapsed < 0.35
         assert len(handler._queue) == 0
 
     @pytest.mark.anyio
