@@ -327,6 +327,7 @@ class TestAddonGeneration:
 
     @patch("jumpstarter_driver_mitmproxy.driver.subprocess.Popen")
     def test_generates_addon_if_missing(self, mock_popen, driver, tmp_path):
+        """The installed addon has the driver's directories filled in."""
         proc = MagicMock()
         proc.poll.return_value = None
         proc.pid = 12345
@@ -971,6 +972,7 @@ class TestAddonPaths:
 
     @staticmethod
     def _fresh_import(monkeypatch):
+        """Import the addon module again, so its module-level defaults are recomputed."""
         import importlib
         import sys
 
@@ -981,6 +983,7 @@ class TestAddonPaths:
         return importlib.import_module("jumpstarter_driver_mitmproxy.bundled_addon")
 
     def test_standalone_defaults_are_per_user_not_opt(self, monkeypatch):
+        """Without a driver, the addon's files go under a per-user temp dir."""
         import getpass
         import tempfile
 
@@ -994,6 +997,7 @@ class TestAddonPaths:
         assert mod.MitmproxyMockAddon.MOCK_DIR == str(base / "mock-responses")  # ty: ignore[unresolved-attribute]
 
     def test_data_dir_env_moves_every_default(self, monkeypatch, tmp_path):
+        """MITMPROXY_DATA_DIR moves the socket, spool and mock directories together."""
         monkeypatch.setenv("MITMPROXY_DATA_DIR", str(tmp_path))
         monkeypatch.delenv("MITMPROXY_MOCK_DIR", raising=False)
         mod = self._fresh_import(monkeypatch)
@@ -1003,9 +1007,11 @@ class TestAddonPaths:
         assert mod.MitmproxyMockAddon.MOCK_DIR == str(tmp_path / "mock-responses")  # ty: ignore[unresolved-attribute]
 
     def test_standalone_default_survives_a_missing_login_name(self, monkeypatch):
+        """A UID with no login name still gets a usable default."""
         import getpass
 
         def no_user():
+            """Stand-in for getpass.getuser on a UID with no passwd entry."""
             raise KeyError("getpwuid(): uid not found")
 
         monkeypatch.delenv("MITMPROXY_DATA_DIR", raising=False)
@@ -1030,6 +1036,7 @@ class TestAddonPaths:
         assert module.MitmproxyMockAddon.MOCK_DIR == driver.directories.mocks  # ty: ignore[unresolved-attribute]
 
     def test_fill_refuses_source_without_placeholders(self, driver):
+        """A renamed placeholder is an error, not a silent fall-back to the defaults."""
         with pytest.raises(RuntimeError, match="_DRIVER_MOCK_DIR"):
             driver._fill_addon_paths("addons = []\n")
 
