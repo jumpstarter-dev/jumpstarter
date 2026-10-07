@@ -1243,15 +1243,20 @@ class TestHookExecutorPRRegressions:
             error = anyio.get_cancelled_exc_class()()
         release = AsyncMock()
         shutdown = MagicMock()
-        with patch.object(executor, "_execute_hook", new=AsyncMock(side_effect=error, return_value=warning)):
+        with (
+            patch.object(executor, "_execute_hook", new=AsyncMock(side_effect=error, return_value=warning)),
+            patch("jumpstarter.exporter.hooks.anyio.sleep", new_callable=AsyncMock) as sleep,
+        ):
             if outcome == "cancelled":
                 with pytest.raises(anyio.get_cancelled_exc_class()):
                     await executor.run_after_lease_hook(lease_scope, AsyncMock(), shutdown, release)
             else:
                 await executor.run_after_lease_hook(lease_scope, AsyncMock(), shutdown, release)
         if outcome == "failure" and on_failure == "endLease":
-            release.assert_awaited_once()
+            sleep.assert_awaited_once_with(1.0)
+            release.assert_awaited_once_with(lease_scope.lease_name)
         else:
+            sleep.assert_not_awaited()
             release.assert_not_awaited()
 
     @macos_pty_xfail

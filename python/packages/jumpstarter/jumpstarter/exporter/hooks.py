@@ -904,10 +904,9 @@ class HookExecutor:
             )
 
         finally:
-            # Always delay to give client time to poll the final status
-            await anyio.sleep(1.0)
-
             # Cleanup also runs on task cancellation and exporter shutdown.
             # Those paths must not end an active reservation.
             if should_release:
+                # Give the client time to observe the failure before release.
+                await anyio.sleep(1.0)
                 await self._safe_release_lease(request_lease_release, lease_scope.lease_name)
