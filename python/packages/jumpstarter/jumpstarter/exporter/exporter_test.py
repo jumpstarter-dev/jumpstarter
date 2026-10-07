@@ -1086,7 +1086,10 @@ class TestReportStatusGrpcErrorHandling:
         controller, stub_ctx = _setup_mock_controller_stub(exporter)
         controller.ReleaseLease.side_effect = AioRpcError(error_code, Metadata(), Metadata(), "Release rejected")
 
-        with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
+        with (
+            patch.object(exporter, "_controller_stub", return_value=stub_ctx),
+            caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"),
+        ):
             await exporter._request_lease_release("test-lease")
 
         controller.ReleaseLease.assert_awaited_once()
