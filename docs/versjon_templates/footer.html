@@ -14,7 +14,9 @@
 {% endmacro %}
 
 <style>
-  #versjon-overlay .versjon-group { margin-bottom: 8px; }
+  #versjon-overlay .versjon-content-inner { padding: 15px 18px; }
+  #versjon-overlay .versjon-group { margin-bottom: 14px; }
+  #versjon-overlay .versjon-group:last-child { margin-bottom: 0; }
   #versjon-overlay .versjon-group-label {
     display: block;
     font-size: 13px;
@@ -29,14 +31,15 @@
     flex-wrap: wrap;
     gap: 4px;
   }
-  #versjon-overlay .versjon-group-links a {
+  #versjon-overlay .versjon-group-links a,
+  #versjon-overlay .versjon-group-links a:visited {
     display: inline-block;
     padding: 2px 8px;
     background: #ddd;
     border-radius: 3px;
     text-decoration: none;
     font-size: 15px;
-    color: #333;
+    color: #222 !important;
     white-space: nowrap;
   }
   #versjon-overlay .versjon-group-links a:hover { background: #c8c8c8; }
@@ -44,7 +47,7 @@
   #versjon-overlay .versjon-group-links a.versjon-current:visited,
   #versjon-overlay .versjon-group-links a.versjon-current:hover {
     background: #555;
-    color: #fff;
+    color: #fff !important;
     text-decoration: none;
   }
 </style>
