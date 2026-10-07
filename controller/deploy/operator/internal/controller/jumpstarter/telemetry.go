@@ -30,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -416,7 +415,7 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSec
 	}
 
 	if t.Loki.URL != "" && t.Loki.SecretRef != "" {
-		optional := ptr.To(true)
+		optional := new(true)
 		envVars = append(envVars,
 			corev1.EnvVar{
 				Name: "LOKI_USERNAME",
