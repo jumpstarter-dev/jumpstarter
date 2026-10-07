@@ -26,6 +26,11 @@ const (
 	// records which remote host an instance was assigned to.
 	AnnotationHost = "qemu-ssh.jumpstarter.dev/host"
 
+	// AnnotationCredentialsSecret records the SSH credentials Secret
+	// name so Cleanup can tear down remote resources even if the
+	// VirtualTargetClass has already been deleted.
+	AnnotationCredentialsSecret = "qemu-ssh.jumpstarter.dev/credentials-secret"
+
 	// defaultSSHUser is used when no user is specified.
 	defaultSSHUser = "root"
 

@@ -21,12 +21,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"strings"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	sigsyaml "sigs.k8s.io/yaml"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -144,7 +147,11 @@ func (p *Provisioner) Deploy(
 		return err
 	}
 
-	if err := p.annotateHost(ctx, exporter, host.Name); err != nil {
+	credSecret := ""
+	if vtc.Spec.CredentialsSecretRef != nil {
+		credSecret = vtc.Spec.CredentialsSecretRef.Name
+	}
+	if err := p.annotateHost(ctx, exporter, host.Name, credSecret); err != nil {
 		return fmt.Errorf("annotate exporter %s with host: %w", exporter.Name, err)
 	}
 
@@ -166,6 +173,11 @@ func (p *Provisioner) IsDeployed(
 
 // Cleanup tears down the remote containers via SSH and removes the
 // host annotation.
+//
+// Must not return a hard error when the VirtualTargetClass is already
+// gone: kubectl delete -f often removes the VTC before the ExporterSet
+// finalizer runs, and a failing Cleanup would wedge the finalizer
+// forever.
 func (p *Provisioner) Cleanup(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
@@ -174,8 +186,10 @@ func (p *Provisioner) Cleanup(
 	logger := log.FromContext(ctx)
 
 	hostName := ""
+	secretName := ""
 	if exporter.Annotations != nil {
 		hostName = exporter.Annotations[AnnotationHost]
+		secretName = exporter.Annotations[AnnotationCredentialsSecret]
 	}
 	if hostName == "" {
 		logger.V(1).Info("no host annotation on exporter, skipping cleanup",
@@ -183,25 +197,56 @@ func (p *Provisioner) Cleanup(
 		return nil
 	}
 
+	var classParams *apiextensionsv1.JSON
 	vtcKey := client.ObjectKey{
 		Namespace: es.Namespace,
 		Name:      es.Spec.VirtualTargetClassName,
 	}
 	var vtc virtualtargetv1alpha1.VirtualTargetClass
 	if err := p.Client.Get(ctx, vtcKey, &vtc); err != nil {
-		return fmt.Errorf("get VirtualTargetClass for cleanup: %w", err)
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("get VirtualTargetClass for cleanup: %w", err)
+		}
+		logger.Info("VirtualTargetClass already deleted, cleaning up from annotations",
+			"exporter", exporter.Name, "vtc", es.Spec.VirtualTargetClassName)
+	} else {
+		classParams = vtc.Spec.Parameters
+		if secretName == "" && vtc.Spec.CredentialsSecretRef != nil {
+			secretName = vtc.Spec.CredentialsSecretRef.Name
+		}
 	}
 
-	privateKey, err := p.readSSHKey(ctx, &vtc)
+	if secretName == "" {
+		logger.Error(nil, "no SSH credentials secret for cleanup, skipping remote teardown",
+			"exporter", exporter.Name)
+		return nil
+	}
+
+	privateKey, err := p.readSSHKeyFromSecret(ctx, es.Namespace, secretName)
 	if err != nil {
+		// NotFound: credentials permanently gone — skip remote teardown so the
+		// ExporterSet finalizer is not wedged. Any other error (timeout, RBAC,
+		// conflict) must fail so Cleanup retries and does not orphan hosts.
+		if apierrors.IsNotFound(err) {
+			logger.Error(err, "SSH credentials secret missing, skipping remote teardown",
+				"exporter", exporter.Name, "secret", secretName)
+			return nil
+		}
 		return fmt.Errorf("read SSH key for cleanup: %w", err)
 	}
 
-	mergedParams := map[string]any{}
-	if vtc.Spec.Parameters != nil && vtc.Spec.Parameters.Raw != nil {
-		_ = sigsyaml.Unmarshal(vtc.Spec.Parameters.Raw, &mergedParams)
+	// Host (user/port) often lives on the ExporterSet, not the VTC — merge both
+	// the same way Deploy does via the reconciler.
+	mergedParams := mergeClassAndSetParameters(classParams, es.Spec.Parameters)
+	host, err := ParseHost(mergedParams)
+	if err != nil {
+		logger.V(1).Info("parse host for cleanup failed, using defaults",
+			"exporter", exporter.Name, "error", err)
+		host = HostConfig{
+			User: defaultSSHUser,
+			Port: defaultSSHPort,
+		}
 	}
-	host, _ := ParseHost(mergedParams)
 
 	conn, err := Connect(SSHConnectConfig{
 		Host:       hostName,
@@ -360,10 +405,15 @@ func (p *Provisioner) teardownInstance(
 	runtimeSvc := RuntimeServiceName(name)
 	exporterSvc := ExporterServiceName(name)
 
-	// Quadlet-generated units cannot be "disabled"; use "stop" instead.
-	if _, err := conn.RunCommand(ctx,
-		fmt.Sprintf("systemctl stop %s %s 2>/dev/null || true",
-			exporterSvc, runtimeSvc)); err != nil {
+	// Bound stop: QEMU under TCG can ignore SIGTERM for a long time and
+	// wedge ExporterSet finalizers / e2e AfterAll. Force-kill after 60s,
+	// then remove containers explicitly.
+	if _, err := conn.RunCommand(ctx, fmt.Sprintf(
+		"timeout 60 systemctl stop %s %s 2>/dev/null || "+
+			"systemctl kill --kill-who=all %s %s 2>/dev/null || true; "+
+			"podman rm -f %s-exporter %s-runtime 2>/dev/null || true",
+		exporterSvc, runtimeSvc, exporterSvc, runtimeSvc, name, name,
+	)); err != nil {
 		logger.Error(err, "failed to stop services", "exporter", name)
 	}
 
@@ -379,7 +429,7 @@ func (p *Provisioner) teardownInstance(
 
 	volumeName := PodmanVolumeName(name)
 	if _, err := conn.RunCommand(ctx,
-		fmt.Sprintf("podman volume rm %s 2>/dev/null || true", volumeName)); err != nil {
+		fmt.Sprintf("podman volume rm -f %s 2>/dev/null || true", volumeName)); err != nil {
 		logger.Error(err, "failed to remove volume", "volume", volumeName)
 	}
 
@@ -398,35 +448,45 @@ func (p *Provisioner) readSSHKey(
 		return nil, fmt.Errorf("VirtualTargetClass %s/%s has no credentialsSecretRef (required for SSH)",
 			vtc.Namespace, vtc.Name)
 	}
+	return p.readSSHKeyFromSecret(ctx, vtc.Namespace, vtc.Spec.CredentialsSecretRef.Name)
+}
 
+// readSSHKeyFromSecret loads the ssh-privatekey field from a Secret.
+func (p *Provisioner) readSSHKeyFromSecret(
+	ctx context.Context,
+	namespace, secretName string,
+) ([]byte, error) {
 	var secret corev1.Secret
 	if err := p.Client.Get(ctx, client.ObjectKey{
-		Name:      vtc.Spec.CredentialsSecretRef.Name,
-		Namespace: vtc.Namespace,
+		Name:      secretName,
+		Namespace: namespace,
 	}, &secret); err != nil {
-		return nil, fmt.Errorf("get SSH credentials Secret %q: %w",
-			vtc.Spec.CredentialsSecretRef.Name, err)
+		return nil, fmt.Errorf("get SSH credentials Secret %q: %w", secretName, err)
 	}
 
 	key, ok := secret.Data[sshPrivateKeyField]
 	if !ok {
 		return nil, fmt.Errorf("credentials Secret %q missing %q key",
-			vtc.Spec.CredentialsSecretRef.Name, sshPrivateKeyField)
+			secretName, sshPrivateKeyField)
 	}
 
 	return key, nil
 }
 
-// annotateHost sets the host assignment annotation on the Exporter CR.
+// annotateHost records host assignment (and credentials Secret) on the
+// Exporter CR so Cleanup can tear down without the VirtualTargetClass.
 func (p *Provisioner) annotateHost(
 	ctx context.Context,
 	exporter *jumpstarterdevv1alpha1.Exporter,
-	hostName string,
+	hostName, credentialsSecret string,
 ) error {
 	if exporter.Annotations == nil {
 		exporter.Annotations = make(map[string]string)
 	}
 	exporter.Annotations[AnnotationHost] = hostName
+	if credentialsSecret != "" {
+		exporter.Annotations[AnnotationCredentialsSecret] = credentialsSecret
+	}
 	return p.Client.Update(ctx, exporter)
 }
 
@@ -537,6 +597,26 @@ func (p *Provisioner) readCredentialToken(
 	}
 
 	return string(token), nil
+}
+
+// mergeClassAndSetParameters overlays ExporterSet parameters on VirtualTargetClass
+// parameters (shallow top-level merge). Host config for qemu-ssh typically lives
+// on the ExporterSet.
+func mergeClassAndSetParameters(
+	classParams *apiextensionsv1.JSON,
+	setParams *apiextensionsv1.JSON,
+) map[string]any {
+	merged := map[string]any{}
+	if classParams != nil && classParams.Raw != nil {
+		_ = json.Unmarshal(classParams.Raw, &merged)
+	}
+	if setParams != nil && setParams.Raw != nil {
+		override := map[string]any{}
+		if err := json.Unmarshal(setParams.Raw, &override); err == nil {
+			maps.Copy(merged, override)
+		}
+	}
+	return merged
 }
 
 // --- ExporterConfig types (mirrors exporterconfig.go in parent package) ---
