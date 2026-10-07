@@ -169,7 +169,7 @@ func TestLokiBuffer_OverflowEmitsDropMarker(t *testing.T) {
 		t.Errorf("marker window_seconds = %q, want 12", marker.ExtraFields["window_seconds"])
 	}
 
-	got := counterValue(t, dropped, "loki")
+	got := counterValue(t, dropped)
 	if got != 2 {
 		t.Errorf("dropped_total{destination=loki} = %v, want 2", got)
 	}
@@ -302,7 +302,7 @@ func TestLokiPush_FlushFailureKeepsInFlightEntriesThatFit(t *testing.T) {
 	if len(queued) != 2 || queued[0].Message != "before" || queued[1].Message != "during" {
 		t.Fatalf("queued = %v, want before then during", messages(queued))
 	}
-	if got := counterValue(t, dropped, "loki"); got != 0 {
+	if got := counterValue(t, dropped); got != 0 {
 		t.Errorf("dropped_total = %v, want 0", got)
 	}
 }
@@ -340,7 +340,7 @@ func TestLokiPush_FlushFailureStaysWithinQueueDepth(t *testing.T) {
 	if queued[2].ExtraFields["count"] != "2" {
 		t.Errorf("marker count = %q, want 2", queued[2].ExtraFields["count"])
 	}
-	if got := counterValue(t, dropped, "loki"); got != 2 {
+	if got := counterValue(t, dropped); got != 2 {
 		t.Errorf("dropped_total = %v, want 2", got)
 	}
 
@@ -357,7 +357,7 @@ func TestLokiPush_FlushFailureStaysWithinQueueDepth(t *testing.T) {
 	if queued[2].ExtraFields["count"] != "4" {
 		t.Errorf("marker count = %q, want 4", queued[2].ExtraFields["count"])
 	}
-	if got := counterValue(t, dropped, "loki"); got != 4 {
+	if got := counterValue(t, dropped); got != 4 {
 		t.Errorf("dropped_total = %v, want 4", got)
 	}
 }
@@ -533,9 +533,9 @@ func TestPushLogs_ForwardsAcceptedEntriesToLoki(t *testing.T) {
 	}
 }
 
-func counterValue(t *testing.T, vec *prometheus.CounterVec, dest string) float64 {
+func counterValue(t *testing.T, vec *prometheus.CounterVec) float64 {
 	t.Helper()
-	m, err := vec.GetMetricWithLabelValues(dest)
+	m, err := vec.GetMetricWithLabelValues("loki")
 	if err != nil {
 		t.Fatal(err)
 	}
