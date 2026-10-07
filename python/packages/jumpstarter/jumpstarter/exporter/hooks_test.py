@@ -194,9 +194,11 @@ class TestHookExecutor:
         with pytest.raises(HookExecutionError) as exc_info:
             await executor.execute_before_lease_hook(lease_scope)
 
+        assert isinstance(exc_info.value, HookExecutionError)
         assert "exit code 1" in str(exc_info.value)
-        assert exc_info.value.on_failure == "endLease"  # type: ignore[attr-defined]
-        assert exc_info.value.hook_type == "before_lease"  # type: ignore[attr-defined]
+        assert exc_info.value.on_failure == "endLease"
+        assert exc_info.value.hook_type == "before_lease"
+        assert exc_info.value.should_end_lease()
 
     async def test_hook_timeout(self, lease_scope) -> None:
         timeout_config = HookConfigV1Alpha1(
@@ -207,8 +209,10 @@ class TestHookExecutor:
         with pytest.raises(HookExecutionError) as exc_info:
             await executor.execute_before_lease_hook(lease_scope)
 
+        assert isinstance(exc_info.value, HookExecutionError)
         assert "timed out after 1 seconds" in str(exc_info.value)
-        assert exc_info.value.on_failure == "exit"  # type: ignore[attr-defined]
+        assert exc_info.value.on_failure == "exit"
+        assert not exc_info.value.should_end_lease()
 
     @macos_pty_xfail
     async def test_hook_environment_variables(self, lease_scope) -> None:
@@ -633,7 +637,10 @@ class TestHookExecutor:
         )
 
         assert lease_scope.skip_after_lease_hook is True
-        mock_request_lease_release.assert_called_once()
+        # The release callback must receive the LeaseContext of the lease
+        # whose hook failed, so the exporter can reject it if that lease
+        # was replaced while the release was in flight.
+        mock_request_lease_release.assert_called_once_with(lease_scope)
         mock_shutdown.assert_not_called()
 
     async def test_before_lease_hook_endlease_handles_release_error(self, lease_scope) -> None:
@@ -1207,6 +1214,50 @@ class TestHookExecutor:
 
 class TestHookExecutorPRRegressions:
     """Regression tests for issues reported during PR review of hooks feature."""
+
+    @pytest.mark.parametrize("on_failure", ["warn", "endLease", "exit"])
+    @pytest.mark.parametrize("outcome", ["success", "failure", "unexpected", "cancelled", "no_hook", "not_ready"])
+    async def test_after_hook_releases_only_on_configured_endlease_failure(
+        self, lease_scope, on_failure, outcome,
+    ) -> None:
+        import anyio
+
+        config = HookConfigV1Alpha1(
+            after_lease=HookInstanceConfigV1Alpha1(script="echo cleanup", on_failure=on_failure),
+        )
+        if outcome == "no_hook":
+            config.after_lease = None
+        if outcome == "not_ready":
+            lease_scope.session = None
+        executor = HookExecutor(config=config)
+        error = None
+        warning = None
+        if outcome == "failure":
+            if on_failure == "warn":
+                warning = "hook failed"
+            else:
+                error = HookExecutionError("hook failed", on_failure, "after_lease")
+        elif outcome == "unexpected":
+            error = RuntimeError("orchestration failed")
+        elif outcome == "cancelled":
+            error = anyio.get_cancelled_exc_class()()
+        release = AsyncMock()
+        shutdown = MagicMock()
+        with (
+            patch.object(executor, "_execute_hook", new=AsyncMock(side_effect=error, return_value=warning)),
+            patch("jumpstarter.exporter.hooks.anyio.sleep", new_callable=AsyncMock) as sleep,
+        ):
+            if outcome == "cancelled":
+                with pytest.raises(anyio.get_cancelled_exc_class()):
+                    await executor.run_after_lease_hook(lease_scope, AsyncMock(), shutdown, release)
+            else:
+                await executor.run_after_lease_hook(lease_scope, AsyncMock(), shutdown, release)
+        if outcome == "failure" and on_failure == "endLease":
+            sleep.assert_awaited_once_with(1.0)
+            release.assert_awaited_once_with(lease_scope)
+        else:
+            sleep.assert_not_awaited()
+            release.assert_not_awaited()
 
     @macos_pty_xfail
     async def test_infrastructure_messages_at_debug_not_info(self, lease_scope) -> None:
