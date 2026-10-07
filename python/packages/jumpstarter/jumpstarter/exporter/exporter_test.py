@@ -820,6 +820,44 @@ class TestReportStatusGrpcErrorHandling:
         # Lease ended event set
         assert lease_ctx.lease_ended.is_set()
 
+    async def test_request_lease_release_rejects_stale_lease_name(self):
+        """A delayed release callback for a replaced lease must not release
+        the replacement lease.
+
+        Simulates the beforeLease endLease path: the hook fails for
+        'old-lease', the release is delayed, and a replacement lease is
+        granted before the callback fires.
+        """
+        exporter = _make_exporter_for_report_status()
+        exporter._release_lease_unsupported = False
+
+        replacement_ctx = LeaseContext(
+            lease_name="new-lease",
+            before_lease_hook=Event(),
+            client_name="test-client",
+        )
+        exporter._lease_context = replacement_ctx
+
+        release_calls = []
+
+        async def capture_release(request, **kwargs):
+            release_calls.append(request)
+
+        mock_controller = AsyncMock()
+        mock_controller.ReleaseLease = AsyncMock(side_effect=capture_release)
+        mock_controller.ReportStatus = AsyncMock()
+
+        stub_ctx = AsyncMock()
+        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
+        stub_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
+            await exporter._request_lease_release("old-lease")
+
+        # No ReleaseLease RPC for the stale lease; replacement lease untouched
+        assert release_calls == []
+        assert not replacement_ctx.lease_ended.is_set()
+
     async def test_request_lease_release_retries_on_transient_failure(self):
         """When ReleaseLease fails with UNAVAILABLE on first attempt, retry and succeed."""
         exporter = _make_exporter_for_report_status()

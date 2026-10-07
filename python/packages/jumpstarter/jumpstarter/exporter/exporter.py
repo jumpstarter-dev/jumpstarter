@@ -793,12 +793,17 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         ):
             logger.info("Requested controller to release lease %s (compat path)", lease_name)
 
-    async def _request_lease_release(self):
+    async def _request_lease_release(self, lease_name: str | None = None):
         """Request the controller to release the current lease.
 
         Called when a lifecycle hook fails with on_failure='endLease'.
         Ordinary hook completion, client disconnection, and exporter cleanup
         must not request release; the client or controller ends those leases.
+
+        lease_name, when provided, identifies the lease whose hook failed.
+        If a replacement lease was granted while the release was in flight,
+        the request is rejected so a delayed callback cannot end the
+        replacement lease.
 
         Tries the ReleaseLease RPC first (semantically correct, retry-safe).
         Falls back to ReportStatus(release_lease=true) for old controllers that
@@ -811,6 +816,17 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             logger.debug("No active lease to release")
             return
 
+        # Stale-lease guard: the failed lease may have been replaced while the
+        # release callback was delayed (e.g. the 1s status delay). Only release
+        # if the failed lease is still the current one.
+        if lease_name is not None and lease_name != self._lease_context.lease_name:
+            logger.info(
+                "Lease %s no longer current (now %s), skipping release",
+                lease_name,
+                self._lease_context.lease_name,
+            )
+            return
+
         # If the lease has already ended (controller sent leased=false, or a previous
         # call already released it), skip the release RPC.
         if self._lease_context.lease_ended.is_set():
@@ -821,21 +837,21 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             self._lease_context.lease_ended.set()
             return
 
-        lease_name = self._lease_context.lease_name
+        release_name = self._lease_context.lease_name
 
         if self._release_lease_unsupported:
-            await self._send_compat_release(lease_name)
+            await self._send_compat_release(release_name)
         else:
             ok, code = await self._retry_rpc(
                 lambda ctrl: ctrl.ReleaseLease(
-                    jumpstarter_pb2.ReleaseLeaseRequest(name=lease_name), timeout=_RPC_TIMEOUT
+                    jumpstarter_pb2.ReleaseLeaseRequest(name=release_name), timeout=_RPC_TIMEOUT
                 ),
                 "release lease",
                 non_retryable_codes=_RELEASE_LEASE_UNSUPPORTED_CODES,
             )
 
             if ok:
-                logger.info("Released lease %s via ReleaseLease RPC", lease_name)
+                logger.info("Released lease %s via ReleaseLease RPC", release_name)
             elif code in _RELEASE_LEASE_UNSUPPORTED_CODES:
                 self._release_lease_unsupported = True
                 logger.info(
@@ -843,9 +859,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     "falling back to ReportStatus with release_lease",
                     code.name,
                 )
-                await self._send_compat_release(lease_name)
+                await self._send_compat_release(release_name)
             else:
-                logger.warning("Failed to release lease %s after retries, proceeding to AVAILABLE", lease_name)
+                logger.warning("Failed to release lease %s after retries, proceeding to AVAILABLE", release_name)
 
         await self._report_status(ExporterStatus.AVAILABLE, "Exporter available after lease release")
 
