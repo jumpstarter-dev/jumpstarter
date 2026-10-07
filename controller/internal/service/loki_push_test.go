@@ -145,7 +145,7 @@ func TestLokiBuffer_OverflowEmitsDropMarker(t *testing.T) {
 		t.Errorf("marker window_seconds = %q, want 12", marker.ExtraFields["window_seconds"])
 	}
 
-	got := counterValue(t, dropped, "loki")
+	got := counterValue(t, dropped)
 	if got != 2 {
 		t.Errorf("dropped_total{destination=loki} = %v, want 2", got)
 	}
@@ -366,9 +366,9 @@ func TestPushLogs_ForwardsAcceptedEntriesToLoki(t *testing.T) {
 	}
 }
 
-func counterValue(t *testing.T, vec *prometheus.CounterVec, dest string) float64 {
+func counterValue(t *testing.T, vec *prometheus.CounterVec) float64 {
 	t.Helper()
-	m, err := vec.GetMetricWithLabelValues(dest)
+	m, err := vec.GetMetricWithLabelValues("loki")
 	if err != nil {
 		t.Fatal(err)
 	}
