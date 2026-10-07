@@ -783,6 +783,9 @@ class HookExecutor:
                 # on_failure='endLease' - report failure, release in finally block
                 logger.error("beforeLease hook failed with on_failure='endLease': %s", e)
                 lease_scope.skip_after_lease_hook = True
+                # Defensive redundancy: this branch is only reached for endLease,
+                # but re-check the policy so a future policy change cannot
+                # silently start releasing leases here.
                 should_release = e.should_end_lease()
                 await report_status(
                     ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
@@ -887,6 +890,9 @@ class HookExecutor:
                 # AFTER_LEASE_HOOK_FAILED is a transient status: the client sees the failure,
                 # the lease is released in the finally block, and the exporter's main loop
                 # clears the lease context and accepts new leases.
+                # Defensive redundancy: this branch is only reached for endLease,
+                # but re-check the policy so a future policy change cannot
+                # silently start releasing leases here.
                 should_release = e.should_end_lease()
                 logger.error("afterLease hook failed with on_failure='endLease': %s", e)
                 await report_status(

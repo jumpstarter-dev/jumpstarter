@@ -761,14 +761,14 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             if await self._send_report_status_rpc(request):
                 logger.info("Updated status to %s: %s", status, message)
 
-    async def _request_lease_release(self, lease_name: str | None = None):
-        """Request the controller to release the current lease.
+    async def _request_lease_release(self, lease_name: str):
+        """Request the controller to release the identified lease.
 
         Called when a lifecycle hook fails with on_failure='endLease'.
         Ordinary hook completion, client disconnection, and exporter cleanup
         must not request release; the client or controller ends those leases.
 
-        lease_name, when provided, identifies the lease whose hook failed.
+        lease_name identifies the lease whose hook failed.
         If a replacement lease was granted while the release was in flight,
         the request is rejected so a delayed callback cannot end the
         replacement lease.
@@ -786,7 +786,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         # Stale-lease guard: the failed lease may have been replaced while the
         # release callback was delayed (e.g. the 1s status delay). Only release
         # if the failed lease is still the current one.
-        if lease_name is not None and lease_name != self._lease_context.lease_name:
+        if lease_name != self._lease_context.lease_name:
             logger.info(
                 "Lease %s no longer current (now %s), skipping release",
                 lease_name,

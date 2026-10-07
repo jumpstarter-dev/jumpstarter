@@ -804,7 +804,7 @@ class TestReportStatusGrpcErrorHandling:
         stub_ctx.__aexit__ = AsyncMock(return_value=False)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
-            await exporter._request_lease_release()
+            await exporter._request_lease_release("test-lease")
 
         # ReleaseLease called once with correct lease name
         assert len(release_calls) == 1
@@ -1008,7 +1008,7 @@ class TestReportStatusGrpcErrorHandling:
         stub_ctx.__aexit__ = AsyncMock(return_value=False)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), patch("anyio.sleep"):
-            await exporter._request_lease_release()
+            await exporter._request_lease_release("test-lease")
 
         # ReleaseLease called twice (failed once, succeeded on retry)
         assert release_call_count == 2
@@ -1060,7 +1060,7 @@ class TestReportStatusGrpcErrorHandling:
         stub_ctx.__aexit__ = AsyncMock(return_value=False)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), patch("anyio.sleep"):
-            await exporter._request_lease_release()
+            await exporter._request_lease_release("test-lease")
 
         # ReleaseLease: _RPC_MAX_RETRIES + 1 attempts (all fail)
         assert release_call_count == _RPC_MAX_RETRIES + 1
