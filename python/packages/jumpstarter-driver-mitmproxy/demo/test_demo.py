@@ -155,6 +155,7 @@ class TestScenarioLoading:
     def test_load_happy_path(
         self, backend_server, proxy_client, http_session,
     ):
+        """The happy-path scenario replaces the real backend's status response."""
         _load_scenario(proxy_client, "happy-path")
         time.sleep(1)
 
@@ -169,6 +170,7 @@ class TestScenarioLoading:
     def test_load_update_available(
         self, backend_server, proxy_client, http_session,
     ):
+        """The update-available scenario reports a newer version."""
         _load_scenario(proxy_client, "update-available")
         time.sleep(1)
 
@@ -183,6 +185,7 @@ class TestScenarioLoading:
     def test_load_backend_outage(
         self, backend_server, proxy_client, http_session,
     ):
+        """The backend-outage scenario answers with 503."""
         _load_scenario(proxy_client, "backend-outage")
         time.sleep(1)
 
