@@ -194,9 +194,10 @@ class TestHookExecutor:
         with pytest.raises(HookExecutionError) as exc_info:
             await executor.execute_before_lease_hook(lease_scope)
 
+        assert isinstance(exc_info.value, HookExecutionError)
         assert "exit code 1" in str(exc_info.value)
-        assert exc_info.value.on_failure == "endLease"  # type: ignore[attr-defined]
-        assert exc_info.value.hook_type == "before_lease"  # type: ignore[attr-defined]
+        assert exc_info.value.on_failure == "endLease"
+        assert exc_info.value.hook_type == "before_lease"
         assert exc_info.value.should_end_lease()
 
     async def test_hook_timeout(self, lease_scope) -> None:
@@ -208,8 +209,9 @@ class TestHookExecutor:
         with pytest.raises(HookExecutionError) as exc_info:
             await executor.execute_before_lease_hook(lease_scope)
 
+        assert isinstance(exc_info.value, HookExecutionError)
         assert "timed out after 1 seconds" in str(exc_info.value)
-        assert exc_info.value.on_failure == "exit"  # type: ignore[attr-defined]
+        assert exc_info.value.on_failure == "exit"
         assert not exc_info.value.should_end_lease()
 
     @macos_pty_xfail
