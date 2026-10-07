@@ -150,6 +150,10 @@ func RuntimeContainerFile(cfg QuadletConfig) (string, error) {
 	if cfg.HostNetwork {
 		b.WriteString("Network=host\n")
 	}
+	// Container user (not [Service] User=): the qemu-runtime image defaults
+	// to UID 65532, which cannot write launcher.sock on a root-owned
+	// Podman volume. Matches in-cluster RunAsUser: 0 on target-runtime.
+	b.WriteString("User=0\n")
 
 	b.WriteString("\n")
 
