@@ -164,6 +164,18 @@ def lease_scope():
 
 
 class TestHookExecutor:
+    @pytest.mark.parametrize("hook_name", ["before_lease", "after_lease"])
+    @pytest.mark.parametrize("on_failure", ["warn", "endLease", "exit"])
+    def test_endlease_deprecation_warning(self, hook_name, on_failure, caplog) -> None:
+        HookExecutor(config=HookConfigV1Alpha1(**{
+            hook_name: HookInstanceConfigV1Alpha1(script="echo hook", on_failure=on_failure),
+        }))
+        warnings = [record.message for record in caplog.records if "is deprecated" in record.message]
+        assert len(warnings) == (1 if on_failure == "endLease" else 0)
+        if warnings:
+            assert f"hooks.{'beforeLease' if hook_name == 'before_lease' else 'afterLease'}" in warnings[0]
+            assert "without releasing the lease" in warnings[0]
+
     async def test_hook_executor_creation(self, hook_config) -> None:
         executor = HookExecutor(config=hook_config)
 
@@ -614,8 +626,8 @@ class TestHookExecutor:
         assert lease_scope.skip_after_lease_hook is True
         mock_shutdown.assert_called_once_with(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
 
-    async def test_before_lease_hook_endlease_sets_skip_flag_and_releases_lease(self, lease_scope) -> None:
-        """Test that beforeLease hook failure with on_failure=endLease sets skip_after_lease_hook and releases lease."""
+    async def test_before_lease_hook_endlease_reports_failure_without_ending_lease(self, lease_scope) -> None:
+        """Deprecated endLease reports failure but preserves the owner's reservation."""
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="endLease"),
         )
@@ -623,40 +635,20 @@ class TestHookExecutor:
 
         mock_report_status = AsyncMock()
         mock_shutdown = MagicMock()
-        mock_request_lease_release = AsyncMock()
 
         await executor.run_before_lease_hook(
             lease_scope,
             mock_report_status,
             mock_shutdown,
-            mock_request_lease_release,
         )
 
         assert lease_scope.skip_after_lease_hook is True
-        mock_request_lease_release.assert_called_once()
+        assert not lease_scope.lease_ended.is_set()
+        assert any(
+            call.args[0] == ExporterStatus.BEFORE_LEASE_HOOK_FAILED
+            for call in mock_report_status.await_args_list
+        )
         mock_shutdown.assert_not_called()
-
-    async def test_before_lease_hook_endlease_handles_release_error(self, lease_scope) -> None:
-        """Test that beforeLease hook with on_failure=endLease handles release errors gracefully."""
-        hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="endLease"),
-        )
-        executor = HookExecutor(config=hook_config)
-
-        mock_report_status = AsyncMock()
-        mock_shutdown = MagicMock()
-        mock_request_lease_release = AsyncMock(side_effect=RuntimeError("controller unavailable"))
-
-        # Should not raise even when request_lease_release fails
-        await executor.run_before_lease_hook(
-            lease_scope,
-            mock_report_status,
-            mock_shutdown,
-            mock_request_lease_release,
-        )
-
-        assert lease_scope.skip_after_lease_hook is True
-        mock_request_lease_release.assert_called_once()
 
     async def test_pty_output_drained_after_stop_flag_set(self) -> None:
         """Test that PTY drain captures data remaining after the stop flag is set.
@@ -1424,7 +1416,7 @@ class TestHookExecutorPRRegressions:
         When afterLease hook fails with on_failure=exit:
         - AFTER_LEASE_HOOK_FAILED status must be reported
         - AVAILABLE must NOT be reported
-        - shutdown must be called (not request_lease_release)
+        - shutdown must be called
         """
         hook_config = HookConfigV1Alpha1(
             after_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
@@ -1437,13 +1429,10 @@ class TestHookExecutorPRRegressions:
             status_calls.append((status, msg))
 
         mock_shutdown = MagicMock()
-        mock_request_release = AsyncMock()
-
         await executor.run_after_lease_hook(
             lease_scope,
             mock_report_status,
             mock_shutdown,
-            mock_request_release,
         )
 
         # AFTER_LEASE_HOOK_FAILED should be in statuses
@@ -1458,9 +1447,8 @@ class TestHookExecutorPRRegressions:
             f"AVAILABLE should NOT be reported when afterLease exits, got: {status_calls}"
         )
 
-        # Shutdown called (not request_lease_release)
+        # Shutdown called without reporting AVAILABLE.
         mock_shutdown.assert_called_once_with(exit_code=1, should_unregister=True, wait_for_lease_exit=True)
-        mock_request_release.assert_not_called()
 
     async def test_before_hook_warn_includes_warning_prefix(self, lease_scope) -> None:
         """Issue E5: beforeLease hook fail with warn should include HOOK_WARNING_PREFIX.
@@ -1551,13 +1539,10 @@ class TestHookExecutorPRRegressions:
             nonlocal shutdown_called_at_index
             shutdown_called_at_index = len(status_calls)
 
-        mock_request_release = AsyncMock()
-
         await executor.run_after_lease_hook(
             lease_scope,
             mock_report_status,
             mock_shutdown,
-            mock_request_release,
         )
 
         offline_indices = [
@@ -1591,7 +1576,6 @@ class TestHookExecutorPRRegressions:
             status_calls.append((status, msg))
 
         mock_shutdown = MagicMock()
-        mock_request_release = AsyncMock()
 
         await executor.run_before_lease_hook(
             lease_scope,
@@ -1608,7 +1592,6 @@ class TestHookExecutorPRRegressions:
             lease_scope,
             mock_report_status,
             mock_shutdown,
-            mock_request_release,
         )
 
         # afterLease hook should run and transition to AVAILABLE

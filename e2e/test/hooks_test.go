@@ -151,13 +151,9 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, ContinueOnFailure, 
 	// beforeLeaseFailureOutput matches every client-visible outcome of a failing
 	// beforeLease hook.
 	//
-	// The client and the exporter race here: the exporter ends the lease the
-	// moment the hook fails, so which message the client prints depends on how
-	// far it got first. It may have seen the hook's own output, the shutdown
-	// notice, a dropped connection, or — if the exporter tore the lease down
-	// before the client's very first RPC — nothing at all, in which case the
-	// client reports the exporter as unreachable. All of these mean the hook
-	// failed and the lease ended, which is what these specs assert.
+	// The client may observe the hook failure, shutdown notice, or a lost
+	// connection. Auto-created shell leases are released by the client;
+	// exporters must not release reservations when reporting hook failures.
 	const beforeLeaseFailureOutput = `(beforeLease hook fail|Exporter shutting down|Connection to exporter lost|` +
 		`did not respond to initial status check|unreachable after)`
 
@@ -185,7 +181,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, ContinueOnFailure, 
 			WaitForExporter("test-exporter-hooks")
 		})
 
-		It("B3: beforeLease onFailure=endLease releases lease and accepts new one", func() {
+		It("B3: client releases failed shell lease and exporter accepts new one", func() {
 			startHooksExporter("exporter-hooks-before-fail-endLease.yaml")
 
 			// First lease: shell should fail because beforeLease hook fails
@@ -195,7 +191,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, ContinueOnFailure, 
 			Expect(err).To(HaveOccurred())
 			Expect(out).To(MatchRegexp(beforeLeaseFailureOutput))
 
-			// The exporter should release the lease and return to Available
+			// The client should release its lease and the exporter return to Available
 			WaitForExporter("test-exporter-hooks")
 
 			// Second lease: should also fail (hook still configured to fail),

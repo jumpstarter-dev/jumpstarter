@@ -129,7 +129,6 @@ async def test_fail_fast_errors_propagate_without_retry(error):
             75 if error.code() in (grpc.StatusCode.UNAUTHENTICATED, grpc.StatusCode.PERMISSION_DENIED) else 1
         )
         assert exporter.exit_code == expected_exit_code
-        assert exporter._controller_stream_failed
     else:
         assert exporter.exit_code is None
 
@@ -153,7 +152,6 @@ async def test_status_stream_budget_expires_after_error_or_eof(ends_cleanly):
         await exporter._retry_stream("Status", stream_factory, tx, backoff=0.01, outage_budget=0.06)
     assert attempts >= 2
     assert exporter.exit_code == 75
-    assert exporter._controller_stream_failed
 
 
 @pytest.mark.anyio

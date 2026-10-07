@@ -50,8 +50,9 @@ class HookInstanceConfigV1Alpha1(BaseModel):
         default="warn",
         alias="onFailure",
         description=(
-            "Action to take when the expected exit code is not returned: 'endLease' to end the lease, "
-            "'exit' takes the exporter offline and ends the lease, 'warn' continues and prints a warning"
+            "Action to take when the expected exit code is not returned: 'warn' continues and prints a warning, "
+            "'exit' takes the exporter offline, 'endLease' is deprecated and reports a hook failure. "
+            "The exporter does not release leases; release belongs to the client or controller."
         ),
     )
 

@@ -3,8 +3,8 @@
 Jumpstarter supports lifecycle hooks that execute shell scripts automatically before or after a {term}`lease`.
 
 A `beforeLease` hook runs after a lease is assigned but
-before drivers are available to the client, and an `afterLease` hook runs after
-the {term}`session` ends but before the lease is released. Hooks are optional and
+before drivers are available to the client, and an `afterLease` hook runs when
+the client requests session completion or the controller ends the lease. Hooks are optional and
 configured in the [Exporter](exporters.md) YAML configuration file (exporter config).
 
 Hooks execute on the exporter {term}`host` using a configurable interpreter (defaulting
@@ -42,7 +42,8 @@ sequenceDiagram
     Note over Hook: j power off
     Hook-->>Exporter: Exit code 0
     Exporter->>Exporter: Status: AVAILABLE
-    Exporter->>Controller: Release lease
+    Exporter-->>Client: Cleanup complete
+    Client->>Controller: Release lease
 ```
 
 The {term}`exporter` transitions through these states during a {term}`lease`:
@@ -53,11 +54,16 @@ The {term}`exporter` transitions through these states during a {term}`lease`:
 3. **`LEASE_READY`** - The {term}`hook` succeeded and the client can now access
    drivers.
 4. **Client {term}`session`** - The client uses drivers normally.
-5. **{term}`Session` ends** - The client disconnects or the {term}`lease` is released.
+5. **{term}`Session` ends** - The client requests completion or the {term}`lease` is released.
 6. **`AFTER_LEASE_HOOK`** - The `afterLease` script runs. The {term}`session` remains
    open so `j` commands can still interact with drivers.
-7. **`AVAILABLE`** - The {term}`hook` completed and the {term}`lease` is released. The
-   {term}`exporter` is ready for the next {term}`lease`.
+7. **`AVAILABLE`** - The {term}`hook` completed. The client releases its lease, or
+   the controller has already ended it. The exporter can accept a new lease once
+   the previous reservation has ended.
+
+Completing a hook or shutting down `jmp run` does not release a lease. Lease
+ownership is managed by the client and controller. `jmp shell` releases leases
+it creates when the shell exits; connecting to a pre-created lease preserves it.
 
 ```{note}
 If no {term}`hook`s are configured, the {term}`exporter` transitions directly from {term}`lease`
@@ -88,7 +94,7 @@ hooks:
       j power on
       sleep 5
     timeout: 60
-    onFailure: endLease
+    onFailure: warn
   afterLease:
     script: |
       j power off
@@ -101,11 +107,11 @@ hooks:
 | Field                    | Type    | Default      | Description                                                                                                                                                                                |
 | ------------------------ | ------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `hooks.beforeLease`      | object  | *(none)*     | {term}`Hook` that runs after {term}`lease` assignment, before drivers are available                                                                                                                        |
-| `hooks.afterLease`       | object  | *(none)*     | {term}`Hook` that runs after the {term}`session` ends, before the {term}`lease` is released                                                                                                                        |
+| `hooks.afterLease`       | object  | *(none)*     | {term}`Hook` that runs on session completion or after the controller ends the {term}`lease`                                                                                                                        |
 | `hooks.<hook>.exec`      | string  | *(auto)*     | Interpreter used to execute the script. Auto-detected from file extension when not set (`.py` uses the exporter's Python, `.sh` uses `/bin/sh`). Defaults to `/bin/sh` for inline scripts. |
 | `hooks.<hook>.script`    | string  | *(required)* | Inline script or path to a script file (auto-detected)                                                                                                                                     |
 | `hooks.<hook>.timeout`   | integer | `120`        | Maximum execution time in seconds                                                                                                                                                          |
-| `hooks.<hook>.onFailure` | string  | `"warn"`     | Action on failure: `"warn"`, `"endLease"`, or `"exit"`                                                                                                                                     |
+| `hooks.<hook>.onFailure` | string  | `"warn"`     | Action on failure: `"warn"`, `"exit"`, or deprecated `"endLease"`                                                                                                                                     |
 
 ### Script Modes
 
@@ -197,20 +203,25 @@ continues as if the {term}`hook` succeeded:
 This is useful for {term}`hook`s that perform best-effort actions where failure should
 not disrupt the workflow.
 
-### `endLease`
+### `endLease` (deprecated)
 
-The {term}`lease` is ended and the client is notified of the failure:
+The exporter logs a deprecation warning at startup for each hook configured with
+`onFailure: endLease`. The option remains accepted, but it reports hook failure
+without asking the controller to release the lease:
 
 - **`beforeLease`**: The exporter status transitions to
   `BEFORE_LEASE_HOOK_FAILED`. The client discovers the failure through status
-  polling and the {term}`lease` is released. The interactive shell is skipped.
+  polling and the interactive shell is skipped. An auto-created `jmp shell`
+  lease is released by the client; a pre-created lease remains reserved until
+  the owner releases it or it expires.
 - **`afterLease`**: The exporter status transitions to
   `AFTER_LEASE_HOOK_FAILED`. Since the {term}`session` has already ended, this
   primarily serves as a signal to the client that cleanup did not complete
-  successfully. The {term}`exporter` remains available for new {term}`lease`s.
+  successfully. The exporter then returns to `AVAILABLE`, but the reservation
+  remains held until the client or controller ends it.
 
-This is the recommended mode for `beforeLease` validation {term}`hook`s where you want
-the client to know immediately that the {term}`device` is not ready.
+Use `warn` for non-critical failures that should allow the session to continue,
+or `exit` for critical failures that require taking the exporter offline.
 
 ### `exit`
 
@@ -231,8 +242,8 @@ configure `RestartPreventExitStatus=1` to prevent automatic restarts after an
 ```{warning}
 The `exit` failure mode is a drastic action intended for critical failures
 where the {term}`device` may be in an unusable state. It takes the {term}`exporter` offline
-until manually restarted. Use `endLease` for most validation scenarios and
-reserve `exit` for critical failures.
+until manually restarted. Reserve `exit` for critical failures and use `warn`
+for best-effort hooks.
 ```
 
 ### Timeout Behavior
@@ -265,7 +276,7 @@ hooks:
       echo "Device did not become reachable"
       exit 1
     timeout: 120
-    onFailure: endLease
+    onFailure: warn
 ```
 
 Note that the `j ssh` command does not have a built-in connection timeout, so
@@ -302,7 +313,7 @@ hooks:
       j power cycle
       sleep 10
     timeout: 180
-    onFailure: endLease
+    onFailure: warn
 ```
 
 ### Using Bash
@@ -319,7 +330,7 @@ hooks:
       [[ -f /dev/ttyUSB0 ]] || { echo "Serial device missing"; exit 1; }
       j power on
     timeout: 60
-    onFailure: endLease
+    onFailure: warn
 ```
 
 ### Using Python
@@ -338,7 +349,7 @@ hooks:
   beforeLease:
     script: /opt/jumpstarter/hooks/prepare_device.py
     timeout: 60
-    onFailure: endLease
+    onFailure: warn
 ```
 
 `/opt/jumpstarter/hooks/prepare_device.py`:
@@ -371,7 +382,7 @@ hooks:
     exec: /bin/bash
     script: /opt/jumpstarter/hooks/prepare_device.sh
     timeout: 120
-    onFailure: endLease
+    onFailure: warn
 ```
 
 ## Best Practices
@@ -380,8 +391,8 @@ hooks:
   cleanup).
 - Set an appropriate `timeout` for each {term}`hook`. The default of 120 seconds may be
   too generous for simple scripts and too short for firmware flashing.
-- Use `onFailure: endLease` for `beforeLease` validation so clients get
-  immediate feedback when a {term}`device` is not ready.
+- Use `onFailure: warn` for non-critical `beforeLease` checks. Use `exit` when
+  a failed check must prevent access to the {term}`device`.
 - Use `onFailure: warn` for `afterLease` cleanup unless leaving the {term}`device` in a
   bad state poses a safety risk.
 - Reserve `onFailure: exit` for critical failures that require manual

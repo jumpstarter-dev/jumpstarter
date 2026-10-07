@@ -75,7 +75,7 @@ restarting the exporter.
 | A3: both hooks execute in correct order | `exporter-hooks-both.yaml` | same | `BEFORE_HOOK:` index < `AFTER_HOOK:` index |
 | B1: beforeLease onFailure=warn allows shell to proceed | `exporter-hooks-before-fail-warn.yaml` | shell command | succeeds; contains "HOOK_FAIL_WARN"; exporter returns Available |
 | B2: beforeLease onFailure=endLease fails shell | `exporter-hooks-before-fail-endLease.yaml` | shell w/ `--retry-timeout 0` | errors; message matches hook-fail/shutdown/connection-lost regex |
-| B3: beforeLease onFailure=endLease releases lease and accepts new one | same config | run shell twice | both fail same way; exporter returns Available both times |
+| B3: client releases failed shell lease and exporter accepts new one | same config | run shell twice | client releases each auto-created lease; both fail same way; exporter returns Available both times |
 | B4: beforeLease fail+endLease does NOT run afterLease hook | `exporter-hooks-before-fail-endLease-with-after.yaml` | shell fails | output lacks "AFTER_SHOULD_NOT_RUN" |
 | B5: beforeLease onFailure=exit shuts down exporter | `exporter-hooks-before-fail-exit.yaml` (single-run mode) | shell fails | exporter process exits within 30s; goes Offline |
 | C1: afterLease onFailure=warn keeps exporter available | `exporter-hooks-after-fail-warn.yaml` | shell succeeds | contains "HOOK_FAIL_WARN"; exporter stays Available |
