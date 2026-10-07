@@ -480,7 +480,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			},
 		}
 
-		dep := createTelemetryDeployment(js, "fake-tls-hash")
+		dep := createTelemetryDeployment(js, "fake-tls-hash", telemetryLokiPod{})
 
 		container := dep.Spec.Template.Spec.Containers[0]
 
@@ -528,7 +528,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			},
 		}
 
-		dep := createTelemetryDeployment(js, "manual-tls-hash")
+		dep := createTelemetryDeployment(js, "manual-tls-hash", telemetryLokiPod{})
 
 		container := dep.Spec.Template.Spec.Containers[0]
 
@@ -572,7 +572,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		}
 
 		// Empty hash when no TLS is configured
-		dep := createTelemetryDeployment(js, "")
+		dep := createTelemetryDeployment(js, "", telemetryLokiPod{})
 
 		container := dep.Spec.Template.Spec.Containers[0]
 

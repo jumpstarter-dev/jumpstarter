@@ -37,9 +37,9 @@ const (
 	jepMetricsBindFlag           = "-metrics-bind-address=:8080"
 )
 
-func phase3TelemetryJS(name, namespace string) *operatorv1alpha1.Jumpstarter {
+func phase3TelemetryJS(namespace string) *operatorv1alpha1.Jumpstarter {
 	return &operatorv1alpha1.Jumpstarter{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: "js", Namespace: namespace},
 		Spec: operatorv1alpha1.JumpstarterSpec{
 			CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
 			Telemetry: &operatorv1alpha1.TelemetryConfig{
@@ -53,7 +53,7 @@ func phase3TelemetryJS(name, namespace string) *operatorv1alpha1.Jumpstarter {
 
 var _ = Describe("createTelemetryDeployment JEP-0013 Phase 3", func() {
 	It("passes default scrapeTimeout, driverTypeEnum, and exemplarKeys as flags", func() {
-		dep := createTelemetryDeployment(phase3TelemetryJS("js", "ns"), "")
+		dep := createTelemetryDeployment(phase3TelemetryJS("ns"), "", telemetryLokiPod{})
 		c := dep.Spec.Template.Spec.Containers[0]
 
 		Expect(c.Args).To(ContainElement(jepMetricsBindFlag))
@@ -63,27 +63,27 @@ var _ = Describe("createTelemetryDeployment JEP-0013 Phase 3", func() {
 	})
 
 	It("passes custom spec.telemetry.metrics fields as flags", func() {
-		js := phase3TelemetryJS("js", "ns")
+		js := phase3TelemetryJS("ns")
 		js.Spec.Telemetry.Metrics = operatorv1alpha1.TelemetryMetricsConfig{
 			ExemplarKeys:   []string{"client", "board-type"},
 			DriverTypeEnum: []string{"power", "can"},
 			ScrapeTimeout:  &metav1.Duration{Duration: 3 * time.Second},
 		}
 
-		c := createTelemetryDeployment(js, "").Spec.Template.Spec.Containers[0]
+		c := createTelemetryDeployment(js, "", telemetryLokiPod{}).Spec.Template.Spec.Containers[0]
 		Expect(c.Args).To(ContainElement("-scrape-timeout=3s"))
 		Expect(c.Args).To(ContainElement("-driver-type-enum=power,can"))
 		Expect(c.Args).To(ContainElement("-exemplar-keys=client,board-type"))
 	})
 
 	It("sets GRPC_TELEMETRY_ENDPOINT to the in-cluster telemetry Service", func() {
-		js := phase3TelemetryJS("js", "jumpstarter-lab")
-		c := createTelemetryDeployment(js, "").Spec.Template.Spec.Containers[0]
+		js := phase3TelemetryJS("jumpstarter-lab")
+		c := createTelemetryDeployment(js, "", telemetryLokiPod{}).Spec.Template.Spec.Containers[0]
 		Expect(envValue(c, "GRPC_TELEMETRY_ENDPOINT")).To(Equal(telemetryEndpointFor(js.Namespace)))
 	})
 
 	It("exposes container port metrics on 8080", func() {
-		c := createTelemetryDeployment(phase3TelemetryJS("js", "ns"), "").Spec.Template.Spec.Containers[0]
+		c := createTelemetryDeployment(phase3TelemetryJS("ns"), "", telemetryLokiPod{}).Spec.Template.Spec.Containers[0]
 		p := namedContainerPort(c.Ports, metricsPortName)
 		Expect(p).NotTo(BeNil(), "expected container port named metrics")
 		Expect(p.ContainerPort).To(Equal(int32(telemetryMetricsPort)))

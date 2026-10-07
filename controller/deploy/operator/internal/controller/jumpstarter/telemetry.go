@@ -54,6 +54,12 @@ var (
 	defaultTelemetryDriverTypeEnum = []string{"power", "storage", "network", "serial", "console", "video", "composite"}
 	defaultTelemetryExemplarKeys   = []string{"client", "lease_id"}
 	defaultTelemetryScrapeTimeout  = 7 * time.Second
+	defaultTelemetryLokiQueueDepth = int32(10000)
+	lokiCAMountPath                = "/loki-ca"
+	lokiCAFilePath                 = "/loki-ca/ca.crt"
+	lokiCAVolumeName               = "loki-ca"
+	lokiSecretHashAnnotation       = "jumpstarter.dev/loki-secret-sha256"
+	lokiCAHashAnnotation           = "jumpstarter.dev/loki-ca-secret-sha256"
 )
 
 // reconcileTelemetryDeploymentStage reconciles only the telemetry Deployment (and cleanup).
@@ -169,7 +175,13 @@ func (r *JumpstarterReconciler) reconcileTelemetryDeployment(ctx context.Context
 		return err
 	}
 
-	desiredDeployment := createTelemetryDeployment(jumpstarter, tlsSecretHash)
+	lokiPod, err := r.telemetryLokiPodPlan(ctx, jumpstarter)
+	if err != nil {
+		log.Error(err, "Failed to read Loki secrets")
+		return err
+	}
+
+	desiredDeployment := createTelemetryDeployment(jumpstarter, tlsSecretHash, lokiPod)
 
 	existingDeployment := &appsv1.Deployment{}
 	existingDeployment.Name = desiredDeployment.Name
@@ -234,6 +246,9 @@ func (r *JumpstarterReconciler) reconcileTelemetryDeployment(ctx context.Context
 		r.emitEventf(jumpstarter, corev1.EventTypeNormal, "TelemetryDeploymentUpdated",
 			"Telemetry deployment updated: name=%s namespace=%s",
 			existingDeployment.Name, existingDeployment.Namespace)
+	}
+	if lokiPod.disablePush && op != controllerutil.OperationResultNone {
+		r.emitEventf(jumpstarter, corev1.EventTypeWarning, "LokiCredentialsMissing", "%s", lokiPod.disableReason)
 	}
 
 	return nil
@@ -322,18 +337,151 @@ func telemetryContainerArgs(t *operatorv1alpha1.TelemetryConfig) []string {
 	if len(keys) == 0 {
 		keys = defaultTelemetryExemplarKeys
 	}
-	return []string{
+	args := []string{
 		fmt.Sprintf("-grpc-bind=:%d", telemetryPort),
 		fmt.Sprintf("-metrics-bind-address=:%d", telemetryMetricsPort),
 		fmt.Sprintf("-scrape-timeout=%s", timeout),
 		fmt.Sprintf("-driver-type-enum=%s", strings.Join(enum, ",")),
 		fmt.Sprintf("-exemplar-keys=%s", strings.Join(keys, ",")),
 	}
+	if t.Loki.URL != "" {
+		args = append(args, fmt.Sprintf("-loki-url=%s", t.Loki.URL))
+		depth := t.Backpressure.QueueDepth
+		if depth <= 0 {
+			depth = defaultTelemetryLokiQueueDepth
+		}
+		args = append(args, fmt.Sprintf("-loki-queue-depth=%d", depth))
+		if t.Loki.TLS.InsecureSkipVerify {
+			args = append(args, "-loki-insecure-skip-verify=true")
+		}
+		if t.Loki.TLS.CASecretRef != "" {
+			args = append(args, fmt.Sprintf("-loki-ca-file=%s", lokiCAFilePath))
+		}
+	}
+	return args
+}
+
+func lokiReferencedSecretKeys(js *operatorv1alpha1.Jumpstarter) []string {
+	if js.Spec.Telemetry == nil || !js.Spec.Telemetry.Enabled {
+		return nil
+	}
+	var keys []string
+	if s := js.Spec.Telemetry.Loki.SecretRef; s != "" {
+		keys = append(keys, js.Namespace+"/"+s)
+	}
+	if s := js.Spec.Telemetry.Loki.TLS.CASecretRef; s != "" {
+		keys = append(keys, js.Namespace+"/"+s)
+	}
+	return keys
+}
+
+func lokiSecretHasCredentials(secret *corev1.Secret) bool {
+	if secret == nil {
+		return false
+	}
+	for _, key := range []string{"token", "username", "password"} {
+		if len(secret.Data[key]) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *JumpstarterReconciler) getSecret(ctx context.Context, namespace, name string) (*corev1.Secret, error) {
+	if name == "" {
+		return nil, nil
+	}
+	var secret corev1.Secret
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &secret); err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get secret %s/%s: %w", namespace, name, err)
+	}
+	return &secret, nil
+}
+
+func (r *JumpstarterReconciler) telemetryLokiPodPlan(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (telemetryLokiPod, error) {
+	var plan telemetryLokiPod
+	if js.Spec.Telemetry == nil {
+		return plan, nil
+	}
+	t := js.Spec.Telemetry
+	if t.Loki.SecretRef != "" {
+		secret, err := r.getSecret(ctx, js.Namespace, t.Loki.SecretRef)
+		if err != nil {
+			return plan, err
+		}
+		if secret == nil {
+			if t.Loki.URL != "" {
+				plan.disablePush = true
+				plan.disableReason = fmt.Sprintf("Loki push disabled: secret %s/%s not found", js.Namespace, t.Loki.SecretRef)
+			}
+		} else {
+			plan.credentialHash = secretDataHash(secret)
+			if !lokiSecretHasCredentials(secret) && t.Loki.URL != "" {
+				plan.disablePush = true
+				plan.disableReason = fmt.Sprintf(
+					"Loki push disabled: secret %s/%s has no token, username, or password",
+					js.Namespace, t.Loki.SecretRef,
+				)
+			}
+		}
+	}
+	if t.Loki.TLS.CASecretRef != "" {
+		secret, err := r.getSecret(ctx, js.Namespace, t.Loki.TLS.CASecretRef)
+		if err != nil {
+			return plan, err
+		}
+		if secret != nil {
+			plan.caHash = secretDataHash(secret)
+		} else if t.Loki.URL != "" && !plan.disablePush {
+			plan.disablePush = true
+			plan.disableReason = fmt.Sprintf("Loki push disabled: secret %s/%s not found", js.Namespace, t.Loki.TLS.CASecretRef)
+		}
+	}
+	return plan, nil
+}
+
+func telemetryPodAnnotations(tlsSecretHash string, loki telemetryLokiPod) map[string]string {
+	annotations := map[string]string{}
+	if tlsSecretHash != "" {
+		annotations["jumpstarter.dev/tls-secret-sha256"] = tlsSecretHash
+	}
+	if loki.credentialHash != "" {
+		annotations[lokiSecretHashAnnotation] = loki.credentialHash
+	}
+	if loki.caHash != "" {
+		annotations[lokiCAHashAnnotation] = loki.caHash
+	}
+	if len(annotations) == 0 {
+		return nil
+	}
+	return annotations
+}
+
+// telemetryLokiPod carries pod-template inputs derived from Loki Secrets.
+// disablePush is set when a referenced Loki Secret is missing or the
+// credential Secret has no token, username, or password. A credential
+// reason is kept when the CA Secret is also missing. An empty secretRef
+// stays a valid unauthenticated endpoint.
+type telemetryLokiPod struct {
+	credentialHash string
+	caHash         string
+	disablePush    bool
+	disableReason  string
 }
 
 // createTelemetryDeployment builds the desired Deployment for the telemetry service.
-// tlsSecretHash is included as a pod annotation to trigger rolling restarts on cert renewal.
-func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSecretHash string) *appsv1.Deployment {
+// Secret hashes are pod annotations so a data change rolls the pod.
+func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSecretHash string, loki telemetryLokiPod) *appsv1.Deployment {
+	if loki.disablePush && jumpstarter.Spec.Telemetry != nil {
+		specCopy := *jumpstarter
+		telCopy := *jumpstarter.Spec.Telemetry
+		telCopy.Loki.URL = ""
+		specCopy.Spec.Telemetry = &telCopy
+		jumpstarter = &specCopy
+	}
 	t := jumpstarter.Spec.Telemetry
 	labels := telemetryLabels(jumpstarter)
 
@@ -342,13 +490,7 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSec
 		replicas = *t.Replicas
 	}
 
-	// Build pod annotations for TLS hash (triggers rolling restart on cert renewal)
-	var podAnnotations map[string]string
-	if tlsSecretHash != "" {
-		podAnnotations = map[string]string{
-			"jumpstarter.dev/tls-secret-sha256": tlsSecretHash,
-		}
-	}
+	podAnnotations := telemetryPodAnnotations(tlsSecretHash, loki)
 
 	// Base environment variables - CONTROLLER_KEY is always required for token validation
 	envVars := []corev1.EnvVar{
@@ -389,6 +531,60 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSec
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName:  tlsSecretName,
+					DefaultMode: &defaultMode,
+				},
+			},
+		})
+	}
+
+	if t.Loki.URL != "" && t.Loki.SecretRef != "" {
+		optional := new(true)
+		envVars = append(envVars,
+			corev1.EnvVar{
+				Name: "LOKI_USERNAME",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: t.Loki.SecretRef},
+						Key:                  "username",
+						Optional:             optional,
+					},
+				},
+			},
+			corev1.EnvVar{
+				Name: "LOKI_PASSWORD",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: t.Loki.SecretRef},
+						Key:                  "password",
+						Optional:             optional,
+					},
+				},
+			},
+			corev1.EnvVar{
+				Name: "LOKI_TOKEN",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: t.Loki.SecretRef},
+						Key:                  "token",
+						Optional:             optional,
+					},
+				},
+			},
+		)
+	}
+
+	if t.Loki.URL != "" && t.Loki.TLS.CASecretRef != "" {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      lokiCAVolumeName,
+			MountPath: lokiCAMountPath,
+			ReadOnly:  true,
+		})
+		defaultMode := int32(420)
+		volumes = append(volumes, corev1.Volume{
+			Name: lokiCAVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  t.Loki.TLS.CASecretRef,
 					DefaultMode: &defaultMode,
 				},
 			},
