@@ -395,12 +395,29 @@ class AddonRegistry:
         self.addons_dir = Path(addons_dir)
         self._handlers: dict[str, Any] = {}
 
+    def _script_path(self, name: str) -> Path | None:
+        """Path of addon ``name``'s script, or ``None`` if it leaves the addons dir.
+
+        ``name`` comes from the mock config, so ``../x`` or an absolute path must
+        not be able to import and run an arbitrary ``.py`` file. Checked on the
+        normalized path, not the symlink-resolved one: the directory is the
+        operator's, so a script they symlinked into it still loads.
+        """
+        base = os.path.abspath(self.addons_dir)
+        script = os.path.abspath(os.path.join(base, f"{name}.py"))
+        if os.path.commonpath([base, script]) != base:
+            return None
+        return Path(script)
+
     def get_handler(self, name: str) -> Any | None:
         """Load and cache a custom addon handler by name."""
         if name in self._handlers:
             return self._handlers[name]
 
-        script_path = self.addons_dir / f"{name}.py"
+        script_path = self._script_path(name)
+        if script_path is None:
+            ctx.log.error(f"Addon path traversal blocked: {name!r}")
+            return None
         if not script_path.exists():
             ctx.log.error(f"Addon script not found: {script_path}")
             return None

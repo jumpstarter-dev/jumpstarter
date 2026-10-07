@@ -709,6 +709,116 @@ class TestBundledAddonImport:
         assert Path(result["response_body_file"]).read_bytes() == b"\x00" * 16
 
 
+def _addon_module(monkeypatch):
+    """The real addon module, with ``ctx.log`` stood in.
+
+    ``ctx.log`` exists only inside a running mitmproxy, and this module logs
+    through it, so the error paths below cannot run without a stand-in.
+    """
+    import importlib
+
+    mod = importlib.import_module("jumpstarter_driver_mitmproxy.bundled_addon")
+    log = MagicMock()
+    monkeypatch.setattr(mod.ctx, "log", log, raising=False)  # ty: ignore[unresolved-attribute]
+    return mod, log
+
+
+class TestSpoolDirectory:
+    """How the addon writes spooled response bodies."""
+
+    @staticmethod
+    def _binary_flow(url_path="/bin"):
+        from mitmproxy.test import tflow
+
+        flow = tflow.tflow(resp=True)
+        response = flow.response
+        assert response is not None
+        flow.request.path = url_path
+        response.headers["content-type"] = "application/octet-stream"
+        response.content = b"\x00" * 16
+        return flow
+
+    def _addon(self, monkeypatch, tmp_path):
+        mod, log = _addon_module(monkeypatch)
+        addon = mod.MitmproxyMockAddon()  # ty: ignore[unresolved-attribute]
+        addon._spool_dir = tmp_path / "spool"
+        return addon, log
+
+    def test_an_uncreatable_spool_dir_costs_only_that_body(self, monkeypatch, tmp_path):
+        addon, log = self._addon(monkeypatch, tmp_path)
+
+        def refuse(self, *args, **kwargs):
+            raise PermissionError(13, "Permission denied", str(self))
+
+        monkeypatch.setattr(Path, "mkdir", refuse)
+
+        result = addon._classify_response_body(self._binary_flow())
+
+        assert result["response_body_file"] is None
+        assert result["response_body"] is None
+        assert result["response_is_binary"] is True
+        assert "Failed to spool" in log.error.call_args.args[0]
+
+
+class TestAddonRegistryPaths:
+    """An addon name comes from the mock config and must stay in the addons dir."""
+
+    @pytest.fixture
+    def registry(self, monkeypatch, tmp_path):
+        mod, _ = _addon_module(monkeypatch)
+        addons = tmp_path / "addons"
+        addons.mkdir()
+        (addons / "good.py").write_text(self._handler("good"))
+        return mod.AddonRegistry(str(addons))  # ty: ignore[unresolved-attribute]
+
+    @staticmethod
+    def _handler(label, marker=None):
+        touch = ""
+        if marker:
+            touch = f"from pathlib import Path\nPath({str(marker)!r}).write_text('ran')\n"
+        return (
+            f"{touch}class Handler:\n    label = {label!r}\n"
+            "    def handle(self, flow, config):\n        return True\n"
+        )
+
+    def test_a_plain_name_loads(self, registry):
+        assert registry.get_handler("good").label == "good"
+
+    def test_a_name_in_a_subdirectory_loads(self, registry, tmp_path):
+        (tmp_path / "addons" / "sub").mkdir()
+        (tmp_path / "addons" / "sub" / "nested.py").write_text(self._handler("nested"))
+
+        assert registry.get_handler("sub/nested").label == "nested"
+        assert registry.get_handler("sub/../good").label == "good"
+
+    @pytest.mark.parametrize("name", [
+        "../outside",
+        "sub/../../outside",
+        "../addons-sibling/outside",
+        "ABSOLUTE",
+    ])
+    def test_a_name_that_leaves_the_addons_dir_is_not_run(self, registry, tmp_path, name):
+        marker = tmp_path / "ran"
+        # Exists, so ``sub/..`` resolves and the escape really is attempted.
+        (tmp_path / "addons" / "sub").mkdir(exist_ok=True)
+        for parent in (tmp_path, tmp_path / "addons-sibling"):
+            parent.mkdir(exist_ok=True)
+            (parent / "outside.py").write_text(self._handler("outside", marker))
+        if name == "ABSOLUTE":
+            name = str(tmp_path / "outside")
+
+        assert registry.get_handler(name) is None
+        assert not marker.exists(), "code outside the addons directory was executed"
+
+    def test_a_script_the_operator_symlinked_in_still_loads(self, registry, tmp_path):
+        real = tmp_path / "shared" / "linked_real.py"
+        real.parent.mkdir()
+        real.write_text(self._handler("linked"))
+        (tmp_path / "addons" / "linked.py").symlink_to(real)
+
+        assert registry.get_handler("linked").label == "linked"
+
+
 @pytest.fixture
 def deep_merge_patch():
     """Import _deep_merge_patch lazily."""
