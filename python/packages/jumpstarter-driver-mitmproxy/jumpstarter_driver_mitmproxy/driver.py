@@ -2069,6 +2069,25 @@ class MitmproxyDriver(Driver):
             state_file,
         )
 
+    def _fill_addon_paths(self, content: str) -> str:
+        """Point the bundled addon's source at this driver's directories.
+
+        Fills the ``_DRIVER_*`` placeholders in ``bundled_addon.py``. Raises if
+        one is missing, so a rename there cannot silently leave the addon on
+        its standalone defaults.
+        """
+        values = {
+            "_DRIVER_MOCK_DIR": self.directories.mocks,
+            "_DRIVER_CAPTURE_SOCKET": self._capture_socket_path,
+            "_DRIVER_CAPTURE_SPOOL_DIR": str(Path(self.directories.data) / "capture-spool"),
+        }
+        for name, value in values.items():
+            placeholder = f"{name}: str | None = None"
+            if content.count(placeholder) != 1:
+                raise RuntimeError(f"bundled addon has no {name} placeholder")
+            content = content.replace(placeholder, f"{name}: str | None = {value!r}")
+        return content
+
     def _generate_default_addon(self, path: Path):
         """Install the bundled v2 mitmproxy addon script.
 
@@ -2084,21 +2103,7 @@ class MitmproxyDriver(Driver):
         if bundled.exists():
             import shutil
             shutil.copy2(bundled, path)
-            # Patch the MOCK_DIR to match this driver's config
-            content = path.read_text()
-            content = content.replace(
-                '/opt/jumpstarter/mitmproxy/mock-responses',
-                self.directories.mocks,
-            )
-            content = content.replace(
-                '/opt/jumpstarter/mitmproxy/capture.sock',
-                self._capture_socket_path or '',
-            )
-            content = content.replace(
-                '/opt/jumpstarter/mitmproxy/capture-spool',
-                str(Path(self.directories.data) / "capture-spool"),
-            )
-            path.write_text(content)
+            path.write_text(self._fill_addon_paths(path.read_text()))
             logger.info("Installed bundled v2 addon: %s", path)
             return
 

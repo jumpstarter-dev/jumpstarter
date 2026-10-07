@@ -327,6 +327,7 @@ class TestAddonGeneration:
 
     @patch("jumpstarter_driver_mitmproxy.driver.subprocess.Popen")
     def test_generates_addon_if_missing(self, mock_popen, driver, tmp_path):
+        """The installed addon has the driver's directories filled in."""
         proc = MagicMock()
         proc.poll.return_value = None
         proc.pid = 12345
@@ -338,6 +339,13 @@ class TestAddonGeneration:
         assert addon_file.exists()
 
         content = addon_file.read_text()
+        # The driver fills its own directories into the deployed copy's
+        # placeholders; an unfilled one leaves the addon on its standalone
+        # defaults while the driver writes elsewhere.
+        spool = str(Path(driver.directories.data) / "capture-spool")
+        assert f"_DRIVER_MOCK_DIR: str | None = {driver.directories.mocks!r}" in content
+        assert f"_DRIVER_CAPTURE_SOCKET: str | None = {driver._capture_socket_path!r}" in content
+        assert f"_DRIVER_CAPTURE_SPOOL_DIR: str | None = {spool!r}" in content
         assert "MitmproxyMockAddon" in content
         assert "addons = [MitmproxyMockAddon()]" in content
 
@@ -957,6 +965,80 @@ class TestAddonRegistryPaths:
         (tmp_path / "addons" / "linked.py").symlink_to(real)
 
         assert registry.get_handler("linked").label == "linked"
+
+
+class TestAddonPaths:
+    """Where the addon keeps its files, standalone and when the driver installs it."""
+
+    @staticmethod
+    def _fresh_import(monkeypatch):
+        """Import the addon module again, so its module-level defaults are recomputed."""
+        import importlib
+        import sys
+
+        monkeypatch.delitem(
+            sys.modules, "jumpstarter_driver_mitmproxy.bundled_addon",
+            raising=False,
+        )
+        return importlib.import_module("jumpstarter_driver_mitmproxy.bundled_addon")
+
+    def test_standalone_defaults_are_per_user_not_opt(self, monkeypatch):
+        """Without a driver, the addon's files go under a per-user temp dir."""
+        import getpass
+        import tempfile
+
+        monkeypatch.delenv("MITMPROXY_DATA_DIR", raising=False)
+        monkeypatch.delenv("MITMPROXY_MOCK_DIR", raising=False)
+        mod = self._fresh_import(monkeypatch)
+
+        base = Path(tempfile.gettempdir()) / f"jumpstarter-mitmproxy-{getpass.getuser()}"
+        assert mod.CAPTURE_SPOOL_DIR == str(base / "capture-spool")  # ty: ignore[unresolved-attribute]
+        assert mod.CAPTURE_SOCKET == str(base / "capture.sock")  # ty: ignore[unresolved-attribute]
+        assert mod.MitmproxyMockAddon.MOCK_DIR == str(base / "mock-responses")  # ty: ignore[unresolved-attribute]
+
+    def test_data_dir_env_moves_every_default(self, monkeypatch, tmp_path):
+        """MITMPROXY_DATA_DIR moves the socket, spool and mock directories together."""
+        monkeypatch.setenv("MITMPROXY_DATA_DIR", str(tmp_path))
+        monkeypatch.delenv("MITMPROXY_MOCK_DIR", raising=False)
+        mod = self._fresh_import(monkeypatch)
+
+        assert mod.CAPTURE_SPOOL_DIR == str(tmp_path / "capture-spool")  # ty: ignore[unresolved-attribute]
+        assert mod.CAPTURE_SOCKET == str(tmp_path / "capture.sock")  # ty: ignore[unresolved-attribute]
+        assert mod.MitmproxyMockAddon.MOCK_DIR == str(tmp_path / "mock-responses")  # ty: ignore[unresolved-attribute]
+
+    def test_standalone_default_survives_a_missing_login_name(self, monkeypatch):
+        """A UID with no login name still gets a usable default."""
+        import getpass
+
+        def no_user():
+            """Stand-in for getpass.getuser on a UID with no passwd entry."""
+            raise KeyError("getpwuid(): uid not found")
+
+        monkeypatch.delenv("MITMPROXY_DATA_DIR", raising=False)
+        monkeypatch.setattr(getpass, "getuser", no_user)
+        mod = self._fresh_import(monkeypatch)
+
+        assert "jumpstarter-mitmproxy-" in mod.CAPTURE_SPOOL_DIR  # ty: ignore[unresolved-attribute]
+
+    def test_installed_addon_uses_the_driver_directories(self, driver, tmp_path):
+        """Executing the filled-in source resolves to the driver's paths."""
+        import types
+
+        driver._capture_socket_path = str(tmp_path / "data" / "capture.sock")
+        source = driver._fill_addon_paths(
+            (Path(__file__).parent / "bundled_addon.py").read_text()
+        ).replace("addons = [MitmproxyMockAddon()]", "addons = []")
+        module = types.ModuleType("installed_addon")
+        exec(compile(source, "mock_addon.py", "exec"), module.__dict__)  # noqa: S102
+
+        assert module.CAPTURE_SPOOL_DIR == str(Path(driver.directories.data) / "capture-spool")  # ty: ignore[unresolved-attribute]
+        assert module.CAPTURE_SOCKET == driver._capture_socket_path  # ty: ignore[unresolved-attribute]
+        assert module.MitmproxyMockAddon.MOCK_DIR == driver.directories.mocks  # ty: ignore[unresolved-attribute]
+
+    def test_fill_refuses_source_without_placeholders(self, driver):
+        """A renamed placeholder is an error, not a silent fall-back to the defaults."""
+        with pytest.raises(RuntimeError, match="_DRIVER_MOCK_DIR"):
+            driver._fill_addon_paths("addons = []\n")
 
 
 @pytest.fixture
