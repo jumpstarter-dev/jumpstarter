@@ -759,6 +759,128 @@ class TestSpoolDirectory:
         assert result["response_is_binary"] is True
         assert "Failed to spool" in log.error.call_args.args[0]
 
+    def test_spooled_bodies_are_private_whatever_the_umask(self, monkeypatch, tmp_path):
+        import os
+        import stat
+
+        addon, _ = self._addon(monkeypatch, tmp_path)
+        previous = os.umask(0)  # the most permissive case
+        try:
+            result = addon._classify_response_body(self._binary_flow())
+        finally:
+            os.umask(previous)
+
+        spooled = Path(result["response_body_file"])
+        assert stat.S_IMODE(spooled.stat().st_mode) == 0o600
+        assert stat.S_IMODE(spooled.parent.stat().st_mode) == 0o700
+
+    @pytest.mark.skipif(
+        not hasattr(__import__("os"), "O_NOFOLLOW"), reason="needs O_NOFOLLOW",
+    )
+    def test_a_symlink_in_the_spool_dir_is_not_followed(self, monkeypatch, tmp_path):
+        import hashlib
+
+        addon, _ = self._addon(monkeypatch, tmp_path)
+        flow = self._binary_flow()
+        url_hash = hashlib.sha256(flow.request.pretty_url.encode()).hexdigest()[:12]
+        victim = tmp_path / "victim.txt"
+        victim.write_text("untouched")
+        addon._spool_dir.mkdir()
+        # The name the first spooled body would get.
+        (addon._spool_dir / f"000001_{url_hash}.bin").symlink_to(victim)
+
+        result = addon._classify_response_body(flow)
+
+        assert victim.read_text() == "untouched"
+        assert result["response_body_file"] is None
+
+    @staticmethod
+    def _first_spool_name(flow):
+        import hashlib
+
+        url_hash = hashlib.sha256(flow.request.pretty_url.encode()).hexdigest()[:12]
+        return f"000001_{url_hash}.bin"
+
+    def test_a_leftover_spool_file_and_dir_are_tightened_before_writing(
+        self, monkeypatch, tmp_path,
+    ):
+        """A crashed session or an older version leaves loose modes behind."""
+        import os
+        import stat
+
+        addon, _ = self._addon(monkeypatch, tmp_path)
+        flow = self._binary_flow()
+        addon._spool_dir.mkdir()
+        os.chmod(addon._spool_dir, 0o755)
+        leftover = addon._spool_dir / self._first_spool_name(flow)
+        leftover.write_bytes(b"body of an earlier session")
+        os.chmod(leftover, 0o644)
+
+        result = addon._classify_response_body(flow)
+
+        assert Path(result["response_body_file"]) == leftover
+        assert leftover.read_bytes() == b"\x00" * 16
+        assert stat.S_IMODE(leftover.stat().st_mode) == 0o600
+        assert stat.S_IMODE(addon._spool_dir.stat().st_mode) == 0o700
+
+    def test_a_spool_file_that_cannot_be_tightened_is_never_written(
+        self, monkeypatch, tmp_path,
+    ):
+        """E.g. a file another user created in a shared directory."""
+        import os
+
+        addon, log = self._addon(monkeypatch, tmp_path)
+        flow = self._binary_flow()
+        addon._spool_dir.mkdir()
+        target = addon._spool_dir / self._first_spool_name(flow)
+        target.write_bytes(b"planted")
+
+        def not_ours(fd, mode):
+            raise PermissionError(1, "Operation not permitted")
+
+        monkeypatch.setattr(os, "fchmod", not_ours)
+
+        result = addon._classify_response_body(flow)
+
+        assert result["response_body_file"] is None
+        assert b"\x00" * 16 not in target.read_bytes(), "the body reached a file that was not ours"
+        assert "Failed to spool" in log.error.call_args.args[0]
+
+    @pytest.mark.skipif(
+        not hasattr(__import__("os"), "O_NOFOLLOW"), reason="needs O_NOFOLLOW",
+    )
+    def test_a_symlinked_spool_dir_is_refused_and_its_target_left_alone(
+        self, monkeypatch, tmp_path,
+    ):
+        """chmod would follow the link and change someone else's directory."""
+        import os
+        import stat
+
+        addon, _ = self._addon(monkeypatch, tmp_path)
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        os.chmod(elsewhere, 0o755)
+        addon._spool_dir.symlink_to(elsewhere, target_is_directory=True)
+
+        result = addon._classify_response_body(self._binary_flow())
+
+        assert result["response_body_file"] is None
+        assert stat.S_IMODE(elsewhere.stat().st_mode) == 0o755
+        assert list(elsewhere.iterdir()) == []
+
+    def test_the_driver_creates_its_spool_dir_private_too(self, driver):
+        import os
+        import stat
+
+        previous = os.umask(0)
+        try:
+            driver._start_capture_server()
+        finally:
+            os.umask(previous)
+
+        spool = Path(driver.directories.data) / "capture-spool"
+        assert stat.S_IMODE(spool.stat().st_mode) == 0o700
+
 
 class TestAddonRegistryPaths:
     """An addon name comes from the mock config and must stay in the addons dir."""

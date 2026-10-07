@@ -461,6 +461,45 @@ class AddonRegistry:
 CAPTURE_SOCKET = "/opt/jumpstarter/mitmproxy/capture.sock"
 CAPTURE_SPOOL_DIR = "/opt/jumpstarter/mitmproxy/capture-spool"
 
+def _open_private(path: str, flags: int) -> int:
+    """``open`` opener: a file that is mode 0600 before anything is written to it.
+
+    Captured bodies can hold tokens or personal data, and the spool lives in a
+    shared temp directory by default, so who can read them must not depend on
+    the umask. A symlink at the path is never followed. A file already there,
+    left by a crashed session or an older version, keeps its old mode, so the
+    mode is set explicitly: opening truncates it, this tightens it, and only
+    then does the caller write. A file this user cannot chmod is refused.
+    """
+    fd = os.open(path, flags | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+    except BaseException:
+        os.close(fd)  # open() has not taken the descriptor over yet
+        raise
+    return fd
+
+
+def _make_private_dir(path: Path) -> None:
+    """Create ``path`` if needed and make sure it is mode 0700, never via a symlink.
+
+    ``mkdir``'s mode only applies to a directory it creates, so one left by an
+    earlier session or version keeps its looser permissions. ``chmod`` follows
+    symlinks, which in a shared temp directory would let a link planted at this
+    path change the mode of someone else's directory. Opening with
+    ``O_NOFOLLOW`` and changing the mode on the descriptor refuses a link instead.
+    """
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd = os.open(
+        path,
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+    )
+    try:
+        os.fchmod(fd, 0o700)
+    finally:
+        os.close(fd)
+
+
 # Response bodies at or below this size are sent inline in capture events.
 # Larger or binary bodies are spooled to disk and only the file path is sent.
 _INLINE_BODY_LIMIT = 256 * 1024  # 256 KB
@@ -1183,8 +1222,9 @@ class MitmproxyMockAddon:
         spool_name = f"{self._spool_counter:06d}_{url_hash}.bin"
         spool_path = self._spool_dir / spool_name
         try:
-            self._spool_dir.mkdir(parents=True, exist_ok=True)
-            spool_path.write_bytes(raw_body)
+            _make_private_dir(self._spool_dir)
+            with open(spool_path, "wb", opener=_open_private) as f:
+                f.write(raw_body)
         except OSError as e:
             ctx.log.error(f"Failed to spool response body: {e}")
             return {
