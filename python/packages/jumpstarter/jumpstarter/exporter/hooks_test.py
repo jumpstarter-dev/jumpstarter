@@ -197,6 +197,7 @@ class TestHookExecutor:
         assert "exit code 1" in str(exc_info.value)
         assert exc_info.value.on_failure == "endLease"  # type: ignore[attr-defined]
         assert exc_info.value.hook_type == "before_lease"  # type: ignore[attr-defined]
+        assert exc_info.value.should_end_lease()
 
     async def test_hook_timeout(self, lease_scope) -> None:
         timeout_config = HookConfigV1Alpha1(
@@ -209,6 +210,7 @@ class TestHookExecutor:
 
         assert "timed out after 1 seconds" in str(exc_info.value)
         assert exc_info.value.on_failure == "exit"  # type: ignore[attr-defined]
+        assert not exc_info.value.should_end_lease()
 
     @macos_pty_xfail
     async def test_hook_environment_variables(self, lease_scope) -> None:
@@ -1209,7 +1211,9 @@ class TestHookExecutorPRRegressions:
     """Regression tests for issues reported during PR review of hooks feature."""
 
     @pytest.mark.parametrize("on_failure", ["warn", "endLease", "exit"])
-    @pytest.mark.parametrize("outcome", ["success", "failure", "unexpected", "cancelled", "no_hook", "not_ready"])
+    @pytest.mark.parametrize("outcome", [
+        "success", "failure", "unexpected", "cancelled", "no_hook", "not_ready", "misreported_endlease",
+    ])
     async def test_after_hook_releases_only_on_configured_endlease_failure(
         self, lease_scope, on_failure, outcome,
     ) -> None:
@@ -1232,6 +1236,9 @@ class TestHookExecutorPRRegressions:
                 error = HookExecutionError("hook failed", on_failure, "after_lease")
         elif outcome == "unexpected":
             error = RuntimeError("orchestration failed")
+        elif outcome == "misreported_endlease":
+            # A future exception-classification change must not override the configured policy.
+            error = HookExecutionError("hook failed", "endLease", "after_lease")
         elif outcome == "cancelled":
             error = anyio.get_cancelled_exc_class()()
         release = AsyncMock()
@@ -1242,7 +1249,7 @@ class TestHookExecutorPRRegressions:
                     await executor.run_after_lease_hook(lease_scope, AsyncMock(), shutdown, release)
             else:
                 await executor.run_after_lease_hook(lease_scope, AsyncMock(), shutdown, release)
-        if outcome == "failure" and on_failure == "endLease":
+        if outcome in ("failure", "misreported_endlease") and on_failure == "endLease":
             release.assert_awaited_once()
         else:
             release.assert_not_awaited()

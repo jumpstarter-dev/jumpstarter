@@ -76,8 +76,8 @@ class HookExecutionError(Exception):
         return self.on_failure == "exit"
 
     def should_end_lease(self) -> bool:
-        """Returns True if the lease should be ended."""
-        return self.on_failure in ("endLease", "exit")
+        """Returns True only for an explicit lease release; exit requests exporter shutdown."""
+        return self.on_failure == "endLease"
 
 
 @dataclass
@@ -651,9 +651,10 @@ class HookExecutor:
     async def _safe_release_lease(
         self,
         request_lease_release: Callable[[], Awaitable[None]] | None,
+        hook_config: HookInstanceConfigV1Alpha1 | None,
     ) -> None:
-        """Call request_lease_release if provided, logging any errors."""
-        if request_lease_release:
+        """Release only if the hook still explicitly requests endLease, logging any errors."""
+        if request_lease_release and hook_config and hook_config.on_failure == "endLease":
             try:
                 await request_lease_release()
             except Exception:
@@ -758,6 +759,7 @@ class HookExecutor:
             logger.info("beforeLease hook completed successfully")
 
         except HookExecutionError as e:
+            # warn returns a warning string; only endLease/exit normally raise this error.
             if e.should_shutdown_exporter():
                 # on_failure='exit' - defer shutdown until client handles the failure
                 logger.error("beforeLease hook failed with on_failure='exit': %s", e)
@@ -776,7 +778,7 @@ class HookExecutor:
                 # on_failure='endLease' - report failure, release in finally block
                 logger.error("beforeLease hook failed with on_failure='endLease': %s", e)
                 lease_scope.skip_after_lease_hook = True
-                should_release = True
+                should_release = e.should_end_lease()
                 await report_status(
                     ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
                     f"beforeLease hook failed (on_failure=endLease): {e}",
@@ -800,7 +802,7 @@ class HookExecutor:
             if should_release:
                 with CancelScope(shield=True):
                     await anyio.sleep(1.0)
-                    await self._safe_release_lease(request_lease_release)
+                    await self._safe_release_lease(request_lease_release, self.config.before_lease)
 
     async def run_after_lease_hook(
         self,
@@ -858,6 +860,7 @@ class HookExecutor:
             logger.info("afterLease hook completed successfully")
 
         except HookExecutionError as e:
+            # warn returns a warning string; only endLease/exit normally raise this error.
             if e.should_shutdown_exporter():
                 # on_failure='exit' - shut down the entire exporter
                 logger.exception("afterLease hook failed with on_failure='exit'")
@@ -878,7 +881,7 @@ class HookExecutor:
                 # AFTER_LEASE_HOOK_FAILED is a transient status: the client sees the failure,
                 # the lease is released in the finally block, and the exporter's main loop
                 # clears the lease context and accepts new leases.
-                should_release = True
+                should_release = e.should_end_lease()
                 logger.error("afterLease hook failed with on_failure='endLease': %s", e)
                 await report_status(
                     ExporterStatus.AFTER_LEASE_HOOK_FAILED,
@@ -901,4 +904,4 @@ class HookExecutor:
             # Cleanup also runs on task cancellation and exporter shutdown.
             # Those paths must not end an active reservation.
             if should_release:
-                await self._safe_release_lease(request_lease_release)
+                await self._safe_release_lease(request_lease_release, self.config.after_lease)
