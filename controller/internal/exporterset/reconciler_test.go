@@ -2401,6 +2401,7 @@ func TestIsExporterOffline_online(t *testing.T) {
 func TestIsExporterOffline_offline(t *testing.T) {
 	exp := &jumpstarterdevv1alpha1.Exporter{
 		Status: jumpstarterdevv1alpha1.ExporterStatus{
+			LastSeen: metav1.Now(),
 			Conditions: []metav1.Condition{
 				{
 					Type:   string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
@@ -2410,6 +2411,25 @@ func TestIsExporterOffline_offline(t *testing.T) {
 		},
 	}
 	if !isExporterOffline(exp) {
-		t.Fatal("expected true when exporter is offline")
+		t.Fatal("expected true when exporter was seen and is offline")
+	}
+}
+
+func TestIsExporterOffline_neverSeen(t *testing.T) {
+	// Exporter reconciler sets Online=False immediately; that is not terminal.
+	exp := &jumpstarterdevv1alpha1.Exporter{
+		Status: jumpstarterdevv1alpha1.ExporterStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:    string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+					Status:  metav1.ConditionFalse,
+					Reason:  "Seen",
+					Message: "Never seen",
+				},
+			},
+		},
+	}
+	if isExporterOffline(exp) {
+		t.Fatal("expected false when Online=False but LastSeen is zero (still starting)")
 	}
 }

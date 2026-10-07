@@ -981,11 +981,9 @@ func (r *ExporterSetReconciler) cleanupTerminalExporters(
 		terminal := false
 
 		if isOffCluster {
-			// Off-cluster: terminal means "deployed but went offline". The
-			// Online condition is set to True when the exporter registers
-			// heartbeats, then flipped to False when they stop. If the
-			// condition doesn't exist at all the exporter never registered
-			// so we leave it alone (still starting up).
+			// Off-cluster: terminal means "deployed, was seen, then went
+			// offline". Online=False with LastSeen zero ("Never seen") is
+			// the normal pre-registration state and must not recycle.
 			deployed, err := deployer.IsDeployed(ctx, exp)
 			if err != nil {
 				return deleted, fmt.Errorf("check deployment for %s: %w", exp.Name, err)
@@ -1022,11 +1020,15 @@ func (r *ExporterSetReconciler) cleanupTerminalExporters(
 	return deleted, nil
 }
 
-// isExporterOffline reports whether the exporter's Online condition has been
-// explicitly set to False. Returns false when the condition doesn't exist
-// (exporter never registered) to avoid cleaning up exporters that are still
-// starting.
+// isExporterOffline reports whether a deployed exporter has gone offline after
+// having been seen at least once. The Exporter reconciler sets Online=False
+// with "Never seen" as soon as the CR exists (LastSeen still zero); that must
+// not count as terminal or ExitAndReplace deletes off-cluster exporters before
+// they can register.
 func isExporterOffline(exp *jumpstarterdevv1alpha1.Exporter) bool {
+	if exp.Status.LastSeen.IsZero() {
+		return false
+	}
 	cond := meta.FindStatusCondition(
 		exp.Status.Conditions,
 		string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
