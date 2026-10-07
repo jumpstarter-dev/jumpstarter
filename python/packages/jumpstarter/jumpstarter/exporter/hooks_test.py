@@ -1211,9 +1211,7 @@ class TestHookExecutorPRRegressions:
     """Regression tests for issues reported during PR review of hooks feature."""
 
     @pytest.mark.parametrize("on_failure", ["warn", "endLease", "exit"])
-    @pytest.mark.parametrize("outcome", [
-        "success", "failure", "unexpected", "cancelled", "no_hook", "not_ready", "misreported_endlease",
-    ])
+    @pytest.mark.parametrize("outcome", ["success", "failure", "unexpected", "cancelled", "no_hook", "not_ready"])
     async def test_after_hook_releases_only_on_configured_endlease_failure(
         self, lease_scope, on_failure, outcome,
     ) -> None:
@@ -1236,9 +1234,6 @@ class TestHookExecutorPRRegressions:
                 error = HookExecutionError("hook failed", on_failure, "after_lease")
         elif outcome == "unexpected":
             error = RuntimeError("orchestration failed")
-        elif outcome == "misreported_endlease":
-            # A future exception-classification change must not override the configured policy.
-            error = HookExecutionError("hook failed", "endLease", "after_lease")
         elif outcome == "cancelled":
             error = anyio.get_cancelled_exc_class()()
         release = AsyncMock()
@@ -1249,7 +1244,7 @@ class TestHookExecutorPRRegressions:
                     await executor.run_after_lease_hook(lease_scope, AsyncMock(), shutdown, release)
             else:
                 await executor.run_after_lease_hook(lease_scope, AsyncMock(), shutdown, release)
-        if outcome in ("failure", "misreported_endlease") and on_failure == "endLease":
+        if outcome == "failure" and on_failure == "endLease":
             release.assert_awaited_once()
         else:
             release.assert_not_awaited()

@@ -651,10 +651,9 @@ class HookExecutor:
     async def _safe_release_lease(
         self,
         request_lease_release: Callable[[], Awaitable[None]] | None,
-        hook_config: HookInstanceConfigV1Alpha1 | None,
     ) -> None:
-        """Release only if the hook still explicitly requests endLease, logging any errors."""
-        if request_lease_release and hook_config and hook_config.on_failure == "endLease":
+        """Call request_lease_release if provided, logging any errors."""
+        if request_lease_release:
             try:
                 await request_lease_release()
             except Exception:
@@ -802,7 +801,7 @@ class HookExecutor:
             if should_release:
                 with CancelScope(shield=True):
                     await anyio.sleep(1.0)
-                    await self._safe_release_lease(request_lease_release, self.config.before_lease)
+                    await self._safe_release_lease(request_lease_release)
 
     async def run_after_lease_hook(
         self,
@@ -904,4 +903,4 @@ class HookExecutor:
             # Cleanup also runs on task cancellation and exporter shutdown.
             # Those paths must not end an active reservation.
             if should_release:
-                await self._safe_release_lease(request_lease_release, self.config.after_lease)
+                await self._safe_release_lease(request_lease_release)
