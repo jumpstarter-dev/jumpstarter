@@ -135,8 +135,17 @@ class TelemetryLogHandler(logging.Handler):
             if self._queue:
                 await self._flush()
 
-    async def _flush(self) -> None:
-        """Drain up to _BATCH_SIZE entries from the queue and push to telemetry."""
+    async def _flush(self, *, timeout: float | None = None) -> None:
+        """Drain up to _BATCH_SIZE entries from the queue and push to telemetry.
+
+        ``timeout`` is the RPC deadline. The periodic flush uses ``_PUSH_TIMEOUT``.
+        Shutdown passes the time still left in that same budget so a push started
+        late cannot run for a full extra timeout.
+        """
+        call_timeout = _PUSH_TIMEOUT if timeout is None else timeout
+        if call_timeout <= 0:
+            return
+
         batch: list[telemetry_pb2.LogEntry] = []
         while self._queue and len(batch) < _BATCH_SIZE:
             batch.append(self._queue.popleft())
@@ -152,7 +161,7 @@ class TelemetryLogHandler(logging.Handler):
             metadata = [("authorization", f"Bearer {token}")] if token else []
             await self._stub.PushLogs(
                 telemetry_pb2.PushLogsRequest(entries=batch),
-                timeout=_PUSH_TIMEOUT,
+                timeout=call_timeout,
                 metadata=metadata,
             )
         except Exception as exc:  # noqa: BLE001
@@ -162,12 +171,16 @@ class TelemetryLogHandler(logging.Handler):
     async def close_async(self) -> None:
         """Flush remaining entries until the shutdown budget expires, then drop the rest.
 
-        ``_PUSH_TIMEOUT`` bounds shutdown as well as one RPC. A hung PushLogs
-        must not be retried once per queued batch.
+        Each push receives only the time still left in ``_PUSH_TIMEOUT``.
+        A hung PushLogs must not be retried once per queued batch, and a push
+        started late in the budget cannot run for a full extra timeout.
         """
         deadline = time.monotonic() + _PUSH_TIMEOUT
-        while self._queue and time.monotonic() < deadline:
-            await self._flush()
+        while self._queue:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            await self._flush(timeout=remaining)
         dropped = len(self._queue)
         self._queue.clear()
         if dropped:
