@@ -858,6 +858,61 @@ class TestReportStatusGrpcErrorHandling:
         assert release_calls == []
         assert not replacement_ctx.lease_ended.is_set()
 
+    @pytest.mark.parametrize(("pending_rpc", "error_code"), [
+        ("release", None),
+        ("release", grpc.StatusCode.PERMISSION_DENIED),
+        ("release", grpc.StatusCode.UNIMPLEMENTED),
+        ("release", grpc.StatusCode.INVALID_ARGUMENT),
+        ("compat", None),
+        ("available", None),
+    ])
+    async def test_request_lease_release_preserves_replacement_during_rpc(self, pending_rpc, error_code):
+        """Replacing a lease during an RPC must not apply stale release side effects."""
+        from grpc.aio import AioRpcError, Metadata
+
+        exporter = _make_exporter_for_report_status()
+        exporter._lease_context = make_lease_context("old-lease")
+        exporter._exporter_status = ExporterStatus.BEFORE_LEASE_HOOK_FAILED
+        exporter._release_lease_unsupported = pending_rpc == "compat"
+        replacement = make_lease_context("new-lease")
+        replacement.update_status(ExporterStatus.LEASE_READY, "Ready for commands")
+        rpc_started = Event()
+        rpc_complete = Event()
+        report_calls = []
+
+        async def release(request, **kwargs):
+            assert request.name == "old-lease"
+            if pending_rpc == "release":
+                rpc_started.set()
+                await rpc_complete.wait()
+            if error_code is not None:
+                raise AioRpcError(error_code, Metadata(), Metadata(), "Release failed")
+
+        async def report(request, **kwargs):
+            report_calls.append(request)
+            if pending_rpc != "release":
+                rpc_started.set()
+                await rpc_complete.wait()
+
+        controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=report)
+        controller.ReleaseLease = AsyncMock(side_effect=release)
+        with patch.object(exporter, "_controller_stub", return_value=stub_ctx), fail_after(5):
+            async with create_task_group() as tg:
+                tg.start_soon(exporter._request_lease_release, "old-lease")
+                await rpc_started.wait()
+                exporter._lease_context = replacement
+                exporter._exporter_status = ExporterStatus.LEASE_READY
+                rpc_complete.set()
+
+        assert exporter._lease_context is replacement
+        assert not replacement.lease_ended.is_set()
+        assert replacement.current_status == ExporterStatus.LEASE_READY
+        assert exporter._exporter_status == ExporterStatus.LEASE_READY
+        # A report already in flight may finish, but no new report may follow it.
+        assert len(report_calls) == (0 if pending_rpc == "release" else 1)
+        if report_calls:
+            assert report_calls[0].release_lease == (pending_rpc == "compat")
+
     async def test_request_lease_release_retries_on_transient_failure(self):
         """When ReleaseLease fails with UNAVAILABLE on first attempt, retry and succeed."""
         exporter = _make_exporter_for_report_status()

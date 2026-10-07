@@ -793,7 +793,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         ):
             logger.info("Requested controller to release lease %s (compat path)", lease_name)
 
-    async def _request_lease_release(self, lease_name: str | None = None):
+    async def _request_lease_release(self, lease_name: str | None = None):  # noqa: C901
         """Request the controller to release the current lease.
 
         Called when a lifecycle hook fails with on_failure='endLease'.
@@ -837,7 +837,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             self._lease_context.lease_ended.set()
             return
 
-        release_name = self._lease_context.lease_name
+        release_context = self._lease_context
+        release_name = release_context.lease_name
 
         if self._release_lease_unsupported:
             await self._send_compat_release(release_name)
@@ -849,6 +850,11 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 "release lease",
                 non_retryable_codes=_RELEASE_LEASE_UNSUPPORTED_CODES,
             )
+
+            # The lease may have changed while the RPC was pending. In particular,
+            # the compatibility fallback has no lease name and could release its replacement.
+            if self._lease_context is not release_context:
+                return
 
             if ok:
                 logger.info("Released lease %s via ReleaseLease RPC", release_name)
@@ -863,13 +869,15 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             else:
                 logger.warning("Failed to release lease %s after retries, proceeding to AVAILABLE", release_name)
 
+        if self._lease_context is not release_context:
+            return
         await self._report_status(ExporterStatus.AVAILABLE, "Exporter available after lease release")
 
         # Directly signal lease ended so handle_lease can exit.
         # The controller may not send another leased=False after our release request,
         # so we signal it ourselves as a fallback.
-        if self._lease_context and not self._lease_context.lease_ended.is_set():
-            self._lease_context.lease_ended.set()
+        if self._lease_context is release_context and not release_context.lease_ended.is_set():
+            release_context.lease_ended.set()
 
     async def _unregister_with_controller(self):
         """Safely unregister from controller with timeout and error handling."""
