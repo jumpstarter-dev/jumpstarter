@@ -330,6 +330,7 @@ class _BinaryHandler(BaseHTTPRequestHandler):
     body = bytes(range(256)) * 2048  # 512 KiB
 
     def do_GET(self):
+        """Serve the same binary body for any path."""
         self.send_response(200)
         self.send_header("Content-Type", "application/octet-stream")
         self.send_header("Content-Length", str(len(self.body)))
@@ -337,7 +338,7 @@ class _BinaryHandler(BaseHTTPRequestHandler):
         self.wfile.write(self.body)
 
     def log_message(self, format, *args):
-        pass
+        """Keep the test output quiet."""
 
 
 class TestCaptureSpool:
@@ -345,6 +346,7 @@ class TestCaptureSpool:
 
     @pytest.fixture
     def upstream(self):
+        """A local server that serves a large binary body."""
         server = HTTPServer(("127.0.0.1", 0), _BinaryHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -353,6 +355,7 @@ class TestCaptureSpool:
 
     @pytest.fixture(autouse=True)
     def _running(self, client, proxy_port):
+        """Run the proxy in passthrough mode for each test."""
         client.start("passthrough")
         assert _wait_for_port("127.0.0.1", proxy_port)
         client.clear_captured_requests()
@@ -361,6 +364,7 @@ class TestCaptureSpool:
 
     @staticmethod
     def _fetch(proxy_port, upstream, path):
+        """GET ``path`` from the upstream through the proxy and check the body arrived intact."""
         response = requests.get(
             f"http://127.0.0.1:{upstream}{path}",
             proxies={"http": f"http://127.0.0.1:{proxy_port}"},
@@ -370,6 +374,7 @@ class TestCaptureSpool:
         return response
 
     def test_body_is_spooled_and_exported(self, client, proxy_port, upstream):
+        """The body is spooled under the data dir and survives scenario export and download."""
         self._fetch(proxy_port, upstream, "/bin/first")
         req = client.wait_for_request("GET", "/bin/first")
 
@@ -382,6 +387,7 @@ class TestCaptureSpool:
         assert client.get_captured_file(files[0]) == _BinaryHandler.body
 
     def test_spool_dir_is_recreated_after_removal(self, client, proxy_port, upstream):
+        """Removing the spool directory mid-session does not lose later bodies."""
         self._fetch(proxy_port, upstream, "/bin/first")
         spool_dir = Path(client.wait_for_request("GET", "/bin/first")["response_body_file"]).parent
         shutil.rmtree(spool_dir)
