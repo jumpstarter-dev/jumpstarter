@@ -903,14 +903,12 @@ class TestSpoolDirectory:
     @pytest.mark.skipif(
         not hasattr(__import__("os"), "O_NOFOLLOW"), reason="needs O_NOFOLLOW",
     )
-    def test_a_symlinked_spool_dir_is_refused_and_its_target_left_alone(
-        self, monkeypatch, tmp_path,
-    ):
+    def test_a_symlinked_spool_dir_is_refused_and_its_target_left_alone(self, tmp_path):
         """chmod would follow the link and change someone else's directory."""
         import os
         import stat
 
-        addon, _ = self._addon(monkeypatch, tmp_path)
+        addon = self._addon(tmp_path)
         elsewhere = tmp_path / "elsewhere"
         elsewhere.mkdir()
         os.chmod(elsewhere, 0o755)
