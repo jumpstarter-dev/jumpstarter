@@ -676,10 +676,12 @@ class TestBundledAddonImport:
     """Importing the addon must not touch the filesystem (#1194)."""
 
     def test_import_does_not_create_directories(self, monkeypatch):
+        """Importing the addon must not need a writable /opt/jumpstarter (#1194)."""
         import importlib
         import sys
 
         def refuse(self, *args, **kwargs):
+            """Stand-in for Path.mkdir that always fails."""
             raise PermissionError(13, "Permission denied", str(self))
 
         monkeypatch.setattr(Path, "mkdir", refuse)
@@ -691,6 +693,7 @@ class TestBundledAddonImport:
         assert mod.addons  # ty: ignore[unresolved-attribute]
 
     def test_spool_dir_is_created_on_first_spool(self, tmp_path):
+        """The spool directory appears when the first body is spooled, not before."""
         import importlib
 
         from mitmproxy.test import tflow
@@ -728,6 +731,7 @@ class TestSpoolDirectory:
 
     @staticmethod
     def _binary_flow(url_path="/bin"):
+        """A flow whose response is binary, so it is spooled to disk."""
         from mitmproxy.test import tflow
 
         flow = tflow.tflow(resp=True)
@@ -739,15 +743,18 @@ class TestSpoolDirectory:
         return flow
 
     def _addon(self, monkeypatch, tmp_path):
+        """An addon instance that spools into a directory under tmp_path."""
         mod, log = _addon_module(monkeypatch)
         addon = mod.MitmproxyMockAddon()  # ty: ignore[unresolved-attribute]
         addon._spool_dir = tmp_path / "spool"
         return addon, log
 
     def test_an_uncreatable_spool_dir_costs_only_that_body(self, monkeypatch, tmp_path):
+        """If the spool directory cannot be created, that body is dropped and the error logged."""
         addon, log = self._addon(monkeypatch, tmp_path)
 
         def refuse(self, *args, **kwargs):
+            """Stand-in for Path.mkdir that always fails."""
             raise PermissionError(13, "Permission denied", str(self))
 
         monkeypatch.setattr(Path, "mkdir", refuse)
@@ -760,6 +767,7 @@ class TestSpoolDirectory:
         assert "Failed to spool" in log.error.call_args.args[0]
 
     def test_spooled_bodies_are_private_whatever_the_umask(self, monkeypatch, tmp_path):
+        """Files are 0600 and the directory 0700 even with the most permissive umask."""
         import os
         import stat
 
@@ -778,6 +786,7 @@ class TestSpoolDirectory:
         not hasattr(__import__("os"), "O_NOFOLLOW"), reason="needs O_NOFOLLOW",
     )
     def test_a_symlink_in_the_spool_dir_is_not_followed(self, monkeypatch, tmp_path):
+        """A symlink planted at a spool file's name is refused, not written through."""
         import hashlib
 
         addon, _ = self._addon(monkeypatch, tmp_path)
@@ -796,6 +805,7 @@ class TestSpoolDirectory:
 
     @staticmethod
     def _first_spool_name(flow):
+        """The name the first spooled body of ``flow`` gets."""
         import hashlib
 
         url_hash = hashlib.sha256(flow.request.pretty_url.encode()).hexdigest()[:12]
@@ -836,6 +846,7 @@ class TestSpoolDirectory:
         target.write_bytes(b"planted")
 
         def not_ours(fd, mode):
+            """Stand-in for fchmod on a file this user does not own."""
             raise PermissionError(1, "Operation not permitted")
 
         monkeypatch.setattr(os, "fchmod", not_ours)
@@ -869,6 +880,7 @@ class TestSpoolDirectory:
         assert list(elsewhere.iterdir()) == []
 
     def test_the_driver_creates_its_spool_dir_private_too(self, driver):
+        """The directory the driver creates when it starts is mode 0700 as well."""
         import os
         import stat
 
@@ -887,6 +899,7 @@ class TestAddonRegistryPaths:
 
     @pytest.fixture
     def registry(self, monkeypatch, tmp_path):
+        """An addon registry over an addons directory holding one valid addon."""
         mod, _ = _addon_module(monkeypatch)
         addons = tmp_path / "addons"
         addons.mkdir()
@@ -895,6 +908,7 @@ class TestAddonRegistryPaths:
 
     @staticmethod
     def _handler(label, marker=None):
+        """Source of an addon module; given ``marker``, it records that it was executed."""
         touch = ""
         if marker:
             touch = f"from pathlib import Path\nPath({str(marker)!r}).write_text('ran')\n"
@@ -904,9 +918,11 @@ class TestAddonRegistryPaths:
         )
 
     def test_a_plain_name_loads(self, registry):
+        """An ordinary addon name still loads."""
         assert registry.get_handler("good").label == "good"
 
     def test_a_name_in_a_subdirectory_loads(self, registry, tmp_path):
+        """Names with a subdirectory, including ``..`` that stays inside, still load."""
         (tmp_path / "addons" / "sub").mkdir()
         (tmp_path / "addons" / "sub" / "nested.py").write_text(self._handler("nested"))
 
@@ -920,6 +936,7 @@ class TestAddonRegistryPaths:
         "ABSOLUTE",
     ])
     def test_a_name_that_leaves_the_addons_dir_is_not_run(self, registry, tmp_path, name):
+        """Neither ``..`` nor an absolute path may run a script outside the addons directory."""
         marker = tmp_path / "ran"
         # Exists, so ``sub/..`` resolves and the escape really is attempted.
         (tmp_path / "addons" / "sub").mkdir(exist_ok=True)
@@ -933,6 +950,7 @@ class TestAddonRegistryPaths:
         assert not marker.exists(), "code outside the addons directory was executed"
 
     def test_a_script_the_operator_symlinked_in_still_loads(self, registry, tmp_path):
+        """A script the operator symlinked into the directory is still loaded."""
         real = tmp_path / "shared" / "linked_real.py"
         real.parent.mkdir()
         real.write_text(self._handler("linked"))

@@ -591,6 +591,7 @@ class MitmproxyMockAddon:
     )
 
     def __init__(self):
+        """Set up paths and per-session state. Touches no files: this runs at import time."""
         self.config: dict = {}
         self.endpoints: dict[str, dict] = {}
         self.files_dir: Path = Path(self.MOCK_DIR) / "../mock-files"
