@@ -637,10 +637,10 @@ class TestHookExecutor:
         )
 
         assert lease_scope.skip_after_lease_hook is True
-        # The release callback must receive the identity of the lease whose
-        # hook failed, so the exporter can reject it if that lease was
-        # replaced while the release was in flight.
-        mock_request_lease_release.assert_called_once_with(lease_scope.lease_name)
+        # The release callback must receive the LeaseContext of the lease
+        # whose hook failed, so the exporter can reject it if that lease
+        # was replaced while the release was in flight.
+        mock_request_lease_release.assert_called_once_with(lease_scope)
         mock_shutdown.assert_not_called()
 
     async def test_before_lease_hook_endlease_handles_release_error(self, lease_scope) -> None:
@@ -1254,7 +1254,7 @@ class TestHookExecutorPRRegressions:
                 await executor.run_after_lease_hook(lease_scope, AsyncMock(), shutdown, release)
         if outcome == "failure" and on_failure == "endLease":
             sleep.assert_awaited_once_with(1.0)
-            release.assert_awaited_once_with(lease_scope.lease_name)
+            release.assert_awaited_once_with(lease_scope)
         else:
             sleep.assert_not_awaited()
             release.assert_not_awaited()

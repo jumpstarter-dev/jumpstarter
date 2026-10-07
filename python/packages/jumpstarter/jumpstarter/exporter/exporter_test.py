@@ -804,7 +804,7 @@ class TestReportStatusGrpcErrorHandling:
         stub_ctx.__aexit__ = AsyncMock(return_value=False)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
-            await exporter._request_lease_release("test-lease")
+            await exporter._request_lease_release(lease_ctx)
 
         # ReleaseLease called once with correct lease name
         assert len(release_calls) == 1
@@ -818,7 +818,7 @@ class TestReportStatusGrpcErrorHandling:
         # Lease ended event set
         assert lease_ctx.lease_ended.is_set()
 
-    async def test_request_lease_release_rejects_stale_lease_name(self):
+    async def test_request_lease_release_rejects_stale_lease(self):
         """A delayed release callback for a replaced lease must not release
         the replacement lease.
 
@@ -828,6 +828,7 @@ class TestReportStatusGrpcErrorHandling:
         """
         exporter = _make_exporter_for_report_status()
 
+        stale_ctx = make_lease_context("old-lease")
         replacement_ctx = LeaseContext(
             lease_name="new-lease",
             before_lease_hook=Event(),
@@ -849,7 +850,7 @@ class TestReportStatusGrpcErrorHandling:
         stub_ctx.__aexit__ = AsyncMock(return_value=False)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
-            await exporter._request_lease_release("old-lease")
+            await exporter._request_lease_release(stale_ctx)
 
         # No ReleaseLease RPC for the stale lease; replacement lease untouched
         assert release_calls == []
@@ -867,7 +868,8 @@ class TestReportStatusGrpcErrorHandling:
         from grpc.aio import AioRpcError, Metadata
 
         exporter = _make_exporter_for_report_status()
-        exporter._lease_context = make_lease_context("old-lease")
+        original = make_lease_context("old-lease")
+        exporter._lease_context = original
         exporter._exporter_status = ExporterStatus.BEFORE_LEASE_HOOK_FAILED
         replacement = make_lease_context("new-lease")
         replacement.update_status(ExporterStatus.LEASE_READY, "Ready for commands")
@@ -893,7 +895,7 @@ class TestReportStatusGrpcErrorHandling:
         controller.ReleaseLease = AsyncMock(side_effect=release)
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), fail_after(5):
             async with create_task_group() as tg:
-                tg.start_soon(exporter._request_lease_release, "old-lease")
+                tg.start_soon(exporter._request_lease_release, original)
                 await rpc_started.wait()
                 exporter._lease_context = replacement
                 exporter._exporter_status = ExporterStatus.LEASE_READY
@@ -930,7 +932,7 @@ class TestReportStatusGrpcErrorHandling:
             patch.object(exporter, "_controller_stub", return_value=stub_ctx),
             patch("anyio.sleep", side_effect=during_backoff) as sleep,
         ):
-            await exporter._request_lease_release(original.lease_name)
+            await exporter._request_lease_release(original)
 
         sleep.assert_awaited_once()
         releases = controller.ReleaseLease.await_args_list
@@ -947,7 +949,8 @@ class TestReportStatusGrpcErrorHandling:
         from grpc.aio import AioRpcError, Metadata
 
         exporter = _make_exporter_for_report_status()
-        exporter._lease_context = make_lease_context("old-lease")
+        original = make_lease_context("old-lease")
+        exporter._lease_context = original
         replacement = make_lease_context("new-lease")
         controller, stub_ctx = _setup_mock_controller_stub(exporter)
         controller.ReleaseLease.side_effect = AioRpcError(
@@ -961,7 +964,7 @@ class TestReportStatusGrpcErrorHandling:
 
         stub_ctx.__aenter__.side_effect = enter_stub
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), patch("anyio.sleep"):
-            await exporter._request_lease_release("old-lease")
+            await exporter._request_lease_release(original)
 
         assert controller.ReleaseLease.await_count == replace_on_attempt - 1
         controller.ReportStatus.assert_not_awaited()
@@ -1008,7 +1011,7 @@ class TestReportStatusGrpcErrorHandling:
         stub_ctx.__aexit__ = AsyncMock(return_value=False)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), patch("anyio.sleep"):
-            await exporter._request_lease_release("test-lease")
+            await exporter._request_lease_release(lease_ctx)
 
         # ReleaseLease called twice (failed once, succeeded on retry)
         assert release_call_count == 2
@@ -1060,7 +1063,7 @@ class TestReportStatusGrpcErrorHandling:
         stub_ctx.__aexit__ = AsyncMock(return_value=False)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), patch("anyio.sleep"):
-            await exporter._request_lease_release("test-lease")
+            await exporter._request_lease_release(lease_ctx)
 
         # ReleaseLease: _RPC_MAX_RETRIES + 1 attempts (all fail)
         assert release_call_count == _RPC_MAX_RETRIES + 1
@@ -1082,7 +1085,8 @@ class TestReportStatusGrpcErrorHandling:
         from grpc.aio import AioRpcError, Metadata
 
         exporter = _make_exporter_for_report_status()
-        exporter._lease_context = make_lease_context()
+        lease_ctx = make_lease_context()
+        exporter._lease_context = lease_ctx
         controller, stub_ctx = _setup_mock_controller_stub(exporter)
         controller.ReleaseLease.side_effect = AioRpcError(error_code, Metadata(), Metadata(), "Release rejected")
 
@@ -1090,7 +1094,7 @@ class TestReportStatusGrpcErrorHandling:
             patch.object(exporter, "_controller_stub", return_value=stub_ctx),
             caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"),
         ):
-            await exporter._request_lease_release("test-lease")
+            await exporter._request_lease_release(lease_ctx)
 
         controller.ReleaseLease.assert_awaited_once()
         assert controller.ReleaseLease.await_args.args[0].name == "test-lease"

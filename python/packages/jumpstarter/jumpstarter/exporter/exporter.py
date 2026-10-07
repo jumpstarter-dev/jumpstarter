@@ -761,17 +761,15 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             if await self._send_report_status_rpc(request):
                 logger.info("Updated status to %s: %s", status, message)
 
-    async def _request_lease_release(self, lease_name: str):
-        """Request the controller to release the identified lease.
+    async def _request_lease_release(self, lease_scope: LeaseContext):
+        """Request the controller to release lease_scope's lease.
 
         Called when a lifecycle hook fails with on_failure='endLease'.
         Ordinary hook completion, client disconnection, and exporter cleanup
         must not request release; the client or controller ends those leases.
 
-        lease_name identifies the lease whose hook failed.
-        If a replacement lease was granted while the release was in flight,
-        the request is rejected so a delayed callback cannot end the
-        replacement lease.
+        Each hook gets this callback bound to its own lease, so a delayed call
+        cannot release, or report AVAILABLE over, a replacement lease.
 
         Uses the named ReleaseLease RPC, supported for exporters since controller
         v0.9.0, so retries cannot target a replacement lease.
@@ -779,56 +777,37 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         if self._controller_stream_failed:
             logger.info("Skipping lease-release RPC after controller stream failure")
             return
-        if not self._lease_context or not self._lease_context.lease_name:
-            logger.debug("No active lease to release")
-            return
-
-        # Stale-lease guard: the failed lease may have been replaced while the
-        # release callback was delayed (e.g. the 1s status delay). Only release
-        # if the failed lease is still the current one.
-        if lease_name != self._lease_context.lease_name:
-            logger.info(
-                "Lease %s no longer current (now %s), skipping release",
-                lease_name,
-                self._lease_context.lease_name,
-            )
-            return
-
-        # If the lease has already ended (controller sent leased=false, or a previous
-        # call already released it), skip the release RPC.
-        if self._lease_context.lease_ended.is_set():
-            logger.debug("Lease already ended, skipping release request")
+        # The lease already ended (controller sent leased=false, or a previous
+        # call released it), or a replacement took the slot: nothing to release.
+        if self._lease_context is not lease_scope or lease_scope.lease_ended.is_set():
+            logger.debug("Lease %s no longer active, skipping release request", lease_scope.lease_name)
             return
 
         if self._standalone:
-            self._lease_context.lease_ended.set()
+            lease_scope.lease_ended.set()
             return
-
-        release_context = self._lease_context
-        release_name = release_context.lease_name
 
         ok, _ = await self._retry_rpc(
             lambda ctrl: ctrl.ReleaseLease(
-                jumpstarter_pb2.ReleaseLeaseRequest(name=release_name), timeout=_RPC_TIMEOUT
+                jumpstarter_pb2.ReleaseLeaseRequest(name=lease_scope.lease_name), timeout=_RPC_TIMEOUT
             ),
             "release lease",
-            lease_context=release_context,
+            lease_context=lease_scope,
         )
 
         # The lease may have changed while the RPC was pending.
-        if self._lease_context is not release_context:
+        if self._lease_context is not lease_scope:
             return
         if ok:
-            logger.info("Released lease %s via ReleaseLease RPC", release_name)
-        else:
-            logger.warning("Failed to release lease %s, proceeding to AVAILABLE", release_name)
+            logger.info("Released lease %s via ReleaseLease RPC", lease_scope.lease_name)
+        elif not lease_scope.lease_ended.is_set():
+            logger.warning("Failed to release lease %s, proceeding to AVAILABLE", lease_scope.lease_name)
         await self._report_status(ExporterStatus.AVAILABLE, "Exporter available after lease release")
 
         # Directly signal lease ended so handle_lease can exit.
         # The controller may not send another leased=False after our release request,
         # so we signal it ourselves as a fallback.
-        if self._lease_context is release_context and not release_context.lease_ended.is_set():
-            release_context.lease_ended.set()
+        lease_scope.lease_ended.set()
 
     async def _unregister_with_controller(self):
         """Safely unregister from controller with timeout and error handling."""
