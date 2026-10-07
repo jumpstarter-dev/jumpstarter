@@ -1846,7 +1846,7 @@ class MitmproxyDriver(Driver):
         """Create a Unix domain socket for receiving capture events."""
         # Ensure the spool directory exists for response body capture
         Path(self.directories.data, "capture-spool").mkdir(
-            parents=True, exist_ok=True,
+            mode=0o700, parents=True, exist_ok=True,
         )
 
         # Use a short path to avoid the ~104-char AF_UNIX limit on macOS.

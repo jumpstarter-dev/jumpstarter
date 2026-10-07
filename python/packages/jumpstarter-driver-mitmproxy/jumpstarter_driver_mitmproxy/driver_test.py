@@ -672,30 +672,299 @@ class TestConfigValidation:
             d._stop_capture_server()
 
 
+class TestBundledAddonImport:
+    """Importing the addon must not touch the filesystem (#1194)."""
+
+    def test_import_does_not_create_directories(self, monkeypatch):
+        """Importing the addon must not need a writable /opt/jumpstarter (#1194)."""
+        import importlib
+        import sys
+
+        def refuse(self, *args, **kwargs):
+            """Stand-in for Path.mkdir that always fails."""
+            raise PermissionError(13, "Permission denied", str(self))
+
+        monkeypatch.setattr(Path, "mkdir", refuse)
+        monkeypatch.delitem(
+            sys.modules, "jumpstarter_driver_mitmproxy.bundled_addon",
+            raising=False,
+        )
+        mod = importlib.import_module("jumpstarter_driver_mitmproxy.bundled_addon")
+        assert mod.addons  # ty: ignore[unresolved-attribute]
+
+    def test_spool_dir_is_created_on_first_spool(self, tmp_path):
+        """The spool directory appears when the first body is spooled, not before."""
+        import importlib
+
+        from mitmproxy.test import tflow
+
+        mod = importlib.import_module("jumpstarter_driver_mitmproxy.bundled_addon")
+        addon = mod.MitmproxyMockAddon()  # ty: ignore[unresolved-attribute]
+        addon._spool_dir = tmp_path / "missing" / "capture-spool"
+        flow = tflow.tflow(resp=True)
+        response = flow.response
+        assert response is not None
+        response.headers["content-type"] = "application/octet-stream"
+        response.content = b"\x00" * 16
+
+        result = addon._classify_response_body(flow)
+
+        assert Path(result["response_body_file"]).read_bytes() == b"\x00" * 16
+
+
+def _addon_module(monkeypatch):
+    """The real addon module, with ``ctx.log`` stood in.
+
+    ``ctx.log`` exists only inside a running mitmproxy, and this module logs
+    through it, so the error paths below cannot run without a stand-in.
+    """
+    import importlib
+
+    mod = importlib.import_module("jumpstarter_driver_mitmproxy.bundled_addon")
+    log = MagicMock()
+    monkeypatch.setattr(mod.ctx, "log", log, raising=False)  # ty: ignore[unresolved-attribute]
+    return mod, log
+
+
+class TestSpoolDirectory:
+    """How the addon writes spooled response bodies."""
+
+    @staticmethod
+    def _binary_flow(url_path="/bin"):
+        """A flow whose response is binary, so it is spooled to disk."""
+        from mitmproxy.test import tflow
+
+        flow = tflow.tflow(resp=True)
+        response = flow.response
+        assert response is not None
+        flow.request.path = url_path
+        response.headers["content-type"] = "application/octet-stream"
+        response.content = b"\x00" * 16
+        return flow
+
+    def _addon(self, monkeypatch, tmp_path):
+        """An addon instance that spools into a directory under tmp_path."""
+        mod, log = _addon_module(monkeypatch)
+        addon = mod.MitmproxyMockAddon()  # ty: ignore[unresolved-attribute]
+        addon._spool_dir = tmp_path / "spool"
+        return addon, log
+
+    def test_an_uncreatable_spool_dir_costs_only_that_body(self, monkeypatch, tmp_path):
+        """If the spool directory cannot be created, that body is dropped and the error logged."""
+        addon, log = self._addon(monkeypatch, tmp_path)
+
+        def refuse(self, *args, **kwargs):
+            """Stand-in for Path.mkdir that always fails."""
+            raise PermissionError(13, "Permission denied", str(self))
+
+        monkeypatch.setattr(Path, "mkdir", refuse)
+
+        result = addon._classify_response_body(self._binary_flow())
+
+        assert result["response_body_file"] is None
+        assert result["response_body"] is None
+        assert result["response_is_binary"] is True
+        assert "Failed to spool" in log.error.call_args.args[0]
+
+    def test_spooled_bodies_are_private_whatever_the_umask(self, monkeypatch, tmp_path):
+        """Files are 0600 and the directory 0700 even with the most permissive umask."""
+        import os
+        import stat
+
+        addon, _ = self._addon(monkeypatch, tmp_path)
+        previous = os.umask(0)  # the most permissive case
+        try:
+            result = addon._classify_response_body(self._binary_flow())
+        finally:
+            os.umask(previous)
+
+        spooled = Path(result["response_body_file"])
+        assert stat.S_IMODE(spooled.stat().st_mode) == 0o600
+        assert stat.S_IMODE(spooled.parent.stat().st_mode) == 0o700
+
+    @pytest.mark.skipif(
+        not hasattr(__import__("os"), "O_NOFOLLOW"), reason="needs O_NOFOLLOW",
+    )
+    def test_a_symlink_in_the_spool_dir_is_not_followed(self, monkeypatch, tmp_path):
+        """A symlink planted at a spool file's name is refused, not written through."""
+        import hashlib
+
+        addon, _ = self._addon(monkeypatch, tmp_path)
+        flow = self._binary_flow()
+        url_hash = hashlib.sha256(flow.request.pretty_url.encode()).hexdigest()[:12]
+        victim = tmp_path / "victim.txt"
+        victim.write_text("untouched")
+        addon._spool_dir.mkdir()
+        # The name the first spooled body would get.
+        (addon._spool_dir / f"000001_{url_hash}.bin").symlink_to(victim)
+
+        result = addon._classify_response_body(flow)
+
+        assert victim.read_text() == "untouched"
+        assert result["response_body_file"] is None
+
+    @staticmethod
+    def _first_spool_name(flow):
+        """The name the first spooled body of ``flow`` gets."""
+        import hashlib
+
+        url_hash = hashlib.sha256(flow.request.pretty_url.encode()).hexdigest()[:12]
+        return f"000001_{url_hash}.bin"
+
+    def test_a_leftover_spool_file_and_dir_are_tightened_before_writing(
+        self, monkeypatch, tmp_path,
+    ):
+        """A crashed session or an older version leaves loose modes behind."""
+        import os
+        import stat
+
+        addon, _ = self._addon(monkeypatch, tmp_path)
+        flow = self._binary_flow()
+        addon._spool_dir.mkdir()
+        os.chmod(addon._spool_dir, 0o755)
+        leftover = addon._spool_dir / self._first_spool_name(flow)
+        leftover.write_bytes(b"body of an earlier session")
+        os.chmod(leftover, 0o644)
+
+        result = addon._classify_response_body(flow)
+
+        assert Path(result["response_body_file"]) == leftover
+        assert leftover.read_bytes() == b"\x00" * 16
+        assert stat.S_IMODE(leftover.stat().st_mode) == 0o600
+        assert stat.S_IMODE(addon._spool_dir.stat().st_mode) == 0o700
+
+    def test_a_spool_file_that_cannot_be_tightened_is_never_written(
+        self, monkeypatch, tmp_path,
+    ):
+        """E.g. a file another user created in a shared directory."""
+        import os
+
+        addon, log = self._addon(monkeypatch, tmp_path)
+        flow = self._binary_flow()
+        addon._spool_dir.mkdir()
+        target = addon._spool_dir / self._first_spool_name(flow)
+        target.write_bytes(b"planted")
+
+        def not_ours(fd, mode):
+            """Stand-in for fchmod on a file this user does not own."""
+            raise PermissionError(1, "Operation not permitted")
+
+        monkeypatch.setattr(os, "fchmod", not_ours)
+
+        result = addon._classify_response_body(flow)
+
+        assert result["response_body_file"] is None
+        assert b"\x00" * 16 not in target.read_bytes(), "the body reached a file that was not ours"
+        assert "Failed to spool" in log.error.call_args.args[0]
+
+    @pytest.mark.skipif(
+        not hasattr(__import__("os"), "O_NOFOLLOW"), reason="needs O_NOFOLLOW",
+    )
+    def test_a_symlinked_spool_dir_is_refused_and_its_target_left_alone(
+        self, monkeypatch, tmp_path,
+    ):
+        """chmod would follow the link and change someone else's directory."""
+        import os
+        import stat
+
+        addon, _ = self._addon(monkeypatch, tmp_path)
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        os.chmod(elsewhere, 0o755)
+        addon._spool_dir.symlink_to(elsewhere, target_is_directory=True)
+
+        result = addon._classify_response_body(self._binary_flow())
+
+        assert result["response_body_file"] is None
+        assert stat.S_IMODE(elsewhere.stat().st_mode) == 0o755
+        assert list(elsewhere.iterdir()) == []
+
+    def test_the_driver_creates_its_spool_dir_private_too(self, driver):
+        """The directory the driver creates when it starts is mode 0700 as well."""
+        import os
+        import stat
+
+        previous = os.umask(0)
+        try:
+            driver._start_capture_server()
+        finally:
+            os.umask(previous)
+
+        spool = Path(driver.directories.data) / "capture-spool"
+        assert stat.S_IMODE(spool.stat().st_mode) == 0o700
+
+
+class TestAddonRegistryPaths:
+    """An addon name comes from the mock config and must stay in the addons dir."""
+
+    @pytest.fixture
+    def registry(self, monkeypatch, tmp_path):
+        """An addon registry over an addons directory holding one valid addon."""
+        mod, _ = _addon_module(monkeypatch)
+        addons = tmp_path / "addons"
+        addons.mkdir()
+        (addons / "good.py").write_text(self._handler("good"))
+        return mod.AddonRegistry(str(addons))  # ty: ignore[unresolved-attribute]
+
+    @staticmethod
+    def _handler(label, marker=None):
+        """Source of an addon module; given ``marker``, it records that it was executed."""
+        touch = ""
+        if marker:
+            touch = f"from pathlib import Path\nPath({str(marker)!r}).write_text('ran')\n"
+        return (
+            f"{touch}class Handler:\n    label = {label!r}\n"
+            "    def handle(self, flow, config):\n        return True\n"
+        )
+
+    def test_a_plain_name_loads(self, registry):
+        """An ordinary addon name still loads."""
+        assert registry.get_handler("good").label == "good"
+
+    def test_a_name_in_a_subdirectory_loads(self, registry, tmp_path):
+        """Names with a subdirectory, including ``..`` that stays inside, still load."""
+        (tmp_path / "addons" / "sub").mkdir()
+        (tmp_path / "addons" / "sub" / "nested.py").write_text(self._handler("nested"))
+
+        assert registry.get_handler("sub/nested").label == "nested"
+        assert registry.get_handler("sub/../good").label == "good"
+
+    @pytest.mark.parametrize("name", [
+        "../outside",
+        "sub/../../outside",
+        "../addons-sibling/outside",
+        "ABSOLUTE",
+    ])
+    def test_a_name_that_leaves_the_addons_dir_is_not_run(self, registry, tmp_path, name):
+        """Neither ``..`` nor an absolute path may run a script outside the addons directory."""
+        marker = tmp_path / "ran"
+        # Exists, so ``sub/..`` resolves and the escape really is attempted.
+        (tmp_path / "addons" / "sub").mkdir(exist_ok=True)
+        for parent in (tmp_path, tmp_path / "addons-sibling"):
+            parent.mkdir(exist_ok=True)
+            (parent / "outside.py").write_text(self._handler("outside", marker))
+        if name == "ABSOLUTE":
+            name = str(tmp_path / "outside")
+
+        assert registry.get_handler(name) is None
+        assert not marker.exists(), "code outside the addons directory was executed"
+
+    def test_a_script_the_operator_symlinked_in_still_loads(self, registry, tmp_path):
+        """A script the operator symlinked into the directory is still loaded."""
+        real = tmp_path / "shared" / "linked_real.py"
+        real.parent.mkdir()
+        real.write_text(self._handler("linked"))
+        (tmp_path / "addons" / "linked.py").symlink_to(real)
+
+        assert registry.get_handler("linked").label == "linked"
+
+
 @pytest.fixture
 def deep_merge_patch():
-    """Import _deep_merge_patch lazily to avoid module-level side effects."""
+    """Import _deep_merge_patch lazily."""
     import importlib
-    import sys
-    # Temporarily mock Path.mkdir to prevent /opt/jumpstarter creation
-    original_mkdir = Path.mkdir
-
-    def safe_mkdir(self, *args, **kwargs):
-        if str(self).startswith("/opt/"):
-            return
-        return original_mkdir(self, *args, **kwargs)
-
-    Path.mkdir = safe_mkdir  # ty: ignore[invalid-assignment]
-    try:
-        if "jumpstarter_driver_mitmproxy.bundled_addon" in sys.modules:
-            mod = sys.modules["jumpstarter_driver_mitmproxy.bundled_addon"]
-        else:
-            mod = importlib.import_module(
-                "jumpstarter_driver_mitmproxy.bundled_addon"
-            )
-        return mod._deep_merge_patch  # ty: ignore[unresolved-attribute]
-    finally:
-        Path.mkdir = original_mkdir
+    mod = importlib.import_module("jumpstarter_driver_mitmproxy.bundled_addon")
+    return mod._deep_merge_patch  # ty: ignore[unresolved-attribute]
 
 
 @pytest.fixture
