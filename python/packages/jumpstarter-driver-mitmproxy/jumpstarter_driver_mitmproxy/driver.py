@@ -33,7 +33,9 @@ import base64
 import fnmatch
 import json
 import logging
+import math
 import os
+import re
 import secrets
 import shutil
 import signal
@@ -43,7 +45,7 @@ import tempfile
 import threading
 import time
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
@@ -65,6 +67,23 @@ def _verify_mitmproxy_binary(binary: str) -> str | None:
         )
     return None
 
+#: File the shaping config is written to and the addon reads back.
+#:
+#: One owner for both halves. The driver used to write the literal in two places
+#: while the addon read its own constant, and a rename on either side turned the
+#: whole feature into a no-op with a green suite — the two sides were covered and
+#: nothing crossed between them.
+SHAPING_CONFIG_NAME = "shaping.json"
+
+#: Ceiling on the delay knobs, in milliseconds.
+#:
+#: A delay is added per flow with a real sleep, so an out-of-range figure does not
+#: emulate a weak link — it hangs every request behind it for as long as it says,
+#: past any client timeout, with nothing in the reply to suggest that is what was
+#: asked for. Realistic weak-link profiles add a second or so, so a minute
+#: is far above every legitimate request while still refusing the ones that can
+#: only be a mistake: a value in the wrong unit, or a stray zero.
+MAX_DELAY_MS = 60_000
 
 # ── Capture export helpers ───────────────────────────────────
 
@@ -328,6 +347,84 @@ class DirectoriesConfig(BaseModel):
             self.files = str(Path(self.data) / "mock-files")
         return self
 
+_CAPTURES_MAX_BYTES = 3_500_000  # trim threshold (gRPC limit = 4MB)
+
+#: Fixed cap on a single spooled response body read, in bytes.
+#:
+#: ``get_response_body`` takes no size argument from the caller, so without a
+#: cap a single oversized capture (e.g. a multi-hundred-MB firmware image
+#: spooled to disk) would be read into memory whole and returned over gRPC,
+#: which rejects it long after the read and the memory it took have already
+#: cost something. 1 MiB matches the default budget ``export_captured_requests``
+#: uses per entry.
+_GET_RESPONSE_BODY_MAX_BYTES = 1_048_576
+
+
+class _SizeLimitedCaptureBuffer(list):
+    """List that tracks approximate serialized size and auto-trims oldest entries.
+
+    Used as a drop-in replacement for MitmproxyDriver._captured_requests.
+    All access is guarded by the driver's external _capture_lock.
+    """
+
+    def __init__(self, max_bytes: int = _CAPTURES_MAX_BYTES):
+        super().__init__()
+        self._max_bytes = max_bytes
+        self._estimated_size = 0
+        #: Cumulative number of entries ever discarded from the front of the
+        #: buffer, via trimming or clearing. A watcher cannot track "how far
+        #: it has read" as a plain index into this list: the list is mutated
+        #: out from under it by both paths. Tracking the discard count instead
+        #: lets positions stay absolute (how many entries have ever been
+        #: appended) and monotonic, so they can be translated back into a
+        #: live index with a single subtraction, regardless of how many
+        #: trims or clears happened in between.
+        self._discarded = 0
+
+    def append(self, item):
+        entry_size = len(json.dumps(item))
+        super().append(item)
+        self._estimated_size += entry_size
+        if self._estimated_size > self._max_bytes:
+            self._trim()
+
+    def clear(self):
+        # Count what's being thrown away before it's gone, so positions
+        # recorded by a watcher before this clear remain resolvable
+        # afterwards instead of referring to entries that no longer exist
+        # with no way to tell how far off they are.
+        self._discarded += len(self)
+        super().clear()
+        self._estimated_size = 0
+
+    def _trim(self):
+        trimmed = 0
+        while self._estimated_size > self._max_bytes and trimmed < len(self) - 1:
+            self._estimated_size -= len(json.dumps(self[trimmed]))
+            trimmed += 1
+        if trimmed:
+            del self[:trimmed]
+            self._discarded += trimmed
+            logger.warning(
+                "Capture buffer auto-trimmed: dropped %d oldest entries (%d remaining)",
+                trimmed, len(self),
+            )
+
+    @property
+    def total_appended(self) -> int:
+        """Absolute count of entries ever appended, monotonic across trims/clears."""
+        return self._discarded + len(self)
+
+    def index_for_position(self, position: int) -> int:
+        """Translate an absolute position into a live index into this buffer.
+
+        Positions older than the oldest entry still held (because it was
+        trimmed or cleared away) clamp to 0 rather than going negative, so a
+        watcher that fell behind resumes from whatever is left instead of
+        slicing with a negative start or waiting on a length the buffer can
+        no longer reach.
+        """
+        return max(0, position - self._discarded)
 
 @dataclass(kw_only=True)
 class MitmproxyDriver(Driver):
@@ -405,6 +502,22 @@ class MitmproxyDriver(Driver):
     )
     _mock_endpoints: dict = field(default_factory=dict, init=False)
     _state_store: dict = field(default_factory=dict, init=False)
+    #: Weak-link emulation currently configured, empty when not shaping. Held
+    #: here as well as on disk so ``get_shaping`` answers without reading a file
+    #: the addon may be rewriting.
+    _shaping: dict = field(default_factory=dict, init=False)
+    #: Whether the addon actually installed this session can shape. The inline
+    #: fallback addon cannot, and a caller has to be told rather than handed a
+    #: config file nobody reads.
+    #:
+    #: Fail closed. ``start`` sets it either way — True when the bundled addon is
+    #: copied, False when the fallback is generated — so the only state this
+    #: default describes is "no session yet", where the honest answer is that
+    #: nothing can shape. It used to default True, which made ``shape`` report
+    #: success before any proxy existed. That is refused earlier now, on the
+    #: session rather than on the addon, because "this session runs the fallback
+    #: addon" is the wrong reason to give when there is no session at all.
+    _shaping_available: bool = field(default=False, init=False)
     _current_mode: str = field(default="stopped", init=False)
     _web_ui_enabled: bool = field(default=False, init=False)
     _current_flow_file: str | None = field(default=None, init=False)
@@ -422,7 +535,7 @@ class MitmproxyDriver(Driver):
     _capture_reader_threads: list = field(
         default_factory=list, init=False, repr=False
     )
-    _captured_requests: list = field(default_factory=list, init=False)
+    _captured_requests: _SizeLimitedCaptureBuffer = field(default_factory=_SizeLimitedCaptureBuffer, init=False)
     _capture_lock: threading.Lock = field(
         default_factory=threading.Lock, init=False
     )
@@ -493,6 +606,17 @@ class MitmproxyDriver(Driver):
         # Ensure directories exist
         Path(self.directories.flows).mkdir(parents=True, exist_ok=True)
         Path(self.directories.mocks).mkdir(parents=True, exist_ok=True)
+
+        # A new session starts unshaped. The config lives in a directory that
+        # outlives the process — often a stable per-user path — so without this a
+        # weak link configured before a restart came back with it, silently: the
+        # addon reloads the file it finds, while every status view reports the
+        # in-memory state, which is empty. Nobody would connect a slow proxy to a
+        # shaping request made an hour earlier.
+        #
+        # Said out loud, because throwing away a request silently is how a test
+        # ends up asserting against a link nobody is shaping.
+        self._discard_shaping("start")
 
         # Start capture server (before addon generation so socket path is set)
         self._start_capture_server()
@@ -705,6 +829,7 @@ class MitmproxyDriver(Driver):
             self._process = None
             self._current_mode = "stopped"
             self._web_ui_enabled = False
+            self._discard_shaping("stop")
             return "Not running"
 
         pid = self._process.pid
@@ -738,6 +863,12 @@ class MitmproxyDriver(Driver):
         self._current_mode = "stopped"
         self._web_ui_enabled = False
         self._current_flow_file = None
+
+        # Shaping belongs to a session, not to this object. Without this the
+        # driver kept reporting a weak link after the proxy that applied it was
+        # gone — and the next ``start`` would delete the file anyway, so the
+        # report was of something that had already stopped being true.
+        self._discard_shaping("stop")
 
         # Stop capture server (do NOT clear _captured_requests - tests may
         # read captures after stop)
@@ -891,6 +1022,219 @@ class MitmproxyDriver(Driver):
             self._write_mock_config()
             return f"Removed mock: {key}"
         return f"Mock not found: {key}"
+
+    @export
+    def shape(
+        self,
+        rate_kbit: int = 0,
+        latency_ms: float = 0.0,
+        jitter_ms: float = 0.0,
+        drop_pct: float = 0.0,
+    ) -> str:
+        """Emulate a slow or unreliable link for traffic through this proxy.
+
+        A proxy is often the only place in a test rig that can add real delay:
+        the device under test may have no kernel support for it at all. Applies
+        to every flow, in both directions, and takes effect on the running
+        process — the addon reloads this on change, so there is no restart.
+
+        What each value means at this layer, because the layer matters:
+
+        * ``rate_kbit`` paces bodies at that many kilobits per second, each
+          direction independently. A real rate, so it does not drift with the
+          latency of the link underneath.
+        * ``latency_ms`` is added once per flow before the request goes upstream,
+          which is what a browser's developer tools mean by added latency.
+        * ``jitter_ms`` spreads that delay by plus or minus this much.
+        * ``drop_pct`` fails whole flows. A proxy sees requests rather than
+          packets, so "loss" here honestly means a request that fails, and the
+          client sees a connection error rather than a synthetic 5xx.
+
+        All zero is the same as :meth:`clear_shaping`. Pass only what you mean:
+        omitted values do not shape.
+
+        Args:
+            rate_kbit: Kilobits per second, or 0 for unpaced.
+            latency_ms: Delay added per flow, in milliseconds.
+            jitter_ms: Spread of that delay, in milliseconds.
+            drop_pct: Percentage of flows to fail, 0-100.
+
+        Returns:
+            A JSON object: ``{"ok": true, "applied": {…}}`` on success, or
+            ``{"ok": false, "error": "…", "reason": "…"}`` when the request was
+            refused, ``reason`` being one of ``invalid``, ``unavailable`` or
+            ``write_failed``.
+
+            Structured rather than prose, and deliberately so. A caller cannot
+            reliably tell "applied" from "refused" by reading a sentence: the
+            first version of this returned messages starting with ``Invalid`` for
+            bad values, a consumer keyed off that prefix, and the moment a second
+            kind of refusal appeared — a session whose addon cannot shape — the
+            consumer read it as success and reported a cap that did not exist.
+            ``get_shaping`` already answers in JSON; this matches it.
+        """
+        refusal = self._refuse_bad_shaping(
+            rate_kbit, latency_ms, jitter_ms, drop_pct,
+        )
+        if refusal:
+            return refusal
+
+        if self._process is None or self._process.poll() is not None:
+            # Shaping belongs to a live session: the addon reads the config when
+            # it runs, and ``start`` clears whatever it finds. Accepting this
+            # before the proxy exists returned ok, wrote a file, and then had it
+            # deleted by the next ``start`` — a request answered with success and
+            # carried out by nobody.
+            return self._shaping_error(
+                "Shaping needs a running proxy: it is a property of a session, "
+                "and starting one clears any shaping it finds. Start the proxy, "
+                "then ask for the weak link",
+                reason="unavailable",
+            )
+        if not self._shaping_available:
+            return self._shaping_error(
+                "Shaping unavailable: this session is running the fallback "
+                "addon, which carries no shaper. Reinstall the package so "
+                "bundled_addon.py is present, then restart the proxy",
+                reason="unavailable",
+            )
+        wanted = {
+            "rate_kbit": int(rate_kbit),
+            "latency_ms": float(latency_ms),
+            "jitter_ms": float(jitter_ms),
+            "drop_pct": float(drop_pct),
+        }
+        if not any(wanted.values()):
+            # All zero means the same as clearing, but it is still an answer to
+            # ``shape``: the reply carries ``applied`` like every other one, so a
+            # caller reading that key does not have to special-case this path.
+            cleared = json.loads(self.clear_shaping())
+            return json.dumps(
+                {"ok": True, "applied": {}, "cleared": cleared["cleared"]},
+            )
+        try:
+            self._write_shaping(wanted)
+        except OSError as exc:
+            # Refused, and NOT remembered. The addon shapes from the file, so a
+            # driver that recorded a config it failed to write would report a weak
+            # link that nothing is applying — and ``get_shaping`` is what a test
+            # asserts on.
+            return self._shaping_error(
+                f"Could not write the shaping config: {exc}",
+                reason="write_failed",
+            )
+        self._shaping = wanted
+        return json.dumps({"ok": True, "applied": dict(wanted)})
+
+    @export
+    def clear_shaping(self) -> str:
+        """Stop emulating a weak link. Idempotent.
+
+        Removes the config file rather than writing zeros into it, so a proxy
+        that nobody asked to shape has nothing to read and nothing to reload.
+
+        Returns:
+            A JSON object: ``{"ok": true, "cleared": bool}``. Same shape as
+            :meth:`shape` so one consumer can read both without special cases.
+        """
+        self._shaping = {}
+        path = Path(self.directories.mocks) / SHAPING_CONFIG_NAME
+        was_present = path.exists()
+        path.unlink(missing_ok=True)
+        return json.dumps({"ok": True, "cleared": was_present})
+
+    def _discard_shaping(self, when: str) -> None:
+        """Clear shaping and say so when there was something to clear.
+
+        Both ends of a session throw shaping away — ``stop`` because it belongs to
+        the session that is ending, ``start`` because a new one begins unshaped —
+        and both have to be audible. Saying it in only one of them moved the
+        silence rather than removing it: in the ordinary ``start`` → ``shape`` →
+        ``stop`` → ``start`` sequence the file is already gone by the time the
+        second ``start`` looks, so a warning only there could never fire.
+
+        Args:
+            when: Which end of the session is discarding, for the message.
+        """
+        if json.loads(self.clear_shaping())["cleared"]:
+            logger.warning(
+                "Discarded the shaping config at %s: shaping belongs to one "
+                "proxy session, so ask for it again once the proxy is running",
+                when,
+            )
+
+    @staticmethod
+    def _refuse_bad_shaping(
+        rate_kbit: float, latency_ms: float, jitter_ms: float, drop_pct: float,
+    ) -> str | None:
+        """The reason a request cannot be honored, or ``None`` if it can.
+
+        Extracted so :meth:`shape` reads as what it does rather than as a wall of
+        range checks — the checks are the majority of it, and the ORDER matters
+        enough to be seen in one place.
+        """
+        knobs = (
+            ("rate_kbit", rate_kbit), ("latency_ms", latency_ms),
+            ("jitter_ms", jitter_ms), ("drop_pct", drop_pct),
+        )
+        for name, value in knobs:
+            # First, because NaN makes every comparison below it False: it slipped
+            # past every range check and was written out as a bare ``NaN``, which
+            # is not JSON a strict reader will take — and the addon would have
+            # paced traffic by it. Infinity passed the same way wherever there was
+            # no upper bound.
+            if not math.isfinite(value):
+                return MitmproxyDriver._shaping_error(
+                    f"Invalid {name}: {value} is not a finite number",
+                )
+        for name, value in knobs:
+            if value < 0:
+                return MitmproxyDriver._shaping_error(
+                    f"Invalid {name}: {value} (must not be negative)",
+                )
+        if drop_pct > 100:
+            return MitmproxyDriver._shaping_error(
+                f"Invalid drop_pct: {drop_pct} (must be 0-100)",
+            )
+        for name, value in (
+            ("latency_ms", latency_ms), ("jitter_ms", jitter_ms),
+        ):
+            if value > MAX_DELAY_MS:
+                return MitmproxyDriver._shaping_error(
+                    f"Invalid {name}: {value} exceeds the {MAX_DELAY_MS} ms "
+                    f"ceiling — that is a hang, not a weak link",
+                )
+        if jitter_ms > latency_ms:
+            # Unconditionally, including when no latency was asked for at all.
+            # A spread wider than the delay reaches below zero and is clamped
+            # there, quietly turning the requested average into something lower.
+            # Exempting ``latency_ms == 0`` would accept a jitter-only request
+            # whose average delay silently ends up lower than the one asked for.
+            return MitmproxyDriver._shaping_error(
+                f"Invalid jitter_ms: {jitter_ms} exceeds latency_ms "
+                f"{latency_ms}, so the delay would clamp at zero",
+            )
+        return None
+
+    @staticmethod
+    def _shaping_error(message: str, reason: str = "invalid") -> str:
+        """A refusal in the same shape as an acceptance.
+
+        ``reason`` is the machine-readable half: ``invalid`` for a value out of
+        range, ``unavailable`` when this session cannot shape, ``write_failed``
+        when the config could not be written. Callers branch on it, never on the
+        wording of ``error``.
+        """
+        return json.dumps({"ok": False, "error": message, "reason": reason})
+
+    @export
+    def get_shaping(self) -> str:
+        """Report the shaping this driver has configured.
+
+        Returns:
+            JSON object, empty when nothing is being shaped.
+        """
+        return json.dumps(self._shaping or {})
 
     @export
     def clear_mocks(self) -> str:
@@ -1492,18 +1836,24 @@ class MitmproxyDriver(Driver):
             JSON string of each capture event.
         """
         with self._capture_lock:
-            last_index = len(self._captured_requests)
+            # An absolute position (how many entries have ever been
+            # appended), not a plain list index: trimming and clearing both
+            # mutate the buffer out from under this generator between polls,
+            # so a bare length would either wait on a count the buffer can
+            # no longer reach or re-yield entries that shifted toward index 0.
+            last_position = self._captured_requests.total_appended
             for req in self._captured_requests:
                 yield json.dumps(req)
 
         while True:
             await asyncio.sleep(0.3)
             with self._capture_lock:
-                new_count = len(self._captured_requests)
-                if new_count > last_index:
-                    for req in self._captured_requests[last_index:new_count]:
+                new_position = self._captured_requests.total_appended
+                if new_position > last_position:
+                    start = self._captured_requests.index_for_position(last_position)
+                    for req in self._captured_requests[start:]:
                         yield json.dumps(req)
-                    last_index = new_count
+                    last_position = new_position
 
     @export
     def clear_captured_requests(self) -> str:
@@ -1605,8 +1955,8 @@ class MitmproxyDriver(Driver):
         """Convert grouped captured requests into v2 scenario endpoints.
 
         .. note::
-            Also consumed by ``SiriusXmDriver`` (jumpstarter-driver-mimosa)
-            at runtime for IP capture export. Avoid renaming without updating.
+            Also called at runtime by out-of-tree drivers that export
+            captures. Avoid renaming or changing the signature.
 
         Keys are full URLs (scheme + domain + path).  Each endpoint
         value is a **list** of response definitions, each containing a
@@ -1813,32 +2163,287 @@ class MitmproxyDriver(Driver):
 
     @export
     def wait_for_request(self, method: str, path: str,
-                         timeout: float = 10.0) -> str:
+                        timeout: float = 10.0,
+                        use_regex: bool = False,
+                        expected_status: int = 0) -> str:
         """Wait for a matching request to be captured.
 
         Polls the capture buffer at 0.2s intervals until a matching
         request is found or the timeout expires.
 
         Args:
-            method: HTTP method to match (e.g., "GET").
-            path: URL path to match. Append ``*`` for prefix matching.
+            method: HTTP method to match (e.g., "GET"). Use ``*`` to
+                match any method.
+            path: URL path to match. Supports exact match, ``*`` suffix
+                for prefix matching, or regex when use_regex is True.
             timeout: Maximum time to wait in seconds.
+            use_regex: If True, match path as a regex pattern.
+            expected_status: If non-zero, only match requests with this
+                HTTP response status code. Zero accepts any status.
 
         Returns:
             JSON string of the matching request, or a JSON object
             with an "error" key on timeout.
+
+        Note:
+            The matched request is NOT removed from the capture buffer.
+            Repeated calls with the same parameters will return the same
+            match. This is intentional — the same request may be checked
+            by multiple calls (e.g. wait_for_request then
+            get_response_body).
         """
+        expected_status = int(expected_status)
+        if expected_status and not 100 <= expected_status <= 599:
+            raise ValueError("expected_status must be 0 or an HTTP status from 100 to 599")
+        if use_regex:
+            # Before the loop, not inside it: the pattern is only reached once a
+            # request whose METHOD matches is in the buffer, so the same bad
+            # pattern either crossed gRPC as a re.error or sat here for the whole
+            # timeout and then reported a timeout — depending on what happened to
+            # have been captured. Compiling once settles it either way, and the
+            # reply is the one get_response_body gives for the same mistake.
+            try:
+                re.compile(path)
+            except re.error as exc:
+                logger.debug("wait_for_request: invalid regex '%s': %s", path, exc)
+                return json.dumps({"error": f"Invalid regex '{path}': {exc}"})
         deadline = time.monotonic() + float(timeout)
         while time.monotonic() < deadline:
             with self._capture_lock:
                 for req in self._captured_requests:
-                    if self._request_matches(req, method, path):
+                    if self._request_matches(req, method, path, use_regex):
+                        if expected_status and req.get("response_status", 0) != expected_status:
+                            continue
                         return json.dumps(req)
             time.sleep(0.2)
+        with self._capture_lock:
+            recent = [(r.get("method", ""), r.get("path", ""))
+                      for r in self._captured_requests[-20:]]
+        logger.debug("wait_for_request timeout: %s %s (status=%s). Buffer: %s",
+                     method, path, expected_status, recent)
         return json.dumps({
             "error": f"Timed out waiting for {method} {path} "
                      f"after {timeout}s"
         })
+
+    @export
+    def get_response_body(self, pattern: str, index: int = -1) -> str:
+        """Return the response body of a captured request matching pattern.
+
+        Searches all captured requests whose path matches the regex
+        pattern and returns the response body from the selected match.
+
+        Args:
+            pattern: Regex pattern to match against the request path
+                (e.g. ``items/.*id=42``).
+            index: Which match to return when multiple requests match.
+                -1 (default) returns the most recent, 0 the oldest.
+
+        Returns:
+            JSON string with keys:
+            - ``body``: The parsed response body (if JSON) or raw text.
+            - ``path``: The matched request's full path.
+            - ``status``: HTTP response status code.
+            - ``truncated``: True if the body was cut off at the
+              ``_GET_RESPONSE_BODY_MAX_BYTES`` read cap.
+            Or a JSON object with an ``error`` key if not found.
+
+        Note:
+            Does not consume the request from the buffer. Same request
+            can be matched by wait_for_request and get_response_body.
+        """
+        index = int(index)
+        try:
+            with self._capture_lock:
+                matched = [
+                    req for req in self._captured_requests
+                    if re.search(pattern, req.get("path", ""))
+                ]
+        except re.error as exc:
+            logger.debug("get_response_body: invalid regex '%s': %s", pattern, exc)
+            return json.dumps({"error": f"Invalid regex '{pattern}': {exc}"})
+
+        if not matched:
+            with self._capture_lock:
+                paths = [r.get("path", "") for r in self._captured_requests[-30:]]
+            logger.debug("get_response_body: no match for '%s'. Buffer: %s",
+                         pattern, paths)
+            return json.dumps({
+                "error": f"No captured response matching '{pattern}'",
+                "available_paths": paths,
+            })
+
+        try:
+            selected = matched[index]
+        except IndexError:
+            logger.debug("get_response_body: index %d out of range (%d matched)",
+                         index, len(matched))
+            return json.dumps({
+                "error": f"Index {index} out of range, only {len(matched)} matched",
+            })
+
+        # Read body: inline string or spooled file on disk
+        body_text = selected.get("response_body")
+        body_file = selected.get("response_body_file")
+        truncated = False
+
+        if body_text is None and body_file:
+            try:
+                with open(body_file, "rb") as f:
+                    # Read one byte past the cap to detect truncation without
+                    # a second stat() call or reading the whole file first.
+                    raw = f.read(_GET_RESPONSE_BODY_MAX_BYTES + 1)
+                truncated = len(raw) > _GET_RESPONSE_BODY_MAX_BYTES
+                if truncated:
+                    raw = raw[:_GET_RESPONSE_BODY_MAX_BYTES]
+                body_text = raw.decode("utf-8", errors="replace")
+            except FileNotFoundError:
+                logger.debug("get_response_body: file gone: %s", body_file)
+                return json.dumps({
+                    "error": f"Response body file not found: {body_file}",
+                })
+            except OSError as exc:
+                logger.debug("get_response_body: failed reading %s: %s", body_file, exc)
+                return json.dumps({
+                    "error": f"Failed to read response body file: {exc}",
+                })
+
+        if body_text is None:
+            logger.debug("get_response_body: no body for %s", selected.get("path", ""))
+            return json.dumps({
+                "error": f"No response body for {selected.get('path', '')}",
+            })
+
+        # Parse as JSON if possible, otherwise return raw text
+        try:
+            parsed = json.loads(body_text)
+        except (json.JSONDecodeError, TypeError):
+            parsed = body_text
+
+        return json.dumps({
+            "body": parsed,
+            "path": selected.get("path", ""),
+            "status": selected.get("response_status", 0),
+            "truncated": truncated,
+        })
+
+    @export
+    def export_captured_requests(self, max_body_size: int = 1048576) -> str:
+        """Return all captured requests with response bodies inlined.
+
+        Reads spool files on the driver side so clients don't need
+        local filesystem access to response bodies.
+
+        Args:
+            max_body_size: Max bytes to read from each spool file (default 1MB).
+
+        Returns:
+            JSON array of enriched request dicts. Each dict includes
+            response_body as inline text (or None), plus
+            response_body_truncated (bool) if body was cut off.
+        """
+        max_body_size = int(max_body_size)
+        # The client checks this too; checked here as well because a driver call
+        # can be made directly, and both out-of-range values fail silently rather
+        # than loudly. Measured on a 230-byte spool file: 0 reads nothing and
+        # then reports ``response_body_truncated`` — ``len("") == 0`` — so an
+        # empty body looks like a clipped one; -1 reads the whole file and marks
+        # nothing, so the cap this argument exists to impose is simply absent.
+        if max_body_size <= 0:
+            raise ValueError("max_body_size must be greater than zero")
+        with self._capture_lock:
+            requests = list(self._captured_requests)
+
+        enriched = []
+        # Budget for the reply, in the units the transport charges: UTF-8 bytes of
+        # serialized JSON. The reply crosses the same gRPC transport the capture buffer
+        # is trimmed to fit under, and max_body_size alone does not bound it — enough
+        # captured requests each spend it again.
+        #
+        # Counted per entry AFTER serializing, not from the decoded body length, because
+        # the decoded length is not what travels. Measured on a JSON payload,
+        # 14% of which is quote characters: six bodies totaling 3,706,998 characters
+        # serialize to 4,235,760 bytes and exceed the 4 MB cap, while the old count read
+        # 3.7 MB and let them through. Escaping is only part of it — the metadata, headers
+        # and request body were not counted at all, and one non-ASCII character costs up
+        # to four bytes, which took a full budget to 21 MB in the same measurement.
+        #
+        # Two bytes reserved for the enclosing brackets, one per entry for its comma.
+        budget = _CAPTURES_MAX_BYTES - 2
+        for req in requests:
+            content_type = req.get("response_content_type", "")
+            entry = {
+                "timestamp": req.get("timestamp"),
+                "method": req.get("method", ""),
+                "url": req.get("url", ""),
+                "path": req.get("path", ""),
+                "response_status": req.get("response_status", 0),
+                "duration_ms": req.get("duration_ms", 0),
+                "response_size": req.get("response_size", 0),
+                "content_type": content_type,
+                "was_mocked": req.get("was_mocked", False),
+                "request_headers": req.get("headers", {}),
+                "request_body": req.get("body", ""),
+                "response_headers": req.get("response_headers", {}),
+            }
+
+            body_text = req.get("response_body")
+            body_file = req.get("response_body_file")
+            is_text = any(t in content_type for t in ("json", "text", "xml", "javascript"))
+
+            if body_text is None and body_file:
+                if is_text:
+                    try:
+                        # Bytes, not characters: max_body_size is a byte cap. One byte
+                        # past it tells a clipped body from one exactly at the cap.
+                        with open(body_file, "rb") as f:
+                            raw = f.read(max_body_size + 1)
+                        if len(raw) > max_body_size:
+                            raw = raw[:max_body_size]
+                            entry["response_body_truncated"] = True
+                        body_text = raw.decode("utf-8", errors="replace")
+                    except FileNotFoundError:
+                        body_text = None
+                        entry["response_body_error"] = f"spool file not found: {body_file}"
+                    except OSError as exc:
+                        # A spool file that exists but cannot be read — permissions, a full
+                        # descriptor table, an I/O error — used to escape this loop and fail
+                        # the whole call, losing every captured request over one unreadable
+                        # body. Reported per entry, like the missing-file case beside it and
+                        # like ``get_response_body`` already did for both.
+                        body_text = None
+                        entry["response_body_error"] = (
+                            f"failed to read spool file {body_file}: {exc}"
+                        )
+                else:
+                    entry["response_body_skipped"] = "binary content type"
+
+            entry["response_body"] = body_text
+
+            # Priced as serialized, then the body dropped if that does not fit — the
+            # body is the only part worth shedding, and an entry without one still
+            # says a request happened, which is what a caller searching the capture
+            # needs. If even that does not fit, the reply is full: stopping is the
+            # only honest end, because an entry appended past the budget makes the
+            # whole call fail rather than this one entry.
+            cost = len(json.dumps(entry).encode("utf-8")) + 1
+            if cost > budget and body_text:
+                entry["response_body"] = None
+                entry.pop("response_body_truncated", None)
+                entry["response_body_skipped"] = "export size budget exceeded"
+                cost = len(json.dumps(entry).encode("utf-8")) + 1
+            if cost > budget:
+                logger.warning(
+                    "Export truncated at %d of %d captured requests: the reply reached "
+                    "the %d-byte budget", len(enriched), len(requests), _CAPTURES_MAX_BYTES,
+                )
+                break
+            budget -= cost
+            enriched.append(entry)
+
+        return json.dumps(enriched)
+
+
 
     # ── Capture internals ──────────────────────────────────────
 
@@ -1972,14 +2577,17 @@ class MitmproxyDriver(Driver):
             logger.debug("Cleaned files directory: %s", files_dir)
 
     @staticmethod
-    def _request_matches(req: dict, method: str, path: str) -> bool:
+    def _request_matches(req: dict, method: str, path: str, use_regex: bool = False) -> bool:
         """Check if a captured request matches method and path.
 
-        Supports exact match and wildcard (``*`` suffix) prefix matching.
+        Supports exact match, wildcard (``*`` suffix) prefix matching,
+        regex matching, and wildcard method (``*`` matches any method).
         """
-        if req.get("method") != method:
+        if method != "*" and req.get("method") != method:
             return False
         req_path = req.get("path", "")
+        if use_regex:
+            return bool(re.search(path, req_path))
         if path.endswith("*"):
             return req_path.startswith(path[:-1])
         return req_path == path
@@ -2033,20 +2641,76 @@ class MitmproxyDriver(Driver):
             "endpoints": self._mock_endpoints,
         }
 
-        # Atomic write: write to temp file then rename to avoid partial reads
-        tmp_fd, tmp_path = tempfile.mkstemp(dir=str(mock_path), suffix=".tmp")
-        try:
-            with os.fdopen(tmp_fd, "w") as f:
-                json.dump(v2_config, f, indent=2)
-            os.replace(tmp_path, config_file)
-        except BaseException:
-            os.unlink(tmp_path)
-            raise
+        self._atomic_write_json(config_file, v2_config)
         logger.debug(
             "Wrote %d mock(s) to %s",
             len(self._mock_endpoints),
             config_file,
         )
+
+    @staticmethod
+    def _atomic_write_json(path: Path, payload) -> None:
+        """Write JSON so a reader never sees a half-written file.
+
+        The addon polls all three of these files while the driver rewrites them,
+        so every one of them needs the same write-then-rename. It used to be
+        written out three times, which is three chances for one of them to lose
+        the property quietly.
+
+        Args:
+            path: Final destination. Its directory must already exist.
+            payload: Anything ``json.dump`` accepts.
+        """
+        # Nothing here ever holds a bare descriptor NUMBER, which is the point.
+        # The obvious shape — ``mkstemp`` then ``os.fdopen`` — hands the number to
+        # a file object that closes it, so on the failure path the number is free
+        # again while this code still has it. Closing it there is not a harmless
+        # EBADF: this driver runs threads that open sockets and files (the capture
+        # server and its read loop), the number can already be theirs, the close
+        # SUCCEEDS, and something else loses its file. ``suppress(OSError)``
+        # cannot help with a call that does not fail.
+        #
+        # Guarding that with a "do we still own it?" flag narrows the window but
+        # does not close it: an ``io.open`` failure AFTER the raw file took the
+        # descriptor over — a locale whose encoding cannot be looked up, memory
+        # pressure, an interrupt inside the codec import — leaves the flag saying
+        # "ours" over a descriptor CPython has already closed. Measured: the
+        # capture read loop was handed that number and lost its connection.
+        #
+        # A named temporary file owns its own descriptor, so the failure mode has
+        # nowhere left to live: the ``with`` closes it on every path that reaches
+        # it — the write raising, the rename raising, an interrupt mid-write — and
+        # there is no number for this code to close a second time. Nothing is
+        # closed in the handler for that reason, and not by oversight: a
+        # ``handle.close()`` there was measured to be unreachable.
+        handle = tempfile.NamedTemporaryFile(  # noqa: SIM115 - closed by the `with` below
+            "w", dir=str(path.parent), suffix=".tmp", delete=False,
+        )
+        try:
+            tmp_path = handle.name
+            with handle:
+                json.dump(payload, handle, indent=2)
+            os.replace(tmp_path, path)
+        except BaseException:
+            # Suppressed so the failure that got us here is the one that reaches
+            # the caller — a message about a temporary file nobody asked about
+            # would otherwise replace the reason the write failed.
+            with suppress(OSError):
+                os.unlink(handle.name)
+            raise
+
+    def _write_shaping(self, config: dict) -> None:
+        """Write the shaping config to disk for addon hot-reload.
+
+        Args:
+            config: What to write. Passed in rather than read from ``self`` so
+                the caller can write first and only then record what it wrote —
+                a config remembered but not written is a weak link the driver
+                reports and nothing applies.
+        """
+        mock_path = Path(self.directories.mocks)
+        mock_path.mkdir(parents=True, exist_ok=True)
+        self._atomic_write_json(mock_path / SHAPING_CONFIG_NAME, config)
 
     def _write_state(self):
         """Write shared state store to disk for addon hot-reload."""
@@ -2054,20 +2718,31 @@ class MitmproxyDriver(Driver):
         mock_path.mkdir(parents=True, exist_ok=True)
         state_file = mock_path / "state.json"
 
-        # Atomic write: write to temp file then rename to avoid partial reads
-        tmp_fd, tmp_path = tempfile.mkstemp(dir=str(mock_path), suffix=".tmp")
-        try:
-            with os.fdopen(tmp_fd, "w") as f:
-                json.dump(self._state_store, f, indent=2)
-            os.replace(tmp_path, state_file)
-        except BaseException:
-            os.unlink(tmp_path)
-            raise
+        self._atomic_write_json(state_file, self._state_store)
         logger.debug(
             "Wrote %d state key(s) to %s",
             len(self._state_store),
             state_file,
         )
+
+    def _fill_addon_paths(self, content: str) -> str:
+        """Point the bundled addon's source at this driver's directories.
+
+        Fills the ``_DRIVER_*`` placeholders in ``bundled_addon.py``. Raises if
+        one is missing, so a rename there cannot silently leave the addon on
+        its standalone defaults.
+        """
+        values = {
+            "_DRIVER_MOCK_DIR": self.directories.mocks,
+            "_DRIVER_CAPTURE_SOCKET": self._capture_socket_path,
+            "_DRIVER_CAPTURE_SPOOL_DIR": str(Path(self.directories.data) / "capture-spool"),
+        }
+        for name, value in values.items():
+            placeholder = f"{name}: str | None = None"
+            if content.count(placeholder) != 1:
+                raise RuntimeError(f"bundled addon has no {name} placeholder")
+            content = content.replace(placeholder, f"{name}: str | None = {value!r}")
+        return content
 
     def _generate_default_addon(self, path: Path):
         """Install the bundled v2 mitmproxy addon script.
@@ -2084,21 +2759,8 @@ class MitmproxyDriver(Driver):
         if bundled.exists():
             import shutil
             shutil.copy2(bundled, path)
-            # Patch the MOCK_DIR to match this driver's config
-            content = path.read_text()
-            content = content.replace(
-                '/opt/jumpstarter/mitmproxy/mock-responses',
-                self.directories.mocks,
-            )
-            content = content.replace(
-                '/opt/jumpstarter/mitmproxy/capture.sock',
-                self._capture_socket_path or '',
-            )
-            content = content.replace(
-                '/opt/jumpstarter/mitmproxy/capture-spool',
-                str(Path(self.directories.data) / "capture-spool"),
-            )
-            path.write_text(content)
+            path.write_text(self._fill_addon_paths(path.read_text()))
+            self._shaping_available = True
             logger.info("Installed bundled v2 addon: %s", path)
             return
 
@@ -2109,9 +2771,14 @@ Auto-generated mitmproxy addon (v2 format) for DUT backend mocking.
 Reads from: {self.directories.mocks}/endpoints.json
 Managed by jumpstarter-driver-mitmproxy.
 """
-import json, os, time
+import json, logging, os, time
 from pathlib import Path
-from mitmproxy import http, ctx
+from mitmproxy import http
+
+# Never ``ctx.log``: it is deprecated in the installed mitmproxy (the master
+# assigns it and every call warns), and it exists only while a master runs — so
+# loading this file without one raises AttributeError inside the calling hook.
+_log = logging.getLogger("jmp.addon.fallback")
 
 class MitmproxyMockAddon:
     MOCK_DIR = "{self.directories.mocks}"
@@ -2140,9 +2807,9 @@ class MitmproxyMockAddon:
             if self.config.get("files_dir"):
                 self.files_dir = Path(self.config["files_dir"])
             self._config_mtime = mtime
-            ctx.log.info(f"Loaded {{len(self.endpoints)}} endpoint(s)")
+            _log.info(f"Loaded {{len(self.endpoints)}} endpoint(s)")
         except Exception as e:
-            ctx.log.error(f"Config load failed: {{e}}")
+            _log.error(f"Config load failed: {{e}}")
 
     def request(self, flow: http.HTTPFlow):
         self._load_config()
@@ -2172,16 +2839,23 @@ class MitmproxyMockAddon:
             body = json.dumps(b).encode() if isinstance(b, (dict, list)) else str(b).encode()
         else:
             body = b""
-        ctx.log.info(f"Mock: {{method}} {{path}} -> {{status}}")
+        _log.info(f"Mock: {{method}} {{path}} -> {{status}}")
         flow.response = http.Response.make(status, body, hdrs)
 
     def response(self, flow: http.HTTPFlow):
         if flow.response:
-            ctx.log.debug(f"{{flow.request.method}} {{flow.request.pretty_url}} -> {{flow.response.status_code}}")
+            _log.debug(f"{{flow.request.method}} {{flow.request.pretty_url}} -> {{flow.response.status_code}}")
 
 addons = [MitmproxyMockAddon()]
 '''
         with open(path, "w") as f:
             f.write(addon_code)
-        logger.info("Generated fallback v2 addon: %s", path)
+        # The fallback carries the mocking addon only. Recorded rather than
+        # papered over: ``shape`` would otherwise write a config file that
+        # nothing in the process reads and report success for it.
+        self._shaping_available = False
+        logger.warning(
+            "Generated fallback v2 addon: %s — traffic shaping is NOT available "
+            "in this session", path,
+        )
 

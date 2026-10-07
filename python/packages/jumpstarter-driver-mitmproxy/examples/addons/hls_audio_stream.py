@@ -82,8 +82,11 @@ class Handler:
     def handle(self, flow: http.HTTPFlow, config: dict) -> bool:
         """Route HLS requests to the appropriate handler."""
         path = flow.request.path
+        # The proxy passes files_dir in; fall back to {data}/mock-files beside
+        # the {data}/addons directory this script is installed in.
         files_dir = Path(
-            config.get("files_dir", "/opt/jumpstarter/mitmproxy/mock-files")
+            config.get("files_dir")
+            or Path(__file__).resolve().parent.parent / "mock-files"
         )
         segments_dir = config.get("segments_dir", "audio/segments")
         segment_duration = config.get("segment_duration_s", 6)

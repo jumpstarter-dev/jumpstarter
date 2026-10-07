@@ -13,6 +13,12 @@ Supports the v2 mock configuration format:
 Loaded by mitmdump/mitmweb via:
     mitmdump -s mock_addon.py
 
+The driver installs this file with its own directories filled in. Run
+standalone, it keeps its files in a per-user temporary directory
+(``$TMPDIR/jumpstarter-mitmproxy-<user>``, the driver's default too),
+or under ``$MITMPROXY_DATA_DIR`` when that is set. ``$MITMPROXY_MOCK_DIR``
+overrides the mock directory alone.
+
 Configuration is read from:
     {mock_dir}/endpoints.json    (v1 flat format)
     {mock_dir}/*.json            (v2 format with "endpoints" key)
@@ -23,14 +29,17 @@ The addon hot-reloads config when the file changes on disk.
 from __future__ import annotations
 
 import asyncio
+import getpass
 import hashlib
 import importlib
 import importlib.util
 import json
+import logging
 import os
 import random
 import re
 import socket as _socket
+import tempfile
 import time
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -38,7 +47,20 @@ from pathlib import Path
 from typing import Any, ClassVar
 from urllib.parse import parse_qs, urlparse
 
-from mitmproxy import ctx, http
+from mitmproxy import http
+
+#: Addons log through the standard library, which is what mitmproxy's own addons
+#: do.
+#:
+#: ``ctx.log`` must not be used, for two measured reasons. It is deprecated: the
+#: master installs it (``master.py``: ``mitmproxy_ctx.log = self.log  #
+#: deprecated, do not use``) and every call warns, so it is on its way out of the
+#: dependency. And it exists ONLY while a master is running — ``ctx`` declares it
+#: under ``TYPE_CHECKING`` alone — so this module raises ``AttributeError``
+#: inside the calling hook whenever it is loaded without one, which is how a test
+#: harness and any tooling load it. Measured on the version this package runs on:
+#: ``hasattr(ctx, "log")`` is False before a master exists and True inside one.
+_log = logging.getLogger("jmp.addon")
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -74,7 +96,7 @@ def _deep_merge_patch(target, patch):
     """Deep-merge a patch dict into a target dict/list in-place.
 
     - Dict patch values recurse into the matching target key.
-    - Keys with ``[N]`` suffix target array elements: ``"modules[0]"``
+    - Keys with ``[N]`` suffix target array elements: ``"devices[0]"``
       navigates to ``target["modules"][0]``.  Missing arrays and
       out-of-range indices are auto-created (filled with empty dicts).
     - Scalar/list patch values replace the target value.
@@ -102,10 +124,7 @@ def _deep_merge_patch(target, patch):
             else:
                 target[key] = value
         except (KeyError, IndexError, TypeError) as e:
-            try:
-                ctx.log.warn(f"Patch merge error on key {key!r}: {e}")
-            except AttributeError:
-                pass  # ctx.log not available outside mitmproxy
+            _log.warning(f"Patch merge error on key {key!r}: {e}")
 
 
 def _apply_patches(body_bytes, patches, flow, state):
@@ -122,10 +141,7 @@ def _apply_patches(body_bytes, patches, flow, state):
     try:
         _deep_merge_patch(body, rendered)
     except (KeyError, IndexError, TypeError) as e:
-        try:
-            ctx.log.warn(f"Patch merge error (continuing with partial patch): {e}")
-        except AttributeError:
-            pass  # ctx.log not available outside mitmproxy
+        _log.warning(f"Patch merge error (continuing with partial patch): {e}")
 
     return json.dumps(body).encode()
 
@@ -228,7 +244,7 @@ class TemplateEngine:
         if expr.startswith("state("):
             return cls._evaluate_state(expr, state)
 
-        ctx.log.warn(f"Unknown template expression: {{{{{expr}}}}}")
+        _log.warning(f"Unknown template expression: {{{{{expr}}}}}")
         return f"{{{{{expr}}}}}"
 
     @classmethod
@@ -283,9 +299,9 @@ class TemplateEngine:
             return ""
         var_name = args[0]
         if var_name in cls.ALLOWED_ENV_VARS:
-            ctx.log.warn(f"env() template used: allowed variable '{var_name}'")
+            _log.warning(f"env() template used: allowed variable '{var_name}'")
             return os.environ.get(var_name, "")
-        ctx.log.warn(f"env() template blocked: variable '{var_name}' is not in ALLOWED_ENV_VARS")
+        _log.warning(f"env() template blocked: variable '{var_name}' is not in ALLOWED_ENV_VARS")
         return ""
 
     _BUILTIN_DISPATCH: ClassVar[list[tuple[str, Any]]]= [
@@ -416,10 +432,10 @@ class AddonRegistry:
 
         script_path = self._script_path(name)
         if script_path is None:
-            ctx.log.error(f"Addon path traversal blocked: {name!r}")
+            _log.error(f"Addon path traversal blocked: {name!r}")
             return None
         if not script_path.exists():
-            ctx.log.error(f"Addon script not found: {script_path}")
+            _log.error(f"Addon script not found: {script_path}")
             return None
 
         try:
@@ -427,7 +443,7 @@ class AddonRegistry:
                 f"hil_addon_{name}", script_path,
             )
             if spec is None or spec.loader is None:
-                ctx.log.error(
+                _log.error(
                     f"Failed to create import spec for addon '{name}' "
                     f"at {script_path}"
                 )
@@ -438,15 +454,15 @@ class AddonRegistry:
             if hasattr(module, "Handler"):
                 handler = module.Handler()  # ty: ignore[call-non-callable]
                 self._handlers[name] = handler
-                ctx.log.info(f"Loaded addon: {name}")
+                _log.info(f"Loaded addon: {name}")
                 return handler
             else:
-                ctx.log.error(
+                _log.error(
                     f"Addon {name} missing Handler class"
                 )
                 return None
-        except Exception as e:  # pragma: no cover  # noqa: BLE001
-            ctx.log.error(f"Failed to load addon {name}: {e}")
+        except Exception as e:  # noqa: BLE001
+            _log.error(f"Failed to load addon {name}: {e}")
             return None
 
     def reload(self, name: str):
@@ -456,10 +472,35 @@ class AddonRegistry:
         return self.get_handler(name)
 
 
+# ── Paths ───────────────────────────────────────────────────
+
+#: Filled in by the driver when it installs this addon (see
+#: ``MitmproxyDriver._generate_default_addon``). ``None`` means the addon is
+#: running standalone and falls back to the defaults below.
+_DRIVER_MOCK_DIR: str | None = None
+_DRIVER_CAPTURE_SOCKET: str | None = None
+_DRIVER_CAPTURE_SPOOL_DIR: str | None = None
+
+
+def _standalone_data_dir() -> Path:
+    """Data directory used when no driver configured one.
+
+    Matches the driver's default. Not ``/opt``: on macOS and in CI a normal
+    user cannot create it.
+    """
+    if os.environ.get("MITMPROXY_DATA_DIR"):
+        return Path(os.environ["MITMPROXY_DATA_DIR"])
+    try:
+        user = getpass.getuser()
+    except Exception:  # noqa: BLE001 - no login name (e.g. arbitrary container UID)
+        user = str(os.getuid()) if hasattr(os, "getuid") else "default"
+    return Path(tempfile.gettempdir()) / f"jumpstarter-mitmproxy-{user}"
+
+
 # ── Capture client ──────────────────────────────────────────
 
-CAPTURE_SOCKET = "/opt/jumpstarter/mitmproxy/capture.sock"
-CAPTURE_SPOOL_DIR = "/opt/jumpstarter/mitmproxy/capture-spool"
+CAPTURE_SOCKET = _DRIVER_CAPTURE_SOCKET or str(_standalone_data_dir() / "capture.sock")
+CAPTURE_SPOOL_DIR = _DRIVER_CAPTURE_SPOOL_DIR or str(_standalone_data_dir() / "capture-spool")
 
 def _open_private(path: str, flags: int) -> int:
     """``open`` opener: a file that is mode 0600 before anything is written to it.
@@ -562,8 +603,8 @@ class MitmproxyMockAddon:
 
         {
           "config": {
-            "files_dir": "/opt/jumpstarter/mitmproxy/mock-files",
-            "addons_dir": "/opt/jumpstarter/mitmproxy/addons",
+            "files_dir": "{data}/mock-files",
+            "addons_dir": "{data}/addons",
             "default_latency_ms": 0
           },
           "endpoints": {
@@ -585,9 +626,11 @@ class MitmproxyMockAddon:
     Also supports the v1 flat format (just endpoints, no wrapper).
     """
 
-    # Default config directory - overridden by env var or config
-    MOCK_DIR = os.environ.get(
-        "MITMPROXY_MOCK_DIR", "/opt/jumpstarter/mitmproxy/mock-responses"
+    # Default config directory - overridden by env var or the driver
+    MOCK_DIR = (
+        os.environ.get("MITMPROXY_MOCK_DIR")
+        or _DRIVER_MOCK_DIR
+        or str(_standalone_data_dir() / "mock-responses")
     )
 
     def __init__(self):
@@ -649,13 +692,13 @@ class MitmproxyMockAddon:
             self.addon_registry = AddonRegistry(addons_dir)
 
             self._config_mtime = mtime
-            ctx.log.info(
+            _log.info(
                 f"Loaded {len(self.endpoints)} endpoint(s) "
                 f"(files: {self.files_dir}, addons: {addons_dir})"
             )
 
-        except Exception as e:  # pragma: no cover  # noqa: BLE001
-            ctx.log.error(f"Failed to load config: {e}")
+        except Exception as e:  # noqa: BLE001
+            _log.error(f"Failed to load config: {e}")
 
     def _load_state(self):
         """Load or reload shared state if the file has changed on disk."""
@@ -671,8 +714,8 @@ class MitmproxyMockAddon:
                 self._state = json.load(f)
 
             self._state_mtime = mtime
-        except Exception as e:  # pragma: no cover  # noqa: BLE001
-            ctx.log.error(f"Failed to load state: {e}")
+        except Exception as e:  # noqa: BLE001
+            _log.error(f"Failed to load state: {e}")
 
     # ── Request matching ────────────────────────────────────
 
@@ -921,7 +964,7 @@ class MitmproxyMockAddon:
         else:
             body = b""
 
-        ctx.log.info(
+        _log.info(
             f"Mock: {flow.request.method} {flow.request.path} "
             f"→ {status} ({len(body)} bytes)"
         )
@@ -1045,7 +1088,7 @@ class MitmproxyMockAddon:
                 return
 
         # No rule matched - passthrough
-        ctx.log.info(
+        _log.info(
             f"No conditional rule matched for {key}, passing through"
         )
 
@@ -1059,7 +1102,7 @@ class MitmproxyMockAddon:
             addon_config["files_dir"] = str(self.files_dir)
 
         if self.addon_registry is None:
-            ctx.log.error("Addon registry not initialized")
+            _log.error("Addon registry not initialized")
             return
 
         handler = self.addon_registry.get_handler(addon_name)
@@ -1078,11 +1121,11 @@ class MitmproxyMockAddon:
             if handled:
                 flow.metadata["_jmp_mocked"] = True
             else:
-                ctx.log.warn(
+                _log.warning(
                     f"Addon {addon_name} did not handle request"
                 )
-        except Exception as e:  # pragma: no cover  # noqa: BLE001
-            ctx.log.error(f"Addon {addon_name} error: {e}")
+        except Exception as e:  # noqa: BLE001
+            _log.error(f"Addon {addon_name} error: {e}")
             flow.response = http.Response.make(
                 500,
                 json.dumps({
@@ -1109,19 +1152,19 @@ class MitmproxyMockAddon:
             file_path = file_path.resolve()
             files_dir_resolved = self.files_dir.resolve()
             if not file_path.is_relative_to(files_dir_resolved):
-                ctx.log.error(f"Path traversal blocked: {relative_path}")
+                _log.error(f"Path traversal blocked: {relative_path}")
                 return None
         except (OSError, ValueError):
             return None
 
         if not file_path.exists():
-            ctx.log.error(f"Mock file not found: {file_path}")
+            _log.error(f"Mock file not found: {file_path}")
             return None
 
         try:
             return file_path.read_bytes()
         except OSError as e:
-            ctx.log.error(f"Failed to read {file_path}: {e}")
+            _log.error(f"Failed to read {file_path}: {e}")
             return None
 
     # ── WebSocket handling ──────────────────────────────────
@@ -1146,8 +1189,8 @@ class MitmproxyMockAddon:
         if handler and hasattr(handler, "websocket_message"):
             try:
                 handler.websocket_message(flow, endpoint.get("addon_config", {}))
-            except Exception as e:  # pragma: no cover  # noqa: BLE001
-                ctx.log.error(
+            except Exception as e:  # noqa: BLE001
+                _log.error(
                     f"Addon {addon_name} websocket error: {e}"
                 )
 
@@ -1227,7 +1270,7 @@ class MitmproxyMockAddon:
             with open(spool_path, "wb", opener=_open_private) as f:
                 f.write(raw_body)
         except OSError as e:
-            ctx.log.error(f"Failed to spool response body: {e}")
+            _log.error(f"Failed to spool response body: {e}")
             return {
                 "response_body": None,
                 "response_body_file": None,
@@ -1304,17 +1347,17 @@ class MitmproxyMockAddon:
                         flow.response.set_content(patched)
                         flow.metadata["_jmp_mocked"] = True
                         flow.metadata["_jmp_patched"] = True
-                        ctx.log.info(
+                        _log.info(
                             f"Patched: {flow.request.method} "
                             f"{flow.request.pretty_url}"
                         )
                     else:
-                        ctx.log.warn(
+                        _log.warning(
                             f"Patch skipped (invalid JSON body): "
                             f"{flow.request.method} {flow.request.pretty_url}"
                         )
                 else:
-                    ctx.log.warn(
+                    _log.warning(
                         f"Patch skipped (non-JSON content-type: "
                         f"{content_type}): {flow.request.method} "
                         f"{flow.request.pretty_url}"
@@ -1327,7 +1370,7 @@ class MitmproxyMockAddon:
                     flow.response.headers[k] = v
                 flow.metadata["_jmp_mocked"] = True
 
-            ctx.log.debug(
+            _log.debug(
                 f"{flow.request.method} {flow.request.pretty_url} "
                 f"→ {flow.response.status_code}"
             )
@@ -1342,6 +1385,255 @@ class MitmproxyMockAddon:
         self._capture_client.send_event(event)
 
 
+class _Bucket:
+    """Token bucket: says how long to wait before passing ``nbytes`` on.
+
+    Never sleeps itself, so the arithmetic is testable without spending real
+    seconds and the caller decides how to wait — which for an addon must be
+    ``await asyncio.sleep`` rather than a blocking one, or the whole proxy stalls.
+    """
+
+    def __init__(
+        self, rate_bytes_s: float, capacity_s: float = 1.0, clock=None,
+    ) -> None:
+        self._rate = rate_bytes_s
+        # One second of traffic: big enough that a single response chunk is not
+        # stalled on an empty bucket, small enough that the average rate holds
+        # over a transfer.
+        self._capacity = max(1.0, rate_bytes_s * capacity_s)
+        self._tokens = self._capacity
+        # Injectable so a test can prove the arithmetic without spending real
+        # seconds. Without it the only way to check this class was to sleep, so
+        # nothing checked it — and a ``consume`` that returned zero unconditionally
+        # passed every test while shaping nothing.
+        self._clock = clock or time.monotonic
+        self._last = self._clock()
+
+    def consume(self, nbytes: int) -> float:
+        now = self._clock()
+        self._tokens = min(
+            self._capacity, self._tokens + (now - self._last) * self._rate,
+        )
+        self._last = now
+        self._tokens -= nbytes
+        if self._tokens >= 0:
+            return 0.0
+        # A body larger than the bucket waits for its own transmission time
+        # instead of being rejected or clipped: the payload is not ours to drop.
+        return -self._tokens / self._rate
+
+
+class TrafficShaper:
+    """Emulates a slow or unreliable link for everything passing through.
+
+    A proxy is the only place in this driver's reach that can add real delay, so
+    this is where a weak-network emulation belongs. The device it proxies for may
+    have no way to express delay at all.
+
+    Registered as a separate addon object rather than folded into the mocking
+    one, so its hooks can be ``async`` (they must be — a blocking sleep in a hook
+    stalls every other flow) without changing the mocking hooks that already work.
+
+    Configured by ``shaping.json`` in the mock directory, hot-reloaded on change
+    exactly like the mock config::
+
+        {"rate_kbit": 400, "latency_ms": 250, "jitter_ms": 80, "drop_pct": 0.2}
+
+    Absent file or all-zero values mean "do not shape", which is the state a
+    proxy that nobody asked to shape must be in.
+
+    What each knob means at this layer, stated plainly because the layer matters:
+
+    * ``rate_kbit`` paces bodies, in each direction independently. It is a real
+      rate — bytes per second — not a window, so it does not drift with latency.
+    * ``latency_ms`` is added once per flow, before the request goes upstream.
+      That is what a browser's developer tools mean by added latency.
+    * ``jitter_ms`` spreads that delay uniformly by ±jitter, floored at zero.
+    * ``drop_pct`` kills whole flows. At this layer there are no packets to lose:
+      a proxy sees requests, so "loss" honestly means a request that fails.
+    """
+
+    #: Must match ``driver.SHAPING_CONFIG_NAME``. The addon is a standalone
+    #: script — it cannot import the driver — so the two are pinned together by a
+    #: test that writes with one and reads with the other instead of by an import.
+    CONFIG_NAME = "shaping.json"
+
+    def __init__(self) -> None:
+        self._path = Path(MitmproxyMockAddon.MOCK_DIR) / self.CONFIG_NAME
+        #: Digest of the CONTENT last read. Not a timestamp, and not a length.
+        #:
+        #: Two weaker versions were wrong in the same direction. ``mtime <= last``
+        #: ignores a file whose timestamp did not advance, and on a coarse
+        #: filesystem — 9p under WSL, NFS, ext3 — two writes inside one tick share
+        #: one. Adding the size did not fix it: the writer always emits the same
+        #: four keys, so ``rate_kbit: 400`` and ``rate_kbit: 900`` are both 85
+        #: bytes. Same tick, same length, different rate — silently ignored, while
+        #: the driver reported the new figure from memory.
+        #:
+        #: A digest costs one read of a file measured in bytes, and it cannot be
+        #: fooled by the clock or by coincidence.
+        self._digest: str | None = None
+        self._config: dict[str, float] = {}
+        self._down: _Bucket | None = None
+        self._up: _Bucket | None = None
+        self._load()
+
+    # ── Config ──────────────────────────────────────────────
+
+    def _load(self) -> None:
+        """Reload the config when the file changed, or forget it when removed.
+
+        Nothing here may raise into a hook. A file this code cannot understand
+        means "do not shape" — never a half-applied state, and never an error
+        raised once per flow for as long as the file sits there.
+
+        Three failures made those happen, and the shape below is the shape of
+        their fixes. A JSON document that parsed but was not an object (a list, a
+        number) was accepted, and every later read of a value raised
+        ``AttributeError`` inside the hook — for good, because the file had
+        already been recorded as successfully loaded. A value that was not a
+        number was noticed only after the new config had been stored, leaving the
+        previous rate metering traffic under the new configuration's name. And a
+        failure to read the file at all reset everything while keeping the digest
+        of the last good read, so that unchanged good file matched its own digest
+        on every later poll and shaping stayed dead until somebody rewrote it.
+
+        Hence three outcomes, and only the middle one keeps the digest:
+
+        ================= ========= =========================
+        what happened     shaping   digest
+        ================= ========= =========================
+        file is gone      cleared   forgotten
+        content refused   cleared   kept — parse it once
+        cannot read it    cleared   forgotten — try again
+        ================= ========= =========================
+        """
+        try:
+            # One syscall for the common case rather than ``exists()`` and then a
+            # read, on a path that runs twice per flow — and with no window in
+            # which the file can vanish between the two.
+            content = self._path.read_bytes()
+        except FileNotFoundError:
+            if self._config:
+                _log.info("shaping: cleared")
+            self._reset()
+            self._digest = None
+            return
+        except Exception as exc:  # noqa: BLE001 - never break the proxy for this
+            # The content is unknown, so no digest can stand for it. Forgetting
+            # the one we have is what makes the next poll try again.
+            _log.error("shaping: cannot read %s: %s", self._path, exc)
+            self._reset()
+            self._digest = None
+            return
+
+        digest = hashlib.sha256(content).hexdigest()
+        if digest == self._digest:
+            return
+        # Recorded before validating, so an unusable file is parsed once rather
+        # than on every flow. It is not "loaded" until it is understood, and any
+        # change to the content is always picked up.
+        self._digest = digest
+
+        try:
+            raw = json.loads(content)
+        except Exception as exc:  # noqa: BLE001 - never break the proxy for this
+            _log.error("shaping: %s is not JSON: %s — not shaping", self._path, exc)
+            self._reset()
+            return
+
+        if not isinstance(raw, dict):
+            _log.error(
+                "shaping: %s must contain a JSON object, found %s — not shaping",
+                self._path, type(raw).__name__,
+            )
+            self._reset()
+            return
+
+        # Every value coerced BEFORE anything is stored, so a bad one cannot
+        # leave the old buckets running under the new config.
+        parsed: dict[str, float] = {}
+        for key in ("rate_kbit", "latency_ms", "jitter_ms", "drop_pct"):
+            # A missing key means "not asked for". A key that IS there has to be
+            # a number: ``or 0`` used to turn ``[]``, ``""``, ``false`` and
+            # ``null`` into a silent zero, which reads as "no shaping requested"
+            # rather than as the malformed config it is.
+            value = raw.get(key, 0)
+            try:
+                parsed[key] = float(value)
+            except (TypeError, ValueError):
+                _log.error(
+                    "shaping: %s has a non-numeric %s (%r) — not shaping",
+                    self._path, key, value,
+                )
+                self._reset()
+                return
+
+        rate = parsed["rate_kbit"]
+        # Two buckets, one per direction, so a rate means the same thing each way
+        # instead of both directions sharing one allowance.
+        self._down = _Bucket(rate * 1000 / 8) if rate > 0 else None
+        self._up = _Bucket(rate * 1000 / 8) if rate > 0 else None
+        self._config = parsed
+        _log.info("shaping: %s", self._config)
+
+    def _reset(self) -> None:
+        """Stop shaping. Says nothing about the digest.
+
+        Whether the digest survives depends on WHY shaping stopped, so that
+        decision belongs to :meth:`_load` and is made there for each of its three
+        outcomes. This method deliberately does not touch it: a reset that also
+        cleared the digest would re-parse a refused file on every flow, and one
+        that always kept it would ignore a good file forever after a read error.
+        """
+        self._config = {}
+        self._down = self._up = None
+
+    def _delay_s(self) -> float:
+        latency = float(self._config.get("latency_ms") or 0)
+        jitter = float(self._config.get("jitter_ms") or 0)
+        if latency <= 0 and jitter <= 0:
+            return 0.0
+        if jitter > 0:
+            latency += random.uniform(-jitter, jitter)
+        return max(0.0, latency) / 1000.0
+
+    # ── Hooks ───────────────────────────────────────────────
+
+    async def request(self, flow: http.HTTPFlow) -> None:
+        """Fail, delay and pace the outbound leg."""
+        self._load()
+        if not self._config:
+            return
+
+        drop = float(self._config.get("drop_pct") or 0)
+        if drop > 0 and random.random() * 100 < drop:
+            # Killing the flow surfaces as a connection error, which is what the
+            # client sees on a link that has given up. A synthetic 5xx would look
+            # like a server that answered.
+            flow.kill()
+            return
+
+        delay = self._delay_s()
+        if delay > 0:
+            await asyncio.sleep(delay)
+        if self._up is not None:
+            body = flow.request.raw_content or b""
+            wait = self._up.consume(len(body))
+            if wait > 0:
+                await asyncio.sleep(wait)
+
+    async def response(self, flow: http.HTTPFlow) -> None:
+        """Pace the inbound leg, which is the one a stream depends on."""
+        self._load()
+        if not self._config or self._down is None:
+            return
+        body = flow.response.raw_content or b"" if flow.response else b""
+        wait = self._down.consume(len(body))
+        if wait > 0:
+            await asyncio.sleep(wait)
+
+
 # ── Entry point ─────────────────────────────────────────────
 
-addons = [MitmproxyMockAddon()]
+addons = [MitmproxyMockAddon(), TrafficShaper()]

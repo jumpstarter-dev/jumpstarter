@@ -4,7 +4,7 @@ Each test class demonstrates a different capability of the proxy driver.
 Run with::
 
     cd python/packages/jumpstarter-driver-mitmproxy/demo
-    jmp shell --exporter exporter.yaml -- pytest . -v
+    jmp shell --exporter-config exporter.yaml -- pytest . -v
 
 The tests require the backend server fixture (started automatically)
 and a running proxy (started automatically via the ``proxy`` fixture).
@@ -19,6 +19,20 @@ import pytest
 
 SCENARIOS_DIR = Path(__file__).parent / "scenarios"
 BACKEND_URL = "http://127.0.0.1:9000"
+
+
+def _load_scenario(proxy, name: str) -> None:
+    """Load a demo scenario from this machine.
+
+    Each lives in ``<name>/scenario.yaml``, the layout ``j proxy capture save``
+    produces. The file is on the test machine, not the exporter, so it is sent
+    as content, as ``j proxy mock load`` does: ``load_mock_scenario()`` only
+    reads files from the exporter's mocks directory.
+    """
+    result = proxy.load_mock_scenario_content(
+        "scenario.yaml", (SCENARIOS_DIR / name / "scenario.yaml").read_text(),
+    )
+    assert result.startswith("Loaded"), result
 
 
 # ── Passthrough (no mocks) ────────────────────────────────────
@@ -141,7 +155,8 @@ class TestScenarioLoading:
     def test_load_happy_path(
         self, backend_server, proxy_client, http_session,
     ):
-        proxy_client.load_mock_scenario(str(SCENARIOS_DIR / "happy-path"))
+        """The happy-path scenario replaces the real backend's status response."""
+        _load_scenario(proxy_client, "happy-path")
         time.sleep(1)
 
         resp = http_session.get(
@@ -155,9 +170,8 @@ class TestScenarioLoading:
     def test_load_update_available(
         self, backend_server, proxy_client, http_session,
     ):
-        proxy_client.load_mock_scenario(
-            str(SCENARIOS_DIR / "update-available"),
-        )
+        """The update-available scenario reports a newer version."""
+        _load_scenario(proxy_client, "update-available")
         time.sleep(1)
 
         resp = http_session.get(
@@ -171,9 +185,8 @@ class TestScenarioLoading:
     def test_load_backend_outage(
         self, backend_server, proxy_client, http_session,
     ):
-        proxy_client.load_mock_scenario(
-            str(SCENARIOS_DIR / "backend-outage"),
-        )
+        """The backend-outage scenario answers with 503."""
+        _load_scenario(proxy_client, "backend-outage")
         time.sleep(1)
 
         resp = http_session.get(
@@ -182,20 +195,19 @@ class TestScenarioLoading:
         assert resp.status_code == 503
         assert resp.json()["error"] == "Service Unavailable"
 
-    def test_mock_scenario_context_manager(
+    def test_clearing_a_scenario_restores_passthrough(
         self, backend_server, proxy_client, http_session,
     ):
-        """mock_scenario() loads on entry, clears on exit."""
-        with proxy_client.mock_scenario(
-            str(SCENARIOS_DIR / "happy-path"),
-        ):
-            time.sleep(1)
-            resp = http_session.get(
-                f"{BACKEND_URL}/api/v1/status", timeout=10,
-            )
-            assert resp.json()["source"] == "mock"
+        """clear_mocks() removes a loaded scenario."""
+        _load_scenario(proxy_client, "happy-path")
+        time.sleep(1)
+        resp = http_session.get(
+            f"{BACKEND_URL}/api/v1/status", timeout=10,
+        )
+        assert resp.json()["source"] == "mock"
 
-        # After exit: mocks cleared → passthrough to real backend
+        # Mocks cleared → passthrough to real backend
+        proxy_client.clear_mocks()
         time.sleep(1)
         resp = http_session.get(
             f"{BACKEND_URL}/api/v1/status", timeout=10,

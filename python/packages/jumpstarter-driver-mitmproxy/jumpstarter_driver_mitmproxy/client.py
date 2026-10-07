@@ -89,13 +89,23 @@ class CaptureContext:
 
     def wait_for_request(
         self, method: str, path: str, timeout: float = 10.0,
+        use_regex: bool = False, expected_status: int = 0,
     ) -> dict:
         """Wait for a matching request.
+
+        Same arguments and defaults as
+        :meth:`MitmproxyClient.wait_for_request`, which this forwards to:
+        ``use_regex`` matches *path* as a regex, and a non-zero
+        ``expected_status`` only matches requests whose response carried that
+        status.
 
         Raises:
             TimeoutError: If no match within timeout.
         """
-        return self._client.wait_for_request(method, path, timeout)
+        return self._client.wait_for_request(
+            method, path, timeout,
+            use_regex=use_regex, expected_status=expected_status,
+        )
 
     def _freeze(self):
         """Take a snapshot (called on context exit)."""
@@ -619,11 +629,9 @@ class MitmproxyClient(DriverClient):
         body before delivery to the DUT.
 
         Args:
-            method: HTTP method (GET, POST, etc.). Use ``*`` to match
-                any method (wildcard).
+            method: HTTP method (GET, POST, etc.), or ``*`` for any method.
             path: URL path to match.
-            patches: Dict to deep-merge into the response body. Use
-                ``key[N]`` syntax for array indexing.
+            patches: Dict to deep-merge into the response body; ``key[N]`` indexes arrays.
             headers: Extra response headers to inject.
 
         Returns:
@@ -632,8 +640,8 @@ class MitmproxyClient(DriverClient):
         Example::
 
             proxy.set_mock_patch(
-                "GET", "/rest/v3/experience/modules/nonPII",
-                {"ModuleListResponse": {"moduleList": {"modules[0]": {
+                "GET", "/api/v1/devices",
+                {"DeviceListResponse": {"deviceList": {"devices[0]": {
                     "status": "Inactive"
                 }}}},
             )
@@ -782,9 +790,7 @@ class MitmproxyClient(DriverClient):
         Args:
             method: HTTP method.
             path: URL path.
-            rules: List of rule dicts, each with optional ``match``
-                conditions and response fields (``status``, ``body``,
-                ``body_template``, ``headers``, etc.).
+            rules: List of rule dicts: an optional ``match`` plus response fields.
 
         Returns:
             Confirmation message.
@@ -882,6 +888,62 @@ class MitmproxyClient(DriverClient):
         """
         return json.loads(self.call("get_all_state"))
 
+    # ── Traffic shaping ─────────────────────────────────────────
+
+    def shape(
+        self,
+        rate_kbit: int = 0,
+        latency_ms: float = 0.0,
+        jitter_ms: float = 0.0,
+        drop_pct: float = 0.0,
+    ) -> dict:
+        """Emulate a slow or unreliable link for all traffic through the proxy.
+
+        Applies to every flow, in both directions, and takes effect on the
+        running proxy without a restart. Shaping belongs to one proxy
+        session: the proxy must be running, and ``stop``/``start`` clear it.
+        Each call replaces the previous configuration; all zeros is the same
+        as :meth:`clear_shaping`.
+
+        Args:
+            rate_kbit: Bandwidth cap in kbit/s, applied to each direction; 0 for unlimited.
+            latency_ms: Delay added once per request, in ms (at most 60000).
+            jitter_ms: Uniform spread of that delay, plus or minus ms; at most ``latency_ms``.
+            drop_pct: Percentage of requests to fail, 0-100, as a connection error.
+
+        Returns:
+            The configuration now applied, empty if everything was zero.
+
+        Raises:
+            ValueError: A value is out of range.
+            RuntimeError: Not running, no shaper in this session, or the write failed.
+        """
+        result = json.loads(
+            self.call("shape", rate_kbit, latency_ms, jitter_ms, drop_pct)
+        )
+        if not result["ok"]:
+            if result.get("reason") == "invalid":
+                raise ValueError(result["error"])
+            raise RuntimeError(result["error"])
+        return result["applied"]
+
+    def clear_shaping(self) -> bool:
+        """Stop emulating a weak link. Safe to call when not shaping.
+
+        Returns:
+            True if shaping was active and has been removed.
+        """
+        return json.loads(self.call("clear_shaping"))["cleared"]
+
+    def get_shaping(self) -> dict:
+        """Get the shaping currently applied.
+
+        Returns:
+            Dict with ``rate_kbit``, ``latency_ms``, ``jitter_ms`` and
+            ``drop_pct``, or an empty dict when not shaping.
+        """
+        return json.loads(self.call("get_shaping"))
+
     # ── Flow file management ────────────────────────────────────
 
     def list_flow_files(self) -> list[dict]:
@@ -955,6 +1017,22 @@ class MitmproxyClient(DriverClient):
             List of captured request dicts.
         """
         return json.loads(self.call("get_captured_requests"))
+
+    def export_captured_requests(self, max_body_size: int = 1048576) -> list[dict]:
+        """Return all captured requests with response bodies inlined.
+
+        Spool files are read on the driver side — no local filesystem
+        access needed.
+
+        Args:
+            max_body_size: Max bytes per spool file (default 1MB).
+
+        Returns:
+            List of enriched request dicts with inline response bodies.
+        """
+        if max_body_size <= 0:
+            raise ValueError("max_body_size must be greater than zero")
+        return json.loads(self.call("export_captured_requests", max_body_size))
 
     def watch_captured_requests(self) -> Generator[dict, None, None]:
         """Stream captured requests as they arrive.
@@ -1044,13 +1122,17 @@ class MitmproxyClient(DriverClient):
         )
 
     def wait_for_request(self, method: str, path: str,
-                         timeout: float = 10.0) -> dict:
+                         timeout: float = 10.0,
+                         use_regex: bool = False,
+                         expected_status: int = 0) -> dict:
         """Wait for a matching request to be captured.
 
         Args:
-            method: HTTP method to match.
-            path: URL path to match (supports ``*`` suffix wildcard).
+            method: HTTP method to match, or ``*`` for any method.
+            path: URL path; a ``*`` suffix matches a prefix, or a regex if use_regex.
             timeout: Maximum seconds to wait.
+            use_regex: If True, match path as a regex pattern.
+            expected_status: Only match this response status code; 0 accepts any.
 
         Returns:
             The matching captured request dict.
@@ -1059,11 +1141,37 @@ class MitmproxyClient(DriverClient):
             TimeoutError: If no match is found within timeout.
         """
         result = json.loads(
-            self.call("wait_for_request", method, path, timeout)
+            self.call("wait_for_request", method, path, timeout,
+                       use_regex, expected_status)
         )
         if "error" in result:
             raise TimeoutError(result["error"])
         return result
+
+
+    def get_response_body(self, pattern: str, index: int = -1) -> dict:
+        """Return parsed response body from a captured request matching pattern.
+
+        Args:
+            pattern: Regex pattern to match against the request path
+                (e.g. ``items/.*id=42``).
+            index: Which match to return when multiple requests match.
+                -1 (default) returns the most recent, 0 the oldest.
+
+        Returns:
+            Dict with keys: body, path, status, truncated (True if the
+            body was cut off at the driver's fixed per-call read cap).
+
+        Raises:
+            LookupError: No matching request found or response body unavailable.
+        """
+        result = json.loads(
+            self.call("get_response_body", pattern, index)
+        )
+        if "error" in result:
+            raise LookupError(result["error"])
+        return result
+
 
     def assert_request_made(self, method: str, path: str) -> dict:
         """Assert that a matching request has been captured.
@@ -1218,8 +1326,8 @@ class MitmproxyClient(DriverClient):
         Example::
 
             with proxy.mock_patch_endpoint(
-                "GET", "/rest/v3/experience/modules/nonPII",
-                {"ModuleListResponse": {"moduleList": {"modules[0]": {
+                "GET", "/api/v1/devices",
+                {"DeviceListResponse": {"deviceList": {"devices[0]": {
                     "status": "Inactive"
                 }}}},
             ):
@@ -1278,6 +1386,33 @@ class MitmproxyClient(DriverClient):
             yield self
         finally:
             self.stop()
+
+    @contextmanager
+    def shaping(
+        self,
+        rate_kbit: int = 0,
+        latency_ms: float = 0.0,
+        jitter_ms: float = 0.0,
+        drop_pct: float = 0.0,
+    ) -> Generator[dict, None, None]:
+        """Context manager for temporary traffic shaping.
+
+        Applies the shaping on entry and clears it on exit. Takes the same
+        arguments as :meth:`shape`, and the proxy must already be running.
+
+        Example::
+
+            with proxy.session():
+                with proxy.shaping(rate_kbit=400, latency_ms=250, jitter_ms=50):
+                    # DUT now sees a slow, high-latency link
+                    assert_download_completes()
+                # link is back to full speed
+        """
+        applied = self.shape(rate_kbit, latency_ms, jitter_ms, drop_pct)
+        try:
+            yield applied
+        finally:
+            self.clear_shaping()
 
     # ── Convenience methods ─────────────────────────────────────
 

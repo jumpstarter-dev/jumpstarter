@@ -11,10 +11,12 @@ Requires mitmdump to be installed and on PATH.
 from __future__ import annotations
 
 import json
+import shutil
 import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
 import pytest
 import requests
@@ -320,6 +322,213 @@ class TestPassthrough:
             assert "headers" in data
         finally:
             client.stop()
+
+
+class _BinaryHandler(BaseHTTPRequestHandler):
+    """Serves a body large and binary enough to be spooled, not inlined."""
+
+    body = bytes(range(256)) * 2048  # 512 KiB
+
+    def do_GET(self):
+        """Serve the same binary body for any path."""
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(len(self.body)))
+        self.end_headers()
+        self.wfile.write(self.body)
+
+    def log_message(self, format, *args):
+        """Keep the test output quiet."""
+
+
+class TestCaptureSpool:
+    """Large and binary response bodies are spooled to the driver's data dir."""
+
+    @pytest.fixture
+    def upstream(self):
+        """A local server that serves a large binary body."""
+        server = HTTPServer(("127.0.0.1", 0), _BinaryHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        yield server.server_address[1]
+        server.shutdown()
+
+    @pytest.fixture(autouse=True)
+    def _running(self, client, proxy_port):
+        """Run the proxy in passthrough mode for each test."""
+        client.start("passthrough")
+        assert _wait_for_port("127.0.0.1", proxy_port)
+        client.clear_captured_requests()
+        yield
+        client.stop()
+
+    @staticmethod
+    def _fetch(proxy_port, upstream, path):
+        """GET ``path`` from the upstream through the proxy and check the body arrived intact."""
+        response = requests.get(
+            f"http://127.0.0.1:{upstream}{path}",
+            proxies={"http": f"http://127.0.0.1:{proxy_port}"},
+            timeout=15,
+        )
+        assert response.content == _BinaryHandler.body
+        return response
+
+    def test_body_is_spooled_and_exported(self, client, proxy_port, upstream):
+        """The body is spooled under the data dir and survives scenario export and download."""
+        self._fetch(proxy_port, upstream, "/bin/first")
+        req = client.wait_for_request("GET", "/bin/first")
+
+        spooled = Path(req["response_body_file"])
+        assert spooled.parent.name == "capture-spool"
+        assert spooled.read_bytes() == _BinaryHandler.body
+
+        _, files = client.export_captured_scenario(filter_pattern="/bin/*")
+        assert len(files) == 1
+        assert client.get_captured_file(files[0]) == _BinaryHandler.body
+
+    def test_spool_dir_is_recreated_after_removal(self, client, proxy_port, upstream):
+        """Removing the spool directory mid-session does not lose later bodies."""
+        self._fetch(proxy_port, upstream, "/bin/first")
+        spool_dir = Path(client.wait_for_request("GET", "/bin/first")["response_body_file"]).parent
+        shutil.rmtree(spool_dir)
+
+        self._fetch(proxy_port, upstream, "/bin/second")
+        req = client.wait_for_request("GET", "/bin/second")
+
+        assert req["response_body_file"], "the body was dropped instead of spooled"
+        assert Path(req["response_body_file"]).read_bytes() == _BinaryHandler.body
+
+
+class TestCaptureQueries:
+    """get_response_body and export_captured_requests, through the client."""
+
+    @pytest.fixture
+    def json_upstream(self):
+        server = HTTPServer(("127.0.0.1", 0), _LocalHttpHandler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        yield server.server_address[1]
+        server.shutdown()
+
+    @pytest.fixture
+    def binary_upstream(self):
+        server = HTTPServer(("127.0.0.1", 0), _BinaryHandler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        yield server.server_address[1]
+        server.shutdown()
+
+    @pytest.fixture(autouse=True)
+    def _running(self, client, proxy_port):
+        client.start("passthrough")
+        assert _wait_for_port("127.0.0.1", proxy_port)
+        client.clear_captured_requests()
+        yield
+        client.stop()
+
+    @staticmethod
+    def _fetch(proxy_port, upstream, path):
+        return requests.get(
+            f"http://127.0.0.1:{upstream}{path}",
+            proxies={"http": f"http://127.0.0.1:{proxy_port}"},
+            timeout=15,
+        )
+
+    def test_get_response_body_returns_the_parsed_body(
+        self, client, proxy_port, json_upstream,
+    ):
+        self._fetch(proxy_port, json_upstream, "/items/1")
+        self._fetch(proxy_port, json_upstream, "/items/2")
+        client.wait_for_request("GET", "/items/2")
+
+        latest = client.get_response_body(r"^/items/\d+$")
+        oldest = client.get_response_body(r"^/items/\d+$", index=0)
+
+        assert latest["body"]["url"] == "/items/2"
+        assert oldest["body"]["url"] == "/items/1"
+        assert latest["status"] == 200
+        assert latest["truncated"] is False
+
+    def test_get_response_body_raises_when_nothing_matches(self, client):
+        with pytest.raises(LookupError, match="No captured response"):
+            client.get_response_body(r"^/nothing-here$")
+
+    def test_export_inlines_text_bodies_and_skips_binary(
+        self, client, proxy_port, json_upstream, binary_upstream,
+    ):
+        self._fetch(proxy_port, json_upstream, "/items/1")
+        self._fetch(proxy_port, binary_upstream, "/bin/1")
+        client.wait_for_request("GET", "/bin/1")
+
+        by_path = {e["path"]: e for e in client.export_captured_requests()}
+
+        assert json.loads(by_path["/items/1"]["response_body"])["url"] == "/items/1"
+        assert by_path["/bin/1"]["response_body"] is None
+        assert by_path["/bin/1"]["response_body_skipped"] == "binary content type"
+
+    def test_export_rejects_a_non_positive_body_cap(self, client):
+        with pytest.raises(ValueError, match="greater than zero"):
+            client.export_captured_requests(max_body_size=0)
+
+
+class TestTrafficShaping:
+    """Shaping applied through the client to a real mitmdump."""
+
+    @pytest.fixture
+    def upstream(self):
+        server = HTTPServer(("127.0.0.1", 0), _LocalHttpHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        yield server.server_address[1]
+        server.shutdown()
+
+    @pytest.fixture
+    def running(self, client, proxy_port):
+        client.start("passthrough")
+        assert _wait_for_port("127.0.0.1", proxy_port), (
+            f"mitmdump did not start on port {proxy_port}"
+        )
+        yield
+        client.stop()
+
+    @staticmethod
+    def _get(proxy_port, upstream):
+        return requests.get(
+            f"http://127.0.0.1:{upstream}/get",
+            proxies={"http": f"http://127.0.0.1:{proxy_port}"},
+            timeout=15,
+        )
+
+    def test_shape_refused_without_a_running_proxy(self, client):
+        with pytest.raises(RuntimeError, match="running proxy"):
+            client.shape(latency_ms=100)
+        assert client.get_shaping() == {}
+
+    def test_out_of_range_value_raises_value_error(self, client, running):
+        with pytest.raises(ValueError, match="drop_pct"):
+            client.shape(drop_pct=150)
+        assert client.get_shaping() == {}
+
+    def test_latency_is_added_and_cleared(self, client, running, proxy_port, upstream):
+        with client.shaping(latency_ms=600) as applied:
+            assert applied["latency_ms"] == 600
+            assert client.get_shaping()["latency_ms"] == 600
+            started = time.monotonic()
+            assert self._get(proxy_port, upstream).status_code == 200
+            assert time.monotonic() - started >= 0.55
+
+        assert client.get_shaping() == {}
+        assert client.clear_shaping() is False
+
+    def test_full_drop_fails_the_request(self, client, running, proxy_port, upstream):
+        with client.shaping(drop_pct=100), pytest.raises(requests.RequestException):
+            self._get(proxy_port, upstream)
+        assert self._get(proxy_port, upstream).status_code == 200
+
+    def test_stop_discards_shaping(self, client, proxy_port):
+        client.start("passthrough")
+        assert _wait_for_port("127.0.0.1", proxy_port)
+        client.shape(rate_kbit=400)
+        client.stop()
+        assert client.get_shaping() == {}
 
 
 class TestRequestCapture:
