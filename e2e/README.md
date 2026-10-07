@@ -187,15 +187,17 @@ arch detected via `qemu-guest-arch.sh`; Alpine guest image ensured via
 
 ## Lane: `exporterset-qemu-ssh` (`exporterset_qemu_ssh_test.go`)
 
-Prereq: exporterset-controller (qemu-ssh) Deployment running; SSH + Podman on the CI
-runner (set up by `setup-qemu-ssh-e2e.sh`); exporter + runtime images loaded into
-Podman; Secret `e2e-qemu-ssh-key`; OIDC client `test-client-exporterset-qemu-ssh`;
-applies `manifests/exporterset-qemu-ssh-kind.yaml` (VTC + ExporterSet targeting
-localhost via SSH).
+Prereq: `setup-qemu-ssh-e2e.sh` configures root SSH + rootful Podman on the CI
+runner, loads exporter/runtime images into Podman (from `/tmp/artifacts/` in CI),
+detects the Kind-reachable host IP (docker/kind bridge gateway), enables the
+`qemu-ssh.jumpstarter.dev` provisioner, and renders
+`.e2e/exporterset-qemu-ssh-kind.yaml` from `manifests/exporterset-qemu-ssh-kind.yaml`.
+OIDC client `test-client-exporterset-qemu-ssh`. AfterAll deletes CRs and runs
+`setup-qemu-ssh-e2e.sh --cleanup` for host-side quadlets/containers.
 
 | Test Name | Steps | Pass Check |
 |---|---|---|
-| brings an Exporter Online via SSH-deployed Podman containers | wait for ExporterSet-created Exporter, wait Online/Registered/Available | exporter reaches Available state |
+| brings an Exporter Online via SSH-deployed Podman containers | wait for ExporterSet-created Exporter, wait Online/Registered/Available; check `sudo podman ps` for e2e containers | exporter Available; exporter+runtime containers Up |
 | can lease, power on, and power off through the SSH-deployed exporter | `jmp shell` → `j qemu power on && sleep 5 && j qemu power off` | no error |
 
 ---

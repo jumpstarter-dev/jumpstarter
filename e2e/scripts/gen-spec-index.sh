@@ -24,6 +24,7 @@ KNOWN_LANES_JSON='[
   "dut-network",
   "exit-on-lease-end",
   "exporterset-qemu",
+  "exporterset-qemu-ssh",
   "auth-logging",
   "old-controller",
   "old-client",
