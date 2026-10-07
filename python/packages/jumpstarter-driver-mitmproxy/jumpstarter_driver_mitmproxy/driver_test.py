@@ -763,18 +763,11 @@ class TestBundledAddonImport:
         assert Path(result["response_body_file"]).read_bytes() == b"\x00" * 16
 
 
-def _addon_module(monkeypatch):
-    """The real addon module, with ``ctx.log`` stood in.
-
-    ``ctx.log`` exists only inside a running mitmproxy, and this module logs
-    through it, so the error paths below cannot run without a stand-in.
-    """
+def _addon_module():
+    """The real addon module, imported the way the tests below need it."""
     import importlib
 
-    mod = importlib.import_module("jumpstarter_driver_mitmproxy.bundled_addon")
-    log = MagicMock()
-    monkeypatch.setattr(mod.ctx, "log", log, raising=False)  # ty: ignore[unresolved-attribute]
-    return mod, log
+    return importlib.import_module("jumpstarter_driver_mitmproxy.bundled_addon")
 
 
 class TestSpoolDirectory:
@@ -793,16 +786,15 @@ class TestSpoolDirectory:
         response.content = b"\x00" * 16
         return flow
 
-    def _addon(self, monkeypatch, tmp_path):
+    def _addon(self, tmp_path):
         """An addon instance that spools into a directory under tmp_path."""
-        mod, log = _addon_module(monkeypatch)
-        addon = mod.MitmproxyMockAddon()  # ty: ignore[unresolved-attribute]
+        addon = _addon_module().MitmproxyMockAddon()  # ty: ignore[unresolved-attribute]
         addon._spool_dir = tmp_path / "spool"
-        return addon, log
+        return addon
 
-    def test_an_uncreatable_spool_dir_costs_only_that_body(self, monkeypatch, tmp_path):
+    def test_an_uncreatable_spool_dir_costs_only_that_body(self, monkeypatch, tmp_path, caplog):
         """If the spool directory cannot be created, that body is dropped and the error logged."""
-        addon, log = self._addon(monkeypatch, tmp_path)
+        addon = self._addon(tmp_path)
 
         def refuse(self, *args, **kwargs):
             """Stand-in for Path.mkdir that always fails."""
@@ -815,14 +807,14 @@ class TestSpoolDirectory:
         assert result["response_body_file"] is None
         assert result["response_body"] is None
         assert result["response_is_binary"] is True
-        assert "Failed to spool" in log.error.call_args.args[0]
+        assert "Failed to spool" in caplog.text
 
-    def test_spooled_bodies_are_private_whatever_the_umask(self, monkeypatch, tmp_path):
+    def test_spooled_bodies_are_private_whatever_the_umask(self, tmp_path):
         """Files are 0600 and the directory 0700 even with the most permissive umask."""
         import os
         import stat
 
-        addon, _ = self._addon(monkeypatch, tmp_path)
+        addon = self._addon(tmp_path)
         previous = os.umask(0)  # the most permissive case
         try:
             result = addon._classify_response_body(self._binary_flow())
@@ -836,11 +828,11 @@ class TestSpoolDirectory:
     @pytest.mark.skipif(
         not hasattr(__import__("os"), "O_NOFOLLOW"), reason="needs O_NOFOLLOW",
     )
-    def test_a_symlink_in_the_spool_dir_is_not_followed(self, monkeypatch, tmp_path):
+    def test_a_symlink_in_the_spool_dir_is_not_followed(self, tmp_path):
         """A symlink planted at a spool file's name is refused, not written through."""
         import hashlib
 
-        addon, _ = self._addon(monkeypatch, tmp_path)
+        addon = self._addon(tmp_path)
         flow = self._binary_flow()
         url_hash = hashlib.sha256(flow.request.pretty_url.encode()).hexdigest()[:12]
         victim = tmp_path / "victim.txt"
@@ -949,9 +941,9 @@ class TestAddonRegistryPaths:
     """An addon name comes from the mock config and must stay in the addons dir."""
 
     @pytest.fixture
-    def registry(self, monkeypatch, tmp_path):
+    def registry(self, tmp_path):
         """An addon registry over an addons directory holding one valid addon."""
-        mod, _ = _addon_module(monkeypatch)
+        mod = _addon_module()
         addons = tmp_path / "addons"
         addons.mkdir()
         (addons / "good.py").write_text(self._handler("good"))

@@ -432,7 +432,7 @@ class AddonRegistry:
 
         script_path = self._script_path(name)
         if script_path is None:
-            ctx.log.error(f"Addon path traversal blocked: {name!r}")
+            _log.error(f"Addon path traversal blocked: {name!r}")
             return None
         if not script_path.exists():
             _log.error(f"Addon script not found: {script_path}")
