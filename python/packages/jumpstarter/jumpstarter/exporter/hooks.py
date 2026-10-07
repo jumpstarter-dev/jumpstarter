@@ -817,7 +817,7 @@ class HookExecutor:
         - Sets up the hook executor with the session for logging
         - Executes the hook and handles errors
         - Triggers shutdown on critical failures (HookExecutionError)
-        - Requests lease release from controller after hook completes
+        - Requests lease release only for an explicit on_failure='endLease' hook failure
 
         Args:
             lease_scope: LeaseScope containing session, socket_path, and client info
@@ -825,7 +825,7 @@ class HookExecutor:
             shutdown: Callback to trigger exporter shutdown (accepts optional exit_code kwarg)
             request_lease_release: Async callback to request lease release from controller
         """
-        shutdown_called = False
+        should_release = False
         try:
             # Verify lease scope is ready - for after-lease this should always be true
             # since we've already processed the lease, but check defensively
@@ -873,12 +873,12 @@ class HookExecutor:
                 logger.error("Shutting down exporter due to afterLease hook failure with on_failure='exit'")
                 # Exit code 1 tells the CLI not to restart the exporter
                 shutdown(exit_code=1, should_unregister=True, wait_for_lease_exit=True)
-                shutdown_called = True
             else:
                 # on_failure='endLease' - report failure to the client, then release the lease.
                 # AFTER_LEASE_HOOK_FAILED is a transient status: the client sees the failure,
                 # the lease is released in the finally block, and the exporter's main loop
                 # clears the lease context and accepts new leases.
+                should_release = True
                 logger.error("afterLease hook failed with on_failure='endLease': %s", e)
                 await report_status(
                     ExporterStatus.AFTER_LEASE_HOOK_FAILED,
@@ -887,8 +887,7 @@ class HookExecutor:
 
         except Exception as e:  # noqa: BLE001
             # Unexpected errors: report failure but do not shut down.
-            # Same transient status - the lease is released and the exporter
-            # accepts new leases after the finally block completes.
+            # An orchestration error is not an explicit endLease hook failure.
             logger.error("afterLease hook failed with unexpected error: %s", e)
             await report_status(
                 ExporterStatus.AFTER_LEASE_HOOK_FAILED,
@@ -899,10 +898,7 @@ class HookExecutor:
             # Always delay to give client time to poll the final status
             await anyio.sleep(1.0)
 
-            # Don't release lease when exporter is shutting down - unregistration handles cleanup.
-            # Releasing here would report AVAILABLE to the controller right before shutdown.
-            if request_lease_release and not shutdown_called:
-                try:
-                    await request_lease_release()
-                except Exception:
-                    logger.exception("Failed to request lease release")
+            # Cleanup also runs on task cancellation and exporter shutdown.
+            # Those paths must not relinquish an active reservation.
+            if should_release:
+                await self._safe_release_lease(request_lease_release)

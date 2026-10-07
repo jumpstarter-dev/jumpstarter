@@ -796,9 +796,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     async def _request_lease_release(self):
         """Request the controller to release the current lease.
 
-        Called after the afterLease hook completes to ensure the lease is
-        released even if the client disconnects unexpectedly. This moves
-        the lease release responsibility from the client to the exporter.
+        Called when a lifecycle hook fails with on_failure='endLease'.
+        Ordinary hook completion, client disconnection, and exporter cleanup
+        must not request release; the client or controller ends those leases.
 
         Tries the ReleaseLease RPC first (semantically correct, retry-safe).
         Falls back to ReportStatus(release_lease=true) for old controllers that

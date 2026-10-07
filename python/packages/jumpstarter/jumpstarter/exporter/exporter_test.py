@@ -437,6 +437,33 @@ class TestHandleLeaseFinally:
         )
 
 
+class TestCleanupDoesNotReleaseActiveLease:
+    @pytest.mark.parametrize("has_after_hook", [False, True])
+    @pytest.mark.parametrize("lifecycle", ["cancelled_cleanup", "end_session"])
+    async def test_cleanup_preserves_reservation_without_endlease_policy(self, has_after_hook, lifecycle):
+        from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
+        from jumpstarter.exporter.hooks import HookExecutor
+
+        hook = HookInstanceConfigV1Alpha1(script="echo cleanup", on_failure="warn")
+        executor = HookExecutor(config=HookConfigV1Alpha1(
+            before_lease=hook, after_lease=hook if has_after_hook else None,
+        ))
+        lease_ctx = make_lease_context()
+        lease_ctx.before_lease_hook.set()
+        exporter = make_exporter(lease_ctx, executor)
+        with patch.object(executor, "_execute_hook", new=AsyncMock(return_value=None)):
+            if lifecycle == "cancelled_cleanup":
+                with anyio.CancelScope() as scope:
+                    scope.cancel()
+                    await exporter._cleanup_after_lease(lease_ctx)
+            else:
+                lease_ctx.end_session_requested.set()
+                await exporter._handle_end_session(lease_ctx)
+        exporter._request_lease_release.assert_not_awaited()
+        assert not lease_ctx.lease_ended.is_set()
+        assert lease_ctx.after_lease_hook_done.is_set()
+
+
 class TestIdempotentLeaseEnd:
     async def test_duplicate_cleanup_is_noop(self):
         """Calling _cleanup_after_lease twice for the same LeaseContext
