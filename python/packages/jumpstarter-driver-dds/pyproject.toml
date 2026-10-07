@@ -14,9 +14,6 @@ dependencies = [
     "click>=8.1.7.2",
 ]
 
-[project.optional-dependencies]
-cyclonedds = ["cyclonedds>=0.10.0,<1.0"]
-
 [project.entry-points."jumpstarter.drivers"]
 Dds = "jumpstarter_driver_dds.driver:Dds"
 
