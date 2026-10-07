@@ -152,9 +152,9 @@ def parse_args(argv=None):
     parser.add_argument(
         "--serial",
         action="store_true",
-        help="watch the board boot on the serial console. Off by default:"
-        " `j serial pipe` currently produces no output on this board even"
-        " though the port itself works",
+        help="watch the board boot on the serial console instead of simply"
+        " waiting out --boot-wait. Off by default: it is useful when a boot"
+        " needs debugging, but it puts a long unscripted log in the recording",
     )
     parser.add_argument(
         "--boot-marker",
@@ -251,6 +251,36 @@ def taken_lease_names():
     except (ValueError, KeyError, TypeError):
         return set()
     return {lease.get("name") for lease in leases}
+
+
+def available_exporter(selector):
+    """Name of an online, unleased exporter matching `selector`, or None.
+
+    Worth checking before anything else starts: `jmp create lease` only
+    creates the Lease object and returns immediately, so a selector that
+    matches no free board does not fail there. It fails later, in `jmp shell
+    --lease`, which polls for the lease to be scheduled for up to two hours.
+    That is a slow way to find out the lab had nothing free.
+    """
+    result = subprocess.run(
+        ["jmp", "get", "exporters", "-l", selector, "--with", "online,leases", "-o", "json"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise SystemExit(
+            f"`jmp get exporters -l {selector}` failed: {result.stderr.strip()}"
+        )
+    try:
+        exporters = json.loads(result.stdout)["exporters"]
+    except (ValueError, KeyError, TypeError) as err:
+        raise SystemExit(f"could not parse `jmp get exporters` output: {err}") from err
+    for exporter in exporters:
+        if exporter.get("online") and not exporter.get("lease"):
+            return exporter.get("name")
+    return None
 
 
 def pick_lease_name():
@@ -431,10 +461,15 @@ def demo(sh, args, lease_id, state=None):
     sh.leave()
 
 
-def main(argv=None):
-    args = parse_args(argv)
-    os.chdir(REPO_ROOT)
+def check_prerequisites(args):
+    """Fail fast on anything that would doom the run, before it starts.
 
+    Each of these would otherwise be discovered minutes into a recording:
+    a missing workload script when it is deployed, a missing pytest when the
+    suite is typed, and a busy lab only once `jmp shell --lease` is already
+    two hours into polling for a lease to be scheduled. Returns the pytest
+    binary to put on the recorded shell's PATH.
+    """
     if not os.access(f"{WORKLOAD}/run.sh", os.X_OK):
         raise SystemExit(f"{WORKLOAD}/run.sh must exist and be executable")
 
@@ -447,6 +482,22 @@ def main(argv=None):
             "no pytest able to import jumpstarter_testing was found; install"
             " pytest and jumpstarter-testing into the Jumpstarter venv"
         )
+
+    if available_exporter(args.selector) is None:
+        raise SystemExit(
+            f"no online, unleased exporter matches {args.selector!r}; nothing"
+            " in the lab is free to lease right now"
+        )
+
+    return pytest_bin
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    os.chdir(REPO_ROOT)
+
+    pytest_bin = check_prerequisites(args)
+
     shell_env = {
         "PATH": os.pathsep.join([os.path.dirname(pytest_bin), os.environ["PATH"]]),
         # Keep the tests pointed at the same board and image as the demo.

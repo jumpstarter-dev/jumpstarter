@@ -185,6 +185,9 @@ class HumanShell:
         # resetting colour.
         self._echo_style = None
         self._prompt_stack = []
+        # Where in `buf` the current _run_once attempt began, so a retry check
+        # cannot match the prompt that preceded the attempt. See _at_prompt.
+        self._attempt_start = 0
         self.closed = False
 
         child_env = dict(os.environ)
@@ -406,8 +409,16 @@ class HumanShell:
                 self.sleep(retry_delay)
 
     def _at_prompt(self) -> bool:
-        """Best effort check that the shell is idle enough to retype a command."""
-        if self.prompt.search(self.buf, max(0, len(self.buf) - 4096)):
+        """Best effort check that the shell is idle enough to retype a command.
+
+        Only output from the current attempt counts. Searching the whole tail
+        of the buffer would match the prompt that came *before* the command,
+        so a command that hung and quietly produced nothing would look like a
+        shell sitting idle, and the retry would type into the hung command's
+        stdin instead of the shell.
+        """
+        window = max(self._attempt_start, len(self.buf) - 4096)
+        if self.prompt.search(self.buf, window):
             return True
         self.send(b"\x03")
         try:
@@ -417,6 +428,9 @@ class HumanShell:
         return True
 
     def _run_once(self, command, *, expect, refute, timeout, allow_failure, think, settle):
+        # Recorded before typing, so it is already correct if this attempt
+        # fails partway through typing rather than while waiting for output.
+        self._attempt_start = len(self.buf)
         self.sleep(think / self.speed)
         self.type(command)
         start = len(self.buf)
