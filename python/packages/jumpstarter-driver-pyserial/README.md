@@ -46,6 +46,8 @@ export:
 | check_present | Check if the serial port exists during exporter initialization, disable if you are connecting to a dynamically created port (i.e. USB from your DUT) | bool  | no       | True    |
 | cps            | Characters per second throttling limit. When set, data transmission will be throttled to simulate slow typing. Useful for devices that can't handle fast input | float | no       | None    |
 | disable_hupcl  | Disable HUPCL on POSIX systems to avoid toggling DTR/RTS on close (can prevent MCU reset on serial disconnect)                                       | bool  | no       | False   |
+| power_control_ref | Explicit power device name from DUT tree for Ctrl-] x3 hotkey (skips auto-discovery). Only needed in multi-power setups | str | no | None (auto-discover) |
+| power_control_method | Power cycle method sequence for Ctrl-] x3 hotkey. Supports method names (`cycle`, `reset`, `on`, `off`) and `sleep:N` delays. Set to `[]` or `null` to disable | list[str] | no | `["cycle"]` |
 | always_on      | Keep the serial port open even when no clients are connected. When false (the default), the port is opened on first client attach and closed when the last client detaches, freeing it for other tools (e.g. esptool). When true, the port stays open for the lifetime of the exporter, which can be useful to avoid HUPCL-triggered resets between sessions | bool  | no       | False   |
 
 ### NVDemuxSerial Driver
@@ -162,7 +164,9 @@ Start an interactive serial console with direct terminal access.
 j serial console
 ```
 
-Exit the console by pressing CTRL+B three times.
+**Hotkeys:**
+- **CTRL+B x3**: Exit the console
+- **CTRL+] x3**: Power cycle the board (if a power driver is available in the DUT tree)
 
 Use `--observe` to attach in read-only (watch-only) mode. Observers receive
 serial output but cannot write, so they can watch a session another client is
