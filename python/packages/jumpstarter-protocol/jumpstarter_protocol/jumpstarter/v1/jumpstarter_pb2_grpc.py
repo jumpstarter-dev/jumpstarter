@@ -71,6 +71,11 @@ class ControllerServiceStub:
                 request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetServiceEndpointsRequest.SerializeToString,
                 response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetServiceEndpointsResponse.FromString,
                 _registered_method=True)
+        self.UpdateLeaseHooks = channel.unary_unary(
+                '/jumpstarter.v1.ControllerService/UpdateLeaseHooks',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.UpdateLeaseHooksRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.LeaseHooks.FromString,
+                _registered_method=True)
 
 
 class ControllerServiceServicer:
@@ -161,6 +166,16 @@ class ControllerServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def UpdateLeaseHooks(self, request, context):
+        """Record a lifecycle hook transition for the exporter's lease.
+        The record survives exporter restarts. Exporters start a hook only after the
+        controller has stored it as running. Returns FAILED_PRECONDITION for a
+        transition the record does not allow (for example a stale lease).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ControllerServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -218,6 +233,11 @@ def add_ControllerServiceServicer_to_server(servicer, server):
                     servicer.GetServiceEndpoints,
                     request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetServiceEndpointsRequest.FromString,
                     response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetServiceEndpointsResponse.SerializeToString,
+            ),
+            'UpdateLeaseHooks': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateLeaseHooks,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.UpdateLeaseHooksRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.LeaseHooks.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -518,6 +538,33 @@ class ControllerService:
             '/jumpstarter.v1.ControllerService/GetServiceEndpoints',
             jumpstarter_dot_v1_dot_jumpstarter__pb2.GetServiceEndpointsRequest.SerializeToString,
             jumpstarter_dot_v1_dot_jumpstarter__pb2.GetServiceEndpointsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UpdateLeaseHooks(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jumpstarter.v1.ControllerService/UpdateLeaseHooks',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.UpdateLeaseHooksRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.LeaseHooks.FromString,
             options,
             channel_credentials,
             insecure,

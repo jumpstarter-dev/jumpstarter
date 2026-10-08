@@ -202,7 +202,23 @@ _ControllerServiceGetServiceEndpointsType = typing_extensions.TypeVar(
     ],
 )
 
-class ControllerServiceStub(typing.Generic[_ControllerServiceRegisterType, _ControllerServiceUnregisterType, _ControllerServiceReportStatusType, _ControllerServiceListenType, _ControllerServiceStatusType, _ControllerServiceDialType, _ControllerServiceGetLeaseType, _ControllerServiceRequestLeaseType, _ControllerServiceReleaseLeaseType, _ControllerServiceListLeasesType, _ControllerServiceGetServiceEndpointsType]):
+_ControllerServiceUpdateLeaseHooksType = typing_extensions.TypeVar(
+    '_ControllerServiceUpdateLeaseHooksType',
+    grpc.UnaryUnaryMultiCallable[
+        jumpstarter.v1.jumpstarter_pb2.UpdateLeaseHooksRequest,
+        jumpstarter.v1.jumpstarter_pb2.LeaseHooks,
+    ],
+    grpc.aio.UnaryUnaryMultiCallable[
+        jumpstarter.v1.jumpstarter_pb2.UpdateLeaseHooksRequest,
+        jumpstarter.v1.jumpstarter_pb2.LeaseHooks,
+    ],
+    default=grpc.UnaryUnaryMultiCallable[
+        jumpstarter.v1.jumpstarter_pb2.UpdateLeaseHooksRequest,
+        jumpstarter.v1.jumpstarter_pb2.LeaseHooks,
+    ],
+)
+
+class ControllerServiceStub(typing.Generic[_ControllerServiceRegisterType, _ControllerServiceUnregisterType, _ControllerServiceReportStatusType, _ControllerServiceListenType, _ControllerServiceStatusType, _ControllerServiceDialType, _ControllerServiceGetLeaseType, _ControllerServiceRequestLeaseType, _ControllerServiceReleaseLeaseType, _ControllerServiceListLeasesType, _ControllerServiceGetServiceEndpointsType, _ControllerServiceUpdateLeaseHooksType]):
     """A service where an exporter can connect to make itself available."""
 
     @typing.overload
@@ -250,6 +266,10 @@ class ControllerServiceStub(typing.Generic[_ControllerServiceRegisterType, _Cont
         grpc.UnaryUnaryMultiCallable[
             jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsRequest,
             jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsResponse,
+        ],
+        grpc.UnaryUnaryMultiCallable[
+            jumpstarter.v1.jumpstarter_pb2.UpdateLeaseHooksRequest,
+            jumpstarter.v1.jumpstarter_pb2.LeaseHooks,
         ],
     ], channel: grpc.Channel) -> None: ...
 
@@ -299,6 +319,10 @@ class ControllerServiceStub(typing.Generic[_ControllerServiceRegisterType, _Cont
             jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsRequest,
             jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsResponse,
         ],
+        grpc.aio.UnaryUnaryMultiCallable[
+            jumpstarter.v1.jumpstarter_pb2.UpdateLeaseHooksRequest,
+            jumpstarter.v1.jumpstarter_pb2.LeaseHooks,
+        ],
     ], channel: grpc.aio.Channel) -> None: ...
 
     Register: _ControllerServiceRegisterType
@@ -345,6 +369,13 @@ class ControllerServiceStub(typing.Generic[_ControllerServiceRegisterType, _Cont
     Older controllers return UNIMPLEMENTED; callers must treat that as an empty list.
     """
 
+    UpdateLeaseHooks: _ControllerServiceUpdateLeaseHooksType
+    """Record a lifecycle hook transition for the exporter's lease.
+    The record survives exporter restarts. Exporters start a hook only after the
+    controller has stored it as running. Returns FAILED_PRECONDITION for a
+    transition the record does not allow (for example a stale lease).
+    """
+
 ControllerServiceAsyncStub: typing_extensions.TypeAlias = ControllerServiceStub[
     grpc.aio.UnaryUnaryMultiCallable[
         jumpstarter.v1.jumpstarter_pb2.RegisterRequest,
@@ -389,6 +420,10 @@ ControllerServiceAsyncStub: typing_extensions.TypeAlias = ControllerServiceStub[
     grpc.aio.UnaryUnaryMultiCallable[
         jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsRequest,
         jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsResponse,
+    ],
+    grpc.aio.UnaryUnaryMultiCallable[
+        jumpstarter.v1.jumpstarter_pb2.UpdateLeaseHooksRequest,
+        jumpstarter.v1.jumpstarter_pb2.LeaseHooks,
     ],
 ]
 
@@ -492,6 +527,18 @@ class ControllerServiceServicer(metaclass=abc.ABCMeta):
         Exporters and clients call this after registration to find the telemetry service.
         Returns an empty list when no optional services are deployed.
         Older controllers return UNIMPLEMENTED; callers must treat that as an empty list.
+        """
+
+    @abc.abstractmethod
+    def UpdateLeaseHooks(
+        self,
+        request: jumpstarter.v1.jumpstarter_pb2.UpdateLeaseHooksRequest,
+        context: _ServicerContext,
+    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.LeaseHooks, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.LeaseHooks]]:
+        """Record a lifecycle hook transition for the exporter's lease.
+        The record survives exporter restarts. Exporters start a hook only after the
+        controller has stored it as running. Returns FAILED_PRECONDITION for a
+        transition the record does not allow (for example a stale lease).
         """
 
 def add_ControllerServiceServicer_to_server(servicer: ControllerServiceServicer, server: typing.Union[grpc.Server, grpc.aio.Server]) -> None: ...
