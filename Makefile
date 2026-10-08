@@ -40,6 +40,7 @@ help:
 	@echo "  make e2e-run               - Run e2e suite (excludes lease-churn; includes ExporterSet QEMU)"
 	@echo "  make e2e                   - Same as e2e-run"
 	@echo "  make e2e-exporterset-qemu  - Run ExporterSet QEMU e2e only"
+	@echo "  make e2e-exporterset-qemu-ssh - Run ExporterSet QEMU-SSH e2e only"
 	@echo "  make e2e-lease-churn       - Run core e2e including lease-churn cycles"
 	@echo "  make e2e-full              - Full setup + run (for CI or first time)"
 	@echo "  make e2e-clean             - Clean up e2e test environment (delete cluster, certs, etc.)"
@@ -205,6 +206,12 @@ e2e-run:
 e2e-exporterset-qemu:
 	@echo "Running ExporterSet QEMU e2e tests..."
 	@GINKGO_LABEL_FILTER=exporterset-qemu bash e2e/run-e2e.sh
+
+# ExporterSet QEMU-SSH e2e (off-cluster provisioner via SSH to localhost).
+.PHONY: e2e-exporterset-qemu-ssh
+e2e-exporterset-qemu-ssh:
+	@echo "Running ExporterSet QEMU-SSH e2e tests..."
+	@GINKGO_LABEL_FILTER=exporterset-qemu-ssh bash e2e/run-e2e.sh
 
 # Core lane including the lease-churn cycle spec (create/release ×20).
 # Needs the Ordered core setup specs, so this is `core` not `lease-churn` alone.

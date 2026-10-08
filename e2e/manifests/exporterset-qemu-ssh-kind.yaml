@@ -1,0 +1,83 @@
+# VirtualTargetClass + ExporterSet for qemu-ssh E2E.
+#
+# Deploys a single tiny QEMU VM via SSH to the CI runner host.
+# The exporter-set-controller (inside Kind) SSHs to __HOST_IP__
+# (Docker/kind bridge gateway) and deploys Podman quadlets.
+#
+# Placeholders filled by e2e/scripts/setup-qemu-ssh-e2e.sh:
+#   __HOST_IP__     – host IP reachable from Kind pods
+#   __GUEST_ARCH__  – x86_64 or aarch64
+#
+# Prerequisites (setup-qemu-ssh-e2e.sh):
+#   - sshd + root key auth on the runner
+#   - Secret "e2e-qemu-ssh-key"
+#   - Rootful Podman with exporter + runtime images
+#   - qemu-ssh.jumpstarter.dev provisioner enabled
+---
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
+kind: VirtualTargetClass
+metadata:
+  name: qemu-ssh-e2e
+  namespace: jumpstarter-lab
+spec:
+  provisioner: qemu-ssh.jumpstarter.dev
+  credentialsSecretRef:
+    name: e2e-qemu-ssh-key
+  bindingMode: Immediate
+  reclaimPolicy: Delete
+  images:
+    exporter:
+      image: quay.io/jumpstarter-dev/jumpstarter:latest
+      imagePullPolicy: IfNotPresent
+    runtime:
+      image: quay.io/jumpstarter-dev/virtual/qemu-runtime:latest
+      imagePullPolicy: IfNotPresent
+  parameters:
+    arch: __GUEST_ARCH__
+    runtime:
+      # Share host network so the exporter can reach Kind on the host IP.
+      host_network: true
+      # No KVM in CI (TCG only).
+      kvm: false
+    resources:
+      cpu: 1
+      memory: 512Mi
+    storage:
+      size: 4Gi
+---
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
+kind: ExporterSet
+metadata:
+  name: qemu-ssh-e2e
+  namespace: jumpstarter-lab
+spec:
+  minReplicas: 0
+  maxReplicas: 1
+  minAvailableReplicas: 1
+  scaleDownCooldown: 5m
+  recycleStrategy: ExitAndReplace
+  virtualTargetClassName: qemu-ssh-e2e
+  parameters:
+    # SSH target: Kind-reachable host IP + root (Deploy needs /etc writes).
+    host:
+      name: __HOST_IP__
+      user: root
+      port: 22
+  selector:
+    matchLabels:
+      board: qemu-ssh-e2e
+  template:
+    metadata:
+      labels:
+        board: qemu-ssh-e2e
+        arch: __GUEST_ARCH__
+        virtual: "true"
+    spec:
+      drivers:
+        - name: qemu
+          type: jumpstarter_driver_qemu.driver.Qemu
+          config:
+            arch: __GUEST_ARCH__
+            smp: 1
+            mem: 512M
+            disk_size: 4G

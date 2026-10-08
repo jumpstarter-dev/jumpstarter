@@ -44,11 +44,23 @@ func TestRuntimeContainerFile_basic(t *testing.T) {
 	mustContain(t, got, "Image=quay.io/jumpstarter-dev/virtual/qemu-runtime:latest")
 	mustContain(t, got, "Volume=jumpstarter-rpi4-virtual-abc12-shared:/shared:z")
 	mustContain(t, got, "JUMPSTARTER_EXEC_LOG_FIELDS=component=exporter,exporter=rpi4-virtual-abc12,namespace=jumpstarter")
+	mustContain(t, got, "User=0")
 	mustContain(t, got, "[Service]")
 	mustContain(t, got, "Restart=always")
 	mustContain(t, got, "[Install]")
 	mustContain(t, got, "WantedBy=default.target")
 	mustNotContain(t, got, "AddDevice")
+
+	// User=0 must be under [Container], not [Service] — Service User only
+	// changes the systemd unit uid, not the container process.
+	containerSection := got[strings.Index(got, "[Container]"):strings.Index(got, "[Service]")]
+	if !strings.Contains(containerSection, "User=0") {
+		t.Error("User=0 must appear in [Container] section")
+	}
+	serviceSection := got[strings.Index(got, "[Service]"):]
+	if strings.Contains(serviceSection, "User=0") {
+		t.Error("User=0 must not appear in [Service] section")
+	}
 }
 
 func TestRuntimeContainerFile_withKVM(t *testing.T) {
@@ -154,6 +166,40 @@ func TestServiceNames(t *testing.T) {
 	if got := ExporterServiceName(name); got != "demo-set-xyz-exporter" {
 		t.Errorf("ExporterServiceName = %q", got)
 	}
+}
+
+func TestRuntimeContainerFile_hostNetwork(t *testing.T) {
+	cfg := baseConfig()
+	cfg.HostNetwork = true
+	got, err := RuntimeContainerFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, got, "Network=host")
+}
+
+func TestExporterContainerFile_hostNetwork(t *testing.T) {
+	cfg := baseConfig()
+	cfg.HostNetwork = true
+	got, err := ExporterContainerFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, got, "Network=host")
+}
+
+func TestContainerFiles_noHostNetworkByDefault(t *testing.T) {
+	cfg := baseConfig()
+	runtime, err := RuntimeContainerFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exporter, err := ExporterContainerFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustNotContain(t, runtime, "Network=host")
+	mustNotContain(t, exporter, "Network=host")
 }
 
 func TestPodmanVolumeName(t *testing.T) {
