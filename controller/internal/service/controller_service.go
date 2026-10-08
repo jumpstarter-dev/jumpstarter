@@ -21,6 +21,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"slices"
@@ -28,6 +29,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/exp/maps"
 
@@ -63,6 +65,7 @@ import (
 	k8suuid "k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -301,6 +304,13 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 		})
 	}
 	exporter.Status.Devices = devices
+	// Set on every registration. An exporter replaced by a version that does not
+	// record its lease hooks drops the record: it is not held by it, and a later
+	// upgrade does not act on hooks it never saw.
+	exporter.Status.RecordsLeaseHooks = req.GetRecordsLeaseHooks()
+	if !exporter.Status.RecordsLeaseHooks {
+		exporter.Status.LeaseHooks = nil
+	}
 
 	if err := s.Client.Status().Patch(ctx, exporter, original); err != nil {
 		logger.Error(err, "unable to update exporter status")
@@ -476,6 +486,243 @@ func (s *ControllerService) handleExporterLeaseRelease(
 		"exporter", exporter.Name)
 
 	return nil
+}
+
+// UpdateLeaseHooks records a lifecycle hook transition in the exporter's lease
+// hook record (Status.LeaseHooks). Exporters call it before starting a hook and
+// after it finishes, so the record outlives the exporter process.
+func (s *ControllerService) UpdateLeaseHooks(
+	ctx context.Context,
+	req *pb.UpdateLeaseHooksRequest,
+) (*pb.LeaseHooks, error) {
+	logger := log.FromContext(ctx)
+
+	exporter, err := s.authenticateExporter(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	logger = logger.WithValues("exporter", types.NamespacedName{
+		Namespace: exporter.Namespace,
+		Name:      exporter.Name,
+	}, "lease", req.GetLeaseName())
+
+	// Validation reads the record, so patch with an optimistic lock and re-read
+	// on conflict rather than overwrite a concurrent change.
+	first := true
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if !first {
+			if err := s.Client.Get(ctx, client.ObjectKeyFromObject(exporter), exporter); err != nil {
+				return err
+			}
+		}
+		first = false
+		assigned, err := s.assignedLease(ctx, exporter)
+		if err != nil {
+			return err
+		}
+		original := client.MergeFromWithOptions(exporter.DeepCopy(), client.MergeFromWithOptimisticLock{})
+		changed, err := applyLeaseHookUpdate(exporter, assigned, req, metav1.Now())
+		if err != nil || !changed {
+			return err
+		}
+		return s.Client.Status().Patch(ctx, exporter, original)
+	})
+	if err != nil {
+		if _, ok := status.FromError(err); ok {
+			logger.Info("Rejected lease hook update", "reason", err.Error())
+			return nil, err
+		}
+		if apierrors.IsInvalid(err) {
+			// Retrying the same update cannot succeed.
+			logger.Info("Rejected invalid lease hook update", "reason", err.Error())
+			return nil, status.Errorf(codes.InvalidArgument, "invalid lease hook update: %s", err)
+		}
+		logger.Error(err, "unable to update lease hooks")
+		return nil, status.Errorf(codes.Internal, "unable to update lease hooks: %s", err)
+	}
+
+	logger.Info("Recorded lease hook state", "leaseHooks", exporter.Status.LeaseHooks)
+	return exporter.Status.LeaseHooks.ToProtobuf(), nil
+}
+
+// maxLeaseHookMessageLength bounds the failure or skip reason stored for a hook,
+// so a long hook error cannot make the Exporter object too large to store.
+const maxLeaseHookMessageLength = 1024
+
+// truncateUTF8 shortens s to at most n bytes without splitting a character.
+func truncateUTF8(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
+}
+
+// parseLeaseHookUpdate validates an UpdateLeaseHooks request and returns the
+// hook it updates ("beforeLease" or "afterLease") and the requested state.
+func parseLeaseHookUpdate(
+	req *pb.UpdateLeaseHooksRequest,
+	now metav1.Time,
+) (string, *jumpstarterdevv1alpha1.LeaseHookStatus, error) {
+	if req.GetLeaseName() == "" {
+		return "", nil, status.Error(codes.InvalidArgument, "lease name is required")
+	}
+	if req.GetLeaseUid() == "" {
+		return "", nil, status.Error(codes.InvalidArgument, "lease UID is required")
+	}
+	var hookName string
+	var update *pb.LeaseHookState
+	switch hook := req.GetHook().(type) {
+	case *pb.UpdateLeaseHooksRequest_BeforeLease:
+		hookName, update = "beforeLease", hook.BeforeLease
+	case *pb.UpdateLeaseHooksRequest_AfterLease:
+		hookName, update = "afterLease", hook.AfterLease
+	default:
+		return "", nil, status.Error(codes.InvalidArgument, "hook is required")
+	}
+	phase, ok := jumpstarterdevv1alpha1.LeaseHookPhaseFromProto(update.GetPhase())
+	if !ok {
+		return "", nil, status.Errorf(codes.InvalidArgument, "invalid %s hook phase %s", hookName, update.GetPhase())
+	}
+	return hookName, &jumpstarterdevv1alpha1.LeaseHookStatus{
+		Phase:              phase,
+		OnFailure:          jumpstarterdevv1alpha1.LeaseHookFailureActionFromProto(update.GetOnFailure()),
+		Message:            truncateUTF8(update.GetMessage(), maxLeaseHookMessageLength),
+		Attempts:           int32(min(max(update.GetAttempts(), 1), math.MaxInt32)),
+		LastTransitionTime: now,
+	}, nil
+}
+
+// leaseAssignment identifies the lease assigned to an exporter: its UID ("" if
+// none is assigned, or the lease has ended or no longer exists) and its client.
+type leaseAssignment struct {
+	uid    types.UID
+	client string
+}
+
+// assignedLease returns the lease assigned to the exporter.
+func (s *ControllerService) assignedLease(
+	ctx context.Context,
+	exporter *jumpstarterdevv1alpha1.Exporter,
+) (leaseAssignment, error) {
+	if exporter.Status.LeaseRef == nil {
+		return leaseAssignment{}, nil
+	}
+	var lease jumpstarterdevv1alpha1.Lease
+	key := types.NamespacedName{Namespace: exporter.Namespace, Name: exporter.Status.LeaseRef.Name}
+	if err := s.Client.Get(ctx, key, &lease); err != nil {
+		if apierrors.IsNotFound(err) {
+			return leaseAssignment{}, nil
+		}
+		return leaseAssignment{}, err
+	}
+	// The exporter reconciler clears leaseRef only some time after a lease ends.
+	if lease.Status.Ended {
+		return leaseAssignment{}, nil
+	}
+	return leaseAssignment{uid: lease.UID, client: lease.Spec.ClientRef.Name}, nil
+}
+
+// applyLeaseHookUpdate applies one hook transition to the exporter's lease hook
+// record, returning whether it changed. Each hook moves from unset to Running
+// (or straight to Skipped), and from Running to a finished phase of the same
+// attempt. Running again with more attempts is a re-run after an exporter
+// restart cut the hook off.
+// Repeating the current state is accepted, so exporters can retry the call.
+//
+// A lease is identified by name and UID, since a name can be reused once the
+// lease is deleted. assigned is the lease assigned to the exporter (with an
+// empty UID if none is, or it no longer exists). No update is accepted for a
+// lease once another lease is assigned to the exporter, including a newer lease
+// with the same name: hooks of an old lease must not run on a board handed to
+// its replacement. A beforeLease hook starts (or re-runs) only for the assigned
+// lease, and a new lease starts a new record, which keeps the lease's client
+// for hooks that run after the lease has ended. afterLease updates need
+// beforeLease to have finished.
+func applyLeaseHookUpdate(
+	exporter *jumpstarterdevv1alpha1.Exporter,
+	assigned leaseAssignment,
+	req *pb.UpdateLeaseHooksRequest,
+	now metav1.Time,
+) (bool, error) {
+	leaseName, leaseUID := req.GetLeaseName(), types.UID(req.GetLeaseUid())
+	hookName, next, err := parseLeaseHookUpdate(req, now)
+	if err != nil {
+		return false, err
+	}
+
+	leaseRef := exporter.Status.LeaseRef
+	if assigned.uid == "" {
+		leaseRef = nil // the assigned lease is gone
+	}
+	isAssigned := leaseRef != nil && leaseRef.Name == leaseName && assigned.uid == leaseUID
+	if leaseRef != nil && !isAssigned {
+		return false, status.Errorf(codes.FailedPrecondition,
+			"exporter is assigned to lease %s (uid %s), not %s (uid %s)", leaseRef.Name, assigned.uid, leaseName, leaseUID)
+	}
+	record := exporter.Status.LeaseHooks
+	if !record.IsFor(leaseName, leaseUID) {
+		record = nil
+	}
+
+	var current **jumpstarterdevv1alpha1.LeaseHookStatus
+	if hookName == "beforeLease" {
+		// Setup starts (or re-runs) only for the assigned lease; one that was
+		// running when the lease ended may still finish.
+		if !isAssigned && (record == nil || next.Phase == jumpstarterdevv1alpha1.LeaseHookPhaseRunning) {
+			return false, status.Errorf(codes.FailedPrecondition, "lease %s is not assigned to this exporter", leaseName)
+		}
+		if record == nil {
+			record = &jumpstarterdevv1alpha1.ExporterLeaseHooks{
+				LeaseRef:   corev1.LocalObjectReference{Name: leaseName},
+				LeaseUID:   leaseUID,
+				ClientName: assigned.client,
+			}
+		}
+		if record.AfterLease != nil {
+			return false, status.Errorf(codes.FailedPrecondition, "afterLease hook of lease %s has already started", leaseName)
+		}
+		current = &record.BeforeLease
+	} else {
+		if record == nil {
+			return false, status.Errorf(codes.FailedPrecondition, "no lease hook record for lease %s", leaseName)
+		}
+		if record.BeforeLease == nil || !record.BeforeLease.Phase.Finished() {
+			return false, status.Errorf(codes.FailedPrecondition, "beforeLease hook of lease %s has not finished", leaseName)
+		}
+		current = &record.AfterLease
+	}
+
+	if prev := *current; prev != nil {
+		if prev.Phase == next.Phase && prev.Attempts == next.Attempts &&
+			prev.OnFailure == next.OnFailure && prev.Message == next.Message {
+			return false, nil
+		}
+		switch {
+		case prev.Phase.Finished():
+			return false, status.Errorf(codes.FailedPrecondition,
+				"%s hook of lease %s has already finished (%s)", hookName, leaseName, prev.Phase)
+		case next.Phase == jumpstarterdevv1alpha1.LeaseHookPhaseRunning && next.Attempts <= prev.Attempts:
+			return false, status.Errorf(codes.FailedPrecondition,
+				"%s hook of lease %s is already running (attempt %d)", hookName, leaseName, prev.Attempts)
+		case next.Phase != jumpstarterdevv1alpha1.LeaseHookPhaseRunning && next.Attempts != prev.Attempts:
+			// A late outcome from an earlier attempt, for example one an exporter
+			// process sent before it was replaced, must not finish a newer one.
+			return false, status.Errorf(codes.FailedPrecondition,
+				"%s hook of lease %s is running attempt %d, not %d", hookName, leaseName, prev.Attempts, next.Attempts)
+		}
+	} else if next.Phase != jumpstarterdevv1alpha1.LeaseHookPhaseRunning &&
+		next.Phase != jumpstarterdevv1alpha1.LeaseHookPhaseSkipped {
+		return false, status.Errorf(codes.FailedPrecondition,
+			"%s hook of lease %s has not started", hookName, leaseName)
+	}
+
+	*current = next
+	exporter.Status.LeaseHooks = record
+	return true, nil
 }
 
 // protoStatusToString converts the proto ExporterStatus enum to the CRD string value
@@ -758,6 +1005,7 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 
 				leased := exporter.Status.LeaseRef != nil
 				leaseName := (*string)(nil)
+				leaseUID := (*string)(nil)
 				clientName := (*string)(nil)
 				var leaseContext map[string]string
 
@@ -774,13 +1022,18 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 					}
 					clientName = &lease.Spec.ClientRef.Name
 					leaseContext = lease.Spec.Context
+					leaseUID = new(string(lease.UID))
 				}
 
 				status := pb.StatusResponse{
 					Leased:     leased,
 					LeaseName:  leaseName,
+					LeaseUid:   leaseUID,
 					ClientName: clientName,
 					Context:    leaseContext,
+					// Always set, even when empty: its presence tells the exporter
+					// that this controller keeps lease hook records.
+					LeaseHooks: exporter.Status.LeaseHooks.ToProtobuf(),
 				}
 				if proto.Equal(lastPbStatusResponse, &status) {
 					jlog.Verbose(logger, "Not sending status update to exporter, it is the same as the last one")

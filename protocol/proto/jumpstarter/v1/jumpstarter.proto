@@ -49,12 +49,19 @@ service ControllerService {
   // Returns an empty list when no optional services are deployed.
   // Older controllers return UNIMPLEMENTED; callers must treat that as an empty list.
   rpc GetServiceEndpoints(GetServiceEndpointsRequest) returns (GetServiceEndpointsResponse);
+
+  // Record a lifecycle hook transition for the exporter's lease.
+  // The record survives exporter restarts. Exporters start a hook only after the
+  // controller has stored it as running. Returns FAILED_PRECONDITION for a
+  // transition the record does not allow (for example a stale lease).
+  rpc UpdateLeaseHooks(UpdateLeaseHooksRequest) returns (LeaseHooks);
 }
 
 // Registration request sent by an exporter to the controller.
 message RegisterRequest {
   map<string, string> labels = 1; // Key-value metadata labels.
   repeated DriverInstanceReport reports = 2; // Driver instance reports for this exporter.
+  bool records_lease_hooks = 3; // The exporter records its lease hooks (UpdateLeaseHooks). The controller then holds it from new leases while its record owes an afterLease hook, whatever status it reports.
 }
 
 // Report describing a single driver instance on an exporter.
@@ -99,6 +106,52 @@ message StatusResponse {
   optional string lease_name = 2; // Name of the active lease, if any.
   optional string client_name = 3; // Name of the connected client, if any.
   map<string, string> context = 4; // User-defined lease context metadata.
+  LeaseHooks lease_hooks = 5; // Hook record of the exporter's latest lease. Always set by controllers that keep it, even when empty.
+  optional string lease_uid = 6; // UID of the active lease, if any. Tells it apart from an earlier lease with the same name.
+}
+
+// Phase of a lease lifecycle hook.
+enum LeaseHookPhase {
+  LEASE_HOOK_PHASE_UNSPECIFIED = 0; // Not started.
+  LEASE_HOOK_PHASE_RUNNING = 1; // Started; still running, or cut off by an exporter restart.
+  LEASE_HOOK_PHASE_SUCCEEDED = 2; // Finished successfully.
+  LEASE_HOOK_PHASE_FAILED = 3; // Failed; on_failure says what the exporter did about it.
+  LEASE_HOOK_PHASE_SKIPPED = 4; // Not run (not configured, or not needed for this lease).
+}
+
+// Failure action configured for a lease lifecycle hook (onFailure).
+enum LeaseHookFailureAction {
+  LEASE_HOOK_FAILURE_ACTION_UNSPECIFIED = 0;
+  LEASE_HOOK_FAILURE_ACTION_WARN = 1; // Continue and warn.
+  LEASE_HOOK_FAILURE_ACTION_END_LEASE = 2; // End the lease.
+  LEASE_HOOK_FAILURE_ACTION_EXIT = 3; // End the lease and take the exporter offline.
+}
+
+// State of one lease lifecycle hook.
+message LeaseHookState {
+  LeaseHookPhase phase = 1; // Phase of the hook.
+  LeaseHookFailureAction on_failure = 2; // Failure action configured when the hook ran.
+  string message = 3; // Failure or skip reason, if any.
+  uint32 attempts = 4; // Times the hook was started; more than one means it was re-run after being cut off.
+}
+
+// Lifecycle hook record of an exporter's latest lease, kept by the controller.
+message LeaseHooks {
+  string lease_name = 1; // Lease the record belongs to; empty if there is no record.
+  LeaseHookState before_lease = 2; // beforeLease hook; unset until it starts.
+  LeaseHookState after_lease = 3; // afterLease hook; unset until it starts.
+  string lease_uid = 4; // UID of the lease the record belongs to. A lease name can be reused once the lease is deleted.
+  string client_name = 5; // Client that held the lease, for hooks that run after the lease has ended.
+}
+
+// Request to record a lifecycle hook transition for a lease.
+message UpdateLeaseHooksRequest {
+  string lease_name = 1; // Lease the hook runs for.
+  oneof hook {
+    LeaseHookState before_lease = 2; // New beforeLease hook state.
+    LeaseHookState after_lease = 3; // New afterLease hook state.
+  }
+  string lease_uid = 4; // UID of the lease the hook runs for (required).
 }
 
 // Request to dial an exporter through the router.

@@ -576,6 +576,45 @@ var _ = Describe("Lease Controller", func() {
 		})
 	})
 
+	When("an exporter still owes the afterLease hook of its previous lease", func() {
+		It("should not be leased while it records its lease hooks, whatever status it reported", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+
+			ctx := context.Background()
+
+			// Both report Available, as a status sent before the record changed can
+			// arrive after it; exporter1 (first by name) still owes cleanup.
+			setExporterLeaseHooks(ctx, testExporter1DutA.Name, true, nil)
+			setExporterLeaseHooks(ctx, testExporter2DutA.Name, true,
+				&jumpstarterdevv1alpha1.LeaseHookStatus{
+					Phase: jumpstarterdevv1alpha1.LeaseHookPhaseSucceeded, LastTransitionTime: metav1.Now(),
+				})
+
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
+			Expect(updatedLease.Status.ExporterRef.Name).To(Equal(testExporter2DutA.Name))
+		})
+
+		It("should be leased once it no longer records its lease hooks, as after a rollback", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+
+			ctx := context.Background()
+
+			setExporterLeaseHooks(ctx, testExporter1DutA.Name, false, nil)
+			setExporterLeaseHooks(ctx, testExporter2DutA.Name, false, nil)
+
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
+			Expect(updatedLease.Status.ExporterRef.Name).To(Equal(testExporter1DutA.Name))
+		})
+	})
+
 	When("trying to lease a busy exporter", func() {
 		It("should not be acquired", func() {
 			lease := leaseDutA2Sec.DeepCopy()
@@ -867,6 +906,28 @@ func setExporterNotReady(ctx context.Context, name string, status string) {
 	exporter.Status.LastSeen = metav1.Now()
 	exporter.Status.ExporterStatusValue = status
 	exporter.Status.StatusMessage = "Running hook"
+	Expect(k8sClient.Status().Update(ctx, exporter)).To(Succeed())
+}
+
+// setExporterLeaseHooks sets an exporter as online, registered and reporting
+// Available (as a status sent before its record changed can still read), whether
+// it records its lease hooks, and a lease hook record for an earlier lease whose
+// beforeLease hook succeeded and whose afterLease hook is in the given state
+// (nil: not started).
+func setExporterLeaseHooks(
+	ctx context.Context, name string, records bool, afterLease *jumpstarterdevv1alpha1.LeaseHookStatus,
+) {
+	setExporterNotReady(ctx, name, jumpstarterdevv1alpha1.ExporterStatusAvailable)
+	exporter := getExporter(ctx, name)
+	exporter.Status.RecordsLeaseHooks = records
+	exporter.Status.LeaseHooks = &jumpstarterdevv1alpha1.ExporterLeaseHooks{
+		LeaseRef: corev1.LocalObjectReference{Name: "previous-lease"},
+		LeaseUID: "previous-lease-uid",
+		BeforeLease: &jumpstarterdevv1alpha1.LeaseHookStatus{
+			Phase: jumpstarterdevv1alpha1.LeaseHookPhaseSucceeded, LastTransitionTime: metav1.Now(),
+		},
+		AfterLease: afterLease,
+	}
 	Expect(k8sClient.Status().Update(ctx, exporter)).To(Succeed())
 }
 
