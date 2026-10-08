@@ -67,6 +67,12 @@ class ControllerServiceStub:
     Returns an empty list when no optional services are deployed.
     Older controllers return UNIMPLEMENTED; callers must treat that as an empty list.
     """
+    UpdateLeaseHooks: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.UpdateLeaseHooksRequest, _jumpstarter_pb2.LeaseHooks]
+    """Record a lifecycle hook transition for the exporter's lease.
+    The record survives exporter restarts. Exporters start a hook only after the
+    controller has stored it as running. Returns FAILED_PRECONDITION for a
+    transition the record does not allow (for example a stale lease).
+    """
 
 @_typing.type_check_only
 class ControllerServiceAsyncStub(ControllerServiceStub):
@@ -105,6 +111,12 @@ class ControllerServiceAsyncStub(ControllerServiceStub):
     Exporters and clients call this after registration to find the telemetry service.
     Returns an empty list when no optional services are deployed.
     Older controllers return UNIMPLEMENTED; callers must treat that as an empty list.
+    """
+    UpdateLeaseHooks: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.UpdateLeaseHooksRequest, _jumpstarter_pb2.LeaseHooks]  # type: ignore[assignment]
+    """Record a lifecycle hook transition for the exporter's lease.
+    The record survives exporter restarts. Exporters start a hook only after the
+    controller has stored it as running. Returns FAILED_PRECONDITION for a
+    transition the record does not allow (for example a stale lease).
     """
 
 class ControllerServiceServicer:
@@ -196,6 +208,17 @@ class ControllerServiceServicer:
         Exporters and clients call this after registration to find the telemetry service.
         Returns an empty list when no optional services are deployed.
         Older controllers return UNIMPLEMENTED; callers must treat that as an empty list.
+        """
+
+    def UpdateLeaseHooks(
+        self,
+        request: _jumpstarter_pb2.UpdateLeaseHooksRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_jumpstarter_pb2.LeaseHooks, _abc.Awaitable[_jumpstarter_pb2.LeaseHooks]]:
+        """Record a lifecycle hook transition for the exporter's lease.
+        The record survives exporter restarts. Exporters start a hook only after the
+        controller has stored it as running. Returns FAILED_PRECONDITION for a
+        transition the record does not allow (for example a stale lease).
         """
 
 def add_ControllerServiceServicer_to_server(servicer: ControllerServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
