@@ -31,14 +31,15 @@ from jumpstarter_protocol import (
     telemetry_pb2_grpc,
 )
 
-from jumpstarter.common import ExporterStatus, Metadata, TemporarySocket
+from jumpstarter.common import ExporterStatus, LeaseHookPhase, Metadata, TemporarySocket
 from jumpstarter.common.exceptions import CertificateDiscoveryError
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.config.env import JMP_GRPC_INSECURE, JUMPSTARTER_GRPC_INSECURE
 from jumpstarter.config.exporter import DEFAULT_STATUS_STREAM_RETRY_TIMEOUT
 from jumpstarter.config.tls import TLSConfigV1Alpha1
-from jumpstarter.exporter.hooks import HookExecutor
+from jumpstarter.exporter.hooks import HookExecutor, HookType, failure_ends_lease
 from jumpstarter.exporter.lease_context import LeaseContext
+from jumpstarter.exporter.lease_hooks import FINISHED_HOOK_PHASES, HOOK_NAMES, HookPlan, Restart, decide_restart
 from jumpstarter.exporter.session import Session
 from jumpstarter.exporter.telemetry import TelemetryLogHandler
 from jumpstarter.logging import clear_log_context, set_log_context
@@ -57,6 +58,13 @@ _RPC_MAX_RETRIES = 20
 _RPC_BACKOFF_BASE = 1.0
 _RPC_BACKOFF_CAP = 30.0
 _RPC_TIMEOUT = 30
+# The controller refused a hook transition: it is out of date (FAILED_PRECONDITION)
+# or invalid (INVALID_ARGUMENT). Sending it again cannot succeed.
+_LEASE_HOOK_REFUSED_CODES = frozenset({grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.INVALID_ARGUMENT})
+# Pause between rounds of retries of hook record writes that must reach the controller.
+_HOOK_RECORD_RETRY_DELAY = _RPC_BACKOFF_CAP
+# How long cleanup waits for a beforeLease hook beyond the hook's own timeout.
+_SETUP_OVERRUN_GRACE = 30
 _FAIL_FAST_STREAM_CODES = frozenset({
     grpc.StatusCode.UNAUTHENTICATED,
     grpc.StatusCode.PERMISSION_DENIED,
@@ -71,6 +79,15 @@ _RESTARTABLE_STREAM_CODES = frozenset({
 _TEMPORARY_STREAM_FAILURE_EXIT_CODE = 75  # EX_TEMPFAIL; service managers may restart this.
 
 
+def _hook_failure_ended_lease(state: jumpstarter_pb2.LeaseHookState | None) -> bool:
+    """Whether a recorded hook failed with an onFailure action that releases the lease."""
+    return (
+        state is not None
+        and state.phase == LeaseHookPhase.FAILED
+        and failure_ends_lease(_HOOK_FAILURE_ACTION_NAMES.get(state.on_failure, ""))
+    )
+
+
 def _is_retryable_stream_error(error: Exception) -> bool:
     if isinstance(error, grpc.aio.AioRpcError):
         return error.code() not in _FAIL_FAST_STREAM_CODES
@@ -82,6 +99,13 @@ def _is_retryable_stream_error(error: Exception) -> bool:
 # slot — keeping a wedged teardown diagnosable without reintroducing a timeout.
 _LEASE_FINISHED_WATCHDOG = 30.0
 
+# Failure actions (onFailure values) recorded for a failed lifecycle hook.
+_HOOK_FAILURE_ACTIONS = {
+    "warn": jumpstarter_pb2.LEASE_HOOK_FAILURE_ACTION_WARN,
+    "endLease": jumpstarter_pb2.LEASE_HOOK_FAILURE_ACTION_END_LEASE,
+    "exit": jumpstarter_pb2.LEASE_HOOK_FAILURE_ACTION_EXIT,
+}
+_HOOK_FAILURE_ACTION_NAMES = {action: name for name, action in _HOOK_FAILURE_ACTIONS.items()}
 _SEVERITY_MAP = {
     "debug": logging.DEBUG,
     "info": logging.INFO,
@@ -347,10 +371,21 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     _report_status and __aexit__ skip controller calls when _standalone is True.
     """
 
-    _last_completed_lease: str | None = field(init=False, default=None)
-    """Name of the most recently completed lease. Set by the control-plane loop
-    when it processes LeaseFinished; suppresses trailing leased=true ticks for a
-    lease that has already torn down."""
+    _last_completed_lease: tuple[str, str] | None = field(init=False, default=None)
+    """Name and UID of the most recently completed lease. Set by the control-plane
+    loop when it processes LeaseFinished; suppresses trailing leased=true ticks for
+    a lease that has already torn down. The UID tells a new lease that reuses the
+    name apart from those ticks."""
+
+    _lease_hooks_supported: bool = field(init=False, default=False)
+    """Whether the controller keeps lease hook records: its Status updates carry lease_hooks."""
+
+    _previous_process_checked: bool = field(init=False, default=False)
+    """Set once the first Status update has been checked for hook work a previous
+    exporter process left (see _finish_previous_lease_hooks)."""
+
+    _handed_off_lease: str | None = field(init=False, default=None)
+    """Live lease this process left in place for the next exporter process, if any."""
 
     _pending_lease_status: jumpstarter_pb2.StatusResponse | None = field(init=False, default=None)
     """Stashed status from a lease reassignment, replayed by the control-plane
@@ -573,15 +608,14 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 jumpstarter_pb2.RegisterRequest(
                     labels=self.labels,
                     reports=response.reports,
+                    # Lets the controller hold this exporter while its record owes cleanup.
+                    records_lease_hooks=self._records_lease_hooks,
                 )
             )
         # Mark exporter as registered internally
         self._registered = True
-        # Only report AVAILABLE status during initial registration (no lease context)
-        # During per-lease registration, status is managed by serve() to avoid
-        # overwriting LEASE_READY with AVAILABLE
-        if self._lease_context is None:
-            await self._report_status(ExporterStatus.AVAILABLE, "Exporter registered and available")
+        # AVAILABLE is reported with the first Status update (_apply_status), once
+        # the exporter knows it owes no hook work from a previous process.
 
         # Discover optional telemetry service endpoint.
         await self._setup_telemetry()
@@ -761,6 +795,20 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             if await self._send_report_status_rpc(request):
                 logger.info("Updated status to %s: %s", status, message)
 
+    async def _report_lease_status(self, lease_scope: LeaseContext, status: ExporterStatus, message: str = ""):
+        """Report a status for a hook of lease_scope's lease.
+
+        A setup task can outlive its lease: cleanup stops waiting for one that
+        overruns. Its reports must then not change the status of whatever the
+        exporter serves now.
+        """
+        if self._lease_context is not lease_scope:
+            logger.warning(
+                "Not reporting %s for lease %s: the exporter has moved on from it", status, lease_scope.lease_name
+            )
+            return
+        await self._report_status(status, message)
+
     async def _request_lease_release(self, lease_scope: LeaseContext):
         """Request the controller to release lease_scope's lease.
 
@@ -809,6 +857,113 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         # so we signal it ourselves as a fallback.
         lease_scope.lease_ended.set()
 
+    async def _record_lease_hook(
+        self,
+        lease_scope: LeaseContext,
+        hook: HookType,
+        phase: LeaseHookPhase,
+        message: str = "",
+        on_failure: str = "",
+        attempts: int | None = None,
+    ) -> bool:
+        """Record a lifecycle hook transition of the lease with the controller.
+
+        attempts defaults to the hook's current attempt (LeaseContext.hook_attempts).
+
+        The record (Exporter.status.leaseHooks) outlives this process: a restarted
+        exporter uses it to resume the lease without repeating its beforeLease
+        hook, and to run an afterLease hook the lease still needs. Hooks start
+        only once their start is recorded, so a lease without a record had no
+        hook touch the device.
+
+        Every transition is recorded before the exporter moves on: a write is
+        retried for as long as the controller is unreachable. The exceptions are
+        a setup whose lease has ended before it started (it must not start), and
+        a process that has lost the controller: it is exiting, and the next
+        process reads a hook whose start or outcome it did not record as not
+        started or cut off.
+
+        Returns False if the transition was not recorded: the controller refused
+        it (for example the lease is no longer assigned), or this process gave up
+        on it. A hook whose start returns False must not run. A controller that
+        does not implement the call keeps no record: the lease's hooks then run
+        as before records existed.
+        """
+        if not lease_scope.hooks.tracked:
+            return True
+        if attempts is None:
+            attempts = lease_scope.hooks.attempt(hook)
+        request = jumpstarter_pb2.UpdateLeaseHooksRequest(
+            lease_name=lease_scope.lease_name,
+            lease_uid=lease_scope.lease_uid,
+            **{
+                hook: jumpstarter_pb2.LeaseHookState(
+                    phase=phase,
+                    on_failure=_HOOK_FAILURE_ACTIONS.get(on_failure, 0),
+                    message=message,
+                    attempts=attempts,
+                )
+            },
+        )
+        ok, code = await self._send_lease_hook(lease_scope, request, hook, phase)
+        if ok:
+            if hook == "before_lease":
+                lease_scope.hooks.recorded = True
+            if phase == LeaseHookPhase.RUNNING:
+                lease_scope.hooks.started[hook] = attempts
+            return True
+        if code == grpc.StatusCode.UNIMPLEMENTED:
+            logger.warning(
+                "Controller does not record lease hooks; the hooks of lease %s run without a record",
+                lease_scope.lease_name,
+            )
+            lease_scope.hooks.tracked = False
+            return True
+        if code in _LEASE_HOOK_REFUSED_CODES:
+            logger.warning(
+                "Controller refused to record %s hook %s for lease %s",
+                HOOK_NAMES[hook], phase, lease_scope.lease_name,
+            )
+        else:
+            logger.warning(
+                "Gave up recording %s hook %s for lease %s; after a restart it reads as not finished",
+                HOOK_NAMES[hook], phase, lease_scope.lease_name,
+            )
+        return False
+
+    async def _send_lease_hook(
+        self,
+        lease_scope: LeaseContext,
+        request: jumpstarter_pb2.UpdateLeaseHooksRequest,
+        hook: HookType,
+        phase: LeaseHookPhase,
+    ) -> tuple[bool, grpc.StatusCode | None]:
+        """Send a hook transition until the controller records or refuses it (see _record_lease_hook)."""
+        setup_start = hook == "before_lease" and phase in (LeaseHookPhase.RUNNING, LeaseHookPhase.SKIPPED)
+        while not self._controller_stream_failed:
+            ok, code = await self._retry_rpc(
+                lambda ctrl: ctrl.UpdateLeaseHooks(request, timeout=_RPC_TIMEOUT),
+                f"record {HOOK_NAMES[hook]} hook {phase}",
+                non_retryable_codes=_LEASE_HOOK_REFUSED_CODES | {grpc.StatusCode.UNIMPLEMENTED},
+            )
+            if ok or code in _LEASE_HOOK_REFUSED_CODES or code == grpc.StatusCode.UNIMPLEMENTED:
+                return ok, code
+            if setup_start and lease_scope.lease_ended.is_set():
+                return False, code  # the lease is gone: do not set it up
+            logger.warning(
+                "Could not record %s hook %s for lease %s; trying again",
+                HOOK_NAMES[hook], phase, lease_scope.lease_name,
+            )
+            await anyio.sleep(_HOOK_RECORD_RETRY_DELAY)
+        # This process is exiting after losing the controller. As with
+        # _request_lease_release, do not wait minutes on retries.
+        return False, None
+
+    def _on_interrupt(self, hook: HookType) -> str | None:
+        """The configured onInterrupt of a hook; None if no such hook is configured."""
+        config = getattr(self.hook_executor.config, hook) if self.hook_executor else None
+        return config.on_interrupt if config is not None else None
+
     async def _unregister_with_controller(self):
         """Safely unregister from controller with timeout and error handling."""
         if not (self._registered and self._unregister):
@@ -820,10 +975,16 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 channel = await self.channel_factory()
                 try:
                     controller = jumpstarter_pb2_grpc.ControllerServiceStub(channel)
-                    await self._report_status(ExporterStatus.OFFLINE, "Exporter shutting down")
+                    message, reason = "Exporter shutting down", "Exporter shutdown"
+                    if self._handed_off_lease:
+                        # Unregister's reason becomes the Exporter's status message.
+                        message = reason = (
+                            f"Exporter shutting down; lease {self._handed_off_lease} resumes when it restarts"
+                        )
+                    await self._report_status(ExporterStatus.OFFLINE, message)
                     await controller.Unregister(
                         jumpstarter_pb2.UnregisterRequest(
-                            reason="Exporter shutdown",
+                            reason=reason,
                         )
                     )
                     logger.info("Controller unregistration completed successfully")
@@ -908,6 +1069,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         logger.info("EndSession requested, running afterLease hook")
 
         try:
+            # Cleanup never overlaps setup.
+            await lease_context.before_lease_hook.wait()
+
             # Check if hook already started (via lease state transition)
             if lease_context.after_lease_hook_started.is_set():
                 logger.debug("afterLease hook already started, waiting for completion")
@@ -926,6 +1090,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                         self._report_status,
                         self.stop,
                         self._request_lease_release,
+                        record_hook=partial(self._record_lease_hook, lease_context),
                     )
                 logger.info("afterLease hook completed via EndSession")
             else:
@@ -933,6 +1098,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     logger.info("Skipping afterLease hook: beforeLease hook failed")
                 else:
                     logger.debug("No afterLease hook configured or no client, transitioning to AVAILABLE")
+                with CancelScope(shield=True):
+                    await self._record_after_lease_skipped(lease_context)
                 await self._report_status(ExporterStatus.AVAILABLE, "Available for new lease")
         except Exception as e:  # noqa: BLE001
             logger.error("Error running afterLease hook via EndSession: %s", e)
@@ -1004,26 +1171,21 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         running the afterLease hook if appropriate, and transitioning to AVAILABLE.
         """
         with CancelScope(shield=True):
-            # Wait for beforeLease hook to complete before running afterLease.
-            # When a lease ends during hook execution, the hook must finish
-            # (subject to its configured timeout) before cleanup proceeds.
-            # Safety timeout: prevent permanent deadlock if before_lease_hook
-            # was never set due to a race (e.g. conn_tg cancelled early).
-            # Use the configured hook timeout (+ margin) when available so we
-            # never interrupt a legitimately-running beforeLease hook.
-            safety_timeout = 15  # generous default for no-hook / unknown cases
-            if (
-                self.hook_executor
-                and self.hook_executor.config.before_lease
-            ):
-                safety_timeout = self.hook_executor.config.before_lease.timeout + 30
-            with move_on_after(safety_timeout) as timeout_scope:
-                await lease_scope.before_lease_hook.wait()
-            if timeout_scope.cancelled_caught:
-                logger.warning(
-                    "Timed out waiting for before_lease_hook; forcing it set to avoid deadlock"
+            await self._wait_for_setup(lease_scope)
+
+            if self._should_hand_off_lease(lease_scope):
+                # A restart is not the end of the lease: no afterLease hook and
+                # no release. The next process resumes the lease, or runs the
+                # afterLease hook if the lease ends before it comes back.
+                logger.info(
+                    "Exporter stopping during lease %s; leaving the lease in place for the "
+                    "restarted exporter (afterLease hook deferred)",
+                    lease_scope.lease_name,
                 )
-                lease_scope.before_lease_hook.set()
+                self._handed_off_lease = lease_scope.lease_name
+                lease_scope.after_lease_hook_started.set()
+                lease_scope.after_lease_hook_done.set()
+                return
 
             if not lease_scope.after_lease_hook_started.is_set():
                 lease_scope.after_lease_hook_started.set()
@@ -1036,8 +1198,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                         self._report_status,
                         self.stop,
                         self._request_lease_release,
+                        record_hook=partial(self._record_lease_hook, lease_scope),
                     )
                 else:
+                    await self._record_after_lease_skipped(lease_scope)
                     if lease_scope.skip_after_lease_hook:
                         if lease_scope.lease_ended.is_set():
                             logger.info("Skipping afterLease hook: lease ended before beforeLease hook ran")
@@ -1058,13 +1222,68 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 await lease_scope.after_lease_hook_done.wait()
                 logger.debug("afterLease hook completed, closing session")
 
+    async def _wait_for_setup(self, lease_scope: LeaseContext) -> None:
+        """Wait for the lease's beforeLease hook to complete before cleanup runs.
+
+        When a lease ends during hook execution, the hook must finish (subject to
+        its configured timeout) before cleanup proceeds. A safety timeout prevents
+        a permanent deadlock if before_lease_hook was never set due to a race (e.g.
+        conn_tg cancelled early); it is the configured hook timeout plus a margin,
+        so a legitimately-running beforeLease hook is never interrupted.
+        """
+        safety_timeout = 15  # generous default for no-hook / unknown cases
+        if self.hook_executor and self.hook_executor.config.before_lease:
+            safety_timeout = self.hook_executor.config.before_lease.timeout + _SETUP_OVERRUN_GRACE
+        with move_on_after(safety_timeout) as timeout_scope:
+            await lease_scope.before_lease_hook.wait()
+        if not timeout_scope.cancelled_caught:
+            return
+        logger.warning("Timed out waiting for before_lease_hook; forcing it set to avoid deadlock")
+        lease_scope.before_lease_hook.set()
+        if lease_scope.hooks.recorded:
+            # The setup outcome may come too late, or never: close the attempt the
+            # record shows as running, or cleanup could not start. Refused if the
+            # setup did record its outcome.
+            await self._record_lease_hook(
+                lease_scope, "before_lease", LeaseHookPhase.FAILED,
+                "beforeLease hook did not finish before its lease ended",
+                attempts=lease_scope.hooks.started.get("before_lease"),
+            )
+
+    def _should_hand_off_lease(self, lease_scope: LeaseContext) -> bool:
+        """Whether to leave a live lease for the next exporter process instead of ending it.
+
+        A live lease only reaches cleanup when this process is going away (a stop
+        signal, or exiting after losing the controller): a lease that really ends
+        sets lease_ended, and a client's EndSession starts the afterLease hook
+        first. A dying process never cleans up a live lease, since it may not be
+        able to report the outcome. With the lease's hooks tracked by the
+        controller, the next process resumes it, or runs its afterLease hook if
+        it ended meanwhile.
+        """
+        return (
+            lease_scope.hooks.tracked
+            and not lease_scope.lease_ended.is_set()
+            and not lease_scope.after_lease_hook_started.is_set()
+        )
+
+    async def _record_after_lease_skipped(self, lease_scope: LeaseContext) -> None:
+        """Close a recorded lease whose afterLease hook does not run, so it owes none."""
+        if lease_scope.hooks.recorded:
+            reason = "beforeLease hook failed" if lease_scope.skip_after_lease_hook else "lease had no client"
+            await self._record_lease_hook(lease_scope, "after_lease", LeaseHookPhase.SKIPPED, reason)
+
     async def _skip_stale_lease(self, lease_name: str, lease_scope: LeaseContext, context: str) -> bool:
         """Handle early bail for a stale lease whose lease_ended is already set.
 
         Sets the events that serve() is waiting on and reports AVAILABLE.
         Returns True if the lease was stale and the caller should return.
+
+        A lease with a hook record is not skipped: a previous exporter process
+        worked on it, so it may owe its afterLease hook. It takes the regular
+        path, whose cleanup runs that hook.
         """
-        if not lease_scope.lease_ended.is_set():
+        if not lease_scope.lease_ended.is_set() or lease_scope.hooks.recorded:
             return False
         logger.info("Lease %s already ended (%s), skipping", lease_name, context)
         lease_scope.skip_after_lease_hook = True
@@ -1113,6 +1332,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 return
 
             logger.info("Listening for incoming connection requests on lease %s", lease_name)
+            runs_before_lease_hook = self.hook_executor is not None and lease_scope.hooks.resumed is None
 
             # Buffer Listen responses to avoid blocking when responses arrive before
             # process_connections starts iterating. This prevents a race condition where
@@ -1200,22 +1420,26 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                             conn_tg.start_soon(wait_for_lease_end)
                             conn_tg.start_soon(process_connections)
 
-                            # Report LEASE_READY if no beforeLease hook is configured.
-                            # This MUST happen after Listen stream is started so the
-                            # controller can forward client Dial requests.
-                            if not self.hook_executor:
-                                await self._report_status(ExporterStatus.LEASE_READY, "Ready for commands")
+                            # Report LEASE_READY if no beforeLease hook runs for this lease:
+                            # none is configured, or the lease is resumed after a restart
+                            # (the previous process already ran it). This MUST happen after
+                            # Listen stream is started so the controller can forward client
+                            # Dial requests.
+                            if not runs_before_lease_hook:
+                                if not lease_scope.lease_ended.is_set():
+                                    ready = (ExporterStatus.LEASE_READY, "Ready for commands")
+                                    await self._report_status(*(lease_scope.hooks.resumed or ready))
                                 lease_scope.before_lease_hook.set()
                     finally:
                         # Ensure before_lease_hook is set so _cleanup_after_lease never
                         # blocks forever.  When conn_tg is cancelled before the no-hook
                         # path reaches lease_scope.before_lease_hook.set(), this flag
                         # remains unset and _cleanup_after_lease (shielded) deadlocks.
-                        # Only apply this fallback when NO hooks are configured - when
-                        # hooks ARE configured, run_before_lease_hook's finally block
-                        # sets the event after updating skip_after_lease_hook. Setting
-                        # it here prematurely would race with that flag update.
-                        if not self.hook_executor and not lease_scope.before_lease_hook.is_set():
+                        # Only apply this fallback when no beforeLease hook runs - when
+                        # one does, run_before_lease_hook's finally block sets the
+                        # event after updating skip_after_lease_hook. Setting it here
+                        # prematurely would race with that flag update.
+                        if not runs_before_lease_hook and not lease_scope.before_lease_hook.is_set():
                             lease_scope.before_lease_hook.set()
                         # Run afterLease hook before closing the session
                         # This ensures the socket is still available for driver calls within the hook
@@ -1331,6 +1555,15 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         tg: TaskGroup,
     ) -> bool:
         """Process a single status update. Returns True to stop the status loop."""
+        self._lease_hooks_supported = status.HasField("lease_hooks")
+        if not self._previous_process_checked:
+            self._previous_process_checked = True
+            reported = await self._finish_previous_lease_hooks(status)
+            if not reported and not status.leased:
+                # Reported here rather than at registration: Available tells the
+                # controller no hook work is owed, known only once the record is checked.
+                await self._report_status(ExporterStatus.AVAILABLE, "Exporter registered and available")
+
         previous_state = self._lease_state
         current_leased = status.leased
 
@@ -1339,14 +1572,15 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
         if current_leased:
             if previous_state == LeaseState.IDLE and status.lease_name != "":
-                if status.lease_name == self._last_completed_lease:
+                if (status.lease_name, status.lease_uid) == self._last_completed_lease:
                     logger.debug("Ignoring trailing status for completed lease %s", status.lease_name)
                     return False
                 self._on_lease_acquired(status, tg)
             elif (
                 previous_state == LeaseState.LEASED
                 and self._lease_context
-                and self._lease_context.lease_name != status.lease_name
+                and (self._lease_context.lease_name, self._lease_context.lease_uid)
+                != (status.lease_name, status.lease_uid)
             ):
                 # Controller reassigned the exporter to a different lease.
                 # Stash the new status and signal the old lease to tear down.
@@ -1387,29 +1621,192 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             log_ctx.update(status.context)
         return log_ctx
 
+    @property
+    def _records_lease_hooks(self) -> bool:
+        """Whether this exporter records its leases' hooks with the controller.
+
+        Not for exitOnLeaseEnd exporters, whose runtime does not outlive the
+        exporter process, nor standalone ones, which have no controller.
+        """
+        return self.hook_executor is not None and not self.exit_on_lease_end and not self._standalone
+
+    @property
+    def _tracks_lease_hooks(self) -> bool:
+        """Whether new leases have their hooks recorded, so they survive a restart."""
+        return self._lease_hooks_supported and self._records_lease_hooks
+
     def _on_lease_acquired(
         self,
         status: jumpstarter_pb2.StatusResponse,
         tg: TaskGroup,
     ) -> None:
-        """Handle new lease assignment: create context and spawn lease handler."""
+        """Handle new lease assignment: create context and spawn lease handler.
+
+        A lease whose hook record shows a beforeLease hook was left in place by a
+        previous exporter process. If that hook finished, the lease resumes
+        without running it again; if a restart cut it off, it runs again or
+        fails, per its onInterrupt.
+        """
         self._started = True
-        logger.info("Starting new lease: %s", status.lease_name)
+        # Hook records identify a lease by its UID, which every controller that keeps them sends.
+        hooks = HookPlan(tracked=self._tracks_lease_hooks and bool(status.lease_uid))
         lease_scope = LeaseContext(
-            lease_name=status.lease_name,
-            before_lease_hook=Event(),
+            lease_name=status.lease_name, before_lease_hook=Event(), lease_uid=status.lease_uid, hooks=hooks
         )
+        restart = Restart.NEW
+        if hooks.tracked:
+            restart = decide_restart(status.lease_hooks, (status.lease_name, status.lease_uid))
+        before = status.lease_hooks.before_lease
+        if restart is Restart.NEW:
+            logger.info("Starting new lease: %s", status.lease_name)
+        elif restart is Restart.FINISH_SETUP:
+            logger.info("Resuming lease %s after exporter restart (beforeLease hook did not finish)",
+                        status.lease_name)
+            hooks.recorded = True
+            hooks.finish_cut_off("before_lease", before, self._on_interrupt("before_lease"), status.lease_name)
+        else:
+            # Setup finished. Cleanup a previous process owed was settled on start-up
+            # (_finish_previous_lease_hooks), which keeps the lease from being acquired again.
+            logger.info("Resuming lease %s after exporter restart (beforeLease hook %s before it)",
+                        status.lease_name, LeaseHookPhase(before.phase).name.lower())
+            hooks.recorded = True
+            hooks.resume(before)
         self._lease_context = lease_scope
         set_log_context(**self._lease_log_context(status))
-        if self.hook_executor:
+        if self.hook_executor and lease_scope.hooks.resumed is None:
             tg.start_soon(
-                self.hook_executor.run_before_lease_hook,
+                partial(
+                    self.hook_executor.run_before_lease_hook,
+                    lease_scope,
+                    partial(self._report_lease_status, lease_scope),
+                    self.stop,
+                    self._request_lease_release,
+                    record_hook=partial(self._record_lease_hook, lease_scope),
+                )
+            )
+        tg.start_soon(self.handle_lease, status.lease_name, tg, lease_scope)
+
+    async def _finish_previous_lease_hooks(self, status: jumpstarter_pb2.StatusResponse) -> bool:
+        """Finish the hook work a previous exporter process left, before anything else.
+
+        Runs once, for the first Status update. The controller's hook record
+        names the last lease a previous process worked on. Resuming that lease,
+        or re-running its cut-off setup, while it is still assigned is left to
+        lease acquisition. This handles the rest, inline, so the device is done
+        with the old lease before a new one is set up:
+
+        - the lease still needs its afterLease hook (it ended while no process
+          served it, or a restart cut the hook off): run it;
+        - the lease is done with its hooks but still assigned: never set it up
+          again. It is released only if a hook failed with onFailure: endLease,
+          as the previous process would have done; otherwise its client or its
+          expiry ends it.
+
+        A record of a lease other than the one assigned now is stale: hooks of
+        that lease must not touch a device handed to its replacement.
+
+        Returns True if it reported a status for the record's lease.
+        """
+        record = status.lease_hooks
+        lease_name = record.lease_name
+        if not self._lease_hooks_supported or self.exit_on_lease_end:
+            return False
+        restart = decide_restart(record, (status.lease_name, status.lease_uid) if status.leased else None)
+        if restart not in (Restart.CLEAN_UP, Restart.SETTLE):
+            if restart is Restart.NEW and record.HasField("before_lease"):
+                logger.info(
+                    "Not finishing hooks of lease %s (uid %s): lease %s (uid %s) is assigned now",
+                    lease_name, record.lease_uid, status.lease_name, status.lease_uid,
+                )
+            return False  # nothing owed, or lease acquisition sets up or resumes the assigned lease
+        assigned = status.leased  # and it is the record's lease, or the record would be stale
+        before = record.before_lease
+        after = record.after_lease if record.HasField("after_lease") else None
+
+        lease_scope = LeaseContext(
+            lease_name=lease_name, lease_uid=record.lease_uid, before_lease_hook=Event(),
+            hooks=HookPlan(tracked=True, recorded=True),
+            client_name=record.client_name,  # kept by the record, as the lease may have ended
+        )
+        lease_scope.before_lease_hook.set()
+        lease_scope.after_lease_hook_started.set()
+        if assigned:
+            # Never set it up again; ignore its leased ticks until the lease ends.
+            self._last_completed_lease = (lease_name, record.lease_uid)
+        else:
+            lease_scope.lease_ended.set()
+        # The loop is the sole writer of _lease_context; holding the slot here
+        # routes the status reports below to this lease.
+        self._lease_context = lease_scope
+        try:
+            if restart is Restart.SETTLE:
+                return await self._settle_lease_without_hooks(lease_scope, before, after, assigned)
+            if before.phase not in FINISHED_HOOK_PHASES:
+                # The lease ended before the cut-off setup could run again.
+                await self._record_lease_hook(
+                    lease_scope, "before_lease", LeaseHookPhase.FAILED,
+                    "beforeLease hook did not finish: the lease ended while the exporter was restarting",
+                    attempts=max(before.attempts, 1),
+                )
+            if after is not None:
+                lease_scope.hooks.finish_cut_off("after_lease", after, self._on_interrupt("after_lease"), lease_name)
+            else:
+                logger.info("Lease %s ended while the exporter was down; running its afterLease hook", lease_name)
+            await self._run_owed_after_lease_hook(lease_scope)
+            return True
+        finally:
+            lease_scope.after_lease_hook_done.set()
+            self._lease_context = None
+
+    async def _settle_lease_without_hooks(
+        self,
+        lease_scope: LeaseContext,
+        before: jumpstarter_pb2.LeaseHookState,
+        after: jumpstarter_pb2.LeaseHookState | None,
+        assigned: bool,
+    ) -> bool:
+        """Settle a recorded lease that needs no more hooks. Returns True if it reported a status.
+
+        A setup that failed with endLease or exit skips cleanup, as without a
+        restart. A lease still assigned is never set up again, and is released
+        only if a hook failed with onFailure: endLease, as the previous process
+        would have done; otherwise its client or its expiry ends it.
+        """
+        if after is None:
+            await self._record_lease_hook(lease_scope, "after_lease", LeaseHookPhase.SKIPPED, "beforeLease hook failed")
+        if not assigned:
+            return False
+        if _hook_failure_ended_lease(before) or _hook_failure_ended_lease(after):
+            logger.info("Lease %s had a hook fail with onFailure: endLease; releasing it", lease_scope.lease_name)
+            await self._request_lease_release(lease_scope)  # Reports AVAILABLE once released
+        else:
+            logger.info("Lease %s is done with its hooks; leaving it to its client", lease_scope.lease_name)
+            await self._report_status(ExporterStatus.AVAILABLE, "Available for new lease")
+        return True
+
+    async def _run_owed_after_lease_hook(self, lease_scope: LeaseContext) -> None:
+        """Run the afterLease hook a previous exporter process owed for the lease.
+
+        A hook failure with onFailure: endLease releases a lease that is still
+        assigned; _request_lease_release skips one that has ended.
+        """
+        record_hook = partial(self._record_lease_hook, lease_scope)
+        if self.hook_executor is None:
+            await record_hook("after_lease", LeaseHookPhase.SKIPPED, "no afterLease hook configured")
+            await self._report_status(ExporterStatus.AVAILABLE, "Available for new lease")
+            return
+        async with self.session_for_lease() as (session, main_path, hook_path):
+            lease_scope.session = session
+            lease_scope.socket_path = main_path
+            lease_scope.hook_socket_path = hook_path
+            session.lease_context = lease_scope
+            await self.hook_executor.run_after_lease_hook(
                 lease_scope,
                 self._report_status,
                 self.stop,
                 self._request_lease_release,
+                record_hook=record_hook,
             )
-        tg.start_soon(self.handle_lease, status.lease_name, tg, lease_scope)
 
     def _on_lease_update(self, status: jumpstarter_pb2.StatusResponse) -> None:
         """Update client info on every leased status tick."""
@@ -1444,7 +1841,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             logger.debug("Lease %s not the current slot owner, ignoring LeaseFinished", lease_ctx.lease_name)
             return self._check_stop_requested()
 
-        self._last_completed_lease = lease_ctx.lease_name
+        self._last_completed_lease = (lease_ctx.lease_name, lease_ctx.lease_uid)
         self._lease_context = None
         if self.exit_on_lease_end:
             # _on_lease_released sets this on the leased=false tick; setting it
