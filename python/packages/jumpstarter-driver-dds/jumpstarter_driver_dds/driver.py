@@ -26,7 +26,7 @@ from jumpstarter.driver import Driver, export
 logger = logging.getLogger(__name__)
 
 
-def _build_cyclonedds_qos(qos: DdsTopicQos):
+def _build_cyclonedds_qos(qos: DdsTopicQos):  # pragma: no cover — requires native CycloneDDS
     """Build a CycloneDDS Qos object from our config model."""
     from cyclonedds.core import Policy, Qos  # ty: ignore[unresolved-import]
 
@@ -72,7 +72,7 @@ def _validate_field_names(fields: list[str]) -> None:
         seen.add(name)
 
 
-def _make_idl_type(topic_name: str, fields: list[str]):
+def _make_idl_type(topic_name: str, fields: list[str]):  # pragma: no cover — requires native CycloneDDS
     """Dynamically create a CycloneDDS IdlStruct type for the given fields.
 
     Each field name maps to a ``str`` type. For complex or mixed-type
@@ -95,7 +95,7 @@ def _make_idl_type(topic_name: str, fields: list[str]):
     return idl_cls
 
 
-class DdsBackend:
+class DdsBackend:  # pragma: no cover — requires native CycloneDDS
     """Default CycloneDDS backend managing real DDS entities."""
 
     def __init__(self, domain_id: int):
@@ -438,7 +438,7 @@ class Dds(Driver):
             super().__post_init__()
         if self.use_mock:
             self._backend = MockDdsBackend(domain_id=self.domain_id)
-        else:
+        else:  # pragma: no cover — requires native CycloneDDS
             try:
                 from cyclonedds.domain import DomainParticipant  # noqa: F401  # ty: ignore[unresolved-import]
             except ImportError as exc:

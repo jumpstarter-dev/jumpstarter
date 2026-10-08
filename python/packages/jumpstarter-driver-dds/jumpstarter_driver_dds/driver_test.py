@@ -237,6 +237,14 @@ class TestMockDdsBackendUnit:
         assert info.topic_count == 2
         assert info.is_connected is True
 
+    def test_read_zero_max_samples_raises(self):
+        """MockDdsBackend.read rejects max_samples < 1."""
+        backend = MockDdsBackend()
+        backend.connect()
+        backend.create_topic("t", ["v"], DdsTopicQos())
+        with pytest.raises(ValueError, match="max_samples must be >= 1"):
+            backend.read("t", 0)
+
 
 # =============================================================================
 # Level 2: E2E Tests with MockDds (gRPC boundary, always run)
@@ -354,6 +362,23 @@ class TestMockDdsE2E:
             assert result.sample_count == 3
             client.disconnect()
 
+    def test_monitor_bounded_iterations(self):
+        """monitor() with max_iterations > 0 stops after that many polls."""
+        with serve(MockDds()) as client:
+            client.connect()
+            client.create_topic("s", ["v"])
+            client.publish("s", {"v": "a"})
+            events = list(client.monitor("s", max_iterations=1))
+            assert len(events) == 1
+            assert events[0].data["v"] == "a"
+            client.disconnect()
+
+    def test_close_while_connected(self):
+        """MockDds.close() disconnects the backend gracefully."""
+        with serve(MockDds()) as client:
+            client.connect()
+            client.create_topic("t", ["f"])
+
 
 class TestMockDdsErrorPaths:
     """2b. Error path tests through gRPC."""
@@ -454,6 +479,56 @@ class TestDdsUseMock:
             assert topic.qos.reliability == DdsReliability.BEST_EFFORT
             assert topic.qos.history_depth == 5
             client.disconnect()
+
+    def test_use_mock_qos_overrides(self):
+        """Explicit QoS overrides in create_topic go through Dds codepath."""
+        driver = Dds(use_mock=True)
+        with serve(driver) as client:
+            client.connect()
+            topic = client.create_topic(
+                "t",
+                ["v"],
+                reliability="BEST_EFFORT",
+                durability="TRANSIENT_LOCAL",
+                history_depth=3,
+            )
+            assert topic.qos.reliability == DdsReliability.BEST_EFFORT
+            assert topic.qos.durability == DdsDurability.TRANSIENT_LOCAL
+            assert topic.qos.history_depth == 3
+            client.disconnect()
+
+    def test_use_mock_list_topics_and_info(self):
+        """Exercise list_topics and get_participant_info through Dds."""
+        driver = Dds(use_mock=True)
+        with serve(driver) as client:
+            client.connect()
+            client.create_topic("a", ["x"])
+            client.create_topic("b", ["y"])
+            topics = client.list_topics()
+            assert len(topics) == 2
+            info = client.get_participant_info()
+            assert info.topic_count == 2
+            assert info.is_connected is True
+            client.disconnect()
+
+    def test_use_mock_monitor(self):
+        """Exercise monitor() through Dds(use_mock=True)."""
+        driver = Dds(use_mock=True)
+        with serve(driver) as client:
+            client.connect()
+            client.create_topic("s", ["v"])
+            client.publish("s", {"v": "hello"})
+            events = list(client.monitor("s", max_iterations=1))
+            assert len(events) == 1
+            assert events[0].data["v"] == "hello"
+            client.disconnect()
+
+    def test_use_mock_close_while_connected(self):
+        """Dds.close() disconnects the backend if still connected."""
+        driver = Dds(use_mock=True)
+        with serve(driver) as client:
+            client.connect()
+            client.create_topic("t", ["f"])
 
 
 # =============================================================================
