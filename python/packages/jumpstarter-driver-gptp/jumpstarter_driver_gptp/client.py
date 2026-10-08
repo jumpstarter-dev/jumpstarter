@@ -143,8 +143,7 @@ class GptpClient(DriverClient):
         Args:
             timeout: Maximum time to wait in seconds.
             poll_interval: Polling interval in seconds.
-            threshold_ns: If provided, also require ``abs(offset) < threshold_ns``
-                before returning True.
+            threshold_ns: Optional offset threshold in nanoseconds.
 
         Returns:
             True if synchronized before timeout, False otherwise.

@@ -811,9 +811,9 @@ class TestGptpWithMockedSubprocess:
             patch("jumpstarter_driver_gptp.driver.os.fdopen", mock_open()),
             patch("jumpstarter_driver_gptp.driver.os.unlink"),
             patch.object(driver, "_supports_hw_timestamping", new_callable=AsyncMock, return_value=False),
+            pytest.raises(RuntimeError, match="ptp4l not found"),
         ):
-            with pytest.raises(RuntimeError, match="ptp4l not found"):
-                await driver.start()
+            await driver.start()
 
     async def test_start_ptp4l_exits_immediately(self):
         mock_proc = _make_mock_process(stdout_lines=[], returncode=1)
@@ -825,9 +825,9 @@ class TestGptpWithMockedSubprocess:
             patch("jumpstarter_driver_gptp.driver.os.fdopen", mock_open()),
             patch("jumpstarter_driver_gptp.driver.os.unlink"),
             patch.object(driver, "_supports_hw_timestamping", new_callable=AsyncMock, return_value=False),
+            pytest.raises(RuntimeError, match="exited immediately"),
         ):
-            with pytest.raises(RuntimeError, match="exited immediately"):
-                await driver.start()
+            await driver.start()
 
     async def test_status_returns_gptp_status(self):
         mock_proc = _make_mock_process(stdout_lines=[
