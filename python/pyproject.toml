@@ -74,6 +74,9 @@ hatch-pin-jumpstarter = { workspace = true }
 # Without these constraints the resolver can pick older releases that only
 # provide cp312/cp313 wheels, forcing slow (or failing) source builds in CI.
 constraint-dependencies = [
+    # Click 8.2+ CliRunner closes StreamMixer buffers during invoke
+    # (pallets/click#824). 8.3.2 keeps those buffers open. Stay on 8.3.x.
+    "click>=8.3.2,<8.4",
     # pydantic >=2.12 requires typing-extensions >=4.14.1, but mitmproxy caps
     # typing-extensions <=4.14 on Python <3.13. On Python >=3.14 we need
     # pydantic >=2.12 so that pydantic-core ships pre-built cp314 wheels.

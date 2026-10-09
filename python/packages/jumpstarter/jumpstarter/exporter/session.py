@@ -59,6 +59,10 @@ class Session(
     _status_version: int = field(init=False, default=0)
     _previous_status: ExporterStatus | None = field(init=False, default=None)
 
+    @property
+    def name(self) -> str:
+        return self.exporter_name
+
     @contextmanager
     def __contextmanager__(self) -> Generator[Self]:
         logging.getLogger().addHandler(self._logging_handler)
