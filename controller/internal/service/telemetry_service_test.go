@@ -23,9 +23,13 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -496,6 +500,151 @@ func startTelemetryGRPCServer(t *testing.T, signer *oidc.Signer) (addr string, l
 	}
 	_ = client // returned via dialTelemetryClient helper below
 	return addr, logBuf, cleanup
+}
+
+func TestTelemetryService_StartDrainsLokiAfterGRPCStops(t *testing.T) {
+	signer := testSigner(t)
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := lis.Addr().String()
+	if err := lis.Close(); err != nil {
+		t.Fatalf("close listener: %v", err)
+	}
+
+	t.Setenv("EXTERNAL_CERT_PEM", "")
+	t.Setenv("EXTERNAL_KEY_PEM", "")
+	t.Setenv("GRPC_TELEMETRY_ENDPOINT", addr)
+
+	var (
+		mu           sync.Mutex
+		pushRejected bool
+		bodyHasEntry bool
+		probe        func() error
+		releaseOnce  sync.Once
+	)
+	release := make(chan struct{})
+	releaseFlush := func() { releaseOnce.Do(func() { close(release) }) }
+	entered := make(chan struct{})
+	var enteredOnce sync.Once
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		rejected := false
+		if probe != nil {
+			rejected = probe() != nil
+		}
+		mu.Lock()
+		if rejected {
+			pushRejected = true
+		}
+		if bytes.Contains(body, []byte("drain-me")) {
+			bodyHasEntry = true
+		}
+		mu.Unlock()
+		enteredOnce.Do(func() { close(entered) })
+		<-release
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	// Last registered cleanup runs first. Release the handler before Close,
+	// which waits for that handler to return.
+	t.Cleanup(srv.Close)
+	t.Cleanup(releaseFlush)
+
+	pusher, err := NewLokiPusher(LokiConfig{URL: srv.URL, QueueDepth: 10}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Keep the entry queued until the shutdown flush. A tick during gRPC
+	// stop would post it while PushLogs is still accepted.
+	pusher.flushInterval = time.Hour
+
+	svc := &TelemetryService{
+		BindAddr:        addr,
+		MetricsBindAddr: "0",
+		Signer:          signer,
+		Loki:            pusher,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- svc.Start(ctx)
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	var conn *grpc.ClientConn
+	tlsCreds := credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec // test-only self-signed cert
+	token := mustToken(t, signer, "exporter:jumpstarter:drain:1")
+	for time.Now().Before(deadline) {
+		conn, err = grpc.NewClient(addr, grpc.WithTransportCredentials(tlsCreds))
+		if err != nil {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		client := pb.NewTelemetryServiceClient(conn)
+		probeCtx := metadata.NewOutgoingContext(
+			context.Background(),
+			metadata.Pairs("authorization", "Bearer "+token),
+		)
+		probe = func() error {
+			_, err := client.PushLogs(probeCtx, &pb.PushLogsRequest{})
+			return err
+		}
+		_, err = client.PushLogs(probeCtx, &pb.PushLogsRequest{})
+		if err == nil || status.Code(err) != codes.Unavailable {
+			break
+		}
+		_ = conn.Close()
+		conn = nil
+		time.Sleep(10 * time.Millisecond)
+	}
+	if conn == nil {
+		cancel()
+		releaseFlush()
+		<-errCh
+		t.Fatal("telemetry gRPC server did not become ready")
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	svc.Loki.Enqueue(logEntry("drain-me"))
+	cancel()
+
+	select {
+	case <-entered:
+	case err := <-errCh:
+		t.Fatalf("Start returned before the Loki flush: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the shutdown Loki flush")
+	}
+
+	select {
+	case err := <-errCh:
+		t.Fatalf("Start returned while the Loki flush was still in flight: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	releaseFlush()
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not return after the Loki flush")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !bodyHasEntry {
+		t.Fatal("shutdown flush did not include the queued log entry")
+	}
+	if !pushRejected {
+		t.Fatal("shutdown flush ran while gRPC was still accepting PushLogs")
+	}
 }
 
 func mustToken(t *testing.T, signer *oidc.Signer, subject string) string {
