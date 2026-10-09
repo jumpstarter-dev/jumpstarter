@@ -32,8 +32,10 @@ CLIENT_CONFIG = ClientConfigV1Alpha1(
     drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
 )
 
-USER_CONFIG_CURRENT = UserConfigV1Alpha1(config=UserConfigV1Alpha1Config(current_client=CLIENT_CONFIG))
-USER_CONFIG_NOT_CURRENT = UserConfigV1Alpha1(config=UserConfigV1Alpha1Config(current_client=None))
+USER_CONFIG_CURRENT = UserConfigV1Alpha1(
+    config=UserConfigV1Alpha1Config.model_validate({"current-client": CLIENT_CONFIG})
+)
+USER_CONFIG_NOT_CURRENT = UserConfigV1Alpha1(config=UserConfigV1Alpha1Config.model_validate({"current-client": None}))
 
 
 @patch.object(ClientConfigV1Alpha1, "delete")
@@ -158,14 +160,14 @@ EXPORTER_TOKEN = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJ
 # Default config path
 default_config_path = ExporterConfigV1Alpha1.BASE_PATH / (EXPORTER_NAME + ".yaml")
 # Create a test exporter config
-EXPORTER_OBJECT = V1Alpha1Exporter(
-    api_version="jumpstarter.dev/v1alpha1",
-    kind="Exporter",
-    metadata=V1ObjectMeta(namespace="default", name=EXPORTER_NAME, creation_timestamp="2024-01-01T21:00:00Z"),
-    status=V1Alpha1ExporterStatus(
+EXPORTER_OBJECT = V1Alpha1Exporter.model_validate({
+    "api_version": "jumpstarter.dev/v1alpha1",
+    "kind": "Exporter",
+    "metadata": V1ObjectMeta(namespace="default", name=EXPORTER_NAME, creation_timestamp="2024-01-01T21:00:00Z"),
+    "status": V1Alpha1ExporterStatus(
         endpoint=EXPORTER_ENDPOINT, credential=V1ObjectReference(name=f"{EXPORTER_NAME}-credential"), devices=[]  # type: ignore[call-arg]
     ),
-)
+})
 EXPORTER_CONFIG = ExporterConfigV1Alpha1(
     alias=EXPORTER_NAME,
     metadata=ObjectMeta(namespace="default", name=EXPORTER_NAME),

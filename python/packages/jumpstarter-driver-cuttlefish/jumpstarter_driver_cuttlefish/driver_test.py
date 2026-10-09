@@ -652,10 +652,10 @@ def test_managed_initialization_preserves_startup_runtime_id(drv, tmp_path):
     initialize(str(state_path), str(runtime_id), BASE)
     config = {"managed": True, "runtime_id_path": str(runtime_id), "health_state_path": str(state_path),
               "env_config": {"instances": [{}]}, "health_ports": [7681]}
-    instance = Cuttlefish(**config)
+    instance = Cuttlefish(**config)  # ty: ignore[invalid-argument-type]
     assert instance._health["runtime_id"] == "runtime-1"
     assert instance._health["ports"] == [7681]
     instance.close()
     runtime_id.write_text("runtime-2")
     with pytest.raises(CuttlefishError, match="restarted"):
-        Cuttlefish(**config)
+        Cuttlefish(**config)  # ty: ignore[invalid-argument-type]

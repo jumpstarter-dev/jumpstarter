@@ -232,7 +232,7 @@ class CorelliumConsole(WebsocketNetwork):
         if console_id is None:
             raise ValueError('Console ID not found for "{self.patent.console_name}"')
         console_url = self.parent.api.get_instance_console_url(instance, console_id)
-
+        assert console_url is not None
         return console_url
 
     @url.setter

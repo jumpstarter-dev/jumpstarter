@@ -46,7 +46,7 @@ async def connect(
         if hasattr(client, "cli"):
             from anyio import to_thread
 
-            cli_cmd = await to_thread.run_sync(client.cli)
+            cli_cmd = await to_thread.run_sync(client.cli)  # ty: ignore[invalid-argument-type]
             cli_tree = walk_click_tree(cli_cmd)
 
     with contextlib.suppress(Exception):

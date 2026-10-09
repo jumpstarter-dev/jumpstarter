@@ -138,7 +138,7 @@ def _make_version_info(**overrides):
         },
     }
     defaults.update(overrides)
-    return VersionInfo(**defaults)
+    return VersionInfo(**defaults)  # ty: ignore[invalid-argument-type]
 
 
 def test_check_firmware_all_match():

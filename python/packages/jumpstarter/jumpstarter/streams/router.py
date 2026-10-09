@@ -32,14 +32,14 @@ class RouterStream(ObjectStream[bytes]):
         match self.context:
             case grpc.aio.StreamStreamCall():
                 self.cls = router_pb2.StreamRequest
-            case grpc._cython.cygrpc._ServicerContext():  # type: ignore[attr-defined]
+            case grpc._cython.cygrpc._ServicerContext():  # type: ignore[attr-defined]  # ty: ignore[possibly-missing-submodule]
                 self.cls = router_pb2.StreamResponse
             case _:
                 raise ValueError(f"RouterStream: invalid context type: {type(self.context)}")
 
-    async def send(self, payload: bytes) -> None:
+    async def send(self, item: bytes) -> None:
         try:
-            await self.context.write(self.cls(payload=payload))
+            await self.context.write(self.cls(payload=item))
         except grpc.aio.AioRpcError as e:
             raise BrokenResourceError from e
 
@@ -76,5 +76,5 @@ class RouterStream(ObjectStream[bytes]):
     async def aclose(self):
         with contextlib.suppress(grpc.aio.AioRpcError, InvalidStateError):
             await self.send_eof()
-            if isinstance(self.context, grpc._cython.cygrpc._ServicerContext):  # type: ignore[attr-defined]
+            if isinstance(self.context, grpc._cython.cygrpc._ServicerContext):  # type: ignore[attr-defined]  # ty: ignore[possibly-missing-submodule]
                 await self.context.abort(grpc.StatusCode.ABORTED, "RouterStream: aclose")

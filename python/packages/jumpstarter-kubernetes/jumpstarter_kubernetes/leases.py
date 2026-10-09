@@ -43,7 +43,7 @@ class V1Alpha1Lease(JsonBaseModel):
             raise TypeError(f"spec must be a dict, got {type(spec).__name__}: {spec!r}")
         selector_data = spec.get("selector", {})
         return V1Alpha1Lease(
-            api_version=data["apiVersion"],
+            apiVersion=data["apiVersion"],
             kind=data["kind"],
             metadata=V1ObjectMeta(
                 creation_timestamp=data["metadata"]["creationTimestamp"],
@@ -55,8 +55,8 @@ class V1Alpha1Lease(JsonBaseModel):
                 uid=data["metadata"]["uid"],
             ),
             status=V1Alpha1LeaseStatus(
-                begin_time=data["status"].get("beginTime", None),
-                end_time=data["status"].get("endTime", None),
+                beginTime=data["status"].get("beginTime", None),
+                endTime=data["status"].get("endTime", None),
                 ended=data["status"]["ended"],
                 exporter=V1ObjectReference(name=data["status"]["exporterRef"]["name"])
                 if "exporterRef" in data["status"]
@@ -74,9 +74,9 @@ class V1Alpha1Lease(JsonBaseModel):
                 ],
             ),
             spec=V1Alpha1LeaseSpec(
-                client=V1ObjectReference(name=spec["clientRef"]["name"]) if "clientRef" in spec else None,
+                client=V1ObjectReference(name=spec["clientRef"]["name"]) if "clientRef" in spec else None,  # ty: ignore[invalid-argument-type]
                 duration=spec.get("duration", None),
-                selector=V1Alpha1LeaseSelector(match_labels=selector_data.get("matchLabels", {})),
+                selector=V1Alpha1LeaseSelector(matchLabels=selector_data.get("matchLabels", {})),
             ),
         )
 

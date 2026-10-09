@@ -109,7 +109,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
-            super().__post_init__()
+            super().__post_init__()  # ty: ignore[unresolved-attribute]
 
         self.controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel)
         self.svc = ClientService(channel=self.channel, namespace=self.namespace)
@@ -146,6 +146,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     async def get(self):
         with translate_grpc_exceptions():
             svc = ClientService(channel=self.channel, namespace=self.namespace)
+            assert self.name is not None  # pragma: no cover
             return await svc.GetLease(name=self.name)
 
     @retry(
@@ -356,6 +357,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 )
             try:
                 # Unary grpc.aio calls need timeout=; AnyIO timeouts can leak CancelledError.
+                assert self.name is not None
                 return await self.controller.Dial(
                     jumpstarter_pb2.DialRequest(lease_name=self.name),
                     timeout=min(_DIAL_ATTEMPT_TIMEOUT, remaining),
@@ -556,6 +558,7 @@ class LeaseAcquisitionSpinner:
         """
         if self.spinner and self._should_show_spinner:
             self._current_message = f"[blue]{message}[/blue]"
+            assert self.start_time is not None
             elapsed = datetime.now(tz=UTC) - self.start_time
             elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
             self.spinner.update(f"{self._current_message} [dim]({elapsed_str})[/dim]")
@@ -568,6 +571,7 @@ class LeaseAcquisitionSpinner:
             )
 
             if should_log:
+                assert self.start_time is not None
                 elapsed = now - self.start_time
                 elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
                 logger.info(f"{message} ({elapsed_str})")
@@ -576,6 +580,7 @@ class LeaseAcquisitionSpinner:
     def tick(self):
         """Update the spinner with current elapsed time without changing the message."""
         if self.spinner and self._should_show_spinner and self._current_message:
+            assert self.start_time is not None
             elapsed = datetime.now(tz=UTC) - self.start_time
             elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
             # Use the stored current message and update with new elapsed time

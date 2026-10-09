@@ -14,7 +14,7 @@ from .storage import write_to_storage_device
 if sys.version_info >= (3, 14):
     from compression import zstd
 else:
-    from backports import zstd
+    from backports import zstd  # ty: ignore[unresolved-import]
 
 pytestmark = pytest.mark.anyio
 

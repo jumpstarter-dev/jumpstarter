@@ -93,7 +93,7 @@ export:
                 },
             }),
         },
-        config={},  # type: ignore[call-arg]
+        config={},
         path=path,
     )
 
@@ -180,6 +180,8 @@ export:
 
     config = ExporterConfigV1Alpha1.load("test-hooks")
 
+    assert config.hooks.before_lease is not None
+    assert config.hooks.after_lease is not None
     assert config.hooks.before_lease.script == 'echo "Pre-lease hook for $LEASE_NAME"\nj power on\n'
     assert config.hooks.after_lease.script == 'echo "Post-lease hook for $LEASE_NAME"\nj power off\n'
 
@@ -188,6 +190,8 @@ export:
     ExporterConfigV1Alpha1.save(config)
     reloaded_config = ExporterConfigV1Alpha1.load("test-hooks")
 
+    assert reloaded_config.hooks.before_lease is not None
+    assert reloaded_config.hooks.after_lease is not None
     assert reloaded_config.hooks.before_lease.script == config.hooks.before_lease.script
     assert reloaded_config.hooks.after_lease.script == config.hooks.after_lease.script
 

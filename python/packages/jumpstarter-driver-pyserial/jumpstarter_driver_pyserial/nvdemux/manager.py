@@ -183,8 +183,8 @@ class DemuxerManager:
                 logger.debug("Not installing signal handlers from non-main thread")
                 return
 
-            cls._original_sigterm_handler = signal.signal(signal.SIGTERM, make_handler(signal.SIGTERM))
-            cls._original_sigint_handler = signal.signal(signal.SIGINT, make_handler(signal.SIGINT))
+            cls._original_sigterm_handler = signal.signal(signal.SIGTERM, make_handler(signal.SIGTERM))  # ty: ignore[invalid-assignment]
+            cls._original_sigint_handler = signal.signal(signal.SIGINT, make_handler(signal.SIGINT))  # ty: ignore[invalid-assignment]
             cls._signal_handlers_installed = True
             logger.debug("Installed signal handlers for SIGTERM and SIGINT")
         except Exception as e:  # pragma: no cover  # noqa: BLE001
@@ -413,6 +413,7 @@ class DemuxerManager:
     def _wait_for_device(self) -> str | None:
         """Wait for device to appear. Returns resolved device path or None if shutdown."""
         while not self._shutdown.is_set():
+            assert self._device is not None
             resolved_device = _resolve_device(self._device)
             if resolved_device:
                 logger.debug("Found device: %s", resolved_device)
@@ -428,6 +429,7 @@ class DemuxerManager:
         On Linux, uses prctl(PR_SET_PDEATHSIG) to ensure the subprocess
         receives SIGTERM when the parent dies (including kill -9).
         """
+        assert self._demuxer_path is not None and self._chip is not None
         cmd = [self._demuxer_path, "-m", self._chip, "-d", device]
         logger.debug("Starting demuxer: %s", " ".join(cmd))
 
@@ -468,6 +470,7 @@ class DemuxerManager:
     def _read_demuxer_stderr(self):
         """Read demuxer stderr and check for catastrophic errors."""
         try:
+            assert self._process is not None and self._process.stderr is not None
             for line in iter(self._process.stderr.readline, ""):
                 if self._shutdown.is_set():
                     break
@@ -493,6 +496,7 @@ class DemuxerManager:
     def _read_demuxer_output(self):
         """Read demuxer stdout and parse all pts paths."""
         try:
+            assert self._process is not None and self._process.stdout is not None
             for line in iter(self._process.stdout.readline, ""):
                 if self._shutdown.is_set():
                     break

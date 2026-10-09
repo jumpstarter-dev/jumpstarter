@@ -16,6 +16,7 @@ def test_create_lease_passes_exporter_name_to_config():
 
     with patch("jumpstarter_cli.create.model_print") as model_print:
         # Skip Click config loading wrapper and call the command body directly.
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=config,
             selector=None,
@@ -46,6 +47,7 @@ def test_create_lease_passes_exporter_name_to_config():
 
 def test_create_lease_requires_selector_or_name():
     with pytest.raises(click.UsageError, match="one of --selector/-l or --name/-n is required"):
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=Mock(),
             selector=None,
@@ -63,6 +65,7 @@ def test_create_lease_requires_selector_or_name():
 
 def test_create_lease_rejects_empty_share_names():
     with pytest.raises(click.UsageError, match="--share must not contain empty client names"):
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=Mock(),
             selector="foo=bar",
@@ -85,6 +88,7 @@ def test_create_lease_parses_and_trims_share_names():
     config.create_lease.return_value = lease
 
     with patch("jumpstarter_cli.create.model_print"):
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=config,
             selector="foo=bar",
@@ -109,6 +113,7 @@ def test_create_lease_passes_tags_to_config():
     config.create_lease.return_value = lease
 
     with patch("jumpstarter_cli.create.model_print"):
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=config,
             selector="board=rpi4",
@@ -143,6 +148,7 @@ def test_create_lease_empty_tags_passes_none():
     config.create_lease.return_value = lease
 
     with patch("jumpstarter_cli.create.model_print"):
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=config,
             selector="board=rpi4",
@@ -172,6 +178,7 @@ def test_create_lease_empty_tags_passes_none():
 
 def test_create_lease_invalid_tag_format():
     with pytest.raises(click.UsageError, match="Invalid tag format"):
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=Mock(),
             selector="board=rpi4",
@@ -194,6 +201,7 @@ def test_create_lease_passes_context_to_config():
     config.create_lease.return_value = lease
 
     with patch("jumpstarter_cli.create.model_print"):
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=config,
             selector="board=rpi4",
@@ -228,6 +236,7 @@ def test_create_lease_empty_context_passes_none():
     config.create_lease.return_value = lease
 
     with patch("jumpstarter_cli.create.model_print"):
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=config,
             selector="board=rpi4",
@@ -257,6 +266,7 @@ def test_create_lease_empty_context_passes_none():
 
 def test_create_lease_invalid_context_format():
     with pytest.raises(click.UsageError, match="Invalid context format"):
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=Mock(),
             selector="board=rpi4",
@@ -275,6 +285,7 @@ def test_create_lease_invalid_context_format():
 def test_create_lease_context_key_too_long():
     long_key = "k" * 33
     with pytest.raises(click.UsageError, match="Context key too long"):
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=Mock(),
             selector="board=rpi4",
@@ -293,6 +304,7 @@ def test_create_lease_context_key_too_long():
 def test_create_lease_context_value_too_long():
     long_val = "v" * 65
     with pytest.raises(click.UsageError, match="Context value too long"):
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=Mock(),
             selector="board=rpi4",
@@ -311,6 +323,7 @@ def test_create_lease_context_value_too_long():
 def test_create_lease_too_many_context_entries():
     entries = tuple(f"key{i}=val{i}" for i in range(9))
     with pytest.raises(click.UsageError, match="Too many context entries"):
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=Mock(),
             selector="board=rpi4",
@@ -335,6 +348,7 @@ def test_create_lease_emits_deprecated_label_warnings():
     with patch("jumpstarter_cli.create.model_print"), patch("jumpstarter_cli.create.click") as mock_click:
         mock_click.style.side_effect = lambda text, **kwargs: text
         mock_click.UsageError = click.UsageError
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=config,
             selector="legacy-board=rpi4",
@@ -367,6 +381,7 @@ def test_create_lease_emits_deprecated_label_warning_without_message():
     with patch("jumpstarter_cli.create.model_print"), patch("jumpstarter_cli.create.click") as mock_click:
         mock_click.style.side_effect = lambda text, **kwargs: text
         mock_click.UsageError = click.UsageError
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=config,
             selector="old-key=val",
@@ -396,6 +411,7 @@ def test_create_lease_no_warnings_when_no_deprecated_labels():
 
     with patch("jumpstarter_cli.create.model_print"), patch("jumpstarter_cli.create.click") as mock_click:
         mock_click.UsageError = click.UsageError
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=config,
             selector="board=rpi4",

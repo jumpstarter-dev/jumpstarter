@@ -108,6 +108,7 @@ class SnmpTestAgent:
         self.requests.append(varbinds)
 
     def _run(self, sock: socket.socket):
+        assert self._loop is not None
         asyncio.set_event_loop(self._loop)
         try:
             try:
@@ -153,11 +154,13 @@ class SnmpTestAgent:
             if self._engine is not None:
                 self._engine.close_dispatcher()
         finally:
+            assert self._loop is not None
             self._loop.stop()
 
     def stop(self):
         if self._thread is None:
             return
+        assert self._loop is not None
         if self._error is None:
             self._loop.call_soon_threadsafe(self._shutdown)
         self._thread.join(timeout=10)
@@ -165,7 +168,7 @@ class SnmpTestAgent:
             raise RuntimeError("SNMP test agent did not stop in time")
 
     def __enter__(self) -> Self:
-        return self.start()
+        return self.start()  # ty: ignore[invalid-return-type]
 
     def __exit__(self, *exc_info):
         self.stop()

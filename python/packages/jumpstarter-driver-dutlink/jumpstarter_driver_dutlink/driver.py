@@ -32,12 +32,12 @@ class DutlinkConfig:
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
-            super().__post_init__()
+            super().__post_init__()  # ty: ignore[unresolved-attribute]
 
         for dev in usb.core.find(idVendor=0x2B23, idProduct=0x1012, find_all=True):
             serial = usb.util.get_string(dev, dev.iSerialNumber)
             if serial == self.serial or self.serial is None:
-                self.logger.debug(f"found dutlink board with serial {serial}")
+                self.logger.debug(f"found dutlink board with serial {serial}")  # ty: ignore[unresolved-attribute]
 
                 self.serial = serial
                 self.dev = dev
@@ -65,14 +65,14 @@ class DutlinkConfig:
         if direction == usb.ENDPOINT_IN:
             self.dev.ctrl_transfer(
                 bmRequestType=usb.ENDPOINT_OUT | usb.TYPE_VENDOR | usb.RECIP_INTERFACE,
-                wIndex=self.itf.bInterfaceNumber,
+                wIndex=self.itf.bInterfaceNumber,  # ty: ignore[unresolved-attribute]
                 bRequest=0x00,
             )
 
         op = actions.index(action)
         res = self.dev.ctrl_transfer(
             bmRequestType=direction | usb.TYPE_VENDOR | usb.RECIP_INTERFACE,
-            wIndex=self.itf.bInterfaceNumber,
+            wIndex=self.itf.bInterfaceNumber,  # ty: ignore[unresolved-attribute]
             bRequest=ty,
             wValue=op,
             data_or_wLength=(value if direction == usb.ENDPOINT_OUT else 512),
@@ -80,7 +80,7 @@ class DutlinkConfig:
 
         if direction == usb.ENDPOINT_IN:
             str_value = bytes(res).decode("utf-8")
-            self.logger.debug("ctrl_transfer result: %s", str_value)
+            self.logger.debug("ctrl_transfer result: %s", str_value)  # ty: ignore[unresolved-attribute]
             return str_value
 
 
@@ -102,7 +102,7 @@ class DutlinkSerial(PySerial, DutlinkSerialConfig):
 class DutlinkPower(DutlinkConfig, PowerInterface, Driver):
     last_action: str | None = field(default=None)
 
-    def control(self, action):
+    def control(self, action):  # ty: ignore[invalid-method-override]
         self.logger.debug(f"power control: {action}")
         if self.last_action == action:
             return
@@ -173,7 +173,7 @@ class DutlinkPower(DutlinkConfig, PowerInterface, Driver):
 class DutlinkStorageMux(DutlinkConfig, StorageMuxFlasherInterface, Driver):
     storage_device: str
 
-    def control(self, action):
+    def control(self, action):  # ty: ignore[invalid-method-override]
         self.logger.debug(f"storage control: {action}")
         return super().control(
             usb.ENDPOINT_OUT,

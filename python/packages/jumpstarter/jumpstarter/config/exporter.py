@@ -407,7 +407,7 @@ class ExporterConfigV1Alpha1(BaseModel):
                     "children": self.export,
                 }).instantiate,
                 tls=self.tls,
-                grpc_options=self.grpcOptions,
+                grpc_options=self.grpcOptions or {},  # ty: ignore[invalid-argument-type]
                 hook_executor=hook_executor,
                 motd=self.motd,
                 exit_on_lease_end=self.exit_on_lease_end,

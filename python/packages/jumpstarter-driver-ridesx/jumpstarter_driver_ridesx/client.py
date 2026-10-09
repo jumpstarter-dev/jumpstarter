@@ -174,7 +174,7 @@ class RideSXClient(FlasherClient, CompositeClient):
 
         return result
 
-    def flash(
+    def flash(  # ty: ignore[invalid-method-override]
         self,
         path: str | dict[str, str],
         *,

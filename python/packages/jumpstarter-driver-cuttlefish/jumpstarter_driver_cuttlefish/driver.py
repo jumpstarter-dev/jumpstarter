@@ -390,7 +390,7 @@ class Cuttlefish(Driver):
         device = self._cvd_device
         self.logger.info(f"Auto-connecting ADB to {device}")
         try:
-            adb.connect_device(device)
+            adb.connect_device(device)  # ty: ignore[unresolved-attribute]
         except Exception:  # noqa: BLE001
             self.logger.warning("ADB connect to %s failed, will retry during boot wait", device)
         return device
@@ -402,7 +402,7 @@ class Cuttlefish(Driver):
         device = self._cvd_device
         self.logger.info(f"Disconnecting ADB from {device}")
         with contextlib.suppress(Exception):
-            adb.disconnect_device(device)
+            adb.disconnect_device(device)  # ty: ignore[unresolved-attribute]
 
     def _wait_boot(self, timeout: float = 300):
         """Wait for CVD to be ADB-reachable and fully booted."""
@@ -413,8 +413,8 @@ class Cuttlefish(Driver):
         device = self._cvd_device
 
         deadline = time.monotonic() + timeout
-        adb_path = adb.adb_path
-        adb_env = adb.adb_env()
+        adb_path = adb.adb_path  # ty: ignore[unresolved-attribute]
+        adb_env = adb.adb_env()  # ty: ignore[unresolved-attribute]
 
         self.logger.info("Waiting for %s to come online", device)
         while time.monotonic() < deadline:

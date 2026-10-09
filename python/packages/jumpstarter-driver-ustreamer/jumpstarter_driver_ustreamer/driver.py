@@ -74,7 +74,7 @@ class UStreamer(VideoInterface, Driver):
 
         self.socketp = Path(self.tempdir.name) / "socket"
 
-        cmdline += ["--unix", self.socketp]
+        cmdline += ["--unix", str(self.socketp)]
 
         self.process = Popen(
             cmdline,
@@ -93,7 +93,7 @@ class UStreamer(VideoInterface, Driver):
     @export
     async def state(self):  # pragma: no cover
         async with (
-            ClientSession(connector=UnixConnector(path=self.socketp)) as session,
+            ClientSession(connector=UnixConnector(path=str(self.socketp))) as session,
             session.get("http://localhost/state") as r,
         ):
             json = await r.json()
@@ -103,7 +103,7 @@ class UStreamer(VideoInterface, Driver):
     @export
     async def snapshot(self):  # pragma: no cover
         async with (
-            ClientSession(connector=UnixConnector(path=self.socketp)) as session,
+            ClientSession(connector=UnixConnector(path=str(self.socketp))) as session,
             session.get("http://localhost/snapshot") as r,
         ):
             data = await r.read()

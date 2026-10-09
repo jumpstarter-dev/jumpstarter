@@ -41,6 +41,7 @@ class ThrottledStream(ObjectStream):
         if not item:
             return
 
+        assert self.cps is not None
         delay_per_char = 1.0 / self.cps
 
         # Send data character by character with delay
@@ -54,12 +55,12 @@ class ThrottledStream(ObjectStream):
 
     async def receive(self):
         if hasattr(self.stream, "receive"):
-            return await self.stream.receive()  # type: ignore[no-any-return]
+            return await self.stream.receive()  # ty: ignore[call-non-callable]
         raise RuntimeError("receive() called on send-only ThrottledStream")
 
     async def send_eof(self):
         if hasattr(self.stream, "send_eof"):
-            await self.stream.send_eof()
+            await self.stream.send_eof()  # ty: ignore[call-non-callable]
 
     async def aclose(self):
         await self.stream.aclose()
@@ -74,7 +75,7 @@ class AsyncSerial(ObjectStream):
     def __post_init__(self):
         # Replace writer with throttled version if chars-per-second throttling is set
         if self.cps is not None and self.cps > 0:
-            self.writer = ThrottledStream(stream=self.writer, cps=self.cps)
+            self.writer = ThrottledStream(stream=self.writer, cps=self.cps)  # ty: ignore[invalid-argument-type]
 
     async def send(self, item: bytes):
         await self.writer.send(item)
@@ -84,7 +85,7 @@ class AsyncSerial(ObjectStream):
 
     async def send_eof(self):
         if hasattr(self.writer, "send_eof"):
-            await self.writer.send_eof()
+            await self.writer.send_eof()  # ty: ignore[call-non-callable]
 
     async def aclose(self):
         try:

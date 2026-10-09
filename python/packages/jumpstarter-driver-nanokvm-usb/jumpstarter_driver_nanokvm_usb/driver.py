@@ -327,14 +327,14 @@ class NanoKVMUSB(Composite):
                 tcp_bind=self.vnc_tcp_bind,
                 layout=self.vnc_layout,
                 max_clients=self.vnc_max_clients,
-                on_client=self._shared_device.ensure_connected,
+                on_client=self._shared_device.ensure_connected,  # ty: ignore[invalid-argument-type]
             )
             self.children["vnc"] = NanoKVMUSBVNC(
                 path=vnc_path,
                 default_encrypt=self.vnc_encrypt,
             )
         for name in ("video", "hid"):
-            self.children[name]._owns_device = False
+            self.children[name]._owns_device = False  # ty: ignore[unresolved-attribute]
 
         super().__post_init__()
         if self._vnc_server is not None:

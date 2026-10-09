@@ -25,12 +25,12 @@ class WebsocketServerStream(ObjectStream[bytes]):
     ws: WSConnection = field(init=False, default_factory=lambda: WSConnection(ConnectionType.SERVER))
     queue: tuple[MemoryObjectSendStream[bytes], MemoryObjectReceiveStream[bytes]] = field(
         init=False,
-        default_factory=lambda: create_memory_object_stream[bytes](32),  # ty: ignore[call-non-callable]
+        default_factory=lambda: create_memory_object_stream[bytes](32),
     )
 
-    async def send(self, data: bytes) -> None:
+    async def send(self, item: bytes) -> None:
         try:
-            self.ws.receive_data(data)
+            self.ws.receive_data(item)
         except RemoteProtocolError as e:
             raise BrokenResourceError from e
 
@@ -42,7 +42,7 @@ class WebsocketServerStream(ObjectStream[bytes]):
                     case CloseConnection():
                         await self.queue[0].send(self.ws.send(event.response()))
                     case Message():
-                        await self.stream.send(event.data)
+                        await self.stream.send(event.data)  # ty: ignore[invalid-argument-type]
                     case Ping():
                         await self.queue[0].send(self.ws.send(event.response()))
         except LocalProtocolError as e:
@@ -78,11 +78,12 @@ class WebsocketClientStream(ObjectStream[bytes]):
 
     conn: WSSClientConnection
 
-    async def send(self, data: bytes) -> None:
-        await self.conn.send(data)
+    async def send(self, item: bytes) -> None:
+        await self.conn.send(item)
 
     async def receive(self) -> bytes:
-        return await self.conn.recv()
+        result = await self.conn.recv()
+        return result if isinstance(result, bytes) else result.encode()
 
     async def send_eof(self):
         pass

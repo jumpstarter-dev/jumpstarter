@@ -3,7 +3,6 @@ from collections import deque
 from collections.abc import Generator
 from contextlib import asynccontextmanager, contextmanager, suppress
 from dataclasses import dataclass, field
-from logging.handlers import QueueHandler
 from typing import TYPE_CHECKING, Self
 from uuid import UUID
 
@@ -52,7 +51,7 @@ class Session(
     lease_context: "LeaseContext | None" = field(init=False, default=None)
 
     _logging_queue: deque = field(init=False)
-    _logging_handler: QueueHandler = field(init=False)
+    _logging_handler: LogHandler = field(init=False)
     _current_status: ExporterStatus = field(init=False, default=ExporterStatus.AVAILABLE)
     _status_message: str = field(init=False, default="")
     _status_update_event: Event = field(init=False)
@@ -337,7 +336,7 @@ class Session(
         async for v in self[UUID(request.uuid)].StreamingDriverCall(request, context):
             yield v
 
-    async def Stream(self, _request_iterator, context):
+    async def Stream(self, _request_iterator, context):  # ty: ignore[invalid-method-override]
         request = StreamRequestMetadata(**dict(list(context.invocation_metadata()))).request  # type: ignore[call-arg]
         logger.debug("Streaming(%s)", request)
         try:

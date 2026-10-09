@@ -32,9 +32,9 @@ class VNClient(CompositeClient):
         """Create a new stream, proxied to the underlying TCP driver."""
         return self.tcp.stream(method)
 
-    async def stream_async(self, method="connect"):
+    def stream_async(self, method="connect"):
         """Create a new async stream, proxied to the underlying TCP driver."""
-        return await self.tcp.stream_async(method)
+        return self.tcp.stream_async(method)
 
     @contextlib.contextmanager
     def session(self, *, encrypt: bool = True) -> typing.Iterator[str]:

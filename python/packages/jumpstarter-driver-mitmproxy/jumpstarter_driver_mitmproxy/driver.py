@@ -474,7 +474,7 @@ class MitmproxyDriver(Driver):
             Status message with proxy and (optionally) web UI URLs.
         """
         if port:
-            self.listen.port = port
+            self.listen.port = port  # ty: ignore[invalid-assignment]
         if self._process is not None and self._process.poll() is None:
             return (
                 f"Already running in '{self._current_mode}' mode "
@@ -491,8 +491,8 @@ class MitmproxyDriver(Driver):
             return "Error: replay_file is required for replay mode"
 
         # Ensure directories exist
-        Path(self.directories.flows).mkdir(parents=True, exist_ok=True)
-        Path(self.directories.mocks).mkdir(parents=True, exist_ok=True)
+        Path(self.directories.flows).mkdir(parents=True, exist_ok=True)  # ty: ignore[unresolved-attribute]
+        Path(self.directories.mocks).mkdir(parents=True, exist_ok=True)  # ty: ignore[unresolved-attribute]
 
         # Start capture server (before addon generation so socket path is set)
         self._start_capture_server()
@@ -520,7 +520,7 @@ class MitmproxyDriver(Driver):
         )
 
         # Wait for startup by polling the listen port
-        self._wait_for_port(self.listen.host, self.listen.port, timeout=10)
+        self._wait_for_port(self.listen.host, self.listen.port, timeout=10)  # ty: ignore[unresolved-attribute]
 
         startup_error = self._check_startup_failure(web_ui)
         if startup_error:
@@ -542,16 +542,16 @@ class MitmproxyDriver(Driver):
         binary = "mitmweb" if web_ui else "mitmdump"
         cmd = [
             binary,
-            "--listen-host", self.listen.host,
-            "--listen-port", str(self.listen.port),
-            "--set", f"confdir={self.directories.conf}",
+            "--listen-host", self.listen.host,  # ty: ignore[unresolved-attribute]
+            "--listen-port", str(self.listen.port),  # ty: ignore[unresolved-attribute]
+            "--set", f"confdir={self.directories.conf}",  # ty: ignore[unresolved-attribute]
             "--quiet",
         ]
 
         if web_ui:
             cmd.extend([
-                "--web-host", self.web.host,
-                "--web-port", str(self.web.port),
+                "--web-host", self.web.host,  # ty: ignore[unresolved-attribute]
+                "--web-port", str(self.web.port),  # ty: ignore[unresolved-attribute]
                 "--set", "web_open_browser=false",
                 "--set", f"web_password={self._web_password}",
             ])
@@ -576,7 +576,7 @@ class MitmproxyDriver(Driver):
         elif mode == "record":
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             flow_file = str(
-                Path(self.directories.flows) / f"capture_{timestamp}.bin"
+                Path(self.directories.flows) / f"capture_{timestamp}.bin"  # ty: ignore[unresolved-attribute]
             )
             cmd.extend(["-w", flow_file])
             self._current_flow_file = flow_file
@@ -584,7 +584,7 @@ class MitmproxyDriver(Driver):
         elif mode == "replay":
             replay_path = Path(replay_file)
             if not replay_path.is_absolute():
-                replay_path = Path(self.directories.flows) / replay_path
+                replay_path = Path(self.directories.flows) / replay_path  # ty: ignore[unresolved-attribute]
             if not replay_path.exists():
                 self._stop_capture_server()
                 return f"Replay file not found: {replay_path}"
@@ -598,7 +598,7 @@ class MitmproxyDriver(Driver):
         # it finds no matching endpoints and passes requests through
         # while still recording traffic via the response() hook.
         # Regenerate every session so the capture socket path is current.
-        addon_path = Path(self.directories.addons) / "mock_addon.py"
+        addon_path = Path(self.directories.addons) / "mock_addon.py"  # ty: ignore[unresolved-attribute]
         self._generate_default_addon(addon_path)
         cmd.extend(["-s", str(addon_path)])
 
@@ -608,13 +608,13 @@ class MitmproxyDriver(Driver):
         """Build the status message after successful startup."""
         msg = (
             f"Started in '{mode}' mode on "
-            f"{self.listen.host}:{self.listen.port} "
-            f"(PID {self._process.pid})"
+            f"{self.listen.host}:{self.listen.port} "  # ty: ignore[unresolved-attribute]
+            f"(PID {self._process.pid})"  # ty: ignore[unresolved-attribute]
         )
 
         if web_ui:
             msg += (
-                f" | Web UI: http://{self.web.host}:{self.web.port}"
+                f" | Web UI: http://{self.web.host}:{self.web.port}"  # ty: ignore[unresolved-attribute]
                 f"/?token={self._web_password}"
             )
 
@@ -628,22 +628,22 @@ class MitmproxyDriver(Driver):
 
         Returns an error message if the process failed, or None on success.
         """
-        if self._process.poll() is None:
+        if self._process.poll() is None:  # ty: ignore[unresolved-attribute]
             return None
 
-        exit_code = self._process.returncode
-        stderr = self._process.stderr.read().decode() if self._process.stderr else ""
+        exit_code = self._process.returncode  # ty: ignore[unresolved-attribute]
+        stderr = self._process.stderr.read().decode() if self._process.stderr else ""  # ty: ignore[unresolved-attribute]
         self._process = None
         self._stop_capture_server()
         port_hint = ""
-        if self._is_port_in_use(self.listen.host, self.listen.port):
+        if self._is_port_in_use(self.listen.host, self.listen.port):  # ty: ignore[unresolved-attribute]
             port_hint = (
-                f" (port {self.listen.port} is already in use"
+                f" (port {self.listen.port} is already in use"  # ty: ignore[unresolved-attribute]
                 " - is another mitmproxy instance running?)"
             )
-        elif web_ui and self._is_port_in_use(self.web.host, self.web.port):
+        elif web_ui and self._is_port_in_use(self.web.host, self.web.port):  # ty: ignore[unresolved-attribute]
             port_hint = (
-                f" (web UI port {self.web.port} is already in use"
+                f" (web UI port {self.web.port} is already in use"  # ty: ignore[unresolved-attribute]
                 " - is another mitmproxy instance running?)"
             )
         logger.error(
@@ -792,12 +792,12 @@ class MitmproxyDriver(Driver):
             "mode": self._current_mode,
             "pid": self._process.pid if running else None,
             "proxy_address": (
-                f"{self.listen.host}:{self.listen.port}"
+                f"{self.listen.host}:{self.listen.port}"  # ty: ignore[unresolved-attribute]
                 if running else None
             ),
             "web_ui_enabled": self._web_ui_enabled,
             "web_ui_address": (
-                f"http://{self.web.host}:{self.web.port}"
+                f"http://{self.web.host}:{self.web.port}"  # ty: ignore[unresolved-attribute]
                 f"/?token={self._web_password}"
                 if running and self._web_ui_enabled else None
             ),
@@ -825,8 +825,8 @@ class MitmproxyDriver(Driver):
         from anyio import connect_tcp
 
         async with await connect_tcp(
-            remote_host=self.web.host,
-            remote_port=self.web.port,
+            remote_host=self.web.host,  # ty: ignore[unresolved-attribute]
+            remote_port=self.web.port,  # ty: ignore[unresolved-attribute]
         ) as stream:
             yield stream
 
@@ -1254,7 +1254,7 @@ class MitmproxyDriver(Driver):
         Returns:
             JSON array of addon names (without .py extension).
         """
-        addon_path = Path(self.directories.addons)
+        addon_path = Path(self.directories.addons)  # ty: ignore[unresolved-attribute]
         if not addon_path.exists():
             return json.dumps([])
 
@@ -1268,13 +1268,13 @@ class MitmproxyDriver(Driver):
         """Resolve a scenario file path, returning Path or error string."""
         path = Path(scenario_file)
         if not path.is_absolute():
-            path = Path(self.directories.mocks) / path
+            path = Path(self.directories.mocks) / path  # ty: ignore[unresolved-attribute]
         if path.is_dir():
             path = path / "scenario.yaml"
-        mocks_base = Path(self.directories.mocks).resolve()
+        mocks_base = Path(self.directories.mocks).resolve()  # ty: ignore[unresolved-attribute]
         resolved = path.resolve()
         if not resolved.is_relative_to(mocks_base):
-            return f"Invalid scenario path: must be within {self.directories.mocks}"
+            return f"Invalid scenario path: must be within {self.directories.mocks}"  # ty: ignore[unresolved-attribute]
         if not resolved.exists():
             return f"Scenario file not found: {path}"
         return resolved
@@ -1385,7 +1385,7 @@ class MitmproxyDriver(Driver):
         Returns:
             JSON array of flow file info (name, size, modified time).
         """
-        flow_path = Path(self.directories.flows)
+        flow_path = Path(self.directories.flows)  # ty: ignore[unresolved-attribute]
         if not flow_path.is_dir():
             return json.dumps([])
         files = []
@@ -1420,7 +1420,7 @@ class MitmproxyDriver(Driver):
             ValueError: If ``name`` contains path traversal sequences.
             FileNotFoundError: If the flow file does not exist.
         """
-        flow_path = Path(self.directories.flows)
+        flow_path = Path(self.directories.flows)  # ty: ignore[unresolved-attribute]
         src = (flow_path / name).resolve()
         # Guard against path traversal
         if not src.is_relative_to(flow_path.resolve()):
@@ -1447,7 +1447,7 @@ class MitmproxyDriver(Driver):
         Returns:
             Absolute path to the CA certificate file.
         """
-        cert_path = Path(self.directories.conf) / "mitmproxy-ca-cert.pem"
+        cert_path = Path(self.directories.conf) / "mitmproxy-ca-cert.pem"  # ty: ignore[unresolved-attribute]
         if cert_path.exists():
             return str(cert_path)
         return f"CA cert not found at {cert_path}. Start proxy once to generate."
@@ -1460,7 +1460,7 @@ class MitmproxyDriver(Driver):
             The PEM-encoded CA certificate contents, or an error
             message starting with ``"Error:"`` if not found.
         """
-        cert_path = Path(self.directories.conf) / "mitmproxy-ca-cert.pem"
+        cert_path = Path(self.directories.conf) / "mitmproxy-ca-cert.pem"  # ty: ignore[unresolved-attribute]
         if not cert_path.exists():
             return (
                 f"Error: CA cert not found at {cert_path}. "
@@ -1562,7 +1562,7 @@ class MitmproxyDriver(Driver):
             url_base = f"{parsed_url.scheme}://{parsed_url.netloc}{base_path}"
             groups.setdefault(url_base, []).append(req)
 
-        files_dir = Path(self.directories.files)
+        files_dir = Path(self.directories.files)  # ty: ignore[unresolved-attribute]
         endpoints, file_paths = self._build_grouped_endpoints(
             groups, files_dir,
         )
@@ -1747,7 +1747,7 @@ class MitmproxyDriver(Driver):
         Returns:
             Message with the number of removed files.
         """
-        spool_dir = Path(self.directories.data) / "capture-spool"
+        spool_dir = Path(self.directories.data) / "capture-spool"  # ty: ignore[unresolved-attribute]
         if not spool_dir.exists():
             return "No spool directory found"
 
@@ -1772,7 +1772,7 @@ class MitmproxyDriver(Driver):
         Yields:
             Base64-encoded chunks of file content.
         """
-        base = Path(self.directories.files).resolve()
+        base = Path(self.directories.files).resolve()  # ty: ignore[unresolved-attribute]
         src = (base / relative_path).resolve()
         if not src.is_relative_to(base):
             logger.error("Blocked path traversal in get_captured_file: %s", relative_path)
@@ -1803,7 +1803,7 @@ class MitmproxyDriver(Driver):
         Returns:
             Confirmation message.
         """
-        base = Path(self.directories.files).resolve()
+        base = Path(self.directories.files).resolve()  # ty: ignore[unresolved-attribute]
         dest = (base / relative_path).resolve()
         if not dest.is_relative_to(base):
             return f"Invalid file path: {relative_path}"
@@ -1845,13 +1845,13 @@ class MitmproxyDriver(Driver):
     def _start_capture_server(self):
         """Create a Unix domain socket for receiving capture events."""
         # Ensure the spool directory exists for response body capture
-        Path(self.directories.data, "capture-spool").mkdir(
+        Path(self.directories.data, "capture-spool").mkdir(  # ty: ignore[unresolved-attribute]
             mode=0o700, parents=True, exist_ok=True,
         )
 
         # Use a short path to avoid the ~104-char AF_UNIX limit on macOS.
         # Try {data}/capture.sock first; fall back to a temp file.
-        preferred = str(Path(self.directories.data) / "capture.sock")
+        preferred = str(Path(self.directories.data) / "capture.sock")  # ty: ignore[unresolved-attribute]
         if len(preferred) < 100:
             sock_path = preferred
             Path(sock_path).parent.mkdir(parents=True, exist_ok=True)
@@ -1887,7 +1887,7 @@ class MitmproxyDriver(Driver):
         """Accept connections on the capture socket."""
         while self._capture_running:
             try:
-                conn, _ = self._capture_server_sock.accept()
+                conn, _ = self._capture_server_sock.accept()  # ty: ignore[unresolved-attribute]
                 t = threading.Thread(
                     target=self._capture_read_loop,
                     args=(conn,),
@@ -1961,12 +1961,12 @@ class MitmproxyDriver(Driver):
         import shutil
 
         for dirname in ("capture-spool",):
-            spool = Path(self.directories.data) / dirname
+            spool = Path(self.directories.data) / dirname  # ty: ignore[unresolved-attribute]
             if spool.is_dir():
                 shutil.rmtree(spool, ignore_errors=True)
                 logger.debug("Cleaned spool directory: %s", spool)
 
-        files_dir = Path(self.directories.files)
+        files_dir = Path(self.directories.files)  # ty: ignore[unresolved-attribute]
         if files_dir.is_dir():
             shutil.rmtree(files_dir, ignore_errors=True)
             logger.debug("Cleaned files directory: %s", files_dir)
@@ -1996,7 +1996,7 @@ class MitmproxyDriver(Driver):
         if self.mock_scenario:
             scenario_path = Path(self.mock_scenario)
             if not scenario_path.is_absolute():
-                scenario_path = Path(self.directories.mocks) / scenario_path
+                scenario_path = Path(self.directories.mocks) / scenario_path  # ty: ignore[unresolved-attribute]
             if scenario_path.is_dir():
                 scenario_path = scenario_path / "scenario.yaml"
             if scenario_path.exists():
@@ -2019,14 +2019,14 @@ class MitmproxyDriver(Driver):
 
     def _write_mock_config(self):
         """Write mock endpoint definitions to disk in v2 format."""
-        mock_path = Path(self.directories.mocks)
+        mock_path = Path(self.directories.mocks)  # ty: ignore[unresolved-attribute]
         mock_path.mkdir(parents=True, exist_ok=True)
         config_file = mock_path / "endpoints.json"
 
         v2_config = {
             "config": {
-                "files_dir": self.directories.files,
-                "addons_dir": self.directories.addons,
+                "files_dir": self.directories.files,  # ty: ignore[unresolved-attribute]
+                "addons_dir": self.directories.addons,  # ty: ignore[unresolved-attribute]
                 "default_latency_ms": 0,
                 "default_content_type": "application/json",
             },
@@ -2050,7 +2050,7 @@ class MitmproxyDriver(Driver):
 
     def _write_state(self):
         """Write shared state store to disk for addon hot-reload."""
-        mock_path = Path(self.directories.mocks)
+        mock_path = Path(self.directories.mocks)  # ty: ignore[unresolved-attribute]
         mock_path.mkdir(parents=True, exist_ok=True)
         state_file = mock_path / "state.json"
 
@@ -2088,7 +2088,7 @@ class MitmproxyDriver(Driver):
             content = path.read_text()
             content = content.replace(
                 '/opt/jumpstarter/mitmproxy/mock-responses',
-                self.directories.mocks,
+                self.directories.mocks,  # ty: ignore[unresolved-attribute]
             )
             content = content.replace(
                 '/opt/jumpstarter/mitmproxy/capture.sock',
@@ -2096,17 +2096,18 @@ class MitmproxyDriver(Driver):
             )
             content = content.replace(
                 '/opt/jumpstarter/mitmproxy/capture-spool',
-                str(Path(self.directories.data) / "capture-spool"),
+                str(Path(self.directories.data) / "capture-spool"),  # ty: ignore[unresolved-attribute]
             )
             path.write_text(content)
             logger.info("Installed bundled v2 addon: %s", path)
             return
 
         # Fallback: generate minimal v2-compatible addon inline
+        mocks_dir = self.directories.mocks  # ty: ignore[unresolved-attribute]
         addon_code = f'''\
 """
 Auto-generated mitmproxy addon (v2 format) for DUT backend mocking.
-Reads from: {self.directories.mocks}/endpoints.json
+Reads from: {mocks_dir}/endpoints.json
 Managed by jumpstarter-driver-mitmproxy.
 """
 import json, os, time
@@ -2114,7 +2115,7 @@ from pathlib import Path
 from mitmproxy import http, ctx
 
 class MitmproxyMockAddon:
-    MOCK_DIR = "{self.directories.mocks}"
+    MOCK_DIR = "{mocks_dir}"
     def __init__(self):
         self.config = {{}}
         self.endpoints = {{}}

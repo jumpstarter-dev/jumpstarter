@@ -8,7 +8,7 @@ from functools import wraps
 from typing import ClassVar
 
 import aiohttp
-import certifi
+import certifi  # ty: ignore[unresolved-import]
 import click
 from aiohttp import web
 from anyio import create_memory_object_stream, sleep
@@ -110,7 +110,7 @@ class Config:
             session.verify = False
             # The user has already opted into insecure TLS (via --insecure flag
             # or config), so urllib3's InsecureRequestWarning is redundant noise.
-            import urllib3
+            import urllib3  # ty: ignore[unresolved-import]
 
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         else:
@@ -191,7 +191,8 @@ class Config:
             await runner.cleanup()
             raise click.ClickException(f"Failed to start callback server on port {port}: {e}") from None
 
-        redirect_uri = f"http://localhost:{site._server.sockets[0].getsockname()[1]}/callback"
+        assert site._server is not None
+        redirect_uri = f"http://localhost:{site._server.sockets[0].getsockname()[1]}/callback"  # ty: ignore[unresolved-attribute]
 
         client = self.client(redirect_uri=redirect_uri)
 

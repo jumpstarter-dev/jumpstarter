@@ -489,10 +489,10 @@ class RfbServer:
         last_pixels: bytes | None,
         force_full: bool,
     ) -> tuple[int, bytes | None, bool] | None:
-        pump = self._pump() if callable(self._pump) else self._pump
+        pump = self._pump() if callable(self._pump) else self._pump  # ty: ignore[call-top-callable]
         if pump is None:
             return None
-        got = pump.wait_jpeg(timeout=0.05, after_generation=last_gen if last_gen >= 0 else None)
+        got = pump.wait_jpeg(timeout=0.05, after_generation=last_gen if last_gen >= 0 else None)  # ty: ignore[unresolved-attribute]
         if got is None:
             return None
         jpeg, gen = got

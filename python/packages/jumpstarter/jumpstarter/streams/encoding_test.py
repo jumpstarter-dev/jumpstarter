@@ -12,7 +12,7 @@ from anyio.streams.stapled import StapledObjectStream
 if sys.version_info >= (3, 14):
     from compression import zstd
 else:
-    from backports import zstd
+    from backports import zstd  # ty: ignore[unresolved-import]
 
 from .encoding import (
     COMPRESSION_SIGNATURES,

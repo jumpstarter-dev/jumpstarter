@@ -97,8 +97,8 @@ class _DrainDeadlineClock:
             self._deadline = real_time + DRAIN_TIMEOUT_SECONDS
             return real_time
         if self._call_count == 2:
-            return self._deadline - 0.001  # type: ignore[operator]
-        return self._deadline + 1.0  # type: ignore[operator]
+            return self._deadline - 0.001  # ty: ignore[unsupported-operator]
+        return self._deadline + 1.0  # ty: ignore[unsupported-operator]
 
 
 class TestFlushLines:
@@ -136,8 +136,8 @@ class TestFlushLines:
 @pytest.fixture
 def hook_config() -> HookConfigV1Alpha1:
     return HookConfigV1Alpha1(
-        before_lease=HookInstanceConfigV1Alpha1(script="echo 'Pre-lease hook executed'", timeout=10),
-        after_lease=HookInstanceConfigV1Alpha1(script="echo 'Post-lease hook executed'", timeout=10),
+        beforeLease=HookInstanceConfigV1Alpha1(script="echo 'Pre-lease hook executed'", timeout=10),
+        afterLease=HookInstanceConfigV1Alpha1(script="echo 'Post-lease hook executed'", timeout=10),
     )
 
 
@@ -179,7 +179,7 @@ class TestHookExecutor:
 
     async def test_successful_hook_execution(self, lease_scope) -> None:
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="echo 'Pre-lease hook executed'", timeout=10),
+            beforeLease=HookInstanceConfigV1Alpha1(script="echo 'Pre-lease hook executed'", timeout=10),
         )
         executor = HookExecutor(config=hook_config)
         result = await executor.execute_before_lease_hook(lease_scope)
@@ -187,7 +187,7 @@ class TestHookExecutor:
 
     async def test_failed_hook_execution(self, lease_scope) -> None:
         failed_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="endLease"),
+            beforeLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="endLease"),
         )
         executor = HookExecutor(config=failed_config)
 
@@ -202,7 +202,7 @@ class TestHookExecutor:
 
     async def test_hook_timeout(self, lease_scope) -> None:
         timeout_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="sleep 60", timeout=1, on_failure="exit"),
+            beforeLease=HookInstanceConfigV1Alpha1(script="sleep 60", timeout=1, onFailure="exit"),
         )
         executor = HookExecutor(config=timeout_config)
 
@@ -217,7 +217,7 @@ class TestHookExecutor:
     @macos_pty_xfail
     async def test_hook_environment_variables(self, lease_scope) -> None:
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(
                 script="echo LEASE_NAME=$LEASE_NAME; echo CLIENT_NAME=$CLIENT_NAME", timeout=10
             ),
         )
@@ -232,7 +232,7 @@ class TestHookExecutor:
     async def test_before_lease_hook_appends_motd(self, lease_scope) -> None:
         lease_scope.session.motd = None
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(
                 script='echo "flashed image: test-v1" > "$JMP_MOTD_FILE"', timeout=10
             ),
         )
@@ -243,7 +243,7 @@ class TestHookExecutor:
     async def test_before_lease_hook_appends_motd_to_existing(self, lease_scope) -> None:
         lease_scope.session.motd = "Welcome to test-exporter!"
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(
                 script='echo "flashed image: test-v1" > "$JMP_MOTD_FILE"', timeout=10
             ),
         )
@@ -254,7 +254,7 @@ class TestHookExecutor:
     async def test_before_lease_hook_motd_unchanged_when_not_written(self, lease_scope) -> None:
         lease_scope.session.motd = "Welcome to test-exporter!"
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="true", timeout=10),
+            beforeLease=HookInstanceConfigV1Alpha1(script="true", timeout=10),
         )
         executor = HookExecutor(config=hook_config)
         await executor.execute_before_lease_hook(lease_scope)
@@ -263,8 +263,8 @@ class TestHookExecutor:
     async def test_before_lease_hook_motd_kept_on_warn_failure(self, lease_scope) -> None:
         lease_scope.session.motd = None
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
-                script='echo "partial setup done" > "$JMP_MOTD_FILE"; exit 1', timeout=10, on_failure="warn"
+            beforeLease=HookInstanceConfigV1Alpha1(
+                script='echo "partial setup done" > "$JMP_MOTD_FILE"; exit 1', timeout=10, onFailure="warn"
             ),
         )
         executor = HookExecutor(config=hook_config)
@@ -275,8 +275,8 @@ class TestHookExecutor:
     async def test_after_lease_hook_has_no_motd_file(self, lease_scope) -> None:
         lease_scope.session.motd = "Welcome to test-exporter!"
         hook_config = HookConfigV1Alpha1(
-            after_lease=HookInstanceConfigV1Alpha1(
-                script='test -z "$JMP_MOTD_FILE"', timeout=10, on_failure="endLease"
+            afterLease=HookInstanceConfigV1Alpha1(
+                script='test -z "$JMP_MOTD_FILE"', timeout=10, onFailure="endLease"
             ),
         )
         executor = HookExecutor(config=hook_config)
@@ -289,8 +289,8 @@ class TestHookExecutor:
         monkeypatch.setenv("JMP_MOTD_FILE", "/tmp/should-not-be-visible")
         lease_scope.session.motd = "Welcome to test-exporter!"
         hook_config = HookConfigV1Alpha1(
-            after_lease=HookInstanceConfigV1Alpha1(
-                script='test -z "$JMP_MOTD_FILE"', timeout=10, on_failure="endLease"
+            afterLease=HookInstanceConfigV1Alpha1(
+                script='test -z "$JMP_MOTD_FILE"', timeout=10, onFailure="endLease"
             ),
         )
         executor = HookExecutor(config=hook_config)
@@ -312,13 +312,14 @@ class TestHookExecutor:
         session = MagicMock()
         session.motd = None
         HookExecutor._append_hook_motd(session, str(big))
+        assert session.motd is not None
         assert len(session.motd) <= MAX_MOTD_BYTES
 
     @macos_pty_xfail
     async def test_real_time_output_logging(self, lease_scope) -> None:
         """Test that hook output is logged in real-time at INFO level."""
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="echo 'Line 1'; echo 'Line 2'; echo 'Line 3'", timeout=10),
+            beforeLease=HookInstanceConfigV1Alpha1(script="echo 'Line 1'; echo 'Line 2'; echo 'Line 3'", timeout=10),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -336,7 +337,7 @@ class TestHookExecutor:
     async def test_post_lease_hook_execution_on_completion(self, lease_scope) -> None:
         """Test that post-lease hook executes when called directly."""
         hook_config = HookConfigV1Alpha1(
-            after_lease=HookInstanceConfigV1Alpha1(script="echo 'Post-lease cleanup completed'", timeout=10),
+            afterLease=HookInstanceConfigV1Alpha1(script="echo 'Post-lease cleanup completed'", timeout=10),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -351,7 +352,7 @@ class TestHookExecutor:
     async def test_hook_timeout_with_warn(self, lease_scope) -> None:
         """Test that hook returns warning string when timeout occurs and on_failure='warn'."""
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="sleep 60", timeout=1, on_failure="warn"),
+            beforeLease=HookInstanceConfigV1Alpha1(script="sleep 60", timeout=1, onFailure="warn"),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -366,7 +367,7 @@ class TestHookExecutor:
     async def test_failed_hook_with_warn_returns_warning(self, lease_scope) -> None:
         """Test that hook with exit 1 and on_failure='warn' returns a warning string."""
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="warn"),
+            beforeLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="warn"),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -389,7 +390,7 @@ class TestHookExecutor:
         from jumpstarter.exporter.lease_context import LeaseContext
 
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="warn"),
+            beforeLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="warn"),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -423,7 +424,7 @@ class TestHookExecutor:
             warning_logged_in_context = context_active
             return original_handle(error_msg, on_failure, hook_type, cause)
 
-        executor._handle_hook_failure = tracking_handle  # type: ignore[method-assign]
+        executor._handle_hook_failure = tracking_handle  # type: ignore[method-assign]  # ty: ignore[invalid-assignment]
 
         result = await executor.execute_before_lease_hook(lease_scope)
         assert result is not None
@@ -436,7 +437,7 @@ class TestHookExecutor:
     async def test_successful_hook_returns_none(self, lease_scope) -> None:
         """Test that a successful hook returns None (no warning)."""
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="echo 'hello'", timeout=10),
+            beforeLease=HookInstanceConfigV1Alpha1(script="echo 'hello'", timeout=10),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -451,11 +452,11 @@ class TestHookExecutor:
         and would fail under /bin/sh on systems where sh is dash.
         """
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
-                exec_="/bin/bash",
-                script='V="hello_world"; echo "BASH_OK: ${V:6:5}"',
-                timeout=10,
-            ),
+            beforeLease=HookInstanceConfigV1Alpha1.model_validate({
+                "exec": "/bin/bash",
+                "script": 'V="hello_world"; echo "BASH_OK: ${V:6:5}"',
+                "timeout": 10,
+            }),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -473,11 +474,11 @@ class TestHookExecutor:
         fail if run as a shell script.
         """
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
-                exec_="python3",
-                script="result = sum([x*x for x in range(4)])\nprint(f'PYTHON_OK: {result}')",
-                timeout=10,
-            ),
+            beforeLease=HookInstanceConfigV1Alpha1.model_validate({
+                "exec": "python3",
+                "script": "result = sum([x*x for x in range(4)])\nprint(f'PYTHON_OK: {result}')",
+                "timeout": 10,
+            }),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -496,7 +497,7 @@ class TestHookExecutor:
         script_file.chmod(0o755)
 
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(
                 script=str(script_file),
                 timeout=10,
             ),
@@ -520,7 +521,7 @@ class TestHookExecutor:
         script_file.write_text("import sys\nprint(f'PYFILE_OK: {sys.executable}')\n")
 
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(
                 script=str(script_file),
                 timeout=10,
             ),
@@ -545,11 +546,11 @@ class TestHookExecutor:
         script_file.write_text("print('OVERRIDE_OK')\n")
 
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
-                exec_="python3",
-                script=str(script_file),
-                timeout=10,
-            ),
+            beforeLease=HookInstanceConfigV1Alpha1.model_validate({
+                "exec": "python3",
+                "script": str(script_file),
+                "timeout": 10,
+            }),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -574,7 +575,7 @@ class TestHookExecutor:
         removed from the environment.
         """
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(
                 script=(
                     'echo "TERM=$TERM";'
                     ' echo "DEBIAN_FRONTEND=$DEBIAN_FRONTEND";'
@@ -600,7 +601,7 @@ class TestHookExecutor:
     async def test_before_lease_hook_exit_sets_skip_flag(self, lease_scope) -> None:
         """Test that beforeLease hook failure with on_failure=exit sets skip_after_lease_hook flag."""
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
+            beforeLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="exit"),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -621,7 +622,7 @@ class TestHookExecutor:
     async def test_before_lease_hook_endlease_sets_skip_flag_and_releases_lease(self, lease_scope) -> None:
         """Test that beforeLease hook failure with on_failure=endLease sets skip_after_lease_hook and releases lease."""
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="endLease"),
+            beforeLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="endLease"),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -646,7 +647,7 @@ class TestHookExecutor:
     async def test_before_lease_hook_endlease_handles_release_error(self, lease_scope) -> None:
         """Test that beforeLease hook with on_failure=endLease handles release errors gracefully."""
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="endLease"),
+            beforeLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="endLease"),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -829,7 +830,7 @@ class TestHookExecutor:
     async def test_drain_captures_output_without_trailing_newline(self, lease_scope) -> None:
         """Verify output without a trailing newline is still captured."""
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(
                 script="printf 'NO_NEWLINE_OUTPUT'",
                 timeout=10,
             ),
@@ -855,7 +856,7 @@ class TestHookExecutor:
         import pty
 
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(
                 script="echo MAIN_OUTPUT",
                 timeout=10,
             ),
@@ -926,7 +927,7 @@ class TestHookExecutor:
             return original_select(rlist, wlist, xlist, timeout)
 
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(
                 script="echo SELECT_ERROR_TEST", timeout=10,
             ),
         )
@@ -962,7 +963,7 @@ class TestHookExecutor:
             return original_select(rlist, wlist, xlist, timeout)
 
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(
                 script="echo VALUEERROR_TEST", timeout=10,
             ),
         )
@@ -994,7 +995,7 @@ class TestHookExecutor:
         clock = _DrainDeadlineClock(_monotonic, state)
 
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(
                 script="echo DEADLINE_TEST", timeout=10,
             ),
         )
@@ -1024,7 +1025,7 @@ class TestHookExecutor:
         drain's except-Exception block suppresses it.
         """
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(
                 script="echo BEFORE_DRAIN_ERROR",
                 timeout=10,
             ),
@@ -1055,7 +1056,7 @@ class TestHookExecutor:
         by the except-Exception handler and does not propagate to the caller.
         """
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(
                 script="echo MAIN_LOOP_ERROR",
                 timeout=10,
             ),
@@ -1101,7 +1102,7 @@ class TestHookExecutor:
             return original_select(rlist, wlist, xlist, timeout)
 
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(
                 script="echo DELAYED_DRAIN_OK", timeout=10,
             ),
         )
@@ -1138,7 +1139,7 @@ class TestHookExecutor:
             return original_select(rlist, wlist, xlist, timeout)
 
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(
                 script="echo MAX_EMPTY_TEST", timeout=10,
             ),
         )
@@ -1184,7 +1185,7 @@ class TestHookExecutor:
             return original_select(rlist, wlist, xlist, timeout)
 
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(
                 script="echo INTERLEAVE_TEST", timeout=10,
             ),
         )
@@ -1270,7 +1271,7 @@ class TestHookExecutorPRRegressions:
         from the hook script should be at INFO.
         """
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="echo 'user output'", timeout=10),
+            beforeLease=HookInstanceConfigV1Alpha1(script="echo 'user output'", timeout=10),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -1307,7 +1308,7 @@ class TestHookExecutorPRRegressions:
         the lease hangs indefinitely.
         """
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="endLease"),
+            beforeLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="endLease"),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -1332,7 +1333,7 @@ class TestHookExecutorPRRegressions:
         and skip_after_lease_hook set to True.
         """
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
+            beforeLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="exit"),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -1387,8 +1388,8 @@ class TestHookExecutorPRRegressions:
         """
         # Config with both hooks
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
-            after_lease=HookInstanceConfigV1Alpha1(script="echo 'SHOULD NOT RUN'", timeout=10),
+            beforeLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="exit"),
+            afterLease=HookInstanceConfigV1Alpha1(script="echo 'SHOULD NOT RUN'", timeout=10),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -1431,7 +1432,7 @@ class TestHookExecutorPRRegressions:
         incorrectly tell the controller the exporter is ready for new leases.
         """
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
+            beforeLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="exit"),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -1478,7 +1479,7 @@ class TestHookExecutorPRRegressions:
         - shutdown must be called (not request_lease_release)
         """
         hook_config = HookConfigV1Alpha1(
-            after_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
+            afterLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="exit"),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -1520,7 +1521,7 @@ class TestHookExecutorPRRegressions:
         shell.py can detect it and display a user-visible warning.
         """
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="warn"),
+            beforeLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="warn"),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -1552,7 +1553,7 @@ class TestHookExecutorPRRegressions:
         exporter during the shutdown window.
         """
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
+            beforeLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="exit"),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -1588,7 +1589,7 @@ class TestHookExecutorPRRegressions:
         """When afterLease hook fails with on_failure=exit, OFFLINE must be
         reported before shutdown to prevent new lease assignment."""
         hook_config = HookConfigV1Alpha1(
-            after_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
+            afterLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="exit"),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -1631,8 +1632,8 @@ class TestHookExecutorPRRegressions:
         and the exporter transitions to AVAILABLE.
         """
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="warn"),
-            after_lease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
+            beforeLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="warn"),
+            afterLease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -1675,7 +1676,7 @@ class TestHookExecutorPRRegressions:
         shell.py can detect it and display a user-visible warning after session ends.
         """
         hook_config = HookConfigV1Alpha1(
-            after_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="warn"),
+            afterLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="warn"),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -1711,7 +1712,7 @@ class TestBeforeLeaseHookLeaseEndedGuard:
         """When the lease has already ended before the hook runs, the hook
         subprocess must NOT be executed and skip_after_lease_hook must be set."""
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
+            beforeLease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -1741,7 +1742,7 @@ class TestBeforeLeaseHookLeaseEndedGuard:
         """The before_lease_hook event must always be set (via the finally block)
         even when the lease has ended, to unblock downstream waiters."""
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
+            beforeLease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -1764,7 +1765,7 @@ class TestBeforeLeaseHookLeaseEndedGuard:
         """When lease has already ended, hook is skipped entirely regardless
         of on_failure setting — the hook subprocess never runs."""
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="warn"),
+            beforeLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="warn"),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -1806,7 +1807,7 @@ class TestBeforeLeaseHookLeaseEndedGuard:
 
         executor = HookExecutor(
             config=HookConfigV1Alpha1(
-                before_lease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
+                beforeLease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
             )
         )
 
@@ -1847,7 +1848,7 @@ class TestBeforeLeaseHookLeaseEndedGuard:
         lease_scope.lease_ended.set()
 
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
+            beforeLease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
         )
         executor = HookExecutor(config=hook_config)
 

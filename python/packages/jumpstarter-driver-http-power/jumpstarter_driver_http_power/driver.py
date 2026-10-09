@@ -69,18 +69,18 @@ class HttpPower(PowerInterface, Driver):
 
         # The structures don't get deserialized automatically for some reason.
         if isinstance(self.power_on, dict):
-            self.power_on = HttpEndpointConfig(**self.power_on)
+            self.power_on = HttpEndpointConfig(**self.power_on)  # ty: ignore[invalid-argument-type]
         if isinstance(self.power_off, dict):
-            self.power_off = HttpEndpointConfig(**self.power_off)
+            self.power_off = HttpEndpointConfig(**self.power_off)  # ty: ignore[invalid-argument-type]
         if self.power_read and isinstance(self.power_read, dict):
-            self.power_read = HttpEndpointConfig(**self.power_read)
+            self.power_read = HttpEndpointConfig(**self.power_read)  # ty: ignore[invalid-argument-type]
         # Presence, not truthiness: an empty mapping is still a configured auth block.
         if isinstance(self.auth, dict):
-            self.auth = HttpAuthConfig(**self.auth)
+            self.auth = HttpAuthConfig(**self.auth)  # ty: ignore[invalid-argument-type]
         if self.auth is not None and isinstance(self.auth.basic, dict):
-            self.auth.basic = HttpBasicAuth(**self.auth.basic)
+            self.auth.basic = HttpBasicAuth(**self.auth.basic)  # ty: ignore[invalid-argument-type]
         if self.auth is not None and isinstance(self.auth.digest, dict):
-            self.auth.digest = HttpDigestAuth(**self.auth.digest)
+            self.auth.digest = HttpDigestAuth(**self.auth.digest)  # ty: ignore[invalid-argument-type]
         if self.auth is not None and self.auth.basic is not None and self.auth.digest is not None:
             raise ValueError("auth.basic and auth.digest are mutually exclusive, configure only one of them")
 

@@ -29,12 +29,12 @@ class MockHTTPHandler(BaseHTTPRequestHandler):
     def _handle_request(self):
         # Record the request for verification
         if not hasattr(self.server, 'requests'):
-            self.server.requests = []
+            self.server.requests = []  # ty: ignore[invalid-assignment]
 
         content_length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else None
 
-        self.server.requests.append({
+        self.server.requests.append({  # ty: ignore[unresolved-attribute]
             'method': self.command,
             'path': self.path,
             'body': body
@@ -182,7 +182,7 @@ class AuthHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         auth = self.headers.get("Authorization")
-        self.server.auth_headers.append(auth)
+        self.server.auth_headers.append(auth)  # ty: ignore[unresolved-attribute]
         if self.path.startswith("/digest") and not (auth or "").startswith("Digest "):
             self.send_response(401)
             self.send_header("WWW-Authenticate", NO_QOP_CHALLENGE if "noqop" in self.path else CHALLENGE)
@@ -213,7 +213,7 @@ def test_dict_config_is_reconstructed():
         "power_read": {"url": "http://x/read", "voltage_path": "emeter.voltage"},
         "auth": {"digest": {"user": "u", "password": "p"}},
     }
-    drv = HttpPower(**config)
+    drv = HttpPower(**config)  # ty: ignore[invalid-argument-type]
     assert isinstance(drv.power_on, HttpEndpointConfig)
     assert isinstance(drv.power_off, HttpEndpointConfig)
     assert isinstance(drv.power_read, HttpEndpointConfig)

@@ -577,7 +577,7 @@ class FlasherClientInterface(metaclass=ABCMeta):
         ...
 
     def cli(self):
-        @driver_click_group(self)
+        @driver_click_group(self)  # ty: ignore[invalid-argument-type]
         def base():
             """Generic flasher interface"""
 
@@ -685,8 +685,8 @@ class FlasherClient(FlasherClientInterface, DriverClient):
 
             for part, img in path.items():
                 op_val = oper_map.get(part) if isinstance(operator, dict) else operator
-                results[part] = self._flash_single(
-                    img, target=part, operator=cast(Operator | None, op_val), compression=compression
+                results[str(part)] = self._flash_single(
+                    img, target=str(part), operator=op_val, compression=compression  # ty: ignore[invalid-argument-type]
                 )
 
             return results
@@ -779,7 +779,7 @@ class StorageMuxClient(DriverClient):
 
 
 class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
-    def flash(
+    def flash(  # ty: ignore[invalid-method-override]
         self,
         path: PathBuf,
         *,

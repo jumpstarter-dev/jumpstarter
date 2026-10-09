@@ -157,6 +157,7 @@ class RenodePower(PowerInterface, Driver):
     async def _configure_simulation(self) -> None:
         """Set up the machine, platform, UART, and firmware in the monitor."""
         machine = self.parent.machine_name
+        assert self._monitor is not None
         self._monitor.add_expected_prompt(machine)
         await self._monitor.execute(f'mach create "{machine}"')
         await self._monitor.execute(f"machine LoadPlatformDescription @{self.parent.platform}")

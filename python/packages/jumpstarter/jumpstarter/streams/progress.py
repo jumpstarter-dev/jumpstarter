@@ -55,7 +55,7 @@ class ProgressStream(ObjectStream[bytes]):
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
-            super().__post_init__()
+            super().__post_init__()  # ty: ignore[unresolved-attribute]
 
         self.__prog = Progress(
             TextColumn("[progress.description]{task.description}"),
@@ -70,10 +70,11 @@ class ProgressStream(ObjectStream[bytes]):
         )
 
     def __del__(self):
-        if self.__prog.live.is_started:
+        if self.__prog is not None and self.__prog.live.is_started:
             self.__prog.stop()
 
     async def receive(self):
+        assert self.__prog is not None
         if self.__recv is None:
             self.__prog.start()
             self.__recv = self.__prog.add_task(
@@ -91,6 +92,7 @@ class ProgressStream(ObjectStream[bytes]):
         return item
 
     async def send(self, item):
+        assert self.__prog is not None
         if self.__send is None:
             self.__prog.start()
             self.__send = self.__prog.add_task(

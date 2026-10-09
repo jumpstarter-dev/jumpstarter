@@ -18,7 +18,7 @@ from opendal import Operator
 if sys.version_info >= (3, 14):
     from compression import zstd
 else:
-    from backports import zstd
+    from backports import zstd  # ty: ignore[unresolved-import]
 
 from .common import PresignedRequest
 from .driver import MockFlasher, MockStorageMux, MockStorageMuxFlasher, Opendal
@@ -276,12 +276,12 @@ def test_drivers_mock_storage_mux_http():
     class StaticHandler(BaseHTTPRequestHandler):
         def do_HEAD(self):
             self.send_response(200)
-            self.send_header("content-length", 11 * 1000)
+            self.send_header("content-length", str(11 * 1000))
             self.end_headers()
 
         def do_GET(self):
             self.send_response(200)
-            self.send_header("content-length", 11 * 1000)
+            self.send_header("content-length", str(11 * 1000))
             self.end_headers()
             self.wfile.write(b"testcontent" * 1000)
 
@@ -588,7 +588,7 @@ def test_flash_http_redirect_preserves_percent_encoding():
         def do_GET(self):
             received_paths.append(self.path)
             if self.path.startswith("/start"):
-                port = self.server.server_address[1]
+                port = self.server.server_address[1]  # ty: ignore[not-subscriptable]
                 self.send_response(302)
                 self.send_header(
                     "Location",
@@ -640,7 +640,7 @@ def test_flash_http_chained_redirects_preserve_percent_encoding():
 
         def do_GET(self):
             received_paths.append(self.path)
-            port = self.server.server_address[1]
+            port = self.server.server_address[1]  # ty: ignore[not-subscriptable]
             if self.path.startswith("/hop1"):
                 self.send_response(302)
                 self.send_header(
@@ -704,7 +704,7 @@ def test_flash_http_redirect_all_status_codes(status_code):
         def do_GET(self):
             received_paths.append(self.path)
             if self.path.startswith("/start"):
-                port = self.server.server_address[1]
+                port = self.server.server_address[1]  # ty: ignore[not-subscriptable]
                 self.send_response(status_code)
                 self.send_header(
                     "Location",
@@ -751,7 +751,7 @@ def test_flash_http_redirect_loop_raises():
             self.end_headers()
 
         def do_GET(self):
-            port = self.server.server_address[1]
+            port = self.server.server_address[1]  # ty: ignore[not-subscriptable]
             self.send_response(302)
             self.send_header(
                 "Location",

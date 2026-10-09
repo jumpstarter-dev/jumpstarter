@@ -51,7 +51,7 @@ def get_native_arch_config():
     elif native_arch == "aarch64":
         return "aarch64", "aarch64"
     else:
-        pytest.skip(f"Unsupported architecture: {native_arch}")  # ty: ignore[call-non-callable]
+        pytest.skip(f"Unsupported architecture: {native_arch}")  # ty: ignore[too-many-positional-arguments]
 
 
 @pytest.mark.xfail(
@@ -621,7 +621,7 @@ async def test_flash_oci_inner_wait_timeout():
 
     async def mock_wait_for(awaitable, *, timeout):
         nonlocal timeout_fired
-        if not timeout_fired:  # ty: ignore[unresolved-reference]
+        if not timeout_fired:
             timeout_fired = True
             if hasattr(awaitable, "close"):
                 awaitable.close()

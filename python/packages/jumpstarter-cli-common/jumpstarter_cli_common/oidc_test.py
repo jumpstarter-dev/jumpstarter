@@ -148,7 +148,7 @@ class TestDeviceAuthorizationGrant:
                 response.text = AsyncMock(return_value="")
             else:
                 # Token endpoint
-                poll_count += 1  # ty: ignore[unresolved-reference]
+                poll_count += 1
                 if poll_count == 1:
                     response.status = 400
                     response.json = AsyncMock(return_value={"error": "authorization_pending"})
@@ -211,7 +211,7 @@ class TestDeviceAuthorizationGrant:
                 response.json = AsyncMock(return_value=device_response_data)
                 response.text = AsyncMock(return_value="")
             else:
-                poll_count += 1  # ty: ignore[unresolved-reference]
+                poll_count += 1
                 if poll_count == 1:
                     response.status = 400
                     response.json = AsyncMock(return_value={"error": "slow_down"})
@@ -349,7 +349,7 @@ class TestInsecureRequestWarningSuppressed:
     """TS-NS-5: Config.client() with insecure_tls=True suppresses InsecureRequestWarning."""
 
     def test_urllib3_insecure_request_warning_suppressed(self) -> None:
-        import urllib3.exceptions
+        import urllib3.exceptions  # ty: ignore[unresolved-import]
 
         config = Config(issuer="https://auth.example.com", client_id="test", insecure_tls=True)
         config.client()

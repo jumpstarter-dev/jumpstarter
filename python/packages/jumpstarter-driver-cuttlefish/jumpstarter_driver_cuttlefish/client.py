@@ -177,6 +177,6 @@ class CuttlefishClient(CompositeClient):
                 continue
             if not hasattr(v, "cli"):
                 continue
-            cuttlefish.add_command(v.cli(), k)
+            cuttlefish.add_command(v.cli(), k)  # ty: ignore[call-non-callable]
 
         return cuttlefish
