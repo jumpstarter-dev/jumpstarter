@@ -5,7 +5,7 @@
 [![Community Meeting](https://img.shields.io/badge/Weekly%20Meeting-Google%20Meet-blue?logo=google-meet)](https://meet.google.com/gzd-hhbd-hpu)
 ![GitHub Release](https://img.shields.io/github/v/release/jumpstarter-dev/jumpstarter)
 ![PyPI - Version](https://img.shields.io/pypi/v/jumpstarter)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jumpstarter-dev/jumpstarter)
+
 
 Jumpstarter is a free and open source test automation framework. It bridges the gap
 between embedded development workflows and deployment environments, enabling
