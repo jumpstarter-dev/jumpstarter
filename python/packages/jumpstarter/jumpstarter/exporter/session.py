@@ -52,7 +52,7 @@ class Session(
     lease_context: "LeaseContext | None" = field(init=False, default=None)
 
     _logging_queue: deque = field(init=False)
-    _logging_handler: QueueHandler = field(init=False)
+    _logging_handler: LogHandler = field(init=False)
     _current_status: ExporterStatus = field(init=False, default=ExporterStatus.AVAILABLE)
     _status_message: str = field(init=False, default="")
     _status_update_event: Event = field(init=False)

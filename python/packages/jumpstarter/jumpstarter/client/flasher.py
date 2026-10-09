@@ -87,7 +87,8 @@ class _AsyncIteratorStream(ObjectStream[bytes]):
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         if self.total is not None and self.total > 0:
-            return {ProgressAttribute.total: lambda: float(self.total)}
+            total = self.total
+            return {ProgressAttribute.total: lambda: float(total)}
         return {}
 
 

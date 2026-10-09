@@ -97,8 +97,8 @@ class _DrainDeadlineClock:
             self._deadline = real_time + DRAIN_TIMEOUT_SECONDS
             return real_time
         if self._call_count == 2:
-            return self._deadline - 0.001  # type: ignore[operator]
-        return self._deadline + 1.0  # type: ignore[operator]
+            return self._deadline - 0.001  # ty: ignore[unsupported-operator]
+        return self._deadline + 1.0  # ty: ignore[unsupported-operator]
 
 
 class TestFlushLines:

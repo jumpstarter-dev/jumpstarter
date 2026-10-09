@@ -475,18 +475,18 @@ class TestInvalidBase64Auth:
 
 class TestOciCredentials:
     def test_fields(self):
-        creds = OciCredentials(username="user", password="pass")  # type: ignore[arg-type]
+        creds = OciCredentials(username="user", password="pass")  # ty: ignore[invalid-argument-type]
         assert creds.username == "user"
         assert creds.password is not None
         assert creds.password.get_secret_value() == "pass"
 
     def test_plain_password(self):
-        creds = OciCredentials(username="user", password="pass")  # type: ignore[arg-type]
+        creds = OciCredentials(username="user", password="pass")  # ty: ignore[invalid-argument-type]
         assert creds.plain_password == "pass"
         assert OciCredentials().plain_password is None
 
     def test_is_authenticated(self):
-        assert OciCredentials(username="user", password="pass").is_authenticated  # type: ignore[arg-type]
+        assert OciCredentials(username="user", password="pass").is_authenticated  # ty: ignore[invalid-argument-type]
         assert not OciCredentials().is_authenticated
         assert not OciCredentials(username=None, password=None).is_authenticated
 
@@ -494,32 +494,32 @@ class TestOciCredentials:
         with pytest.raises(ValueError, match="both username and password"):
             OciCredentials(username="user", password=None)
         with pytest.raises(ValueError, match="both username and password"):
-            OciCredentials(username=None, password="pass")  # type: ignore[arg-type]
+            OciCredentials(username=None, password="pass")  # ty: ignore[invalid-argument-type]
 
     def test_empty_strings_normalized_to_none(self):
-        creds = OciCredentials(username="", password="")  # type: ignore[arg-type]
+        creds = OciCredentials(username="", password="")  # ty: ignore[invalid-argument-type]
         assert creds.username is None
         assert creds.password is None
         assert not creds.is_authenticated
 
     def test_username_with_empty_password_rejected(self):
         with pytest.raises(ValueError, match="both username and password"):
-            OciCredentials(username="user", password="")  # type: ignore[arg-type]
+            OciCredentials(username="user", password="")  # ty: ignore[invalid-argument-type]
 
     def test_whitespace_strings_normalized_to_none(self):
-        creds = OciCredentials(username="  ", password="  ")  # type: ignore[arg-type]
+        creds = OciCredentials(username="  ", password="  ")  # ty: ignore[invalid-argument-type]
         assert creds.username is None
         assert creds.password is None
         assert not creds.is_authenticated
 
     def test_strips_whitespace_from_credentials(self):
-        creds = OciCredentials(username=" user ", password=" pass ")  # type: ignore[arg-type]
+        creds = OciCredentials(username=" user ", password=" pass ")  # ty: ignore[invalid-argument-type]
         assert creds.username == "user"
         assert creds.password is not None
         assert creds.password.get_secret_value() == "pass"
 
     def test_frozen(self):
-        creds = OciCredentials(username="user", password="pass")  # type: ignore[arg-type]
+        creds = OciCredentials(username="user", password="pass")  # ty: ignore[invalid-argument-type]
         with pytest.raises(ValidationError):
             creds.username = "other"
 

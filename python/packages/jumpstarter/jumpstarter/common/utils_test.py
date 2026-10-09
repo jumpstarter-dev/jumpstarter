@@ -45,14 +45,16 @@ def test_launch_shell_prints_motd(tmp_path, monkeypatch, capfd):
 
 
 def test_launch_shell_no_motd_for_command(tmp_path, monkeypatch, capfd):
-    monkeypatch.setenv("SHELL", shutil.which("true"))
+    true_cmd = shutil.which("true")
+    assert true_cmd is not None
+    monkeypatch.setenv("SHELL", true_cmd)
     exit_code = launch_shell(
         host=str(tmp_path / "test.sock"),
         context="remote",
         allow=["*"],
         unsafe=False,
         use_profiles=False,
-        command=(shutil.which("true"),),  # type: ignore[arg-type]
+        command=(true_cmd,),
         motd="Welcome to my-exporter!",
     )
     assert exit_code == 0

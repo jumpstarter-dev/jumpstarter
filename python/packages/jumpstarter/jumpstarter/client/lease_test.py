@@ -1093,7 +1093,7 @@ class TestServeUnixAsync:
 
         with pytest.raises(ExporterUnreachableError, match="exporter is offline"):
             async with lease.serve_unix_async():
-                pytest.fail("Listener started despite initial Dial failure")
+                pytest.fail("Listener started despite initial Dial failure")  # ty: ignore[invalid-argument-type]
         lease.controller.Dial.assert_awaited_once()
 
     @pytest.mark.anyio

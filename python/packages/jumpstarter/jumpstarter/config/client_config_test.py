@@ -2,6 +2,7 @@ import os
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -159,7 +160,7 @@ def test_client_config_from_file_missing_field_raises(missing_field):
 
 @pytest.mark.parametrize("invalid_field", ["allow"])
 def test_client_config_from_file_invalid_drivers_field_raises(invalid_field):
-    CLIENT_CONFIG = {
+    CLIENT_CONFIG: dict[str, Any] = {
         "apiVersion": "jumpstarter.dev/v1alpha1",
         "kind": "ClientConfig",
         "endpoint": "jumpstarter.my-lab.com:1443",

@@ -93,7 +93,7 @@ export:
                 },
             }),
         },
-        config={},  # type: ignore[call-arg]
+        config={},  # ty: ignore[unknown-argument]
         path=path,
     )
 

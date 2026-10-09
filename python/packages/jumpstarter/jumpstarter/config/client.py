@@ -253,7 +253,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         tags: dict[str, str] | None = None,
         allow_disabled: bool = False,
         context: dict[str, str] | None = None,
-        shared_with: list[str] | None = None,  # type: ignore[invalid-type-form]
+        shared_with: list[str] | None = None,  # ty: ignore[invalid-type-form]
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
         return await svc.CreateLease(
@@ -312,8 +312,8 @@ class ClientConfigV1Alpha1(BaseSettings):
         duration: timedelta | None = None,
         begin_time: datetime | None = None,
         client: str | None = None,
-        add_shared_with: list[str] | None = None,  # type: ignore[invalid-type-form]
-        remove_shared_with: list[str] | None = None,  # type: ignore[invalid-type-form]
+        add_shared_with: list[str] | None = None,  # ty: ignore[invalid-type-form]
+        remove_shared_with: list[str] | None = None,  # ty: ignore[invalid-type-form]
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
         return await svc.UpdateLease(
@@ -369,7 +369,7 @@ class ClientConfigV1Alpha1(BaseSettings):
             )
             async with Lease(
                 channel=await self.channel(),
-                namespace=self.metadata.namespace,
+                namespace=self.metadata.namespace or "",
                 name=lease_name,
                 selector=selector,
                 requested_exporter_name=exporter_name,
