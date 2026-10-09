@@ -9,7 +9,7 @@ from anyio import (
     create_memory_object_stream,
     create_task_group,
 )
-from anyio.abc import AnyByteStream
+from anyio.abc import ObjectReceiveStream, ObjectSendStream
 from anyio.streams.stapled import StapledObjectStream
 
 from jumpstarter.metrics.registry import (
@@ -22,10 +22,10 @@ from jumpstarter.metrics.registry import (
 logger = logging.getLogger(__name__)
 
 
-async def _send_eof(dst: AnyByteStream) -> bool:
+async def _send_eof(dst: ObjectSendStream[bytes]) -> bool:
     """Half-close ``dst``; return False if its transport is unusable."""
     try:
-        await dst.send_eof()
+        await dst.send_eof()  # ty: ignore[unresolved-attribute]
     except AttributeError:
         pass  # The destination cannot half-close.
     except OSError as e:
@@ -39,8 +39,8 @@ async def _send_eof(dst: AnyByteStream) -> bool:
 
 
 async def copy_stream(
-    dst: AnyByteStream,
-    src: AnyByteStream,
+    dst: ObjectSendStream[bytes],
+    src: ObjectReceiveStream[bytes],
     *,
     metrics_direction: StreamDirection | None = None,
     metrics_driver_type: str = "other",

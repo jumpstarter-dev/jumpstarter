@@ -1,5 +1,6 @@
 import errno
 import os
+from collections.abc import AsyncIterator
 from logging import Logger
 from typing import Literal
 
@@ -53,7 +54,7 @@ async def wait_for_storage_device(  # noqa: C901
 
 async def write_to_storage_device(
     storage_device: str | os.PathLike,
-    resource: AnyByteStream,
+    resource: AsyncIterator[bytes],
     timeout: int = 10,
     fsync_timeout: int = 900,
     leeway: int = 6,

@@ -109,7 +109,7 @@ class Driver(
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
-            super().__post_init__()
+            super().__post_init__()  # ty: ignore[unresolved-attribute]
 
         self.logger = get_logger(f"driver.{self.__class__.__name__}", LogSource.DRIVER)
         self.logger.setLevel(self.log_level)

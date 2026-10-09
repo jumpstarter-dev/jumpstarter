@@ -708,8 +708,8 @@ class MultipathExporterStub:
     def __post_init__(self, channels):
         for channel in channels:
             stub = SimpleNamespace()
-            jumpstarter_pb2_grpc.ExporterServiceStub.__init__(stub, channel)  # type: ignore[arg-type]
-            router_pb2_grpc.RouterServiceStub.__init__(stub, channel)  # type: ignore[arg-type]
+            jumpstarter_pb2_grpc.ExporterServiceStub.__init__(stub, channel)  # type: ignore[arg-type]  # ty: ignore[no-matching-overload]
+            router_pb2_grpc.RouterServiceStub.__init__(stub, channel)  # type: ignore[arg-type]  # ty: ignore[no-matching-overload]
             self.__stubs[channel] = stub
 
     def __getattr__(self, name):

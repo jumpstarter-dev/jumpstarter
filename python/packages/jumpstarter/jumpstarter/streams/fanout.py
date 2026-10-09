@@ -181,7 +181,7 @@ class _FanOutStreamBase:
         return self
 
     async def __aexit__(self, *exc):
-        await self.aclose()
+        await self.aclose()  # ty: ignore[unresolved-attribute]
 
 
 class ExclusiveStream(_FanOutStreamBase):
@@ -575,7 +575,7 @@ class FanOutStreamMixin:
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
-            super().__post_init__()
+            super().__post_init__()  # ty: ignore[unresolved-attribute]
         self._fanout = StreamFanOut(
             source_factory=self._open_source,
             scrollback_size=self._fanout_scrollback_size,
@@ -628,7 +628,7 @@ class FanOutStreamMixin:
             else:
                 self._fanout.kick_sync()
         if hasattr(super(), "close"):
-            super().close()
+            super().close()  # ty: ignore[unresolved-attribute]
 
     def shutdown(self):
         """Session-end teardown: stop the reader loop and release the source.
@@ -640,4 +640,4 @@ class FanOutStreamMixin:
         if self._fanout is not None:
             self._fanout.shutdown_sync()
         if hasattr(super(), "shutdown"):
-            super().shutdown()
+            super().shutdown()  # ty: ignore[unresolved-attribute]

@@ -168,7 +168,7 @@ def test_client_config_from_file_invalid_drivers_field_raises(invalid_field):
         "drivers": {"allow": ["jumpstarter.drivers.*", "vendorpackage.*"]},
     }
 
-    CLIENT_CONFIG["drivers"][invalid_field] = "foo"
+    CLIENT_CONFIG["drivers"][invalid_field] = "foo"  # ty: ignore[invalid-assignment]
     with tempfile.NamedTemporaryFile(mode="w") as f:
         yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
         with pytest.raises(ValidationError):

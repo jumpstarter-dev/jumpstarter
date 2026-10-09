@@ -116,7 +116,7 @@ class TestLeaseEndDuringHook:
                 after_lease_started_before_hook_done = True
             return await original_run_after(*args, **kwargs)  # type: ignore[call-arg]
 
-        hook_executor.run_after_lease_hook = tracking_run_after  # type: ignore[method-assign]
+        hook_executor.run_after_lease_hook = tracking_run_after  # type: ignore[method-assign]  # ty: ignore[invalid-assignment]
 
         exporter = make_exporter(lease_ctx, hook_executor)
 
@@ -308,8 +308,8 @@ class TestConsecutiveLeaseOrdering:
             events.append("after_end")
             return result
 
-        hook_executor.run_before_lease_hook = tracking_before  # type: ignore[method-assign]
-        hook_executor.run_after_lease_hook = tracking_after  # type: ignore[method-assign]
+        hook_executor.run_before_lease_hook = tracking_before  # type: ignore[method-assign]  # ty: ignore[invalid-assignment]
+        hook_executor.run_after_lease_hook = tracking_after  # type: ignore[method-assign]  # ty: ignore[invalid-assignment]
 
         lease_ctx_1 = make_lease_context(lease_name="lease-1")
         exporter = make_exporter(lease_ctx_1, hook_executor)
@@ -484,7 +484,7 @@ class TestIdempotentLeaseEnd:
             after_hook_call_count += 1
             return await original_run_after(*args, **kwargs)  # type: ignore[call-arg]
 
-        hook_executor.run_after_lease_hook = counting_run_after  # type: ignore[method-assign]
+        hook_executor.run_after_lease_hook = counting_run_after  # type: ignore[method-assign]  # ty: ignore[invalid-assignment]
 
         lease_ctx = make_lease_context()
         lease_ctx.before_lease_hook.set()
@@ -1712,16 +1712,16 @@ class TestHandleLeaseConnections:
                 tx, rx = original_create(*args, **kwargs)
                 orig_tx, orig_rx = tx.aclose, rx.aclose
 
-                async def close_tx():
+                async def close_tx() -> None:
                     closed.append("tx")
                     await orig_tx()
 
-                async def close_rx():
+                async def close_rx() -> None:
                     closed.append("rx")
                     await orig_rx()
 
-                tx.aclose = close_tx
-                rx.aclose = close_rx
+                tx.aclose = close_tx  # ty: ignore[invalid-assignment]
+                rx.aclose = close_rx  # ty: ignore[invalid-assignment]
                 return tx, rx
 
         with patch.object(exporter_mod, "create_memory_object_stream", TrackingFactory()):

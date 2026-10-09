@@ -424,7 +424,7 @@ class TestHookExecutor:
             warning_logged_in_context = context_active
             return original_handle(error_msg, on_failure, hook_type, cause)
 
-        executor._handle_hook_failure = tracking_handle  # type: ignore[method-assign]
+        executor._handle_hook_failure = tracking_handle  # type: ignore[method-assign]  # ty: ignore[invalid-assignment]
 
         result = await executor.execute_before_lease_hook(lease_scope)
         assert result is not None
@@ -452,11 +452,11 @@ class TestHookExecutor:
         and would fail under /bin/sh on systems where sh is dash.
         """
         hook_config = HookConfigV1Alpha1(
-            beforeLease=HookInstanceConfigV1Alpha1(
-                exec_="/bin/bash",
-                script='V="hello_world"; echo "BASH_OK: ${V:6:5}"',
-                timeout=10,
-            ),
+            beforeLease=HookInstanceConfigV1Alpha1.model_validate({
+                "exec": "/bin/bash",
+                "script": 'V="hello_world"; echo "BASH_OK: ${V:6:5}"',
+                "timeout": 10,
+            }),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -474,11 +474,11 @@ class TestHookExecutor:
         fail if run as a shell script.
         """
         hook_config = HookConfigV1Alpha1(
-            beforeLease=HookInstanceConfigV1Alpha1(
-                exec_="python3",
-                script="result = sum([x*x for x in range(4)])\nprint(f'PYTHON_OK: {result}')",
-                timeout=10,
-            ),
+            beforeLease=HookInstanceConfigV1Alpha1.model_validate({
+                "exec": "python3",
+                "script": "result = sum([x*x for x in range(4)])\nprint(f'PYTHON_OK: {result}')",
+                "timeout": 10,
+            }),
         )
         executor = HookExecutor(config=hook_config)
 
@@ -546,11 +546,11 @@ class TestHookExecutor:
         script_file.write_text("print('OVERRIDE_OK')\n")
 
         hook_config = HookConfigV1Alpha1(
-            beforeLease=HookInstanceConfigV1Alpha1(
-                exec_="python3",
-                script=str(script_file),
-                timeout=10,
-            ),
+            beforeLease=HookInstanceConfigV1Alpha1.model_validate({
+                "exec": "python3",
+                "script": str(script_file),
+                "timeout": 10,
+            }),
         )
         executor = HookExecutor(config=hook_config)
 

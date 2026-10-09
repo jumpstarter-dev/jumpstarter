@@ -109,7 +109,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
-            super().__post_init__()
+            super().__post_init__()  # ty: ignore[unresolved-attribute]
 
         self.controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel)
         self.svc = ClientService(channel=self.channel, namespace=self.namespace)

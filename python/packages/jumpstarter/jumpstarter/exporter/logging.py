@@ -69,7 +69,7 @@ class LogHandler(logging.Handler):
                 structured[key] = str(val)
         if structured:
             kwargs["structured_fields"] = structured
-        return jumpstarter_pb2.LogStreamResponse(**kwargs)
+        return jumpstarter_pb2.LogStreamResponse(**kwargs)  # ty: ignore[invalid-argument-type]
 
     def emit(self, record):
         try:

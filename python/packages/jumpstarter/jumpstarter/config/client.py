@@ -379,7 +379,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 unsafe=self.drivers.unsafe,
                 release=release_lease,
                 tls_config=self.tls,
-                grpc_options=self.grpcOptions,
+                grpc_options=self.grpcOptions or {},
                 client_name=self.metadata.name,
                 allow_disabled=allow_disabled,
                 acquisition_timeout=acquisition_timeout_seconds,
