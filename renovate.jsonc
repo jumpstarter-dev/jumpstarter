@@ -31,7 +31,7 @@
       "defaultRegistryUrlTemplate": "https://fedoraproject.org/releases.json",
       "format": "json",
       "transformTemplates": [
-        "{ \"releases\": [$[arch=\"x86_64\" and variant=\"Cloud\" and $contains(link, \"Cloud-Base-Generic\") and $contains(link, \".qcow2\")].{ \"version\": $match(link, /Generic-(\\d+-\\d+\\.\\d+)\\./).groups[0] }] }"
+        "{ \"releases\": [$[arch=\"x86_64\" and variant=\"Cloud\" and $contains(link, \"Cloud-Base-Generic\") and $contains(link, \".qcow2\") and $not($contains(link, \"/test/\"))].{ \"version\": $match(link, /Generic-(\\d+-\\d+\\.\\d+)\\./).groups[0] }] }"
       ]
     }
   },
