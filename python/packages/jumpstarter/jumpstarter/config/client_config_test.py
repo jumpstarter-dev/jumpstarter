@@ -137,7 +137,7 @@ def test_client_config_from_file_invalid_field_raises(invalid_field):
     with tempfile.NamedTemporaryFile(mode="w") as f:
         yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
         with pytest.raises(ValueError):
-            _ = ClientConfigV1Alpha1.from_file(f.name)
+            _ = ClientConfigV1Alpha1.from_file(Path(f.name))
 
 
 @pytest.mark.parametrize("missing_field", ["token", "endpoint", "drivers"])
@@ -154,7 +154,7 @@ def test_client_config_from_file_missing_field_raises(missing_field):
     with tempfile.NamedTemporaryFile(mode="w") as f:
         yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
         with pytest.raises(ValidationError):
-            _ = ClientConfigV1Alpha1.from_file(f.name)
+            _ = ClientConfigV1Alpha1.from_file(Path(f.name))
 
 
 @pytest.mark.parametrize("invalid_field", ["allow"])
@@ -171,7 +171,7 @@ def test_client_config_from_file_invalid_drivers_field_raises(invalid_field):
     with tempfile.NamedTemporaryFile(mode="w") as f:
         yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
         with pytest.raises(ValidationError):
-            _ = ClientConfigV1Alpha1.from_file(f.name)
+            _ = ClientConfigV1Alpha1.from_file(Path(f.name))
 
 
 def test_client_config_load():
@@ -663,7 +663,7 @@ def test_client_config_list_redacts_credentials_by_default():
         refresh_token="secret-refresh-token",
         drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*"], unsafe=False),
     )
-    configs = ClientConfigListV1Alpha1(current_config="testclient", items=[config])
+    configs = ClientConfigListV1Alpha1(currentConfig="testclient", items=[config])
 
     dumped = configs.model_dump(mode="json", by_alias=True)
     assert "token" not in dumped["items"][0]

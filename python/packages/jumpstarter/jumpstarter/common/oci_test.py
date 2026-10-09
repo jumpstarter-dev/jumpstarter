@@ -94,6 +94,7 @@ class TestReadAuthFileCredentials:
         ):
             result = read_auth_file_credentials("oci://quay.io/org/image:latest")
             assert result.username == "myuser"
+            assert result.password is not None
             assert result.password.get_secret_value() == "mypass"
 
     def test_reads_from_podman_auth_json(self, tmp_path):
@@ -106,6 +107,7 @@ class TestReadAuthFileCredentials:
         ):
             result = read_auth_file_credentials("oci://ghcr.io/org/repo:v1")
             assert result.username == "ghuser"
+            assert result.password is not None
             assert result.password.get_secret_value() == "ghtoken"
 
     def test_handles_docker_hub_url_variants(self, tmp_path):
@@ -121,6 +123,7 @@ class TestReadAuthFileCredentials:
         ):
             result = read_auth_file_credentials("oci://docker.io/library/ubuntu:22.04")
             assert result.username == "dockuser"
+            assert result.password is not None
             assert result.password.get_secret_value() == "dockpass"
 
     def test_returns_none_when_no_match(self, tmp_path):
@@ -157,6 +160,7 @@ class TestReadAuthFileCredentials:
         ):
             result = read_auth_file_credentials("oci://quay.io/org/image:latest")
             assert result.username == "user"
+            assert result.password is not None
             assert result.password.get_secret_value() == "pass"
 
     def test_supports_separate_username_password_fields(self, tmp_path):
@@ -170,6 +174,7 @@ class TestReadAuthFileCredentials:
         ):
             result = read_auth_file_credentials("oci://quay.io/org/image:latest")
             assert result.username == "altuser"
+            assert result.password is not None
             assert result.password.get_secret_value() == "altpass"
 
     def test_whitespace_only_separate_fields_skipped(self, tmp_path):
@@ -198,6 +203,7 @@ class TestReadAuthFileCredentials:
         ):
             result = read_auth_file_credentials("oci://quay.io/org/image:latest")
             assert result.username == "first_user"
+            assert result.password is not None
             assert result.password.get_secret_value() == "first_pass"
 
     def test_password_with_colon(self, tmp_path):
@@ -211,6 +217,7 @@ class TestReadAuthFileCredentials:
         ):
             result = read_auth_file_credentials("oci://quay.io/org/image:latest")
             assert result.username == "user"
+            assert result.password is not None
             assert result.password.get_secret_value() == "pass:with:colons"
 
     def test_registry_with_port(self, tmp_path):
@@ -223,6 +230,7 @@ class TestReadAuthFileCredentials:
         ):
             result = read_auth_file_credentials("oci://registry.local:5000/myrepo:latest")
             assert result.username == "user"
+            assert result.password is not None
             assert result.password.get_secret_value() == "pass"
 
     def test_empty_auths_section(self, tmp_path):
@@ -249,6 +257,7 @@ class TestResolveOciCredentials:
         ):
             result = resolve_oci_credentials("oci://quay.io/org/image:latest")
             assert result.username == "envuser"
+            assert result.password is not None
             assert result.password.get_secret_value() == "envpass"
 
     def test_falls_back_to_auth_file(self, tmp_path):
@@ -262,6 +271,7 @@ class TestResolveOciCredentials:
         ):
             result = resolve_oci_credentials("oci://quay.io/org/image:latest")
             assert result.username == "fileuser"
+            assert result.password is not None
             assert result.password.get_secret_value() == "filepass"
 
     def test_partial_env_falls_back_to_auth_file(self, tmp_path):
@@ -278,6 +288,7 @@ class TestResolveOciCredentials:
         ):
             result = resolve_oci_credentials("oci://quay.io/org/image:latest")
             assert result.username == "fileuser"
+            assert result.password is not None
             assert result.password.get_secret_value() == "filepass"
 
     def test_partial_env_password_only_falls_back_to_auth_file(self, tmp_path):
@@ -293,6 +304,7 @@ class TestResolveOciCredentials:
         ):
             result = resolve_oci_credentials("oci://quay.io/org/image:latest")
             assert result.username == "fileuser"
+            assert result.password is not None
             assert result.password.get_secret_value() == "filepass"
 
     def test_whitespace_env_vars_fall_through_to_auth_file(self, tmp_path):
@@ -309,6 +321,7 @@ class TestResolveOciCredentials:
         ):
             result = resolve_oci_credentials("oci://quay.io/org/image:latest")
             assert result.username == "fileuser"
+            assert result.password is not None
             assert result.password.get_secret_value() == "filepass"
 
     def test_returns_none_when_no_source(self):
@@ -428,6 +441,7 @@ class TestInvalidBase64Auth:
         ):
             result = read_auth_file_credentials("oci://quay.io/org/image:latest")
             assert result.username == "fallback_user"
+            assert result.password is not None
             assert result.password.get_secret_value() == "fallback_pass"
 
     def test_empty_username_in_base64_falls_through(self, tmp_path):
@@ -463,6 +477,7 @@ class TestOciCredentials:
     def test_fields(self):
         creds = OciCredentials(username="user", password="pass")  # type: ignore[arg-type]
         assert creds.username == "user"
+        assert creds.password is not None
         assert creds.password.get_secret_value() == "pass"
 
     def test_plain_password(self):
@@ -500,6 +515,7 @@ class TestOciCredentials:
     def test_strips_whitespace_from_credentials(self):
         creds = OciCredentials(username=" user ", password=" pass ")  # type: ignore[arg-type]
         assert creds.username == "user"
+        assert creds.password is not None
         assert creds.password.get_secret_value() == "pass"
 
     def test_frozen(self):
@@ -632,6 +648,7 @@ class TestBareImageCredentialLookup:
         ):
             result = read_auth_file_credentials("oci://ubuntu:latest")
             assert result.username == "dockuser"
+            assert result.password is not None
             assert result.password.get_secret_value() == "dockpass"
 
     def test_first_matching_registry_wins(self, tmp_path):
@@ -657,6 +674,7 @@ class TestBareImageCredentialLookup:
         ):
             result = read_auth_file_credentials("oci://ubuntu:latest")
             assert result.username == "quayuser"
+            assert result.password is not None
             assert result.password.get_secret_value() == "quaypass"
 
     def test_no_match_in_any_registry(self, tmp_path):

@@ -39,6 +39,7 @@ config:
         monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", f.name)
         config = UserConfigV1Alpha1.load()
         mock_load.assert_called_once_with("testclient")
+        assert config.config.current_client is not None
         assert config.config.current_client.alias == "testclient"
         os.unlink(f.name)
 
@@ -251,6 +252,7 @@ config:
             value = loaded.read()
             assert value == USER_CONFIG
             mock_load.assert_called_once_with("testclient")
+        assert config.config.current_client is not None
         assert config.config.current_client.alias == "testclient"
         os.unlink(f.name)
 

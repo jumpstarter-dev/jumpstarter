@@ -104,7 +104,7 @@ class TestLeaseEndDuringHook:
         from jumpstarter.exporter.hooks import HookExecutor
 
         hook_config = HookConfigV1Alpha1(
-            after_lease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
+            afterLease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
         )
         hook_executor = HookExecutor(config=hook_config)
 
@@ -211,7 +211,7 @@ class TestUnusedLeaseTimeout:
         lease_ctx.before_lease_hook.set()
 
         hook_config = HookConfigV1Alpha1(
-            after_lease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
+            afterLease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
         )
         hook_executor = HookExecutor(config=hook_config)
 
@@ -286,8 +286,8 @@ class TestConsecutiveLeaseOrdering:
         from jumpstarter.exporter.hooks import HookExecutor
 
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="echo before", timeout=10),
-            after_lease=HookInstanceConfigV1Alpha1(script="echo after", timeout=10),
+            beforeLease=HookInstanceConfigV1Alpha1(script="echo before", timeout=10),
+            afterLease=HookInstanceConfigV1Alpha1(script="echo after", timeout=10),
         )
         hook_executor = HookExecutor(config=hook_config)
 
@@ -382,7 +382,7 @@ class TestBeforeLeaseHookSafetyTimeout:
         from jumpstarter.exporter.hooks import HookExecutor
 
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=60),
+            beforeLease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=60),
         )
         hook_executor = HookExecutor(config=hook_config)
 
@@ -472,7 +472,7 @@ class TestIdempotentLeaseEnd:
         from jumpstarter.exporter.hooks import HookExecutor
 
         hook_config = HookConfigV1Alpha1(
-            after_lease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
+            afterLease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
         )
         hook_executor = HookExecutor(config=hook_config)
 
@@ -523,7 +523,7 @@ class TestBeforeLeaseHookRaceGuard:
         from jumpstarter.exporter.hooks import HookExecutor
 
         hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
+            beforeLease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
         )
         hook_executor = HookExecutor(config=hook_config)
 
