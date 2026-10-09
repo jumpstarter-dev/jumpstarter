@@ -52,6 +52,13 @@
     color: #fff !important;
     text-decoration: none;
   }
+  #versjon-overlay.versjon-inline .versjon {
+    padding-top: calc(var(--sidebar-item-spacing-vertical, 0.5rem) * 1.3);
+    padding-bottom: calc(var(--sidebar-item-spacing-vertical, 0.5rem) * 1.3);
+  }
+  @media (max-width: 63.9em) {
+    #versjon-overlay.versjon-inline .versjon { text-align: center; }
+  }
 </style>
 <div id="versjon-overlay">
     <button type="button" class="versjon"><i class="fa fa-book"></i> Version: {{current}}</button>
