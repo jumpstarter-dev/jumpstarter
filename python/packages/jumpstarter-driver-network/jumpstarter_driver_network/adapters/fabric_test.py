@@ -45,7 +45,7 @@ def test_client_adapter_fabric():
     server_thread.start()
 
     with (
-        serve(TcpNetwork(host=server.server_address[0], port=server.server_address[1])) as client,
+        serve(TcpNetwork(host=str(server.server_address[0]), port=server.server_address[1])) as client,
         FabricAdapter(client=client, connect_kwargs={"password": "password"}) as conn,
     ):
         conn.run("dummy command")

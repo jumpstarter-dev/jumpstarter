@@ -12,7 +12,7 @@ from jumpstarter_cli_common.oidc import (
     format_duration,
     get_token_remaining_seconds,
 )
-from jumpstarter_cli_common.opt import DataOutputType, opt_output_json_yaml
+from jumpstarter_cli_common.opt import DataOutputType, OutputMode, opt_output_json_yaml
 from jumpstarter_cli_common.print import model_print
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -53,12 +53,12 @@ def _collect_auth_status(config) -> AuthStatusV1Alpha1:
 
     token_str = getattr(config, "token", None)
     if not token_str:
-        return AuthStatusV1Alpha1(status="no-token", refresh_token_stored=refresh_token_stored)
+        return AuthStatusV1Alpha1.model_validate({"status": "no-token", "refreshTokenStored": refresh_token_stored})
 
     try:
         payload = decode_jwt(token_str)
     except ValueError as e:
-        return AuthStatusV1Alpha1(status="invalid-token", error=str(e), refresh_token_stored=refresh_token_stored)
+        return AuthStatusV1Alpha1.model_validate({"status": "invalid-token", "error": str(e), "refreshTokenStored": refresh_token_stored})
 
     remaining = get_token_remaining_seconds(token_str)
     if remaining is None:
@@ -70,16 +70,16 @@ def _collect_auth_status(config) -> AuthStatusV1Alpha1:
     else:
         status = "valid"
 
-    return AuthStatusV1Alpha1(
-        status=status,
-        expires_at=_timestamp_claim(payload, "exp"),
-        remaining_seconds=remaining,
-        subject=payload.get("sub"),
-        issuer=payload.get("iss"),
-        issued_at=_timestamp_claim(payload, "iat"),
-        auth_time=_timestamp_claim(payload, "auth_time"),
-        refresh_token_stored=refresh_token_stored,
-    )
+    return AuthStatusV1Alpha1.model_validate({
+        "status": status,
+        "expiresAt": _timestamp_claim(payload, "exp"),
+        "remainingSeconds": remaining,
+        "subject": payload.get("sub"),
+        "issuer": payload.get("iss"),
+        "issuedAt": _timestamp_claim(payload, "iat"),
+        "authTime": _timestamp_claim(payload, "auth_time"),
+        "refreshTokenStored": refresh_token_stored,
+    })
 
 
 def _print_token_status(remaining: float) -> None:
@@ -135,7 +135,7 @@ def _print_verbose_details(payload: dict, config) -> None:
 def token_status(config, verbose: bool, output: DataOutputType):
     """Display token status and expiry information."""
     if output:
-        model_print(_collect_auth_status(config), output)
+        model_print(_collect_auth_status(config), OutputMode(output))
         return
 
     token_str = getattr(config, "token", None)
@@ -194,7 +194,7 @@ async def refresh_token(config):
     new_refresh_token = tokens.get("refresh_token")
     if new_refresh_token is not None:
         config.refresh_token = new_refresh_token
-    ClientConfigV1Alpha1.save(config)  # ty: ignore[invalid-argument-type]
+    ClientConfigV1Alpha1.save(config)
     click.echo("Access token refreshed.")
 
 
@@ -223,7 +223,7 @@ async def rotate_token(config):
         raise click.ClickException(f"Token rotation failed: invalid token returned ({e}).") from e
 
     config.token = new_token
-    ClientConfigV1Alpha1.save(config)  # ty: ignore[invalid-argument-type]
+    ClientConfigV1Alpha1.save(config)
 
     new_remaining = get_token_remaining_seconds(new_token)
     if new_remaining is not None:

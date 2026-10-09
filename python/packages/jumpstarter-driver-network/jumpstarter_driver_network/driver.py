@@ -52,7 +52,7 @@ def _resolve_hostname(host: str) -> str:
         if addr_info:
             # Get the first resolved address (ip address)
             resolved_ip = addr_info[0][4][0]
-            return resolved_ip
+            return str(resolved_ip)
     except (OSError, socket.gaierror):
         # If resolution fails, return the original hostname
         pass
@@ -82,7 +82,7 @@ class NetworkInterface(metaclass=ABCMeta):
         return "jumpstarter_driver_network.client.NetworkClient"
 
     @abstractmethod
-    @asynccontextmanager
+    @asynccontextmanager  # ty: ignore[no-matching-overload]
     async def connect(self): ...
 
 
@@ -222,7 +222,7 @@ class DbusNetwork(NetworkInterface, Driver):
     kind: Literal["system", "session"]
 
     scheme: str | None = field(init=False, default=None)
-    args: dict[str, str] = field(init=False, default_factory=dict)
+    args: dict[str, str | int] = field(init=False, default_factory=dict)
 
     KIND_LABEL: ClassVar[str] = "jumpstarter.dev/dbusnetwork/kind"
 
@@ -279,11 +279,11 @@ class DbusNetwork(NetworkInterface, Driver):
         match self.scheme:
             case "unix":
                 self.logger.debug("Connecting UDS path=%s", self.args["path"])
-                async with await connect_unix(path=self.args["path"]) as stream:
+                async with await connect_unix(path=str(self.args["path"])) as stream:
                     yield stream
             case "tcp":
                 self.logger.debug("Connecting TCP host=%s port=%d", self.args["host"], self.args["port"])
-                async with await connect_tcp(remote_host=self.args["host"], remote_port=self.args["port"]) as stream:
+                async with await connect_tcp(remote_host=str(self.args["host"]), remote_port=int(self.args["port"])) as stream:
                     yield stream
 
 
@@ -303,7 +303,7 @@ class EchoNetwork(NetworkInterface, Driver):
     @exportstream
     @asynccontextmanager
     async def connect(self):
-        tx, rx = create_memory_object_stream[bytes](32) # ty: ignore[call-non-callable]
+        tx, rx = create_memory_object_stream[bytes](32)
         self.logger.debug("Connecting Echo")
         async with StapledObjectStream(tx, rx) as stream:
             yield stream

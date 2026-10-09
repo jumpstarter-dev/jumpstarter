@@ -79,7 +79,7 @@ class Can(Driver):
         modifier_callback: Callable[[can.Message], None] | None = None,
     ) -> UUID:
         assert modifier_callback is None
-        task = self.bus._send_periodic_internal(msgs, period, duration, autostart, modifier_callback)
+        task = self.bus._send_periodic_internal(msgs, period, duration, autostart, modifier_callback)  # ty: ignore[invalid-argument-type]
         uuid = uuid4()
         self.__tasks[uuid] = task
         return uuid
@@ -87,7 +87,7 @@ class Can(Driver):
     @export
     @validate_call(validate_return=True)
     def _start_task(self, uuid: UUID) -> None:
-        self.__tasks[uuid].start()
+        self.__tasks[uuid].start()  # ty: ignore[unresolved-attribute]
 
     @export
     @validate_call(validate_return=True)
@@ -239,6 +239,7 @@ class IsoTpPython(Driver):
         """
         Enqueue an ISO-TP frame to send over the CAN network.
         """
+        assert msg.data is not None
         return self.stack.send(msg.data, target_address_type, send_timeout)
 
     @export
@@ -329,7 +330,7 @@ class IsoTpSocket(Driver):
             raise ValueError("socket already started")
         self.sock = isotp.socket()
         self.params.apply(self.sock)
-        self.sock.bind(self.channel, self.address)
+        self.sock.bind(self.channel, self.address)  # ty: ignore[unresolved-attribute]
 
     @export
     @validate_call(validate_return=True)
@@ -352,6 +353,7 @@ class IsoTpSocket(Driver):
         """
         if not self.sock:
             raise ValueError("socket not started")
+        assert msg.data is not None
         self.sock.send(msg.data)
 
     @export

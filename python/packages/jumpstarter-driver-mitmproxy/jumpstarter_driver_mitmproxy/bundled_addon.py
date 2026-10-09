@@ -436,7 +436,7 @@ class AddonRegistry:
             spec.loader.exec_module(module)
 
             if hasattr(module, "Handler"):
-                handler = module.Handler()  # ty: ignore[call-non-callable]
+                handler = module.Handler()
                 self._handlers[name] = handler
                 ctx.log.info(f"Loaded addon: {name}")
                 return handler
@@ -534,7 +534,7 @@ class CaptureClient:
             if self._sock is None and not self._connect():  # pragma: no cover
                 return
             try:
-                self._sock.sendall(payload.encode())
+                self._sock.sendall(payload.encode())  # ty: ignore[unresolved-attribute]
                 return
             except OSError:
                 self.close()
@@ -1222,6 +1222,7 @@ class MitmproxyMockAddon:
         ).hexdigest()[:12]
         spool_name = f"{self._spool_counter:06d}_{url_hash}.bin"
         spool_path = self._spool_dir / spool_name
+        assert raw_body is not None
         try:
             _make_private_dir(self._spool_dir)
             with open(spool_path, "wb", opener=_open_private) as f:

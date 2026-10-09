@@ -310,7 +310,7 @@ def test_power_cycle_scopes_to_parent_hub(monkeypatch):
     # FT200X at bus 2, port path (5, 2) -> its parent hub path is (5,)
     dev = _FakeUSBDev("DP04I34D")
     dev.bus = 2
-    dev.port_numbers = (5, 2)
+    dev.port_numbers = (5, 2)  # ty: ignore[invalid-assignment]
 
     right_hub = _FakeHub(bus=2, port_numbers=(5,))
     wrong_bus = _FakeHub(bus=3, port_numbers=(5,))
@@ -337,7 +337,7 @@ def test_power_cycle_scopes_to_parent_hub(monkeypatch):
 def test_power_cycle_skips_when_no_topology_match(monkeypatch):
     dev = _FakeUSBDev("DP04I34D")
     dev.bus = 2
-    dev.port_numbers = (5, 2)
+    dev.port_numbers = (5, 2)  # ty: ignore[invalid-assignment]
 
     # two hubs present, neither matches the dev's topology -> do not guess
     hub_a = _FakeHub(bus=2, port_numbers=(7,))
@@ -354,11 +354,11 @@ def test_drivers_sdwire():
     try:
         instance = SDWire()
     except FileNotFoundError:
-        pytest.skip("sd-wire not available")  # ty: ignore[call-non-callable]
+        pytest.skip("sd-wire not available")  # ty: ignore[too-many-positional-arguments]
     except usb.core.USBError:
-        pytest.skip("USB not available")  # ty: ignore[call-non-callable]
+        pytest.skip("USB not available")  # ty: ignore[too-many-positional-arguments]
     except usb.core.NoBackendError:
-        pytest.skip("No USB backend")  # ty: ignore[call-non-callable]
+        pytest.skip("No USB backend")  # ty: ignore[too-many-positional-arguments]
 
     with serve(instance) as client:
         client.host()

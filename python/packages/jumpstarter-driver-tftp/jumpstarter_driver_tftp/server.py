@@ -370,7 +370,7 @@ class TftpReadTransfer(TftpTransfer):
     ):
         super().__init__(
             server=server,
-            filepath=filepath,
+            filepath=filepath,  # ty: ignore[invalid-argument-type]
             client_addr=client_addr,
             block_size=block_size,
             timeout=timeout,
@@ -479,6 +479,7 @@ class TftpReadTransfer(TftpTransfer):
 
     def _create_oack_packet(self) -> bytes:
         packet = Opcode.OACK.to_bytes(2, "big")
+        assert self.negotiated_options is not None
         for opt_name, opt_value in self.negotiated_options.items():
             packet += f"{opt_name}\0{opt_value!s}\0".encode()
         return packet
@@ -487,6 +488,7 @@ class TftpReadTransfer(TftpTransfer):
         return Opcode.DATA.to_bytes(2, "big") + self.block_num.to_bytes(2, "big") + data
 
     def _send_packet(self, packet: bytes):
+        assert self.transport is not None
         self.transport.sendto(packet)
         if packet[0:2] == Opcode.DATA.to_bytes(2, "big"):
             block = int.from_bytes(packet[2:4], "big")
@@ -534,6 +536,7 @@ class TftpReadTransfer(TftpTransfer):
             self.ack_received.set()
         elif block_num == self.block_num - 1:
             self.logger.warning(f"Duplicate ACK for block {block_num} received, resending block {self.block_num}")
+            assert self.transport is not None and self.current_packet is not None
             self.transport.sendto(self.current_packet)
         else:
             self.logger.warning(f"Out of sequence ACK: expected {self.block_num}, got {block_num}")

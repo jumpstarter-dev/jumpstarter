@@ -79,8 +79,8 @@ def test_drivers_flashers_exporter_ip_override(temp_dirs):
             "power": MockPower(),
         },
     )
-    assert default.tftp.advertised_host is None
-    assert default.http.advertised_host is None
+    assert default.tftp.advertised_host is None  # ty: ignore[unresolved-attribute]
+    assert default.http.advertised_host is None  # ty: ignore[unresolved-attribute]
 
 
 def test_drivers_flashers_setup_flasher_bundle(complete_flasher):

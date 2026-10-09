@@ -67,6 +67,7 @@ class OBD(Driver):
         if not obd.commands.has_name(command_name):
             raise DriverInvalidArgument(f"Unknown OBD command: {command_name}")
         cmd = obd.commands[command_name]
+        assert self._connection is not None
         response = self._connection.query(cmd)
         if response.is_null():
             return None
@@ -80,6 +81,7 @@ class OBD(Driver):
         cycles to re-complete. Use only as a deliberate reset.
         """
         # obd.commands is populated dynamically; index it by name
+        assert self._connection is not None
         self._connection.query(obd.commands["CLEAR_DTC"], force=True)
 
     @staticmethod
@@ -104,14 +106,17 @@ class OBD(Driver):
     @export
     def status(self) -> OBDConnectionStatus:
         """Connection state."""
+        assert self._connection is not None
         return OBDConnectionStatus(str(self._connection.status()))
 
     @export
     def supported_commands(self) -> list[str]:
         """Sorted PID names the connected ECU advertises."""
+        assert self._connection is not None
         return sorted(cmd.name for cmd in self._connection.supported_commands)
 
     @export
     def is_connected(self) -> bool:
         """True when a vehicle ECU is on the bus, not just the adapter."""
+        assert self._connection is not None
         return self._connection.is_connected()

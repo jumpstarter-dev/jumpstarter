@@ -98,7 +98,7 @@ class BaseFlasher(Driver):
             fls_path = Path("/usr/local/bin/fls")
         if not fls_path.exists():
             raise ConfigurationError("fls binary not found at /usr/local/bin/fls-aarch64 or /usr/local/bin/fls")
-        await self.http.storage.copy_exporter_file(fls_path, "fls")
+        await self.http.storage.copy_exporter_file(fls_path, "fls")  # ty: ignore[unresolved-attribute]
 
     @export
     async def setup_flasher_bundle(self, force_flash_bundle: str | None = None):
@@ -115,19 +115,19 @@ class BaseFlasher(Driver):
         manifest = await self.get_flasher_manifest()
         kernel_path = await self._get_file_path(manifest.spec.kernel.file)
         self.logger.info(f"Setting up kernel in tftp: {kernel_path}")
-        await self.tftp.storage.copy_exporter_file(kernel_path, kernel_path.name)
+        await self.tftp.storage.copy_exporter_file(kernel_path, kernel_path.name)  # ty: ignore[unresolved-attribute]
 
         initram_file = manifest.get_initram_file()
         if initram_file:
             initram_path = await self._get_file_path(initram_file)
             self.logger.info(f"Setting up initram in tftp: {initram_path}")
-            await self.tftp.storage.copy_exporter_file(initram_path, initram_path.name)
+            await self.tftp.storage.copy_exporter_file(initram_path, initram_path.name)  # ty: ignore[unresolved-attribute]
 
         dtb_file = manifest.get_dtb_file(self.variant) if manifest.spec.dtb else None
         if dtb_file:
             dtb_path = await self._get_file_path(dtb_file)
             self.logger.info(f"Setting up dtb in tftp: {dtb_path}")
-            await self.tftp.storage.copy_exporter_file(dtb_path, dtb_path.name)
+            await self.tftp.storage.copy_exporter_file(dtb_path, dtb_path.name)  # ty: ignore[unresolved-attribute]
 
     @export
     def set_dtb(self, handle):
@@ -175,13 +175,13 @@ class BaseFlasher(Driver):
 
         # ensure the bundle dir exists
         bundle_dir.mkdir(parents=True, exist_ok=True)
-        oras_client.pull(self.flasher_bundle, outdir=bundle_dir)
+        oras_client.pull(self.flasher_bundle, outdir=str(bundle_dir))
 
         self.logger.info(f"Bundle downloaded to {bundle_dir}")
 
         # mark this bundle as downloaded for the current object lifetime
-        self._downloaded[self.flasher_bundle] = bundle_dir
-        return bundle_dir
+        self._downloaded[self.flasher_bundle] = str(bundle_dir)
+        return str(bundle_dir)
 
     async def _get_file_path(self, filename) -> Path:
         """Get the bundle contents path.
@@ -229,7 +229,7 @@ class BaseFlasher(Driver):
             return ""
 
     @export
-    async def get_dtb_address(self) -> str:
+    async def get_dtb_address(self) -> str | None:
         """Return the dtb address"""
         manifest = await self.get_flasher_manifest()
         return manifest.get_dtb_address()
@@ -241,7 +241,7 @@ class BaseFlasher(Driver):
         return manifest.get_kernel_address()
 
     @export
-    async def get_initram_address(self) -> str:
+    async def get_initram_address(self) -> str | None:
         """Return the initram address"""
         manifest = await self.get_flasher_manifest()
         return manifest.get_initram_address()

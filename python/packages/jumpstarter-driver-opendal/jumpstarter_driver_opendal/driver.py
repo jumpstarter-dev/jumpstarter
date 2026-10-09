@@ -28,7 +28,7 @@ class Opendal(Driver):
 
     _operator: AsyncOperator = field(init=False)
     _fds: dict[UUID, AsyncFile] = field(init=False, default_factory=dict)
-    _metadata: dict[UUID, OpendalMetadata] = field(init=False, default_factory=dict)
+    _metadata: dict[UUID, OpendalMetadata | None] = field(init=False, default_factory=dict)
 
     # Track all created paths (files and directories)
     _created_paths: set[str] = field(init=False, default_factory=set)

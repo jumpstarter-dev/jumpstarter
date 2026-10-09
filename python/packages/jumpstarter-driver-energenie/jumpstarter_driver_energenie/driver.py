@@ -2,8 +2,8 @@
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
-import requests
-import requests.exceptions
+import requests  # ty: ignore[unresolved-import]
+import requests.exceptions  # ty: ignore[unresolved-import]
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
 
 from jumpstarter.driver import Driver, export

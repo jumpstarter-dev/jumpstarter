@@ -32,7 +32,7 @@ def applied(kind: str, name: str, action: str, api_version: str = "jumpstarter.d
         kind=kind,
         name=name,
         namespace="default",
-        action=action,  # type: ignore[arg-type]
+        action=action,  # ty: ignore[invalid-argument-type]
         resource={"apiVersion": api_version, "kind": kind, "metadata": {"name": name}},
     )
 

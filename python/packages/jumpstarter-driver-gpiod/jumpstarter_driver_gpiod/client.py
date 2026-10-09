@@ -91,19 +91,19 @@ class DigitalInputClient(DriverClient):
         @gpio.command()
         @click.argument("edge_type", type=click.Choice(["rising", "falling"]))
         @click.option("--timeout", "-t", default="3600", help="Timeout in seconds")
-        def wait_for_edge(edge_type: str, timeout: str | None = None):
+        def wait_for_edge(edge_type: str, timeout: str = "3600"):
             """Wait for edge"""
             self.wait_for_edge(edge_type, float(timeout))
 
         @gpio.command()
         @click.option("--timeout", "-t", default="3600", help="Timeout in seconds")
-        def wait_for_active(timeout: str | None = None):
+        def wait_for_active(timeout: str = "3600"):
             """Wait for active"""
             self.wait_for_active(float(timeout))
 
         @gpio.command()
         @click.option("--timeout", "-t", default="3600", help="Timeout in seconds")
-        def wait_for_inactive(timeout: str | None = None):
+        def wait_for_inactive(timeout: str = "3600"):
             """Wait for inactive"""
             self.wait_for_inactive(float(timeout))
 

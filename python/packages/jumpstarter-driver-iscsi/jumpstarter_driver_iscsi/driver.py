@@ -110,9 +110,10 @@ class ISCSI(Driver):
 
     def _setup_target(self):
         """Setup the iSCSI target"""
+        assert self._rtsroot is not None
         target_exists = False
         try:
-            targets_list = list(self._rtsroot.targets)  # type: ignore[attr-defined]
+            targets_list = list(self._rtsroot.targets)
             for target in targets_list:
                 if target.wwn == self._iqn:
                     self._target = target
@@ -128,20 +129,22 @@ class ISCSI(Driver):
 
         if not target_exists:
             self.logger.info(f"Creating new target: {self._iqn}")
-            fabric_modules = {m.name: m for m in list(self._rtsroot.fabric_modules)}  # type: ignore[attr-defined]
+            fabric_modules = {m.name: m for m in list(self._rtsroot.fabric_modules)}
             iscsi_fabric = fabric_modules.get("iscsi")
             if not iscsi_fabric:
                 raise ISCSIError("Could not find iSCSI fabric module")
             self._target = Target(iscsi_fabric, self._iqn)
             self._tpg = TPG(self._target, 1)
 
-        self._tpg.enable = True  # type: ignore[attr-defined]
+        assert self._tpg is not None
+        self._tpg.enable = True
 
     def _setup_network_portal(self):
         """Setup the network portal for the target"""
+        assert self._tpg is not None
         portal_exists = False
         try:
-            portals = list(self._tpg.network_portals)  # type: ignore[attr-defined]
+            portals = list(self._tpg.network_portals)
             for portal in portals:
                 if portal.ip_address == self.host and portal.port == self.port:
                     portal_exists = True
@@ -155,14 +158,16 @@ class ISCSI(Driver):
 
     def _configure_tpg_attributes(self):
         """Configure TPG attributes"""
-        self._tpg.set_attribute("authentication", "0")  # type: ignore[attr-defined]
-        self._tpg.set_attribute("generate_node_acls", "1")  # type: ignore[attr-defined]
-        self._tpg.set_attribute("demo_mode_write_protect", "0")  # type: ignore[attr-defined]
+        assert self._tpg is not None
+        self._tpg.set_attribute("authentication", "0")
+        self._tpg.set_attribute("generate_node_acls", "1")
+        self._tpg.set_attribute("demo_mode_write_protect", "0")
 
     def _clear_tpg_luns(self):
         """Clear all LUNs from the current TPG"""
+        assert self._tpg is not None
         try:
-            for lun in list(self._tpg.luns):  # type: ignore[attr-defined]
+            for lun in list(self._tpg.luns):
                 try:
                     storage_obj = getattr(lun, "storage_object", None)
                 except Exception:  # noqa: BLE001
@@ -181,7 +186,8 @@ class ISCSI(Driver):
         """Clean up orphan storage objects under root_dir"""
         try:
             root_abs = os.path.abspath(self.root_dir)
-            for so in list(self._rtsroot.storage_objects):  # type: ignore[attr-defined]
+            assert self._rtsroot is not None
+            for so in list(self._rtsroot.storage_objects):
                 with suppress(Exception):
                     if isinstance(so, FileIOStorageObject):
                         udev_path = os.path.abspath(getattr(so, "udev_path", ""))

@@ -106,7 +106,9 @@ def test_client_can_redirect(request):
 
         client1.send(can.Message(data=b"hello"))
 
-        assert bus4.recv().data == b"hello"
+        received = bus4.recv()
+        assert received is not None
+        assert received.data == b"hello"
 
         notifier.stop()
 

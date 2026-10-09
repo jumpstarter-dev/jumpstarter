@@ -123,8 +123,8 @@ class QemuFlasher(FlasherInterface, Driver):
         fls_env = None
         if creds.is_authenticated:
             fls_env = os.environ.copy()
-            fls_env["FLS_REGISTRY_USERNAME"] = creds.username
-            fls_env["FLS_REGISTRY_PASSWORD"] = creds.plain_password
+            fls_env["FLS_REGISTRY_USERNAME"] = creds.username or ""
+            fls_env["FLS_REGISTRY_PASSWORD"] = creds.plain_password or ""
 
         self.logger.info(f"Running fls: {' '.join(fls_cmd)}")
 
@@ -138,15 +138,16 @@ class QemuFlasher(FlasherInterface, Driver):
         self, cmd: list[str], env: dict[str, str] | None
     ) -> AsyncGenerator[tuple[str, str, int | None], None]:
         """Run a subprocess and yield (stdout, stderr, returncode) tuples as output arrives."""
-        process = await asyncio.create_subprocess_exec(  # ty: ignore[missing-argument]
+        process = await asyncio.create_subprocess_exec(
             *cmd,
-            stdout=asyncio.subprocess.PIPE,  # ty: ignore[unresolved-attribute]
-            stderr=asyncio.subprocess.PIPE,  # ty: ignore[unresolved-attribute]
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
             env=env,
         )
 
         output_queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
 
+        assert process.stdout is not None and process.stderr is not None
         tasks = [
             asyncio.create_task(_read_pipe(process.stdout, "stdout", output_queue)),
             asyncio.create_task(_read_pipe(process.stderr, "stderr", output_queue)),
@@ -402,7 +403,7 @@ class QemuPower(PowerInterface, Driver):
 
         if not self.parent.launcher_socket:
             chardevs = await qmp.execute("query-chardev")
-            pty = next(c for c in chardevs if c["label"] == "serial0")["filename"].lstrip("pty:")
+            pty = next(c for c in chardevs if c["label"] == "serial0")["filename"].lstrip("pty:")  # ty: ignore[not-iterable]
             Path(self.parent._pty).unlink(missing_ok=True)
             Path(self.parent._pty).symlink_to(pty)
 

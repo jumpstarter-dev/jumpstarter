@@ -20,6 +20,8 @@ from .common import (
     UdsResponse,
     UdsSessionType,
 )
+from typing import Any
+
 from jumpstarter.driver import export
 
 logger = logging.getLogger(__name__)
@@ -61,6 +63,8 @@ class UdsInterface:
     Concrete subclasses must initialise ``self._uds_client`` (a
     ``udsoncan.client.Client``) in their ``__post_init__``.
     """
+
+    _uds_client: Any
 
     @classmethod
     def client(cls) -> str:

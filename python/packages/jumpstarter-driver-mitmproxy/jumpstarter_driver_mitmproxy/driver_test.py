@@ -963,8 +963,26 @@ class TestAddonRegistryPaths:
 def deep_merge_patch():
     """Import _deep_merge_patch lazily."""
     import importlib
-    mod = importlib.import_module("jumpstarter_driver_mitmproxy.bundled_addon")
-    return mod._deep_merge_patch  # ty: ignore[unresolved-attribute]
+    import sys
+    # Temporarily mock Path.mkdir to prevent /opt/jumpstarter creation
+    original_mkdir = Path.mkdir
+
+    def safe_mkdir(self, *args, **kwargs):
+        if str(self).startswith("/opt/"):
+            return
+        return original_mkdir(self, *args, **kwargs)
+
+    Path.mkdir = safe_mkdir  # ty: ignore[invalid-assignment]
+    try:
+        if "jumpstarter_driver_mitmproxy.bundled_addon" in sys.modules:
+            mod = sys.modules["jumpstarter_driver_mitmproxy.bundled_addon"]
+        else:
+            mod = importlib.import_module(
+                "jumpstarter_driver_mitmproxy.bundled_addon"
+            )
+        return mod._deep_merge_patch  # ty: ignore[unresolved-attribute]
+    finally:
+        Path.mkdir = original_mkdir
 
 
 @pytest.fixture
@@ -972,7 +990,7 @@ def apply_patches(deep_merge_patch):
     """Import _apply_patches lazily."""
     import sys
     mod = sys.modules["jumpstarter_driver_mitmproxy.bundled_addon"]
-    return mod._apply_patches  # ty: ignore[unresolved-attribute]
+    return mod._apply_patches
 
 
 class TestDeepMergePatch:

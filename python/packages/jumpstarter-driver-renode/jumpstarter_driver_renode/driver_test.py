@@ -33,8 +33,8 @@ class TestRenodeMonitor:
 
         async def mock_connect_tcp(host, port):
             nonlocal call_count
-            call_count += 1  # ty: ignore[unresolved-reference]
-            if call_count < 3:  # ty: ignore[unresolved-reference]
+            call_count += 1
+            if call_count < 3:
                 raise OSError("Connection refused")
             stream = AsyncMock()
             stream.receive = AsyncMock(return_value=b"Renode v1.15\n(monitor) \n")
@@ -127,7 +127,7 @@ class TestRenodeMonitor:
 
         async def mock_connect_tcp(host, port):
             nonlocal call_count
-            call_count += 1  # ty: ignore[unresolved-reference]
+            call_count += 1
             stream = AsyncMock()
             streams.append(stream)
             if call_count < 2:
@@ -251,7 +251,7 @@ class TestRenodeMonitor:
 def _make_driver(**kwargs) -> Renode:
     defaults = {"platform": "platforms/boards/stm32f4_discovery-kit.repl"}
     defaults.update(kwargs)
-    return Renode(**defaults)  # ty: ignore[missing-argument]
+    return Renode(**defaults)  # ty: ignore[invalid-argument-type]
 
 
 class TestRenodePower:

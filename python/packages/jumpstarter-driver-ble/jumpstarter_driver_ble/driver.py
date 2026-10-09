@@ -41,8 +41,8 @@ class AsyncBleWrapper(ObjectStream):
     config: AsyncBleConfig
     receive_stream: MemoryObjectReceiveStream
 
-    async def send(self, data: bytes):
-        await self.client.write_gatt_char(self.config.write_char_uuid, data)
+    async def send(self, item: bytes):
+        await self.client.write_gatt_char(self.config.write_char_uuid, item)
 
     async def receive(self):
         return bytes(await self.receive_stream.receive())
@@ -112,7 +112,7 @@ class BleWriteNotifyStream(Driver):
         async with BleakClient(self.address) as client:
             try:
                 if client.is_connected:
-                    send_stream, receive_stream = anyio.create_memory_object_stream[bytearray](  # ty: ignore[call-non-callable]
+                    send_stream, receive_stream = anyio.create_memory_object_stream[bytearray](
                         max_buffer_size=1000)
                     self.logger.info(
                         "Connected to BLE device at Address: %s", self.address)

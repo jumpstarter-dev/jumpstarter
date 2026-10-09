@@ -97,6 +97,7 @@ def _parse_step(data: object) -> Step:
             [{
                 "type": "value_error",
                 "loc": (),
+                "input": None,
                 "ctx": {"error": ValueError(f"Step must be a mapping, got {type(data).__name__}")},
             }],
         )
@@ -110,7 +111,7 @@ def _parse_step(data: object) -> Step:
         return FastbootStep.model_validate(data)
     raise ValidationError.from_exception_data(
         "Step",
-        [{"type": "value_error", "loc": (), "ctx": {"error": ValueError(f"Unknown step type: {sorted(data)}")}}],
+        [{"type": "value_error", "loc": (), "input": None, "ctx": {"error": ValueError(f"Unknown step type: {sorted(data)}")}}],
     )
 
 
@@ -124,7 +125,7 @@ def load_firmware_manifest(yaml_path: Path) -> FirmwareManifest:
     if not isinstance(raw, dict):
         raise ValidationError.from_exception_data(
             "FirmwareManifest",
-            [{"type": "value_error", "loc": (), "ctx": {"error": ValueError("Manifest root must be a mapping")}}],
+            [{"type": "value_error", "loc": (), "input": None, "ctx": {"error": ValueError("Manifest root must be a mapping")}}],
         )
 
     payload = dict(raw)
