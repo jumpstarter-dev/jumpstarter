@@ -44,6 +44,11 @@ help:
 	@echo "  make e2e-full              - Full setup + run (for CI or first time)"
 	@echo "  make e2e-clean             - Clean up e2e test environment (delete cluster, certs, etc.)"
 	@echo ""
+	@echo "Demo recordings (need lab access):"
+	@echo "  make demo-cast     - Record docs/source/_static/demo.cast against a real board"
+	@echo "  make demo-verify   - Run the same flow without recording, as a smoke test"
+	@echo "  make demo-play     - Play back the recorded cast"
+	@echo ""
 	@echo "Per-project targets:"
 	@echo "  make build-<project>  - Build specific project"
 	@echo "  make test-<project>   - Test specific project"
@@ -56,6 +61,23 @@ help:
 	@echo "  make clean-rust   - Clean Rust build artifacts"
 	@echo ""
 	@echo "Projects: $(SUBDIRS)"
+
+# ---- Demo recording targets ----
+#
+# These lease a real board from the lab, so they need a working client config.
+# Set DEMO_SELECTOR / DEMO_IMAGE / DEMO_OS_NAME to point the demo at a
+# different board type or image. See demo/README.md.
+
+.PHONY: demo-cast demo-verify demo-play
+
+demo-cast:
+	./demo/board_demo.py $(DEMO_ARGS)
+
+demo-verify:
+	./demo/board_demo.py --no-cast --speed 8 $(DEMO_ARGS)
+
+demo-play:
+	asciinema play docs/source/_static/demo.cast
 
 # ---- Documentation targets ----
 

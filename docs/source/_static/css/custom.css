@@ -7,13 +7,50 @@
     display: none !important;
 }
 
+/* The demo player is a terminal panel with its own background in both themes,
+   rather than blending into the page. A recording cannot be made legible on
+   both a white and a near-black page: the tools it captures choose their own
+   colours, and some of them emit 24 bit RGB that no palette can remap. rich's
+   progress bar during the flash step is the clear case - it fades between
+   #f92672 and #3a3a3a, which is 1.5:1 on a dark page and 3.8:1 on a light one.
+   Pinning the background means those choices land against the terminal they
+   were made for, and contrast only has to be verified once. */
 #demo-player {
     isolation: isolate;
+    border: 1px solid var(--color-background-border);
+    border-radius: 8px;
+    overflow: hidden;
 }
 
+/* Catppuccin Mocha on the "mantle" background. Every SGR colour the recording
+   actually uses clears 4.5:1 against it; color-8 is lifted off Mocha's #6c7086
+   (3.6:1) because the shell prompt writes its "jumpstarter" prefix in it. */
 #demo-player .ap-player {
-    --term-color-background: var(--color-background-primary);
-    --term-color-foreground: var(--color-foreground-primary);
+    --term-color-background: #181825;
+    --term-color-foreground: #cdd6f4;
+
+    --term-color-0: #45475a;
+    --term-color-1: #f38ba8;
+    --term-color-2: #a6e3a1;
+    --term-color-3: #f9e2af;
+    --term-color-4: #89b4fa;
+    --term-color-5: #cba6f7;
+    --term-color-6: #94e2d5;
+    --term-color-7: #bac2de;
+    --term-color-8: #9399b2;
+    --term-color-9: #f5a3bd;
+    --term-color-10: #b9e8b4;
+    --term-color-11: #fbe8c0;
+    --term-color-12: #a0c5fb;
+    --term-color-13: #d7bcf9;
+    --term-color-14: #abe9df;
+    --term-color-15: #cdd6f4;
+}
+
+/* The player renders SGR 2 at opacity 0.5, which puts rich's dimmed log
+   timestamps at 3.8:1. They are secondary, not decorative - keep them legible. */
+#demo-player pre.ap-term-text .ap-faint {
+    opacity: 0.75;
 }
 
 /* Align sidebar logo with content heading */
