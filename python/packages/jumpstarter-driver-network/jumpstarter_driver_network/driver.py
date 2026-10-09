@@ -283,7 +283,9 @@ class DbusNetwork(NetworkInterface, Driver):
                     yield stream
             case "tcp":
                 self.logger.debug("Connecting TCP host=%s port=%d", self.args["host"], self.args["port"])
-                async with await connect_tcp(remote_host=str(self.args["host"]), remote_port=int(self.args["port"])) as stream:
+                async with await connect_tcp(
+                    remote_host=str(self.args["host"]), remote_port=int(self.args["port"])
+                ) as stream:
                     yield stream
 
 

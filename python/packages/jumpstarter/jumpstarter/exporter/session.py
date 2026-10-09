@@ -3,7 +3,6 @@ from collections import deque
 from collections.abc import Generator
 from contextlib import asynccontextmanager, contextmanager, suppress
 from dataclasses import dataclass, field
-from logging.handlers import QueueHandler
 from typing import TYPE_CHECKING, Self
 from uuid import UUID
 

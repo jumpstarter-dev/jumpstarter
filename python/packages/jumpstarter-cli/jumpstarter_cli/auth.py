@@ -58,7 +58,9 @@ def _collect_auth_status(config) -> AuthStatusV1Alpha1:
     try:
         payload = decode_jwt(token_str)
     except ValueError as e:
-        return AuthStatusV1Alpha1.model_validate({"status": "invalid-token", "error": str(e), "refreshTokenStored": refresh_token_stored})
+        return AuthStatusV1Alpha1.model_validate(
+            {"status": "invalid-token", "error": str(e), "refreshTokenStored": refresh_token_stored}
+        )
 
     remaining = get_token_remaining_seconds(token_str)
     if remaining is None:

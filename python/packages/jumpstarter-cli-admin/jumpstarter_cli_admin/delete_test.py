@@ -32,7 +32,9 @@ CLIENT_CONFIG = ClientConfigV1Alpha1(
     drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
 )
 
-USER_CONFIG_CURRENT = UserConfigV1Alpha1(config=UserConfigV1Alpha1Config.model_validate({"current-client": CLIENT_CONFIG}))
+USER_CONFIG_CURRENT = UserConfigV1Alpha1(
+    config=UserConfigV1Alpha1Config.model_validate({"current-client": CLIENT_CONFIG})
+)
 USER_CONFIG_NOT_CURRENT = UserConfigV1Alpha1(config=UserConfigV1Alpha1Config.model_validate({"current-client": None}))
 
 

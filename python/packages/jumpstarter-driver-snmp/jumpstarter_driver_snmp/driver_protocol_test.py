@@ -167,8 +167,8 @@ class SnmpTestAgent:
         if self._thread.is_alive():
             raise RuntimeError("SNMP test agent did not stop in time")
 
-    def __enter__(self) -> "SnmpTestAgent":
-        return self.start()
+    def __enter__(self) -> Self:
+        return self.start()  # ty: ignore[invalid-return-type]
 
     def __exit__(self, *exc_info):
         self.stop()

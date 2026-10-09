@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from pydantic import validate_call
 from udsoncan.exceptions import NegativeResponseException
@@ -20,8 +21,6 @@ from .common import (
     UdsResponse,
     UdsSessionType,
 )
-from typing import Any
-
 from jumpstarter.driver import export
 
 logger = logging.getLogger(__name__)
