@@ -767,7 +767,7 @@ async def _resource_upload(session: Session, driver: Driver):
             .items()
         )
         try:
-            metadata = ResourceMetadata(**dict(list(await call.initial_metadata())))  # type: ignore[call-arg]  # ty: ignore[invalid-argument-type]
+            metadata = ResourceMetadata(**dict(list(await call.initial_metadata())))  # type: ignore[call-arg]
             yield call, metadata.resource.model_dump(mode="json"), sever
         finally:
             # Finish the call on this test's event loop before it closes.

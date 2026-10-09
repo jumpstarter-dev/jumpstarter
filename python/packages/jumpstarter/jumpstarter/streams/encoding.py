@@ -12,7 +12,7 @@ from anyio.abc import AnyByteStream, ObjectStream
 
 if sys.version_info >= (3, 14):
     from compression import zstd
-else:
+else:  # pragma: no cover
     from backports import zstd  # ty: ignore[unresolved-import]
 
 

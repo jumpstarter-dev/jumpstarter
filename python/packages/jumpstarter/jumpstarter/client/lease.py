@@ -146,7 +146,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     async def get(self):
         with translate_grpc_exceptions():
             svc = ClientService(channel=self.channel, namespace=self.namespace)
-            assert self.name is not None
+            assert self.name is not None  # pragma: no cover
             return await svc.GetLease(name=self.name)
 
     @retry(

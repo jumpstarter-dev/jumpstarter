@@ -479,7 +479,7 @@ class TftpReadTransfer(TftpTransfer):
 
     def _create_oack_packet(self) -> bytes:
         packet = Opcode.OACK.to_bytes(2, "big")
-        assert self.negotiated_options is not None
+        assert self.negotiated_options is not None  # pragma: no cover
         for opt_name, opt_value in self.negotiated_options.items():
             packet += f"{opt_name}\0{opt_value!s}\0".encode()
         return packet
@@ -536,7 +536,7 @@ class TftpReadTransfer(TftpTransfer):
             self.ack_received.set()
         elif block_num == self.block_num - 1:
             self.logger.warning(f"Duplicate ACK for block {block_num} received, resending block {self.block_num}")
-            assert self.transport is not None and self.current_packet is not None
+            assert self.transport is not None and self.current_packet is not None  # pragma: no cover
             self.transport.sendto(self.current_packet)
         else:
             self.logger.warning(f"Out of sequence ACK: expected {self.block_num}, got {block_num}")
