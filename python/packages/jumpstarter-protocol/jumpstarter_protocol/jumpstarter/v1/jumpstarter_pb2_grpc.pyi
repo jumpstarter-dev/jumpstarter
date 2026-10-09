@@ -392,9 +392,10 @@ ControllerServiceAsyncStub: typing_extensions.TypeAlias = ControllerServiceStub[
     ],
 ]
 
-class ControllerServiceServicer:
+class ControllerServiceServicer(metaclass=abc.ABCMeta):
     """A service where an exporter can connect to make itself available."""
 
+    @abc.abstractmethod
     def Register(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.RegisterRequest,
@@ -402,6 +403,7 @@ class ControllerServiceServicer:
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.RegisterResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.RegisterResponse]]:
         """Register an exporter with the controller."""
 
+    @abc.abstractmethod
     def Unregister(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.UnregisterRequest,
@@ -411,6 +413,7 @@ class ControllerServiceServicer:
         Disconnecting will invalidate any existing router tokens.
         """
 
+    @abc.abstractmethod
     def ReportStatus(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.ReportStatusRequest,
@@ -418,6 +421,7 @@ class ControllerServiceServicer:
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.ReportStatusResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.ReportStatusResponse]]:
         """Report exporter status to the controller."""
 
+    @abc.abstractmethod
     def Listen(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.ListenRequest,
@@ -427,6 +431,7 @@ class ControllerServiceServicer:
         Returns stream tokens for accepting incoming client connections.
         """
 
+    @abc.abstractmethod
     def Status(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.StatusRequest,
@@ -434,6 +439,7 @@ class ControllerServiceServicer:
     ) -> typing.Union[collections.abc.Iterator[jumpstarter.v1.jumpstarter_pb2.StatusResponse], collections.abc.AsyncIterator[jumpstarter.v1.jumpstarter_pb2.StatusResponse]]:
         """Stream lease status updates for the exporter."""
 
+    @abc.abstractmethod
     def Dial(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.DialRequest,
@@ -444,6 +450,7 @@ class ControllerServiceServicer:
         Leases are checked before token issuance.
         """
 
+    @abc.abstractmethod
     def GetLease(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.GetLeaseRequest,
@@ -451,6 +458,7 @@ class ControllerServiceServicer:
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.GetLeaseResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.GetLeaseResponse]]:
         """Retrieve a lease by name."""
 
+    @abc.abstractmethod
     def RequestLease(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.RequestLeaseRequest,
@@ -458,6 +466,7 @@ class ControllerServiceServicer:
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.RequestLeaseResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.RequestLeaseResponse]]:
         """Request a new lease for an exporter."""
 
+    @abc.abstractmethod
     def ReleaseLease(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseRequest,
@@ -465,6 +474,7 @@ class ControllerServiceServicer:
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseResponse]]:
         """Release an active lease."""
 
+    @abc.abstractmethod
     def ListLeases(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.ListLeasesRequest,
@@ -472,6 +482,7 @@ class ControllerServiceServicer:
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.ListLeasesResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.ListLeasesResponse]]:
         """List all leases."""
 
+    @abc.abstractmethod
     def GetServiceEndpoints(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.GetServiceEndpointsRequest,
@@ -721,11 +732,12 @@ ExporterServiceAsyncStub: typing_extensions.TypeAlias = ExporterServiceStub[
     ],
 ]
 
-class ExporterServiceServicer:
+class ExporterServiceServicer(metaclass=abc.ABCMeta):
     """A service an exporter can share locally to be used without a server.
     Channel and call credentials are used to authenticate the client and route to the right exporter.
     """
 
+    @abc.abstractmethod
     def GetReport(
         self,
         request: google.protobuf.empty_pb2.Empty,
@@ -733,6 +745,7 @@ class ExporterServiceServicer:
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.GetReportResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.GetReportResponse]]:
         """Retrieve the exporter driver report."""
 
+    @abc.abstractmethod
     def DriverCall(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.DriverCallRequest,
@@ -740,6 +753,7 @@ class ExporterServiceServicer:
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.DriverCallResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.DriverCallResponse]]:
         """Invoke a method on a driver instance."""
 
+    @abc.abstractmethod
     def StreamingDriverCall(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallRequest,
@@ -747,6 +761,7 @@ class ExporterServiceServicer:
     ) -> typing.Union[collections.abc.Iterator[jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallResponse], collections.abc.AsyncIterator[jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallResponse]]:
         """Invoke a streaming method on a driver instance."""
 
+    @abc.abstractmethod
     def LogStream(
         self,
         request: google.protobuf.empty_pb2.Empty,
@@ -754,6 +769,7 @@ class ExporterServiceServicer:
     ) -> typing.Union[collections.abc.Iterator[jumpstarter.v1.jumpstarter_pb2.LogStreamResponse], collections.abc.AsyncIterator[jumpstarter.v1.jumpstarter_pb2.LogStreamResponse]]:
         """Stream log messages from the exporter."""
 
+    @abc.abstractmethod
     def Reset(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.ResetRequest,
@@ -761,6 +777,7 @@ class ExporterServiceServicer:
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.ResetResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.ResetResponse]]:
         """Reset the exporter connection."""
 
+    @abc.abstractmethod
     def GetStatus(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.GetStatusRequest,
@@ -768,6 +785,7 @@ class ExporterServiceServicer:
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.GetStatusResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.GetStatusResponse]]:
         """Retrieve the current exporter status."""
 
+    @abc.abstractmethod
     def EndSession(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.EndSessionRequest,

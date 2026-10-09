@@ -105,11 +105,12 @@ TelemetryServiceAsyncStub: typing_extensions.TypeAlias = TelemetryServiceStub[
     ],
 ]
 
-class TelemetryServiceServicer:
+class TelemetryServiceServicer(metaclass=abc.ABCMeta):
     """A service that reverse-scrapes exporter metrics and receives structured logs.
     Implemented by jumpstarter-telemetry; not part of the controller.
     """
 
+    @abc.abstractmethod
     def MetricsStream(
         self,
         request_iterator: _MaybeAsyncIterator[jumpstarter.v1.telemetry_pb2.MetricsStreamRequest],
@@ -119,6 +120,7 @@ class TelemetryServiceServicer:
         exporter responds with metric snapshots (structured families plus optional OpenMetrics text).
         """
 
+    @abc.abstractmethod
     def PushLogs(
         self,
         request: jumpstarter.v1.telemetry_pb2.PushLogsRequest,
