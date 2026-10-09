@@ -294,10 +294,9 @@ ClientServiceAsyncStub: typing_extensions.TypeAlias = ClientServiceStub[
     ],
 ]
 
-class ClientServiceServicer(metaclass=abc.ABCMeta):
+class ClientServiceServicer:
     """Client-facing API service for managing exporters and leases."""
 
-    @abc.abstractmethod
     def GetExporter(
         self,
         request: jumpstarter.client.v1.client_pb2.GetExporterRequest,
@@ -305,7 +304,6 @@ class ClientServiceServicer(metaclass=abc.ABCMeta):
     ) -> typing.Union[jumpstarter.client.v1.client_pb2.Exporter, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.Exporter]]:
         """Retrieve a single exporter by resource name."""
 
-    @abc.abstractmethod
     def ListExporters(
         self,
         request: jumpstarter.client.v1.client_pb2.ListExportersRequest,
@@ -313,7 +311,6 @@ class ClientServiceServicer(metaclass=abc.ABCMeta):
     ) -> typing.Union[jumpstarter.client.v1.client_pb2.ListExportersResponse, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.ListExportersResponse]]:
         """List exporters in a namespace with optional filtering."""
 
-    @abc.abstractmethod
     def GetLease(
         self,
         request: jumpstarter.client.v1.client_pb2.GetLeaseRequest,
@@ -321,7 +318,6 @@ class ClientServiceServicer(metaclass=abc.ABCMeta):
     ) -> typing.Union[jumpstarter.client.v1.client_pb2.Lease, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.Lease]]:
         """Retrieve a single lease by resource name."""
 
-    @abc.abstractmethod
     def ListLeases(
         self,
         request: jumpstarter.client.v1.client_pb2.ListLeasesRequest,
@@ -329,7 +325,6 @@ class ClientServiceServicer(metaclass=abc.ABCMeta):
     ) -> typing.Union[jumpstarter.client.v1.client_pb2.ListLeasesResponse, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.ListLeasesResponse]]:
         """List leases in a namespace with optional filtering."""
 
-    @abc.abstractmethod
     def CreateLease(
         self,
         request: jumpstarter.client.v1.client_pb2.CreateLeaseRequest,
@@ -337,7 +332,6 @@ class ClientServiceServicer(metaclass=abc.ABCMeta):
     ) -> typing.Union[jumpstarter.client.v1.client_pb2.Lease, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.Lease]]:
         """Create a new lease for an exporter."""
 
-    @abc.abstractmethod
     def UpdateLease(
         self,
         request: jumpstarter.client.v1.client_pb2.UpdateLeaseRequest,
@@ -345,7 +339,6 @@ class ClientServiceServicer(metaclass=abc.ABCMeta):
     ) -> typing.Union[jumpstarter.client.v1.client_pb2.Lease, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.Lease]]:
         """Update an existing lease."""
 
-    @abc.abstractmethod
     def DeleteLease(
         self,
         request: jumpstarter.client.v1.client_pb2.DeleteLeaseRequest,
@@ -353,7 +346,6 @@ class ClientServiceServicer(metaclass=abc.ABCMeta):
     ) -> typing.Union[google.protobuf.empty_pb2.Empty, collections.abc.Awaitable[google.protobuf.empty_pb2.Empty]]:
         """Delete a lease by resource name."""
 
-    @abc.abstractmethod
     def RotateToken(
         self,
         request: jumpstarter.client.v1.client_pb2.RotateTokenRequest,

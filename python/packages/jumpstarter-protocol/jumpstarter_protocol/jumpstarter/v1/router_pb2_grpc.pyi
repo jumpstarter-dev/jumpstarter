@@ -76,7 +76,7 @@ RouterServiceAsyncStub: typing_extensions.TypeAlias = RouterServiceStub[
     ],
 ]
 
-class RouterServiceServicer(metaclass=abc.ABCMeta):
+class RouterServiceServicer:
     """Router service for multiplexing bidirectional streams between clients and exporters.
     Claims:
     iss: jumpstarter controller
@@ -85,7 +85,6 @@ class RouterServiceServicer(metaclass=abc.ABCMeta):
     stream: stream id.
     """
 
-    @abc.abstractmethod
     def Stream(
         self,
         request_iterator: _MaybeAsyncIterator[jumpstarter.v1.router_pb2.StreamRequest],
