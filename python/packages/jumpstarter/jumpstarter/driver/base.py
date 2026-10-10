@@ -75,6 +75,16 @@ SUPPORTED_CONTENT_ENCODINGS = (
 )
 
 
+class _DriverLoggerNameFilter(logging.Filter):
+    def __init__(self, display_name: str):
+        super().__init__()
+        self.display_name = display_name
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.name = self.display_name
+        return True
+
+
 @dataclass(kw_only=True)
 class Driver(
     Metadata,
@@ -104,15 +114,29 @@ class Driver(
     methods_description: dict[str, str] = field(default_factory=dict)
     """Map of method names to their help descriptions (configurable via server config)"""
 
-    log_level: str = "INFO"
+    log_level: str | None = None
     logger: logging.Logger = field(init=False)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
 
-        self.logger = get_logger(f"driver.{self.__class__.__name__}", LogSource.DRIVER)
-        self.logger.setLevel(self.log_level)
+        display_name = f"driver.{self.__class__.__name__}"
+        self.logger = get_logger(f"{display_name}.{str(self.uuid)[-4:]}", LogSource.DRIVER)
+        self.logger.addFilter(_DriverLoggerNameFilter(display_name))
+        self.logger.setLevel(self.log_level if self.log_level is not None else "INFO")
+
+    def propagate_log_level(self, inherited: str = "INFO") -> None:
+        """Set this driver's log level and recurse into all children.
+
+        If a driver has an explicit ``log_level``, that value wins; otherwise
+        it inherits the level from its parent.  Called once from
+        ``Session.__init__`` after the full driver tree is constructed.
+        """
+        level = self.log_level if self.log_level is not None else inherited
+        self.logger.setLevel(level)
+        for child in self.children.values():
+            child.propagate_log_level(level)
 
     def close(self):
         for child in self.children.values():
