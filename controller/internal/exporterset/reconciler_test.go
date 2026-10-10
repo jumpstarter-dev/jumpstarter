@@ -2019,7 +2019,8 @@ func TestEnsureExporterPods_configSecretHasEndpointAndToken(t *testing.T) {
 func TestEnsureExporterPods_driversAppearedInConfig(t *testing.T) {
 	es := makeExporterSet(func(e *virtualtargetv1alpha1.ExporterSet) {
 		e.Spec.Template.Spec.Drivers = []virtualtargetv1alpha1.DriverConfig{
-			{Name: "power", Type: "jumpstarter_driver_power.driver.QemuPower"},
+			{Name: "qemu", Type: "jumpstarter_driver_qemu.driver.Qemu"},
+			{Name: "power", Ref: "qemu.power"},
 		}
 	})
 	exp := makeExporterWithCredential()
@@ -2039,8 +2040,8 @@ func TestEnsureExporterPods_driversAppearedInConfig(t *testing.T) {
 	if !strings.Contains(content, "power:") {
 		t.Errorf("expected 'power:' in config YAML, got:\n%s", content)
 	}
-	if !strings.Contains(content, "QemuPower") {
-		t.Errorf("expected 'QemuPower' in config YAML, got:\n%s", content)
+	if !strings.Contains(content, "ref: qemu.power") {
+		t.Errorf("expected 'ref: qemu.power' in config YAML, got:\n%s", content)
 	}
 }
 

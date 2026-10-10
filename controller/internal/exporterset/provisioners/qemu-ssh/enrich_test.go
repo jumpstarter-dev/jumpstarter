@@ -18,6 +18,7 @@ package qemussh
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
@@ -158,6 +159,80 @@ func TestEnrich_defaultPartitionsAarch64(t *testing.T) {
 	}
 	if got := partitions["OVMF_CODE.fd"]; got != "/usr/share/AAVMF/AAVMF_CODE.fd" {
 		t.Errorf("OVMF_CODE.fd = %v", got)
+	}
+}
+
+func TestEnrich_rejectsOwnedChildAsTopLevel(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "qemu",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+		{
+			Name: "power",
+			Type: "jumpstarter_driver_qemu.driver.QemuPower",
+		},
+	}
+
+	_, err := enrichExporterExport(drivers, nil)
+	if err == nil {
+		t.Fatal("expected error for owned child type as top-level driver")
+	}
+	if !strings.Contains(err.Error(), "cannot be a top-level driver") {
+		t.Errorf("error = %q, want message about top-level driver", err)
+	}
+}
+
+func TestEnrich_keepsExistingPowerRef(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "qemu",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+		{
+			Name: "power",
+			Ref:  "qemu.power",
+		},
+	}
+
+	result, err := enrichExporterExport(drivers, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	count := 0
+	for _, d := range result {
+		if d.Name == "power" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("power driver count = %d, want 1", count)
+	}
+}
+
+func TestEnrich_powerRefUsesDriverName(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "vm",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+	}
+
+	result, err := enrichExporterExport(drivers, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	power := findDriver(result, "power")
+	if power == nil {
+		t.Fatal("power root alias missing")
+	}
+	if power.Ref != "vm.power" {
+		t.Errorf("power.ref = %q, want vm.power", power.Ref)
 	}
 }
 

@@ -42,6 +42,7 @@ func TestRuntimeContainerFile_basic(t *testing.T) {
 	mustContain(t, got, "[Container]")
 	mustContain(t, got, "ContainerName=rpi4-virtual-abc12-runtime")
 	mustContain(t, got, "Image=quay.io/jumpstarter-dev/virtual/qemu-runtime:latest")
+	mustContain(t, got, "User=0")
 	mustContain(t, got, "Volume=jumpstarter-rpi4-virtual-abc12-shared:/shared:z")
 	mustContain(t, got, "JUMPSTARTER_EXEC_LOG_FIELDS=component=exporter,exporter=rpi4-virtual-abc12,namespace=jumpstarter")
 	mustContain(t, got, "[Service]")

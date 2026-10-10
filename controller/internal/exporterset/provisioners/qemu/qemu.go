@@ -31,6 +31,7 @@ import (
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/disk"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/qemudriver"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -360,22 +361,22 @@ func (p *Provisioner) EnrichExporterExport(
 	mergedParameters map[string]any,
 	_ *jumpstarterdevv1alpha1.Exporter,
 ) ([]virtualtargetv1alpha1.DriverConfig, error) {
-	result := make([]virtualtargetv1alpha1.DriverConfig, 0, len(drivers)+1)
 	hasTCP := false
-
 	for _, d := range drivers {
 		if d.Type == tcpDriverType {
 			hasTCP = true
 		}
+	}
 
-		if d.Type == qemuDriverType {
-			var err error
-			d, err = enrichQemuDriver(d, mergedParameters)
-			if err != nil {
-				return nil, err
-			}
-		}
-		result = append(result, d)
+	if err := qemudriver.ValidateNoOwnedChildren(drivers); err != nil {
+		return nil, err
+	}
+
+	result, err := qemudriver.EnrichAndAliasPower(drivers, func(d virtualtargetv1alpha1.DriverConfig) (virtualtargetv1alpha1.DriverConfig, error) {
+		return enrichQemuDriver(d, mergedParameters)
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	// Auto-inject tcp wrapper driver if not present.
