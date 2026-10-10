@@ -682,6 +682,9 @@ func (r *ExporterSetReconciler) syncConfigSecret(
 ) error {
 	configSecret, err := r.buildExporterConfigSecret(ctx, es, vtc, exp, caBundle, mergedParameters)
 	if err != nil {
+		if r.Recorder != nil {
+			r.Recorder.Eventf(es, corev1.EventTypeWarning, "ExporterConfigFailed", "Cannot build config for Exporter %s: %v", exp.Name, err)
+		}
 		return fmt.Errorf("build config for %s: %w", exp.Name, err)
 	}
 
@@ -718,6 +721,9 @@ func (r *ExporterSetReconciler) createExporterPod(
 
 	pod, err := r.Provisioner.RenderPod(ctx, es, vtc, mergedParameters, images, exp)
 	if err != nil {
+		if r.Recorder != nil {
+			r.Recorder.Eventf(es, corev1.EventTypeWarning, "PodRenderFailed", "Cannot render Pod for Exporter %s: %v", exp.Name, err)
+		}
 		return fmt.Errorf("render Pod for %s: %w", exp.Name, err)
 	}
 
@@ -1986,6 +1992,9 @@ func mergeImages(vtcImages, esImages *virtualtargetv1alpha1.ImageOverrides) *vir
 	}
 	if esImages.Runtime != nil {
 		merged.Runtime = esImages.Runtime.DeepCopy()
+	}
+	if esImages.Turn != nil {
+		merged.Turn = esImages.Turn.DeepCopy()
 	}
 	return merged
 }
