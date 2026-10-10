@@ -8,6 +8,7 @@ import collections.abc
 import google.protobuf.descriptor
 import google.protobuf.duration_pb2
 import google.protobuf.internal.containers
+import google.protobuf.internal.enum_type_wrapper
 import google.protobuf.message
 import google.protobuf.struct_pb2
 import google.protobuf.timestamp_pb2
@@ -22,6 +23,64 @@ else:
     import typing_extensions
 
 DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
+
+class _LeaseHookPhase:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: typing_extensions.TypeAlias = ValueType
+
+class _LeaseHookPhaseEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_LeaseHookPhase.ValueType], builtins.type):
+    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+    LEASE_HOOK_PHASE_UNSPECIFIED: _LeaseHookPhase.ValueType  # 0
+    """Not started."""
+    LEASE_HOOK_PHASE_RUNNING: _LeaseHookPhase.ValueType  # 1
+    """Started; still running, or cut off by an exporter restart."""
+    LEASE_HOOK_PHASE_SUCCEEDED: _LeaseHookPhase.ValueType  # 2
+    """Finished successfully."""
+    LEASE_HOOK_PHASE_FAILED: _LeaseHookPhase.ValueType  # 3
+    """Failed; on_failure says what the exporter did about it."""
+    LEASE_HOOK_PHASE_SKIPPED: _LeaseHookPhase.ValueType  # 4
+    """Not run (not configured, or not needed for this lease)."""
+
+class LeaseHookPhase(_LeaseHookPhase, metaclass=_LeaseHookPhaseEnumTypeWrapper):
+    """Phase of a lease lifecycle hook."""
+
+LEASE_HOOK_PHASE_UNSPECIFIED: LeaseHookPhase.ValueType  # 0
+"""Not started."""
+LEASE_HOOK_PHASE_RUNNING: LeaseHookPhase.ValueType  # 1
+"""Started; still running, or cut off by an exporter restart."""
+LEASE_HOOK_PHASE_SUCCEEDED: LeaseHookPhase.ValueType  # 2
+"""Finished successfully."""
+LEASE_HOOK_PHASE_FAILED: LeaseHookPhase.ValueType  # 3
+"""Failed; on_failure says what the exporter did about it."""
+LEASE_HOOK_PHASE_SKIPPED: LeaseHookPhase.ValueType  # 4
+"""Not run (not configured, or not needed for this lease)."""
+Global___LeaseHookPhase: typing_extensions.TypeAlias = LeaseHookPhase
+
+class _LeaseHookFailureAction:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: typing_extensions.TypeAlias = ValueType
+
+class _LeaseHookFailureActionEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_LeaseHookFailureAction.ValueType], builtins.type):
+    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+    LEASE_HOOK_FAILURE_ACTION_UNSPECIFIED: _LeaseHookFailureAction.ValueType  # 0
+    LEASE_HOOK_FAILURE_ACTION_WARN: _LeaseHookFailureAction.ValueType  # 1
+    """Continue and warn."""
+    LEASE_HOOK_FAILURE_ACTION_END_LEASE: _LeaseHookFailureAction.ValueType  # 2
+    """End the lease."""
+    LEASE_HOOK_FAILURE_ACTION_EXIT: _LeaseHookFailureAction.ValueType  # 3
+    """End the lease and take the exporter offline."""
+
+class LeaseHookFailureAction(_LeaseHookFailureAction, metaclass=_LeaseHookFailureActionEnumTypeWrapper):
+    """Failure action configured for a lease lifecycle hook (onFailure)."""
+
+LEASE_HOOK_FAILURE_ACTION_UNSPECIFIED: LeaseHookFailureAction.ValueType  # 0
+LEASE_HOOK_FAILURE_ACTION_WARN: LeaseHookFailureAction.ValueType  # 1
+"""Continue and warn."""
+LEASE_HOOK_FAILURE_ACTION_END_LEASE: LeaseHookFailureAction.ValueType  # 2
+"""End the lease."""
+LEASE_HOOK_FAILURE_ACTION_EXIT: LeaseHookFailureAction.ValueType  # 3
+"""End the lease and take the exporter offline."""
+Global___LeaseHookFailureAction: typing_extensions.TypeAlias = LeaseHookFailureAction
 
 @typing.final
 class RegisterRequest(google.protobuf.message.Message):
@@ -47,6 +106,9 @@ class RegisterRequest(google.protobuf.message.Message):
 
     LABELS_FIELD_NUMBER: builtins.int
     REPORTS_FIELD_NUMBER: builtins.int
+    RECORDS_LEASE_HOOKS_FIELD_NUMBER: builtins.int
+    records_lease_hooks: builtins.bool
+    """The exporter records its lease hooks (UpdateLeaseHooks). The controller then holds it from new leases while its record owes an afterLease hook, whatever status it reports."""
     @property
     def labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
         """Key-value metadata labels."""
@@ -60,8 +122,9 @@ class RegisterRequest(google.protobuf.message.Message):
         *,
         labels: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
         reports: collections.abc.Iterable[Global___DriverInstanceReport] | None = ...,
+        records_lease_hooks: builtins.bool = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["labels", b"labels", "reports", b"reports"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["labels", b"labels", "records_lease_hooks", b"records_lease_hooks", "reports", b"reports"]) -> None: ...
 
 Global___RegisterRequest: typing_extensions.TypeAlias = RegisterRequest
 
@@ -266,15 +329,23 @@ class StatusResponse(google.protobuf.message.Message):
     LEASE_NAME_FIELD_NUMBER: builtins.int
     CLIENT_NAME_FIELD_NUMBER: builtins.int
     CONTEXT_FIELD_NUMBER: builtins.int
+    LEASE_HOOKS_FIELD_NUMBER: builtins.int
+    LEASE_UID_FIELD_NUMBER: builtins.int
     leased: builtins.bool
     """Whether the exporter is currently leased."""
     lease_name: builtins.str
     """Name of the active lease, if any."""
     client_name: builtins.str
     """Name of the connected client, if any."""
+    lease_uid: builtins.str
+    """UID of the active lease, if any. Tells it apart from an earlier lease with the same name."""
     @property
     def context(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
         """User-defined lease context metadata."""
+
+    @property
+    def lease_hooks(self) -> Global___LeaseHooks:
+        """Hook record of the exporter's latest lease. Always set by controllers that keep it, even when empty."""
 
     def __init__(
         self,
@@ -283,15 +354,124 @@ class StatusResponse(google.protobuf.message.Message):
         lease_name: builtins.str | None = ...,
         client_name: builtins.str | None = ...,
         context: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
+        lease_hooks: Global___LeaseHooks | None = ...,
+        lease_uid: builtins.str | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["_client_name", b"_client_name", "_lease_name", b"_lease_name", "client_name", b"client_name", "lease_name", b"lease_name"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_client_name", b"_client_name", "_lease_name", b"_lease_name", "client_name", b"client_name", "context", b"context", "lease_name", b"lease_name", "leased", b"leased"]) -> None: ...
+    def HasField(self, field_name: typing.Literal["_client_name", b"_client_name", "_lease_name", b"_lease_name", "_lease_uid", b"_lease_uid", "client_name", b"client_name", "lease_hooks", b"lease_hooks", "lease_name", b"lease_name", "lease_uid", b"lease_uid"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["_client_name", b"_client_name", "_lease_name", b"_lease_name", "_lease_uid", b"_lease_uid", "client_name", b"client_name", "context", b"context", "lease_hooks", b"lease_hooks", "lease_name", b"lease_name", "lease_uid", b"lease_uid", "leased", b"leased"]) -> None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_client_name", b"_client_name"]) -> typing.Literal["client_name"] | None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_lease_name", b"_lease_name"]) -> typing.Literal["lease_name"] | None: ...
+    @typing.overload
+    def WhichOneof(self, oneof_group: typing.Literal["_lease_uid", b"_lease_uid"]) -> typing.Literal["lease_uid"] | None: ...
 
 Global___StatusResponse: typing_extensions.TypeAlias = StatusResponse
+
+@typing.final
+class LeaseHookState(google.protobuf.message.Message):
+    """State of one lease lifecycle hook."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    PHASE_FIELD_NUMBER: builtins.int
+    ON_FAILURE_FIELD_NUMBER: builtins.int
+    MESSAGE_FIELD_NUMBER: builtins.int
+    ATTEMPTS_FIELD_NUMBER: builtins.int
+    phase: Global___LeaseHookPhase.ValueType
+    """Phase of the hook."""
+    on_failure: Global___LeaseHookFailureAction.ValueType
+    """Failure action configured when the hook ran."""
+    message: builtins.str
+    """Failure or skip reason, if any."""
+    attempts: builtins.int
+    """Times the hook was started; more than one means it was re-run after being cut off."""
+    def __init__(
+        self,
+        *,
+        phase: Global___LeaseHookPhase.ValueType = ...,
+        on_failure: Global___LeaseHookFailureAction.ValueType = ...,
+        message: builtins.str = ...,
+        attempts: builtins.int = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["attempts", b"attempts", "message", b"message", "on_failure", b"on_failure", "phase", b"phase"]) -> None: ...
+
+Global___LeaseHookState: typing_extensions.TypeAlias = LeaseHookState
+
+@typing.final
+class LeaseHooks(google.protobuf.message.Message):
+    """Lifecycle hook record of an exporter's latest lease, kept by the controller."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    LEASE_NAME_FIELD_NUMBER: builtins.int
+    BEFORE_LEASE_FIELD_NUMBER: builtins.int
+    AFTER_LEASE_FIELD_NUMBER: builtins.int
+    LEASE_UID_FIELD_NUMBER: builtins.int
+    CLIENT_NAME_FIELD_NUMBER: builtins.int
+    lease_name: builtins.str
+    """Lease the record belongs to; empty if there is no record."""
+    lease_uid: builtins.str
+    """UID of the lease the record belongs to. A lease name can be reused once the lease is deleted."""
+    client_name: builtins.str
+    """Client that held the lease, for hooks that run after the lease has ended."""
+    @property
+    def before_lease(self) -> Global___LeaseHookState:
+        """beforeLease hook; unset until it starts."""
+
+    @property
+    def after_lease(self) -> Global___LeaseHookState:
+        """afterLease hook; unset until it starts."""
+
+    def __init__(
+        self,
+        *,
+        lease_name: builtins.str = ...,
+        before_lease: Global___LeaseHookState | None = ...,
+        after_lease: Global___LeaseHookState | None = ...,
+        lease_uid: builtins.str = ...,
+        client_name: builtins.str = ...,
+    ) -> None: ...
+    def HasField(self, field_name: typing.Literal["after_lease", b"after_lease", "before_lease", b"before_lease"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["after_lease", b"after_lease", "before_lease", b"before_lease", "client_name", b"client_name", "lease_name", b"lease_name", "lease_uid", b"lease_uid"]) -> None: ...
+
+Global___LeaseHooks: typing_extensions.TypeAlias = LeaseHooks
+
+@typing.final
+class UpdateLeaseHooksRequest(google.protobuf.message.Message):
+    """Request to record a lifecycle hook transition for a lease."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    LEASE_NAME_FIELD_NUMBER: builtins.int
+    BEFORE_LEASE_FIELD_NUMBER: builtins.int
+    AFTER_LEASE_FIELD_NUMBER: builtins.int
+    LEASE_UID_FIELD_NUMBER: builtins.int
+    lease_name: builtins.str
+    """Lease the hook runs for."""
+    lease_uid: builtins.str
+    """UID of the lease the hook runs for (required)."""
+    @property
+    def before_lease(self) -> Global___LeaseHookState:
+        """New beforeLease hook state."""
+
+    @property
+    def after_lease(self) -> Global___LeaseHookState:
+        """New afterLease hook state."""
+
+    def __init__(
+        self,
+        *,
+        lease_name: builtins.str = ...,
+        before_lease: Global___LeaseHookState | None = ...,
+        after_lease: Global___LeaseHookState | None = ...,
+        lease_uid: builtins.str = ...,
+    ) -> None: ...
+    def HasField(self, field_name: typing.Literal["after_lease", b"after_lease", "before_lease", b"before_lease", "hook", b"hook"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["after_lease", b"after_lease", "before_lease", b"before_lease", "hook", b"hook", "lease_name", b"lease_name", "lease_uid", b"lease_uid"]) -> None: ...
+    def WhichOneof(self, oneof_group: typing.Literal["hook", b"hook"]) -> typing.Literal["before_lease", "after_lease"] | None: ...
+
+Global___UpdateLeaseHooksRequest: typing_extensions.TypeAlias = UpdateLeaseHooksRequest
 
 @typing.final
 class DialRequest(google.protobuf.message.Message):
