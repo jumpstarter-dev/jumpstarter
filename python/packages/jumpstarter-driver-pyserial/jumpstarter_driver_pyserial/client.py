@@ -25,6 +25,10 @@ KNOWN_POWER_CLIENTS = frozenset({
     "jumpstarter_driver_snmp.client.SNMPServerClient",
 })
 
+# Console reconnection settings
+SUCCESSFUL_SESSION_THRESHOLD = 5  # seconds - reset counter if session lasted this long
+MAX_RAPID_FAILURES = 10  # maximum consecutive rapid reconnection attempts
+
 
 def _stdin_supplies_data() -> bool:
     """Whether stdin is a pipe, socket or regular file that can feed the console.
@@ -270,14 +274,17 @@ class PySerialClient(DriverClient):
                     click.echo("Power cycle: CTRL+] x 3 times\n")
 
             retries = 0
-            while retries < 30:
+            while retries < MAX_RAPID_FAILURES:
                 console = Console(serial_client=self, observe=observe, on_power_cycle=on_power_cycle)
+                session_start = time.time()
                 try:
                     console.run()
                     break
                 except ConsoleStreamDrop:
+                    session_duration = time.time() - session_start
+                    session_was_healthy = session_duration >= SUCCESSFUL_SESSION_THRESHOLD
+                    retries = 0 if session_was_healthy else retries + 1
                     click.echo("\r\nSerial connection lost, reconnecting...\n", err=True)
-                    retries += 1
                     time.sleep(1)
             else:
                 click.echo("\nSerial connection lost (reconnect attempts exhausted).\n", err=True)
