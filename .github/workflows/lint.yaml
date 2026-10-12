@@ -34,6 +34,12 @@ jobs:
               - '.github/workflows/lint.yaml'
             protocol:
               - 'protocol/**'
+              - 'controller/buf.gen.yaml'
+              - 'controller/Makefile'
+              - 'controller/internal/protocol/**'
+              - 'python/buf.gen.yaml'
+              - 'python/Makefile'
+              - 'python/packages/jumpstarter-protocol/jumpstarter_protocol/**'
               - '.github/workflows/lint.yaml'
             python:
               - 'python/**'
@@ -85,6 +91,16 @@ jobs:
       - name: Run protobuf linter
         working-directory: protocol
         run: make lint
+
+      - name: Check generated protobuf code is up to date
+        run: |
+          make -C controller protobuf-gen
+          make -C python protobuf-gen
+          git add --intent-to-add .
+          git diff --exit-code || {
+            echo "::error::Generated protobuf code is out of date. Run 'make protobuf-gen' in controller/ and python/ and commit the result."
+            exit 1
+          }
 
   lint-python:
     needs: changes
