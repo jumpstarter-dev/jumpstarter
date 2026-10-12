@@ -27,12 +27,11 @@ GRPC_GENERATED_VERSION: str
 GRPC_VERSION: str
 
 class RouterServiceStub:
-    """Router service for multiplexing bidirectional streams between clients and exporters.
-    Claims:
-    iss: jumpstarter controller
-    aud: jumpstarter router
-    sub: jumpstarter client/exporter
-    stream: stream id.
+    """Router service for pairing bidirectional streams between clients and exporters.
+    The controller issues JWTs with these claims:
+    iss: https://jumpstarter.dev/stream
+    aud: https://jumpstarter.dev/router
+    sub: stream ID shared by the two peers.
     """
 
     @_typing.overload
@@ -44,12 +43,11 @@ class RouterServiceStub:
 
 @_typing.type_check_only
 class RouterServiceAsyncStub(RouterServiceStub):
-    """Router service for multiplexing bidirectional streams between clients and exporters.
-    Claims:
-    iss: jumpstarter controller
-    aud: jumpstarter router
-    sub: jumpstarter client/exporter
-    stream: stream id.
+    """Router service for pairing bidirectional streams between clients and exporters.
+    The controller issues JWTs with these claims:
+    iss: https://jumpstarter.dev/stream
+    aud: https://jumpstarter.dev/router
+    sub: stream ID shared by the two peers.
     """
 
     def __init__(self, channel: _aio.Channel) -> None: ...
@@ -57,12 +55,11 @@ class RouterServiceAsyncStub(RouterServiceStub):
     """Stream connects caller to another caller of the same stream."""
 
 class RouterServiceServicer:
-    """Router service for multiplexing bidirectional streams between clients and exporters.
-    Claims:
-    iss: jumpstarter controller
-    aud: jumpstarter router
-    sub: jumpstarter client/exporter
-    stream: stream id.
+    """Router service for pairing bidirectional streams between clients and exporters.
+    The controller issues JWTs with these claims:
+    iss: https://jumpstarter.dev/stream
+    aud: https://jumpstarter.dev/router
+    sub: stream ID shared by the two peers.
     """
 
     def Stream(

@@ -6,12 +6,11 @@ from . import router_pb2 as jumpstarter_dot_v1_dot_router__pb2
 
 
 class RouterServiceStub:
-    """Router service for multiplexing bidirectional streams between clients and exporters.
-    Claims:
-    iss: jumpstarter controller
-    aud: jumpstarter router
-    sub: jumpstarter client/exporter
-    stream: stream id.
+    """Router service for pairing bidirectional streams between clients and exporters.
+    The controller issues JWTs with these claims:
+    iss: https://jumpstarter.dev/stream
+    aud: https://jumpstarter.dev/router
+    sub: stream ID shared by the two peers.
     """
 
     def __init__(self, channel):
@@ -28,12 +27,11 @@ class RouterServiceStub:
 
 
 class RouterServiceServicer:
-    """Router service for multiplexing bidirectional streams between clients and exporters.
-    Claims:
-    iss: jumpstarter controller
-    aud: jumpstarter router
-    sub: jumpstarter client/exporter
-    stream: stream id.
+    """Router service for pairing bidirectional streams between clients and exporters.
+    The controller issues JWTs with these claims:
+    iss: https://jumpstarter.dev/stream
+    aud: https://jumpstarter.dev/router
+    sub: stream ID shared by the two peers.
     """
 
     def Stream(self, request_iterator, context):
@@ -60,12 +58,11 @@ def add_RouterServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class RouterService:
-    """Router service for multiplexing bidirectional streams between clients and exporters.
-    Claims:
-    iss: jumpstarter controller
-    aud: jumpstarter router
-    sub: jumpstarter client/exporter
-    stream: stream id.
+    """Router service for pairing bidirectional streams between clients and exporters.
+    The controller issues JWTs with these claims:
+    iss: https://jumpstarter.dev/stream
+    aud: https://jumpstarter.dev/router
+    sub: stream ID shared by the two peers.
     """
 
     @staticmethod
