@@ -419,6 +419,7 @@
       "groupName": "buf-protobuf-plugins",
       "matchDepNames": [
         "protocolbuffers/protobuf",
+        "grpc/grpc",
         "mypy-protobuf"
       ]
     },

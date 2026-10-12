@@ -4,7 +4,8 @@ managed:
 plugins:
   - remote: buf.build/protocolbuffers/python:v31.1
     out: ./packages/jumpstarter-protocol/jumpstarter_protocol
-  - remote: buf.build/grpc/python
+  # renovate: datasource=github-releases depName=grpc/grpc
+  - remote: buf.build/grpc/python:v1.84.0
     out: ./packages/jumpstarter-protocol/jumpstarter_protocol
   - remote: buf.build/community/nipunn1313-mypy:v3.7.0
     out: ./packages/jumpstarter-protocol/jumpstarter_protocol
