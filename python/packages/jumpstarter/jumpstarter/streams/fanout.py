@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import deque
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
@@ -393,7 +393,7 @@ class StreamFanOut:
         self,
         on_overflow: str = "drop",
         buffer_bytes: int = 65536,
-    ) -> AsyncIterator[ExclusiveStream]:
+    ) -> AsyncGenerator[ExclusiveStream, None]:
         """Attach with the write token. Yields an ExclusiveStream."""
         async with self._lock:
             if self._write_token_holder is not None:
@@ -426,7 +426,7 @@ class StreamFanOut:
         self,
         on_overflow: str = "drop",
         buffer_bytes: int = 65536,
-    ) -> AsyncIterator[ObserverStream]:
+    ) -> AsyncGenerator[ObserverStream, None]:
         """Attach as a read-only observer. Yields an ObserverStream."""
         async with self._lock:
             await self._ensure_started()

@@ -44,7 +44,7 @@ async def test_stream_async_hides_console_marker_from_python_callers() -> None:
         )
     )
     stub.Stream.return_value = context
-    client = AsyncDriverClient(stub=stub)
+    client = AsyncDriverClient(stub=stub)  # ty: ignore[no-matching-overload]
 
     with pytest.raises(DriverError, match="Console in use") as exc_info:
         async with client.stream_async("connect"):
@@ -63,7 +63,7 @@ async def test_stream_async_translates_console_in_use_abort_before_headers() -> 
     context.code = AsyncMock(return_value=StatusCode.FAILED_PRECONDITION)
     context.details = AsyncMock(return_value=f"{CONSOLE_IN_USE_MARKER} Console in use by another client.")
     stub.Stream.return_value = context
-    client = AsyncDriverClient(stub=stub)
+    client = AsyncDriverClient(stub=stub)  # ty: ignore[no-matching-overload]
 
     with pytest.raises(DriverError, match="Console in use") as exc_info:
         async with client.stream_async("connect"):

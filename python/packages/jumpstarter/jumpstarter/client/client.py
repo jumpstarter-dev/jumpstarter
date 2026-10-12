@@ -136,7 +136,7 @@ async def client_from_channel(
                 logger.warning("Driver client '%s' is not available.", e.class_path)
             client_class = StubDriverClient
 
-        client = client_class(
+        client = client_class(  # ty: ignore[no-matching-overload]
             uuid=UUID(report.uuid),
             labels=report.labels,
             stub=stub,

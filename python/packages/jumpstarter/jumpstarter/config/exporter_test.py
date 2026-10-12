@@ -54,7 +54,7 @@ export:
 
     config = ExporterConfigV1Alpha1.load("test")
 
-    assert config == ExporterConfigV1Alpha1(  # type: ignore[call-arg]
+    assert config == ExporterConfigV1Alpha1(  # type: ignore[call-arg]  # ty: ignore[pydantic-discarded-extra-argument]
         alias="test",
         apiVersion="jumpstarter.dev/v1alpha1",
         kind="ExporterConfig",
