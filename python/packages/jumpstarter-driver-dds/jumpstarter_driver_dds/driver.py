@@ -104,7 +104,7 @@ class DdsBackend:  # pragma: no cover — requires native CycloneDDS
         self._topics: dict[str, Any] = {}
         self._writers: dict[str, Any] = {}
         self._readers: dict[str, Any] = {}
-        self._idl_types: dict[str, type] = {}
+        self._idl_types: dict[str, type[Any]] = {}
         self._qos_map: dict[str, DdsTopicQos] = {}
         self._sample_counts: dict[str, int] = {}
         self._connected = False

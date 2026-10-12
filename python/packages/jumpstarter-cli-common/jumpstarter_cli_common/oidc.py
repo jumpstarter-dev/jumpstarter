@@ -8,7 +8,7 @@ from functools import wraps
 from typing import ClassVar
 
 import aiohttp
-import certifi  # ty: ignore[unresolved-import]
+import certifi
 import click
 from aiohttp import web
 from anyio import create_memory_object_stream, sleep
@@ -110,7 +110,7 @@ class Config:
             session.verify = False
             # The user has already opted into insecure TLS (via --insecure flag
             # or config), so urllib3's InsecureRequestWarning is redundant noise.
-            import urllib3  # ty: ignore[unresolved-import]
+            import urllib3
 
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         else:

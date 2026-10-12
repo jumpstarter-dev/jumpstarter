@@ -4,11 +4,15 @@ import contextlib
 import time
 from collections.abc import Generator
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-try:
-    import gpiod
-except ImportError:
-    gpiod = None  # ty: ignore[invalid-assignment]
+if TYPE_CHECKING:
+    import gpiod  # pragma: no cover
+else:
+    try:
+        import gpiod
+    except ImportError:
+        gpiod = None  # type: ignore[assignment]
 
 from jumpstarter_driver_power.common import PowerReading
 from jumpstarter_driver_power.driver import PowerInterface

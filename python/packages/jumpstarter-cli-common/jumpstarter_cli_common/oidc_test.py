@@ -349,7 +349,7 @@ class TestInsecureRequestWarningSuppressed:
     """TS-NS-5: Config.client() with insecure_tls=True suppresses InsecureRequestWarning."""
 
     def test_urllib3_insecure_request_warning_suppressed(self) -> None:
-        import urllib3.exceptions  # ty: ignore[unresolved-import]
+        import urllib3.exceptions
 
         config = Config(issuer="https://auth.example.com", client_id="test", insecure_tls=True)
         config.client()

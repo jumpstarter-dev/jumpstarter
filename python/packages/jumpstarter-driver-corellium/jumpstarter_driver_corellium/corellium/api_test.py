@@ -34,7 +34,7 @@ def test_get_project_ok(requests_mock, project_name, data, has_results):
 
     if has_results:
         assert project is not None
-        assert project.name == project_name if project_name is not None else 'Default Project'
+        assert project.name == (project_name if project_name is not None else 'Default Project')
     else:
         assert project is None
 
