@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ssl
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -32,7 +33,7 @@ class TestKubevirtPower:
     def _make_power(self, **kwargs):
         from jumpstarter_driver_kubevirt.driver import KubevirtPower
 
-        defaults = {"namespace": "test-ns", "vm_name": "test-vm"}
+        defaults: dict[str, Any] = {"namespace": "test-ns", "vm_name": "test-vm"}
         defaults.update(kwargs)
         return KubevirtPower(**defaults)
 
@@ -344,7 +345,7 @@ class TestKubevirtStorage:
     def _make_storage(self, **kwargs):
         from jumpstarter_driver_kubevirt.driver import KubevirtStorage
 
-        defaults = {"namespace": "test-ns", "vm_name": "test-vm"}
+        defaults: dict[str, Any] = {"namespace": "test-ns", "vm_name": "test-vm"}
         defaults.update(kwargs)
         return KubevirtStorage(**defaults)
 

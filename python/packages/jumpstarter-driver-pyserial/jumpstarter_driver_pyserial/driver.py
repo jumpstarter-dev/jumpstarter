@@ -19,7 +19,7 @@ from jumpstarter.streams.fanout import FanOutStreamMixin
 try:
     import termios
 except ImportError:  # pragma: no cover - non-POSIX platforms
-    termios = None  # ty: ignore[invalid-assignment]
+    termios = None  # type: ignore[assignment]
 
 LOOP = "loop://"
 

@@ -269,7 +269,7 @@ class _FakeHub:
 def test_host_selects_before_power_cycle(monkeypatch):
     sdwire = object.__new__(SDWire)
     sdwire.logger = logging.getLogger("test-sdwire")
-    sdwire.dev = object()
+    sdwire.dev = object()  # ty: ignore[invalid-assignment]
 
     monkeypatch.setattr(sdwire_driver.platform, "system", lambda: "Darwin")
 
@@ -290,7 +290,7 @@ def test_host_selects_before_power_cycle(monkeypatch):
 def test_host_no_power_cycle_off_darwin(monkeypatch):
     sdwire = object.__new__(SDWire)
     sdwire.logger = logging.getLogger("test-sdwire")
-    sdwire.dev = object()
+    sdwire.dev = object()  # ty: ignore[invalid-assignment]
 
     monkeypatch.setattr(sdwire_driver.platform, "system", lambda: "Linux")
 

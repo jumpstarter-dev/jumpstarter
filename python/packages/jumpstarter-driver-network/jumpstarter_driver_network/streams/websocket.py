@@ -42,7 +42,7 @@ class WebsocketServerStream(ObjectStream[bytes]):
                     case CloseConnection():
                         await self.queue[0].send(self.ws.send(event.response()))
                     case Message():
-                        await self.stream.send(event.data)  # ty: ignore[invalid-argument-type]
+                        await self.stream.send(event.data)
                     case Ping():
                         await self.queue[0].send(self.ws.send(event.response()))
         except LocalProtocolError as e:

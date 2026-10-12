@@ -422,7 +422,7 @@ class TftpReadTransfer(TftpTransfer):
         return True
 
     async def _perform_transfer(self):
-        async with await self.server.operator.open(self.filepath, "rb") as f:
+        async with await self.server.operator.open(self.filepath, "rb") as f:  # ty: ignore[invalid-context-manager]
             while True:
                 if self.server.shutdown_event.is_set():
                     self.logger.info(f"Server shutdown detected, stopping transfer to {self.client_addr}")

@@ -360,7 +360,7 @@ async def execute_manifest(
                     step_name=label,
                 )
                 retry_check = RETRY_MODE_DMESG.get(step.retry_mode)
-                if step.retry_mode and retry_check is None:
+                if retry_check is None:
                     logger.warning(
                         "No dmesg verification configured for retry mode '%s'; "
                         "skipping post-retry device check",

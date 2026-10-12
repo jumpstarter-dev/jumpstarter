@@ -258,9 +258,10 @@ class QemuPower(PowerInterface, Driver):
                 case "x86_64":
                     cpu = "qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt"
 
+        if cpu is not None:
+            cmdline += ["-cpu", cpu]
+
         cmdline += [
-            "-cpu",
-            cpu,
             "-qmp",
             f"unix:{self.parent._qmp},server=on,wait=off",
             "-smp",

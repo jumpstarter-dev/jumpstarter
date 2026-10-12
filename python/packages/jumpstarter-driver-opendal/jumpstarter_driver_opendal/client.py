@@ -686,7 +686,7 @@ class FlasherClient(FlasherClientInterface, DriverClient):
             for part, img in path.items():
                 op_val = oper_map.get(part) if isinstance(operator, dict) else operator
                 results[str(part)] = self._flash_single(
-                    img, target=str(part), operator=op_val, compression=compression  # ty: ignore[invalid-argument-type]
+                    img, target=str(part), operator=op_val, compression=compression
                 )
 
             return results
@@ -834,6 +834,6 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
             finally:
                 self.call("dut")
 
-    def cli(self):
+    def cli(self, base=None):
         top_cli = FlasherClient.cli(self)
         return StorageMuxClient.cli(self, top_cli)

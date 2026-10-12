@@ -20,6 +20,7 @@ from lightkube.core.exceptions import ApiError
 from lightkube.generic_resource import create_namespaced_resource
 from lightkube.models.meta_v1 import ObjectMeta
 from lightkube.types import PatchType
+from websockets import Subprotocol
 from websockets.exceptions import InvalidStatus
 
 from jumpstarter.driver import Driver, export, exportstream
@@ -241,7 +242,7 @@ class KubevirtConsole(_KubevirtBase, NetworkInterface, Driver):
                     ws_url,
                     additional_headers=headers,
                     ssl=ssl_ctx,
-                    subprotocols=["plain.kubevirt.io"],
+                    subprotocols=[Subprotocol("plain.kubevirt.io")],
                 ) as websocket:
                     async with WebsocketClientStream(conn=websocket) as stream:
                         yield stream

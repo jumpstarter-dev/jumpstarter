@@ -690,7 +690,7 @@ class TestBundledAddonImport:
             raising=False,
         )
         mod = importlib.import_module("jumpstarter_driver_mitmproxy.bundled_addon")
-        assert mod.addons  # ty: ignore[unresolved-attribute]
+        assert mod.addons
 
     def test_spool_dir_is_created_on_first_spool(self, tmp_path):
         """The spool directory appears when the first body is spooled, not before."""
@@ -699,7 +699,7 @@ class TestBundledAddonImport:
         from mitmproxy.test import tflow
 
         mod = importlib.import_module("jumpstarter_driver_mitmproxy.bundled_addon")
-        addon = mod.MitmproxyMockAddon()  # ty: ignore[unresolved-attribute]
+        addon = mod.MitmproxyMockAddon()
         addon._spool_dir = tmp_path / "missing" / "capture-spool"
         flow = tflow.tflow(resp=True)
         response = flow.response
@@ -722,7 +722,7 @@ def _addon_module(monkeypatch):
 
     mod = importlib.import_module("jumpstarter_driver_mitmproxy.bundled_addon")
     log = MagicMock()
-    monkeypatch.setattr(mod.ctx, "log", log, raising=False)  # ty: ignore[unresolved-attribute]
+    monkeypatch.setattr(mod.ctx, "log", log, raising=False)
     return mod, log
 
 
@@ -745,7 +745,7 @@ class TestSpoolDirectory:
     def _addon(self, monkeypatch, tmp_path):
         """An addon instance that spools into a directory under tmp_path."""
         mod, log = _addon_module(monkeypatch)
-        addon = mod.MitmproxyMockAddon()  # ty: ignore[unresolved-attribute]
+        addon = mod.MitmproxyMockAddon()
         addon._spool_dir = tmp_path / "spool"
         return addon, log
 
@@ -904,7 +904,7 @@ class TestAddonRegistryPaths:
         addons = tmp_path / "addons"
         addons.mkdir()
         (addons / "good.py").write_text(self._handler("good"))
-        return mod.AddonRegistry(str(addons))  # ty: ignore[unresolved-attribute]
+        return mod.AddonRegistry(str(addons))
 
     @staticmethod
     def _handler(label, marker=None):
@@ -972,7 +972,7 @@ def deep_merge_patch():
             return
         return original_mkdir(self, *args, **kwargs)
 
-    Path.mkdir = safe_mkdir  # ty: ignore[invalid-assignment]
+    Path.mkdir = safe_mkdir
     try:
         if "jumpstarter_driver_mitmproxy.bundled_addon" in sys.modules:
             mod = sys.modules["jumpstarter_driver_mitmproxy.bundled_addon"]
@@ -980,7 +980,7 @@ def deep_merge_patch():
             mod = importlib.import_module(
                 "jumpstarter_driver_mitmproxy.bundled_addon"
             )
-        return mod._deep_merge_patch  # ty: ignore[unresolved-attribute]
+        return mod._deep_merge_patch
     finally:
         Path.mkdir = original_mkdir
 

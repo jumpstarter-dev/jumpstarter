@@ -74,7 +74,7 @@ class V1Alpha1Lease(JsonBaseModel):
                 ],
             ),
             spec=V1Alpha1LeaseSpec(
-                client=V1ObjectReference(name=spec["clientRef"]["name"]) if "clientRef" in spec else None,  # ty: ignore[invalid-argument-type]
+                client=V1ObjectReference(name=spec["clientRef"]["name"]) if "clientRef" in spec else None,
                 duration=spec.get("duration", None),
                 selector=V1Alpha1LeaseSelector(matchLabels=selector_data.get("matchLabels", {})),
             ),

@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import typing
 import webbrowser
+from collections.abc import Generator
 
 import anyio
 import click
@@ -37,7 +38,7 @@ class VNClient(CompositeClient):
         return self.tcp.stream_async(method)
 
     @contextlib.contextmanager
-    def session(self, *, encrypt: bool = True) -> typing.Iterator[str]:
+    def session(self, *, encrypt: bool = True) -> Generator[str, None, None]:
         """
         Open a noVNC session and yield the connection URL.
 
