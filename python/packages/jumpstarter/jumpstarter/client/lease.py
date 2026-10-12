@@ -67,6 +67,15 @@ class DirectLease(ContextManagerMixin, AsyncContextManagerMixin):
     lease_ended: bool = field(default=False, init=False)
 
     @asynccontextmanager
+    async def __asynccontextmanager__(self) -> AsyncGenerator[Self]:
+        yield self
+
+    @contextmanager
+    def __contextmanager__(self) -> Generator[Self]:
+        with self.portal.wrap_async_context_manager(self) as value:
+            yield value
+
+    @asynccontextmanager
     async def serve_unix_async(self):
         """Yield the TCP address (no listener); client connects directly."""
         yield self.address

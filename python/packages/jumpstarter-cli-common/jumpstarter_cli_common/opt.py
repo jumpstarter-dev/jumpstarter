@@ -80,7 +80,7 @@ def _opt_log_level_callback(ctx, param, value):
         # Exporter run: use structured logging (JSON in production, text in dev)
         from jumpstarter.logging import setup_logging
 
-        level = logging.getLevelName(value.upper()) if value else logging.INFO
+        level = logging.getLevelNamesMapping().get(value.upper(), logging.INFO) if value else logging.INFO
         setup_logging(component="exporter", log_format=_log_format_value, level=level)
     else:
         # Logs go to stderr so they never interleave with the machine-readable
