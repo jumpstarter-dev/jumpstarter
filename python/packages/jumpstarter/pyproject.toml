@@ -61,5 +61,8 @@ build-backend = "hatchling.build"
 [tool.hatch.build.hooks.pin_jumpstarter]
 name = "pin_jumpstarter"
 
+[tool.ty.environment]
+python-version = "3.14"
+
 [tool.ty.rules]
 unresolved-reference = "warn"
