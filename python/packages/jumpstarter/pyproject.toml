@@ -63,4 +63,3 @@ name = "pin_jumpstarter"
 
 [tool.ty.rules]
 unresolved-reference = "warn"
-unused-ignore-comment = "ignore"
