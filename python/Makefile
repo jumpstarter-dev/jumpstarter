@@ -1,4 +1,5 @@
 PKG_TARGETS = $(subst packages/,,$(wildcard packages/*))
+PYTHON_VERSION = $(shell cat .python-version | tr -d '[:space:]')
 
 # Help target
 .PHONY: help
@@ -51,7 +52,7 @@ pkg-test-%: packages/%
 endif
 
 pkg-ty-%: packages/%
-	uv run --isolated --directory $< --with ty ty check .
+	uv run --isolated --directory $< --with ty ty check --python-version $(PYTHON_VERSION) .
 
 pkg-test-all: sync $(addprefix pkg-test-,$(PKG_TARGETS))
 
