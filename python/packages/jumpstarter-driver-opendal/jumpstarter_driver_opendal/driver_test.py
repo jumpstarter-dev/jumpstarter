@@ -18,7 +18,7 @@ from opendal import Operator
 if sys.version_info >= (3, 14):
     from compression import zstd
 else:
-    from backports import zstd  # ty: ignore[unresolved-import]
+    from backports import zstd
 
 from .common import PresignedRequest
 from .driver import MockFlasher, MockStorageMux, MockStorageMuxFlasher, Opendal
