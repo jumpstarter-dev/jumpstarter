@@ -116,12 +116,18 @@ class StubDriverClient(DriverClient):
     is actually used.
     """
 
+    # Why the client class was unavailable. Without it the stub can only guess,
+    # and reports an allow list rejection as an uninstalled package.
+    missing_reason: str | None = None
+
     def _get_missing_class_path(self) -> str:
         """Get the missing class path from labels."""
         return self.labels["jumpstarter.dev/client"]
 
     def _raise_missing_error(self):
-        """Raise ImportError with installation instructions."""
+        """Raise ImportError explaining why the driver client is unavailable."""
+        if self.missing_reason:
+            raise ImportError(self.missing_reason)
         class_path = self._get_missing_class_path()
         message = _format_missing_driver_message(class_path)
         raise ImportError(message)
