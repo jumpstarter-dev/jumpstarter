@@ -8,12 +8,13 @@ from unittest.mock import AsyncMock, Mock, patch
 import anyio
 import grpc
 import pytest
+from anyio.from_thread import BlockingPortal
 from grpc.aio import AioRpcError
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
 from rich.console import Console
 
 from jumpstarter.client.exceptions import LeaseError
-from jumpstarter.client.lease import Lease, LeaseAcquisitionSpinner
+from jumpstarter.client.lease import DirectLease, Lease, LeaseAcquisitionSpinner
 from jumpstarter.common.exceptions import ExporterUnreachableError
 
 
@@ -357,6 +358,29 @@ class TestLeaseAcquisitionSpinner:
             spinner.update_status("Message 4")
 
             assert mock_spinner.update.call_count == 4
+
+
+class TestDirectLeaseContextManager:
+    """Tests that DirectLease works as both async and sync context managers."""
+
+    def _make_direct_lease(self):
+        return DirectLease(
+            address="localhost:50051",
+            portal=Mock(spec=BlockingPortal),
+            allow=[],
+            unsafe=False,
+        )
+
+    @pytest.mark.anyio
+    async def test_async_context_manager_returns_self(self):
+        lease = self._make_direct_lease()
+        async with lease as value:
+            assert value is lease
+
+    def test_sync_context_manager_returns_self(self):
+        lease = self._make_direct_lease()
+        with lease as value:
+            assert value is lease
 
 
 class TestRequestAsyncOwnership:

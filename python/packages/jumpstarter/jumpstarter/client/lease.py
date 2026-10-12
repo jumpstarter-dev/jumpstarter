@@ -44,7 +44,7 @@ _DIAL_ATTEMPT_TIMEOUT = 35.0
 
 
 @dataclass(kw_only=True)
-class DirectLease(ContextManagerMixin, AsyncContextManagerMixin):
+class DirectLease:
     """Lease-like object for direct connection to an exporter (no controller).
 
     Used when connecting via jmp shell --tls-grpc host:port. Yields the address
@@ -66,14 +66,17 @@ class DirectLease(ContextManagerMixin, AsyncContextManagerMixin):
     release: bool = field(default=False, init=False)
     lease_ended: bool = field(default=False, init=False)
 
-    @asynccontextmanager
-    async def __asynccontextmanager__(self) -> AsyncGenerator[Self]:
-        yield self
+    async def __aenter__(self) -> Self:
+        return self
 
-    @contextmanager
-    def __contextmanager__(self) -> Generator[Self]:
-        with self.portal.wrap_async_context_manager(self) as value:
-            yield value
+    async def __aexit__(self, *args: object) -> None:
+        pass
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        pass
 
     @asynccontextmanager
     async def serve_unix_async(self):
@@ -117,9 +120,6 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     lease_revoked: bool = field(default=False, init=False)  # Set when this (shared) client loses shared access
 
     def __post_init__(self):
-        if hasattr(super(), "__post_init__"):
-            super().__post_init__()  # ty: ignore[unresolved-attribute]
-
         self.controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel)
         self.svc = ClientService(channel=self.channel, namespace=self.namespace)
 
