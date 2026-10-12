@@ -14,7 +14,7 @@ from anyio import create_task_group
 from google.protobuf import empty_pb2
 from grpc import StatusCode
 from grpc.aio import AioRpcError
-from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
+from jumpstarter_protocol import jumpstarter_pb2
 from rich.logging import RichHandler
 
 from jumpstarter.client.status_monitor import StatusMonitor
@@ -67,11 +67,7 @@ def _console_in_use_error(code: StatusCode, details: str | None) -> DriverError 
 
 
 @dataclass(kw_only=True)
-class AsyncDriverClient(
-    Metadata,
-    jumpstarter_pb2_grpc.ExporterServiceStub,
-    router_pb2_grpc.RouterServiceStub,
-):
+class AsyncDriverClient(Metadata):
     """
     Async driver client base class
 

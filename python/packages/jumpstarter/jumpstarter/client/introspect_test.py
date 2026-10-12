@@ -324,7 +324,7 @@ class TestDescribeClient:
         from jumpstarter.client.base import StubDriverClient
 
         async with BlockingPortal() as portal:
-            stub = StubDriverClient(  # ty: ignore[no-matching-overload]
+            stub = StubDriverClient(
                 labels={"jumpstarter.dev/client": "missing_pkg.client.MissingClient"},
                 stub=None,
                 portal=portal,

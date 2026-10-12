@@ -23,7 +23,7 @@ class MissingClientDriver(Driver):
 
 def create_stub_client(class_path: str) -> StubDriverClient:
     """Create a StubDriverClient with minimal mocking for testing."""
-    return StubDriverClient(  # ty: ignore[no-matching-overload]
+    return StubDriverClient(
         uuid=uuid4(),
         labels={"jumpstarter.dev/client": class_path},
         stub=MagicMock(),
