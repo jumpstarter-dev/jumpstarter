@@ -154,10 +154,6 @@ spec:
       drivers:
         - name: qemu
           type: jumpstarter_driver_qemu.driver.Qemu
-        - name: power
-          type: jumpstarter_driver_power.driver.QemuPower
-        - name: serial
-          type: jumpstarter_driver_serial.driver.QemuSerial
 ```
 
 The `tcp` driver is auto-injected by the provisioner (SSH host-forwarding on

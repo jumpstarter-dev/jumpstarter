@@ -19,6 +19,7 @@ package qemu
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
@@ -201,6 +202,28 @@ func TestEnrichExporterExport_autoInjectsTCPDriver(t *testing.T) {
 	}
 	if tcp.Type != tcpDriverType {
 		t.Errorf("tcp driver type = %q", tcp.Type)
+	}
+}
+
+func TestEnrichExporterExport_rejectsOwnedChildAsTopLevel(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "qemu",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+		{
+			Name: "power",
+			Type: "jumpstarter_driver_qemu.driver.QemuPower",
+		},
+	}
+
+	_, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
+	if err == nil {
+		t.Fatal("expected error for owned child type as top-level driver")
+	}
+	if !strings.Contains(err.Error(), "cannot be a top-level driver") {
+		t.Errorf("error = %q, want message about top-level driver", err)
 	}
 }
 
