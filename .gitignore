@@ -12,7 +12,6 @@ server.csr
 
 # Python
 .python-version
-!python/.python-version
 .venv/
 __pycache__/
 *.pyc

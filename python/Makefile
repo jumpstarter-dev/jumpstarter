@@ -1,5 +1,5 @@
 PKG_TARGETS = $(subst packages/,,$(wildcard packages/*))
-PYTHON_VERSION = $(shell cat .python-version | tr -d '[:space:]')
+PYTHON_VERSION = $(shell cut -d. -f1-2 ../.py-version | tr -d '[:space:]')
 
 # Help target
 .PHONY: help
