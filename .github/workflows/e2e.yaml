@@ -97,7 +97,7 @@ jobs:
           docker save quay.io/jumpstarter-dev/jumpstarter-controller:latest -o /tmp/controller-image.tar
 
       - name: Upload controller image
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: controller-image-${{ matrix.arch }}
           path: /tmp/controller-image.tar
@@ -140,7 +140,7 @@ jobs:
           cp controller/deploy/operator/dist/install.yaml /tmp/operator-install.yaml
 
       - name: Upload operator artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: operator-image-${{ matrix.arch }}
           path: |
@@ -182,7 +182,7 @@ jobs:
           docker save quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest -o /tmp/exporterset-controller-image.tar
 
       - name: Upload exporterset-controller image
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: exporterset-controller-image-${{ matrix.arch }}
           path: /tmp/exporterset-controller-image.tar
@@ -218,7 +218,7 @@ jobs:
           docker save quay.io/jumpstarter-dev/jumpstarter:latest -o /tmp/exporter-image.tar
 
       - name: Upload exporter image
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: exporter-image-${{ matrix.arch }}
           path: /tmp/exporter-image.tar
@@ -253,7 +253,7 @@ jobs:
           docker save quay.io/jumpstarter-dev/virtual/qemu-runtime:latest -o /tmp/qemu-runtime-image.tar
 
       - name: Upload qemu-runtime image
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: qemu-runtime-image-${{ matrix.arch }}
           path: /tmp/qemu-runtime-image.tar
@@ -291,7 +291,7 @@ jobs:
         run: uv build --all --out-dir dist
 
       - name: Upload python wheels
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: python-wheels
           path: python/dist/
