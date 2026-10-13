@@ -353,6 +353,7 @@ func (p *Provisioner) RenderPod(
 // - Defaults arch/smp/mem/disk_size from mergedParameters if not set
 // - Injects default_partitions (firmware paths) based on arch unless user overrides
 // - Auto-injects hostfwd.ssh if not present
+// - Auto-aliases power/flasher/console as root refs for hardware-style access
 // - Auto-injects tcp wrapper driver entry
 func (p *Provisioner) EnrichExporterExport(
 	_ context.Context,
@@ -365,7 +366,7 @@ func (p *Provisioner) EnrichExporterExport(
 		return nil, err
 	}
 
-	result := make([]virtualtargetv1alpha1.DriverConfig, 0, len(drivers)+1)
+	result := make([]virtualtargetv1alpha1.DriverConfig, 0, len(drivers)+len(qemudriver.PresetRootChildren)+1)
 	hasTCP := false
 
 	for _, d := range drivers {
@@ -382,6 +383,8 @@ func (p *Provisioner) EnrichExporterExport(
 		}
 		result = append(result, d)
 	}
+
+	result = qemudriver.AliasPresetRoots(result)
 
 	// Auto-inject tcp wrapper driver if not present.
 	if !hasTCP {
