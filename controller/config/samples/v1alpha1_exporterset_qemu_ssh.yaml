@@ -38,5 +38,5 @@ spec:
       drivers:
         - name: qemu
           type: jumpstarter_driver_qemu.driver.Qemu
-        # power and tcp are auto-injected by the provisioner —
-        # power aliases qemu.power, tcp uses ssh hostfwd on port 2222
+        # power/flasher/console are aliased as root refs; tcp is
+        # auto-injected (ssh hostfwd on port 2222)

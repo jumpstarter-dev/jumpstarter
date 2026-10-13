@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/qemudriver"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
@@ -224,6 +225,105 @@ func TestEnrichExporterExport_rejectsOwnedChildAsTopLevel(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "cannot be a top-level driver") {
 		t.Errorf("error = %q, want message about top-level driver", err)
+	}
+}
+
+func TestEnrichExporterExport_aliasesPresetRoots(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "vm",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+	}
+
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, child := range qemudriver.PresetRootChildren {
+		got := findDriver(result, child)
+		if got == nil {
+			t.Fatalf("missing root alias %q", child)
+		}
+		want := "vm." + child
+		if got.Ref != want {
+			t.Errorf("%s.ref = %q, want %q", child, got.Ref, want)
+		}
+		if got.Type != "" {
+			t.Errorf("%s.type = %q, want empty", child, got.Type)
+		}
+	}
+}
+
+func TestEnrichExporterExport_keepsExistingPresetRoot(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "qemu",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+		{Name: "power", Ref: "custom.power"},
+	}
+
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	power := findDriver(result, "power")
+	if power == nil {
+		t.Fatal("power root missing")
+	}
+	if power.Ref != "custom.power" {
+		t.Errorf("power.ref = %q, want custom.power (user-provided)", power.Ref)
+	}
+
+	count := 0
+	for _, d := range result {
+		if d.Name == "power" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("power driver count = %d, want 1", count)
+	}
+
+	for _, child := range []string{"flasher", "console"} {
+		got := findDriver(result, child)
+		if got == nil {
+			t.Fatalf("missing auto-aliased %q", child)
+		}
+		if got.Ref != "qemu."+child {
+			t.Errorf("%s.ref = %q, want qemu.%s", child, got.Ref, child)
+		}
+	}
+}
+
+func TestEnrichExporterExport_skipsPresetRootsWhenMultipleQemu(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "qemu-a",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+		{
+			Name:   "qemu-b",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+	}
+
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, child := range qemudriver.PresetRootChildren {
+		if got := findDriver(result, child); got != nil {
+			t.Fatalf("unexpected root alias %q when multiple QEMU drivers present: %+v", child, *got)
+		}
 	}
 }
 
