@@ -1079,14 +1079,16 @@ func (r *ExporterSetReconciler) reconcileScaleUp(
 		return false, nil
 	}
 
-	// 3. Demand: pending Leases exist and no capacity is available.
+	// 3. Demand: more pending Leases than instances that could serve them.
+	//    Instances still booting count as capacity here, otherwise one waiting
+	//    lease would add another Exporter on every reconcile until maxReplicas.
 	if !atMaxReplicas(es, state.replicas) {
 		pending, err := r.countPendingLeases(ctx, es)
 		if err != nil {
 			logger.Error(err, "failed to count pending leases")
 			return false, nil
 		}
-		if pending > 0 && state.available == 0 && maxScaleUp(es, state.replicas) > 0 {
+		if pending > potentiallyAvailable && maxScaleUp(es, state.replicas) > 0 {
 			return true, r.scaleUp(ctx, es, 1)
 		}
 	}
@@ -1821,7 +1823,7 @@ func (r *ExporterSetReconciler) findExporterSetsForLease(
 		return nil
 	}
 
-	if lease.Status.Ended {
+	if lease.Status.Ended || !leaseWantsPoolMember(lease) {
 		return nil
 	}
 
@@ -1868,7 +1870,7 @@ func (r *ExporterSetReconciler) countPendingLeases(
 	for i := range leaseList.Items {
 		lease := &leaseList.Items[i]
 
-		if lease.Status.Ended || lease.Status.ExporterRef != nil {
+		if lease.Status.Ended || lease.Status.ExporterRef != nil || !leaseWantsPoolMember(lease) {
 			continue
 		}
 
@@ -1886,6 +1888,17 @@ func (r *ExporterSetReconciler) countPendingLeases(
 		}
 	}
 	return count, nil
+}
+
+// leaseWantsPoolMember reports whether a Lease can be served by a pool instance
+// at all. A lease pinned to a named exporter, or one without a selector (an
+// empty selector converts to labels.Everything and would match every pool),
+// is no demand for any ExporterSet.
+func leaseWantsPoolMember(lease *jumpstarterdevv1alpha1.Lease) bool {
+	if lease.Spec.ExporterRef != nil {
+		return false
+	}
+	return len(lease.Spec.Selector.MatchLabels) > 0 || len(lease.Spec.Selector.MatchExpressions) > 0
 }
 
 func isOwnedBy(obj client.Object, ownerUID types.UID) bool {

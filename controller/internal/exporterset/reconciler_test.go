@@ -2413,3 +2413,48 @@ func TestIsExporterOffline_offline(t *testing.T) {
 		t.Fatal("expected true when exporter is offline")
 	}
 }
+
+func TestReconcile_demandDriven_onePendingLeaseCreatesOneExporter(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 0
+		es.Spec.MinAvailableReplicas = 0
+		es.Spec.MaxReplicas = 5
+	})
+	lease := makePendingLease("pending-1", map[string]string{"exporterset": "demo-set"})
+
+	r, c := newReconciler(t, es, makeVTC(), lease)
+
+	// The freshly created Exporter stays offline while it boots; the next cycles
+	// must count it as capacity for the waiting lease instead of adding more.
+	for range 4 {
+		reconcileOnce(t, r)
+	}
+
+	exporters := listExporters(t, c)
+	if len(exporters) != 1 {
+		t.Fatalf("expected 1 Exporter for 1 pending lease, got %d", len(exporters))
+	}
+}
+
+func TestReconcile_demandDriven_ignoresLeasesPinnedToAnExporter(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 0
+		es.Spec.MinAvailableReplicas = 0
+		es.Spec.MaxReplicas = 5
+	})
+	// jmp create lease --name <exporter> yields an empty selector and an ExporterRef.
+	lease := makePendingLease("pinned-1", nil)
+	lease.Spec.ExporterRef = &corev1.LocalObjectReference{Name: "some-physical-board"}
+
+	r, c := newReconciler(t, es, makeVTC(), lease)
+
+	reconcileOnce(t, r)
+
+	exporters := listExporters(t, c)
+	if len(exporters) != 0 {
+		t.Fatalf("expected 0 Exporters (lease is pinned to a named exporter), got %d", len(exporters))
+	}
+	if requests := r.findExporterSetsForLease(context.Background(), lease); len(requests) != 0 {
+		t.Fatalf("got %d requests for a pinned lease, want 0", len(requests))
+	}
+}
