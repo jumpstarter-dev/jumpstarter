@@ -287,7 +287,7 @@ class Session(
     def __getitem__(self, key: UUID):
         return self.mapping[key]
 
-    def _check_status_for_driver_call(self, context):
+    async def _check_status_for_driver_call(self, context):
         """Check if the current status allows driver calls.
 
         Driver calls are allowed during:
@@ -308,7 +308,7 @@ class Session(
         }
 
         if self._current_status not in ALLOWED_STATUSES:
-            context.abort(
+            await context.abort(
                 grpc.StatusCode.FAILED_PRECONDITION,
                 f"Exporter not ready for driver calls (status: {self._current_status})",
             )
@@ -327,12 +327,12 @@ class Session(
 
     async def DriverCall(self, request, context):
         logger.debug("DriverCall(uuid=%s, method=%s)", request.uuid, request.method)
-        self._check_status_for_driver_call(context)
+        await self._check_status_for_driver_call(context)
         return await self[UUID(request.uuid)].DriverCall(request, context)
 
     async def StreamingDriverCall(self, request, context):
         logger.debug("StreamingDriverCall(uuid=%s, method=%s)", request.uuid, request.method)
-        self._check_status_for_driver_call(context)
+        await self._check_status_for_driver_call(context)
         async for v in self[UUID(request.uuid)].StreamingDriverCall(request, context):
             yield v
 
