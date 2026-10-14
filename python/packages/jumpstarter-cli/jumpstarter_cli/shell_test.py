@@ -135,6 +135,39 @@ def test_shell_attaches_client_telemetry():
     mock_attach.assert_awaited()
 
 
+async def test_shell_closes_telemetry_when_the_shell_times_out():
+    telemetry = Mock()
+    telemetry.handler = Mock()
+    telemetry.handler.flush_loop = AsyncMock()
+    telemetry.aclose = AsyncMock()
+    config = _DummyConfig()
+
+    async def boom(*_args):
+        raise TimeoutError("shell timeout")
+
+    with (
+        patch(
+            "jumpstarter_cli.shell.attach_client_telemetry",
+            new=AsyncMock(return_value=telemetry),
+        ),
+        patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=boom),
+        pytest.raises(ExceptionGroup) as raised,
+    ):
+        await _shell_with_signal_handling(
+            config,
+            None,
+            "laptop-test-exporter",
+            None,
+            timedelta(minutes=1),
+            False,
+            (),
+            None,
+        )
+
+    assert any(isinstance(exc, TimeoutError) for exc in raised.value.exceptions)
+    telemetry.aclose.assert_awaited()
+
+
 async def test_shell_warns_when_expired_token_prevents_cleanup_on_normal_exit():
     lease = Mock()
     lease.release = True

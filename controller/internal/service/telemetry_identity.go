@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authorization"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -93,6 +94,12 @@ func (s *TelemetryService) authenticatePushLogs(ctx context.Context) (telemetryI
 	}
 	subject, err := s.Signer.ParseSubject(token)
 	if err != nil {
+		// External OIDC access tokens are not signed by the controller.
+		// Fall through to the same authenticator and identity mapping the
+		// controller uses for client RPCs.
+		if s.ClientAuthn != nil {
+			return s.authenticateExternalClient(ctx)
+		}
 		// Same generic status as authenticateExporter: do not wrap the jwt
 		// parse error into the client-visible message.
 		log.FromContext(ctx).V(1).Info("telemetry token parse failed", "error", err.Error())
@@ -109,4 +116,32 @@ func (s *TelemetryService) authenticatePushLogs(ctx context.Context) (telemetryI
 		return parseClientSubject(subject)
 	}
 	return telemetryIdentity{}, status.Errorf(codes.PermissionDenied, "token is not a client or exporter token")
+}
+
+// authenticateExternalClient maps an already-present bearer token through the
+// controller's client authenticator. jumpstarter-kind, jumpstarter-namespace,
+// and jumpstarter-name metadata use the same rules as controller RPCs.
+func (s *TelemetryService) authenticateExternalClient(ctx context.Context) (telemetryIdentity, error) {
+	resp, ok, err := s.ClientAuthn.AuthenticateContext(ctx)
+	if err != nil || !ok || resp == nil || resp.User == nil {
+		if err != nil {
+			log.FromContext(ctx).V(1).Info("external client token rejected", "error", err.Error())
+		}
+		return telemetryIdentity{}, status.Error(codes.Unauthenticated, "invalid token")
+	}
+	attrs, err := authorization.NewMetadataAttributesGetter(authorization.MetadataAttributesGetterConfig{
+		NamespaceKey: "jumpstarter-namespace",
+		ResourceKey:  "jumpstarter-kind",
+		NameKey:      "jumpstarter-name",
+	}).ContextAttributes(ctx, resp.User)
+	if err != nil {
+		return telemetryIdentity{}, err
+	}
+	if attrs.GetResource() != "Client" {
+		return telemetryIdentity{}, status.Error(codes.PermissionDenied, "token is not a client token")
+	}
+	if attrs.GetNamespace() == "" || attrs.GetName() == "" {
+		return telemetryIdentity{}, status.Error(codes.PermissionDenied, "token has incomplete client identity")
+	}
+	return telemetryIdentity{kind: "client", namespace: attrs.GetNamespace(), name: attrs.GetName()}, nil
 }

@@ -81,7 +81,11 @@ async def test_attach_adds_cli_handler_without_replacing_stdout():
 
     with (
         patch("jumpstarter.client.telemetry.jumpstarter_pb2_grpc.ControllerServiceStub", return_value=stub),
-        patch("jumpstarter.client.telemetry.grpc.aio.insecure_channel") as insecure,
+        patch(
+            "jumpstarter.client.telemetry.ssl_channel_credentials",
+            new=AsyncMock(return_value=MagicMock()),
+        ),
+        patch("jumpstarter.client.telemetry.aio_secure_channel") as insecure,
         patch("jumpstarter.client.telemetry.telemetry_pb2_grpc.TelemetryServiceStub") as tel_stub,
     ):
         insecure.return_value = MagicMock()
@@ -124,7 +128,11 @@ async def test_attach_sends_token_current_at_flush():
 
     with (
         patch("jumpstarter.client.telemetry.jumpstarter_pb2_grpc.ControllerServiceStub", return_value=controller),
-        patch("jumpstarter.client.telemetry.grpc.aio.insecure_channel") as insecure,
+        patch(
+            "jumpstarter.client.telemetry.ssl_channel_credentials",
+            new=AsyncMock(return_value=MagicMock()),
+        ),
+        patch("jumpstarter.client.telemetry.aio_secure_channel") as insecure,
         patch("jumpstarter.client.telemetry.telemetry_pb2_grpc.TelemetryServiceStub", return_value=tel),
     ):
         insecure.return_value = MagicMock()
@@ -141,5 +149,15 @@ async def test_attach_sends_token_current_at_flush():
         await session.aclose()
 
     assert push.await_count == 2
-    assert push.await_args_list[0].kwargs["metadata"] == [("authorization", "Bearer old-token")]
-    assert push.await_args_list[1].kwargs["metadata"] == [("authorization", "Bearer new-token")]
+    identity = [
+        ("jumpstarter-kind", "Client"),
+        ("jumpstarter-namespace", "jumpstarter"),
+    ]
+    assert push.await_args_list[0].kwargs["metadata"] == [
+        *identity,
+        ("authorization", "Bearer old-token"),
+    ]
+    assert push.await_args_list[1].kwargs["metadata"] == [
+        *identity,
+        ("authorization", "Bearer new-token"),
+    ]

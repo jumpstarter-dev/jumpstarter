@@ -588,6 +588,33 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSec
 		})
 	}
 
+	// Mount the controller ConfigMap so external OIDC issuers can be verified
+	// with the same authentication configuration the controller uses. This is
+	// a volume mount, not Kubernetes API access.
+	envVars = append(envVars, corev1.EnvVar{
+		Name:  "AUTHENTICATION_CONFIG",
+		Value: "/etc/jumpstarter/config.yaml",
+	})
+	volumeMounts = append(volumeMounts, corev1.VolumeMount{
+		Name:      "controller-config",
+		MountPath: "/etc/jumpstarter",
+		ReadOnly:  true,
+	})
+	volumes = append(volumes, corev1.Volume{
+		Name: "controller-config",
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: "jumpstarter-controller",
+				},
+				Items: []corev1.KeyToPath{{
+					Key:  "config",
+					Path: "config.yaml",
+				}},
+			},
+		},
+	})
+
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-telemetry", jumpstarter.Name),

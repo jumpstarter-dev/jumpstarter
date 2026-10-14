@@ -4,7 +4,7 @@ import logging
 import sys
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 
 import structlog.contextvars
@@ -66,12 +66,14 @@ class TelemetryLogHandler(logging.Handler):
         namespace: str = "",
         token: str | Callable[[], str] = "",
         component: str = "exporter",
+        identity_metadata: Sequence[tuple[str, str]] | None = None,
     ) -> None:
         super().__init__()
         self._stub = stub
         self._namespace = namespace
         self._token = token
         self.component = component
+        self._identity_metadata = tuple(identity_metadata or ())
         self._queue: deque[telemetry_pb2.LogEntry] = deque(maxlen=_MAX_QUEUE_SIZE)
 
     def prepare(self, record: logging.LogRecord) -> telemetry_pb2.LogEntry:
@@ -158,7 +160,9 @@ class TelemetryLogHandler(logging.Handler):
             # A provider error is a failed push: the batch is already popped and must not
             # escape flush_loop, which shares the shell task group.
             token = self._token() if callable(self._token) else self._token
-            metadata = [("authorization", f"Bearer {token}")] if token else []
+            metadata = list(self._identity_metadata)
+            if token:
+                metadata.append(("authorization", f"Bearer {token}"))
             await self._stub.PushLogs(
                 telemetry_pb2.PushLogsRequest(entries=batch),
                 timeout=call_timeout,
