@@ -41,6 +41,8 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"k8s.io/apiserver/pkg/authentication/authenticator"
+	"k8s.io/apiserver/pkg/authentication/user"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -1341,5 +1343,92 @@ func TestGetServiceEndpoints_AuthFailure_LogsWithPeer(t *testing.T) {
 	}
 	if !strings.Contains(logged, "10.0.0.5") {
 		t.Errorf("expected peer IP in log, got:\n%s", logged)
+	}
+}
+
+type stubClientAuthn struct {
+	name string
+	ok   bool
+}
+
+func (s stubClientAuthn) AuthenticateContext(context.Context) (*authenticator.Response, bool, error) {
+	if !s.ok {
+		return nil, false, nil
+	}
+	return &authenticator.Response{User: &user.DefaultInfo{Name: s.name}}, true, nil
+}
+
+func TestTelemetryService_PushLogs_LokiDoesNotAlsoLogClientEntries(t *testing.T) {
+	var logBuf bytes.Buffer
+	testLogger := zap.New(zap.WriteTo(&logBuf))
+	signer := testSigner(t)
+	pusher := &LokiPusher{queueDepth: 10, now: time.Now}
+	svc := &TelemetryService{BindAddr: ":0", Signer: signer, Loki: pusher}
+	ctx := logf.IntoContext(authedCtx(t, signer, "client:jumpstarter:ci-client:uid1"), testLogger)
+
+	resp, err := svc.PushLogs(ctx, &pb.PushLogsRequest{Entries: []*pb.LogEntry{{
+		Severity: "error",
+		Message:  "flash failed",
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Accepted != 1 {
+		t.Fatalf("Accepted = %d, want 1", resp.Accepted)
+	}
+	if strings.Contains(logBuf.String(), "flash failed") {
+		t.Fatalf("ingested entry was also written to stdout:\n%s", logBuf.String())
+	}
+	queued := pusher.queued()
+	if len(queued) != 1 || queued[0].Message != "flash failed" {
+		t.Fatalf("queued = %#v, want the ingested entry", queued)
+	}
+}
+
+func TestTelemetryService_PushLogs_ExternalOIDCClient(t *testing.T) {
+	signer := testSigner(t)
+	svc := &TelemetryService{
+		BindAddr:    ":0",
+		Signer:      signer,
+		ClientAuthn: stubClientAuthn{name: "dex:alice", ok: true},
+	}
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+		"authorization", "Bearer external-oidc-token",
+		"jumpstarter-kind", "Client",
+		"jumpstarter-namespace", "jumpstarter",
+		"jumpstarter-name", "alice",
+	))
+	resp, err := svc.PushLogs(ctx, &pb.PushLogsRequest{Entries: []*pb.LogEntry{{
+		Severity:  "info",
+		Message:   "from oidc",
+		Component: "cli",
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Accepted != 1 || resp.Dropped != 0 {
+		t.Fatalf("accepted=%d dropped=%d, want 1/0", resp.Accepted, resp.Dropped)
+	}
+}
+
+func TestTelemetryService_PushLogs_ExternalOIDCNameMismatch(t *testing.T) {
+	signer := testSigner(t)
+	svc := &TelemetryService{
+		BindAddr:    ":0",
+		Signer:      signer,
+		ClientAuthn: stubClientAuthn{name: "dex:alice", ok: true},
+	}
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+		"authorization", "Bearer external-oidc-token",
+		"jumpstarter-kind", "Client",
+		"jumpstarter-namespace", "jumpstarter",
+		"jumpstarter-name", "bob",
+	))
+	_, err := svc.PushLogs(ctx, &pb.PushLogsRequest{Entries: []*pb.LogEntry{{
+		Severity: "info",
+		Message:  "from oidc",
+	}}})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("code = %s, want InvalidArgument: %v", status.Code(err), err)
 	}
 }

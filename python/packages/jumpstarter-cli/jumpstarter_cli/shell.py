@@ -702,9 +702,13 @@ async def _shell_with_signal_handling(  # noqa: C901
         finally:
             if not tg.cancel_scope.cancel_called:
                 tg.cancel_scope.cancel()
+            # Close even when the task group is failing. Shield the flush so a
+            # cancellation that caused the exit cannot skip it, and keep it
+            # inside the handler's own shutdown budget.
+            if telemetry is not None:
+                with anyio.CancelScope(shield=True):
+                    await telemetry.aclose()
 
-    if telemetry is not None:
-        await telemetry.aclose()
     return exit_code
 
 
