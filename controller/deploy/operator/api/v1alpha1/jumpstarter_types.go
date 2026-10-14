@@ -306,7 +306,7 @@ type TelemetryConfig struct {
 	// Number of telemetry replicas to run.
 	// Multiple replicas provide HA; each exporter connects to exactly one replica
 	// via a persistent MetricsStream, so Prometheus sum-by queries across replicas
-	// yield exact totals without double-counting (see JEP-0013 DD-8).
+	// yield exact totals without double-counting.
 	// Set to 0 to suspend the telemetry deployment (Deployment stays but no pods run,
 	// Service and other resources are preserved).
 	// Note: when replicas is set to 0, the controller also removes the telemetry
@@ -328,8 +328,7 @@ type TelemetryConfig struct {
 	// Use this to configure TLS when not using cert-manager.
 	GRPC TelemetryGRPCConfig `json:"grpc,omitempty"`
 
-	// Metrics configures reverse-scrape fan-out and Prometheus exposition
-	// (JEP-0013). ServiceMonitor fields are a later phase.
+	// Metrics configures reverse-scrape fan-out and Prometheus exposition.
 	Metrics TelemetryMetricsConfig `json:"metrics,omitempty"`
 
 	// Loki configures optional HTTP push of ingested logs to a Loki-compatible
@@ -347,7 +346,7 @@ type TelemetryLokiConfig struct {
 	URL string `json:"url,omitempty"`
 
 	// Secret with Loki credentials (username/password and/or token keys).
-	// See JEP-0013 DD-5: only the telemetry pod holds Loki credentials.
+	// Only the telemetry pod holds Loki credentials.
 	SecretRef string `json:"secretRef,omitempty"`
 
 	// TLS settings for the Loki endpoint.
@@ -404,7 +403,7 @@ type TelemetryMetricsConfig struct {
 
 	// Max wait for parallel exporter MetricsStream responses during a /metrics fan-out.
 	// Should be lower than the Prometheus scrape_timeout.
-	// JEP-0013 specifies the 7s default and no maximum. 60s bounds the fan-out
+	// The default is 7s. 60s bounds the fan-out
 	// wait and the HTTP write timeout that grows with this value.
 	// +kubebuilder:default="7s"
 	// +kubebuilder:validation:XValidation:rule="duration(self) > duration('0s') && duration(self) <= duration('60s')",message="scrapeTimeout must be greater than 0 and at most 60s"

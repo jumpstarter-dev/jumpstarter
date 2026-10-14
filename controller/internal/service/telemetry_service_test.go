@@ -877,6 +877,40 @@ func TestTelemetryService_PushLogs_AllFieldsLogged(t *testing.T) {
 	}
 }
 
+func TestTelemetryService_PushLogs_LokiDoesNotAlsoLogIngestedEntries(t *testing.T) {
+	var logBuf bytes.Buffer
+	testLogger := zap.New(zap.WriteTo(&logBuf))
+
+	signer := testSigner(t)
+	pusher := &LokiPusher{queueDepth: 10, now: time.Now}
+	svc := &TelemetryService{BindAddr: ":0", Signer: signer, Loki: pusher}
+	ctx := logf.IntoContext(authedCtx(t, signer, "exporter:jumpstarter:lab-exporter:abc123"), testLogger)
+
+	resp, err := svc.PushLogs(ctx, &pb.PushLogsRequest{Entries: []*pb.LogEntry{{
+		Severity: "error",
+		Message:  "flash failed",
+		Exporter: "lab-exporter",
+	}}})
+	if err != nil {
+		t.Fatalf("PushLogs returned error: %v", err)
+	}
+	if resp.Accepted != 1 {
+		t.Fatalf("Accepted = %d, want 1", resp.Accepted)
+	}
+	if strings.Contains(logBuf.String(), "flash failed") {
+		t.Fatalf("ingested event was also written to stdout:\n%s", logBuf.String())
+	}
+
+	pusher.mu.Lock()
+	defer pusher.mu.Unlock()
+	if len(pusher.entries) != 1 {
+		t.Fatalf("queued entries = %d, want 1", len(pusher.entries))
+	}
+	if pusher.entries[0].GetMessage() != "flash failed" {
+		t.Fatalf("queued message = %q", pusher.entries[0].GetMessage())
+	}
+}
+
 func TestTelemetryService_PushLogs_RejectsNonExporterToken(t *testing.T) {
 	signer := testSigner(t)
 	svc := &TelemetryService{BindAddr: ":0", Signer: signer}

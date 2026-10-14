@@ -119,9 +119,11 @@ type TelemetryService struct {
 	scrapeGroup singleflight.Group
 }
 
-// PushLogs receives a batch of structured log entries, writes them via the
-// controller-runtime logger (structured JSON to stdout), and enqueues them for
-// Loki when a pusher is configured.
+// PushLogs receives a batch of structured log entries. When a Loki pusher is
+// configured, accepted entries are queued for Loki and are not also written to
+// stdout. Otherwise they are written via the controller-runtime logger
+// (structured JSON to stdout). The service's own operational diagnostics are
+// still logged normally.
 func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest) (*pb.PushLogsResponse, error) {
 	id, err := s.authenticateExporter(ctx)
 	if err != nil {
@@ -156,10 +158,17 @@ func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest
 
 		prepared := prepareLogEntry(id, entry)
 
+		// Direct Loki and stdout shipping are exclusive. A cluster log
+		// shipper plus a Loki push would otherwise ingest each event twice.
+		if s.Loki != nil {
+			s.Loki.Enqueue(prepared)
+			accepted++
+			continue
+		}
+
 		// Always log the authenticated identity. After the mismatch checks
 		// above, any non-empty entry fields already match the token; using
-		// the token values makes the server the source of truth for Loki
-		// stream labels even when the entry omitted them.
+		// the token values makes stdout the source of truth when Loki is off.
 		kvs := []any{
 			"component", prepared.Component,
 			logFieldExporter, claimedName,
@@ -194,9 +203,6 @@ func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest
 			logger.Error(nil, prepared.Message, kvs...)
 		default:
 			logger.Info(prepared.Message, kvs...)
-		}
-		if s.Loki != nil {
-			s.Loki.Enqueue(prepared)
 		}
 		accepted++
 	}
