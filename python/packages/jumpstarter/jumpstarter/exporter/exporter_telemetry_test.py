@@ -39,7 +39,6 @@ def make_bare_exporter():
     exp.labels = {"jumpstarter.dev/name": "test-exporter"}
     exp.exporter_name = "test-exporter"
     exp.token = "test-token"
-    exp.namespace = ""
 
     tls = MagicMock()
     tls.insecure = False

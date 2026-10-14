@@ -18,14 +18,15 @@ limitations under the License.
 from __future__ import annotations
 
 import urllib.request
+from typing import cast
 from unittest.mock import MagicMock, patch
 
-import anyio
 import anyio.lowlevel
+import anyio.to_thread
 import grpc
 import pytest
 from anyio import EndOfStream, create_memory_object_stream, create_task_group, fail_after, sleep
-from jumpstarter_protocol import telemetry_pb2
+from jumpstarter_protocol import telemetry_pb2, telemetry_pb2_grpc
 
 from jumpstarter.exporter.metrics_stream import MetricsStreamClient
 from jumpstarter.metrics.registry import MetricsRegistry
@@ -82,6 +83,22 @@ class RecordingStub:
         return self.call
 
 
+def _client(
+    stub: RecordingStub,
+    *,
+    identity: str,
+    token: str = "",
+    registry: MetricsRegistry | None = None,
+) -> MetricsStreamClient:
+    """Build a client from a test double. The production parameter is the generated stub."""
+    return MetricsStreamClient(
+        cast(telemetry_pb2_grpc.TelemetryServiceStub, stub),
+        identity=identity,
+        token=token,
+        registry=registry,
+    )
+
+
 async def _wait_until(pred, *, timeout: float = 2.0) -> None:
     with fail_after(timeout):
         while not pred():
@@ -109,7 +126,7 @@ class TestMetricsStreamProtocol:
     async def test_first_message_is_register_with_exporter_identity(self):
         call = FakeMetricsCall()
         stub = RecordingStub(call)
-        client = MetricsStreamClient(stub, identity=IDENTITY, token=TOKEN)
+        client = _client(stub, identity=IDENTITY, token=TOKEN)
 
         async with create_task_group() as tg:
             tg.start_soon(client.run)
@@ -123,7 +140,7 @@ class TestMetricsStreamProtocol:
     async def test_sends_bearer_token_metadata(self):
         call = FakeMetricsCall()
         stub = RecordingStub(call)
-        client = MetricsStreamClient(stub, identity=IDENTITY, token=TOKEN)
+        client = _client(stub, identity=IDENTITY, token=TOKEN)
 
         async with create_task_group() as tg:
             tg.start_soon(client.run)
@@ -138,7 +155,7 @@ class TestMetricsStreamProtocol:
         expected = reg.generate_latest()
 
         call = FakeMetricsCall()
-        client = MetricsStreamClient(RecordingStub(call), identity=IDENTITY, token=TOKEN, registry=reg)
+        client = _client(RecordingStub(call), identity=IDENTITY, token=TOKEN, registry=reg)
 
         async with create_task_group() as tg:
             tg.start_soon(client.run)
@@ -167,7 +184,7 @@ class TestMetricsStreamProtocol:
         expected = reg.generate_latest()
 
         call = FakeMetricsCall()
-        client = MetricsStreamClient(RecordingStub(call), identity=IDENTITY, token=TOKEN, registry=reg)
+        client = _client(RecordingStub(call), identity=IDENTITY, token=TOKEN, registry=reg)
 
         async with create_task_group() as tg:
             tg.start_soon(client.run)
@@ -190,7 +207,7 @@ class TestMetricsStreamProtocol:
         assert empty  # OpenMetrics text is still produced with no samples
 
         call = FakeMetricsCall()
-        client = MetricsStreamClient(RecordingStub(call), identity=IDENTITY, token="", registry=reg)
+        client = _client(RecordingStub(call), identity=IDENTITY, token="", registry=reg)
 
         async with create_task_group() as tg:
             tg.start_soon(client.run)
@@ -217,7 +234,7 @@ class TestMetricsStreamProtocol:
             shutdown()
 
         call = FakeMetricsCall()
-        client = MetricsStreamClient(RecordingStub(call), identity=IDENTITY, token=TOKEN, registry=reg)
+        client = _client(RecordingStub(call), identity=IDENTITY, token=TOKEN, registry=reg)
 
         async with create_task_group() as tg:
             tg.start_soon(client.run)
@@ -230,7 +247,7 @@ class TestMetricsStreamProtocol:
 
     async def test_cancel_stops_run(self):
         call = FakeMetricsCall()
-        client = MetricsStreamClient(RecordingStub(call), identity=IDENTITY, token=TOKEN)
+        client = _client(RecordingStub(call), identity=IDENTITY, token=TOKEN)
 
         async with create_task_group() as tg:
             tg.start_soon(client.run)
