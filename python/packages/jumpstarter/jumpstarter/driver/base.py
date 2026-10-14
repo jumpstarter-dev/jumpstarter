@@ -123,7 +123,8 @@ class Driver(
 
         display_name = f"driver.{self.__class__.__name__}"
         self.logger = get_logger(f"{display_name}.{str(self.uuid)[-4:]}", LogSource.DRIVER)
-        self.logger.addFilter(_DriverLoggerNameFilter(display_name))
+        self._logger_filter = _DriverLoggerNameFilter(display_name)
+        self.logger.addFilter(self._logger_filter)
         self.logger.setLevel(self.log_level if self.log_level is not None else "INFO")
 
     def propagate_log_level(self, inherited: str = "INFO") -> None:
@@ -141,6 +142,9 @@ class Driver(
     def close(self):
         for child in self.children.values():
             child.close()
+        # Remove the per-instance name filter added in __post_init__ so it does
+        # not leak on the (global) logger when the driver is torn down.
+        self.logger.removeFilter(self._logger_filter)
 
     def shutdown(self):
         """Session-end teardown hook, run by the exporter before close().
