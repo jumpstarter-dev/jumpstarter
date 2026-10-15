@@ -3,7 +3,7 @@ import sys
 import termios
 import tty
 from collections.abc import Awaitable, Callable
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 
 from anyio import BrokenResourceError, ClosedResourceError, EndOfStream, create_task_group
 from anyio.streams.file import FileReadStream, FileWriteStream
@@ -104,6 +104,7 @@ class Console:
         stdin = FileReadStream(sys.stdin.buffer)
         keys = {EXIT_KEY, POWER_KEY} if self.on_power_cycle is not None else {EXIT_KEY}
         hotkeys = HotkeyDetector(keys)
+        send_warned = False
         while True:
             data = await stdin.receive(max_bytes=1)
             if not data:
@@ -112,8 +113,18 @@ class Console:
             if hit == EXIT_KEY:
                 raise ConsoleExit
             if hit == POWER_KEY:
+                # POWER_KEY is only armed when a power-cycle callback exists
+                assert self.on_power_cycle is not None
                 await self.on_power_cycle()
                 continue
             if stream is not None:
-                with suppress(*STREAM_ERRORS):
+                try:
                     await stream.send(data)
+                except STREAM_ERRORS:
+                    # Transient during power-cycle re-enumeration; warn once per
+                    # failure streak so persistent write breakage stays diagnosable.
+                    if not send_warned:
+                        logger.warning("send failed, input may not reach the device")
+                        send_warned = True
+                else:
+                    send_warned = False

@@ -1,188 +1,199 @@
-import threading
-from unittest.mock import MagicMock
+from dataclasses import field
+from unittest.mock import AsyncMock, patch
+
+from pydantic.dataclasses import dataclass
 
 from .driver import PySerial
+from jumpstarter.client.core import DriverMethodNotImplemented
 from jumpstarter.common.utils import serve
+from jumpstarter.driver import Driver, export
 
 
-def test_find_power_client_no_root():
-    with serve(PySerial(url="loop://", power_control_method=["cycle"])) as client:
-        # No root attribute set → should return None
-        assert client._find_power_client() is None
+@dataclass(kw_only=True)
+class FakePower(Driver):
+    calls: list[str] = field(default_factory=list)
+
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter.client.DriverClient"
+
+    @export
+    def off(self):
+        self.calls.append("off")
+
+    @export
+    def on(self):
+        self.calls.append("on")
+
+    @export
+    def cycle(self):
+        self.calls.append("cycle")
 
 
-def test_find_power_client_auto_discover():
-    power = MagicMock(spec=["cycle", "children", "labels"])
-    power.children = {}
-    power.labels = {"jumpstarter.dev/client": "jumpstarter_driver_power.client.PowerClient"}
-    root = MagicMock(spec=["children", "labels"])
-    root.children = {"power": power}
-    root.labels = {}
+@dataclass(kw_only=True)
+class FakeDut(Driver):
+    """Minimal parent driver so the serial device has sibling drivers."""
 
-    with serve(PySerial(url="loop://")) as client:
-        object.__setattr__(client, "root", root)
-        assert client._find_power_client() is power
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter.client.DriverClient"
 
 
-def test_make_power_cycle_calls_cycle():
-    called = threading.Event()
-    power = MagicMock()
-    power.cycle = MagicMock(side_effect=lambda: called.set())
-
-    with serve(PySerial(url="loop://")) as client:
-        cycle_fn = client._make_power_cycle(power)
-        client.portal.call(cycle_fn)
-        assert called.is_set()
+def test_power_cycle_hook_resolves():
+    dut = FakeDut(children={"serial": PySerial(url="loop://"), "power": FakePower()})
+    with serve(dut) as client:
+        serial = client.children["serial"]
+        assert callable(serial._power_cycle_hook())
 
 
-def test_find_power_client_ambiguous():
-    power1 = MagicMock(spec=["children", "labels"])
-    power1.children = {}
-    power1.labels = {
-        "jumpstarter.dev/client": "jumpstarter_driver_power.client.PowerClient",
-        "jumpstarter.dev/name": "power1",
-    }
-    power2 = MagicMock(spec=["children", "labels"])
-    power2.children = {}
-    power2.labels = {
-        "jumpstarter.dev/client": "jumpstarter_driver_power.client.PowerClient",
-        "jumpstarter.dev/name": "power2",
-    }
-    root = MagicMock(spec=["children", "labels"])
-    root.children = {"power1": power1, "power2": power2}
-    root.labels = {}
-
-    with serve(PySerial(url="loop://")) as client:
-        object.__setattr__(client, "root", root)
-        assert client._find_power_client() is None
+def test_power_cycle_hook_default_cycle():
+    fake = FakePower()
+    dut = FakeDut(children={"serial": PySerial(url="loop://"), "power": fake})
+    with serve(dut) as client:
+        hook = client.children["serial"]._power_cycle_hook()
+        assert hook is not None
+        client.portal.call(hook)
+        assert fake.calls == ["cycle"]
 
 
-def test_find_power_client_explicit_ref():
-    power = MagicMock(spec=["children", "labels"])
-    power.children = {}
-    power.labels = {"jumpstarter.dev/client": "jumpstarter_driver_power.client.PowerClient"}
-    other = MagicMock(spec=["children", "labels"])
-    other.children = {}
-    other.labels = {"jumpstarter.dev/client": "other.driver.Client"}
-    root = MagicMock(spec=["children", "labels"])
-    root.children = {"power": power, "other": other}
-    root.labels = {}
-
-    with serve(PySerial(url="loop://", power_control_ref="power")) as client:
-        object.__setattr__(client, "root", root)
-        assert client._find_power_client() is power
-
-
-def test_find_power_client_explicit_ref_missing():
-    root = MagicMock(spec=["children", "labels"])
-    root.children = {}
-    root.labels = {}
-
-    with serve(PySerial(url="loop://", power_control_ref="nonexistent")) as client:
-        object.__setattr__(client, "root", root)
-        assert client._find_power_client() is None
+def test_power_cycle_hook_executes_steps():
+    fake = FakePower()
+    dut = FakeDut(
+        children={
+            "serial": PySerial(url="loop://", power_control_method=["off", "sleep:0.01", "on"]),
+            "power": fake,
+        }
+    )
+    with serve(dut) as client:
+        hook = client.children["serial"]._power_cycle_hook()
+        assert hook is not None
+        client.portal.call(hook)
+        assert fake.calls == ["off", "on"]
 
 
-def test_find_power_client_non_power_ignored():
-    gpio = MagicMock(spec=["children", "labels"])
-    gpio.children = {}
-    gpio.labels = {"jumpstarter.dev/client": "jumpstarter_driver_gpiod.client.DigitalOutputClient"}
-    root = MagicMock(spec=["children", "labels"])
-    root.children = {"gpio": gpio}
-    root.labels = {}
-
-    with serve(PySerial(url="loop://")) as client:
-        object.__setattr__(client, "root", root)
-        assert client._find_power_client() is None
+def test_dut_power_cycle_remote_call():
+    """dut_power_cycle is a regular driver call, usable outside the hotkey."""
+    fake = FakePower()
+    dut = FakeDut(children={"serial": PySerial(url="loop://"), "power": fake})
+    with serve(dut) as client:
+        client.children["serial"].call("dut_power_cycle")
+        assert fake.calls == ["cycle"]
 
 
-def test_make_power_cycle_custom_method():
-    called_sequence = []
-    power = MagicMock()
-    power.off = MagicMock(side_effect=lambda: called_sequence.append("off"))
-    power.on = MagicMock(side_effect=lambda: called_sequence.append("on"))
-
-    with serve(PySerial(url="loop://", power_control_method=["off", "on"])) as client:
-        cycle_fn = client._make_power_cycle(power)
-        client.portal.call(cycle_fn)
-        assert called_sequence == ["off", "on"]
-
-
-def test_find_power_client_disabled_via_empty_list():
-    power = MagicMock(spec=["children", "labels"])
-    power.children = {}
-    power.labels = {"jumpstarter.dev/client": "jumpstarter_driver_power.client.PowerClient"}
-    root = MagicMock(spec=["children", "labels"])
-    root.children = {"power": power}
-    root.labels = {}
-
-    with serve(PySerial(url="loop://", power_control_method=[])) as client:
-        object.__setattr__(client, "root", root)
-        assert client._find_power_client() is None
+def test_power_cycle_hook_ref_override():
+    fake = FakePower()
+    dut = FakeDut(
+        children={
+            "serial": PySerial(url="loop://", power_control_ref="psu"),
+            "psu": fake,
+        }
+    )
+    with serve(dut) as client:
+        hook = client.children["serial"]._power_cycle_hook()
+        assert hook is not None
+        client.portal.call(hook)
+        assert fake.calls == ["cycle"]
 
 
-def test_make_power_cycle_missing_method():
-    power = MagicMock(spec=["children", "labels"])
-    power.children = {}
-    power.labels = {}
-
-    with serve(PySerial(url="loop://", power_control_method=["nonexistent_method"])) as client:
-        result = client._make_power_cycle(power)
-        assert result is None
+def test_power_cycle_hook_ref_missing():
+    dut = FakeDut(children={"serial": PySerial(url="loop://", power_control_ref="main"), "psu": FakePower()})
+    with serve(dut) as client:
+        assert client.children["serial"]._power_cycle_hook() is None
 
 
-def test_make_power_cycle_with_sleep():
-    called_sequence = []
-    power = MagicMock()
-    power.off = MagicMock(side_effect=lambda: called_sequence.append("off"))
-    power.on = MagicMock(side_effect=lambda: called_sequence.append("on"))
-
-    with serve(PySerial(url="loop://", power_control_method=["off", "sleep:0.01", "on"])) as client:
-        cycle_fn = client._make_power_cycle(power)
-        client.portal.call(cycle_fn)
-        assert called_sequence == ["off", "on"]
+def test_power_cycle_hook_no_power():
+    with serve(FakeDut(children={"serial": PySerial(url="loop://")})) as client:
+        assert client.children["serial"]._power_cycle_hook() is None
 
 
-def test_find_power_client_disabled_via_none():
-    power = MagicMock(spec=["children", "labels"])
-    power.children = {}
-    power.labels = {"jumpstarter.dev/client": "jumpstarter_driver_power.client.PowerClient"}
-    root = MagicMock(spec=["children", "labels"])
-    root.children = {"power": power}
-    root.labels = {}
-
-    with serve(PySerial(url="loop://", power_control_method=None)) as client:
-        object.__setattr__(client, "root", root)
-        assert client._find_power_client() is None
+def test_power_cycle_hook_child_fallback():
+    """Standalone serial (no parent) resolves the power driver among its children."""
+    fake = FakePower()
+    with serve(PySerial(url="loop://", children={"power": fake})) as client:
+        hook = client._power_cycle_hook()
+        assert hook is not None
+        client.portal.call(hook)
+        assert fake.calls == ["cycle"]
 
 
-def test_collect_power_clients_dedup_proxy():
-    # Simulate Proxy scenario: same power driver instance appears twice in tree
-    # (once via proxy delegation, once via direct parent)
-    from uuid import uuid4
-    shared_uuid = uuid4()
+def test_power_cycle_hook_sibling_preferred_over_child():
+    """When both a sibling and a child match the ref, the sibling wins."""
+    sibling = FakePower()
+    child = FakePower()
+    dut = FakeDut(
+        children={
+            "serial": PySerial(url="loop://", children={"power": child}),
+            "power": sibling,
+        }
+    )
+    with serve(dut) as client:
+        hook = client.children["serial"]._power_cycle_hook()
+        assert hook is not None
+        client.portal.call(hook)
+        assert sibling.calls == ["cycle"]
+        assert child.calls == []
 
-    power1 = MagicMock(spec=["children", "labels", "uuid"])
-    power1.children = {}
-    power1.labels = {
-        "jumpstarter.dev/client": "jumpstarter_driver_power.client.PowerClient",
-        "jumpstarter.dev/name": "power",
-    }
-    power1.uuid = shared_uuid
 
-    power2 = MagicMock(spec=["children", "labels", "uuid"])
-    power2.children = {}
-    power2.labels = {
-        "jumpstarter.dev/client": "jumpstarter_driver_power.client.PowerClient",
-        "jumpstarter.dev/name": "power",
-    }
-    power2.uuid = shared_uuid  # Same UUID as power1
+def test_power_cycle_hook_disabled_via_empty_list():
+    dut = FakeDut(children={"serial": PySerial(url="loop://", power_control_method=[]), "power": FakePower()})
+    with serve(dut) as client:
+        assert client.children["serial"]._power_cycle_hook() is None
 
-    root = MagicMock(spec=["children", "labels"])
-    root.children = {"power1": power1, "power2": power2}
-    root.labels = {}
 
-    with serve(PySerial(url="loop://")) as client:
-        object.__setattr__(client, "root", root)
-        # Should find only one power client despite two references
-        assert client._find_power_client() is power1
+def test_power_cycle_hook_disabled_via_none():
+    dut = FakeDut(children={"serial": PySerial(url="loop://", power_control_method=None), "power": FakePower()})
+    with serve(dut) as client:
+        assert client.children["serial"]._power_cycle_hook() is None
+
+
+def test_power_cycle_hook_invalid_method():
+    dut = FakeDut(
+        children={
+            "serial": PySerial(url="loop://", power_control_method=["nonexistent_method"]),
+            "power": FakePower(),
+        }
+    )
+    with serve(dut) as client:
+        assert client.children["serial"]._power_cycle_hook() is None
+
+
+def test_power_cycle_hook_invalid_sleep():
+    dut = FakeDut(
+        children={
+            "serial": PySerial(url="loop://", power_control_method=["sleep:bad"]),
+            "power": FakePower(),
+        }
+    )
+    with serve(dut) as client:
+        assert client.children["serial"]._power_cycle_hook() is None
+
+
+def test_power_cycle_hook_string_method():
+    fake = FakePower()
+    dut = FakeDut(
+        children={"serial": PySerial(url="loop://", power_control_method="cycle"), "power": fake}
+    )
+    with serve(dut) as client:
+        hook = client.children["serial"]._power_cycle_hook()
+        assert hook is not None
+        client.portal.call(hook)
+        assert fake.calls == ["cycle"]
+
+
+def test_power_cycle_hook_old_exporter():
+    dut = FakeDut(children={"serial": PySerial(url="loop://"), "power": FakePower()})
+    with serve(dut) as client:
+        serial = client.children["serial"]
+        with patch.object(serial, "call", side_effect=DriverMethodNotImplemented("power_control_config")):
+            assert serial._power_cycle_hook() is None
+
+
+def test_power_cycle_hook_failure_does_not_raise():
+    """A failed dut_power_cycle call warns instead of killing the console."""
+    dut = FakeDut(children={"serial": PySerial(url="loop://"), "power": FakePower()})
+    with serve(dut) as client:
+        serial = client.children["serial"]
+        hook = serial._power_cycle_hook()
+        assert hook is not None
+        with patch.object(serial, "call_async", AsyncMock(side_effect=RuntimeError("PDU unreachable"))):
+            client.portal.call(hook)  # must not raise

@@ -6,24 +6,17 @@ import time
 from contextlib import contextmanager
 
 import click
-from anyio import BrokenResourceError, EndOfStream, create_task_group, open_file, sleep, to_thread
+from anyio import BrokenResourceError, EndOfStream, create_task_group, open_file
 from anyio.streams.file import FileReadStream
 from jumpstarter_driver_network.adapters import PexpectAdapter
 from pexpect.fdpexpect import fdspawn
 
 from .console import Console, ConsoleStreamDrop
 from jumpstarter.client import DriverClient
+from jumpstarter.client.core import DriverMethodNotImplemented
 from jumpstarter.client.decorators import driver_click_group
 
 logger = logging.getLogger(__name__)
-
-KNOWN_POWER_CLIENTS = frozenset({
-    "jumpstarter_driver_power.client.PowerClient",
-    "jumpstarter_driver_power.client.VirtualPowerClient",
-    "jumpstarter_driver_ridesx.client.RideSXPowerClient",
-    "jumpstarter_driver_noyito_relay.client.NoyitoPowerClient",
-    "jumpstarter_driver_snmp.client.SNMPServerClient",
-})
 
 # Console reconnection settings
 SUCCESSFUL_SESSION_THRESHOLD = 5  # seconds - reset counter if session lasted this long
@@ -165,91 +158,25 @@ class PySerialClient(DriverClient):
 
         return bytes_read, bytes_sent
 
-    def _find_power_client(self):
-        # Check if hotkey is disabled
-        method_label = self.labels.get("jumpstarter.dev/pyserial/power-control-method", "cycle")
-        if not method_label:
+    def _power_cycle_hook(self):
+        """Build the Ctrl-] x3 callback, or None when unavailable.
+
+        Asks the driver (one DriverCall) whether power control is configured
+        and valid; the hotkey then triggers dut_power_cycle, which executes
+        the configured sequence on the exporter side.
+        """
+        try:
+            config = self.call("power_control_config")
+        except DriverMethodNotImplemented:
+            return None  # exporter predates the power hotkey
+        if not config.get("available"):
             return None
-
-        root = getattr(self, 'root', None)
-        if root is None:
-            return None
-
-        # Explicit ref takes precedence
-        ref_label = self.labels.get("jumpstarter.dev/pyserial/power-control-ref")
-        if ref_label:
-            power_client = root.children.get(ref_label)
-            if power_client is None:
-                logger.warning(
-                    "power_control_ref '%s' not found in DUT tree — power cycle hotkey disabled",
-                    ref_label
-                )
-                return None
-            return power_client
-
-        # Auto-discovery: collect all power-capable clients
-        candidates = []
-        self._collect_power_clients(root, candidates)
-
-        if len(candidates) == 0:
-            return None
-        if len(candidates) == 1:
-            return candidates[0]
-
-        # Multiple candidates — ambiguous
-        names = [c.labels.get("jumpstarter.dev/name", "unknown") for c in candidates]
-        logger.warning(
-            "Multiple power drivers found (%s) — power cycle hotkey disabled. "
-            "Set power_control_ref to select one explicitly.",
-            ", ".join(names)
-        )
-        return None
-
-    def _collect_power_clients(self, client, result, seen_uuids=None):
-        if seen_uuids is None:
-            seen_uuids = set()
-        client_uuid = getattr(client, 'uuid', None)
-        if client_uuid and client_uuid in seen_uuids:
-            return
-        if client_uuid:
-            seen_uuids.add(client_uuid)
-        client_class = client.labels.get("jumpstarter.dev/client")
-        if client_class in KNOWN_POWER_CLIENTS:
-            result.append(client)
-        for child in client.children.values():
-            self._collect_power_clients(child, result, seen_uuids)
-
-    def _make_power_cycle(self, power_client):
-        method_label = self.labels.get("jumpstarter.dev/pyserial/power-control-method", "cycle")
-        methods = [m for m in method_label.split(",") if m]
-
-        # Pre-validate and parse all steps
-        steps = []
-        for method in methods:
-            if method.startswith("sleep:"):
-                try:
-                    delay = float(method.split(":", 1)[1])
-                    steps.append(("sleep", delay))
-                except (ValueError, IndexError):
-                    logger.warning("Invalid sleep step '%s' — power cycle hotkey disabled", method)
-                    return None
-            else:
-                operation = getattr(power_client, method, None)
-                if callable(operation):
-                    steps.append(("operation", operation))
-                else:
-                    logger.warning(
-                        "Power client does not have callable method '%s' — power cycle hotkey disabled",
-                        method
-                    )
-                    return None
 
         async def _cycle():
-            for kind, value in steps:
-                if kind == "sleep":
-                    await sleep(value)
-                else:
-                    await to_thread.run_sync(value)
+            try:
+                await self.call_async("dut_power_cycle")
+            except Exception:
+                logger.warning("power cycle failed", exc_info=True)
 
         return _cycle
 
@@ -267,8 +194,7 @@ class PySerialClient(DriverClient):
                 on_power_cycle = None
                 click.echo("\nStarting serial console in observe mode (read-only) ... exit with CTRL+B x 3 times\n")
             else:
-                power_client = self._find_power_client()
-                on_power_cycle = self._make_power_cycle(power_client) if power_client is not None else None
+                on_power_cycle = self._power_cycle_hook()
                 click.echo("\nStarting serial port console ... exit with CTRL+B x 3 times\n")
                 if on_power_cycle is not None:
                     click.echo("Power cycle: CTRL+] x 3 times\n")

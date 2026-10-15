@@ -1,3 +1,4 @@
+import logging
 import os
 import threading
 import time
@@ -94,8 +95,9 @@ def test_ctrl_bracket_without_power_client():
     assert "exc" not in result
 
 
-def test_send_failure_does_not_kill_console():
+def test_send_failure_does_not_kill_console(caplog):
     """send() raising BrokenResourceError should not crash the console."""
+    caplog.set_level(logging.WARNING, logger="jumpstarter_driver_pyserial.console")
 
     class _BrokenSendStream:
         """Wrapper that breaks send() but keeps receive() working."""
@@ -134,6 +136,10 @@ def test_send_failure_does_not_kill_console():
 
     assert not t.is_alive()
     assert "exc" not in result, f"console raised unexpected exception: {result.get('exc')}"
+
+    # Multiple failed sends ("a" plus the two non-exit Ctrl-B bytes) warn exactly once
+    warnings = [r for r in caplog.records if "send failed" in r.message]
+    assert len(warnings) == 1, f"expected exactly one send-failure warning, got {len(warnings)}"
 
 
 def test_receive_failure_raises_stream_drop():
