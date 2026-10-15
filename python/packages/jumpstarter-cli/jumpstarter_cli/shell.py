@@ -858,6 +858,7 @@ async def _shell_direct_async(
     help=(
         "Path to an exporter config. Only the export section is used: those drivers are "
         "overlaid as client-only clients on this session, including nested children and refs. "
+        "A ref may name a driver in this file or one already on the session. "
         "Sets JMP_CLIENT_OVERLAY. Server-side calls on the overlaid clients are not supported."
     ),
 )
@@ -878,7 +879,7 @@ def shell(
     tls_grpc_address,
     tls_grpc_insecure,
     passphrase,
-    overlay,
+    overlay: str | None = None,
 ):
     """
     Spawns a shell (or custom command) connecting to a local or remote exporter

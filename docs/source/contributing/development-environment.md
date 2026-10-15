@@ -67,7 +67,9 @@ sets `JMP_CLIENT_OVERLAY` to the absolute path of that file. Inside the shell,
 `export` and place them next to the session's drivers:
 
 - Nested `children` are included on the parent client.
-- A `ref` is the same client object as the driver it names.
+- A `ref` is the same client object as the driver it names. That driver can be
+  another entry in the overlay or one already on the session, so a ref to a lab
+  driver keeps calling the exporter.
 - A top-level name that already exists on the session is replaced, and a
   warning naming that client is printed when `j` or `env()` builds the client.
 - `config` values are passed through when the client class declares those
@@ -86,6 +88,8 @@ $ exit
 
 ```yaml
 export:
+  lab_power:
+    ref: power
   my-local-tool:
     type: my_driver.driver.MyDriver
     config:
@@ -93,6 +97,8 @@ export:
     children:
       helper:
         type: my_driver.driver.Helper
+      pwr:
+        ref: power
   alias:
     ref: my-local-tool.helper
 ```
