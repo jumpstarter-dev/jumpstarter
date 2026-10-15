@@ -1,0 +1,10 @@
+# Client-only overlay for e2e: alias the leased MockPower driver.
+# Used with jmp shell --overlay; does not start any drivers on the exporter.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: client-overlay-ref-power
+export:
+  lab_power:
+    ref: power
