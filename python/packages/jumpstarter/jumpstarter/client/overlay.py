@@ -1,8 +1,11 @@
-"""Client-only overlay built from an exporter config's export section.
+"""Client-only overlay built from an export tree.
 
 The overlay instantiates driver *clients* (including nested children and refs)
 and never starts the corresponding drivers. Server-side calls on those clients
 fail. A ref may name another overlay driver or a driver already on the session.
+
+Overlay files use :class:`ClientOverlayConfig`: a single ``export`` map. They are
+not exporter configs (no endpoint, token, or metadata).
 """
 
 from __future__ import annotations
@@ -15,14 +18,13 @@ from typing import Any, Protocol
 
 import yaml
 from anyio.from_thread import BlockingPortal
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from jumpstarter.client.base import DriverClient
 from jumpstarter.client.core import DriverError
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.common.importlib import import_class
 from jumpstarter.config.exporter import (
-    ExporterConfigV1Alpha1,
     ExporterConfigV1Alpha1DriverInstance,
     ExporterConfigV1Alpha1DriverInstanceBase,
     ExporterConfigV1Alpha1DriverInstanceComposite,
@@ -46,6 +48,13 @@ _MANAGED_FIELDS = frozenset({
 _COMPOSITE_CLIENT = "jumpstarter_driver_composite.client.CompositeClient"
 
 
+class ClientOverlayConfig(BaseModel):
+    """Client overlay file: an ``export`` map only."""
+
+    model_config = ConfigDict(extra="forbid")
+    export: dict[str, ExporterConfigV1Alpha1DriverInstance]
+
+
 class _HasChildren(Protocol):
     children: dict[str, DriverClient]
 
@@ -63,14 +72,14 @@ class LocalOnlyStub:
 
 
 def prepare_client_overlay(path: str) -> str:
-    """Load an exporter config and validate its export section.
+    """Load and validate a :class:`ClientOverlayConfig` file.
 
-    Returns the absolute path. Endpoint, token, tls, and hooks are ignored.
-    A ref to a driver that is not in the file is accepted here; it is resolved
-    against the session client when the overlay is applied.
+    Returns the absolute path. A ref to a driver that is not in the file is
+    accepted here; it is resolved against the session client when the overlay
+    is applied.
     """
-    resolved, config = _load_overlay_config(path)
-    validate_client_overlay(config.export)
+    resolved, export = _load_overlay_export(path)
+    validate_client_overlay(export)
     return str(resolved)
 
 
@@ -156,18 +165,21 @@ def apply_client_overlay_from_path(
     portal: BlockingPortal,
     stack: ExitStack,
 ) -> None:
-    """Load ``path`` and merge its export section onto ``client``."""
-    _, config = _load_overlay_config(path)
-    apply_client_overlay(client, config.export, portal, stack)
+    """Load ``path`` and merge its export tree onto ``client``."""
+    _, export = _load_overlay_export(path)
+    apply_client_overlay(client, export, portal, stack)
 
 
-def _load_overlay_config(path: str) -> tuple[Path, ExporterConfigV1Alpha1]:
+def _load_overlay_export(path: str) -> tuple[Path, dict[str, ExporterConfigV1Alpha1DriverInstance]]:
+    """Load a :class:`ClientOverlayConfig` YAML file."""
     resolved = Path(path).expanduser().resolve()
     try:
-        config = ExporterConfigV1Alpha1.load_path(resolved)
+        with resolved.open() as f:
+            data = yaml.safe_load(f)
+        config = ClientOverlayConfig.model_validate(data)
     except (OSError, ValidationError, yaml.YAMLError) as exc:
         raise ConfigurationError(f"Failed to load client overlay '{resolved}': {exc}") from exc
-    return resolved, config
+    return resolved, config.export
 
 
 def _composite_client_class() -> type[DriverClient]:

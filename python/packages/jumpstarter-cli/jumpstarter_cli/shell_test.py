@@ -1464,13 +1464,7 @@ def test_shell_overlay_is_passed_to_the_shell(tmp_path):
     config_path = _write_exporter_config(tmp_path)
     overlay = tmp_path / "overlay.yaml"
     overlay.write_text(
-        """apiVersion: jumpstarter.dev/v1alpha1
-kind: ExporterConfig
-metadata:
-  namespace: default
-  name: overlay
-endpoint: "jumpstarter.example:443"
-token: "secret"
+        """
 export:
   power:
     type: jumpstarter.client.overlay_test.OverlaySampleDriver
@@ -1490,16 +1484,7 @@ export:
 def test_shell_overlay_empty_export_fails_before_launch(tmp_path):
     config_path = _write_exporter_config(tmp_path)
     overlay = tmp_path / "overlay.yaml"
-    overlay.write_text(
-        """apiVersion: jumpstarter.dev/v1alpha1
-kind: ExporterConfig
-metadata:
-  namespace: default
-  name: overlay
-export: {}
-""",
-        encoding="utf-8",
-    )
+    overlay.write_text("export: {}\n", encoding="utf-8")
     with (
         patch.object(ExporterConfigV1Alpha1, "serve_unix", _fake_serve_unix),
         patch("jumpstarter_cli.shell.launch_shell", return_value=0) as launched,

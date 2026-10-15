@@ -160,20 +160,11 @@ def test_apply_replaces_existing_client_and_warns(portal_and_stack, capsys):
     assert "kept" not in err
 
 
-def test_prepare_client_overlay_uses_only_the_export_section(tmp_path, portal_and_stack):
+def test_prepare_loads_client_overlay_export(tmp_path, portal_and_stack):
     portal, stack = portal_and_stack
-    path = tmp_path / "exporter.yaml"
+    path = tmp_path / "overlay.yaml"
     path.write_text(
-        f"""apiVersion: jumpstarter.dev/v1alpha1
-kind: ExporterConfig
-metadata:
-  namespace: default
-  name: lab
-endpoint: "jumpstarter.example:443"
-token: "secret"
-hooks:
-  beforeLease:
-    script: "echo hi"
+        f"""
 export:
   power:
     type: "{_DRIVER}"
@@ -307,9 +298,15 @@ def test_apply_from_path_wraps_load_errors(portal_and_stack, tmp_path):
         apply_client_overlay_from_path(session, str(invalid_yaml), portal, stack)
 
     invalid_model = tmp_path / "model.yaml"
-    invalid_model.write_text("kind: nope\n", encoding="utf-8")
+    invalid_model.write_text("export: []\n", encoding="utf-8")
     with pytest.raises(ConfigurationError, match="Failed to load"):
         apply_client_overlay_from_path(session, str(invalid_model), portal, stack)
+
+    # Bare driver maps and full exporter configs are rejected (export: required).
+    bare_map = tmp_path / "bare.yaml"
+    bare_map.write_text(f"power:\n  type: {_DRIVER}\n", encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="Failed to load"):
+        apply_client_overlay_from_path(session, str(bare_map), portal, stack)
 
 
 def test_env_async_ref_calls_live_session_driver(monkeypatch, tmp_path):
@@ -329,11 +326,6 @@ def test_env_async_ref_calls_live_session_driver(monkeypatch, tmp_path):
     overlay = tmp_path / "overlay.yaml"
     overlay.write_text(
         f"""
-apiVersion: jumpstarter.dev/v1alpha1
-kind: ExporterConfig
-metadata:
-  namespace: default
-  name: overlay
 export:
   lab_power:
     ref: power

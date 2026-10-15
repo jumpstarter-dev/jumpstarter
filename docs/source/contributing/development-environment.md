@@ -60,11 +60,11 @@ host, while you iterate on client-side commands, helpers, or orchestration on
 your workstation. The lab exporter keeps running; the overlay only adds those
 clients to your shell.
 
-`--overlay` takes a normal exporter config and reads only its `export` section.
-`jmp shell` still connects with `--client`, `--exporter`, or `--tls-grpc`, and
-sets `JMP_CLIENT_OVERLAY` to the absolute path of that file. Inside the shell,
-`j`, Python `env()`, and pytest (`JumpstarterTest`) build client objects from
-`export` and place them next to the session's drivers:
+`--overlay` takes a client overlay YAML with only an `export` map (no endpoint,
+token, or metadata). `jmp shell` still connects with `--client`, `--exporter`,
+or `--tls-grpc`, and sets `JMP_CLIENT_OVERLAY` to the absolute path of that
+file. Inside the shell, `j`, Python `env()`, and pytest (`JumpstarterTest`)
+build client objects from `export` and place them next to the session's drivers:
 
 - Nested `children` are included on the parent client.
 - A `ref` is the same client object as the driver it names. That driver can be
@@ -73,13 +73,13 @@ sets `JMP_CLIENT_OVERLAY` to the absolute path of that file. Inside the shell,
 - A top-level name that already exists on the session is replaced, and a
   warning naming that client is printed when `j` or `env()` builds the client.
 - `config` values are passed through when the client class declares those
-  fields. Endpoint, token, TLS, and hooks in the file are ignored.
+  fields.
 - Methods that perform a server-side driver call (`call`, `streamingcall`, or
   `stream`) raise an error on an overlaid client. Calls to the lab drivers
   continue to reach the exporter.
 
 ```console
-$ jmp shell --client lab --selector board=rpi4 --overlay ./exporter.yaml
+$ jmp shell --client lab --selector board=rpi4 --overlay ./overlay.yaml
 $ j my-local-tool --help
 $ python ./try_client.py
 $ pytest test_my_device.py

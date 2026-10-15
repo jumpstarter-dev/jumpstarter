@@ -55,11 +55,11 @@ to interact with the mock hardware. The command structure follows `j
 
 ## Overlay client-only drivers
 
-Add client-only drivers from an exporter config's `export` section to a session
-that is already connected to lab hardware:
+Add client-only drivers from an overlay YAML (`export:` map) to a session that
+is already connected to lab hardware:
 
 ```console
-$ jmp shell --client hello --selector example.com/board=foo --overlay ./exporter.yaml
+$ jmp shell --client hello --selector example.com/board=foo --overlay ./overlay.yaml
 ```
 
 `jmp shell` sets `JMP_CLIENT_OVERLAY` for that shell. `j`, `env()`, and pytest
