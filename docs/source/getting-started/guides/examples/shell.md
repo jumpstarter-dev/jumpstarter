@@ -53,6 +53,21 @@ Each driver can expose different commands through this interface, making it easy
 to interact with the mock hardware. The command structure follows `j
 <driver_type> <action>`, where available actions depend on the specific driver.
 
+## Overlay client-only drivers
+
+Add client-only drivers from an exporter config's `export` section to a session
+that is already connected to lab hardware:
+
+```console
+$ jmp shell --client hello --selector example.com/board=foo --overlay ./exporter.yaml
+```
+
+`jmp shell` sets `JMP_CLIENT_OVERLAY` for that shell. `j`, `env()`, and pytest
+then see those clients next to the leased drivers. See
+[Developing client-side drivers](../../../contributing/development-environment.md#developing-client-side-drivers)
+for when to use this, including nested children, refs, and the warning printed
+when an overlay name replaces a session client.
+
 ## The Shell Prompt
 
 The {term}`exporter shell` prompt is displayed as `jumpstarter ⚡<exporter>

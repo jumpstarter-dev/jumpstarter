@@ -7,9 +7,11 @@ from anyio.from_thread import start_blocking_portal
 from pydantic import ValidationError
 
 from jumpstarter.client import client_from_path
+from jumpstarter.client.overlay import apply_client_overlay_from_path
 from jumpstarter.common.exceptions import EnvironmentVariableNotSetError
 from jumpstarter.config.client import ClientConfigV1Alpha1Drivers
 from jumpstarter.config.env import (
+    JMP_CLIENT_OVERLAY,
     JMP_DRIVERS_ALLOW,
     JMP_EXPORTER,
     JMP_EXPORTER_LABELS,
@@ -78,6 +80,9 @@ async def env_async(portal, stack):
 
     This is useful when interacting with an already established Jumpstarter shell,
     to either a local exporter or a remote one.
+
+    When ``JMP_CLIENT_OVERLAY`` is set, client-only drivers from that exporter
+    config's export section are merged onto the session client.
     """
     host = os.environ.get(JUMPSTARTER_HOST, None)
     if host is None:
@@ -97,6 +102,9 @@ async def env_async(portal, stack):
         insecure=insecure,
         passphrase=passphrase,
     ) as client:
+        overlay = os.environ.get(JMP_CLIENT_OVERLAY)
+        if overlay:
+            apply_client_overlay_from_path(client, overlay, portal, stack)
         try:
             yield client
         finally:

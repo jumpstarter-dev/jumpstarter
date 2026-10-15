@@ -51,6 +51,60 @@ You can also run specific tests with:
 $ make pkg-test-${package_name}
 ```
 
+### Developing client-side drivers
+
+Use `jmp shell --overlay` when the hardware and its drivers are already running
+in a lab, and the code you are writing lives on the client. A typical case is a
+leased exporter whose power, serial, and storage drivers are up on the lab
+host, while you iterate on client-side commands, helpers, or orchestration on
+your workstation. The lab exporter keeps running; the overlay only adds those
+clients to your shell.
+
+`--overlay` takes a normal exporter config and reads only its `export` section.
+`jmp shell` still connects with `--client`, `--exporter`, or `--tls-grpc`, and
+sets `JMP_CLIENT_OVERLAY` to the absolute path of that file. Inside the shell,
+`j`, Python `env()`, and pytest (`JumpstarterTest`) build client objects from
+`export` and place them next to the session's drivers:
+
+- Nested `children` are included on the parent client.
+- A `ref` is the same client object as the driver it names.
+- A top-level name that already exists on the session is replaced, and a
+  warning naming that client is printed when `j` or `env()` builds the client.
+- `config` values are passed through when the client class declares those
+  fields. Endpoint, token, TLS, and hooks in the file are ignored.
+- Methods that perform a server-side driver call (`call`, `streamingcall`, or
+  `stream`) raise an error on an overlaid client. Calls to the lab drivers
+  continue to reach the exporter.
+
+```console
+$ jmp shell --client lab --selector board=rpi4 --overlay ./exporter.yaml
+$ j my-local-tool --help
+$ python ./try_client.py
+$ pytest test_my_device.py
+$ exit
+```
+
+```yaml
+export:
+  my-local-tool:
+    type: my_driver.driver.MyDriver
+    config:
+      host: bench
+    children:
+      helper:
+        type: my_driver.driver.Helper
+  alias:
+    ref: my-local-tool.helper
+```
+
+`jmp shell --exporter-config ./exporter.yaml` is the other local workflow: it
+starts the drivers from that file on your machine. Use `--overlay` when those
+drivers should stay on the leased lab exporter and only the client tree is
+under development.
+
+`JMP_CLIENT_OVERLAY` is listed with the other shell variables in
+[Configuration files](../getting-started/configuration/files.md).
+
 ## Go Environment
 
 The Jumpstarter controller lives in the `controller/` directory within the

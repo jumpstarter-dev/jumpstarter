@@ -13,6 +13,7 @@ from anyio.from_thread import BlockingPortal, start_blocking_portal
 from jumpstarter.client import client_from_path
 from jumpstarter.common.display import display_options
 from jumpstarter.config.env import (
+    JMP_CLIENT_OVERLAY,
     JMP_DRIVERS_ALLOW,
     JMP_EXPORTER,
     JMP_EXPORTER_LABELS,
@@ -138,6 +139,7 @@ def _build_common_env(
     lease=None,
     insecure: bool = False,
     passphrase: str | None = None,
+    overlay: str | None = None,
 ) -> dict[str, str]:
     """Build the base environment dict for shell/command processes."""
     env = os.environ | {
@@ -149,6 +151,8 @@ def _build_common_env(
         env = env | {JMP_GRPC_INSECURE: "1"}
     if passphrase:
         env = env | {JMP_GRPC_PASSPHRASE: passphrase}
+    if overlay:
+        env = env | {JMP_CLIENT_OVERLAY: overlay}
     if lease is not None:
         env.update(_lease_env_vars(lease))
     return env
@@ -212,6 +216,7 @@ def launch_shell(
     insecure: bool = False,
     passphrase: str | None = None,
     motd: str | None = None,
+    overlay: str | None = None,
 ) -> int:
     """Launch a shell with a custom prompt indicating the exporter type.
 
@@ -224,6 +229,7 @@ def launch_shell(
         command: Optional command to run instead of launching an interactive shell
         lease: Optional Lease object to set up lease ending callback
         motd: Optional message of the day printed before interactive shells
+        overlay: Optional exporter config path exported as JMP_CLIENT_OVERLAY
 
     Returns:
         The exit code of the shell or command process
@@ -233,7 +239,7 @@ def launch_shell(
     shell_name = os.path.basename(shell)
 
     common_env = _build_common_env(
-        host, allow, unsafe, lease=lease, insecure=insecure, passphrase=passphrase
+        host, allow, unsafe, lease=lease, insecure=insecure, passphrase=passphrase, overlay=overlay
     )
 
     if command:

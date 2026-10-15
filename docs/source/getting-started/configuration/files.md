@@ -75,6 +75,7 @@ leases:
 - `JMP_LEASE` - Active lease name (enables reconnection via `JMP_LEASE=<name> jmp shell`)
 - `JMP_EXPORTER` - Name of the connected exporter
 - `JMP_EXPORTER_LABELS` - Connected exporter's labels as comma-separated `key=value` pairs
+- `JMP_CLIENT_OVERLAY` - Absolute path to an exporter config, set by `jmp shell --overlay`. `j`, `env()`, and pytest running inside that shell read only the file's `export` section and overlay those client-only drivers onto the session client. Nested `children` are included, a `ref` is the same client object as its target, and a top-level name that already exists on the session is replaced with a warning. Server-side driver calls on the overlaid clients are not supported. See [Developing client-side drivers](../../contributing/development-environment.md#developing-client-side-drivers).
 
 **CLI Commands**:
 ```{code-block}  console

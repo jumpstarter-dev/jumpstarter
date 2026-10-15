@@ -1460,6 +1460,57 @@ def test_shell_exporter_config_propagates_exit_code(tmp_path, expected):
     assert result.exit_code == expected
 
 
+def test_shell_overlay_is_passed_to_the_shell(tmp_path):
+    config_path = _write_exporter_config(tmp_path)
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text(
+        """apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: overlay
+endpoint: "jumpstarter.example:443"
+token: "secret"
+export:
+  power:
+    type: jumpstarter.client.overlay_test.OverlaySampleDriver
+""",
+        encoding="utf-8",
+    )
+    with (
+        patch.object(ExporterConfigV1Alpha1, "serve_unix", _fake_serve_unix),
+        patch("jumpstarter_cli.shell.launch_shell", return_value=0) as launched,
+    ):
+        result = CliRunner().invoke(shell, ["--exporter-config", str(config_path), "--overlay", str(overlay)])
+
+    assert result.exit_code == 0, result.output
+    assert launched.call_args.kwargs["overlay"] == str(overlay.resolve())
+
+
+def test_shell_overlay_empty_export_fails_before_launch(tmp_path):
+    config_path = _write_exporter_config(tmp_path)
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text(
+        """apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: overlay
+export: {}
+""",
+        encoding="utf-8",
+    )
+    with (
+        patch.object(ExporterConfigV1Alpha1, "serve_unix", _fake_serve_unix),
+        patch("jumpstarter_cli.shell.launch_shell", return_value=0) as launched,
+    ):
+        result = CliRunner().invoke(shell, ["--exporter-config", str(config_path), "--overlay", str(overlay)])
+
+    assert launched.called is False
+    assert result.exit_code != 0
+    assert "empty" in (result.output + str(result.exception)).lower()
+
+
 class TestRetryLoopUserInterrupt:
     """SIGINT must exit, not reacquire, even if Dial surfaces as Unreachable."""
 

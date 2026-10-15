@@ -38,6 +38,7 @@ from .login import relogin_client
 from jumpstarter.client import DirectLease
 from jumpstarter.client.client import client_from_path, fetch_motd
 from jumpstarter.client.exceptions import LeaseError
+from jumpstarter.client.overlay import prepare_client_overlay
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus
 from jumpstarter.common.exceptions import (
     ConnectionError,
@@ -61,7 +62,9 @@ _TOKEN_REFRESH_THRESHOLD_SECONDS = 120
 _SHARED_ACCESS_POLL_SECONDS = 15
 
 
-def _run_shell_only(lease, config, command, path: str, motd: str | None = None) -> int:
+def _run_shell_only(
+    lease, config, command, path: str, motd: str | None = None, overlay: str | None = None,
+) -> int:
     """Run just the shell command without log streaming."""
     allow = config.drivers.allow if config is not None else getattr(lease, "allow", [])
     unsafe = config.drivers.unsafe if config is not None else getattr(lease, "unsafe", False)
@@ -79,6 +82,7 @@ def _run_shell_only(lease, config, command, path: str, motd: str | None = None) 
         insecure=insecure,
         passphrase=passphrase,
         motd=motd,
+        overlay=overlay,
     )
 
 
@@ -343,7 +347,9 @@ async def _cancel_if_connection_lost(monitor, coro):
     return result
 
 
-async def _run_shell_with_lease_async(lease, exporter_logs, config, command, cancel_scope):
+async def _run_shell_with_lease_async(
+    lease, exporter_logs, config, command, cancel_scope, overlay: str | None = None,
+):
     """Run an interactive session, ignoring exporter loss that arrives after the shell exits.
 
     The shell runs in a worker thread that anyio cannot cancel. If a
@@ -360,7 +366,9 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
         exit_code = code
 
     try:
-        return await _run_shell_session(lease, exporter_logs, config, command, cancel_scope, record_exit)
+        return await _run_shell_session(
+            lease, exporter_logs, config, command, cancel_scope, record_exit, overlay,
+        )
     except (BaseExceptionGroup, ExporterUnreachableError) as exc:
         unreachable = (
             find_exception_in_group(exc, ExporterUnreachableError) if isinstance(exc, BaseExceptionGroup) else exc
@@ -371,7 +379,9 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
         return exit_code
 
 
-async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope, on_shell_exit):  # noqa: C901
+async def _run_shell_session(  # noqa: C901
+    lease, exporter_logs, config, command, cancel_scope, on_shell_exit, overlay: str | None = None,
+):
     """Run shell with lease context managers and wait for afterLease hook if logs enabled.
 
     When exporter_logs is enabled, this function will:
@@ -459,7 +469,7 @@ async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope
                     # enclosing task group is already unwinding, the await below
                     # raises instead of returning and the value would be lost.
                     def _run_and_record():
-                        code = _run_shell_only(lease, config, command, path, motd)
+                        code = _run_shell_only(lease, config, command, path, motd, overlay)
                         on_shell_exit(code)
                         return code
 
@@ -570,7 +580,7 @@ async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope
 
 async def _shell_with_signal_handling(  # noqa: C901
     config, selector, exporter_name, lease_name, duration, exporter_logs, command, acquisition_timeout,
-    retry_timeout=None, dial_timeout=None, allow_disabled=False,
+    retry_timeout=None, dial_timeout=None, allow_disabled=False, overlay: str | None = None,
 ):
     """Handle lease acquisition and shell execution with signal handling."""
     exit_code = 0
@@ -610,7 +620,7 @@ async def _shell_with_signal_handling(  # noqa: C901
                             unreachable = None
                             try:
                                 exit_code = await _run_shell_with_lease_async(
-                                    lease, exporter_logs, config, command, tg.cancel_scope
+                                    lease, exporter_logs, config, command, tg.cancel_scope, overlay,
                                 )
                             except BaseExceptionGroup as eg:
                                 # SIGINT cancels in-flight Dial, which is mapped to
@@ -762,6 +772,7 @@ async def _shell_direct_async(
     exporter_logs: bool,
     command: tuple,
     passphrase: str | None = None,
+    overlay: str | None = None,
 ):
     """Run shell with direct connection to exporter (no controller)."""
     exit_code = 0
@@ -787,7 +798,9 @@ async def _shell_direct_async(
         async with create_task_group() as tg:
             tg.start_soon(signal_handler, tg.cancel_scope)
             try:
-                exit_code = await _run_shell_with_lease_async(lease, exporter_logs, config, command, tg.cancel_scope)
+                exit_code = await _run_shell_with_lease_async(
+                    lease, exporter_logs, config, command, tg.cancel_scope, overlay,
+                )
             except grpc.aio.AioRpcError as e:
                 if e.code() == grpc.StatusCode.UNAUTHENTICATED:
                     raise click.ClickException("Authentication failed: invalid or missing passphrase") from None
@@ -839,6 +852,15 @@ async def _shell_direct_async(
     default=None,
     help="Passphrase for authenticating with a standalone exporter (--tls-grpc).",
 )
+@click.option(
+    "--overlay",
+    type=click.Path(exists=True, dir_okay=False),
+    help=(
+        "Path to an exporter config. Only the export section is used: those drivers are "
+        "overlaid as client-only clients on this session, including nested children and refs. "
+        "Sets JMP_CLIENT_OVERLAY. Server-side calls on the overlaid clients are not supported."
+    ),
+)
 # end client specific
 @handle_exceptions_with_reauthentication(relogin_client)
 def shell(
@@ -856,6 +878,7 @@ def shell(
     tls_grpc_address,
     tls_grpc_insecure,
     passphrase,
+    overlay,
 ):
     """
     Spawns a shell (or custom command) connecting to a local or remote exporter
@@ -867,8 +890,11 @@ def shell(
     .. code-block:: bash
 
         $ jmp shell --exporter foo -- python bar.py
+        $ jmp shell --exporter foo --overlay ./local-drivers.yaml
         $ jmp shell --tls-grpc exporter.host.name:1234
     """
+
+    overlay_path = prepare_client_overlay(overlay) if overlay else None
 
     if tls_grpc_address is not None:
         exit_code = anyio.run(
@@ -878,6 +904,7 @@ def shell(
             exporter_logs,
             command,
             passphrase,
+            overlay_path,
         )
         sys.exit(exit_code)
 
@@ -904,6 +931,7 @@ def shell(
                 retry_timeout,
                 dial_timeout,
                 allow_disabled,
+                overlay_path,
             )
             sys.exit(exit_code)
 
@@ -918,6 +946,7 @@ def shell(
                     use_profiles=False,
                     command=command,
                     motd=config.motd,
+                    overlay=overlay_path,
                 )
             # Exit once the serve context has torn down.
             sys.exit(exit_code)
