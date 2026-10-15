@@ -3,7 +3,8 @@ import sys
 import termios
 import tty
 from collections.abc import Awaitable, Callable
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
+from typing import NoReturn
 
 from anyio import BrokenResourceError, ClosedResourceError, EndOfStream, create_task_group
 from anyio.streams.file import FileReadStream, FileWriteStream
@@ -29,18 +30,27 @@ class ConsoleStreamDrop(Exception):
     """Serial stream dropped; caller may reconnect."""
 
 
-class HotkeyDetector:
-    """Detects repeated key presses for hotkey sequences."""
+async def _exit_console() -> NoReturn:
+    """Exit action bound to EXIT_KEY in the hotkey action map."""
+    raise ConsoleExit
 
-    def __init__(self, keys: set[bytes], presses: int = PRESSES):
-        self.keys = keys
+
+class HotkeyDetector:
+    """Detects a hotkey pressed `presses` times in a row and returns its action.
+
+    Partial sequences are forwarded like ordinary input; only the byte that
+    completes a sequence is consumed.
+    """
+
+    def __init__(self, actions: dict[bytes, Callable[[], Awaitable[None]]], presses: int = PRESSES):
+        self.actions = actions
         self.presses = presses
         self._last: bytes | None = None
         self._count = 0
 
-    def feed(self, byte: bytes) -> bytes | None:
-        """Feed a byte and return the key if hotkey sequence detected."""
-        if byte not in self.keys:
+    def feed(self, byte: bytes) -> Callable[[], Awaitable[None]] | None:
+        """Feed a byte and return its action if a hotkey sequence completed."""
+        if byte not in self.actions:
             self._last, self._count = None, 0
             return None
         self._count = self._count + 1 if byte == self._last else 1
@@ -48,7 +58,7 @@ class HotkeyDetector:
         if self._count < self.presses:
             return None
         self._last, self._count = None, 0
-        return byte
+        return self.actions[byte]
 
 
 class Console:
@@ -102,18 +112,25 @@ class Console:
 
     async def __read_stdin(self, stream=None):
         stdin = FileReadStream(sys.stdin.buffer)
-        keys = {EXIT_KEY, POWER_KEY} if self.on_power_cycle is not None else {EXIT_KEY}
-        hotkeys = HotkeyDetector(keys)
+        actions: dict[bytes, Callable[[], Awaitable[None]]] = {EXIT_KEY: _exit_console}
+        if self.on_power_cycle is not None:
+            actions[POWER_KEY] = self.on_power_cycle
+        hotkeys = HotkeyDetector(actions)
+        send_warned = False
         while True:
             data = await stdin.receive(max_bytes=1)
             if not data:
                 continue
-            hit = hotkeys.feed(data)
-            if hit == EXIT_KEY:
-                raise ConsoleExit
-            if hit == POWER_KEY:
-                await self.on_power_cycle()
+            action = hotkeys.feed(data)
+            if action is not None:
+                await action()
                 continue
             if stream is not None:
-                with suppress(*STREAM_ERRORS):
+                try:
                     await stream.send(data)
+                except STREAM_ERRORS:  # transient while the reader reconnects after a power cycle
+                    if not send_warned:
+                        logger.warning("send failed, input may not reach the device")
+                    send_warned = True
+                else:
+                    send_warned = False

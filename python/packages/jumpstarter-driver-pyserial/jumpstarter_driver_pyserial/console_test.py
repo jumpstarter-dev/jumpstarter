@@ -1,3 +1,4 @@
+import logging
 import os
 import threading
 import time
@@ -94,8 +95,9 @@ def test_ctrl_bracket_without_power_client():
     assert "exc" not in result
 
 
-def test_send_failure_does_not_kill_console():
+def test_send_failure_does_not_kill_console(caplog):
     """send() raising BrokenResourceError should not crash the console."""
+    caplog.set_level(logging.WARNING, logger="jumpstarter_driver_pyserial.console")
 
     class _BrokenSendStream:
         """Wrapper that breaks send() but keeps receive() working."""
@@ -135,6 +137,10 @@ def test_send_failure_does_not_kill_console():
     assert not t.is_alive()
     assert "exc" not in result, f"console raised unexpected exception: {result.get('exc')}"
 
+    # Multiple failed sends ("a" plus the two non-exit Ctrl-B bytes) warn exactly once
+    warnings = [r for r in caplog.records if "send failed" in r.message]
+    assert len(warnings) == 1, f"expected exactly one send-failure warning, got {len(warnings)}"
+
 
 def test_receive_failure_raises_stream_drop():
     """receive() raising BrokenResourceError should trigger ConsoleStreamDrop."""
@@ -162,46 +168,51 @@ def test_receive_failure_raises_stream_drop():
 
 
 def test_hotkey_detector_three_presses():
-    """Three consecutive presses of a registered key return the key."""
-    detector = HotkeyDetector({b"\x02", b"\x1d"})
+    """Three consecutive presses of a registered key return its action."""
+    exit_action = AsyncMock()
+    detector = HotkeyDetector({b"\x02": exit_action, b"\x1d": AsyncMock()})
     assert detector.feed(b"\x02") is None
     assert detector.feed(b"\x02") is None
-    assert detector.feed(b"\x02") == b"\x02"
+    assert detector.feed(b"\x02") is exit_action
 
 
 def test_hotkey_detector_unrelated_byte_resets():
     """An unrelated byte resets the counter."""
-    detector = HotkeyDetector({b"\x02"})
+    exit_action = AsyncMock()
+    detector = HotkeyDetector({b"\x02": exit_action})
     assert detector.feed(b"\x02") is None
     assert detector.feed(b"\x02") is None
     assert detector.feed(b"a") is None  # reset
     assert detector.feed(b"\x02") is None
     assert detector.feed(b"\x02") is None
-    assert detector.feed(b"\x02") == b"\x02"
+    assert detector.feed(b"\x02") is exit_action
 
 
 def test_hotkey_detector_alternating_keys_resets():
     """Alternating between registered keys resets rather than accumulating."""
-    detector = HotkeyDetector({b"\x02", b"\x1d"})
+    exit_action = AsyncMock()
+    power_action = AsyncMock()
+    detector = HotkeyDetector({b"\x02": exit_action, b"\x1d": power_action})
     assert detector.feed(b"\x02") is None
     assert detector.feed(b"\x1d") is None  # different key, reset
     assert detector.feed(b"\x1d") is None
-    assert detector.feed(b"\x1d") == b"\x1d"
+    assert detector.feed(b"\x1d") is power_action
 
 
-def test_hotkey_detector_byte_outside_keys():
-    """A byte not in the keys set returns None."""
-    detector = HotkeyDetector({b"\x02"})
+def test_hotkey_detector_byte_outside_actions():
+    """A byte with no registered action returns None."""
+    detector = HotkeyDetector({b"\x02": AsyncMock()})
     assert detector.feed(b"x") is None
     assert detector.feed(b"y") is None
 
 
 def test_hotkey_detector_counter_resets_after_hit():
     """After a hit, the counter resets so a 4th press does not immediately re-fire."""
-    detector = HotkeyDetector({b"\x02"})
+    exit_action = AsyncMock()
+    detector = HotkeyDetector({b"\x02": exit_action})
     assert detector.feed(b"\x02") is None
     assert detector.feed(b"\x02") is None
-    assert detector.feed(b"\x02") == b"\x02"  # hit
+    assert detector.feed(b"\x02") is exit_action  # hit
     assert detector.feed(b"\x02") is None  # counter was reset
     assert detector.feed(b"\x02") is None
-    assert detector.feed(b"\x02") == b"\x02"  # hit again after 3 more
+    assert detector.feed(b"\x02") is exit_action  # hit again after 3 more
