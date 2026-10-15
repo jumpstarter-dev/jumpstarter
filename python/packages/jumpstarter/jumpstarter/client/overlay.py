@@ -50,48 +50,16 @@ class _HasChildren(Protocol):
     children: dict[str, DriverClient]
 
 
-class _OverlayTree:
-    """Temporary parent for newly built overlay clients.
-
-    This is not a driver client. Dropping it must not close the children, which
-    are either installed on the session or still referenced by the caller.
-    """
-
-    def __init__(self) -> None:
-        self.children: dict[str, DriverClient] = {}
-
-
 class LocalOnlyStub:
     """Rejects server-side RPCs for a client-only overlay driver."""
 
     def __init__(self, name: str):
         self.name = name
 
-    def _fail(self, method: str) -> None:
+    def __getattr__(self, attr: str):
         raise DriverError(
-            f"Server-side call {method!r} is not supported for client-only driver {self.name!r}"
+            f"Server-side call {attr!r} is not supported for client-only driver {self.name!r}"
         )
-
-    async def DriverCall(self, request):
-        self._fail(getattr(request, "method", "DriverCall"))
-
-    def StreamingDriverCall(self, request):
-        self._fail(getattr(request, "method", "StreamingDriverCall"))
-
-    def Stream(self, *args, **kwargs):
-        self._fail("stream")
-
-    async def GetStatus(self, request):
-        self._fail("GetStatus")
-
-    def LogStream(self, request):
-        self._fail("LogStream")
-
-    async def EndSession(self, request):
-        self._fail("EndSession")
-
-    async def GetReport(self, request):
-        self._fail("GetReport")
 
 
 def prepare_client_overlay(path: str) -> str:
@@ -116,7 +84,20 @@ def validate_client_overlay(export: dict[str, ExporterConfigV1Alpha1DriverInstan
         raise ConfigurationError("Client overlay export section is empty")
     concrete, refs = _index_export(export)
     for ref in refs.values():
-        _follow_ref(ref, concrete, refs)
+        _check_ref(ref)
+        seen: list[str] = []
+        current = ref
+        # Walk overlay-local chains for cycles. Names that leave the export are
+        # resolved against the session client when the overlay is applied.
+        while current not in concrete:
+            if current in seen:
+                cycle = " -> ".join([*seen, current])
+                raise ConfigurationError(f"Client overlay ref cycle: {cycle}")
+            nxt = refs.get(current)
+            if nxt is None:
+                break
+            seen.append(current)
+            current = nxt
 
 
 def build_client_overlay(
@@ -124,44 +105,31 @@ def build_client_overlay(
     portal: BlockingPortal,
     stack: ExitStack,
     session: _HasChildren | None = None,
-) -> _OverlayTree:
+) -> dict[str, DriverClient]:
     """Build overlay clients for the export section.
 
     ``session`` supplies drivers a ref may name that are not declared in the
     export. Without it, such a ref is an error.
     """
     validate_client_overlay(export)
-    root = _OverlayTree()
+    root: dict[str, DriverClient] = {}
     registry: dict[str, DriverClient] = {}
-    owners: dict[str, _HasChildren] = {"": root}
-    pending: list[tuple[str, str, str]] = []
+    pending: list[tuple[dict[str, DriverClient], str, str]] = []
     ref_targets: dict[str, str] = {}
     for name, instance in export.items():
-        _add_node(
-            root.children,
-            "",
-            name,
-            instance,
-            name,
-            portal,
-            stack,
-            registry,
-            owners,
-            pending,
-            ref_targets,
-        )
+        _add_node(root, name, instance, name, portal, stack, registry, pending, ref_targets)
     concrete = set(registry)
     # Resolve every ref before linking any of them, so a failure cannot leave a
     # session client parented under a tree that is about to be discarded.
-    resolved: list[tuple[_HasChildren, str, DriverClient]] = []
-    for parent_path, name, ref in pending:
+    resolved: list[tuple[dict[str, DriverClient], str, DriverClient]] = []
+    for parent_children, name, ref in pending:
         resolved.append((
-            owners[parent_path],
+            parent_children,
             name,
             _client_for_ref(ref, concrete, ref_targets, registry, session),
         ))
-    for parent, name, target in resolved:
-        parent.children[name] = target
+    for parent_children, name, target in resolved:
+        parent_children[name] = target
     return root
 
 
@@ -173,11 +141,7 @@ def apply_client_overlay(
 ) -> None:
     """Merge export clients onto ``client``. Existing names are replaced."""
     overlay = build_client_overlay(export, portal, stack, session=client)
-    transferred = dict(overlay.children)
-    # The temporary tree must not outlive this function while still parenting
-    # the clients. A composite client destructor closes its children.
-    overlay.children.clear()
-    for name, child in transferred.items():
+    for name, child in overlay.items():
         if name in client.children:
             print(
                 f"Warning: client overlay replaced existing client '{name}'",
@@ -247,83 +211,62 @@ def _index_export(
 
 def _add_node(
     parent_children: dict[str, DriverClient],
-    parent_path: str,
     name: str,
     instance: ExporterConfigV1Alpha1DriverInstance,
     path: str,
     portal: BlockingPortal,
     stack: ExitStack,
     registry: dict[str, DriverClient],
-    owners: dict[str, _HasChildren],
-    pending: list[tuple[str, str, str]],
+    pending: list[tuple[dict[str, DriverClient], str, str]],
     ref_targets: dict[str, str],
 ) -> None:
     match instance.root:
         case ExporterConfigV1Alpha1DriverInstanceProxy(ref=ref):
             _check_ref(ref)
             ref_targets[path] = ref
-            pending.append((parent_path, name, ref))
+            pending.append((parent_children, name, ref))
+            return
         case ExporterConfigV1Alpha1DriverInstanceComposite():
-            client = _make_client(
-                _composite_client_class(),
-                _COMPOSITE_CLIENT,
-                name,
-                path,
-                None,
-                {},
-                {},
-                portal,
-                stack,
-            )
-            registry[path] = client
-            owners[path] = client
-            parent_children[name] = client
-            for child_name, child in instance.root.children.items():
-                _add_node(
-                    client.children,
-                    path,
-                    child_name,
-                    child,
-                    f"{path}.{child_name}",
-                    portal,
-                    stack,
-                    registry,
-                    owners,
-                    pending,
-                    ref_targets,
-                )
+            client_class = _composite_client_class()
+            client_path = _COMPOSITE_CLIENT
+            description = None
+            methods_description: dict[str, str] = {}
+            config: dict[str, Any] = {}
+            children = instance.root.children
         case ExporterConfigV1Alpha1DriverInstanceBase() as root:
             client_class, client_path = _import_client_class(root.type)
-            client = _make_client(
-                client_class,
-                client_path,
-                name,
-                path,
-                root.description,
-                root.methods_description,
-                root.config,
-                portal,
-                stack,
-            )
-            registry[path] = client
-            owners[path] = client
-            parent_children[name] = client
-            for child_name, child in root.children.items():
-                _add_node(
-                    client.children,
-                    path,
-                    child_name,
-                    child,
-                    f"{path}.{child_name}",
-                    portal,
-                    stack,
-                    registry,
-                    owners,
-                    pending,
-                    ref_targets,
-                )
+            description = root.description
+            methods_description = root.methods_description
+            config = root.config
+            children = root.children
         case _:
             raise ConfigurationError(f"Unknown driver instance type: {type(instance.root)}")
+
+    client = _make_client(
+        client_class,
+        client_path,
+        name,
+        path,
+        description,
+        methods_description,
+        config,
+        portal,
+        stack,
+    )
+    registry[path] = client
+    parent_children[name] = client
+    for child_name, child in children.items():
+        _add_node(
+            client.children,
+            child_name,
+            child,
+            f"{path}.{child_name}",
+            portal,
+            stack,
+            registry,
+            pending,
+            ref_targets,
+        )
 
 
 def _import_client_class(driver_type: str) -> tuple[Any, str]:
@@ -344,12 +287,14 @@ def _check_ref(ref: str) -> None:
         raise ConfigurationError(f"Client overlay ref {ref!r} is invalid")
 
 
-def _follow_ref(ref: str, concrete: set[str], ref_targets: dict[str, str]) -> str:
-    """Return the terminal path of a ref chain.
-
-    The terminal is a concrete overlay path when the chain stays in the export.
-    Otherwise it is a name to look up on the session client.
-    """
+def _client_for_ref(
+    ref: str,
+    concrete: set[str],
+    ref_targets: dict[str, str],
+    registry: dict[str, DriverClient],
+    session: _HasChildren | None,
+) -> DriverClient:
+    """Resolve a ref chain to a concrete overlay client or a session client."""
     _check_ref(ref)
     seen: list[str] = []
     current = ref
@@ -359,28 +304,15 @@ def _follow_ref(ref: str, concrete: set[str], ref_targets: dict[str, str]) -> st
             raise ConfigurationError(f"Client overlay ref cycle: {cycle}")
         nxt = ref_targets.get(current)
         if nxt is None:
-            return current
+            found = _lookup_client(session, current)
+            if found is None:
+                raise ConfigurationError(
+                    f"Client overlay ref {ref!r} references nonexistent driver {current!r}"
+                )
+            return found
         seen.append(current)
         current = nxt
-    return current
-
-
-def _client_for_ref(
-    ref: str,
-    concrete: set[str],
-    ref_targets: dict[str, str],
-    registry: dict[str, DriverClient],
-    session: _HasChildren | None,
-) -> DriverClient:
-    terminal = _follow_ref(ref, concrete, ref_targets)
-    if terminal in concrete:
-        return registry[terminal]
-    found = _lookup_client(session, terminal)
-    if found is None:
-        raise ConfigurationError(
-            f"Client overlay ref {ref!r} references nonexistent driver {terminal!r}"
-        )
-    return found
+    return registry[current]
 
 
 def _lookup_client(root: _HasChildren | None, path: str) -> DriverClient | None:

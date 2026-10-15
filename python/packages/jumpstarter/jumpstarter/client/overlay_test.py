@@ -2,7 +2,7 @@
 
 import gc
 import sys
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext
 from unittest.mock import patch
 
 import pytest
@@ -84,18 +84,18 @@ def test_build_includes_children_config_and_shared_refs(portal_and_stack):
     portal, stack = portal_and_stack
     root = build_client_overlay(_sample_export(), portal, stack)
 
-    board = root.children["board"]
-    leaf = root.children["group"].children["leaf"]
+    board = root["board"]
+    leaf = root["group"].children["leaf"]
     assert isinstance(board, OverlaySampleClient)
-    assert isinstance(root.children["group"], CompositeClient)
+    assert isinstance(root["group"], CompositeClient)
     assert isinstance(board.children["inner"], OverlaySampleClient)
     assert board.host == "lab"
     assert board.description == "board"
     assert board.methods_description == {"on": "turn on"}
     assert board.labels["jumpstarter.dev/name"] == "board"
-    assert root.children["alias"] is board
-    assert root.children["chain"] is board
-    assert root.children["leaf_alias"] is leaf
+    assert root["alias"] is board
+    assert root["chain"] is board
+    assert root["leaf_alias"] is leaf
     assert board.children["serial"] is leaf
 
 
@@ -125,7 +125,7 @@ def test_validate_rejects_driver_without_client_class():
 
 def test_server_side_calls_are_not_supported(portal_and_stack):
     portal, stack = portal_and_stack
-    power = build_client_overlay(_export({"power": {"type": _DRIVER}}), portal, stack).children["power"]
+    power = build_client_overlay(_export({"power": {"type": _DRIVER}}), portal, stack)["power"]
 
     with pytest.raises(DriverError, match="not supported"):
         power.call("on")
@@ -137,10 +137,11 @@ def test_server_side_calls_are_not_supported(portal_and_stack):
 
 def test_apply_replaces_existing_client_and_warns(portal_and_stack, capsys):
     portal, stack = portal_and_stack
-    session = build_client_overlay(_export({
+    children = build_client_overlay(_export({
         "power": {"type": _DRIVER, "description": "remote"},
         "kept": {"type": _DRIVER},
     }), portal, stack)
+    session = type("Session", (), {"children": children})()
     original = session.children["power"]
     kept = session.children["kept"]
 
@@ -184,7 +185,9 @@ export:
 
     resolved = prepare_client_overlay(str(path))
     assert resolved == str(path.resolve())
-    session = build_client_overlay(_export({"kept": {"type": _DRIVER}}), portal, stack)
+    session = type("Session", (), {
+        "children": build_client_overlay(_export({"kept": {"type": _DRIVER}}), portal, stack),
+    })()
     apply_client_overlay_from_path(session, resolved, portal, stack)
     assert set(session.children) == {"kept", "power"}
     power = session.children["power"]
@@ -201,15 +204,8 @@ async def test_env_async_applies_overlay_from_env(monkeypatch, tmp_path):
     monkeypatch.setenv(JMP_CLIENT_OVERLAY, str(overlay))
     client = type("Client", (), {"children": {}, "close": lambda self: None})()
 
-    class _Connected:
-        async def __aenter__(self):
-            return client
-
-        async def __aexit__(self, *args):
-            return None
-
     with (
-        patch("jumpstarter.utils.env.client_from_path", return_value=_Connected()),
+        patch("jumpstarter.utils.env.client_from_path", return_value=nullcontext(client)),
         patch("jumpstarter.utils.env.apply_client_overlay_from_path") as apply,
     ):
         async with env_async(portal=None, stack=None) as got:
@@ -222,7 +218,7 @@ def test_typed_overlay_does_not_import_composite(portal_and_stack, monkeypatch):
     portal, stack = portal_and_stack
     monkeypatch.setitem(sys.modules, "jumpstarter_driver_composite.client", None)
     root = build_client_overlay(_export({"power": {"type": _DRIVER}}), portal, stack)
-    assert isinstance(root.children["power"], OverlaySampleClient)
+    assert isinstance(root["power"], OverlaySampleClient)
 
 
 def test_composite_node_reports_missing_package(portal_and_stack, monkeypatch):
@@ -234,7 +230,9 @@ def test_composite_node_reports_missing_package(portal_and_stack, monkeypatch):
 
 def test_transferred_clients_stay_open_until_the_session_stack_closes(portal_and_stack, monkeypatch):
     portal, stack = portal_and_stack
-    session = build_client_overlay(_export({"kept": {"type": _DRIVER}}), portal, stack)
+    session = type("Session", (), {
+        "children": build_client_overlay(_export({"kept": {"type": _DRIVER}}), portal, stack),
+    })()
     closed: list[str] = []
 
     def tracking(*args, **kwargs):
@@ -258,11 +256,13 @@ def test_transferred_clients_stay_open_until_the_session_stack_closes(portal_and
 
 def test_ref_reuses_session_client_and_local_driver_shadows_it(portal_and_stack):
     portal, stack = portal_and_stack
-    session = build_client_overlay(
-        _export({"power": {"type": _DRIVER, "config": {"host": "remote"}}}),
-        portal,
-        stack,
-    )
+    session = type("Session", (), {
+        "children": build_client_overlay(
+            _export({"power": {"type": _DRIVER, "config": {"host": "remote"}}}),
+            portal,
+            stack,
+        ),
+    })()
     remote = session.children["power"]
 
     apply_client_overlay(
@@ -295,7 +295,9 @@ def test_ref_reuses_session_client_and_local_driver_shadows_it(portal_and_stack)
 
 def test_apply_from_path_wraps_load_errors(portal_and_stack, tmp_path):
     portal, stack = portal_and_stack
-    session = build_client_overlay(_export({"kept": {"type": _DRIVER}}), portal, stack)
+    session = type("Session", (), {
+        "children": build_client_overlay(_export({"kept": {"type": _DRIVER}}), portal, stack),
+    })()
     with pytest.raises(ConfigurationError, match="Failed to load"):
         apply_client_overlay_from_path(session, str(tmp_path / "missing.yaml"), portal, stack)
 
