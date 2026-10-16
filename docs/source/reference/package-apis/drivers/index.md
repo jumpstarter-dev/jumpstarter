@@ -89,6 +89,7 @@ Drivers for virtual and emulated targets:
 - {doc}`Android Emulator <androidemulator>` (`jumpstarter-driver-androidemulator`) - Android emulator lifecycle management with ADB tunneling
 - {doc}`KubeVirt <kubevirt>` (`jumpstarter-driver-kubevirt`) - KubeVirt virtual machine provisioning on remote clusters
 - {doc}`QEMU <qemu>` (`jumpstarter-driver-qemu`) - QEMU virtual machine management
+- {doc}`QNX <qnx>` (`jumpstarter-driver-qnx`) - QNX board and QVM control
 - {doc}`Renode <renode>` (`jumpstarter-driver-renode`) - Renode embedded systems emulation
 - {doc}`Corellium <corellium>` (`jumpstarter-driver-corellium`) - Corellium virtualization platform
 - {doc}`Cuttlefish <cuttlefish>` (`jumpstarter-driver-cuttlefish`) - Android Cuttlefish virtual device management
@@ -141,6 +142,7 @@ power.md
 probe-rs.md
 pyserial.md
 qemu.md
+qnx.md
 renode.md
 ridesx.md
 sdwire.md

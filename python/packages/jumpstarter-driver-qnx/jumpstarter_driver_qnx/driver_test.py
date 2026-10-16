@@ -2,10 +2,15 @@ import pytest
 
 from .driver import Qnx, QnxPower, Qvm, QvmFlasher, QvmPower
 from jumpstarter.common.exceptions import ConfigurationError
+from jumpstarter.driver import Driver
 
 
-class MockDriver:
+class MockDriver(Driver):
     """Minimal mock for driver children used in init tests."""
+
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter_driver_qnx.driver_test.MockDriver"
 
 
 class TestQnxDriverInit:
@@ -52,6 +57,7 @@ class TestQnxDriverInit:
             children={"power_ctl": MockDriver(), "serial": MockDriver()},
         )
         power = qnx.children["power"]
+        assert isinstance(power, QnxPower)
         assert power.boot_prompt == "Press 'E' for eMMC download"
         assert power.boot_key == "E"
         assert power.final_prompt == "$ "
