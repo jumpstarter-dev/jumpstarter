@@ -231,8 +231,9 @@ class Driver(
         """
         op = request.method
         started = time.perf_counter()
-        self.logger.info(
-            "Operation started",
+        self.logger.debug(
+            "DriverCall %s started",
+            op,
             extra={"operation": op, "driver_type": self.driver_type},
         )
         try:
@@ -251,13 +252,16 @@ class Driver(
                 uuid=str(uuid4()),
                 result=encode_value(result),
             )
+            duration = time.perf_counter() - started
             self._record_operation_metrics(
                 operation=op,
                 result="success",
-                duration_seconds=time.perf_counter() - started,
+                duration_seconds=duration,
             )
-            self.logger.info(
-                "Operation completed",
+            self.logger.debug(
+                "DriverCall %s completed in %.3fs",
+                op,
+                duration,
                 extra={"operation": op, "driver_type": self.driver_type, "result": "success"},
             )
             return response
@@ -274,8 +278,9 @@ class Driver(
         """
         op = request.method
         started = time.perf_counter()
-        self.logger.info(
-            "Operation started",
+        self.logger.debug(
+            "StreamingDriverCall %s started",
+            op,
             extra={"operation": op, "driver_type": self.driver_type},
         )
         try:
@@ -295,13 +300,16 @@ class Driver(
                         uuid=str(uuid4()),
                         result=encode_value(result),
                     )
+            duration = time.perf_counter() - started
             self._record_operation_metrics(
                 operation=op,
                 result="success",
-                duration_seconds=time.perf_counter() - started,
+                duration_seconds=duration,
             )
-            self.logger.info(
-                "Operation completed",
+            self.logger.debug(
+                "StreamingDriverCall %s completed in %.3fs",
+                op,
+                duration,
                 extra={"operation": op, "driver_type": self.driver_type, "result": "success"},
             )
         except grpc.aio.AbortError:

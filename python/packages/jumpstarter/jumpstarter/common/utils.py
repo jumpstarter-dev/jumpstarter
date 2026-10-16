@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 
 from jumpstarter.client import client_from_path
+from jumpstarter.client.overlay import serve_client_overlay
 from jumpstarter.common.display import display_options
 from jumpstarter.config.env import (
     JMP_DRIVERS_ALLOW,
@@ -20,6 +21,7 @@ from jumpstarter.config.env import (
     JMP_GRPC_PASSPHRASE,
     JMP_LEASE,
     JUMPSTARTER_HOST,
+    JUMPSTARTER_HOST_OVERLAY,
 )
 from jumpstarter.exporter import Session
 from jumpstarter.utils.env import ExporterMetadata, env, env_with_metadata
@@ -138,6 +140,7 @@ def _build_common_env(
     lease=None,
     insecure: bool = False,
     passphrase: str | None = None,
+    overlay_host: str | None = None,
 ) -> dict[str, str]:
     """Build the base environment dict for shell/command processes."""
     env = os.environ | {
@@ -149,6 +152,8 @@ def _build_common_env(
         env = env | {JMP_GRPC_INSECURE: "1"}
     if passphrase:
         env = env | {JMP_GRPC_PASSPHRASE: passphrase}
+    if overlay_host:
+        env = env | {JUMPSTARTER_HOST_OVERLAY: overlay_host}
     if lease is not None:
         env.update(_lease_env_vars(lease))
     return env
@@ -212,6 +217,7 @@ def launch_shell(
     insecure: bool = False,
     passphrase: str | None = None,
     motd: str | None = None,
+    overlay: str | None = None,
 ) -> int:
     """Launch a shell with a custom prompt indicating the exporter type.
 
@@ -224,49 +230,51 @@ def launch_shell(
         command: Optional command to run instead of launching an interactive shell
         lease: Optional Lease object to set up lease ending callback
         motd: Optional message of the day printed before interactive shells
+        overlay: Optional overlay config served for the lifetime of the shell
 
     Returns:
         The exit code of the shell or command process
     """
 
-    shell = os.environ.get("SHELL", "bash")
-    shell_name = os.path.basename(shell)
+    with serve_client_overlay(overlay) as overlay_host:
+        shell = os.environ.get("SHELL", "bash")
+        shell_name = os.path.basename(shell)
 
-    common_env = _build_common_env(
-        host, allow, unsafe, lease=lease, insecure=insecure, passphrase=passphrase
-    )
+        common_env = _build_common_env(
+            host, allow, unsafe, lease=lease, insecure=insecure, passphrase=passphrase, overlay_host=overlay_host
+        )
 
-    if command:
-        return _run_process(list(command), common_env, lease)
+        if command:
+            return _run_process(list(command), common_env, lease)
 
-    if motd:
-        print(motd, flush=True)
+        if motd:
+            print(motd, flush=True)
 
-    opts = display_options()
-    bolt = "^" if opts.no_icons else "⚡"
-    arrow = ">" if opts.no_icons else "➤"
+        opts = display_options()
+        bolt = "^" if opts.no_icons else "⚡"
+        arrow = ">" if opts.no_icons else "➤"
 
-    if shell_name.endswith("bash"):
-        env = common_env | {"PS1": _bash_ps1(context, bolt, arrow, opts.no_color)}
-        cmd = [shell]
-        if not use_profiles:
-            cmd.extend(["--norc", "--noprofile"])
-        return _run_process(cmd, env, lease)
+        if shell_name.endswith("bash"):
+            env = common_env | {"PS1": _bash_ps1(context, bolt, arrow, opts.no_color)}
+            cmd = [shell]
+            if not use_profiles:
+                cmd.extend(["--norc", "--noprofile"])
+            return _run_process(cmd, env, lease)
 
-    elif shell_name == "fish":
-        cmd = [shell, "--init-command", _fish_prompt_fn(context, bolt, arrow, opts.no_color)]
-        return _run_process(cmd, common_env, lease)
+        elif shell_name == "fish":
+            cmd = [shell, "--init-command", _fish_prompt_fn(context, bolt, arrow, opts.no_color)]
+            return _run_process(cmd, common_env, lease)
 
-    elif shell_name == "zsh":
-        env = common_env | {"PS1": _zsh_ps1(context, bolt, arrow, opts.no_color)}
-        if "HISTFILE" not in env:
-            env["HISTFILE"] = os.path.join(os.path.expanduser("~"), ".zsh_history")
+        elif shell_name == "zsh":
+            env = common_env | {"PS1": _zsh_ps1(context, bolt, arrow, opts.no_color)}
+            if "HISTFILE" not in env:
+                env["HISTFILE"] = os.path.join(os.path.expanduser("~"), ".zsh_history")
 
-        cmd = [shell]
-        if not use_profiles:
-            cmd.append("--no-rcs")
-        cmd.extend(["-o", "inc_append_history", "-o", "share_history"])
-        return _run_process(cmd, env, lease)
+            cmd = [shell]
+            if not use_profiles:
+                cmd.append("--no-rcs")
+            cmd.extend(["-o", "inc_append_history", "-o", "share_history"])
+            return _run_process(cmd, env, lease)
 
-    else:
-        return _run_process([shell], common_env, lease)
+        else:
+            return _run_process([shell], common_env, lease)

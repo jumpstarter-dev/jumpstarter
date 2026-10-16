@@ -75,6 +75,7 @@ leases:
 - `JMP_LEASE` - Active lease name (enables reconnection via `JMP_LEASE=<name> jmp shell`)
 - `JMP_EXPORTER` - Name of the connected exporter
 - `JMP_EXPORTER_LABELS` - Connected exporter's labels as comma-separated `key=value` pairs
+- `JUMPSTARTER_HOST_OVERLAY` - Optional address of an overlay exporter, normally a Unix socket set by `jmp shell --overlay`. `j`, `env()`, and pytest connect to it alongside `JUMPSTARTER_HOST`; its top-level drivers silently take precedence. Overlay drivers persist for the shell's lifetime. See [Developing client-side drivers](../../contributing/development-environment.md#developing-client-side-drivers).
 
 **CLI Commands**:
 ```{code-block}  console
