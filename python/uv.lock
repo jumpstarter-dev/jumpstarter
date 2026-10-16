@@ -3138,6 +3138,7 @@ dependencies = [
     { name = "anyio" },
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-ssh" },
     { name = "pexpect" },
 ]
 
@@ -3152,6 +3153,7 @@ requires-dist = [
     { name = "anyio", specifier = ">=4.10.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-ssh", editable = "packages/jumpstarter-driver-ssh" },
     { name = "pexpect", specifier = ">=4.9" },
 ]
 

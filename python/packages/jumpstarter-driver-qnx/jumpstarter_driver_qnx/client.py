@@ -1,3 +1,4 @@
+import os
 import subprocess
 import threading
 import time
@@ -9,10 +10,19 @@ from urllib.parse import urlparse
 import click
 import pexpect
 from jumpstarter_driver_composite.client import CompositeClient
+from jumpstarter_driver_ssh.client import SSHCommandRunOptions
 
-from jumpstarter.client import DriverClient
 from jumpstarter.client.decorators import driver_click_group
+from jumpstarter.common.exceptions import JumpstarterException
 from jumpstarter.common.fls import get_fls_binary
+
+
+class QnxError(JumpstarterException):
+    """Base exception for QNX/QVM driver errors (surfaced cleanly by ``j``)."""
+
+
+class QnxTimeoutError(QnxError):
+    """Raised when a QNX/QVM serial expect or operation times out."""
 
 
 class QnxState(Enum):
@@ -27,40 +37,44 @@ class QnxState(Enum):
 
 
 @dataclass(kw_only=True)
-class QnxPowerClient(DriverClient):
+class QnxPowerClient(CompositeClient):
     """Client for the orchestrated QNX power driver.
 
     Orchestrates: power_ctl.cycle() → IPL boot menu → init_script.
+    Children: power_ctl, serial (shared with parent Qnx).
     """
 
-    # State shared with QvmPowerClient via the parent QnxClient
     _state_lock: threading.Lock = field(default_factory=threading.Lock)
     _state: QnxState = QnxState.BOARD_OFF
     _state_event: threading.Event = field(default_factory=threading.Event)
 
     @cached_property
+    def _config(self) -> dict:
+        return self.call("get_config")
+
+    @property
     def _boot_prompt(self) -> str:
-        return self.call("get_boot_prompt")
+        return self._config["boot_prompt"]
 
-    @cached_property
+    @property
     def _boot_key(self) -> str:
-        return self.call("get_boot_key")
+        return self._config["boot_key"]
 
-    @cached_property
+    @property
     def _final_prompt(self) -> str:
-        return self.call("get_final_prompt")
+        return self._config["final_prompt"]
 
-    @cached_property
+    @property
     def _init_script(self) -> str:
-        return self.call("get_init_script")
+        return self._config["init_script"]
 
-    @cached_property
+    @property
     def _boot_timeout(self) -> int:
-        return self.call("get_boot_timeout")
+        return self._config["boot_timeout"]
 
-    @cached_property
+    @property
     def _prompt_timeout(self) -> int:
-        return self.call("get_prompt_timeout")
+        return self._config["prompt_timeout"]
 
     def _set_state(self, state: QnxState):
         with self._state_lock:
@@ -70,64 +84,78 @@ class QnxPowerClient(DriverClient):
             else:
                 self._state_event.clear()
 
+    @staticmethod
+    def _console_text(console) -> str:
+        before = getattr(console, "before", None) or b""
+        if isinstance(before, bytes):
+            return before.decode(errors="replace")
+        return str(before)
+
+    def _expect(self, console, pattern: str, timeout: int, what: str):
+        """pexpect.expect wrapping timeouts as QnxTimeoutError for ``j``."""
+        try:
+            console.expect(pattern, timeout=timeout)
+        except pexpect.TIMEOUT as err:
+            output = self._console_text(console).strip()
+            detail = f"\n--- serial output ---\n{output}\n---" if output else ""
+            raise QnxTimeoutError(
+                f"Timed out waiting for {what} {pattern!r} after {timeout}s{detail}"
+            ) from err
+
+    def _run_init_script(self, console):
+        self.logger.info("Running init script...")
+        # Run as one compound command so $? is the overall exit code
+        script = self._init_script.rstrip("\n")
+        console.sendline("{")
+        for line in script.splitlines():
+            console.sendline(line)
+        console.sendline("}; echo INIT_EXIT_CODE=$?")
+        try:
+            console.expect(r"INIT_EXIT_CODE=(\d+)", timeout=self._prompt_timeout)
+        except pexpect.TIMEOUT as err:
+            output = self._console_text(console).strip()
+            detail = f"\n--- serial output ---\n{output}\n---" if output else ""
+            raise QnxTimeoutError(
+                f"Timed out waiting for init script exit code after {self._prompt_timeout}s{detail}"
+            ) from err
+
+        exit_code = int(console.match.group(1))
+        output = self._console_text(console).strip()
+        if exit_code != 0:
+            detail = f"\n--- serial output ---\n{output}\n---" if output else ""
+            raise QnxError(f"Init script failed with exit code {exit_code}{detail}")
+
+        self._expect(
+            console, self._final_prompt, self._prompt_timeout, "QNX prompt after init script"
+        )
+        self.logger.info("Init script completed successfully")
+
+    def _boot_via_ipl(self, console):
+        self.logger.info(f"Waiting for IPL boot prompt: {self._boot_prompt!r}")
+        # Send space to trigger re-prompt if serial opened late
+        console.send(" ")
+        self._expect(console, self._boot_prompt, self._boot_timeout, "IPL boot prompt")
+        self.logger.info(f"Sending boot key: {self._boot_key!r}")
+        console.send(self._boot_key)
+        self.logger.info(f"Waiting for QNX prompt: {self._final_prompt!r}")
+        self._expect(console, self._final_prompt, self._prompt_timeout, "QNX prompt")
+        if self._init_script:
+            self._run_init_script(console)
+
     def on(self):
         """Power on QNX board with full boot orchestration."""
         self._set_state(QnxState.QNX_BOOTING)
         try:
-            # Step 1: Power cycle to ensure known state
             self.logger.info("Power cycling board...")
-            # Access power_ctl through the parent Qnx composite
-            parent = self._parent_client
-            parent.power_ctl.cycle()
+            self.power_ctl.cycle()
 
-            # Steps 2-3: IPL boot menu interaction
-            if self._boot_prompt and self._boot_key:
-                self.logger.info(f"Waiting for IPL boot prompt: {self._boot_prompt!r}")
-                with parent.serial.pexpect() as console:
-                    # Send space to trigger re-prompt if serial opened late
-                    console.send(" ")
-                    console.expect(
-                        self._boot_prompt, timeout=self._boot_timeout
-                    )
-                    self.logger.info(f"Sending boot key: {self._boot_key!r}")
-                    console.send(self._boot_key)
-
-                    # Step 4: Wait for QNX shell prompt
-                    self.logger.info(
-                        f"Waiting for QNX prompt: {self._final_prompt!r}"
-                    )
-                    console.expect(
-                        self._final_prompt, timeout=self._prompt_timeout
-                    )
-
-                    # Step 5-6: Run init script if configured
-                    if self._init_script:
-                        self.logger.info("Running init script...")
-                        # Send the whole script as a block, then check exit code
-                        script_block = self._init_script.rstrip("\n")
-                        for line in script_block.splitlines():
-                            console.sendline(line)
-                        console.sendline("echo INIT_EXIT_CODE=$?")
-                        console.expect(
-                            r"INIT_EXIT_CODE=(\d+)",
-                            timeout=self._prompt_timeout,
-                        )
-                        exit_code = int(console.match.group(1))
-                        if exit_code != 0:
-                            raise RuntimeError(
-                                f"Init script failed with exit code {exit_code}"
-                            )
-                        console.expect(
-                            self._final_prompt,
-                            timeout=self._prompt_timeout,
-                        )
-                        self.logger.info("Init script completed successfully")
-            else:
-                # No boot prompt configured — just wait for final prompt
-                self.logger.info("No boot prompt configured, waiting for QNX prompt...")
-                with parent.serial.pexpect() as console:
-                    console.expect(
-                        self._final_prompt, timeout=self._prompt_timeout
+            with self.serial.pexpect() as console:
+                if self._boot_prompt and self._boot_key:
+                    self._boot_via_ipl(console)
+                else:
+                    self.logger.info("No boot prompt configured, waiting for QNX prompt...")
+                    self._expect(
+                        console, self._final_prompt, self._prompt_timeout, "QNX prompt"
                     )
 
             self._set_state(QnxState.QNX_READY)
@@ -139,8 +167,7 @@ class QnxPowerClient(DriverClient):
     def off(self):
         """Power off the QNX board."""
         self.logger.info("Powering off board...")
-        parent = self._parent_client
-        parent.power_ctl.off()
+        self.power_ctl.off()
         self._set_state(QnxState.BOARD_OFF)
         self.logger.info("Board powered off")
 
@@ -156,20 +183,15 @@ class QnxPowerClient(DriverClient):
             state = self._state
         if state == QnxState.BOARD_OFF:
             return "off"
-        elif state in (QnxState.QNX_BOOTING, QnxState.QNX_READY) or state in (
+        if state in (
+            QnxState.QNX_BOOTING,
+            QnxState.QNX_READY,
             QnxState.QVM_STARTING,
             QnxState.QVM_RUNNING,
             QnxState.QVM_STOPPING,
         ):
             return "on"
         return "unknown"
-
-    @property
-    def _parent_client(self):
-        """Get the parent QnxClient composite."""
-        # In jumpstarter, the parent composite client is accessible
-        # because QnxPower is a child of the Qnx composite
-        return self._composite_parent
 
     def cli(self):
         @driver_click_group(self)
@@ -207,80 +229,81 @@ class QnxClient(CompositeClient):
     """Client for the QNX board composite driver."""
 
     @cached_property
-    def _boot_prompt(self) -> str:
-        return self.call("get_boot_prompt")
-
-    @cached_property
     def _final_prompt(self) -> str:
         return self.call("get_final_prompt")
 
 
 @dataclass(kw_only=True)
-class QvmPowerClient(DriverClient):
-    """Client for QVM power — launches/stops QVM via QNX serial console."""
+class QvmPowerClient(CompositeClient):
+    """Client for QVM power — launches/stops QVM via QNX serial console.
+
+    Children: qnx (shared with parent Qvm).
+    """
 
     @cached_property
+    def _config(self) -> dict:
+        return self.call("get_config")
+
+    @property
     def _qvm_path(self) -> str:
-        return self.call("get_qvm_path")
+        return self._config["qvm_path"]
 
-    @cached_property
+    @property
     def _working_directory(self) -> str:
-        return self.call("get_working_directory")
+        return self._config["working_directory"]
 
-    @cached_property
+    @property
     def _qvm_config_path(self) -> str:
-        return self.call("get_qvm_config_path")
+        return self._config["qvm_config_path"]
 
-    @cached_property
+    @property
     def _uboot_bootcmd(self) -> str:
-        return self.call("get_uboot_bootcmd")
+        return self._config["uboot_bootcmd"]
 
-    @cached_property
+    @property
     def _qvm_start_timeout(self) -> int:
-        return self.call("get_qvm_start_timeout")
+        return self._config["qvm_start_timeout"]
+
+    def _write_config_via_ssh(self, content: str):
+        """Write QVM config to the board via SSH."""
+        opts = SSHCommandRunOptions(capture_output=True)
+        result = self.qnx.ssh.run(
+            opts,
+            [
+                "sh",
+                "-c",
+                f"cat > {self._qvm_config_path} << 'QVMEOF'\n{content}QVMEOF",
+            ],
+        )
+        if result.return_code != 0:
+            raise QnxError(f"Failed to write QVM config: {result.stderr}")
 
     def on(self):
         """Power on QVM: ensure QNX is booted, upload config, launch QVM."""
-        parent = self._composite_parent
+        qnx_power = self.qnx.power
+        qnx_power_status = qnx_power.status()
+        if qnx_power_status != "on":
+            self.logger.info("QNX is not ready, booting first...")
+            qnx_power.on()
 
-        # Step 1: Ensure QNX is booted
-        qnx_power_status = parent.qnx.power.status()
-        if qnx_power_status == "off":
-            self.logger.info("QNX is off, booting first...")
-            parent.qnx.power.on()
-        elif qnx_power_status != "on":
-            self.logger.info("QNX state unclear, attempting boot...")
-            parent.qnx.power.on()
-
-        # Step 2: Upload rendered config via SSH
-        rendered_config = self.call("get_rendered_config")
+        rendered_config = self._config["rendered_config"]
         if rendered_config:
             self.logger.info(f"Uploading QVM config to {self._qvm_config_path}")
-            # Write config via SSH: echo into file
-            parent.qnx.ssh.run(
-                parent.qnx.ssh.__class__.SSHCommandRunOptions(capture_output=True),
-                ["sh", "-c", f"cat > {self._qvm_config_path} << 'QVMEOF'\n{rendered_config}QVMEOF"],
-            )
+            self._write_config_via_ssh(rendered_config)
 
-        # Update state on the QNX power client
-        qnx_power = parent.qnx.power
         if hasattr(qnx_power, "_set_state"):
             qnx_power._set_state(QnxState.QVM_STARTING)
 
-        # Step 3: Launch QVM via serial
         self.logger.info("Launching QVM...")
-
-        with parent.qnx.serial.pexpect() as console:
+        with self.qnx.serial.pexpect() as console:
             launch_cmd = (
                 f"cd {self._working_directory} && "
                 f"{self._qvm_path} @{self._qvm_config_path}"
             )
             console.sendline(launch_cmd)
 
-            # Step 4-5: If uboot_bootcmd is set, interrupt U-Boot and send it
             if self._uboot_bootcmd:
                 self.logger.info("Waiting for U-Boot prompt...")
-                # Send spaces to interrupt U-Boot autoboot
                 for _ in range(50):
                     console.send(" ")
                     try:
@@ -289,15 +312,12 @@ class QvmPowerClient(DriverClient):
                     except pexpect.TIMEOUT:
                         continue
                 else:
-                    raise RuntimeError(
-                        "Failed to interrupt U-Boot autoboot"
-                    )
+                    raise QnxTimeoutError("Failed to interrupt U-Boot autoboot")
 
                 self.logger.info(f"Sending bootcmd: {self._uboot_bootcmd}")
                 console.sendline(self._uboot_bootcmd)
 
             # TODO: Wait for QVM boot confirmation
-            # For now just wait a bit and declare success
             self.logger.info("QVM launched, waiting for boot...")
             time.sleep(2)
 
@@ -308,18 +328,21 @@ class QvmPowerClient(DriverClient):
 
     def off(self):
         """Stop QVM via slay command."""
-        parent = self._composite_parent
-        qnx_power = parent.qnx.power
-
+        qnx_power = self.qnx.power
         if hasattr(qnx_power, "_set_state"):
             qnx_power._set_state(QnxState.QVM_STOPPING)
 
         self.logger.info("Stopping QVM...")
-        final_prompt = parent.qnx.call("get_final_prompt")
+        final_prompt = self.qnx.call("get_final_prompt")
 
-        with parent.qnx.serial.pexpect() as console:
-            console.sendline("slay qvm")
-            console.expect(final_prompt, timeout=10)
+        try:
+            with self.qnx.serial.pexpect() as console:
+                console.sendline("slay qvm")
+                console.expect(final_prompt, timeout=10)
+        except pexpect.TIMEOUT as err:
+            raise QnxTimeoutError(
+                f"Timed out waiting for QNX prompt after slay qvm: {final_prompt!r}"
+            ) from err
 
         if hasattr(qnx_power, "_set_state"):
             qnx_power._set_state(QnxState.QNX_READY)
@@ -334,16 +357,15 @@ class QvmPowerClient(DriverClient):
 
     def status(self) -> str:
         """Return QVM power state."""
-        parent = self._composite_parent
-        qnx_power = parent.qnx.power
+        qnx_power = self.qnx.power
         if hasattr(qnx_power, "_state"):
             with qnx_power._state_lock:
                 state = qnx_power._state
             if state == QnxState.QVM_RUNNING:
                 return "on"
-            elif state == QnxState.QVM_STARTING:
+            if state == QnxState.QVM_STARTING:
                 return "starting"
-            elif state == QnxState.QVM_STOPPING:
+            if state == QnxState.QVM_STOPPING:
                 return "stopping"
         return "off"
 
@@ -379,35 +401,36 @@ class QvmPowerClient(DriverClient):
 
 
 @dataclass(kw_only=True)
-class QvmFlasherClient(DriverClient):
-    """Client for QVM storage flashing via fls with ssh:// target."""
+class QvmFlasherClient(CompositeClient):
+    """Client for QVM storage flashing via fls with ssh:// target.
+
+    Children: qnx (shared with parent Qvm).
+    """
 
     @cached_property
+    def _config(self) -> dict:
+        return self.call("get_config")
+
+    @property
     def _emmc_device(self) -> str:
-        return self.call("get_emmc_device")
+        return self._config["emmc_device"]
 
-    @cached_property
+    @property
     def _ssh_password(self) -> str:
-        return self.call("get_ssh_password")
+        return self._config["ssh_password"]
 
-    @cached_property
+    @property
     def _flash_timeout(self) -> int:
-        return self.call("get_flash_timeout")
+        return self._config["flash_timeout"]
 
     def _get_ssh_target(self) -> str:
         """Build the ssh:// target URL from the qnx driver's children."""
-        parent = self._composite_parent
-
-        # Get host and port from qnx.tcp
-        tcp_address = parent.qnx.tcp.address()
+        tcp_address = self.qnx.tcp.address()
         parsed = urlparse(tcp_address)
         host = parsed.hostname
         port = parsed.port
+        username = self.qnx.ssh.username
 
-        # Get username from qnx.ssh
-        username = parent.qnx.ssh.username
-
-        # Build ssh:// URL
         port_suffix = f":{port}" if port and port != 22 else ""
         return f"ssh://{username}@{host}{port_suffix}{self._emmc_device}"
 
@@ -417,31 +440,30 @@ class QvmFlasherClient(DriverClient):
         Args:
             source: Image source — OCI reference (oci://...) or HTTP(S) URL.
         """
-        parent = self._composite_parent
-
-        # Ensure QVM is stopped before flashing
-        qvm_power = parent.power
-        qvm_status = qvm_power.status()
-        if qvm_status in ("on", "starting"):
-            raise RuntimeError(
-                "QVM must be powered off before flashing. "
-                "Run 'j qvm power off' first."
-            )
-
         # Ensure QNX is booted (we need SSH access)
-        qnx_power_status = parent.qnx.power.status()
-        if qnx_power_status == "off":
+        qnx_power_status = self.qnx.power.status()
+        if qnx_power_status != "on":
             self.logger.info("QNX is off, booting first...")
-            parent.qnx.power.on()
+            self.qnx.power.on()
+
+        # Prefer checking QVM status if available via sibling path on parent —
+        # QvmFlasher only has qnx as child; caller should power off QVM first.
+        # Soft check: if qnx reports QVM_RUNNING, refuse.
+        qnx_power = self.qnx.power
+        if hasattr(qnx_power, "_state"):
+            with qnx_power._state_lock:
+                state = qnx_power._state
+            if state in (QnxState.QVM_RUNNING, QnxState.QVM_STARTING):
+                raise QnxError(
+                    "QVM must be powered off before flashing. "
+                    "Run 'j qvm power off' first."
+                )
 
         ssh_target = self._get_ssh_target()
         self.logger.info(f"Flashing {source} → {ssh_target}")
 
         fls_binary = get_fls_binary()
         fls_cmd = [fls_binary, "from-url", source, ssh_target]
-
-        # Set up environment for fls SSH auth
-        import os
 
         fls_env = os.environ.copy()
         if self._ssh_password:
@@ -458,20 +480,21 @@ class QvmFlasherClient(DriverClient):
                 text=True,
             )
 
+            assert process.stdout is not None
             for line in iter(process.stdout.readline, ""):
                 print(line, end="", flush=True)
 
             process.wait(timeout=self._flash_timeout)
 
             if process.returncode != 0:
-                raise RuntimeError(
+                raise QnxError(
                     f"fls flash failed with exit code {process.returncode}"
                 )
 
             self.logger.info("Flash completed successfully")
         except subprocess.TimeoutExpired as err:
             process.kill()
-            raise RuntimeError(
+            raise QnxTimeoutError(
                 f"fls flash timed out after {self._flash_timeout}s"
             ) from err
 
@@ -500,32 +523,33 @@ class QvmClient(CompositeClient):
         """Read the current QVM config from the board via SSH."""
         qvm_config_path = self.call("get_qvm_config_path")
         result = self.qnx.ssh.run(
-            self.qnx.ssh.__class__.SSHCommandRunOptions(capture_output=True),
+            SSHCommandRunOptions(capture_output=True),
             ["cat", qvm_config_path],
         )
         if result.return_code != 0:
-            raise RuntimeError(
-                f"Failed to read QVM config: {result.stderr}"
-            )
+            raise QnxError(f"Failed to read QVM config: {result.stderr}")
         return result.stdout
 
     def set_qvm_config(self, content: str):
         """Write a new QVM config to the board via SSH."""
         qvm_config_path = self.call("get_qvm_config_path")
-        self.qnx.ssh.run(
-            self.qnx.ssh.__class__.SSHCommandRunOptions(capture_output=True),
+        result = self.qnx.ssh.run(
+            SSHCommandRunOptions(capture_output=True),
             [
-                "sh", "-c",
+                "sh",
+                "-c",
                 f"cat > {qvm_config_path} << 'QVMEOF'\n{content}QVMEOF",
             ],
         )
+        if result.return_code != 0:
+            raise QnxError(f"Failed to write QVM config: {result.stderr}")
         self.logger.info(f"QVM config written to {qvm_config_path}")
 
     def reset_qvm_config(self):
         """Restore QVM config from the default template."""
         rendered = self.call("get_rendered_config")
         if not rendered:
-            raise RuntimeError(
+            raise QnxError(
                 "No qvm_default_config is set in the driver configuration"
             )
         self.set_qvm_config(rendered)

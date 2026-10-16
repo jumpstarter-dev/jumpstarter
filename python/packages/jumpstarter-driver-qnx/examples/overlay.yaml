@@ -1,0 +1,45 @@
+export:
+  qnx:
+    type: "jumpstarter_driver_qnx.driver.Qnx"
+    config:
+      boot_prompt: "Press 'M' for eSD download"
+      boot_key: "M"
+      final_prompt: "#"
+      boot_timeout: 60
+      prompt_timeout: 120
+      init_script: |
+        mkdir -p /root/.ssh
+        echo "ssh-ed25519 AAAA..." >> /root/.ssh/authorized_keys
+    children:
+      power_ctl:
+        ref: "power"
+      serial:
+        ref: "serial"
+      tcp:
+        ref: "qnxtcp"
+      ssh:
+        ref: "qnxssh"
+
+  qvm:
+    type: "jumpstarter_driver_qnx.driver.Qvm"
+    config:
+      emmc_device: "/dev/emmc0"
+      ssh_password: "root"
+      qvm_path: "/sbin/qvm"
+      working_directory: "/tmp"
+      virtio_net_mac: "52:54:00:ab:cd:ef"
+      qvm_config_path: "/tmp/qvm-autosd10.conf"
+      uboot_bootcmd: "bootefi bootmgr ${fdtcontroladdr}"
+      qvm_start_timeout: 30
+      flash_timeout: 1800
+      qvm_default_config: |
+        system uboot-guest
+        cpu sched 80
+        ram 0x40000000,2024m
+        vdev pl011 loc 0x09000000 intr gic:33
+        vdev virtio-blk loc 0x0a000000 intr gic:48 hostdev {emmc_device}
+        vdev virtio-net loc 0x1c0c0000 intr gic:40 mac {virtio_net_mac} name p2p peer /dev/vdevpeers/vp0 peerfeats 0x0000
+        guest load 0x40200000,u-boot-with-prior-stage-dt.bin
+    children:
+      qnx:
+        ref: "qnx"

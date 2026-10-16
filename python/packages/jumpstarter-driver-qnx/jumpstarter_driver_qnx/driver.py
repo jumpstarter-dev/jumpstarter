@@ -14,9 +14,38 @@ class QnxPower(Driver):
 
     driver_type = "power"
 
+    boot_prompt: str = "Press 'M' for eSD download"
+    boot_key: str = "M"
+    final_prompt: str = "#"
+    init_script: str = ""
+    boot_timeout: int = 60
+    prompt_timeout: int = 120
+
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_qnx.client.QnxPowerClient"
+
+    def __post_init__(self):
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
+        for child in ("power_ctl", "serial"):
+            if child not in self.children:
+                raise ConfigurationError(
+                    f"QnxPower requires '{child}' child driver"
+                )
+
+    @export
+    def get_config(self) -> dict:
+        """Return all QnxPower config in one RPC (avoids log spam from many get_* calls)."""
+        return {
+            "boot_prompt": self.boot_prompt,
+            "boot_key": self.boot_key,
+            "final_prompt": self.final_prompt,
+            "init_script": self.init_script,
+            "boot_timeout": self.boot_timeout,
+            "prompt_timeout": self.prompt_timeout,
+        }
 
 
 @dataclass(kw_only=True)
@@ -30,14 +59,10 @@ class Qnx(Driver):
 
     driver_type = "composite"
 
-    # IPL boot menu configuration
     boot_prompt: str = "Press 'M' for eSD download"
     boot_key: str = "M"
     final_prompt: str = "#"
-
-    # Optional shell scriptlet to run after QNX boot
     init_script: str = ""
-
     boot_timeout: int = 60
     prompt_timeout: int = 120
 
@@ -55,59 +80,108 @@ class Qnx(Driver):
                     f"Qnx driver requires '{child}' child driver"
                 )
 
-        self.children["power"] = QnxPower()
-
-    @export
-    def get_boot_prompt(self) -> str:
-        return self.boot_prompt
-
-    @export
-    def get_boot_key(self) -> str:
-        return self.boot_key
+        # Share power_ctl/serial with the orchestrated power child
+        # (same pattern as BaseFlasher → UbootConsole)
+        self.children["power"] = QnxPower(
+            boot_prompt=self.boot_prompt,
+            boot_key=self.boot_key,
+            final_prompt=self.final_prompt,
+            init_script=self.init_script,
+            boot_timeout=self.boot_timeout,
+            prompt_timeout=self.prompt_timeout,
+            children={
+                "power_ctl": self.children["power_ctl"],
+                "serial": self.children["serial"],
+            },
+        )
 
     @export
     def get_final_prompt(self) -> str:
         return self.final_prompt
-
-    @export
-    def get_init_script(self) -> str:
-        return self.init_script
-
-    @export
-    def get_boot_timeout(self) -> int:
-        return self.boot_timeout
-
-    @export
-    def get_prompt_timeout(self) -> int:
-        return self.prompt_timeout
 
 
 @dataclass(kw_only=True)
 class QvmPower(Driver):
     """QVM power driver — launches/stops QVM via the QNX serial console.
 
-    Auto-created by the Qvm driver.
+    Auto-created by the Qvm driver. Requires a 'qnx' child.
     """
 
     driver_type = "power"
 
+    qvm_path: str = "/sbin/qvm"
+    working_directory: str = "/tmp"
+    qvm_config_path: str = "/tmp/qvm.conf"
+    uboot_bootcmd: str = ""
+    qvm_start_timeout: int = 30
+    qvm_default_config: str = ""
+    virtio_net_mac: str = ""
+    emmc_device: str = "/dev/emmc0"
+
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_qnx.client.QvmPowerClient"
+
+    def __post_init__(self):
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
+        if "qnx" not in self.children:
+            raise ConfigurationError("QvmPower requires 'qnx' child driver")
+
+    def render_config(self) -> str:
+        if not self.qvm_default_config:
+            return ""
+        return self.qvm_default_config.format(
+            virtio_net_mac=self.virtio_net_mac,
+            emmc_device=self.emmc_device,
+        )
+
+    @export
+    def get_config(self) -> dict:
+        """Return all QvmPower config in one RPC."""
+        return {
+            "qvm_path": self.qvm_path,
+            "working_directory": self.working_directory,
+            "qvm_config_path": self.qvm_config_path,
+            "uboot_bootcmd": self.uboot_bootcmd,
+            "qvm_start_timeout": self.qvm_start_timeout,
+            "rendered_config": self.render_config(),
+        }
 
 
 @dataclass(kw_only=True)
 class QvmFlasher(Driver):
     """QVM flasher driver — runs fls with ssh:// target.
 
-    Auto-created by the Qvm driver.
+    Auto-created by the Qvm driver. Requires a 'qnx' child.
     """
 
     driver_type = "storage"
 
+    emmc_device: str = "/dev/emmc0"
+    ssh_password: str = ""
+    flash_timeout: int = 1800
+
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_qnx.client.QvmFlasherClient"
+
+    def __post_init__(self):
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
+        if "qnx" not in self.children:
+            raise ConfigurationError("QvmFlasher requires 'qnx' child driver")
+
+    @export
+    def get_config(self) -> dict:
+        """Return all QvmFlasher config in one RPC."""
+        return {
+            "emmc_device": self.emmc_device,
+            "ssh_password": self.ssh_password,
+            "flash_timeout": self.flash_timeout,
+        }
 
 
 @dataclass(kw_only=True)
@@ -120,26 +194,14 @@ class Qvm(Driver):
 
     driver_type = "composite"
 
-    # Block device for flashing
     emmc_device: str = "/dev/emmc0"
-
-    # SSH password for fls ssh:// target (optional)
     ssh_password: str = ""
-
-    # QVM binary and launch configuration
     qvm_path: str = "/sbin/qvm"
     working_directory: str = "/tmp"
     qvm_config_path: str = "/tmp/qvm.conf"
-
-    # virtio-net MAC address
     virtio_net_mac: str = ""
-
-    # Optional U-Boot bootcmd
     uboot_bootcmd: str = ""
-
-    # Default QVM config template (supports {variable} substitution)
     qvm_default_config: str = ""
-
     qvm_start_timeout: int = 30
     flash_timeout: int = 1800
 
@@ -156,8 +218,24 @@ class Qvm(Driver):
                 "Qvm driver requires 'qnx' child driver (use ref: to reference a Qnx driver)"
             )
 
-        self.children["power"] = QvmPower()
-        self.children["storage"] = QvmFlasher()
+        qnx = self.children["qnx"]
+        self.children["power"] = QvmPower(
+            qvm_path=self.qvm_path,
+            working_directory=self.working_directory,
+            qvm_config_path=self.qvm_config_path,
+            uboot_bootcmd=self.uboot_bootcmd,
+            qvm_start_timeout=self.qvm_start_timeout,
+            qvm_default_config=self.qvm_default_config,
+            virtio_net_mac=self.virtio_net_mac,
+            emmc_device=self.emmc_device,
+            children={"qnx": qnx},
+        )
+        self.children["storage"] = QvmFlasher(
+            emmc_device=self.emmc_device,
+            ssh_password=self.ssh_password,
+            flash_timeout=self.flash_timeout,
+            children={"qnx": qnx},
+        )
 
     def render_config(self) -> str:
         """Render the QVM config template with variable substitution."""
@@ -169,45 +247,9 @@ class Qvm(Driver):
         )
 
     @export
-    def get_emmc_device(self) -> str:
-        return self.emmc_device
-
-    @export
-    def get_ssh_password(self) -> str:
-        return self.ssh_password
-
-    @export
-    def get_qvm_path(self) -> str:
-        return self.qvm_path
-
-    @export
-    def get_working_directory(self) -> str:
-        return self.working_directory
-
-    @export
     def get_qvm_config_path(self) -> str:
         return self.qvm_config_path
 
     @export
-    def get_virtio_net_mac(self) -> str:
-        return self.virtio_net_mac
-
-    @export
-    def get_uboot_bootcmd(self) -> str:
-        return self.uboot_bootcmd
-
-    @export
-    def get_qvm_default_config(self) -> str:
-        return self.qvm_default_config
-
-    @export
     def get_rendered_config(self) -> str:
         return self.render_config()
-
-    @export
-    def get_qvm_start_timeout(self) -> int:
-        return self.qvm_start_timeout
-
-    @export
-    def get_flash_timeout(self) -> int:
-        return self.flash_timeout
