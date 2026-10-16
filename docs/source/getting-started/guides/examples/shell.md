@@ -62,11 +62,8 @@ is already connected to lab hardware:
 $ jmp shell --client hello --selector example.com/board=foo --overlay ./overlay.yaml
 ```
 
-`jmp shell` sets `JMP_CLIENT_OVERLAY` for that shell. `j`, `env()`, and pytest
-then see those clients next to the leased drivers. See
+This feature is mostly useful for driver development, see
 [Developing client-side drivers](../../../contributing/development-environment.md#developing-client-side-drivers)
-for when to use this, including nested children, refs, and the warning printed
-when an overlay name replaces a session client.
 
 ## The Shell Prompt
 
