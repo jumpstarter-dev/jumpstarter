@@ -321,6 +321,56 @@ var _ = Describe("Router Lifecycle", func() {
 		}
 	})
 
+	It("deletes the Services of a removed router endpoint", func() {
+		By("creating with 2 router endpoints")
+		spec := makeJumpstarterSpec(new(int32(1)))
+		spec.Routers.GRPC.Endpoints = []operatorv1alpha1.Endpoint{{Address: "router"}, {Address: "router-alt"}}
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       spec,
+		})).To(Succeed())
+		doReconcile()
+
+		svc := &corev1.Service{}
+		secondEndpoint := types.NamespacedName{Name: routerServiceName(0) + "-1", Namespace: crNamespace}
+		Expect(k8sClient.Get(ctx, secondEndpoint, svc)).To(Succeed())
+
+		By("removing the second endpoint")
+		js := &operatorv1alpha1.Jumpstarter{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: crNamespace}, js)).To(Succeed())
+		js.Spec.Routers.GRPC.Endpoints = js.Spec.Routers.GRPC.Endpoints[:1]
+		Expect(k8sClient.Update(ctx, js)).To(Succeed())
+		doReconcile()
+
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: routerServiceName(0), Namespace: crNamespace,
+		}, svc)).To(Succeed())
+		err := k8sClient.Get(ctx, secondEndpoint, svc)
+		Expect(errors.IsNotFound(err)).To(BeTrue(), "Service for the removed endpoint should be deleted")
+	})
+
+	It("does not delete a router-named Service the Jumpstarter does not control", func() {
+		By("creating a Service named like an excess router replica, without an owner")
+		Expect(k8sClient.Create(ctx, &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      routerServiceName(1),
+				Namespace: crNamespace,
+				Labels:    map[string]string{"router": crName},
+			},
+			Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Port: 8083}}},
+		})).To(Succeed())
+
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       makeJumpstarterSpec(new(int32(1))),
+		})).To(Succeed())
+		doReconcile()
+
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: routerServiceName(1), Namespace: crNamespace,
+		}, &corev1.Service{})).To(Succeed())
+	})
+
 	It("updates the Deployment when the image changes", func() {
 		By("creating with initial image")
 		spec := makeJumpstarterSpec(new(int32(1)))

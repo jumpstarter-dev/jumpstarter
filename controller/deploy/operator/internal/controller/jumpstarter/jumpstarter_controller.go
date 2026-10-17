@@ -1748,91 +1748,39 @@ func (r *JumpstarterReconciler) cleanupExcessRouterDeployments(ctx context.Conte
 func (r *JumpstarterReconciler) cleanupExcessRouterServices(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
 
-	// Services can have suffixes for different service types
-	// ClusterIP has no suffix, LoadBalancer has "-lb", NodePort has "-np"
-	suffixes := []string{"", "-lb", "-np"}
+	serviceList := &corev1.ServiceList{}
+	if err := r.List(ctx, serviceList,
+		client.InNamespace(jumpstarter.Namespace),
+		client.MatchingLabels{"router": jumpstarter.Name},
+	); err != nil {
+		return fmt.Errorf("failed to list router services: %w", err)
+	}
 
-	// 1. Delete services for excess replicas (replica index >= current replica count)
-	svcCleanupReplicas := routerReplicas(&jumpstarter.Spec.Routers)
-	for idx := svcCleanupReplicas; idx < 100; idx++ { // reasonable upper bound
-		foundAny := false
-
-		// Try to delete services for all endpoints and service types for this replica
-		for endpointIdx := range 10 { // reasonable upper bound for endpoints
-			for _, suffix := range suffixes {
-				var serviceName string
-				if endpointIdx == 0 {
-					serviceName = fmt.Sprintf("%s-router-%d%s", jumpstarter.Name, idx, suffix)
-				} else {
-					serviceName = fmt.Sprintf("%s-router-%d-%d%s", jumpstarter.Name, idx, endpointIdx, suffix)
-				}
-
-				service := &corev1.Service{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      serviceName,
-						Namespace: jumpstarter.Namespace,
-					},
-				}
-
-				err := r.Delete(ctx, service)
-				if err != nil {
-					if !errors.IsNotFound(err) {
-						return fmt.Errorf("failed to delete excess service %s: %w", serviceName, err)
-					}
-				} else {
-					foundAny = true
-					log.Info("Deleted excess router service", "service", serviceName, "replicaIndex", idx, "endpointIdx", endpointIdx)
-				}
+	// Every service name the current spec can produce. Services can have suffixes
+	// for different service types: ClusterIP has no suffix, LoadBalancer has "-lb",
+	// NodePort has "-np".
+	numEndpoints := max(len(jumpstarter.Spec.Routers.GRPC.Endpoints), 1)
+	wanted := make(map[string]struct{})
+	for replicaIdx := range routerReplicas(&jumpstarter.Spec.Routers) {
+		for endpointIdx := range numEndpoints {
+			serviceName := r.buildServiceNameForReplicaEndpoint(jumpstarter, replicaIdx, endpointIdx)
+			for _, suffix := range []string{"", "-lb", "-np"} {
+				wanted[serviceName+suffix] = struct{}{}
 			}
-		}
-
-		// If we didn't find any services for this replica index, we've gone past all excess services
-		if !foundAny {
-			break
 		}
 	}
 
-	// 2. Delete services for excess endpoints within valid replicas
-	numEndpoints := len(jumpstarter.Spec.Routers.GRPC.Endpoints)
-	if numEndpoints == 0 {
-		numEndpoints = 1 // default endpoint
-	}
-
-	for replicaIdx := range svcCleanupReplicas {
-		for endpointIdx := numEndpoints; endpointIdx < 10; endpointIdx++ { // reasonable upper bound
-			foundAny := false
-
-			for _, suffix := range suffixes {
-				var serviceName string
-				if endpointIdx == 0 {
-					serviceName = fmt.Sprintf("%s-router-%d%s", jumpstarter.Name, replicaIdx, suffix)
-				} else {
-					serviceName = fmt.Sprintf("%s-router-%d-%d%s", jumpstarter.Name, replicaIdx, endpointIdx, suffix)
-				}
-
-				service := &corev1.Service{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      serviceName,
-						Namespace: jumpstarter.Namespace,
-					},
-				}
-
-				err := r.Delete(ctx, service)
-				if err != nil {
-					if !errors.IsNotFound(err) {
-						return fmt.Errorf("failed to delete excess endpoint service %s: %w", serviceName, err)
-					}
-				} else {
-					foundAny = true
-					log.Info("Deleted excess endpoint service", "service", serviceName, "replicaIndex", replicaIdx, "endpointIdx", endpointIdx)
-				}
-			}
-
-			// If we didn't find any services for this endpoint index, we've gone past all excess endpoints
-			if !foundAny {
-				break
-			}
+	// Delete what the spec no longer produces, but only services this
+	// Jumpstarter controls: a matching label alone does not make it ours.
+	for i := range serviceList.Items {
+		service := &serviceList.Items[i]
+		if _, ok := wanted[service.Name]; ok || !metav1.IsControlledBy(service, jumpstarter) {
+			continue
 		}
+		if err := r.Delete(ctx, service); client.IgnoreNotFound(err) != nil {
+			return fmt.Errorf("failed to delete excess router service %s: %w", service.Name, err)
+		}
+		log.Info("Deleted excess router service", "service", service.Name)
 	}
 
 	return nil
