@@ -1743,8 +1743,8 @@ func (r *JumpstarterReconciler) cleanupExcessRouterDeployments(ctx context.Conte
 }
 
 // cleanupExcessRouterServices deletes router services that exceed the current replica count
-// or endpoint count. This ensures that when replicas or endpoints are scaled down, the
-// corresponding services are removed.
+// or endpoint count, or whose Service type the endpoint no longer enables. This ensures that
+// when replicas, endpoints or Service types are removed, the corresponding services are removed.
 func (r *JumpstarterReconciler) cleanupExcessRouterServices(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
 
@@ -1756,15 +1756,15 @@ func (r *JumpstarterReconciler) cleanupExcessRouterServices(ctx context.Context,
 		return fmt.Errorf("failed to list router services: %w", err)
 	}
 
-	// Every service name the current spec can produce. Services can have suffixes
-	// for different service types: ClusterIP has no suffix, LoadBalancer has "-lb",
-	// NodePort has "-np".
-	numEndpoints := max(len(jumpstarter.Spec.Routers.GRPC.Endpoints), 1)
+	// Every service the current spec produces: one per Service type each
+	// endpoint enables, for every replica. With no endpoints the reconcile
+	// falls back to an endpoint that enables no type, so nothing is wanted.
 	wanted := make(map[string]struct{})
 	for replicaIdx := range routerReplicas(&jumpstarter.Spec.Routers) {
-		for endpointIdx := range numEndpoints {
+		for endpointIdx := range jumpstarter.Spec.Routers.GRPC.Endpoints {
 			serviceName := r.buildServiceNameForReplicaEndpoint(jumpstarter, replicaIdx, endpointIdx)
-			for _, suffix := range []string{"", "-lb", "-np"} {
+			endpoint := &jumpstarter.Spec.Routers.GRPC.Endpoints[endpointIdx]
+			for _, suffix := range endpoints.RouterServiceSuffixes(endpoint) {
 				wanted[serviceName+suffix] = struct{}{}
 			}
 		}
