@@ -9,6 +9,7 @@
 #   --label-filter "hooks"                - run hooks tests only
 #   --label-filter "direct-listener"      - run direct-listener tests only
 #   --label-filter "exporterset-qemu"     - ExporterSet QEMU only (needs qemu images)
+#   --label-filter "exporterset-qemu-ssh" - ExporterSet QEMU-SSH only (needs SSH+Podman on host)
 #   --label-filter "!exporterset-qemu"   - skip ExporterSet QEMU
 #   --label-filter "!operator-only"       - skip operator-specific tests
 #   --label-filter "!lease-churn"         - skip assigned-lease cycle spec (default for make e2e-run / CI)

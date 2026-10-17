@@ -18,10 +18,12 @@ package qemussh
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -216,5 +218,43 @@ func TestBuildExportMap_duplicateKey(t *testing.T) {
 	_, err := buildExportMap(drivers)
 	if err == nil {
 		t.Fatal("expected error for duplicate key")
+	}
+}
+
+func TestMergeClassAndSetParameters_hostFromExporterSet(t *testing.T) {
+	classRaw, err := json.Marshal(map[string]any{
+		"arch": "x86_64",
+		"runtime": map[string]any{
+			"host_network": true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	setRaw, err := json.Marshal(map[string]any{
+		"host": map[string]any{
+			"name": "172.18.0.1",
+			"user": "root",
+			"port": 22,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	merged := mergeClassAndSetParameters(
+		&apiextensionsv1.JSON{Raw: classRaw},
+		&apiextensionsv1.JSON{Raw: setRaw},
+	)
+
+	host, err := ParseHost(merged)
+	if err != nil {
+		t.Fatalf("ParseHost: %v", err)
+	}
+	if host.Name != "172.18.0.1" || host.User != "root" || host.Port != 22 {
+		t.Errorf("host = %+v, want name=172.18.0.1 user=root port=22", host)
+	}
+	if merged["arch"] != "x86_64" {
+		t.Errorf("arch = %v, want x86_64", merged["arch"])
 	}
 }
