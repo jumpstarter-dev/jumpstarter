@@ -1,6 +1,8 @@
+import logging
 import os
 import stat
 import sys
+import time
 from contextlib import contextmanager
 
 import click
@@ -9,9 +11,16 @@ from anyio.streams.file import FileReadStream
 from jumpstarter_driver_network.adapters import PexpectAdapter
 from pexpect.fdpexpect import fdspawn
 
-from .console import Console
+from .console import Console, ConsoleStreamDrop
 from jumpstarter.client import DriverClient
+from jumpstarter.client.core import DriverMethodNotImplemented
 from jumpstarter.client.decorators import driver_click_group
+
+logger = logging.getLogger(__name__)
+
+# Console reconnection settings
+SUCCESSFUL_SESSION_THRESHOLD = 5  # seconds - reset counter if session lasted this long
+MAX_RAPID_FAILURES = 10  # maximum consecutive rapid reconnection attempts
 
 
 def _stdin_supplies_data() -> bool:
@@ -149,6 +158,28 @@ class PySerialClient(DriverClient):
 
         return bytes_read, bytes_sent
 
+    def _power_cycle_hook(self):
+        """Build the Ctrl-] x3 callback, or None when unavailable.
+
+        Asks the driver (one DriverCall) whether power control is configured
+        and valid; the hotkey then triggers dut_power_cycle, which executes
+        the configured sequence on the exporter side.
+        """
+        try:
+            config = self.call("power_control_config")
+        except DriverMethodNotImplemented:
+            return None  # exporter predates the power hotkey
+        if not config.get("available"):
+            return None
+
+        async def _cycle():
+            try:
+                await self.call_async("dut_power_cycle")
+            except Exception:
+                logger.warning("power cycle failed", exc_info=True)
+
+        return _cycle
+
     def cli(self):  # noqa: C901
         @driver_click_group(self)
         def base():
@@ -158,12 +189,31 @@ class PySerialClient(DriverClient):
         @click.option("--observe", is_flag=True, default=False, help="Watch-only mode (read-only)")
         def console(observe):
             """Start serial port console"""
+            # Power cycle is disabled in observe mode (passive observer shouldn't control power)
             if observe:
+                on_power_cycle = None
                 click.echo("\nStarting serial console in observe mode (read-only) ... exit with CTRL+B x 3 times\n")
             else:
+                on_power_cycle = self._power_cycle_hook()
                 click.echo("\nStarting serial port console ... exit with CTRL+B x 3 times\n")
-            console = Console(serial_client=self, observe=observe)
-            console.run()
+                if on_power_cycle is not None:
+                    click.echo("Power cycle: CTRL+] x 3 times\n")
+
+            retries = 0
+            while retries < MAX_RAPID_FAILURES:
+                console = Console(serial_client=self, observe=observe, on_power_cycle=on_power_cycle)
+                session_start = time.time()
+                try:
+                    console.run()
+                    break
+                except ConsoleStreamDrop:
+                    session_duration = time.time() - session_start
+                    session_was_healthy = session_duration >= SUCCESSFUL_SESSION_THRESHOLD
+                    retries = 0 if session_was_healthy else retries + 1
+                    click.echo("\r\nSerial connection lost, reconnecting...\n", err=True)
+                    time.sleep(1)
+            else:
+                click.echo("\nSerial connection lost (reconnect attempts exhausted).\n", err=True)
 
         @base.command()
         @click.option(
