@@ -66,6 +66,7 @@ members = [
     "jumpstarter-driver-probe-rs",
     "jumpstarter-driver-pyserial",
     "jumpstarter-driver-qemu",
+    "jumpstarter-driver-qnx",
     "jumpstarter-driver-renode",
     "jumpstarter-driver-ridesx",
     "jumpstarter-driver-sdwire",
@@ -1819,6 +1820,7 @@ dependencies = [
     { name = "jumpstarter-driver-probe-rs" },
     { name = "jumpstarter-driver-pyserial" },
     { name = "jumpstarter-driver-qemu" },
+    { name = "jumpstarter-driver-qnx" },
     { name = "jumpstarter-driver-renode" },
     { name = "jumpstarter-driver-ridesx" },
     { name = "jumpstarter-driver-sdwire" },
@@ -1887,6 +1889,7 @@ requires-dist = [
     { name = "jumpstarter-driver-probe-rs", editable = "packages/jumpstarter-driver-probe-rs" },
     { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
     { name = "jumpstarter-driver-qemu", editable = "packages/jumpstarter-driver-qemu" },
+    { name = "jumpstarter-driver-qnx", editable = "packages/jumpstarter-driver-qnx" },
     { name = "jumpstarter-driver-renode", editable = "packages/jumpstarter-driver-renode" },
     { name = "jumpstarter-driver-ridesx", editable = "packages/jumpstarter-driver-ridesx" },
     { name = "jumpstarter-driver-sdwire", editable = "packages/jumpstarter-driver-sdwire" },
@@ -3128,6 +3131,38 @@ dev = [
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "requests", specifier = ">=2.32.3" },
+]
+
+[[package]]
+name = "jumpstarter-driver-qnx"
+source = { editable = "packages/jumpstarter-driver-qnx" }
+dependencies = [
+    { name = "anyio" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-ssh" },
+    { name = "pexpect" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.10.0" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-ssh", editable = "packages/jumpstarter-driver-ssh" },
+    { name = "pexpect", specifier = ">=4.9" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
 [[package]]
