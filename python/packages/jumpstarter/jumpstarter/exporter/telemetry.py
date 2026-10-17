@@ -70,6 +70,14 @@ class TelemetryLogHandler(logging.Handler):
         self._token = token
         self._queue: deque[telemetry_pb2.LogEntry] = deque(maxlen=_MAX_QUEUE_SIZE)
 
+    @property
+    def token(self) -> str:
+        return self._token
+
+    @token.setter
+    def token(self, value: str) -> None:
+        self._token = value
+
     def prepare(self, record: logging.LogRecord) -> telemetry_pb2.LogEntry:
         """Convert a LogRecord to a LogEntry proto.
 

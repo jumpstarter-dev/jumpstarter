@@ -342,6 +342,45 @@ func (s *ControllerService) GetServiceEndpoints(
 	return resp, nil
 }
 
+// RotateToken signs a new token for the authenticated exporter, updates the
+// corresponding Secret in Kubernetes, and returns the new token and its expiry.
+func (s *ControllerService) RotateToken(
+	ctx context.Context,
+	req *pb.RotateTokenRequest,
+) (*pb.RotateTokenResponse, error) {
+	exporter, err := s.authenticateExporter(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.Signer == nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "token signer not configured")
+	}
+
+	credential, err := authentication.BearerTokenFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	subject, err := s.Signer.ParseSubject(credential)
+	if err != nil || subject != exporter.InternalSubject() {
+		return nil, status.Error(codes.PermissionDenied, "only internal exporter tokens can be rotated")
+	}
+
+	token, expiry, err := auth.RotateCredential(ctx, s.Client, s.Signer, client.ObjectKey{
+		Namespace: exporter.Namespace,
+		Name:      exporter.Name + "-exporter",
+	}, exporter.InternalSubject())
+	if err != nil {
+		return nil, err
+	}
+	log.FromContext(ctx).Info("token rotated", "exporter", exporter.Name, "namespace", exporter.Namespace)
+
+	return &pb.RotateTokenResponse{
+		Token:  token,
+		Expiry: expiry,
+	}, nil
+}
+
 func (s *ControllerService) Unregister(
 	ctx context.Context,
 	req *pb.UnregisterRequest,
