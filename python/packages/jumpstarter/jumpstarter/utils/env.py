@@ -1,12 +1,13 @@
 import logging
 import os
-from contextlib import ExitStack, asynccontextmanager, contextmanager
+from contextlib import AsyncExitStack, ExitStack, asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 
 from anyio.from_thread import start_blocking_portal
 from pydantic import ValidationError
 
 from jumpstarter.client import client_from_path
+from jumpstarter.client.overlay import apply_client_overlay
 from jumpstarter.common.exceptions import EnvironmentVariableNotSetError
 from jumpstarter.config.client import ClientConfigV1Alpha1Drivers
 from jumpstarter.config.env import (
@@ -18,6 +19,7 @@ from jumpstarter.config.env import (
     JMP_LEASE,
     JUMPSTARTER_GRPC_INSECURE,
     JUMPSTARTER_HOST,
+    JUMPSTARTER_HOST_OVERLAY,
 )
 
 logger = logging.getLogger(__name__)
@@ -78,6 +80,9 @@ async def env_async(portal, stack):
 
     This is useful when interacting with an already established Jumpstarter shell,
     to either a local exporter or a remote one.
+
+    When ``JUMPSTARTER_HOST_OVERLAY`` is set, connect to that exporter too.
+    Its top-level drivers silently replace same-named drivers from the base.
     """
     host = os.environ.get(JUMPSTARTER_HOST, None)
     if host is None:
@@ -96,7 +101,13 @@ async def env_async(portal, stack):
         unsafe=drivers.unsafe,
         insecure=insecure,
         passphrase=passphrase,
-    ) as client:
+    ) as client, AsyncExitStack() as overlay_stack:
+        overlay_host = os.environ.get(JUMPSTARTER_HOST_OVERLAY)
+        if overlay_host:
+            overlay = await overlay_stack.enter_async_context(client_from_path(
+                overlay_host, portal, stack, allow=drivers.allow, unsafe=drivers.unsafe,
+            ))
+            apply_client_overlay(client, overlay)
         try:
             yield client
         finally:

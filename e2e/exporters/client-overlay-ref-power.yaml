@@ -1,0 +1,5 @@
+# Ref-only overlay for e2e: alias the leased MockPower driver.
+# Served by the local overlay session; power calls still reach the lab exporter.
+export:
+  lab_power:
+    ref: power

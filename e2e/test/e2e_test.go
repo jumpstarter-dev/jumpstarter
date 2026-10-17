@@ -670,6 +670,19 @@ spec:
 			// Should not be a timeout (exit code 124)
 			Expect(out).To(ContainSubstring("cannot be satisfied"))
 		})
+
+		It("can lease with client overlay against remote exporter", func() {
+			WaitForExporters("test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy")
+
+			overlay := filepath.Join(RepoRoot(), "e2e", "exporters", "client-overlay-ref-power.yaml")
+			// Overlay aliases the leased MockPower as lab_power; the RPC still
+			// reaches the exporter through the controller lease path.
+			MustJmp("shell",
+				"--client", "test-client-oidc",
+				"--selector", "example.com/board=oidc",
+				"--overlay", overlay,
+				"--", "j", "lab_power", "on")
+		})
 	})
 
 	// -------------------------------------------------------------------

@@ -56,6 +56,7 @@ Prereq (all): dex + controller/operator running, namespace `jumpstarter-lab` cre
 | can lease and connect to exporters | exporters running | `jmp shell --selector ... j power on` for oidc/sa/legacy/provisioning clients | all shells succeed |
 | can lease and connect to exporters by name | exporters running | `jmp shell --name <exporter>` (+ combined `--name`+`--selector`) | all succeed |
 | fails fast when requesting non-existent exporter by name | exporters running | `timeout 20s jmp shell --name test-exporter-does-not-exist` | errors (not a 124 timeout); message contains "cannot be satisfied" |
+| can lease with client overlay against remote exporter | exporters running | `jmp shell --client test-client-oidc --selector example.com/board=oidc --overlay e2e/exporters/client-overlay-ref-power.yaml -- j lab_power on` | no error; overlay ref reaches leased MockPower through the controller |
 | can get CRDs with admin cli | — | `jmp admin get client/exporter/lease` | no error |
 | can delete clients with admin cli | clients exist | delete oidc/sa/legacy clients | secrets/CRDs no longer found via kubectl |
 | can delete exporters with admin cli | exporters exist | delete oidc/sa/legacy exporters | secrets/CRDs no longer found via kubectl |

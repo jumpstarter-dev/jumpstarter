@@ -34,7 +34,7 @@ from jumpstarter_cli.shell import (
 
 from jumpstarter.client.grpc import Lease, LeaseList
 from jumpstarter.common import ExporterStatus
-from jumpstarter.common.exceptions import ExporterOfflineError, ExporterUnreachableError
+from jumpstarter.common.exceptions import ConfigurationError, ExporterOfflineError, ExporterUnreachableError
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.env import JMP_LEASE
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
@@ -1157,6 +1157,25 @@ class TestShellWithSignalHandlingExceptionGroup:
         config.lease_async = lease_async  # ty: ignore[invalid-assignment]
         return config
 
+    async def test_configuration_error_is_not_reported_as_connection_loss(self):
+        from jumpstarter_cli_common.exceptions import find_exception_in_group
+
+        lease = Mock(lease_ended=False, lease_transferred=False)
+        config = self._make_config_with_lease(lease)
+        error = ConfigurationError("Qnx driver requires 'power_ctl' child driver")
+
+        with (
+            patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
+            patch("jumpstarter_cli.shell._monitor_shared_access", new_callable=AsyncMock),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=ExceptionGroup("startup", [error])),
+            pytest.raises(BaseExceptionGroup) as exc_info,
+        ):
+            await _shell_with_signal_handling(
+                config, None, None, None, timedelta(minutes=1), False, (), None
+            )
+        assert find_exception_in_group(exc_info.value, ConfigurationError) is error
+        assert find_exception_in_group(exc_info.value, ExporterOfflineError) is None
+
     async def test_exits_gracefully_when_lease_ended(self):
         """When the lease expired naturally, a task-group failure exits with code 0."""
         lease = Mock()
@@ -1458,6 +1477,42 @@ def test_shell_exporter_config_propagates_exit_code(tmp_path, expected):
         result = CliRunner().invoke(shell, ["--exporter-config", str(config_path), "--", "sh", "-c", "true"])
     assert launched.called
     assert result.exit_code == expected
+
+
+def test_shell_overlay_is_passed_to_the_shell(tmp_path):
+    config_path = _write_exporter_config(tmp_path)
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text(
+        """
+export:
+  power:
+    type: jumpstarter_driver_power.driver.MockPower
+""",
+        encoding="utf-8",
+    )
+    with (
+        patch.object(ExporterConfigV1Alpha1, "serve_unix", _fake_serve_unix),
+        patch("jumpstarter_cli.shell.launch_shell", return_value=0) as launched,
+    ):
+        result = CliRunner().invoke(shell, ["--exporter-config", str(config_path), "--overlay", str(overlay)])
+
+    assert result.exit_code == 0, result.output
+    assert launched.call_args.kwargs["overlay"] == str(overlay.resolve())
+
+
+def test_shell_overlay_empty_export_fails_before_launch(tmp_path):
+    config_path = _write_exporter_config(tmp_path)
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text("export: {}\n", encoding="utf-8")
+    with (
+        patch.object(ExporterConfigV1Alpha1, "serve_unix", _fake_serve_unix),
+        patch("jumpstarter_cli.shell.launch_shell", return_value=0) as launched,
+    ):
+        result = CliRunner().invoke(shell, ["--exporter-config", str(config_path), "--overlay", str(overlay)])
+
+    assert launched.called is False
+    assert result.exit_code != 0
+    assert "empty" in (result.output + str(result.exception)).lower()
 
 
 class TestRetryLoopUserInterrupt:
