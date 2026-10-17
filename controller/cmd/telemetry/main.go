@@ -15,9 +15,9 @@ limitations under the License.
 */
 
 // jumpstarter-telemetry reverse-scrapes exporter metrics via MetricsStream and
-// receives structured log entries via PushLogs. Logs are written to structured
-// stdout for downstream log shippers (Promtail, Grafana Alloy, Vector) and
-// optionally pushed to Loki's HTTP API when -loki-url is set.
+// receives structured log entries via PushLogs. When -loki-url is set, accepted
+// entries are pushed only to Loki. Otherwise they are written as structured
+// JSON to stdout for downstream log shippers (Promtail, Grafana Alloy, Vector).
 //
 // TLS: always enabled. Set EXTERNAL_CERT_PEM and EXTERNAL_KEY_PEM to file paths of
 // operator-mounted cert/key (e.g. from a cert-manager Secret); when absent a
@@ -140,6 +140,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	clientAuthn, err := loadClientAuthenticator(ctx)
+	if err != nil {
+		logger.Error(err, "unable to load external client authenticator")
+		os.Exit(1)
+	}
+
 	svc := &service.TelemetryService{
 		BindAddr:        bindAddr,
 		MetricsBindAddr: metricsAddr,
@@ -147,6 +153,7 @@ func main() {
 		DriverTypeEnum:  splitCSV(driverTypeEnum),
 		ExemplarKeys:    splitCSV(exemplarKeys),
 		Signer:          signer,
+		ClientAuthn:     clientAuthn,
 		LokiConfig: service.LokiConfig{
 			URL:                lokiURL,
 			Username:           os.Getenv("LOKI_USERNAME"),

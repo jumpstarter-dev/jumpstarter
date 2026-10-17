@@ -106,6 +106,68 @@ def test_shell_passes_exporter_name_to_lease_async():
     assert config.captured[1] == "laptop-test-exporter"
 
 
+def test_shell_attaches_client_telemetry():
+    config = _DummyConfig()
+
+    with (
+        patch(
+            "jumpstarter_cli.shell.attach_client_telemetry",
+            new=AsyncMock(return_value=None),
+        ) as mock_attach,
+        patch(
+            "jumpstarter_cli.shell._run_shell_with_lease_async",
+            new=AsyncMock(return_value=0),
+        ),
+    ):
+        exit_code = anyio.run(
+            _shell_with_signal_handling,
+            config,
+            None,
+            "laptop-test-exporter",
+            None,
+            timedelta(minutes=1),
+            False,
+            (),
+            None,
+        )
+
+    assert exit_code == 0
+    mock_attach.assert_awaited()
+
+
+async def test_shell_closes_telemetry_when_the_shell_times_out():
+    telemetry = Mock()
+    telemetry.handler = Mock()
+    telemetry.handler.flush_loop = AsyncMock()
+    telemetry.aclose = AsyncMock()
+    config = _DummyConfig()
+
+    async def boom(*_args):
+        raise TimeoutError("shell timeout")
+
+    with (
+        patch(
+            "jumpstarter_cli.shell.attach_client_telemetry",
+            new=AsyncMock(return_value=telemetry),
+        ),
+        patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=boom),
+        pytest.raises(ExceptionGroup) as raised,
+    ):
+        await _shell_with_signal_handling(
+            config,
+            None,
+            "laptop-test-exporter",
+            None,
+            timedelta(minutes=1),
+            False,
+            (),
+            None,
+        )
+
+    assert any(isinstance(exc, TimeoutError) for exc in raised.value.exceptions)
+    telemetry.aclose.assert_awaited()
+
+
 async def test_shell_warns_when_expired_token_prevents_cleanup_on_normal_exit():
     lease = Mock()
     lease.release = True
