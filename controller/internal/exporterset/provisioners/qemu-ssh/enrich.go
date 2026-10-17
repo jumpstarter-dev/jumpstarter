@@ -32,7 +32,8 @@ const (
 
 // enrichExporterExport adjusts driver configuration for off-cluster
 // deployment. The logic mirrors the in-cluster QEMU provisioner but
-// paths match the quadlet container layout.
+// paths match the quadlet container layout. It also aliases
+// power/flasher/console as root refs for hardware-style client access.
 func enrichExporterExport(
 	drivers []virtualtargetv1alpha1.DriverConfig,
 	mergedParameters map[string]any,
@@ -41,7 +42,7 @@ func enrichExporterExport(
 		return nil, err
 	}
 
-	result := make([]virtualtargetv1alpha1.DriverConfig, 0, len(drivers)+1)
+	result := make([]virtualtargetv1alpha1.DriverConfig, 0, len(drivers)+len(qemudriver.PresetRootChildren)+1)
 	hasTCP := false
 
 	for _, d := range drivers {
@@ -58,6 +59,8 @@ func enrichExporterExport(
 		}
 		result = append(result, d)
 	}
+
+	result = qemudriver.AliasPresetRoots(result)
 
 	if !hasTCP {
 		result = append(result, virtualtargetv1alpha1.DriverConfig{

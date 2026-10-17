@@ -156,7 +156,9 @@ spec:
           type: jumpstarter_driver_qemu.driver.Qemu
 ```
 
-The `tcp` driver is auto-injected by the provisioner (SSH host-forwarding on
+The provisioner auto-aliases `power`, `flasher`, and `console` as root-level
+refs to the QEMU children (so clients can use `client.power` like on real
+hardware). The `tcp` driver is also auto-injected (SSH host-forwarding on
 port 2222).
 
 ## How it works
