@@ -184,6 +184,119 @@ spec:
                   the exporter.
                 format: date-time
                 type: string
+              leaseHooks:
+                description: |-
+                  LeaseHooks records how far the exporter got with the lifecycle hooks of
+                  its latest lease. It survives exporter restarts, so a restarted exporter
+                  neither repeats a finished beforeLease hook nor skips an owed afterLease hook.
+                  It is dropped when an exporter that does not record its lease hooks registers.
+                properties:
+                  afterLease:
+                    description: AfterLease is the afterLease hook's state; unset
+                      until it starts.
+                    properties:
+                      attempts:
+                        description: |-
+                          Attempts counts the times the hook was started; more than one means it
+                          was re-run after an exporter restart cut it off.
+                        format: int32
+                        type: integer
+                      lastTransitionTime:
+                        description: LastTransitionTime is when the hook entered its
+                          current phase.
+                        format: date-time
+                        type: string
+                      message:
+                        description: Message is the failure or skip reason, if any.
+                        type: string
+                      onFailure:
+                        description: OnFailure is the hook's configured failure action
+                          when it ran.
+                        enum:
+                        - warn
+                        - endLease
+                        - exit
+                        type: string
+                      phase:
+                        description: Phase of the hook. Running also covers a hook
+                          cut off by an exporter restart.
+                        enum:
+                        - Running
+                        - Succeeded
+                        - Failed
+                        - Skipped
+                        type: string
+                    required:
+                    - lastTransitionTime
+                    - phase
+                    type: object
+                  beforeLease:
+                    description: BeforeLease is the beforeLease hook's state; unset
+                      until it starts.
+                    properties:
+                      attempts:
+                        description: |-
+                          Attempts counts the times the hook was started; more than one means it
+                          was re-run after an exporter restart cut it off.
+                        format: int32
+                        type: integer
+                      lastTransitionTime:
+                        description: LastTransitionTime is when the hook entered its
+                          current phase.
+                        format: date-time
+                        type: string
+                      message:
+                        description: Message is the failure or skip reason, if any.
+                        type: string
+                      onFailure:
+                        description: OnFailure is the hook's configured failure action
+                          when it ran.
+                        enum:
+                        - warn
+                        - endLease
+                        - exit
+                        type: string
+                      phase:
+                        description: Phase of the hook. Running also covers a hook
+                          cut off by an exporter restart.
+                        enum:
+                        - Running
+                        - Succeeded
+                        - Failed
+                        - Skipped
+                        type: string
+                    required:
+                    - lastTransitionTime
+                    - phase
+                    type: object
+                  clientName:
+                    description: |-
+                      ClientName is the client that held the lease. An afterLease hook that runs
+                      after the lease has ended (for example after an exporter restart) gets it.
+                    type: string
+                  leaseRef:
+                    description: LeaseRef is the lease the hooks belong to.
+                    properties:
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  leaseUID:
+                    description: |-
+                      LeaseUID is the UID of that lease. A lease name can be reused once the
+                      lease is deleted, so the name alone does not identify it.
+                    type: string
+                required:
+                - leaseRef
+                - leaseUID
+                type: object
               leaseRef:
                 description: LeaseRef is a reference to the lease currently assigned
                   to this exporter.
@@ -199,6 +312,12 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              recordsLeaseHooks:
+                description: |-
+                  RecordsLeaseHooks is set when the exporter process that last registered
+                  records its lease hooks. Such an exporter is not assigned a new lease while
+                  its record owes an afterLease hook, whatever status it reports.
+                type: boolean
               statusMessage:
                 description: StatusMessage is an optional human-readable message describing
                   the current state

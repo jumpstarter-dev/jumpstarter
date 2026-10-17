@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -38,13 +39,20 @@ import (
 	"google.golang.org/grpc/metadata"
 	grpcpeer "google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -2376,4 +2384,399 @@ func TestStatusResponseIncludesLeaseContext(t *testing.T) {
 			t.Fatalf("expected nil context when not leased, got %v", response.Context)
 		}
 	})
+}
+
+// leaseHooksService builds an authenticated ControllerService for the exporter
+// "test-exporter" with the given status, backed by a fake client that also
+// holds objs.
+func leaseHooksService(
+	t *testing.T, exporterStatus jumpstarterdevv1alpha1.ExporterStatus, objs ...client.Object,
+) (*ControllerService, client.WithWatch) {
+	t.Helper()
+	scheme := k8sruntime.NewScheme()
+	if err := jumpstarterdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add scheme: %v", err)
+	}
+	exporter := &jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-exporter", Namespace: "default"},
+		Status:     exporterStatus,
+	}
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(append(objs, exporter)...).
+		WithStatusSubresource(&jumpstarterdevv1alpha1.Exporter{}).
+		Build()
+	svc := &ControllerService{
+		Client: fakeClient,
+		Authn:  &passingAuthenticator{userName: "test-user"},
+		Authz:  passingAuthorizer{},
+		Attr:   &exporterAttributesGetter{namespace: "default", name: "test-exporter"},
+	}
+	return svc, fakeClient
+}
+
+// TestUpdateLeaseHooks covers the transitions the controller accepts for an
+// exporter's lease hook record. The record is what lets a restarted exporter
+// resume a lease without repeating setup and still run owed cleanup, so it
+// must refuse transitions that would let a stale or repeated hook run. Leases
+// are identified by name and UID, since a name can be reused once the lease is
+// deleted.
+func TestUpdateLeaseHooks(t *testing.T) {
+	leaseObj := func(name, uid string) *jumpstarterdevv1alpha1.Lease {
+		return &jumpstarterdevv1alpha1.Lease{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default", UID: types.UID(uid)},
+			Spec:       jumpstarterdevv1alpha1.LeaseSpec{ClientRef: corev1.LocalObjectReference{Name: "client-" + uid}},
+		}
+	}
+	a1, a2, b1 := leaseObj("a", "a-1"), leaseObj("a", "a-2"), leaseObj("b", "b-1")
+	a1Ended := leaseObj("a", "a-1")
+	a1Ended.Status.Ended = true
+	hook := func(phase jumpstarterdevv1alpha1.LeaseHookPhase, attempts int32) *jumpstarterdevv1alpha1.LeaseHookStatus {
+		return &jumpstarterdevv1alpha1.LeaseHookStatus{Phase: phase, Attempts: attempts}
+	}
+	record := func(lease *jumpstarterdevv1alpha1.Lease, before, after *jumpstarterdevv1alpha1.LeaseHookStatus) *jumpstarterdevv1alpha1.ExporterLeaseHooks {
+		return &jumpstarterdevv1alpha1.ExporterLeaseHooks{
+			LeaseRef: corev1.LocalObjectReference{Name: lease.Name}, LeaseUID: lease.UID,
+			ClientName: lease.Spec.ClientRef.Name, BeforeLease: before, AfterLease: after,
+		}
+	}
+	state := func(phase pb.LeaseHookPhase, attempts uint32) *pb.LeaseHookState {
+		return &pb.LeaseHookState{Phase: phase, Attempts: attempts}
+	}
+	before := func(lease *jumpstarterdevv1alpha1.Lease, s *pb.LeaseHookState) *pb.UpdateLeaseHooksRequest {
+		return &pb.UpdateLeaseHooksRequest{
+			LeaseName: lease.Name, LeaseUid: string(lease.UID), Hook: &pb.UpdateLeaseHooksRequest_BeforeLease{BeforeLease: s},
+		}
+	}
+	after := func(lease *jumpstarterdevv1alpha1.Lease, s *pb.LeaseHookState) *pb.UpdateLeaseHooksRequest {
+		return &pb.UpdateLeaseHooksRequest{
+			LeaseName: lease.Name, LeaseUid: string(lease.UID), Hook: &pb.UpdateLeaseHooksRequest_AfterLease{AfterLease: s},
+		}
+	}
+	const (
+		running   = jumpstarterdevv1alpha1.LeaseHookPhaseRunning
+		succeeded = jumpstarterdevv1alpha1.LeaseHookPhaseSucceeded
+		failed    = jumpstarterdevv1alpha1.LeaseHookPhaseFailed
+		pRunning  = pb.LeaseHookPhase_LEASE_HOOK_PHASE_RUNNING
+		pSuccess  = pb.LeaseHookPhase_LEASE_HOOK_PHASE_SUCCEEDED
+	)
+
+	cases := []struct {
+		name     string
+		assigned *jumpstarterdevv1alpha1.Lease // lease the exporter's leaseRef names
+		deleted  bool                          // the assigned Lease object no longer exists
+		initial  *jumpstarterdevv1alpha1.ExporterLeaseHooks
+		req      *pb.UpdateLeaseHooksRequest
+		wantCode codes.Code
+		want     *jumpstarterdevv1alpha1.ExporterLeaseHooks // unchanged initial record on error
+	}{
+		{"setup of the assigned lease starts a record", a1, false, nil,
+			before(a1, state(pRunning, 1)), codes.OK, record(a1, hook(running, 1), nil)},
+		{"setup of a lease that is not assigned is refused", b1, false, nil,
+			before(a1, state(pRunning, 1)), codes.FailedPrecondition, nil},
+		{"a new lease replaces the previous record", b1, false, record(a1, hook(succeeded, 1), hook(running, 1)),
+			before(b1, state(pRunning, 1)), codes.OK, record(b1, hook(running, 1), nil)},
+		{"a new lease reusing a finished lease's name starts a fresh record", a2, false,
+			record(a1, hook(succeeded, 1), hook(succeeded, 1)),
+			before(a2, state(pRunning, 1)), codes.OK, record(a2, hook(running, 1), nil)},
+		{"a hook cannot finish before it starts", a1, false, nil,
+			before(a1, state(pSuccess, 1)), codes.FailedPrecondition, nil},
+		{"a failed hook records its failure action and message", a1, false, record(a1, hook(running, 1), nil),
+			before(a1, &pb.LeaseHookState{
+				Phase:     pb.LeaseHookPhase_LEASE_HOOK_PHASE_FAILED,
+				OnFailure: pb.LeaseHookFailureAction_LEASE_HOOK_FAILURE_ACTION_END_LEASE,
+				Message:   "exit code 3", Attempts: 1,
+			}), codes.OK,
+			record(a1, &jumpstarterdevv1alpha1.LeaseHookStatus{
+				Phase: failed, OnFailure: "endLease", Message: "exit code 3", Attempts: 1,
+			}, nil)},
+		{"a retried call is accepted unchanged", a1, false, record(a1, hook(running, 1), nil),
+			before(a1, state(pRunning, 1)), codes.OK, record(a1, hook(running, 1), nil)},
+		{"a hook cut off by a restart is re-run as the next attempt", a1, false, record(a1, hook(running, 1), nil),
+			before(a1, state(pRunning, 2)), codes.OK, record(a1, hook(running, 2), nil)},
+		{"setup that finishes after its lease ended is recorded", nil, false, record(a1, hook(running, 1), nil),
+			before(a1, state(pSuccess, 1)), codes.OK, record(a1, hook(succeeded, 1), nil)},
+		{"setup is not re-run once its lease ended", nil, false, record(a1, hook(running, 1), nil),
+			before(a1, state(pRunning, 2)), codes.FailedPrecondition, record(a1, hook(running, 1), nil)},
+		{"an old setup outcome cannot finish a newer running attempt", a1, false, record(a1, hook(running, 2), nil),
+			before(a1, state(pSuccess, 1)), codes.FailedPrecondition, record(a1, hook(running, 2), nil)},
+		{"an old cleanup outcome cannot finish a newer running attempt", a1, false,
+			record(a1, hook(succeeded, 1), hook(running, 2)),
+			after(a1, state(pSuccess, 1)), codes.FailedPrecondition, record(a1, hook(succeeded, 1), hook(running, 2))},
+		{"a retried outcome is accepted unchanged", a1, false, record(a1, hook(succeeded, 2), nil),
+			before(a1, state(pSuccess, 2)), codes.OK, record(a1, hook(succeeded, 2), nil)},
+		{"a finished hook is not run again", a1, false, record(a1, hook(succeeded, 1), nil),
+			before(a1, state(pRunning, 2)), codes.FailedPrecondition, record(a1, hook(succeeded, 1), nil)},
+		{"setup cannot start again once cleanup has", a1, false, record(a1, hook(running, 1), hook(running, 1)),
+			before(a1, state(pRunning, 2)), codes.FailedPrecondition, record(a1, hook(running, 1), hook(running, 1))},
+		{"cleanup runs after the lease ended", nil, false, record(a1, hook(succeeded, 1), nil),
+			after(a1, state(pRunning, 1)), codes.OK, record(a1, hook(succeeded, 1), hook(running, 1))},
+		{"cleanup runs once the assigned lease is deleted", a1, true, record(a1, hook(succeeded, 1), nil),
+			after(a1, state(pRunning, 1)), codes.OK, record(a1, hook(succeeded, 1), hook(running, 1))},
+		{"cleanup waits for setup to finish", nil, false, record(a1, hook(running, 1), nil),
+			after(a1, state(pRunning, 1)), codes.FailedPrecondition, record(a1, hook(running, 1), nil)},
+		{"setup of an ended lease is refused while it is still referenced", a1Ended, false, nil,
+			before(a1, state(pRunning, 1)), codes.FailedPrecondition, nil},
+		{"cleanup of an ended lease is recorded while it is still referenced", a1Ended, false,
+			record(a1, hook(succeeded, 1), nil),
+			after(a1, state(pRunning, 1)), codes.OK, record(a1, hook(succeeded, 1), hook(running, 1))},
+		{"cleanup of an old lease is refused once another lease is assigned", b1, false, record(a1, hook(succeeded, 1), nil),
+			after(a1, state(pRunning, 1)), codes.FailedPrecondition, record(a1, hook(succeeded, 1), nil)},
+		{"cleanup of an old lease is refused once a lease with its name is assigned", a2, false,
+			record(a1, hook(succeeded, 1), nil),
+			after(a1, state(pRunning, 1)), codes.FailedPrecondition, record(a1, hook(succeeded, 1), nil)},
+		{"cleanup without a record is refused", nil, false, nil,
+			after(a1, state(pRunning, 1)), codes.FailedPrecondition, nil},
+		{"a long failure message is cut short, keeping whole characters", a1, false, record(a1, hook(running, 1), nil),
+			before(a1, &pb.LeaseHookState{
+				Phase: pb.LeaseHookPhase_LEASE_HOOK_PHASE_FAILED, Attempts: 1, Message: "x" + strings.Repeat("é", 1000),
+			}), codes.OK,
+			record(a1, &jumpstarterdevv1alpha1.LeaseHookStatus{
+				Phase: failed, Attempts: 1, Message: "x" + strings.Repeat("é", 511), // 1023 bytes: the next é would not fit
+			}, nil)},
+		{"attempts beyond the CRD's range are capped", a1, false, nil,
+			before(a1, state(pRunning, math.MaxUint32)), codes.OK, record(a1, hook(running, math.MaxInt32), nil)},
+		{"an unspecified phase is invalid", a1, false, nil,
+			before(a1, state(pb.LeaseHookPhase_LEASE_HOOK_PHASE_UNSPECIFIED, 1)), codes.InvalidArgument, nil},
+		{"the lease UID is required", a1, false, nil,
+			before(leaseObj("a", ""), state(pRunning, 1)), codes.InvalidArgument, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var leaseRef *corev1.LocalObjectReference
+			var objs []client.Object
+			if tc.assigned != nil {
+				leaseRef = &corev1.LocalObjectReference{Name: tc.assigned.Name}
+				if !tc.deleted {
+					objs = append(objs, tc.assigned.DeepCopy())
+				}
+			}
+			svc, c := leaseHooksService(t, jumpstarterdevv1alpha1.ExporterStatus{
+				LeaseRef: leaseRef, LeaseHooks: tc.initial,
+			}, objs...)
+			resp, err := svc.UpdateLeaseHooks(context.Background(), tc.req)
+			if got := status.Code(err); got != tc.wantCode {
+				t.Fatalf("UpdateLeaseHooks code = %v (%v), want %v", got, err, tc.wantCode)
+			}
+
+			var exporter jumpstarterdevv1alpha1.Exporter
+			key := types.NamespacedName{Namespace: "default", Name: "test-exporter"}
+			if err := c.Get(context.Background(), key, &exporter); err != nil {
+				t.Fatalf("failed to get exporter: %v", err)
+			}
+			got := exporter.Status.LeaseHooks
+			if diff := leaseHooksDiff(got, tc.want); diff != "" {
+				t.Fatalf("leaseHooks: %s", diff)
+			}
+			if tc.wantCode == codes.OK &&
+				(resp.GetLeaseName() != got.LeaseRef.Name || resp.GetLeaseUid() != string(got.LeaseUID)) {
+				t.Fatalf("response lease = %q/%q, want the stored record's %q/%q",
+					resp.GetLeaseName(), resp.GetLeaseUid(), got.LeaseRef.Name, got.LeaseUID)
+			}
+		})
+	}
+}
+
+// An update the API server rejects as invalid cannot succeed on retry, so the
+// exporter must not keep retrying it: report it as InvalidArgument.
+func TestUpdateLeaseHooksReportsInvalidUpdate(t *testing.T) {
+	scheme := k8sruntime.NewScheme()
+	if err := jumpstarterdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add scheme: %v", err)
+	}
+	lease := &jumpstarterdevv1alpha1.Lease{ObjectMeta: metav1.ObjectMeta{Name: "a", Namespace: "default", UID: "a-1"}}
+	exporter := &jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-exporter", Namespace: "default"},
+		Status:     jumpstarterdevv1alpha1.ExporterStatus{LeaseRef: &corev1.LocalObjectReference{Name: "a"}},
+	}
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(lease, exporter).
+		WithStatusSubresource(&jumpstarterdevv1alpha1.Exporter{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			SubResourcePatch: func(_ context.Context, _ client.Client, _ string, obj client.Object, _ client.Patch,
+				_ ...client.SubResourcePatchOption) error {
+				return apierrors.NewInvalid(schema.GroupKind{Group: "jumpstarter.dev", Kind: "Exporter"},
+					obj.GetName(), field.ErrorList{field.Invalid(field.NewPath("status"), nil, "rejected")})
+			},
+		}).
+		Build()
+	svc := &ControllerService{
+		Client: fakeClient,
+		Authn:  &passingAuthenticator{userName: "test-user"},
+		Authz:  passingAuthorizer{},
+		Attr:   &exporterAttributesGetter{namespace: "default", name: "test-exporter"},
+	}
+
+	_, err := svc.UpdateLeaseHooks(context.Background(), &pb.UpdateLeaseHooksRequest{
+		LeaseName: "a", LeaseUid: "a-1",
+		Hook: &pb.UpdateLeaseHooksRequest_BeforeLease{BeforeLease: &pb.LeaseHookState{
+			Phase: pb.LeaseHookPhase_LEASE_HOOK_PHASE_RUNNING, Attempts: 1,
+		}},
+	})
+	if got := status.Code(err); got != codes.InvalidArgument {
+		t.Fatalf("UpdateLeaseHooks code = %v (%v), want InvalidArgument", got, err)
+	}
+}
+
+// Status reports are asynchronous: one the exporter sent before it started a
+// lease's record can arrive after it. Such a late Available must leave the
+// record, and the registration that says the exporter keeps it, in place, so
+// the controller still holds the exporter while it owes cleanup. A restarted
+// exporter registering again keeps both; one registering without the flag (an
+// exporter rolled back to an older version) drops them.
+func TestLateAvailableReportKeepsLeaseHookHold(t *testing.T) {
+	lease := &jumpstarterdevv1alpha1.Lease{ObjectMeta: metav1.ObjectMeta{Name: "a", Namespace: "default", UID: "a-1"}}
+	svc, c := leaseHooksService(t, jumpstarterdevv1alpha1.ExporterStatus{
+		LeaseRef: &corev1.LocalObjectReference{Name: "a"},
+	}, lease)
+	ctx := context.Background()
+	exporterStatus := func() jumpstarterdevv1alpha1.ExporterStatus {
+		t.Helper()
+		var exporter jumpstarterdevv1alpha1.Exporter
+		if err := c.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-exporter"}, &exporter); err != nil {
+			t.Fatalf("failed to get exporter: %v", err)
+		}
+		return exporter.Status
+	}
+
+	if _, err := svc.Register(ctx, &pb.RegisterRequest{RecordsLeaseHooks: true}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if _, err := svc.UpdateLeaseHooks(ctx, &pb.UpdateLeaseHooksRequest{
+		LeaseName: "a", LeaseUid: "a-1",
+		Hook: &pb.UpdateLeaseHooksRequest_BeforeLease{BeforeLease: &pb.LeaseHookState{
+			Phase: pb.LeaseHookPhase_LEASE_HOOK_PHASE_RUNNING, Attempts: 1,
+		}},
+	}); err != nil {
+		t.Fatalf("UpdateLeaseHooks: %v", err)
+	}
+	if _, err := svc.ReportStatus(ctx, &pb.ReportStatusRequest{Status: pb.ExporterStatus_EXPORTER_STATUS_AVAILABLE}); err != nil {
+		t.Fatalf("ReportStatus: %v", err)
+	}
+	if st := exporterStatus(); !st.RecordsLeaseHooks || !st.LeaseHooks.OwesAfterLease() {
+		t.Fatalf("after a late Available: recordsLeaseHooks=%v owesAfterLease=%v, want both true",
+			st.RecordsLeaseHooks, st.LeaseHooks.OwesAfterLease())
+	}
+
+	if _, err := svc.Register(ctx, &pb.RegisterRequest{RecordsLeaseHooks: true}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if st := exporterStatus(); !st.RecordsLeaseHooks || !st.LeaseHooks.OwesAfterLease() {
+		t.Fatalf("after a restart: recordsLeaseHooks=%v owesAfterLease=%v, want both true",
+			st.RecordsLeaseHooks, st.LeaseHooks.OwesAfterLease())
+	}
+
+	if _, err := svc.Register(ctx, &pb.RegisterRequest{}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if st := exporterStatus(); st.RecordsLeaseHooks || st.LeaseHooks != nil {
+		t.Fatalf("after registering without the flag: recordsLeaseHooks=%v leaseHooks=%+v, want unset",
+			st.RecordsLeaseHooks, st.LeaseHooks)
+	}
+}
+
+// leaseHooksDiff compares records, ignoring transition times.
+func leaseHooksDiff(got, want *jumpstarterdevv1alpha1.ExporterLeaseHooks) string {
+	if got == nil || want == nil {
+		if got != want {
+			return fmt.Sprintf("got %+v, want %+v", got, want)
+		}
+		return ""
+	}
+	if got.LeaseRef.Name != want.LeaseRef.Name || got.LeaseUID != want.LeaseUID || got.ClientName != want.ClientName {
+		return fmt.Sprintf("lease %q/%q of %q, want %q/%q of %q", got.LeaseRef.Name, got.LeaseUID, got.ClientName,
+			want.LeaseRef.Name, want.LeaseUID, want.ClientName)
+	}
+	hookDiff := func(name string, g, w *jumpstarterdevv1alpha1.LeaseHookStatus) string {
+		if g == nil || w == nil {
+			if g != w {
+				return fmt.Sprintf("%s %+v, want %+v", name, g, w)
+			}
+			return ""
+		}
+		if g.Phase != w.Phase || g.Attempts != w.Attempts || g.OnFailure != w.OnFailure || g.Message != w.Message {
+			return fmt.Sprintf("%s %+v, want %+v", name, *g, *w)
+		}
+		return ""
+	}
+	return hookDiff("beforeLease", got.BeforeLease, want.BeforeLease) + hookDiff("afterLease", got.AfterLease, want.AfterLease)
+}
+
+// capturingStatusStream records what the Status RPC sends to the exporter.
+type capturingStatusStream struct {
+	pb.ControllerService_StatusServer
+	ctx  context.Context
+	sent chan *pb.StatusResponse
+}
+
+func (s *capturingStatusStream) Context() context.Context { return s.ctx }
+
+func (s *capturingStatusStream) Send(r *pb.StatusResponse) error {
+	s.sent <- r
+	return nil
+}
+
+// Exporters detect a controller that keeps lease hook records by the presence
+// of lease_hooks, so it must be set even when there is no record.
+func TestStatusStreamSendsLeaseHooks(t *testing.T) {
+	cases := []struct {
+		name      string
+		recorded  *jumpstarterdevv1alpha1.ExporterLeaseHooks
+		wantLease string
+	}{
+		{"recorded", &jumpstarterdevv1alpha1.ExporterLeaseHooks{
+			LeaseRef: corev1.LocalObjectReference{Name: "a"}, LeaseUID: "a-1", ClientName: "recorded-client",
+			BeforeLease: &jumpstarterdevv1alpha1.LeaseHookStatus{
+				Phase: jumpstarterdevv1alpha1.LeaseHookPhaseSucceeded, Attempts: 1,
+			},
+		}, "a"},
+		{"none", nil, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lease := &jumpstarterdevv1alpha1.Lease{
+				ObjectMeta: metav1.ObjectMeta{Name: "a", Namespace: "default", UID: "a-1"},
+				Spec:       jumpstarterdevv1alpha1.LeaseSpec{ClientRef: corev1.LocalObjectReference{Name: "client"}},
+			}
+			svc, _ := leaseHooksService(t, jumpstarterdevv1alpha1.ExporterStatus{
+				LeaseRef: &corev1.LocalObjectReference{Name: "a"}, LeaseHooks: tc.recorded,
+			}, lease)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			stream := &capturingStatusStream{ctx: ctx, sent: make(chan *pb.StatusResponse, 1)}
+			done := make(chan error, 1)
+			go func() { done <- svc.Status(&pb.StatusRequest{}, stream) }()
+
+			select {
+			case resp := <-stream.sent:
+				if resp.LeaseHooks == nil {
+					t.Fatal("lease_hooks not set")
+				}
+				if got := resp.GetLeaseHooks().GetLeaseName(); got != tc.wantLease {
+					t.Fatalf("lease_hooks lease = %q, want %q", got, tc.wantLease)
+				}
+				// The exporter tells a resumed lease from a new one with the same name by UID.
+				if resp.GetLeaseUid() != "a-1" {
+					t.Fatalf("lease_uid = %q, want the assigned lease's a-1", resp.GetLeaseUid())
+				}
+				if tc.recorded != nil && resp.GetLeaseHooks().GetLeaseUid() != "a-1" {
+					t.Fatalf("lease_hooks lease_uid = %q, want a-1", resp.GetLeaseHooks().GetLeaseUid())
+				}
+				if tc.recorded != nil && resp.GetLeaseHooks().GetClientName() != "recorded-client" {
+					t.Fatalf("lease_hooks client_name = %q, want recorded-client", resp.GetLeaseHooks().GetClientName())
+				}
+				if tc.recorded != nil && resp.GetLeaseHooks().GetBeforeLease().GetPhase() != pb.LeaseHookPhase_LEASE_HOOK_PHASE_SUCCEEDED {
+					t.Fatalf("lease_hooks beforeLease = %v, want SUCCEEDED", resp.GetLeaseHooks().GetBeforeLease())
+				}
+			case err := <-done:
+				t.Fatalf("Status returned before sending: %v", err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for a StatusResponse")
+			}
+			cancel()
+			<-done
+		})
+	}
 }
