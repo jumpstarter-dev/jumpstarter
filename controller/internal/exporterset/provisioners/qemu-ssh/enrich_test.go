@@ -284,6 +284,50 @@ func TestEnrich_skipsPresetRootsWhenMultipleQemu(t *testing.T) {
 	}
 }
 
+func TestEnrich_skipsPresetRootsWhenDisabled(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "qemu",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+	}
+
+	result, err := enrichExporterExport(drivers, map[string]any{
+		qemudriver.ExposeRootDriversParam: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, child := range qemudriver.PresetRootChildren {
+		if got := findDriver(result, child); got != nil {
+			t.Fatalf("unexpected root alias %q when exposeRootDrivers=false: %+v", child, *got)
+		}
+	}
+}
+
+func TestEnrich_skipsPresetRootsWhenQemuNameHasDot(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "vm.prod",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+	}
+
+	result, err := enrichExporterExport(drivers, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, child := range qemudriver.PresetRootChildren {
+		if got := findDriver(result, child); got != nil {
+			t.Fatalf("unexpected root alias %q for dotted QEMU name: %+v", child, *got)
+		}
+	}
+}
+
 func TestEnrich_hostfwdSSH(t *testing.T) {
 	drivers := []virtualtargetv1alpha1.DriverConfig{
 		{

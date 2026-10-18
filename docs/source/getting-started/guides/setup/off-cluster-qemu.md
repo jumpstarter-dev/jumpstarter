@@ -156,10 +156,11 @@ spec:
           type: jumpstarter_driver_qemu.driver.Qemu
 ```
 
-The provisioner auto-aliases `power`, `flasher`, and `console` as root-level
-refs to the QEMU children (so clients can use `client.power` like on real
-hardware). The `tcp` driver is also auto-injected (SSH host-forwarding on
-port 2222).
+By default the provisioner auto-aliases `power`, `flasher`, and `console` as
+root-level refs to the QEMU children (so clients can use `client.power` like
+on real hardware). Set `parameters.exposeRootDrivers: false` to keep a
+nested-only export map (`client.qemu.power`, etc.). The `tcp` driver is also
+auto-injected (SSH host-forwarding on port 2222).
 
 ## How it works
 

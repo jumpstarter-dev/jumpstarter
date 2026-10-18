@@ -26,4 +26,5 @@ spec:
       drivers:
         - name: qemu
           type: jumpstarter_driver_qemu.driver.Qemu
-        # power/flasher/console are aliased as root refs; tcp is auto-injected
+        # power/flasher/console aliased as root refs by default
+        # (parameters.exposeRootDrivers: false to disable); tcp is auto-injected

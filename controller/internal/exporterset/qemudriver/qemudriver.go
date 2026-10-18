@@ -20,6 +20,7 @@ package qemudriver
 
 import (
 	"fmt"
+	"strings"
 
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 )
@@ -27,6 +28,11 @@ import (
 const (
 	// QemuDriverType is the Python class path for the QEMU driver.
 	QemuDriverType = "jumpstarter_driver_qemu.driver.Qemu"
+
+	// ExposeRootDriversParam controls whether PresetRootChildren are
+	// auto-aliased as root-level refs. Set to false in merged parameters
+	// to keep a nested-only export map. Defaults to true when unset.
+	ExposeRootDriversParam = "exposeRootDrivers"
 )
 
 // OwnedChildTypes lists driver types that Qemu.__post_init__
@@ -58,11 +64,35 @@ func ValidateNoOwnedChildren(drivers []virtualtargetv1alpha1.DriverConfig) error
 	return nil
 }
 
+// ExposeRootDriversEnabled reports whether root driver aliases should
+// be added. Defaults to true when the parameter is unset or not a bool.
+func ExposeRootDriversEnabled(params map[string]any) bool {
+	if params == nil {
+		return true
+	}
+	v, ok := params[ExposeRootDriversParam]
+	if !ok {
+		return true
+	}
+	b, ok := v.(bool)
+	if !ok {
+		return true
+	}
+	return b
+}
+
 // AliasPresetRoots appends root-level ref aliases for PresetRootChildren
-// when a single QEMU driver is present and the root name is not already
-// taken. Nested paths (e.g. qemu.power) remain available. When zero or
-// multiple QEMU drivers are present, drivers are returned unchanged.
-func AliasPresetRoots(drivers []virtualtargetv1alpha1.DriverConfig) []virtualtargetv1alpha1.DriverConfig {
+// when enabled (via parameters.exposeRootDrivers, default true), a single
+// QEMU driver is present, its name has no dots (Proxy refs split on "."),
+// and the root name is not already taken. Nested paths remain available.
+func AliasPresetRoots(
+	drivers []virtualtargetv1alpha1.DriverConfig,
+	params map[string]any,
+) []virtualtargetv1alpha1.DriverConfig {
+	if !ExposeRootDriversEnabled(params) {
+		return drivers
+	}
+
 	qemuName := ""
 	qemuCount := 0
 	present := make(map[string]struct{}, len(drivers))
@@ -75,6 +105,11 @@ func AliasPresetRoots(drivers []virtualtargetv1alpha1.DriverConfig) []virtualtar
 		}
 	}
 	if qemuCount != 1 {
+		return drivers
+	}
+	// Proxy resolves refs by splitting on "."; a driver name that
+	// already contains dots would produce an unresolvable path.
+	if strings.Contains(qemuName, ".") {
 		return drivers
 	}
 

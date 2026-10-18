@@ -354,6 +354,7 @@ func (p *Provisioner) RenderPod(
 // - Injects default_partitions (firmware paths) based on arch unless user overrides
 // - Auto-injects hostfwd.ssh if not present
 // - Auto-aliases power/flasher/console as root refs for hardware-style access
+//   (parameters.exposeRootDrivers, default true; set false to disable)
 // - Auto-injects tcp wrapper driver entry
 func (p *Provisioner) EnrichExporterExport(
 	_ context.Context,
@@ -384,7 +385,7 @@ func (p *Provisioner) EnrichExporterExport(
 		result = append(result, d)
 	}
 
-	result = qemudriver.AliasPresetRoots(result)
+	result = qemudriver.AliasPresetRoots(result, mergedParameters)
 
 	// Auto-inject tcp wrapper driver if not present.
 	if !hasTCP {
