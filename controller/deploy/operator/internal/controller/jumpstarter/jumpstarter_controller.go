@@ -1512,14 +1512,21 @@ func ensurePort(address, defaultPort string) string {
 	return net.JoinHostPort(address, defaultPort)
 }
 
+// routerServiceNamePrefix is the prefix of every service name
+// buildServiceNameForReplicaEndpoint creates.
+func routerServiceNamePrefix(jumpstarter *operatorv1alpha1.Jumpstarter) string {
+	return jumpstarter.Name + "-router-"
+}
+
 // buildServiceNameForReplicaEndpoint creates a unique service name for a router replica and endpoint
 func (r *JumpstarterReconciler) buildServiceNameForReplicaEndpoint(jumpstarter *operatorv1alpha1.Jumpstarter, replicaIndex int32, endpointIdx int) string {
+	prefix := routerServiceNamePrefix(jumpstarter)
 	if endpointIdx == 0 {
 		// First endpoint uses base name for backwards compatibility
-		return fmt.Sprintf("%s-router-%d", jumpstarter.Name, replicaIndex)
+		return fmt.Sprintf("%s%d", prefix, replicaIndex)
 	}
 	// Additional endpoints get a suffix
-	return fmt.Sprintf("%s-router-%d-%d", jumpstarter.Name, replicaIndex, endpointIdx)
+	return fmt.Sprintf("%s%d-%d", prefix, replicaIndex, endpointIdx)
 }
 
 // buildEndpointForReplica creates an Endpoint struct for a specific router replica and endpoint
@@ -1748,12 +1755,11 @@ func (r *JumpstarterReconciler) cleanupExcessRouterDeployments(ctx context.Conte
 func (r *JumpstarterReconciler) cleanupExcessRouterServices(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
 
+	// Find router services by name, not by the router label: an endpoint's
+	// labels override the operator's, so an endpoint can relabel its services.
 	serviceList := &corev1.ServiceList{}
-	if err := r.List(ctx, serviceList,
-		client.InNamespace(jumpstarter.Namespace),
-		client.MatchingLabels{"router": jumpstarter.Name},
-	); err != nil {
-		return fmt.Errorf("failed to list router services: %w", err)
+	if err := r.List(ctx, serviceList, client.InNamespace(jumpstarter.Namespace)); err != nil {
+		return fmt.Errorf("failed to list services: %w", err)
 	}
 
 	// Every service the current spec produces: one per Service type each
@@ -1771,10 +1777,14 @@ func (r *JumpstarterReconciler) cleanupExcessRouterServices(ctx context.Context,
 	}
 
 	// Delete what the spec no longer produces, but only services this
-	// Jumpstarter controls: a matching label alone does not make it ours.
+	// Jumpstarter controls: a matching name alone does not make it ours.
+	prefix := routerServiceNamePrefix(jumpstarter)
 	for i := range serviceList.Items {
 		service := &serviceList.Items[i]
-		if _, ok := wanted[service.Name]; ok || !metav1.IsControlledBy(service, jumpstarter) {
+		if !strings.HasPrefix(service.Name, prefix) || !metav1.IsControlledBy(service, jumpstarter) {
+			continue
+		}
+		if _, ok := wanted[service.Name]; ok {
 			continue
 		}
 		if err := r.Delete(ctx, service); client.IgnoreNotFound(err) != nil {
