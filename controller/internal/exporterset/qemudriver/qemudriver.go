@@ -43,10 +43,20 @@ var OwnedChildTypes = map[string]struct{}{
 	"jumpstarter_driver_qemu.driver.QemuFlasher": {},
 }
 
-// PresetRootChildren are Qemu child names exposed as root-level ref
-// aliases so clients match hardware-style flat export maps
-// (client.power, client.flasher, client.console).
-var PresetRootChildren = []string{"power", "flasher", "console"}
+// RootAlias maps a hardware-style root name to a QEMU child name.
+type RootAlias struct {
+	Root  string // name exposed at root level (e.g. "storage")
+	Child string // QEMU child name (e.g. "flasher")
+}
+
+// PresetRootChildren maps hardware-style root names to Qemu child
+// names so clients match physical-exporter flat export maps
+// (client.power, client.storage, client.serial).
+var PresetRootChildren = []RootAlias{
+	{"power", "power"},
+	{"storage", "flasher"},
+	{"serial", "console"},
+}
 
 // ValidateNoOwnedChildren checks that no driver in the list is an
 // owned child type. Returns an error with guidance on how to fix it.
@@ -116,13 +126,13 @@ func AliasPresetRoots(
 	result := make([]virtualtargetv1alpha1.DriverConfig, len(drivers), len(drivers)+len(PresetRootChildren))
 	copy(result, drivers)
 
-	for _, child := range PresetRootChildren {
-		if _, exists := present[child]; exists {
+	for _, alias := range PresetRootChildren {
+		if _, exists := present[alias.Root]; exists {
 			continue
 		}
 		result = append(result, virtualtargetv1alpha1.DriverConfig{
-			Name: child,
-			Ref:  qemuName + "." + child,
+			Name: alias.Root,
+			Ref:  qemuName + "." + alias.Child,
 		})
 	}
 	return result

@@ -242,17 +242,17 @@ func TestEnrichExporterExport_aliasesPresetRoots(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, child := range qemudriver.PresetRootChildren {
-		got := findDriver(result, child)
+	for _, alias := range qemudriver.PresetRootChildren {
+		got := findDriver(result, alias.Root)
 		if got == nil {
-			t.Fatalf("missing root alias %q", child)
+			t.Fatalf("missing root alias %q", alias.Root)
 		}
-		want := "vm." + child
+		want := "vm." + alias.Child
 		if got.Ref != want {
-			t.Errorf("%s.ref = %q, want %q", child, got.Ref, want)
+			t.Errorf("%s.ref = %q, want %q", alias.Root, got.Ref, want)
 		}
 		if got.Type != "" {
-			t.Errorf("%s.type = %q, want empty", child, got.Type)
+			t.Errorf("%s.type = %q, want empty", alias.Root, got.Type)
 		}
 	}
 }
@@ -290,13 +290,16 @@ func TestEnrichExporterExport_keepsExistingPresetRoot(t *testing.T) {
 		t.Errorf("power driver count = %d, want 1", count)
 	}
 
-	for _, child := range []string{"flasher", "console"} {
-		got := findDriver(result, child)
-		if got == nil {
-			t.Fatalf("missing auto-aliased %q", child)
+	for _, alias := range qemudriver.PresetRootChildren {
+		if alias.Root == "power" {
+			continue
 		}
-		if got.Ref != "qemu."+child {
-			t.Errorf("%s.ref = %q, want qemu.%s", child, got.Ref, child)
+		got := findDriver(result, alias.Root)
+		if got == nil {
+			t.Fatalf("missing auto-aliased %q", alias.Root)
+		}
+		if got.Ref != "qemu."+alias.Child {
+			t.Errorf("%s.ref = %q, want qemu.%s", alias.Root, got.Ref, alias.Child)
 		}
 	}
 }
@@ -320,9 +323,9 @@ func TestEnrichExporterExport_skipsPresetRootsWhenMultipleQemu(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, child := range qemudriver.PresetRootChildren {
-		if got := findDriver(result, child); got != nil {
-			t.Fatalf("unexpected root alias %q when multiple QEMU drivers present: %+v", child, *got)
+	for _, alias := range qemudriver.PresetRootChildren {
+		if got := findDriver(result, alias.Root); got != nil {
+			t.Fatalf("unexpected root alias %q when multiple QEMU drivers present: %+v", alias.Root, *got)
 		}
 	}
 }
@@ -343,9 +346,9 @@ func TestEnrichExporterExport_skipsPresetRootsWhenDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, child := range qemudriver.PresetRootChildren {
-		if got := findDriver(result, child); got != nil {
-			t.Fatalf("unexpected root alias %q when exposeRootDrivers=false: %+v", child, *got)
+	for _, alias := range qemudriver.PresetRootChildren {
+		if got := findDriver(result, alias.Root); got != nil {
+			t.Fatalf("unexpected root alias %q when exposeRootDrivers=false: %+v", alias.Root, *got)
 		}
 	}
 }
@@ -364,9 +367,9 @@ func TestEnrichExporterExport_skipsPresetRootsWhenQemuNameHasDot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, child := range qemudriver.PresetRootChildren {
-		if got := findDriver(result, child); got != nil {
-			t.Fatalf("unexpected root alias %q for dotted QEMU name: %+v", child, *got)
+	for _, alias := range qemudriver.PresetRootChildren {
+		if got := findDriver(result, alias.Root); got != nil {
+			t.Fatalf("unexpected root alias %q for dotted QEMU name: %+v", alias.Root, *got)
 		}
 	}
 }

@@ -33,7 +33,7 @@ const (
 // enrichExporterExport adjusts driver configuration for off-cluster
 // deployment. The logic mirrors the in-cluster QEMU provisioner but
 // paths match the quadlet container layout. It also aliases
-// power/flasher/console as root refs for hardware-style client access
+// power/storage/serial as root refs for hardware-style client access
 // when parameters.exposeRootDrivers is true (the default).
 func enrichExporterExport(
 	drivers []virtualtargetv1alpha1.DriverConfig,
