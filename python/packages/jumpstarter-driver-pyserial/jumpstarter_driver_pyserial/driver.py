@@ -109,12 +109,12 @@ class PySerial(FanOutStreamMixin, Driver):
         metadata={"description": "Name of the power driver sibling for the Ctrl-] hotkey"},
     )
     power_control_method: list[str] | str | None = field(
-        default_factory=lambda: ["cycle"],
+        default_factory=lambda: ["off", "sleep:2", "on"],
         metadata={
             "description": "Power cycle method sequence for the Ctrl-] hotkey, "
             "executed on the power_control_ref driver. "
             "Supports method names (cycle, reset, on, off) and sleep:N. "
-            "Set to [] or null to disable hotkey. Default: ['cycle']"
+            "Set to [] or null to disable hotkey. Default: ['off', 'sleep:2', 'on']"
         },
     )
     always_on: bool = field(default=False)

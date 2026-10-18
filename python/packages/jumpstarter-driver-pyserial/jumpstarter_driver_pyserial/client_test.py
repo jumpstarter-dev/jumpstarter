@@ -46,14 +46,15 @@ def test_power_cycle_hook_resolves():
         assert callable(serial._power_cycle_hook())
 
 
-def test_power_cycle_hook_default_cycle():
+def test_power_cycle_hook_default_sequence():
+    """The default sequence is off → sleep → on (ridesx/cuttlefish convention)."""
     fake = FakePower()
     dut = FakeDut(children={"serial": PySerial(url="loop://"), "power": fake})
     with serve(dut) as client:
         hook = client.children["serial"]._power_cycle_hook()
         assert hook is not None
         client.portal.call(hook)
-        assert fake.calls == ["cycle"]
+        assert fake.calls == ["off", "on"]
 
 
 def test_power_cycle_hook_executes_steps():
@@ -74,7 +75,9 @@ def test_power_cycle_hook_executes_steps():
 def test_dut_power_cycle_remote_call():
     """dut_power_cycle is a regular driver call, usable outside the hotkey."""
     fake = FakePower()
-    dut = FakeDut(children={"serial": PySerial(url="loop://"), "power": fake})
+    dut = FakeDut(
+        children={"serial": PySerial(url="loop://", power_control_method=["cycle"]), "power": fake}
+    )
     with serve(dut) as client:
         client.children["serial"].call("dut_power_cycle")
         assert fake.calls == ["cycle"]
@@ -84,7 +87,7 @@ def test_power_cycle_hook_ref_override():
     fake = FakePower()
     dut = FakeDut(
         children={
-            "serial": PySerial(url="loop://", power_control_ref="psu"),
+            "serial": PySerial(url="loop://", power_control_ref="psu", power_control_method=["cycle"]),
             "psu": fake,
         }
     )
@@ -109,7 +112,7 @@ def test_power_cycle_hook_no_power():
 def test_power_cycle_hook_child_fallback():
     """Standalone serial (no parent) resolves the power driver among its children."""
     fake = FakePower()
-    with serve(PySerial(url="loop://", children={"power": fake})) as client:
+    with serve(PySerial(url="loop://", children={"power": fake}, power_control_method=["cycle"])) as client:
         hook = client._power_cycle_hook()
         assert hook is not None
         client.portal.call(hook)
@@ -122,7 +125,7 @@ def test_power_cycle_hook_sibling_preferred_over_child():
     child = FakePower()
     dut = FakeDut(
         children={
-            "serial": PySerial(url="loop://", children={"power": child}),
+            "serial": PySerial(url="loop://", children={"power": child}, power_control_method=["cycle"]),
             "power": sibling,
         }
     )
