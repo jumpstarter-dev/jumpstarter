@@ -349,13 +349,13 @@ func (p *Provisioner) RenderPod(
 }
 
 // EnrichExporterExport injects QEMU-specific driver configuration:
-// - Forces launcher_socket on the QEMU driver entry
-// - Defaults arch/smp/mem/disk_size from mergedParameters if not set
-// - Injects default_partitions (firmware paths) based on arch unless user overrides
-// - Auto-injects hostfwd.ssh if not present
-// - Auto-aliases power/flasher/console as root refs for hardware-style access
-//   (parameters.exposeRootDrivers, default true; set false to disable)
-// - Auto-injects tcp wrapper driver entry
+//   - Forces launcher_socket on the QEMU driver entry
+//   - Defaults arch/smp/mem/disk_size from mergedParameters if not set
+//   - Injects default_partitions (firmware paths) based on arch unless user overrides
+//   - Auto-injects hostfwd.ssh if not present
+//   - Auto-aliases power/flasher/console as root refs for hardware-style access
+//     (parameters.exposeRootDrivers, default true; set false to disable)
+//   - Auto-injects tcp wrapper driver entry
 func (p *Provisioner) EnrichExporterExport(
 	_ context.Context,
 	_ *virtualtargetv1alpha1.VirtualTargetClass,
