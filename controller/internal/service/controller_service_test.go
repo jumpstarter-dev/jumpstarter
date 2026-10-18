@@ -38,6 +38,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	grpcpeer "google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -2374,6 +2375,353 @@ func TestStatusResponseIncludesLeaseContext(t *testing.T) {
 
 		if response.Context != nil {
 			t.Fatalf("expected nil context when not leased, got %v", response.Context)
+		}
+	})
+}
+
+func newReleaseLeaseTestScheme(t *testing.T) *k8sruntime.Scheme {
+	t.Helper()
+	scheme := k8sruntime.NewScheme()
+	if err := jumpstarterdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add scheme: %v", err)
+	}
+	return scheme
+}
+
+// TestIssue1205_Reproduction follows the exact reproduction steps from issue #1205:
+// 1. Acquire a lease on a test exporter
+// 2. Invoke ReleaseLease using the exporter's authenticated connection
+// 3. Inspect controller logs
+// 4. Verify attribution is present (was missing before the fix)
+func TestIssue1205_Reproduction(t *testing.T) {
+	scheme := newReleaseLeaseTestScheme(t)
+
+	// Step 1: "Acquire a lease on a test exporter"
+	lease := &jumpstarterdevv1alpha1.Lease{
+		ObjectMeta: metav1.ObjectMeta{Name: "incident-lease-42", Namespace: "production"},
+		Spec: jumpstarterdevv1alpha1.LeaseSpec{
+			ClientRef: corev1.LocalObjectReference{Name: "ci-pipeline"},
+			Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"board": "rpi4"}},
+			Release:   false,
+		},
+		Status: jumpstarterdevv1alpha1.LeaseStatus{
+			ExporterRef: &corev1.LocalObjectReference{Name: "lab-exporter-7"},
+			Ended:       false,
+		},
+	}
+	exporter := &jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{Name: "lab-exporter-7", Namespace: "production"},
+	}
+	svc := &ControllerService{
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(lease).Build(),
+	}
+	buf, ctx := withCapturedLog(t)
+
+	// Step 2: "Invoke ReleaseLease using the exporter's authenticated connection"
+	resp, err := svc.releaseLeaseAsExporter(ctx, exporter, &pb.ReleaseLeaseRequest{Name: "incident-lease-42"})
+	if err != nil {
+		t.Fatalf("ReleaseLease failed: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("expected non-nil response")
+	}
+
+	// Step 3: "Inspect controller logs"
+	logged := buf.String()
+	t.Logf("Controller log output:\n%s", logged)
+
+	// Step 4: Verify attribution — before the fix, `logged` would be empty
+	if logged == "" {
+		t.Fatal("BUG NOT FIXED: no log output at all (the original issue)")
+	}
+	for _, want := range []string{
+		`"lease": "incident-lease-42"`,
+		`"namespace": "production"`,
+		`"exporter": "lab-exporter-7"`,
+		`"path": "ReleaseLease"`,
+		`"outcome": "newly_marked"`,
+	} {
+		if !strings.Contains(logged, want) {
+			t.Errorf("attribution field missing: expected %q in log", want)
+		}
+	}
+}
+
+func TestReleaseLeaseAsExporter_AttributionLogging(t *testing.T) {
+	scheme := newReleaseLeaseTestScheme(t)
+	exporter := &jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-exporter", Namespace: "default"},
+	}
+
+	t.Run("newly marked logs ReleaseLease path and exporter", func(t *testing.T) {
+		lease := &jumpstarterdevv1alpha1.Lease{
+			ObjectMeta: metav1.ObjectMeta{Name: "lease-active", Namespace: "default"},
+			Spec: jumpstarterdevv1alpha1.LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
+				Release:   false,
+			},
+			Status: jumpstarterdevv1alpha1.LeaseStatus{
+				ExporterRef: &corev1.LocalObjectReference{Name: "test-exporter"},
+				Ended:       false,
+			},
+		}
+		svc := &ControllerService{
+			Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(lease).Build(),
+		}
+		buf, ctx := withCapturedLog(t)
+
+		resp, err := svc.releaseLeaseAsExporter(ctx, exporter, &pb.ReleaseLeaseRequest{Name: "lease-active"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp == nil {
+			t.Fatal("expected response")
+		}
+
+		logged := buf.String()
+		for _, want := range []string{
+			"Lease marked for release by exporter",
+			`"lease": "lease-active"`,
+			`"namespace": "default"`,
+			`"exporter": "test-exporter"`,
+			`"path": "ReleaseLease"`,
+			`"outcome": "newly_marked"`,
+		} {
+			if !strings.Contains(logged, want) {
+				t.Errorf("expected %q in log, got:\n%s", want, logged)
+			}
+		}
+		if strings.Contains(logged, `"outcome": "already_released"`) ||
+			strings.Contains(logged, `"outcome": "already_ended"`) {
+			t.Errorf("successful transition must not look like an idempotent retry, got:\n%s", logged)
+		}
+	})
+
+	t.Run("idempotent already released is distinguishable", func(t *testing.T) {
+		lease := &jumpstarterdevv1alpha1.Lease{
+			ObjectMeta: metav1.ObjectMeta{Name: "lease-releasing", Namespace: "default"},
+			Spec: jumpstarterdevv1alpha1.LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
+				Release:   true,
+			},
+			Status: jumpstarterdevv1alpha1.LeaseStatus{
+				ExporterRef: &corev1.LocalObjectReference{Name: "test-exporter"},
+				Ended:       false,
+			},
+		}
+		svc := &ControllerService{
+			Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(lease).Build(),
+		}
+		buf, ctx := withCapturedLog(t)
+
+		_, err := svc.releaseLeaseAsExporter(ctx, exporter, &pb.ReleaseLeaseRequest{Name: "lease-releasing"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		logged := buf.String()
+		if !strings.Contains(logged, `"outcome": "already_released"`) {
+			t.Errorf("expected already_released outcome, got:\n%s", logged)
+		}
+		if strings.Contains(logged, `"outcome": "newly_marked"`) {
+			t.Errorf("idempotent retry must not emit newly_marked, got:\n%s", logged)
+		}
+	})
+
+	t.Run("idempotent already ended is distinguishable", func(t *testing.T) {
+		lease := &jumpstarterdevv1alpha1.Lease{
+			ObjectMeta: metav1.ObjectMeta{Name: "lease-ended", Namespace: "default"},
+			Spec: jumpstarterdevv1alpha1.LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
+				Release:   false,
+			},
+			Status: jumpstarterdevv1alpha1.LeaseStatus{
+				ExporterRef: &corev1.LocalObjectReference{Name: "test-exporter"},
+				Ended:       true,
+			},
+		}
+		svc := &ControllerService{
+			Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(lease).Build(),
+		}
+		buf, ctx := withCapturedLog(t)
+
+		_, err := svc.releaseLeaseAsExporter(ctx, exporter, &pb.ReleaseLeaseRequest{Name: "lease-ended"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		logged := buf.String()
+		if !strings.Contains(logged, `"outcome": "already_ended"`) {
+			t.Errorf("expected already_ended outcome, got:\n%s", logged)
+		}
+		if strings.Contains(logged, `"outcome": "newly_marked"`) {
+			t.Errorf("idempotent retry must not emit newly_marked, got:\n%s", logged)
+		}
+	})
+
+	t.Run("rejected request does not emit successful transition", func(t *testing.T) {
+		lease := &jumpstarterdevv1alpha1.Lease{
+			ObjectMeta: metav1.ObjectMeta{Name: "lease-other", Namespace: "default"},
+			Spec: jumpstarterdevv1alpha1.LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
+				Release:   false,
+			},
+			Status: jumpstarterdevv1alpha1.LeaseStatus{
+				ExporterRef: &corev1.LocalObjectReference{Name: "other-exporter"},
+				Ended:       false,
+			},
+		}
+		svc := &ControllerService{
+			Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(lease).Build(),
+		}
+		buf, ctx := withCapturedLog(t)
+
+		_, err := svc.releaseLeaseAsExporter(ctx, exporter, &pb.ReleaseLeaseRequest{Name: "lease-other"})
+		if err == nil {
+			t.Fatal("expected permission error")
+		}
+
+		logged := buf.String()
+		if !strings.Contains(logged, `"outcome": "rejected"`) {
+			t.Errorf("expected rejected outcome, got:\n%s", logged)
+		}
+		if strings.Contains(logged, `"outcome": "newly_marked"`) {
+			t.Errorf("rejected request must not emit newly_marked, got:\n%s", logged)
+		}
+	})
+}
+
+func TestReleaseLeaseAsClient_AttributionLogging(t *testing.T) {
+	scheme := newReleaseLeaseTestScheme(t)
+	jclient := &jumpstarterdevv1alpha1.Client{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-client", Namespace: "default"},
+	}
+
+	t.Run("newly marked logs ReleaseLease path and client", func(t *testing.T) {
+		lease := &jumpstarterdevv1alpha1.Lease{
+			ObjectMeta: metav1.ObjectMeta{Name: "lease-owned", Namespace: "default"},
+			Spec: jumpstarterdevv1alpha1.LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
+				Release:   false,
+			},
+		}
+		svc := &ControllerService{
+			Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(lease).Build(),
+		}
+		buf, ctx := withCapturedLog(t)
+
+		resp, err := svc.releaseLeaseAsClient(ctx, jclient, &pb.ReleaseLeaseRequest{Name: "lease-owned"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp == nil {
+			t.Fatal("expected response")
+		}
+
+		logged := buf.String()
+		for _, want := range []string{
+			"Lease marked for release by client",
+			`"lease": "lease-owned"`,
+			`"namespace": "default"`,
+			`"client": "test-client"`,
+			`"path": "ReleaseLease"`,
+			`"outcome": "newly_marked"`,
+		} {
+			if !strings.Contains(logged, want) {
+				t.Errorf("expected %q in log, got:\n%s", want, logged)
+			}
+		}
+	})
+
+	t.Run("idempotent already released is distinguishable", func(t *testing.T) {
+		lease := &jumpstarterdevv1alpha1.Lease{
+			ObjectMeta: metav1.ObjectMeta{Name: "lease-client-releasing", Namespace: "default"},
+			Spec: jumpstarterdevv1alpha1.LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
+				Release:   true,
+			},
+		}
+		svc := &ControllerService{
+			Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(lease).Build(),
+		}
+		buf, ctx := withCapturedLog(t)
+
+		_, err := svc.releaseLeaseAsClient(ctx, jclient, &pb.ReleaseLeaseRequest{Name: "lease-client-releasing"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		logged := buf.String()
+		if !strings.Contains(logged, `"outcome": "already_released"`) {
+			t.Errorf("expected already_released outcome, got:\n%s", logged)
+		}
+		if strings.Contains(logged, `"outcome": "newly_marked"`) {
+			t.Errorf("idempotent retry must not emit newly_marked, got:\n%s", logged)
+		}
+	})
+
+	t.Run("idempotent already ended is distinguishable", func(t *testing.T) {
+		lease := &jumpstarterdevv1alpha1.Lease{
+			ObjectMeta: metav1.ObjectMeta{Name: "lease-client-ended", Namespace: "default"},
+			Spec: jumpstarterdevv1alpha1.LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
+				Release:   false,
+			},
+			Status: jumpstarterdevv1alpha1.LeaseStatus{
+				Ended: true,
+			},
+		}
+		svc := &ControllerService{
+			Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(lease).Build(),
+		}
+		buf, ctx := withCapturedLog(t)
+
+		_, err := svc.releaseLeaseAsClient(ctx, jclient, &pb.ReleaseLeaseRequest{Name: "lease-client-ended"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		logged := buf.String()
+		if !strings.Contains(logged, `"outcome": "already_ended"`) {
+			t.Errorf("expected already_ended outcome, got:\n%s", logged)
+		}
+		if strings.Contains(logged, `"outcome": "newly_marked"`) {
+			t.Errorf("idempotent retry must not emit newly_marked, got:\n%s", logged)
+		}
+	})
+
+	t.Run("rejected owner check does not emit successful transition", func(t *testing.T) {
+		lease := &jumpstarterdevv1alpha1.Lease{
+			ObjectMeta: metav1.ObjectMeta{Name: "lease-shared", Namespace: "default"},
+			Spec: jumpstarterdevv1alpha1.LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "other-client"},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
+				Release:   false,
+			},
+		}
+		svc := &ControllerService{
+			Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(lease).Build(),
+		}
+		buf, ctx := withCapturedLog(t)
+
+		_, err := svc.releaseLeaseAsClient(ctx, jclient, &pb.ReleaseLeaseRequest{Name: "lease-shared"})
+		if err == nil {
+			t.Fatal("expected permission denied")
+		}
+
+		logged := buf.String()
+		if !strings.Contains(logged, `"outcome": "rejected"`) {
+			t.Errorf("expected rejected outcome, got:\n%s", logged)
+		}
+		if strings.Contains(logged, `"outcome": "newly_marked"`) {
+			t.Errorf("rejected request must not emit newly_marked, got:\n%s", logged)
 		}
 	})
 }

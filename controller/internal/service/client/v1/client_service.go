@@ -621,11 +621,20 @@ func (s *ClientService) DeleteLease(ctx context.Context, req *cpb.DeleteLeaseReq
 		return nil, err
 	}
 
+	logger := log.FromContext(ctx).WithValues(
+		"lease", jlease.Name,
+		"namespace", jlease.Namespace,
+		"client", jclient.Name,
+		"path", "DeleteLease",
+	)
+
 	if !jlease.IsOwnedBy(jclient.Name) {
+		logger.Info("Lease release request rejected", "outcome", "rejected")
 		return nil, status.Errorf(codes.PermissionDenied, "DeleteLease permission denied: only lease owner can release")
 	}
 
 	if jlease.Spec.Release {
+		logger.Info("Lease release request is idempotent", "outcome", "already_released")
 		return nil, status.Errorf(codes.FailedPrecondition, "lease %q has already been released", req.Name)
 	}
 
@@ -634,8 +643,11 @@ func (s *ClientService) DeleteLease(ctx context.Context, req *cpb.DeleteLeaseReq
 	jlease.Spec.Release = true
 
 	if err := s.Patch(ctx, &jlease, original); err != nil {
+		logger.Error(err, "failed to mark lease for release", "outcome", "failed")
 		return nil, err
 	}
+
+	logger.Info("Lease marked for release by client", "outcome", "newly_marked")
 
 	return &emptypb.Empty{}, nil
 }
