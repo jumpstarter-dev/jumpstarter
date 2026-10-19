@@ -104,7 +104,7 @@ const (
 	// its UDP relay binds the Pod IP so the streamer's Pod-IP ICE candidates
 	// can exchange packets with it. The relay range stays clear of the
 	// streamer's own 15550-15599 UDP candidates.
-	DefaultTurnImage = "docker.io/coturn/coturn:4.7.0"
+	DefaultTurnImage = "quay.io/coturn/coturn:4.7.0"
 	turnPortDefault  = 3478
 	webUIPortDefault = 2090
 	turnRealm        = "cuttlefish.jumpstarter.dev"
