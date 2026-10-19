@@ -2,7 +2,6 @@ import logging
 import os
 import stat
 import sys
-import time
 from contextlib import contextmanager
 
 import click
@@ -17,10 +16,6 @@ from jumpstarter.client.core import DriverMethodNotImplemented
 from jumpstarter.client.decorators import driver_click_group
 
 logger = logging.getLogger(__name__)
-
-# Console reconnection settings
-SUCCESSFUL_SESSION_THRESHOLD = 5  # seconds - reset counter if session lasted this long
-MAX_RAPID_FAILURES = 10  # maximum consecutive rapid reconnection attempts
 
 
 def _stdin_supplies_data() -> bool:
@@ -199,21 +194,14 @@ class PySerialClient(DriverClient):
                 if on_power_cycle is not None:
                     click.echo("Power cycle: CTRL+] x 3 times\n")
 
-            retries = 0
-            while retries < MAX_RAPID_FAILURES:
-                console = Console(serial_client=self, observe=observe, on_power_cycle=on_power_cycle)
-                session_start = time.monotonic()
-                try:
-                    console.run()
-                    break
-                except ConsoleStreamDrop:
-                    session_duration = time.monotonic() - session_start
-                    session_was_healthy = session_duration >= SUCCESSFUL_SESSION_THRESHOLD
-                    retries = 0 if session_was_healthy else retries + 1
-                    click.echo("\r\nSerial connection lost, reconnecting...\n", err=True)
-                    time.sleep(1)
-            else:
-                click.echo("\nSerial connection lost (reconnect attempts exhausted).\n", err=True)
+            # No reconnect: the exporter's fanout keeps the stream attached
+            # while the device itself re-enumerates, so a drop here means the
+            # session was closed (kicked, token revoked, lease ended).
+            console = Console(serial_client=self, observe=observe, on_power_cycle=on_power_cycle)
+            try:
+                console.run()
+            except ConsoleStreamDrop:
+                raise click.ClickException("serial connection closed") from None
 
         @base.command()
         @click.option(

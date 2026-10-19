@@ -27,7 +27,7 @@ class ConsoleExit(Exception):
 
 
 class ConsoleStreamDrop(Exception):
-    """Serial stream dropped; caller may reconnect."""
+    """Serial stream closed by the exporter (kicked, token revoked, lease ended)."""
 
 
 async def _exit_console() -> NoReturn:
@@ -128,7 +128,7 @@ class Console:
             if stream is not None:
                 try:
                     await stream.send(data)
-                except STREAM_ERRORS:  # transient while the reader reconnects after a power cycle
+                except STREAM_ERRORS:  # stream breaking; the reader task surfaces the drop
                     if not send_warned:
                         logger.warning("send failed, input may not reach the device")
                     send_warned = True

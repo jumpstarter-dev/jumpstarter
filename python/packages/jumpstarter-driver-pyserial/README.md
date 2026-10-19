@@ -38,8 +38,7 @@ export:
 
 Example configuration with manual power control: a power driver declared as a
 sibling of the serial device enables the Ctrl-] x3 power-cycle hotkey in
-`start-console` (the console reconnects automatically after the board
-re-enumerates):
+`start-console` (the console stays attached while the board re-enumerates):
 ```yaml
 export:
   serial:
