@@ -3291,6 +3291,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "jumpstarter-driver-composite" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "types-pexpect" },
@@ -3308,6 +3309,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "types-pexpect", specifier = ">=4.9.0.20241208" },

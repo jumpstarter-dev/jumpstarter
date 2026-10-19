@@ -1,6 +1,8 @@
 from dataclasses import field
 from unittest.mock import AsyncMock, patch
 
+import pytest
+from jumpstarter_driver_composite.driver import Composite, Proxy
 from pydantic.dataclasses import dataclass
 
 from .driver import PySerial
@@ -135,6 +137,42 @@ def test_power_cycle_hook_sibling_preferred_over_child():
         client.portal.call(hook)
         assert sibling.calls == ["cycle"]
         assert child.calls == []
+
+
+@pytest.mark.parametrize("storage_first", [True, False], ids=["storage_first", "storage_last"])
+def test_power_cycle_hook_proxy_reenumeration_order_independent(storage_first):
+    """A Proxy re-enumeration must not change sibling resolution, whatever the declaration order."""
+    fake = FakePower()
+    members: dict[str, Driver] = {
+        "serial": PySerial(url="loop://", power_control_method=["cycle"]),
+        "power": fake,
+    }
+    storage: dict[str, Driver] = {"storage": FakeDut(children={"serial": Proxy(ref="serial")})}
+    root = Composite(children=storage | members if storage_first else members | storage)
+    with serve(root) as client:
+        hook = client.children["serial"]._power_cycle_hook()
+        assert hook is not None
+        client.portal.call(hook)
+        assert fake.calls == ["cycle"]
+
+
+def test_power_cycle_hook_siblings_resolved_where_declared_not_proxied():
+    """Siblings come from where the serial is declared, not from the Proxy's parent."""
+    declared = FakePower()
+    proxied = FakePower()
+    root = Composite(
+        children={
+            "serial": PySerial(url="loop://", power_control_method=["cycle"]),
+            "power": declared,
+            "dut": FakeDut(children={"serial": Proxy(ref="serial"), "power": proxied}),
+        }
+    )
+    with serve(root) as client:
+        hook = client.children["serial"]._power_cycle_hook()
+        assert hook is not None
+        client.portal.call(hook)
+        assert declared.calls == ["cycle"]
+        assert proxied.calls == []
 
 
 def test_power_cycle_hook_disabled_via_empty_list():

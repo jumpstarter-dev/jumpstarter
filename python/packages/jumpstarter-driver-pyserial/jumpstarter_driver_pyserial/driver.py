@@ -139,8 +139,14 @@ class PySerial(FanOutStreamMixin, Driver):
         return "jumpstarter_driver_pyserial.client.PySerialClient"
 
     def enumerate(self, *, root=None, parent=None, name=None):
-        """Capture the tree parent so the power hotkey can resolve sibling drivers."""
-        self._parent = parent
+        """Capture the owning parent so the power hotkey can resolve sibling drivers.
+
+        A Proxy referencing this device re-enumerates it under the proxy's
+        parent; those passes are skipped so the result doesn't depend on
+        declaration order.
+        """
+        if parent is not None and parent.children.get(name) is self:
+            self._parent = parent
         return super().enumerate(root=root, parent=parent, name=name)
 
     def _power_plan(self):
