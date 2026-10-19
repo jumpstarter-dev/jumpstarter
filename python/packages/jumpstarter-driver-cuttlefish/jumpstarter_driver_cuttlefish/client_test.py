@@ -241,12 +241,14 @@ def test_cli_webrtc_prints_url():
         assert "http://cf:1080" in r.output
 
 
-def test_cli_webrtc_forward_requires_provisioned_display(requests_mock):
-    requests_mock.get(f"{BASE}/cvds/cvd/1", json={"cvds": [{"webrtc_device_id": "cvd-1-1"}]})
+@pytest.mark.parametrize("cvds", [[], [{"webrtc_device_id": "cvd-1-1"}]])
+def test_cli_webrtc_forward_requires_provisioned_display(requests_mock, cvds):
+    requests_mock.get(f"{BASE}/cvds/cvd/1", json={"cvds": cvds})
     with serve(Cuttlefish()) as client:
         r = CliRunner().invoke(client.cli(), ["webrtc", "--forward"])
         assert r.exit_code != 0
         assert "webrtc_turn" in r.output
+        assert not requests_mock.called
 
 
 def test_cli_webrtc_forward_refuses_shared_turn_port(requests_mock):

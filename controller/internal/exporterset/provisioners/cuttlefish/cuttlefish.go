@@ -372,6 +372,8 @@ func turnContainer(webrtc webrtcConfig, img images) corev1.Container {
 			"--lt-cred-mech",
 			"--no-tls",
 			"--no-dtls",
+			"--no-udp",
+			"--no-tcp-relay",
 			"--no-cli",
 			"--cli-password=" + turnCredential,
 			// Limit TURN peers to the streamer's Pod-IP and loopback candidates.
