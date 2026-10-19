@@ -202,12 +202,12 @@ class PySerialClient(DriverClient):
             retries = 0
             while retries < MAX_RAPID_FAILURES:
                 console = Console(serial_client=self, observe=observe, on_power_cycle=on_power_cycle)
-                session_start = time.time()
+                session_start = time.monotonic()
                 try:
                     console.run()
                     break
                 except ConsoleStreamDrop:
-                    session_duration = time.time() - session_start
+                    session_duration = time.monotonic() - session_start
                     session_was_healthy = session_duration >= SUCCESSFUL_SESSION_THRESHOLD
                     retries = 0 if session_was_healthy else retries + 1
                     click.echo("\r\nSerial connection lost, reconnecting...\n", err=True)

@@ -15,7 +15,9 @@ from anyio.streams.stapled import StapledObjectStream
 from serial import serial_for_url
 from serial_asyncio import open_serial_connection
 
+from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.driver import Driver, export
+from jumpstarter.driver.decorators import MARKER_DRIVERCALL, MARKER_MAGIC
 from jumpstarter.streams.fanout import FanOutStreamMixin
 
 try:
@@ -106,14 +108,14 @@ class PySerial(FanOutStreamMixin, Driver):
     disable_hupcl: bool = field(default=False)
     power_control_ref: str = field(
         default="power",
-        metadata={"description": "Name of the power driver sibling for the Ctrl-] hotkey"},
+        metadata={"description": "Name of the power driver sibling (or child) for the Ctrl-] hotkey"},
     )
     power_control_method: list[str] | str | None = field(
         default_factory=lambda: ["off", "sleep:2", "on"],
         metadata={
             "description": "Power cycle method sequence for the Ctrl-] hotkey, "
             "executed on the power_control_ref driver. "
-            "Supports method names (cycle, reset, on, off) and sleep:N. "
+            "Supports methods exported by that driver (e.g. on, off, cycle, hard_reset) and sleep:N. "
             "Set to [] or null to disable hotkey. Default: ['off', 'sleep:2', 'on']"
         },
     )
@@ -133,6 +135,12 @@ class PySerial(FanOutStreamMixin, Driver):
         # Normalize power_control_method: None stays None, string becomes list
         if isinstance(self.power_control_method, str):
             object.__setattr__(self, "power_control_method", [self.power_control_method])
+        methods = self.power_control_method
+        if methods is not None and not (isinstance(methods, list) and all(isinstance(m, str) for m in methods)):
+            raise ConfigurationError(
+                f"power_control_method must be a list of strings, got {methods!r} "
+                "(quote on/off in YAML, which otherwise parses them as booleans)"
+            )
 
     @classmethod
     def client(cls) -> str:
@@ -167,7 +175,7 @@ class PySerial(FanOutStreamMixin, Driver):
             # Standalone serial device (no parent): fall back to own children
             power = self.children.get(ref)
         if power is None:
-            self.logger.warning(
+            self.logger.info(
                 "power_control_ref '%s' matches no sibling or child of the serial device — power cycle hotkey disabled",
                 ref,
             )
@@ -181,11 +189,13 @@ class PySerial(FanOutStreamMixin, Driver):
                 except ValueError:
                     self.logger.warning("Invalid sleep step '%s' — power cycle hotkey disabled", method)
                     return None
-            elif callable(getattr(power, method, None)):
+            # Same check as DriverCall dispatch: only @export-ed methods, never
+            # lifecycle hooks such as Driver.reset() or close().
+            elif getattr(getattr(power, method, None), MARKER_DRIVERCALL, None) == MARKER_MAGIC:
                 steps.append(("call", method))
             else:
                 self.logger.warning(
-                    "Power driver '%s' has no callable method '%s' — power cycle hotkey disabled", ref, method
+                    "Power driver '%s' has no exported method '%s' — power cycle hotkey disabled", ref, method
                 )
                 return None
         return power, steps

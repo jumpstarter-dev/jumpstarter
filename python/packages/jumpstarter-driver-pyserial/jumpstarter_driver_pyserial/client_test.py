@@ -7,6 +7,7 @@ from pydantic.dataclasses import dataclass
 
 from .driver import PySerial
 from jumpstarter.client.core import DriverMethodNotImplemented
+from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.common.utils import serve
 from jumpstarter.driver import Driver, export
 
@@ -196,6 +197,21 @@ def test_power_cycle_hook_invalid_method():
     )
     with serve(dut) as client:
         assert client.children["serial"]._power_cycle_hook() is None
+
+
+def test_power_cycle_hook_rejects_unexported_method():
+    """Lifecycle hooks such as Driver.reset() are callable but not exported."""
+    dut = FakeDut(
+        children={"serial": PySerial(url="loop://", power_control_method=["reset"]), "power": FakePower()}
+    )
+    with serve(dut) as client:
+        assert client.children["serial"]._power_cycle_hook() is None
+
+
+def test_power_control_method_rejects_non_strings():
+    """Unquoted on/off in YAML parse as booleans; fail at config load, not console start."""
+    with pytest.raises(ConfigurationError, match="quote on/off"):
+        PySerial(url="loop://", power_control_method=[False, "sleep:2", True])  # ty: ignore[invalid-argument-type]
 
 
 def test_power_cycle_hook_invalid_sleep():

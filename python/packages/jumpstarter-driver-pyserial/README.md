@@ -65,8 +65,8 @@ export:
 | check_present | Check if the serial port exists during exporter initialization, disable if you are connecting to a dynamically created port (i.e. USB from your DUT) | bool  | no       | True    |
 | cps            | Characters per second throttling limit. When set, data transmission will be throttled to simulate slow typing. Useful for devices that can't handle fast input | float | no       | None    |
 | disable_hupcl  | Disable HUPCL on POSIX systems to avoid toggling DTR/RTS on close (can prevent MCU reset on serial disconnect)                                       | bool  | no       | False   |
-| power_control_ref | Name of the power driver sibling that the Ctrl-] x3 console hotkey controls. For a standalone serial device (no parent), a child of the same name is used instead | str | no | power |
-| power_control_method | Power cycle method sequence for the Ctrl-] x3 hotkey, executed on the power_control_ref driver. Supports method names (`cycle`, `reset`, `on`, `off`) and `sleep:N` delays. Set to `[]` or `null` to disable | list[str] | no | `["off", "sleep:2", "on"]` |
+| power_control_ref | Name of the power driver that the Ctrl-] x3 console hotkey controls. Looked up among the serial device's siblings first, then among its own children (e.g. a `ref:` child) | str | no | power |
+| power_control_method | Power cycle method sequence for the Ctrl-] x3 hotkey, executed on the power_control_ref driver. Supports methods exported by that driver (e.g. `on`, `off`, `cycle` on ridesx, `hard_reset` on esp32) and `sleep:N` delays. Quote `"on"`/`"off"` in YAML. Set to `[]` or `null` to disable | list[str] | no | `["off", "sleep:2", "on"]` |
 | always_on      | Keep the serial port open even when no clients are connected. When false (the default), the port is opened on first client attach and closed when the last client detaches, freeing it for other tools (e.g. esptool). When true, the port stays open for the lifetime of the exporter, which can be useful to avoid HUPCL-triggered resets between sessions | bool  | no       | False   |
 
 ### NVDemuxSerial Driver
