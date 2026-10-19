@@ -16,6 +16,7 @@ else:
 
 from .encoding import (
     COMPRESSION_SIGNATURES,
+    DECOMPRESSED_CHUNK_SIZE,
     AutoDecompressIterator,
     Compression,
     compress_stream,
@@ -158,6 +159,21 @@ class TestAutoDecompressIterator:
         async for chunk in AutoDecompressIterator(source=empty_iter()):
             chunks.append(chunk)
         assert chunks == []
+
+    @pytest.mark.parametrize(
+        "compress",
+        [gzip.compress, lambda data: lzma.compress(data, format=lzma.FORMAT_XZ), bz2.compress, zstd.compress],
+        ids=["gzip", "xz", "bz2", "zstd"],
+    )
+    async def test_output_chunks_are_bounded(self, compress):
+        """Zeros compress by orders of magnitude, as in sparse disk images: one
+        input chunk must not decompress into one unbounded allocation."""
+        original = bytes(16 * 1024 * 1024)
+        compressed = compress(original)
+        source = self._async_iter_from_bytes(compressed, len(compressed))
+        chunks = [chunk async for chunk in AutoDecompressIterator(source=source)]
+        assert b"".join(chunks) == original
+        assert max(len(chunk) for chunk in chunks) <= DECOMPRESSED_CHUNK_SIZE
 
     async def test_large_data(self):
         """Should handle large data correctly."""

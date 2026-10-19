@@ -43,6 +43,11 @@ COMPRESSION_SIGNATURES: tuple[FileSignature, ...] = (
 # Standard buffer size for file signature detection (covers most formats)
 SIGNATURE_BUFFER_SIZE = 8
 
+# Upper bound on one decompressed chunk. Zeros compress by orders of magnitude
+# (an xz or zstd sparse disk image turns kilobytes into gigabytes), so an
+# unbounded decompress() of a single input chunk can exhaust memory.
+DECOMPRESSED_CHUNK_SIZE = 1024 * 1024
+
 
 def detect_compression_from_signature(data: bytes) -> Compression | None:
     """Detect compression format from file signature bytes at the start of data.
@@ -166,6 +171,8 @@ class AutoDecompressIterator(AsyncIterator[bytes]):
     _detected: bool = field(init=False, default=False)
     _buffer: bytes = field(init=False, default=b"")
     _exhausted: bool = field(init=False, default=False)
+    # The decompressor holds more output for input it has already been given.
+    _draining: bool = field(init=False, default=False)
 
     def _call_decompressor(self, method_name: str, *args) -> bytes:
         """Call decompressor method with error handling.
@@ -201,17 +208,31 @@ class AutoDecompressIterator(AsyncIterator[bytes]):
 
         self._detected = True
 
+    def _decompress(self, data: bytes) -> bytes:
+        """Decompress at most DECOMPRESSED_CHUNK_SIZE bytes; the rest stays pending."""
+        output = self._call_decompressor("decompress", data, DECOMPRESSED_CHUNK_SIZE)
+        tail = getattr(self._decompressor, "unconsumed_tail", None)
+        if tail is not None:  # zlib keeps the input it has not decompressed yet
+            self._draining = bool(tail)
+        else:  # lzma, bz2 and zstd keep the output they have not returned yet
+            self._draining = not self._decompressor.needs_input and not self._decompressor.eof
+        return output
+
     async def __anext__(self) -> bytes:
         # First call: detect compression format
         if not self._detected:
             await self._detect_compression()
+
+        # Return pending output before consuming more input
+        if self._draining:
+            return self._decompress(getattr(self._decompressor, "unconsumed_tail", b""))
 
         # Process buffered data first
         if self._buffer:
             data = self._buffer
             self._buffer = b""
             if self._decompressor is not None:
-                return self._call_decompressor("decompress", data)
+                return self._decompress(data)
             return data
 
         # Stream exhausted
@@ -232,7 +253,7 @@ class AutoDecompressIterator(AsyncIterator[bytes]):
             raise
 
         if self._decompressor is not None:
-            return self._call_decompressor("decompress", chunk)
+            return self._decompress(chunk)
         return chunk
 
     def __aiter__(self) -> Self:
