@@ -1,3 +1,4 @@
+import bz2
 import json
 import lzma
 import os
@@ -18,6 +19,7 @@ from click.testing import CliRunner
 from .client import _client_url, _echo, _parse
 from .driver import IMAGES_VOLUME_MARGIN, Cuttlefish, CvdFlasher, CvdPower
 from .health import initialize
+from .image_test import CRC32, DONT_CARE, RAW, _android_sparse, _sparse_sample
 from jumpstarter.client.core import DriverError
 from jumpstarter.client.flasher import FlasherClient
 from jumpstarter.common.exceptions import ArgumentError
@@ -623,6 +625,72 @@ def test_power_on_refused_while_flashing(requests_mock, images, listed):
     assert (images / "boot.img").read_bytes() == body
     assert not _requested(requests_mock, "POST", "/cvds")
     assert _requested(requests_mock, "DELETE", "/cvds/cvd/1") == bool(listed)
+
+
+def test_flash_expands_android_sparse_images(requests_mock, images, tmp_path):
+    # Android CI ships super.img and userdata.img like this; the CVD reads raw disks.
+    requests_mock.get(f"{BASE}/cvds", json={"cvds": []})
+    sparse, raw = _sparse_sample(dont_care_blocks=7168)
+    source = tmp_path / "super.img.xz"
+    source.write_bytes(lzma.compress(sparse))
+    with serve(_flashable(images)) as client:
+        client.storage.flash(source, target="boot")
+    flashed = images / "boot.img"
+    assert flashed.read_bytes() == raw
+    assert flashed.stat().st_blocks * 512 < MiB, "32 MiB of don't-care and zero fill must stay holes"
+
+
+def test_flash_keeps_output_a_decompressor_holds_back(requests_mock, images, tmp_path):
+    # bz2 returns nothing until it has a whole block, so an empty chunk is not the end.
+    requests_mock.get(f"{BASE}/cvds", json={"cvds": []})
+    image = os.urandom(MiB)
+    source = tmp_path / "boot.img.bz2"
+    source.write_bytes(bz2.compress(image))
+    with serve(_flashable(images)) as client:
+        client.storage.flash(source, target="boot")
+    assert (images / "boot.img").read_bytes() == image
+
+
+@pytest.mark.parametrize("sparse,error", [
+    (_android_sparse((RAW, 1, bytes(4096)), major=2), "unsupported Android sparse image: version 2.0"),
+    (_android_sparse((DONT_CARE, 1, b""), block_size=0), "unsupported Android sparse image: .*0-byte blocks"),
+    (_android_sparse((0xCAC9, 1, b"")), "unknown Android sparse chunk type 0xcac9"),
+    (_android_sparse((RAW, 2, bytes(4096), 12 + 8192)), "Android sparse image ends early"),
+    (_android_sparse((DONT_CARE, 3, b""), blocks=5), "has 5 blocks but its chunks cover 3"),
+    (_android_sparse((CRC32, 2, bytes(8192))), "type 0xcac4 with 2 blocks is 16 bytes, not 8204"),
+    (_android_sparse((CRC32, 2, b"\x12\x34\x56\x78")), "type 0xcac4 must have 0 blocks, not 2"),
+    (
+        _android_sparse((DONT_CARE, 2, b""), (CRC32, 2, b"\x12\x34\x56\x78"), blocks=2),
+        "type 0xcac4 must have 0 blocks, not 2",
+    ),
+    (_android_sparse((DONT_CARE, 1, b"")) + b"extra", "unexpected trailing data after Android sparse image"),
+], ids=[
+    "version", "zero-block-size", "chunk-type", "truncated", "block-count",
+    "chunk-size", "checksum-blocks", "checksum-blocks-matching-total", "trailing-data",
+])
+def test_flash_rejects_corrupt_android_sparse_images(requests_mock, images, tmp_path, sparse, error):
+    requests_mock.get(f"{BASE}/cvds", json={"cvds": []})
+    source = tmp_path / "super.img"
+    source.write_bytes(sparse)
+    with serve(_flashable(images)) as client, _upload_fails(error):
+        client.storage.flash(source, target="boot")
+    assert (images / "boot.img").read_bytes() == b"original boot"
+    assert not list(images.glob("*.partial"))
+
+
+def test_flash_verifies_compressed_sparse_trailer(requests_mock, images, tmp_path):
+    # A multi-chunk compressed sparse image whose trailer is corrupted in the final
+    # chunk must still fail: raw_image drains to EOF so the decompressor checks it.
+    requests_mock.get(f"{BASE}/cvds", json={"cvds": []})
+    sparse = _android_sparse((RAW, 32, os.urandom(32 * 4096)))
+    compressed = bytearray(lzma.compress(sparse))
+    compressed[-1] ^= 0xFF
+    source = tmp_path / "super.img.xz"
+    source.write_bytes(compressed)
+    with serve(_flashable(images)) as client, _upload_fails("Failed to decompress"):
+        client.storage.flash(source, target="boot")
+    assert (images / "boot.img").read_bytes() == b"original boot"
+    assert not list(images.glob("*.partial"))
 
 
 @pytest.fixture

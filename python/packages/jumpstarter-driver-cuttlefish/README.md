@@ -263,10 +263,10 @@ j cuttlefish power on
   URLs, which the exporter downloads itself without sending the image through
   the lease. gzip, xz, bz2 and zstd are detected and decompressed. Android
   sparse images, such as `super.img` from an Android CI `-img-` zip, are
-  written as they are; `cvd` expands them on the next boot, which takes longer
-  and needs room for the expanded copy.
-- **Images stay sparse.** Runs of zeros are skipped rather than written, so a
-  multi-GiB `super.img` that is mostly holes stays small on disk. Compress large
+  expanded to the raw image the CVD boots from.
+- **Images stay sparse.** Runs of zeros, and an Android sparse image's
+  don't-care blocks, are skipped rather than written, so a multi-GiB
+  `super.img` that is mostly holes stays small on disk. Compress large
   images before uploading them; zeros still cross the lease otherwise.
 - **A failed flash keeps the running CVD and the partition's previous
   image.** A source that sends nothing for `flash_idle_timeout` seconds is
