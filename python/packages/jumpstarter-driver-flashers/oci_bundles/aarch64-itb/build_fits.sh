@@ -23,7 +23,6 @@ else
 	cp -R overlay "${BUILDROOT_DIR}"
 	./kernel_fedora.sh "${BUILDROOT_DIR}/overlay"
 	( cd "${BUILDROOT_DIR}"; make buildroot_defconfig && make )
-	dtc s32g3.dts -o s32g3.dtb
 	mkimage -f fedora.its data/flasher-fedora.itb
 	rm -rf "${BUILDROOT_DIR}/overlay"
 

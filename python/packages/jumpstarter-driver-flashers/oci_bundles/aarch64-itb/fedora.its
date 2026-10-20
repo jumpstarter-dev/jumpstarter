@@ -53,7 +53,7 @@
 		};
 		fdt-s32g3 {
 			description = "DTB NXP S32G-VNP-RDB3";
-			data = /incbin/("./s32g3.dtb");
+			data = /incbin/("./kernel-fedora/dtb/freescale/s32g399a-rdb3.dtb");
 			type = "flat_dt";
 			arch = "arm64";
 			compression = "none";
