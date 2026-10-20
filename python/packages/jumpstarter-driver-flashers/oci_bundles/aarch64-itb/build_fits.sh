@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+BUILDROOT_VERSION="2026.08"
+
 cd "$(dirname "$0")"
 
 # run only in a container
@@ -14,7 +16,7 @@ else
 		wget cpio rsync bc lzop zip patch perl tar qemu-system-aarch64 qemu-img unzboot \
 		uboot-tools kmod awk zstd lz4  kernel dtc rpm-build
 
-	git clone --depth 1 --branch 2025.08  https://github.com/buildroot/buildroot "${BUILDROOT_DIR}"
+	git clone --depth 1 --branch "${BUILDROOT_VERSION}" https://github.com/buildroot/buildroot "${BUILDROOT_DIR}"
 
 	# build buildroot (initramfs)
 	cp buildroot_defconfig  "${BUILDROOT_DIR}/configs/"
