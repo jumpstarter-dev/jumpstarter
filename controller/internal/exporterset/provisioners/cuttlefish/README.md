@@ -294,8 +294,7 @@ Flashed images live only in the Pod's image volume. `ExitAndReplace` deletes
 the Pod when the lease ends, so the next lessee starts from the pool's build
 again; this is one reason `InPlaceReuse` is rejected. Leave room in
 `storage.imageSize` for the largest partition a lessee will replace: the new
-image is written next to the old one before it replaces it, and an Android
-sparse image is expanded next to itself on the first boot.
+image is written next to the old one before it replaces it.
 
 The health probe still fails a Pod whose own build does not boot. After a
 flash, a boot failure is the lessee's images: the driver removes the failed

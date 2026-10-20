@@ -1,14 +1,16 @@
 """Partition images on their way into a CVD's image directory.
 
-Staging a decompressed image next to the image it replaces, and installing
-it. Nothing here knows about CVDs,
+Decoding (decompressed bytes in, a raw image out), staging the result next to
+the image it replaces, and installing it. Nothing here knows about CVDs,
 leases or health: the flasher decides when each step may run, and every
 blocking step runs on the ``Worker`` it passes in.
 """
 
 import os
-from collections.abc import AsyncIterator, Callable
+import struct
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import aclosing
 from pathlib import Path
 from typing import Any, BinaryIO
 
@@ -16,7 +18,7 @@ from anyio import CancelScope, to_thread
 
 
 class ImageError(Exception):
-    """An image that does not fit."""
+    """An image that cannot be decoded or does not fit."""
 
 
 class Worker:
@@ -53,6 +55,131 @@ class Worker:
 # Granularity of hole detection. Decompressed chunks mix data and long zero
 # runs, so a chunk is never all zeros as a whole.
 SPARSE_BLOCK = 64 * 1024
+
+# Android sparse images (libsparse v1.0), the format fastboot images and
+# Android CI's super.img and userdata.img come in: a header, then chunks of
+# raw blocks, a repeated 4-byte fill, don't-care blocks or a CRC32. A CVD
+# reads its images as raw disks and cvd would expand them on the next boot,
+# outside the volume budget, so they are expanded while flashing.
+SPARSE_MAGIC = 0xED26FF3A
+SPARSE_HEADER = struct.Struct("<IHHHHIIII")
+SPARSE_CHUNK = struct.Struct("<HHII")
+CHUNK_RAW, CHUNK_FILL, CHUNK_DONT_CARE, CHUNK_CRC32 = 0xCAC1, 0xCAC2, 0xCAC3, 0xCAC4
+# Bytes after the chunk header for each type, as libsparse checks them; a raw
+# chunk carries its blocks.
+CHUNK_BODY = {CHUNK_FILL: 4, CHUNK_DONT_CARE: 0, CHUNK_CRC32: 4}
+FILL_PIECE = 1024 * 1024
+
+
+class _Pending:
+    """Exact-size reads from an async stream of chunks of any size.
+
+    An empty chunk is not the end of the stream: a decompressor can return
+    nothing for a while (bz2 holds output back until it has a whole block, up
+    to 900 kB of input). Only the iterator ending is.
+    """
+
+    def __init__(self, chunks: AsyncIterator[bytes]):
+        self._chunks = chunks
+        self._data = b""
+
+    async def _more(self) -> bool:
+        """Append the next chunk with data; False at the end of the stream."""
+        async for chunk in self._chunks:
+            if chunk:
+                self._data += chunk
+                return True
+        return False
+
+    async def peek(self, size: int) -> bytes:
+        while len(self._data) < size and await self._more():
+            pass
+        return self._data[:size]
+
+    async def read(self, size: int) -> bytes:
+        data = await self.peek(size)
+        if len(data) < size:
+            raise ImageError("Android sparse image ends early")
+        self._data = self._data[size:]
+        return data
+
+    async def take(self, limit: int | None = None) -> bytes:
+        """Up to ``limit`` bytes of what has arrived; empty only at the end of the stream."""
+        if not self._data and not await self._more():
+            return b""
+        if limit is None or limit >= len(self._data):
+            piece, self._data = self._data, b""
+        else:
+            piece, self._data = self._data[:limit], self._data[limit:]
+        return piece
+
+
+async def raw_image(chunks: AsyncIterator[bytes]) -> AsyncGenerator[bytes | int, None]:
+    """The raw image in ``chunks`` (decompressed bytes), as data and holes (yielded as their length).
+
+    Android sparse images are expanded; anything else passes through as it is.
+    """
+    stream = _Pending(chunks)
+    head = await stream.peek(SPARSE_HEADER.size)
+    if int.from_bytes(head[:4], "little") != SPARSE_MAGIC:
+        while piece := await stream.take():
+            yield piece
+        return
+    async for piece in _expand_android_sparse(stream):
+        yield piece
+
+
+async def _expand_android_sparse(stream: _Pending) -> AsyncGenerator[bytes | int, None]:
+    _, major, minor, header_size, chunk_header_size, block_size, blocks, chunk_count, _ = SPARSE_HEADER.unpack(
+        await stream.read(SPARSE_HEADER.size)
+    )
+    if (major, header_size, chunk_header_size) != (1, SPARSE_HEADER.size, SPARSE_CHUNK.size) or block_size % 4:
+        raise ImageError(
+            f"unsupported Android sparse image: version {major}.{minor}, {header_size}/{chunk_header_size}-byte "
+            f"headers, {block_size}-byte blocks"
+        )
+    covered = 0
+    for _ in range(chunk_count):
+        kind, _, chunk_blocks, size = SPARSE_CHUNK.unpack(await stream.read(SPARSE_CHUNK.size))
+        length = chunk_blocks * block_size
+        body = length if kind == CHUNK_RAW else CHUNK_BODY.get(kind)
+        if body is None:
+            raise ImageError(f"unknown Android sparse chunk type {kind:#x}")
+        if size != SPARSE_CHUNK.size + body:
+            raise ImageError(
+                f"corrupt Android sparse chunk: type {kind:#x} with {chunk_blocks} blocks is "
+                f"{SPARSE_CHUNK.size + body} bytes, not {size}"
+            )
+        async for piece in _sparse_chunk(stream, kind, length):
+            yield piece
+        if kind != CHUNK_CRC32:  # a checksum stands for no blocks, whatever it declares
+            covered += chunk_blocks
+    if covered != blocks:
+        raise ImageError(f"Android sparse image has {blocks} blocks but its chunks cover {covered}")
+
+
+async def _sparse_chunk(stream: _Pending, kind: int, length: int) -> AsyncGenerator[bytes | int, None]:
+    """The ``length`` raw bytes a chunk of a known ``kind`` stands for."""
+    if kind == CHUNK_RAW:
+        while length:
+            piece = await stream.take(length)
+            if not piece:
+                raise ImageError("Android sparse image ends early")
+            length -= len(piece)
+            yield piece
+    elif kind == CHUNK_FILL:
+        pattern = await stream.read(4)
+        if pattern == bytes(4):
+            yield length
+        else:
+            piece = pattern * (FILL_PIECE // 4)
+            for start in range(0, length, FILL_PIECE):
+                yield piece[: length - start]
+    elif kind == CHUNK_DONT_CARE:
+        yield length
+    else:  # CHUNK_CRC32, not checked
+        await stream.read(4)
+
 
 def _write_sparse(out: BinaryIO, chunk: bytes) -> int:
     """Write ``chunk`` at the current position, seeking over all-zero blocks.
@@ -113,7 +240,7 @@ def space_left(directory: Path, limit: int, margin: int) -> int:
 
 
 async def stage(chunks: AsyncIterator[bytes], staged: Path, budget: int | None, worker: Worker) -> None:
-    """Write the image in ``chunks`` (decompressed bytes) to ``staged``.
+    """Write the raw image in ``chunks`` (decompressed bytes) to ``staged``.
 
     Zero blocks become holes: super.img and userdata.img are multi-GiB images
     that are mostly holes, and writing them out would fill the volume. Stops
@@ -124,11 +251,16 @@ async def stage(chunks: AsyncIterator[bytes], staged: Path, budget: int | None, 
     try:
         out = await worker.run(staged_file.open)
         size = allocated = 0
-        async for chunk in chunks:
-            allocated += await worker.run(_write_sparse, out, chunk)
-            size += len(chunk)
-            if budget is not None and allocated > budget:
-                raise ImageError(f"{staged.stem} needs more than the {budget} bytes left in the image volume")
+        async with aclosing(raw_image(chunks)) as pieces:
+            async for piece in pieces:
+                if isinstance(piece, int):  # a hole
+                    await worker.run(out.seek, piece, os.SEEK_CUR)
+                    size += piece
+                    continue
+                allocated += await worker.run(_write_sparse, out, piece)
+                size += len(piece)
+                if budget is not None and allocated > budget:
+                    raise ImageError(f"{staged.stem} needs more than the {budget} bytes left in the image volume")
         await worker.run(_finish, out, size)
     except BaseException:
         worker.submit(staged_file.discard)
