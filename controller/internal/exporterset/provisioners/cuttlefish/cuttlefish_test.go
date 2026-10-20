@@ -218,6 +218,36 @@ func TestStorageValidation(t *testing.T) {
 	}
 }
 
+// Flashing renames new images into the image volume from the exporter, which
+// runs as neither root nor cvd_user: the volume must be writable for a group
+// the exporter's processes actually have, for both image sources.
+func TestExporterCanReplaceImages(t *testing.T) {
+	for _, params := range []map[string]any{{"fetch_images": true}, {"image_volume_claim": "cuttlefish-images"}} {
+		pod := renderTestPod(t, params)
+		exporter := pod.Spec.Containers[0]
+		var mount *corev1.VolumeMount
+		for i := range exporter.VolumeMounts {
+			if exporter.VolumeMounts[i].Name == "cvd-images" {
+				mount = &exporter.VolumeMounts[i]
+			}
+		}
+		if mount == nil || mount.MountPath != fetchPath || mount.ReadOnly {
+			t.Fatalf("%v: exporter image mount = %#v, want writable %s", params, mount, fetchPath)
+		}
+		if exporter.SecurityContext != nil && exporter.SecurityContext.RunAsGroup != nil {
+			t.Errorf("%v: exporter primary group overridden; the image's default group must stay", params)
+		}
+		if pod.Spec.SecurityContext == nil || len(pod.Spec.SecurityContext.SupplementalGroups) != 1 {
+			t.Fatalf("%v: pod supplemental groups = %#v, want the image volume's group", params, pod.Spec.SecurityContext)
+		}
+		permissions := initContainer(t, pod, "fix-cuttlefish-permissions").Command[2]
+		grant := fmt.Sprintf("chgrp %d %s && chmod 2775 %s", pod.Spec.SecurityContext.SupplementalGroups[0], fetchPath, fetchPath)
+		if !strings.Contains(permissions, grant) {
+			t.Errorf("%v: permissions command %q does not grant the exporter's group (%q)", params, permissions, grant)
+		}
+	}
+}
+
 func enrichExporterExportForTest(
 	drivers []virtualtargetv1alpha1.DriverConfig,
 	mergedParameters map[string]any,
@@ -234,6 +264,7 @@ func TestEnrichExporterExport(t *testing.T) {
 	result, err := enrichExporterExportForTest(drivers, map[string]any{
 		"default_build": "aosp/test",
 		"gpu_mode":      "none",
+		"storage":       map[string]any{"imageSize": "16Gi"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -242,6 +273,10 @@ func TestEnrichExporterExport(t *testing.T) {
 	cuttlefish := configFor(t, result[0])
 	if cuttlefish["host"] != "127.0.0.1" || cuttlefish["port"] != float64(hostOrchestratorPort) || cuttlefish["scheme"] != "http" {
 		t.Errorf("Cuttlefish endpoint = %#v", cuttlefish)
+	}
+	// The flasher writes where env_config loads images from, and stays under the volume's limit.
+	if cuttlefish["images_dir"] != fetchPath || cuttlefish["images_volume_limit"] != float64(16<<30) {
+		t.Errorf("flashing config = %v, %v; want %s, 16Gi", cuttlefish["images_dir"], cuttlefish["images_volume_limit"], fetchPath)
 	}
 	if fmt.Sprint(cuttlefish["health_ports"]) != fmt.Sprint([]any{float64(netsimPort), float64(hciPort)}) {
 		t.Errorf("health_ports = %v", cuttlefish["health_ports"])
@@ -283,8 +318,27 @@ func TestEnrichExporterExportDefaultsPodSafeGraphicsAndVM(t *testing.T) {
 	}
 }
 
+// The same parameters must always name the same invalid size; map iteration
+// would pick a different one from call to call.
+func TestStorageErrorsNameSizesInAFixedOrder(t *testing.T) {
+	parameters := map[string]any{"storage": map[string]any{"imageSize": 5, "stateSize": "-1Gi", "tmpSize": "lots"}}
+	for range 20 {
+		_, _, _, err := resolveVolumeSizes(parameters)
+		if err == nil || !strings.Contains(err.Error(), "parameters.storage.imageSize ") {
+			t.Fatalf("error = %v, want parameters.storage.imageSize reported first", err)
+		}
+	}
+}
+
 func TestEnrichExporterExportRejectsExternalEndpoints(t *testing.T) {
-	for _, config := range []map[string]any{{"host": "custom-host"}, {"port": 9999}, {"instance_num": 2}, {"scheme": "https"}} {
+	for _, config := range []map[string]any{
+		{"host": "custom-host"}, {"port": 9999}, {"instance_num": 2}, {"scheme": "https"},
+		{"images_dir": "/var/tmp/cvd"}, {"images_volume_limit": 1 << 40},
+		// A CVD loading images from anywhere but the image volume would not boot what a lessee flashed.
+		{"env_config": map[string]any{"instances": []any{map[string]any{"disk": map[string]any{"default_build": "/elsewhere"}}}}},
+		{"env_config": map[string]any{"instances": []any{map[string]any{"disk": map[string]any{"super": map[string]any{"system": "/x"}}}}}},
+		{"env_config": map[string]any{"instances": []any{map[string]any{"boot": map[string]any{"kernel": map[string]any{"build": "@ab/k"}}}}}},
+	} {
 		driver := virtualtargetv1alpha1.DriverConfig{Name: "cuttlefish", Type: cuttlefishDriverType, Config: mustJSON(config)}
 		if _, err := enrichExporterExportForTest([]virtualtargetv1alpha1.DriverConfig{driver}, nil); err == nil {
 			t.Errorf("accepted external endpoint %v", config)

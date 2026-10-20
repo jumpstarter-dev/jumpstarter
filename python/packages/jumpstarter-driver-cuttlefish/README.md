@@ -177,11 +177,14 @@ export:
 | cvd_user        | Exec backend: non-root user that runs `jumpstarter-exec serve` and its `cvd` children in the runtime container. Must match the owner of CVD state; Host Orchestrator uses `httpcvd`. | str | no | "" |
 | webui_port      | Port of the in-Pod nginx vhost serving the WebRTC client page with a TURN-aware `/infra_config`. Creates a `webui` child when set. Injected by the ExporterSet provisioner with `webrtc_turn: true`. | int | no | 0 |
 | turn_port       | Port of the in-Pod TURN relay carrying WebRTC media. Creates a `turn` child when set, and is also the local port `j cuttlefish webrtc --forward` binds. | int | no | 0 |
+| images_dir      | Directory the CVD's images are loaded from, writable by the exporter. Enables flashing. Every `env_config` instance must set `disk.default_build` to it and load no image from elsewhere (`boot.build`, `boot.kernel`, `boot.bootloader`, `boot.android_efi_loader`, `disk.super`). Injected by the ExporterSet provisioner. | str | no | "" |
+| images_volume_limit | Size limit in bytes of the volume holding `images_dir`; a flash stops before exceeding it. Injected by the ExporterSet provisioner. | int | no | 0 (no limit) |
+| flash_idle_timeout | Seconds a flash waits for more image data before giving up | float | no | 120 |
 
 This is a **composite driver** with three core children and two optional display children:
 
 - **power** — `VirtualPowerInterface`: `j power on`, `j power off [--destroy]`, `j power cycle`
-- **storage** — `FlasherInterface`: not yet implemented (planned: HO artifact upload API)
+- **storage** — `FlasherInterface`: replaces partition images (see [Flashing](#flashing)); needs `images_dir`
 - **adb** — ADB server for device communication
 - **webui** — TCP endpoint for the WebRTC client page, when provisioned
 - **turn** — TCP endpoint for the TURN relay, when provisioned
@@ -236,6 +239,54 @@ requests; native programs on the same computer can still use the local port.
 This requires `webrtc_turn: true` on the ExporterSet; without it the driver has
 no `webui`/`turn` children and the command says so.
 
+### Flashing
+
+A CVD boots from the image files in `images_dir` plus a per-instance overlay
+that `cvd load` assembles over them. Flashing therefore replaces the files and
+recreates the CVD rather than writing to a running device:
+
+```bash
+j cuttlefish storage flash -t boot:out/boot.img -t vendor_boot:out/vendor_boot.img
+j cuttlefish power on
+```
+
+- **The running CVD stays until the new image is complete.** The image is
+  written next to the old one while the CVD keeps running; only then is the
+  CVD destroyed and the image renamed into place. Userdata starts empty on the
+  next boot, as with `fastboot -w`. The device stays off until you power it
+  on, and power on is refused while a flash is in progress.
+- **Targets are the build's partition images**: `-t boot:...` replaces
+  `boot.img`. Every target and every local file is checked before anything is
+  written, and unknown names are rejected with the list of partitions the
+  build has. `env_config` is not changed.
+- **Sources** can be local files, streamed over the lease, or `http(s)://`
+  URLs, which the exporter downloads itself without sending the image through
+  the lease. gzip, xz, bz2 and zstd are detected and decompressed. Android
+  sparse images, such as `super.img` from an Android CI `-img-` zip, are
+  written as they are; `cvd` expands them on the next boot, which takes longer
+  and needs room for the expanded copy.
+- **Images stay sparse.** Runs of zeros are skipped rather than written, so a
+  multi-GiB `super.img` that is mostly holes stays small on disk. Compress large
+  images before uploading them; zeros still cross the lease otherwise.
+- **A failed flash keeps the running CVD and the partition's previous
+  image.** A source that sends nothing for `flash_idle_timeout` seconds is
+  abandoned, and a flash that would exceed `images_volume_limit` stops before
+  it fills the volume. With several targets, partitions flashed before the
+  failing one stay replaced; flash them again or power on with the mix. A
+  flash cancelled after its image is complete may leave the device off with
+  the previous image.
+- **Flashed images that do not boot leave the device usable.** Power on fails
+  with `cvd`'s error; once the runtime confirms the failed CVD is gone, the
+  device stays off and you can flash again. In a managed Pod the health probe
+  keeps the Pod; when the pool's own images do not boot, it still replaces it.
+- **Verified boot.** Cuttlefish's default bootloader is unlocked: it verifies
+  `boot` against `vbmeta` and reports a failure, but boots the image anyway
+  (`ro.boot.verifiedbootstate=orange`). Images need not be re-signed.
+
+In managed ExporterSet Pods the provisioner sets `images_dir` and
+`images_volume_limit`, and the flashed images live in the Pod's own volume, so
+they never outlast the lease. Dumping images back is not supported.
+
 ## Usage
 
 ### CLI
@@ -273,6 +324,9 @@ j cuttlefish powerwash
 
 # Simulate power button press
 j cuttlefish powerbtn
+
+# Replace a partition image (destroys the CVD; power on afterwards)
+j cuttlefish storage flash -t boot:boot.img
 
 # List running operations
 j cuttlefish ops
