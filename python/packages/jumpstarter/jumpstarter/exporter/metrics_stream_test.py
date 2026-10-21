@@ -17,6 +17,7 @@ limitations under the License.
 
 from __future__ import annotations
 
+import logging
 import urllib.request
 from typing import cast
 from unittest.mock import MagicMock, patch
@@ -372,3 +373,124 @@ class TestMetricsStreamProtocol:
         assert order[0] == "cancel"
         assert call.cancelled is True
         assert order[1] == "sleep:0.5"
+
+
+def _rpc_error(code: grpc.StatusCode) -> grpc.aio.AioRpcError:
+    return grpc.aio.AioRpcError(code=code, initial_metadata=None, trailing_metadata=None)
+
+
+def _stream_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [record for record in caplog.records if record.name == "jumpstarter.exporter.metrics_stream"]
+
+
+class TestMetricsStreamAuthLogging:
+    async def test_auth_rejection_warns_on_transition(self, caplog: pytest.LogCaptureFixture):
+        """The same auth status is a warning once; a different one warns again."""
+        hanging = FakeMetricsCall()
+        codes = [
+            grpc.StatusCode.PERMISSION_DENIED,
+            grpc.StatusCode.PERMISSION_DENIED,
+            grpc.StatusCode.UNAUTHENTICATED,
+        ]
+        steps = iter(codes)
+
+        def metrics_stream(*args, **kwargs):
+            try:
+                code = next(steps)
+            except StopIteration:
+                return hanging
+            raise _rpc_error(code)
+
+        stub = MagicMock()
+        stub.MetricsStream = metrics_stream
+        client = MetricsStreamClient(stub, identity=IDENTITY, token=TOKEN, backoff_base=0.01, backoff_cap=0.01)
+
+        with caplog.at_level(logging.DEBUG):
+            async with create_task_group() as tg:
+                tg.start_soon(client.run)
+                await _wait_until(lambda: len(hanging.writes) >= 1)
+                tg.cancel_scope.cancel()
+
+        records = _stream_records(caplog)
+        warnings = [record.getMessage() for record in records if record.levelno == logging.WARNING]
+        assert warnings == [
+            "MetricsStream rejected (PERMISSION_DENIED); retrying in 0.01s",
+            "MetricsStream rejected (UNAUTHENTICATED); retrying in 0.01s",
+        ]
+        assert any(
+            record.levelno == logging.DEBUG and "PERMISSION_DENIED" in record.getMessage() for record in records
+        )
+
+    async def test_auth_rejection_warns_again_after_connect(self, caplog: pytest.LogCaptureFixture):
+        """A completed session clears the rejection so the next one warns again."""
+        recovered = FakeMetricsCall()
+        hanging = FakeMetricsCall()
+        steps = iter(["denied", "connect", "denied"])
+
+        def metrics_stream(*args, **kwargs):
+            try:
+                step = next(steps)
+            except StopIteration:
+                return hanging
+            if step == "connect":
+                return recovered
+            raise _rpc_error(grpc.StatusCode.PERMISSION_DENIED)
+
+        stub = MagicMock()
+        stub.MetricsStream = metrics_stream
+        client = MetricsStreamClient(stub, identity=IDENTITY, token=TOKEN, backoff_base=0.01, backoff_cap=0.01)
+
+        with caplog.at_level(logging.DEBUG):
+            async with create_task_group() as tg:
+                tg.start_soon(client.run)
+                await _wait_until(lambda: len(recovered.writes) >= 1)
+                await recovered.close_from_server()
+                await _wait_until(
+                    lambda: sum(record.levelno == logging.WARNING for record in _stream_records(caplog)) >= 2
+                )
+                tg.cancel_scope.cancel()
+
+        records = _stream_records(caplog)
+        warnings = [record.getMessage() for record in records if record.levelno == logging.WARNING]
+        infos = [record.getMessage() for record in records if record.levelno == logging.INFO]
+        assert warnings == [
+            "MetricsStream rejected (PERMISSION_DENIED); retrying in 0.01s",
+            "MetricsStream rejected (PERMISSION_DENIED); retrying in 0.01s",
+        ]
+        assert infos == ["MetricsStream connected"]
+
+    async def test_unavailable_clears_auth_rejection_without_warning(self, caplog: pytest.LogCaptureFixture):
+        """A transient outage stays at debug and lets the next auth rejection warn."""
+        hanging = FakeMetricsCall()
+        codes = [
+            grpc.StatusCode.PERMISSION_DENIED,
+            grpc.StatusCode.UNAVAILABLE,
+            grpc.StatusCode.PERMISSION_DENIED,
+        ]
+        steps = iter(codes)
+
+        def metrics_stream(*args, **kwargs):
+            try:
+                code = next(steps)
+            except StopIteration:
+                return hanging
+            raise _rpc_error(code)
+
+        stub = MagicMock()
+        stub.MetricsStream = metrics_stream
+        client = MetricsStreamClient(stub, identity=IDENTITY, token=TOKEN, backoff_base=0.01, backoff_cap=0.01)
+
+        with caplog.at_level(logging.DEBUG):
+            async with create_task_group() as tg:
+                tg.start_soon(client.run)
+                await _wait_until(lambda: len(hanging.writes) >= 1)
+                tg.cancel_scope.cancel()
+
+        records = _stream_records(caplog)
+        warnings = [record.getMessage() for record in records if record.levelno == logging.WARNING]
+        assert warnings == [
+            "MetricsStream rejected (PERMISSION_DENIED); retrying in 0.01s",
+            "MetricsStream rejected (PERMISSION_DENIED); retrying in 0.01s",
+        ]
+        assert any(record.levelno == logging.DEBUG and "UNAVAILABLE" in record.getMessage() for record in records)
+        assert not any(record.levelno == logging.WARNING and "UNAVAILABLE" in record.getMessage() for record in records)
