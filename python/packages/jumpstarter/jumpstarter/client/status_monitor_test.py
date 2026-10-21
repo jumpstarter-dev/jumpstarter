@@ -754,6 +754,51 @@ class TestStatusMonitorWaiterConsistency:
                 assert monitor._active_waiters == 0
                 assert monitor._running
 
+    async def test_stop_wakes_waiter_without_timeout(self) -> None:
+        """stop() must release a waiter that has no timeout, also after a restart."""
+        stub = MockExporterStub([create_status_response(ExporterStatus.AVAILABLE)])
+        monitor = StatusMonitor(stub)
+        results: list[ExporterStatus | None] = []
+
+        async def waiter():
+            results.append(await monitor.wait_for_any_of([ExporterStatus.LEASE_READY]))
+
+        with anyio.fail_after(5):
+            # Second round: a restarted monitor must not inherit an already-set event.
+            for _ in range(2):
+                async with anyio.create_task_group() as tg:
+                    await monitor.start(tg)
+                    tg.start_soon(waiter)
+                    await anyio.wait_all_tasks_blocked()
+                    assert monitor._active_waiters == 1
+                    await monitor.stop()
+
+        assert results == [None, None]
+        assert monitor._active_waiters == 0
+
+    async def test_immediate_restart_does_not_adopt_stopped_waiter(self) -> None:
+        """A waiter woken by stop() must return even if start() runs before it does."""
+        stub = MockExporterStub([create_status_response(ExporterStatus.AVAILABLE)])
+        monitor = StatusMonitor(stub)
+        results: list[ExporterStatus | None] = []
+
+        async def waiter():
+            results.append(await monitor.wait_for_any_of([ExporterStatus.LEASE_READY]))
+
+        with anyio.fail_after(5):
+            async with anyio.create_task_group() as tg:
+                await monitor.start(tg)
+                tg.start_soon(waiter)
+                await anyio.wait_all_tasks_blocked()
+                assert monitor._active_waiters == 1
+                # stop() has no checkpoint, so the waiter only runs after the restart.
+                await monitor.stop()
+                await monitor.start(tg)
+                await anyio.wait_all_tasks_blocked()
+                assert results == [None]
+                assert monitor._active_waiters == 0
+                await monitor.stop()
+
 
 class TestStatusMonitorLifecycle:
     async def test_start_sets_running_flag(self) -> None:

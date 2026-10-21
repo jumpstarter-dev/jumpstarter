@@ -191,8 +191,11 @@ class StatusMonitor:
         async def wait_for_first():
             # Increment active waiters to force fast polling
             self._active_waiters += 1
+            # Bind to this run's stop event: a start() that follows stop() before
+            # this waiter wakes must not carry it into the new run
+            run_stop_event = self._stop_event
             try:
-                while self._running and not self._connection_lost:
+                while self._running and not self._connection_lost and not run_stop_event.is_set():
                     # Check current status first
                     for target in targets:
                         if self._current_status == target:
@@ -395,9 +398,11 @@ class StatusMonitor:
             await self._poll_loop()
 
     async def stop(self):
-        """Stop the background polling task."""
+        """Stop the background polling task and wake any waiters."""
         self._running = False
         self._stop_event.set()
+        self._any_change_event.set()
+        self._any_change_event = Event()
 
     async def __aenter__(self):
         """Context manager entry - starts monitoring in a new task group."""
