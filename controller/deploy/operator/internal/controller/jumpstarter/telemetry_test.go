@@ -501,7 +501,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			},
 		}
 
-		dep := createTelemetryDeployment(js, "fake-tls-hash", telemetryLokiPod{})
+		dep := createTelemetryDeployment(js, "", "fake-tls-hash", telemetryLokiPod{})
 
 		container := dep.Spec.Template.Spec.Containers[0]
 
@@ -549,7 +549,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			},
 		}
 
-		dep := createTelemetryDeployment(js, "manual-tls-hash", telemetryLokiPod{})
+		dep := createTelemetryDeployment(js, "", "manual-tls-hash", telemetryLokiPod{})
 
 		container := dep.Spec.Template.Spec.Containers[0]
 
@@ -593,7 +593,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		}
 
 		// Empty hash when no TLS is configured
-		dep := createTelemetryDeployment(js, "", telemetryLokiPod{})
+		dep := createTelemetryDeployment(js, "", "", telemetryLokiPod{})
 
 		container := dep.Spec.Template.Spec.Containers[0]
 
@@ -616,6 +616,73 @@ var _ = Describe("Telemetry Lifecycle", func() {
 
 		// No TLS hash annotation when no TLS is configured
 		Expect(dep.Spec.Template.Annotations).To(BeNil())
+	})
+
+	It("stamps the controller config hash so an authentication change rolls the pod", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-auth-roll", Namespace: "default"},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled:         true,
+					Image:           "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+					ImagePullPolicy: corev1.PullIfNotPresent,
+				},
+			},
+		}
+
+		first := createTelemetryDeployment(js, "config-hash-a", "", telemetryLokiPod{})
+		second := createTelemetryDeployment(js, "config-hash-b", "", telemetryLokiPod{})
+
+		Expect(first.Spec.Template.Annotations).To(HaveKeyWithValue("jumpstarter.dev/configmap-sha256", "config-hash-a"))
+		Expect(second.Spec.Template.Annotations).To(HaveKeyWithValue("jumpstarter.dev/configmap-sha256", "config-hash-b"))
+	})
+
+	It("uses the same config hash as the controller and updates it when authentication changes", func() {
+		spec := makeJumpstarterSpec()
+		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
+			Enabled:         true,
+			Image:           "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+			ImagePullPolicy: corev1.PullIfNotPresent,
+		}
+		spec.Authentication.Internal.Enabled = true
+		spec.Authentication.Internal.Prefix = "internal:"
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       spec,
+		})).To(Succeed())
+
+		doReconcile()
+
+		telemetryDep := &appsv1.Deployment{}
+		controllerDep := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: crName + "-telemetry", Namespace: crNamespace,
+		}, telemetryDep)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: crName + "-controller", Namespace: crNamespace,
+		}, controllerDep)).To(Succeed())
+
+		first := telemetryDep.Spec.Template.Annotations["jumpstarter.dev/configmap-sha256"]
+		Expect(first).NotTo(BeEmpty())
+		Expect(first).To(Equal(controllerDep.Spec.Template.Annotations["jumpstarter.dev/configmap-sha256"]))
+
+		updated := &operatorv1alpha1.Jumpstarter{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: crNamespace}, updated)).To(Succeed())
+		updated.Spec.Authentication.Internal.Prefix = "rotated:"
+		Expect(k8sClient.Update(ctx, updated)).To(Succeed())
+
+		doReconcile()
+
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: crName + "-telemetry", Namespace: crNamespace,
+		}, telemetryDep)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: crName + "-controller", Namespace: crNamespace,
+		}, controllerDep)).To(Succeed())
+
+		next := telemetryDep.Spec.Template.Annotations["jumpstarter.dev/configmap-sha256"]
+		Expect(next).NotTo(Equal(first))
+		Expect(next).To(Equal(controllerDep.Spec.Template.Annotations["jumpstarter.dev/configmap-sha256"]))
 	})
 
 	It("uses a dedicated service account separate from the controller", func() {

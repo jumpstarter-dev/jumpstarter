@@ -29,7 +29,7 @@ const (
 
 var _ = Describe("createTelemetryDeployment JEP-0013 Loki push", func() {
 	It("omits Loki flags when spec.telemetry.loki.url is unset (metrics-only)", func() {
-		c := createTelemetryDeployment(phase3TelemetryJS("ns"), "", telemetryLokiPod{}).Spec.Template.Spec.Containers[0]
+		c := createTelemetryDeployment(phase3TelemetryJS("ns"), "", "", telemetryLokiPod{}).Spec.Template.Spec.Containers[0]
 		for _, arg := range c.Args {
 			Expect(arg).NotTo(HavePrefix("-loki-url="))
 			Expect(arg).NotTo(HavePrefix("-loki-queue-depth="))
@@ -45,7 +45,7 @@ var _ = Describe("createTelemetryDeployment JEP-0013 Loki push", func() {
 		js := phase3TelemetryJS("ns")
 		js.Spec.Telemetry.Loki.URL = "https://loki-gateway.monitoring.svc:3100/loki/api/v1/push"
 
-		c := createTelemetryDeployment(js, "", telemetryLokiPod{}).Spec.Template.Spec.Containers[0]
+		c := createTelemetryDeployment(js, "", "", telemetryLokiPod{}).Spec.Template.Spec.Containers[0]
 		Expect(c.Args).To(ContainElement("-loki-url=https://loki-gateway.monitoring.svc:3100/loki/api/v1/push"))
 		Expect(c.Args).To(ContainElement(jepDefaultLokiQueueDepthFlag))
 	})
@@ -55,7 +55,7 @@ var _ = Describe("createTelemetryDeployment JEP-0013 Loki push", func() {
 		js.Spec.Telemetry.Loki.URL = "http://loki:3100"
 		js.Spec.Telemetry.Backpressure.QueueDepth = 20000
 
-		c := createTelemetryDeployment(js, "", telemetryLokiPod{}).Spec.Template.Spec.Containers[0]
+		c := createTelemetryDeployment(js, "", "", telemetryLokiPod{}).Spec.Template.Spec.Containers[0]
 		Expect(c.Args).To(ContainElement("-loki-queue-depth=20000"))
 	})
 
@@ -64,7 +64,7 @@ var _ = Describe("createTelemetryDeployment JEP-0013 Loki push", func() {
 		js.Spec.Telemetry.Loki.URL = "https://loki:3100/loki/api/v1/push"
 		js.Spec.Telemetry.Loki.SecretRef = "loki-credentials"
 
-		c := createTelemetryDeployment(js, "", telemetryLokiPod{}).Spec.Template.Spec.Containers[0]
+		c := createTelemetryDeployment(js, "", "", telemetryLokiPod{}).Spec.Template.Spec.Containers[0]
 		Expect(envSecretRef(c, "LOKI_USERNAME")).To(Equal(secretKeyRef{"loki-credentials", "username"}))
 		Expect(envSecretRef(c, "LOKI_PASSWORD")).To(Equal(secretKeyRef{"loki-credentials", "password"}))
 		Expect(envSecretRef(c, "LOKI_TOKEN")).To(Equal(secretKeyRef{"loki-credentials", "token"}))
@@ -75,7 +75,7 @@ var _ = Describe("createTelemetryDeployment JEP-0013 Loki push", func() {
 		js.Spec.Telemetry.Loki.URL = "https://loki:3100/loki/api/v1/push"
 		js.Spec.Telemetry.Loki.TLS.CASecretRef = "loki-ca-bundle"
 
-		dep := createTelemetryDeployment(js, "", telemetryLokiPod{})
+		dep := createTelemetryDeployment(js, "", "", telemetryLokiPod{})
 		c := dep.Spec.Template.Spec.Containers[0]
 		Expect(c.Args).To(ContainElement(jepLokiCAFileFlag))
 
@@ -105,7 +105,7 @@ var _ = Describe("createTelemetryDeployment JEP-0013 Loki push", func() {
 		js.Spec.Telemetry.Loki.URL = "https://loki:3100/loki/api/v1/push"
 		js.Spec.Telemetry.Loki.TLS.InsecureSkipVerify = true
 
-		c := createTelemetryDeployment(js, "", telemetryLokiPod{}).Spec.Template.Spec.Containers[0]
+		c := createTelemetryDeployment(js, "", "", telemetryLokiPod{}).Spec.Template.Spec.Containers[0]
 		Expect(c.Args).To(ContainElement("-loki-insecure-skip-verify=true"))
 	})
 })

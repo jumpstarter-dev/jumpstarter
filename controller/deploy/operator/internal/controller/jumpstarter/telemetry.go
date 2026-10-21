@@ -65,7 +65,9 @@ var (
 // reconcileTelemetryDeploymentStage reconciles only the telemetry Deployment (and cleanup).
 // It is called from the Deployment stage of the reconcile loop, before Services.
 // Certificate reconciliation is handled in certificates.go alongside other certs.
-func (r *JumpstarterReconciler) reconcileTelemetryDeploymentStage(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
+// configMapHash is configMapDataHash of the desired controller ConfigMap, the same
+// value stamped on the controller pod, so an authentication change rolls telemetry.
+func (r *JumpstarterReconciler) reconcileTelemetryDeploymentStage(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter, configMapHash string) error {
 	if jumpstarter.Spec.Telemetry == nil || !jumpstarter.Spec.Telemetry.Enabled {
 		return r.cleanupTelemetry(ctx, jumpstarter)
 	}
@@ -74,7 +76,7 @@ func (r *JumpstarterReconciler) reconcileTelemetryDeploymentStage(ctx context.Co
 		return fmt.Errorf("failed to reconcile telemetry service account: %w", err)
 	}
 
-	if err := r.reconcileTelemetryDeployment(ctx, jumpstarter); err != nil {
+	if err := r.reconcileTelemetryDeployment(ctx, jumpstarter, configMapHash); err != nil {
 		return fmt.Errorf("failed to reconcile telemetry deployment: %w", err)
 	}
 
@@ -166,7 +168,7 @@ func (r *JumpstarterReconciler) getTelemetryTLSSecretHash(ctx context.Context, j
 }
 
 // reconcileTelemetryDeployment creates or updates the telemetry Deployment.
-func (r *JumpstarterReconciler) reconcileTelemetryDeployment(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
+func (r *JumpstarterReconciler) reconcileTelemetryDeployment(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter, configMapHash string) error {
 	log := logf.FromContext(ctx)
 
 	tlsSecretHash, err := r.getTelemetryTLSSecretHash(ctx, jumpstarter)
@@ -181,7 +183,7 @@ func (r *JumpstarterReconciler) reconcileTelemetryDeployment(ctx context.Context
 		return err
 	}
 
-	desiredDeployment := createTelemetryDeployment(jumpstarter, tlsSecretHash, lokiPod)
+	desiredDeployment := createTelemetryDeployment(jumpstarter, configMapHash, tlsSecretHash, lokiPod)
 
 	existingDeployment := &appsv1.Deployment{}
 	existingDeployment.Name = desiredDeployment.Name
@@ -443,8 +445,13 @@ func (r *JumpstarterReconciler) telemetryLokiPodPlan(ctx context.Context, js *op
 	return plan, nil
 }
 
-func telemetryPodAnnotations(tlsSecretHash string, loki telemetryLokiPod) map[string]string {
+func telemetryPodAnnotations(configMapHash, tlsSecretHash string, loki telemetryLokiPod) map[string]string {
 	annotations := map[string]string{}
+	// Same annotation the controller Deployment uses. External OIDC authenticators
+	// are loaded once at process start, so a ConfigMap change has to roll the pod.
+	if configMapHash != "" {
+		annotations["jumpstarter.dev/configmap-sha256"] = configMapHash
+	}
 	if tlsSecretHash != "" {
 		annotations["jumpstarter.dev/tls-secret-sha256"] = tlsSecretHash
 	}
@@ -473,8 +480,9 @@ type telemetryLokiPod struct {
 }
 
 // createTelemetryDeployment builds the desired Deployment for the telemetry service.
-// Secret hashes are pod annotations so a data change rolls the pod.
-func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSecretHash string, loki telemetryLokiPod) *appsv1.Deployment {
+// The ConfigMap hash and Secret hashes are pod annotations so a data change rolls the pod.
+// configMapHash is the desired controller ConfigMap, matching the controller Deployment.
+func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, configMapHash, tlsSecretHash string, loki telemetryLokiPod) *appsv1.Deployment {
 	if loki.disablePush && jumpstarter.Spec.Telemetry != nil {
 		specCopy := *jumpstarter
 		telCopy := *jumpstarter.Spec.Telemetry
@@ -487,7 +495,7 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSec
 
 	replicas := telemetryReplicas(t)
 
-	podAnnotations := telemetryPodAnnotations(tlsSecretHash, loki)
+	podAnnotations := telemetryPodAnnotations(configMapHash, tlsSecretHash, loki)
 
 	// Base environment variables - CONTROLLER_KEY is always required for token validation
 	envVars := []corev1.EnvVar{

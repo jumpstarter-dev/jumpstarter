@@ -37,7 +37,7 @@ func TestReconcileTelemetryDeploymentOmitsLokiWhenSecretMissing(t *testing.T) {
 	js.Spec.Telemetry.Loki.SecretRef = "loki-credentials"
 	r, c, rec := lokiTestReconciler(t)
 
-	if err := r.reconcileTelemetryDeployment(context.Background(), js); err != nil {
+	if err := r.reconcileTelemetryDeployment(context.Background(), js, ""); err != nil {
 		t.Fatal(err)
 	}
 	dep := getTelemetryDep(t, c)
@@ -61,7 +61,7 @@ func TestReconcileTelemetryDeploymentOmitsLokiWhenSecretHasNoCredentials(t *test
 	}
 	r, c, rec := lokiTestReconciler(t, secret)
 
-	if err := r.reconcileTelemetryDeployment(context.Background(), js); err != nil {
+	if err := r.reconcileTelemetryDeployment(context.Background(), js, ""); err != nil {
 		t.Fatal(err)
 	}
 	if hasLokiURL(getTelemetryDep(t, c)) {
@@ -81,7 +81,7 @@ func TestReconcileTelemetryDeploymentKeepsLokiForTokenOnlySecret(t *testing.T) {
 	}
 	r, c, rec := lokiTestReconciler(t, secret)
 
-	if err := r.reconcileTelemetryDeployment(context.Background(), js); err != nil {
+	if err := r.reconcileTelemetryDeployment(context.Background(), js, ""); err != nil {
 		t.Fatal(err)
 	}
 	dep := getTelemetryDep(t, c)
@@ -106,7 +106,7 @@ func TestReconcileTelemetryDeploymentKeepsLokiForPasswordOnlySecret(t *testing.T
 	}
 	r, c, _ := lokiTestReconciler(t, secret)
 
-	if err := r.reconcileTelemetryDeployment(context.Background(), js); err != nil {
+	if err := r.reconcileTelemetryDeployment(context.Background(), js, ""); err != nil {
 		t.Fatal(err)
 	}
 	if !hasLokiURL(getTelemetryDep(t, c)) {
@@ -118,7 +118,7 @@ func TestReconcileTelemetryDeploymentKeepsUnauthenticatedLoki(t *testing.T) {
 	js := lokiPushJS()
 	r, c, rec := lokiTestReconciler(t)
 
-	if err := r.reconcileTelemetryDeployment(context.Background(), js); err != nil {
+	if err := r.reconcileTelemetryDeployment(context.Background(), js, ""); err != nil {
 		t.Fatal(err)
 	}
 	dep := getTelemetryDep(t, c)
@@ -143,7 +143,7 @@ func TestReconcileTelemetryDeploymentOmitsLokiWhenCASecretMissing(t *testing.T) 
 	}
 	r, c, rec := lokiTestReconciler(t, secret)
 
-	if err := r.reconcileTelemetryDeployment(context.Background(), js); err != nil {
+	if err := r.reconcileTelemetryDeployment(context.Background(), js, ""); err != nil {
 		t.Fatal(err)
 	}
 	dep := getTelemetryDep(t, c)
@@ -165,7 +165,7 @@ func TestReconcileTelemetryDeploymentKeepsCredentialReasonWhenCASecretMissing(t 
 	js.Spec.Telemetry.Loki.TLS.CASecretRef = "loki-ca-bundle"
 	r, c, rec := lokiTestReconciler(t)
 
-	if err := r.reconcileTelemetryDeployment(context.Background(), js); err != nil {
+	if err := r.reconcileTelemetryDeployment(context.Background(), js, ""); err != nil {
 		t.Fatal(err)
 	}
 	if hasLokiURL(getTelemetryDep(t, c)) {
@@ -194,7 +194,7 @@ func TestReconcileTelemetryDeploymentRollsWhenLokiSecretChanges(t *testing.T) {
 	}
 	r, c, _ := lokiTestReconciler(t, secret, ca)
 
-	if err := r.reconcileTelemetryDeployment(context.Background(), js); err != nil {
+	if err := r.reconcileTelemetryDeployment(context.Background(), js, ""); err != nil {
 		t.Fatal(err)
 	}
 	first := getTelemetryDep(t, c)
@@ -208,7 +208,7 @@ func TestReconcileTelemetryDeploymentRollsWhenLokiSecretChanges(t *testing.T) {
 	if err := c.Update(context.Background(), secret); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.reconcileTelemetryDeployment(context.Background(), js); err != nil {
+	if err := r.reconcileTelemetryDeployment(context.Background(), js, ""); err != nil {
 		t.Fatal(err)
 	}
 	second := getTelemetryDep(t, c)
