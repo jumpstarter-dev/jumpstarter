@@ -80,16 +80,19 @@ class QemuClient(CompositeClient):
 
     @contextmanager
     def shell(self):
-        # Password only. The guest account is the cloud-init user. An agent
-        # key that cannot sign closes the transport before password auth.
+        # A configured guest password skips the agent and key files. The
+        # cloud-init user authenticates with that password, and an agent key
+        # that cannot sign closes the transport before password auth. An empty
+        # password leaves agent and discovered-key authentication available.
+        password = self.password
+        connect_kwargs: dict[str, str | bool] = {"password": password}
+        if password:
+            connect_kwargs["allow_agent"] = False
+            connect_kwargs["look_for_keys"] = False
         with FabricAdapter(
             client=self.ssh,
             user=self.username,
-            connect_kwargs={
-                "password": self.password,
-                "allow_agent": False,
-                "look_for_keys": False,
-            },
+            connect_kwargs=connect_kwargs,
         ) as conn:
             yield conn
 
