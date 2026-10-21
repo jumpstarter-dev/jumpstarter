@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+import anyio
 import pytest
 from grpc import StatusCode
 from grpc.aio import AioRpcError
@@ -333,3 +334,33 @@ class TestAsyncDriverClientWaitForHookStatus:
 
         # Should return True (backward compatibility - assume hook complete)
         assert result is True
+
+
+class TestAsyncDriverClientWaitForLeaseReadyMonitored:
+    @pytest.mark.parametrize(
+        "error", [create_mock_rpc_error(StatusCode.UNIMPLEMENTED), NotImplementedError()], ids=["grpc", "stub"]
+    )
+    async def test_old_exporter_is_ready_before_and_after_discovery(self, error: Exception) -> None:
+        """An exporter without GetStatus counts as LEASE_READY for a wait that is
+        pending when the RPC fails, and for later waits once the client knows."""
+        reply = anyio.Event()
+
+        async def get_status(request, timeout=None):
+            await reply.wait()
+            raise error
+
+        stub = MagicMock()
+        stub.GetStatus = AsyncMock(side_effect=get_status)
+        client = AsyncDriverClient(stub=stub)
+
+        with anyio.fail_after(5):
+            async with client.status_monitor_async() as monitor, anyio.create_task_group() as tg:
+                tg.start_soon(client.wait_for_lease_ready_monitored, 2.0)
+                await anyio.wait_all_tasks_blocked()
+                assert monitor._active_waiters == 1
+                reply.set()
+
+            async with client.status_monitor_async():
+                await client.wait_for_lease_ready_monitored(timeout=2.0)
+
+        stub.GetStatus.assert_awaited_once()

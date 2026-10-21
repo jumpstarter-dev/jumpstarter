@@ -56,9 +56,6 @@ class StatusMonitor:
         self._status_version: int = 0
         self._previous_status: ExporterStatus | None = None
 
-        # Events for specific status transitions
-        self._status_events: dict[ExporterStatus, Event] = {}
-
         # General status change event (fires on any change)
         self._any_change_event: Event = Event()
 
@@ -134,9 +131,7 @@ class StatusMonitor:
         """
         self._on_status_change.append(callback)
 
-    async def wait_for_status(  # noqa: C901
-        self, target: ExporterStatus, timeout: float | None = None
-    ) -> bool:
+    async def wait_for_status(self, target: ExporterStatus, timeout: float | None = None) -> bool:
         """Wait for a specific status (non-blocking to other tasks).
 
         Args:
@@ -146,76 +141,7 @@ class StatusMonitor:
         Returns:
             True if status was reached, False if timed out or connection lost
         """
-        # If connection was marked as lost, verify with a quick poll
-        # (connection may have recovered from transient error)
-        if self._connection_lost:
-            logger.debug("Connection was marked as lost, verifying...")
-            try:
-                response = await self._stub.GetStatus(
-                    jumpstarter_pb2.GetStatusRequest(),
-                    timeout=5.0
-                )
-                # Connection recovered!
-                logger.info("Connection recovered during verification poll")
-                self._connection_lost = False
-                new_status = ExporterStatus.from_proto(response.status)
-                self._current_status = new_status
-                self._status_message = response.message or ""
-                self._status_version = response.status_version
-                # Check if we're already at target
-                if new_status == target:
-                    return True
-            except AioRpcError as e:
-                if e.code() in (StatusCode.UNAVAILABLE, StatusCode.DEADLINE_EXCEEDED):
-                    logger.debug("Connection still lost (%s)", e.code())
-                    return False
-                # Other errors - connection might still work, continue waiting
-                logger.debug("GetStatus error during verification: %s", e.code())
-            except Exception as e:  # noqa: BLE001
-                logger.debug("GetStatus error during verification: %s", e)
-                return False
-
-        # Check if already at target status
-        if self._current_status == target:
-            return True
-
-        # Get or create event for this status
-        if target not in self._status_events:
-            self._status_events[target] = Event()
-
-        async def wait_loop():
-            # Increment active waiters to force fast polling
-            self._active_waiters += 1
-            try:
-                while self._running and not self._connection_lost:
-                    # Check current status
-                    if self._current_status == target:
-                        return True
-
-                    # Capture event reference before waiting
-                    current_event = self._any_change_event
-
-                    # Double-check after capturing
-                    if self._current_status == target:
-                        return True
-
-                    # Check for connection lost
-                    if self._connection_lost:
-                        logger.debug("Connection lost while waiting")
-                        return False
-
-                    # Wait for any status change
-                    await current_event.wait()
-                return False
-            finally:
-                self._active_waiters -= 1
-
-        if timeout is not None:
-            with anyio.move_on_after(timeout):
-                return await wait_loop()
-            return False
-        else:
-            return await wait_loop()
+        return await self.wait_for_any_of([target], timeout=timeout) == target
 
     async def wait_for_any_of(  # noqa: C901
         self, targets: list[ExporterStatus], timeout: float | None = None
@@ -261,11 +187,6 @@ class StatusMonitor:
         # Check if already at one of the target statuses
         if self._current_status in targets:
             return self._current_status
-
-        # Create events for all targets
-        for target in targets:
-            if target not in self._status_events:
-                self._status_events[target] = Event()
 
         async def wait_for_first():
             # Increment active waiters to force fast polling
@@ -362,12 +283,6 @@ class StatusMonitor:
                 # Fire events if status changed
                 if old_status != new_status:
                     logger.info(f"Status changed: {old_status} -> {new_status} (version={new_version})")
-
-                    # Fire specific status event
-                    if new_status in self._status_events:
-                        self._status_events[new_status].set()
-                        # Reset for next time
-                        self._status_events[new_status] = Event()
 
                     # Fire general change event - set BEFORE replacing
                     self._any_change_event.set()
