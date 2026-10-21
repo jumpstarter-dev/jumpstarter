@@ -137,8 +137,7 @@ def test_shell_attaches_client_telemetry():
 
 async def test_shell_closes_telemetry_when_the_shell_times_out():
     telemetry = Mock()
-    telemetry.handler = Mock()
-    telemetry.handler.flush_loop = AsyncMock()
+    telemetry.run = AsyncMock()
     telemetry.aclose = AsyncMock()
     config = _DummyConfig()
 
