@@ -336,7 +336,17 @@ class TestMetricsStreamProtocol:
 
     async def test_scrape_build_failure_cancels_before_retry(self):
         """Building a scrape response must not leave the RPC open across the retry."""
-        call = FakeMetricsCall()
+
+        class _Call(FakeMetricsCall):
+            def __init__(self) -> None:
+                super().__init__()
+                self.order: list[str] = []
+
+            def cancel(self) -> None:
+                self.order.append("cancel")
+                super().cancel()
+
+        call = _Call()
         client = MetricsStreamClient(
             cast(telemetry_pb2_grpc.TelemetryServiceStub, RecordingStub(call)),
             identity=IDENTITY,
@@ -344,16 +354,9 @@ class TestMetricsStreamProtocol:
             backoff_base=0.5,
             backoff_cap=2.0,
         )
-        order: list[str] = []
-
-        def cancel() -> None:
-            order.append("cancel")
-            FakeMetricsCall.cancel(call)
-
-        call.cancel = cancel
 
         async def fake_sleep(seconds: float) -> None:
-            order.append(f"sleep:{seconds}")
+            call.order.append(f"sleep:{seconds}")
             await anyio.lowlevel.checkpoint()
 
         with (
@@ -367,12 +370,12 @@ class TestMetricsStreamProtocol:
                 tg.start_soon(client.run)
                 await _wait_until(lambda: len(call.writes) >= 1)
                 await call.push_scrape()
-                await _wait_until(lambda: any(item.startswith("sleep:") for item in order))
+                await _wait_until(lambda: any(item.startswith("sleep:") for item in call.order))
                 tg.cancel_scope.cancel()
 
-        assert order[0] == "cancel"
+        assert call.order[0] == "cancel"
         assert call.cancelled is True
-        assert order[1] == "sleep:0.5"
+        assert call.order[1] == "sleep:0.5"
 
 
 def _rpc_error(code: grpc.StatusCode) -> grpc.aio.AioRpcError:
