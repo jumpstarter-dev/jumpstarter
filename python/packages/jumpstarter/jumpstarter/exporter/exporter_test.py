@@ -1103,6 +1103,369 @@ class TestReportStatusGrpcErrorHandling:
         assert "Failed to release lease" in caplog.text
 
 
+class TestDrainSupersession:
+    """Regression tests: the drain must discard superseded status
+    snapshots instead of retrying stale reports after backoff."""
+
+    async def test_stale_retry_discarded_when_superseded(self):
+        """When AVAILABLE fails and LEASE_READY is queued during backoff,
+        the retry must send LEASE_READY — not stale AVAILABLE."""
+        exporter = _make_exporter_for_report_status()
+        exporter._status_drain_active = True
+        exporter._status_rpc_event = Event()
+        exporter._pending_status_request = None
+
+        unavailable = grpc.aio.AioRpcError(
+            code=grpc.StatusCode.UNAVAILABLE,
+            initial_metadata=grpc.aio.Metadata(),
+            trailing_metadata=grpc.aio.Metadata(),
+            details="transient",
+        )
+
+        sent_statuses = []
+        first_attempt_done = Event()
+        retry_sent = Event()
+        call_count = 0
+
+        async def mock_report_status(request, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                first_attempt_done.set()
+                raise unavailable
+            sent_statuses.append(ExporterStatus.from_proto(request.status))
+            retry_sent.set()
+
+        _mock_controller, stub_ctx = _setup_mock_controller_stub(
+            exporter, side_effect=mock_report_status,
+        )
+
+        backoff_entered = Event()
+        backoff_release = Event()
+
+        async def gated_sleep(duration):
+            """Pause during backoff so the test can inject a newer status."""
+            backoff_entered.set()
+            await backoff_release.wait()
+
+        with (
+            patch.object(exporter, "_controller_stub", return_value=stub_ctx),
+            patch("anyio.sleep", gated_sleep),
+        ):
+            async with create_task_group() as tg:
+                tg.start_soon(exporter._drain_status_reports)
+
+                # 1) Queue AVAILABLE
+                await exporter._report_status(ExporterStatus.AVAILABLE, "available")
+
+                # 2) Wait for first attempt to fail and enter backoff
+                with fail_after(5):
+                    await first_attempt_done.wait()
+                    await backoff_entered.wait()
+
+                # 3) Queue LEASE_READY while drain is in backoff
+                await exporter._report_status(ExporterStatus.LEASE_READY, "ready")
+
+                # 4) Release backoff — drain re-reads _pending_status_request
+                backoff_release.set()
+
+                # 5) Wait for the retry to succeed
+                with fail_after(5):
+                    await retry_sent.wait()
+
+                tg.cancel_scope.cancel()
+
+        assert ExporterStatus.AVAILABLE not in sent_statuses, (
+            f"Stale AVAILABLE was retried after supersession. Sent: {sent_statuses}"
+        )
+        assert ExporterStatus.LEASE_READY in sent_statuses
+
+    async def test_drain_retries_same_request_when_not_superseded(self):
+        """When no newer status is queued during backoff, the drain retries
+        the original request — normal retry behavior is preserved."""
+        exporter = _make_exporter_for_report_status()
+        exporter._status_drain_active = True
+        exporter._status_rpc_event = Event()
+        exporter._pending_status_request = None
+
+        unavailable = grpc.aio.AioRpcError(
+            code=grpc.StatusCode.UNAVAILABLE,
+            initial_metadata=grpc.aio.Metadata(),
+            trailing_metadata=grpc.aio.Metadata(),
+            details="transient",
+        )
+
+        sent_statuses = []
+        retry_sent = Event()
+        call_count = 0
+
+        async def fail_once_then_succeed(request, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise unavailable
+            sent_statuses.append(ExporterStatus.from_proto(request.status))
+            retry_sent.set()
+
+        _mock_controller, stub_ctx = _setup_mock_controller_stub(
+            exporter, side_effect=fail_once_then_succeed,
+        )
+
+        with (
+            patch.object(exporter, "_controller_stub", return_value=stub_ctx),
+            patch("anyio.sleep", AsyncMock()),
+        ):
+            async with create_task_group() as tg:
+                tg.start_soon(exporter._drain_status_reports)
+
+                await exporter._report_status(ExporterStatus.AVAILABLE, "available")
+
+                with fail_after(5):
+                    await retry_sent.wait()
+
+                tg.cancel_scope.cancel()
+
+        assert sent_statuses == [ExporterStatus.AVAILABLE]
+        assert call_count == 2
+
+    async def test_stale_send_discarded_during_channel_setup(self):
+        """When a newer status is queued while _controller_stub is setting
+        up the channel (TLS handshake, etc.), the RPC must send the newer
+        status — not the one read before channel setup started."""
+        from contextlib import asynccontextmanager
+
+        exporter = _make_exporter_for_report_status()
+        exporter._status_drain_active = True
+        exporter._status_rpc_event = Event()
+        exporter._pending_status_request = None
+
+        sent_statuses = []
+        send_done = Event()
+
+        async def mock_report_status(request, **kwargs):
+            sent_statuses.append(ExporterStatus.from_proto(request.status))
+            send_done.set()
+
+        mock_controller = AsyncMock()
+        mock_controller.ReportStatus = AsyncMock(side_effect=mock_report_status)
+
+        channel_entered = Event()
+        channel_release = Event()
+
+        @asynccontextmanager
+        async def slow_controller_stub():
+            """Simulate slow channel setup that yields to the event loop."""
+            channel_entered.set()
+            await channel_release.wait()
+            yield mock_controller
+
+        with patch.object(exporter, "_controller_stub", slow_controller_stub):
+            async with create_task_group() as tg:
+                tg.start_soon(exporter._drain_status_reports)
+
+                # 1) Queue AVAILABLE
+                await exporter._report_status(ExporterStatus.AVAILABLE, "available")
+
+                # 2) Wait for channel setup to start (simulates TLS handshake)
+                with fail_after(5):
+                    await channel_entered.wait()
+
+                # 3) Queue LEASE_READY during channel setup
+                await exporter._report_status(ExporterStatus.LEASE_READY, "ready")
+
+                # 4) Release channel — drain reads latest before RPC
+                channel_release.set()
+
+                # 5) Wait for the RPC
+                with fail_after(5):
+                    await send_done.wait()
+
+                tg.cancel_scope.cancel()
+
+        assert ExporterStatus.AVAILABLE not in sent_statuses, (
+            f"Stale AVAILABLE sent during channel setup. Sent: {sent_statuses}"
+        )
+        assert ExporterStatus.LEASE_READY in sent_statuses
+
+    async def test_drain_breaks_when_request_cleared_during_channel_setup(self):
+        """If _pending_status_request becomes None during channel setup,
+        the drain breaks out without sending anything."""
+        from contextlib import asynccontextmanager
+
+        exporter = _make_exporter_for_report_status()
+        exporter._status_drain_active = True
+        exporter._status_rpc_event = Event()
+        exporter._pending_status_request = None
+
+        mock_controller = AsyncMock()
+        rpc_called = False
+
+        async def should_not_be_called(request, **kwargs):
+            nonlocal rpc_called
+            rpc_called = True
+
+        mock_controller.ReportStatus = AsyncMock(side_effect=should_not_be_called)
+
+        channel_entered = Event()
+        channel_release = Event()
+        stub_exited = Event()
+
+        @asynccontextmanager
+        async def slow_controller_stub():
+            channel_entered.set()
+            await channel_release.wait()
+            try:
+                yield mock_controller
+            finally:
+                stub_exited.set()
+
+        with patch.object(exporter, "_controller_stub", slow_controller_stub):
+            async with create_task_group() as tg:
+                tg.start_soon(exporter._drain_status_reports)
+
+                await exporter._report_status(ExporterStatus.AVAILABLE, "available")
+
+                with fail_after(5):
+                    await channel_entered.wait()
+
+                # Clear the pending request during channel setup
+                exporter._pending_status_request = None
+
+                channel_release.set()
+
+                # Wait until the drain has fully exited the stub
+                with fail_after(5):
+                    await stub_exited.wait()
+
+                tg.cancel_scope.cancel()
+
+        assert not rpc_called
+
+    async def test_drain_stops_on_unimplemented(self, caplog):
+        """UNIMPLEMENTED logs a warning and stops retrying."""
+        exporter = _make_exporter_for_report_status()
+        exporter._status_drain_active = True
+        exporter._status_rpc_event = Event()
+        exporter._pending_status_request = None
+
+        unimplemented = grpc.aio.AioRpcError(
+            code=grpc.StatusCode.UNIMPLEMENTED,
+            initial_metadata=grpc.aio.Metadata(),
+            trailing_metadata=grpc.aio.Metadata(),
+            details="not implemented",
+        )
+
+        rpc_done = Event()
+
+        async def fail_unimplemented(request, **kwargs):
+            rpc_done.set()
+            raise unimplemented
+
+        _mock_controller, stub_ctx = _setup_mock_controller_stub(
+            exporter, side_effect=fail_unimplemented,
+        )
+
+        with (
+            patch.object(exporter, "_controller_stub", return_value=stub_ctx),
+            caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"),
+        ):
+            async with create_task_group() as tg:
+                tg.start_soon(exporter._drain_status_reports)
+
+                await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+
+                with fail_after(5):
+                    await rpc_done.wait()
+                await anyio.lowlevel.checkpoint()
+
+                tg.cancel_scope.cancel()
+
+        assert any("ReportStatus not supported" in r.message for r in caplog.records)
+
+    async def test_drain_stops_on_non_transient_grpc_error(self, caplog):
+        """Non-transient gRPC errors (e.g. PERMISSION_DENIED) are not retried."""
+        exporter = _make_exporter_for_report_status()
+        exporter._status_drain_active = True
+        exporter._status_rpc_event = Event()
+        exporter._pending_status_request = None
+
+        permission_error = grpc.aio.AioRpcError(
+            code=grpc.StatusCode.PERMISSION_DENIED,
+            initial_metadata=grpc.aio.Metadata(),
+            trailing_metadata=grpc.aio.Metadata(),
+            details="denied",
+        )
+
+        rpc_done = Event()
+        call_count = 0
+
+        async def fail_permission(request, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            rpc_done.set()
+            raise permission_error
+
+        _mock_controller, stub_ctx = _setup_mock_controller_stub(
+            exporter, side_effect=fail_permission,
+        )
+
+        with (
+            patch.object(exporter, "_controller_stub", return_value=stub_ctx),
+            caplog.at_level(logging.ERROR, logger="jumpstarter.exporter.exporter"),
+        ):
+            async with create_task_group() as tg:
+                tg.start_soon(exporter._drain_status_reports)
+
+                await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+
+                with fail_after(5):
+                    await rpc_done.wait()
+                await anyio.lowlevel.checkpoint()
+
+                tg.cancel_scope.cancel()
+
+        assert call_count == 1
+        assert any("Failed to" in r.message for r in caplog.records if r.levelno >= logging.ERROR)
+
+    async def test_drain_stops_on_non_grpc_exception(self, caplog):
+        """Non-gRPC exceptions (e.g. ConnectionError) are not retried."""
+        exporter = _make_exporter_for_report_status()
+        exporter._status_drain_active = True
+        exporter._status_rpc_event = Event()
+        exporter._pending_status_request = None
+
+        rpc_done = Event()
+        call_count = 0
+
+        async def fail_connection(request, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            rpc_done.set()
+            raise ConnectionError("network unreachable")
+
+        _mock_controller, stub_ctx = _setup_mock_controller_stub(
+            exporter, side_effect=fail_connection,
+        )
+
+        with (
+            patch.object(exporter, "_controller_stub", return_value=stub_ctx),
+            caplog.at_level(logging.ERROR, logger="jumpstarter.exporter.exporter"),
+        ):
+            async with create_task_group() as tg:
+                tg.start_soon(exporter._drain_status_reports)
+
+                await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+
+                with fail_after(5):
+                    await rpc_done.wait()
+                await anyio.lowlevel.checkpoint()
+
+                tg.cancel_scope.cancel()
+
+        assert call_count == 1
+        assert any("Failed to" in r.message for r in caplog.records if r.levelno >= logging.ERROR)
+
+
 class TestHandleLeaseStaleSkip:
     async def test_handle_lease_skips_session_for_stale_lease(self):
         """When lease_ended is already set, handle_lease skips session

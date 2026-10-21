@@ -719,20 +719,56 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         """Background task that sends status updates to the controller.
 
         Runs during serve() to make _report_status non-blocking. Uses "latest wins"
-        semantics: if multiple status updates arrive while retrying, only the most
-        recent one is sent. This prevents blocking the client connection path when
-        the controller is temporarily unreachable.
+        semantics for pending status reports. Before each RPC attempt, the latest
+        pending request is read after channel setup, ensuring that newer updates
+        supersede stale requests, including during retry backoff.
         """
         while True:
             await self._status_rpc_event.wait()
             self._status_rpc_event = Event()  # Reset for next update
-            request = self._pending_status_request
-            if request and await self._send_report_status_rpc(request):
-                logger.info(
-                    "Updated status to %s: %s",
-                    ExporterStatus.from_proto(request.status),
-                    request.message,
-                )
+
+            for attempt in range(_RPC_MAX_RETRIES + 1):
+                try:
+                    async with self._controller_stub() as controller:
+                        # Re-read after channel setup: no await between this
+                        # read and the RPC call, so no other task can
+                        # interleave a newer status in between.
+                        request = self._pending_status_request
+                        if request is None:
+                            break
+                        await controller.ReportStatus(request, timeout=_RPC_TIMEOUT)
+                    logger.info(
+                        "Updated status to %s: %s",
+                        ExporterStatus.from_proto(request.status),
+                        request.message,
+                    )
+                    break
+                except grpc.aio.AioRpcError as e:
+                    if e.code() == grpc.StatusCode.UNIMPLEMENTED:
+                        logger.warning(
+                            "ReportStatus not supported by controller, "
+                            "status updates will be skipped"
+                        )
+                        break
+                    if e.code() in _TRANSIENT_GRPC_CODES and attempt < _RPC_MAX_RETRIES:
+                        backoff = min(
+                            _RPC_BACKOFF_BASE * (2 ** attempt), _RPC_BACKOFF_CAP
+                        )
+                        logger.warning(
+                            "Transient error %s (attempt %d/%d), retrying in %.1fs: %s",
+                            "report status",
+                            attempt + 1,
+                            _RPC_MAX_RETRIES + 1,
+                            backoff,
+                            e,
+                        )
+                        await anyio.sleep(backoff)
+                        continue
+                    logger.exception("Failed to %s", "report status")
+                    break
+                except Exception as e:  # noqa: BLE001
+                    logger.error("Failed to %s: %s", "report status", e)
+                    break
 
     async def _report_status(self, status: ExporterStatus, message: str = ""):
         """Report the exporter status with the controller and session."""
