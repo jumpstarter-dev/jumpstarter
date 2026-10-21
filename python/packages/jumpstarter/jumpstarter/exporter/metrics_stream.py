@@ -65,16 +65,21 @@ class MetricsStreamClient:
 
     async def _session(self) -> None:
         call = self._stub.MetricsStream(**self._call_kwargs())
-        await call.write(
-            telemetry_pb2.MetricsStreamRequest(
-                register=telemetry_pb2.MetricsRegister(identity=self.identity),
-            )
-        )
-        async for resp in call:
-            if resp.WhichOneof("msg") != "scrape_request":
-                continue
+        try:
             await call.write(
                 telemetry_pb2.MetricsStreamRequest(
-                    scrape_response=scrape_response_from_registry(self._registry_or_default()),
+                    register=telemetry_pb2.MetricsRegister(identity=self.identity),
                 )
             )
+            async for resp in call:
+                if resp.WhichOneof("msg") != "scrape_request":
+                    continue
+                await call.write(
+                    telemetry_pb2.MetricsStreamRequest(
+                        scrape_response=scrape_response_from_registry(self._registry_or_default()),
+                    )
+                )
+        finally:
+            # A local failure, such as building the scrape response, used to
+            # leave the server-side RPC open until the channel closed.
+            call.cancel()

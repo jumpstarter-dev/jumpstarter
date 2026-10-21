@@ -43,7 +43,11 @@ class FakeMetricsCall:
 
     def __init__(self):
         self.writes: list[telemetry_pb2.MetricsStreamRequest] = []
+        self.cancelled = False
         self._send, self._recv = create_memory_object_stream[telemetry_pb2.MetricsStreamResponse](32)
+
+    def cancel(self) -> None:
+        self.cancelled = True
 
     async def write(self, msg: telemetry_pb2.MetricsStreamRequest) -> None:
         self.writes.append(msg)
@@ -328,3 +332,43 @@ class TestMetricsStreamProtocol:
 
         assert delays[0] == 0.5
         assert attempts["n"] >= 2
+
+    async def test_scrape_build_failure_cancels_before_retry(self):
+        """Building a scrape response must not leave the RPC open across the retry."""
+        call = FakeMetricsCall()
+        client = MetricsStreamClient(
+            cast(telemetry_pb2_grpc.TelemetryServiceStub, RecordingStub(call)),
+            identity=IDENTITY,
+            token=TOKEN,
+            backoff_base=0.5,
+            backoff_cap=2.0,
+        )
+        order: list[str] = []
+
+        def cancel() -> None:
+            order.append("cancel")
+            FakeMetricsCall.cancel(call)
+
+        call.cancel = cancel
+
+        async def fake_sleep(seconds: float) -> None:
+            order.append(f"sleep:{seconds}")
+            await anyio.lowlevel.checkpoint()
+
+        with (
+            patch(
+                "jumpstarter.exporter.metrics_stream.scrape_response_from_registry",
+                side_effect=RuntimeError("scrape failed"),
+            ),
+            patch("jumpstarter.exporter.metrics_stream.sleep", fake_sleep),
+        ):
+            async with create_task_group() as tg:
+                tg.start_soon(client.run)
+                await _wait_until(lambda: len(call.writes) >= 1)
+                await call.push_scrape()
+                await _wait_until(lambda: any(item.startswith("sleep:") for item in order))
+                tg.cancel_scope.cancel()
+
+        assert order[0] == "cancel"
+        assert call.cancelled is True
+        assert order[1] == "sleep:0.5"
