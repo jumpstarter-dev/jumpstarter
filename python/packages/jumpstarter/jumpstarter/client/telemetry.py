@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from types import SimpleNamespace
 
@@ -31,19 +32,74 @@ def _severity_to_level(severity: str) -> int:
 
 @dataclass
 class ClientTelemetry:
-    handler: TelemetryLogHandler
-    channel: grpc.aio.Channel
+    """Discovered telemetry endpoint. The channel opens in ``run``, not at attach time.
+
+    ``tls.insecure`` discovers the server certificate by dialing the telemetry
+    endpoint. Doing that before the lease would stall or fail ``jmp shell``
+    when the telemetry process is down. PushLogs stays best-effort: one dial
+    attempt, then the session continues without a handler.
+    """
+
+    endpoint: str
+    certificate: str
+    insecure: bool
+    namespace: str
+    min_severity: str
+    token: Callable[[], str]
+    identity_metadata: tuple[tuple[str, str], ...]
+    handler: TelemetryLogHandler | None = None
+    channel: grpc.aio.Channel | None = None
+    _closed: bool = False
+
+    async def run(self) -> None:
+        """Open the channel once, then flush until cancelled."""
+        if not await self._open():
+            return
+        handler = self.handler
+        if handler is None:
+            return
+        await handler.flush_loop()
+
+    async def _open(self) -> bool:
+        if self._closed or self.handler is not None:
+            return self.handler is not None
+        try:
+            channel = await _telemetry_channel(self.endpoint, self.certificate, self.insecure)
+        except Exception as exc:  # noqa: BLE001
+            # Same best-effort boundary as GetServiceEndpoints. Cancellation is
+            # a BaseException and still propagates.
+            logger.debug("telemetry channel unavailable: %s", exc)
+            return False
+        if self._closed:
+            await _close_channel(channel)
+            return False
+        self.channel = channel
+        handler = TelemetryLogHandler(
+            telemetry_pb2_grpc.TelemetryServiceStub(channel),
+            namespace=self.namespace,
+            token=self.token,
+            component="cli",
+            identity_metadata=self.identity_metadata,
+        )
+        handler.setLevel(_severity_to_level(self.min_severity))
+        logging.getLogger().addHandler(handler)
+        self.handler = handler
+        logger.info("Telemetry log handler attached (component=cli)")
+        return True
 
     async def aclose(self) -> None:
-        try:
-            await self.handler.close_async()
-        except Exception:
-            logger.debug("telemetry handler close failed", exc_info=True)
-        logging.getLogger().removeHandler(self.handler)
-        try:
-            await self.channel.close()
-        except Exception:
-            logger.debug("telemetry channel close failed", exc_info=True)
+        self._closed = True
+        handler = self.handler
+        channel = self.channel
+        self.handler = None
+        self.channel = None
+        if handler is not None:
+            try:
+                await handler.close_async()
+            except Exception:
+                logger.debug("telemetry handler close failed", exc_info=True)
+            logging.getLogger().removeHandler(handler)
+        await _close_channel(channel)
 
 
 async def _telemetry_channel(endpoint: str, certificate: str, insecure: bool) -> grpc.aio.Channel:
@@ -62,11 +118,21 @@ async def _telemetry_channel(endpoint: str, certificate: str, insecure: bool) ->
     return grpc.aio.secure_channel(endpoint, grpc.ssl_channel_credentials())
 
 
+async def _close_channel(channel: grpc.aio.Channel | None) -> None:
+    if channel is None:
+        return
+    try:
+        await channel.close()
+    except Exception:
+        logger.debug("telemetry channel close failed", exc_info=True)
+
+
 async def attach_client_telemetry(config) -> ClientTelemetry | None:
     """Best-effort GetServiceEndpoints + TelemetryLogHandler for jmp.
 
-    Human-facing stdout handlers are left in place; this only adds a PushLogs
-    handler when the controller advertises a telemetry endpoint.
+    Human-facing stdout handlers are left in place. The PushLogs handler is
+    attached from ``ClientTelemetry.run`` after the telemetry channel opens,
+    so shell startup does not wait on the telemetry process.
     """
     try:
         channel = await config.channel()
@@ -85,9 +151,6 @@ async def attach_client_telemetry(config) -> ClientTelemetry | None:
 
     ep = resp.telemetry_endpoints[0]
     tls = getattr(config, "tls", None)
-    insecure = bool(getattr(tls, "insecure", False))
-    tel_channel = await _telemetry_channel(ep.endpoint, ep.certificate or "", insecure)
-    tel_stub = telemetry_pb2_grpc.TelemetryServiceStub(tel_channel)
     namespace = ""
     client_name = ""
     metadata = getattr(config, "metadata", None)
@@ -104,14 +167,12 @@ async def attach_client_telemetry(config) -> ClientTelemetry | None:
     def current_token() -> str:
         return getattr(config, "token", None) or ""
 
-    handler = TelemetryLogHandler(
-        tel_stub,
+    return ClientTelemetry(
+        endpoint=ep.endpoint,
+        certificate=ep.certificate or "",
+        insecure=bool(getattr(tls, "insecure", False)),
         namespace=namespace,
+        min_severity=ep.min_severity,
         token=current_token,
-        component="cli",
-        identity_metadata=identity_metadata,
+        identity_metadata=tuple(identity_metadata),
     )
-    handler.setLevel(_severity_to_level(ep.min_severity))
-    logging.getLogger().addHandler(handler)
-    logger.info("Telemetry log handler attached (component=cli)")
-    return ClientTelemetry(handler=handler, channel=tel_channel)

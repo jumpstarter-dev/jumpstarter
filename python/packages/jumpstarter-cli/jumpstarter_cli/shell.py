@@ -594,7 +594,9 @@ async def _shell_with_signal_handling(  # noqa: C901
 
         telemetry = await attach_client_telemetry(config)
         if telemetry is not None:
-            tg.start_soon(telemetry.handler.flush_loop)
+            # Dial, including tls.insecure certificate discovery, runs here so a
+            # down telemetry service cannot block or fail lease startup.
+            tg.start_soon(telemetry.run)
 
         try:
             try:

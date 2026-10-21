@@ -8,6 +8,7 @@ import grpc
 import pytest
 
 from jumpstarter.client.telemetry import attach_client_telemetry
+from jumpstarter.common.exceptions import CertificateDiscoveryError
 
 pytestmark = pytest.mark.anyio
 
@@ -91,12 +92,16 @@ async def test_attach_adds_cli_handler_without_replacing_stdout():
         insecure.return_value = MagicMock()
         tel_stub.return_value = MagicMock()
         session = await attach_client_telemetry(make_config(insecure=True))
+        assert session is not None
+        assert await session._open()
 
     try:
         assert session is not None
-        assert session.handler.component == "cli"
-        assert session.handler.level == logging.WARNING
-        assert session.handler in root.handlers
+        handler = session.handler
+        assert handler is not None
+        assert handler.component == "cli"
+        assert handler.level == logging.WARNING
+        assert handler in root.handlers
         for h in before:
             assert h in root.handlers
     finally:
@@ -137,14 +142,17 @@ async def test_attach_sends_token_current_at_flush():
     ):
         insecure.return_value = MagicMock()
         session = await attach_client_telemetry(config)
+        assert session is not None
+        assert await session._open()
 
-    assert session is not None
     try:
-        session.handler.emit(_record("before refresh"))
-        await session.handler._flush()
+        handler = session.handler
+        assert handler is not None
+        handler.emit(_record("before refresh"))
+        await handler._flush()
         config.token = "new-token"
-        session.handler.emit(_record("after refresh"))
-        await session.handler._flush()
+        handler.emit(_record("after refresh"))
+        await handler._flush()
     finally:
         await session.aclose()
 
@@ -161,3 +169,70 @@ async def test_attach_sends_token_current_at_flush():
         *identity,
         ("authorization", "Bearer new-token"),
     ]
+
+
+async def test_attach_does_not_dial_telemetry():
+    """Shell startup only discovers the endpoint. The telemetry dial is deferred."""
+    resp = MagicMock()
+    resp.telemetry_endpoints = [make_endpoint()]
+    stub = AsyncMock()
+    stub.GetServiceEndpoints = AsyncMock(return_value=resp)
+    dial = AsyncMock(side_effect=AssertionError("dialled during attach"))
+
+    with (
+        patch("jumpstarter.client.telemetry.jumpstarter_pb2_grpc.ControllerServiceStub", return_value=stub),
+        patch("jumpstarter.client.telemetry.ssl_channel_credentials", new=dial),
+    ):
+        session = await attach_client_telemetry(make_config(insecure=True))
+
+    assert session is not None
+    dial.assert_not_called()
+    assert session.handler is None
+
+
+async def test_open_skips_handler_when_telemetry_is_down(caplog):
+    """A down telemetry process drops client logs and leaves the shell running."""
+    resp = MagicMock()
+    resp.telemetry_endpoints = [make_endpoint()]
+    stub = AsyncMock()
+    stub.GetServiceEndpoints = AsyncMock(return_value=resp)
+    root = logging.getLogger()
+    before = list(root.handlers)
+
+    with (
+        patch("jumpstarter.client.telemetry.jumpstarter_pb2_grpc.ControllerServiceStub", return_value=stub),
+        patch(
+            "jumpstarter.client.telemetry.ssl_channel_credentials",
+            new=AsyncMock(side_effect=CertificateDiscoveryError("telemetry down")),
+        ),
+        caplog.at_level(logging.DEBUG, logger="jumpstarter.client.telemetry"),
+    ):
+        session = await attach_client_telemetry(make_config(insecure=True))
+        assert session is not None
+        opened = await session._open()
+
+    assert opened is False
+    assert session.handler is None
+    assert session.channel is None
+    assert list(root.handlers) == before
+    assert "telemetry channel unavailable" in caplog.text
+
+
+async def test_aclose_before_open_skips_the_dial():
+    resp = MagicMock()
+    resp.telemetry_endpoints = [make_endpoint()]
+    stub = AsyncMock()
+    stub.GetServiceEndpoints = AsyncMock(return_value=resp)
+    dial = AsyncMock(side_effect=AssertionError("dialled after close"))
+
+    with (
+        patch("jumpstarter.client.telemetry.jumpstarter_pb2_grpc.ControllerServiceStub", return_value=stub),
+        patch("jumpstarter.client.telemetry.ssl_channel_credentials", new=dial),
+    ):
+        session = await attach_client_telemetry(make_config(insecure=True))
+        assert session is not None
+        await session.aclose()
+        assert await session._open() is False
+
+    dial.assert_not_called()
+    assert session.handler is None
