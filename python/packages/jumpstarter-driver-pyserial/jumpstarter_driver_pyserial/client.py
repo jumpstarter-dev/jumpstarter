@@ -1,3 +1,4 @@
+import logging
 import os
 import stat
 import sys
@@ -9,9 +10,12 @@ from anyio.streams.file import FileReadStream
 from jumpstarter_driver_network.adapters import PexpectAdapter
 from pexpect.fdpexpect import fdspawn
 
-from .console import Console
+from .console import Console, ConsoleStreamDrop
 from jumpstarter.client import DriverClient
+from jumpstarter.client.base import StubDriverClient
 from jumpstarter.client.decorators import driver_click_group
+
+logger = logging.getLogger(__name__)
 
 
 def _stdin_supplies_data() -> bool:
@@ -149,6 +153,19 @@ class PySerialClient(DriverClient):
 
         return bytes_read, bytes_sent
 
+    def _power_child(self):
+        """The `power` child if its client provides cycle(), else None."""
+        power = self.children.get("power")
+        if power is None:
+            return None
+        if isinstance(power, StubDriverClient):
+            logger.warning("'power' child client is unavailable, power cycle hotkey disabled")
+            return None
+        if not callable(getattr(power, "cycle", None)):
+            logger.warning("'power' child has no cycle() method, power cycle hotkey disabled")
+            return None
+        return power
+
     def cli(self):  # noqa: C901
         @driver_click_group(self)
         def base():
@@ -158,12 +175,24 @@ class PySerialClient(DriverClient):
         @click.option("--observe", is_flag=True, default=False, help="Watch-only mode (read-only)")
         def console(observe):
             """Start serial port console"""
+            # Power cycle is disabled in observe mode (passive observer shouldn't control power)
             if observe:
+                power_control = None
                 click.echo("\nStarting serial console in observe mode (read-only) ... exit with CTRL+B x 3 times\n")
             else:
+                power_control = self._power_child()
                 click.echo("\nStarting serial port console ... exit with CTRL+B x 3 times\n")
-            console = Console(serial_client=self, observe=observe)
-            console.run()
+                if power_control is not None:
+                    click.echo("Power cycle: CTRL+] x 3 times\n")
+
+            # No reconnect: the exporter's fanout keeps the stream attached
+            # while the device itself re-enumerates, so a drop here means the
+            # session was closed (kicked, token revoked, lease ended).
+            console = Console(serial_client=self, observe=observe, power_control=power_control)
+            try:
+                console.run()
+            except ConsoleStreamDrop:
+                raise click.ClickException("serial connection closed") from None
 
         @base.command()
         @click.option(

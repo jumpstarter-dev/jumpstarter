@@ -36,6 +36,30 @@ export:
       #cps: Avoid using cps when using --no-output.
 ```
 
+Example configuration with power control: a power driver referenced as the
+`power` child of the serial device enables the Ctrl-] x3 power-cycle hotkey in
+`console` (the console stays attached while the board re-enumerates):
+```yaml
+export:
+  serial:
+    type: jumpstarter_driver_pyserial.driver.PySerial
+    config:
+      url: "/dev/ttyUSB0"
+      baudrate: 115200
+    children:
+      power:
+        ref: "power" # any driver whose client provides cycle(), e.g. any power driver
+  power:
+    type: jumpstarter_driver_yepkit.driver.Ykush
+    config:
+      serial: "YK112233"
+      port: "1"
+```
+
+Drivers that create their own console (qemu, renode, dutlink, corellium) wire
+their power driver into it automatically, so the hotkey works there without
+any configuration.
+
 
 ### Config parameters
 
@@ -162,7 +186,9 @@ Start an interactive serial console with direct terminal access.
 j serial console
 ```
 
-Exit the console by pressing CTRL+B three times.
+**Hotkeys:**
+- **CTRL+B x3**: Exit the console
+- **CTRL+] x3**: Power cycle the board (when the serial device has a `power` child, see above)
 
 Use `--observe` to attach in read-only (watch-only) mode. Observers receive
 serial output but cannot write, so they can watch a session another client is

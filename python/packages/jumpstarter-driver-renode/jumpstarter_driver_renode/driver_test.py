@@ -254,6 +254,12 @@ def _make_driver(**kwargs) -> Renode:
     return Renode(**defaults)  # ty: ignore[invalid-argument-type]
 
 
+def test_console_wires_power_child():
+    """The console gets the power child so its hotkey can power-cycle the simulated board."""
+    driver = _make_driver()
+    assert driver.children["console"].children["power"] is driver.children["power"]
+
+
 class TestRenodePower:
     @pytest.mark.anyio
     async def test_power_on_command_sequence(self):
