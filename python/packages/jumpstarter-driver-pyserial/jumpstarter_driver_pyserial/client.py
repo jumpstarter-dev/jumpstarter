@@ -5,14 +5,13 @@ import sys
 from contextlib import contextmanager
 
 import click
-from anyio import BrokenResourceError, EndOfStream, create_task_group, open_file
+from anyio import BrokenResourceError, EndOfStream, create_task_group, open_file, to_thread
 from anyio.streams.file import FileReadStream
 from jumpstarter_driver_network.adapters import PexpectAdapter
 from pexpect.fdpexpect import fdspawn
 
 from .console import Console, ConsoleStreamDrop
 from jumpstarter.client import DriverClient
-from jumpstarter.client.core import DriverMethodNotImplemented
 from jumpstarter.client.decorators import driver_click_group
 
 logger = logging.getLogger(__name__)
@@ -153,23 +152,33 @@ class PySerialClient(DriverClient):
 
         return bytes_read, bytes_sent
 
-    def _power_cycle_hook(self):
-        """Build the Ctrl-] x3 callback, or None when unavailable.
+    def _power_child(self):
+        """The `power` child if its client provides cycle(), else None."""
+        power = self.children.get("power")
+        return power if callable(getattr(power, "cycle", None)) else None
 
-        Asks the driver (one DriverCall) whether power control is configured
-        and valid; the hotkey then triggers dut_power_cycle, which executes
-        the configured sequence on the exporter side.
+    def dut_power_cycle(self) -> None:
+        """Power-cycle the DUT through the serial device's `power` child.
+
+        The child is typically a `ref:` to the exporter's power driver; every
+        PowerClient-based driver provides cycle().
         """
-        try:
-            config = self.call("power_control_config")
-        except DriverMethodNotImplemented:
-            return None  # exporter predates the power hotkey
-        if not config.get("available"):
+        power = self._power_child()
+        if power is None:
+            raise RuntimeError("no 'power' child with a cycle() method on this serial device")
+        power.cycle()
+
+    def _power_cycle_hook(self):
+        """Build the Ctrl-] x3 callback, or None when no usable power child exists."""
+        if self._power_child() is None:
+            if "power" in self.children:
+                logger.warning("'power' child has no cycle() method, power cycle hotkey disabled")
             return None
 
         async def _cycle():
             try:
-                await self.call_async("dut_power_cycle")
+                # cycle() is a blocking client call; keep it off the console's event loop
+                await to_thread.run_sync(self.dut_power_cycle)
             except Exception:
                 logger.warning("power cycle failed", exc_info=True)
 

@@ -36,9 +36,9 @@ export:
       #cps: Avoid using cps when using --no-output.
 ```
 
-Example configuration with manual power control: a power driver declared as a
-sibling of the serial device enables the Ctrl-] x3 power-cycle hotkey in
-`start-console` (the console stays attached while the board re-enumerates):
+Example configuration with power control: a power driver referenced as the
+`power` child of the serial device enables the Ctrl-] x3 power-cycle hotkey in
+`console` (the console stays attached while the board re-enumerates):
 ```yaml
 export:
   serial:
@@ -46,12 +46,14 @@ export:
     config:
       url: "/dev/ttyUSB0"
       baudrate: 115200
-      # power_control_method: ["off", "sleep:2", "on"] # Default
-      # power_control_ref: "power" # Default: name of the sibling below
+    children:
+      power:
+        ref: "power" # any driver whose client provides cycle(), e.g. any power driver
   power:
-    type: "jumpstarter_driver_power.driver.PDU" # Any driver providing the methods used above
+    type: jumpstarter_driver_yepkit.driver.Ykush
     config:
-      # ... power driver specific config ...
+      serial: "YK112233"
+      port: "1"
 ```
 
 
@@ -64,8 +66,6 @@ export:
 | check_present | Check if the serial port exists during exporter initialization, disable if you are connecting to a dynamically created port (i.e. USB from your DUT) | bool  | no       | True    |
 | cps            | Characters per second throttling limit. When set, data transmission will be throttled to simulate slow typing. Useful for devices that can't handle fast input | float | no       | None    |
 | disable_hupcl  | Disable HUPCL on POSIX systems to avoid toggling DTR/RTS on close (can prevent MCU reset on serial disconnect)                                       | bool  | no       | False   |
-| power_control_ref | Name of the power driver that the Ctrl-] x3 console hotkey controls. Looked up among the serial device's siblings first, then among its own children (e.g. a `ref:` child) | str | no | power |
-| power_control_method | Power cycle method sequence for the Ctrl-] x3 hotkey, executed on the power_control_ref driver. Supports methods exported by that driver (e.g. `on`, `off`, `cycle` on ridesx, `hard_reset` on esp32) and `sleep:N` delays. Quote `"on"`/`"off"` in YAML. Set to `[]` or `null` to disable | list[str] | no | `["off", "sleep:2", "on"]` |
 | always_on      | Keep the serial port open even when no clients are connected. When false (the default), the port is opened on first client attach and closed when the last client detaches, freeing it for other tools (e.g. esptool). When true, the port stays open for the lifetime of the exporter, which can be useful to avoid HUPCL-triggered resets between sessions | bool  | no       | False   |
 
 ### NVDemuxSerial Driver
@@ -184,10 +184,10 @@ j serial console
 
 **Hotkeys:**
 - **CTRL+B x3**: Exit the console
-- **CTRL+] x3**: Power cycle the board (when a `power_control_ref` driver is configured, see above)
+- **CTRL+] x3**: Power cycle the board (when the serial device has a `power` child, see above)
 
-The power-cycle hotkey invokes the exported `dut_power_cycle` driver method,
-so automated clients can trigger the same power cycle programmatically.
+The power-cycle hotkey calls the client's `dut_power_cycle()`, so automated
+clients can trigger the same power cycle programmatically.
 
 Use `--observe` to attach in read-only (watch-only) mode. Observers receive
 serial output but cannot write, so they can watch a session another client is
@@ -306,7 +306,7 @@ reset some boards unless `disable_hupcl` is set.
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_pyserial.client.PySerialClient()
-    :members: pexpect, open, stream, open_stream, close
+    :members: pexpect, open, stream, open_stream, close, dut_power_cycle
 ```
 
 ### Examples

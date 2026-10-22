@@ -1,13 +1,11 @@
 import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from inspect import iscoroutinefunction
 from typing import Any
 
 from anyio import (
     create_memory_object_stream,
     sleep,
-    to_thread,
 )
 from anyio._backends._asyncio import StreamReaderWrapper, StreamWriterWrapper
 from anyio.abc import ObjectSendStream, ObjectStream
@@ -15,9 +13,7 @@ from anyio.streams.stapled import StapledObjectStream
 from serial import serial_for_url
 from serial_asyncio import open_serial_connection
 
-from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.driver import Driver, export
-from jumpstarter.driver.decorators import MARKER_DRIVERCALL, MARKER_MAGIC
 from jumpstarter.streams.fanout import FanOutStreamMixin
 
 try:
@@ -107,22 +103,8 @@ class PySerial(FanOutStreamMixin, Driver):
     check_present: bool = field(default=True)
     cps: float | None = field(default=None)  # characters per second throttling
     disable_hupcl: bool = field(default=False)
-    power_control_ref: str = field(
-        default="power",
-        metadata={"description": "Name of the power driver sibling (or child) for the Ctrl-] hotkey"},
-    )
-    power_control_method: list[str] | str | None = field(
-        default_factory=lambda: ["off", "sleep:2", "on"],
-        metadata={
-            "description": "Power cycle method sequence for the Ctrl-] hotkey, "
-            "executed on the power_control_ref driver. "
-            "Supports methods exported by that driver (e.g. on, off, cycle, hard_reset) and sleep:N. "
-            "Set to [] or null to disable hotkey. Default: ['off', 'sleep:2', 'on']"
-        },
-    )
     always_on: bool = field(default=False)
     _transport: Any = field(default=None, init=False, repr=False)
-    _parent: Driver | None = field(default=None, init=False, repr=False)
 
     def _get_fanout_always_on(self) -> bool:
         return self.always_on
@@ -133,111 +115,9 @@ class PySerial(FanOutStreamMixin, Driver):
         if self.check_present and self.url != LOOP:
             serial_for_url(self.url, baudrate=self.baudrate)
 
-        # Normalize power_control_method: None stays None, string becomes list
-        if isinstance(self.power_control_method, str):
-            object.__setattr__(self, "power_control_method", [self.power_control_method])
-        methods = self.power_control_method
-        if methods is not None and not (isinstance(methods, list) and all(isinstance(m, str) for m in methods)):
-            raise ConfigurationError(
-                f"power_control_method must be a list of strings, got {methods!r} "
-                "(quote on/off in YAML, which otherwise parses them as booleans)"
-            )
-
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_pyserial.client.PySerialClient"
-
-    def enumerate(self, *, root=None, parent=None, name=None):
-        """Capture the owning parent so the power hotkey can resolve sibling drivers.
-
-        A Proxy referencing this device re-enumerates it under the proxy's
-        parent; those passes are skipped so the result doesn't depend on
-        declaration order.
-        """
-        if parent is not None and parent.children.get(name) is self:
-            self._parent = parent
-        return super().enumerate(root=root, parent=parent, name=name)
-
-    def _power_plan(self):
-        """Resolve the power driver and validate the method sequence.
-
-        Returns (power, steps) with steps as ("sleep", seconds) / ("call",
-        method name) tuples, or None (with a warning for misconfigurations)
-        when the hotkey is unavailable.
-        """
-        if not self.power_control_method:
-            return None  # disabled via config; not a warning-worthy condition
-
-        ref = self.power_control_ref
-        power = None
-        if self._parent is not None:
-            power = self._parent.children.get(ref)
-        if power is None:
-            # Standalone serial device (no parent): fall back to own children
-            power = self.children.get(ref)
-        if power is None:
-            self.logger.info(
-                "power_control_ref '%s' matches no sibling or child of the serial device — power cycle hotkey disabled",
-                ref,
-            )
-            return None
-
-        steps = []
-        for method in self.power_control_method:
-            if method.startswith("sleep:"):
-                try:
-                    steps.append(("sleep", float(method.split(":", 1)[1])))
-                except ValueError:
-                    self.logger.warning("Invalid sleep step '%s' — power cycle hotkey disabled", method)
-                    return None
-            # Same check as DriverCall dispatch: only @export-ed methods, never
-            # lifecycle hooks such as Driver.reset() or close().
-            elif getattr(getattr(power, method, None), MARKER_DRIVERCALL, None) == MARKER_MAGIC:
-                steps.append(("call", method))
-            else:
-                self.logger.warning(
-                    "Power driver '%s' has no exported method '%s' — power cycle hotkey disabled", ref, method
-                )
-                return None
-        return power, steps
-
-    @export
-    async def power_control_config(self) -> dict:
-        """Power-cycle hotkey availability for the console client.
-
-        Validates the configured method sequence against the power driver
-        (duck-typed on the real driver object) so the client can decide
-        whether to arm the Ctrl-] hotkey.
-        """
-        if not self.power_control_method:
-            return {"available": False, "reason": "power control disabled"}
-        if self._power_plan() is None:
-            return {"available": False, "reason": "power driver or methods unavailable"}
-        return {"available": True}
-
-    @export
-    async def dut_power_cycle(self):
-        """Power-cycle the DUT attached to this console.
-
-        Executes the configured power_control_method sequence on the
-        power_control_ref driver. Triggered by the console Ctrl-] x3 hotkey
-        and callable remotely like any other driver method.
-        """
-        plan = self._power_plan()
-        if plan is None:
-            raise RuntimeError("power cycle unavailable: power control disabled or misconfigured")
-        power, steps = plan
-        for kind, value in steps:
-            if kind == "sleep":
-                await sleep(value)
-            else:
-                method = getattr(power, value)
-                # Match DriverCall dispatch: await coroutines, run sync methods
-                # in a worker thread so blocking PDUs don't stall the exporter.
-                if iscoroutinefunction(method):
-                    await method()
-                else:
-                    await to_thread.run_sync(method)
 
     def _maybe_disable_hupcl(self, serial_port: Any):
         """Disable HUPCL to avoid MCU reset on serial port close when supported."""
