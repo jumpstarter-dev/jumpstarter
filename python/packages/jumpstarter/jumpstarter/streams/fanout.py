@@ -613,10 +613,7 @@ class FanOutStreamMixin:
 
         When always_on is false the reader stops once the kicked clients unwind.
         Closing a serial port may toggle DTR and reset the attached board.
-
-        Deliberately does not chain to super().close(): that would close child
-        drivers (e.g. a `power` ref, switching the DUT off) on a remote kick.
-        Full teardown, children included, happens at session end via shutdown().
+        Full teardown happens at session end via shutdown().
         """
         if self._fanout is not None:
             try:
@@ -630,6 +627,8 @@ class FanOutStreamMixin:
                     run_sync_from_thread(self._fanout.kick_sync)
             else:
                 self._fanout.kick_sync()
+        if hasattr(super(), "close"):
+            super().close()  # ty: ignore[unresolved-attribute]
 
     def shutdown(self):
         """Session-end teardown: stop the reader loop and release the source.
@@ -642,6 +641,3 @@ class FanOutStreamMixin:
             self._fanout.shutdown_sync()
         if hasattr(super(), "shutdown"):
             super().shutdown()  # ty: ignore[unresolved-attribute]
-        # The base close() teardown (child drivers) that the client-callable close() skips.
-        if hasattr(super(), "close"):
-            super().close()  # ty: ignore[unresolved-attribute]

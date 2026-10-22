@@ -31,10 +31,6 @@ class FakePower(Driver):
     def on(self):
         self.calls.append("on")
 
-    def close(self):
-        self.calls.append("close")
-        super().close()
-
 
 @dataclass(kw_only=True)
 class NoCyclePower(Driver):
@@ -125,15 +121,6 @@ def test_console_opens_with_unavailable_power_client():
         assert result.exit_code == 0
         run.assert_called_once()
         assert "Power cycle" not in result.output
-
-
-def test_kick_does_not_close_power_child():
-    """A remote close() kick must not power the DUT off; session teardown closes it."""
-    fake = FakePower()
-    with serve(PySerial(url="loop://", children={"power": fake})) as client:
-        client.call("close")
-        assert "close" not in fake.calls
-    assert "close" in fake.calls
 
 
 def test_console_banner_advertises_power_cycle():

@@ -834,7 +834,7 @@ class TestFanOutStreamMixin:
         with pytest.raises(AssertionError, match="__post_init__"):
             driver._get_fanout()
 
-    def test_mixin_close_does_not_close_children(self):
+    def test_mixin_close_calls_super(self):
         from dataclasses import dataclass
 
         close_called = False
@@ -852,19 +852,14 @@ class TestFanOutStreamMixin:
 
         driver = TestDriver()
         driver.close()
-        assert not close_called
+        assert close_called
 
     def test_mixin_shutdown_stops_fanout_and_calls_super(self):
         from dataclasses import dataclass
 
         shutdown_called = False
-        close_called = False
 
         class Base:
-            def close(self):
-                nonlocal close_called
-                close_called = True
-
             def shutdown(self):
                 nonlocal shutdown_called
                 shutdown_called = True
@@ -881,7 +876,6 @@ class TestFanOutStreamMixin:
 
         assert fanout._shutdown
         assert shutdown_called
-        assert close_called
 
     @pytest.mark.anyio
     async def test_mixin_open_source_not_implemented(self):
