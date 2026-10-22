@@ -70,6 +70,9 @@ class ProgressStream(ObjectStream[bytes]):
         )
 
     def __del__(self):
+        self.__stop()
+
+    def __stop(self):
         if self.__prog is not None and self.__prog.live.is_started:
             self.__prog.stop()
 
@@ -111,4 +114,7 @@ class ProgressStream(ObjectStream[bytes]):
         await self.stream.send_eof()
 
     async def aclose(self):
-        await self.stream.aclose()
+        try:
+            await self.stream.aclose()
+        finally:
+            self.__stop()

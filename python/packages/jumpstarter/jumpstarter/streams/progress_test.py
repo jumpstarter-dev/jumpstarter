@@ -67,6 +67,35 @@ async def test_send_without_prior_receive_does_not_crash():
     await ps.send(b"hello world")
 
 
+class _FailingCloseStream(_BytesStream):
+    async def aclose(self):
+        raise OSError("close failed")
+
+
+async def test_aclose_stops_the_rich_bar():
+    with patch.dict(os.environ, {"TERM": "xterm"}):
+        ps = ProgressStream(stream=_BytesStream(), logging=False)
+    await ps.receive()
+    prog = ps._ProgressStream__prog  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    assert prog.live.is_started
+
+    await ps.aclose()
+
+    assert not prog.live.is_started
+
+
+async def test_aclose_stops_the_rich_bar_when_closing_the_stream_fails():
+    with patch.dict(os.environ, {"TERM": "xterm"}):
+        ps = ProgressStream(stream=_FailingCloseStream(), logging=False)
+    await ps.receive()
+    prog = ps._ProgressStream__prog  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+
+    with pytest.raises(OSError, match="close failed"):
+        await ps.aclose()
+
+    assert not prog.live.is_started
+
+
 def test_fmt_bytes_adapts_units():
     assert _fmt_bytes(500) == "500 B"
     assert _fmt_bytes(1500) == "1.5 KB"
