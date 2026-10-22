@@ -296,8 +296,8 @@ class PySerial(FanOutStreamMixin, Driver):
         ``disable_hupcl`` is set. Full teardown happens at session end via
         shutdown().
         """
-        # FanOutStreamMixin.close() kicks clients + releases the token, then
-        # chains to Driver.close() for any children.
+        # FanOutStreamMixin.close() kicks clients and releases the token; children
+        # are closed at session end by shutdown().
         super().close()
 
     def shutdown(self):
@@ -317,7 +317,7 @@ class PySerial(FanOutStreamMixin, Driver):
             self.logger.debug("shutdown() closing transport for %s", self.url)
             transport.close()
         # FanOutStreamMixin.shutdown() tears down the reader, then Driver.shutdown()
-        # recurses to children.
+        # recurses to children and Driver.close() closes them.
         super().shutdown()
 
     @export
