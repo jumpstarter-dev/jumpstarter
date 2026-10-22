@@ -4,9 +4,9 @@ import termios
 import tty
 from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
-from typing import NoReturn
+from typing import NoReturn, Protocol
 
-from anyio import BrokenResourceError, ClosedResourceError, EndOfStream, create_task_group
+from anyio import BrokenResourceError, ClosedResourceError, EndOfStream, create_task_group, to_thread
 from anyio.streams.file import FileReadStream, FileWriteStream
 
 from jumpstarter.client import DriverClient
@@ -28,6 +28,12 @@ class ConsoleExit(Exception):
 
 class ConsoleStreamDrop(Exception):
     """Serial stream closed by the exporter (kicked, token revoked, lease ended)."""
+
+
+class PowerControl(Protocol):
+    """A power client the console can cycle, e.g. a PowerClient."""
+
+    def cycle(self) -> object: ...
 
 
 async def _exit_console() -> NoReturn:
@@ -66,11 +72,11 @@ class Console:
         self,
         serial_client: DriverClient,
         observe: bool = False,
-        on_power_cycle: Callable[[], Awaitable[None]] | None = None,
+        power_control: PowerControl | None = None,
     ):
         self.serial_client = serial_client
         self.observe = observe
-        self.on_power_cycle = on_power_cycle
+        self.power_control = power_control
 
     def run(self):
         with self.setraw():
@@ -110,11 +116,19 @@ class Console:
         except STREAM_ERRORS:
             raise ConsoleStreamDrop() from None
 
+    async def _power_cycle(self):
+        assert self.power_control is not None
+        try:
+            # cycle() is a blocking client call; keep it off the console's event loop
+            await to_thread.run_sync(self.power_control.cycle)
+        except Exception:
+            logger.warning("power cycle failed", exc_info=True)
+
     async def __read_stdin(self, stream=None):
         stdin = FileReadStream(sys.stdin.buffer)
         actions: dict[bytes, Callable[[], Awaitable[None]]] = {EXIT_KEY: _exit_console}
-        if self.on_power_cycle is not None:
-            actions[POWER_KEY] = self.on_power_cycle
+        if self.power_control is not None:
+            actions[POWER_KEY] = self._power_cycle
         hotkeys = HotkeyDetector(actions)
         send_warned = False
         while True:

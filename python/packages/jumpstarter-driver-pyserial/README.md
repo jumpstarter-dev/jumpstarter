@@ -190,9 +190,6 @@ j serial console
 - **CTRL+B x3**: Exit the console
 - **CTRL+] x3**: Power cycle the board (when the serial device has a `power` child, see above)
 
-The power-cycle hotkey calls the client's `dut_power_cycle()`, so automated
-clients can trigger the same power cycle programmatically.
-
 Use `--observe` to attach in read-only (watch-only) mode. Observers receive
 serial output but cannot write, so they can watch a session another client is
 driving without interfering:
@@ -310,7 +307,7 @@ reset some boards unless `disable_hupcl` is set.
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_pyserial.client.PySerialClient()
-    :members: pexpect, open, stream, open_stream, close, dut_power_cycle
+    :members: pexpect, open, stream, open_stream, close
 ```
 
 ### Examples

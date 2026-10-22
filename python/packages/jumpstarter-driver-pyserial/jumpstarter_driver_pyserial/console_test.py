@@ -12,7 +12,7 @@ from .driver import PySerial
 from jumpstarter.common.utils import serve
 
 
-def _start_console(client, on_power_cycle=None):
+def _start_console(client, power_control=None):
     """Run Console.run() in a thread with a PTY substituted for stdin.
 
     Returns (master_fd, thread, result_dict). Write keypresses to master_fd;
@@ -29,7 +29,7 @@ def _start_console(client, on_power_cycle=None):
 
     def _run():
         with patch("sys.stdin", mock_stdin):
-            console = Console(serial_client=client, on_power_cycle=on_power_cycle)
+            console = Console(serial_client=client, power_control=power_control)
             try:
                 console.run()
             except Exception as e:  # noqa: BLE001 - test infrastructure captures all exceptions from console thread
@@ -56,18 +56,30 @@ def test_ctrl_b_exits():
     assert "exc" not in result
 
 
-def test_ctrl_bracket_triggers_power_cycle():
-    power_cycled = threading.Event()
+class _FakePowerControl:
+    """Power client double that records the thread cycle() ran on."""
 
-    async def on_power_cycle():
-        power_cycled.set()
+    def __init__(self, error=None):
+        self.cycled = threading.Event()
+        self.cycle_thread = None
+        self.error = error
+
+    def cycle(self):
+        self.cycle_thread = threading.current_thread()
+        self.cycled.set()
+        if self.error is not None:
+            raise self.error
+
+
+def test_ctrl_bracket_triggers_power_cycle():
+    power = _FakePowerControl()
 
     with serve(PySerial(url="loop://")) as client:
-        master_fd, t, result = _start_console(client, on_power_cycle=on_power_cycle)
+        master_fd, t, result = _start_console(client, power_control=power)
         try:
             time.sleep(0.1)
             os.write(master_fd, b"\x1d\x1d\x1d")
-            assert power_cycled.wait(timeout=5), "power cycle was not triggered"
+            assert power.cycled.wait(timeout=5), "power cycle was not triggered"
             assert t.is_alive(), "console exited after power cycle"
             os.write(master_fd, b"\x02\x02\x02")
             t.join(timeout=5)
@@ -76,11 +88,35 @@ def test_ctrl_bracket_triggers_power_cycle():
 
     assert not t.is_alive()
     assert "exc" not in result
+    # cycle() blocks, so it must not run on the console thread that hosts the event loop
+    assert power.cycle_thread is not t
+
+
+def test_power_cycle_failure_does_not_kill_console(caplog):
+    caplog.set_level(logging.WARNING, logger="jumpstarter_driver_pyserial.console")
+    power = _FakePowerControl(error=RuntimeError("PDU unreachable"))
+
+    with serve(PySerial(url="loop://")) as client:
+        master_fd, t, result = _start_console(client, power_control=power)
+        try:
+            time.sleep(0.1)
+            os.write(master_fd, b"\x1d\x1d\x1d")
+            assert power.cycled.wait(timeout=5), "power cycle was not triggered"
+            time.sleep(0.1)
+            assert t.is_alive(), "console exited after a failed power cycle"
+            os.write(master_fd, b"\x02\x02\x02")
+            t.join(timeout=5)
+        finally:
+            os.close(master_fd)
+
+    assert not t.is_alive()
+    assert "exc" not in result
+    assert any("power cycle failed" in r.message for r in caplog.records)
 
 
 def test_ctrl_bracket_without_power_client():
     with serve(PySerial(url="loop://")) as client:
-        master_fd, t, result = _start_console(client, on_power_cycle=None)
+        master_fd, t, result = _start_console(client, power_control=None)
         try:
             time.sleep(0.1)
             os.write(master_fd, b"\x1d\x1d\x1d")

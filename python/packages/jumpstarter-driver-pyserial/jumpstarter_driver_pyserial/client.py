@@ -5,13 +5,14 @@ import sys
 from contextlib import contextmanager
 
 import click
-from anyio import BrokenResourceError, EndOfStream, create_task_group, open_file, to_thread
+from anyio import BrokenResourceError, EndOfStream, create_task_group, open_file
 from anyio.streams.file import FileReadStream
 from jumpstarter_driver_network.adapters import PexpectAdapter
 from pexpect.fdpexpect import fdspawn
 
 from .console import Console, ConsoleStreamDrop
 from jumpstarter.client import DriverClient
+from jumpstarter.client.base import StubDriverClient
 from jumpstarter.client.decorators import driver_click_group
 
 logger = logging.getLogger(__name__)
@@ -155,34 +156,15 @@ class PySerialClient(DriverClient):
     def _power_child(self):
         """The `power` child if its client provides cycle(), else None."""
         power = self.children.get("power")
-        return power if callable(getattr(power, "cycle", None)) else None
-
-    def dut_power_cycle(self) -> None:
-        """Power-cycle the DUT through the serial device's `power` child.
-
-        The child is typically a `ref:` to the exporter's power driver; every
-        PowerClient-based driver provides cycle().
-        """
-        power = self._power_child()
         if power is None:
-            raise RuntimeError("no 'power' child with a cycle() method on this serial device")
-        power.cycle()
-
-    def _power_cycle_hook(self):
-        """Build the Ctrl-] x3 callback, or None when no usable power child exists."""
-        if self._power_child() is None:
-            if "power" in self.children:
-                logger.warning("'power' child has no cycle() method, power cycle hotkey disabled")
             return None
-
-        async def _cycle():
-            try:
-                # cycle() is a blocking client call; keep it off the console's event loop
-                await to_thread.run_sync(self.dut_power_cycle)
-            except Exception:
-                logger.warning("power cycle failed", exc_info=True)
-
-        return _cycle
+        if isinstance(power, StubDriverClient):
+            logger.warning("'power' child client is unavailable, power cycle hotkey disabled")
+            return None
+        if not callable(getattr(power, "cycle", None)):
+            logger.warning("'power' child has no cycle() method, power cycle hotkey disabled")
+            return None
+        return power
 
     def cli(self):  # noqa: C901
         @driver_click_group(self)
@@ -195,18 +177,18 @@ class PySerialClient(DriverClient):
             """Start serial port console"""
             # Power cycle is disabled in observe mode (passive observer shouldn't control power)
             if observe:
-                on_power_cycle = None
+                power_control = None
                 click.echo("\nStarting serial console in observe mode (read-only) ... exit with CTRL+B x 3 times\n")
             else:
-                on_power_cycle = self._power_cycle_hook()
+                power_control = self._power_child()
                 click.echo("\nStarting serial port console ... exit with CTRL+B x 3 times\n")
-                if on_power_cycle is not None:
+                if power_control is not None:
                     click.echo("Power cycle: CTRL+] x 3 times\n")
 
             # No reconnect: the exporter's fanout keeps the stream attached
             # while the device itself re-enumerates, so a drop here means the
             # session was closed (kicked, token revoked, lease ended).
-            console = Console(serial_client=self, observe=observe, on_power_cycle=on_power_cycle)
+            console = Console(serial_client=self, observe=observe, power_control=power_control)
             try:
                 console.run()
             except ConsoleStreamDrop:
