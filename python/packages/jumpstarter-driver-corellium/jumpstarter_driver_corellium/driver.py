@@ -63,7 +63,8 @@ class Corellium(Driver):
         self._api = ApiClient(api_host, api_token)
 
         self.children["power"] = CorelliumPower(parent=self)
-        self.children["serial"] = CorelliumConsole(parent=self, url="")
+        # The power child enables the console's Ctrl-] x3 power-cycle hotkey.
+        self.children["serial"] = CorelliumConsole(parent=self, url="", children={"power": self.children["power"]})
 
     def get_env_var(self, name: str) -> str:
         """

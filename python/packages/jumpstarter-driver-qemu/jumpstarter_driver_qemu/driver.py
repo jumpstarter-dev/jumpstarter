@@ -499,7 +499,10 @@ class Qemu(Driver):
         if self.launcher_socket:
             self.children["console"] = UnixNetwork(path=self._serial_socket)
         else:
-            self.children["console"] = PySerial(url=self._pty, check_present=False)
+            # The power child enables the console's Ctrl-] x3 power-cycle hotkey.
+            self.children["console"] = PySerial(
+                url=self._pty, check_present=False, children={"power": self.children["power"]}
+            )
 
         self.children["vnc"] = UnixNetwork(path=self._vnc)
 

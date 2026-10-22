@@ -299,6 +299,12 @@ def test_disk_dir_is_slash_disk_in_production_sidecar():
     assert driver._disk_dir == "/disk"
 
 
+def test_console_wires_power_child():
+    """The console gets the power child so its hotkey can power-cycle the VM."""
+    driver = Qemu()
+    assert driver.children["console"].children["power"] is driver.children["power"]
+
+
 def test_cidata_uses_tmp_by_default():
     """Local mode keeps cloud-init vvfat content under a system temp dir."""
     driver = Qemu()

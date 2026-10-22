@@ -22,6 +22,15 @@ def test_driver_corellium_init_ok(monkeypatch):
     assert 'api-token' == c.api.token
 
 
+def test_console_wires_power_child(monkeypatch):
+    monkeypatch.setenv('CORELLIUM_API_HOST', 'api-host')
+    monkeypatch.setenv('CORELLIUM_API_TOKEN', 'api-token')
+
+    c = Corellium(project_id='1', device_name='jmp', device_flavor='kronos', device_os='1.0')
+
+    assert c.children['serial'].children['power'] is c.children['power']
+
+
 @pytest.mark.parametrize(
         'env,err',
         [

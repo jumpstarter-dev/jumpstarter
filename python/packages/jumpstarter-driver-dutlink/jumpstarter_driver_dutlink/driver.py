@@ -250,23 +250,30 @@ class Dutlink(DutlinkConfig, CompositeInterface, Driver):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
 
-        self.children["power"] = DutlinkPower(serial=self.serial, timeout_s=self.timeout_s)
+        power = self.children["power"] = DutlinkPower(serial=self.serial, timeout_s=self.timeout_s)
         self.children["storage"] = DutlinkStorageMux(
             serial=self.serial, storage_device=self.storage_device, timeout_s=self.timeout_s
         )
 
         # if an alternate serial port has been requested, use it
         if self.alternate_console is not None:
+            # The power child enables the console's Ctrl-] x3 power-cycle hotkey.
             try:
-                self.children["console"] = PySerial(url=self.alternate_console, baudrate=self.baudrate)
+                self.children["console"] = PySerial(
+                    url=self.alternate_console, baudrate=self.baudrate, children={"power": power}
+                )
             except SerialException:
                 self.logger.info(
                     f"failed to open alternate console {self.alternate_console} but trying to power on the target once"
                 )
                 self.children["power"].on()
                 time.sleep(5)
-                self.children["console"] = PySerial(url=self.alternate_console, baudrate=self.baudrate)
+                self.children["console"] = PySerial(
+                    url=self.alternate_console, baudrate=self.baudrate, children={"power": power}
+                )
                 self.children["power"].off()
         else:
             # otherwise look up the tty console provided by dutlink
-            self.children["console"] = DutlinkSerial(serial=self.serial, baudrate=self.baudrate)
+            self.children["console"] = DutlinkSerial(
+                serial=self.serial, baudrate=self.baudrate, children={"power": power}
+            )

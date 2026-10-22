@@ -56,6 +56,10 @@ export:
       port: "1"
 ```
 
+Drivers that create their own console (qemu, renode, dutlink, corellium) wire
+their power driver into it automatically, so the hotkey works there without
+any configuration.
+
 
 ### Config parameters
 
