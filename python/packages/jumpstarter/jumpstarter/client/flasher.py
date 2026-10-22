@@ -87,7 +87,8 @@ class _AsyncIteratorStream(ObjectStream[bytes]):
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         if self.total is not None and self.total > 0:
-            return {ProgressAttribute.total: lambda: float(self.total)}
+            total = self.total
+            return {ProgressAttribute.total: lambda: float(total)}
         return {}
 
 
@@ -219,7 +220,7 @@ class FlasherClientInterface(metaclass=ABCMeta):
         ...
 
     def cli(self) -> click.Group:
-        @driver_click_group(self)
+        @driver_click_group(self)  # ty: ignore[invalid-argument-type]
         def base():
             """Generic flasher interface"""
 
@@ -299,7 +300,7 @@ class FlasherClient(FlasherClientInterface, DriverClient):
                 raise ArgumentError("'target' parameter is not valid when flashing multiple images")
 
             results: dict[str, object] = {}
-            for part, img in path.items():
+            for part, img in cast(dict[str, PathBuf], path).items():
                 results[part] = self._flash_single(img, target=part, compression=compression)
             return results
 

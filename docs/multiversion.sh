@@ -57,5 +57,5 @@ for BRANCH in "${BRANCHES[@]}"; do
 done
 
 pushd "${OUTPUT_DIR}"
-uvx --from git+https://github.com/steinwurf/versjon --with jinja2 versjon
+uvx --from git+https://github.com/steinwurf/versjon --with jinja2 versjon --user_templates "${SCRIPT_DIR}/versjon_templates"
 popd

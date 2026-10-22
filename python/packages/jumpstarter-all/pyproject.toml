@@ -21,6 +21,7 @@ dependencies = [
   "jumpstarter-driver-doip",
   "jumpstarter-driver-corellium",
   "jumpstarter-driver-cuttlefish",
+  "jumpstarter-driver-dds",
   "jumpstarter-driver-dut-network",
   "jumpstarter-driver-dutlink",
   "jumpstarter-driver-energenie",

@@ -82,6 +82,8 @@ async def _ssl_channel_credentials_insecure(  # noqa: C901
     except ValueError as e:
         raise ConfigurationError(f"Failed parsing {target}") from e
 
+    assert parsed.hostname is not None
+    hostname = parsed.hostname
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
@@ -95,15 +97,15 @@ async def _ssl_channel_credentials_insecure(  # noqa: C901
     loop = asyncio.get_running_loop()
     try:
         with fail_after(timeout):
-            addr_info = await loop.getaddrinfo(parsed.hostname, port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM)
+            addr_info = await loop.getaddrinfo(hostname, port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM)
     except socket.gaierror as e:
-        raise CertificateDiscoveryError(f"Failed resolving {parsed.hostname}") from e
+        raise CertificateDiscoveryError(f"Failed resolving {hostname}") from e
     except TimeoutError as e:
-        raise CertificateDiscoveryError(f"Timeout resolving {parsed.hostname} after {timeout}s") from e
+        raise CertificateDiscoveryError(f"Timeout resolving {hostname} after {timeout}s") from e
 
     # Log resolved IPs
-    resolved_ips = [sockaddr[0] for _, _, _, _, sockaddr in addr_info]
-    logger.debug(f"Resolved {parsed.hostname} to {len(resolved_ips)} IP(s): {', '.join(resolved_ips)}")
+    resolved_ips: list[str] = [str(sockaddr[0]) for _, _, _, _, sockaddr in addr_info]
+    logger.debug(f"Resolved {hostname} to {len(resolved_ips)} IP(s): {', '.join(resolved_ips)}")
 
     try:
         with fail_after(timeout):
@@ -113,7 +115,7 @@ async def _ssl_channel_credentials_insecure(  # noqa: C901
                 """Wrapper that returns (ip, result) on success or (ip, exception) on failure."""
                 try:
                     result = await _try_connect_and_extract_cert(
-                        ip_address, port, ssl_context, parsed.hostname, timeout
+                        ip_address, port, ssl_context, hostname, timeout
                     )
                     return (ip_address, result, None)
                 except Exception as e:  # noqa: BLE001
@@ -121,7 +123,7 @@ async def _ssl_channel_credentials_insecure(  # noqa: C901
 
             tasks = []
             for _family, _type, _proto, _canonname, sockaddr in addr_info:
-                ip_address = sockaddr[0]
+                ip_address = str(sockaddr[0])
                 task = asyncio.create_task(try_with_ip(ip_address))
                 tasks.append(task)
 
@@ -153,7 +155,7 @@ async def _ssl_channel_credentials_insecure(  # noqa: C901
 
                 # All IPs failed
                 raise CertificateDiscoveryError(
-                    f"Failed connecting to {parsed.hostname}:{port} - all IPs exhausted. Errors: {errors}"
+                    f"Failed connecting to {hostname}:{port} - all IPs exhausted. Errors: {errors}"
                 )
             finally:
                 # Cancel any remaining tasks
@@ -162,7 +164,7 @@ async def _ssl_channel_credentials_insecure(  # noqa: C901
                         task.cancel()
     except TimeoutError as e:
         raise CertificateDiscoveryError(
-            f"Timeout connecting to {parsed.hostname}:{port} after {timeout}s (resolved to {', '.join(resolved_ips)})"
+            f"Timeout connecting to {hostname}:{port} after {timeout}s (resolved to {', '.join(resolved_ips)})"
         ) from e
 
 

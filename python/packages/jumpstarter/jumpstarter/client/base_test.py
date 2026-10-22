@@ -37,7 +37,9 @@ def test_missing_driver_logs_warning_and_creates_stub(caplog):
     expected_class_path = "nonexistent_driver_package.client.NonExistentClient"
     with caplog.at_level(logging.WARNING), serve(MissingClientDriver()) as client:
         # Should have logged a warning with the exact class path from MissingDriverError
-        assert f"Driver client '{expected_class_path}' is not available." in caplog.text
+        assert f"Driver client '{expected_class_path}' is not available" in caplog.text
+        # ...and say why, so the warning is actionable on its own
+        assert "is not installed" in caplog.text
 
         # Should have created a StubDriverClient
         assert isinstance(client, StubDriverClient)
@@ -96,3 +98,28 @@ def test_stub_driver_client_arbitrary_method_raises():
         stub.on()
     assert "jumpstarter_driver_power" in str(exc_info.value)
     assert "version mismatch" in str(exc_info.value)
+
+
+def test_stub_reports_the_supplied_reason():
+    """A stub built with a reason raises that reason, not the generic text."""
+    stub = StubDriverClient(
+        uuid=uuid4(),
+        labels={"jumpstarter.dev/client": "some_package.client.Client"},
+        stub=MagicMock(),
+        portal=create_autospec(BlockingPortal, instance=True),
+        stack=ExitStack(),
+        missing_reason="Driver 'some_package.client.Client' is not allowed by the client configuration.",
+    )
+    with pytest.raises(ImportError) as exc_info:
+        stub.call("anything")
+    assert "not allowed by the client configuration" in str(exc_info.value)
+    # The installation advice would be actively misleading here.
+    assert "is not installed" not in str(exc_info.value)
+
+
+def test_stub_without_reason_keeps_the_install_hint():
+    """Without a reason the stub still explains the driver is not installed."""
+    stub = create_stub_client("missing_driver.client.Client")
+    with pytest.raises(ImportError) as exc_info:
+        stub.call("anything")
+    assert "is not installed" in str(exc_info.value)

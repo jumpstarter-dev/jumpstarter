@@ -31,14 +31,14 @@ CLIENT_ENDPOINT = "grpc://example.com:443"
 CLIENT_TOKEN = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
 DRIVER_NAME = "jumpstarter.Testing"
 
-CLIENT_OBJECT = V1Alpha1Client(
-    api_version="jumpstarter.dev/v1alpha1",
-    kind="Client",
-    metadata=V1ObjectMeta(namespace="default", name=CLIENT_NAME, creation_timestamp="2024-01-01T21:00:00Z"),
-    status=V1Alpha1ClientStatus(
+CLIENT_OBJECT = V1Alpha1Client.model_validate({
+    "api_version": "jumpstarter.dev/v1alpha1",
+    "kind": "Client",
+    "metadata": V1ObjectMeta(namespace="default", name=CLIENT_NAME, creation_timestamp="2024-01-01T21:00:00Z"),
+    "status": V1Alpha1ClientStatus(
         endpoint=CLIENT_ENDPOINT, credential=V1ObjectReference(name=f"{CLIENT_NAME}-credential")
     ),
-)
+})
 
 CLIENT_JSON = f"""{{
     "apiVersion": "jumpstarter.dev/v1alpha1",
@@ -212,14 +212,14 @@ EXPORTER_TOKEN = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJ
 # Default config path
 default_config_path = ExporterConfigV1Alpha1.BASE_PATH / (EXPORTER_NAME + ".yaml")
 # Create a test exporter config
-EXPORTER_OBJECT = V1Alpha1Exporter(
-    api_version="jumpstarter.dev/v1alpha1",
-    kind="Exporter",
-    metadata=V1ObjectMeta(namespace="default", name=EXPORTER_NAME, creation_timestamp="2024-01-01T21:00:00Z"),
-    status=V1Alpha1ExporterStatus(
+EXPORTER_OBJECT = V1Alpha1Exporter.model_validate({
+    "api_version": "jumpstarter.dev/v1alpha1",
+    "kind": "Exporter",
+    "metadata": V1ObjectMeta(namespace="default", name=EXPORTER_NAME, creation_timestamp="2024-01-01T21:00:00Z"),
+    "status": V1Alpha1ExporterStatus(
         endpoint=EXPORTER_ENDPOINT, credential=V1ObjectReference(name=f"{EXPORTER_NAME}-credential"), devices=[]  # type: ignore[call-arg]
     ),
-)
+})
 
 EXPORTER_JSON = f"""{{
     "apiVersion": "jumpstarter.dev/v1alpha1",

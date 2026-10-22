@@ -2,6 +2,7 @@ import os
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -110,18 +111,17 @@ drivers:
   - jumpstarter.drivers.*
   - vendorpackage.*
 """
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        f.write(CLIENT_CONFIG)
-        f.close()
-        config = ClientConfigV1Alpha1.from_file(f.name)
-        assert config.alias == f.name.split("/")[-1]
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "my.client.yaml"
+        path.write_text(CLIENT_CONFIG)
+        config = ClientConfigV1Alpha1.from_file(path)
+        assert config.alias == "my.client"
         assert config.metadata.namespace == "default"
         assert config.metadata.name == "testclient"
         assert config.endpoint == "jumpstarter.my-lab.com:1443"
         assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
         assert config.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
         assert config.drivers.unsafe is False
-        os.unlink(f.name)
 
 
 @pytest.mark.parametrize("invalid_field", ["apiVersion", "kind"])
@@ -138,7 +138,7 @@ def test_client_config_from_file_invalid_field_raises(invalid_field):
     with tempfile.NamedTemporaryFile(mode="w") as f:
         yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
         with pytest.raises(ValueError):
-            _ = ClientConfigV1Alpha1.from_file(f.name)
+            _ = ClientConfigV1Alpha1.from_file(Path(f.name))
 
 
 @pytest.mark.parametrize("missing_field", ["token", "endpoint", "drivers"])
@@ -155,12 +155,12 @@ def test_client_config_from_file_missing_field_raises(missing_field):
     with tempfile.NamedTemporaryFile(mode="w") as f:
         yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
         with pytest.raises(ValidationError):
-            _ = ClientConfigV1Alpha1.from_file(f.name)
+            _ = ClientConfigV1Alpha1.from_file(Path(f.name))
 
 
 @pytest.mark.parametrize("invalid_field", ["allow"])
 def test_client_config_from_file_invalid_drivers_field_raises(invalid_field):
-    CLIENT_CONFIG = {
+    CLIENT_CONFIG: dict[str, Any] = {
         "apiVersion": "jumpstarter.dev/v1alpha1",
         "kind": "ClientConfig",
         "endpoint": "jumpstarter.my-lab.com:1443",
@@ -168,11 +168,11 @@ def test_client_config_from_file_invalid_drivers_field_raises(invalid_field):
         "drivers": {"allow": ["jumpstarter.drivers.*", "vendorpackage.*"]},
     }
 
-    CLIENT_CONFIG["drivers"][invalid_field] = "foo"
+    CLIENT_CONFIG["drivers"][invalid_field] = "foo"  # ty: ignore[invalid-assignment]
     with tempfile.NamedTemporaryFile(mode="w") as f:
         yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
         with pytest.raises(ValidationError):
-            _ = ClientConfigV1Alpha1.from_file(f.name)
+            _ = ClientConfigV1Alpha1.from_file(Path(f.name))
 
 
 def test_client_config_load():
@@ -664,7 +664,7 @@ def test_client_config_list_redacts_credentials_by_default():
         refresh_token="secret-refresh-token",
         drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*"], unsafe=False),
     )
-    configs = ClientConfigListV1Alpha1(current_config="testclient", items=[config])
+    configs = ClientConfigListV1Alpha1(currentConfig="testclient", items=[config])
 
     dumped = configs.model_dump(mode="json", by_alias=True)
     assert "token" not in dumped["items"][0]

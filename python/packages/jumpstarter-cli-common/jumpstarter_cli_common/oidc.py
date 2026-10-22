@@ -114,7 +114,7 @@ class Config:
 
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         else:
-            session.verify = os.environ.get("SSL_CERT_FILE") or certifi.where()
+            session.verify = os.environ.get("SSL_CERT_FILE") or certifi.where()  # ty: ignore[invalid-assignment]
         return session
 
     async def token_exchange_grant(self, token: str, **kwargs):
@@ -191,7 +191,8 @@ class Config:
             await runner.cleanup()
             raise click.ClickException(f"Failed to start callback server on port {port}: {e}") from None
 
-        redirect_uri = f"http://localhost:{site._server.sockets[0].getsockname()[1]}/callback"
+        assert site._server is not None
+        redirect_uri = f"http://localhost:{site._server.sockets[0].getsockname()[1]}/callback"  # ty: ignore[unresolved-attribute]
 
         client = self.client(redirect_uri=redirect_uri)
 

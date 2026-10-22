@@ -43,7 +43,7 @@ class V1Alpha1Exporter(JsonBaseModel):
     @staticmethod
     def from_dict(dict: dict):
         return V1Alpha1Exporter(
-            api_version=dict["apiVersion"],
+            apiVersion=dict["apiVersion"],
             kind=dict["kind"],
             metadata=V1ObjectMeta(
                 creation_timestamp=dict["metadata"]["creationTimestamp"],
@@ -64,8 +64,8 @@ class V1Alpha1Exporter(JsonBaseModel):
                 devices=[V1Alpha1ExporterDevice(labels=d["labels"], uuid=d["uuid"]) for d in dict["status"]["devices"]]  # type: ignore[call-arg]
                 if "devices" in dict["status"]
                 else [],
-                exporter_status=dict["status"].get("exporterStatus"),
-                status_message=dict["status"].get("statusMessage"),
+                exporterStatus=dict["status"].get("exporterStatus"),
+                statusMessage=dict["status"].get("statusMessage"),
             )
             # An exporter the controller has not reconciled yet has no status.
             if "status" in dict

@@ -55,6 +55,6 @@ class CompositeClient(DriverClient):
             if isinstance(v, StubDriverClient):
                 continue
             if hasattr(v, "cli"):
-                base.add_command(v.cli(), k)
+                base.add_command(v.cli(), k)  # ty: ignore[call-non-callable]
 
         return base

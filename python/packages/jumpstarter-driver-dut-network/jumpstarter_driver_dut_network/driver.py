@@ -8,7 +8,7 @@ import sys
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, TypedDict, cast
 
 from . import dnsmasq, iproute, nftables
 from .ntp_server import NtpServer
@@ -89,7 +89,7 @@ class FilterDirection:
             )
         # Convert raw dicts to FilterRule instances (for YAML deserialization).
         self.rules = [
-            FilterRule(**r) if isinstance(r, dict) else r for r in self.rules  # ty: ignore[missing-argument]
+            FilterRule(**cast(dict[str, Any], r)) if isinstance(r, dict) else r for r in self.rules
         ]
 
 
@@ -103,9 +103,9 @@ class FilterConfig:
     def __post_init__(self) -> None:
         # Convert raw dicts to FilterDirection instances (for YAML deserialization).
         if isinstance(self.egress, dict):
-            self.egress = FilterDirection(**self.egress)
+            self.egress = FilterDirection(**cast(dict[str, Any], self.egress))
         if isinstance(self.ingress, dict):
-            self.ingress = FilterDirection(**self.ingress)
+            self.ingress = FilterDirection(**cast(dict[str, Any], self.ingress))
 
     @classmethod
     def from_dict(cls, data: dict) -> "FilterConfig":
@@ -325,8 +325,7 @@ class DutNetwork(Driver):
             )
 
         _family, _type, _proto, _canonname, sockaddr = results[0]
-        address, _port = sockaddr
-        return address
+        return str(sockaddr[0])
 
     def _validate_config(self) -> None:
         """Parse and validate the driver configuration fields."""
@@ -390,6 +389,7 @@ class DutNetwork(Driver):
         iproute.configure_interface(self.interface, self.gateway_ip, self._prefix_len)
 
         if not self._nat_disabled():
+            assert self._upstream is not None
             self._prev_fwd_iface = iproute.get_interface_forwarding(self.interface)
             self._prev_fwd_upstream = iproute.get_interface_forwarding(self._upstream)
             iproute.set_interface_forwarding(self.interface, True)
@@ -409,7 +409,7 @@ class DutNetwork(Driver):
                 interface=self.interface,
                 range_start=self.dhcp_range_start,
                 range_end=self.dhcp_range_end,
-                static_leases=[e.to_dict() for e in self.addresses if e.mac],
+                static_leases=[e.to_dict() for e in self.addresses if e.mac],  # ty: ignore[invalid-argument-type]
                 dns_servers=self.dns_servers,
                 gateway_ip=self.gateway_ip,
                 dns_entries=self.dns_entries,
@@ -555,11 +555,11 @@ class DutNetwork(Driver):
         extra_ifaces = list(self._created_vlans) or None
         if extra_ifaces:
             self._fwd_rule_handles = nftables.ensure_filter_forward(
-                self.interface, self._upstream, extra_interfaces=extra_ifaces,
+                self.interface, self._upstream, extra_interfaces=extra_ifaces,  # ty: ignore[invalid-argument-type]
             )
         else:
             self._fwd_rule_handles = nftables.ensure_filter_forward(
-                self.interface, self._upstream,
+                self.interface, self._upstream,  # ty: ignore[invalid-argument-type]
             )
 
     def _teardown_vlans_and_pbr(self) -> None:
@@ -583,7 +583,7 @@ class DutNetwork(Driver):
         outbound = self._outbound_interfaces()
         if outbound != [self._upstream]:
             kwargs["nat_interfaces"] = outbound
-        nftables.apply_masquerade_rules(self.interface, self._upstream, self.subnet, **kwargs)
+        nftables.apply_masquerade_rules(self.interface, self._upstream, self.subnet, **kwargs)  # ty: ignore[invalid-argument-type]
 
     def _apply_1to1_aliases_and_rules(self) -> None:
         """Add IP aliases and apply nftables 1:1 NAT rules per mapping."""
@@ -851,7 +851,7 @@ class DutNetwork(Driver):
                 interface=self.interface,
                 range_start=self.dhcp_range_start,
                 range_end=self.dhcp_range_end,
-                static_leases=[e.to_dict() for e in self.addresses if e.mac],
+                static_leases=[e.to_dict() for e in self.addresses if e.mac],  # ty: ignore[invalid-argument-type]
                 dns_servers=self.dns_servers,
                 gateway_ip=self.gateway_ip,
                 dns_entries=self.dns_entries,

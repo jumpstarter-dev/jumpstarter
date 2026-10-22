@@ -274,9 +274,10 @@ with validation results. A prewarmed PVC needs the same build provenance.
 (default) drives Host Orchestrator at `http://127.0.0.1:2081`. `exec` follows
 the QEMU provisioner's launcher-socket pattern and Podcvd's control model: the
 exporter runs `cvd` inside the runtime container through `jumpstarter-exec`, and
-Host Orchestrator and nginx are not started at all, so the Pod has no
-unauthenticated control listener. Only `cuttlefish-host-resources` and the
-WebRTC operator (1080/1443) run next to the launcher. Both backends share image
+Host Orchestrator and the stock nginx service are not started.
+`cuttlefish-host-resources` and the WebRTC operator (1080/1443) run next to the
+launcher. With `webrtc_turn: true`, a private nginx instance listens on loopback
+and proxies the operator on 1080 for display access through the lease. Both backends share image
 preparation, scheduling, storage budgets, the NetworkPolicy and the health
 state file.
 
@@ -307,6 +308,71 @@ only the provisioner-approved `env_config`. Host Orchestrator operations
 (`list_operations`) do not exist in exec mode because every `cvd` call is
 synchronous. Inventory documents are normalized to the Host Orchestrator shape,
 so clients see the same fields from both backends.
+
+## WebRTC display over the lease
+
+Set `parameters.webrtc_turn: true` to make the CVD's screen viewable by whoever
+holds the lease. It is off by default: it adds a container, and exporters driven
+over adb alone do not need it.
+
+The isolation policy denies all ingress to the runtime Pod, and WebRTC media is
+UDP addressed to the Pod's own interfaces - the streamer offers candidates like
+`192.168.190.172:15550`. Opening ingress for those ports would defeat the policy
+and still only serve viewers that can route to Pod IPs. A relay in the same Pod
+solves the addressing instead, so the provisioner adds:
+
+- **`cuttlefish-turn`**, a coturn sidecar listening on `127.0.0.1:3478/tcp`.
+  Its UDP relay binds the Pod IP and accepts only the Pod IP or loopback as ICE
+  peers. The browser allocates a relay over the forwarded TCP connection.
+  The expected selected pair is the browser's Pod-IP relay candidate (for
+  example `192.168.190.172:49160`) and the streamer's Pod-IP host candidate
+  (for example `192.168.190.172:15550`). The streamer sends UDP to the relay
+  in its own network namespace; coturn passes media back over the TCP forward.
+- **a display nginx vhost**. In HTTP mode it is written to `sites-enabled`
+  before the image's services start and proxies Host Orchestrator on 2081.
+  In exec mode a private nginx instance uses `/tmp/jumpstarter-nginx.conf` and
+  proxies the operator directly on 1080. Both override `/infra_config`, replacing
+  the operator's public STUN server with the lease-forwarded TURN listener, and
+  upgrade the signalling WebSocket.
+
+The TURN TCP listener and display vhost are loopback-only; the UDP relay binds
+the Pod IP for local streamer traffic. Both listeners join `health_ports` so a
+dead relay or vhost fails the probe. On the client side this is
+`j cuttlefish webrtc --forward`. In Chrome's `chrome://webrtc-internals`, inspect
+the selected candidate pair to confirm `relay` (browser) to `host` (streamer).
+The vhost rejects non-local Host headers, cross-site browser requests, and
+Origins that differ from the forwarded UI URL. The local forward is still
+accessible to native processes on the same computer.
+
+| Parameter | Description | Default |
+| --- | --- | --- |
+| `webrtc_turn` | Enable the in-Pod TURN relay and display vhost | `false` |
+| `turn_port` | coturn TCP listener, and the local port the client binds | `3478` |
+| `webui_port` | nginx vhost serving the TURN-aware client page | `2090` |
+
+Override the coturn image and pull policy with `spec.images.turn` on the
+VirtualTargetClass or ExporterSet (ExporterSet takes precedence):
+
+```yaml
+images:
+  turn:
+    image: docker.io/coturn/coturn:4.7.0
+    imagePullPolicy: IfNotPresent
+```
+
+The relay runs as a non-root user, without privilege escalation or Linux
+capabilities, with CPU/memory requests of 10m/16Mi and limits of 500m/128Mi.
+`turn_port` must be at least 1024. The fixed TURN credential is a protocol
+requirement; access is controlled by the lease and the Pod's network isolation.
+
+The client must bind the advertised `turn_port` locally. Only one display forward
+using that port can run on a workstation at a time, including forwards from
+other ExporterSets using the same port. To view two concurrently, configure a
+different `turn_port` on each ExporterSet; changing `--ui-port` alone does not help.
+
+Media crosses the lease over TCP (the relay-to-streamer leg is UDP on the
+Pod's IP), so a lossy link degrades into stutter rather than WebRTC's
+usual frame dropping.
 
 ## Failure and recovery behavior
 

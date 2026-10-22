@@ -10,6 +10,7 @@ def test_share_add_calls_update_lease():
     config.update_lease.return_value = updated
 
     with patch("jumpstarter_cli.share.model_print") as model_print:
+        assert share_add.callback is not None
         inspect.unwrap(share_add.callback)(
             config=config,
             lease="my-lease",
@@ -27,6 +28,7 @@ def test_share_remove_calls_update_lease():
     config.update_lease.return_value = updated
 
     with patch("jumpstarter_cli.share.model_print") as model_print:
+        assert share_remove.callback is not None
         inspect.unwrap(share_remove.callback)(
             config=config,
             lease="my-lease",
@@ -46,6 +48,7 @@ def test_share_list_shows_shared_clients(capsys):
     config = Mock()
     config.get_lease.return_value = lease_entry
 
+    assert share_list.callback is not None
     inspect.unwrap(share_list.callback)(config=config, lease="my-lease")
 
     config.get_lease.assert_called_once_with("my-lease")
@@ -67,6 +70,7 @@ def test_share_list_flags_denied_clients(capsys):
     config = Mock()
     config.get_lease.return_value = lease_entry
 
+    assert share_list.callback is not None
     inspect.unwrap(share_list.callback)(config=config, lease="my-lease")
 
     captured = capsys.readouterr()
@@ -82,6 +86,7 @@ def test_share_list_not_shared(capsys):
     config = Mock()
     config.get_lease.return_value = lease_entry
 
+    assert share_list.callback is not None
     inspect.unwrap(share_list.callback)(config=config, lease="my-lease")
 
     captured = capsys.readouterr()

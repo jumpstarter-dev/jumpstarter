@@ -87,7 +87,7 @@ class CanClient(DriverClient, can.BusABC):
         self.call("send", CanMessage.construct(msg), timeout)
 
     @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
-    def _send_periodic_internal(
+    def _send_periodic_internal(  # ty: ignore[invalid-method-override]
         self,
         msgs: Sequence[can.Message],
         period: float,

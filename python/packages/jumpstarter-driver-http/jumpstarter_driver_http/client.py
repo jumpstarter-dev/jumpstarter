@@ -70,4 +70,4 @@ class HttpServerClient(CompositeClient):
         """
         self.storage.write_from_path(dst, src, operator)
 
-        return str(URL(self.get_url()).joinpath(dst))
+        return str(URL(self.get_url()).joinpath(str(dst)))

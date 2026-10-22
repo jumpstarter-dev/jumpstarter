@@ -28,7 +28,7 @@ class Opendal(Driver):
 
     _operator: AsyncOperator = field(init=False)
     _fds: dict[UUID, AsyncFile] = field(init=False, default_factory=dict)
-    _metadata: dict[UUID, OpendalMetadata] = field(init=False, default_factory=dict)
+    _metadata: dict[UUID, OpendalMetadata | None] = field(init=False, default_factory=dict)
 
     # Track all created paths (files and directories)
     _created_paths: set[str] = field(init=False, default_factory=set)
@@ -138,7 +138,7 @@ class Opendal(Driver):
                 m = hashlib.md5()
             case "sha256":
                 m = hashlib.sha256()
-        async with await self._operator.open(path, "rb") as f:
+        async with await self._operator.open(path, "rb") as f:  # ty: ignore[invalid-context-manager]
             while True:
                 data = await f.read(size=65536)
                 if len(data) == 0:
@@ -224,8 +224,8 @@ class Opendal(Driver):
         This function is intended to be used on the exporter side to copy files to the target path.
         """
         async with (
-            await AsyncOperator("fs", root=source.parent.as_posix()).open(source.name, "rb") as src,
-            await self._operator.open(target, "wb") as dst,
+            await AsyncOperator("fs", root=source.parent.as_posix()).open(source.name, "rb") as src,  # ty: ignore[invalid-context-manager]
+            await self._operator.open(target, "wb") as dst,  # ty: ignore[invalid-context-manager]
         ):
             while True:
                 data = await src.read(size=65536)

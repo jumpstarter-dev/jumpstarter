@@ -53,7 +53,7 @@ class VideoCapture:
                 try:
                     ctl = V4L2CtlMjpegCapture(v4l2_ctl_executable=resolved_v4l2_ctl)
                     ctl.open(device, width, height, fps)
-                    self._mjpeg = ctl
+                    self._mjpeg = ctl  # ty: ignore[invalid-assignment]
                     return
                 except OSError as exc:
                     logger.warning("v4l2-ctl MJPEG passthrough unavailable (%s)", exc)
@@ -84,7 +84,7 @@ class VideoCapture:
         if not cap.isOpened():
             raise ConnectionError(f"Cannot open video device: {device}")
 
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))  # type: ignore[attr-defined]
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))  # ty: ignore[unresolved-attribute]
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)

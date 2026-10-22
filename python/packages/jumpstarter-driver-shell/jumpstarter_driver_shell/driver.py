@@ -49,21 +49,21 @@ class Shell(Driver):
         # Extract descriptions from methods configuration and populate methods_description
         for method_name, method_config in self.methods.items():
             if isinstance(method_config, dict) and "description" in method_config:
-                self.methods_description[method_name] = method_config["description"]
+                self.methods_description[method_name] = str(method_config["description"])
 
     def _get_method_command(self, method: str) -> str:
         """Extract the command string from a method configuration"""
         method_config = self.methods[method]
         if isinstance(method_config, str):
             return method_config
-        return method_config.get("command", "echo Hello")
+        return str(method_config.get("command", "echo Hello"))
 
     def _get_method_timeout(self, method: str) -> int:
         """Extract the timeout from a method configuration, fallback to global timeout"""
         method_config = self.methods[method]
         if isinstance(method_config, str):
             return self.timeout
-        return method_config.get("timeout", self.timeout)
+        return int(method_config.get("timeout", self.timeout))
 
     @classmethod
     def client(cls) -> str:
@@ -187,7 +187,7 @@ class Shell(Driver):
 
         # Start the process with pipes for streaming and new process group
         self.logger.debug( f"running {method} with cmd: {cmd} and env: {combined_env} " f"and args: {args}")
-        process = await asyncio.create_subprocess_exec(  # ty: ignore[missing-argument]
+        process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,

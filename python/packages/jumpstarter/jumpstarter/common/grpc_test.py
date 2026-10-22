@@ -22,7 +22,7 @@ def test_default_options_preserve_existing_defaults():
 
 
 def test_user_options_override_defaults():
-    user_options = {"grpc.keepalive_time_ms": 50000}
+    user_options: dict[str, str | int] = {"grpc.keepalive_time_ms": 50000}
     options = dict(_override_default_grpc_options(user_options))
     assert options["grpc.keepalive_time_ms"] == 50000
 

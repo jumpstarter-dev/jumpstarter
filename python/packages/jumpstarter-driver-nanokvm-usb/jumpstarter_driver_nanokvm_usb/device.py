@@ -98,7 +98,7 @@ class NanoKVMUSBDevice:
                         self._video_width,
                         self._video_height,
                         self._video_fps,
-                        video_format=self._video_format,
+                        video_format=self._video_format,  # ty: ignore[invalid-argument-type]
                         jpeg_quality=self._video_jpeg_quality,
                         v4l2_ctl_executable=self._v4l2_ctl_executable,
                     )

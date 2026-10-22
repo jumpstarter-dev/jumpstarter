@@ -1,0 +1,3 @@
+# Recordings are generated, not hand written: keep them out of diffs and
+# language statistics.
+*.cast -diff linguist-generated=true

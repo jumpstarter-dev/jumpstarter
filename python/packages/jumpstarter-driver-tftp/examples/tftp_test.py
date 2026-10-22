@@ -35,4 +35,4 @@ class TestResource(JumpstarterTest):
             assert test_file not in client.tftp.list_files()
 
         except (TftpError, FileNotFoundError) as e:
-            pytest.fail(f"Test failed: {e}") # ty: ignore[call-non-callable]
+            pytest.fail(f"Test failed: {e}")  # ty: ignore[invalid-argument-type]

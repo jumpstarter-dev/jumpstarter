@@ -315,8 +315,9 @@ class TestCheckCrInstances:
 
         assert set(result.keys()) == set(CrInstanceError.__annotations__.keys())
         assert "error" in result
-        assert "exit 1" in result["error"]
-        assert "forbidden" in result["error"]
+        error = str(result["error"])
+        assert "exit 1" in error
+        assert "forbidden" in error
         assert result["installed"] is False
 
     @pytest.mark.asyncio
@@ -328,7 +329,8 @@ class TestCheckCrInstances:
 
         assert set(result.keys()) == set(CrInstanceError.__annotations__.keys())
         assert "error" in result
-        assert "CR instance check failed" in result["error"]
+        error = str(result["error"])
+        assert "CR instance check failed" in error
         assert result["installed"] is False
 
     @pytest.mark.asyncio
@@ -340,8 +342,9 @@ class TestCheckCrInstances:
 
         assert set(result.keys()) == set(CrInstanceError.__annotations__.keys())
         assert "error" in result
-        assert "CR instance check failed" in result["error"]
-        assert "kubectl not found" in result["error"]
+        error = str(result["error"])
+        assert "CR instance check failed" in error
+        assert "kubectl not found" in error
         assert result["installed"] is False
 
 
@@ -363,7 +366,7 @@ class TestApplyCrResult:
         malformed = {"installed": True}
 
         with pytest.raises(KeyError):
-            _apply_cr_result(result_data, malformed)
+            _apply_cr_result(result_data, malformed)  # ty: ignore[invalid-argument-type]
 
     def test_apply_cr_result_error_sets_error_field(self):
         result_data = {"installed": False, "namespace": None, "status": None, "error": None}
@@ -588,6 +591,7 @@ class TestGetClusterInfo:
         result = await get_cluster_info("test-context")
 
         assert result.accessible is False
+        assert result.error is not None
         assert "Failed to get cluster info:" in result.error
         assert "Failed to get kubectl config: connection refused" in result.error
 
@@ -600,6 +604,7 @@ class TestGetClusterInfo:
         result = await get_cluster_info("test-context")
 
         assert result.accessible is False
+        assert result.error is not None
         assert "Failed to get cluster info" in result.error
         assert "Failed to parse kubectl config" in result.error
 
@@ -621,6 +626,7 @@ class TestGetClusterInfo:
 
         assert result.name == "missing-context"
         assert result.accessible is False
+        assert result.error is not None
         assert "not found" in result.error
 
     @pytest.mark.asyncio
@@ -730,7 +736,7 @@ class TestListClusters:
             server="https://test.example.com",
             user="test-user",
             namespace="default",
-            is_current=True,
+            isCurrent=True,
             type="kind",
             accessible=True,
             jumpstarter=V1Alpha1JumpstarterInstance(installed=False),
@@ -776,7 +782,7 @@ class TestListClusters:
         ]
         mock_get_cluster_info.return_value = V1Alpha1ClusterInfo(
             name="ctx", cluster="cluster", server="https://server", user="u",
-            namespace="default", is_current=True, type="kind", accessible=True,
+            namespace="default", isCurrent=True, type="kind", accessible=True,
             jumpstarter=V1Alpha1JumpstarterInstance(installed=False),
         )
 
@@ -809,12 +815,12 @@ class TestListClusters:
 
         kind_info = V1Alpha1ClusterInfo(
             name="kind-ctx", cluster="kind-cluster", server="https://kind", user="u",
-            namespace="default", is_current=True, type="kind", accessible=True,
+            namespace="default", isCurrent=True, type="kind", accessible=True,
             jumpstarter=V1Alpha1JumpstarterInstance(installed=False),
         )
         remote_info = V1Alpha1ClusterInfo(
             name="remote-ctx", cluster="remote-cluster", server="https://remote", user="u",
-            namespace="default", is_current=False, type="remote", accessible=False,
+            namespace="default", isCurrent=False, type="remote", accessible=False,
             jumpstarter=V1Alpha1JumpstarterInstance(installed=False),
         )
         mock_get_cluster_info.side_effect = [kind_info, remote_info]

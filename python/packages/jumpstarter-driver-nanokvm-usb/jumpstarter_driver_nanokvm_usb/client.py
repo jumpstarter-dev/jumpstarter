@@ -145,7 +145,7 @@ class NanoKVMUSBHIDClient(DriverClient):
         @click.option("--y", type=float, default=None, help="Optional Y coordinate (0.0-1.0)")
         def mouse_click_cmd(button, x, y):
             """Click a mouse button"""
-            self.mouse_click(resolve_button(button), x, y)
+            self.mouse_click(resolve_button(button), x, y)  # ty: ignore[invalid-argument-type]
             if x is not None and y is not None:
                 click.echo(f"Clicked {button} button at ({x}, {y})")
             else:

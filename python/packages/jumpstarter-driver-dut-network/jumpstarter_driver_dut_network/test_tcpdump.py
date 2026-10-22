@@ -49,7 +49,7 @@ def _make_driver(tmp_path, **overrides):
         mock_nftables.ensure_filter_forward.return_value = []
         mock_nftables.list_rules.return_value = ""
         mock_nftables._table_name_for.return_value = "jumpstarter_eth_dut"
-        driver = DutNetwork(**params)  # type: ignore[missing-argument]
+        driver = DutNetwork(**params)  # ty: ignore[invalid-argument-type]
 
     return driver
 
@@ -96,7 +96,7 @@ class TestTcpdumpConfig:
                 nat_mode="masquerade",
                 enable_tcpdump=True,
                 state_dir=str(tmp_path),
-            )  # type: ignore[missing-argument]
+            )
 
     def test_tcpdump_missing_binary_ok_when_disabled(self, tmp_path: Path):
         """When enable_tcpdump is False, missing tcpdump binary is fine."""
@@ -131,7 +131,7 @@ class TestTcpdumpConfig:
                 nat_mode="masquerade",
                 enable_tcpdump=False,
                 state_dir=str(tmp_path),
-            )  # type: ignore[missing-argument]
+            )
             assert driver.enable_tcpdump is False
 
 

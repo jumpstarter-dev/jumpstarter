@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import deque
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
@@ -181,7 +181,7 @@ class _FanOutStreamBase:
         return self
 
     async def __aexit__(self, *exc):
-        await self.aclose()
+        await self.aclose()  # ty: ignore[unresolved-attribute]
 
 
 class ExclusiveStream(_FanOutStreamBase):
@@ -393,7 +393,7 @@ class StreamFanOut:
         self,
         on_overflow: str = "drop",
         buffer_bytes: int = 65536,
-    ) -> AsyncIterator[ExclusiveStream]:
+    ) -> AsyncGenerator[ExclusiveStream, None]:
         """Attach with the write token. Yields an ExclusiveStream."""
         async with self._lock:
             if self._write_token_holder is not None:
@@ -426,7 +426,7 @@ class StreamFanOut:
         self,
         on_overflow: str = "drop",
         buffer_bytes: int = 65536,
-    ) -> AsyncIterator[ObserverStream]:
+    ) -> AsyncGenerator[ObserverStream, None]:
         """Attach as a read-only observer. Yields an ObserverStream."""
         async with self._lock:
             await self._ensure_started()
@@ -575,7 +575,7 @@ class FanOutStreamMixin:
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
-            super().__post_init__()
+            super().__post_init__()  # ty: ignore[unresolved-attribute]
         self._fanout = StreamFanOut(
             source_factory=self._open_source,
             scrollback_size=self._fanout_scrollback_size,
@@ -628,7 +628,7 @@ class FanOutStreamMixin:
             else:
                 self._fanout.kick_sync()
         if hasattr(super(), "close"):
-            super().close()
+            super().close()  # ty: ignore[unresolved-attribute]
 
     def shutdown(self):
         """Session-end teardown: stop the reader loop and release the source.
@@ -640,4 +640,4 @@ class FanOutStreamMixin:
         if self._fanout is not None:
             self._fanout.shutdown_sync()
         if hasattr(super(), "shutdown"):
-            super().shutdown()
+            super().shutdown()  # ty: ignore[unresolved-attribute]

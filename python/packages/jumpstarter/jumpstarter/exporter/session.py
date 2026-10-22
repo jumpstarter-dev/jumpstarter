@@ -3,7 +3,6 @@ from collections import deque
 from collections.abc import Generator
 from contextlib import asynccontextmanager, contextmanager, suppress
 from dataclasses import dataclass, field
-from logging.handlers import QueueHandler
 from typing import TYPE_CHECKING, Self
 from uuid import UUID
 
@@ -52,7 +51,7 @@ class Session(
     lease_context: "LeaseContext | None" = field(init=False, default=None)
 
     _logging_queue: deque = field(init=False)
-    _logging_handler: QueueHandler = field(init=False)
+    _logging_handler: LogHandler = field(init=False)
     _current_status: ExporterStatus = field(init=False, default=ExporterStatus.AVAILABLE)
     _status_message: str = field(init=False, default="")
     _status_update_event: Event = field(init=False)
@@ -288,7 +287,7 @@ class Session(
     def __getitem__(self, key: UUID):
         return self.mapping[key]
 
-    def _check_status_for_driver_call(self, context):
+    async def _check_status_for_driver_call(self, context):
         """Check if the current status allows driver calls.
 
         Driver calls are allowed during:
@@ -309,7 +308,7 @@ class Session(
         }
 
         if self._current_status not in ALLOWED_STATUSES:
-            context.abort(
+            await context.abort(
                 grpc.StatusCode.FAILED_PRECONDITION,
                 f"Exporter not ready for driver calls (status: {self._current_status})",
             )
@@ -328,16 +327,16 @@ class Session(
 
     async def DriverCall(self, request, context):
         logger.debug("DriverCall(uuid=%s, method=%s)", request.uuid, request.method)
-        self._check_status_for_driver_call(context)
+        await self._check_status_for_driver_call(context)
         return await self[UUID(request.uuid)].DriverCall(request, context)
 
     async def StreamingDriverCall(self, request, context):
         logger.debug("StreamingDriverCall(uuid=%s, method=%s)", request.uuid, request.method)
-        self._check_status_for_driver_call(context)
+        await self._check_status_for_driver_call(context)
         async for v in self[UUID(request.uuid)].StreamingDriverCall(request, context):
             yield v
 
-    async def Stream(self, _request_iterator, context):
+    async def Stream(self, _request_iterator, context):  # ty: ignore[invalid-method-override]
         request = StreamRequestMetadata(**dict(list(context.invocation_metadata()))).request  # type: ignore[call-arg]
         logger.debug("Streaming(%s)", request)
         try:

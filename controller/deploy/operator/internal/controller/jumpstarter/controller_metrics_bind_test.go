@@ -39,7 +39,7 @@ var _ = Describe("createControllerDeployment metrics bind", func() {
 				Controller: operatorv1alpha1.ControllerConfig{
 					Image:           "example.com/controller:test",
 					ImagePullPolicy: corev1.PullIfNotPresent,
-					Replicas:        1,
+					Replicas:        new(int32(1)),
 				},
 			},
 		}

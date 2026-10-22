@@ -17,7 +17,7 @@ plugins:
     out: internal/protocol
     opt: paths=source_relative
   # renovate: datasource=github-releases depName=grpc-ecosystem/grpc-gateway
-  - remote: buf.build/grpc-ecosystem/gateway:v2.30.0
+  - remote: buf.build/grpc-ecosystem/gateway:v2.31.0
     out: internal/protocol
     opt: paths=source_relative
 inputs:

@@ -42,7 +42,7 @@ sequenceDiagram
     Note over Hook: j power off
     Hook-->>Exporter: Exit code 0
     Exporter->>Exporter: Status: AVAILABLE
-    Exporter->>Controller: Release lease
+    Client->>Controller: Release lease
 ```
 
 The {term}`exporter` transitions through these states during a {term}`lease`:
@@ -200,6 +200,11 @@ not disrupt the workflow.
 ### `endLease`
 
 The {term}`lease` is ended and the client is notified of the failure:
+
+The exporter requests release only when a hook fails with `onFailure: endLease`.
+Successful cleanup, `warn`, skipped hooks, cancellation, and unexpected
+orchestration errors do not request release. Normal completion is handled by
+the client or controller expiry.
 
 - **`beforeLease`**: The exporter status transitions to
   `BEFORE_LEASE_HOOK_FAILED`. The client discovers the failure through status

@@ -3,17 +3,17 @@
 isort:skip_file
 Copyright 2024 The Jumpstarter Authors"""
 
-import abc
-import collections.abc
-import grpc
-import grpc.aio
-import typing
+from collections import abc as _abc
+from grpc import aio as _aio
+import abc as _abc_1
+import grpc as _grpc
+import typing as _typing
 
-_T = typing.TypeVar("_T")
+_T = _typing.TypeVar("_T")
 
-class _MaybeAsyncIterator(collections.abc.AsyncIterator[_T], collections.abc.Iterator[_T], metaclass=abc.ABCMeta): ...
+class _MaybeAsyncIterator(_abc.AsyncIterator[_T], _abc.Iterator[_T], metaclass=_abc_1.ABCMeta): ...
 
-class _ServicerContext(grpc.ServicerContext, grpc.aio.ServicerContext):  # type: ignore[misc, type-arg]
+class _ServicerContext(_grpc.ServicerContext, _aio.ServicerContext):  # type: ignore[misc, type-arg]
     ...
 
 GRPC_GENERATED_VERSION: str

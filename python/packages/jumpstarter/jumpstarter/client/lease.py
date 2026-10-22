@@ -44,7 +44,7 @@ _DIAL_ATTEMPT_TIMEOUT = 35.0
 
 
 @dataclass(kw_only=True)
-class DirectLease(ContextManagerMixin, AsyncContextManagerMixin):
+class DirectLease:
     """Lease-like object for direct connection to an exporter (no controller).
 
     Used when connecting via jmp shell --tls-grpc host:port. Yields the address
@@ -65,6 +65,18 @@ class DirectLease(ContextManagerMixin, AsyncContextManagerMixin):
     exporter_labels: dict[str, str] = field(default_factory=dict, init=False)
     release: bool = field(default=False, init=False)
     lease_ended: bool = field(default=False, init=False)
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        pass
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        pass
 
     @asynccontextmanager
     async def serve_unix_async(self):
@@ -94,7 +106,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     tls_config: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
     grpc_options: dict[str, Any] = field(default_factory=dict)
     client_name: str | None = None  # Name of the current client, used for ownership validation
-    allow_disabled: bool = False  # Allow leasing a disabled exporter (only effective with exporter_name)
+    allow_disabled: bool = False  # Allow leasing a disabled exporter (works with exporter_name and selector)
     acquisition_timeout: int = field(default=7200)  # Timeout in seconds for lease acquisition, polled in 5s intervals
     dial_timeout: float = field(default=60.0)  # Timeout in seconds for Dial retry loop when exporter not ready
     retry_timeout: float = field(default=300.0)  # Retry timeout for unreachable exporter (0 to disable)
@@ -108,9 +120,6 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     lease_revoked: bool = field(default=False, init=False)  # Set when this (shared) client loses shared access
 
     def __post_init__(self):
-        if hasattr(super(), "__post_init__"):
-            super().__post_init__()
-
         self.controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel)
         self.svc = ClientService(channel=self.channel, namespace=self.namespace)
 
@@ -146,6 +155,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     async def get(self):
         with translate_grpc_exceptions():
             svc = ClientService(channel=self.channel, namespace=self.namespace)
+            assert self.name is not None  # pragma: no cover
             return await svc.GetLease(name=self.name)
 
     @retry(
@@ -356,6 +366,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 )
             try:
                 # Unary grpc.aio calls need timeout=; AnyIO timeouts can leak CancelledError.
+                assert self.name is not None
                 return await self.controller.Dial(
                     jumpstarter_pb2.DialRequest(lease_name=self.name),
                     timeout=min(_DIAL_ATTEMPT_TIMEOUT, remaining),
@@ -556,6 +567,7 @@ class LeaseAcquisitionSpinner:
         """
         if self.spinner and self._should_show_spinner:
             self._current_message = f"[blue]{message}[/blue]"
+            assert self.start_time is not None
             elapsed = datetime.now(tz=UTC) - self.start_time
             elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
             self.spinner.update(f"{self._current_message} [dim]({elapsed_str})[/dim]")
@@ -568,6 +580,7 @@ class LeaseAcquisitionSpinner:
             )
 
             if should_log:
+                assert self.start_time is not None
                 elapsed = now - self.start_time
                 elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
                 logger.info(f"{message} ({elapsed_str})")
@@ -576,6 +589,7 @@ class LeaseAcquisitionSpinner:
     def tick(self):
         """Update the spinner with current elapsed time without changing the message."""
         if self.spinner and self._should_show_spinner and self._current_message:
+            assert self.start_time is not None
             elapsed = datetime.now(tz=UTC) - self.start_time
             elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
             # Use the stored current message and update with new elapsed time

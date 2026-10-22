@@ -452,14 +452,26 @@ func (s *ControllerService) handleExporterLeaseRelease(
 		return fmt.Errorf("failed to get lease: %w", err)
 	}
 
+	logger = logger.WithValues(
+		"lease", lease.Name,
+		"namespace", lease.Namespace,
+		"exporter", exporter.Name,
+		"path", "ReportStatus",
+	)
+
 	// Verify the lease is actually held by this exporter
 	if lease.Status.ExporterRef == nil || lease.Status.ExporterRef.Name != exporter.Name {
+		logger.Info("Lease release request rejected", "outcome", "rejected")
 		return fmt.Errorf("lease %s is not held by exporter %s", lease.Name, exporter.Name)
 	}
 
 	// Check if lease is already ended or marked for release
 	if lease.Status.Ended || lease.Spec.Release {
-		logger.Info("Lease already ended or marked for release", "lease", lease.Name)
+		outcome := "already_released"
+		if lease.Status.Ended {
+			outcome = "already_ended"
+		}
+		logger.Info("Lease release request is idempotent", "outcome", outcome)
 		return nil
 	}
 
@@ -471,9 +483,7 @@ func (s *ControllerService) handleExporterLeaseRelease(
 		return fmt.Errorf("failed to mark lease for release: %w", err)
 	}
 
-	logger.Info("Lease marked for release by exporter",
-		"lease", lease.Name,
-		"exporter", exporter.Name)
+	logger.Info("Lease marked for release by exporter", "outcome", "newly_marked")
 
 	return nil
 }
@@ -1097,13 +1107,26 @@ func (s *ControllerService) releaseLeaseAsExporter(
 		return nil, status.Errorf(codes.Internal, "failed to get lease: %s", err)
 	}
 
+	logger := log.FromContext(ctx).WithValues(
+		"lease", lease.Name,
+		"namespace", lease.Namespace,
+		"exporter", exporter.Name,
+		"path", "ReleaseLease",
+	)
+
 	if lease.Status.ExporterRef == nil || lease.Status.ExporterRef.Name != exporter.Name {
+		logger.Info("Lease release request rejected", "outcome", "rejected")
 		return nil, status.Errorf(codes.FailedPrecondition,
 			"lease %s is not held by exporter %s", req.Name, exporter.Name)
 	}
 
 	// Idempotent: already ended or marked for release
 	if lease.Status.Ended || lease.Spec.Release {
+		outcome := "already_released"
+		if lease.Status.Ended {
+			outcome = "already_ended"
+		}
+		logger.Info("Lease release request is idempotent", "outcome", outcome)
 		return &pb.ReleaseLeaseResponse{}, nil
 	}
 
@@ -1111,8 +1134,61 @@ func (s *ControllerService) releaseLeaseAsExporter(
 	lease.Spec.Release = true
 
 	if err := s.Client.Patch(ctx, &lease, original); err != nil {
+		logger.Error(err, "failed to mark lease for release", "outcome", "failed")
 		return nil, status.Errorf(codes.Internal, "failed to mark lease for release: %s", err)
 	}
+
+	logger.Info("Lease marked for release by exporter", "outcome", "newly_marked")
+
+	return &pb.ReleaseLeaseResponse{}, nil
+}
+
+func (s *ControllerService) releaseLeaseAsClient(
+	ctx context.Context,
+	jclient *jumpstarterdevv1alpha1.Client,
+	req *pb.ReleaseLeaseRequest,
+) (*pb.ReleaseLeaseResponse, error) {
+	var lease jumpstarterdevv1alpha1.Lease
+	if err := s.Client.Get(ctx, types.NamespacedName{
+		Namespace: jclient.Namespace,
+		Name:      req.Name,
+	}, &lease); err != nil {
+		return nil, err
+	}
+
+	logger := log.FromContext(ctx).WithValues(
+		"lease", lease.Name,
+		"namespace", lease.Namespace,
+		"client", jclient.Name,
+		"path", "ReleaseLease",
+	)
+
+	// Release is destructive and ends the lease for everyone, so it is restricted
+	// to the owner. Shared clients keep read/list/dial access via IsAccessibleBy.
+	if !lease.IsOwnedBy(jclient.Name) {
+		logger.Info("Lease release request rejected", "outcome", "rejected")
+		return nil, status.Errorf(codes.PermissionDenied, "ReleaseLease permission denied: only lease owner can release")
+	}
+
+	// Idempotent: already ended or marked for release
+	if lease.Status.Ended || lease.Spec.Release {
+		outcome := "already_released"
+		if lease.Status.Ended {
+			outcome = "already_ended"
+		}
+		logger.Info("Lease release request is idempotent", "outcome", outcome)
+		return &pb.ReleaseLeaseResponse{}, nil
+	}
+
+	original := client.MergeFrom(lease.DeepCopy())
+	lease.Spec.Release = true
+
+	if err := s.Client.Patch(ctx, &lease, original); err != nil {
+		logger.Error(err, "failed to mark lease for release", "outcome", "failed")
+		return nil, err
+	}
+
+	logger.Info("Lease marked for release by client", "outcome", "newly_marked")
 
 	return &pb.ReleaseLeaseResponse{}, nil
 }
@@ -1135,33 +1211,7 @@ func (s *ControllerService) ReleaseLease(
 		return nil, err
 	}
 
-	var lease jumpstarterdevv1alpha1.Lease
-	if err := s.Client.Get(ctx, types.NamespacedName{
-		Namespace: jclient.Namespace,
-		Name:      req.Name,
-	}, &lease); err != nil {
-		return nil, err
-	}
-
-	// Release is destructive and ends the lease for everyone, so it is restricted
-	// to the owner. Shared clients keep read/list/dial access via IsAccessibleBy.
-	if !lease.IsOwnedBy(jclient.Name) {
-		return nil, status.Errorf(codes.PermissionDenied, "ReleaseLease permission denied: only lease owner can release")
-	}
-
-	// Idempotent: already ended or marked for release
-	if lease.Status.Ended || lease.Spec.Release {
-		return &pb.ReleaseLeaseResponse{}, nil
-	}
-
-	original := client.MergeFrom(lease.DeepCopy())
-	lease.Spec.Release = true
-
-	if err := s.Client.Patch(ctx, &lease, original); err != nil {
-		return nil, err
-	}
-
-	return &pb.ReleaseLeaseResponse{}, nil
+	return s.releaseLeaseAsClient(ctx, jclient, req)
 }
 
 func (s *ControllerService) ListLeases(

@@ -240,7 +240,7 @@ class ConnectionManager:
         task_status,
     ) -> Connection:
         """Wire up the Unix socket, client, and notification watchers for a lease."""
-        notify_send, notify_recv = anyio.create_memory_object_stream[tuple[str, str, timedelta]](16)  # ty: ignore[call-non-callable]
+        notify_send, notify_recv = anyio.create_memory_object_stream[tuple[str, str, timedelta]](16)
 
         def _on_lease_ending(lease_obj, remaining):
             try:

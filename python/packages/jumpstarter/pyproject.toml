@@ -62,5 +62,4 @@ build-backend = "hatchling.build"
 name = "pin_jumpstarter"
 
 [tool.ty.rules]
-call-non-callable = "warn"
 unresolved-reference = "warn"

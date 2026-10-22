@@ -108,7 +108,7 @@ def _fresh_rpc(*, fork_support=None, import_order="jumpstarter-first", fork=Fals
             else:
                 process.kill()
         stdout, stderr = process.communicate(timeout=5)
-        pytest.fail(f"Fresh gRPC process timed out:\n{stdout}\n{stderr}")
+        pytest.fail(f"Fresh gRPC process timed out:\n{stdout}\n{stderr}")  # ty: ignore[invalid-argument-type]
     assert process.returncode == 0, f"{stdout}\n{stderr}"
     return json.loads(stdout)
 

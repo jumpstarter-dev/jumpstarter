@@ -394,8 +394,10 @@ class TestExporterList:
         )
 
         # Manually verify the lease data that would be extracted
+        assert exporter.lease is not None
         assert exporter.lease.client == "my-client"
         assert exporter.lease.get_status() == "Expired"
+        assert exporter.lease.effective_begin_time is not None
         assert exporter.lease.effective_begin_time.strftime("%Y-%m-%d %H:%M:%S") == "2023-01-01 10:00:00"
 
         # Test the logic that builds lease_info tuple in rich_add_rows

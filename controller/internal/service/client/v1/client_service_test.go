@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -22,6 +23,8 @@ import (
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 func TestValidateLeaseTarget(t *testing.T) {
@@ -792,4 +795,108 @@ func TestUpdateLeaseBeginTimeAfterStart(t *testing.T) {
 			}
 		})
 	}
+}
+
+func withCapturedLog(t *testing.T) (*bytes.Buffer, context.Context) {
+	t.Helper()
+	var buf bytes.Buffer
+	logger := ctrlzap.New(ctrlzap.UseDevMode(true), ctrlzap.WriteTo(&buf))
+	ctx := logf.IntoContext(context.Background(), logger)
+	return &buf, ctx
+}
+
+func TestDeleteLease_AttributionLogging(t *testing.T) {
+	const ns = "default"
+
+	t.Run("newly marked logs DeleteLease path and client", func(t *testing.T) {
+		lease := &jumpstarterdevv1alpha1.Lease{
+			ObjectMeta: metav1.ObjectMeta{Name: "lease-del", Namespace: ns},
+			Spec: jumpstarterdevv1alpha1.LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "ci-client"},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
+				Release:   false,
+			},
+		}
+		objs := append(namedClients(ns, "ci-client"), lease)
+		svc := authedClientService("ci-client", ns, testFakeClient(objs...))
+		buf, ctx := withCapturedLog(t)
+
+		_, err := svc.DeleteLease(ctx, &cpb.DeleteLeaseRequest{
+			Name: utils.UnparseLeaseIdentifier(kclient.ObjectKey{Namespace: ns, Name: "lease-del"}),
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		logged := buf.String()
+		for _, want := range []string{
+			"Lease marked for release by client",
+			`"lease": "lease-del"`,
+			`"client": "ci-client"`,
+			`"path": "DeleteLease"`,
+			`"outcome": "newly_marked"`,
+		} {
+			if !strings.Contains(logged, want) {
+				t.Errorf("expected %q in log, got:\n%s", want, logged)
+			}
+		}
+	})
+
+	t.Run("rejected owner check logs rejected outcome", func(t *testing.T) {
+		lease := &jumpstarterdevv1alpha1.Lease{
+			ObjectMeta: metav1.ObjectMeta{Name: "lease-other", Namespace: ns},
+			Spec: jumpstarterdevv1alpha1.LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "other-owner"},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
+				Release:   false,
+			},
+		}
+		objs := append(namedClients(ns, "owner"), lease)
+		svc := authedClientService("owner", ns, testFakeClient(objs...))
+		buf, ctx := withCapturedLog(t)
+
+		_, err := svc.DeleteLease(ctx, &cpb.DeleteLeaseRequest{
+			Name: utils.UnparseLeaseIdentifier(kclient.ObjectKey{Namespace: ns, Name: "lease-other"}),
+		})
+		if err == nil {
+			t.Fatal("expected permission denied")
+		}
+
+		logged := buf.String()
+		if !strings.Contains(logged, `"outcome": "rejected"`) {
+			t.Errorf("expected rejected outcome, got:\n%s", logged)
+		}
+		if strings.Contains(logged, `"outcome": "newly_marked"`) {
+			t.Errorf("rejected request must not emit newly_marked, got:\n%s", logged)
+		}
+	})
+
+	t.Run("already released logs idempotent outcome", func(t *testing.T) {
+		lease := &jumpstarterdevv1alpha1.Lease{
+			ObjectMeta: metav1.ObjectMeta{Name: "lease-released", Namespace: ns},
+			Spec: jumpstarterdevv1alpha1.LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "owner"},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
+				Release:   true,
+			},
+		}
+		objs := append(namedClients(ns, "owner"), lease)
+		svc := authedClientService("owner", ns, testFakeClient(objs...))
+		buf, ctx := withCapturedLog(t)
+
+		_, err := svc.DeleteLease(ctx, &cpb.DeleteLeaseRequest{
+			Name: utils.UnparseLeaseIdentifier(kclient.ObjectKey{Namespace: ns, Name: "lease-released"}),
+		})
+		if err == nil {
+			t.Fatal("expected FailedPrecondition for already released lease")
+		}
+
+		logged := buf.String()
+		if !strings.Contains(logged, `"outcome": "already_released"`) {
+			t.Errorf("expected already_released outcome, got:\n%s", logged)
+		}
+		if strings.Contains(logged, `"outcome": "newly_marked"`) {
+			t.Errorf("idempotent must not emit newly_marked, got:\n%s", logged)
+		}
+	})
 }

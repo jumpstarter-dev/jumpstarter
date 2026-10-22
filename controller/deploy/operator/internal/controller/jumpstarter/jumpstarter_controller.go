@@ -28,6 +28,7 @@ import (
 	"maps"
 	"net"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -127,10 +128,43 @@ type JumpstarterReconciler struct {
 
 // virtualtarget.jumpstarter.dev CRD resources (needed to grant permissions to managed
 // exporter-set provisioner controllers, see exporterSetPolicyRules)
-// +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=exportersets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=exportersets,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=exportersets/status;exportersets/scale,verbs=get;update;patch
 // +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=exportersets/finalizers,verbs=update
 // +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=virtualtargetclasses,verbs=get;list;watch
+
+// routerReplicas returns the effective router replica count.
+// When Replicas is nil (e.g. a pre-existing stored object that predates API
+// server defaulting, or an in-process caller), we return the CRD default (3)
+// rather than 0 so that a nil pointer never silently suspends all routers.
+func routerReplicas(spec *operatorv1alpha1.RoutersConfig) int32 {
+	if spec.Replicas != nil {
+		return *spec.Replicas
+	}
+	return 3 // CRD default (+kubebuilder:default=3)
+}
+
+// controllerReplicas returns the effective controller replica count.
+// When Replicas is nil we return the CRD default (1) for the same reason as
+// routerReplicas: nil means "no opinion / use default", not "suspend".
+func controllerReplicas(spec *operatorv1alpha1.ControllerConfig) int32 {
+	if spec.Replicas != nil {
+		return *spec.Replicas
+	}
+	return 1 // CRD default (+kubebuilder:default=1)
+}
+
+// telemetryReplicas returns the effective telemetry replica count when telemetry is enabled.
+// When Replicas is nil we return the CRD default (1), not suspend.
+func telemetryReplicas(spec *operatorv1alpha1.TelemetryConfig) int32 {
+	if spec == nil {
+		return 1
+	}
+	if spec.Replicas != nil {
+		return *spec.Replicas
+	}
+	return 1 // CRD default (+kubebuilder:default=1)
+}
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
@@ -165,14 +199,15 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// gRPC stream coordination (Dial/Listen pairing), so only one replica can
 	// serve traffic correctly. Multiple replicas would cause connection failures
 	// when Dial and Listen land on different pods.
-	if jumpstarter.Spec.Controller.Replicas > 1 {
+	if controllerReplicas(&jumpstarter.Spec.Controller) > 1 {
+		requested := controllerReplicas(&jumpstarter.Spec.Controller)
 		log.Info("WARNING: controller.replicas > 1 is not yet supported — the controller "+
 			"uses in-memory state for gRPC stream coordination. Clamping to 1.",
-			"requested", jumpstarter.Spec.Controller.Replicas)
+			"requested", requested)
 		r.emitEventf(&jumpstarter, corev1.EventTypeWarning, "ReplicasClamped",
 			"controller.replicas=%d is not yet supported (in-memory gRPC state requires a single replica), clamping to 1",
-			jumpstarter.Spec.Controller.Replicas)
-		jumpstarter.Spec.Controller.Replicas = 1
+			requested)
+		jumpstarter.Spec.Controller.Replicas = new(int32(1))
 	}
 
 	// Reconcile RBAC resources first
@@ -384,92 +419,26 @@ func (r *JumpstarterReconciler) reconcileControllerDeployment(ctx context.Contex
 func (r *JumpstarterReconciler) reconcileRouterDeployment(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
 
+	// When replicas is 0, reconcile existing router Deployments at 0 replicas (still
+	// applying spec changes) without deleting them or their associated resources.
+	// Note: cleanup of stale suspended Deployments (e.g. router-1, router-2 left
+	// over from a 3→0 scale-down) happens on the RESUME path, not here. When
+	// resuming to N replicas, the reconcile loop creates/updates the first N
+	// Deployments and then calls cleanupExcessRouterDeployments which deletes any
+	// with an index >= N. This keeps the suspend path simple and idempotent.
+	nRouters := routerReplicas(&jumpstarter.Spec.Routers)
+
+	if nRouters == 0 {
+		return r.reconcileSuspendedRouterDeployments(ctx, jumpstarter)
+	}
+
 	// Cache hashes by secret name so a shared CertSecret is fetched once across replicas.
 	tlsHashBySecret := make(map[string]string)
 
 	// Create one deployment per replica
-	for i := int32(0); i < jumpstarter.Spec.Routers.Replicas; i++ {
-		secretName := routerTLSSecretName(jumpstarter, i)
-		routerTLSHash, ok := tlsHashBySecret[secretName]
-		if !ok {
-			var err error
-			routerTLSHash, err = r.getTLSSecretHash(ctx, jumpstarter.Namespace, secretName)
-			if err != nil {
-				log.Error(err, "Failed to compute router TLS secret hash", "replica", i)
-				return err
-			}
-			tlsHashBySecret[secretName] = routerTLSHash
-		}
-		desiredDeployment := r.createRouterDeployment(jumpstarter, i, routerTLSHash)
-
-		existingDeployment := &appsv1.Deployment{}
-		existingDeployment.Name = desiredDeployment.Name
-		existingDeployment.Namespace = desiredDeployment.Namespace
-
-		op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existingDeployment, func() error {
-			// Check if this is a new deployment or an existing one
-			if existingDeployment.CreationTimestamp.IsZero() {
-				// Deployment is being created, copy all fields from desired
-				existingDeployment.Labels = desiredDeployment.Labels
-				existingDeployment.Annotations = desiredDeployment.Annotations
-				existingDeployment.Spec = desiredDeployment.Spec
-				return controllerutil.SetControllerReference(jumpstarter, existingDeployment, r.Scheme)
-			}
-			desiredDeployment.Spec.Template.Spec.SchedulerName = existingDeployment.Spec.Template.Spec.SchedulerName
-			desiredDeployment.Spec.Template.Spec.DeprecatedServiceAccount = existingDeployment.Spec.Template.Spec.DeprecatedServiceAccount
-
-			if !deploymentNeedsUpdate(existingDeployment, desiredDeployment) {
-				log.V(1).Info("Router deployment specs are equal, skipping update",
-					"name", existingDeployment.Name,
-					"namespace", existingDeployment.Namespace,
-					"replica", i)
-				return nil
-			}
-			// Deployment exists, generate and log diff
-			diff, err := generateDiff(existingDeployment, desiredDeployment)
-			if err != nil {
-				log.V(1).Info("Failed to generate deployment diff", "error", err)
-			} else if diff != "" {
-				fmt.Printf("\n=== Router deployment differences detected ===\n")
-				fmt.Printf("Name: %s\n", existingDeployment.Name)
-				fmt.Printf("Namespace: %s\n", existingDeployment.Namespace)
-				fmt.Printf("Replica: %d\n", i)
-				fmt.Printf("\n%s\n", diff)
-				fmt.Printf("==============================================\n\n")
-			}
-
-			// Apply changes
-			existingDeployment.Labels = desiredDeployment.Labels
-			existingDeployment.Annotations = desiredDeployment.Annotations
-			existingDeployment.Spec.Replicas = desiredDeployment.Spec.Replicas
-			existingDeployment.Spec.Selector = desiredDeployment.Spec.Selector
-			existingDeployment.Spec.Template = desiredDeployment.Spec.Template
-			return controllerutil.SetControllerReference(jumpstarter, existingDeployment, r.Scheme)
-		})
-
-		if err != nil {
-			log.Error(err, "Failed to reconcile router deployment",
-				"name", desiredDeployment.Name,
-				"namespace", desiredDeployment.Namespace,
-				"replica", i)
+	for i := range nRouters {
+		if err := r.reconcileRouterDeploymentReplica(ctx, jumpstarter, i, tlsHashBySecret, nil); err != nil {
 			return err
-		}
-
-		log.Info("Router deployment reconciled",
-			"name", existingDeployment.Name,
-			"namespace", existingDeployment.Namespace,
-			"replica", i,
-			"operation", op)
-
-		switch op {
-		case controllerutil.OperationResultCreated:
-			r.emitEventf(jumpstarter, corev1.EventTypeNormal, "RouterDeploymentCreated",
-				"Router deployment created: name=%s namespace=%s replica=%d",
-				existingDeployment.Name, existingDeployment.Namespace, i)
-		case controllerutil.OperationResultUpdated:
-			r.emitEventf(jumpstarter, corev1.EventTypeNormal, "RouterDeploymentUpdated",
-				"Router deployment updated: name=%s namespace=%s replica=%d",
-				existingDeployment.Name, existingDeployment.Namespace, i)
 		}
 	}
 
@@ -505,8 +474,11 @@ func (r *JumpstarterReconciler) reconcileServices(ctx context.Context, jumpstart
 		}
 	}
 
-	// Reconcile router services - one per replica, all endpoints per replica
-	for i := int32(0); i < jumpstarter.Spec.Routers.Replicas; i++ {
+	// Reconcile router services - one per replica, all endpoints per replica.
+	// When replicas == 0 the router is suspended; skip service reconciliation and
+	// cleanup so existing Services are preserved for quick resume.
+	svcRouterReplicas := routerReplicas(&jumpstarter.Spec.Routers)
+	for i := range svcRouterReplicas {
 		if len(jumpstarter.Spec.Routers.GRPC.Endpoints) > 0 {
 			// Each replica gets ALL configured endpoints with replica substitution
 			for endpointIdx, baseEndpoint := range jumpstarter.Spec.Routers.GRPC.Endpoints {
@@ -555,10 +527,14 @@ func (r *JumpstarterReconciler) reconcileServices(ctx context.Context, jumpstart
 		}
 	}
 
-	// Clean up services for scaled-down replicas
-	if err := r.cleanupExcessRouterServices(ctx, jumpstarter); err != nil {
-		log.Error(err, "Failed to cleanup excess router services")
-		return err
+	// Clean up services for scaled-down replicas.
+	// Skip when replicas == 0 (suspended): keep existing Services so the router
+	// configuration can be restored without reconfiguration.
+	if svcRouterReplicas > 0 {
+		if err := r.cleanupExcessRouterServices(ctx, jumpstarter); err != nil {
+			log.Error(err, "Failed to cleanup excess router services")
+			return err
+		}
 	}
 
 	// Reconcile login endpoints (if configured)
@@ -924,7 +900,7 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 			Labels:    labels,
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas:                &jumpstarter.Spec.Controller.Replicas,
+			Replicas:                new(controllerReplicas(&jumpstarter.Spec.Controller)),
 			ProgressDeadlineSeconds: new(int32(600)),
 			RevisionHistoryLimit:    new(int32(10)),
 			Strategy: appsv1.DeploymentStrategy{
@@ -1324,31 +1300,51 @@ func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *op
 		Keys: jumpstarter.Spec.DeprecatedLabels.Keys,
 	}
 
-	// Telemetry configuration. When cert-manager is enabled, inline the CA so
+	// Telemetry configuration.
+	// When replicas==0 the telemetry Deployment is suspended (no ready endpoints), so omit
+	// the telemetry block from the config to avoid directing exporters to a dead endpoint.
+	// Side-effect: exporters that are already streaming metrics will lose their MetricsStream
+	// target immediately. The block is automatically restored on the next reconcile once
+	// replicas is bumped back above 0.
+	// When cert-manager is enabled, inline the CA so
 	// GetServiceEndpoints.certificate lets exporters verify telemetry TLS.
 	if jumpstarter.Spec.Telemetry != nil && jumpstarter.Spec.Telemetry.Enabled {
 		t := jumpstarter.Spec.Telemetry
-		telemetryCfg := &config.Telemetry{
-			Enabled:  true,
-			Endpoint: telemetryEndpointFor(jumpstarter.Namespace),
-		}
-		if t.Logging.Filter.MinSeverity != "" {
-			telemetryCfg.Logging.Filter.MinSeverity = t.Logging.Filter.MinSeverity
-		}
-		// Include CA certificate when cert-manager is enabled so exporters can verify TLS
-		if jumpstarter.Spec.CertManager.Enabled {
-			caCert, err := r.resolveTelemetryCA(ctx, jumpstarter)
-			if err != nil {
-				// Log at default verbosity so operators notice during initial cert-manager setup.
-				// Reconciliation continues without a certificate; telemetryCANeedsRequeue
-				// triggers a short requeue until the CA secret is ready.
-				logf.FromContext(ctx).Info("Could not resolve telemetry CA certificate; exporters cannot verify telemetry TLS until the CA is available",
-					"error", err)
-			} else if caCert != "" {
-				telemetryCfg.Certificate = caCert
+		if telemetryReplicas(t) > 0 {
+			telemetryCfg := &config.Telemetry{
+				Enabled:  true,
+				Endpoint: telemetryEndpointFor(jumpstarter.Namespace),
 			}
+			if t.Logging.Filter.MinSeverity != "" {
+				telemetryCfg.Logging.Filter.MinSeverity = t.Logging.Filter.MinSeverity
+			}
+			// Include CA certificate so exporters can verify TLS.
+			if jumpstarter.Spec.CertManager.Enabled {
+				// cert-manager path: CA is in the cert-manager-managed CA secret.
+				caCert, err := r.resolveTelemetryCA(ctx, jumpstarter)
+				if err != nil {
+					// Log at default verbosity so operators notice during initial cert-manager setup.
+					// Reconciliation continues without a certificate; telemetryCANeedsRequeue
+					// triggers a short requeue until the CA secret is ready.
+					logf.FromContext(ctx).Info("Could not resolve telemetry CA certificate; exporters cannot verify telemetry TLS until the CA is available",
+						"error", err)
+				} else if caCert != "" {
+					telemetryCfg.Certificate = caCert
+				}
+			} else if t.GRPC.TLS.CertSecret != "" {
+				// Manual CertSecret path: read ca.crt from the user-provided TLS secret.
+				// The field is optional — if absent the secret uses a system-trusted certificate
+				// and exporters rely on the system CA pool.
+				var tlsSecret corev1.Secret
+				if err := r.Get(ctx, client.ObjectKey{Name: t.GRPC.TLS.CertSecret, Namespace: jumpstarter.Namespace}, &tlsSecret); err != nil {
+					logf.FromContext(ctx).V(1).Info("Could not read manual telemetry TLS secret for CA; exporters will use the system CA pool",
+						"secret", t.GRPC.TLS.CertSecret, "error", err)
+				} else if caCert, ok := tlsSecret.Data["ca.crt"]; ok && len(caCert) > 0 {
+					telemetryCfg.Certificate = string(caCert)
+				}
+			}
+			cfg.Telemetry = telemetryCfg
 		}
-		cfg.Telemetry = telemetryCfg
 	}
 
 	// gRPC keepalive configuration
@@ -1445,12 +1441,17 @@ func (r *JumpstarterReconciler) resolveJWTAuthenticators(
 	return result, nil
 }
 
-// buildRouter builds the router configuration with entries for all replicas
+// buildRouter builds the router configuration with entries for all replicas.
+// When routers.replicas == 0 (suspended), the returned map is empty and the
+// controller ConfigMap will contain an empty router section ({}). This means
+// the running controller will also see zero router entries, so any Dial/Listen
+// attempt will fail to find a router — suspending routers effectively disables
+// gRPC stream routing at the controller level until routers are resumed.
 func (r *JumpstarterReconciler) buildRouter(jumpstarter *operatorv1alpha1.Jumpstarter) config.Router {
 	router := make(config.Router)
 
 	// Create router entry for each replica
-	for i := int32(0); i < jumpstarter.Spec.Routers.Replicas; i++ {
+	for i := int32(0); i < routerReplicas(&jumpstarter.Spec.Routers); i++ {
 		// First replica is named "default" for backwards compatibility
 		routerName := "default"
 		if i > 0 {
@@ -1511,14 +1512,21 @@ func ensurePort(address, defaultPort string) string {
 	return net.JoinHostPort(address, defaultPort)
 }
 
+// routerServiceNamePrefix is the prefix of every service name
+// buildServiceNameForReplicaEndpoint creates.
+func routerServiceNamePrefix(jumpstarter *operatorv1alpha1.Jumpstarter) string {
+	return jumpstarter.Name + "-router-"
+}
+
 // buildServiceNameForReplicaEndpoint creates a unique service name for a router replica and endpoint
 func (r *JumpstarterReconciler) buildServiceNameForReplicaEndpoint(jumpstarter *operatorv1alpha1.Jumpstarter, replicaIndex int32, endpointIdx int) string {
+	prefix := routerServiceNamePrefix(jumpstarter)
 	if endpointIdx == 0 {
 		// First endpoint uses base name for backwards compatibility
-		return fmt.Sprintf("%s-router-%d", jumpstarter.Name, replicaIndex)
+		return fmt.Sprintf("%s%d", prefix, replicaIndex)
 	}
 	// Additional endpoints get a suffix
-	return fmt.Sprintf("%s-router-%d-%d", jumpstarter.Name, replicaIndex, endpointIdx)
+	return fmt.Sprintf("%s%d-%d", prefix, replicaIndex, endpointIdx)
 }
 
 // buildEndpointForReplica creates an Endpoint struct for a specific router replica and endpoint
@@ -1541,6 +1549,162 @@ func (r *JumpstarterReconciler) buildEndpointForReplica(jumpstarter *operatorv1a
 	return endpoint
 }
 
+// reconcileRouterDeploymentReplica reconciles a single router Deployment for replica index i.
+// When overrideReplicas is non-nil, the Deployment is scaled to that value (used when suspending).
+func (r *JumpstarterReconciler) reconcileRouterDeploymentReplica(
+	ctx context.Context,
+	jumpstarter *operatorv1alpha1.Jumpstarter,
+	i int32,
+	tlsHashBySecret map[string]string,
+	overrideReplicas *int32,
+) error {
+	log := logf.FromContext(ctx)
+
+	secretName := routerTLSSecretName(jumpstarter, i)
+	routerTLSHash, ok := tlsHashBySecret[secretName]
+	if !ok {
+		var err error
+		routerTLSHash, err = r.getTLSSecretHash(ctx, jumpstarter.Namespace, secretName)
+		if err != nil {
+			log.Error(err, "Failed to compute router TLS secret hash", "replica", i)
+			return err
+		}
+		tlsHashBySecret[secretName] = routerTLSHash
+	}
+	desiredDeployment := r.createRouterDeployment(jumpstarter, i, routerTLSHash)
+	if overrideReplicas != nil {
+		desiredDeployment.Spec.Replicas = overrideReplicas
+	}
+
+	existingDeployment := &appsv1.Deployment{}
+	existingDeployment.Name = desiredDeployment.Name
+	existingDeployment.Namespace = desiredDeployment.Namespace
+
+	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existingDeployment, func() error {
+		if existingDeployment.CreationTimestamp.IsZero() {
+			existingDeployment.Labels = desiredDeployment.Labels
+			existingDeployment.Annotations = desiredDeployment.Annotations
+			existingDeployment.Spec = desiredDeployment.Spec
+			return controllerutil.SetControllerReference(jumpstarter, existingDeployment, r.Scheme)
+		}
+		desiredDeployment.Spec.Template.Spec.SchedulerName = existingDeployment.Spec.Template.Spec.SchedulerName
+		desiredDeployment.Spec.Template.Spec.DeprecatedServiceAccount = existingDeployment.Spec.Template.Spec.DeprecatedServiceAccount
+
+		if !deploymentNeedsUpdate(existingDeployment, desiredDeployment) {
+			if desiredDeployment.Spec.Replicas != nil &&
+				(existingDeployment.Spec.Replicas == nil || *existingDeployment.Spec.Replicas != *desiredDeployment.Spec.Replicas) {
+				existingDeployment.Spec.Replicas = desiredDeployment.Spec.Replicas
+				return controllerutil.SetControllerReference(jumpstarter, existingDeployment, r.Scheme)
+			}
+			log.V(1).Info("Router deployment specs are equal, skipping update",
+				"name", existingDeployment.Name,
+				"namespace", existingDeployment.Namespace,
+				"replica", i)
+			return nil
+		}
+
+		diff, err := generateDiff(existingDeployment, desiredDeployment)
+		if err != nil {
+			log.V(1).Info("Failed to generate deployment diff", "error", err)
+		} else if diff != "" {
+			fmt.Printf("\n=== Router deployment differences detected ===\n")
+			fmt.Printf("Name: %s\n", existingDeployment.Name)
+			fmt.Printf("Namespace: %s\n", existingDeployment.Namespace)
+			fmt.Printf("Replica: %d\n", i)
+			fmt.Printf("\n%s\n", diff)
+			fmt.Printf("==============================================\n\n")
+		}
+
+		existingDeployment.Labels = desiredDeployment.Labels
+		existingDeployment.Annotations = desiredDeployment.Annotations
+		existingDeployment.Spec.Replicas = desiredDeployment.Spec.Replicas
+		existingDeployment.Spec.Selector = desiredDeployment.Spec.Selector
+		existingDeployment.Spec.Template = desiredDeployment.Spec.Template
+		return controllerutil.SetControllerReference(jumpstarter, existingDeployment, r.Scheme)
+	})
+	if err != nil {
+		log.Error(err, "Failed to reconcile router deployment",
+			"name", desiredDeployment.Name,
+			"namespace", desiredDeployment.Namespace,
+			"replica", i)
+		return err
+	}
+
+	log.Info("Router deployment reconciled",
+		"name", existingDeployment.Name,
+		"namespace", existingDeployment.Namespace,
+		"replica", i,
+		"operation", op)
+
+	switch op {
+	case controllerutil.OperationResultCreated:
+		r.emitEventf(jumpstarter, corev1.EventTypeNormal, "RouterDeploymentCreated",
+			"Router deployment created: name=%s namespace=%s replica=%d",
+			existingDeployment.Name, existingDeployment.Namespace, i)
+	case controllerutil.OperationResultUpdated:
+		r.emitEventf(jumpstarter, corev1.EventTypeNormal, "RouterDeploymentUpdated",
+			"Router deployment updated: name=%s namespace=%s replica=%d",
+			existingDeployment.Name, existingDeployment.Namespace, i)
+	}
+
+	return nil
+}
+
+// reconcileSuspendedRouterDeployments keeps existing router Deployments at 0 replicas while
+// still applying spec changes (image, resources, etc.) so they are ready to resume.
+func (r *JumpstarterReconciler) reconcileSuspendedRouterDeployments(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
+	log := logf.FromContext(ctx)
+
+	deploymentList := &appsv1.DeploymentList{}
+	if err := r.List(ctx, deploymentList,
+		client.InNamespace(jumpstarter.Namespace),
+		client.MatchingLabels{"router": jumpstarter.Name},
+	); err != nil {
+		return fmt.Errorf("failed to list router deployments for suspension: %w", err)
+	}
+
+	tlsHashBySecret := make(map[string]string)
+	zero := new(int32(0))
+
+	for i := range deploymentList.Items {
+		dep := &deploymentList.Items[i]
+		idxStr, ok := dep.Labels["router-index"]
+		if !ok {
+			log.Info("Scaling router deployment without router-index label to 0 during suspension", "name", dep.Name)
+			if dep.Spec.Replicas == nil || *dep.Spec.Replicas != 0 {
+				dep.Spec.Replicas = zero
+				if err := r.Update(ctx, dep); err != nil {
+					return fmt.Errorf("failed to suspend router deployment %s: %w", dep.Name, err)
+				}
+				r.emitEventf(jumpstarter, corev1.EventTypeNormal, "RouterDeploymentSuspended",
+					"Router deployment suspended: name=%s namespace=%s", dep.Name, dep.Namespace)
+			}
+			continue
+		}
+
+		idx, err := strconv.ParseInt(idxStr, 10, 32)
+		if err != nil {
+			log.Info("Scaling router deployment with invalid router-index to 0 during suspension",
+				"name", dep.Name, "router-index", idxStr, "error", err)
+			if dep.Spec.Replicas == nil || *dep.Spec.Replicas != 0 {
+				dep.Spec.Replicas = zero
+				if err := r.Update(ctx, dep); err != nil {
+					return fmt.Errorf("failed to suspend router deployment %s with invalid router-index: %w", dep.Name, err)
+				}
+				r.emitEventf(jumpstarter, corev1.EventTypeNormal, "RouterDeploymentSuspended",
+					"Router deployment suspended (invalid router-index label): name=%s namespace=%s", dep.Name, dep.Namespace)
+			}
+			continue
+		}
+
+		if err := r.reconcileRouterDeploymentReplica(ctx, jumpstarter, int32(idx), tlsHashBySecret, zero); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // cleanupExcessRouterDeployments deletes router deployments that exceed the current replica count
 func (r *JumpstarterReconciler) cleanupExcessRouterDeployments(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
@@ -1559,12 +1723,13 @@ func (r *JumpstarterReconciler) cleanupExcessRouterDeployments(ctx context.Conte
 	}
 
 	// Delete deployments with replica index >= current replica count
+	currentRouterReplicas := routerReplicas(&jumpstarter.Spec.Routers)
 	for i := range deploymentList.Items {
 		deployment := &deploymentList.Items[i]
 
 		// Check if this deployment's name indicates it's beyond the current replica count
 		// We need to check all indices from current replicas onwards
-		for idx := jumpstarter.Spec.Routers.Replicas; idx < 100; idx++ { // reasonable upper bound
+		for idx := currentRouterReplicas; idx < 100; idx++ { // reasonable upper bound
 			excessName := fmt.Sprintf("%s-router-%d", jumpstarter.Name, idx)
 			if deployment.Name == excessName {
 				log.Info("Deleting excess router deployment", "deployment", deployment.Name, "replicaIndex", idx)
@@ -1585,95 +1750,47 @@ func (r *JumpstarterReconciler) cleanupExcessRouterDeployments(ctx context.Conte
 }
 
 // cleanupExcessRouterServices deletes router services that exceed the current replica count
-// or endpoint count. This ensures that when replicas or endpoints are scaled down, the
-// corresponding services are removed.
+// or endpoint count, or whose Service type the endpoint no longer enables. This ensures that
+// when replicas, endpoints or Service types are removed, the corresponding services are removed.
 func (r *JumpstarterReconciler) cleanupExcessRouterServices(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
 
-	// Services can have suffixes for different service types
-	// ClusterIP has no suffix, LoadBalancer has "-lb", NodePort has "-np"
-	suffixes := []string{"", "-lb", "-np"}
+	// Find router services by name, not by the router label: an endpoint's
+	// labels override the operator's, so an endpoint can relabel its services.
+	serviceList := &corev1.ServiceList{}
+	if err := r.List(ctx, serviceList, client.InNamespace(jumpstarter.Namespace)); err != nil {
+		return fmt.Errorf("failed to list services: %w", err)
+	}
 
-	// 1. Delete services for excess replicas (replica index >= current replica count)
-	for idx := jumpstarter.Spec.Routers.Replicas; idx < 100; idx++ { // reasonable upper bound
-		foundAny := false
-
-		// Try to delete services for all endpoints and service types for this replica
-		for endpointIdx := range 10 { // reasonable upper bound for endpoints
-			for _, suffix := range suffixes {
-				var serviceName string
-				if endpointIdx == 0 {
-					serviceName = fmt.Sprintf("%s-router-%d%s", jumpstarter.Name, idx, suffix)
-				} else {
-					serviceName = fmt.Sprintf("%s-router-%d-%d%s", jumpstarter.Name, idx, endpointIdx, suffix)
-				}
-
-				service := &corev1.Service{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      serviceName,
-						Namespace: jumpstarter.Namespace,
-					},
-				}
-
-				err := r.Delete(ctx, service)
-				if err != nil {
-					if !errors.IsNotFound(err) {
-						return fmt.Errorf("failed to delete excess service %s: %w", serviceName, err)
-					}
-				} else {
-					foundAny = true
-					log.Info("Deleted excess router service", "service", serviceName, "replicaIndex", idx, "endpointIdx", endpointIdx)
-				}
+	// Every service the current spec produces: one per Service type each
+	// endpoint enables, for every replica. With no endpoints the reconcile
+	// falls back to an endpoint that enables no type, so nothing is wanted.
+	wanted := make(map[string]struct{})
+	for replicaIdx := range routerReplicas(&jumpstarter.Spec.Routers) {
+		for endpointIdx := range jumpstarter.Spec.Routers.GRPC.Endpoints {
+			serviceName := r.buildServiceNameForReplicaEndpoint(jumpstarter, replicaIdx, endpointIdx)
+			endpoint := &jumpstarter.Spec.Routers.GRPC.Endpoints[endpointIdx]
+			for _, suffix := range endpoints.RouterServiceSuffixes(endpoint) {
+				wanted[serviceName+suffix] = struct{}{}
 			}
-		}
-
-		// If we didn't find any services for this replica index, we've gone past all excess services
-		if !foundAny {
-			break
 		}
 	}
 
-	// 2. Delete services for excess endpoints within valid replicas
-	numEndpoints := len(jumpstarter.Spec.Routers.GRPC.Endpoints)
-	if numEndpoints == 0 {
-		numEndpoints = 1 // default endpoint
-	}
-
-	for replicaIdx := int32(0); replicaIdx < jumpstarter.Spec.Routers.Replicas; replicaIdx++ {
-		for endpointIdx := numEndpoints; endpointIdx < 10; endpointIdx++ { // reasonable upper bound
-			foundAny := false
-
-			for _, suffix := range suffixes {
-				var serviceName string
-				if endpointIdx == 0 {
-					serviceName = fmt.Sprintf("%s-router-%d%s", jumpstarter.Name, replicaIdx, suffix)
-				} else {
-					serviceName = fmt.Sprintf("%s-router-%d-%d%s", jumpstarter.Name, replicaIdx, endpointIdx, suffix)
-				}
-
-				service := &corev1.Service{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      serviceName,
-						Namespace: jumpstarter.Namespace,
-					},
-				}
-
-				err := r.Delete(ctx, service)
-				if err != nil {
-					if !errors.IsNotFound(err) {
-						return fmt.Errorf("failed to delete excess endpoint service %s: %w", serviceName, err)
-					}
-				} else {
-					foundAny = true
-					log.Info("Deleted excess endpoint service", "service", serviceName, "replicaIndex", replicaIdx, "endpointIdx", endpointIdx)
-				}
-			}
-
-			// If we didn't find any services for this endpoint index, we've gone past all excess endpoints
-			if !foundAny {
-				break
-			}
+	// Delete what the spec no longer produces, but only services this
+	// Jumpstarter controls: a matching name alone does not make it ours.
+	prefix := routerServiceNamePrefix(jumpstarter)
+	for i := range serviceList.Items {
+		service := &serviceList.Items[i]
+		if !strings.HasPrefix(service.Name, prefix) || !metav1.IsControlledBy(service, jumpstarter) {
+			continue
 		}
+		if _, ok := wanted[service.Name]; ok {
+			continue
+		}
+		if err := r.Delete(ctx, service); client.IgnoreNotFound(err) != nil {
+			return fmt.Errorf("failed to delete excess router service %s: %w", service.Name, err)
+		}
+		log.Info("Deleted excess router service", "service", service.Name)
 	}
 
 	return nil
@@ -1754,7 +1871,7 @@ func (r *JumpstarterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 			// Router TLS cert secrets
 			if jumpstarter.Spec.CertManager.Enabled {
-				for i := int32(0); i < jumpstarter.Spec.Routers.Replicas; i++ {
+				for i := int32(0); i < routerReplicas(&jumpstarter.Spec.Routers); i++ {
 					keys = append(keys, jumpstarter.Namespace+"/"+GetRouterCertSecretName(jumpstarter, i))
 				}
 			} else if s := jumpstarter.Spec.Routers.GRPC.TLS.CertSecret; s != "" {

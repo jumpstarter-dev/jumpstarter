@@ -1,6 +1,7 @@
 import asyncio
 import subprocess
 from collections.abc import Generator
+from concurrent.futures import CancelledError as FutureCancelledError
 from contextlib import contextmanager
 
 import anyio
@@ -34,9 +35,10 @@ def _is_cancelled(exc: BaseException) -> bool:
 
     Both backends' cancellations are matched directly: asyncio's ``CancelledError``
     (which trio's also subclasses on recent versions) and trio's ``Cancelled`` by
-    name, so trio need not be installed.
+    name, so trio need not be installed. Portal futures can instead raise
+    ``concurrent.futures.CancelledError`` when their task is cancelled.
     """
-    if isinstance(exc, asyncio.CancelledError):
+    if isinstance(exc, (asyncio.CancelledError, FutureCancelledError)):
         return True
     return type(exc).__name__ == "Cancelled" and type(exc).__module__.startswith("trio")
 

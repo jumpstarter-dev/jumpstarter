@@ -31,6 +31,7 @@ import (
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/disk"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/qemudriver"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -354,9 +355,16 @@ func (p *Provisioner) RenderPod(
 // - Auto-injects hostfwd.ssh if not present
 // - Auto-injects tcp wrapper driver entry
 func (p *Provisioner) EnrichExporterExport(
+	_ context.Context,
+	_ *virtualtargetv1alpha1.VirtualTargetClass,
 	drivers []virtualtargetv1alpha1.DriverConfig,
 	mergedParameters map[string]any,
+	_ *jumpstarterdevv1alpha1.Exporter,
 ) ([]virtualtargetv1alpha1.DriverConfig, error) {
+	if err := qemudriver.ValidateNoOwnedChildren(drivers); err != nil {
+		return nil, err
+	}
+
 	result := make([]virtualtargetv1alpha1.DriverConfig, 0, len(drivers)+1)
 	hasTCP := false
 

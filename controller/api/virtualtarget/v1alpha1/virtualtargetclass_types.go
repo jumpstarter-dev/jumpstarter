@@ -93,6 +93,10 @@ type ImageOverrides struct {
 	// (e.g. QEMU runtime for the qemu.jumpstarter.dev provisioner).
 	// +optional
 	Runtime *ImageSpec `json:"runtime,omitempty"`
+
+	// Turn overrides the Cuttlefish TURN relay container image.
+	// +optional
+	Turn *ImageSpec `json:"turn,omitempty"`
 }
 
 // VirtualTargetClassSpec defines the desired state of VirtualTargetClass.

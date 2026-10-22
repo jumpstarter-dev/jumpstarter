@@ -13,6 +13,7 @@ jumpstarter-driver-ble = { workspace = true }
 jumpstarter-driver-bt-peer = { workspace = true }
 jumpstarter-driver-can = { workspace = true }
 jumpstarter-driver-composite = { workspace = true }
+jumpstarter-driver-dds = { workspace = true }
 jumpstarter-driver-corellium = { workspace = true }
 jumpstarter-driver-cuttlefish = { workspace = true }
 jumpstarter-driver-doip = { workspace = true }
@@ -30,6 +31,7 @@ jumpstarter-driver-netsim = { workspace = true }
 jumpstarter-driver-network = { workspace = true }
 jumpstarter-driver-noyito-relay = { workspace = true }
 jumpstarter-driver-obd = { workspace = true }
+jumpstarter-driver-kubevirt = { workspace = true }
 jumpstarter-driver-opendal = { workspace = true }
 jumpstarter-driver-power = { workspace = true }
 jumpstarter-driver-pi-pico = { workspace = true }
@@ -137,7 +139,7 @@ dev = [
     "typos>=1.23.6",
     "pre-commit>=3.8.0",
     "esbonio>=0.16.5",
-    "ty>=0.0.1a8",
+    "ty==0.0.85",
     "diff-cover>=10.2.0",
 ]
 

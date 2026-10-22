@@ -5,7 +5,7 @@ from shutil import which
 import pytest
 
 from .client import SigrokClient
-from .common import CaptureConfig, CaptureResult, OutputFormat
+from .common import CaptureConfig, CaptureResult, OutputFormat, Sample
 from .csv import parse_csv
 
 # ---------------------------------------------------------------------------
@@ -147,6 +147,7 @@ def test_csv_format_basic(demo_client: SigrokClient):
     # CSV format uses inferred names (D0, D1, etc.) based on column types
     # Channel mapping is only preserved in VCD format
     first_sample = decoded_data[0]
+    assert isinstance(first_sample, Sample)
     assert "D0" in first_sample.values or "D1" in first_sample.values
 
 
@@ -170,6 +171,7 @@ def test_csv_format_timing(demo_client: SigrokClient):
 
     # Verify timing progresses correctly
     for sample in samples:
+        assert isinstance(sample, Sample)
         assert isinstance(sample.time, float)
         # Verify timing progresses (1/100kHz = 0.00001s per sample)
         assert sample.time == pytest.approx(sample.sample * 0.00001, rel=1e-6, abs=1e-12)
@@ -194,6 +196,7 @@ def test_csv_format_analog_channels(demo_client: SigrokClient):
 
     # Check first sample for analog values
     first_sample = decoded_data[0]
+    assert isinstance(first_sample, Sample)
     assert len(first_sample.values) > 0
 
     # Analog values should be floats (voltages)
@@ -219,5 +222,6 @@ def test_csv_format_mixed_channels(demo_client: SigrokClient):
 
     # Verify we have values for channels
     first_sample = samples[0]
+    assert isinstance(first_sample, Sample)
     assert len(first_sample.values) > 0
 

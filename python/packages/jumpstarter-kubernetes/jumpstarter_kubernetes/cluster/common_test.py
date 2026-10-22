@@ -91,6 +91,7 @@ class TestGetExtraCertsPath:
                 result = get_extra_certs_path(cert_file)
                 expected = os.path.abspath(cert_file)
                 assert result == expected
+                assert result is not None
                 assert os.path.isabs(result)
             finally:
                 os.chdir(original_cwd)
@@ -99,6 +100,7 @@ class TestGetExtraCertsPath:
         with tempfile.NamedTemporaryFile(suffix=".crt") as temp_file:
             result = get_extra_certs_path(temp_file.name)
             assert result == temp_file.name
+            assert result is not None
             assert os.path.isabs(result)
 
     def test_get_extra_certs_path_nonexistent(self):
@@ -172,7 +174,7 @@ class TestValidateClusterName:
 
         # This would be caught by type checking, but test runtime behavior
         with pytest.raises(ClusterNameValidationError, match="Cluster name cannot be empty"):
-            validate_cluster_name(None)  # type: ignore[arg-type]
+            validate_cluster_name(None)  # ty: ignore[invalid-argument-type]
 
     def test_validate_cluster_name_with_special_chars(self):
         result = validate_cluster_name("test-cluster_123")

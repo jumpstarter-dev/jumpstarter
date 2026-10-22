@@ -44,7 +44,7 @@ class MockParent(Driver):
     @export
     def initialize(self):
         # This simulates RideSX accessing self.children["serial"].connect()
-        result = self.children["serial"].connect()
+        result = self.children["serial"].connect()  # ty: ignore[unresolved-attribute]
         return f"initialized with {result}"
 
 

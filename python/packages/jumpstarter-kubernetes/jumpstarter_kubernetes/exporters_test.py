@@ -14,7 +14,7 @@ from jumpstarter_kubernetes.exporters import (
 )
 
 TEST_EXPORTER = V1Alpha1Exporter(
-    api_version="jumpstarter.dev/v1alpha1",
+    apiVersion="jumpstarter.dev/v1alpha1",
     kind="Exporter",
     metadata=V1ObjectMeta(
         creation_timestamp="2021-10-01T00:00:00Z",
@@ -437,7 +437,7 @@ def test_exporter_from_dict_without_status():
 def test_exporter_rich_add_rows_without_status():
     """A status-less exporter still renders as a row"""
     exporter = V1Alpha1Exporter(
-        api_version="jumpstarter.dev/v1alpha1",
+        apiVersion="jumpstarter.dev/v1alpha1",
         kind="Exporter",
         metadata=V1ObjectMeta(name="fresh-exporter", namespace="default", creation_timestamp="2021-10-01T00:00:00Z"),
         status=None,
@@ -451,7 +451,7 @@ def test_exporter_rich_add_rows_without_status():
 def test_exporter_rich_add_rows_devices_without_status():
     """A status-less exporter is still listed when devices are requested"""
     exporter = V1Alpha1Exporter(
-        api_version="jumpstarter.dev/v1alpha1",
+        apiVersion="jumpstarter.dev/v1alpha1",
         kind="Exporter",
         metadata=V1ObjectMeta(name="fresh-exporter", namespace="default", creation_timestamp="2021-10-01T00:00:00Z"),
         status=None,
@@ -465,7 +465,7 @@ def test_exporter_rich_add_rows_devices_without_status():
 def test_exporter_rich_add_rows_devices_when_it_has_none():
     """An exporter that has never run has no devices, but has not disappeared"""
     exporter = V1Alpha1Exporter(
-        api_version="jumpstarter.dev/v1alpha1",
+        apiVersion="jumpstarter.dev/v1alpha1",
         kind="Exporter",
         metadata=V1ObjectMeta(name="never-run", namespace="default", creation_timestamp="2021-10-01T00:00:00Z"),
         status=V1Alpha1ExporterStatus(endpoint="https://e", devices=[]),  # type: ignore[call-arg]

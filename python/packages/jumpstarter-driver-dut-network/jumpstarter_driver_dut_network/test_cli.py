@@ -53,7 +53,7 @@ def _make_driver(tmp_path, **overrides):
         mock_nftables.ensure_filter_forward.return_value = []
         mock_nftables.list_rules.return_value = "table ip jumpstarter_eth_dut { masquerade }"
         mock_nftables._table_name_for.return_value = "jumpstarter_eth_dut"
-        driver = DutNetwork(**params)  # type: ignore[missing-argument]
+        driver = DutNetwork(**params)  # ty: ignore[invalid-argument-type]
 
     return driver
 

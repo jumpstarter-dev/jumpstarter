@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-SoCType = Literal["sa8775p", "sa8540p1", "sa8540p2"]
+SoCType = Literal["sa8775p", "sa8650p", "sa8540p1", "sa8540p2"]
 
 CommandDelay = tuple[str, float]
 
@@ -129,7 +129,7 @@ SA8540P2 = SoCProfile(
     ],
 )
 
-SOC_PROFILES: dict[SoCType, SoCProfile] = {
+SOC_PROFILES: dict[str, SoCProfile] = {
     "sa8775p": SA8775P,
     "sa8650p": SA8775P,
     "sa8540p1": SA8540P1,

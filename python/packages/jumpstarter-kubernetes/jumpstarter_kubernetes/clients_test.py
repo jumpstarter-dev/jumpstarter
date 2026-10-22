@@ -10,7 +10,7 @@ from jumpstarter_kubernetes.clients import ClientsV1Alpha1Api
 from jumpstarter_kubernetes.exceptions import CredentialNotReadyError
 
 TEST_CLIENT = V1Alpha1Client(
-    api_version="jumpstarter.dev/v1alpha1",
+    apiVersion="jumpstarter.dev/v1alpha1",
     kind="Client",
     metadata=V1ObjectMeta(
         creation_timestamp="2021-10-01T00:00:00Z",
@@ -149,7 +149,7 @@ def test_client_rich_add_rows_without_status():
     """Test V1Alpha1Client.rich_add_rows without status"""
 
     client = V1Alpha1Client(
-        api_version="jumpstarter.dev/v1alpha1",
+        apiVersion="jumpstarter.dev/v1alpha1",
         kind="Client",
         metadata=V1ObjectMeta(name="test-client", namespace="default"),
         status=None,

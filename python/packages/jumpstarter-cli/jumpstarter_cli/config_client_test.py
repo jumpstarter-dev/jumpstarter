@@ -103,7 +103,7 @@ def _patch_client_list():
         token="secret-token",
         refresh_token="secret-refresh-token",
     )
-    configs = ClientConfigListV1Alpha1(current_config=CLIENT_ALIAS, items=[config])
+    configs = ClientConfigListV1Alpha1.model_validate({"currentConfig": CLIENT_ALIAS, "items": [config]})
     return patch.object(ClientConfigV1Alpha1, "list", return_value=configs)
 
 

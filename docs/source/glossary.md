@@ -41,6 +41,9 @@ controller
 exporter
   Service that exposes hardware interfaces to clients over gRPC.
 
+ExporterSet
+  Kubernetes CR that manages a pool of exporter replicas with auto-scaling.
+
 host
   Machine running the exporter, typically a single board computer.
 
@@ -52,6 +55,9 @@ router
 
 service
   Kubernetes backend providing controller, router, and authentication.
+
+VirtualTargetClass
+  CR that defines provisioner backend and shared parameters for virtual targets.
 ```
 
 ## Concepts

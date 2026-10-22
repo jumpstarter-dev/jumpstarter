@@ -196,7 +196,7 @@ def _make_driver(tmp_path, **overrides):
         mock_ntp_server = MagicMock()
         mock_ntp_server.running = True
         mock_ntp_cls.return_value = mock_ntp_server
-        driver = DutNetwork(**params)  # type: ignore[missing-argument]
+        driver = DutNetwork(**params)  # ty: ignore[invalid-argument-type]
 
     return driver, mock_iproute, mock_nftables, mock_dnsmasq, mock_ntp_cls
 

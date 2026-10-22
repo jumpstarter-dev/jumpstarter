@@ -1,19 +1,22 @@
 """Tests for session GetReport with descriptions and methods_description"""
 
 import logging
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager
 
 import grpc
 import pytest
 from anyio import BrokenResourceError, CancelScope, connect_tcp, fail_after, sleep_forever
+from anyio.from_thread import BlockingPortal
 from google.protobuf import empty_pb2
 from jumpstarter_protocol import router_pb2_grpc
 
-from jumpstarter.common import TemporaryTcpListener
+from jumpstarter.client.client import client_from_path
+from jumpstarter.client.core import ExporterNotReady
+from jumpstarter.common import ExporterStatus, TemporaryTcpListener
 from jumpstarter.common.resources import ResourceMetadata
 from jumpstarter.common.streams import ResourceStreamRequest, StreamRequestMetadata
 from jumpstarter.common.utils import serve
-from jumpstarter.driver import Driver
+from jumpstarter.driver import Driver, export
 from jumpstarter.exporter.auth import PASSPHRASE_METADATA_KEY, PassphraseInterceptor
 from jumpstarter.exporter.session import Session
 from jumpstarter.streams.common import forward_stream
@@ -727,6 +730,62 @@ async def test_log_stream_without_enriched_fields():
             assert len(msg.structured_fields) == 0
 
             log_stream.cancel()
+
+
+# ============================================================================
+# Driver call status gate
+# ============================================================================
+
+
+class GatedDriver(Driver):
+    """Driver with one unary and one streaming export, covering both gated RPCs."""
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @export
+    def ping(self) -> str:
+        return "pong"
+
+    @export
+    async def count(self):
+        yield 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "status, allowed",
+    [
+        (ExporterStatus.LEASE_READY, True),
+        # hooks run `j` commands against the session while these are set
+        (ExporterStatus.BEFORE_LEASE_HOOK, True),
+        (ExporterStatus.AFTER_LEASE_HOOK, True),
+        (ExporterStatus.AVAILABLE, False),
+        (ExporterStatus.BEFORE_LEASE_HOOK_FAILED, False),
+        (ExporterStatus.AFTER_LEASE_HOOK_FAILED, False),
+        (ExporterStatus.OFFLINE, False),
+        # the controller lets this through for exporters that predate status reporting; the exporter must not
+        (ExporterStatus.UNSPECIFIED, False),
+    ],
+)
+async def test_driver_calls_gated_on_exporter_status(status, allowed):
+    """Driver calls are refused with ExporterNotReady unless the exporter is ready or running a hook."""
+    driver = GatedDriver()
+    with Session(uuid=driver.uuid, labels=driver.labels, root_device=driver) as session:
+        session.update_status(status)
+        async with session.serve_unix_async() as path, BlockingPortal() as portal:
+            with ExitStack() as stack:
+                async with client_from_path(path, portal, stack, allow=[], unsafe=True) as client:
+                    if allowed:
+                        assert await client.call_async("ping") == "pong"
+                        assert [value async for value in client.streamingcall_async("count")] == [1]
+                    else:
+                        with pytest.raises(ExporterNotReady, match=f"status: {status.name}"):
+                            await client.call_async("ping")
+                        with pytest.raises(ExporterNotReady, match=f"status: {status.name}"):
+                            async for _ in client.streamingcall_async("count"):
+                                pass
 
 
 # ============================================================================

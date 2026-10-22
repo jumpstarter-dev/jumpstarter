@@ -154,22 +154,20 @@ var _ = Describe("exporterSetPolicyRules", func() {
 		}
 	})
 
-	It("should grant read-only access on exportersets (no create/update/delete)", func() {
+	It("should grant read+update+patch access on exportersets (no create/delete)", func() {
 		for _, rule := range rules {
 			if containsString(rule.APIGroups, "virtualtarget.jumpstarter.dev") &&
 				containsString(rule.Resources, "exportersets") &&
 				!containsString(rule.Resources, "exportersets/status") &&
 				!containsString(rule.Resources, "exportersets/scale") &&
 				!containsString(rule.Resources, "exportersets/finalizers") {
-				Expect(rule.Verbs).To(ContainElements("get", "list", "watch"))
+				Expect(rule.Verbs).To(ContainElements("get", "list", "watch", "update", "patch"))
 				Expect(rule.Verbs).NotTo(ContainElement("create"))
-				Expect(rule.Verbs).NotTo(ContainElement("update"))
-				Expect(rule.Verbs).NotTo(ContainElement("patch"))
 				Expect(rule.Verbs).NotTo(ContainElement("delete"))
 				return
 			}
 		}
-		Fail("no rule found granting read-only access on exportersets")
+		Fail("no rule found granting read+update+patch access on exportersets")
 	})
 
 	It("should grant status/scale/finalizer access on exportersets", func() {
@@ -343,6 +341,77 @@ var _ = Describe("hasEnabledProvisioners", func() {
 			{Name: "corellium.jumpstarter.dev", Enabled: new(true)},
 		}
 		Expect(hasEnabledProvisioners(provs)).To(BeTrue())
+	})
+
+	It("should return false when all provisioners have replicas=0 (suspended)", func() {
+		provs := []operatorv1alpha1.ProvisionerConfig{
+			{Name: "qemu.jumpstarter.dev", Replicas: new(int32(0))},
+			{Name: "corellium.jumpstarter.dev", Replicas: new(int32(0))},
+		}
+		Expect(hasEnabledProvisioners(provs)).To(BeFalse())
+	})
+
+	It("should return true when at least one provisioner has replicas>0 among suspended ones", func() {
+		provs := []operatorv1alpha1.ProvisionerConfig{
+			{Name: "qemu.jumpstarter.dev", Replicas: new(int32(0))},
+			{Name: "corellium.jumpstarter.dev", Replicas: new(int32(1))},
+		}
+		Expect(hasEnabledProvisioners(provs)).To(BeTrue())
+	})
+
+	It("should return false when provisioner is enabled but replicas=0", func() {
+		provs := []operatorv1alpha1.ProvisionerConfig{
+			{Name: "qemu.jumpstarter.dev", Enabled: new(true), Replicas: new(int32(0))},
+		}
+		Expect(hasEnabledProvisioners(provs)).To(BeFalse())
+	})
+
+	It("should return false when all provisioners are disabled or suspended", func() {
+		provs := []operatorv1alpha1.ProvisionerConfig{
+			{Name: "qemu.jumpstarter.dev", Enabled: new(false)},
+			{Name: "corellium.jumpstarter.dev", Replicas: new(int32(0))},
+		}
+		Expect(hasEnabledProvisioners(provs)).To(BeFalse())
+	})
+})
+
+var _ = Describe("exporterSetControllersIdleState", func() {
+	It("returns Disabled for an empty provisioner list", func() {
+		reason, msg := exporterSetControllersIdleState(nil)
+		Expect(reason).To(Equal("Disabled"))
+		Expect(msg).To(ContainSubstring("No ExporterSet provisioners"))
+
+		reason, msg = exporterSetControllersIdleState([]operatorv1alpha1.ProvisionerConfig{})
+		Expect(reason).To(Equal("Disabled"))
+		Expect(msg).To(ContainSubstring("No ExporterSet provisioners"))
+	})
+
+	It("returns Disabled when all provisioners are disabled", func() {
+		provs := []operatorv1alpha1.ProvisionerConfig{
+			{Name: "qemu.jumpstarter.dev", Enabled: new(false)},
+		}
+		reason, msg := exporterSetControllersIdleState(provs)
+		Expect(reason).To(Equal("Disabled"))
+		Expect(msg).To(ContainSubstring("disabled"))
+	})
+
+	It("returns Suspended when all provisioners have replicas=0", func() {
+		provs := []operatorv1alpha1.ProvisionerConfig{
+			{Name: "qemu.jumpstarter.dev", Replicas: new(int32(0))},
+		}
+		reason, msg := exporterSetControllersIdleState(provs)
+		Expect(reason).To(Equal("Suspended"))
+		Expect(msg).To(ContainSubstring("suspended"))
+	})
+
+	It("returns NotRunning for a mix of disabled and suspended provisioners", func() {
+		provs := []operatorv1alpha1.ProvisionerConfig{
+			{Name: "qemu.jumpstarter.dev", Enabled: new(false)},
+			{Name: "corellium.jumpstarter.dev", Replicas: new(int32(0))},
+		}
+		reason, msg := exporterSetControllersIdleState(provs)
+		Expect(reason).To(Equal("NotRunning"))
+		Expect(msg).To(ContainSubstring("suspended or disabled"))
 	})
 })
 

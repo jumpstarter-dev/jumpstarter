@@ -221,7 +221,8 @@ class TestGetExportersCallsPaginatedMethod:
         from jumpstarter_cli.get import get_exporters
 
         with patch("jumpstarter_cli.get.model_print"):
-            get_exporters.callback.__wrapped__.__wrapped__(
+            assert get_exporters.callback is not None
+            get_exporters.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
                 config=config, selector=None, output="text", with_options=[], allow_disabled=False,
                 show_hidden_labels=False, page_size=100,
             )
@@ -242,7 +243,8 @@ class TestGetExportersCallsPaginatedMethod:
         from jumpstarter_cli.get import get_leases
 
         with patch("jumpstarter_cli.get.model_print"):
-            get_leases.callback.__wrapped__.__wrapped__(
+            assert get_leases.callback is not None
+            get_leases.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
                 config=config, selector=None, output="text", show_all=False, all_clients=False, tag_filter=None,
                 page_size=100,
             )
@@ -260,7 +262,8 @@ class TestGetExportersCallsPaginatedMethod:
         from jumpstarter_cli.get import get_exporters
 
         with patch("jumpstarter_cli.get.model_print"):
-            get_exporters.callback.__wrapped__.__wrapped__(
+            assert get_exporters.callback is not None
+            get_exporters.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
                 config=config, selector=None, output="text", with_options=[], allow_disabled=False,
                 show_hidden_labels=False, page_size=5,
             )
@@ -281,7 +284,8 @@ class TestGetExportersCallsPaginatedMethod:
         from jumpstarter_cli.get import get_leases
 
         with patch("jumpstarter_cli.get.model_print"):
-            get_leases.callback.__wrapped__.__wrapped__(
+            assert get_leases.callback is not None
+            get_leases.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
                 config=config, selector=None, output="text", show_all=False, all_clients=False, tag_filter=None,
                 page_size=10,
             )
@@ -446,7 +450,8 @@ class TestGetLeasesShortFlags:
         assert name_arg.required is False
 
 
-_unwrapped_get_leases = get_leases.callback.__wrapped__.__wrapped__
+assert get_leases.callback is not None
+_unwrapped_get_leases = get_leases.callback.__wrapped__.__wrapped__  # ty: ignore[unresolved-attribute]
 
 
 class TestGetLeasesClientFiltering:

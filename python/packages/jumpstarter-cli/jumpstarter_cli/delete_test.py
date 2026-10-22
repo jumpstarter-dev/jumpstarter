@@ -34,7 +34,8 @@ def _make_config(leases):
     return config
 
 
-_delete_leases = delete_leases.callback.__wrapped__.__wrapped__
+assert delete_leases.callback is not None
+_delete_leases = delete_leases.callback.__wrapped__.__wrapped__  # ty: ignore[unresolved-attribute]
 
 
 def test_delete_all_only_deletes_own_leases():

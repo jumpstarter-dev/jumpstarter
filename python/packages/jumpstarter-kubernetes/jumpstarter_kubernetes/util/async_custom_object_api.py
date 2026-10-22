@@ -45,9 +45,9 @@ class AbstractAsyncCustomObjectApi(AbstractAsyncContextManager):
 
     async def __aexit__(self, exc_type, exc_value, traceback):
         await self._client.__aexit__(exc_type, exc_value, traceback)
-        self._client = None
-        self.api = None
-        self.core_api = None
+        self._client = None  # ty: ignore[invalid-assignment]
+        self.api = None  # ty: ignore[invalid-assignment]
+        self.core_api = None  # ty: ignore[invalid-assignment]
 
     async def get_ca_bundle(self) -> str:
         """Get the CA certificate bundle from the jumpstarter-service-ca-cert ConfigMap.

@@ -22,7 +22,7 @@ class _FakeStatus:
         self.MIL = False
         self.DTC_count = 0
         self.ignition_type = "spark"
-        self.__dict__[None] = "reserved"  # the real-hardware crash trigger
+        self.__dict__[None] = "reserved"  # ty: ignore[invalid-assignment]  # the real-hardware crash trigger
 
 
 def _make_mock_connection(status=obd.OBDStatus.CAR_CONNECTED):

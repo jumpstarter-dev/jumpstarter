@@ -127,14 +127,18 @@ async def client_from_channel(
     for index in TopologicalSorter(topo).static_order():
         report = reports[index]
 
+        stub_kwargs = {}
         try:
             client_class = import_class(report.labels["jumpstarter.dev/client"], allow, unsafe)
         except MissingDriverError as e:
             # Create stub client instead of failing
             # Suppress duplicate warnings
             if not os.environ.get("_JMP_SUPPRESS_DRIVER_WARNINGS"):
-                logger.warning("Driver client '%s' is not available.", e.class_path)
+                logger.warning("Driver client '%s' is not available: %s", e.class_path, e)
             client_class = StubDriverClient
+            # Keep why it was unavailable; the stub cannot tell a rejected allow
+            # list from an uninstalled package once the exception is gone.
+            stub_kwargs["missing_reason"] = str(e)
 
         client = client_class(
             uuid=UUID(report.uuid),
@@ -145,6 +149,7 @@ async def client_from_channel(
             children={reports[k].labels["jumpstarter.dev/name"]: clients[k] for k in topo[index]},
             description=getattr(report, "description", None) or None,
             methods_description=getattr(report, "methods_description", {}) or {},
+            **stub_kwargs,
         )
 
         clients[index] = client

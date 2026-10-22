@@ -51,7 +51,8 @@ class AsyncFileStream(ObjectStream[bytes]):
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         if self.metadata is not None and self.metadata.content_length != 0:
-            return {ProgressAttribute.total: lambda: float(self.metadata.content_length)}
+            metadata = self.metadata
+            return {ProgressAttribute.total: lambda: float(metadata.content_length)}
         else:
             return {}
 
@@ -81,7 +82,7 @@ async def OpendalAdapter(
         # create presigned url for the specified file with a 60 second expiration
         presigned = await operator.to_async_operator().presign_read(path, expire_second=60)
         yield PresignedRequestResource(
-            headers=presigned.headers, url=presigned.url, method=presigned.method
+            headers=presigned.headers, url=presigned.url, method=presigned.method  # ty: ignore[invalid-argument-type]
         ).model_dump(mode="json")
     # otherwise stream the file content from the client to the exporter
     else:
