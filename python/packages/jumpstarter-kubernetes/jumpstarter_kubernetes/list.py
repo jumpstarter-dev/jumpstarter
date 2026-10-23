@@ -12,4 +12,4 @@ class V1Alpha1List[T](JsonBaseModel):
 
     api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
     items: list[T]
-    kind: str = Field(default="List")
+    kind: str = Field(default="List", frozen=True)
