@@ -120,7 +120,7 @@ driver = Netsim(
 )
 with serve(driver) as client:
     # Health check returns device count
-    print(client.netsim_status())  # e.g. "OK (2 devices)"
+    print(client.status())  # e.g. "OK (2 devices)"
 
     # List devices
     devices = client.list_devices()

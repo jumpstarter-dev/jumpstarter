@@ -36,7 +36,7 @@ class PowerClient(DriverClient):
         self.on()
         self.logger.info("Power cycle sequence complete")
 
-    def power_status(self) -> str | None:
+    def status(self) -> str | None:  # ty: ignore[invalid-property-type-override]
         """Return the power state reported by the driver, e.g. "on", "off" or "unknown".
 
         Optional for power drivers: returns None when the driver cannot report its
@@ -78,7 +78,7 @@ class PowerClient(DriverClient):
         @base.command()
         def status():
             """Print the power state"""
-            click.echo(_require_status(self.power_status()))
+            click.echo(_require_status(self.status()))
 
         @base.command()
         @click.option("--count", "-n", default=1, help="Number of readings (0 = infinite)", show_default=True)

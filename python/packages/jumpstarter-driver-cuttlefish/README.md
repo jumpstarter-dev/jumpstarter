@@ -300,7 +300,7 @@ driver = Cuttlefish(
 )
 with serve(driver) as client:
     # Check Host Orchestrator is reachable
-    print(client.cvd_status())  # "OK"
+    print(client.status())  # "OK"
 
     # Power on (creates CVD from env_config)
     client.power.on()

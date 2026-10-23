@@ -57,7 +57,7 @@ class NetsimClient(DriverClient):
     def stop_capture(self, capture_id: str) -> str:
         return self.call("stop_capture", capture_id)
 
-    def netsim_status(self) -> str:
+    def status(self) -> str:  # ty: ignore[invalid-property-type-override]
         return self.call("status")
 
     def cli(self):  # noqa: C901
@@ -136,6 +136,6 @@ class NetsimClient(DriverClient):
         @netsim.command("status")
         def status_cmd():
             """Health check shows device count."""
-            click.echo(self.netsim_status())
+            click.echo(self.status())
 
         return netsim

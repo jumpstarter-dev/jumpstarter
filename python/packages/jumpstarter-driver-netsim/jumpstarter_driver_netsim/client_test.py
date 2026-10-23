@@ -123,7 +123,7 @@ def test_stop_capture(mock_run, requests_mock):
 def test_status(requests_mock):
     requests_mock.get(f"{BASE}/v1/devices", json=DEVICES_RESPONSE)
     with serve(Netsim()) as client:
-        assert client.netsim_status() == "OK (2 devices)"
+        assert client.status() == "OK (2 devices)"
 
 
 def test_cli_devices(requests_mock):
