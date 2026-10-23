@@ -125,7 +125,7 @@ class TestProxyLifecycle:
         assert "mock" in result
         assert str(proxy_port) in result
 
-        status = client.status()
+        status = client.proxy_status()
         assert status["running"] is True
         assert status["mode"] == "mock"
         assert status["pid"] is not None
@@ -139,7 +139,7 @@ class TestProxyLifecycle:
         result = client.stop()
         assert "Stopped" in result
 
-        status = client.status()
+        status = client.proxy_status()
         assert status["running"] is False
         assert status["mode"] == "stopped"
 
@@ -150,7 +150,7 @@ class TestProxyLifecycle:
             f"mitmdump did not start on port {proxy_port}"
         )
 
-        status = client.status()
+        status = client.proxy_status()
         assert status["running"] is True
         assert status["mode"] == "passthrough"
 

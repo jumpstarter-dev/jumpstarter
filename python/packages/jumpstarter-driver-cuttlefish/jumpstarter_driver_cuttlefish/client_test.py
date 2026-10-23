@@ -97,7 +97,7 @@ def test_powerbtn_cvd(requests_mock):
 def test_status(requests_mock):
     requests_mock.get(f"{BASE}/_debug/statusz", text="ok")
     with serve(Cuttlefish()) as client:
-        assert client.status() == "OK"
+        assert client.cvd_status() == "OK"
 
 
 def test_list_operations(requests_mock):

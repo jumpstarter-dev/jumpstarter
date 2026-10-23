@@ -141,7 +141,7 @@ def test_status_ch1(mock_serial_cls):
     mock_serial_cls.return_value = mock_ser
 
     with serve(NoyitoPowerSerial(port="/dev/ttyUSB0", channel=1)) as client:
-        assert client.status() == "on"
+        assert client.power_status() == "on"
 
 
 @patch("jumpstarter_driver_noyito_relay.driver.serial.Serial")
@@ -151,7 +151,7 @@ def test_status_ch2(mock_serial_cls):
     mock_serial_cls.return_value = mock_ser
 
     with serve(NoyitoPowerSerial(port="/dev/ttyUSB0", channel=2)) as client:
-        assert client.status() == "off"
+        assert client.power_status() == "off"
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +192,7 @@ def test_dual_status_both_on(mock_serial_cls):
     mock_serial_cls.return_value = mock_ser
 
     with serve(NoyitoPowerSerial(port="/dev/ttyUSB0", all_channels=True)) as client:
-        assert client.status() == "on"
+        assert client.power_status() == "on"
 
 
 @patch("jumpstarter_driver_noyito_relay.driver.serial.Serial")
@@ -202,7 +202,7 @@ def test_dual_status_partial(mock_serial_cls):
     mock_serial_cls.return_value = mock_ser
 
     with serve(NoyitoPowerSerial(port="/dev/ttyUSB0", all_channels=True)) as client:
-        assert client.status() == "partial"
+        assert client.power_status() == "partial"
 
 
 @patch("jumpstarter_driver_noyito_relay.driver.serial.Serial")
@@ -344,7 +344,7 @@ def test_hid_status_ch1_on(mock_hid_cls):
     mock_hid_cls.return_value = mock_dev
 
     with serve(NoyitoPowerHID(num_channels=4, channel=1)) as client:
-        assert client.status() == "on"
+        assert client.power_status() == "on"
 
     mock_dev.write.assert_called_once_with(b"\x00" + bytes([0xA0, 0x0F, 0x02, 0xB1]))
 
@@ -356,7 +356,7 @@ def test_hid_status_ch2_off(mock_hid_cls):
     mock_hid_cls.return_value = mock_dev
 
     with serve(NoyitoPowerHID(num_channels=4, channel=2)) as client:
-        assert client.status() == "off"
+        assert client.power_status() == "off"
 
     mock_dev.write.assert_called_once_with(b"\x00" + bytes([0xA0, 0x0F, 0x02, 0xB1]))
 
@@ -368,7 +368,7 @@ def test_hid_status_all_on_4ch(mock_hid_cls):
     mock_hid_cls.return_value = mock_dev
 
     with serve(NoyitoPowerHID(num_channels=4, all_channels=True)) as client:
-        assert client.status() == "on"
+        assert client.power_status() == "on"
 
     mock_dev.write.assert_called_once_with(b"\x00" + bytes([0xA0, 0x0F, 0x02, 0xB1]))
 
@@ -380,6 +380,6 @@ def test_hid_status_partial_4ch(mock_hid_cls):
     mock_hid_cls.return_value = mock_dev
 
     with serve(NoyitoPowerHID(num_channels=4, all_channels=True)) as client:
-        assert client.status() == "partial"
+        assert client.power_status() == "partial"
 
     mock_dev.write.assert_called_once_with(b"\x00" + bytes([0xA0, 0x0F, 0x02, 0xB1]))

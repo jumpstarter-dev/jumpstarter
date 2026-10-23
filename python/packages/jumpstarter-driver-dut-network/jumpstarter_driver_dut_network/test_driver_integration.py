@@ -433,7 +433,7 @@ class TestDriverRpc:
         driver = net_env.create_driver()
         try:
             with serve(driver) as client:
-                result = client.status()
+                result = client.network_status()
                 assert isinstance(result, dict)
                 assert result["interface_status"]["name"] == net_env.VETH_HOST
                 assert result["interface_status"]["exists"] is True
