@@ -132,7 +132,7 @@ class V1Alpha1Lease(JsonBaseModel):
 
 
 class V1Alpha1LeaseList(V1Alpha1List[V1Alpha1Lease]):
-    kind: Literal["LeaseList"] = Field(default="LeaseList")
+    kind: str = Field(default="LeaseList")
 
     @staticmethod
     def from_dict(data: dict):

@@ -69,7 +69,7 @@ def obd_client():
 
 
 def test_obd_status(obd_client):
-    result = obd_client.status()
+    result = obd_client.connection_status()
     assert result == OBDConnectionStatus.CAR_CONNECTED
 
 

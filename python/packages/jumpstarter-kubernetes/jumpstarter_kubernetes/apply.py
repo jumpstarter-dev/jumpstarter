@@ -125,8 +125,6 @@ class V1Alpha1AppliedResource(JsonBaseModel):
 
 
 class V1Alpha1AppliedResourceList(V1Alpha1List[V1Alpha1AppliedResource]):
-    kind: Literal["List"] = Field(default="List")
-
     @classmethod
     def rich_add_columns(cls, table, **kwargs):
         V1Alpha1AppliedResource.rich_add_columns(table, **kwargs)

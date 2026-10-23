@@ -28,7 +28,7 @@ def proxy_session(client):
     proxy.start(mode="mock", web_ui=True)
 
     # Print the web UI URL for interactive debugging
-    info = proxy.status()
+    info = proxy.proxy_status()
     if info.get("web_ui_address"):
         print(f"\n>>> mitmweb UI: {info['web_ui_address']}")
 

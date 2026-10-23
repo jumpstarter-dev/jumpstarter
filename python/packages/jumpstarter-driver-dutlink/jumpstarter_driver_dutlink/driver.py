@@ -90,12 +90,13 @@ class DutlinkSerialConfig(DutlinkConfig, Driver):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
 
+        assert self.tty is not None
         self.url = self.tty
 
 
 @dataclass(kw_only=True)
 class DutlinkSerial(PySerial, DutlinkSerialConfig):
-    url: str | None = field(init=False, default=None)
+    url: str = field(init=False, default="")
 
 
 @dataclass(kw_only=True)

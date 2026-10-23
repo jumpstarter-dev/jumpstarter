@@ -57,7 +57,7 @@ class NetsimClient(DriverClient):
     def stop_capture(self, capture_id: str) -> str:
         return self.call("stop_capture", capture_id)
 
-    def status(self) -> str:
+    def netsim_status(self) -> str:
         return self.call("status")
 
     def cli(self):  # noqa: C901
@@ -136,6 +136,6 @@ class NetsimClient(DriverClient):
         @netsim.command("status")
         def status_cmd():
             """Health check shows device count."""
-            click.echo(self.status())
+            click.echo(self.netsim_status())
 
         return netsim

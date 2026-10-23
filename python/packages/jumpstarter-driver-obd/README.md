@@ -67,7 +67,7 @@ export:
 from jumpstarter_driver_obd import OBDConnectionStatus
 
 # Check connection state
-status = obd.status()                              # returns OBDConnectionStatus
+status = obd.connection_status()                              # returns OBDConnectionStatus
 print(status == OBDConnectionStatus.CAR_CONNECTED) # True
 print(obd.is_connected())                          # True
 

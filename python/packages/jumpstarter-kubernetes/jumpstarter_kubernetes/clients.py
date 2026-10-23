@@ -75,7 +75,7 @@ class V1Alpha1Client(JsonBaseModel):
 
 
 class V1Alpha1ClientList(V1Alpha1List[V1Alpha1Client]):
-    kind: Literal["ClientList"] = Field(default="ClientList")
+    kind: str = Field(default="ClientList")
 
     @staticmethod
     def from_dict(dict: dict):

@@ -16,7 +16,7 @@ class DutNetworkClient(DriverClient):
     and inspect NAT rules.
     """
 
-    def status(self) -> dict:
+    def network_status(self) -> dict:
         """Get network status including interface state, leases, and NAT info."""
         return self.call("status")
 
@@ -86,7 +86,7 @@ class DutNetworkClient(DriverClient):
         @base.command()
         def status():
             """Show network status (interface, leases, NAT)."""
-            result = self.status()
+            result = self.network_status()
             click.echo(json.dumps(result, indent=2))
 
         @base.command()

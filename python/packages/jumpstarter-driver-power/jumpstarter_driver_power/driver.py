@@ -10,7 +10,7 @@ class PowerInterface(metaclass=ABCMeta):
 
     Drivers may also export an optional ``status()`` returning the power state (for
     example "on", "off" or "unknown"). It is not abstract, so drivers that can't
-    report their state don't need it; ``PowerClient.status()`` returns None for them.
+    report their state don't need it; ``PowerClient.power_status()`` returns None for them.
     """
 
     driver_type = "power"
@@ -53,9 +53,9 @@ class MockPower(PowerInterface, Driver):
 
     >>> with serve(MockPower()) as power:
     ...     power.on()
-    ...     assert power.status() == "on"
+    ...     assert power.power_status() == "on"
     ...     power.off()
-    ...     assert power.status() == "off"
+    ...     assert power.power_status() == "off"
     ...
     ...     assert list(power.read()) == [
     ...         PowerReading(voltage=0.0, current=0.0),
@@ -91,9 +91,9 @@ class SyncMockPower(PowerInterface, Driver):
 
     >>> with serve(SyncMockPower()) as power:
     ...     power.on()
-    ...     assert power.status() == "on"
+    ...     assert power.power_status() == "on"
     ...     power.off()
-    ...     assert power.status() == "off"
+    ...     assert power.power_status() == "off"
     ...
     ...     assert list(power.read()) == [
     ...         PowerReading(voltage=0.0, current=0.0),

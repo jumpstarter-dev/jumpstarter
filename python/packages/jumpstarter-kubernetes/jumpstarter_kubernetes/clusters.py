@@ -78,7 +78,7 @@ class V1Alpha1ClusterInfo(JsonBaseModel):
 class V1Alpha1ClusterList(V1Alpha1List[V1Alpha1ClusterInfo]):
     """List of clusters"""
 
-    kind: Literal["ClusterList"] = Field(default="ClusterList")
+    kind: str = Field(default="ClusterList")
 
     @classmethod
     def rich_add_columns(cls, table, **kwargs):

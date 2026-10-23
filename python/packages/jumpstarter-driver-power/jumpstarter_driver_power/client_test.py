@@ -63,7 +63,7 @@ def test_status_cli():
 
 def test_status_is_none_when_the_driver_has_no_status():
     with serve(NoStatusPower()) as client:
-        assert client.status() is None
+        assert client.power_status() is None
         result = CliRunner().invoke(client.cli(), ["status"])
         assert result.exit_code != 0
         assert "does not report its state" in result.output

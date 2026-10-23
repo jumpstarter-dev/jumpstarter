@@ -151,7 +151,7 @@ class MitmproxyClient(DriverClient):
 
     # ── Status ──────────────────────────────────────────────────
 
-    def status(self) -> dict:
+    def proxy_status(self) -> dict:
         """Get proxy status as a dict.
 
         Returns:
@@ -167,7 +167,7 @@ class MitmproxyClient(DriverClient):
     @property
     def web_ui_url(self) -> str | None:
         """Get the mitmweb UI URL if available."""
-        info = self.status()
+        info = self.proxy_status()
         return info.get("web_ui_address")
 
     # ── CLI (jmp shell) ────────────────────────────────────────
@@ -219,7 +219,7 @@ class MitmproxyClient(DriverClient):
         @base.command("status")
         def status_cmd():
             """Show proxy status."""
-            info = self.status()
+            info = self.proxy_status()
             running = info.get("running", False)
             mode = info.get("mode", "unknown")
             pid = info.get("pid")

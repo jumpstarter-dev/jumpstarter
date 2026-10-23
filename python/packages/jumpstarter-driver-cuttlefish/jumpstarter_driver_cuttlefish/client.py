@@ -112,7 +112,7 @@ class CuttlefishClient(CompositeClient):
         parsed = _parse(self.call("get_webrtc_config"))
         return parsed if isinstance(parsed, dict) else {}
 
-    def status(self) -> str:
+    def cvd_status(self) -> str:
         return self.call("status")
 
     def list_operations(self) -> dict | list | str:
@@ -161,7 +161,7 @@ class CuttlefishClient(CompositeClient):
         @cuttlefish.command("status")
         def status_cmd():
             """Health check."""
-            click.echo(self.status())
+            click.echo(self.cvd_status())
 
         @cuttlefish.command("ops")
         def ops_cmd():

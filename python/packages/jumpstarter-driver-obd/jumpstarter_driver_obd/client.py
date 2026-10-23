@@ -19,7 +19,7 @@ class OBDClient(DriverClient):
         """
         return self.call("clear_dtc")
 
-    def status(self) -> OBDConnectionStatus:
+    def connection_status(self) -> OBDConnectionStatus:
         """Connection state."""
         return OBDConnectionStatus(self.call("status"))
 

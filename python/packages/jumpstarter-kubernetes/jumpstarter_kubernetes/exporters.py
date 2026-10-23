@@ -132,7 +132,7 @@ class V1Alpha1Exporter(JsonBaseModel):
 
 
 class V1Alpha1ExporterList(V1Alpha1List[V1Alpha1Exporter]):
-    kind: Literal["ExporterList"] = Field(default="ExporterList")
+    kind: str = Field(default="ExporterList")
 
     @staticmethod
     def from_dict(dict: dict):
