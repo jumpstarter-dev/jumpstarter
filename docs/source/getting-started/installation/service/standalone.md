@@ -23,7 +23,7 @@ dnf install -y lorax
 export CENTOS_ISO=CentOS-Stream-10-latest-x86_64-boot.iso
 curl -o "${CENTOS_ISO}" -L "https://mirrors.centos.org/mirrorlist?path=/10-stream/BaseOS/x86_64/iso/${CENTOS_ISO}&redirect=1&protocol=https"
 curl -o kickstart.ks -L https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/refs/heads/main/controller/deploy/microshift-bootc/kickstart.ks
-mkksiso kickstart.ks ${CENTOS_ISO} cs10-js-install.iso
+sudo mkksiso kickstart.ks ${CENTOS_ISO} cs10-js-install.iso
 ```
 
 Flash the .iso to a pendrive, and boot/install your system, watch out and remove the pendrive once install has finished.
