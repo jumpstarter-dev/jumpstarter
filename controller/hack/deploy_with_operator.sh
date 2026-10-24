@@ -245,6 +245,8 @@ ${ROUTER_ENDPOINT_CONFIG}
     provisioners:
       - name: qemu.jumpstarter.dev
         enabled: true
+      - name: qemu-ssh.jumpstarter.dev
+        enabled: true
 EOF
 
 echo -e "${GREEN}Generated Jumpstarter CR (saved to ${TMPFILE}):${NC}"
