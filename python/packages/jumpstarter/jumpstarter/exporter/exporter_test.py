@@ -76,12 +76,19 @@ def _make_base_exporter(**overrides):
         "_request_lease_release": AsyncMock(),
         "_telemetry_handler": None,
         "_telemetry_channel": None,
+        "_metrics_stream": None,
     }
     defaults.update(overrides)
     exporter = Exporter.__new__(Exporter)
     for k, v in defaults.items():
         setattr(exporter, k, v)
     return exporter
+
+
+def test_exporter_name_property_reads_exporter_name():
+    exporter = _make_base_exporter()
+    assert exporter.labels == {}
+    assert exporter.name == "test-exporter"
 
 
 def make_exporter(lease_ctx, hook_executor=None):
