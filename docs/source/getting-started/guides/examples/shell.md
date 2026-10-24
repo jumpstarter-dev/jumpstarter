@@ -53,6 +53,20 @@ Each driver can expose different commands through this interface, making it easy
 to interact with the mock hardware. The command structure follows `j
 <driver_type> <action>`, where available actions depend on the specific driver.
 
+## Overlay local drivers
+
+Add local drivers from an overlay YAML (`export:` map) to a session that
+is already connected to lab hardware. They run in a local exporter for the
+shell's lifetime, retaining state across `j` commands. Same-named overlay
+drivers silently take precedence over lab drivers:
+
+```console
+$ jmp shell --client hello --selector example.com/board=foo --overlay ./overlay.yaml
+```
+
+This feature is mostly useful for driver development, see
+[Developing client-side drivers](../../../contributing/development-environment.md#developing-client-side-drivers)
+
 ## The Shell Prompt
 
 The {term}`exporter shell` prompt is displayed as `jumpstarter ⚡<exporter>
