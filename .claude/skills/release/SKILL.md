@@ -22,6 +22,7 @@ Release input: $ARGUMENTS
 - Python packages are versioned automatically from git tags via `hatch-vcs` — no manual version files.
 - The `bundle/` directory is NOT committed to the repo.
 - `GITHUB_USER` env var controls the fork for community-operators and for pushing version-bump PRs. Auto-detected via `gh api user -q .login` if not set.
+- `UV_PUBLISH_TOKEN` env var is required for the manual PyPI publish fallback (final releases only). Must be set before running `uv publish`. The `publish-pypi.yaml` workflow uses OIDC trusted publishing and needs no token.
 - Do NOT modify `controller/deploy/operator/api/v1alpha1/jumpstarter_types.go` — the operator resolves `:latest` image defaults to its own version at runtime.
 
 ## Ordering constraint
@@ -329,6 +330,7 @@ The tag push triggers:
 
 The GitHub Release triggers:
 - `release-operator-installer.yaml` — uploads `operator-installer.yaml` to the release
+- `publish-pypi.yaml` — builds and publishes the Python packages to PyPI (final releases only, RC releases are skipped)
 
 Tell the user that CI is now building the container images and you will monitor progress.
 
@@ -343,7 +345,69 @@ gh run watch <RUN_ID>
 
 Monitor the run periodically using `gh run view <RUN_ID> --json status,conclusion` until it completes. If it fails, offer to re-trigger with `gh run rerun <RUN_ID>`. If it fails again, show the user the failure details with `gh run view <RUN_ID> --log-failed` and stop.
 
-When the build-images workflow succeeds, inform the user and proceed automatically to step 2D.
+When the build-images workflow succeeds, inform the user and proceed to Phase 4 (for final releases) or skip directly to step 2D.
+
+#### Phase 4: Publish to PyPI (final releases only)
+
+**Skip this phase entirely for RC releases.** Only final releases (`vX.Y.Z` without `-rc`) are published to PyPI; RCs are published to the internal package repo instead.
+
+**Prerequisite:** Check out the tag so `hatch-vcs` derives the correct version:
+
+```bash
+git checkout vX.Y.Z   # detached HEAD is fine
+```
+
+Build all workspace packages:
+
+```bash
+cd python
+
+rm -rf dist/
+uv build --all --out-dir dist
+
+# Verify the version in the built filenames matches the release
+ls dist/ | head -20
+```
+
+Confirm the `.whl` and `.tar.gz` filenames contain the expected version (e.g., `X.Y.Z`, no `.devN` suffix). If versions look wrong, ensure `git describe --tags --exact-match` resolves to the correct tag.
+
+**Exclude `hatch-pin-jumpstarter`** — it has independent versioning (0.1.0) and will fail if already on PyPI. Only publish the `X.Y.Z`-versioned packages:
+
+```bash
+# Requires UV_PUBLISH_TOKEN set to a PyPI API token
+${UV_PUBLISH_TOKEN:?ERROR: UV_PUBLISH_TOKEN is not set — get a PyPI API token first}
+uv publish dist/jumpstarter-X.Y.Z* dist/jumpstarter_*-X.Y.Z*
+```
+
+**PyPI rate limit on new projects:** PyPI returns `429 Too Many Requests — Too many new projects created` when an account registers too many new projects in a short window. `uv publish` stops on the first failure, so a bulk upload of all packages will abort mid-batch if any are new.
+
+**Strategy when rate-limited:**
+
+1. Check which packages already exist on PyPI (any version):
+   ```bash
+   for f in dist/jumpstarter-X.Y.Z-py3-none-any.whl dist/jumpstarter_*-X.Y.Z-py3-none-any.whl; do
+     name=$(basename "$f" | sed 's/-X.Y.Z-.*//' | tr '_' '-')
+     code=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/${name}/json")
+     [ "$code" = "200" ] && echo "EXISTS: $name" || echo "NEW:    $name"
+   done
+   ```
+2. Publish existing packages one at a time (they won't hit the new-project limit):
+   ```bash
+   uv publish dist/<existing_package>-X.Y.Z*
+   ```
+3. For new packages, wait for the rate limit to reset (typically a few hours, sometimes ~24h) and retry:
+   ```bash
+   uv publish dist/<new_package>-X.Y.Z*
+   ```
+4. Report to the user which packages succeeded and which are still pending.
+
+**Long-term solution:** The `publish-pypi.yaml` workflow uses PyPI Trusted Publishing (OIDC, no token). Once configured, tag pushes handle everything automatically. Note: a pending publisher does not pre-create the PyPI project — the first publish creates it, so the new-project rate limit can still apply on the first release of a new package.
+
+After publishing, verify a representative package is available:
+
+```bash
+pip index versions jumpstarter 2>/dev/null || pip install jumpstarter==X.Y.Z --dry-run
+```
 
 ### 2D. Operator bundle contribution
 
@@ -472,6 +536,7 @@ Present a checklist of what was done (mark completed items) and what remains:
 - [ ] GitHub Release created (with `--prerelease` for RCs)
 - [ ] CI image build completed
 - [ ] `operator-installer.yaml` asset uploaded (automated by CI)
+- [ ] Published to PyPI via `uv publish` (final releases only, not RCs)
 - [ ] OLM bundle generated and verified (`make bundle`)
 - [ ] Community-operators PRs created (`make contribute` + `gh pr create`)
 - [ ] Infrastructure fixes cherry-picked to `main` (if applicable)
