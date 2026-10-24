@@ -19,6 +19,9 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,6 +35,7 @@ import (
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/config"
 	jlog "github.com/jumpstarter-dev/jumpstarter/controller/internal/log"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -42,9 +46,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
+	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -2724,4 +2731,160 @@ func TestReleaseLeaseAsClient_AttributionLogging(t *testing.T) {
 			t.Errorf("rejected request must not emit newly_marked, got:\n%s", logged)
 		}
 	})
+}
+
+func assertRotationDeniedEvent(t *testing.T, recorder *record.FakeRecorder, denied bool) {
+	t.Helper()
+	select {
+	case event := <-recorder.Events:
+		if !denied || !strings.Contains(event, "Warning RotationDenied") {
+			t.Fatalf("unexpected event: %s", event)
+		}
+	default:
+		if denied {
+			t.Fatal("lineage denial did not emit a warning")
+		}
+	}
+}
+
+func TestControllerServiceRotateToken(t *testing.T) {
+	scheme := k8sruntime.NewScheme()
+	if err := jumpstarterdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	signer := oidc.NewSigner(key, "https://controller.example.com", "dummy")
+	for _, tc := range []struct {
+		name              string
+		issuer            string
+		audience          string
+		subject           string
+		wrongKey          bool
+		expired           bool
+		early             bool
+		wrongStoredToken  bool
+		missingSigner     bool
+		missingSecret     bool
+		missingCredential bool
+		want              codes.Code
+	}{
+		{name: "successful rotation", want: codes.OK},
+		{name: "outside renewal window", early: true, want: codes.PermissionDenied},
+		{name: "unknown token lineage", wrongStoredToken: true, want: codes.PermissionDenied},
+		{name: "external issuer", issuer: "https://idp.example.com", want: codes.PermissionDenied},
+		{name: "external signature with internal issuer", wrongKey: true, want: codes.PermissionDenied},
+		{name: "different exporter UID", subject: "exporter:default:test-exporter:other-uid", want: codes.PermissionDenied},
+		{name: "wrong audience", audience: "other", want: codes.PermissionDenied},
+		{name: "expired credential", expired: true, want: codes.PermissionDenied},
+		{name: "missing credential", missingCredential: true, want: codes.InvalidArgument},
+		{name: "missing signer", missingSigner: true, want: codes.FailedPrecondition},
+		{name: "missing secret", missingSecret: true, want: codes.Internal},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			exporter := &jumpstarterdevv1alpha1.Exporter{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-exporter", Namespace: "default", UID: "uid"},
+			}
+			issuer, audience, subject := tc.issuer, tc.audience, tc.subject
+			if issuer == "" {
+				issuer = signer.Issuer()
+			}
+			if audience == "" {
+				audience = signer.Audience()
+			}
+			if subject == "" {
+				subject = exporter.InternalSubject()
+			}
+			credentialKey := key
+			if tc.wrongKey {
+				credentialKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			now := time.Now()
+			issuedAt, expiresAt := now.Add(-24*time.Hour), now.Add(time.Hour)
+			if tc.expired {
+				expiresAt = now.Add(-time.Hour)
+			}
+			if tc.early {
+				issuedAt, expiresAt = now, now.Add(48*time.Hour)
+			}
+			credential, err := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.RegisteredClaims{
+				Issuer: issuer, Audience: []string{audience}, Subject: subject,
+				IssuedAt: jwt.NewNumericDate(issuedAt), ExpiresAt: jwt.NewNumericDate(expiresAt),
+			}).SignedString(credentialKey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-exporter-exporter", Namespace: "default"},
+				Data:       map[string][]byte{"token": []byte(credential)},
+			}
+			if tc.wrongStoredToken {
+				secret.Data["token"] = []byte("different-token")
+			}
+			objects := []client.Object{exporter}
+			if !tc.missingSecret {
+				objects = append(objects, secret)
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+			recorder := record.NewFakeRecorder(10)
+			svc := &ControllerService{
+				Recorder: recorder,
+				Client:   fakeClient,
+				Authn:    &passingAuthenticator{userName: "test-user"},
+				Authz:    passingAuthorizer{},
+				Attr:     &exporterAttributesGetter{namespace: "default", name: "test-exporter"},
+				Signer:   signer,
+			}
+			if tc.missingSigner {
+				svc.Signer = nil
+			}
+			ctx := context.Background()
+			if !tc.missingCredential {
+				ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("authorization", "Bearer "+credential))
+			}
+			resp, err := svc.RotateToken(ctx, &pb.RotateTokenRequest{})
+			if status.Code(err) != tc.want {
+				t.Fatalf("got %v, want %v: %v", status.Code(err), tc.want, err)
+			}
+			if tc.missingSecret {
+				return
+			}
+			var updatedSecret corev1.Secret
+			if err := fakeClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: secret.Name}, &updatedSecret); err != nil {
+				t.Fatal(err)
+			}
+			assertRotationDeniedEvent(t, recorder, tc.wrongStoredToken)
+			if tc.want != codes.OK {
+				if string(updatedSecret.Data["token"]) != string(secret.Data["token"]) {
+					t.Fatal("rejected rotation changed credential")
+				}
+				return
+			}
+			if resp.Token == "" || resp.Token == credential {
+				t.Fatal("expected a new token")
+			}
+			if err := signer.Validate(resp.Token); err != nil {
+				t.Fatalf("invalid rotated token: %v", err)
+			}
+			expiry, err := signer.TokenExpiry(resp.Token)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resp.Expiry == nil || !resp.Expiry.AsTime().Equal(expiry) {
+				t.Fatal("expiry does not match rotated token")
+			}
+			if string(updatedSecret.Data["token"]) != resp.Token {
+				t.Fatal("secret does not contain rotated token")
+			}
+		})
+	}
 }

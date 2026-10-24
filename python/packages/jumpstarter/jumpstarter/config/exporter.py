@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import errno
+import logging
 import os
+import stat
 import tempfile
+from collections.abc import Callable
 from contextlib import asynccontextmanager, contextmanager, suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
@@ -10,6 +13,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 import grpc
 import yaml
 from anyio.from_thread import start_blocking_portal
+from anyio.to_thread import run_sync
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 from .common import CONFIG_PATH, ObjectMeta
@@ -21,6 +25,29 @@ from jumpstarter.common.importlib import import_class
 
 if TYPE_CHECKING:
     from jumpstarter.driver import Driver
+
+logger = logging.getLogger(__name__)
+
+
+def _write_yaml(path: Path, data: dict, mode: int = 0o600) -> None:
+    temp_fd, temp_path = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        os.fchmod(temp_fd, mode)
+        with os.fdopen(temp_fd, "w") as f:
+            yaml.safe_dump(
+                data,
+                f,
+                sort_keys=False,
+            )
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, path)
+    finally:
+        try:
+            os.unlink(temp_path)
+        except OSError as e:
+            if e.errno != errno.ENOENT:
+                raise
 
 
 DEFAULT_STATUS_STREAM_RETRY_TIMEOUT = 30 * 60.0
@@ -297,28 +324,29 @@ class ExporterConfigV1Alpha1(BaseModel):
         else:
             config.path = Path(path)
         config.path.parent.mkdir(parents=True, exist_ok=True)
-        temp_fd, temp_path = tempfile.mkstemp(prefix=f".{config.path.name}.", dir=config.path.parent)
-        try:
-            os.fchmod(temp_fd, 0o600)
-            with os.fdopen(temp_fd, "w") as f:
-                yaml.safe_dump(
-                    config.model_dump(
-                        mode="json", by_alias=True, exclude=cls._EXCLUDE_FROM_YAML,
-                    ),
-                    f,
-                    sort_keys=False,
-                )
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(temp_path, config.path)
-            os.chmod(config.path, 0o600)
-        finally:
-            try:
-                os.unlink(temp_path)
-            except OSError as e:
-                if e.errno != errno.ENOENT:
-                    raise
+        _write_yaml(config.path, config.model_dump(mode="json", by_alias=True, exclude=cls._EXCLUDE_FROM_YAML))
         return config.path
+
+    def _save_rotated_token(self, token: str) -> None:
+        assert self.path is not None
+        path = self.path.resolve(strict=True)
+        with path.open() as source:
+            data = yaml.safe_load(source)
+            mode = stat.S_IMODE(os.fstat(source.fileno()).st_mode)
+        if not isinstance(data, dict):
+            raise TypeError("exporter configuration must be a YAML mapping")
+        data["token"] = token
+        _write_yaml(path, data, mode)
+
+    async def _persist_rotated_token(self, token: str) -> None:
+        if self.path is None:
+            return
+        try:
+            await run_sync(self._save_rotated_token, token, abandon_on_cancel=True)
+            logger.info("Saved rotated exporter token to %s", self.path)
+        except (OSError, TypeError, ValueError, yaml.YAMLError) as exc:
+            log = logger.info if isinstance(exc, OSError) and exc.errno == errno.EROFS else logger.warning
+            log("Could not save rotated token to %s: %s", self.path, exc)
 
     @classmethod
     def delete(cls, alias: str) -> Path:
@@ -360,7 +388,9 @@ class ExporterConfigV1Alpha1(BaseModel):
             yield path
 
     @asynccontextmanager
-    async def create_exporter(self, *, standalone: bool = False):
+    async def create_exporter(
+        self, *, standalone: bool = False, on_token_rotated: Callable[[str], None] | None = None
+    ):
         """Create and manage an exporter instance with proper lifecycle.
 
         When standalone is True, channel_factory is a no-op (never used);
@@ -371,18 +401,18 @@ class ExporterConfigV1Alpha1(BaseModel):
 
         from jumpstarter.exporter import Exporter
 
-        async def channel_factory() -> grpc.aio.Channel:
-            if self.endpoint is None or self.token is None:
+        async def channel_factory(token: str) -> grpc.aio.Channel:
+            if self.endpoint is None or not token:
                 raise ConfigurationError("endpoint or token not set in exporter config")
             # The stream retry loop logs once per outage; per-IP discovery
             # failures remain in the final exception and debug logs.
             credentials = grpc.composite_channel_credentials(
                 await ssl_channel_credentials(self.endpoint, self.tls, log_connection_failures=False),
-                call_credentials("Exporter", self.metadata, self.token),
+                call_credentials("Exporter", self.metadata, token),
             )
             return aio_secure_channel(self.endpoint, credentials, self.grpcOptions)
 
-        async def dummy_channel_factory() -> grpc.aio.Channel:
+        async def dummy_channel_factory(token: str) -> grpc.aio.Channel:
             raise RuntimeError("channel_factory must not be called in standalone mode")
 
         # Create hook executor if hooks are configured
@@ -393,6 +423,15 @@ class ExporterConfigV1Alpha1(BaseModel):
             hook_executor = HookExecutor(
                 config=self.hooks,
             )
+
+        async def token_rotated(new_token: str):
+            self.token = new_token
+            if on_token_rotated is not None:
+                try:
+                    on_token_rotated(new_token)
+                except Exception:
+                    logger.exception("Could not notify exporter supervisor of rotated token")
+            await self._persist_rotated_token(new_token)
 
         exporter = None
         entered = False
@@ -412,6 +451,7 @@ class ExporterConfigV1Alpha1(BaseModel):
                 motd=self.motd,
                 exit_on_lease_end=self.exit_on_lease_end,
                 status_stream_retry_timeout=self.status_stream_retry_timeout,
+                on_token_rotated=token_rotated,
             )
             # Initialize the exporter (registration, etc.)
             await exporter.__aenter__()

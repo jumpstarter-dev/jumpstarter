@@ -74,8 +74,15 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	prevOnline := meta.IsStatusConditionTrue(exporter.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline))
 	prevRegistered := meta.IsStatusConditionTrue(exporter.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered))
+	prevCredential := exporter.Status.Credential
+	prevExpiryReason := ""
+	if condition := meta.FindStatusCondition(exporter.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeTokenExpiring)); condition != nil {
+		prevExpiryReason = condition.Reason
+	}
+	prevTokenExpiring := meta.IsStatusConditionTrue(exporter.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeTokenExpiring))
 
-	if err := r.reconcileStatusCredential(ctx, &exporter); err != nil {
+	tokenExpiry, warningThreshold, regenerated, err := r.reconcileStatusCredential(ctx, &exporter)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -92,6 +99,30 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
+	if exporter.Spec.Username != nil {
+		exporter.Status.TokenExpiresAt = nil
+		meta.RemoveStatusCondition(&exporter.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeTokenExpiring))
+	} else {
+		reconcileTokenExpiryWithThreshold(
+			&exporter.Status.Conditions,
+			&exporter.Status.TokenExpiresAt,
+			tokenExpiry,
+			exporter.Generation,
+			string(jumpstarterdevv1alpha1.ExporterConditionTypeTokenExpiring),
+			warningThreshold,
+		)
+
+		if regenerated {
+			meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+				Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeTokenExpiring),
+				Status:             metav1.ConditionTrue,
+				ObservedGeneration: exporter.Generation,
+				Reason:             "Regenerated",
+				Message:            fmt.Sprintf("Token expired on %s; replacement credential is available in Secret %s; exporter must reconnect", tokenExpiry.UTC().Format(time.RFC3339), exporter.Status.Credential.Name),
+			})
+		}
+	}
+
 	newOnline := meta.IsStatusConditionTrue(exporter.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline))
 	newRegistered := meta.IsStatusConditionTrue(exporter.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered))
 
@@ -100,6 +131,20 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Emit only after status patch succeeds.
+	if prevCredential == nil && exporter.Status.Credential != nil {
+		r.emitEventf(&exporter, corev1.EventTypeNormal, "CredentialCreated",
+			"Credential secret created for exporter: secret=%s", exporter.Status.Credential.Name)
+	}
+
+	newTokenExpiring := meta.IsStatusConditionTrue(exporter.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeTokenExpiring))
+	if regenerated && prevExpiryReason != "Regenerated" {
+		r.emitEventf(&exporter, corev1.EventTypeWarning, "CredentialRegenerated",
+			"Exporter token expired on %s; retrieve the replacement from Secret %s and reconnect", tokenExpiry.UTC().Format(time.RFC3339), exporter.Status.Credential.Name)
+	} else if !regenerated && !prevTokenExpiring && newTokenExpiring {
+		r.emitEventf(&exporter, corev1.EventTypeWarning, "TokenExpiringSoon",
+			"Token for exporter %s is expiring soon: expires=%s", exporter.Name, tokenExpiry.UTC().Format(time.RFC3339))
+	}
+
 	if !prevRegistered && newRegistered {
 		r.emitEventf(&exporter, corev1.EventTypeNormal, "ExporterRegistered",
 			"Exporter registered its capabilities: deviceCount=%d", len(exporter.Status.Devices))
@@ -125,24 +170,66 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
+	expiryCheckInterval := min(tokenExpiryRequeueInterval, warningThreshold)
+	if result.RequeueAfter == 0 || result.RequeueAfter > expiryCheckInterval {
+		result.RequeueAfter = expiryCheckInterval
+	}
+
 	return result, nil
 }
 
 func (r *ExporterReconciler) reconcileStatusCredential(
 	ctx context.Context,
 	exporter *jumpstarterdevv1alpha1.Exporter,
-) error {
-	secret, _, err := ensureSecret(ctx, client.ObjectKey{
+) (time.Time, time.Duration, bool, error) {
+	secret, expiry, err := ensureSecret(ctx, client.ObjectKey{
 		Name:      exporter.Name + "-exporter",
 		Namespace: exporter.Namespace,
 	}, r.Client, r.Scheme, r.Signer, exporter.InternalSubject(), exporter)
 	if err != nil {
-		return fmt.Errorf("reconcileStatusCredential: failed to prepare credential for exporter: %w", err)
+		return time.Time{}, 0, false, fmt.Errorf("reconcileStatusCredential: failed to prepare credential for exporter: %w", err)
 	}
 	exporter.Status.Credential = &corev1.LocalObjectReference{
 		Name: secret.Name,
 	}
-	return nil
+	if exporter.Spec.Username != nil {
+		return time.Time{}, tokenExpiryWarningThreshold, false, nil
+	}
+	warningThreshold := tokenExpiryWarningThreshold
+	lifetime, err := r.Signer.TokenLifetime(string(secret.Data[TokenKey]))
+	if err != nil {
+		return time.Time{}, 0, false, fmt.Errorf("reconcileStatusCredential: failed to read token lifetime: %w", err)
+	}
+	// Automatic renewal happens with 20% remaining (capped at 31 days).
+	// Warn later, including for controllers configured with short lifetimes.
+	if lifetime > 0 {
+		warningThreshold = min(warningThreshold, lifetime/10)
+	}
+	regenerated := false
+	_, hasExpiredAt := secret.Annotations[expiredTokenAnnotation]
+	_, hasRegeneratedAt := secret.Annotations[regeneratedTokenAnnotation]
+	if hasExpiredAt || hasRegeneratedAt {
+		expiredAt, expiryErr := time.Parse(time.RFC3339, secret.Annotations[expiredTokenAnnotation])
+		regeneratedAt, regenerationErr := time.Parse(time.RFC3339Nano, secret.Annotations[regeneratedTokenAnnotation])
+		invalid := expiryErr != nil || regenerationErr != nil || expiredAt.IsZero() || regeneratedAt.IsZero()
+		// Heartbeats on an already authenticated stream do not prove receipt.
+		authenticatedWithCurrentToken := exporter.Annotations[AuthenticatedTokenHashAnnotation] == TokenHash(string(secret.Data[TokenKey]))
+		if invalid || authenticatedWithCurrentToken {
+			original := client.MergeFromWithOptions(secret.DeepCopy(), client.MergeFromWithOptimisticLock{})
+			delete(secret.Annotations, expiredTokenAnnotation)
+			delete(secret.Annotations, regeneratedTokenAnnotation)
+			if err := r.Patch(ctx, secret, original); err != nil {
+				return time.Time{}, 0, false, err
+			}
+			if invalid {
+				log.FromContext(ctx).Info("Cleared malformed credential recovery annotations", "secret", secret.Name)
+			}
+		} else {
+			expiry = expiredAt
+			regenerated = true
+		}
+	}
+	return expiry, warningThreshold, regenerated, nil
 }
 
 func (r *ExporterReconciler) reconcileStatusLeaseRef(

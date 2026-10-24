@@ -2,8 +2,11 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"time"
 
+	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -15,6 +18,13 @@ import (
 )
 
 const TokenKey string = "token"
+
+const AuthenticatedTokenHashAnnotation = "jumpstarter.dev/authenticated-token-hash"
+
+const PreviousTokenHashAnnotation = "jumpstarter.dev/previous-token-hash"
+
+const expiredTokenAnnotation = "jumpstarter.dev/expired-token-at"
+const regeneratedTokenAnnotation = "jumpstarter.dev/credential-regenerated-at"
 
 func ensureSecret(
 	ctx context.Context,
@@ -60,7 +70,7 @@ func ensureSecret(
 		expiry, _ := signer.TokenExpiry(token)
 		return &secret, expiry, nil
 	} else {
-		original := client.MergeFrom(secret.DeepCopy())
+		original := client.MergeFromWithOptions(secret.DeepCopy(), client.MergeFromWithOptimisticLock{})
 		if err := controllerutil.SetControllerReference(owner, &secret, scheme); err != nil {
 			logger.Error(err, "failed to set controller reference")
 			return nil, time.Time{}, err
@@ -74,6 +84,16 @@ func ensureSecret(
 				logger.Error(err, "failed to sign token")
 				return nil, time.Time{}, err
 			}
+			if _, isExporter := owner.(*jumpstarterdevv1alpha1.Exporter); isExporter {
+				delete(secret.Annotations, PreviousTokenHashAnnotation)
+				if expiredAt, err := signer.TokenExpiry(string(token)); err == nil && !expiredAt.IsZero() && expiredAt.Before(time.Now()) {
+					if secret.Annotations == nil {
+						secret.Annotations = map[string]string{}
+					}
+					secret.Annotations[expiredTokenAnnotation] = expiredAt.UTC().Format(time.RFC3339)
+					secret.Annotations[regeneratedTokenAnnotation] = time.Now().UTC().Format(time.RFC3339Nano)
+				}
+			}
 			secret.Data = map[string][]byte{
 				TokenKey: []byte(newToken),
 			}
@@ -86,4 +106,9 @@ func ensureSecret(
 		expiry, _ := signer.TokenExpiry(string(token))
 		return &secret, expiry, nil
 	}
+}
+
+func TokenHash(token string) string {
+	digest := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(digest[:])
 }
