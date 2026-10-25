@@ -48,7 +48,7 @@ export:
       baudrate: 115200
     children:
       power:
-        ref: "power" # any driver whose client provides cycle(), e.g. any power driver
+        ref: "power" # any power driver
   power:
     type: jumpstarter_driver_yepkit.driver.Ykush
     config:

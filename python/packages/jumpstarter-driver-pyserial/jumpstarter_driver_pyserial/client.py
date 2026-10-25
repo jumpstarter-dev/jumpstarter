@@ -8,11 +8,11 @@ import click
 from anyio import BrokenResourceError, EndOfStream, create_task_group, open_file
 from anyio.streams.file import FileReadStream
 from jumpstarter_driver_network.adapters import PexpectAdapter
+from jumpstarter_driver_power.client import PowerClient
 from pexpect.fdpexpect import fdspawn
 
 from .console import Console, ConsoleStreamDrop
 from jumpstarter.client import DriverClient
-from jumpstarter.client.base import StubDriverClient
 from jumpstarter.client.decorators import driver_click_group
 
 logger = logging.getLogger(__name__)
@@ -153,16 +153,11 @@ class PySerialClient(DriverClient):
 
         return bytes_read, bytes_sent
 
-    def _power_child(self):
-        """The `power` child if its client provides cycle(), else None."""
+    def _power_child(self) -> PowerClient | None:
+        """Return the power child when it implements PowerClient."""
         power = self.children.get("power")
-        if power is None:
-            return None
-        if isinstance(power, StubDriverClient):
-            logger.warning("'power' child client is unavailable, power cycle hotkey disabled")
-            return None
-        if not callable(getattr(power, "cycle", None)):
-            logger.warning("'power' child has no cycle() method, power cycle hotkey disabled")
+        if power is not None and not isinstance(power, PowerClient):
+            logger.warning("'power' child is unavailable or not a PowerClient, power cycle hotkey disabled")
             return None
         return power
 

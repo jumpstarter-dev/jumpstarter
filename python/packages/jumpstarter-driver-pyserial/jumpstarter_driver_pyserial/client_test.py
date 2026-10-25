@@ -8,7 +8,6 @@ from jumpstarter_driver_composite.driver import Composite, Proxy
 from pydantic.dataclasses import dataclass
 
 from .driver import PySerial
-from jumpstarter.client.base import StubDriverClient
 from jumpstarter.common.utils import serve
 from jumpstarter.driver import Driver, export
 
@@ -68,15 +67,6 @@ def test_power_child_ignores_sibling_power():
         assert client.children["serial"]._power_child() is None
 
 
-def test_power_child_without_cycle(caplog):
-    with (
-        caplog.at_level(logging.WARNING, logger="jumpstarter_driver_pyserial.client"),
-        serve(PySerial(url="loop://", children={"power": NoCyclePower()})) as client,
-    ):
-        assert client._power_child() is None
-    assert "no cycle() method" in caplog.text
-
-
 def test_power_child_cycles_the_power_driver():
     fake = FakePower()
     with serve(PySerial(url="loop://", children={"power": fake})) as client:
@@ -102,16 +92,16 @@ def test_power_child_follows_ref():
         assert fake.calls == ["off", "on"]
 
 
-def test_power_child_unavailable_client_is_ignored(caplog):
-    """A power client that can't be imported (not installed, or rejected by the allow list)
-    must disable the hotkey, not break the serial console."""
+@pytest.mark.parametrize("power_driver", [NoCyclePower, UnavailablePower], ids=["not-a-power-client", "unavailable"])
+def test_power_child_unusable_is_ignored(power_driver, caplog):
+    """A power child that isn't a PowerClient, or whose client can't be imported (not installed,
+    or rejected by the allow list), must disable the hotkey, not break the serial console."""
     with (
         caplog.at_level(logging.WARNING, logger="jumpstarter_driver_pyserial.client"),
-        serve(PySerial(url="loop://", children={"power": UnavailablePower()})) as client,
+        serve(PySerial(url="loop://", children={"power": power_driver()})) as client,
     ):
-        assert isinstance(client.children["power"], StubDriverClient)
         assert client._power_child() is None
-    assert "unavailable" in caplog.text
+    assert "not a PowerClient" in caplog.text
 
 
 def test_console_opens_with_unavailable_power_client():

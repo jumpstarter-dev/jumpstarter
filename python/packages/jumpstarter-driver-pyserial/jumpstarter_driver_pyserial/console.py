@@ -4,10 +4,11 @@ import termios
 import tty
 from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
-from typing import NoReturn, Protocol
+from typing import NoReturn
 
 from anyio import BrokenResourceError, ClosedResourceError, EndOfStream, create_task_group, to_thread
 from anyio.streams.file import FileReadStream, FileWriteStream
+from jumpstarter_driver_power.client import PowerClient
 
 from jumpstarter.client import DriverClient
 
@@ -28,12 +29,6 @@ class ConsoleExit(Exception):
 
 class ConsoleStreamDrop(Exception):
     """Serial stream closed by the exporter (kicked, token revoked, lease ended)."""
-
-
-class PowerControl(Protocol):
-    """A power client the console can cycle, e.g. a PowerClient."""
-
-    def cycle(self) -> object: ...
 
 
 async def _exit_console() -> NoReturn:
@@ -72,7 +67,7 @@ class Console:
         self,
         serial_client: DriverClient,
         observe: bool = False,
-        power_control: PowerControl | None = None,
+        power_control: PowerClient | None = None,
     ):
         self.serial_client = serial_client
         self.observe = observe
