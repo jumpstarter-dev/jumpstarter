@@ -18,8 +18,8 @@ EXIT_KEY = b"\x02"  # Ctrl-B
 POWER_KEY = b"\x1d"  # Ctrl-]
 PRESSES = 3
 
-# receive() raises EndOfStream on a clean GOAWAY/EOF; send() only ever raises
-# BrokenResourceError (streams/router.py:40-44). Treat the set uniformly.
+# receive() raises EndOfStream on a clean close; send() only raises BrokenResourceError.
+# Treat them uniformly.
 STREAM_ERRORS = (EndOfStream, BrokenResourceError, ClosedResourceError)
 
 
@@ -32,7 +32,6 @@ class ConsoleStreamDrop(Exception):
 
 
 async def _exit_console() -> NoReturn:
-    """Exit action bound to EXIT_KEY in the hotkey action map."""
     raise ConsoleExit
 
 
@@ -50,7 +49,6 @@ class HotkeyDetector:
         self._count = 0
 
     def feed(self, byte: bytes) -> Callable[[], Awaitable[None]] | None:
-        """Feed a byte and return its action if a hotkey sequence completed."""
         if byte not in self.actions:
             self._last, self._count = None, 0
             return None

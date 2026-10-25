@@ -58,7 +58,7 @@ export:
 
 Drivers that create their own console (qemu, renode, dutlink, corellium) wire
 their power driver into it automatically, so the hotkey works there without
-any configuration.
+any configuration (qemu: except in sidecar mode).
 
 
 ### Config parameters

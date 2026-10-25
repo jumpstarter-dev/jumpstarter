@@ -382,8 +382,8 @@ def test_console_command_structure(pyserial_client):
     assert alias_cmd.hidden is True
 
 
-def test_console_stream_drop_exits_without_reconnect(pyserial_client):
-    """A dropped console stream (e.g. kicked by `close`) exits cleanly instead of reconnecting."""
+def test_console_stream_drop_exits_cleanly(pyserial_client):
+    """A dropped console stream (e.g. kicked) is reported as a click error (exit 1) and the console is not restarted."""
     with patch("jumpstarter_driver_pyserial.client.Console.run", side_effect=ConsoleStreamDrop) as run:
         result = CliRunner().invoke(pyserial_client.cli(), ["console"])
 

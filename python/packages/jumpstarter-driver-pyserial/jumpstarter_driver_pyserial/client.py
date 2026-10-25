@@ -180,9 +180,8 @@ class PySerialClient(DriverClient):
                 if power_control is not None:
                     click.echo("Power cycle: CTRL+] x 3 times\n")
 
-            # No reconnect: the exporter's fanout keeps the stream attached
-            # while the device itself re-enumerates, so a drop here means the
-            # session was closed (kicked, token revoked, lease ended).
+            # A drop means the session was closed: the exporter's fanout keeps the
+            # stream across device re-enumeration.
             console = Console(serial_client=self, observe=observe, power_control=power_control)
             try:
                 console.run()

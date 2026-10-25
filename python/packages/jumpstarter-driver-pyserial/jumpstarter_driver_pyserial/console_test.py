@@ -38,14 +38,28 @@ def _start_console(client, power_control=None):
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()
+    _wait_attached(client, t)
     return master_fd, t, result
+
+
+def _wait_attached(client, thread, timeout=5):
+    """Wait until the console holds the write token, or its thread has already died.
+
+    Console.run() puts the tty in raw mode before it attaches, so once attached
+    keypresses are no longer discarded or line-buffered.
+    """
+    deadline = time.monotonic() + timeout
+    while thread.is_alive() and time.monotonic() < deadline:
+        if client.call("console_status")["write_token_held"]:
+            return
+        time.sleep(0.01)
+    assert not thread.is_alive(), "console did not attach"
 
 
 def test_ctrl_b_exits():
     with serve(PySerial(url="loop://")) as client:
         master_fd, t, result = _start_console(client)
         try:
-            time.sleep(0.1)
             os.write(master_fd, b"a")
             os.write(master_fd, b"\x02\x02\x02")
             t.join(timeout=5)
@@ -75,9 +89,9 @@ def test_ctrl_bracket_triggers_power_cycle():
     power = _FakePowerControl()
 
     with serve(PySerial(url="loop://")) as client:
+        loop_thread = client.portal.call(threading.current_thread)
         master_fd, t, result = _start_console(client, power_control=power)
         try:
-            time.sleep(0.1)
             os.write(master_fd, b"\x1d\x1d\x1d")
             assert power.cycled.wait(timeout=5), "power cycle was not triggered"
             assert t.is_alive(), "console exited after power cycle"
@@ -88,8 +102,9 @@ def test_ctrl_bracket_triggers_power_cycle():
 
     assert not t.is_alive()
     assert "exc" not in result
-    # cycle() blocks, so it must not run on the console thread that hosts the event loop
-    assert power.cycle_thread is not t
+    # cycle() blocks, so it must not run on the thread of the event loop driving the console
+    assert power.cycle_thread is not None
+    assert power.cycle_thread is not loop_thread
 
 
 def test_power_cycle_failure_does_not_kill_console(caplog):
@@ -99,7 +114,6 @@ def test_power_cycle_failure_does_not_kill_console(caplog):
     with serve(PySerial(url="loop://")) as client:
         master_fd, t, result = _start_console(client, power_control=power)
         try:
-            time.sleep(0.1)
             os.write(master_fd, b"\x1d\x1d\x1d")
             assert power.cycled.wait(timeout=5), "power cycle was not triggered"
             time.sleep(0.1)
@@ -118,7 +132,6 @@ def test_ctrl_bracket_without_power_client():
     with serve(PySerial(url="loop://")) as client:
         master_fd, t, result = _start_console(client, power_control=None)
         try:
-            time.sleep(0.1)
             os.write(master_fd, b"\x1d\x1d\x1d")
             time.sleep(0.1)
             assert t.is_alive(), "console exited unexpectedly on Ctrl-] without power client"
@@ -161,8 +174,7 @@ def test_send_failure_does_not_kill_console(caplog):
         with patch.object(client, "stream_async", wrapped_stream_async):
             master_fd, t, result = _start_console(client)
             try:
-                time.sleep(0.1)
-                os.write(master_fd, b"a")  # This send() will raise BrokenResourceError
+                os.write(master_fd, b"a")
                 time.sleep(0.1)
                 assert t.is_alive(), "console crashed on send failure"
                 os.write(master_fd, b"\x02\x02\x02")
@@ -173,7 +185,7 @@ def test_send_failure_does_not_kill_console(caplog):
     assert not t.is_alive()
     assert "exc" not in result, f"console raised unexpected exception: {result.get('exc')}"
 
-    # Multiple failed sends ("a" plus the two non-exit Ctrl-B bytes) warn exactly once
+    # three failed sends (a, ^B, ^B) warn once
     warnings = [r for r in caplog.records if "send failed" in r.message]
     assert len(warnings) == 1, f"expected exactly one send-failure warning, got {len(warnings)}"
 
@@ -218,7 +230,7 @@ def test_hotkey_detector_unrelated_byte_resets():
     detector = HotkeyDetector({b"\x02": exit_action})
     assert detector.feed(b"\x02") is None
     assert detector.feed(b"\x02") is None
-    assert detector.feed(b"a") is None  # reset
+    assert detector.feed(b"a") is None
     assert detector.feed(b"\x02") is None
     assert detector.feed(b"\x02") is None
     assert detector.feed(b"\x02") is exit_action
@@ -230,7 +242,7 @@ def test_hotkey_detector_alternating_keys_resets():
     power_action = AsyncMock()
     detector = HotkeyDetector({b"\x02": exit_action, b"\x1d": power_action})
     assert detector.feed(b"\x02") is None
-    assert detector.feed(b"\x1d") is None  # different key, reset
+    assert detector.feed(b"\x1d") is None
     assert detector.feed(b"\x1d") is None
     assert detector.feed(b"\x1d") is power_action
 
@@ -248,7 +260,7 @@ def test_hotkey_detector_counter_resets_after_hit():
     detector = HotkeyDetector({b"\x02": exit_action})
     assert detector.feed(b"\x02") is None
     assert detector.feed(b"\x02") is None
-    assert detector.feed(b"\x02") is exit_action  # hit
-    assert detector.feed(b"\x02") is None  # counter was reset
+    assert detector.feed(b"\x02") is exit_action
     assert detector.feed(b"\x02") is None
-    assert detector.feed(b"\x02") is exit_action  # hit again after 3 more
+    assert detector.feed(b"\x02") is None
+    assert detector.feed(b"\x02") is exit_action

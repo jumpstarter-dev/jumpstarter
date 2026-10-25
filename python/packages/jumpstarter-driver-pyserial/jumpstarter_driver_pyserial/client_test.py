@@ -32,8 +32,8 @@ class FakePower(Driver):
 
 
 @dataclass(kw_only=True)
-class NoCyclePower(Driver):
-    """Power driver whose plain DriverClient provides no cycle()."""
+class PlainDriver(Driver):
+    """Driver whose client is a plain DriverClient, not a PowerClient."""
 
     @classmethod
     def client(cls) -> str:
@@ -92,7 +92,7 @@ def test_power_child_follows_ref():
         assert fake.calls == ["off", "on"]
 
 
-@pytest.mark.parametrize("power_driver", [NoCyclePower, UnavailablePower], ids=["not-a-power-client", "unavailable"])
+@pytest.mark.parametrize("power_driver", [PlainDriver, UnavailablePower], ids=["not-a-power-client", "unavailable"])
 def test_power_child_unusable_is_ignored(power_driver, caplog):
     """A power child that isn't a PowerClient, or whose client can't be imported (not installed,
     or rejected by the allow list), must disable the hotkey, not break the serial console."""
@@ -105,6 +105,8 @@ def test_power_child_unusable_is_ignored(power_driver, caplog):
 
 
 def test_console_opens_with_unavailable_power_client():
+    """An unavailable power client (a stub that raises ImportError on attribute access)
+    must not stop the console from opening."""
     with serve(PySerial(url="loop://", children={"power": UnavailablePower()})) as client:
         with patch("jumpstarter_driver_pyserial.client.Console.run") as run:
             result = CliRunner().invoke(client.cli(), ["console"])
