@@ -3,19 +3,22 @@ import inspect
 import json
 import logging
 import math
+import signal
 import time
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import anyio
 import anyio.lowlevel
+import anyio.to_thread
 import click
 import grpc
 import grpc.aio
 import pytest
 from click.testing import CliRunner
-from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentication
+from jumpstarter_cli_common.exceptions import find_exception_in_group, handle_exceptions_with_reauthentication
 
 from jumpstarter_cli.shell import (
     _attempt_token_recovery,
@@ -33,8 +36,10 @@ from jumpstarter_cli.shell import (
 )
 
 from jumpstarter.client.grpc import Lease, LeaseList
+from jumpstarter.client.lease import Lease as ClientLease
 from jumpstarter.common import ExporterStatus
 from jumpstarter.common.exceptions import ExporterOfflineError, ExporterUnreachableError
+from jumpstarter.common.utils import launch_shell
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.env import JMP_LEASE
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
@@ -42,7 +47,12 @@ from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 pytestmark = pytest.mark.anyio
 
 
-def _make_lease(name: str, client: str = "test-client") -> Lease:
+def _make_lease(
+    name: str,
+    client: str = "test-client",
+    effective_shared_with: tuple[str, ...] = (),
+    effective_end_time: datetime | None = None,
+) -> Lease:
     return Lease(
         namespace="default",
         name=name,
@@ -55,7 +65,8 @@ def _make_lease(name: str, client: str = "test-client") -> Lease:
         exporter="test-exporter",
         conditions=[],
         effective_begin_time=None,
-        effective_end_time=None,
+        effective_end_time=effective_end_time,
+        effective_shared_with=list(effective_shared_with),
     )
 
 
@@ -859,13 +870,34 @@ class _FakeStatusMonitor:
         return None
 
 
-def _make_shell_lease(*, release=True, lease_ended=False, name="test-lease"):
-    """Build a mock lease suitable for _run_shell_with_lease_async tests."""
+def _make_shell_lease(
+    *,
+    release=True,
+    lease_ended=False,
+    lease_revoked=False,
+    name="test-lease",
+    client_name="test-client",
+    held_by="test-client",
+    ended_at=None,
+    get_error=None,
+):
+    """Build a mock lease suitable for _run_shell_with_lease_async tests.
+
+    lease_ended and lease_revoked are what the lease and shared-access monitors
+    last saw. held_by and ended_at are what the controller reports now, which
+    can be a poll interval ahead of them; get_error makes the controller unreachable.
+    """
     lease = Mock()
     lease.release = release
     lease.name = name
     lease.lease_ended = lease_ended
+    lease.lease_revoked = lease_revoked
     lease.lease_transferred = False
+    lease.client_name = client_name
+    lease.get = AsyncMock(
+        return_value=_make_lease(name, client=held_by, effective_end_time=ended_at),
+        side_effect=get_error,
+    )
     lease.portal = Mock()
     lease.allow = []
     lease.unsafe = False
@@ -909,11 +941,59 @@ async def _fake_client_from_path_ctx(client):
     yield client
 
 
+@asynccontextmanager
+async def _unresponsive_controller():
+    """A channel to a gRPC server that accepts every call and never answers, as a hung controller."""
+
+    class _Hang(grpc.GenericRpcHandler):
+        def service(self, handler_call_details):
+            async def hang(request, context):
+                # Outlasts every timeout under test, but ends if a deadline goes missing
+                await anyio.sleep(40)
+                await context.abort(grpc.StatusCode.UNAVAILABLE, "unresponsive controller gave up")
+
+            return grpc.unary_unary_rpc_method_handler(hang)
+
+    server = grpc.aio.server()
+    server.add_generic_rpc_handlers((_Hang(),))
+    port = server.add_insecure_port("127.0.0.1:0")
+    await server.start()
+    channel = grpc.aio.insecure_channel(f"127.0.0.1:{port}")
+    try:
+        yield channel
+    finally:
+        await channel.close()
+        await server.stop(grace=None)
+
+
 class TestRunShellWithLeaseAsync:
-    async def test_skips_after_lease_hook_when_lease_ended(self):
+    # EndSession runs the afterLease hook on whatever lease the exporter serves,
+    # so a lease transferred away would get its new owner's hook run early.
+    @pytest.mark.parametrize(
+        "no_longer_held",
+        [
+            {"lease_ended": True},
+            {"lease_revoked": True},
+            # The owner transferred the lease and exited before the monitors polled
+            {"held_by": "bob"},
+            {"ended_at": datetime(2026, 1, 1, tzinfo=UTC)},
+            # Unconfirmed is not confirmed: the exporter runs the hook when the lease ends
+            {"get_error": ConnectionError("controller unreachable")},
+            {"client_name": ""},
+        ],
+        ids=[
+            "lease-ended",
+            "access-lost",
+            "transferred-unnoticed",
+            "ended-unnoticed",
+            "controller-unreachable",
+            "no-client-name",
+        ],
+    )
+    async def test_skips_after_lease_hook_when_lease_no_longer_held(self, no_longer_held):
         monitor = _FakeStatusMonitor()
         client = _build_fake_client(monitor, get_status_return=ExporterStatus.LEASE_READY)
-        lease = _make_shell_lease(release=True, lease_ended=True)
+        lease = _make_shell_lease(release=True, **no_longer_held)
         cancel_scope = Mock(cancel_called=False)
 
         @asynccontextmanager
@@ -929,14 +1009,14 @@ class TestRunShellWithLeaseAsync:
         assert exit_code == 42
         client.end_session_async.assert_not_called()
 
-    async def test_calls_end_session_when_lease_not_ended(self):
+    async def test_calls_end_session_when_controller_confirms_lease_is_held(self):
         monitor = _FakeStatusMonitor(statuses=[ExporterStatus.LEASE_READY, ExporterStatus.AVAILABLE])
         client = _build_fake_client(
             monitor,
             get_status_return=ExporterStatus.LEASE_READY,
             end_session_return=True,
         )
-        lease = _make_shell_lease(release=True, lease_ended=False)
+        lease = _make_shell_lease(release=True)
         cancel_scope = Mock(cancel_called=False)
 
         @asynccontextmanager
@@ -951,6 +1031,37 @@ class TestRunShellWithLeaseAsync:
 
         assert exit_code == 0
         client.end_session_async.assert_called_once()
+
+    async def test_unresponsive_controller_times_out_the_ownership_check_not_the_session(self, monkeypatch):
+        """A controller that stops answering at the ownership check counts as no.
+
+        The check must time out on its own. Cancelling a hung grpc.aio call from
+        an anyio scope raised a CancelledError anyio did not recognize, which
+        cancelled the whole session: the shell exited 2, not with its command's code.
+        """
+        monkeypatch.setattr("jumpstarter_cli.shell._LEASE_CHECK_TIMEOUT_SECONDS", 0.2)
+        monitor = _FakeStatusMonitor()
+        client = _build_fake_client(monitor, get_status_return=ExporterStatus.LEASE_READY)
+        lease = _make_shell_lease(release=True)
+        cancel_scope = Mock(cancel_called=False)
+
+        @asynccontextmanager
+        async def fake_client_from_path(*_a, **_kw):
+            yield client
+
+        async with _unresponsive_controller() as channel:
+            controller = object.__new__(ClientLease)  # the real Lease.get, against the hung controller
+            controller.channel, controller.namespace, controller.name = channel, "default", "test-lease"
+            lease.get = controller.get
+            with (
+                patch("jumpstarter_cli.shell.client_from_path", side_effect=fake_client_from_path),
+                patch("jumpstarter_cli.shell._run_shell_only", return_value=42),
+                anyio.fail_after(10),
+            ):
+                exit_code = await _run_shell_with_lease_async(lease, False, None, (), cancel_scope)
+
+        assert exit_code == 42
+        client.end_session_async.assert_not_called()
 
     async def test_unreachable_after_shell_exit_returns_exit_code(self):
         """An exporter lost while the user is at the prompt must not trigger a reconnect.
@@ -1460,6 +1571,95 @@ def test_shell_exporter_config_propagates_exit_code(tmp_path, expected):
     assert result.exit_code == expected
 
 
+def _rpc_error(code: grpc.StatusCode, details: str) -> grpc.aio.AioRpcError:
+    return grpc.aio.AioRpcError(code, grpc.aio.Metadata(), grpc.aio.Metadata(), details)
+
+
+def _not_ready(*_a, **_kw):
+    raise _rpc_error(grpc.StatusCode.FAILED_PRECONDITION, "exporter is not ready (status: Available)")
+
+
+async def _start_session_with_failing_dial(client_name, release, dial, controller_view):
+    """Run _shell_with_signal_handling on a real Lease whose initial Dial fails.
+
+    Returns the exit code and how many times the lease was acquired. The
+    shared-access monitor is left out: it polls on its own schedule, and these
+    tests are about the retry loop's verdict.
+    """
+    lease = object.__new__(ClientLease)
+    lease.name, lease.exporter_name = "test-lease", "test-exporter"
+    lease.client_name, lease.owner = client_name, "owner"
+    lease.release, lease.retry_timeout, lease.dial_timeout = release, 0.3, 0.2
+    lease.lease_ended = lease.lease_transferred = lease.lease_revoked = False
+    lease.lease_ending_callback = None
+    lease.get = AsyncMock(return_value=controller_view)
+    lease.controller = Mock()
+    lease.controller.Dial = AsyncMock(side_effect=dial)
+    acquired = 0
+
+    @asynccontextmanager
+    async def lease_async(*_a, **_kw):
+        nonlocal acquired
+        acquired += 1
+        yield lease
+
+    config = _DummyConfig()
+    config.lease_async = lease_async
+
+    with (
+        patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
+        patch("jumpstarter_cli.shell._monitor_shared_access", new_callable=AsyncMock),
+        anyio.fail_after(10),
+    ):
+        exit_code = await _shell_with_signal_handling(
+            config, None, None, "test-lease", timedelta(minutes=1), False, (), None
+        )
+    return exit_code, acquired
+
+
+@pytest.mark.parametrize(
+    "client_name, release, dial",
+    [
+        # The controller clears the share set when the lease ends, so the shared
+        # client's Dial is refused as if the lease had been transferred.
+        pytest.param(
+            "alice",
+            False,
+            [_rpc_error(grpc.StatusCode.PERMISSION_DENIED, "permission denied")],
+            id="shared-client-refused",
+        ),
+        # The exporter is Available again after the lease's afterLease hook, so
+        # the owner's Dial waits for it until dial_timeout, as for a lost exporter.
+        pytest.param("owner", True, _not_ready, id="owner-dial-times-out"),
+    ],
+)
+async def test_lease_ending_during_startup_exits_as_expired(client_name, release, dial):
+    """A lease that ends before the first Dial succeeds ends the session cleanly.
+
+    The lease monitor starts only after that Dial, so nothing has recorded the end.
+    """
+    ended = _make_lease("test-lease", client="owner", effective_end_time=datetime.now(tz=UTC))
+
+    exit_code, acquired = await _start_session_with_failing_dial(client_name, release, dial, ended)
+
+    assert exit_code == 0
+    assert acquired == 1  # not released and acquired again
+
+
+async def test_transfer_during_startup_is_still_reported():
+    """A Dial refused on a live lease is still a transfer, not an expiry."""
+    transferred = _make_lease("test-lease", client="bob")
+
+    with pytest.raises(BaseExceptionGroup) as exc_info:
+        await _start_session_with_failing_dial(
+            "alice", False, [_rpc_error(grpc.StatusCode.PERMISSION_DENIED, "permission denied")], transferred
+        )
+
+    offline = find_exception_in_group(exc_info.value, ExporterOfflineError)
+    assert offline is not None
+    assert "transferred to another client" in str(offline)
+
+
 class TestRetryLoopUserInterrupt:
     """SIGINT must exit, not reacquire, even if Dial surfaces as Unreachable."""
 
@@ -1543,35 +1743,103 @@ class _FakeCancelScope:
         self.cancel_called = True
 
 
-async def test_monitor_shared_access_exits_when_revoked(capsys):
-    # A shared client that has dropped out of the effective set must set the
-    # revoked flag and cancel the shell scope so the live session tears down.
-    lease = Mock()
-    lease.name = "test-lease"
-    lease.client_name = "alice"
-    lease.lease_revoked = False
-    fresh = Mock(client="owner")
-    fresh.is_accessible_by = Mock(return_value=False)
-    lease.get = AsyncMock(return_value=fresh)
+def _monitored_lease(client_name: str, *leases: Lease, owner: str = "owner") -> SimpleNamespace:
+    """A session lease whose get() returns *leases* in order, as the shared-access monitor polls it.
+
+    owner is who held the lease when it was acquired.
+    """
+    return SimpleNamespace(
+        name="test-lease",
+        client_name=client_name,
+        owner=owner,
+        exporter_name="test-exporter",
+        exporter_labels={},
+        lease_ending_callback=None,
+        lease_revoked=False,
+        get=AsyncMock(side_effect=list(leases)),
+    )
+
+
+@pytest.mark.parametrize(
+    ("first_poll", "message"),
+    [
+        (_make_lease("test-lease", client="owner"), "Shared access to this lease has been revoked"),
+        # Transferred between acquisition and the first poll
+        (_make_lease("test-lease", client="bob"), "Lease test-lease has been transferred to bob"),
+    ],
+    ids=["share-removed", "transferred-before-first-poll"],
+)
+async def test_monitor_shared_access_exits_when_access_lost_before_shell(capsys, first_poll, message):
+    # Before the shell starts there is nothing to signal, so the session itself stops.
+    lease = _monitored_lease("alice", first_poll)
     scope = _FakeCancelScope()
 
     await _monitor_shared_access(lease, scope)
 
     assert lease.lease_revoked is True
     assert scope.cancel_called is True
-    fresh.is_accessible_by.assert_called_once_with("alice")
-    assert "revoked" in capsys.readouterr().out.lower()
+    assert message in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("client_name", "after", "message"),
+    [
+        ("alice", _make_lease("test-lease", client="owner"), "Shared access to this lease has been revoked"),
+        ("alice", _make_lease("test-lease", client="bob"), "Lease test-lease has been transferred to bob"),
+        ("owner", _make_lease("test-lease", client="bob"), "Lease test-lease has been transferred to bob"),
+    ],
+    ids=["share-removed", "transferred-shared-client", "transferred-owner"],
+)
+async def test_monitor_shared_access_ends_the_running_shell(monkeypatch, capfd, tmp_path, client_name, after, message):
+    """Losing access while the shell runs ends the shell, as lease expiry does.
+
+    The shell runs in a worker thread that cancelling the session cannot stop;
+    a cancel alone left it running against a socket that no longer accepted.
+    """
+    monkeypatch.setattr("jumpstarter_cli.shell._SHARED_ACCESS_POLL_SECONDS", 0.01)
+    before = _make_lease("test-lease", client="owner", effective_shared_with=("alice",))
+    lease = _monitored_lease(client_name, before, after)
+    exit_code = None
+
+    async def run_shell():
+        nonlocal exit_code
+        exit_code = await anyio.to_thread.run_sync(
+            lambda: launch_shell(
+                str(tmp_path / "test.sock"), "remote", [], False, False, command=("sleep", "10"), lease=lease
+            )
+        )
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(run_shell)
+        with anyio.fail_after(5):
+            while lease.lease_ending_callback is None:  # set once the shell process runs
+                await anyio.sleep(0.01)
+        await _monitor_shared_access(lease, _FakeCancelScope())
+
+    assert exit_code == 128 + signal.SIGHUP
+    assert message in capfd.readouterr().out
+
+
+async def test_monitor_shared_access_leaves_an_ended_lease_to_the_lease_monitor(capsys):
+    """An ended lease is not reported as revoked access and does not cut the session short.
+
+    The controller clears the share set when the lease ends; the lease monitor
+    ends the session for every client, owner included.
+    """
+    ended = _make_lease("test-lease", client="owner", effective_end_time=datetime.now(tz=UTC))
+    lease = _monitored_lease("alice", ended)
+    scope = _FakeCancelScope()
+
+    await _monitor_shared_access(lease, scope)
+
+    assert lease.lease_revoked is False
+    assert scope.cancel_called is False
+    assert "revoked" not in capsys.readouterr().out
 
 
 async def test_monitor_shared_access_keeps_session_while_granted():
     # A shared client that still has effective access is left alone.
-    lease = Mock()
-    lease.name = "test-lease"
-    lease.client_name = "alice"
-    lease.lease_revoked = False
-    fresh = Mock(client="owner")
-    fresh.is_accessible_by = Mock(return_value=True)
-    lease.get = AsyncMock(return_value=fresh)
+    lease = _monitored_lease("alice", _make_lease("test-lease", client="owner", effective_shared_with=("alice",)))
     scope = _FakeCancelScope()
 
     async def fake_sleep(_):
