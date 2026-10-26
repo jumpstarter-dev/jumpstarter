@@ -3,9 +3,10 @@ import json
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 import anyio
+from bumble import avc
 from bumble.a2dp import (
     A2DP_SBC_CODEC_TYPE,
     SbcFrame,
@@ -21,8 +22,20 @@ from bumble.avdtp import (
     MediaPacketPump,
     State,
 )
+from bumble.avrcp import CharacterSetId as AvrcpCharacterSetId
+from bumble.avrcp import (
+    Command,
+    EventId,
+    GetElementAttributesCommand,
+    GetElementAttributesResponse,
+    GetPlayStatusResponse,
+    MediaAttribute,
+    MediaAttributeId,
+    PduId,
+    PlayStatus,
+    TargetServiceSdpRecord,
+)
 from bumble.avrcp import Delegate as AvrcpDelegate
-from bumble.avrcp import EventId, PlayStatus, TargetServiceSdpRecord
 from bumble.avrcp import Protocol as AvrcpProtocol
 from bumble.core import BT_BR_EDR_TRANSPORT, ClassOfDevice, DeviceClass
 from bumble.device import Connection, Device, DeviceConfiguration
@@ -84,6 +97,38 @@ class AutoAcceptDelegate(PairingDelegate):
         return 0
 
 
+@dataclass
+class TrackMetadata:
+    """What the DUT displays for the current track."""
+
+    title: str = ""
+    artist: str = ""
+    album: str = ""
+    duration_ms: int = 0
+
+    def as_media_attributes(self, attribute_ids) -> list[MediaAttribute]:
+        """Render as AVRCP media attributes, omitting the ones left empty.
+
+        An empty request means "every attribute", per AVRCP.
+        """
+        values = {
+            MediaAttributeId.TITLE: self.title,
+            MediaAttributeId.ARTIST_NAME: self.artist,
+            MediaAttributeId.ALBUM_NAME: self.album,
+            MediaAttributeId.PLAYING_TIME: str(self.duration_ms) if self.duration_ms else "",
+        }
+        wanted = list(attribute_ids) or list(values)
+        return [
+            MediaAttribute(
+                attribute_id=attribute_id,
+                character_set_id=AvrcpCharacterSetId.UTF_8,
+                attribute_value=values[attribute_id],
+            )
+            for attribute_id in wanted
+            if values.get(attribute_id)
+        ]
+
+
 class _AvrcpDelegate(AvrcpDelegate):
     """Reports the peer's transport state to the DUT's AVRCP controller.
 
@@ -93,7 +138,7 @@ class _AvrcpDelegate(AvrcpDelegate):
     unit's transport controls reach the driver.
     """
 
-    def __init__(self, on_key=None):
+    def __init__(self, on_key=None, position_provider=None):
         super().__init__(
             supported_events=[
                 EventId.PLAYBACK_STATUS_CHANGED,
@@ -101,10 +146,72 @@ class _AvrcpDelegate(AvrcpDelegate):
             ]
         )
         self._on_key = on_key
+        self._position_provider = position_provider
+        self.metadata = TrackMetadata()
 
     async def on_key_event(self, key, pressed: bool, data: bytes) -> None:
         if self._on_key is not None:
             self._on_key(key, pressed)
+
+    async def get_media_attributes(self, attribute_ids) -> list[MediaAttribute]:
+        return self.metadata.as_media_attributes(attribute_ids)
+
+    async def get_song_length_and_position(self) -> tuple[int, int]:
+        if not self.metadata.duration_ms:
+            return (GetPlayStatusResponse.UNAVAILABLE, GetPlayStatusResponse.UNAVAILABLE)
+        position = self._position_provider() if self._position_provider else 0
+        return (self.metadata.duration_ms, position)
+
+
+class _AvrcpProtocol(AvrcpProtocol):
+    """Adds the target commands bumble leaves unimplemented.
+
+    bumble answers GET_PLAY_STATUS with "length unavailable" and rejects
+    GET_ELEMENT_ATTRIBUTES outright, so the DUT sees a player with no name,
+    no track and no duration. Android shows that as an unidentified session.
+    """
+
+    @property
+    def _target_delegate(self) -> _AvrcpDelegate:
+        # Narrowing `delegate` with an annotation would be an unsound override,
+        # since the base class accepts any Delegate.
+        return cast(_AvrcpDelegate, self.delegate)
+
+    def _on_command_pdu(self, pdu_id: PduId, pdu: bytes) -> None:
+        if pdu_id != PduId.GET_ELEMENT_ATTRIBUTES or self.receive_command_state is None:
+            super()._on_command_pdu(pdu_id, pdu)
+            return
+
+        transaction_label = self.receive_command_state.transaction_label
+        command = Command.from_bytes(pdu_id, pdu)
+        assert isinstance(command, GetElementAttributesCommand)
+
+        async def get_media_attributes() -> None:
+            attributes = await self._target_delegate.get_media_attributes(command.attribute_ids)
+            self.send_avrcp_response(
+                transaction_label,
+                avc.ResponseFrame.ResponseCode.IMPLEMENTED_OR_STABLE,
+                GetElementAttributesResponse(attributes=attributes),
+            )
+
+        self._delegate_command(transaction_label, command, get_media_attributes())
+        self.receive_command_state = None
+
+    def _on_get_play_status_command(self, transaction_label: int, command) -> None:
+        async def get_play_status() -> None:
+            play_status = await self.delegate.get_playback_status()
+            song_length, song_position = await self._target_delegate.get_song_length_and_position()
+            self.send_avrcp_response(
+                transaction_label,
+                avc.ResponseFrame.ResponseCode.IMPLEMENTED_OR_STABLE,
+                GetPlayStatusResponse(
+                    song_length=song_length,
+                    song_position=song_position,
+                    play_status=play_status,
+                ),
+            )
+
+        self._delegate_command(transaction_label, command, get_play_status())
 
 
 class _ByteReader:
@@ -472,6 +579,7 @@ class BtPeer(Driver):
             self._emit("stream_resume_discarded", {"reason": "track changed while starting"})
             return
         if state.get("streaming"):
+            self._report_track_changed()
             self._report_playback_status(PlayStatus.PLAYING)
         self._emit("stream_resumed", state)
 
@@ -480,6 +588,28 @@ class BtPeer(Driver):
         if self._session is None:
             return {"streaming": False, "reason": "no AVDTP connection from the DUT yet"}
         return await self._session.start()
+
+    def _current_position_ms(self) -> int:
+        """Approximate playback position from how much of the buffer was read.
+
+        SBC at a fixed bitpool is constant bitrate, so bytes consumed scale
+        with elapsed time.
+        """
+        track = self._track
+        if track is None or not track.data or self._avrcp_delegate is None:
+            return 0
+        duration_ms = self._avrcp_delegate.metadata.duration_ms
+        if not duration_ms:
+            return 0
+        return int(duration_ms * track.position / len(track.data))
+
+    def _report_track_changed(self) -> None:
+        if self._avrcp is None:
+            return
+        try:
+            self._avrcp.notify_track_changed(0)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("could not notify track change: %s", exc)
 
     def _report_playback_status(self, status: PlayStatus) -> None:
         """Tell the DUT's AVRCP controller what the peer is doing."""
@@ -604,8 +734,11 @@ class BtPeer(Driver):
             self._avdtp_listener = Listener.for_device(self._device)
             self._avdtp_listener.on("connection", self._on_avdtp_connection)
 
-            self._avrcp_delegate = _AvrcpDelegate(on_key=self._on_avrcp_key)
-            self._avrcp = AvrcpProtocol(self._avrcp_delegate)
+            self._avrcp_delegate = _AvrcpDelegate(
+                on_key=self._on_avrcp_key,
+                position_provider=self._current_position_ms,
+            )
+            self._avrcp = _AvrcpProtocol(self._avrcp_delegate)
             self._avrcp.listen(self._device)
 
             self._device.on("connection", self._on_connection)
@@ -860,12 +993,18 @@ class BtPeer(Driver):
         return bytes(data)
 
     @export
-    async def play(self, src: str, name: str = "track", loop: bool = False) -> str:
+    async def play(
+        self, src: str, name: str = "track", loop: bool = False, metadata_json: str = "{}"
+    ) -> str:
         """Stream an uploaded SBC file to the DUT over A2DP.
 
         src is a client resource handle. The audio must already be encoded in
         the single SBC configuration the peer advertises; the client's play
         command transcodes with ffmpeg to match.
+
+        metadata_json carries what the DUT should display for the track:
+        title, artist, album and duration_ms. The client fills it in from the
+        source file's tags.
 
         Replaces any track already playing. Returns JSON describing the track.
         """
@@ -891,16 +1030,26 @@ class BtPeer(Driver):
             # than splicing into one already in flight.
             await session.suspend()
 
-        previous, self._track = self._track, _Track(name=name, data=data, loop=bool(loop))
+        metadata = _parse_metadata(metadata_json, default_title=name)
+        previous_track = self._track
+        previous_metadata = self._avrcp_delegate.metadata if self._avrcp_delegate is not None else None
+
+        self._track = _Track(name=name, data=data, loop=bool(loop))
+        if self._avrcp_delegate is not None:
+            self._avrcp_delegate.metadata = metadata
 
         try:
             stream_state = await self._ensure_streaming()
         except Exception:
             # Leaving the track installed would make playback_status claim to
             # be playing, and let a later AVDTP event start it unannounced.
-            self._track = previous
+            self._track = previous_track
+            if self._avrcp_delegate is not None and previous_metadata is not None:
+                self._avrcp_delegate.metadata = previous_metadata
             self._report_playback_status(PlayStatus.STOPPED)
             raise
+
+        self._report_track_changed()
         if stream_state.get("streaming"):
             self._report_playback_status(PlayStatus.PLAYING)
 
@@ -909,6 +1058,10 @@ class BtPeer(Driver):
             "bytes": len(data),
             "loop": bool(loop),
             "bitpool": frame.bitpool,
+            "title": metadata.title,
+            "artist": metadata.artist,
+            "album": metadata.album,
+            "duration_ms": metadata.duration_ms,
             **stream_state,
         }
         self._emit("track_started", info)
@@ -955,6 +1108,7 @@ class BtPeer(Driver):
         stream = session.source.stream if session is not None else None
         if track is None:
             return json.dumps({"playing": False, "streaming": _is_streaming(stream)})
+        metadata = self._avrcp_delegate.metadata if self._avrcp_delegate else TrackMetadata()
         return json.dumps({
             "playing": True,
             "name": track.name,
@@ -962,7 +1116,34 @@ class BtPeer(Driver):
             "bytes": len(track.data),
             "position": track.position,
             "streaming": _is_streaming(stream),
+            "title": metadata.title,
+            "artist": metadata.artist,
+            "album": metadata.album,
+            "duration_ms": metadata.duration_ms,
+            "position_ms": self._current_position_ms(),
         })
+
+
+def _parse_metadata(metadata_json: str, default_title: str) -> TrackMetadata:
+    """Build track metadata from the client, falling back to the file name."""
+    try:
+        raw = json.loads(metadata_json) if metadata_json else {}
+    except json.JSONDecodeError as exc:
+        raise BtPeerError(f"invalid metadata JSON: {exc.msg}") from exc
+    if not isinstance(raw, dict):
+        raise BtPeerError(f"metadata must be a JSON object, got {type(raw).__name__}")
+
+    try:
+        duration_ms = int(raw.get("duration_ms") or 0)
+    except (TypeError, ValueError):
+        duration_ms = 0
+
+    return TrackMetadata(
+        title=str(raw.get("title") or default_title),
+        artist=str(raw.get("artist") or ""),
+        album=str(raw.get("album") or ""),
+        duration_ms=max(duration_ms, 0),
+    )
 
 
 async def _validate_sbc(data: bytes, max_bitpool: int = SBC_MAX_BITPOOL) -> SbcFrame:

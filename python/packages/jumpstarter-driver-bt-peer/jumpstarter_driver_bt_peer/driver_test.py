@@ -11,10 +11,15 @@ from bumble.l2cap import ClassicChannel
 from .driver import (
     DEFAULT_RTP_MTU,
     AutoAcceptDelegate,
+    AvrcpProtocol,
     BtPeer,
     BtPeerError,
+    PduId,
+    TrackMetadata,
     _A2dpSession,
     _AvrcpDelegate,
+    _AvrcpProtocol,
+    _parse_metadata,
     _Track,
     _validate_sbc,
 )
@@ -822,6 +827,12 @@ async def test_play_sets_track_and_reports_status():
         "bytes": result["bytes"],
         "position": 0,
         "streaming": True,
+        # No tags were supplied, so the title falls back to the file name.
+        "title": "song.mp3",
+        "artist": "",
+        "album": "",
+        "duration_ms": 0,
+        "position_ms": 0,
     }
 
     assert json.loads(await peer.stop_playback())["status"] == "stopped"
@@ -1067,7 +1078,7 @@ async def test_start_peer_advertises_avrcp_target():
         patch("jumpstarter_driver_bt_peer.driver.open_transport", new=AsyncMock(return_value=mock_transport)),
         patch("jumpstarter_driver_bt_peer.driver.Device", return_value=mock_device),
         patch("jumpstarter_driver_bt_peer.driver.Listener"),
-        patch("jumpstarter_driver_bt_peer.driver.AvrcpProtocol") as avrcp_protocol,
+        patch("jumpstarter_driver_bt_peer.driver._AvrcpProtocol") as avrcp_protocol,
     ):
         await peer.start_peer("{}")
 
@@ -1373,3 +1384,170 @@ async def test_a_rejected_upload_leaves_the_current_track_playing():
     protocol.stream.stop.assert_not_awaited()
     assert peer._track is not None
     assert peer._track.name == "good.sbc"
+
+
+def test_track_metadata_renders_requested_attributes():
+    from bumble.avrcp import MediaAttributeId
+
+    metadata = TrackMetadata(title="Fun Fun Music", artist="gr0za", album="Test", duration_ms=128040)
+    attributes = metadata.as_media_attributes([MediaAttributeId.TITLE, MediaAttributeId.ARTIST_NAME])
+
+    assert [(a.attribute_id, a.attribute_value) for a in attributes] == [
+        (MediaAttributeId.TITLE, "Fun Fun Music"),
+        (MediaAttributeId.ARTIST_NAME, "gr0za"),
+    ]
+
+
+def test_track_metadata_empty_request_means_everything():
+    from bumble.avrcp import MediaAttributeId
+
+    metadata = TrackMetadata(title="T", artist="A", album="B", duration_ms=1000)
+    ids = [a.attribute_id for a in metadata.as_media_attributes([])]
+
+    assert set(ids) == {
+        MediaAttributeId.TITLE,
+        MediaAttributeId.ARTIST_NAME,
+        MediaAttributeId.ALBUM_NAME,
+        MediaAttributeId.PLAYING_TIME,
+    }
+
+
+def test_track_metadata_omits_unset_fields():
+    """An attribute with an empty value is left out rather than sent blank."""
+    from bumble.avrcp import MediaAttributeId
+
+    attributes = TrackMetadata(title="Only A Title").as_media_attributes([])
+
+    assert [a.attribute_id for a in attributes] == [MediaAttributeId.TITLE]
+
+
+def test_media_attributes_survive_bumble_encoding():
+    """The response has to serialize; a bad character set id fails only here."""
+    from bumble.avrcp import GetElementAttributesResponse
+
+    metadata = TrackMetadata(title="Fun Fun Music", artist="gr0za", album="Test", duration_ms=128040)
+    response = GetElementAttributesResponse(attributes=metadata.as_media_attributes([]))
+
+    encoded = bytes(response)
+    assert b"Fun Fun Music" in encoded
+    assert b"gr0za" in encoded
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ('{"title": "T", "artist": "A", "album": "B", "duration_ms": 1500}', ("T", "A", "B", 1500)),
+        ("{}", ("fallback.mp3", "", "", 0)),
+        ('{"title": ""}', ("fallback.mp3", "", "", 0)),
+        ('{"duration_ms": "2000"}', ("fallback.mp3", "", "", 2000)),
+        ('{"duration_ms": "not a number"}', ("fallback.mp3", "", "", 0)),
+        ('{"duration_ms": -5}', ("fallback.mp3", "", "", 0)),
+    ],
+)
+def test_parse_metadata(raw, expected):
+    metadata = _parse_metadata(raw, default_title="fallback.mp3")
+    assert (metadata.title, metadata.artist, metadata.album, metadata.duration_ms) == expected
+
+
+def test_parse_metadata_rejects_malformed_json():
+    with pytest.raises(BtPeerError, match="invalid metadata JSON"):
+        _parse_metadata("{not json", default_title="x")
+    with pytest.raises(BtPeerError, match="must be a JSON object"):
+        _parse_metadata("[1, 2]", default_title="x")
+
+
+@pytest.mark.anyio
+async def test_play_publishes_metadata_over_avrcp():
+    from bumble.avrcp import MediaAttributeId
+
+    peer = _running_peer()
+    peer._avrcp_delegate = _AvrcpDelegate(position_provider=peer._current_position_ms)
+    peer._avrcp = MagicMock()
+
+    metadata = json.dumps({
+        "title": "Fun Fun Music",
+        "artist": "gr0za",
+        "album": "Jumpstarter bt_peer test",
+        "duration_ms": 128040,
+    })
+    with _patch_resource(make_sbc_file(100)):
+        result = json.loads(await peer.play("handle", name="song.mp3", metadata_json=metadata))
+
+    assert result["title"] == "Fun Fun Music"
+    assert result["artist"] == "gr0za"
+    assert result["duration_ms"] == 128040
+
+    attributes = await peer._avrcp_delegate.get_media_attributes([MediaAttributeId.TITLE])
+    assert attributes[0].attribute_value == "Fun Fun Music"
+
+    length, position = await peer._avrcp_delegate.get_song_length_and_position()
+    assert length == 128040
+    assert position == 0
+
+    peer._avrcp.notify_track_changed.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_play_status_is_unavailable_without_a_duration():
+    """A file with no duration must not claim a length of zero."""
+    from bumble.avrcp import GetPlayStatusResponse
+
+    delegate = _AvrcpDelegate()
+    length, position = await delegate.get_song_length_and_position()
+
+    assert length == GetPlayStatusResponse.UNAVAILABLE
+    assert position == GetPlayStatusResponse.UNAVAILABLE
+
+
+@pytest.mark.anyio
+async def test_position_tracks_bytes_consumed():
+    peer, _protocol = _peer_with_session()
+    peer._avrcp_delegate = _AvrcpDelegate(position_provider=peer._current_position_ms)
+
+    with _patch_resource(make_sbc_file(200)):
+        await peer.play("handle", metadata_json=json.dumps({"duration_ms": 10000}))
+
+    assert peer._current_position_ms() == 0
+
+    source = peer._session._media_source()
+    for _ in range(20):
+        await source.__anext__()
+
+    position = peer._current_position_ms()
+    assert 0 < position < 10000, position
+
+
+@pytest.mark.anyio
+async def test_get_element_attributes_is_dispatched():
+    """bumble rejects this PDU by default; the subclass has to answer it."""
+    from bumble.avrcp import GetElementAttributesCommand, MediaAttributeId, PduId
+
+    protocol = _AvrcpProtocol.__new__(_AvrcpProtocol)
+    protocol.delegate = _AvrcpDelegate()
+    protocol.delegate.metadata = TrackMetadata(title="Fun Fun Music", artist="gr0za")
+    protocol.receive_command_state = MagicMock(transaction_label=7)
+    command = GetElementAttributesCommand(identifier=0, attribute_ids=[MediaAttributeId.TITLE])
+
+    with (
+        patch.object(_AvrcpProtocol, "send_avrcp_response") as send,
+        patch.object(_AvrcpProtocol, "_delegate_command") as delegate_command,
+    ):
+        protocol._on_command_pdu(PduId.GET_ELEMENT_ATTRIBUTES, bytes(command))
+        # Await the coroutine the dispatcher would have spawned.
+        await delegate_command.call_args.args[2]
+
+    assert protocol.receive_command_state is None
+    label, _code, response = send.call_args.args
+    assert label == 7
+    assert [a.attribute_value for a in response.attributes] == ["Fun Fun Music"]
+
+
+@pytest.mark.anyio
+async def test_other_pdus_still_reach_the_base_class():
+    protocol = _AvrcpProtocol.__new__(_AvrcpProtocol)
+    protocol.receive_command_state = MagicMock(transaction_label=1)
+
+    with patch.object(AvrcpProtocol, "_on_command_pdu") as base:
+        protocol._on_command_pdu(PduId.GET_PLAY_STATUS, b"")
+
+    base.assert_called_once()
