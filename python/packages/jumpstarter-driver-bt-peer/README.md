@@ -76,6 +76,18 @@ ffmpeg -i song.mp3 -ar 44100 -ac 2 -b:a 320k -f sbc song.sbc
 
 Tracks are buffered in the exporter's memory, up to 256 MiB.
 
+The peer also advertises an AVRCP target and reports playing/paused/stopped
+through it. A DUT needs this to treat the peer as a media device at all: with
+only the A2DP record advertised, Android connects its sink, decodes the
+incoming audio and discards it, leaving `A2dpSinkService` with no active
+device. Track metadata is not exposed, as bumble's AVRCP target implements no
+`GET_ELEMENT_ATTRIBUTES`, so the DUT shows a session with no title or artist.
+
+PLAY/PAUSE/STOP coming *from* the DUT are recorded as `avrcp_key` events but
+ignored unless the driver is configured with `follow_transport_keys: true`.
+Android sends PAUSE as soon as it connects when it cannot resolve an addressed
+player, which would otherwise silence a track that was just started.
+
 ## API Reference
 
 ```{eval-rst}
