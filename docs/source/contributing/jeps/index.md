@@ -38,7 +38,7 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 | 0011 | [Protobuf Introspection and Interface Generation](JEP-0011-protobuf-introspection-interface-generation.md)             | Accepted    | @kirkbrauer (Kirk Brauer)            |
 | 0013 | [Metrics, Tracing, and Log Observability](JEP-0013-observability-telemetry-logs.md)                                    | Accepted    | @mangelajo (Miguel Angel Ajo Pelayo) |
 | 0014 | [Virtual Scalable Exporters](JEP-0014-virtual-scalable-exporters.md)                                                   | Approved    | @mangelajo (Miguel Angel Ajo Pelayo) |
-| 0016 | [Typed FSM Runner and Exporter Lifecycle](JEP-0016-typed-fsm-exporter-lifecycle.md)                                  | Draft       | @mangelajo (Miguel Angel Ajo Pelayo) |
+| 0016 | [Typed FSM Runner and Exporter Lifecycle](JEP-0016-typed-fsm-exporter-lifecycle.md)                                  | Discussion  | @mangelajo (Miguel Angel Ajo Pelayo) |
 
 ### Informational JEPs
 
