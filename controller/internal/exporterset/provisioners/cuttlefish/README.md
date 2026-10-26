@@ -356,7 +356,7 @@ VirtualTargetClass or ExporterSet (ExporterSet takes precedence):
 ```yaml
 images:
   turn:
-    image: docker.io/coturn/coturn:4.7.0
+    image: quay.io/coturn/coturn:4.7.0
     imagePullPolicy: IfNotPresent
 ```
 

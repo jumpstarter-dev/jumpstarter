@@ -197,8 +197,8 @@ class CuttlefishClient(CompositeClient):
             if not forward:
                 click.echo(self.get_webrtc_url())
                 return
-            config = self.get_webrtc_config()
             webui, turn = self.children.get("webui"), self.children.get("turn")
+            config = self.get_webrtc_config() if webui is not None and turn is not None else {}
             if not config.get("webui_port") or not config.get("turn_port") or webui is None or turn is None:
                 raise click.ClickException(
                     "this exporter does not expose the WebRTC display; "

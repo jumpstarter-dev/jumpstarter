@@ -749,6 +749,8 @@ func TestRenderPod_webrtcTurn(t *testing.T) {
 		fmt.Sprintf("--listening-port=%d", turnPortDefault),
 		fmt.Sprintf("--user=%s:%s", turnUser, turnCredential),
 		"--lt-cred-mech",
+		"--no-udp",
+		"--no-tcp-relay",
 		"--cli-password=" + turnCredential,
 		"--allow-loopback-peers",
 		"--denied-peer-ip=0.0.0.0-255.255.255.255",
