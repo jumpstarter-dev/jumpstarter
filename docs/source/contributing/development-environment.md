@@ -51,6 +51,46 @@ You can also run specific tests with:
 $ make pkg-test-${package_name}
 ```
 
+### Developing client-side drivers
+
+Use `jmp shell --overlay` to develop local drivers against lab hardware.
+Overlay drivers persist for the shell session and take precedence over
+same-named lab drivers. The shell sets `JUMPSTARTER_HOST_OVERLAY` for `j`,
+`env()`, and pytest. The overlay YAML needs only an `export` map.
+
+```console
+$ jmp shell --client lab --selector board=rpi4 --overlay ./overlay.yaml
+$ j my-local-tool --help
+$ python ./try_client.py
+$ pytest test_my_device.py
+$ exit
+```
+
+```yaml
+export:
+  lab_power:
+    ref: power
+  my-local-tool:
+    type: my_driver.driver.MyDriver
+    config:
+      host: bench
+    children:
+      helper:
+        type: my_driver.driver.Helper
+      pwr:
+        ref: power
+  alias:
+    ref: my-local-tool.helper
+```
+
+`jmp shell --exporter-config ./exporter.yaml` is the other local workflow: it
+starts a standalone local exporter from that file. Use `--overlay` to combine
+local development drivers with drivers already running on the leased lab
+exporter.
+
+`JUMPSTARTER_HOST_OVERLAY` is listed with the other shell variables in
+[Configuration files](../getting-started/configuration/files.md).
+
 ## Go Environment
 
 The Jumpstarter controller lives in the `controller/` directory within the

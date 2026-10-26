@@ -327,6 +327,11 @@ def test_build_common_env_empty_passphrase():
     assert "JMP_GRPC_PASSPHRASE" not in env
 
 
+def test_build_common_env_overlay():
+    env = _build_common_env("host.sock", ["*"], unsafe=False, overlay_host="overlay.sock")
+    assert env["JUMPSTARTER_HOST_OVERLAY"] == "overlay.sock"
+
+
 def test_build_common_env_with_lease():
     lease = SimpleNamespace(
         exporter_name="exp1",
