@@ -9,6 +9,7 @@ from .driver import (
     AutoAcceptDelegate,
     BtPeer,
     BtPeerError,
+    _AvrcpDelegate,
     _check_sbc_frame,
     _first_sbc_frame,
     _Track,
@@ -915,3 +916,98 @@ async def test_play_reports_that_it_started_the_stream():
 
     assert result["streaming"] is True
     assert result["reason"] == "started by the peer"
+
+
+@pytest.mark.anyio
+async def test_start_peer_advertises_avrcp_target():
+    """Without UUID 110C the DUT leaves its A2DP sink inactive and drops the audio."""
+    from bumble.sdp import SDP_SERVICE_CLASS_ID_LIST_ATTRIBUTE_ID
+
+    peer = BtPeer()
+    mock_transport = _make_mock_transport()
+    mock_device = AsyncMock()
+    mock_device.public_address = "AA:BB:CC:DD:EE:FF"
+    mock_device.on = MagicMock()  # sync in bumble; AsyncMock would leave a coroutine unawaited
+
+    with (
+        patch("jumpstarter_driver_bt_peer.driver.open_transport", new=AsyncMock(return_value=mock_transport)),
+        patch("jumpstarter_driver_bt_peer.driver.Device", return_value=mock_device),
+        patch("jumpstarter_driver_bt_peer.driver.Listener"),
+        patch("jumpstarter_driver_bt_peer.driver.AvrcpProtocol") as avrcp_protocol,
+    ):
+        await peer.start_peer("{}")
+
+    uuids = []
+    for record in mock_device.sdp_service_records.values():
+        for attribute in record:
+            if attribute.id == SDP_SERVICE_CLASS_ID_LIST_ATTRIBUTE_ID:
+                uuids += [str(v.value) for v in attribute.value.value]
+
+    assert any("110A" in u for u in uuids), f"missing A2DP AudioSource: {uuids}"
+    assert any("110C" in u for u in uuids), f"missing AVRCP Target: {uuids}"
+    avrcp_protocol.return_value.listen.assert_called_once_with(mock_device)
+
+
+@pytest.mark.anyio
+async def test_play_reports_playing_over_avrcp():
+    from bumble.avrcp import PlayStatus
+
+    peer = _running_peer()
+    peer._avrcp_delegate = _AvrcpDelegate()
+    peer._avrcp = MagicMock()
+
+    with _patch_resource(make_sbc_file(100)):
+        await peer.play("handle", name="song.mp3")
+
+    assert peer._avrcp_delegate.playback_status == PlayStatus.PLAYING
+    peer._avrcp.notify_playback_status_changed.assert_called_with(PlayStatus.PLAYING)
+
+    peer.stop_playback()
+    assert peer._avrcp_delegate.playback_status == PlayStatus.STOPPED
+
+
+@pytest.mark.anyio
+async def test_avrcp_notification_failure_does_not_break_play():
+    """A controller that never registered must not fail the play call."""
+    peer = _running_peer()
+    peer._avrcp_delegate = _AvrcpDelegate()
+    peer._avrcp = MagicMock()
+    peer._avrcp.notify_playback_status_changed.side_effect = RuntimeError("no listener")
+
+    with _patch_resource(make_sbc_file(10)):
+        result = json.loads(await peer.play("handle"))
+
+    assert result["bytes"] > 0
+
+
+@pytest.mark.anyio
+async def test_avrcp_transport_keys_pause_and_resume():
+    from bumble.avrcp import PlayStatus
+
+    peer = _running_peer()
+    peer._avrcp_delegate = _AvrcpDelegate()
+    peer._avrcp = MagicMock()
+    with _patch_resource(make_sbc_file(60)):
+        await peer.play("handle", name="song.mp3")
+
+    track = peer._track
+    assert track is not None
+
+    pause = MagicMock()
+    pause.name = "PAUSE"
+    peer._on_avrcp_key(pause, pressed=True)
+    assert track.paused is True
+    assert peer._avrcp_delegate.playback_status == PlayStatus.PAUSED
+
+    # A paused track emits filler rather than audio, keeping the stream open.
+    source = peer._media_source()
+    packet = await source.__anext__()
+    assert len(packet.payload) == 1
+    assert track.position == 0
+
+    play = MagicMock()
+    play.name = "PLAY"
+    peer._on_avrcp_key(play, pressed=True)
+    assert track.paused is False
+    assert peer._avrcp_delegate.playback_status == PlayStatus.PLAYING
+    assert len((await source.__anext__()).payload) > 1
