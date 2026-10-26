@@ -33,5 +33,5 @@ Flashing requires DataVolume-backed disks and an Immediate storage class.
 The implementation uses CDI's asynchronous upload endpoint and waits for the
 DataVolume's `Succeeded` phase before activation. See the
 [CDI upload protocol](https://github.com/kubevirt/containerized-data-importer/blob/main/doc/upload.md)
-and the [provisioner guide](../../../docs/source/getting-started/guides/kubevirt-provisioner.md)
+and the [provisioner guide](https://jumpstarter.dev/main/getting-started/guides/kubevirt-provisioner.html)
 for deployment requirements, storage configuration, and recovery behavior.

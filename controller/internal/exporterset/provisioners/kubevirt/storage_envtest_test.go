@@ -33,7 +33,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
-	"k8s.io/utils/ptr"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -121,7 +120,7 @@ func TestInitialDisksWithoutVMFinalizerPermission(t *testing.T) {
 	}
 	// Negative control: blocking VM deletion must still require extra permission.
 	blocked := initialDataVolume(vm, "blocked-probe", params.Storage.Disks["root"])
-	blocked.OwnerReferences[0].BlockOwnerDeletion = ptr.To(true)
+	blocked.OwnerReferences[0].BlockOwnerDeletion = new(true)
 	if err := remote.Create(ctx, blocked); !apierrors.IsForbidden(err) || !strings.Contains(err.Error(), "blockOwnerDeletion") {
 		t.Fatalf("expected owner-deletion permission rejection, got %v", err)
 	}
@@ -151,7 +150,7 @@ func storageTestCRD(gvk schema.GroupVersionKind, plural string) *apiextensionsv1
 			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{{
 				Name: gvk.Version, Served: true, Storage: true,
 				Schema: &apiextensionsv1.CustomResourceValidation{
-					OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{Type: "object", XPreserveUnknownFields: ptr.To(true)},
+					OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{Type: "object", XPreserveUnknownFields: new(true)},
 				},
 			}},
 		},
