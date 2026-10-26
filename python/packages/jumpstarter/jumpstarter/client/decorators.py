@@ -95,6 +95,10 @@ class DriverClickGroup(click.Group):
         same command.  Aliases are hidden from ``--help`` so they don't clutter
         the output, but work exactly like the canonical name.
         """
+        # Accept the bare @group.command form (no parentheses), like click.Group.
+        if len(args) == 1 and callable(args[0]) and not kwargs:
+            return self.command()(args[0])
+
         aliases: list[str] = kwargs.pop("aliases", [])
 
         def decorator(f: Callable) -> click.Command:
