@@ -1,9 +1,31 @@
+import contextlib
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from .driver import AutoAcceptDelegate, BtPeer, BtPeerError
+from .driver import (
+    DEFAULT_RTP_MTU,
+    AutoAcceptDelegate,
+    BtPeer,
+    BtPeerError,
+    _check_sbc_frame,
+    _first_sbc_frame,
+    _Track,
+)
+
+
+def make_sbc_file(frame_count: int, bitpool: int = 52, sf_index: int = 2, channel_mode: int = 2) -> bytes:
+    """Synthesize an SBC file; defaults match the configuration the peer advertises."""
+    header_byte = (sf_index << 6) | (3 << 4) | (channel_mode << 2) | (0 << 1) | 1
+    channels = 1 if channel_mode == 0 else 2
+    subbands, blocks = 8, 16
+    length = 4 + (4 * subbands * channels) // 8
+    if channel_mode in (0, 1):
+        length += (blocks * channels * bitpool) // 8
+    else:
+        length += ((1 if channel_mode == 3 else 0) * subbands + blocks * bitpool) // 8
+    return (bytes([0x9C, header_byte, bitpool, 0x00]) + bytes(length - 4)) * frame_count
 
 
 @pytest.fixture
@@ -551,9 +573,11 @@ async def test_emit_events():
 async def test_on_avdtp_connection():
     peer = BtPeer()
     mock_protocol = MagicMock()
+    mock_protocol.l2cap_channel.peer_mtu = 672
 
     peer._on_avdtp_connection(mock_protocol)
 
+    assert peer._rtp_mtu == 672
     mock_protocol.add_source.assert_called_once()
     pump = mock_protocol.add_source.call_args.args[1]
     packets = pump.packets
@@ -562,6 +586,20 @@ async def test_on_avdtp_connection():
     assert bytes(first)
     events = list(peer._events)
     assert any(e["type"] == "avdtp_connected" for e in events)
+
+
+@pytest.mark.anyio
+async def test_on_avdtp_connection_rejects_implausible_mtu():
+    for peer_mtu in (None, "672", 4, MagicMock()):
+        peer = BtPeer()
+        mock_protocol = MagicMock()
+        mock_protocol.l2cap_channel.peer_mtu = peer_mtu
+
+        peer._on_avdtp_connection(mock_protocol)
+
+        assert peer._rtp_mtu == DEFAULT_RTP_MTU
+        # _emit serializes to JSON, so a non-int MTU would blow up there.
+        assert any(e["type"] == "avdtp_connected" for e in peer._events)
 
 
 @pytest.mark.anyio
@@ -612,3 +650,173 @@ async def test_start_peer_exception_cleanup_after_device_init():
     assert peer._transport is None
     mock_device.power_off.assert_awaited_once()
     mock_transport.close.assert_awaited_once()
+
+
+class _FakeResource:
+    """Stands in for the client upload stream handed to play()."""
+
+    def __init__(self, data: bytes, chunk: int = 4096):
+        self._chunks = [data[i : i + chunk] for i in range(0, len(data), chunk)]
+
+    def __aiter__(self):
+        return self._generate()
+
+    async def _generate(self):
+        for chunk in self._chunks:
+            yield chunk
+
+
+def _running_peer() -> BtPeer:
+    peer = BtPeer()
+    peer._device = MagicMock()
+    return peer
+
+
+def _patch_resource(payload: bytes):
+    """Patch Driver.resource so play() sees `payload` as the client upload."""
+
+    @contextlib.asynccontextmanager
+    async def _resource(self, handle, timeout=7200):
+        yield _FakeResource(payload)
+
+    return patch.object(BtPeer, "resource", _resource)
+
+
+@pytest.mark.anyio
+async def test_first_sbc_frame_parses_pinned_format():
+    frame = await _first_sbc_frame(make_sbc_file(4))
+    assert frame.sampling_frequency == 44100
+    assert frame.channel_mode == 2
+    assert frame.block_count == 16
+    assert frame.subband_count == 8
+    assert frame.allocation_method == 0
+    _check_sbc_frame(frame)
+
+
+@pytest.mark.anyio
+async def test_first_sbc_frame_rejects_non_sbc():
+    with pytest.raises(BtPeerError, match="not SBC audio"):
+        await _first_sbc_frame(b"ID3\x04 this is not audio")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        ({"sf_index": 3}, "48000 Hz"),
+        ({"channel_mode": 0}, "channel mode"),
+        ({"bitpool": 90}, "bitpool 90"),
+    ],
+)
+async def test_check_sbc_frame_rejects_mismatches(kwargs, expected):
+    frame = await _first_sbc_frame(make_sbc_file(4, **kwargs))
+    with pytest.raises(BtPeerError, match=expected):
+        _check_sbc_frame(frame)
+
+
+@pytest.mark.anyio
+async def test_play_requires_running_peer():
+    peer = BtPeer()
+    with pytest.raises(BtPeerError, match="peer not running"):
+        await peer.play("handle")
+
+
+@pytest.mark.anyio
+async def test_play_rejects_empty_upload():
+    peer = _running_peer()
+    with _patch_resource(b""), pytest.raises(BtPeerError, match="empty"):
+        await peer.play("handle")
+
+
+@pytest.mark.anyio
+async def test_play_rejects_mismatched_sbc():
+    peer = _running_peer()
+    with _patch_resource(make_sbc_file(4, sf_index=3)), pytest.raises(BtPeerError, match="48000 Hz"):
+        await peer.play("handle")
+    assert peer._track is None
+
+
+@pytest.mark.anyio
+async def test_play_sets_track_and_reports_status():
+    peer = _running_peer()
+    with _patch_resource(make_sbc_file(100)):
+        result = json.loads(await peer.play("handle", name="song.mp3", loop=True))
+
+    assert result["name"] == "song.mp3"
+    assert result["loop"] is True
+    assert result["bitpool"] == 52
+    assert peer._track is not None
+
+    status = json.loads(peer.playback_status())
+    assert status == {
+        "playing": True,
+        "name": "song.mp3",
+        "loop": True,
+        "bytes": result["bytes"],
+        "position": 0,
+    }
+
+    assert json.loads(peer.stop_playback())["status"] == "stopped"
+    assert peer._track is None
+    assert json.loads(peer.playback_status()) == {"playing": False}
+    assert json.loads(peer.stop_playback())["status"] == "not_playing"
+
+
+@pytest.mark.anyio
+async def test_stop_peer_clears_playback():
+    peer = _running_peer()
+    with _patch_resource(make_sbc_file(10)):
+        await peer.play("handle")
+    peer._device = AsyncMock()
+    peer._transport = _make_mock_transport()
+    peer._rtp_mtu = 895
+
+    await peer.stop_peer()
+
+    assert peer._track is None
+    assert peer._rtp_mtu == DEFAULT_RTP_MTU
+
+
+@pytest.mark.anyio
+async def test_media_source_timestamps_never_go_backwards():
+    """MediaPacketPump paces off timestamps, so a track swap must not rewind them."""
+    peer = BtPeer()
+    source = peer._media_source()
+    timestamps = []
+
+    for _ in range(3):
+        timestamps.append((await source.__anext__()).timestamp_seconds)
+
+    peer._track = _Track(name="song.sbc", data=make_sbc_file(200), mtu=672)
+    while peer._track is not None:
+        timestamps.append((await source.__anext__()).timestamp_seconds)
+
+    # And back to silence once the track drains.
+    timestamps.append((await source.__anext__()).timestamp_seconds)
+
+    assert timestamps == sorted(timestamps)
+    assert timestamps[-1] > timestamps[2]
+    assert any(e["type"] == "track_finished" for e in peer._events)
+
+
+@pytest.mark.anyio
+async def test_media_source_loops_without_rewinding_timestamps():
+    peer = BtPeer()
+    source = peer._media_source()
+    peer._track = _Track(name="loop.sbc", data=make_sbc_file(30), mtu=672, loop=True)
+
+    timestamps = [(await source.__anext__()).timestamp_seconds for _ in range(120)]
+
+    assert timestamps == sorted(timestamps)
+    assert peer._track is not None, "loop mode should keep the track active"
+    assert any(e["type"] == "track_looped" for e in peer._events)
+
+
+@pytest.mark.anyio
+async def test_track_restart_rewinds_data():
+    track = _Track(name="t", data=make_sbc_file(10), mtu=672)
+    await track._reader.read(50)
+    assert track.position == 50
+    track.restart()
+    assert track.position == 0
+    assert track.last_timestamp == 0.0
