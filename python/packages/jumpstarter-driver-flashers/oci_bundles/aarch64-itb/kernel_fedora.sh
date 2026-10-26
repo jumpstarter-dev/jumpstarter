@@ -7,6 +7,16 @@ KMOD=(
 	# S32G3 networking
 	dwmac_s32
 	micrel
+	# iMX8MP platform (fw_devlink requires all DT suppliers to probe)
+	gpio_mxc
+	nvmem_imx_ocotp
+	i2c_imx
+	pca9450_regulator
+	# iMX8MP storage (sdhci_esdhc_imx already covered above)
+	# iMX8MP watchdog (SPL starts it with 60s timeout)
+	imx2_wdt
+	# iMX8MP networking
+	dwmac_imx
 	# TI storage
 	sdhci_am654
 	mmc_block
@@ -85,6 +95,15 @@ cat >$script <<EOF
 
 if [ "\$1" = "start" ]; then
   if dmesg | head | grep -i S32G-VNP-RDB3; then
+    modprobe micrel
+  fi
+  if dmesg | head | grep -i "Verdin iMX8M Plus"; then
+    modprobe gpio_mxc
+    modprobe nvmem_imx_ocotp
+    modprobe i2c_imx
+    modprobe pca9450_regulator
+    modprobe imx2_wdt
+    modprobe dwmac_imx
     modprobe micrel
   fi
 fi

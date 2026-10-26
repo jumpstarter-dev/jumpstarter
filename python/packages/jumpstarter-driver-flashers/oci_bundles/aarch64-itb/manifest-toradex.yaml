@@ -1,0 +1,28 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: FlashBundleManifest
+metadata:
+  name: toradex-verdin-imx8mp
+spec:
+  manufacturer: Toradex
+  link: "https://www.toradex.com/computer-on-modules/verdin-arm-family/nxp-imx-8m-plus"
+  bootcmd: "bootm 0x90000000#imx8mp-verdin-ivy"
+  shelltype: "busybox"
+  login:
+    login_prompt: "login:"
+    username: "root"
+    prompt: "#"
+  default_target: "emmc"
+  targets:
+    emmc: "/dev/mmcblk2"
+    sd: "/dev/mmcblk1"
+  kernel:
+    file: data/flasher-fedora.itb
+    address: "0x90000000"
+  dtb:
+    default: imx8mp-verdin-ivy
+    address: "0x88000000"
+    variants:
+      imx8mp-verdin-ivy:
+        bootcmd: "bootm 0x90000000#imx8mp-verdin-ivy"
+      custom:
+        bootcmd: "bootm 0x90000000:kernel 0x90000000:initrd 0x88000000"
