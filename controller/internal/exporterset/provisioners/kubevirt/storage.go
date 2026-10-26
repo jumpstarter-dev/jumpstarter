@@ -118,12 +118,16 @@ func initialDataVolume(vm *kubevirtv1.VirtualMachine, name string, disk DiskConf
 		mode := corev1.PersistentVolumeMode(disk.VolumeMode)
 		storage.VolumeMode = &mode
 	}
+	ownerRef := metav1.NewControllerRef(vm, kubevirtv1.VirtualMachineGroupVersionKind)
+	// VM ownership provides garbage collection without blocking VM deletion.
+	// Match uploaded disks without requiring virtualmachines/finalizers permission.
+	ownerRef.BlockOwnerDeletion = nil
 	return &cdiv1beta1.DataVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: vm.Name + "-" + name, Namespace: vm.Namespace,
 			Labels:          maps.Clone(vm.Labels),
 			Annotations:     map[string]string{"cdi.kubevirt.io/storage.deleteAfterCompletion": "false"},
-			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(vm, kubevirtv1.VirtualMachineGroupVersionKind)},
+			OwnerReferences: []metav1.OwnerReference{*ownerRef},
 		},
 		Spec: cdiv1beta1.DataVolumeSpec{Source: source, Storage: storage},
 	}

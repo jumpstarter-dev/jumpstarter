@@ -219,6 +219,9 @@ storage:
 Disks have stable names and serial numbers and use the virtio bus. `cloudinit` is
 reserved. The provisioner creates standalone DataVolumes owned by the remote VM;
 source PVCs are cloned, and are not adopted or deleted.
+Initial and flashed DataVolumes keep VM owner references for garbage collection
+without blocking VM deletion. Creating them does not require permission to update
+`virtualmachines/finalizers`.
 
 ## Auto-Injected Drivers
 
@@ -321,6 +324,11 @@ operation ID and fresh volumes; interrupted uploads are not resumed.
 - **Delete**: `reclaimPolicy: Delete` → provisioner deletes VM and Services on
   target cluster. Services also have `ownerReferences` to the VM as a
   secondary cleanup mechanism.
+
+`ExitAndReplace` currently restarts the KubeVirt exporter inside the same pod
+when a lease ends. The VM and its disk contents persist because the exporter
+runs as a restarting sidecar and the pod never reaches a terminal phase.
+Lease release therefore does not currently provide a fresh VM or reset its disks.
 
 ## Networking
 
