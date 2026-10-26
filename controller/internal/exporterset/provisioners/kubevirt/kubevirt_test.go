@@ -329,12 +329,13 @@ func TestEnrichExporterExport_storageConfigUsesProvisionedDiskSettings(t *testin
 		t.Fatal("storage driver not found")
 	}
 	config := unmarshalConfig(t, storageDriver.Config)
-	if got := config["disk_size"]; got != "40Gi" {
+	root := config["disks"].(map[string]any)["root"].(map[string]any)
+	if got := root["size"]; got != "40Gi" {
 		t.Errorf("storage disk_size = %v, want 40Gi", got)
 	}
-	accessModes, ok := config["access_modes"].([]any)
+	accessModes, ok := root["access_modes"].([]any)
 	if !ok || len(accessModes) != 1 || accessModes[0] != "ReadWriteMany" {
-		t.Errorf("storage access_modes = %#v, want [ReadWriteMany]", config["access_modes"])
+		t.Errorf("storage access_modes = %#v, want [ReadWriteMany]", root["access_modes"])
 	}
 }
 

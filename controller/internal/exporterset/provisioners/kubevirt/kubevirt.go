@@ -35,7 +35,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	kubevirtv1 "kubevirt.io/api/core/v1"
-	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -161,6 +160,10 @@ func (p *Provisioner) RenderPod(
 		vm = existing
 	}
 
+	if err := ensureDisks(ctx, remoteClient, vm, params); err != nil {
+		return nil, fmt.Errorf("create VM disks: %w", err)
+	}
+
 	if err := p.createServices(ctx, remoteClient, vm, params, exporter); err != nil {
 		return nil, fmt.Errorf("create services: %w", err)
 	}
@@ -214,16 +217,6 @@ func (p *Provisioner) buildVirtualMachine(
 							Guest: &memory,
 						},
 						Devices: kubevirtv1.Devices{
-							Disks: []kubevirtv1.Disk{
-								{
-									Name: "root",
-									DiskDevice: kubevirtv1.DiskDevice{
-										Disk: &kubevirtv1.DiskTarget{
-											Bus: kubevirtv1.DiskBusVirtio,
-										},
-									},
-								},
-							},
 							Interfaces: []kubevirtv1.Interface{
 								{
 									Name: "default",
@@ -248,75 +241,7 @@ func (p *Provisioner) buildVirtualMachine(
 		},
 	}
 
-	if params.Storage != nil && params.Storage.Type == StorageTypeDataVolume {
-		dvName := exporter.Name + "-root"
-		dvSource := &cdiv1beta1.DataVolumeSource{}
-		if params.Storage.Source.HTTP != nil {
-			dvSource.HTTP = &cdiv1beta1.DataVolumeSourceHTTP{
-				URL: params.Storage.Source.HTTP.URL,
-			}
-		} else if params.Storage.Source.Registry != nil {
-			url := "docker://" + params.Storage.Source.Registry.Image
-			dvSource.Registry = &cdiv1beta1.DataVolumeSourceRegistry{
-				URL: &url,
-			}
-		} else if params.Storage.Source.PVC != nil {
-			dvSource.PVC = &cdiv1beta1.DataVolumeSourcePVC{
-				Name:      params.Storage.Source.PVC.Name,
-				Namespace: params.Storage.Source.PVC.Namespace,
-			}
-		}
-
-		diskSize, err := resource.ParseQuantity(params.DiskSize)
-		if err != nil {
-			return nil, fmt.Errorf("parse diskSize %q: %w", params.DiskSize, err)
-		}
-		accessModes := make([]corev1.PersistentVolumeAccessMode, len(params.Storage.AccessModes))
-		for i, m := range params.Storage.AccessModes {
-			accessModes[i] = corev1.PersistentVolumeAccessMode(m)
-		}
-
-		dvSpec := cdiv1beta1.DataVolumeSpec{
-			Source: dvSource,
-			Storage: &cdiv1beta1.StorageSpec{
-				AccessModes: accessModes,
-				Resources: corev1.VolumeResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceStorage: diskSize,
-					},
-				},
-			},
-		}
-		if params.Storage.StorageClassName != "" {
-			dvSpec.Storage.StorageClassName = &params.Storage.StorageClassName
-		}
-
-		vm.Spec.DataVolumeTemplates = []kubevirtv1.DataVolumeTemplateSpec{
-			{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: dvName,
-				},
-				Spec: dvSpec,
-			},
-		}
-		vm.Spec.Template.Spec.Volumes = append(vm.Spec.Template.Spec.Volumes, kubevirtv1.Volume{
-			Name: "root",
-			VolumeSource: kubevirtv1.VolumeSource{
-				DataVolume: &kubevirtv1.DataVolumeSource{
-					Name: dvName,
-				},
-			},
-		})
-	} else {
-		vm.Spec.Template.Spec.Volumes = append(vm.Spec.Template.Spec.Volumes, kubevirtv1.Volume{
-			Name: "root",
-			VolumeSource: kubevirtv1.VolumeSource{
-				ContainerDisk: &kubevirtv1.ContainerDiskSource{
-					Image: params.Image,
-				},
-			},
-		})
-	}
+	configureDisks(vm, params)
 
 	vmiSpec := &vm.Spec.Template.Spec
 	iface := &vmiSpec.Domain.Devices.Interfaces[0]
@@ -568,10 +493,10 @@ func (p *Provisioner) EnrichExporterExport(
 			"kubeconfig": kubeconfigPath,
 		}
 		storageCfg := maps.Clone(baseCfg)
-		storageCfg["disk_size"] = params.DiskSize
-		storageCfg["access_modes"] = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
-		if params.Storage != nil && len(params.Storage.AccessModes) > 0 {
-			storageCfg["access_modes"] = params.Storage.AccessModes
+		storageCfg["disks"] = diskDriverConfig(params)
+		if params.Storage != nil {
+			storageCfg["upload_proxy_url"] = params.Storage.UploadProxyURL
+			storageCfg["upload_ca"] = params.Storage.UploadProxyCA
 		}
 
 		result = append(result,

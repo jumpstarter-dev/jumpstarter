@@ -7,6 +7,7 @@ import ssl
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from typing import ClassVar
 from urllib.parse import urlparse
 
 import websockets
@@ -17,36 +18,14 @@ from jumpstarter_driver_power.driver import PowerInterface, PowerReading
 from lightkube import AsyncClient
 from lightkube.config.kubeconfig import KubeConfig
 from lightkube.core.exceptions import ApiError
-from lightkube.generic_resource import create_namespaced_resource
-from lightkube.models.meta_v1 import ObjectMeta
-from lightkube.types import PatchType
 from websockets import Subprotocol
 from websockets.exceptions import InvalidStatus
 
+from .storage import Disk, Flash
+from .vm import VirtualMachine, VirtualMachineInstance, VMControl, operation, require_idle
 from jumpstarter.driver import Driver, export, exportstream
 
 logger = logging.getLogger(__name__)
-
-VirtualMachine = create_namespaced_resource(
-    group="kubevirt.io",
-    version="v1",
-    kind="VirtualMachine",
-    plural="virtualmachines",
-)
-
-VirtualMachineInstance = create_namespaced_resource(
-    group="kubevirt.io",
-    version="v1",
-    kind="VirtualMachineInstance",
-    plural="virtualmachineinstances",
-)
-
-DataVolume = create_namespaced_resource(
-    group="cdi.kubevirt.io",
-    version="v1beta1",
-    kind="DataVolume",
-    plural="datavolumes",
-)
 
 
 def _build_client(kubeconfig_path: str | None) -> AsyncClient:
@@ -68,6 +47,9 @@ class _KubevirtBase:
             self._client = _build_client(self.kubeconfig)
         return self._client
 
+    def _control(self) -> VMControl:
+        return VMControl(self._get_client(), self.namespace, self._resolve_vm_name())
+
     def _resolve_vm_name(self) -> str:
         if self.vm_name:
             return self.vm_name
@@ -82,41 +64,26 @@ class KubevirtPower(_KubevirtBase, PowerInterface, Driver):
 
     @export
     async def on(self) -> None:
-        client = self._get_client()
-        name = self._resolve_vm_name()
-
-        patch = {"spec": {"runStrategy": "Always"}}
-        await client.patch(
-            VirtualMachine,
-            name=name,
-            namespace=self.namespace,
-            obj=patch,
-            patch_type=PatchType.MERGE,
-        )
-        logger.info("started VM %s/%s", self.namespace, name)
+        control = self._control()
+        vm = await control.get()
+        require_idle(vm)
+        await control.patch(vm, spec={"runStrategy": "Always"})
+        logger.info("started VM %s/%s", self.namespace, self.vm_name)
 
     @export
     async def off(self, destroy: bool = False) -> None:
-        client = self._get_client()
-        name = self._resolve_vm_name()
-
+        control = self._control()
+        vm = await control.get()
         if destroy:
-            await client.delete(
-                VirtualMachine,
-                name=name,
-                namespace=self.namespace,
-            )
-            logger.info("destroyed VM %s/%s", self.namespace, name)
+            pending = operation(vm)
+            if not pending or pending["phase"] != "destroying":
+                require_idle(vm)
+                await control.patch(vm, state={"phase": "destroying"}, spec={"runStrategy": "Halted"})
+            await control.client.delete(VirtualMachine, name=control.name, namespace=control.namespace)
         else:
-            patch = {"spec": {"runStrategy": "Halted"}}
-            await client.patch(
-                VirtualMachine,
-                name=name,
-                namespace=self.namespace,
-                obj=patch,
-                patch_type=PatchType.MERGE,
-            )
-            logger.info("stopped VM %s/%s", self.namespace, name)
+            require_idle(vm)
+            await control.patch(vm, spec={"runStrategy": "Halted"})
+        logger.info("stopped VM %s/%s", self.namespace, self.vm_name)
 
     @export
     async def read(self) -> AsyncGenerator[PowerReading, None]:
@@ -265,75 +232,62 @@ class KubevirtConsole(_KubevirtBase, NetworkInterface, Driver):
 
 @dataclass(kw_only=True)
 class KubevirtStorage(_KubevirtBase, Driver):
-    disk_size: str = "20Gi"
-    access_modes: list[str] = field(default_factory=lambda: ["ReadWriteOnce"])
-    delete_timeout: float = 60.0
-    delete_poll_interval: float = 0.5
+    driver_type: ClassVar[str] = "storage"
+    disks: dict[str, Disk] = field(default_factory=lambda: {"root": Disk()})
+    upload_proxy_url: str = ""
+    upload_ca: str = ""
+    flash_timeout: float = 1800
+    shutdown_timeout: float = 120
+    poll_interval: float = 1
+    _lock: asyncio.Lock = field(init=False, default_factory=asyncio.Lock, repr=False)
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.disks = {
+            name: Disk(**config) if isinstance(config, dict) else config for name, config in self.disks.items()
+        }
 
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_kubevirt.client.KubevirtStorageClient"
 
-    @export
-    async def flash(
-        self,
-        image_url: str,
-        disk_size: str | None = None,
-        access_modes: list[str] | None = None,
-    ) -> None:
-        client = self._get_client()
-        name = self._resolve_vm_name()
-        dv_name = f"{name}-root"
-
-        if disk_size is None:
-            disk_size = self.disk_size
-        if access_modes is None:
-            access_modes = self.access_modes
-
-        deleted = False
-        try:
-            await client.delete(DataVolume, name=dv_name, namespace=self.namespace)
-            deleted = True
-            logger.info("deleted existing DataVolume %s/%s for re-flash", self.namespace, dv_name)
-        except ApiError as e:
-            if e.status.code != 404:
-                raise
-
-        if deleted:
-            async with asyncio.timeout(self.delete_timeout):
-                while True:
-                    try:
-                        await client.get(DataVolume, name=dv_name, namespace=self.namespace)
-                    except ApiError as e:
-                        if e.status.code == 404:
-                            break
-                        raise
-                    await asyncio.sleep(self.delete_poll_interval)
-
-        dv = DataVolume(
-            metadata=ObjectMeta(
-                name=dv_name,
-                namespace=self.namespace,
-            ),
-            spec={
-                "source": {
-                    "http": {
-                        "url": image_url,
-                    },
-                },
-                "storage": {
-                    "accessModes": access_modes,
-                    "resources": {
-                        "requests": {
-                            "storage": disk_size,
-                        },
-                    },
-                },
-            },
+    def _flash(self):
+        return Flash(
+            self._control(),
+            self.disks,
+            self.upload_proxy_url,
+            self.upload_ca,
+            self.flash_timeout,
+            self.shutdown_timeout,
+            self.poll_interval,
         )
 
-        await client.create(dv)
-        logger.info("created DataVolume %s/%s from %s (size=%s)", self.namespace, dv_name, image_url, disk_size)
+    @export
+    async def begin_flash(self, targets: list[str]) -> str:
+        async with self._lock:
+            return await self._flash().begin(targets)
+
+    @export
+    async def prepare_flash(self, operation_id: str, target: str) -> None:
+        async with self._lock:
+            await self._flash().prepare(operation_id, target)
+
+    @export
+    async def stage_flash(self, operation_id: str, target: str, handle) -> None:
+        async with self._lock:
+            await self._flash().stage(
+                operation_id, target, lambda: self.resource(handle, timeout=int(self.flash_timeout))
+            )
+
+    @export
+    async def commit_flash(self, operation_id: str) -> None:
+        async with self._lock:
+            await self._flash().commit(operation_id)
+
+    @export
+    async def recover_flash(self, operation_id: str | None = None) -> bool:
+        async with self._lock:
+            return await self._flash().recover(operation_id)
 
 
 @dataclass(kw_only=True)

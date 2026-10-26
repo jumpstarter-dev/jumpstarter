@@ -19,8 +19,10 @@ package kubevirt
 import (
 	"fmt"
 	"math"
+	"net/url"
 
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 const (
@@ -49,14 +51,23 @@ type StorageSource struct {
 	HTTP     *HTTPSource
 	Registry *RegistrySource
 	PVC      *PVCSource
+	Blank    bool
 }
 
-type StorageConfig struct {
-	Type             string
+type DiskConfig struct {
 	Size             string
 	StorageClassName string
 	AccessModes      []string
+	VolumeMode       string
+	BootOrder        *uint
 	Source           StorageSource
+}
+
+type StorageConfig struct {
+	Type           string
+	Disks          map[string]DiskConfig
+	UploadProxyURL string
+	UploadProxyCA  string
 }
 
 // KubevirtParams holds parsed and validated parameters from VTC/ExporterSet
@@ -135,14 +146,12 @@ func parseParams(params map[string]any) (*KubevirtParams, error) {
 	}
 
 	if stor, ok := params["storage"].(map[string]any); ok {
-		sc, err := parseStorageConfig(stor)
+		sc, err := parseStorageConfig(stor, p.DiskSize)
 		if err != nil {
 			return nil, err
 		}
 		p.Storage = sc
-		if p.Storage.Size != "" {
-			p.DiskSize = p.Storage.Size
-		}
+		p.DiskSize = sc.Disks["root"].Size
 	}
 
 	// Require either image (for containerDisk) or storage config (for dataVolume).
@@ -160,11 +169,9 @@ func parseParams(params map[string]any) (*KubevirtParams, error) {
 	return p, nil
 }
 
-func parseStorageConfig(stor map[string]any) (*StorageConfig, error) {
+func parseStorageConfig(stor map[string]any, defaultSize string) (*StorageConfig, error) {
 	sc := &StorageConfig{
-		Type:        StorageTypeContainerDisk,
-		Size:        defaultDiskSize,
-		AccessModes: []string{"ReadWriteOnce"},
+		Type: StorageTypeContainerDisk,
 	}
 
 	if t, ok := stor["type"].(string); ok && t != "" {
@@ -177,53 +184,147 @@ func parseStorageConfig(stor map[string]any) (*StorageConfig, error) {
 		}
 	}
 
-	if size, ok := stor["size"].(string); ok && size != "" {
-		sc.Size = size
+	defaults, err := parseDiskConfig(stor, DiskConfig{Size: defaultSize, AccessModes: []string{"ReadWriteOnce"}})
+	if err != nil {
+		return nil, err
 	}
-
-	if scn, ok := stor["storageClassName"].(string); ok && scn != "" {
-		sc.StorageClassName = scn
-	}
-
-	if am, ok := stor["accessModes"].([]any); ok && len(am) > 0 {
-		sc.AccessModes = make([]string, 0, len(am))
-		for _, v := range am {
-			if s, ok := v.(string); ok {
-				sc.AccessModes = append(sc.AccessModes, s)
-			}
+	sc.UploadProxyURL, _ = stor["uploadProxyURL"].(string)
+	sc.UploadProxyCA, _ = stor["uploadProxyCA"].(string)
+	if sc.UploadProxyURL != "" {
+		u, err := url.Parse(sc.UploadProxyURL)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			return nil, fmt.Errorf("storage.uploadProxyURL must be an HTTPS URL without credentials, query, or fragment")
 		}
 	}
+	sc.Disks = map[string]DiskConfig{"root": defaults}
+	if raw, exists := stor["disks"]; exists {
+		disks, ok := raw.(map[string]any)
+		if !ok || len(disks) == 0 || sc.Type != StorageTypeDataVolume {
+			return nil, fmt.Errorf("storage.disks must be a nonempty map with storage.type=dataVolume")
+		}
+		if _, exists := stor["source"]; exists {
+			return nil, fmt.Errorf("use storage.disks.root.source instead of storage.source with named disks")
+		}
+		sc.Disks = make(map[string]DiskConfig, len(disks))
+		for name, rawDisk := range disks {
+			if len(validation.IsDNS1123Label(name)) != 0 || name == "cloudinit" {
+				return nil, fmt.Errorf("invalid or reserved storage disk name %q", name)
+			}
+			disk, ok := rawDisk.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("storage disk %q must be an object", name)
+			}
+			parsed, err := parseDiskConfig(disk, defaults)
+			if err != nil {
+				return nil, fmt.Errorf("storage disk %q: %w", name, err)
+			}
+			sc.Disks[name] = parsed
+		}
+	}
+	root, ok := sc.Disks["root"]
+	if !ok {
+		return nil, fmt.Errorf("storage.disks must include root")
+	}
+	if root.BootOrder == nil {
+		order := uint(1)
+		root.BootOrder = &order
+		sc.Disks["root"] = root
+	}
+	orders := make(map[uint]bool)
+	for _, disk := range sc.Disks {
+		if disk.BootOrder != nil {
+			if orders[*disk.BootOrder] {
+				return nil, fmt.Errorf("disk bootOrder values must be unique")
+			}
+			orders[*disk.BootOrder] = true
+		}
+	}
+	return sc, nil
+}
 
-	if src, ok := stor["source"].(map[string]any); ok {
+func parseDiskConfig(raw map[string]any, disk DiskConfig) (DiskConfig, error) {
+	for key, dest := range map[string]*string{
+		"size": &disk.Size, "storageClassName": &disk.StorageClassName, "volumeMode": &disk.VolumeMode,
+	} {
+		if value, exists := raw[key]; exists {
+			s, ok := value.(string)
+			if !ok || s == "" {
+				return disk, fmt.Errorf("%s must be a nonempty string", key)
+			}
+			*dest = s
+		}
+	}
+	if size, err := resource.ParseQuantity(disk.Size); err != nil || size.Sign() <= 0 {
+		return disk, fmt.Errorf("invalid disk size %q", disk.Size)
+	}
+	if disk.VolumeMode != "" && disk.VolumeMode != "Block" && disk.VolumeMode != "Filesystem" {
+		return disk, fmt.Errorf("volumeMode must be Block or Filesystem")
+	}
+	if rawModes, exists := raw["accessModes"]; exists {
+		am, ok := rawModes.([]any)
+		if !ok || len(am) == 0 {
+			return disk, fmt.Errorf("accessModes must be a nonempty list")
+		}
+		disk.AccessModes = make([]string, 0, len(am))
+		for _, v := range am {
+			s, ok := v.(string)
+			if !ok || (s != "ReadWriteOnce" && s != "ReadWriteMany" && s != "ReadWriteOncePod") {
+				return disk, fmt.Errorf("invalid writable access mode %v", v)
+			}
+			disk.AccessModes = append(disk.AccessModes, s)
+		}
+	}
+	if value, exists := raw["bootOrder"]; exists {
+		order, ok := toInt(value)
+		if !ok || order <= 0 || order > math.MaxUint32 {
+			return disk, fmt.Errorf("bootOrder must be a positive integer")
+		}
+		u := uint(order)
+		disk.BootOrder = &u
+	}
+	var err error
+	disk.Source, err = parseStorageSource(raw)
+	return disk, err
+}
+
+func parseStorageSource(raw map[string]any) (StorageSource, error) {
+	source := StorageSource{Blank: true}
+	if value, exists := raw["source"]; exists {
+		src, ok := value.(map[string]any)
+		if !ok || len(src) != 1 {
+			return source, fmt.Errorf("source must specify exactly one of http, registry, pvc, or blank")
+		}
+		source = StorageSource{}
 		if httpSrc, ok := src["http"].(map[string]any); ok {
 			url, _ := httpSrc["url"].(string)
 			if url == "" {
-				return nil, fmt.Errorf("storage source http requires \"url\"")
+				return source, fmt.Errorf("storage source http requires \"url\"")
 			}
-			sc.Source.HTTP = &HTTPSource{URL: url}
+			source.HTTP = &HTTPSource{URL: url}
 		}
 		if regSrc, ok := src["registry"].(map[string]any); ok {
 			img, _ := regSrc["image"].(string)
 			if img == "" {
-				return nil, fmt.Errorf("storage source registry requires \"image\"")
+				return source, fmt.Errorf("storage source registry requires \"image\"")
 			}
-			sc.Source.Registry = &RegistrySource{Image: img}
+			source.Registry = &RegistrySource{Image: img}
 		}
 		if pvcSrc, ok := src["pvc"].(map[string]any); ok {
 			name, _ := pvcSrc["name"].(string)
 			ns, _ := pvcSrc["namespace"].(string)
 			if name == "" {
-				return nil, fmt.Errorf("storage source pvc requires \"name\"")
+				return source, fmt.Errorf("storage source pvc requires \"name\"")
 			}
-			sc.Source.PVC = &PVCSource{Name: name, Namespace: ns}
+			source.PVC = &PVCSource{Name: name, Namespace: ns}
+		}
+		if blank, ok := src["blank"].(map[string]any); ok && len(blank) == 0 {
+			source.Blank = true
+		}
+		if source == (StorageSource{}) {
+			return source, fmt.Errorf("invalid storage source: expected http, registry, pvc, or blank")
 		}
 	}
-
-	if sc.Type == StorageTypeDataVolume && sc.Source == (StorageSource{}) {
-		return nil, fmt.Errorf("storage type %q requires a source (http, registry, or pvc)", StorageTypeDataVolume)
-	}
-
-	return sc, nil
+	return source, nil
 }
 
 // toInt converts a numeric interface{} (float64 from JSON, int, etc.) to int.
