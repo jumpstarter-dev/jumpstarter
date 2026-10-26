@@ -17,8 +17,11 @@ from bumble.a2dp import (
 from bumble.avdtp import (
     AVDTP_AUDIO_MEDIA_TYPE,
     Listener,
+    LocalSource,
     MediaCodecCapabilities,
     MediaPacketPump,
+    Protocol,
+    State,
 )
 from bumble.core import BT_BR_EDR_TRANSPORT, ClassOfDevice, DeviceClass
 from bumble.device import Connection, Device, DeviceConfiguration
@@ -136,6 +139,8 @@ class BtPeer(Driver):
     _connections: dict[int, Connection] = field(default_factory=dict, init=False, repr=False)
     _track: _Track | None = field(default=None, init=False, repr=False)
     _rtp_mtu: int = field(default=DEFAULT_RTP_MTU, init=False, repr=False)
+    _protocol: Protocol | None = field(default=None, init=False, repr=False)
+    _source: LocalSource | None = field(default=None, init=False, repr=False)
 
     @classmethod
     def client(cls) -> str:
@@ -196,7 +201,8 @@ class BtPeer(Driver):
         self._rtp_mtu = peer_mtu if isinstance(peer_mtu, int) and peer_mtu >= MIN_RTP_MTU else DEFAULT_RTP_MTU
 
         pump = MediaPacketPump(self._media_source())
-        protocol.add_source(sbc_capabilities, pump)
+        self._protocol = protocol
+        self._source = protocol.add_source(sbc_capabilities, pump)
         self._emit("avdtp_connected", {"mtu": self._rtp_mtu})
 
     def _make_packet(self, sequence_number: int, timestamp_seconds: float, payload: bytes) -> MediaPacket:
@@ -252,6 +258,63 @@ class BtPeer(Driver):
             packet.timestamp = int(1000 * timestamp_seconds)
             sequence_number = (sequence_number + 1) & 0xFFFF
             yield packet
+
+    async def _ensure_streaming(self) -> dict[str, Any]:
+        """Put the AVDTP stream into STREAMING, initiating it if necessary.
+
+        A2DP sources drive the stream: a phone configures, opens and starts it
+        when the user hits play, and the sink just renders what arrives. The
+        DUT therefore connects the AVDTP signalling channel and then waits, so
+        nothing is pumped until the peer initiates here.
+        """
+        protocol, source = self._protocol, self._source
+        if protocol is None or source is None:
+            return {"streaming": False, "reason": "no AVDTP connection from the DUT yet"}
+
+        stream = source.stream
+        if stream is not None and stream.state == State.STREAMING:
+            return {"streaming": True, "reason": "already streaming"}
+
+        if stream is None:
+            await protocol.discover_remote_endpoints()
+            sink = protocol.find_remote_sink_by_codec(AVDTP_AUDIO_MEDIA_TYPE, A2DP_SBC_CODEC_TYPE)
+            if sink is None:
+                raise BtPeerError(
+                    "the DUT exposes no free SBC audio sink endpoint; "
+                    "is Bluetooth media enabled on the head unit?"
+                )
+            self._adopt_sink_bitpool(sink)
+            stream = await protocol.create_stream(source, sink)
+
+        # start() opens the RTP channel itself when the stream is CONFIGURED.
+        await stream.start()
+        return {"streaming": True, "reason": "started by the peer"}
+
+    def _adopt_sink_bitpool(self, sink) -> None:
+        """Narrow the advertised bitpool range to what the sink accepts.
+
+        The sink rejects a configuration whose bitpool range is wider than its
+        own, so the offer has to be clamped before SET_CONFIGURATION.
+        """
+        source = self._source
+        if source is None:
+            return
+        for capability in sink.capabilities:
+            if not isinstance(capability, MediaCodecCapabilities):
+                continue
+            remote = capability.media_codec_information
+            if not isinstance(remote, SbcMediaCodecInformation):
+                continue
+            for local_capability in source.capabilities:
+                local = getattr(local_capability, "media_codec_information", None)
+                if isinstance(local, SbcMediaCodecInformation):
+                    local.minimum_bitpool_value = remote.minimum_bitpool_value
+                    local.maximum_bitpool_value = remote.maximum_bitpool_value
+            self._emit("sink_bitpool", {
+                "minimum": remote.minimum_bitpool_value,
+                "maximum": remote.maximum_bitpool_value,
+            })
+            return
 
     def _on_track_exhausted(self, track: _Track) -> None:
         if track.loop:
@@ -371,6 +434,8 @@ class BtPeer(Driver):
         self._transport = None
         self._track = None
         self._rtp_mtu = DEFAULT_RTP_MTU
+        self._protocol = None
+        self._source = None
         self._connections.clear()
         self._events.clear()
 
@@ -601,12 +666,14 @@ class BtPeer(Driver):
         track = _Track(name=name, data=bytes(data), mtu=self._rtp_mtu, loop=bool(loop))
         self._track = track
 
+        stream_state = await self._ensure_streaming()
+
         info = {
             "name": name,
             "bytes": len(data),
             "loop": bool(loop),
             "bitpool": frame.bitpool,
-            "streaming": bool(self._connections),
+            **stream_state,
         }
         self._emit("track_started", info)
         return json.dumps(info)

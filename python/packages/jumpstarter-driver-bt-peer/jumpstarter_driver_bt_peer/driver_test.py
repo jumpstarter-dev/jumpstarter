@@ -820,3 +820,98 @@ async def test_track_restart_rewinds_data():
     track.restart()
     assert track.position == 0
     assert track.last_timestamp == 0.0
+
+
+def _sink_with_bitpool(minimum: int, maximum: int):
+    from bumble.a2dp import SbcMediaCodecInformation
+    from bumble.avdtp import MediaCodecCapabilities
+
+    info = MagicMock(spec=SbcMediaCodecInformation)
+    info.minimum_bitpool_value = minimum
+    info.maximum_bitpool_value = maximum
+    capability = MagicMock(spec=MediaCodecCapabilities)
+    capability.media_codec_information = info
+    sink = MagicMock()
+    sink.capabilities = [capability]
+    return sink
+
+
+@pytest.mark.anyio
+async def test_ensure_streaming_without_avdtp_connection():
+    peer = BtPeer()
+    assert await peer._ensure_streaming() == {
+        "streaming": False,
+        "reason": "no AVDTP connection from the DUT yet",
+    }
+
+
+@pytest.mark.anyio
+async def test_ensure_streaming_is_a_noop_when_already_streaming():
+    from bumble.avdtp import State
+
+    peer = BtPeer()
+    peer._protocol = MagicMock()
+    peer._source = MagicMock()
+    peer._source.stream.state = State.STREAMING
+
+    result = await peer._ensure_streaming()
+
+    assert result == {"streaming": True, "reason": "already streaming"}
+    peer._protocol.discover_remote_endpoints.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_ensure_streaming_initiates_the_stream():
+    """The DUT opens AVDTP signalling and waits; the source has to start it."""
+    peer = BtPeer()
+    peer._source = MagicMock()
+    peer._source.stream = None
+    peer._source.capabilities = _sink_with_bitpool(0, 0).capabilities
+
+    stream = AsyncMock()
+    peer._protocol = MagicMock()
+    peer._protocol.discover_remote_endpoints = AsyncMock()
+    peer._protocol.find_remote_sink_by_codec = MagicMock(return_value=_sink_with_bitpool(2, 35))
+    peer._protocol.create_stream = AsyncMock(return_value=stream)
+
+    result = await peer._ensure_streaming()
+
+    assert result == {"streaming": True, "reason": "started by the peer"}
+    peer._protocol.discover_remote_endpoints.assert_awaited_once()
+    peer._protocol.create_stream.assert_awaited_once()
+    stream.start.assert_awaited_once()
+    # The offered bitpool range must be clamped to what the sink accepts.
+    assert peer._source.capabilities[0].media_codec_information.minimum_bitpool_value == 2
+    assert peer._source.capabilities[0].media_codec_information.maximum_bitpool_value == 35
+    assert any(e["type"] == "sink_bitpool" for e in peer._events)
+
+
+@pytest.mark.anyio
+async def test_ensure_streaming_without_a_sink_endpoint():
+    peer = BtPeer()
+    peer._source = MagicMock()
+    peer._source.stream = None
+    peer._protocol = MagicMock()
+    peer._protocol.discover_remote_endpoints = AsyncMock()
+    peer._protocol.find_remote_sink_by_codec = MagicMock(return_value=None)
+
+    with pytest.raises(BtPeerError, match="no free SBC audio sink"):
+        await peer._ensure_streaming()
+
+
+@pytest.mark.anyio
+async def test_play_reports_that_it_started_the_stream():
+    peer = _running_peer()
+    peer._source = MagicMock()
+    peer._source.stream = None
+    peer._source.capabilities = _sink_with_bitpool(0, 0).capabilities
+    peer._protocol = MagicMock()
+    peer._protocol.discover_remote_endpoints = AsyncMock()
+    peer._protocol.find_remote_sink_by_codec = MagicMock(return_value=_sink_with_bitpool(2, 53))
+    peer._protocol.create_stream = AsyncMock(return_value=AsyncMock())
+
+    with _patch_resource(make_sbc_file(100)):
+        result = json.loads(await peer.play("handle", name="song.mp3"))
+
+    assert result["streaming"] is True
+    assert result["reason"] == "started by the peer"
