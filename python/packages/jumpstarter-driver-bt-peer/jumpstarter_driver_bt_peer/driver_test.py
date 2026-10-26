@@ -981,10 +981,36 @@ async def test_avrcp_notification_failure_does_not_break_play():
 
 
 @pytest.mark.anyio
+async def test_avrcp_transport_keys_are_ignored_by_default():
+    """A DUT that sends PAUSE on connect must not silence an explicit play()."""
+    peer = _running_peer()
+    peer._avrcp_delegate = _AvrcpDelegate()
+    peer._avrcp = MagicMock()
+    with _patch_resource(make_sbc_file(60)):
+        await peer.play("handle", name="song.mp3")
+
+    track = peer._track
+    assert track is not None
+
+    pause = MagicMock()
+    pause.name = "PAUSE"
+    peer._on_avrcp_key(pause, pressed=True)
+
+    assert track.paused is False
+    event = [e for e in peer._events if e["type"] == "avrcp_key"][-1]
+    assert event == {**event, "key": "PAUSE", "pressed": True, "honored": False}
+
+    # Audio, not filler.
+    source = peer._media_source()
+    assert len((await source.__anext__()).payload) > 1
+
+
+@pytest.mark.anyio
 async def test_avrcp_transport_keys_pause_and_resume():
     from bumble.avrcp import PlayStatus
 
     peer = _running_peer()
+    peer.follow_transport_keys = True
     peer._avrcp_delegate = _AvrcpDelegate()
     peer._avrcp = MagicMock()
     with _patch_resource(make_sbc_file(60)):

@@ -158,6 +158,9 @@ class BtPeer(Driver):
     """
 
     transport: str = "tcp-client:127.0.0.1:7300"
+    # Whether PLAY/PAUSE/STOP from the DUT control playback. Off by default so
+    # a DUT cannot silence a track the caller explicitly started.
+    follow_transport_keys: bool = False
 
     _device: Device | None = field(default=None, init=False, repr=False)
     _transport: Any = field(default=None, init=False, repr=False)
@@ -365,10 +368,16 @@ class BtPeer(Driver):
             self.logger.debug("could not notify playback status: %s", exc)
 
     def _on_avrcp_key(self, key, pressed: bool) -> None:
-        """Handle transport keys pressed on the head unit."""
+        """Handle transport keys pressed on the head unit.
+
+        Acting on these is opt-in. A DUT may send PAUSE as soon as it
+        connects -- Android does when it cannot resolve an addressed player --
+        which would otherwise silence a track the caller just asked to play.
+        The key is always recorded as an event so it stays observable.
+        """
         name = getattr(key, "name", str(key))
-        self._emit("avrcp_key", {"key": name, "pressed": pressed})
-        if not pressed:
+        self._emit("avrcp_key", {"key": name, "pressed": pressed, "honored": self.follow_transport_keys})
+        if not pressed or not self.follow_transport_keys:
             return
         if name in ("PAUSE", "STOP") and self._track is not None:
             self._track.paused = True
