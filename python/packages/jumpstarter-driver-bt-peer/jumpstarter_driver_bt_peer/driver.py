@@ -8,7 +8,10 @@ from typing import Any
 import anyio
 from bumble.a2dp import (
     A2DP_SBC_CODEC_TYPE,
+    SbcFrame,
     SbcMediaCodecInformation,
+    SbcPacketSource,
+    SbcParser,
     make_audio_source_service_sdp_records,
 )
 from bumble.avdtp import (
@@ -25,7 +28,27 @@ from bumble.pairing import PairingConfig, PairingDelegate
 from bumble.rtp import MediaPacket
 from bumble.transport import open_transport
 
+from .media import (
+    MAX_TRACK_BYTES,
+    SBC_ALLOCATION_METHOD,
+    SBC_BLOCK_COUNT,
+    SBC_CHANNEL_MODE,
+    SBC_MAX_BITPOOL,
+    SBC_MIN_BITPOOL,
+    SBC_SAMPLING_FREQUENCY,
+    SBC_SUBBAND_COUNT,
+    describe_sbc_format,
+)
 from jumpstarter.driver import Driver, export
+
+# Duration of a filler packet emitted while no track is playing.
+SILENCE_PACKET_DURATION = 0.02
+
+# Fallback when the AVDTP transport channel does not report a usable peer MTU.
+DEFAULT_RTP_MTU = 672
+
+# The L2CAP minimum; anything smaller cannot hold an RTP header plus a frame.
+MIN_RTP_MTU = 48
 
 
 class BtPeerError(Exception):
@@ -55,6 +78,46 @@ class AutoAcceptDelegate(PairingDelegate):
         return 0
 
 
+class _ByteReader:
+    """An async ``read(n)`` over an in-memory buffer, as bumble's parsers expect."""
+
+    def __init__(self, data: bytes):
+        self.data = data
+        self.position = 0
+
+    async def read(self, byte_count: int) -> bytes:
+        chunk = self.data[self.position : self.position + byte_count]
+        self.position += len(chunk)
+        return chunk
+
+
+class _Track:
+    """An uploaded SBC file being streamed to the DUT.
+
+    The whole file is held in memory so that looping can rewind without
+    re-uploading, and so the packet source never blocks the event loop on disk.
+    """
+
+    def __init__(self, name: str, data: bytes, mtu: int, loop: bool = False):
+        self.name = name
+        self.data = data
+        self.mtu = mtu
+        self.loop = loop
+        self.last_timestamp = 0.0
+        self.restart()
+
+    @property
+    def position(self) -> int:
+        return self._reader.position
+
+    def restart(self) -> None:
+        self._reader = _ByteReader(self.data)
+        self.last_timestamp = 0.0
+        # SbcPacketSource.packets is a property that builds a fresh generator on
+        # every access, so it has to be held rather than re-read each time.
+        self.packets = SbcPacketSource(self._reader.read, self.mtu).packets
+
+
 @dataclass(kw_only=True)
 class BtPeer(Driver):
     """Bluetooth peer device powered by bumble.
@@ -71,6 +134,8 @@ class BtPeer(Driver):
     _avdtp_listener: Listener | None = field(default=None, init=False, repr=False)
     _events: deque = field(default_factory=lambda: deque(maxlen=1000), init=False, repr=False)
     _connections: dict[int, Connection] = field(default_factory=dict, init=False, repr=False)
+    _track: _Track | None = field(default=None, init=False, repr=False)
+    _rtp_mtu: int = field(default=DEFAULT_RTP_MTU, init=False, repr=False)
 
     @classmethod
     def client(cls) -> str:
@@ -106,47 +171,98 @@ class BtPeer(Driver):
         connection.on("disconnection", on_disconnect)
 
     def _on_avdtp_connection(self, protocol) -> None:
+        # The peer is the AVDTP acceptor, so the sink picks a configuration out
+        # of whatever is advertised here. Advertising exactly one configuration
+        # means play() can reject mismatched audio up front instead of letting
+        # it come out of the speakers as noise.
         S = SbcMediaCodecInformation
         sbc_capabilities = MediaCodecCapabilities(
             media_type=AVDTP_AUDIO_MEDIA_TYPE,
             media_codec_type=A2DP_SBC_CODEC_TYPE,
             media_codec_information=S(
-                sampling_frequency=S.SamplingFrequency.SF_48000 | S.SamplingFrequency.SF_44100,
-                channel_mode=S.ChannelMode.JOINT_STEREO | S.ChannelMode.STEREO,
-                block_length=S.BlockLength.BL_16 | S.BlockLength.BL_12 | S.BlockLength.BL_8,
+                sampling_frequency=S.SamplingFrequency.SF_44100,
+                channel_mode=S.ChannelMode.STEREO,
+                block_length=S.BlockLength.BL_16,
                 subbands=S.Subbands.S_8,
                 allocation_method=S.AllocationMethod.LOUDNESS,
-                minimum_bitpool_value=2,
-                maximum_bitpool_value=53,
+                minimum_bitpool_value=SBC_MIN_BITPOOL,
+                maximum_bitpool_value=SBC_MAX_BITPOOL,
             ),
         )
 
-        async def silence():
-            """Yield timestamped RTP packets so MediaPacketPump can stream."""
-            sequence_number = 0
-            timestamp_seconds = 0.0
-            while True:
-                packet = MediaPacket(
-                    2,
-                    0,
-                    0,
-                    0,
-                    sequence_number,
-                    int(timestamp_seconds * 8000),
-                    0,
-                    [],
-                    96,
-                    b"\x00",
-                )
-                packet.timestamp_seconds = timestamp_seconds
-                yield packet
-                sequence_number = (sequence_number + 1) & 0xFFFF
-                timestamp_seconds += 0.02
-                await anyio.sleep(0.02)
+        # The MTU sizes RTP payloads, so an implausible value would silently
+        # produce malformed packets rather than failing here.
+        peer_mtu = getattr(getattr(protocol, "l2cap_channel", None), "peer_mtu", None)
+        self._rtp_mtu = peer_mtu if isinstance(peer_mtu, int) and peer_mtu >= MIN_RTP_MTU else DEFAULT_RTP_MTU
 
-        pump = MediaPacketPump(silence())
+        pump = MediaPacketPump(self._media_source())
         protocol.add_source(sbc_capabilities, pump)
-        self._emit("avdtp_connected", {})
+        self._emit("avdtp_connected", {"mtu": self._rtp_mtu})
+
+    def _make_packet(self, sequence_number: int, timestamp_seconds: float, payload: bytes) -> MediaPacket:
+        packet = MediaPacket(
+            2, 0, 0, 0, sequence_number, int(1000 * timestamp_seconds), 0, [], 96, payload
+        )
+        packet.timestamp_seconds = timestamp_seconds
+        return packet
+
+    async def _media_source(self):
+        """Single long-lived packet source backing the AVDTP stream.
+
+        Emits filler packets while idle and the current track's packets while
+        one is playing, so a track can be swapped in without renegotiating the
+        stream. MediaPacketPump paces itself against packet.timestamp_seconds
+        relative to the first packet it ever sees, so timestamps have to keep
+        rising for the life of the stream. Each track's own timestamps restart
+        at zero, so per-track deltas are accumulated into a stream-wide clock
+        rather than passed through; otherwise the pump would see time jump
+        backwards on a track change and flush the whole file at wire speed.
+        """
+        sequence_number = 0
+        timestamp_seconds = 0.0
+
+        while True:
+            track = self._track
+
+            if track is None:
+                # No sleep here: the pump already waits until each packet's
+                # timestamp before writing it, so sleeping as well would make
+                # real time run ahead of the stream clock by the sleep
+                # overhead. That gap is invisible while idle, but the pump
+                # makes it up the instant a track starts by flushing packets
+                # at wire speed, which overruns the sink's buffer.
+                yield self._make_packet(sequence_number, timestamp_seconds, b"\x00")
+                sequence_number = (sequence_number + 1) & 0xFFFF
+                timestamp_seconds += SILENCE_PACKET_DURATION
+                continue
+
+            try:
+                packet = await anext(track.packets)
+            except StopAsyncIteration:
+                self._on_track_exhausted(track)
+                continue
+
+            delta = packet.timestamp_seconds - track.last_timestamp
+            track.last_timestamp = packet.timestamp_seconds
+            if delta > 0:
+                timestamp_seconds += delta
+
+            packet.sequence_number = sequence_number
+            packet.timestamp_seconds = timestamp_seconds
+            packet.timestamp = int(1000 * timestamp_seconds)
+            sequence_number = (sequence_number + 1) & 0xFFFF
+            yield packet
+
+    def _on_track_exhausted(self, track: _Track) -> None:
+        if track.loop:
+            track.restart()
+            self._emit("track_looped", {"name": track.name})
+            return
+        # Only fall back to silence if play() has not already swapped in a
+        # different track while this one was draining.
+        if self._track is track:
+            self._track = None
+        self._emit("track_finished", {"name": track.name})
 
     @export
     async def start_peer(self, config_json: str = "{}") -> str:
@@ -253,6 +369,8 @@ class BtPeer(Driver):
         transport = self._transport
         self._device = None
         self._transport = None
+        self._track = None
+        self._rtp_mtu = DEFAULT_RTP_MTU
         self._connections.clear()
         self._events.clear()
 
@@ -451,3 +569,102 @@ class BtPeer(Driver):
                 "encrypted": conn.is_encrypted,
             })
         return json.dumps(conns)
+
+    @export
+    async def play(self, src: str, name: str = "track", loop: bool = False) -> str:
+        """Stream an uploaded SBC file to the DUT over A2DP.
+
+        src is a client resource handle. The audio must already be encoded in
+        the single SBC configuration the peer advertises; the client's play
+        command transcodes with ffmpeg to match.
+
+        Replaces any track already playing. Returns JSON describing the track.
+        """
+        if self._device is None:
+            raise BtPeerError("peer not running — call start_peer first")
+
+        data = bytearray()
+        async with self.resource(src) as res:
+            async for chunk in res:
+                data.extend(chunk)
+                if len(data) > MAX_TRACK_BYTES:
+                    raise BtPeerError(
+                        f"track is larger than the {MAX_TRACK_BYTES // (1024 * 1024)} MiB limit"
+                    )
+
+        if not data:
+            raise BtPeerError("uploaded track is empty")
+
+        frame = await _first_sbc_frame(bytes(data))
+        _check_sbc_frame(frame)
+
+        track = _Track(name=name, data=bytes(data), mtu=self._rtp_mtu, loop=bool(loop))
+        self._track = track
+
+        info = {
+            "name": name,
+            "bytes": len(data),
+            "loop": bool(loop),
+            "bitpool": frame.bitpool,
+            "streaming": bool(self._connections),
+        }
+        self._emit("track_started", info)
+        return json.dumps(info)
+
+    @export
+    def stop_playback(self) -> str:
+        """Stop the current track and fall back to silence."""
+        track = self._track
+        if track is None:
+            return json.dumps({"status": "not_playing"})
+        self._track = None
+        self._emit("track_stopped", {"name": track.name})
+        return json.dumps({"status": "stopped", "name": track.name})
+
+    @export
+    def playback_status(self) -> str:
+        """Return what the peer is currently streaming."""
+        track = self._track
+        if track is None:
+            return json.dumps({"playing": False})
+        return json.dumps({
+            "playing": True,
+            "name": track.name,
+            "loop": track.loop,
+            "bytes": len(track.data),
+            "position": track.position,
+        })
+
+
+async def _first_sbc_frame(data: bytes) -> SbcFrame:
+    """Parse the first SBC frame out of an uploaded file."""
+    async for frame in SbcParser(_ByteReader(data).read).frames:
+        return frame
+
+    raise BtPeerError(
+        "uploaded file is not SBC audio (no valid frame header found); "
+        f"expected {describe_sbc_format()}"
+    )
+
+
+def _check_sbc_frame(frame: SbcFrame) -> None:
+    """Reject audio the DUT's sink was never offered."""
+    mismatches = []
+    if frame.sampling_frequency != SBC_SAMPLING_FREQUENCY:
+        mismatches.append(f"sampling frequency {frame.sampling_frequency} Hz")
+    if frame.channel_mode != SBC_CHANNEL_MODE:
+        mismatches.append(f"channel mode {frame.channel_mode} (expected stereo)")
+    if frame.block_count != SBC_BLOCK_COUNT:
+        mismatches.append(f"{frame.block_count} blocks")
+    if frame.subband_count != SBC_SUBBAND_COUNT:
+        mismatches.append(f"{frame.subband_count} subbands")
+    if frame.allocation_method != SBC_ALLOCATION_METHOD:
+        mismatches.append(f"allocation method {frame.allocation_method} (expected loudness)")
+    if not SBC_MIN_BITPOOL <= frame.bitpool <= SBC_MAX_BITPOOL:
+        mismatches.append(f"bitpool {frame.bitpool}")
+
+    if mismatches:
+        raise BtPeerError(
+            f"SBC file does not match the advertised stream configuration "
+            f"({describe_sbc_format()}): got {', '.join(mismatches)}"
+        )
