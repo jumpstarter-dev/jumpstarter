@@ -739,6 +739,41 @@ func TestReconcile_exitAndReplace_deletesFailedUnleasedExporter(t *testing.T) {
 	}
 }
 
+func TestReconcile_exitAndReplace_retriesCleanupBeforeRetiringExporter(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 1
+		es.Spec.MaxReplicas = 1
+	})
+	r, c := newReconciler(t,
+		es, makeVTC(),
+		makeExporter("exp-dead", false, false, true),
+		makePod("exp-dead", corev1.PodSucceeded),
+	)
+	cleanupErr := errors.New("remote cleanup unavailable")
+	prov := &failingCleanupProvisioner{Provisioner: r.Provisioner, err: cleanupErr}
+	r.Provisioner = prov
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: es.Name, Namespace: es.Namespace},
+	})
+	if !errors.Is(err, cleanupErr) {
+		t.Fatalf("cleanup failure must be retried: %v", err)
+	}
+	exporters := listExporters(t, c)
+	if len(exporters) != 1 || exporters[0].Name != "exp-dead" {
+		t.Fatal("cleanup failure must preserve the old Exporter for retry")
+	}
+	prov.err = nil
+	reconcileOnce(t, r)
+	if prov.calls != 2 || len(listExporters(t, c)) != 0 {
+		t.Fatal("successful cleanup must retire the old Exporter")
+	}
+	reconcileOnce(t, r)
+	exporters = listExporters(t, c)
+	if len(exporters) != 1 || exporters[0].Name == "exp-dead" {
+		t.Fatal("the pool must refill with a new Exporter after cleanup succeeds")
+	}
+}
+
 func TestReconcile_exitAndReplace_keepsRunningExporter(t *testing.T) {
 	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
 		es.Spec.MinReplicas = 0

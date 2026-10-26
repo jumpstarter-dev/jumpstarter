@@ -44,10 +44,7 @@ const (
 
 	DefaultExporterImage = "quay.io/jumpstarter-dev/jumpstarter:latest"
 
-	jmpExecBinaryPath = "/jumpstarter/bin/jumpstarter-exec"
-	configMountPath   = "/etc/jumpstarter/exporters"
-	sharedVolumeName  = "shared"
-	sharedMountPath   = "/shared"
+	configMountPath = "/etc/jumpstarter/exporters"
 
 	labelManagedBy  = "app.kubernetes.io/managed-by"
 	labelExporter   = "jumpstarter.dev/exporter"
@@ -444,16 +441,18 @@ func (p *Provisioner) createService(
 	return nil
 }
 
-// buildExporterPod creates a lightweight Pod that runs only the Jumpstarter
-// exporter sidecar — no target-runtime container. The VM runs on the remote
-// cluster; this Pod just hosts the exporter process.
+// buildExporterPod makes the exporter process control the Pod's lifetime.
+// The VM runs on the remote cluster and is cleaned up by the reconciler.
 func (p *Provisioner) buildExporterPod(
 	exporterSet *virtualtargetv1alpha1.ExporterSet,
 	vtc *virtualtargetv1alpha1.VirtualTargetClass,
 	images *virtualtargetv1alpha1.ImageOverrides,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) *corev1.Pod {
-	restartAlways := corev1.ContainerRestartPolicyAlways
+	restartPolicy := corev1.RestartPolicyNever
+	if exporterSet.Spec.RecycleStrategy == virtualtargetv1alpha1.RecycleStrategyInPlaceReuse {
+		restartPolicy = corev1.RestartPolicyAlways
+	}
 
 	var exporterSpec *virtualtargetv1alpha1.ImageSpec
 	if images != nil {
@@ -472,54 +471,24 @@ func (p *Provisioner) buildExporterPod(
 		podMeta.GenerateName = fmt.Sprintf("%s-", exporterSet.Name)
 	}
 
-	sizeLimit := resource.MustParse("10Mi")
-
 	return &corev1.Pod{
 		ObjectMeta: podMeta,
 		Spec: corev1.PodSpec{
-			InitContainers: []corev1.Container{
-				{
-					Name:            "copy-jumpstarter-exec",
-					Image:           exporterImage,
-					ImagePullPolicy: exporterPullPolicy,
-					Command: []string{
-						"cp",
-						jmpExecBinaryPath,
-						sharedMountPath + "/jumpstarter-exec",
-					},
-					VolumeMounts: []corev1.VolumeMount{
-						{Name: sharedVolumeName, MountPath: sharedMountPath},
-					},
-				},
+			// ExitAndReplace needs exporter exit to leave a terminal Pod. InPlaceReuse
+			// keeps the exporter running across leases and restarts it after a crash.
+			RestartPolicy: restartPolicy,
+			Containers: []corev1.Container{
 				{
 					Name:            "exporter",
 					Image:           exporterImage,
 					ImagePullPolicy: exporterPullPolicy,
-					RestartPolicy:   &restartAlways,
 					Command:         []string{"jmp", "run", "--exporter-config", configMountPath + "/config.yaml"},
 					VolumeMounts: []corev1.VolumeMount{
-						{Name: sharedVolumeName, MountPath: sharedMountPath},
 						{Name: credentialsVolumeName, MountPath: credentialsMountPath, ReadOnly: true},
 					},
 				},
 			},
-			Containers: []corev1.Container{
-				{
-					Name:            "keepalive",
-					Image:           exporterImage,
-					ImagePullPolicy: exporterPullPolicy,
-					Command:         []string{"sleep", "infinity"},
-				},
-			},
 			Volumes: []corev1.Volume{
-				{
-					Name: sharedVolumeName,
-					VolumeSource: corev1.VolumeSource{
-						EmptyDir: &corev1.EmptyDirVolumeSource{
-							SizeLimit: &sizeLimit,
-						},
-					},
-				},
 				{
 					Name: credentialsVolumeName,
 					VolumeSource: corev1.VolumeSource{
