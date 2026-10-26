@@ -3,9 +3,11 @@
 from unittest.mock import MagicMock
 
 import anyio
+import grpc
 import pytest
 from grpc import StatusCode
 from grpc.aio import AioRpcError
+from jumpstarter_protocol import jumpstarter_pb2_grpc
 
 from jumpstarter.client.status_monitor import StatusMonitor
 from jumpstarter.common import ExporterStatus
@@ -515,7 +517,10 @@ class TestStatusMonitorWaitForStatus:
         assert result is False
         assert monitor.connection_lost
 
-    async def test_wait_for_status_unimplemented_returns_promptly(self) -> None:
+    @pytest.mark.parametrize(
+        "error", [create_mock_rpc_error(StatusCode.UNIMPLEMENTED), NotImplementedError()], ids=["grpc", "stub"]
+    )
+    async def test_wait_for_status_unimplemented_returns_promptly(self, error: Exception) -> None:
         """Test wait_for_status returns promptly when UNIMPLEMENTED is received.
 
         When GetStatus returns UNIMPLEMENTED (old exporter without status support),
@@ -524,7 +529,7 @@ class TestStatusMonitorWaitForStatus:
         # First return AVAILABLE, then UNIMPLEMENTED to simulate an old exporter
         responses = [
             create_status_response(ExporterStatus.AVAILABLE, version=1),
-            create_mock_rpc_error(StatusCode.UNIMPLEMENTED),
+            error,
         ]
         stub = MockExporterStub(responses)
         monitor = StatusMonitor(stub, poll_interval=0.05)
@@ -532,14 +537,13 @@ class TestStatusMonitorWaitForStatus:
         async with anyio.create_task_group() as tg:
             await monitor.start(tg)
 
-            # Wait for a status that will never be reached - should return promptly
-            # when UNIMPLEMENTED is received, not hang until timeout
+            # Unsupported GetStatus assumes LEASE_READY for backward compatibility.
             result = await monitor.wait_for_status(ExporterStatus.LEASE_READY, timeout=2.0)
 
             await monitor.stop()
 
-        # Should return False promptly (well before the 2s timeout)
-        assert result is False
+        assert result is True
+        assert monitor.current_status == ExporterStatus.LEASE_READY
         # Monitor should have stopped running
         assert not monitor._running
 
@@ -675,6 +679,125 @@ class TestStatusMonitorWaitForAnyOf:
         assert result == ExporterStatus.LEASE_READY
         # Monitor should have stopped running
         assert not monitor._running
+
+
+class TestStatusMonitorWaiterConsistency:
+    @pytest.mark.parametrize("multiple", [False, True], ids=["single", "multiple"])
+    @pytest.mark.parametrize("target", [ExporterStatus.LEASE_READY, ExporterStatus.AVAILABLE])
+    async def test_unsupported_rpc_agrees_for_pending_and_later_waiters(
+        self, multiple: bool, target: ExporterStatus
+    ) -> None:
+        """Old exporters report readiness consistently before and after the RPC reply."""
+        reply = anyio.Event()
+
+        class OldExporter(jumpstarter_pb2_grpc.ExporterServiceServicer):
+            async def GetStatus(self, request, context):
+                await reply.wait()
+                await context.abort(StatusCode.UNIMPLEMENTED, "GetStatus is not supported")
+
+        server = grpc.aio.server()
+        jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(OldExporter(), server)
+        port = server.add_insecure_port("127.0.0.1:0")
+        await server.start()
+        try:
+            async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel:
+                monitor = StatusMonitor(jumpstarter_pb2_grpc.ExporterServiceStub(channel))
+
+                async def wait() -> bool:
+                    if multiple:
+                        return await monitor.wait_for_any_of([target], timeout=2.0) == target
+                    return await monitor.wait_for_status(target, timeout=2.0)
+
+                results: list[bool] = []
+
+                async def pending_waiter():
+                    results.append(await wait())
+
+                with anyio.fail_after(5):
+                    async with anyio.create_task_group() as tg:
+                        await monitor.start(tg)
+                        tg.start_soon(pending_waiter)
+                        await anyio.wait_all_tasks_blocked()
+                        assert monitor._active_waiters == 1
+                        reply.set()
+
+                    results.append(await wait())
+
+                expected = target == ExporterStatus.LEASE_READY
+                assert results == [expected, expected]
+                assert monitor.current_status == ExporterStatus.LEASE_READY
+                assert monitor._active_waiters == 0
+                assert not monitor._running
+        finally:
+            await server.stop(grace=None)
+
+    @pytest.mark.parametrize(
+        ("method", "targets"),
+        [
+            ("wait_for_status", ExporterStatus.LEASE_READY),
+            ("wait_for_any_of", [ExporterStatus.LEASE_READY]),
+        ],
+    )
+    async def test_cancelling_waiter_restores_polling_mode(
+        self, method: str, targets: ExporterStatus | list[ExporterStatus]
+    ) -> None:
+        """Cancelling either wait API must release its active-waiter count."""
+        stub = MockExporterStub([create_status_response(ExporterStatus.AVAILABLE)])
+        with anyio.fail_after(5):
+            async with StatusMonitor(stub) as monitor:
+                async with anyio.create_task_group() as tg:
+                    tg.start_soon(getattr(monitor, method), targets)
+                    await anyio.wait_all_tasks_blocked()
+                    assert monitor._active_waiters == 1
+                    tg.cancel_scope.cancel()
+
+                assert monitor._active_waiters == 0
+                assert monitor._running
+
+    async def test_stop_wakes_waiter_without_timeout(self) -> None:
+        """stop() must release a waiter that has no timeout, also after a restart."""
+        stub = MockExporterStub([create_status_response(ExporterStatus.AVAILABLE)])
+        monitor = StatusMonitor(stub)
+        results: list[ExporterStatus | None] = []
+
+        async def waiter():
+            results.append(await monitor.wait_for_any_of([ExporterStatus.LEASE_READY]))
+
+        with anyio.fail_after(5):
+            # Second round: a restarted monitor must not inherit an already-set event.
+            for _ in range(2):
+                async with anyio.create_task_group() as tg:
+                    await monitor.start(tg)
+                    tg.start_soon(waiter)
+                    await anyio.wait_all_tasks_blocked()
+                    assert monitor._active_waiters == 1
+                    await monitor.stop()
+
+        assert results == [None, None]
+        assert monitor._active_waiters == 0
+
+    async def test_immediate_restart_does_not_adopt_stopped_waiter(self) -> None:
+        """A waiter woken by stop() must return even if start() runs before it does."""
+        stub = MockExporterStub([create_status_response(ExporterStatus.AVAILABLE)])
+        monitor = StatusMonitor(stub)
+        results: list[ExporterStatus | None] = []
+
+        async def waiter():
+            results.append(await monitor.wait_for_any_of([ExporterStatus.LEASE_READY]))
+
+        with anyio.fail_after(5):
+            async with anyio.create_task_group() as tg:
+                await monitor.start(tg)
+                tg.start_soon(waiter)
+                await anyio.wait_all_tasks_blocked()
+                assert monitor._active_waiters == 1
+                # stop() has no checkpoint, so the waiter only runs after the restart.
+                await monitor.stop()
+                await monitor.start(tg)
+                await anyio.wait_all_tasks_blocked()
+                assert results == [None]
+                assert monitor._active_waiters == 0
+                await monitor.stop()
 
 
 class TestStatusMonitorLifecycle:
