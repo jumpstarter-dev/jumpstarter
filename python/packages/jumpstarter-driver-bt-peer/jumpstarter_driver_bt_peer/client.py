@@ -118,6 +118,48 @@ def _transcode_to_sbc(source: Path, destination: Path) -> None:
         raise click.ClickException(f"ffmpeg could not convert {source.name}:\n{result.stderr.strip()}")
 
 
+def _probe_metadata(source: Path) -> dict[str, Any]:
+    """Read title/artist/album/duration from the source file with ffprobe.
+
+    Best effort: an untagged file, or no ffprobe, just means the DUT shows the
+    file name. ffprobe ships with ffmpeg, which is already needed to transcode.
+    """
+    ffprobe = shutil.which("ffprobe")
+    if ffprobe is None:
+        return {}
+
+    result = subprocess.run(
+        [
+            ffprobe, "-v", "error",
+            "-show_entries", "format=duration:format_tags=title,artist,album",
+            "-of", "json", str(source),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return {}
+
+    try:
+        fmt = json.loads(result.stdout).get("format", {})
+    except json.JSONDecodeError:
+        return {}
+
+    tags = {key.lower(): value for key, value in (fmt.get("tags") or {}).items()}
+    try:
+        duration_ms = int(float(fmt.get("duration", 0)) * 1000)
+    except (TypeError, ValueError):
+        duration_ms = 0
+
+    return {
+        "title": tags.get("title", ""),
+        "artist": tags.get("artist", ""),
+        "album": tags.get("album", ""),
+        "duration_ms": duration_ms,
+    }
+
+
 class BtPeerClient(DriverClient):
     """Client for the Bluetooth peer driver."""
 
@@ -148,9 +190,23 @@ class BtPeerClient(DriverClient):
     def get_connections(self) -> list[Any]:
         return _parse_list(self.call("get_connections"))
 
-    def play(self, path: str | Path, loop: bool = False) -> dict[str, Any]:
-        """Stream a local audio file to the DUT, transcoding if needed."""
+    def play(
+        self,
+        path: str | Path,
+        loop: bool = False,
+        title: str = "",
+        artist: str = "",
+        album: str = "",
+    ) -> dict[str, Any]:
+        """Stream a local audio file to the DUT, transcoding if needed.
+
+        Track details are read from the file's tags and shown by the DUT;
+        title/artist/album override whatever the tags say.
+        """
         source = Path(path).expanduser().resolve()
+
+        metadata = _probe_metadata(source)
+        metadata.update({k: v for k, v in (("title", title), ("artist", artist), ("album", album)) if v})
 
         if source.suffix.lower() == ".sbc":
             encoded = source.read_bytes()
@@ -164,7 +220,7 @@ class BtPeerClient(DriverClient):
             self.portal.wrap_async_context_manager(_BytesStream(buf=BytesIO(encoded))) as stream,
             self.portal.wrap_async_context_manager(self.resource_async(stream)) as handle,
         ):
-            return _parse_dict(self.call("play", handle, source.name, loop))
+            return _parse_dict(self.call("play", handle, source.name, loop, json.dumps(metadata)))
 
     def pause(self) -> dict[str, Any]:
         return _parse_dict(self.call("pause"))
@@ -256,13 +312,17 @@ class BtPeerClient(DriverClient):
             type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=Path),
         )
         @click.option("--loop", is_flag=True, help="Repeat the track until stopped")
-        def play_cmd(audio_file: Path, loop: bool):
+        @click.option("--title", default="", help="Override the title the DUT displays")
+        @click.option("--artist", default="", help="Override the artist the DUT displays")
+        @click.option("--album", default="", help="Override the album the DUT displays")
+        def play_cmd(audio_file: Path, loop: bool, title: str, artist: str, album: str):
             """Stream an audio file to the DUT over A2DP.
 
             Anything ffmpeg can read is transcoded locally to the SBC
             configuration the peer advertises. A .sbc file is sent as-is.
+            Track details come from the file's tags unless overridden.
             """
-            _echo(self.play(audio_file, loop))
+            _echo(self.play(audio_file, loop, title=title, artist=artist, album=album))
 
         @bt_peer.command("pause")
         def pause_cmd():

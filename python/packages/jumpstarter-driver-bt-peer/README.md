@@ -89,8 +89,19 @@ The peer also advertises an AVRCP target and reports playing/paused/stopped
 through it. A DUT needs this to treat the peer as a media device at all: with
 only the A2DP record advertised, Android connects its sink, decodes the
 incoming audio and discards it, leaving `A2dpSinkService` with no active
-device. Track metadata is not exposed, as bumble's AVRCP target implements no
-`GET_ELEMENT_ATTRIBUTES`, so the DUT shows a session with no title or artist.
+device.
+
+Track details come from the source file's tags, read locally with `ffprobe`,
+and are shown by the DUT along with a duration and progress position. Override
+them per track when a file is untagged:
+
+```bash
+j bt_peer play untagged.mp3 --title "Chime" --artist "Test Fixture"
+```
+
+Without tags or an override the DUT shows the file name. bumble's AVRCP target
+implements neither `GET_ELEMENT_ATTRIBUTES` nor song length in
+`GET_PLAY_STATUS`, so the driver answers both itself.
 
 PLAY/PAUSE/STOP coming *from* the DUT are recorded as `avrcp_key` events but
 ignored unless the driver is configured with `follow_transport_keys: true`.
