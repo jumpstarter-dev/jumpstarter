@@ -5,11 +5,11 @@
 | **JEP** | 0016 |
 | **Title** | Typed FSM Runner and Exporter Lifecycle |
 | **Author(s)** | @mangelajo (Miguel Angel Ajo Pelayo <miguelangel@ajo.es>) |
-| **Status** | Draft |
+| **Status** | Discussion |
 | **Type** | Standards Track |
 | **Created** | 2026-10-26 |
 | **Updated** | 2026-10-26 |
-| **Discussion** | The pull request proposing this JEP |
+| **Discussion** | https://github.com/jumpstarter-dev/jumpstarter/pull/1250 |
 | **Requires** | - |
 | **Supersedes** | - |
 | **Superseded-By** | - |
@@ -583,7 +583,8 @@ input ownership registry alternatives are covered in DD-1 through DD-4.
 
 - 2026-10-26: Converted the exporter FSM design plan into this proposal and
   included the typed shared runner, exporter-input reference, and 19 checked
-  behavioral cases. Production lifecycle integration remains pending.
+  behavioral cases in [PR #1250](https://github.com/jumpstarter-dev/jumpstarter/pull/1250).
+  Production lifecycle integration remains pending.
 
 ## References
 
