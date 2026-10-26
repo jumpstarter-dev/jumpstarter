@@ -42,6 +42,7 @@ dependencies = [
   "jumpstarter-driver-probe-rs",
   "jumpstarter-driver-pyserial",
   "jumpstarter-driver-qemu",
+  "jumpstarter-driver-qnx",
   "jumpstarter-driver-renode",
   "jumpstarter-driver-gpiod",
   "jumpstarter-driver-ridesx",
