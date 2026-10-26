@@ -354,3 +354,116 @@ def test_alias_path_traversal_rejected(bad_alias: str):
     """Aliases with path separators or dot-segments are rejected before any filesystem access."""
     with pytest.raises(ConfigurationError, match="Invalid exporter alias"):
         ExporterConfigV1Alpha1.validate_alias(bad_alias)
+
+
+class TestHookInstanceConfigNewFields:
+    """Tests for exit-code-based actions, retries, and new onFailure values."""
+
+    def test_new_on_failure_values_accepted(self):
+        from .exporter import HookInstanceConfigV1Alpha1
+
+        for action in ("warn", "warning", "endLease", "exit", "fail", "userError", "adminNotification"):
+            hook = HookInstanceConfigV1Alpha1(script="echo hello", onFailure=action)
+            assert hook.on_failure == action
+
+    def test_invalid_on_failure_rejected(self):
+        from .exporter import HookInstanceConfigV1Alpha1
+
+        with pytest.raises(ValueError):
+            HookInstanceConfigV1Alpha1.model_validate({"script": "echo hello", "onFailure": "invalid"})
+
+    def test_exit_actions_default_empty(self):
+        from .exporter import HookInstanceConfigV1Alpha1
+
+        hook = HookInstanceConfigV1Alpha1(script="echo hello")
+        assert hook.exit_actions == {}
+
+    def test_exit_actions_parsed(self):
+        from .exporter import HookInstanceConfigV1Alpha1
+
+        hook = HookInstanceConfigV1Alpha1.model_validate({
+            "script": "echo hello",
+            "exitActions": {3: "warning", 5: "userError", 10: "adminNotification", 42: "exit"},
+        })
+        assert hook.exit_actions == {3: "warning", 5: "userError", 10: "adminNotification", 42: "exit"}
+
+    def test_exit_actions_invalid_action_rejected(self):
+        from .exporter import HookInstanceConfigV1Alpha1
+
+        with pytest.raises(ValueError):
+            HookInstanceConfigV1Alpha1.model_validate({
+                "script": "echo hello",
+                "exitActions": {1: "invalid_action"},
+            })
+
+    def test_retries_default_zero(self):
+        from .exporter import HookInstanceConfigV1Alpha1
+
+        hook = HookInstanceConfigV1Alpha1(script="echo hello")
+        assert hook.retries == 0
+
+    def test_retries_parsed(self):
+        from .exporter import HookInstanceConfigV1Alpha1
+
+        hook = HookInstanceConfigV1Alpha1.model_validate({
+            "script": "echo hello",
+            "retries": 3,
+            "retryDelay": 10,
+        })
+        assert hook.retries == 3
+        assert hook.retry_delay == 10
+
+    def test_retries_negative_rejected(self):
+        from .exporter import HookInstanceConfigV1Alpha1
+
+        with pytest.raises(ValueError):
+            HookInstanceConfigV1Alpha1.model_validate({
+                "script": "echo hello",
+                "retries": -1,
+            })
+
+    def test_retry_delay_default_five(self):
+        from .exporter import HookInstanceConfigV1Alpha1
+
+        hook = HookInstanceConfigV1Alpha1(script="echo hello")
+        assert hook.retry_delay == 5
+
+    def test_full_yaml_roundtrip(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        monkeypatch.setattr(ExporterConfigV1Alpha1, "BASE_PATH", tmp_path)
+
+        path = tmp_path / "test-new-hooks.yaml"
+        text = """apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: test-new-hooks
+endpoint: "jumpstarter.my-lab.com:1443"
+token: "test-token"
+hooks:
+  beforeLease:
+    script: ./check-dut.sh
+    timeout: 120
+    onFailure: fail
+    retries: 3
+    retryDelay: 10
+    exitActions:
+      3: warning
+      5: userError
+      10: adminNotification
+export: {}
+"""
+        path.write_text(text, encoding="utf-8")
+        config = ExporterConfigV1Alpha1.load("test-new-hooks")
+
+        hook = config.hooks.before_lease
+        assert hook is not None
+        assert hook.on_failure == "fail"
+        assert hook.retries == 3
+        assert hook.retry_delay == 10
+        assert hook.exit_actions == {3: "warning", 5: "userError", 10: "adminNotification"}
+
+        yaml_output = ExporterConfigV1Alpha1.dump_yaml(config)
+        assert "onFailure: fail" in yaml_output
+        assert "retries: 3" in yaml_output
+        assert "retryDelay: 10" in yaml_output
+        assert "exitActions:" in yaml_output

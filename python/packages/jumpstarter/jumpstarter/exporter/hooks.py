@@ -25,6 +25,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+type HookAction = Literal[
+    "warn", "warning", "endLease", "exit",
+    "fail", "userError", "adminNotification",
+]
+
 MAX_DRAIN_BYTES = 256 * 1024
 DRAIN_TIMEOUT_SECONDS = 2.0
 DRAIN_MAX_EMPTY_POLLS = 10
@@ -35,6 +40,18 @@ MAX_MOTD_BYTES = 64 * 1024
 # Module-level reference to time.monotonic so tests can patch it without
 # affecting the asyncio event loop (which also uses time.monotonic).
 _monotonic = time.monotonic
+
+# Standard exit-code convention for hooks.  Active only when ``onFailure``
+# is set to a new-style action (fail, userError, adminNotification) so that
+# legacy configs (onFailure: exit / warn / endLease) are never surprised.
+_DEFAULT_EXIT_ACTIONS: dict[int, HookAction] = {
+    1: "fail",               # general error → retryable
+    2: "userError",          # client/user caused the problem
+    3: "adminNotification",  # admin intervention needed
+}
+
+# onFailure values that activate the built-in exit-code defaults.
+_NEW_STYLE_ACTIONS = frozenset({"fail", "userError", "adminNotification"})
 
 
 def _flush_lines(buffer: bytes, output_lines: list[str]) -> bytes:
@@ -56,16 +73,21 @@ def _flush_lines(buffer: bytes, output_lines: list[str]) -> bytes:
 
 @dataclass
 class HookExecutionError(Exception):
-    """Raised when a hook fails and on_failure is set to 'endLease' or 'exit'.
+    """Raised when a hook fails with a blocking action.
+
+    Raised for any non-warning action: fail, userError, adminNotification,
+    endLease, or exit.  The ``on_failure`` field carries the resolved action
+    (which may come from the ``exitActions`` map rather than the default
+    ``onFailure`` config value).
 
     Attributes:
         message: Error message describing the failure
-        on_failure: The on_failure mode that triggered this error ('endLease' or 'exit')
+        on_failure: The resolved action that triggered this error
         hook_type: The type of hook that failed ('before_lease' or 'after_lease')
     """
 
     message: str
-    on_failure: Literal["endLease", "exit"]
+    on_failure: HookAction
     hook_type: Literal["before_lease", "after_lease"]
 
     def __str__(self) -> str:
@@ -78,6 +100,18 @@ class HookExecutionError(Exception):
     def should_end_lease(self) -> bool:
         """Returns True only for an explicit lease release; exit requests exporter shutdown."""
         return self.on_failure == "endLease"
+
+    def should_retry(self) -> bool:
+        """Returns True if the hook failure should be retried (``fail`` action only)."""
+        return self.on_failure == "fail"
+
+    def is_user_error(self) -> bool:
+        """Returns True if the failure is attributed to the user/client."""
+        return self.on_failure == "userError"
+
+    def is_admin_notification(self) -> bool:
+        """Returns True if admin attention is required."""
+        return self.on_failure == "adminNotification"
 
 
 @dataclass
@@ -234,32 +268,61 @@ class HookExecutor:
         if content:
             session.motd = "\n".join(filter(None, [session.motd, content]))
 
+    @staticmethod
+    def _resolve_action(
+        returncode: int | None,
+        hook_config: HookInstanceConfigV1Alpha1,
+    ) -> HookAction:
+        """Resolve the action for a hook failure based on exit code and config.
+
+        Resolution order:
+        1. Explicit ``exitActions`` map in the hook config (highest priority).
+        2. Built-in exit-code defaults (``_DEFAULT_EXIT_ACTIONS``), but **only**
+           when ``onFailure`` is a new-style action (fail / userError /
+           adminNotification).  Legacy onFailure values (warn, endLease, exit)
+           are never overridden by the defaults, preserving backward compat.
+        3. The ``onFailure`` default from config.
+        """
+        if returncode is not None and returncode in hook_config.exit_actions:
+            return hook_config.exit_actions[returncode]
+        if (
+            returncode is not None
+            and hook_config.on_failure in _NEW_STYLE_ACTIONS
+            and returncode in _DEFAULT_EXIT_ACTIONS
+        ):
+            return _DEFAULT_EXIT_ACTIONS[returncode]
+        return hook_config.on_failure
+
     def _handle_hook_failure(
         self,
         error_msg: str,
-        on_failure: Literal["warn", "endLease", "exit"],
+        on_failure: HookAction,
         hook_type: Literal["before_lease", "after_lease"],
         cause: Exception | None = None,
     ) -> str | None:
-        """Handle hook failure according to on_failure setting.
+        """Handle hook failure according to the resolved action.
 
         Args:
             error_msg: Error message describing the failure
-            on_failure: The on_failure mode ('warn', 'endLease', or 'exit')
+            on_failure: The resolved action (from exitActions or onFailure default)
             hook_type: The type of hook that failed
             cause: Optional exception that caused the failure
 
         Returns:
-            Warning message string if on_failure is 'warn', None otherwise
+            Warning message string if action is 'warn'/'warning', None otherwise
 
         Raises:
-            HookExecutionError: If on_failure is 'endLease' or 'exit'
+            HookExecutionError: For any blocking action (fail, userError,
+                adminNotification, endLease, exit)
         """
-        if on_failure == "warn":
-            logger.warning("%s (on_failure=warn, continuing)", error_msg)
+        if on_failure in ("warn", "warning"):
+            logger.warning("%s (action=warning, continuing)", error_msg)
             return error_msg
 
-        logger.exception("%s (on_failure=%s, raising exception)", error_msg, on_failure)
+        if on_failure == "adminNotification":
+            logger.critical("ADMIN ACTION REQUIRED: %s", error_msg)
+
+        logger.error("%s (action=%s, raising exception)", error_msg, on_failure)
 
         error = HookExecutionError(
             message=error_msg,
@@ -267,7 +330,6 @@ class HookExecutor:
             hook_type=hook_type,
         )
 
-        # Properly handle exception chaining
         if cause is not None:
             raise error from cause
         else:
@@ -599,7 +661,13 @@ class HookExecutor:
                 # For timeout, create a TimeoutError as the cause
                 if timed_out and cause is None:
                     cause = TimeoutError(error_msg)
-                return self._handle_hook_failure(error_msg, on_failure, hook_type, cause)
+                # Resolve action from exit code (exitActions map) or fall back
+                # to the default onFailure.  Timeouts and exceptions have
+                # returncode=None, so they always use the default.
+                action = on_failure
+                if returncode is not None and returncode != 0:
+                    action = self._resolve_action(returncode, hook_config)
+                return self._handle_hook_failure(error_msg, action, hook_type, cause)
         return None
 
     async def execute_before_lease_hook(self, lease_scope: "LeaseContext") -> str | None:
@@ -695,7 +763,7 @@ class HookExecutor:
             elapsed += interval
         return True
 
-    async def run_before_lease_hook(
+    async def run_before_lease_hook(  # noqa: C901
         self,
         lease_scope: "LeaseContext",
         report_status: Callable[["ExporterStatus", str], Awaitable[None]],
@@ -708,7 +776,8 @@ class HookExecutor:
         - Waits for the lease scope to be ready (session/socket populated)
         - Reports status changes via the provided callback
         - Sets up the hook executor with the session for logging
-        - Executes the hook and handles errors
+        - Executes the hook with retries (when action is ``fail``)
+        - Resolves the action from exit codes via ``exitActions`` map
         - Always signals the before_lease_hook event to unblock connections
 
         Args:
@@ -739,39 +808,79 @@ class HookExecutor:
                 lease_scope.skip_after_lease_hook = True
                 return
 
-            await report_status(ExporterStatus.BEFORE_LEASE_HOOK, "Running beforeLease hook")
+            hook_config = self.config.before_lease
+            max_attempts = 1 + hook_config.retries
 
-            # Execute hook with lease scope
-            logger.info("Executing before-lease hook for lease %s", lease_scope.lease_name)
-            warning = await self._execute_hook(
-                self.config.before_lease,
-                lease_scope,
-                LogSource.BEFORE_LEASE_HOOK,
-            )
+            for attempt in range(1, max_attempts + 1):
+                # Check if lease ended between retries
+                if lease_scope.lease_ended.is_set():
+                    logger.info(
+                        "Lease %s ended during hook retry, aborting",
+                        lease_scope.lease_name,
+                    )
+                    lease_scope.skip_after_lease_hook = True
+                    return
 
-            if lease_scope.lease_ended.is_set():
-                logger.info(
-                    "Lease %s ended during beforeLease hook, skipping LEASE_READY transition",
-                    lease_scope.lease_name,
-                )
-                return
+                if attempt == 1:
+                    await report_status(ExporterStatus.BEFORE_LEASE_HOOK, "Running beforeLease hook")
+                else:
+                    await report_status(
+                        ExporterStatus.BEFORE_LEASE_HOOK,
+                        f"Retrying beforeLease hook (attempt {attempt}/{max_attempts})",
+                    )
 
-            if warning:
-                msg = f"{HOOK_WARNING_PREFIX}beforeLease hook warning: {warning}"
-            else:
-                msg = "Ready for commands"
-            await report_status(ExporterStatus.LEASE_READY, msg)
-            logger.info("beforeLease hook completed successfully")
+                try:
+                    # Execute hook with lease scope
+                    logger.info(
+                        "Executing before-lease hook for lease %s (attempt %d/%d)",
+                        lease_scope.lease_name,
+                        attempt,
+                        max_attempts,
+                    )
+                    warning = await self._execute_hook(
+                        hook_config,
+                        lease_scope,
+                        LogSource.BEFORE_LEASE_HOOK,
+                    )
+
+                    if lease_scope.lease_ended.is_set():
+                        logger.info(
+                            "Lease %s ended during beforeLease hook, skipping LEASE_READY transition",
+                            lease_scope.lease_name,
+                        )
+                        return
+
+                    if warning:
+                        msg = f"{HOOK_WARNING_PREFIX}beforeLease hook warning: {warning}"
+                    else:
+                        msg = "Ready for commands"
+                    await report_status(ExporterStatus.LEASE_READY, msg)
+                    logger.info("beforeLease hook completed successfully")
+                    return
+
+                except HookExecutionError as e:
+                    # Only retry when the resolved action is 'fail' and attempts remain
+                    if e.should_retry() and attempt < max_attempts:
+                        logger.warning(
+                            "beforeLease hook failed (attempt %d/%d): %s, retrying in %ds",
+                            attempt,
+                            max_attempts,
+                            e,
+                            hook_config.retry_delay,
+                        )
+                        await anyio.sleep(hook_config.retry_delay)
+                        continue
+                    # Non-retryable action or last attempt — propagate
+                    raise
 
         except HookExecutionError as e:
-            # warn returns a warning string; only endLease/exit normally raise this error.
             if e.should_shutdown_exporter():
-                # on_failure='exit' - defer shutdown until client handles the failure
-                logger.error("beforeLease hook failed with on_failure='exit': %s", e)
+                # action='exit' — defer shutdown until client handles the failure
+                logger.error("beforeLease hook failed with action='exit': %s", e)
                 lease_scope.skip_after_lease_hook = True
                 await report_status(
                     ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
-                    f"beforeLease hook failed (on_failure=exit, shutting down): {e}",
+                    f"beforeLease hook failed (shutting down): {e}",
                 )
                 await report_status(
                     ExporterStatus.OFFLINE,
@@ -779,9 +888,26 @@ class HookExecutor:
                 )
                 # Defer shutdown: sets _stop_requested=True, actual stop after lease cleanup
                 shutdown(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
+
+            elif e.should_retry() or e.is_user_error() or e.is_admin_notification():
+                # fail / userError / adminNotification — block lease, stay alive
+                lease_scope.skip_after_lease_hook = True
+                assert self.config.before_lease is not None
+                max_attempts = 1 + self.config.before_lease.retries
+
+                if e.is_admin_notification():
+                    status_msg = f"beforeLease hook failed (admin action required): {e}"
+                elif e.is_user_error():
+                    status_msg = f"beforeLease hook failed (user error): {e}"
+                else:
+                    attempts_info = f" after {max_attempts} attempts" if max_attempts > 1 else ""
+                    status_msg = f"beforeLease hook failed{attempts_info}: {e}"
+
+                await report_status(ExporterStatus.BEFORE_LEASE_HOOK_FAILED, status_msg)
+
             else:
-                # on_failure='endLease' - report failure, release in finally block
-                logger.error("beforeLease hook failed with on_failure='endLease': %s", e)
+                # endLease (deprecated) — report failure, release in finally block
+                logger.error("beforeLease hook failed with action='endLease': %s", e)
                 lease_scope.skip_after_lease_hook = True
                 # Defensive redundancy: this branch is only reached for endLease,
                 # but re-check the policy so a future policy change cannot
@@ -812,7 +938,7 @@ class HookExecutor:
                     await anyio.sleep(1.0)
                     await self._safe_release_lease(request_lease_release, lease_scope)
 
-    async def run_after_lease_hook(
+    async def run_after_lease_hook(  # noqa: C901
         self,
         lease_scope: "LeaseContext",
         report_status: Callable[["ExporterStatus", str], Awaitable[None]],
@@ -825,9 +951,9 @@ class HookExecutor:
         - Validates that the lease scope is ready
         - Reports status changes via the provided callback
         - Sets up the hook executor with the session for logging
-        - Executes the hook and handles errors
-        - Triggers shutdown on critical failures (HookExecutionError)
-        - Requests lease release only for an explicit on_failure='endLease' hook failure
+        - Executes the hook with retries (when action is ``fail``)
+        - Triggers shutdown on critical failures (action='exit')
+        - Requests lease release only for an explicit action='endLease' hook failure
 
         Args:
             lease_scope: LeaseScope containing session, socket_path, and client info
@@ -851,50 +977,88 @@ class HookExecutor:
                 await report_status(ExporterStatus.AVAILABLE, "Available for new lease")
                 return
 
-            await report_status(ExporterStatus.AFTER_LEASE_HOOK, "Running afterLease hooks")
+            hook_config = self.config.after_lease
+            max_attempts = 1 + hook_config.retries
 
-            # Execute hook with lease scope
-            logger.info("Executing after-lease hook for lease %s", lease_scope.lease_name)
-            warning = await self._execute_hook(
-                self.config.after_lease,
-                lease_scope,
-                LogSource.AFTER_LEASE_HOOK,
-            )
+            for attempt in range(1, max_attempts + 1):
+                if attempt == 1:
+                    await report_status(ExporterStatus.AFTER_LEASE_HOOK, "Running afterLease hooks")
+                else:
+                    await report_status(
+                        ExporterStatus.AFTER_LEASE_HOOK,
+                        f"Retrying afterLease hook (attempt {attempt}/{max_attempts})",
+                    )
 
-            if warning:
-                msg = f"{HOOK_WARNING_PREFIX}afterLease hook warning: {warning}"
-            else:
-                msg = "Available for new lease"
-            await report_status(ExporterStatus.AVAILABLE, msg)
-            logger.info("afterLease hook completed successfully")
+                try:
+                    # Execute hook with lease scope
+                    logger.info(
+                        "Executing after-lease hook for lease %s (attempt %d/%d)",
+                        lease_scope.lease_name,
+                        attempt,
+                        max_attempts,
+                    )
+                    warning = await self._execute_hook(
+                        hook_config,
+                        lease_scope,
+                        LogSource.AFTER_LEASE_HOOK,
+                    )
+
+                    if warning:
+                        msg = f"{HOOK_WARNING_PREFIX}afterLease hook warning: {warning}"
+                    else:
+                        msg = "Available for new lease"
+                    await report_status(ExporterStatus.AVAILABLE, msg)
+                    logger.info("afterLease hook completed successfully")
+                    return
+
+                except HookExecutionError as e:
+                    # Only retry when the resolved action is 'fail' and attempts remain
+                    if e.should_retry() and attempt < max_attempts:
+                        logger.warning(
+                            "afterLease hook failed (attempt %d/%d): %s, retrying in %ds",
+                            attempt,
+                            max_attempts,
+                            e,
+                            hook_config.retry_delay,
+                        )
+                        await anyio.sleep(hook_config.retry_delay)
+                        continue
+                    # Non-retryable action or last attempt — propagate
+                    raise
 
         except HookExecutionError as e:
-            # warn returns a warning string; only endLease/exit normally raise this error.
             if e.should_shutdown_exporter():
-                # on_failure='exit' - shut down the entire exporter
-                logger.exception("afterLease hook failed with on_failure='exit'")
+                # action='exit' — shut down the entire exporter
+                logger.error("afterLease hook failed with action='exit': %s", e)
                 await report_status(
                     ExporterStatus.AFTER_LEASE_HOOK_FAILED,
-                    f"afterLease hook failed (on_failure=exit, shutting down): {e}",
+                    f"afterLease hook failed (shutting down): {e}",
                 )
                 await report_status(
                     ExporterStatus.OFFLINE,
                     "Exporter shutting down due to afterLease hook failure",
                 )
-                # No delay needed - client is already polling and will see the failure
-                logger.error("Shutting down exporter due to afterLease hook failure with on_failure='exit'")
-                # Exit code 1 tells the CLI not to restart the exporter
+                logger.error("Shutting down exporter due to afterLease hook failure with action='exit'")
                 shutdown(exit_code=1, should_unregister=True, wait_for_lease_exit=True)
+
+            elif e.should_retry() or e.is_user_error() or e.is_admin_notification():
+                # fail / userError / adminNotification — report failure, don't shut down
+                if e.is_admin_notification():
+                    status_msg = f"afterLease hook failed (admin action required): {e}"
+                elif e.is_user_error():
+                    status_msg = f"afterLease hook failed (user error): {e}"
+                else:
+                    assert self.config.after_lease is not None
+                    max_attempts = 1 + self.config.after_lease.retries
+                    attempts_info = f" after {max_attempts} attempts" if max_attempts > 1 else ""
+                    status_msg = f"afterLease hook failed{attempts_info}: {e}"
+                logger.error(status_msg)
+                await report_status(ExporterStatus.AFTER_LEASE_HOOK_FAILED, status_msg)
+
             else:
-                # on_failure='endLease' - report failure to the client, then release the lease.
-                # AFTER_LEASE_HOOK_FAILED is a transient status: the client sees the failure,
-                # the lease is released in the finally block, and the exporter's main loop
-                # clears the lease context and accepts new leases.
-                # Defensive redundancy: this branch is only reached for endLease,
-                # but re-check the policy so a future policy change cannot
-                # silently start releasing leases here.
+                # endLease (deprecated) — report failure, release in finally block
                 should_release = e.should_end_lease()
-                logger.error("afterLease hook failed with on_failure='endLease': %s", e)
+                logger.error("afterLease hook failed with action='endLease': %s", e)
                 await report_status(
                     ExporterStatus.AFTER_LEASE_HOOK_FAILED,
                     f"afterLease hook failed (on_failure=endLease): {e}",

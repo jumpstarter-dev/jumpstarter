@@ -141,7 +141,7 @@ hooks: # Optional lifecycle hooks that run at lease boundaries
     script: |
       j power on
     timeout: 120       # Hook execution timeout in seconds (default: 120)
-    onFailure: warn    # Action on failure: "warn" (default), "endLease", or "exit"
+    onFailure: warn    # Action on failure: "warn" (default), "fail", "userError", "adminNotification", "endLease", or "exit"
   afterLease:
     script: |
       j power off
