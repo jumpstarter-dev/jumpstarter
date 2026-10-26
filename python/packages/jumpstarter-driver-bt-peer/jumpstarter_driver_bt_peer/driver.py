@@ -23,6 +23,9 @@ from bumble.avdtp import (
     Protocol,
     State,
 )
+from bumble.avrcp import Delegate as AvrcpDelegate
+from bumble.avrcp import EventId, PlayStatus, TargetServiceSdpRecord
+from bumble.avrcp import Protocol as AvrcpProtocol
 from bumble.core import BT_BR_EDR_TRANSPORT, ClassOfDevice, DeviceClass
 from bumble.device import Connection, Device, DeviceConfiguration
 from bumble.hci import HCI_PERIPHERAL_ROLE
@@ -81,6 +84,29 @@ class AutoAcceptDelegate(PairingDelegate):
         return 0
 
 
+class _AvrcpDelegate(AvrcpDelegate):
+    """Reports the peer's transport state to the DUT's AVRCP controller.
+
+    Without an AVRCP target the DUT sees an A2DP source that never claims to
+    be playing, so it leaves the sink inactive and renders nothing even though
+    packets are arriving. Key presses are forwarded to `on_key` so the head
+    unit's transport controls reach the driver.
+    """
+
+    def __init__(self, on_key=None):
+        super().__init__(
+            supported_events=[
+                EventId.PLAYBACK_STATUS_CHANGED,
+                EventId.TRACK_CHANGED,
+            ]
+        )
+        self._on_key = on_key
+
+    async def on_key_event(self, key, pressed: bool, data: bytes) -> None:
+        if self._on_key is not None:
+            self._on_key(key, pressed)
+
+
 class _ByteReader:
     """An async ``read(n)`` over an in-memory buffer, as bumble's parsers expect."""
 
@@ -106,6 +132,7 @@ class _Track:
         self.data = data
         self.mtu = mtu
         self.loop = loop
+        self.paused = False
         self.last_timestamp = 0.0
         self.restart()
 
@@ -141,6 +168,8 @@ class BtPeer(Driver):
     _rtp_mtu: int = field(default=DEFAULT_RTP_MTU, init=False, repr=False)
     _protocol: Protocol | None = field(default=None, init=False, repr=False)
     _source: LocalSource | None = field(default=None, init=False, repr=False)
+    _avrcp: AvrcpProtocol | None = field(default=None, init=False, repr=False)
+    _avrcp_delegate: _AvrcpDelegate | None = field(default=None, init=False, repr=False)
 
     @classmethod
     def client(cls) -> str:
@@ -230,6 +259,11 @@ class BtPeer(Driver):
         while True:
             track = self._track
 
+            # A paused track keeps its position but emits filler, so the
+            # stream stays open and resuming needs no renegotiation.
+            if track is not None and track.paused:
+                track = None
+
             if track is None:
                 # No sleep here: the pump already waits until each packet's
                 # timestamp before writing it, so sleeping as well would make
@@ -316,6 +350,33 @@ class BtPeer(Driver):
             })
             return
 
+    def _report_playback_status(self, status: PlayStatus) -> None:
+        """Tell the DUT's AVRCP controller what the peer is doing."""
+        if self._avrcp_delegate is None:
+            return
+        self._avrcp_delegate.playback_status = status
+        if self._avrcp is None:
+            return
+        try:
+            self._avrcp.notify_playback_status_changed(status)
+        except Exception as exc:  # noqa: BLE001
+            # Only a notification: a controller that never registered, or a
+            # dropped AVCTP channel, must not fail the play call.
+            self.logger.debug("could not notify playback status: %s", exc)
+
+    def _on_avrcp_key(self, key, pressed: bool) -> None:
+        """Handle transport keys pressed on the head unit."""
+        name = getattr(key, "name", str(key))
+        self._emit("avrcp_key", {"key": name, "pressed": pressed})
+        if not pressed:
+            return
+        if name in ("PAUSE", "STOP") and self._track is not None:
+            self._track.paused = True
+            self._report_playback_status(PlayStatus.PAUSED if name == "PAUSE" else PlayStatus.STOPPED)
+        elif name == "PLAY" and self._track is not None:
+            self._track.paused = False
+            self._report_playback_status(PlayStatus.PLAYING)
+
     def _on_track_exhausted(self, track: _Track) -> None:
         if track.loop:
             track.restart()
@@ -325,6 +386,7 @@ class BtPeer(Driver):
         # different track while this one was draining.
         if self._track is track:
             self._track = None
+            self._report_playback_status(PlayStatus.STOPPED)
         self._emit("track_finished", {"name": track.name})
 
     @export
@@ -388,15 +450,25 @@ class BtPeer(Driver):
                 delegate=AutoAcceptDelegate(),
             )
 
-            service_record_handle = 0x00010001
+            # A2DP source plus AVRCP target, the pair a phone advertises. The
+            # DUT needs the AVRCP record (UUID 110C) to treat this as a real
+            # media device; with the A2DP record alone it leaves its sink
+            # inactive and discards the audio.
+            audio_source_handle = 0x00010001
+            avrcp_target_handle = 0x00010002
             self._device.sdp_service_records = {
-                service_record_handle: make_audio_source_service_sdp_records(
-                    service_record_handle
-                )
+                audio_source_handle: make_audio_source_service_sdp_records(audio_source_handle),
+                avrcp_target_handle: TargetServiceSdpRecord(
+                    avrcp_target_handle
+                ).to_service_attributes(),
             }
 
             self._avdtp_listener = Listener.for_device(self._device)
             self._avdtp_listener.on("connection", self._on_avdtp_connection)
+
+            self._avrcp_delegate = _AvrcpDelegate(on_key=self._on_avrcp_key)
+            self._avrcp = AvrcpProtocol(self._avrcp_delegate)
+            self._avrcp.listen(self._device)
 
             self._device.on("connection", self._on_connection)
 
@@ -436,6 +508,8 @@ class BtPeer(Driver):
         self._rtp_mtu = DEFAULT_RTP_MTU
         self._protocol = None
         self._source = None
+        self._avrcp = None
+        self._avrcp_delegate = None
         self._connections.clear()
         self._events.clear()
 
@@ -667,6 +741,7 @@ class BtPeer(Driver):
         self._track = track
 
         stream_state = await self._ensure_streaming()
+        self._report_playback_status(PlayStatus.PLAYING)
 
         info = {
             "name": name,
@@ -685,6 +760,7 @@ class BtPeer(Driver):
         if track is None:
             return json.dumps({"status": "not_playing"})
         self._track = None
+        self._report_playback_status(PlayStatus.STOPPED)
         self._emit("track_stopped", {"name": track.name})
         return json.dumps({"status": "stopped", "name": track.name})
 
