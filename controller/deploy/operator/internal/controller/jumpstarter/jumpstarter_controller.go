@@ -279,6 +279,14 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	// Reconcile observability integration: metrics Services, ServiceMonitors and
+	// the optional log shipper ConfigMap. Optional integrations never block lease
+	// operations; failures are retried on the next reconcile.
+	if err := r.reconcileObservability(ctx, &jumpstarter); err != nil {
+		log.Error(err, "Failed to reconcile observability integration")
+		return ctrl.Result{}, err
+	}
+
 	// Reconcile ConfigMaps (after deployments and services)
 	if err := r.reconcileConfigMaps(ctx, &jumpstarter, desiredConfigMap); err != nil {
 		log.Error(err, "Failed to reconcile ConfigMaps")
@@ -302,6 +310,14 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	requeueAfter := 30 * time.Minute
 	if r.telemetryCANeedsRequeue(ctx, &jumpstarter) {
 		requeueAfter = telemetryCARequeueInterval
+	}
+	// While Prometheus autodiscovery is enabled but the ServiceMonitor CRD is not
+	// installed, poll faster so the objects appear within five minutes of the CRD
+	// being installed, without a hot loop.
+	if serviceMonitorEnabled(&jumpstarter) && requeueAfter > 2*time.Minute {
+		if available, err := r.serviceMonitorCRDAvailable(ctx); err == nil && !available {
+			requeueAfter = 2 * time.Minute
+		}
 	}
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
@@ -775,6 +791,12 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 		"controller": jumpstarter.Name,
 	}
 
+	// Discovery labels for cluster log shippers. Applied to the pod template only:
+	// Deployment.spec.selector is immutable and must keep its existing key set.
+	podLabels := maps.Clone(labels)
+	podLabels[logScrapeLabel] = "true"
+	podLabels[logFormatLabel] = "json"
+
 	// Build GRPC endpoint from first controller endpoint
 	// Default to port 443 for TLS gRPC endpoints
 	grpcEndpoint := ""
@@ -916,7 +938,7 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
+					Labels:      podLabels,
 					Annotations: r.buildControllerPodAnnotations(jumpstarter, configMapHash, tlsSecretHash),
 				},
 				Spec: corev1.PodSpec{
@@ -1049,6 +1071,12 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 		"router-index": fmt.Sprintf("%d", replicaIndex),
 	}
 
+	// Discovery labels for cluster log shippers. Applied to the pod template only:
+	// Deployment.spec.selector is immutable and must keep its existing key set.
+	podLabels := maps.Clone(labels)
+	podLabels[logScrapeLabel] = "true"
+	podLabels[logFormatLabel] = "json"
+
 	// Build router endpoint for this specific replica
 	routerEndpoint := r.buildRouterEndpointForReplica(jumpstarter, replicaIndex)
 
@@ -1132,7 +1160,7 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
+					Labels:      podLabels,
 					Annotations: r.buildRouterPodAnnotations(jumpstarter, tlsSecretHash),
 				},
 				Spec: corev1.PodSpec{

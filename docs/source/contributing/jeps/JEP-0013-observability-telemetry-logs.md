@@ -1697,6 +1697,8 @@ all subsequent phases have E2E coverage from the start.
 
 - JEP-0011 proposed: 2026-04-23
 - JEP-0011 updated based on feedback: 2026-04-29
+- Phase 5 (in-cluster log scraping and Prometheus autodiscovery) implemented on
+  the `jep-0013-phase5-incluster-log-scraping` branch: 2026-10-27
 
 ## References
 

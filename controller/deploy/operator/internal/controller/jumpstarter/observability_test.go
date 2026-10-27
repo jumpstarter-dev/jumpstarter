@@ -1,0 +1,344 @@
+/*
+Copyright 2025.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package jumpstarter
+
+import (
+	"reflect"
+	"strings"
+	"testing"
+
+	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/yaml"
+)
+
+func testJumpstarter() *operatorv1alpha1.Jumpstarter {
+	return &operatorv1alpha1.Jumpstarter{
+		ObjectMeta: metav1.ObjectMeta{Name: "jumpstarter", Namespace: "lab"},
+	}
+}
+
+func boolPtr(v bool) *bool { return &v }
+
+func TestServiceMonitorEnabled(t *testing.T) {
+	tests := []struct {
+		name string
+		js   *operatorv1alpha1.Jumpstarter
+		want bool
+	}{
+		{"nil telemetry defaults true", testJumpstarter(), true},
+		{"empty metrics defaults true", func() *operatorv1alpha1.Jumpstarter {
+			js := testJumpstarter()
+			js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+			return js
+		}(), true},
+		{"explicit false", func() *operatorv1alpha1.Jumpstarter {
+			js := testJumpstarter()
+			js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+			js.Spec.Telemetry.Metrics.ServiceMonitor = boolPtr(false)
+			return js
+		}(), false},
+		{"explicit true", func() *operatorv1alpha1.Jumpstarter {
+			js := testJumpstarter()
+			js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+			js.Spec.Telemetry.Metrics.ServiceMonitor = boolPtr(true)
+			return js
+		}(), true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := serviceMonitorEnabled(tc.js); got != tc.want {
+				t.Errorf("serviceMonitorEnabled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestShipperType(t *testing.T) {
+	tests := []struct {
+		name string
+		js   *operatorv1alpha1.Jumpstarter
+		want string
+	}{
+		{"nil telemetry", testJumpstarter(), shipperTypeNone},
+		{"empty type", func() *operatorv1alpha1.Jumpstarter {
+			js := testJumpstarter()
+			js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+			return js
+		}(), shipperTypeNone},
+		{"promtail", func() *operatorv1alpha1.Jumpstarter {
+			js := testJumpstarter()
+			js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+			js.Spec.Telemetry.Logging.Shipper.Type = shipperTypePromtail
+			return js
+		}(), shipperTypePromtail},
+		{"alloy", func() *operatorv1alpha1.Jumpstarter {
+			js := testJumpstarter()
+			js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+			js.Spec.Telemetry.Logging.Shipper.Type = shipperTypeAlloy
+			return js
+		}(), shipperTypeAlloy},
+		{"vector", func() *operatorv1alpha1.Jumpstarter {
+			js := testJumpstarter()
+			js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+			js.Spec.Telemetry.Logging.Shipper.Type = shipperTypeVector
+			return js
+		}(), shipperTypeVector},
+		{"unknown falls back to none", func() *operatorv1alpha1.Jumpstarter {
+			js := testJumpstarter()
+			js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+			js.Spec.Telemetry.Logging.Shipper.Type = "fluentbit"
+			return js
+		}(), shipperTypeNone},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shipperType(tc.js); got != tc.want {
+				t.Errorf("shipperType() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDesiredMetricsServices(t *testing.T) {
+	js := testJumpstarter()
+	services := desiredMetricsServices(js)
+	if len(services) != 2 {
+		t.Fatalf("expected 2 metrics services, got %d", len(services))
+	}
+
+	want := map[string]map[string]string{
+		"jumpstarter-controller-metrics": {"component": "controller", "controller": js.Name},
+		"jumpstarter-router-metrics":     {"component": "router", "router": js.Name},
+	}
+	for _, svc := range services {
+		selector, ok := want[svc.Name]
+		if !ok {
+			t.Errorf("unexpected service %q", svc.Name)
+			continue
+		}
+		if svc.Namespace != js.Namespace {
+			t.Errorf("%s namespace = %q, want %q", svc.Name, svc.Namespace, js.Namespace)
+		}
+		if !reflect.DeepEqual(svc.Spec.Selector, selector) {
+			t.Errorf("%s selector = %v, want %v", svc.Name, svc.Spec.Selector, selector)
+		}
+		if len(svc.Spec.Ports) != 1 {
+			t.Fatalf("%s expected one port", svc.Name)
+		}
+		port := svc.Spec.Ports[0]
+		if port.Name != metricsPortName || port.Port != metricsPort || port.TargetPort.String() != metricsPortName {
+			t.Errorf("%s port = %+v, want name/port/target %s/%d/%s", svc.Name, port, metricsPortName, metricsPort, metricsPortName)
+		}
+		if svc.Labels[metricsServiceLabel] != "true" {
+			t.Errorf("%s missing %s label", svc.Name, metricsServiceLabel)
+		}
+	}
+}
+
+func TestDesiredServiceMonitors(t *testing.T) {
+	js := testJumpstarter()
+	if got := len(desiredServiceMonitors(js)); got != 2 {
+		t.Fatalf("without telemetry expected 2 monitors, got %d", got)
+	}
+
+	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{Enabled: true}
+	if got := len(desiredServiceMonitors(js)); got != 3 {
+		t.Fatalf("with telemetry expected 3 monitors, got %d", got)
+	}
+
+	for _, monitor := range desiredServiceMonitors(js) {
+		if monitor.GetNamespace() != js.Namespace {
+			t.Errorf("%s namespace = %q", monitor.GetName(), monitor.GetNamespace())
+		}
+		if monitor.GetKind() != serviceMonitorKind || monitor.GetAPIVersion() != serviceMonitorGroup+"/"+serviceMonitorVersion {
+			t.Errorf("%s wrong GVK %s/%s", monitor.GetName(), monitor.GetAPIVersion(), monitor.GetKind())
+		}
+		spec, ok := monitor.Object["spec"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("%s missing spec", monitor.GetName())
+		}
+		endpoints, ok := spec["endpoints"].([]interface{})
+		if !ok || len(endpoints) != 1 {
+			t.Fatalf("%s endpoints = %v", monitor.GetName(), spec["endpoints"])
+		}
+		endpoint := endpoints[0].(map[string]interface{})
+		if endpoint["port"] != metricsPortName {
+			t.Errorf("%s endpoint port = %v, want %s", monitor.GetName(), endpoint["port"], metricsPortName)
+		}
+		if spec["namespaceSelector"].(map[string]interface{})["matchNames"].([]interface{})[0] != js.Namespace {
+			t.Errorf("%s namespaceSelector mismatch", monitor.GetName())
+		}
+	}
+
+	telemetry := desiredServiceMonitors(js)[2]
+	selector := telemetry.Object["spec"].(map[string]interface{})["selector"].(map[string]interface{})["matchLabels"].(map[string]interface{})
+	if selector["component"] != "telemetry" || selector["controller"] != js.Name {
+		t.Errorf("telemetry selector = %v", selector)
+	}
+}
+
+func TestRenderShipper(t *testing.T) {
+	js := testJumpstarter()
+	tests := []struct {
+		name    string
+		key     string
+		markers []string
+	}{
+		{"promtail", "promtail.yaml", []string{"kubernetes_sd_configs", "jumpstarter_dev_log_scrape", "component", "exporter"}},
+		{"alloy", "alloy.alloy", []string{"discovery.kubernetes", "jumpstarter_dev_log_scrape", "stage.labels", "component", "exporter"}},
+		{"vector", "vector.yaml", []string{"kubernetes_logs", "jumpstarter.dev/log-scrape=true", "labels:", "component", "exporter"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			key, content := renderShipper(js, tc.name)
+			if key != tc.key {
+				t.Errorf("key = %q, want %q", key, tc.key)
+			}
+			for _, marker := range tc.markers {
+				if !strings.Contains(content, marker) {
+					t.Errorf("rendering missing %q", marker)
+				}
+			}
+			lower := strings.ToLower(content)
+			for _, forbidden := range []string{"password", "username", "token", "secret"} {
+				if strings.Contains(lower, forbidden) {
+					t.Errorf("rendering contains forbidden credential marker %q", forbidden)
+				}
+			}
+			if !strings.Contains(content, js.Namespace) {
+				t.Errorf("rendering missing namespace %q", js.Namespace)
+			}
+			if !strings.Contains(content, "{{LOKI_URL}}") {
+				t.Errorf("rendering missing placeholder")
+			}
+		})
+	}
+}
+
+func TestRenderShipperUsesConfiguredLokiURL(t *testing.T) {
+	js := testJumpstarter()
+	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{Loki: operatorv1alpha1.TelemetryLokiConfig{URL: "https://loki.example/push"}}
+	_, content := renderShipper(js, shipperTypePromtail)
+	if !strings.Contains(content, "https://loki.example/push") {
+		t.Fatal("expected configured Loki URL in rendering")
+	}
+	if strings.Contains(content, "{{LOKI_URL}}") {
+		t.Fatal("placeholder should be replaced when URL is configured")
+	}
+}
+
+func TestBuildLogShipperConfigMap(t *testing.T) {
+	js := testJumpstarter()
+	if cm := buildLogShipperConfigMap(js); cm != nil {
+		t.Fatalf("expected nil ConfigMap when shipper is none, got %v", cm.Data)
+	}
+
+	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+	js.Spec.Telemetry.Logging.Shipper.Type = shipperTypePromtail
+	cm := buildLogShipperConfigMap(js)
+	if cm == nil {
+		t.Fatal("expected ConfigMap")
+	}
+	if cm.Name != "jumpstarter-log-shipper" || cm.Namespace != js.Namespace {
+		t.Errorf("ConfigMap identity = %s/%s", cm.Namespace, cm.Name)
+	}
+	if len(cm.Data) != 2 {
+		t.Fatalf("expected 2 keys, got %d: %v", len(cm.Data), cm.Data)
+	}
+	if _, ok := cm.Data["promtail.yaml"]; !ok {
+		t.Error("missing promtail.yaml")
+	}
+	if _, ok := cm.Data["README.md"]; !ok {
+		t.Error("missing README.md")
+	}
+	if cm.Labels["jumpstarter.dev/log-shipper"] != shipperTypePromtail {
+		t.Errorf("labels = %v", cm.Labels)
+	}
+}
+
+func TestPodLabelsDoNotChangeSelector(t *testing.T) {
+	js := testJumpstarter()
+	r := &JumpstarterReconciler{}
+
+	controller := r.createControllerDeployment(js, "hash", "")
+	wantControllerSelector := map[string]string{
+		"component":  "controller",
+		"app":        "jumpstarter-controller",
+		"controller": js.Name,
+	}
+	if !reflect.DeepEqual(controller.Spec.Selector.MatchLabels, wantControllerSelector) {
+		t.Errorf("controller selector changed: %v", controller.Spec.Selector.MatchLabels)
+	}
+	if controller.Spec.Template.Labels[logScrapeLabel] != "true" || controller.Spec.Template.Labels[logFormatLabel] != "json" {
+		t.Errorf("controller pod template missing discovery labels: %v", controller.Spec.Template.Labels)
+	}
+
+	router := r.createRouterDeployment(js, 0, "")
+	wantRouterSelector := map[string]string{
+		"component":    "router",
+		"app":          js.Name + "-router-0",
+		"router":       js.Name,
+		"router-index": "0",
+	}
+	if !reflect.DeepEqual(router.Spec.Selector.MatchLabels, wantRouterSelector) {
+		t.Errorf("router selector changed: %v", router.Spec.Selector.MatchLabels)
+	}
+	if router.Spec.Template.Labels[logScrapeLabel] != "true" || router.Spec.Template.Labels[logFormatLabel] != "json" {
+		t.Errorf("router pod template missing discovery labels: %v", router.Spec.Template.Labels)
+	}
+}
+
+func TestSnippetsParse(t *testing.T) {
+	js := testJumpstarter()
+
+	t.Run("promtail parses as YAML", func(t *testing.T) {
+		_, content := renderShipper(js, shipperTypePromtail)
+		var parsed map[string]interface{}
+		if err := yaml.Unmarshal([]byte(content), &parsed); err != nil {
+			t.Fatalf("promtail rendering is not valid YAML: %v", err)
+		}
+		if _, ok := parsed["scrape_configs"]; !ok {
+			t.Error("promtail rendering missing scrape_configs")
+		}
+	})
+
+	t.Run("vector parses as YAML", func(t *testing.T) {
+		_, content := renderShipper(js, shipperTypeVector)
+		var parsed map[string]interface{}
+		if err := yaml.Unmarshal([]byte(content), &parsed); err != nil {
+			t.Fatalf("vector rendering is not valid YAML: %v", err)
+		}
+		for _, key := range []string{"sources", "transforms", "sinks"} {
+			if _, ok := parsed[key]; !ok {
+				t.Errorf("vector rendering missing %s", key)
+			}
+		}
+	})
+
+	t.Run("alloy has balanced blocks", func(t *testing.T) {
+		_, content := renderShipper(js, shipperTypeAlloy)
+		if strings.Count(content, "{") != strings.Count(content, "}") {
+			t.Error("alloy rendering has unbalanced braces")
+		}
+		for _, marker := range []string{"loki.source.kubernetes", "loki.process", "loki.write"} {
+			if !strings.Contains(content, marker) {
+				t.Errorf("alloy rendering missing %s", marker)
+			}
+		}
+	})
+}
