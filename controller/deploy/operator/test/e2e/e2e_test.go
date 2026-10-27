@@ -256,6 +256,7 @@ var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 
 			By("waiting for the metrics endpoint to be ready")
 			verifyMetricsEndpointReady := func(g Gomega) {
+				//nolint:staticcheck // SA1019: Endpoints retained for compatibility; migrate to EndpointSlice separately.
 				endpoints := &corev1.Endpoints{}
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      metricsServiceName,

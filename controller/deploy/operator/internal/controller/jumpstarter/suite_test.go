@@ -72,6 +72,7 @@ var _ = BeforeSuite(func() {
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "..", "config", "crd", "bases"),
+			filepath.Join("..", "..", "..", "config", "test", "monitoring"),
 		},
 		ErrorIfCRDPathMissing: true,
 	}
@@ -80,6 +81,12 @@ var _ = BeforeSuite(func() {
 	if binaryDir := testutils.GetFirstFoundEnvTestBinaryDir(5); binaryDir != "" {
 		testEnv.BinaryAssetsDirectory = binaryDir
 	}
+
+	// The suite creates many Services; widen the Service CIDR so the default
+	// 254-address range is not exhausted (the observability feature adds two
+	// metrics Services per Jumpstarter CR).
+	testEnv.ControlPlane.GetAPIServer().Configure().
+		Set("service-cluster-ip-range", "10.0.0.0/16")
 
 	// cfg is defined in this file globally.
 	cfg, err = testEnv.Start()
