@@ -21,7 +21,7 @@ def qemu_client():
 def _skip_without_ssh_on_macos(qemu_client) -> None:
     """A bare Qemu() exports ssh only when vhost-vsock is available."""
     if platform.system() == "Darwin" and "ssh" not in qemu_client.children:
-        pytest.skip("ssh child is absent on macOS")
+        pytest.skip("ssh child is absent on macOS")  # ty: ignore[too-many-positional-arguments]
 
 
 def test_flash_oci_forwards_authenticated_credentials(qemu_client):
