@@ -1699,6 +1699,9 @@ all subsequent phases have E2E coverage from the start.
 - JEP-0011 updated based on feedback: 2026-04-29
 - Phase 5 (in-cluster log scraping and Prometheus autodiscovery) implemented on
   the `jep-0013-phase5-incluster-log-scraping` branch: 2026-10-27
+- Grafana Alloy log-shipper rendering validated with `alloy validate` and
+  `alloy fmt --test` against Grafana Alloy commit
+  `43c40e25565d1fc0062b06c282c130c577559597`: 2026-10-28
 
 ## References
 
