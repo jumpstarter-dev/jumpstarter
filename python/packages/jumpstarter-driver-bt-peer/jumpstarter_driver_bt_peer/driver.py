@@ -17,10 +17,8 @@ from bumble.a2dp import (
 from bumble.avdtp import (
     AVDTP_AUDIO_MEDIA_TYPE,
     Listener,
-    LocalSource,
     MediaCodecCapabilities,
     MediaPacketPump,
-    Protocol,
     State,
 )
 from bumble.avrcp import Delegate as AvrcpDelegate
@@ -30,6 +28,7 @@ from bumble.core import BT_BR_EDR_TRANSPORT, ClassOfDevice, DeviceClass
 from bumble.device import Connection, Device, DeviceConfiguration
 from bumble.hci import HCI_PERIPHERAL_ROLE
 from bumble.host import Host
+from bumble.l2cap import ClassicChannel
 from bumble.pairing import PairingConfig, PairingDelegate
 from bumble.rtp import MediaPacket
 from bumble.transport import open_transport
@@ -126,27 +125,240 @@ class _Track:
 
     The whole file is held in memory so that looping can rewind without
     re-uploading, and so the packet source never blocks the event loop on disk.
+
+    The track does not own an MTU: that belongs to the media transport
+    channel, which may not exist yet when a track is queued.
     """
 
-    def __init__(self, name: str, data: bytes, mtu: int, loop: bool = False):
+    def __init__(self, name: str, data: bytes, loop: bool = False):
         self.name = name
         self.data = data
-        self.mtu = mtu
         self.loop = loop
-        self.paused = False
         self.last_timestamp = 0.0
-        self.restart()
+        self._reader = _ByteReader(data)
+        self._packets = None
 
     @property
     def position(self) -> int:
         return self._reader.position
 
-    def restart(self) -> None:
+    def packets(self, mtu: int):
+        """The packet generator, built on first use so it can size to the MTU.
+
+        SbcPacketSource.packets is a property that builds a fresh generator on
+        every access, so it has to be held rather than re-read each time.
+        """
+        if self._packets is None:
+            self._packets = SbcPacketSource(self._reader.read, mtu).packets
+        return self._packets
+
+    def rewind(self) -> None:
         self._reader = _ByteReader(self.data)
         self.last_timestamp = 0.0
-        # SbcPacketSource.packets is a property that builds a fresh generator on
-        # every access, so it has to be held rather than re-read each time.
-        self.packets = SbcPacketSource(self._reader.read, self.mtu).packets
+        self._packets = None
+
+
+def _is_streaming(stream) -> bool:
+    return stream is not None and stream.state == State.STREAMING
+
+
+def _sbc_capabilities() -> MediaCodecCapabilities:
+    """The single SBC configuration the peer advertises.
+
+    The peer is the AVDTP acceptor, so the sink picks a configuration out of
+    whatever is offered. Advertising exactly one means play() can reject
+    mismatched audio up front instead of letting it reach the speakers as
+    noise.
+    """
+    S = SbcMediaCodecInformation
+    return MediaCodecCapabilities(
+        media_type=AVDTP_AUDIO_MEDIA_TYPE,
+        media_codec_type=A2DP_SBC_CODEC_TYPE,
+        media_codec_information=S(
+            sampling_frequency=S.SamplingFrequency.SF_44100,
+            channel_mode=S.ChannelMode.STEREO,
+            block_length=S.BlockLength.BL_16,
+            subbands=S.Subbands.S_8,
+            allocation_method=S.AllocationMethod.LOUDNESS,
+            minimum_bitpool_value=SBC_MIN_BITPOOL,
+            maximum_bitpool_value=SBC_MAX_BITPOOL,
+        ),
+    )
+
+
+async def _no_packets():
+    """Stands in until START supplies the real source."""
+    return
+    yield  # pragma: no cover
+
+
+class _StartPump(MediaPacketPump):
+    """Builds the packet stream at START, once the RTP channel exists.
+
+    The MTU that bounds an RTP payload belongs to the media transport
+    channel, which is only created when the stream opens. Taking it from the
+    signalling channel at connection time reads a different channel's value.
+    """
+
+    def __init__(self, session: "_A2dpSession"):
+        super().__init__(_no_packets())
+        self._session = session
+
+    async def start(self, rtp_channel) -> None:
+        self.packets = self._session.packets(getattr(rtp_channel, "peer_mtu", None))
+        await super().start(rtp_channel)
+
+
+class _A2dpSession:
+    """Everything belonging to one AVDTP connection.
+
+    Scoped to the connection rather than the driver, so a closed channel
+    takes its protocol, source and stream with it instead of leaving stale
+    objects behind for the next play() to operate on.
+
+    The track itself stays with the driver: it is playback intent, it can be
+    set before any connection exists, and it should survive a reconnect.
+    """
+
+    def __init__(self, protocol, get_track, on_exhausted, emit):
+        self.protocol = protocol
+        self.mtu = DEFAULT_RTP_MTU
+        self._get_track = get_track
+        self._on_exhausted = on_exhausted
+        self._emit = emit
+        self.source = protocol.add_source(_sbc_capabilities(), _StartPump(self))
+
+    # -- packets ---------------------------------------------------------
+
+    def packets(self, mtu):
+        """Start a fresh packet stream sized to the media channel's MTU."""
+        self.mtu = mtu if isinstance(mtu, int) and mtu >= MIN_RTP_MTU else DEFAULT_RTP_MTU
+        self._emit("rtp_channel_open", {"mtu": self.mtu})
+        return self._media_source()
+
+    def _make_packet(self, sequence_number: int, timestamp_seconds: float, payload: bytes) -> MediaPacket:
+        packet = MediaPacket(
+            2, 0, 0, 0, sequence_number, int(1000 * timestamp_seconds), 0, [], 96, payload
+        )
+        packet.timestamp_seconds = timestamp_seconds
+        return packet
+
+    async def _media_source(self):
+        """Packet source backing the stream for as long as it is started.
+
+        Emits filler while no track is set and the track's packets otherwise,
+        so a track can be swapped without renegotiating. MediaPacketPump
+        paces itself against packet.timestamp_seconds relative to the first
+        packet it sees, so timestamps have to keep rising for the life of the
+        stream. Each track's own timestamps restart at zero, so per-track
+        deltas are accumulated into a stream-wide clock rather than passed
+        through; otherwise the pump would see time jump backwards on a track
+        change and flush the whole file at wire speed.
+        """
+        sequence_number = 0
+        timestamp_seconds = 0.0
+
+        while True:
+            track = self._get_track()
+
+            if track is None:
+                # No sleep here: the pump already waits until each packet's
+                # timestamp before writing it, so sleeping as well would make
+                # real time run ahead of the stream clock by the sleep
+                # overhead. That gap is invisible while idle, but the pump
+                # makes it up the instant a track starts by flushing packets
+                # at wire speed, which overruns the sink's buffer.
+                yield self._make_packet(sequence_number, timestamp_seconds, b"\x00")
+                sequence_number = (sequence_number + 1) & 0xFFFF
+                timestamp_seconds += SILENCE_PACKET_DURATION
+                continue
+
+            try:
+                packet = await anext(track.packets(self.mtu))
+            except StopAsyncIteration:
+                # Rewinds for a loop, or clears the track so the next pass
+                # falls through to filler.
+                self._on_exhausted(track)
+                continue
+
+            delta = packet.timestamp_seconds - track.last_timestamp
+            track.last_timestamp = packet.timestamp_seconds
+            if delta > 0:
+                timestamp_seconds += delta
+
+            packet.sequence_number = sequence_number
+            packet.timestamp_seconds = timestamp_seconds
+            packet.timestamp = int(1000 * timestamp_seconds)
+            sequence_number = (sequence_number + 1) & 0xFFFF
+            yield packet
+
+    # -- stream lifecycle ------------------------------------------------
+
+    async def _open_stream(self):
+        """Return a stream ready to be started, creating one if needed.
+
+        A stream left IDLE by a close cannot be started again, so it needs
+        recreating exactly as if there had never been one.
+        """
+        stream = self.source.stream
+        if stream is not None and stream.state != State.IDLE:
+            return stream
+
+        await self.protocol.discover_remote_endpoints()
+        sink = self.protocol.find_remote_sink_by_codec(AVDTP_AUDIO_MEDIA_TYPE, A2DP_SBC_CODEC_TYPE)
+        if sink is None:
+            raise BtPeerError(
+                "the DUT exposes no free SBC audio sink endpoint; "
+                "is Bluetooth media enabled on the head unit?"
+            )
+        self._adopt_sink_bitpool(sink)
+        return await self.protocol.create_stream(self.source, sink)
+
+    async def start(self) -> dict[str, Any]:
+        """Put the stream into STREAMING, initiating it if necessary.
+
+        A2DP sources drive the stream: a phone configures, opens and starts
+        it when the user hits play, and the sink renders what arrives. The
+        DUT connects the signalling channel and then waits, so nothing is
+        pumped until the peer initiates here.
+        """
+        stream = await self._open_stream()
+        if stream.state == State.STREAMING:
+            return {"streaming": True, "reason": "already streaming"}
+        # start() opens the media transport channel itself when CONFIGURED.
+        await stream.start()
+        return {"streaming": True, "reason": "started by the peer"}
+
+    async def suspend(self) -> bool:
+        """Send AVDTP SUSPEND, leaving the stream OPEN and resumable."""
+        stream = self.source.stream
+        if stream is None or stream.state != State.STREAMING:
+            return False
+        await stream.stop()
+        return True
+
+    def _adopt_sink_bitpool(self, sink) -> None:
+        """Narrow the advertised bitpool range to what the sink accepts.
+
+        The sink rejects a configuration whose bitpool range is wider than
+        its own, so the offer has to be clamped before SET_CONFIGURATION.
+        """
+        for capability in sink.capabilities:
+            if not isinstance(capability, MediaCodecCapabilities):
+                continue
+            remote = capability.media_codec_information
+            if not isinstance(remote, SbcMediaCodecInformation):
+                continue
+            for local_capability in self.source.capabilities:
+                local = getattr(local_capability, "media_codec_information", None)
+                if isinstance(local, SbcMediaCodecInformation):
+                    local.minimum_bitpool_value = remote.minimum_bitpool_value
+                    local.maximum_bitpool_value = remote.maximum_bitpool_value
+            self._emit("sink_bitpool", {
+                "minimum": remote.minimum_bitpool_value,
+                "maximum": remote.maximum_bitpool_value,
+            })
+            return
 
 
 @dataclass(kw_only=True)
@@ -169,9 +381,7 @@ class BtPeer(Driver):
     _events: deque = field(default_factory=lambda: deque(maxlen=1000), init=False, repr=False)
     _connections: dict[int, Connection] = field(default_factory=dict, init=False, repr=False)
     _track: _Track | None = field(default=None, init=False, repr=False)
-    _rtp_mtu: int = field(default=DEFAULT_RTP_MTU, init=False, repr=False)
-    _protocol: Protocol | None = field(default=None, init=False, repr=False)
-    _source: LocalSource | None = field(default=None, init=False, repr=False)
+    _session: _A2dpSession | None = field(default=None, init=False, repr=False)
     _avrcp: AvrcpProtocol | None = field(default=None, init=False, repr=False)
     _avrcp_delegate: _AvrcpDelegate | None = field(default=None, init=False, repr=False)
 
@@ -209,41 +419,30 @@ class BtPeer(Driver):
         connection.on("disconnection", on_disconnect)
 
     def _on_avdtp_connection(self, protocol) -> None:
-        # The peer is the AVDTP acceptor, so the sink picks a configuration out
-        # of whatever is advertised here. Advertising exactly one configuration
-        # means play() can reject mismatched audio up front instead of letting
-        # it come out of the speakers as noise.
-        S = SbcMediaCodecInformation
-        sbc_capabilities = MediaCodecCapabilities(
-            media_type=AVDTP_AUDIO_MEDIA_TYPE,
-            media_codec_type=A2DP_SBC_CODEC_TYPE,
-            media_codec_information=S(
-                sampling_frequency=S.SamplingFrequency.SF_44100,
-                channel_mode=S.ChannelMode.STEREO,
-                block_length=S.BlockLength.BL_16,
-                subbands=S.Subbands.S_8,
-                allocation_method=S.AllocationMethod.LOUDNESS,
-                minimum_bitpool_value=SBC_MIN_BITPOOL,
-                maximum_bitpool_value=SBC_MAX_BITPOOL,
-            ),
+        self._session = _A2dpSession(
+            protocol,
+            get_track=lambda: self._track,
+            on_exhausted=self._on_track_exhausted,
+            emit=self._emit,
         )
+        self._emit("avdtp_connected", {})
 
-        # The MTU sizes RTP payloads, so an implausible value would silently
-        # produce malformed packets rather than failing here.
-        peer_mtu = getattr(getattr(protocol, "l2cap_channel", None), "peer_mtu", None)
-        self._rtp_mtu = peer_mtu if isinstance(peer_mtu, int) and peer_mtu >= MIN_RTP_MTU else DEFAULT_RTP_MTU
-
-        pump = MediaPacketPump(self._media_source())
-        self._protocol = protocol
-        self._source = protocol.add_source(sbc_capabilities, pump)
-        self._emit("avdtp_connected", {"mtu": self._rtp_mtu})
+        channel = getattr(protocol, "l2cap_channel", None)
+        if channel is not None:
+            # Without this the session outlives its channel, and the next
+            # play() operates on a protocol that is no longer connected.
+            channel.on(ClassicChannel.EVENT_CLOSE, self._on_avdtp_close)
 
         # play() may have been called in the window between the DUT's ACL
-        # connection and its AVDTP channel, in which case it had no protocol
+        # connection and its AVDTP channel, in which case it had no session
         # to start a stream on and gave up. Pick the queued track up now,
         # otherwise it sits there silently until something calls play again.
         if self._track is not None:
             AsyncRunner.spawn(self._resume_queued_track())
+
+    def _on_avdtp_close(self) -> None:
+        self._session = None
+        self._emit("avdtp_disconnected", {})
 
     async def _resume_queued_track(self) -> None:
         try:
@@ -255,121 +454,11 @@ class BtPeer(Driver):
             self._report_playback_status(PlayStatus.PLAYING)
         self._emit("stream_resumed", state)
 
-    def _make_packet(self, sequence_number: int, timestamp_seconds: float, payload: bytes) -> MediaPacket:
-        packet = MediaPacket(
-            2, 0, 0, 0, sequence_number, int(1000 * timestamp_seconds), 0, [], 96, payload
-        )
-        packet.timestamp_seconds = timestamp_seconds
-        return packet
-
-    async def _media_source(self):
-        """Single long-lived packet source backing the AVDTP stream.
-
-        Emits filler packets while idle and the current track's packets while
-        one is playing, so a track can be swapped in without renegotiating the
-        stream. MediaPacketPump paces itself against packet.timestamp_seconds
-        relative to the first packet it ever sees, so timestamps have to keep
-        rising for the life of the stream. Each track's own timestamps restart
-        at zero, so per-track deltas are accumulated into a stream-wide clock
-        rather than passed through; otherwise the pump would see time jump
-        backwards on a track change and flush the whole file at wire speed.
-        """
-        sequence_number = 0
-        timestamp_seconds = 0.0
-
-        while True:
-            track = self._track
-
-            # A paused track keeps its position but emits filler, so the
-            # stream stays open and resuming needs no renegotiation.
-            if track is not None and track.paused:
-                track = None
-
-            if track is None:
-                # No sleep here: the pump already waits until each packet's
-                # timestamp before writing it, so sleeping as well would make
-                # real time run ahead of the stream clock by the sleep
-                # overhead. That gap is invisible while idle, but the pump
-                # makes it up the instant a track starts by flushing packets
-                # at wire speed, which overruns the sink's buffer.
-                yield self._make_packet(sequence_number, timestamp_seconds, b"\x00")
-                sequence_number = (sequence_number + 1) & 0xFFFF
-                timestamp_seconds += SILENCE_PACKET_DURATION
-                continue
-
-            try:
-                packet = await anext(track.packets)
-            except StopAsyncIteration:
-                self._on_track_exhausted(track)
-                continue
-
-            delta = packet.timestamp_seconds - track.last_timestamp
-            track.last_timestamp = packet.timestamp_seconds
-            if delta > 0:
-                timestamp_seconds += delta
-
-            packet.sequence_number = sequence_number
-            packet.timestamp_seconds = timestamp_seconds
-            packet.timestamp = int(1000 * timestamp_seconds)
-            sequence_number = (sequence_number + 1) & 0xFFFF
-            yield packet
-
     async def _ensure_streaming(self) -> dict[str, Any]:
-        """Put the AVDTP stream into STREAMING, initiating it if necessary.
-
-        A2DP sources drive the stream: a phone configures, opens and starts it
-        when the user hits play, and the sink just renders what arrives. The
-        DUT therefore connects the AVDTP signalling channel and then waits, so
-        nothing is pumped until the peer initiates here.
-        """
-        protocol, source = self._protocol, self._source
-        if protocol is None or source is None:
+        """Start the stream on the current session, if there is one."""
+        if self._session is None:
             return {"streaming": False, "reason": "no AVDTP connection from the DUT yet"}
-
-        stream = source.stream
-        if stream is not None and stream.state == State.STREAMING:
-            return {"streaming": True, "reason": "already streaming"}
-
-        if stream is None:
-            await protocol.discover_remote_endpoints()
-            sink = protocol.find_remote_sink_by_codec(AVDTP_AUDIO_MEDIA_TYPE, A2DP_SBC_CODEC_TYPE)
-            if sink is None:
-                raise BtPeerError(
-                    "the DUT exposes no free SBC audio sink endpoint; "
-                    "is Bluetooth media enabled on the head unit?"
-                )
-            self._adopt_sink_bitpool(sink)
-            stream = await protocol.create_stream(source, sink)
-
-        # start() opens the RTP channel itself when the stream is CONFIGURED.
-        await stream.start()
-        return {"streaming": True, "reason": "started by the peer"}
-
-    def _adopt_sink_bitpool(self, sink) -> None:
-        """Narrow the advertised bitpool range to what the sink accepts.
-
-        The sink rejects a configuration whose bitpool range is wider than its
-        own, so the offer has to be clamped before SET_CONFIGURATION.
-        """
-        source = self._source
-        if source is None:
-            return
-        for capability in sink.capabilities:
-            if not isinstance(capability, MediaCodecCapabilities):
-                continue
-            remote = capability.media_codec_information
-            if not isinstance(remote, SbcMediaCodecInformation):
-                continue
-            for local_capability in source.capabilities:
-                local = getattr(local_capability, "media_codec_information", None)
-                if isinstance(local, SbcMediaCodecInformation):
-                    local.minimum_bitpool_value = remote.minimum_bitpool_value
-                    local.maximum_bitpool_value = remote.maximum_bitpool_value
-            self._emit("sink_bitpool", {
-                "minimum": remote.minimum_bitpool_value,
-                "maximum": remote.maximum_bitpool_value,
-            })
-            return
+        return await self._session.start()
 
     def _report_playback_status(self, status: PlayStatus) -> None:
         """Tell the DUT's AVRCP controller what the peer is doing."""
@@ -397,16 +486,17 @@ class BtPeer(Driver):
         self._emit("avrcp_key", {"key": name, "pressed": pressed, "honored": self.follow_transport_keys})
         if not pressed or not self.follow_transport_keys:
             return
-        if name in ("PAUSE", "STOP") and self._track is not None:
-            self._track.paused = True
-            self._report_playback_status(PlayStatus.PAUSED if name == "PAUSE" else PlayStatus.STOPPED)
-        elif name == "PLAY" and self._track is not None:
-            self._track.paused = False
-            self._report_playback_status(PlayStatus.PLAYING)
+        if name == "PAUSE":
+            AsyncRunner.spawn(self.pause())
+        elif name == "STOP":
+            AsyncRunner.spawn(self.stop_playback())
+        elif name == "PLAY":
+            AsyncRunner.spawn(self.resume())
 
     def _on_track_exhausted(self, track: _Track) -> None:
+        """Called by the session when the track's packets run out."""
         if track.loop:
-            track.restart()
+            track.rewind()
             self._emit("track_looped", {"name": track.name})
             return
         # Only fall back to silence if play() has not already swapped in a
@@ -532,9 +622,7 @@ class BtPeer(Driver):
         self._device = None
         self._transport = None
         self._track = None
-        self._rtp_mtu = DEFAULT_RTP_MTU
-        self._protocol = None
-        self._source = None
+        self._session = None
         self._avrcp = None
         self._avrcp_delegate = None
         self._connections.clear()
@@ -764,11 +852,16 @@ class BtPeer(Driver):
         frame = await _first_sbc_frame(bytes(data))
         _check_sbc_frame(frame)
 
-        track = _Track(name=name, data=bytes(data), mtu=self._rtp_mtu, loop=bool(loop))
-        self._track = track
+        # Suspend first so a track swap restarts the stream cleanly rather
+        # than splicing into one already in flight.
+        if self._session is not None:
+            await self._session.suspend()
+
+        self._track = _Track(name=name, data=bytes(data), loop=bool(loop))
 
         stream_state = await self._ensure_streaming()
-        self._report_playback_status(PlayStatus.PLAYING)
+        if stream_state.get("streaming"):
+            self._report_playback_status(PlayStatus.PLAYING)
 
         info = {
             "name": name,
@@ -781,28 +874,53 @@ class BtPeer(Driver):
         return json.dumps(info)
 
     @export
-    def stop_playback(self) -> str:
-        """Stop the current track and fall back to silence."""
+    async def pause(self) -> str:
+        """Suspend the stream, keeping the track and its position."""
+        if self._track is None:
+            return json.dumps({"status": "not_playing"})
+        suspended = self._session is not None and await self._session.suspend()
+        self._report_playback_status(PlayStatus.PAUSED)
+        self._emit("track_paused", {"name": self._track.name, "suspended": suspended})
+        return json.dumps({"status": "paused", "name": self._track.name})
+
+    @export
+    async def resume(self) -> str:
+        """Restart a stream suspended by pause()."""
+        if self._track is None:
+            return json.dumps({"status": "not_playing"})
+        state = await self._ensure_streaming()
+        if state.get("streaming"):
+            self._report_playback_status(PlayStatus.PLAYING)
+        self._emit("track_resumed", {"name": self._track.name, **state})
+        return json.dumps({"status": "resumed", "name": self._track.name, **state})
+
+    @export
+    async def stop_playback(self) -> str:
+        """Stop the current track and suspend the stream."""
         track = self._track
         if track is None:
             return json.dumps({"status": "not_playing"})
         self._track = None
+        suspended = self._session is not None and await self._session.suspend()
         self._report_playback_status(PlayStatus.STOPPED)
-        self._emit("track_stopped", {"name": track.name})
+        self._emit("track_stopped", {"name": track.name, "suspended": suspended})
         return json.dumps({"status": "stopped", "name": track.name})
 
     @export
     def playback_status(self) -> str:
         """Return what the peer is currently streaming."""
         track = self._track
+        session = self._session
+        stream = session.source.stream if session is not None else None
         if track is None:
-            return json.dumps({"playing": False})
+            return json.dumps({"playing": False, "streaming": _is_streaming(stream)})
         return json.dumps({
             "playing": True,
             "name": track.name,
             "loop": track.loop,
             "bytes": len(track.data),
             "position": track.position,
+            "streaming": _is_streaming(stream),
         })
 
 

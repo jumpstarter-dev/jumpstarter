@@ -136,6 +136,12 @@ class BtPeerClient(DriverClient):
         ):
             return _parse_dict(self.call("play", handle, source.name, loop))
 
+    def pause(self) -> dict[str, Any]:
+        return _parse_dict(self.call("pause"))
+
+    def resume(self) -> dict[str, Any]:
+        return _parse_dict(self.call("resume"))
+
     def stop_playback(self) -> dict[str, Any]:
         return _parse_dict(self.call("stop_playback"))
 
@@ -228,9 +234,19 @@ class BtPeerClient(DriverClient):
             """
             _echo(self.play(audio_file, loop))
 
+        @bt_peer.command("pause")
+        def pause_cmd():
+            """Suspend the stream, keeping the track and its position."""
+            _echo(self.pause())
+
+        @bt_peer.command("resume")
+        def resume_cmd():
+            """Restart a stream suspended by pause."""
+            _echo(self.resume())
+
         @bt_peer.command("stop-playback")
         def stop_playback_cmd():
-            """Stop the current track."""
+            """Stop the current track and suspend the stream."""
             _echo(self.stop_playback())
 
         @bt_peer.command("playback")
