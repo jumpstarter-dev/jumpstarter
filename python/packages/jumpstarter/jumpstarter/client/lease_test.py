@@ -197,7 +197,7 @@ class TestLeaseAcquisitionSpinner:
             assert "[dim](" in call_args
             assert "[/dim]" in call_args
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_integration_with_async_context(self):
         """Test integration with async context manager."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):

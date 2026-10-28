@@ -64,7 +64,7 @@ class TestSslChannelCredentialsInsecure:
     """Resolution and connection are timed separately, so the error a user
     sees points at the step that actually stalled."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_returns_credentials_from_first_reachable_ip(self):
         async def getaddrinfo(*_args, **_kwargs):
             return _addr_info("192.0.2.1", "192.0.2.2")
@@ -82,7 +82,7 @@ class TestSslChannelCredentialsInsecure:
 
         assert credentials is not None
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_resolution_failure_names_the_host(self):
         async def getaddrinfo(*_args, **_kwargs):
             raise socket.gaierror("Name or service not known")
@@ -93,7 +93,7 @@ class TestSslChannelCredentialsInsecure:
         ):
             await _ssl_channel_credentials_insecure("example.com:443", timeout=5)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_slow_resolver_is_reported_as_a_resolution_timeout(self):
         async def getaddrinfo(*_args, **_kwargs):
             await asyncio.sleep(10)
@@ -104,7 +104,7 @@ class TestSslChannelCredentialsInsecure:
         ):
             await _ssl_channel_credentials_insecure("example.com:443", timeout=0.05)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_connect_timeout_reports_the_resolved_ips(self):
         async def getaddrinfo(*_args, **_kwargs):
             return _addr_info("192.0.2.1")
@@ -122,7 +122,7 @@ class TestSslChannelCredentialsInsecure:
         ):
             await _ssl_channel_credentials_insecure("example.com:443", timeout=0.05)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_all_ips_failing_lists_the_errors(self):
         async def getaddrinfo(*_args, **_kwargs):
             return _addr_info("192.0.2.1", "192.0.2.2")
@@ -137,7 +137,7 @@ class TestSslChannelCredentialsInsecure:
         ):
             await _ssl_channel_credentials_insecure("example.com:443", timeout=5)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_exporter_retry_can_suppress_per_ip_warnings(self, caplog):
         async def getaddrinfo(*_args, **_kwargs):
             return _addr_info("192.0.2.1", "192.0.2.2")
