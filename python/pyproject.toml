@@ -157,6 +157,7 @@ extend-select = ["I", "C", "E", "F", "W", "B", "ERA", "TID251"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "asyncio".msg = "Use anyio. The loop is asyncio, but first-party code goes through anyio."
+"anyio._backends".msg = "Private anyio API that may change in any release; use the public anyio API."
 
 [tool.ruff.lint.per-file-ignores]
 # Files that still import asyncio directly. Migrations delete entries here; never add new ones.
