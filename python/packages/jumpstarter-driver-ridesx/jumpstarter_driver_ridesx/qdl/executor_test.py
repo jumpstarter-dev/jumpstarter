@@ -1,11 +1,14 @@
 import subprocess
+import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import anyio
 import pytest
 
 from jumpstarter_driver_ridesx.qdl.executor import (
     build_qdl_command,
     check_dmesg,
+    execute_step,
     fix_provision_default_xml,
     run_fastboot_step,
     set_device_mode,
@@ -118,7 +121,8 @@ async def test_set_device_mode_polls_dmesg_until_marker_found():
     with (
         patch("jumpstarter_driver_ridesx.qdl.executor.read_dmesg", return_value="baseline"),
         patch("jumpstarter_driver_ridesx.qdl.executor.check_dmesg", side_effect=fake_check_dmesg),
-        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch("jumpstarter_driver_ridesx.qdl.executor.sleep", new_callable=AsyncMock),
+        patch("jumpstarter_driver_ridesx.tac.sleep", new_callable=AsyncMock),
     ):
         await set_device_mode(
             tac=tac, profile=SA8775P, mode="fastboot",
@@ -141,7 +145,8 @@ async def test_set_device_mode_raises_after_timeout():
     with (
         patch("jumpstarter_driver_ridesx.qdl.executor.read_dmesg", return_value="baseline"),
         patch("jumpstarter_driver_ridesx.qdl.executor.check_dmesg", side_effect=RuntimeError("not found")),
-        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch("jumpstarter_driver_ridesx.qdl.executor.sleep", new_callable=AsyncMock),
+        patch("jumpstarter_driver_ridesx.tac.sleep", new_callable=AsyncMock),
         pytest.raises(RuntimeError, match="not found"),
     ):
         await set_device_mode(
@@ -199,3 +204,31 @@ def test_fastboot_step_flashes_without_revision(tmp_path, monkeypatch):
     )
     run_fastboot_step(step, tmp_path, timeout=5, board_revision=None)
     assert len(calls) == 2
+
+
+@pytest.mark.anyio
+async def test_cancelling_a_blocking_qdl_step_does_not_wait_for_the_thread(tmp_path):
+    release = threading.Event()
+    step = QdlStep(qdl=QdlConfig(storage="ufs", programmer="prog_firehose_ddr.elf", files=["rawprogram*.xml"]))
+
+    with patch(
+        "jumpstarter_driver_ridesx.qdl.executor.run_qdl_step",
+        side_effect=lambda *args, **kwargs: release.wait(10),
+    ):
+        try:
+            started = anyio.current_time()
+            with anyio.move_on_after(0.1):
+                await execute_step(
+                    step,
+                    tac=MagicMock(),
+                    profile=SA8775P,
+                    firmware_root=tmp_path,
+                    qdl_timeout=1,
+                    fastboot_timeout=1,
+                    tac_timeout=1.0,
+                )
+            elapsed = anyio.current_time() - started
+        finally:
+            release.set()
+
+    assert elapsed < 5
