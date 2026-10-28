@@ -86,6 +86,19 @@ var _ = Describe("Observability reconciliation", func() {
 		Expect(reason).To(Equal("Created"))
 	})
 
+	It("keeps the router metrics Service during router service cleanup", func() {
+		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
+
+		// The endpoint reconciler prunes services matching the "<name>-router-"
+		// prefix; the metrics Service uses that prefix and must survive.
+		Expect(r.cleanupExcessRouterServices(ctx, js)).To(Succeed())
+
+		svc := &corev1.Service{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: "jumpstarter-router-metrics", Namespace: namespace.Name,
+		}, svc)).To(Succeed())
+	})
+
 	It("manages the shipper ConfigMap lifecycle", func() {
 		js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
 		js.Spec.Telemetry.Logging.Shipper.Type = shipperTypePromtail
