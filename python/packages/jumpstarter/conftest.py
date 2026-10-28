@@ -1,3 +1,4 @@
+import gc
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from ipaddress import IPv4Address
@@ -12,6 +13,7 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from grpc._cython.cygrpc import CallbackWrapper
 from jumpstarter_protocol import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
@@ -75,6 +77,40 @@ class MockController(jumpstarter_pb2_grpc.ControllerServiceServicer):
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+def _unfinished_grpc_operations() -> list[CallbackWrapper]:
+    return [obj for obj in gc.get_objects() if isinstance(obj, CallbackWrapper) and _unfinished(obj)]
+
+
+def _unfinished(operation: CallbackWrapper) -> bool:
+    """Whether gRPC may still complete the operation; a cancelled waiter does not stop it."""
+    futures = [referent for referent in gc.get_referents(operation) if callable(getattr(referent, "done", None))]
+    return any(not future.done() or future.cancelled() for future in futures)
+
+
+@pytest.fixture
+def unfinished_grpc_operations():
+    return _unfinished_grpc_operations
+
+
+# gRPC never releases an operation whose result went to a closed event loop, so
+# remember what was reported instead of failing every test that follows.
+_reported_grpc_operations: set[int] = set()
+
+
+@pytest.fixture(autouse=True)
+def _no_unfinished_grpc_operations():
+    yield
+    unfinished = {id(operation) for operation in _unfinished_grpc_operations()} - _reported_grpc_operations
+    if unfinished:
+        gc.collect()
+        unfinished = {id(operation) for operation in _unfinished_grpc_operations()} - _reported_grpc_operations
+    _reported_grpc_operations.update(unfinished)
+    assert not unfinished, (
+        f"the test left {len(unfinished)} gRPC operation(s) unfinished; their results would reach "
+        "its closed event loop during a later test"
+    )
 
 
 key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
