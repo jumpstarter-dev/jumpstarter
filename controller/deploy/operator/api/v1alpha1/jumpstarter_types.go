@@ -402,6 +402,12 @@ type TelemetryMetricsConfig struct {
 	// +kubebuilder:default=true
 	ServiceMonitor *bool `json:"serviceMonitor,omitempty"`
 
+	// Additional labels to add to generated ServiceMonitors. Use this to match
+	// the Prometheus Operator's serviceMonitorSelector (for example,
+	// release: kube-prometheus-stack).
+	// +kubebuilder:validation:MaxProperties=16
+	ServiceMonitorLabels map[string]string `json:"serviceMonitorLabels,omitempty"`
+
 	// Allowlist of keys to include in Prometheus exemplars. Unlisted keys are omitted.
 	// At most 16 keys. Each key is at most 32 characters, the same limit as
 	// Lease spec.context key names that may appear in this list.

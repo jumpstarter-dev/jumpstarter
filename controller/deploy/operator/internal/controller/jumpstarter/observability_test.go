@@ -17,12 +17,19 @@ limitations under the License.
 package jumpstarter
 
 import (
+	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
 )
 
@@ -114,6 +121,55 @@ func TestShipperType(t *testing.T) {
 	}
 }
 
+// serviceMonitorListErrorClient simulates a transient API/RBAC failure while
+// detecting the optional ServiceMonitor CRD.
+type serviceMonitorListErrorClient struct {
+	client.Client
+	listErr               error
+	deletedServiceMonitor bool
+}
+
+func (c *serviceMonitorListErrorClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if _, ok := list.(*unstructured.UnstructuredList); ok {
+		return c.listErr
+	}
+	return c.Client.List(ctx, list, opts...)
+}
+
+func (c *serviceMonitorListErrorClient) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
+	if obj.GetObjectKind().GroupVersionKind().Kind == serviceMonitorKind {
+		c.deletedServiceMonitor = true
+	}
+	return c.Client.Delete(ctx, obj, opts...)
+}
+
+func TestReconcileObservabilityDoesNotDeleteServiceMonitorsOnDetectionError(t *testing.T) {
+	s := runtime.NewScheme()
+	if err := corev1.AddToScheme(s); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+	if err := operatorv1alpha1.AddToScheme(s); err != nil {
+		t.Fatalf("add operator scheme: %v", err)
+	}
+
+	wrapped := &serviceMonitorListErrorClient{
+		Client:  fake.NewClientBuilder().WithScheme(s).Build(),
+		listErr: errors.New("transient apiserver error"),
+	}
+	r := &JumpstarterReconciler{Client: wrapped, Scheme: s}
+
+	err := r.reconcileObservability(context.Background(), testJumpstarter())
+	if err == nil {
+		t.Fatal("reconcileObservability should report the CRD detection error for retry")
+	}
+	if !strings.Contains(err.Error(), "service monitor CRD detection") {
+		t.Fatalf("unexpected reconcileObservability error: %v", err)
+	}
+	if wrapped.deletedServiceMonitor {
+		t.Fatal("ServiceMonitors must not be deleted when CRD detection fails")
+	}
+}
+
 func TestDesiredMetricsServices(t *testing.T) {
 	js := testJumpstarter()
 	services := desiredMetricsServices(js)
@@ -192,6 +248,23 @@ func TestDesiredServiceMonitors(t *testing.T) {
 	}
 }
 
+func TestDesiredServiceMonitorsAddsConfiguredLabels(t *testing.T) {
+	js := testJumpstarter()
+	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+	js.Spec.Telemetry.Metrics.ServiceMonitorLabels = map[string]string{
+		"release": "kube-prometheus-stack",
+	}
+
+	for _, monitor := range desiredServiceMonitors(js) {
+		if got := monitor.GetLabels()["release"]; got != "kube-prometheus-stack" {
+			t.Errorf("%s release label = %q, want kube-prometheus-stack", monitor.GetName(), got)
+		}
+		if monitor.GetLabels()[metricsServiceLabel] != "true" {
+			t.Errorf("%s lost the metrics label: %v", monitor.GetName(), monitor.GetLabels())
+		}
+	}
+}
+
 func TestRenderShipper(t *testing.T) {
 	js := testJumpstarter()
 	tests := []struct {
@@ -227,6 +300,27 @@ func TestRenderShipper(t *testing.T) {
 				t.Errorf("rendering missing placeholder")
 			}
 		})
+	}
+}
+
+func TestRenderShipperDoesNotPromotePodLabels(t *testing.T) {
+	js := testJumpstarter()
+	for _, shipper := range []string{shipperTypePromtail, shipperTypeAlloy, shipperTypeVector} {
+		_, content := renderShipper(js, shipper)
+		for _, forbidden := range []string{
+			"target_label: pod",
+			"target_label: container",
+			`target_label  = "pod"`,
+			`target_label  = "container"`,
+			`pod: "{{ kubernetes.pod_name }}"`,
+		} {
+			if strings.Contains(content, forbidden) {
+				t.Errorf("%s promotes a high-cardinality pod/container label: %q", shipper, forbidden)
+			}
+		}
+		if !strings.Contains(content, "namespace") {
+			t.Errorf("%s should keep the namespace stream label", shipper)
+		}
 	}
 }
 
