@@ -36,7 +36,15 @@ spec:
   telemetry:
     metrics:
       serviceMonitor: true
+      serviceMonitorLabels:
+        release: kube-prometheus-stack
 ```
+
+`serviceMonitorLabels` are added to the `ServiceMonitor` metadata so the
+objects match your Prometheus `serviceMonitorSelector`. kube-prometheus-stack
+usually selects a Helm release label such as `release: kube-prometheus-stack`;
+if your Prometheus uses a different selector, set the matching labels here.
+The labels do not change the metrics Service selector.
 
 If the Prometheus Operator is not installed, reconciliation still succeeds: the
 metrics Services are created, ServiceMonitors are skipped, and the
@@ -74,14 +82,19 @@ shipper configuration key plus a `README.md`:
 Merge the key into your existing shipper deployment. The snippet:
 
 - selects pods labeled `jumpstarter.dev/log-scrape="true"` in the CR namespace;
-- promotes only `component` and `exporter` to Loki stream labels;
+- promotes `component`, `exporter`, and `namespace` to Loki stream labels;
 - keeps `client`, `lease_id`, and lease `spec.context` keys inside the JSON body
   so they can be queried with `| json | lease_id="..."`;
 - forwards the original JSON line, so multi-line stack traces remain one record;
 - contains no credentials.
 
 If `spec.telemetry.loki.url` is unset, the snippet uses the `{{LOKI_URL}}`
-placeholder. Credentials always come from the shipper's own Secret.
+placeholder. Set a real URL before running the shipper validator or deploying
+the snippet. Credentials always come from the shipper's own Secret.
+
+`LogShipperReady=True` means the operator generated the ConfigMap. It does not
+mean a shipper is running or that Loki is reachable; those remain cluster
+administrator responsibilities.
 
 Changing the type replaces the ConfigMap data in one reconciliation. Setting
 `type: none` removes the ConfigMap; the pod labels remain, so no pod restart is
