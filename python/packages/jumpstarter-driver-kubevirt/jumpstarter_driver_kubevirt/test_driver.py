@@ -69,6 +69,14 @@ class TestKubevirtPower:
     async def test_on(self):
         power = self._make_power()
         mock_client = AsyncMock()
+        from jumpstarter_driver_kubevirt.vm import VirtualMachine
+
+        mock_client.get.return_value = VirtualMachine.from_dict(
+            {
+                "metadata": {"name": "test-vm", "uid": "uid", "resourceVersion": "1"},
+                "spec": {"runStrategy": "Halted"},
+            }
+        )
         power._client = mock_client
 
         await power.on()
@@ -82,6 +90,14 @@ class TestKubevirtPower:
     async def test_off_halt(self):
         power = self._make_power()
         mock_client = AsyncMock()
+        from jumpstarter_driver_kubevirt.vm import VirtualMachine
+
+        mock_client.get.return_value = VirtualMachine.from_dict(
+            {
+                "metadata": {"name": "test-vm", "uid": "uid", "resourceVersion": "1"},
+                "spec": {"runStrategy": "Halted"},
+            }
+        )
         power._client = mock_client
 
         await power.off(destroy=False)
@@ -94,12 +110,20 @@ class TestKubevirtPower:
     async def test_off_destroy(self):
         power = self._make_power()
         mock_client = AsyncMock()
+        from jumpstarter_driver_kubevirt.vm import VirtualMachine
+
+        mock_client.get.return_value = VirtualMachine.from_dict(
+            {
+                "metadata": {"name": "test-vm", "uid": "uid", "resourceVersion": "1"},
+                "spec": {"runStrategy": "Halted"},
+            }
+        )
         power._client = mock_client
 
         await power.off(destroy=True)
 
         mock_client.delete.assert_called_once()
-        mock_client.patch.assert_not_called()
+        mock_client.patch.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_read_running(self):
@@ -339,124 +363,6 @@ class TestKubevirtConsole:
                 pass
 
             assert mock_sleep.call_count == 2
-
-
-class TestKubevirtStorage:
-    def _make_storage(self, **kwargs):
-        from jumpstarter_driver_kubevirt.driver import KubevirtStorage
-
-        defaults: dict[str, Any] = {"namespace": "test-ns", "vm_name": "test-vm"}
-        defaults.update(kwargs)
-        return KubevirtStorage(**defaults)
-
-    def test_client_class_method(self):
-        from jumpstarter_driver_kubevirt.driver import KubevirtStorage
-
-        assert KubevirtStorage.client() == "jumpstarter_driver_kubevirt.client.KubevirtStorageClient"
-
-    def test_resolve_vm_name(self):
-        storage = self._make_storage(vm_name="my-vm")
-        assert storage._resolve_vm_name() == "my-vm"
-
-    def test_resolve_vm_name_empty_raises(self):
-        storage = self._make_storage(vm_name="")
-        with pytest.raises(ValueError, match="vm_name not set"):
-            storage._resolve_vm_name()
-
-    def test_get_client_lazy_init(self):
-        storage = self._make_storage()
-        with patch("jumpstarter_driver_kubevirt.driver._build_client") as mock_build:
-            mock_client = MagicMock()
-            mock_build.return_value = mock_client
-
-            result = storage._get_client()
-            assert result is mock_client
-
-            result2 = storage._get_client()
-            assert result2 is mock_client
-            assert mock_build.call_count == 1
-
-    @pytest.mark.asyncio
-    async def test_flash_delete_then_create(self):
-        from lightkube.core.exceptions import ApiError
-
-        storage = self._make_storage()
-        mock_client = AsyncMock()
-        error = ApiError.__new__(ApiError)
-        error.status = MagicMock()
-        error.status.code = 404
-        mock_client.get = AsyncMock(side_effect=error)
-        storage._client = mock_client
-
-        await storage.flash("http://example.com/image.qcow2")
-
-        mock_client.delete.assert_called_once()
-        mock_client.get.assert_called_once()
-        mock_client.create.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_flash_uses_configured_storage_settings(self):
-        from lightkube.core.exceptions import ApiError
-
-        storage = self._make_storage(disk_size="40Gi", access_modes=["ReadWriteMany"])
-        mock_client = AsyncMock()
-        error = ApiError.__new__(ApiError)
-        error.status = MagicMock()
-        error.status.code = 404
-        mock_client.delete = AsyncMock(side_effect=error)
-        storage._client = mock_client
-
-        await storage.flash("http://example.com/image.qcow2")
-
-        dv = mock_client.create.call_args.args[0]
-        assert dv.spec["storage"]["accessModes"] == ["ReadWriteMany"]
-        assert dv.spec["storage"]["resources"]["requests"]["storage"] == "40Gi"
-
-    @pytest.mark.asyncio
-    async def test_flash_delete_404_still_creates(self):
-        from lightkube.core.exceptions import ApiError
-
-        storage = self._make_storage()
-        mock_client = AsyncMock()
-
-        error = ApiError.__new__(ApiError)
-        error.status = MagicMock()
-        error.status.code = 404
-
-        mock_client.delete = AsyncMock(side_effect=error)
-        storage._client = mock_client
-
-        await storage.flash("http://example.com/image.qcow2")
-
-        mock_client.create.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_flash_delete_other_error_raises(self):
-        from lightkube.core.exceptions import ApiError
-
-        storage = self._make_storage()
-        mock_client = AsyncMock()
-
-        error = ApiError.__new__(ApiError)
-        error.status = MagicMock()
-        error.status.code = 500
-
-        mock_client.delete = AsyncMock(side_effect=error)
-        storage._client = mock_client
-
-        with pytest.raises(ApiError):
-            await storage.flash("http://example.com/image.qcow2")
-
-    @pytest.mark.asyncio
-    async def test_flash_times_out_waiting_for_deletion(self):
-        storage = self._make_storage(delete_timeout=0)
-        mock_client = AsyncMock()
-        storage._client = mock_client
-
-        with pytest.raises(TimeoutError):
-            await storage.flash("http://example.com/image.qcow2")
-
-        mock_client.create.assert_not_called()
 
 
 class TestKubevirt:

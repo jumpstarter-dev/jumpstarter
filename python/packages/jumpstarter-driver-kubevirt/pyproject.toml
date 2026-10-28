@@ -13,6 +13,8 @@ dependencies = [
   "jumpstarter-driver-composite",
   "jumpstarter-driver-power",
   "jumpstarter-driver-network",
+  "jumpstarter-driver-opendal",
+  "aiohttp>=3.11",
   "lightkube>=0.15",
   "websockets>=13.0",
 ]
@@ -41,6 +43,7 @@ raw-options = { 'root' = '../../../' }
 jumpstarter-driver-composite = { workspace = true }
 jumpstarter-driver-network = { workspace = true }
 jumpstarter-driver-power = { workspace = true }
+jumpstarter-driver-opendal = { workspace = true }
 
 [build-system]
 requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]

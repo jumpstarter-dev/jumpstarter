@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/clientcmd"
 	kubevirtv1 "kubevirt.io/api/core/v1"
+	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -74,6 +75,7 @@ func remoteScheme() *runtime.Scheme {
 		cachedRemoteScheme = runtime.NewScheme()
 		_ = corev1.AddToScheme(cachedRemoteScheme)
 		_ = kubevirtv1.AddToScheme(cachedRemoteScheme)
+		_ = cdiv1beta1.AddToScheme(cachedRemoteScheme)
 	})
 	return cachedRemoteScheme
 }

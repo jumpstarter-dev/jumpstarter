@@ -2703,9 +2703,11 @@ dev = [
 name = "jumpstarter-driver-kubevirt"
 source = { editable = "packages/jumpstarter-driver-kubevirt" }
 dependencies = [
+    { name = "aiohttp" },
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-opendal" },
     { name = "jumpstarter-driver-power" },
     { name = "lightkube" },
     { name = "websockets" },
@@ -2720,9 +2722,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", specifier = ">=3.11" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
     { name = "lightkube", specifier = ">=0.15" },
     { name = "websockets", specifier = ">=13.0" },

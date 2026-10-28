@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import termios
@@ -10,7 +11,15 @@ from anyio import EndOfStream, create_task_group, wait_readable
 from anyio._backends._asyncio import BrokenResourceError
 from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_network.client import NetworkClient
+from jumpstarter_driver_opendal.adapter import OpendalAdapter
+from jumpstarter_driver_opendal.client import operator_for_path
+from jumpstarter_driver_opendal.common import PathBuf
 from jumpstarter_driver_power.client import PowerClient
+from opendal import Operator
+
+from jumpstarter.client import DriverClient
+from jumpstarter.client.decorators import driver_click_group
+from jumpstarter.streams.encoding import Compression
 
 
 class KubevirtPowerClient(PowerClient):
@@ -22,7 +31,6 @@ class ConsoleExit(Exception):
 
 
 class KubevirtConsoleClient(NetworkClient):
-
     def cli(self):
         base = super().cli()
 
@@ -92,9 +100,92 @@ class KubevirtConsoleClient(NetworkClient):
             os.set_blocking(fd, True)
 
 
-class KubevirtStorageClient(CompositeClient):
-    def flash(self, image_url: str) -> None:
-        self.call("flash", image_url)
+class KubevirtStorageClient(DriverClient):
+    def flash(
+        self,
+        path: PathBuf | dict[str, PathBuf],
+        *,
+        target: str | None = None,
+        operator: Operator | dict[str, Operator] | None = None,
+        compression: Compression | None = None,
+    ) -> None:
+        if isinstance(path, dict):
+            if target is not None:
+                raise ValueError("target cannot be combined with a disk mapping")
+            images = path
+        else:
+            if isinstance(operator, dict):
+                raise TypeError("operator mapping requires a disk mapping")
+            images = {target or "root": path}
+        if not images:
+            raise ValueError("At least one image is required")
+        operation_id = self.call("begin_flash", list(images))
+        try:
+            for name, image in images.items():
+                self.call("prepare_flash", operation_id, name)
+                op = operator.get(name) if isinstance(operator, dict) else operator
+                self._stage_image(operation_id, name, image, op, compression)
+            self.call("commit_flash", operation_id)
+        except BaseException as error:
+            try:
+                committed = self.call("recover_flash", operation_id)
+            except Exception:
+                logging.getLogger(__name__).warning("Flash interrupted; run 'j storage recover'", exc_info=True)
+            else:
+                if committed and isinstance(error, Exception):
+                    return  # The activation succeeded, but its response was lost.
+            raise
+
+    def _stage_image(self, operation_id, name, image, operator, compression):
+        original_url = image if isinstance(image, str) and image.startswith(("http://", "https://")) else None
+        if operator is None:
+            image, operator, _ = operator_for_path(image)
+        # Open resources just before use: presigned URLs may have short lifetimes.
+        with OpendalAdapter(
+            client=self,
+            operator=operator,
+            path=image,
+            mode="rb",
+            compression=compression,
+            original_url=original_url,
+        ) as handle:
+            self.call("stage_flash", operation_id, name, handle)
+
+    def recover(self):
+        return self.call("recover_flash")
+
+    def cli(self):
+        @driver_click_group(self)
+        def base():
+            """Flash VM boot and data disks. Successful flashes leave the VM off."""
+
+        @base.command()
+        @click.argument("file", required=False)
+        @click.option("--target", "-t", "targets", multiple=True, help="name:file (repeat for multiple disks)")
+        @click.option("--compression", type=click.Choice(Compression, case_sensitive=False))
+        def flash(file, targets, compression):
+            if bool(file) == bool(targets):
+                raise click.UsageError("Specify FILE or one or more --target name:file arguments")
+            if file:
+                self.flash(file, compression=compression)
+                return
+            images = {}
+            for value in targets:
+                name, separator, image = value.partition(":")
+                if not separator or not name or not image or name in images:
+                    raise click.UsageError("Each --target must have a distinct name and use name:file")
+                images[name] = image
+            self.flash(images, compression=compression)
+
+        @base.command()
+        def recover():
+            """Abort an interrupted flash or finish cleanup after activation."""
+            committed = self.recover()
+            click.echo(
+                "Activated disks preserved; cleanup complete." if committed else "Uncommitted uploads discarded."
+            )
+
+        return base
 
 
 class KubevirtClient(CompositeClient):
