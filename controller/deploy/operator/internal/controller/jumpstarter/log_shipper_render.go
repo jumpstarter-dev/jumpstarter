@@ -72,10 +72,6 @@ scrape_configs:
         action: keep
       - source_labels: [__meta_kubernetes_namespace]
         target_label: namespace
-      - source_labels: [__meta_kubernetes_pod_name]
-        target_label: pod
-      - source_labels: [__meta_kubernetes_pod_container_name]
-        target_label: container
     pipeline_stages:
       - json:
           expressions:
@@ -109,16 +105,6 @@ discovery.relabel "jumpstarter_pods" {
   rule {
     source_labels = ["__meta_kubernetes_namespace"]
     target_label  = "namespace"
-  }
-
-  rule {
-    source_labels = ["__meta_kubernetes_pod_name"]
-    target_label  = "pod"
-  }
-
-  rule {
-    source_labels = ["__meta_kubernetes_pod_container_name"]
-    target_label  = "container"
   }
 }
 
@@ -184,7 +170,6 @@ sinks:
       component: "{{ component }}"
       exporter: "{{ exporter }}"
       namespace: "{{ kubernetes.namespace_name }}"
-      pod: "{{ kubernetes.pod_name }}"
 `
 
 // renderPromtail renders the Promtail configuration.
@@ -230,8 +215,9 @@ pushed directly to Loki by the telemetry service and are not scraped here.
 
 ## Stream labels
 
-Only "component" and "exporter" are promoted to Loki stream labels. Fields such
-as "client", "lease_id" and any lease spec.context keys stay in the JSON body.
+Only "component", "exporter", and "namespace" are promoted to Loki stream
+labels. Fields such as "client", "lease_id" and any lease spec.context keys stay
+in the JSON body.
 Query them with a JSON filter, for example:
 
     {component="controller"} | json | lease_id="<id>"

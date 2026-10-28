@@ -18,6 +18,7 @@ package jumpstarter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
@@ -224,7 +225,13 @@ func desiredServiceMonitors(js *operatorv1alpha1.Jumpstarter) []*unstructured.Un
 		})
 		monitor.SetName(name)
 		monitor.SetNamespace(js.Namespace)
-		monitor.SetLabels(metricsServiceLabels(js, component))
+		labels := metricsServiceLabels(js, component)
+		if js.Spec.Telemetry != nil {
+			for k, v := range js.Spec.Telemetry.Metrics.ServiceMonitorLabels {
+				labels[k] = v
+			}
+		}
+		monitor.SetLabels(labels)
 		monitor.Object["spec"] = map[string]interface{}{
 			"namespaceSelector": map[string]interface{}{
 				"matchNames": []interface{}{js.Namespace},
@@ -319,23 +326,32 @@ func (r *JumpstarterReconciler) deleteObjectIfExists(ctx context.Context, key ty
 }
 
 // reconcileObservability reconciles metrics Services, ServiceMonitors and the
-// log shipper ConfigMap. It never blocks lease operations: failures are
-// returned for retry, and optional integrations degrade to status conditions.
+// log shipper ConfigMap. It never blocks lease operations: each optional
+// integration is attempted independently, failures are collected for retry, and
+// the caller reports them through status conditions instead of aborting the
+// Jumpstarter reconcile.
 func (r *JumpstarterReconciler) reconcileObservability(ctx context.Context, js *operatorv1alpha1.Jumpstarter) error {
+	var errs []error
+
 	if err := r.reconcileMetricsServices(ctx, js); err != nil {
-		return err
+		errs = append(errs, fmt.Errorf("metrics services: %w", err))
 	}
 
 	crdAvailable, err := r.serviceMonitorCRDAvailable(ctx)
 	if err != nil {
-		logf.FromContext(ctx).Error(err, "Failed to detect ServiceMonitor CRD")
-		crdAvailable = false
-	}
-	if err := r.reconcileServiceMonitors(ctx, js, crdAvailable); err != nil {
-		return err
+		// A transient API/RBAC error must not be mistaken for an absent CRD:
+		// deleting the monitors here would cause churn and data loss.
+		logf.FromContext(ctx).Error(err, "Failed to detect ServiceMonitor CRD; leaving ServiceMonitors unchanged")
+		errs = append(errs, fmt.Errorf("service monitor CRD detection: %w", err))
+	} else if err := r.reconcileServiceMonitors(ctx, js, crdAvailable); err != nil {
+		errs = append(errs, fmt.Errorf("service monitors: %w", err))
 	}
 
-	return r.reconcileLogShipper(ctx, js)
+	if err := r.reconcileLogShipper(ctx, js); err != nil {
+		errs = append(errs, fmt.Errorf("log shipper: %w", err))
+	}
+
+	return errors.Join(errs...)
 }
 
 // serviceMonitorCondition reports the ServiceMonitorReady condition state.

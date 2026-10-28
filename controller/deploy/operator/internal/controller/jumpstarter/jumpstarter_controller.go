@@ -280,11 +280,13 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// Reconcile observability integration: metrics Services, ServiceMonitors and
-	// the optional log shipper ConfigMap. Optional integrations never block lease
-	// operations; failures are retried on the next reconcile.
-	if err := r.reconcileObservability(ctx, &jumpstarter); err != nil {
-		log.Error(err, "Failed to reconcile observability integration")
-		return ctrl.Result{}, err
+	// the optional log shipper ConfigMap. These are optional integrations, so a
+	// failure must not abort the rest of the Jumpstarter reconcile (status,
+	// ConfigMaps, Secrets). The condition reports the failure and a short requeue
+	// retries it.
+	observabilityErr := r.reconcileObservability(ctx, &jumpstarter)
+	if observabilityErr != nil {
+		log.Error(observabilityErr, "Failed to reconcile observability integration")
 	}
 
 	// Reconcile ConfigMaps (after deployments and services)
@@ -308,6 +310,9 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Requeue periodically to pick up changes. Use a shorter interval while the
 	// telemetry CA secret is not yet ready so the controller ConfigMap converges quickly.
 	requeueAfter := 30 * time.Minute
+	if observabilityErr != nil {
+		requeueAfter = 2 * time.Minute
+	}
 	if r.telemetryCANeedsRequeue(ctx, &jumpstarter) {
 		requeueAfter = telemetryCARequeueInterval
 	}

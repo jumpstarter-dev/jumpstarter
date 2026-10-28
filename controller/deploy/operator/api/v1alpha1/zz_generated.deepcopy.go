@@ -1044,6 +1044,13 @@ func (in *TelemetryMetricsConfig) DeepCopyInto(out *TelemetryMetricsConfig) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.ServiceMonitorLabels != nil {
+		in, out := &in.ServiceMonitorLabels, &out.ServiceMonitorLabels
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	if in.ExemplarKeys != nil {
 		in, out := &in.ExemplarKeys, &out.ExemplarKeys
 		*out = make([]string, len(*in))
