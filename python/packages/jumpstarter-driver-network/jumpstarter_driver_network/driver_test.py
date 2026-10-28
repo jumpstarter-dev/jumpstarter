@@ -4,6 +4,7 @@ import socket
 import subprocess
 import sys
 from shutil import which
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -11,7 +12,7 @@ from anyio.from_thread import start_blocking_portal
 from click.testing import CliRunner
 
 from .adapters import TcpPortforwardAdapter, UnixPortforwardAdapter
-from .driver import DbusNetwork, TcpNetwork, UdpNetwork, UnixNetwork, WebsocketNetwork
+from .driver import DbusNetwork, TcpNetwork, UdpNetwork, UnixNetwork, VsockNetwork, WebsocketNetwork
 from jumpstarter.common import TemporaryUnixListener
 from jumpstarter.common.utils import serve
 
@@ -451,3 +452,22 @@ def test_tcp_network_cli_address_disabled():
         result = runner.invoke(cli, ["address"])
         assert result.exit_code != 0
         assert "enable_address mode is not true" in result.output
+
+
+@pytest.mark.anyio
+async def test_vsock_connect_streams_over_the_connected_socket(monkeypatch):
+    ours, theirs = socket.socketpair()
+    monkeypatch.setattr(
+        "jumpstarter_driver_network.driver.socket",
+        SimpleNamespace(socket=lambda family, type: ours, SOCK_STREAM=socket.SOCK_STREAM),
+    )
+    monkeypatch.setattr("ctypes.CDLL", lambda *args, **kwargs: SimpleNamespace(connect=lambda *args: 0))
+
+    with theirs:
+        async with VsockNetwork(cid=3, port=1024).connect() as stream:
+            theirs.sendall(b"ping")
+            assert await stream.receive() == b"ping"
+            await stream.send(b"pong")
+            assert theirs.recv(4) == b"pong"
+
+        assert theirs.recv(1) == b""
