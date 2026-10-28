@@ -8,15 +8,14 @@ mocking the pysnmp internals as in driver_test.py.
 
 from __future__ import annotations
 
-import asyncio
 import socket
-import threading
 import time
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from typing import Any, Self
 
 import pytest
+from anyio.from_thread import BlockingPortal, start_blocking_portal
 from pysnmp.carrier.asyncio.dgram import udp
 from pysnmp.entity import config, engine
 from pysnmp.entity.rfc3413 import cmdrsp, context
@@ -27,16 +26,6 @@ from jumpstarter_driver_snmp.driver import AuthProtocol, PrivProtocol, SNMPError
 from jumpstarter.common.utils import serve
 
 pytestmark = pytest.mark.anyio
-
-
-@pytest.fixture(autouse=True)
-def _reset_event_loop():
-    """The driver creates, sets and closes its own event loop per operation,
-    leaving a closed loop registered on the main thread. Replace it with a
-    fresh open loop after each test so tests running later (e.g. the mock
-    based driver_test.py) do not hit a closed loop via asyncio.get_event_loop()."""
-    yield
-    asyncio.set_event_loop(asyncio.new_event_loop())
 
 
 class _RecordingSetResponder(cmdrsp.SetCommandResponder):
@@ -63,8 +52,8 @@ class _RecordingSetResponder(cmdrsp.SetCommandResponder):
 class SnmpTestAgent:
     """In-process SNMPv3 agent serving SET requests on a loopback UDP port.
 
-    Runs a dedicated asyncio event loop in a background thread so it can
-    answer the driver while the driver runs its own loop.
+    Runs its own event loop in a background thread (an anyio blocking portal)
+    so it can answer the driver while the driver runs on the test's loop.
     """
 
     def __init__(
@@ -86,43 +75,27 @@ class SnmpTestAgent:
         self.error_index = error_index
         self.port: int = 0
         self.requests: list[list[tuple[tuple[int, ...], int]]] = []
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._thread: threading.Thread | None = None
+        self._stack: ExitStack | None = None
+        self._portal: BlockingPortal | None = None
         self._engine: Any = None
         self._responder: _RecordingSetResponder | None = None
-        self._ready = threading.Event()
-        self._error: BaseException | None = None
 
     def start(self) -> SnmpTestAgent:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.bind(("127.0.0.1", 0))
         self.port = sock.getsockname()[1]
-        self._loop = asyncio.new_event_loop()
-        self._thread = threading.Thread(target=self._run, args=(sock,), daemon=True)
-        self._thread.start()
-        if not self._ready.wait(timeout=10):
-            raise RuntimeError("SNMP test agent did not start in time")
-        if self._error is not None:
-            raise self._error
+        stack = ExitStack()
+        portal = stack.enter_context(start_blocking_portal())
+        try:
+            portal.call(self._setup, sock)
+        except BaseException:
+            stack.close()
+            raise
+        self._stack, self._portal = stack, portal
         return self
 
     def record(self, varbinds: list[tuple[tuple[int, ...], int]]):
         self.requests.append(varbinds)
-
-    def _run(self, sock: socket.socket):
-        assert self._loop is not None
-        asyncio.set_event_loop(self._loop)
-        try:
-            try:
-                self._loop.run_until_complete(self._setup(sock))
-            except BaseException as e:  # noqa: BLE001
-                self._error = e
-                self._ready.set()
-                return
-            self._ready.set()
-            self._loop.run_forever()
-        finally:
-            self._loop.close()
 
     async def _setup(self, sock: socket.socket):
         self._engine = engine.SnmpEngine()
@@ -149,25 +122,21 @@ class SnmpTestAgent:
         self._engine.open_dispatcher()
 
     def _shutdown(self):
-        try:
-            if self._responder is not None:
-                self._engine.message_dispatcher.unregister_context_engine_id(b"", self._responder.SUPPORTED_PDU_TYPES)
-                self._responder.close(self._engine)
-            if self._engine is not None:
-                self._engine.close_dispatcher()
-        finally:
-            assert self._loop is not None
-            self._loop.stop()
+        if self._responder is not None:
+            self._engine.message_dispatcher.unregister_context_engine_id(b"", self._responder.SUPPORTED_PDU_TYPES)
+            self._responder.close(self._engine)
+        if self._engine is not None:
+            self._engine.close_dispatcher()
 
     def stop(self):
-        if self._thread is None:
+        if self._stack is None:
             return
-        assert self._loop is not None
-        if self._error is None:
-            self._loop.call_soon_threadsafe(self._shutdown)
-        self._thread.join(timeout=10)
-        if self._thread.is_alive():
-            raise RuntimeError("SNMP test agent did not stop in time")
+        assert self._portal is not None
+        try:
+            self._portal.call(self._shutdown)
+        finally:
+            self._stack.close()
+            self._stack = self._portal = None
 
     def __enter__(self) -> Self:
         return self.start()  # ty: ignore[invalid-return-type]
