@@ -254,15 +254,18 @@ git pull origin release-X.Y
    - `python/Containerfile` → `ARG FLS_VERSION=`
    - `python/packages/jumpstarter-driver-flashers/jumpstarter_driver_flashers/client.py` → `flash()` default and `--fls-version` click default
 
-3. **Regenerate manifests:**
+3. **Regenerate manifests and set the operator image tag:**
    ```bash
    cd controller/deploy/operator
-   make manifests generate
+   make build-installer
+   grep newTag config/manager/kustomization.yaml   # must show X.Y.Z
    ```
+   `build-installer` runs `make manifests generate` and then sets `newTag` in `config/manager/kustomization.yaml` from `VERSION`. It needs no images, so it belongs in this pre-tag commit. `make bundle` in step 2D sets the same tag, but only after the tag is cut, so without this step the tagged tree keeps the previous release's image tag.
 
 4. **Commit and push via PR** — release branches are protected and require merge queue, so direct pushes will be rejected. Files to include:
    - `controller/deploy/operator/Makefile`
-   - Any files changed by `make manifests generate`
+   - `controller/deploy/operator/config/manager/kustomization.yaml`
+   - Any other files changed by `make build-installer`
    - FLS pin files (if bumped): `python/Containerfile`, `python/packages/jumpstarter-driver-flashers/jumpstarter_driver_flashers/client.py`
 
    Push to the user's fork and create a PR targeting the release branch:
@@ -468,6 +471,7 @@ Present a checklist of what was done (mark completed items) and what remains:
 - [ ] FLS released in `jumpstarter-dev/fls` (if new FLS version) and release assets uploaded
 - [ ] FLS pins updated (`python/Containerfile` + flashers CLI/`flash()` defaults)
 - [ ] Operator Makefile VERSION and REPLACES updated
+- [ ] Operator image tag (`newTag` in `config/manager/kustomization.yaml`) matches VERSION in the pre-tag commit
 - [ ] Git tag created and pushed
 - [ ] GitHub Release created (with `--prerelease` for RCs)
 - [ ] CI image build completed
