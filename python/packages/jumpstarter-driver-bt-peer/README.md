@@ -47,12 +47,21 @@ Once the DUT has connected and opened an A2DP stream, send it audio:
 ```bash
 j bt_peer play song.mp3
 j bt_peer play jingle.wav --loop
+j bt_peer pause
+j bt_peer resume
 j bt_peer playback
 j bt_peer stop-playback
 ```
 
-While no track is playing the peer streams silence, so the A2DP stream stays
-open and a track can be started or swapped without renegotiating it.
+`play` starts the stream itself rather than waiting to be asked: in A2DP the
+source drives it, and the DUT opens the signalling channel and then waits. A
+track loaded before the DUT's AVDTP channel exists is started as soon as it
+arrives, so the two can race without the track being left silent.
+
+`pause` and `stop-playback` send AVDTP SUSPEND, which leaves the stream OPEN
+and resumable rather than tearing it down; `resume` and `play` start it again.
+Pause keeps the track's position. While a stream is started with no track set
+the peer sends filler, so a track can be swapped in without renegotiating.
 
 Anything ffmpeg can read is accepted; the client transcodes locally and
 uploads the encoded SBC, so the exporter does not need ffmpeg. Install it with
