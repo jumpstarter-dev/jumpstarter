@@ -1,10 +1,11 @@
-from asyncio import run
-from functools import wraps
+from functools import partial, wraps
+
+from anyio import run
 
 
 def blocking(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        return run(f(*args, **kwargs))
+        return run(partial(f, *args, **kwargs))
 
     return wrapper
