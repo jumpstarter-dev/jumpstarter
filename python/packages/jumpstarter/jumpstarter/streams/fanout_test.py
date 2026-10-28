@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import asyncio
-from contextlib import asynccontextmanager
+import threading
+from contextlib import AsyncExitStack, asynccontextmanager
 
 import anyio
 import pytest
@@ -24,7 +24,18 @@ from .fanout import (
     ReadOnlyStreamError,
     StreamFanOut,
     WriteTokenRevokedError,
+    _Reader,
 )
+
+
+@pytest.fixture
+async def running():
+    async with AsyncExitStack() as stack:
+
+        async def enter(fanout: StreamFanOut) -> StreamFanOut:
+            return await stack.enter_async_context(fanout.running())
+
+        yield enter
 
 
 class TestClientBuffer:
@@ -118,7 +129,7 @@ async def _memory_source_factory(tx_send, rx_recv):
 
 class TestStreamFanOut:
     @pytest.mark.anyio
-    async def test_exclusive_basic(self):
+    async def test_exclusive_basic(self, running):
         a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -126,7 +137,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
 
         async with fanout.attach_exclusive() as stream:
             await a_tx.send(b"hello")
@@ -137,7 +148,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_second_exclusive_raises(self):
+    async def test_second_exclusive_raises(self, running):
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -145,7 +156,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
 
         async with fanout.attach_exclusive():
             with pytest.raises(ExclusiveSessionActive):
@@ -155,7 +166,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_observer_receives_same_data(self):
+    async def test_observer_receives_same_data(self, running):
         a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -163,7 +174,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
 
         async with fanout.attach_exclusive() as primary, fanout.attach_observer() as observer:
             await a_tx.send(b"shared data")
@@ -176,7 +187,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_observer_send_raises(self):
+    async def test_observer_send_raises(self, running):
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -184,7 +195,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
 
         async with fanout.attach_exclusive(), fanout.attach_observer() as observer:
             with pytest.raises(ReadOnlyStreamError):
@@ -193,7 +204,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_primary_close_frees_token(self):
+    async def test_primary_close_frees_token(self, running):
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -201,7 +212,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=True)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=True))
 
         async with fanout.attach_exclusive():
             pass
@@ -212,7 +223,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_observer_before_exclusive(self):
+    async def test_observer_before_exclusive(self, running):
         a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -220,7 +231,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=True)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=True))
 
         async with fanout.attach_observer() as observer:
             await a_tx.send(b"before exclusive")
@@ -231,7 +242,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_release_write_token(self):
+    async def test_release_write_token(self, running):
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -239,7 +250,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
 
         async with fanout.attach_exclusive() as stream:
             await fanout.release_write_token()
@@ -249,7 +260,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_scrollback_replay(self):
+    async def test_scrollback_replay(self, running):
         a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -257,7 +268,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, scrollback_size=4096, always_on=True)
+        fanout = await running(StreamFanOut(source_factory=factory, scrollback_size=4096, always_on=True))
 
         async with fanout.attach_exclusive() as primary:
             await a_tx.send(b"history line 1\n")
@@ -275,7 +286,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_last_detach_clears_scrollback_before_next_observer(self):
+    async def test_last_detach_clears_scrollback_before_next_observer(self, running):
         sources = []
 
         @asynccontextmanager
@@ -285,7 +296,7 @@ class TestStreamFanOut:
             sources.append(tx)
             yield StapledObjectStream(sink, rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
         async with fanout.attach_observer() as first:
             await sources[-1].send(b"old output")
             with anyio.fail_after(1):
@@ -302,7 +313,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_exclusive_session_active_message(self):
+    async def test_exclusive_session_active_message(self, running):
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -310,7 +321,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
 
         async with fanout.attach_exclusive():
             with pytest.raises(ExclusiveSessionActive) as exc_info:
@@ -322,7 +333,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_status(self):
+    async def test_status(self, running):
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -330,7 +341,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
 
         async with fanout.attach_exclusive(), fanout.attach_observer():
             status = fanout.status()
@@ -342,7 +353,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_overflow_error_policy(self):
+    async def test_overflow_error_policy(self, running):
         a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -350,7 +361,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
 
         async with fanout.attach_exclusive(on_overflow="error", buffer_bytes=10) as stream:
             for _ in range(20):
@@ -371,7 +382,7 @@ class TestStreamFanOut:
         assert buf._close_error is err
 
     @pytest.mark.anyio
-    async def test_exclusive_send_when_source_none(self):
+    async def test_exclusive_send_when_source_none(self, running):
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -379,7 +390,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
 
         async with fanout.attach_exclusive() as stream:
             fanout._source = None
@@ -389,7 +400,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_send_eof_is_noop(self):
+    async def test_send_eof_is_noop(self, running):
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -397,7 +408,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
 
         async with fanout.attach_exclusive() as stream:
             await stream.send_eof()
@@ -405,7 +416,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_extra_attributes_empty(self):
+    async def test_extra_attributes_empty(self, running):
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -413,7 +424,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
 
         async with fanout.attach_exclusive() as stream:
             assert stream.extra_attributes == {}
@@ -422,7 +433,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_extra_raises_without_default(self):
+    async def test_extra_raises_without_default(self, running):
         from anyio import TypedAttributeLookupError
 
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
@@ -432,7 +443,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
 
         async with fanout.attach_exclusive() as stream:
             with pytest.raises(TypedAttributeLookupError):
@@ -441,7 +452,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_async_iteration(self):
+    async def test_async_iteration(self, running):
         a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -449,7 +460,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
 
         async with fanout.attach_exclusive() as stream:
             assert stream.__aiter__() is stream
@@ -461,7 +472,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_anext_raises_stop_on_close(self):
+    async def test_anext_raises_stop_on_close(self, running):
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -469,7 +480,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
 
         async with fanout.attach_observer() as stream:
             fanout._clients[stream._id].close()
@@ -479,7 +490,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_context_manager_protocol(self):
+    async def test_context_manager_protocol(self, running):
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -487,7 +498,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
 
         async with fanout.attach_exclusive() as stream:
             s = await stream.__aenter__()
@@ -497,7 +508,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_observer_aclose_idempotent(self):
+    async def test_observer_aclose_idempotent(self, running):
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -505,7 +516,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
 
         async with fanout.attach_exclusive(), fanout.attach_observer() as observer:
             await observer.aclose()
@@ -514,7 +525,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_scrollback_overflow_trims(self):
+    async def test_scrollback_overflow_trims(self, running):
         a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
 
@@ -522,7 +533,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, scrollback_size=20, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, scrollback_size=20, always_on=False))
 
         async with fanout.attach_exclusive() as stream:
             await a_tx.send(b"a" * 15)
@@ -547,7 +558,7 @@ class TestStreamFanOut:
             type(stream).extra_attributes = original
 
     @pytest.mark.anyio
-    async def test_exclusive_send_to_source(self):
+    async def test_exclusive_send_to_source(self, running):
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, b_rx = create_memory_object_stream[bytes](32)
 
@@ -555,7 +566,7 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
 
         async with fanout.attach_exclusive() as stream:
             await stream.send(b"outbound")
@@ -565,7 +576,7 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_reconnect_broadcasts_message(self):
+    async def test_reconnect_broadcasts_message(self, running):
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _b_rx = create_memory_object_stream[bytes](32)
         call_count = 0
@@ -582,7 +593,7 @@ class TestStreamFanOut:
             else:
                 yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
         collected = bytearray()
 
         async with fanout.attach_observer() as obs:
@@ -594,29 +605,30 @@ class TestStreamFanOut:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_stop_reader_handles_task_exception(self):
+    async def test_stop_reader_handles_a_failed_reader(self, running, monkeypatch):
         @asynccontextmanager
         async def factory():
             yield None
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
 
-        async def _failing_reader():
+        async def failing_reader():
             raise RuntimeError("boom")
 
-        fanout._reader_task = asyncio.get_running_loop().create_task(_failing_reader())
-        fanout._started = True
+        monkeypatch.setattr(fanout, "_reader_loop", failing_reader)
+        async with fanout._lock:
+            await fanout._ensure_started()
         await fanout._stop_reader()
-        assert fanout._reader_task is None
+        assert fanout._reader is None
         assert not fanout._started
 
     @pytest.mark.anyio
-    async def test_unexpected_reader_failure_resets_start_state(self, monkeypatch):
+    async def test_unexpected_reader_failure_resets_start_state(self, running, monkeypatch):
         @asynccontextmanager
         async def factory():
             yield None
 
-        fanout = StreamFanOut(source_factory=factory)
+        fanout = await running(StreamFanOut(source_factory=factory))
 
         async def failing_reader():
             raise RuntimeError("unexpected source failure")
@@ -625,18 +637,18 @@ class TestStreamFanOut:
         fanout._started = True
         fanout._source_ready.set()
 
-        await fanout._run_reader()
+        await fanout._run_reader(_Reader())
 
         assert not fanout._started
         assert not fanout._source_ready.is_set()
 
     @pytest.mark.anyio
-    async def test_unexpected_reader_failure_disconnects_clients(self, monkeypatch):
+    async def test_unexpected_reader_failure_disconnects_clients(self, running, monkeypatch):
         @asynccontextmanager
         async def factory():
             yield None
 
-        fanout = StreamFanOut(source_factory=factory)
+        fanout = await running(StreamFanOut(source_factory=factory))
         buf = ClientBuffer()
         fanout._clients[1] = buf
         fanout._write_token_holder = 1
@@ -646,7 +658,7 @@ class TestStreamFanOut:
             raise RuntimeError("unexpected source failure")
 
         monkeypatch.setattr(fanout, "_reader_loop", failing_reader)
-        await fanout._run_reader()
+        await fanout._run_reader(_Reader())
 
         assert buf.closed
         with pytest.raises(ClosedResourceError):
@@ -656,7 +668,7 @@ class TestStreamFanOut:
         assert not fanout._started
 
     @pytest.mark.anyio
-    async def test_kick_keeps_reader_alive_but_shutdown_stops_it(self):
+    async def test_kick_keeps_reader_alive_but_shutdown_stops_it(self, running):
         a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _ = create_memory_object_stream[bytes](32)
 
@@ -664,15 +676,15 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory)
+        fanout = await running(StreamFanOut(source_factory=factory))
         async with fanout.attach_exclusive() as first:
-            reader = fanout._reader_task
+            reader = fanout._reader
             assert reader is not None
 
             fanout.kick_sync()
             assert not fanout._shutdown
-            assert fanout._reader_task is reader
-            assert not reader.done()
+            assert fanout._reader is reader
+            assert not reader.done.is_set()
             with pytest.raises(ClosedResourceError):
                 await first.receive()
 
@@ -683,18 +695,18 @@ class TestStreamFanOut:
 
                 fanout.shutdown_sync()
                 assert fanout._shutdown
-                assert fanout._reader_task is None
+                assert fanout._reader is None
                 with pytest.raises(ClosedResourceError):
                     await replacement.receive()
 
         with anyio.fail_after(1):
-            while not reader.done():
+            while not reader.done.is_set():
                 await checkpoint()
-        assert reader.done()
+        assert reader.done.is_set()
 
 
     @pytest.mark.anyio
-    async def test_kick_stops_lazy_reader_once_kicked_client_unwinds(self):
+    async def test_kick_stops_lazy_reader_once_kicked_client_unwinds(self, running):
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
         b_tx, _ = create_memory_object_stream[bytes](32)
 
@@ -702,23 +714,102 @@ class TestStreamFanOut:
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
-        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        fanout = await running(StreamFanOut(source_factory=factory, always_on=False))
         async with fanout.attach_exclusive():
-            reader = fanout._reader_task
+            reader = fanout._reader
             assert reader is not None
             fanout.kick_sync()
             # The kick itself leaves the reader running...
-            assert fanout._reader_task is reader
-            assert not reader.done()
+            assert fanout._reader is reader
+            assert not reader.done.is_set()
 
         # ...until the kicked client's attach context detaches the last client.
-        assert fanout._reader_task is None
-        assert reader.done()
+        assert fanout._reader is None
+        assert reader.done.is_set()
         assert not fanout.status()["reader_running"]
+
+
+@asynccontextmanager
+async def _idle_source():
+    _tx, rx = create_memory_object_stream[bytes](32)
+    sink, _ = create_memory_object_stream[bytes](32)
+    yield StapledObjectStream(sink, rx)
+
+
+class TestRunning:
+    @pytest.mark.anyio
+    async def test_attaching_outside_running_raises(self):
+        fanout = StreamFanOut(source_factory=_idle_source)
+
+        with pytest.raises(RuntimeError, match="not running"):
+            async with fanout.attach_observer():
+                pass
+
+    @pytest.mark.anyio
+    async def test_running_twice_raises(self):
+        fanout = StreamFanOut(source_factory=_idle_source)
+
+        async with fanout.running():
+            with pytest.raises(RuntimeError, match="already running"):
+                async with fanout.running():
+                    pass
+
+    @pytest.mark.anyio
+    async def test_leaving_running_closes_the_source_and_wakes_clients(self):
+        closed = anyio.Event()
+
+        @asynccontextmanager
+        async def source_with_async_close():
+            async with _idle_source() as stream:
+                try:
+                    yield stream
+                finally:
+                    await checkpoint()
+                    closed.set()
+
+        fanout = StreamFanOut(source_factory=source_with_async_close)
+        async with fanout.running():
+            attachment = fanout.attach_observer()
+            stream = await attachment.__aenter__()
+
+        assert closed.is_set()
+        with pytest.raises(ClosedResourceError):
+            await stream.receive()
+        await attachment.__aexit__(None, None, None)
+
+    @pytest.mark.anyio
+    async def test_a_detach_in_a_cancelled_scope_still_releases_the_client(self, running):
+        fanout = await running(StreamFanOut(source_factory=_idle_source))
+
+        with anyio.CancelScope() as scope:
+            async with fanout.attach_exclusive():
+                scope.cancel()
+                await checkpoint()
+
+        status = fanout.status()
+        assert status["total_clients"] == 0
+        assert not status["write_token_held"]
+
+    @pytest.mark.anyio
+    async def test_a_failing_reader_does_not_deadlock_stopping_it(self, running, monkeypatch):
+        fanout = await running(StreamFanOut(source_factory=_idle_source, always_on=False))
+
+        async def failing_reader():
+            raise RuntimeError("source failed")
+
+        monkeypatch.setattr(fanout, "_reader_loop", failing_reader)
+        with anyio.fail_after(1):
+            async with fanout._lock:
+                await fanout._ensure_started()
+                await anyio.sleep(0.05)
+                await fanout._stop_reader()
+
+        assert fanout._reader is None
+
 
 class TestFanOutStreamMixin:
     @pytest.mark.anyio
-    async def test_exported_close_kicks_on_loop_thread(self, monkeypatch):
+    async def test_exported_close_kicks_on_loop_thread(self, running, monkeypatch):
         from dataclasses import dataclass
 
         _tx, rx = create_memory_object_stream[bytes](32)
@@ -731,12 +822,12 @@ class TestFanOutStreamMixin:
                 yield StapledObjectStream(sink, rx)
 
         driver = TestDriver()
-        fanout = driver._get_fanout()
-        loop = asyncio.get_running_loop()
+        fanout = await running(driver._get_fanout())
+        loop_thread = threading.get_ident()
         original_kick = fanout.kick_sync
 
         def checked_kick():
-            assert asyncio.get_running_loop() is loop
+            assert threading.get_ident() == loop_thread
             original_kick()
 
         monkeypatch.setattr(fanout, "kick_sync", checked_kick)
@@ -748,7 +839,7 @@ class TestFanOutStreamMixin:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_mixin_connect_and_observe(self):
+    async def test_mixin_connect_and_observe(self, running):
         from dataclasses import dataclass
 
         a_tx, a_rx = create_memory_object_stream[bytes](32)
@@ -761,7 +852,7 @@ class TestFanOutStreamMixin:
                 yield StapledObjectStream(b_tx, a_rx)
 
         driver = TestDriver()
-        fanout = driver._get_fanout()
+        fanout = await running(driver._get_fanout())
 
         async with fanout.attach_exclusive() as stream:
             await a_tx.send(b"mixin-data")
@@ -780,7 +871,7 @@ class TestFanOutStreamMixin:
         await fanout.close()
 
     @pytest.mark.anyio
-    async def test_mixin_release_console(self):
+    async def test_mixin_release_console(self, running):
         from dataclasses import dataclass
 
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
@@ -793,7 +884,7 @@ class TestFanOutStreamMixin:
                 yield StapledObjectStream(b_tx, a_rx)
 
         driver = TestDriver()
-        fanout = driver._get_fanout()
+        fanout = await running(driver._get_fanout())
 
         async with fanout.attach_exclusive():
             assert fanout._write_token_holder is not None
@@ -891,7 +982,7 @@ class TestFanOutStreamMixin:
                 pass
 
     @pytest.mark.anyio
-    async def test_mixin_connect_via_method(self):
+    async def test_mixin_connect_via_method(self, running):
         from dataclasses import dataclass
 
         a_tx, a_rx = create_memory_object_stream[bytes](32)
@@ -904,6 +995,7 @@ class TestFanOutStreamMixin:
                 yield StapledObjectStream(b_tx, a_rx)
 
         driver = TestDriver()
+        await running(driver._get_fanout())
 
         async with driver.connect() as stream:
             await a_tx.send(b"via-connect")
@@ -914,7 +1006,7 @@ class TestFanOutStreamMixin:
         await driver._get_fanout().close()
 
     @pytest.mark.anyio
-    async def test_mixin_observe_via_method(self):
+    async def test_mixin_observe_via_method(self, running):
         from dataclasses import dataclass
 
         a_tx, a_rx = create_memory_object_stream[bytes](32)
@@ -927,6 +1019,7 @@ class TestFanOutStreamMixin:
                 yield StapledObjectStream(b_tx, a_rx)
 
         driver = TestDriver()
+        await running(driver._get_fanout())
 
         async with driver.observe() as stream:
             await a_tx.send(b"via-observe")
@@ -937,7 +1030,7 @@ class TestFanOutStreamMixin:
         await driver._get_fanout().close()
 
     @pytest.mark.anyio
-    async def test_mixin_release_console_via_method(self):
+    async def test_mixin_release_console_via_method(self, running):
         from dataclasses import dataclass
 
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
@@ -950,7 +1043,7 @@ class TestFanOutStreamMixin:
                 yield StapledObjectStream(b_tx, a_rx)
 
         driver = TestDriver()
-        fanout = driver._get_fanout()
+        fanout = await running(driver._get_fanout())
 
         async with fanout.attach_exclusive():
             assert fanout._write_token_holder is not None

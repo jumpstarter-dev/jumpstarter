@@ -1,7 +1,7 @@
 import logging
 from collections import deque
 from collections.abc import Generator
-from contextlib import asynccontextmanager, contextmanager, suppress
+from contextlib import AsyncExitStack, asynccontextmanager, contextmanager, suppress
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
 from uuid import UUID
@@ -21,7 +21,12 @@ from jumpstarter.common.streams import ResourceStreamRequest, StreamRequestMetad
 from jumpstarter.logging import set_log_context, unbind_log_context
 from jumpstarter.metrics import get_registry
 from jumpstarter.streams.common import forward_stream
-from jumpstarter.streams.fanout import ExclusiveSessionActive, ReadOnlyStreamError, WriteTokenRevokedError
+from jumpstarter.streams.fanout import (
+    ExclusiveSessionActive,
+    FanOutStreamMixin,
+    ReadOnlyStreamError,
+    WriteTokenRevokedError,
+)
 from jumpstarter.streams.metadata import MetadataStreamAttributes
 from jumpstarter.streams.router import RouterStream
 
@@ -116,6 +121,20 @@ class Session(
         self._logging_handler.add_child_handler("driver.", LogSource.DRIVER)
 
     @asynccontextmanager
+    async def _fanouts_running(self):
+        """Run the console fan-out readers of this session's drivers while it serves.
+
+        They start before and stop after the gRPC server, so no client can attach
+        to a stopped fan-out, and every console source is closed before the
+        session's driver shutdown runs.
+        """
+        async with AsyncExitStack() as stack:
+            for driver in self.mapping.values():
+                if isinstance(driver, FanOutStreamMixin):
+                    await stack.enter_async_context(driver._get_fanout().running())
+            yield
+
+    @asynccontextmanager
     async def serve_port_async(self, port):
         server = grpc.aio.server()
         server.add_insecure_port(port)
@@ -123,11 +142,12 @@ class Session(
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
-        await server.start()
-        try:
-            yield
-        finally:
-            await server.stop(grace=None)
+        async with self._fanouts_running():
+            await server.start()
+            try:
+                yield
+            finally:
+                await server.stop(grace=None)
 
     @asynccontextmanager
     async def serve_multi_port_async(self, *ports):
@@ -150,18 +170,19 @@ class Session(
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
-        await server.start()
-        logger.info("Session server started on %d ports", len(ports))
-        try:
-            yield
-        finally:
-            logger.info("Stopping session server...")
-            # Use a short grace period to allow pending RPCs to complete
-            # This helps prevent SSL corruption from abrupt connection termination
-            await server.stop(grace=1.0)
-            # Brief delay to ensure all connections are fully closed
-            await sleep(0.1)
-            logger.info("Session server stopped")
+        async with self._fanouts_running():
+            await server.start()
+            logger.info("Session server started on %d ports", len(ports))
+            try:
+                yield
+            finally:
+                logger.info("Stopping session server...")
+                # Use a short grace period to allow pending RPCs to complete
+                # This helps prevent SSL corruption from abrupt connection termination
+                await server.stop(grace=1.0)
+                # Brief delay to ensure all connections are fully closed
+                await sleep(0.1)
+                logger.info("Session server stopped")
 
     @asynccontextmanager
     async def _serve_grpc_server_async(self, server):
@@ -169,14 +190,15 @@ class Session(
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
-        await server.start()
-        try:
-            yield
-        finally:
-            logger.info("Stopping session server...")
-            await server.stop(grace=1.0)
-            await sleep(0.1)
-            logger.info("Session server stopped")
+        async with self._fanouts_running():
+            await server.start()
+            try:
+                yield
+            finally:
+                logger.info("Stopping session server...")
+                await server.stop(grace=1.0)
+                await sleep(0.1)
+                logger.info("Session server stopped")
 
     def _add_tcp_port(
         self,

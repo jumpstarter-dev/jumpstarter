@@ -2,11 +2,21 @@
 
 import logging
 from contextlib import ExitStack, asynccontextmanager
+from dataclasses import dataclass, field
 
 import grpc
 import pytest
-from anyio import BrokenResourceError, CancelScope, connect_tcp, fail_after, run, sleep_forever
+from anyio import (
+    BrokenResourceError,
+    CancelScope,
+    connect_tcp,
+    create_memory_object_stream,
+    fail_after,
+    run,
+    sleep_forever,
+)
 from anyio.from_thread import BlockingPortal
+from anyio.streams.stapled import StapledObjectStream
 from google.protobuf import empty_pb2
 from jumpstarter_protocol import router_pb2_grpc
 
@@ -20,6 +30,7 @@ from jumpstarter.driver import Driver, export
 from jumpstarter.exporter.auth import PASSPHRASE_METADATA_KEY, PassphraseInterceptor
 from jumpstarter.exporter.session import Session
 from jumpstarter.streams.common import forward_stream
+from jumpstarter.streams.fanout import FanOutStreamMixin
 from jumpstarter.streams.router import RouterStream
 
 
@@ -37,6 +48,38 @@ class CompositeDriver_(Driver):
     @classmethod
     def client(cls):
         return "jumpstarter.client.DriverClient"
+
+
+@dataclass(kw_only=True)
+class RecordingConsoleDriver(FanOutStreamMixin, Driver):
+    events: list[str] = field(default_factory=list)
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @asynccontextmanager
+    async def _open_source(self):
+        _tx, rx = create_memory_object_stream[bytes](32)
+        sink, _ = create_memory_object_stream[bytes](32)
+        self.events.append("opened")
+        try:
+            yield StapledObjectStream(sink, rx)
+        finally:
+            self.events.append("closed")
+
+    def shutdown(self):
+        self.events.append("shutdown")
+        super().shutdown()
+
+
+def test_session_closes_console_sources_before_driver_shutdown():
+    driver = RecordingConsoleDriver()
+
+    with serve(driver) as client, client.stream():
+        pass
+
+    assert driver.events == ["opened", "closed", "shutdown"]
 
 
 def test_session_unbinds_exporter_log_context():
