@@ -19,6 +19,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -42,6 +43,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
@@ -61,6 +63,52 @@ func drainChannel(ch <-chan *pb.ListenResponse) int {
 		default:
 			return count
 		}
+	}
+}
+
+func TestWithExporterLogsCRDName(t *testing.T) {
+	// These are the two shapes observed in controller logs: a plain CRD name
+	// and the legacy NamespacedName object. Both must serialize as a string so
+	// the log shipper can promote "exporter" to a Loki stream label.
+	tests := []struct {
+		name  string
+		value any
+		want  string
+	}{
+		{"string form", "test-exporter-sa", "test-exporter-sa"},
+		{
+			"namespaced name form",
+			types.NamespacedName{Namespace: "jumpstarter-lab", Name: "test-exporter-oidc"},
+			"test-exporter-oidc",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			logger := ctrlzap.New(
+				ctrlzap.UseDevMode(false),
+				ctrlzap.WriteTo(&buf),
+			).WithValues("component", "controller")
+
+			withExporter(logger, tt.value).Info("exporter log shape")
+
+			var line map[string]any
+			if err := json.Unmarshal(buf.Bytes(), &line); err != nil {
+				t.Fatalf("decode log line %q: %v", buf.String(), err)
+			}
+
+			got, ok := line["exporter"]
+			if !ok {
+				t.Fatalf("log line is missing exporter: %s", buf.String())
+			}
+			if got != tt.want {
+				t.Fatalf("exporter = %#v, want %q; line: %s", got, tt.want, buf.String())
+			}
+			if _, isObject := got.(map[string]any); isObject {
+				t.Fatalf("exporter must not be a JSON object: %s", buf.String())
+			}
+		})
 	}
 }
 
