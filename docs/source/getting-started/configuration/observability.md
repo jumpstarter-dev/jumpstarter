@@ -100,6 +100,51 @@ Changing the type replaces the ConfigMap data in one reconciliation. Setting
 `type: none` removes the ConfigMap; the pod labels remain, so no pod restart is
 caused by disabling log shipping.
 
+### Grafana Alloy
+
+The generated `alloy.alloy` rendering is validated against Grafana Alloy commit
+`43c40e25565d1fc0062b06c282c130c577559597` (`main`, 2026-10-28).
+
+The rendering:
+
+- filters Kubernetes discovery to pods labeled
+  `jumpstarter.dev/log-scrape="true"`;
+- assumes the Alloy Helm chart DaemonSet and uses a `spec.nodeName` field
+  selector, so each Alloy pod tails only the Controller/Router pods on its node;
+- enforces the JEP-0013 stream-label set with `stage.label_keep`. This also
+  removes Alloy's default `job` label;
+- keeps `client`, `lease_id`, and lease `spec.context` fields in the JSON body.
+
+For a single-replica Alloy Deployment, remove `selectors.field`; otherwise it
+only collects pods on its own node. For clustered Alloy, enable
+`loki.source.kubernetes.clustering` instead of node filtering.
+
+Alloy needs `get`, `list`, and `watch` on `pods`, `pods/log`, and `namespaces`.
+The Alloy Helm chart's default RBAC grants these. If you use
+`remote.kubernetes.secret` for Loki authentication, Alloy also needs `get` on
+`secrets`, which the chart does not grant by default. Prefer mounting the
+shipper's Secret and using file references:
+
+```hcl
+loki.write "default" {
+  endpoint {
+    url = "https://loki.example/loki/api/v1/push"
+
+    basic_auth {
+      username      = "jumpstarter"
+      password_file = "/etc/alloy/loki-password"
+    }
+
+    tls_config {
+      ca_file = "/etc/alloy/loki-ca.crt"
+    }
+  }
+}
+```
+
+The `remote.kubernetes.secret` alternative is also valid, but requires the extra
+Secret RBAC. Credentials never belong in the generated ConfigMap.
+
 ## Validate
 
 ```sh
@@ -116,7 +161,16 @@ kubectl -n jumpstarter-lab get configmap jumpstarter-log-shipper \
 promtail -check-config.file=/tmp/promtail.yaml
 ```
 
-For Alloy use `alloy fmt --test`, for Vector use `vector validate`.
+For Alloy use both `alloy validate` and `alloy fmt --test`; for Vector use
+`vector validate`. `alloy validate` checks components, required properties, and
+unknown properties; `alloy fmt --test` checks formatting only.
+
+```sh
+kubectl -n jumpstarter-lab get configmap jumpstarter-log-shipper \
+  -o jsonpath='{.data.alloy\.alloy}' > /tmp/alloy.alloy
+alloy validate /tmp/alloy.alloy
+alloy fmt --test /tmp/alloy.alloy
+```
 
 ## Conditions
 

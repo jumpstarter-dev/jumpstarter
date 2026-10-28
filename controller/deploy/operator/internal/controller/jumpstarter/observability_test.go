@@ -19,6 +19,10 @@ package jumpstarter
 import (
 	"context"
 	"errors"
+	"flag"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -273,7 +277,7 @@ func TestRenderShipper(t *testing.T) {
 		markers []string
 	}{
 		{"promtail", "promtail.yaml", []string{"kubernetes_sd_configs", "jumpstarter_dev_log_scrape", "component", "exporter"}},
-		{"alloy", "alloy.alloy", []string{"discovery.kubernetes", "jumpstarter_dev_log_scrape", "stage.labels", "component", "exporter"}},
+		{"alloy", "alloy.alloy", []string{"discovery.kubernetes", "jumpstarter_dev_log_scrape", "selectors", "spec.nodeName", "stage.labels", "stage.label_keep", "component", "exporter", "namespace"}},
 		{"vector", "vector.yaml", []string{"kubernetes_logs", "jumpstarter.dev/log-scrape=true", "labels:", "component", "exporter"}},
 	}
 	for _, tc := range tests {
@@ -324,6 +328,59 @@ func TestRenderShipperDoesNotPromotePodLabels(t *testing.T) {
 	}
 }
 
+var updateAlloyGolden = flag.Bool("update-alloy-golden", false, "update testdata/logshipper/alloy.alloy.golden")
+
+func TestRenderAlloyGolden(t *testing.T) {
+	js := testJumpstarter()
+	_, got := renderShipper(js, shipperTypeAlloy)
+	golden := filepath.Join("testdata", "logshipper", "alloy.alloy.golden")
+
+	if *updateAlloyGolden {
+		if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil {
+			t.Fatalf("create golden directory: %v", err)
+		}
+		if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
+			t.Fatalf("write golden file: %v", err)
+		}
+	}
+
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatalf("read golden file: %v", err)
+	}
+	if string(want) != got {
+		t.Fatalf("alloy rendering differs from %s; rerun with -update-alloy-golden", golden)
+	}
+}
+
+func TestAlloyRenderingValidates(t *testing.T) {
+	alloyBin := os.Getenv("ALLOY_BIN")
+	if alloyBin == "" {
+		var err error
+		alloyBin, err = exec.LookPath("alloy")
+		if err != nil {
+			t.Skip("set ALLOY_BIN or install alloy to run Alloy validation")
+		}
+	}
+
+	js := testJumpstarter()
+	_, content := renderShipper(js, shipperTypeAlloy)
+	path := filepath.Join(t.TempDir(), "alloy.alloy")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write alloy config: %v", err)
+	}
+
+	for _, args := range [][]string{
+		{"validate", path},
+		{"fmt", "--test", path},
+	} {
+		cmd := exec.Command(alloyBin, args...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("alloy %s failed: %v\n%s", strings.Join(args, " "), err, out)
+		}
+	}
+}
+
 func TestRenderShipperUsesConfiguredLokiURL(t *testing.T) {
 	js := testJumpstarter()
 	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{Loki: operatorv1alpha1.TelemetryLokiConfig{URL: "https://loki.example/push"}}
@@ -362,6 +419,28 @@ func TestBuildLogShipperConfigMap(t *testing.T) {
 	}
 	if cm.Labels["jumpstarter.dev/log-shipper"] != shipperTypePromtail {
 		t.Errorf("labels = %v", cm.Labels)
+	}
+}
+
+func TestAlloyConfigMapReadmeMentionsValidatedCommit(t *testing.T) {
+	js := testJumpstarter()
+	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+	js.Spec.Telemetry.Logging.Shipper.Type = shipperTypeAlloy
+
+	cm := buildLogShipperConfigMap(js)
+	if cm == nil {
+		t.Fatal("expected Alloy ConfigMap")
+	}
+	readme := cm.Data["README.md"]
+	for _, want := range []string{
+		alloyValidatedCommit,
+		"alloy validate",
+		"alloy fmt --test",
+		"single-replica Deployment",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Errorf("Alloy README missing %q", want)
+		}
 	}
 }
 
