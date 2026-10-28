@@ -119,6 +119,56 @@ async def test_exit_fsm_can_be_the_initial_state() -> None:
 
 
 @pytest.mark.anyio
+async def test_already_cancelled_runner_does_not_evaluate_states() -> None:
+    class Immediate:
+        async def run(self, snapshot: bool) -> ExitFSM:
+            raise AssertionError("State ran despite pending cancellation")
+
+    initial = Immediate()
+    runner = FSMRunner(initial, Switch())
+    with CancelScope() as scope:
+        scope.cancel()
+        with pytest.raises(get_cancelled_exc_class()):
+            await runner.run()
+    assert runner.current_state is initial
+
+
+@pytest.mark.anyio
+async def test_immediate_transitions_allow_input_publication_and_cancellation() -> None:
+    inputs = Switch()
+    entered = Event()
+    observed = Event()
+    scope = CancelScope()
+    snapshots: list[bool] = []
+
+    class Immediate:
+        async def run(self, snapshot: bool) -> Immediate:
+            snapshots.append(snapshot)
+            # A finite limit makes starvation fail instead of hanging the event loop.
+            assert len(snapshots) < 100, "Immediate transitions starved the producer"
+            assert snapshot == inputs.value  # Capture inputs after yielding to producers.
+            entered.set()
+            if snapshot:
+                observed.set()
+            return Immediate()
+
+    async def publish_and_cancel() -> None:
+        await entered.wait()
+        inputs.publish(True)
+        await observed.wait()
+        scope.cancel()
+
+    runner = FSMRunner(Immediate(), inputs)
+    with fail_after(2):
+        async with create_task_group() as tg:
+            tg.start_soon(publish_and_cancel)
+            with scope, pytest.raises(get_cancelled_exc_class()):
+                await runner.run()
+    assert snapshots[0] is False and snapshots[-1] is True
+    assert isinstance(runner.current_state, Immediate)
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("cancel", [False, True])
 async def test_runner_preserves_state_and_propagates_failure_or_cancellation(
     cancel: bool, caplog: pytest.LogCaptureFixture

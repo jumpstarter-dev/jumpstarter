@@ -8,7 +8,7 @@
 | **Status** | Discussion |
 | **Type** | Standards Track |
 | **Created** | 2026-10-26 |
-| **Updated** | 2026-10-26 |
+| **Updated** | 2026-10-28 |
 | **Discussion** | https://github.com/jumpstarter-dev/jumpstarter/pull/1250 |
 | **Requires** | - |
 | **Supersedes** | - |
@@ -57,21 +57,26 @@ lease or shutdown policy.
 `jumpstarter.fsm` provides four domain-independent building blocks:
 
 ```python
+from contextlib import AsyncExitStack
+
+
 class InputSource[SnapshotT](Protocol):
     def snapshot_and_watch(self) -> tuple[SnapshotT, Event]: ...
 
 
 class State[SnapshotT](Protocol):
-    async def run(self, snapshot: SnapshotT) -> State[SnapshotT] | ExitFSM | None: ...
+    async def run(
+        self, snapshot: SnapshotT, resources: AsyncExitStack
+    ) -> State[SnapshotT] | ExitFSM | None: ...
 
 
 @dataclass(frozen=True)
 class ExitFSM:
-    """Terminal marker, returned after cleanup."""
+    """Stop evaluating states; the runner unwinds remaining resources before exit."""
 ```
 
 The fourth building block, `FSMRunner[SnapshotT]`, owns the current state, the
-input wait, and transition scheduling:
+input wait, transition scheduling, and one `AsyncExitStack` spanning its run:
 
 ```python
 from jumpstarter.fsm import FSMRunner
@@ -82,27 +87,39 @@ current = runner.current_state
 ```
 
 - A successor runs immediately with a fresh snapshot. No extra notification or
-  completion event is necessary.
+  completion event is necessary. The same resource stack is passed to every state.
+- Before each evaluation, an AnyIO checkpoint delivers cancellation and lets
+  input producers run. Capture the snapshot afterward: awaiting a state alone
+  need not yield, so immediate transition chains could otherwise starve both.
 - `None` ends an evaluation, not the logical state. The runner waits for changed
   inputs and then evaluates that same state again.
-- `ExitFSM()` ends the runner. It does not execute cleanup; return it only after
-  cleanup has completed. It is also a valid initial value.
+- `ExitFSM()` stops state evaluation. The runner unwinds remaining registered
+  resources before returning successfully; the marker has no activity of its own.
+  It is also a valid initial value. Normal domain cleanup still belongs in states.
 - Activity states await hooks or other concrete operations and return a
   successor. Input updates cannot rerun or interrupt the activity by themselves.
 - Waiting states inspect one snapshot and return a decision. They contain no
   input-wait loops and must not repeat one-time side effects on reevaluation.
-- States carry their concrete resources and operations as fields. There is no
-  generic context wrapper or transition callback framework.
+- States acquire resources when needed, register contexts with the supplied
+  stack, and carry live references to successors. They decide normal release;
+  the runner's stack supplies fallback unwinding on exit, error, or cancellation.
+  Returning a successor or `None` does not close the stack.
 
 ```{mermaid}
 flowchart TD
-    Capture["Runner captures snapshot and change event"] --> Run["await state.run(snapshot)"]
+    Open["Runner opens AsyncExitStack"] --> Checkpoint["Cancellation and scheduling checkpoint"]
+    Checkpoint --> Capture["Capture snapshot and change event"]
+    Capture --> Run["await state.run(snapshot, resources)"]
     Run --> Result{"Returned value"}
     Result -->|None| Wait["Await captured event; retain current state"]
-    Wait --> Capture
+    Wait --> Checkpoint
     Result -->|Successor| Transition["Set current state to successor"]
-    Transition --> Capture
-    Result -->|ExitFSM| Exit["Return from runner"]
+    Transition --> Checkpoint
+    Result -->|ExitFSM| Unwind["Unwind remaining resources"]
+    Run -->|exception or cancellation| Unwind
+    Wait -->|cancellation| Unwind
+    Checkpoint -->|cancellation| Unwind
+    Unwind --> Exit["Return on successful exit; otherwise propagate failure"]
 ```
 
 ### Exporter specialization
@@ -137,6 +154,11 @@ The demo does not open real sessions or transports. Its compact `Cleanup` state
 stands in for completion; the after-hook, reservation wait, and transport-close
 separation below remains to be implemented. Neither reference module is wired
 into `Exporter.serve()` by this proposal's reference-code increment.
+
+The 2026-10-28 resource-lifetime revision is a planned follow-up: the reference
+code still implements `run(snapshot)`. Passing a runner-owned `AsyncExitStack`
+and verifying real awaited cleanup have not yet been implemented. The reported
+21 passing cases below cover the existing foundation, not this new guarantee.
 
 The controller-mode migration reuses the existing hook execution, transport,
 reporting, and supervision facilities. Standalone TCP mode, connection bridging,
@@ -197,23 +219,30 @@ lease-local EndSession requests, with one coalescing wakeup.
 B. Generations distinguish a replacement A from the original instance. An
 EndSession request belongs to its session's lease object, never a replacement.
 
-### DD-4: Let sequential states own lease resources
+### DD-4: State-directed resources with a runner-owned exit stack
 
 **Alternatives considered:**
 
 1. **Maintain an active/completed registry in `Inputs`:** validate ownership, but
    duplicate facts already represented by the current state.
-2. **Carry resources through states:** admit in `Available`, close in
-   `ClosingLease`, then retain the completed key in the next `Available` state.
-3. **Use independent phase tasks and completion messages:** keep a responsive
+2. **Carry resource references with manual context entry/exit:** preserve a
+   session across phases, but rely on reaching the cleanup state after every
+   error. A context opened lexically inside one `run()` closes too early on return.
+3. **Register state-acquired resources with a runner-owned `AsyncExitStack`:**
+   preserve contexts across state calls, close normally in `ClosingLease`, and
+   unwind remaining resources when the runner exits unexpectedly.
+4. **Use independent phase tasks and completion messages:** keep a responsive
    dispatcher but introduce another set of lifetime and teardown boundaries.
 
-**Decision:** Sequential states carry resources; `Inputs` only stores inputs and
-notifies the runner.
+**Decision:** The runner creates one standard-library exit stack and passes it to
+`run(snapshot, resources)`. States own acquisition, use, and normal release;
+`Inputs` only stores inputs and notifies the runner.
 
-**Rationale:** Ownership and cleanup order are visible in the state progression.
-The old slot is not free until teardown has actually completed. Background I/O
-can remain concurrent without becoming another lifecycle decision-maker.
+**Rationale:** The session survives transitions without a custom resource-owner
+framework. A state exception cannot bypass registered resource unwinding merely
+because `ClosingLease` was not reached. The old slot is not free until teardown
+actually completes. Async cleanup remains the resource context manager's
+responsibility; an exit stack does not make arbitrary cleanup cancellation-safe.
 
 ### DD-5: Defer ordinary control requests to activity boundaries
 
@@ -242,6 +271,11 @@ activities, and becomes `ExitFSM` on successful termination. Observers must not
 mutate it. Exceptions/cancellation propagate and leave the last state queryable;
 the runner rejects concurrent or repeated execution.
 
+With the resource-stack revision, retain the last active state while final
+unwinding runs and publish the terminal `ExitFSM` state only after successful
+closure. A cleanup error must propagate rather than look like successful exit.
+Resource context managers must not suppress lifecycle exceptions/cancellation.
+
 DEBUG logs under `jumpstarter.fsm` include the configured runner name and
 distinguish logical state entry/exit from individual `run()` evaluations.
 Returning `None` does not produce a false exit/reentry. Each evaluation records
@@ -265,6 +299,7 @@ behavioral checks establish those properties.
 | Lease key | Lease name and publisher-assigned local generation |
 | Shutdown | Persistent mode, optional exit code, reason, and controller-cleanup policy |
 | Active lease/resources | Current state's lease reference, not a global input registry |
+| Registered resource lifetime | Runner-owned `AsyncExitStack`, shared across state calls |
 | Completed assignment | `Available.last_completed`, updated only after teardown |
 | EndSession | Existing `LeaseContext.end_session_requested` event on that session's lease |
 | Notification | One coalescing AnyIO event, carrying no lifecycle payload |
@@ -301,14 +336,14 @@ sequenceDiagram
     participant Producer
     Runner->>Inputs: snapshot_and_watch()
     Inputs-->>Runner: snapshot, event E1
-    Runner->>State: run(snapshot)
+    Runner->>State: run(snapshot, resources)
     Producer->>Inputs: Publish changed observation or wake after lease-local request
     Note over Inputs: Create E2 and set E1
     State-->>Runner: None
     Note over Runner: Waiting on E1 returns immediately
     Runner->>Inputs: snapshot_and_watch()
     Inputs-->>Runner: Latest snapshot, event E2
-    Runner->>State: run(latest snapshot)
+    Runner->>State: run(latest snapshot, resources)
 ```
 
 This is event-loop-only synchronization. Thread callbacks must be marshalled
@@ -349,7 +384,8 @@ failure outcome and own their policy-specific successors.
   hook completion. Return `None` until controller release/reassignment or
   stop-now; proceed immediately if one already applies.
 - **ClosingLease:** await actual connection, session, and driver teardown before
-  returning `Available(last_completed=key)` or `Stopping`.
+  returning `Available(last_completed=key)` or `Stopping`. Stop and await lease
+  I/O tasks, then await `resources.aclose()`; a failed close does not free the slot.
 - **Stopping:** publish `OFFLINE`, finish applicable controller unregistration,
   telemetry, and runtime-sidecar shutdown, then return `ExitFSM()`.
 
@@ -359,8 +395,8 @@ cleanup never requests controller release. The existing
 contract. Hook completion is not transport completion.
 
 The session and hook socket must exist before the before-hook and remain alive
-through after-hook execution and any release wait. Reuse `session_for_lease()`
-and context-managed resources with opening/closing owned by the same lifecycle
+through after-hook execution and any release wait. Register `session_for_lease()`
+with the runner-provided stack, keeping context entry/exit in the same lifecycle
 task, including exceptional cleanup if setup or a state raises. Listen,
 connection bridging, gRPC serving, and log delivery remain concurrent I/O tasks.
 Both hook phases retain driver-call access so hooks can use `j`.
@@ -371,6 +407,84 @@ admits another lease. Centralize status/message publication; existing background
 delivery can keep controller RPC retries from stalling the lifecycle. Preserve
 warning/failure visibility for polling clients rather than immediately
 overwriting a failed state and assuming it was observed.
+
+### Resource acquisition, normal closure, and fallback
+
+`FSMRunner.run()` creates and owns an `AsyncExitStack` around its entire state
+loop. Each state receives that same stack. For example, session preparation uses:
+
+```python
+# Inside the admitting state's run(snapshot, resources):
+session, main_path, hook_path = await resources.enter_async_context(
+    self.exporter.session_for_lease()
+)
+# Retain these references on the lease carried by subsequent states.
+```
+
+Do not wrap a persistent session in `async with` inside a single state evaluation:
+returning the successor would close it. Short-lived resources that are needed
+only during one evaluation can still use a local context normally.
+
+For this exporter FSM, the stack contains **lease-scoped session/socket/driver
+resources**. `ClosingLease` explicitly awaits its closure before recording
+completion or returning to `Available`. The emptied stack is reusable for the
+next lease. Exporter-wide services, telemetry, and supervisor task groups have
+their own explicit scopes; they must not be closed by a per-lease `aclose()`.
+
+On terminal exit or an exception, the runner unwinds whatever remains on the
+stack in reverse acquisition order. Normal closure removes callbacks so the
+final unwind does not close them twice. This is resource release, not an implicit
+execution of skipped hook states: expected failure/cleanup policy still needs
+explicit state transitions.
+
+### Cancellation-safe cleanup and task-group nesting
+
+`AsyncExitStack` guarantees invocation and ordering of registered cleanup, not
+successful completion. Under AnyIO's level cancellation, a `finally` block can
+start and its next cancellable await can immediately raise again. Protect awaited
+close operations **inside the individual resource context manager**, with a
+resource-appropriate bound:
+
+```python
+# Inside a resource context manager's finally block:
+with anyio.fail_after(close_timeout, shield=True):
+    await connection.aclose()
+```
+
+The shield blocks outer cancellation; the local timeout can still interrupt
+cooperative async cleanup. It cannot interrupt a blocking synchronous driver
+operation, which needs its own bounded operation or suitable execution strategy.
+Do not suppress a close timeout and proceed to `Available`: incomplete teardown
+must abort the lifecycle and prevent replacement admission. Preserve the original
+failure as context if cleanup also fails.
+
+The stack removes a callback before invoking it, so an interrupted/failed close
+is not automatically retried by a later `aclose()`. A resource helper owns any
+required termination fallback. Similarly, failed `__aenter__` must clean its own
+partial allocations: the stack only registers contexts that entered successfully.
+
+Keep AnyIO task groups and cancellation scopes explicitly nested in their owning
+task. They require same-task, reverse-order scope exit. Do not register a task
+group and then blindly wrap the entire `resources.aclose()` in a newer shield:
+that can attempt to exit the group's cancel scope while the shield is still
+active. Local shielding inside ordinary resource cleanup preserves nesting;
+shielding the whole runner would also incorrectly defer cancellation of idle waits.
+
+The exporter supervisor must terminate background producers when the runner
+finishes; returning from one task does not cancel its siblings automatically:
+
+```python
+async with anyio.create_task_group() as background:
+    background.start_soon(publish_controller_inputs)
+    try:
+        await runner.run()  # Includes final resource unwinding.
+    finally:
+        background.cancel_scope.cancel()
+```
+
+On normal shutdown, keep required I/O available through hook and resource cleanup,
+then stop exporter-wide producer tasks. A background failure may cancel the runner
+earlier, so resource-local cleanup protection is required on that path too.
 
 ### Hook failure, shutdown, and stream policy
 
@@ -416,7 +530,9 @@ signal exit-code precedence and whether controller cleanup RPCs are appropriate.
    including the deliberate deferral change.
 2. Review the shared runner and exporter-input reference foundation independently
    of production cutover.
-3. Implement the real lifecycle and failure states using existing operations;
+3. Implement the revised resource-stack contract and prove context lifetime,
+   awaited cleanup, and task-group exit with controlled resources first. Then
+   implement the real lifecycle/failure states using existing operations and
    transfer resource lifetime and status publication together.
 4. Adapt Status, signals, terminal stream failures, and lease-local EndSession
    producers. Use one lifecycle implementation at a time.
@@ -439,7 +555,7 @@ signal exit-code precedence and whether controller cleanup RPCs are appropriate.
 
 ### Unit tests and static verification
 
-The included reference has 19 passing cases: five shared-runner cases using a
+The included reference has 21 passing cases: seven shared-runner cases using a
 boolean source, and fourteen exporter-specific cases. They use existing pytest,
 AnyIO event barriers, and bounded waits instead of sleep-based ordering.
 
@@ -448,6 +564,30 @@ logical transitions versus reevaluation, named logs, deterministic run timing,
 error/cancellation propagation and cleanup, input-payload omission, wakeup races,
 coalescing, generation boundaries, completed-assignment suppression, shutdown
 escalation, lease-local requests, and blocked teardown before replacement.
+Immediate-transition checks cover already-pending cancellation and producer
+progress with fresh snapshots through states that never yield internally.
+Existing cleanup assertions use test events; they do not prove cancellation-safe
+closing of actual async contexts. The resource-stack revision requires additional
+checks before those guarantees are considered verified.
+
+### Resource-stack verification to add
+
+- A context entered by one state remains usable across successors and a `None`
+  input wait; acquisition and closure occur in the runner's task.
+- Explicit lease closure completes before replacement admission; final runner
+  unwind does not repeat it, and the stack can serve a second lease.
+- State failure and cancellation during both activities and input waits invoke
+  actual awaited cleanup. Protected close finishes before `runner.run()` exits.
+- If later setup fails, previously registered resources close; the failing
+  context cleans its own partially acquired resources.
+- Close failure/timeout propagates, retains diagnostic state, and never reports
+  successful `ExitFSM`, completion, or availability for another lease.
+- Task groups exit without cancel-scope nesting errors; normal terminal exit and
+  background-task failure both leave no running producer tasks.
+- Update typed state methods and positive/negative probes for the added
+  `AsyncExitStack` argument.
+
+### Static verification of the existing reference
 
 Positive `assert_type()` checks pass for Python 3.12 and 3.14 targets. Seven
 temporary negative probes reject invalid state/successor returns, shutdown mode,
@@ -508,6 +648,9 @@ and `jumpstarter.exporter.fsm` to inspect evaluation timing and named transition
   provided as tested reference code, without production wiring.
 - [x] Independent input sources, external state queries, safe debug tracing,
   behavioral checks, and positive/negative typing verification work.
+- [ ] The runner-owned `AsyncExitStack` is passed to states; context lifetime,
+  same-task LIFO teardown, bounded cancellation-safe closing, and supervisor exit
+  pass the resource-stack checks above.
 - [ ] Real lifecycle/failure states own hook sequencing, status publication, and
   resource teardown with one coherent exporter cutover.
 - [ ] Reservation/final-log behavior, driver gating, shutdown deferral, and stream
@@ -524,6 +667,10 @@ It does not change gRPC messages, CRDs, CLI flags, configuration, driver APIs, o
 current reservation/hook behavior. The proposed Python interfaces remain subject
 to JEP review; including a reference does not mean the full lifecycle is accepted
 or implemented.
+
+Adding `resources: AsyncExitStack` changes the reference state method signature
+from `run(snapshot)` to `run(snapshot, resources)`. Update all reference states and
+type examples together before adoption; the change is currently planned only.
 
 The later controller-mode migration deliberately changes ordinary stop handling
 during activities: requests wait for a bounded activity boundary rather than
@@ -576,8 +723,10 @@ input ownership registry alternatives are covered in DD-1 through DD-4.
 - Finalize conflicting hook/signal/stream exit-code and controller-cleanup
   precedence; the reference's first-explicit-code rule is not evidence that
   existing terminal-stream classification is preserved in every combined case.
-- Select the existing resource owner or concrete runtime dependencies for real
-  states, and confirm lab/CI coverage for hardware-backed migration checks.
+- Select concrete runtime dependencies and per-resource close bounds/fallbacks
+  for real states, and confirm lab/CI coverage for hardware-backed migration
+  checks. The runner-owned exit stack and resource-local cleanup protection are
+  decided; their implementation and verification remain pending.
 
 ## Implementation History
 
@@ -585,6 +734,11 @@ input ownership registry alternatives are covered in DD-1 through DD-4.
   included the typed shared runner, exporter-input reference, and 19 checked
   behavioral cases in [PR #1250](https://github.com/jumpstarter-dev/jumpstarter/pull/1250).
   Production lifecycle integration remains pending.
+- 2026-10-28: Specify a runner-owned `AsyncExitStack` passed to state methods,
+  explicit per-lease closure, resource-local bounded/shielded cleanup, and scoped
+  supervisor shutdown. This resource-lifetime revision is not yet implemented.
+- 2026-10-28: Add a runner checkpoint before snapshot capture and two regression
+  cases for cancellation and producer progress through immediate transitions.
 
 ## References
 
