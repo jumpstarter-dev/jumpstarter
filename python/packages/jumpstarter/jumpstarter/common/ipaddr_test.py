@@ -8,7 +8,7 @@ from jumpstarter.common.ipaddr import get_minikube_ip
 class TestIPAddressDetection:
     """Test IP address detection functions."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("asyncio.create_subprocess_exec")
     async def test_get_minikube_ip_success(self, mock_subprocess):
         mock_process = AsyncMock()
@@ -26,7 +26,7 @@ class TestIPAddressDetection:
             stderr=-1,  # asyncio.subprocess.PIPE constants
         )
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("asyncio.create_subprocess_exec")
     async def test_get_minikube_ip_with_profile(self, mock_subprocess):
         mock_process = AsyncMock()
@@ -39,7 +39,7 @@ class TestIPAddressDetection:
         assert result == "192.168.49.3"
         mock_subprocess.assert_called_once_with("minikube", "ip", "-p", "test-profile", stdout=-1, stderr=-1)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("asyncio.create_subprocess_exec")
     async def test_get_minikube_ip_custom_binary(self, mock_subprocess):
         mock_process = AsyncMock()
@@ -52,7 +52,7 @@ class TestIPAddressDetection:
         assert result == "10.0.0.5"
         mock_subprocess.assert_called_once_with("custom-minikube", "ip", stdout=-1, stderr=-1)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("asyncio.create_subprocess_exec")
     async def test_get_minikube_ip_failure(self, mock_subprocess):
         mock_process = AsyncMock()
@@ -63,7 +63,7 @@ class TestIPAddressDetection:
         with pytest.raises(RuntimeError, match="error: cluster not found"):
             await get_minikube_ip()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("asyncio.create_subprocess_exec")
     async def test_get_minikube_ip_profile_and_custom_binary(self, mock_subprocess):
         mock_process = AsyncMock()

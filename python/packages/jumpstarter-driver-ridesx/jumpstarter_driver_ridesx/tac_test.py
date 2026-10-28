@@ -5,7 +5,7 @@ import pytest
 from jumpstarter_driver_ridesx.tac import TAC_ACK, send_tac_command
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_send_tac_command_waits_for_prompt():
     tac = MagicMock()
     stream = AsyncMock()
@@ -18,7 +18,7 @@ async def test_send_tac_command_waits_for_prompt():
     stream.send.assert_called_once_with(b"devicePower 0\r")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_send_tac_command_times_out():
     tac = MagicMock()
     stream = AsyncMock()

@@ -92,7 +92,7 @@ def test_resolve_manifest_from_embedded_jumpstarter_manifest(tmp_path):
     assert resolved.name == "embedded"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_cache_is_fresh_detects_local_file_change(tmp_path):
     driver = QualcommFlasher.__new__(QualcommFlasher)
     driver.work_dir = str(tmp_path)
@@ -117,7 +117,7 @@ async def test_cache_is_fresh_detects_local_file_change(tmp_path):
     assert not await driver._cache_is_fresh(firmware_root, None, source_filename=str(archive))
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_prepare_cached_flash_uses_embedded_manifest_without_manifest_data(tmp_path):
     driver = QualcommFlasher.__new__(QualcommFlasher)
     driver.work_dir = str(tmp_path)

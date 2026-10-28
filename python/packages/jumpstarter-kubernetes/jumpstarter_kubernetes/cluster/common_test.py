@@ -188,7 +188,7 @@ class TestValidateClusterName:
 class TestRunCommand:
     """Test run_command function."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_run_command_success(self):
         with patch("asyncio.create_subprocess_exec") as mock_subprocess:
             mock_process = AsyncMock()
@@ -205,7 +205,7 @@ class TestRunCommand:
                 "echo", "test", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_run_command_failure(self):
         with patch("asyncio.create_subprocess_exec") as mock_subprocess:
             mock_process = AsyncMock()
@@ -219,7 +219,7 @@ class TestRunCommand:
             assert stdout == ""
             assert stderr == "error message"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_run_command_not_found(self):
         with (
             patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError("command not found")),
@@ -227,7 +227,7 @@ class TestRunCommand:
         ):
             await run_command(["nonexistent"])
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_run_command_with_output_success(self):
         with patch("asyncio.create_subprocess_exec") as mock_subprocess:
             mock_process = AsyncMock()
@@ -239,7 +239,7 @@ class TestRunCommand:
             assert returncode == 0
             mock_subprocess.assert_called_once_with("echo", "test")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_run_command_with_output_not_found(self):
         with (
             patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError("command not found")),
@@ -247,7 +247,7 @@ class TestRunCommand:
         ):
             await run_command_with_output(["nonexistent"])
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_run_command_with_output_failure(self):
         with patch("asyncio.create_subprocess_exec") as mock_subprocess:
             mock_process = AsyncMock()

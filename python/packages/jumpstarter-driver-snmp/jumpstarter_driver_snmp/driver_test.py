@@ -5,6 +5,8 @@ from pysnmp.entity import config as snmp_config
 
 from jumpstarter_driver_snmp.driver import AuthProtocol, PrivProtocol, SNMPServer
 
+pytestmark = pytest.mark.anyio
+
 
 class MockMibObject:
     def getInstIdFromIndices(self, *args):

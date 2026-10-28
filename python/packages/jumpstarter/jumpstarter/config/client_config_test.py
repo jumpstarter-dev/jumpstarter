@@ -433,7 +433,7 @@ def test_client_config_delete_does_not_exist_raises():
         _get_path_mock.assert_called_once_with("xyz")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_create_lease_passes_exporter_name():
     config = ClientConfigV1Alpha1(
         alias="testclient",
@@ -469,7 +469,7 @@ async def test_create_lease_passes_exporter_name():
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_lease_calls_get_lease():
     config = ClientConfigV1Alpha1(
         alias="testclient",
@@ -491,7 +491,7 @@ async def test_get_lease_calls_get_lease():
     mock_service.GetLease.assert_awaited_once_with(name="01a0153c-277c-7992-9476-8ff0f68ba6f8")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_leases_paginates():
     from jumpstarter.client.grpc import Lease, LeaseList
 
@@ -540,7 +540,7 @@ async def test_list_leases_paginates():
     assert calls[2].kwargs["page_token"] == "token2"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_leases_single_page():
     from jumpstarter.client.grpc import Lease, LeaseList
 
@@ -573,7 +573,7 @@ async def test_list_leases_single_page():
     mock_service.ListLeases.assert_awaited_once()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_exporters_paginates():
     from jumpstarter.client.grpc import Exporter, ExporterList
 
@@ -616,7 +616,7 @@ async def test_list_exporters_paginates():
     assert calls[1].kwargs["page_token"] == "tok1"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_exporters_with_leases_propagates_page_size():
     from jumpstarter.client.grpc import Exporter, ExporterList, Lease, LeaseList
 
@@ -679,7 +679,7 @@ def test_client_config_list_redacts_credentials_by_default():
     assert dumped["items"][0]["refresh_token"] == "secret-refresh-token"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_exporters_with_leases_preserves_exporter_fields():
     from jumpstarter.client.grpc import Exporter, ExporterList, Lease, LeaseList
     from jumpstarter.common.enums import ExporterStatus

@@ -157,13 +157,13 @@ def test_login_cli_shows_certificate_message(monkeypatch) -> None:
     assert "TLS certificate verification failed" in result.output
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_fetch_auth_config_rejects_http_without_insecure_tls():
     with pytest.raises(click.UsageError, match="--insecure-tls"):
         await fetch_auth_config("http://login.example.com", insecure_tls=False)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_fetch_auth_config_allows_explicit_http_with_insecure_tls():
     mock_response = MagicMock()
     mock_response.status = 200
@@ -189,7 +189,7 @@ async def test_fetch_auth_config_allows_explicit_http_with_insecure_tls():
     assert result["grpcEndpoint"] == "grpc.example.com"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_fetch_auth_config_defaults_to_https_with_insecure_tls():
     mock_response = MagicMock()
     mock_response.status = 200

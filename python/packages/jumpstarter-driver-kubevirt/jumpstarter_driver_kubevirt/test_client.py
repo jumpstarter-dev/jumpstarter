@@ -36,7 +36,7 @@ class TestKubevirtConsoleClient:
         assert hasattr(KubevirtConsoleClient, "cli")
         assert callable(KubevirtConsoleClient.cli)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_stream_to_stdout_reads_until_eos(self):
         stream = AsyncMock()
         stream.receive = AsyncMock(side_effect=[b"hello", b"world", EndOfStream()])
@@ -51,7 +51,7 @@ class TestKubevirtConsoleClient:
             mock_stdout.buffer.write.assert_any_call(b"hello")
             mock_stdout.buffer.write.assert_any_call(b"world")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_stdin_to_stream_ctrl_b_exit(self):
         stream = AsyncMock()
 
@@ -67,7 +67,7 @@ class TestKubevirtConsoleClient:
 
             mock_set_blocking.assert_called()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_stdin_to_stream_normal_data(self):
         stream = AsyncMock()
         counter = [0]
@@ -88,7 +88,7 @@ class TestKubevirtConsoleClient:
 
             assert stream.send.call_count >= 1
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_stdin_to_stream_empty_data_exits(self):
         stream = AsyncMock()
 

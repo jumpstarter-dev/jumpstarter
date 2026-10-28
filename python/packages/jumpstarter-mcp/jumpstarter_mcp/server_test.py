@@ -202,7 +202,7 @@ class TestRunCommand:
         manager._connections[conn.id] = conn
         return manager, conn.id
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_successful_command(self, manager_with_conn):
         from jumpstarter_mcp.tools.commands import run_command
 
@@ -222,7 +222,7 @@ class TestRunCommand:
         assert result["stdout"] == "hello\n"
         assert "timed_out" not in result
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_timeout_captures_output(self, manager_with_conn):
         from jumpstarter_mcp.tools.commands import run_command
 
@@ -252,7 +252,7 @@ class TestRunCommand:
         assert result["timeout_seconds"] == 1
         assert result["stdout"] == "partial"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_j_not_found(self, manager_with_conn):
         from jumpstarter_mcp.tools.commands import run_command
 
@@ -264,7 +264,7 @@ class TestRunCommand:
         assert "error" in result
         assert "not found" in result["error"]
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_subprocess_stdin_is_devnull(self, manager_with_conn):
         """Subprocess must not inherit MCP's stdin (would consume JSON-RPC input)."""
         from jumpstarter_mcp.tools.commands import run_command
@@ -316,14 +316,14 @@ def _make_jwt_payload(exp: int | None = None, iss: str = "https://sso.example.co
 
 
 class TestEnsureFreshToken:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_no_token_returns_config_unchanged(self):
         config = MagicMock()
         config.token = None
         result = await _ensure_fresh_token(config)
         assert result is config
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_valid_token_skips_refresh(self):
         future_exp = int(time.time()) + 3600
         config = MagicMock()
@@ -336,7 +336,7 @@ class TestEnsureFreshToken:
         assert result is config
         mock_cls.save.assert_not_called()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_expired_token_no_refresh_token_skips(self):
         past_exp = int(time.time()) - 60
         config = MagicMock()
@@ -346,7 +346,7 @@ class TestEnsureFreshToken:
         result = await _ensure_fresh_token(config)
         assert result is config
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_expired_token_refreshes_successfully(self):
         past_exp = int(time.time()) - 60
         config = MagicMock()
@@ -371,7 +371,7 @@ class TestEnsureFreshToken:
         assert result.refresh_token == new_refresh
         mock_cls.save.assert_called_once_with(config)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_expired_token_refresh_updates_only_access_when_no_new_refresh(self):
         past_exp = int(time.time()) - 60
         config = MagicMock()
@@ -392,7 +392,7 @@ class TestEnsureFreshToken:
         assert result.token == "new-access"
         assert result.refresh_token == "old-refresh"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_expired_token_refresh_failure_returns_config_unchanged(self):
         past_exp = int(time.time()) - 60
         original_token = _make_jwt_payload(exp=past_exp)
@@ -412,7 +412,7 @@ class TestEnsureFreshToken:
         assert result is config
         mock_cls.save.assert_not_called()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_near_expiry_triggers_refresh(self):
         near_exp = int(time.time()) + TOKEN_REFRESH_THRESHOLD_SECONDS - 1
         config = MagicMock()
@@ -430,7 +430,7 @@ class TestEnsureFreshToken:
 
         assert result.token == "refreshed"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_token_without_exp_claim_skips_refresh(self):
         config = MagicMock()
         config.token = _make_jwt_payload(exp=None)
@@ -570,7 +570,7 @@ class TestStdoutIsolation:
 
 
 class TestListEvents:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_empty_queue_returns_empty_list(self):
         import json
 
@@ -580,7 +580,7 @@ class TestListEvents:
         result = json.loads(await list_events(manager))
         assert result == []
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_events_are_drained(self):
         import json
 
@@ -594,7 +594,7 @@ class TestListEvents:
         assert result[0]["message"] == "lease expiring"
         assert json.loads(await list_events(manager)) == []
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_max_count_respected(self):
         import json
 

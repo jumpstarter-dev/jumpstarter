@@ -122,7 +122,7 @@ def patch_call(api: ApplyV1Alpha1Api):
     raise AssertionError("no apply request was sent")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_apply_creates_a_resource_the_cluster_does_not_have():
     api = make_api()
 
@@ -151,7 +151,7 @@ async def test_apply_creates_a_resource_the_cluster_does_not_have():
     assert call.kwargs["response_types_map"] == {200: "object", 201: "object"}
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_apply_reports_a_resource_it_changed_as_configured():
     api = make_api(existing={"metadata": {"name": "hello", "resourceVersion": "1"}})
 
@@ -160,7 +160,7 @@ async def test_apply_reports_a_resource_it_changed_as_configured():
     assert applied.action == "configured"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_apply_reports_an_unchanged_resource_as_unchanged():
     # A server-side apply that changes nothing leaves the resource version be.
     api = make_api(
@@ -173,7 +173,7 @@ async def test_apply_reports_an_unchanged_resource_as_unchanged():
     assert applied.action == "unchanged"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_apply_keeps_the_namespace_the_manifest_asks_for():
     api = make_api()
     manifest = load_manifests(CLIENT_MANIFEST)[0]
@@ -185,7 +185,7 @@ async def test_apply_keeps_the_namespace_the_manifest_asks_for():
     assert patch_call(api).kwargs["path_params"]["namespace"] == "lab"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_apply_takes_ownership_of_conflicting_fields_when_asked():
     api = make_api()
 
@@ -194,7 +194,7 @@ async def test_apply_takes_ownership_of_conflicting_fields_when_asked():
     assert ("force", "true") in patch_call(api).kwargs["query_params"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_apply_passes_a_dry_run_through_to_the_server():
     api = make_api()
 
@@ -203,7 +203,7 @@ async def test_apply_passes_a_dry_run_through_to_the_server():
     assert ("dryRun", "All") in patch_call(api).kwargs["query_params"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_a_dry_run_reports_a_change_the_resource_version_cannot_show():
     # Nothing is persisted, so the resource version stays put even though the
     # manifest would change the labels. The answer has to come from the content.
@@ -217,7 +217,7 @@ async def test_a_dry_run_reports_a_change_the_resource_version_cannot_show():
     assert applied.action == "configured"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_a_dry_run_ignores_fields_the_server_owns():
     api = make_api(
         existing={
@@ -237,7 +237,7 @@ async def test_a_dry_run_ignores_fields_the_server_owns():
     assert applied.action == "unchanged"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_apply_uses_the_cluster_scoped_endpoint_for_a_cluster_scoped_kind():
     api = make_api()
     manifest = {
@@ -259,7 +259,7 @@ async def test_apply_uses_the_cluster_scoped_endpoint_for_a_cluster_scoped_kind(
     }
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_apply_rejects_a_namespace_on_a_cluster_scoped_kind():
     api = make_api()
     manifest = {
@@ -272,7 +272,7 @@ async def test_apply_rejects_a_namespace_on_a_cluster_scoped_kind():
         await api.apply(manifest)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_apply_rejects_a_kind_the_cluster_does_not_serve():
     api = make_api()
     manifest = {
@@ -285,7 +285,7 @@ async def test_apply_rejects_a_kind_the_cluster_does_not_serve():
         await api.apply(manifest)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_apply_explains_a_missing_api_group():
     api = make_api()
     api._client.call_api.side_effect = ApiException(status=404)  # ty: ignore[unresolved-attribute]
@@ -294,7 +294,7 @@ async def test_apply_explains_a_missing_api_group():
         await api.apply(load_manifests(CLIENT_MANIFEST)[0])
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_apply_all_looks_up_each_kind_once():
     api = make_api()
 
