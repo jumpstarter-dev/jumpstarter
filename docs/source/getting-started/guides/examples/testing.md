@@ -179,6 +179,32 @@ Run only tests without the `slow` marker:
 $ pytest -m "not slow"
 ```
 
+### Async tests
+
+`JumpstarterTest` and its `client` are synchronous. To test your own async code,
+use the pytest plugin that ships with anyio, which Jumpstarter already depends on:
+mark the test with `@pytest.mark.anyio` and define an `anyio_backend` fixture that
+returns `"asyncio"` (without it, anyio also tries to run each test on trio).
+`jumpstarter-testing` does not install pytest-asyncio; add it to your own
+dependencies if you prefer it.
+
+```python
+import anyio
+import pytest
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.mark.anyio
+async def test_gives_up_after_timeout():
+    with anyio.move_on_after(0.1) as scope:
+        await anyio.sleep(1)
+    assert scope.cancelled_caught
+```
+
 ### Fixtures for setup and teardown
 
 A fixture that manages storage flashing before tests:

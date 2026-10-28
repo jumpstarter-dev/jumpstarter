@@ -30,7 +30,6 @@ addopts = "--cov --cov-report=html --cov-report=xml"
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_gptp"]
-asyncio_mode = "auto"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
@@ -41,7 +40,6 @@ name = "pin_jumpstarter"
 
 [dependency-groups]
 dev = [
-    "pytest-asyncio>=0.24.0",
     "pytest-cov>=6.0.0",
     "pytest>=8.3.3",
 ]
