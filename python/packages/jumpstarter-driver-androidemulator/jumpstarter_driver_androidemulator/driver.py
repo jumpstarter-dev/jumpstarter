@@ -112,8 +112,10 @@ class AndroidEmulatorPower(PowerInterface, Driver):
     def on(self) -> None:
         """Start the Android emulator."""
         if self._process is not None:
-            self.logger.warning("Emulator already running, ignoring")
-            return
+            if self._process.poll() is None:
+                self.logger.warning("Emulator already running, ignoring")
+                return
+            self.off()
 
         cmdline = [
             self.parent.emulator_path,
@@ -149,33 +151,46 @@ class AndroidEmulatorPower(PowerInterface, Driver):
     @export
     def off(self) -> None:
         """Stop the Android emulator."""
-        if self._process is None or self._process.returncode is not None:
+        if self._process is None:
             self.logger.warning("Emulator not running, ignoring")
             return
 
-        # Try graceful shutdown via ADB
         try:
-            adb_path = shutil.which("adb") or "adb"
-            subprocess.run(
-                [adb_path, "-s", f"emulator-{self.parent.console_port}", "emu", "kill"],
-                env={**os.environ, "ANDROID_ADB_SERVER_PORT": str(self.parent.adb_server_port)},
-                timeout=5,
-                capture_output=True,
-                check=False,
-            )
-            self._process.wait(timeout=15)
-            self.logger.info("Emulator shut down gracefully")
-        except (TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
-            self.logger.warning("Graceful shutdown failed, killing process")
-            try:
-                self._process.kill()
-            except ProcessLookupError:
-                pass
+            if self._process.poll() is None:
+                # Try graceful shutdown via ADB
+                try:
+                    adb_path = shutil.which("adb") or "adb"
+                    subprocess.run(
+                        [adb_path, "-s", f"emulator-{self.parent.console_port}", "emu", "kill"],
+                        env={**os.environ, "ANDROID_ADB_SERVER_PORT": str(self.parent.adb_server_port)},
+                        timeout=5,
+                        capture_output=True,
+                        check=False,
+                    )
+                    self._process.wait(timeout=15)
+                    self.logger.info("Emulator shut down gracefully")
+                except (TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+                    self.logger.warning("Graceful shutdown failed, killing process")
+                    try:
+                        self._process.kill()
+                    except ProcessLookupError:
+                        pass
+                    self._process.wait(timeout=5)
+            else:
+                self._process.wait(timeout=5)
+        finally:
+            if self._process.stdin is not None:
+                try:
+                    self._process.stdin.close()
+                except (OSError, ValueError):
+                    self.logger.warning("Failed to close emulator stdin", exc_info=True)
 
         # Cleanup threads
         for thread in [self._log_thread, self._stderr_thread]:
             if thread is not None:
                 thread.join(timeout=2)
+                if thread.is_alive():
+                    raise TimeoutError("Emulator log thread did not stop")
 
         self._process = None
         self._log_thread = None
