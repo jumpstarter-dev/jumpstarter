@@ -3,7 +3,9 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
 from anyio import sleep
-from anyio._backends._asyncio import StreamReaderWrapper, StreamWriterWrapper
+
+# pyserial-asyncio returns asyncio streams, and anyio adapts those only in its private backend.
+from anyio._backends._asyncio import StreamReaderWrapper, StreamWriterWrapper  # noqa: TID251
 from serial_asyncio import open_serial_connection
 
 from ..driver import AsyncSerial
