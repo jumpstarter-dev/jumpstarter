@@ -8,6 +8,7 @@ from time import perf_counter
 from typing import Protocol
 
 from anyio import Event
+from anyio.lowlevel import checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,9 @@ class FSMRunner[SnapshotT]:
         logger.debug("FSM %s enter %s", self._name, type(self._state).__name__)
         try:
             while not isinstance(self._state, ExitFSM):
+                # State coroutines may return without yielding, starving cancellation and input producers.
+                # Checkpoint before capturing inputs so the next evaluation sees their latest updates.
+                await checkpoint()
                 state = self._state
                 state_name = type(state).__name__
                 snapshot, changed = self._inputs.snapshot_and_watch()
