@@ -1,11 +1,10 @@
+from .driver import ${DRIVER_CLASS}
 from jumpstarter.common.utils import serve
 
-from .driver import ${DRIVER_CLASS}
 
-
-def test_drivers_${DRIVER_NAME}():
+def test_drivers_${DRIVER_MODULE_NAME}():
     instance = ${DRIVER_CLASS}()
 
     with serve(instance) as client:
-        assert client.state().ok
-        _ = client.snapshot()
+        assert client.method1() == "method1 response"
+        assert client.method2() == "method2 response"
