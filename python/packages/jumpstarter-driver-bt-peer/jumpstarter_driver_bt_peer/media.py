@@ -30,6 +30,12 @@ SBC_TARGET_BITRATE = "320k"
 # roughly two hours of audio, well past anything a media test needs.
 MAX_TRACK_BYTES = 256 * 1024 * 1024
 
+# Budget for the client's ffmpeg conversion, scaled to the input size so a
+# long recording is not cut off while a wedged ffmpeg still cannot hang the
+# play command forever.
+TRANSCODE_BASE_TIMEOUT = 60.0
+TRANSCODE_SECONDS_PER_MIB = 6.0
+
 
 def ffmpeg_sbc_args(source: str, destination: str) -> list[str]:
     """ffmpeg arguments that transcode ``source`` into the pinned SBC format."""

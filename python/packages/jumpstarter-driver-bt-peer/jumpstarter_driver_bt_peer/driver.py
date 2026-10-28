@@ -223,6 +223,9 @@ class _A2dpSession:
     def __init__(self, protocol, get_track, on_exhausted, emit):
         self.protocol = protocol
         self.mtu = DEFAULT_RTP_MTU
+        # The sink's ceiling once discovered, which may be below what the
+        # peer advertises.
+        self.max_bitpool = SBC_MAX_BITPOOL
         self._get_track = get_track
         self._on_exhausted = on_exhausted
         self._emit = emit
@@ -314,6 +317,14 @@ class _A2dpSession:
         self._adopt_sink_bitpool(sink)
         return await self.protocol.create_stream(self.source, sink)
 
+    async def prepare(self) -> None:
+        """Discover the sink and configure a stream, without starting it.
+
+        Separated from start() so an upload can be checked against the
+        negotiated bitpool before any of it is transmitted.
+        """
+        await self._open_stream()
+
     async def start(self) -> dict[str, Any]:
         """Put the stream into STREAMING, initiating it if necessary.
 
@@ -354,6 +365,7 @@ class _A2dpSession:
                 if isinstance(local, SbcMediaCodecInformation):
                     local.minimum_bitpool_value = remote.minimum_bitpool_value
                     local.maximum_bitpool_value = remote.maximum_bitpool_value
+            self.max_bitpool = remote.maximum_bitpool_value
             self._emit("sink_bitpool", {
                 "minimum": remote.minimum_bitpool_value,
                 "maximum": remote.maximum_bitpool_value,
@@ -445,10 +457,19 @@ class BtPeer(Driver):
         self._emit("avdtp_disconnected", {})
 
     async def _resume_queued_track(self) -> None:
+        queued = self._track
         try:
             state = await self._ensure_streaming()
         except Exception as exc:  # noqa: BLE001
-            self._emit("stream_resume_failed", {"error": str(exc)})
+            if self._track is queued:
+                self._emit("stream_resume_failed", {"error": str(exc)})
+            return
+        # stop_playback() may have cleared or replaced the track while
+        # endpoint discovery was in flight. Reporting PLAYING for a track
+        # that is no longer current would leave the DUT showing the wrong
+        # state; the stream itself is left started, sending filler.
+        if self._track is not queued:
+            self._emit("stream_resume_discarded", {"reason": "track changed while starting"})
             return
         if state.get("streaming"):
             self._report_playback_status(PlayStatus.PLAYING)
@@ -849,17 +870,29 @@ class BtPeer(Driver):
         if not data:
             raise BtPeerError("uploaded track is empty")
 
-        frame = await _first_sbc_frame(bytes(data))
-        _check_sbc_frame(frame)
+        session = self._session
+        if session is not None:
+            # Suspend first so a track swap restarts the stream cleanly
+            # rather than splicing into one already in flight.
+            await session.suspend()
+            # Configure before validating, so the upload is checked against
+            # the bitpool the sink actually accepted rather than only the
+            # wider range the peer advertises.
+            await session.prepare()
 
-        # Suspend first so a track swap restarts the stream cleanly rather
-        # than splicing into one already in flight.
-        if self._session is not None:
-            await self._session.suspend()
+        max_bitpool = session.max_bitpool if session is not None else SBC_MAX_BITPOOL
+        frame = await _validate_sbc(bytes(data), max_bitpool=max_bitpool)
 
-        self._track = _Track(name=name, data=bytes(data), loop=bool(loop))
+        previous, self._track = self._track, _Track(name=name, data=bytes(data), loop=bool(loop))
 
-        stream_state = await self._ensure_streaming()
+        try:
+            stream_state = await self._ensure_streaming()
+        except Exception:
+            # Leaving the track installed would make playback_status claim to
+            # be playing, and let a later AVDTP event start it unannounced.
+            self._track = previous
+            self._report_playback_status(PlayStatus.STOPPED)
+            raise
         if stream_state.get("streaming"):
             self._report_playback_status(PlayStatus.PLAYING)
 
@@ -924,19 +957,37 @@ class BtPeer(Driver):
         })
 
 
-async def _first_sbc_frame(data: bytes) -> SbcFrame:
-    """Parse the first SBC frame out of an uploaded file."""
+async def _validate_sbc(data: bytes, max_bitpool: int = SBC_MAX_BITPOOL) -> SbcFrame:
+    """Check every frame of an upload, returning the first.
+
+    Every frame is checked, not just the first. SbcPacketSource concatenates
+    later frames without looking at their parameters, so a file whose first
+    frame matches and whose later frames do not would be transmitted under a
+    configuration the sink never agreed to. Parsing is header-only, so the
+    walk costs little even for a long track.
+    """
+    first: SbcFrame | None = None
+    index = 0
     async for frame in SbcParser(_ByteReader(data).read).frames:
-        return frame
+        _check_sbc_frame(frame, max_bitpool=max_bitpool, index=index)
+        if first is None:
+            first = frame
+        index += 1
 
-    raise BtPeerError(
-        "uploaded file is not SBC audio (no valid frame header found); "
-        f"expected {describe_sbc_format()}"
-    )
+    if first is None:
+        raise BtPeerError(
+            "uploaded file is not SBC audio (no valid frame header found); "
+            f"expected {describe_sbc_format()}"
+        )
+    return first
 
 
-def _check_sbc_frame(frame: SbcFrame) -> None:
-    """Reject audio the DUT's sink was never offered."""
+def _check_sbc_frame(frame: SbcFrame, max_bitpool: int = SBC_MAX_BITPOOL, index: int = 0) -> None:
+    """Reject audio the DUT's sink was never offered.
+
+    max_bitpool is the sink's ceiling once one has been negotiated, which may
+    be lower than the advertised maximum.
+    """
     mismatches = []
     if frame.sampling_frequency != SBC_SAMPLING_FREQUENCY:
         mismatches.append(f"sampling frequency {frame.sampling_frequency} Hz")
@@ -948,11 +999,12 @@ def _check_sbc_frame(frame: SbcFrame) -> None:
         mismatches.append(f"{frame.subband_count} subbands")
     if frame.allocation_method != SBC_ALLOCATION_METHOD:
         mismatches.append(f"allocation method {frame.allocation_method} (expected loudness)")
-    if not SBC_MIN_BITPOOL <= frame.bitpool <= SBC_MAX_BITPOOL:
-        mismatches.append(f"bitpool {frame.bitpool}")
+    if not SBC_MIN_BITPOOL <= frame.bitpool <= max_bitpool:
+        mismatches.append(f"bitpool {frame.bitpool} (sink accepts {SBC_MIN_BITPOOL}-{max_bitpool})")
 
     if mismatches:
+        where = "SBC file" if index == 0 else f"SBC frame {index}"
         raise BtPeerError(
-            f"SBC file does not match the advertised stream configuration "
+            f"{where} does not match the advertised stream configuration "
             f"({describe_sbc_format()}): got {', '.join(mismatches)}"
         )

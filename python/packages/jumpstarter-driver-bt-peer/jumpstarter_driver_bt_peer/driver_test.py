@@ -15,9 +15,8 @@ from .driver import (
     BtPeerError,
     _A2dpSession,
     _AvrcpDelegate,
-    _check_sbc_frame,
-    _first_sbc_frame,
     _Track,
+    _validate_sbc,
 )
 
 
@@ -728,20 +727,19 @@ def _patch_resource(payload: bytes):
 
 
 @pytest.mark.anyio
-async def test_first_sbc_frame_parses_pinned_format():
-    frame = await _first_sbc_frame(make_sbc_file(4))
+async def test_validate_sbc_parses_pinned_format():
+    frame = await _validate_sbc(make_sbc_file(4))
     assert frame.sampling_frequency == 44100
     assert frame.channel_mode == 2
     assert frame.block_count == 16
     assert frame.subband_count == 8
     assert frame.allocation_method == 0
-    _check_sbc_frame(frame)
 
 
 @pytest.mark.anyio
-async def test_first_sbc_frame_rejects_non_sbc():
+async def test_validate_sbc_rejects_non_sbc():
     with pytest.raises(BtPeerError, match="not SBC audio"):
-        await _first_sbc_frame(b"ID3\x04 this is not audio")
+        await _validate_sbc(b"ID3\x04 this is not audio")
 
 
 @pytest.mark.anyio
@@ -753,10 +751,32 @@ async def test_first_sbc_frame_rejects_non_sbc():
         ({"bitpool": 90}, "bitpool 90"),
     ],
 )
-async def test_check_sbc_frame_rejects_mismatches(kwargs, expected):
-    frame = await _first_sbc_frame(make_sbc_file(4, **kwargs))
+async def test_validate_sbc_rejects_mismatches(kwargs, expected):
     with pytest.raises(BtPeerError, match=expected):
-        _check_sbc_frame(frame)
+        await _validate_sbc(make_sbc_file(4, **kwargs))
+
+
+@pytest.mark.anyio
+async def test_validate_sbc_checks_every_frame_not_just_the_first():
+    """SbcPacketSource concatenates later frames without re-checking them."""
+    good = make_sbc_file(4)
+    mixed = good + make_sbc_file(1, sf_index=3) + good
+
+    with pytest.raises(BtPeerError, match="48000 Hz") as excinfo:
+        await _validate_sbc(mixed)
+
+    assert "frame 4" in str(excinfo.value), excinfo.value
+
+
+@pytest.mark.anyio
+async def test_validate_sbc_honours_the_negotiated_bitpool_ceiling():
+    """A sink may accept less than the advertised maximum."""
+    data = make_sbc_file(4, bitpool=52)
+
+    await _validate_sbc(data, max_bitpool=53)
+
+    with pytest.raises(BtPeerError, match="sink accepts 2-35"):
+        await _validate_sbc(data, max_bitpool=35)
 
 
 @pytest.mark.anyio
@@ -1271,3 +1291,65 @@ async def test_resume_failure_is_reported_not_raised():
 
     failed = [e for e in peer._events if e["type"] == "stream_resume_failed"]
     assert failed and "no free SBC audio sink" in failed[0]["error"]
+
+
+@pytest.mark.anyio
+async def test_failed_play_does_not_leave_a_track_installed():
+    """A track left behind would make playback_status claim to be playing."""
+    from bumble.avrcp import PlayStatus
+
+    peer, protocol = _peer_with_session()
+    protocol.find_remote_sink_by_codec = MagicMock(return_value=None)
+
+    with _patch_resource(make_sbc_file(50)), pytest.raises(BtPeerError, match="no free SBC audio sink"):
+        await peer.play("handle", name="song.mp3")
+
+    assert peer._track is None
+    assert json.loads(peer.playback_status())["playing"] is False
+    assert peer._avrcp_delegate.playback_status == PlayStatus.STOPPED
+
+
+@pytest.mark.anyio
+async def test_failed_play_restores_the_previous_track():
+    peer, protocol = _peer_with_session()
+    with _patch_resource(make_sbc_file(50)):
+        await peer.play("handle", name="first.mp3")
+
+    protocol.find_remote_sink_by_codec = MagicMock(return_value=None)
+    protocol.source.stream = None
+    with _patch_resource(make_sbc_file(50)), pytest.raises(BtPeerError):
+        await peer.play("handle", name="second.mp3")
+
+    assert peer._track is not None
+    assert peer._track.name == "first.mp3"
+
+
+@pytest.mark.anyio
+async def test_play_rejects_audio_above_the_negotiated_bitpool():
+    """The sink's ceiling can be below the range the peer advertises."""
+    peer, _protocol = _peer_with_session(sink=_sink_with_bitpool(2, 35))
+
+    with _patch_resource(make_sbc_file(50, bitpool=52)), pytest.raises(BtPeerError, match="sink accepts 2-35"):
+        await peer.play("handle", name="loud.sbc")
+
+    assert peer._track is None
+
+
+@pytest.mark.anyio
+async def test_resume_discards_a_track_stopped_while_starting():
+    """stop_playback() can land while endpoint discovery is still in flight."""
+    from bumble.avrcp import PlayStatus
+
+    peer, protocol = _peer_with_session()
+    peer._track = _Track(name="t", data=make_sbc_file(10))
+
+    async def stop_midway():
+        peer._track = None
+
+    protocol.discover_remote_endpoints = AsyncMock(side_effect=stop_midway)
+
+    await peer._resume_queued_track()
+
+    assert any(e["type"] == "stream_resume_discarded" for e in peer._events)
+    assert not any(e["type"] == "stream_resumed" for e in peer._events)
+    assert peer._avrcp_delegate.playback_status != PlayStatus.PLAYING

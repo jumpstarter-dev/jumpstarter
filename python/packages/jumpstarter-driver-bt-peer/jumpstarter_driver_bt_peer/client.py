@@ -11,7 +11,12 @@ import click
 from anyio import EndOfStream
 from anyio.abc import ObjectStream
 
-from .media import describe_sbc_format, ffmpeg_sbc_args
+from .media import (
+    TRANSCODE_BASE_TIMEOUT,
+    TRANSCODE_SECONDS_PER_MIB,
+    describe_sbc_format,
+    ffmpeg_sbc_args,
+)
 from jumpstarter.client import DriverClient
 
 
@@ -65,6 +70,22 @@ def _echo(obj: object) -> None:
         click.echo(obj)
 
 
+def transcode_timeout_for(source: Path) -> float:
+    """Seconds to allow ffmpeg, scaled to the size of the input.
+
+    A fixed limit either aborts a legitimately slow conversion of a long
+    recording or lets a wedged ffmpeg hang `play` indefinitely. Scaling by
+    input size keeps the limit generous for real work while still bounded:
+    the driver accepts tracks up to 256 MiB, so this tops out around half an
+    hour for an input that large.
+    """
+    try:
+        megabytes = source.stat().st_size / (1024 * 1024)
+    except OSError:
+        megabytes = 0
+    return TRANSCODE_BASE_TIMEOUT + megabytes * TRANSCODE_SECONDS_PER_MIB
+
+
 def _transcode_to_sbc(source: Path, destination: Path) -> None:
     """Re-encode any ffmpeg-readable audio into the peer's SBC configuration.
 
@@ -78,12 +99,21 @@ def _transcode_to_sbc(source: Path, destination: Path) -> None:
             "Install it with 'brew install ffmpeg', or pass an already-encoded .sbc file."
         )
 
-    result = subprocess.run(
-        [ffmpeg, *ffmpeg_sbc_args(str(source), str(destination))],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    timeout = transcode_timeout_for(source)
+    try:
+        result = subprocess.run(
+            [ffmpeg, *ffmpeg_sbc_args(str(source), str(destination))],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise click.ClickException(
+            f"ffmpeg did not finish converting {source.name} within {timeout:.0f}s. "
+            "Convert it yourself and pass the .sbc file if it is genuinely this slow."
+        ) from exc
+
     if result.returncode != 0:
         raise click.ClickException(f"ffmpeg could not convert {source.name}:\n{result.stderr.strip()}")
 
