@@ -845,6 +845,20 @@ class BtPeer(Driver):
             })
         return json.dumps(conns)
 
+    async def _receive_upload(self, src: str) -> bytes:
+        """Read a client resource into memory, bounded by MAX_TRACK_BYTES."""
+        data = bytearray()
+        async with self.resource(src) as res:
+            async for chunk in res:
+                data.extend(chunk)
+                if len(data) > MAX_TRACK_BYTES:
+                    raise BtPeerError(
+                        f"track is larger than the {MAX_TRACK_BYTES // (1024 * 1024)} MiB limit"
+                    )
+        if not data:
+            raise BtPeerError("uploaded track is empty")
+        return bytes(data)
+
     @export
     async def play(self, src: str, name: str = "track", loop: bool = False) -> str:
         """Stream an uploaded SBC file to the DUT over A2DP.
@@ -858,32 +872,26 @@ class BtPeer(Driver):
         if self._device is None:
             raise BtPeerError("peer not running — call start_peer first")
 
-        data = bytearray()
-        async with self.resource(src) as res:
-            async for chunk in res:
-                data.extend(chunk)
-                if len(data) > MAX_TRACK_BYTES:
-                    raise BtPeerError(
-                        f"track is larger than the {MAX_TRACK_BYTES // (1024 * 1024)} MiB limit"
-                    )
-
-        if not data:
-            raise BtPeerError("uploaded track is empty")
-
+        data = await self._receive_upload(src)
         session = self._session
         if session is not None:
-            # Suspend first so a track swap restarts the stream cleanly
-            # rather than splicing into one already in flight.
-            await session.suspend()
             # Configure before validating, so the upload is checked against
             # the bitpool the sink actually accepted rather than only the
-            # wider range the peer advertises.
+            # wider range the peer advertises. This leaves a running stream
+            # alone; only the suspend below disturbs it.
             await session.prepare()
 
         max_bitpool = session.max_bitpool if session is not None else SBC_MAX_BITPOOL
-        frame = await _validate_sbc(bytes(data), max_bitpool=max_bitpool)
+        # Validate before suspending. Suspending first would silence whatever
+        # is playing even when the new upload turns out to be unusable.
+        frame = await _validate_sbc(data, max_bitpool=max_bitpool)
 
-        previous, self._track = self._track, _Track(name=name, data=bytes(data), loop=bool(loop))
+        if session is not None:
+            # Suspend so the new track restarts the stream cleanly rather
+            # than splicing into one already in flight.
+            await session.suspend()
+
+        previous, self._track = self._track, _Track(name=name, data=data, loop=bool(loop))
 
         try:
             stream_state = await self._ensure_streaming()

@@ -1353,3 +1353,23 @@ async def test_resume_discards_a_track_stopped_while_starting():
     assert any(e["type"] == "stream_resume_discarded" for e in peer._events)
     assert not any(e["type"] == "stream_resumed" for e in peer._events)
     assert peer._avrcp_delegate.playback_status != PlayStatus.PLAYING
+
+
+@pytest.mark.anyio
+async def test_a_rejected_upload_leaves_the_current_track_playing():
+    """Validating after suspending would silence audio over a bad upload."""
+    peer, protocol = _peer_with_session()
+    with _patch_resource(make_sbc_file(60)):
+        await peer.play("handle", name="good.sbc")
+
+    protocol.source.stream = protocol.stream
+    protocol.stream.state = State.STREAMING
+    protocol.stream.stop.reset_mock()
+
+    bad = make_sbc_file(4) + make_sbc_file(1, sf_index=3)
+    with _patch_resource(bad), pytest.raises(BtPeerError, match="48000 Hz"):
+        await peer.play("handle", name="bad.sbc")
+
+    protocol.stream.stop.assert_not_awaited()
+    assert peer._track is not None
+    assert peer._track.name == "good.sbc"
