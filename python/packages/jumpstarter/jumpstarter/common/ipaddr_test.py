@@ -1,77 +1,44 @@
-from unittest.mock import AsyncMock, patch
+import stat
+import sys
 
 import pytest
 
 from jumpstarter.common.ipaddr import get_minikube_ip
 
 
-class TestIPAddressDetection:
-    """Test IP address detection functions."""
+@pytest.fixture
+def fake_minikube(tmp_path):
+    def make(script: str) -> str:
+        path = tmp_path / "minikube"
+        path.write_text(f"#!{sys.executable}\nimport sys\n{script}\n")
+        path.chmod(path.stat().st_mode | stat.S_IEXEC)
+        return str(path)
+
+    return make
+
+
+class TestGetMinikubeIp:
+    @pytest.mark.anyio
+    async def test_returns_stripped_stdout(self, fake_minikube):
+        minikube = fake_minikube('print("192.168.49.2")')
+
+        assert await get_minikube_ip(minikube=minikube) == "192.168.49.2"
 
     @pytest.mark.anyio
-    @patch("asyncio.create_subprocess_exec")
-    async def test_get_minikube_ip_success(self, mock_subprocess):
-        mock_process = AsyncMock()
-        mock_process.communicate.return_value = (b"192.168.49.2\n", b"")
-        mock_process.returncode = 0
-        mock_subprocess.return_value = mock_process
+    async def test_runs_the_ip_subcommand(self, fake_minikube):
+        minikube = fake_minikube('print(" ".join(sys.argv[1:]))')
 
-        result = await get_minikube_ip()
-
-        assert result == "192.168.49.2"
-        mock_subprocess.assert_called_once_with(
-            "minikube",
-            "ip",
-            stdout=-1,
-            stderr=-1,  # asyncio.subprocess.PIPE constants
-        )
+        assert await get_minikube_ip(minikube=minikube) == "ip"
 
     @pytest.mark.anyio
-    @patch("asyncio.create_subprocess_exec")
-    async def test_get_minikube_ip_with_profile(self, mock_subprocess):
-        mock_process = AsyncMock()
-        mock_process.communicate.return_value = (b"192.168.49.3\n", b"")
-        mock_process.returncode = 0
-        mock_subprocess.return_value = mock_process
+    async def test_passes_the_profile(self, fake_minikube):
+        minikube = fake_minikube('print(" ".join(sys.argv[1:]))')
 
-        result = await get_minikube_ip("test-profile")
-
-        assert result == "192.168.49.3"
-        mock_subprocess.assert_called_once_with("minikube", "ip", "-p", "test-profile", stdout=-1, stderr=-1)
+        assert await get_minikube_ip("test-profile", minikube) == "ip -p test-profile"
 
     @pytest.mark.anyio
-    @patch("asyncio.create_subprocess_exec")
-    async def test_get_minikube_ip_custom_binary(self, mock_subprocess):
-        mock_process = AsyncMock()
-        mock_process.communicate.return_value = (b"10.0.0.5\n", b"")
-        mock_process.returncode = 0
-        mock_subprocess.return_value = mock_process
-
-        result = await get_minikube_ip(minikube="custom-minikube")
-
-        assert result == "10.0.0.5"
-        mock_subprocess.assert_called_once_with("custom-minikube", "ip", stdout=-1, stderr=-1)
-
-    @pytest.mark.anyio
-    @patch("asyncio.create_subprocess_exec")
-    async def test_get_minikube_ip_failure(self, mock_subprocess):
-        mock_process = AsyncMock()
-        mock_process.communicate.return_value = (b"", b"error: cluster not found\n")
-        mock_process.returncode = 1
-        mock_subprocess.return_value = mock_process
+    async def test_failure_raises_with_stderr(self, fake_minikube):
+        minikube = fake_minikube('sys.stderr.write("error: cluster not found\\n"); sys.exit(1)')
 
         with pytest.raises(RuntimeError, match="error: cluster not found"):
-            await get_minikube_ip()
-
-    @pytest.mark.anyio
-    @patch("asyncio.create_subprocess_exec")
-    async def test_get_minikube_ip_profile_and_custom_binary(self, mock_subprocess):
-        mock_process = AsyncMock()
-        mock_process.communicate.return_value = (b"172.16.0.1\n", b"")
-        mock_process.returncode = 0
-        mock_subprocess.return_value = mock_process
-
-        result = await get_minikube_ip("my-profile", "my-minikube")
-
-        assert result == "172.16.0.1"
-        mock_subprocess.assert_called_once_with("my-minikube", "ip", "-p", "my-profile", stdout=-1, stderr=-1)
+            await get_minikube_ip(minikube=minikube)
