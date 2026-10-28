@@ -11,6 +11,7 @@ from typing import ClassVar
 from urllib.parse import urlparse
 
 import websockets
+from anyio import sleep
 from jumpstarter_driver_composite.driver import CompositeInterface
 from jumpstarter_driver_network.driver import NetworkInterface
 from jumpstarter_driver_network.streams.websocket import WebsocketClientStream
@@ -220,7 +221,7 @@ class KubevirtConsole(_KubevirtBase, NetworkInterface, Driver):
                         attempt + 1,
                         self.console_max_retries,
                     )
-                    await asyncio.sleep(self.console_retry_interval)
+                    await sleep(self.console_retry_interval)
                 else:
                     raise
 
