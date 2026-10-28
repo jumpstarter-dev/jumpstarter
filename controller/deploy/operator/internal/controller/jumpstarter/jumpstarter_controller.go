@@ -1808,6 +1808,11 @@ func (r *JumpstarterReconciler) cleanupExcessRouterServices(ctx context.Context,
 		if !strings.HasPrefix(service.Name, prefix) || !metav1.IsControlledBy(service, jumpstarter) {
 			continue
 		}
+		// Metrics Services share the "<name>-router-" prefix but belong to the
+		// observability stage, not the endpoint reconciler. Do not prune them.
+		if service.Labels[metricsServiceLabel] == "true" {
+			continue
+		}
 		if _, ok := wanted[service.Name]; ok {
 			continue
 		}
