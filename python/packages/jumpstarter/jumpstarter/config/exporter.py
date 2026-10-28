@@ -44,15 +44,52 @@ class HookInstanceConfigV1Alpha1(BaseModel):
     timeout: int = Field(default=120, description="The hook execution timeout in seconds (default: 120s)")
     on_failure: Literal[
         "warn",
+        "warning",
         "endLease",
         "exit",
+        "fail",
+        "userError",
+        "adminNotification",
     ] = Field(
         default="warn",
         alias="onFailure",
         description=(
-            "Action to take when the expected exit code is not returned: 'endLease' to end the lease, "
-            "'exit' takes the exporter offline and ends the lease, 'warn' continues and prints a warning"
+            "Default action when the hook fails with an exit code not listed in exitActions. "
+            "'warn'/'warning' continues with a warning, 'fail' blocks the lease and stays alive (retryable), "
+            "'userError' blocks the lease (user-facing error), 'adminNotification' blocks and flags admin "
+            "attention, 'endLease' blocks the lease (deprecated), 'exit' shuts down the exporter."
         ),
+    )
+    exit_actions: dict[int, Literal[
+        "warn",
+        "warning",
+        "endLease",
+        "exit",
+        "fail",
+        "userError",
+        "adminNotification",
+    ]] = Field(
+        default_factory=dict,
+        alias="exitActions",
+        description=(
+            "Map specific non-zero exit codes to actions. Exit code 0 is always success. "
+            "Unmapped non-zero exit codes use the onFailure default."
+        ),
+    )
+    retries: int = Field(
+        default=0,
+        alias="retries",
+        ge=0,
+        description=(
+            "Number of retry attempts when the resolved action is 'fail' (0 = no retry). "
+            "Other actions are applied immediately without retry."
+        ),
+    )
+    retry_delay: int = Field(
+        default=5,
+        alias="retryDelay",
+        ge=0,
+        description="Seconds to wait between retry attempts.",
     )
 
 
