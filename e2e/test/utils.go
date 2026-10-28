@@ -241,6 +241,26 @@ func MustJmp(args ...string) string {
 	return out
 }
 
+// noLeasesFoundMessage is the jmp CLI message returned when a delete matches
+// nothing. Cleanup must treat this as success.
+const noLeasesFoundMessage = "no leases found matching the criteria"
+
+// IsNoLeasesFound reports whether jmp output indicates that no leases matched.
+func IsNoLeasesFound(output string) bool {
+	return strings.Contains(output, noLeasesFoundMessage)
+}
+
+// MustJmpAllowingNoLeases runs a jmp command and treats an empty lease result as
+// success. Use it for lease cleanup registered with DeferCleanup: a spec that
+// already released everything it created must not fail during teardown.
+func MustJmpAllowingNoLeases(args ...string) {
+	out, err := Jmp(args...)
+	if err == nil || IsNoLeasesFound(out) {
+		return
+	}
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "jmp %v failed: %s", args, out)
+}
+
 // --- Client / exporter provisioning helpers ---
 
 // CreateOIDCClient creates a Jumpstarter client CR with Dex OIDC identity.
