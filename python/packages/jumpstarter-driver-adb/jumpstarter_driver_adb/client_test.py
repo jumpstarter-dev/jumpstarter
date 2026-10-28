@@ -1,10 +1,12 @@
-import asyncio
 import subprocess
 from concurrent.futures import CancelledError
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
+import anyio
 import pytest
+from anyio import to_thread
+from anyio.from_thread import BlockingPortal
 
 from .client import (
     ADB_CONNECT_TIMEOUT,
@@ -235,15 +237,8 @@ def test_an_interrupt_ends_the_wait_without_propagating(exc):
     _wait_for_interrupt(client)  # must return, so teardown can run
 
 
-@pytest.mark.parametrize("cancelled", [asyncio.CancelledError, CancelledError])
-def test_anyio_cancellation_ends_the_wait(cancelled):
-    """Cancellation is a BaseException, not an Exception, so it needs its own arm.
-
-    Deliberately synchronous and with no event loop: these waits run in a worker
-    thread, and `get_cancelled_exc_class()` in the except arm used to raise
-    NoEventLoopError there, masking the cancellation it was meant to detect.
-    """
-    client = MagicMock(portal=_Portal(cancelled()))
+def test_a_cancelled_portal_task_ends_the_wait():
+    client = MagicMock(portal=_Portal(CancelledError()))
     _wait_for_interrupt(client)
 
 
@@ -414,3 +409,27 @@ def test_forward_adb_yields_the_local_listener():
         AdbClient.forward_adb(client, port=0) as addr,
     ):
         assert addr == ("127.0.0.1", 54321)
+
+
+@pytest.mark.anyio
+async def test_cancellation_reaches_a_portal_waiter_as_a_future_cancellation():
+    started = anyio.Event()
+    raised = []
+
+    async def signal_then_sleep():
+        started.set()
+        await anyio.sleep_forever()
+
+    def wait(portal):
+        try:
+            portal.call(signal_then_sleep)
+        except CancelledError:
+            raised.append(CancelledError)
+
+    with anyio.CancelScope() as scope:
+        async with BlockingPortal() as portal, anyio.create_task_group() as tg:
+            tg.start_soon(to_thread.run_sync, wait, portal)
+            await started.wait()
+            scope.cancel()
+
+    assert raised == [CancelledError]
