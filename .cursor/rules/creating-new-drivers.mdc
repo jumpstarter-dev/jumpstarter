@@ -92,9 +92,19 @@ The script automatically creates:
 ## Code Style and Testing
 
 - Follow existing code style (validate with `make lint`, fix with `make lint-fix`)
-- Perform static type checking with `make ty-pkg-${package_name}`
+- Perform static type checking with `make pkg-ty-${package_name}`
 - Add comprehensive tests and update documentation
 - Verify all tests pass (`make pkg-test-${package_name}` or `make test`)
+
+## Async Code
+
+Jumpstarter runs on an asyncio event loop, but driver code goes through anyio:
+
+- Use anyio (`sleep`, `fail_after`, `create_task_group`, `run_process`, `to_thread.run_sync`) rather than asyncio. `make lint` rejects `import asyncio` (ruff TID251); when a library forces an asyncio name on you, import it with `# noqa: TID251` and a comment saying why, as `python/packages/jumpstarter/jumpstarter/streams/router.py` does.
+- To stream the output of a subprocess, use `jumpstarter.common.process.open_streaming_process`: leaving it stops the process, also on cancellation.
+- Mark async tests with `@pytest.mark.anyio`. pytest-asyncio is not installed, and `--strict-markers` rejects `@pytest.mark.asyncio`.
+- Keep the `conftest.py` the script creates: its `anyio_backend` fixture runs anyio tests on asyncio only. Without it anyio also runs every test on trio, and a package with its own pytest configuration does not see `python/conftest.py`.
+- Patch a name where the module under test looks it up, for example `patch("jumpstarter_driver_x.driver.sleep")` after `from anyio import sleep`. A patch of `"asyncio.sleep"` intercepts nothing.
 
 ## Contributing Guidelines
 
