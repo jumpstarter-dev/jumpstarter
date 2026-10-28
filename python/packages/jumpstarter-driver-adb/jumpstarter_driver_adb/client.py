@@ -1,4 +1,3 @@
-import asyncio
 import subprocess
 from collections.abc import Generator
 from concurrent.futures import CancelledError as FutureCancelledError
@@ -25,24 +24,6 @@ ADB_CONNECT_TIMEOUT = 60.0
 ADB_DISCONNECT_TIMEOUT = 30.0
 
 
-def _is_cancelled(exc: BaseException) -> bool:
-    """Whether *exc* is a task cancellation.
-
-    Checked without ``anyio.get_cancelled_exc_class()``, which resolves the *running*
-    backend and raises ``NoEventLoopError`` when there is none. These waits run in a
-    worker thread, off the loop, so asking there would raise from the except arm and
-    mask the very cancellation being handled -- reproduced as a test failure.
-
-    Both backends' cancellations are matched directly: asyncio's ``CancelledError``
-    (which trio's also subclasses on recent versions) and trio's ``Cancelled`` by
-    name, so trio need not be installed. Portal futures can instead raise
-    ``concurrent.futures.CancelledError`` when their task is cancelled.
-    """
-    if isinstance(exc, (asyncio.CancelledError, FutureCancelledError)):
-        return True
-    return type(exc).__name__ == "Cancelled" and type(exc).__module__.startswith("trio")
-
-
 def _wait_for_interrupt(client: DriverClient) -> None:
     """Block until the CLI is interrupted, then return so teardown can run.
 
@@ -63,15 +44,10 @@ def _wait_for_interrupt(client: DriverClient) -> None:
     """
     try:
         client.portal.call(anyio.sleep_forever)
-    except (KeyboardInterrupt, SystemExit, GeneratorExit, RuntimeError):
-        # RuntimeError covers the portal already being shut down when we ask.
+    except (KeyboardInterrupt, SystemExit, GeneratorExit, RuntimeError, FutureCancelledError):
+        # RuntimeError covers the portal already being shut down when we ask, and
+        # the portal reports its cancelled task as a cancelled future.
         return
-    except BaseException as e:
-        # Cancellation derives from BaseException, not Exception, so it needs its
-        # own arm.
-        if _is_cancelled(e):
-            return
-        raise
 
 
 def _adb_connect(adb: str, target: str, *, timeout: float = ADB_CONNECT_TIMEOUT) -> str:
