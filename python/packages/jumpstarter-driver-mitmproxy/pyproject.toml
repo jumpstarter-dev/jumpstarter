@@ -8,7 +8,7 @@ requires-python = ">=3.12"
 license = "Apache-2.0"
 # mitmproxy is launched as an external program, not imported, so it is not a runtime
 # dependency; install it separately (e.g. `uv tool install mitmproxy`). See README.
-dependencies = ["jumpstarter"]
+dependencies = ["jumpstarter", "anyio>=4.10.0"]
 
 [project.entry-points."jumpstarter.drivers"]
 MitmproxyDriver = "jumpstarter_driver_mitmproxy.driver:MitmproxyDriver"
