@@ -33,6 +33,7 @@ from bumble.host import Host
 from bumble.pairing import PairingConfig, PairingDelegate
 from bumble.rtp import MediaPacket
 from bumble.transport import open_transport
+from bumble.utils import AsyncRunner
 
 from .media import (
     MAX_TRACK_BYTES,
@@ -236,6 +237,23 @@ class BtPeer(Driver):
         self._protocol = protocol
         self._source = protocol.add_source(sbc_capabilities, pump)
         self._emit("avdtp_connected", {"mtu": self._rtp_mtu})
+
+        # play() may have been called in the window between the DUT's ACL
+        # connection and its AVDTP channel, in which case it had no protocol
+        # to start a stream on and gave up. Pick the queued track up now,
+        # otherwise it sits there silently until something calls play again.
+        if self._track is not None:
+            AsyncRunner.spawn(self._resume_queued_track())
+
+    async def _resume_queued_track(self) -> None:
+        try:
+            state = await self._ensure_streaming()
+        except Exception as exc:  # noqa: BLE001
+            self._emit("stream_resume_failed", {"error": str(exc)})
+            return
+        if state.get("streaming"):
+            self._report_playback_status(PlayStatus.PLAYING)
+        self._emit("stream_resumed", state)
 
     def _make_packet(self, sequence_number: int, timestamp_seconds: float, payload: bytes) -> MediaPacket:
         packet = MediaPacket(
