@@ -162,9 +162,6 @@ extend-select = ["I", "C", "E", "F", "W", "B", "ERA", "TID251"]
 # Files that still import asyncio directly. Migrations delete entries here; never add new ones.
 "packages/jumpstarter-driver-mitmproxy/examples/addons/data_stream_websocket.py" = ["TID251"]
 "packages/jumpstarter-driver-mitmproxy/jumpstarter_driver_mitmproxy/bundled_addon.py" = ["TID251"]
-"packages/jumpstarter-driver-tftp/jumpstarter_driver_tftp/driver.py" = ["TID251"]
-"packages/jumpstarter-driver-tftp/jumpstarter_driver_tftp/server.py" = ["TID251"]
-"packages/jumpstarter-driver-tftp/jumpstarter_driver_tftp/server_test.py" = ["TID251"]
 
 [tool.ruff.lint.isort]
 known-local-folder = ["packages", "examples", "jumpstarter"]
