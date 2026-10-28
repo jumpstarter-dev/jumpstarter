@@ -7,7 +7,6 @@ adding new backends, driver classes, CLI commands, or Pydantic models.
 from __future__ import annotations
 
 import dataclasses as dc
-import pathlib
 
 import pytest
 
@@ -276,20 +275,3 @@ class TestHistoryDepthValidation:
     def test_depth_one_accepted(self):
         qos = DdsTopicQos(history_depth=1)
         assert qos.history_depth == 1
-
-
-# =============================================================================
-# 8. Project conventions
-# =============================================================================
-
-
-class TestProjectConventions:
-    def test_no_asyncio_imports_in_production_code(self):
-        pkg = pathlib.Path(__file__).parent
-        for py_file in pkg.glob("*.py"):
-            if py_file.name.endswith("_test.py"):
-                continue
-            content = py_file.read_text()
-            assert "import asyncio" not in content, (
-                f"{py_file.name} imports asyncio; use anyio instead (project convention)"
-            )

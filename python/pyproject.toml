@@ -176,6 +176,7 @@ extend-select = ["I", "C", "E", "F", "W", "B", "ERA", "TID251"]
 "asyncio.TaskGroup".msg = "Use anyio.create_task_group()."
 "asyncio.get_event_loop".msg = "Use asyncio.get_running_loop() or anyio.from_thread."
 "asyncio.run_coroutine_threadsafe".msg = "Use anyio.from_thread.run()."
+"anyio._backends".msg = "Private anyio API that may change in any release; use the public anyio API."
 
 [tool.ruff.lint.isort]
 known-local-folder = ["packages", "examples", "jumpstarter"]
