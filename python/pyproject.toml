@@ -160,8 +160,6 @@ extend-select = ["I", "C", "E", "F", "W", "B", "ERA", "TID251"]
 
 [tool.ruff.lint.per-file-ignores]
 # Files that still import asyncio directly. Migrations delete entries here; never add new ones.
-"packages/jumpstarter-driver-dut-network/jumpstarter_driver_dut_network/driver.py" = ["TID251"]
-"packages/jumpstarter-driver-dut-network/jumpstarter_driver_dut_network/test_tcpdump.py" = ["TID251"]
 "packages/jumpstarter-driver-mitmproxy/examples/addons/data_stream_websocket.py" = ["TID251"]
 "packages/jumpstarter-driver-mitmproxy/jumpstarter_driver_mitmproxy/bundled_addon.py" = ["TID251"]
 "packages/jumpstarter-driver-pyserial/jumpstarter_driver_pyserial/driver_test.py" = ["TID251"]
