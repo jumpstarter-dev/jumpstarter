@@ -53,11 +53,10 @@ async def test_cancelling_the_reader_stops_a_sigrok_that_ignores_sigterm(monkeyp
         "print(os.getpid(), flush=True); time.sleep(60)"
     )
     driver = _streaming(monkeypatch, code)
-    pids = []
+    output = b""
 
     with move_on_after(0.5):
         async for chunk in driver.capture_stream(CaptureConfig()):
-            pids.append(int(chunk))
+            output += chunk
 
-    assert pids
-    await _wait_until_gone(pids[0])
+    await _wait_until_gone(int(output))
