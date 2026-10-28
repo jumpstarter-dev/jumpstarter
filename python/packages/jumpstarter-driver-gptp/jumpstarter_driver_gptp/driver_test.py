@@ -37,6 +37,8 @@ from .driver import (
 from jumpstarter.client.core import DriverError
 from jumpstarter.common.utils import serve
 
+pytestmark = pytest.mark.anyio
+
 # =============================================================================
 # Level 1: Unit Tests (No system dependencies, always run)
 # =============================================================================
