@@ -1,7 +1,7 @@
-import asyncio
 import base64
 from typing import Literal
 
+from anyio import sleep
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 from pydantic import Field
 
@@ -199,7 +199,7 @@ class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
             if "status" in updated_exporter and "credential" in updated_exporter["status"]:
                 return V1Alpha1Exporter.from_dict(updated_exporter)
             count += 1
-            await asyncio.sleep(CREATE_EXPORTER_DELAY)
+            await sleep(CREATE_EXPORTER_DELAY)
         raise Exception("Timeout waiting for exporter credentials")  # noqa: TRY002
 
     async def get_exporter_config(self, name: str) -> ExporterConfigV1Alpha1:
