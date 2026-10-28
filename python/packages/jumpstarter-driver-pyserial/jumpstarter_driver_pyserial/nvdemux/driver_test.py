@@ -147,14 +147,15 @@ async def test_nvdemux_streams_share_source_until_session_shutdown():
         driver = NVDemuxSerial(demuxer_path="/usr/bin/demuxer")
 
         with Session(root_device=driver):
-            for data in (b"CCPLEX boot\n", b"CCPLEX ready\n"):
-                async with driver.connect() as console, driver.observe() as observer:
-                    await tx.send(data)
-                    assert await console.receive() == data
-                    assert await observer.receive() == data
-                assert not closed.is_set()
+            async with driver._get_fanout().running():
+                for data in (b"CCPLEX boot\n", b"CCPLEX ready\n"):
+                    async with driver.connect() as console, driver.observe() as observer:
+                        await tx.send(data)
+                        assert await console.receive() == data
+                        assert await observer.receive() == data
+                    assert not closed.is_set()
 
-            open_serial.assert_awaited_once_with(url="/dev/pts/5", baudrate=115200)
+                open_serial.assert_awaited_once_with(url="/dev/pts/5", baudrate=115200)
 
         await closed.wait()
 
@@ -170,8 +171,9 @@ async def test_nvdemux_attach_fails_at_configured_timeout():
         manager.get_pts_path.return_value = None
         driver = NVDemuxSerial(demuxer_path="/usr/bin/demuxer", timeout=0.2)
         try:
-            with pytest.raises(TimeoutError, match="source not ready within 0.2s"):
-                async with driver.connect():
-                    pass
+            async with driver._get_fanout().running():
+                with pytest.raises(TimeoutError, match="source not ready within 0.2s"):
+                    async with driver.connect():
+                        pass
         finally:
             driver.shutdown()
