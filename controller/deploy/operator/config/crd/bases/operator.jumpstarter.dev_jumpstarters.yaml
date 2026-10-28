@@ -2193,6 +2193,23 @@ spec:
                             - critical
                             type: string
                         type: object
+                      shipper:
+                        description: |-
+                          Shipper configures the log shipper integration for Controller and Router
+                          pod logs. When type is "none" (the default) no configuration is generated.
+                        properties:
+                          type:
+                            default: none
+                            description: |-
+                              Shipper type. "none" generates nothing; "promtail", "alloy" and "vector"
+                              publish a credential-free configuration in the <name>-log-shipper ConfigMap.
+                            enum:
+                            - none
+                            - promtail
+                            - alloy
+                            - vector
+                            type: string
+                        type: object
                     type: object
                   loki:
                     description: |-
@@ -2271,6 +2288,23 @@ spec:
                             60s
                           rule: duration(self) > duration('0s') && duration(self)
                             <= duration('60s')
+                      serviceMonitor:
+                        default: true
+                        description: |-
+                          ServiceMonitor controls creation of Prometheus ServiceMonitor resources and
+                          the metrics Services they select. Requires the monitoring.coreos.com/v1
+                          ServiceMonitor CRD; when the CRD is absent the metrics Services are still
+                          created and ServiceMonitors are skipped.
+                        type: boolean
+                      serviceMonitorLabels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Additional labels to add to generated ServiceMonitors. Use this to match
+                          the Prometheus Operator's serviceMonitorSelector (for example,
+                          release: kube-prometheus-stack).
+                        maxProperties: 16
+                        type: object
                     type: object
                   replicas:
                     default: 1
