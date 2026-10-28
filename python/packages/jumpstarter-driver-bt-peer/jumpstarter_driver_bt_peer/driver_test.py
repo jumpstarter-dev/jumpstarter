@@ -2,6 +2,8 @@ import contextlib
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import anyio
+import anyio.lowlevel
 import pytest
 
 from .driver import (
@@ -1037,3 +1039,77 @@ async def test_avrcp_transport_keys_pause_and_resume():
     assert track.paused is False
     assert peer._avrcp_delegate.playback_status == PlayStatus.PLAYING
     assert len((await source.__anext__()).payload) > 1
+
+
+@pytest.mark.anyio
+async def test_track_queued_before_avdtp_starts_when_it_connects():
+    """play() can land between the DUT's ACL connection and its AVDTP channel.
+
+    It then has no protocol to start a stream on. The track must not sit there
+    silently until something calls play again.
+    """
+    from bumble.avrcp import PlayStatus
+
+    peer = _running_peer()
+    peer._avrcp_delegate = _AvrcpDelegate()
+    peer._avrcp = MagicMock()
+
+    # play() before any AVDTP connection: nothing to stream on.
+    with _patch_resource(make_sbc_file(100)):
+        result = json.loads(await peer.play("handle", name="song.mp3"))
+    assert result["streaming"] is False
+    assert peer._track is not None
+
+    # The DUT's AVDTP channel arrives afterwards.
+    stream = AsyncMock()
+    protocol = MagicMock()
+    protocol.l2cap_channel.peer_mtu = 672
+    protocol.discover_remote_endpoints = AsyncMock()
+    protocol.find_remote_sink_by_codec = MagicMock(return_value=_sink_with_bitpool(2, 53))
+    protocol.create_stream = AsyncMock(return_value=stream)
+    source = MagicMock()
+    source.stream = None
+    source.capabilities = _sink_with_bitpool(0, 0).capabilities
+    protocol.add_source = MagicMock(return_value=source)
+
+    peer._on_avdtp_connection(protocol)
+    # _on_avdtp_connection is a sync callback, so the resume runs as a task.
+    for _ in range(50):
+        if stream.start.await_count:
+            break
+        await anyio.lowlevel.checkpoint()
+
+    stream.start.assert_awaited_once()
+    assert any(e["type"] == "stream_resumed" for e in peer._events)
+    assert peer._avrcp_delegate.playback_status == PlayStatus.PLAYING
+
+
+@pytest.mark.anyio
+async def test_avdtp_connection_without_a_queued_track_starts_nothing():
+    peer = BtPeer()
+    protocol = MagicMock()
+    protocol.l2cap_channel.peer_mtu = 672
+    protocol.discover_remote_endpoints = AsyncMock()
+
+    peer._on_avdtp_connection(protocol)
+    for _ in range(10):
+        await anyio.lowlevel.checkpoint()
+
+    protocol.discover_remote_endpoints.assert_not_awaited()
+    assert not any(e["type"] == "stream_resumed" for e in peer._events)
+
+
+@pytest.mark.anyio
+async def test_resume_failure_is_reported_not_raised():
+    peer = _running_peer()
+    peer._track = _Track(name="t", data=make_sbc_file(10), mtu=672)
+    peer._source = MagicMock()
+    peer._source.stream = None
+    peer._protocol = MagicMock()
+    peer._protocol.discover_remote_endpoints = AsyncMock()
+    peer._protocol.find_remote_sink_by_codec = MagicMock(return_value=None)
+
+    await peer._resume_queued_track()
+
+    failed = [e for e in peer._events if e["type"] == "stream_resume_failed"]
+    assert failed and "no free SBC audio sink" in failed[0]["error"]
