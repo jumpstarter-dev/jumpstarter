@@ -260,8 +260,9 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile Telemetry Deployment (Service is reconciled below in the networking stage)
-	if err := r.reconcileTelemetryDeploymentStage(ctx, &jumpstarter); err != nil {
+	// Reconcile Telemetry Deployment (Service is reconciled below in the networking stage).
+	// The same desired-ConfigMap hash rolls the controller, so authentication changes roll telemetry too.
+	if err := r.reconcileTelemetryDeploymentStage(ctx, &jumpstarter, configMapHash); err != nil {
 		log.Error(err, "Failed to reconcile Telemetry deployment")
 		return ctrl.Result{}, err
 	}
@@ -1007,11 +1008,6 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 			},
 		},
 	}
-}
-
-//go:fix inline
-func boolPtr(b bool) *bool {
-	return new(b)
 }
 
 // buildControllerPodAnnotations builds the pod template annotations for the controller deployment.
@@ -1886,6 +1882,8 @@ func (r *JumpstarterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 					keys = append(keys, jumpstarter.Namespace+"/"+s)
 				}
 			}
+
+			keys = append(keys, lokiReferencedSecretKeys(jumpstarter)...)
 
 			return keys
 		},

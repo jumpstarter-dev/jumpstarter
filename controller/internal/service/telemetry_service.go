@@ -28,6 +28,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
 	"github.com/prometheus/client_golang/prometheus"
@@ -98,6 +99,12 @@ type TelemetryService struct {
 	// without a k8s client.
 	Signer *oidc.Signer
 
+	// ClientAuthn authenticates external OIDC client tokens when Signer
+	// rejects them. Identity mapping matches the controller: namespace and
+	// kind come from gRPC metadata, and the client name is derived from the
+	// username. Nil keeps the internal-token-only path.
+	ClientAuthn authentication.ContextAuthenticator
+
 	// Logger overrides log.FromContext when set (used by tests to capture output).
 	Logger *logr.Logger
 
@@ -125,7 +132,7 @@ type TelemetryService struct {
 // (structured JSON to stdout). The service's own operational diagnostics are
 // still logged normally.
 func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest) (*pb.PushLogsResponse, error) {
-	id, err := s.authenticateExporter(ctx)
+	id, err := s.authenticatePushLogs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -144,12 +151,24 @@ func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest
 
 	var accepted uint32
 	for _, entry := range entries {
-		// Drop entries that claim to be from a different exporter or namespace
-		// than what the token authorises. Counted as dropped rather than failing
-		// the whole batch so valid entries in the same request are still written.
-		if entry.Exporter != "" && entry.Exporter != claimedName {
-			dropped++
-			continue
+		// Drop entries that claim an identity the token does not authorise.
+		// Counted as dropped rather than failing the whole batch so valid
+		// entries in the same request are still written. A client token
+		// authorises no exporter, so a non-empty Exporter is dropped too.
+		if id.kind == "exporter" {
+			if entry.Exporter != "" && entry.Exporter != claimedName {
+				dropped++
+				continue
+			}
+		} else {
+			if entry.Client != "" && entry.Client != claimedName {
+				dropped++
+				continue
+			}
+			if entry.Exporter != "" {
+				dropped++
+				continue
+			}
 		}
 		if entry.Namespace != "" && entry.Namespace != claimedNamespace {
 			dropped++
@@ -157,23 +176,22 @@ func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest
 		}
 
 		prepared := prepareLogEntry(id, entry)
-
-		// Direct Loki and stdout shipping are exclusive. A cluster log
-		// shipper plus a Loki push would otherwise ingest each event twice.
 		if s.Loki != nil {
 			s.Loki.Enqueue(prepared)
 			accepted++
 			continue
 		}
 
-		// Always log the authenticated identity. After the mismatch checks
-		// above, any non-empty entry fields already match the token; using
-		// the token values makes stdout the source of truth when Loki is off.
+		// Structured stdout is the delivery path only when Loki is not
+		// configured. The token values are the source of truth for identity
+		// fields even when the entry omitted them.
 		kvs := []any{
 			"component", prepared.Component,
-			logFieldExporter, claimedName,
 			"namespace", claimedNamespace,
 			"severity", prepared.Severity,
+		}
+		if prepared.Exporter != "" {
+			kvs = append(kvs, logFieldExporter, prepared.Exporter)
 		}
 		if prepared.Timestamp != nil {
 			kvs = append(kvs, "ts", prepared.Timestamp.AsTime().Format(time.RFC3339Nano))
@@ -222,19 +240,24 @@ func (s *TelemetryService) pushLogsLogger(ctx context.Context) logr.Logger {
 
 // prepareLogEntry copies entry with identity overwritten from the token and
 // extra_fields truncated / stripped of reserved keys.
-func prepareLogEntry(id exporterIdentity, entry *pb.LogEntry) *pb.LogEntry {
+func prepareLogEntry(id telemetryIdentity, entry *pb.LogEntry) *pb.LogEntry {
 	out := &pb.LogEntry{
 		Timestamp:  entry.Timestamp,
 		Severity:   entry.Severity,
 		Message:    entry.Message,
 		Component:  entry.Component,
-		Exporter:   id.name,
 		Lease:      entry.Lease,
 		Client:     entry.Client,
 		Operation:  entry.Operation,
 		Result:     entry.Result,
 		DriverType: entry.DriverType,
 		Namespace:  id.namespace,
+	}
+	if id.kind == "exporter" {
+		out.Exporter = id.name
+	} else {
+		out.Client = id.name
+		out.Exporter = ""
 	}
 	if len(entry.ExtraFields) == 0 {
 		return out

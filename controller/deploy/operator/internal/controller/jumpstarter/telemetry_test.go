@@ -501,12 +501,12 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			},
 		}
 
-		dep := createTelemetryDeployment(js, "fake-tls-hash")
+		dep := createTelemetryDeployment(js, "", "fake-tls-hash", telemetryLokiPod{})
 
 		container := dep.Spec.Template.Spec.Containers[0]
 
-		// Should have CONTROLLER_KEY, GRPC_TELEMETRY_ENDPOINT, and TLS env vars
-		Expect(container.Env).To(HaveLen(4))
+		// Should have CONTROLLER_KEY, GRPC_TELEMETRY_ENDPOINT, authentication config, and TLS env vars
+		Expect(container.Env).To(HaveLen(5))
 		envNames := make(map[string]string)
 		for _, env := range container.Env {
 			envNames[env.Name] = env.Value
@@ -517,13 +517,13 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_KEY_PEM", "/tls/tls.key"))
 
 		// Should have TLS volume mount
-		Expect(container.VolumeMounts).To(HaveLen(1))
+		Expect(container.VolumeMounts).To(HaveLen(2))
 		Expect(container.VolumeMounts[0].Name).To(Equal("tls-certs"))
 		Expect(container.VolumeMounts[0].MountPath).To(Equal("/tls"))
 		Expect(container.VolumeMounts[0].ReadOnly).To(BeTrue())
 
-		// Should have TLS volume
-		Expect(dep.Spec.Template.Spec.Volumes).To(HaveLen(1))
+		// Should have TLS volume plus the controller authentication ConfigMap
+		Expect(dep.Spec.Template.Spec.Volumes).To(HaveLen(2))
 		Expect(dep.Spec.Template.Spec.Volumes[0].Name).To(Equal("tls-certs"))
 		Expect(dep.Spec.Template.Spec.Volumes[0].Secret.SecretName).To(Equal("test-tls-telemetry-tls"))
 
@@ -549,12 +549,12 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			},
 		}
 
-		dep := createTelemetryDeployment(js, "manual-tls-hash")
+		dep := createTelemetryDeployment(js, "", "manual-tls-hash", telemetryLokiPod{})
 
 		container := dep.Spec.Template.Spec.Containers[0]
 
-		// Should have CONTROLLER_KEY, GRPC_TELEMETRY_ENDPOINT, and TLS env vars
-		Expect(container.Env).To(HaveLen(4))
+		// Should have CONTROLLER_KEY, GRPC_TELEMETRY_ENDPOINT, authentication config, and TLS env vars
+		Expect(container.Env).To(HaveLen(5))
 		envNames := make(map[string]string)
 		for _, env := range container.Env {
 			envNames[env.Name] = env.Value
@@ -565,12 +565,12 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_KEY_PEM", "/tls/tls.key"))
 
 		// Should have TLS volume mount
-		Expect(container.VolumeMounts).To(HaveLen(1))
+		Expect(container.VolumeMounts).To(HaveLen(2))
 		Expect(container.VolumeMounts[0].Name).To(Equal("tls-certs"))
 		Expect(container.VolumeMounts[0].MountPath).To(Equal("/tls"))
 
 		// Should have TLS volume with manual secret name
-		Expect(dep.Spec.Template.Spec.Volumes).To(HaveLen(1))
+		Expect(dep.Spec.Template.Spec.Volumes).To(HaveLen(2))
 		Expect(dep.Spec.Template.Spec.Volumes[0].Name).To(Equal("tls-certs"))
 		Expect(dep.Spec.Template.Spec.Volumes[0].Secret.SecretName).To(Equal("my-custom-telemetry-tls"))
 
@@ -593,11 +593,11 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		}
 
 		// Empty hash when no TLS is configured
-		dep := createTelemetryDeployment(js, "")
+		dep := createTelemetryDeployment(js, "", "", telemetryLokiPod{})
 
 		container := dep.Spec.Template.Spec.Containers[0]
 
-		Expect(container.Env).To(HaveLen(2))
+		Expect(container.Env).To(HaveLen(3))
 		envNames := make(map[string]string)
 		for _, env := range container.Env {
 			if env.Value != "" {
@@ -608,12 +608,81 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		Expect(container.Env[0].Name).To(Equal("CONTROLLER_KEY"))
 		Expect(envNames).NotTo(HaveKey("EXTERNAL_CERT_PEM"))
 
-		// No volume mounts or volumes
-		Expect(container.VolumeMounts).To(BeEmpty())
-		Expect(dep.Spec.Template.Spec.Volumes).To(BeEmpty())
+		// Authentication ConfigMap only; no TLS volume
+		Expect(container.VolumeMounts).To(HaveLen(1))
+		Expect(container.VolumeMounts[0].Name).To(Equal("controller-config"))
+		Expect(dep.Spec.Template.Spec.Volumes).To(HaveLen(1))
+		Expect(dep.Spec.Template.Spec.Volumes[0].Name).To(Equal("controller-config"))
 
 		// No TLS hash annotation when no TLS is configured
 		Expect(dep.Spec.Template.Annotations).To(BeNil())
+	})
+
+	It("stamps the controller config hash so an authentication change rolls the pod", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-auth-roll", Namespace: "default"},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled:         true,
+					Image:           "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+					ImagePullPolicy: corev1.PullIfNotPresent,
+				},
+			},
+		}
+
+		first := createTelemetryDeployment(js, "config-hash-a", "", telemetryLokiPod{})
+		second := createTelemetryDeployment(js, "config-hash-b", "", telemetryLokiPod{})
+
+		Expect(first.Spec.Template.Annotations).To(HaveKeyWithValue("jumpstarter.dev/configmap-sha256", "config-hash-a"))
+		Expect(second.Spec.Template.Annotations).To(HaveKeyWithValue("jumpstarter.dev/configmap-sha256", "config-hash-b"))
+	})
+
+	It("uses the same config hash as the controller and updates it when authentication changes", func() {
+		spec := makeJumpstarterSpec()
+		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
+			Enabled:         true,
+			Image:           "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+			ImagePullPolicy: corev1.PullIfNotPresent,
+		}
+		spec.Authentication.Internal.Enabled = true
+		spec.Authentication.Internal.Prefix = "internal:"
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       spec,
+		})).To(Succeed())
+
+		doReconcile()
+
+		telemetryDep := &appsv1.Deployment{}
+		controllerDep := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: crName + "-telemetry", Namespace: crNamespace,
+		}, telemetryDep)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: crName + "-controller", Namespace: crNamespace,
+		}, controllerDep)).To(Succeed())
+
+		first := telemetryDep.Spec.Template.Annotations["jumpstarter.dev/configmap-sha256"]
+		Expect(first).NotTo(BeEmpty())
+		Expect(first).To(Equal(controllerDep.Spec.Template.Annotations["jumpstarter.dev/configmap-sha256"]))
+
+		updated := &operatorv1alpha1.Jumpstarter{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: crNamespace}, updated)).To(Succeed())
+		updated.Spec.Authentication.Internal.Prefix = "rotated:"
+		Expect(k8sClient.Update(ctx, updated)).To(Succeed())
+
+		doReconcile()
+
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: crName + "-telemetry", Namespace: crNamespace,
+		}, telemetryDep)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: crName + "-controller", Namespace: crNamespace,
+		}, controllerDep)).To(Succeed())
+
+		next := telemetryDep.Spec.Template.Annotations["jumpstarter.dev/configmap-sha256"]
+		Expect(next).NotTo(Equal(first))
+		Expect(next).To(Equal(controllerDep.Spec.Template.Annotations["jumpstarter.dev/configmap-sha256"]))
 	})
 
 	It("uses a dedicated service account separate from the controller", func() {

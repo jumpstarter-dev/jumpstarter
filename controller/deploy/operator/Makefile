@@ -146,7 +146,7 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 
 .PHONY: test-e2e
 test-e2e: manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
-	KIND_CLUSTER=kind-jumpstarter go test ./test/e2e/ -v -ginkgo.v
+	KIND_CLUSTER=kind-jumpstarter go test ./test/e2e/ -timeout 20m -v -ginkgo.v
 
 
 .PHONY: lint
