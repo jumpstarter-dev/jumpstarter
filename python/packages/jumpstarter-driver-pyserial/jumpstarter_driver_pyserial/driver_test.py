@@ -1,10 +1,13 @@
 import contextlib
+import os
 import time
 from types import SimpleNamespace
 from typing import cast
+from unittest.mock import MagicMock
 
 import anyio
 import pytest
+import serial_asyncio
 from anyio import create_memory_object_stream
 from anyio.streams.stapled import StapledObjectStream
 
@@ -247,46 +250,43 @@ def test_close_noop_when_no_stream():
         client.call("close")
 
 
+@contextlib.contextmanager
+def _pty_serial(monkeypatch):
+    """Open the driver's serial port on a pseudo-terminal; yields its device end and a transport spy."""
+    device, port = os.openpty()
+    opened = SimpleNamespace(transport=None, close=None)
+
+    async def open_pty(**kwargs):
+        reader, writer = await serial_asyncio.open_serial_connection(url=os.ttyname(port))
+        opened.transport = writer.transport
+        opened.close = MagicMock(wraps=writer.transport.close)
+        writer.transport.close = opened.close
+        return reader, writer
+
+    monkeypatch.setattr(driver_module, "open_serial_connection", open_pty)
+    try:
+        yield device, opened
+    finally:
+        os.close(device)
+        os.close(port)
+
+
 def test_last_detach_closes_transport(monkeypatch):
     """The default lazy reader releases the transport after the last detach."""
-    import asyncio
-    from unittest.mock import MagicMock
 
     async def _run():
-        reader = asyncio.StreamReader()
-        reader.feed_data(b"test-data")
+        with _pty_serial(monkeypatch) as (device, opened):
+            driver = PySerial(url="/dev/ttyMOCK", check_present=False)
 
-        protocol = asyncio.StreamReaderProtocol(reader)
-        transport = MagicMock()
-        transport.serial = None
-        transport.is_closing.return_value = False
-        transport.get_write_buffer_size.return_value = 0
-        orig_close = transport.close
+            async with driver._get_fanout().running():
+                async with driver.connect() as stream:
+                    assert driver._transport is opened.transport
+                    os.write(device, b"test-data")
+                    with anyio.fail_after(5):
+                        assert await stream.receive() == b"test-data"
 
-        def fake_close():
-            orig_close()
-            with contextlib.suppress(Exception):
-                protocol.connection_lost(None)
-
-        transport.close = fake_close
-
-        loop = asyncio.get_running_loop()
-        writer = asyncio.StreamWriter(transport, protocol, reader, loop)
-
-        async def fake_open(**kw):
-            return reader, writer
-
-        monkeypatch.setattr(driver_module, "open_serial_connection", fake_open)
-
-        driver = PySerial(url="/dev/ttyMOCK", check_present=False)
-
-        async with driver.connect() as stream:
-            assert driver._transport is transport
-            data = await stream.receive()
-            assert data == b"test-data"
-
-        assert driver._transport is None
-        orig_close.assert_called_once_with()
+                assert driver._transport is None
+                opened.close.assert_called_once_with()
 
     anyio.run(_run)
 
@@ -297,54 +297,27 @@ def test_shutdown_releases_port_but_close_keeps_it(monkeypatch):
     This checks the configured always-on behavior; with the default lazy
     reader, detaching the last client closes the port instead.
     """
-    import asyncio
-    from unittest.mock import MagicMock
 
     async def _run():
-        reader = asyncio.StreamReader()
-        reader.feed_data(b"hello")
+        with _pty_serial(monkeypatch) as (device, opened):
+            driver = PySerial(url="/dev/ttyMOCK", check_present=False, always_on=True)
 
-        protocol = asyncio.StreamReaderProtocol(reader)
-        transport = MagicMock()
-        mock_serial = MagicMock()
-        transport.serial = mock_serial
-        transport.is_closing.return_value = False
-        transport.get_write_buffer_size.return_value = 0
+            async with driver._get_fanout().running():
+                async with driver.connect() as stream:
+                    os.write(device, b"hello")
+                    with anyio.fail_after(5):
+                        assert await stream.receive() == b"hello"
+                    # With always_on, a kick does not drop the physical port.
+                    driver.close()
+                    opened.close.assert_not_called()
+                    # shutdown() is session-end teardown and releases the port.
+                    driver.shutdown()
 
-        closed = {"called": False}
-        orig_close = transport.close
+                opened.close.assert_called()
 
-        def fake_close():
-            closed["called"] = True
-            orig_close()
-            with contextlib.suppress(Exception):
-                protocol.connection_lost(None)
-
-        transport.close = fake_close
-
-        loop = asyncio.get_running_loop()
-        writer = asyncio.StreamWriter(transport, protocol, reader, loop)
-
-        async def fake_open(**kw):
-            return reader, writer
-
-        monkeypatch.setattr(driver_module, "open_serial_connection", fake_open)
-
-        driver = PySerial(url="/dev/ttyMOCK", check_present=False, always_on=True)
-
-        async with driver.connect() as stream:
-            data = await stream.receive()
-            assert data == b"hello"
-            # With always_on, a kick does not drop the physical port.
-            driver.close()
-            assert not closed["called"]
-            # shutdown() is session-end teardown and releases the port.
-            driver.shutdown()
-
-        assert closed["called"]
-        status = driver._fanout.status()
-        assert status["total_clients"] == 0
-        assert not status["write_token_held"]
-        assert driver._fanout._reader_task is None
+            status = driver._get_fanout().status()
+            assert status["total_clients"] == 0
+            assert not status["write_token_held"]
+            assert driver._get_fanout()._reader is None
 
     anyio.run(_run)
