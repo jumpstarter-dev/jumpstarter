@@ -295,8 +295,10 @@ class IosSimulator(CompositeInterface, Driver):
             raise RuntimeError("state_dir is too long for a companion Unix socket; use a short path like /private/tmp")
         self._creation_attempted = True
         if golden is None:
+            assert self.device_type is not None and self.runtime is not None  # guaranteed by _validate_target_config
             output = self._simctl("create", self.device_name, self.device_type, self.runtime)
         else:
+            assert self.golden_udid is not None  # guaranteed by _validate_golden_config
             output = self._run(
                 [
                     self.xcrun,
@@ -314,6 +316,7 @@ class IosSimulator(CompositeInterface, Driver):
 
     def _socket_path(self) -> Path:
         self._owned_set()
+        assert self._lease_dir is not None  # _owned_set raises when there is no lease
         return self._lease_dir / "idb.sock"
 
     def _companion_alive(self) -> bool:
@@ -332,6 +335,7 @@ class IosSimulator(CompositeInterface, Driver):
             return False
 
     def _log_tail(self) -> str:
+        assert self._lease_dir is not None  # only called while a companion is starting
         try:
             with (self._lease_dir / "companion.log").open("rb") as log:
                 log.seek(0, os.SEEK_END)
@@ -342,6 +346,7 @@ class IosSimulator(CompositeInterface, Driver):
 
     def _start_companion(self) -> None:
         path = self._socket_path()
+        assert self._lease_dir is not None and self._udid is not None  # a created, resolved simulator
         path.unlink(missing_ok=True)
         args = [
             self.idb_companion,
@@ -393,12 +398,14 @@ class IosSimulator(CompositeInterface, Driver):
                 if creating:
                     self._create()
                 _, device = self._device()
+                udid = self._udid
+                assert udid is not None  # _device found it in the owned set
                 if device.get("state") == "Booted" and self._companion_alive() and self._socket_ready():
                     return
                 self._stop_companion()
                 if device.get("state") != "Booted":
-                    self._simctl("boot", self._udid, timeout=self.boot_timeout)
-                self._simctl("bootstatus", self._udid, "-b", timeout=self.boot_timeout)
+                    self._simctl("boot", udid, timeout=self.boot_timeout)
+                self._simctl("bootstatus", udid, "-b", timeout=self.boot_timeout)
                 self._start_companion()
             except BaseException:
                 # Remove a partially created simulator. A failed restart only
@@ -483,6 +490,8 @@ class IosSimulator(CompositeInterface, Driver):
                 raise RuntimeError(info["reason"])
             self._owned_set()
             if self._http_service is None:
+                # A present simulator has a lease and a UDID that _device resolved.
+                assert self._lease_dir is not None and self._udid is not None
                 context = SimulatorHttpContext(
                     directory=self._lease_dir,
                     device_set=self._owned_set(),

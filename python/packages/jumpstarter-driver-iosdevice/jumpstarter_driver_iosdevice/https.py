@@ -52,7 +52,7 @@ class HttpsIdentity:
         """
         if (certfile is None) != (keyfile is None):
             raise ValueError("certfile and keyfile must be provided together")
-        if certfile is not None and Path(certfile) == Path(keyfile):
+        if certfile is not None and keyfile is not None and Path(certfile) == Path(keyfile):
             raise ValueError("certificate and private key must have distinct paths")
         authority_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         server_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -124,7 +124,7 @@ class HttpsIdentity:
 
         # OpenSSL requires files to load the identity. By default both are
         # removed immediately; an external server may instead own their lifetime.
-        if certfile is None:
+        if certfile is None or keyfile is None:  # both or neither, checked above
             with tempfile.TemporaryDirectory(prefix="js-https-") as directory:
                 load(Path(directory) / "server.crt", Path(directory) / "server.key")
         else:
@@ -152,8 +152,8 @@ class _MemoryByteStream(ByteStream):
 
 
 def _stream_pair():
-    a_tx, a_rx = create_memory_object_stream[bytes](16)  # ty: ignore[call-non-callable]
-    b_tx, b_rx = create_memory_object_stream[bytes](16)  # ty: ignore[call-non-callable]
+    a_tx, a_rx = create_memory_object_stream[bytes](16)
+    b_tx, b_rx = create_memory_object_stream[bytes](16)
     return _MemoryByteStream(StapledObjectStream(a_tx, b_rx)), _MemoryByteStream(StapledObjectStream(b_tx, a_rx))
 
 

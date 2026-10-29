@@ -133,8 +133,7 @@ class MockMux:
 async def running_mux():
     mock = MockMux()
     listener = await create_tcp_listener(local_host="127.0.0.1")
-    address = listener.extra(SocketAttribute.local_address)
-    daemon = UsbMuxDaemon(host=address[0], port=address[1], timeout=1)
+    daemon = UsbMuxDaemon(host="127.0.0.1", port=listener.extra(SocketAttribute.local_port), timeout=1)
     async with listener, create_task_group() as tasks:
         tasks.start_soon(listener.serve, mock.handle)
         try:

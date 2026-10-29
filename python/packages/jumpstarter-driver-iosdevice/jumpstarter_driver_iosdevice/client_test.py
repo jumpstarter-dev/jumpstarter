@@ -380,7 +380,7 @@ def test_cli_empty_command_reports_usage(client):
 
 def test_interface_requires_info():
     with pytest.raises(TypeError, match="abstract"):
-        IosDeviceInterface()
+        IosDeviceInterface()  # ty: ignore[call-non-callable]
     assert IosDeviceInterface.client() == "jumpstarter_driver_iosdevice.client.IosDeviceClient"
 
 
@@ -613,7 +613,7 @@ def test_https_native_tls_crosses_opaque_adapter_and_requires_public_ca(https_cl
             self.end_headers()
             self.wfile.write(body)
 
-        def log_message(self, *_args):
+        def log_message(self, format, *args):
             pass
 
     server = HTTPServer(("127.0.0.1", 0), StatusHandler)

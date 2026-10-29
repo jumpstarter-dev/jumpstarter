@@ -235,7 +235,7 @@ class PairedDevice:
             elif name == "StopSession":
                 assert request["SessionID"] == "REAL-SESSION-IDENTITY"
                 await _write_lockdown(stream, response)
-                stream, remainder = await stream.unwrap()
+                stream, remainder = await stream.unwrap()  # ty: ignore[unresolved-attribute]
                 assert not remainder
                 reader = BufferedByteReceiveStream(stream)
                 continue
@@ -263,7 +263,7 @@ class PairedDevice:
 async def _running(paired_peer, *, connection_type=None, **kwargs):
     peer = PairedDevice(paired_peer, **kwargs)
     upstream = await create_tcp_listener(local_host="127.0.0.1")
-    host, port = upstream.extra(SocketAttribute.local_address)
+    host, port = "127.0.0.1", upstream.extra(SocketAttribute.local_port)
     broker = ExporterTrustBroker(
         udid=UDID, device_id=DEVICE_ID, host=host, port=port, timeout=2, connection_type=connection_type
     )

@@ -144,6 +144,7 @@ class IosDevice(IosDeviceInterface, Driver):
         selector = self.udid
         if self.usb_port is not None:
             selector = await to_thread.run_sync(_serial_at_port, self.usb_port)
+        assert selector is not None  # guaranteed by config validation: usb_port or udid is set
         candidates = []
         for device in await daemon.list_devices():
             properties = device.get("Properties", {})
@@ -190,8 +191,9 @@ class IosDevice(IosDeviceInterface, Driver):
         if self.usb_port is not None:
             result["usb_port"] = self.usb_port
         try:
-            result.update(await self._describe())
-            match = re.fullmatch(r"(\d+)\.(\d+)(?:\.\d+)*", result["os_version"])
+            described = await self._describe()
+            result.update(described)
+            match = re.fullmatch(r"(\d+)\.(\d+)(?:\.\d+)*", described["os_version"])
             if match is None:
                 result["reason"] = "cannot verify device iOS version"
             elif tuple(map(int, match.groups())) < (17, 4):
