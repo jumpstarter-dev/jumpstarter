@@ -2,8 +2,8 @@
 
 `jumpstarter-driver-iosdevice` connects existing iOS tools to one leased iPhone
 or iPad through usbmux. The exporter owns device pairing; clients use a
-lease-scoped proxy identity. Device tools such as pymobiledevice3, go-ios,
-libimobiledevice and Appium are installed separately.
+lease-scoped proxy identity. Device tools such as go-ios, libimobiledevice
+and Appium are installed separately.
 
 ## Installation
 
@@ -17,7 +17,6 @@ under their respective licenses; Jumpstarter does not bundle or download them.
 
 | Tool | Common use |
 | --- | --- |
-| [pymobiledevice3](https://github.com/doronz88/pymobiledevice3) | Device management and developer services |
 | [go-ios](https://github.com/danielpaulus/go-ios) | Device management and automation |
 | [libimobiledevice](https://github.com/libimobiledevice/libimobiledevice) | Device utilities and libraries |
 | [usbfluxd](https://github.com/corellium/usbfluxd) | Access a remote usbmux endpoint from local tools |
@@ -28,6 +27,26 @@ later. Pair the device on the exporter before leasing it. Developer services
 also require Developer Mode, a compatible mounted developer image, and any
 on-device approvals requested by your tools. Jumpstarter does not configure
 these prerequisites or provide physical power control.
+
+### Preparing a physical device
+
+Do this once per device, on the exporter host, with the device unlocked:
+
+1. Connect the device over USB. When iOS asks *Trust This Computer?*, tap
+   **Trust** and enter the device passcode. This creates the pairing record the
+   exporter owns; clients never receive it.
+2. Enable Developer Mode: **Settings > Privacy & Security > Developer Mode**,
+   turn it on and restart when asked. After the restart, swipe up to unlock and
+   tap **Enable** in the prompt, then confirm with the passcode. If the toggle is
+   not shown, connect the device to Xcode or a developer tool once so iOS offers
+   it.
+3. For WebDriverAgent and Appium, enable **Settings > Developer > Enable UI
+   Automation**.
+4. Verify from the exporter host with libimobiledevice: `idevice_id -l` lists
+   the UDID and `idevicepair validate` confirms the pairing.
+
+Keep the device unlocked while tools install or launch test runners; iOS may
+ask for further approvals on screen.
 
 ## Configuration
 
@@ -78,7 +97,7 @@ The commands below assume an export named `ios` inside a `jmp shell` session.
 ```shell
 j ios info
 j ios serve
-j ios -- pymobiledevice3 usbmux list
+j ios -- idevice_id -l
 j ios connect
 j ios forward 9100
 j ios https
