@@ -1,4 +1,4 @@
-from .enums import ExporterStatus, LogSource
+from .enums import ExporterStatus, LeaseHookPhase, LogSource
 from .fls import download_fls, get_fls_binary, get_fls_github_url
 from .metadata import Metadata
 from .tempfile import TemporarySocket, TemporaryTcpListener, TemporaryUnixListener
@@ -17,6 +17,7 @@ __all__ = [
     "ControllerStub",
     "ExporterStatus",
     "ExporterStub",
+    "LeaseHookPhase",
     "LogSource",
     "Metadata",
     "RouterStub",
