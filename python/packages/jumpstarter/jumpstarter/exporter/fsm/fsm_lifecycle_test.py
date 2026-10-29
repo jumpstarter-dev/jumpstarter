@@ -15,13 +15,14 @@ from anyio.lowlevel import checkpoint
 from google.protobuf import empty_pb2
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
 
-from jumpstarter.common import ExporterStatus
+from jumpstarter.common import ExporterStatus, LeaseHookPhase
 from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
 from jumpstarter.driver import Driver, export
 from jumpstarter.exporter.exporter import Exporter
 from jumpstarter.exporter.fsm import AwaitingLeaseRelease, BeforeLeaseHook, ClosingLease, LeaseReady, ShutdownMode
 from jumpstarter.exporter.fsm.lease_context import LeaseContext
 from jumpstarter.exporter.hooks import HookExecutionError, HookExecutor
+from jumpstarter.exporter.lease_hooks import HOOK_FAILURE_ACTIONS
 from jumpstarter.fsm import ExitFSM
 
 pytestmark = pytest.mark.anyio
@@ -76,13 +77,13 @@ class LocalExporter(Exporter):
             await changed.wait()
 
     @asynccontextmanager
-    async def session_for_lease(self):
+    async def session_for_lease(self, reset_device: bool = True):
         state = self.fsm.runner.current_state if self.fsm.runner else None
-        lease = getattr(state, "admitting", None)
+        lease = getattr(state, "admitting", None) or self._lease_context
         assert isinstance(lease, LeaseContext)
         self.trace.append(("open", lease.lease_name))
         try:
-            async with super().session_for_lease() as session:
+            async with super().session_for_lease(reset_device=reset_device) as session:
                 self.leases.append(lease)
                 try:
                     yield session
@@ -365,6 +366,8 @@ async def test_exit_on_lease_end_stops_sidecar_after_teardown(monkeypatch):
     with fail_after(5):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
+            # AVAILABLE is reported with the first status, not at registration.
+            await exporter.fsm.inputs.send(jumpstarter_pb2.StatusResponse())
             await exporter.wait_status(ExporterStatus.AVAILABLE)
             assert exporter.fsm.inputs.snapshot().shutdown is None
             exporter.fsm.inputs.publish_lease_assignment("A")
@@ -676,3 +679,348 @@ async def test_stop_now_is_bounded_while_release_rpc_is_stalled(monkeypatch):
             exporter.stop()
     assert exporter.closed.is_set()
     assert exporter.fsm.runner is not None and isinstance(exporter.fsm.runner.current_state, ExitFSM)
+
+
+# --- Exporter restarts: the lease outlives the process (controller hook records) ---
+
+
+def hook_state(phase: LeaseHookPhase, on_failure: str = "warn", message: str = "", attempts: int = 1):
+    return jumpstarter_pb2.LeaseHookState(
+        phase=jumpstarter_pb2.LeaseHookPhase.ValueType(phase),
+        on_failure=HOOK_FAILURE_ACTIONS.get(on_failure, jumpstarter_pb2.LEASE_HOOK_FAILURE_ACTION_UNSPECIFIED),
+        message=message,
+        attempts=attempts,
+    )
+
+
+def lease_hooks_record(before=None, after=None, lease_name="A", lease_uid="u1", client_name="client"):
+    return jumpstarter_pb2.LeaseHooks(
+        lease_name=lease_name,
+        lease_uid=lease_uid,
+        client_name=client_name,
+        **({"before_lease": before} if before is not None else {}),
+        **({"after_lease": after} if after is not None else {}),
+    )
+
+
+def status_with_hooks(record, *, leased=False, lease_name="", lease_uid=""):
+    return jumpstarter_pb2.StatusResponse(
+        leased=leased, lease_name=lease_name, lease_uid=lease_uid, lease_hooks=record
+    )
+
+
+class HookRecordController:
+    """Controller mock that keeps the exporter's lease hook record like the controller."""
+
+    def __init__(self, refuse_with: grpc.StatusCode | None = None):
+        self.record: dict[str, jumpstarter_pb2.LeaseHookState] = {}
+        self.refuse_with = refuse_with
+        self.controller = MagicMock(ReleaseLease=AsyncMock())
+        self.controller.UpdateLeaseHooks = AsyncMock(side_effect=self._update)
+
+    async def _update(self, request, **kwargs):
+        if self.refuse_with is not None:
+            raise grpc.aio.AioRpcError(self.refuse_with, grpc.aio.Metadata(), grpc.aio.Metadata(), "refused")
+        if request.HasField("before_lease"):
+            self.record["before_lease"] = request.before_lease
+        if request.HasField("after_lease"):
+            self.record["after_lease"] = request.after_lease
+        return jumpstarter_pb2.LeaseHooks()
+
+
+def restart_exporter(refuse_with: grpc.StatusCode | None = None) -> tuple[LocalExporter, HookRecordController]:
+    exporter = make_exporter(hook_executor=hooks())
+    hooks_controller = HookRecordController(refuse_with=refuse_with)
+    exporter.controller = hooks_controller.controller
+    return exporter, hooks_controller
+
+
+def counting_driver(calls: list[str]):
+    class CountingDriver(PingDriver):
+        def reset(self):
+            calls.append("reset")
+
+    return CountingDriver
+
+
+async def test_stop_during_live_tracked_lease_leaves_it_for_the_next_process(monkeypatch):
+    exporter, hc = restart_exporter()
+    before, after = AsyncMock(return_value=None), AsyncMock(return_value=None)
+    monkeypatch.setattr(exporter.hook_executor, "execute_before_lease_hook", before)
+    monkeypatch.setattr(exporter.hook_executor, "execute_after_lease_hook", after)
+    with fail_after(5):
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.serve)
+            await exporter.fsm.inputs.send(
+                status_with_hooks(lease_hooks_record(before=hook_state(LeaseHookPhase.SUCCEEDED)),
+                                  leased=True, lease_name="A", lease_uid="u1")
+            )
+            await exporter.wait_status(ExporterStatus.LEASE_READY)
+            exporter.stop()
+    # The lease is live and tracked: no cleanup, no release, no record of one.
+    before.assert_not_awaited()  # resumed, not set up again
+    after.assert_not_awaited()
+    exporter.controller.ReleaseLease.assert_not_awaited()
+    assert exporter._handed_off_lease == "A"
+    assert "after_lease" not in hc.record
+    assert exporter.closed.is_set()
+    assert exporter.fsm.runner is not None and isinstance(exporter.fsm.runner.current_state, ExitFSM)
+
+
+async def test_stop_during_live_untracked_lease_still_runs_cleanup(monkeypatch):
+    exporter = make_exporter(hook_executor=hooks())
+    before, after = AsyncMock(return_value=None), AsyncMock(return_value=None)
+    monkeypatch.setattr(exporter.hook_executor, "execute_before_lease_hook", before)
+    monkeypatch.setattr(exporter.hook_executor, "execute_after_lease_hook", after)
+    with fail_after(5):
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.serve)
+            # A controller that keeps no hook records: the lease cannot outlive the process.
+            await exporter.fsm.inputs.send(
+                jumpstarter_pb2.StatusResponse(leased=True, lease_name="A", lease_uid="u1")
+            )
+            await exporter.wait_status(ExporterStatus.LEASE_READY)
+            exporter.stop()
+    before.assert_awaited_once()
+    after.assert_awaited_once()
+    assert exporter._handed_off_lease is None
+    assert exporter.closed.is_set()
+
+
+async def test_resumed_lease_skips_setup_and_device_reset(monkeypatch):
+    calls: list[str] = []
+    exporter, _ = restart_exporter()
+    exporter.device_factory = counting_driver(calls)
+    before = AsyncMock(return_value=None)
+    monkeypatch.setattr(exporter.hook_executor, "execute_before_lease_hook", before)
+    with fail_after(5):
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.serve)
+            await exporter.fsm.inputs.send(
+                status_with_hooks(lease_hooks_record(before=hook_state(LeaseHookPhase.SUCCEEDED)),
+                                  leased=True, lease_name="A", lease_uid="u1")
+            )
+            await exporter.wait_status(ExporterStatus.LEASE_READY)
+            session = exporter.leases[0].session
+            exporter.stop()
+    before.assert_not_awaited()
+    assert calls == []  # a resumed lease is not set up again, so its device is not reset
+    assert session is not None
+    assert session._status_message == "Ready for commands (lease resumed after exporter restart)"
+
+
+async def test_resumed_lease_reports_its_recorded_setup_outcome(monkeypatch):
+    exporter, hc = restart_exporter()
+    before, after = AsyncMock(return_value=None), AsyncMock(return_value=None)
+    monkeypatch.setattr(exporter.hook_executor, "execute_before_lease_hook", before)
+    monkeypatch.setattr(exporter.hook_executor, "execute_after_lease_hook", after)
+    with fail_after(5):
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.serve)
+            await exporter.fsm.inputs.send(
+                status_with_hooks(lease_hooks_record(before=hook_state(LeaseHookPhase.FAILED, "warn", "boom")),
+                                  leased=True, lease_name="A", lease_uid="u1")
+            )
+            await exporter.wait_status(ExporterStatus.LEASE_READY)
+            session = exporter.leases[0].session
+            assert session is not None
+            assert session._status_message.startswith("[HOOK_WARNING]")
+            await exporter.fsm.inputs.send(status_with_hooks(
+                lease_hooks_record(before=hook_state(LeaseHookPhase.FAILED, "warn", "boom"))))
+            exporter.stop()
+    before.assert_not_awaited()
+    after.assert_awaited_once()  # the lease ended: its cleanup runs
+    assert hc.record["after_lease"].phase == LeaseHookPhase.SUCCEEDED
+
+
+async def test_lease_ended_while_down_runs_owed_cleanup(monkeypatch):
+    exporter, hc = restart_exporter()
+    after = AsyncMock(return_value=None)
+    monkeypatch.setattr(exporter.hook_executor, "execute_after_lease_hook", after)
+    with fail_after(5):
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.serve)
+            await exporter.fsm.inputs.send(
+                status_with_hooks(lease_hooks_record(before=hook_state(LeaseHookPhase.SUCCEEDED)))
+            )
+            await exporter.wait_status(ExporterStatus.AVAILABLE)
+            exporter.stop()
+    after.assert_awaited_once()
+    assert hc.record["after_lease"].phase == LeaseHookPhase.SUCCEEDED
+    assert exporter.closed.is_set()  # the lease already ended: nothing waits for a release
+
+
+async def test_cut_off_cleanup_runs_again_as_next_attempt(monkeypatch):
+    exporter, hc = restart_exporter()
+    after = AsyncMock(return_value=None)
+    monkeypatch.setattr(exporter.hook_executor, "execute_after_lease_hook", after)
+    with fail_after(5):
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.serve)
+            await exporter.fsm.inputs.send(
+                status_with_hooks(lease_hooks_record(
+                    before=hook_state(LeaseHookPhase.SUCCEEDED),
+                    after=hook_state(LeaseHookPhase.RUNNING, attempts=1)))
+            )
+            await exporter.wait_status(ExporterStatus.AVAILABLE)
+            exporter.stop()
+    after.assert_awaited_once()
+    assert hc.record["after_lease"].phase == LeaseHookPhase.SUCCEEDED
+    assert hc.record["after_lease"].attempts == 2  # onInterrupt: rerun, as the next attempt
+
+
+async def test_cut_off_hook_with_on_interrupt_fail_fails_without_running():
+    hook = HookInstanceConfigV1Alpha1(script="echo should-not-run", timeout=3, on_interrupt="fail")
+    exporter = make_exporter(hook_executor=HookExecutor(config=HookConfigV1Alpha1(before_lease=hook, after_lease=hook)))
+    hc = HookRecordController()
+    exporter.controller = hc.controller
+    with fail_after(5):
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.serve)
+            await exporter.fsm.inputs.send(
+                status_with_hooks(lease_hooks_record(
+                    before=hook_state(LeaseHookPhase.SUCCEEDED),
+                    after=hook_state(LeaseHookPhase.RUNNING, on_failure="warn", attempts=1)))
+            )
+            await exporter.wait_status(ExporterStatus.AVAILABLE)
+            exporter.stop()
+    # The hook never ran: its cut-off failure is handled by onFailure like any failure.
+    assert hc.record["after_lease"].phase == LeaseHookPhase.FAILED
+    assert "did not finish" in hc.record["after_lease"].message
+
+
+async def test_refused_setup_record_skips_hook_and_closes_lease(monkeypatch):
+    exporter, hc = restart_exporter(refuse_with=grpc.StatusCode.FAILED_PRECONDITION)
+    before, after = AsyncMock(return_value=None), AsyncMock(return_value=None)
+    monkeypatch.setattr(exporter.hook_executor, "execute_before_lease_hook", before)
+    monkeypatch.setattr(exporter.hook_executor, "execute_after_lease_hook", after)
+    with fail_after(5):
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.serve)
+            await exporter.fsm.inputs.send(
+                status_with_hooks(lease_hooks_record(), leased=True, lease_name="A", lease_uid="u1")
+            )
+            await exporter.closed.wait()
+            exporter.stop()
+    # The controller refused the start (the lease is no longer assigned): the
+    # hook must not run, and the lease closes without cleanup.
+    before.assert_not_awaited()
+    after.assert_not_awaited()
+    assert hc.record == {}
+    assert exporter.closed.is_set()
+
+
+async def test_controller_without_hook_recording_runs_hooks_untracked(monkeypatch):
+    exporter, hc = restart_exporter(refuse_with=grpc.StatusCode.UNIMPLEMENTED)
+    before, after = AsyncMock(return_value=None), AsyncMock(return_value=None)
+    monkeypatch.setattr(exporter.hook_executor, "execute_before_lease_hook", before)
+    monkeypatch.setattr(exporter.hook_executor, "execute_after_lease_hook", after)
+    with fail_after(5):
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.serve)
+            await exporter.fsm.inputs.send(
+                status_with_hooks(lease_hooks_record(), leased=True, lease_name="A", lease_uid="u1")
+            )
+            await exporter.wait_status(ExporterStatus.LEASE_READY)
+            exporter.fsm.inputs.publish_lease_assignment(None)
+            exporter.stop()
+    before.assert_awaited_once()  # hooks run as before records existed
+    after.assert_awaited_once()
+    assert hc.record == {}
+    assert exporter.closed.is_set()
+
+
+@pytest.mark.parametrize("hook_failed", [True, False])
+async def test_settled_lease_is_never_set_up_again(monkeypatch, hook_failed):
+    exporter, hc = restart_exporter()
+    before = AsyncMock(return_value=None)
+    monkeypatch.setattr(exporter.hook_executor, "execute_before_lease_hook", before)
+    record = (
+        lease_hooks_record(before=hook_state(LeaseHookPhase.FAILED, "endLease", "boom"))
+        if hook_failed
+        else lease_hooks_record(before=hook_state(LeaseHookPhase.SUCCEEDED),
+                                after=hook_state(LeaseHookPhase.SUCCEEDED))
+    )
+    with fail_after(5):
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.serve)
+            await exporter.fsm.inputs.send(status_with_hooks(record, leased=True, lease_name="A", lease_uid="u1"))
+            await exporter.wait_status(ExporterStatus.AVAILABLE)
+            # Leased ticks for the settled lease do not set it up again.
+            await exporter.fsm.inputs.send(status_with_hooks(record, leased=True, lease_name="A", lease_uid="u1"))
+            await checkpoint()
+            assert exporter.leases == []
+            exporter.stop()
+    before.assert_not_awaited()
+    assert exporter.controller.ReleaseLease.await_count == (1 if hook_failed else 0)
+    if hook_failed:
+        assert hc.record["after_lease"].phase == LeaseHookPhase.SKIPPED  # no cleanup owed
+
+
+async def test_cut_off_setup_runs_again_as_next_attempt(monkeypatch):
+    exporter, hc = restart_exporter()
+    before = AsyncMock(return_value=None)
+    monkeypatch.setattr(exporter.hook_executor, "execute_before_lease_hook", before)
+    with fail_after(5):
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.serve)
+            await exporter.fsm.inputs.send(
+                status_with_hooks(lease_hooks_record(before=hook_state(LeaseHookPhase.RUNNING, attempts=1)),
+                                  leased=True, lease_name="A", lease_uid="u1")
+            )
+            await exporter.wait_status(ExporterStatus.LEASE_READY)
+            exporter.fsm.inputs.publish_lease_assignment(None)
+            exporter.stop()
+    before.assert_awaited_once()  # onInterrupt: rerun, as the next attempt
+    assert hc.record["before_lease"].phase == LeaseHookPhase.SUCCEEDED
+    assert hc.record["before_lease"].attempts == 2
+
+
+async def test_new_tracked_lease_records_hooks_and_resets_device(monkeypatch):
+    calls: list[str] = []
+    exporter, hc = restart_exporter()
+    exporter.device_factory = counting_driver(calls)
+    before, after = AsyncMock(return_value=None), AsyncMock(return_value=None)
+    monkeypatch.setattr(exporter.hook_executor, "execute_before_lease_hook", before)
+    monkeypatch.setattr(exporter.hook_executor, "execute_after_lease_hook", after)
+    with fail_after(5):
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.serve)
+            await exporter.fsm.inputs.send(
+                status_with_hooks(lease_hooks_record(), leased=True, lease_name="A", lease_uid="u1")
+            )
+            await exporter.wait_status(ExporterStatus.LEASE_READY)
+            exporter.fsm.inputs.publish_lease_assignment(None)
+            await exporter.wait_status(ExporterStatus.AVAILABLE)
+            exporter.stop()
+    assert calls == ["reset"]  # a new lease sets the device up
+    before.assert_awaited_once()
+    after.assert_awaited_once()
+    assert hc.record["before_lease"].phase == LeaseHookPhase.SUCCEEDED
+    assert hc.record["after_lease"].phase == LeaseHookPhase.SUCCEEDED
+
+
+async def test_registration_declares_hook_recording_and_defers_available():
+    exporter, hc = restart_exporter()
+    controller = hc.controller
+    # ExporterServiceStub(local_channel) builds its RPCs from channel.unary_unary.
+    controller.unary_unary = MagicMock(return_value=AsyncMock(return_value=jumpstarter_pb2.GetReportResponse()))
+    controller.Register = AsyncMock()
+    controller.GetServiceEndpoints = AsyncMock(side_effect=grpc.aio.AioRpcError(
+        grpc.StatusCode.UNIMPLEMENTED, grpc.aio.Metadata(), grpc.aio.Metadata(), "no telemetry"))
+    await exporter._register_with_controller(controller)
+    register_args = controller.Register.await_args
+    assert register_args is not None
+    assert register_args.args[0].records_lease_hooks is True
+    assert exporter._exporter_status == ExporterStatus.OFFLINE  # AVAILABLE waits for the first status
+
+    plain = make_exporter()  # no hooks configured: nothing to record
+    plain_controller = HookRecordController().controller
+    plain.controller = plain_controller
+    plain_controller.unary_unary = controller.unary_unary
+    plain_controller.Register = AsyncMock()
+    plain_controller.GetServiceEndpoints = controller.GetServiceEndpoints
+    await plain._register_with_controller(plain_controller)
+    plain_args = plain_controller.Register.await_args
+    assert plain_args is not None
+    assert plain_args.args[0].records_lease_hooks is False

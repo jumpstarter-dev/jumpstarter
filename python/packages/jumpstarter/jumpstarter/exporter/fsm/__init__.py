@@ -12,6 +12,7 @@ from jumpstarter.exporter.fsm.input import (
     ShutdownMode,
     ShutdownRequest,
     State,
+    Takeover,
 )
 from jumpstarter.exporter.fsm.lease_context import LeaseContext
 from jumpstarter.exporter.fsm.states import (
@@ -23,7 +24,9 @@ from jumpstarter.exporter.fsm.states import (
     BeforeLeaseHookFailed,
     ClosingLease,
     LeaseReady,
+    RecoveringLease,
     ReleasingLease,
+    Starting,
     Stopping,
 )
 from jumpstarter.fsm import FSMRunner
@@ -43,11 +46,14 @@ __all__ = [
     "LeaseContext",
     "LeaseKey",
     "LeaseReady",
+    "RecoveringLease",
     "ReleasingLease",
     "ShutdownMode",
     "ShutdownRequest",
+    "Starting",
     "State",
     "Stopping",
+    "Takeover",
 ]
 
 

@@ -1,9 +1,10 @@
 import logging
 import math
 import os
-from collections.abc import AsyncGenerator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator, Awaitable, Callable, Generator
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
+from functools import partial
 from typing import TYPE_CHECKING, Any, Self
 
 import anyio
@@ -29,7 +30,7 @@ from jumpstarter_protocol import (
     telemetry_pb2_grpc,
 )
 
-from jumpstarter.common import ExporterStatus, Metadata, TemporarySocket
+from jumpstarter.common import ExporterStatus, LeaseHookPhase, Metadata, TemporarySocket
 from jumpstarter.common.exceptions import CertificateDiscoveryError
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.config.env import JMP_GRPC_INSECURE, JUMPSTARTER_GRPC_INSECURE
@@ -42,9 +43,11 @@ from jumpstarter.exporter.fsm import (
     LeaseKey,
     ShutdownMode,
     ShutdownRequest,
+    Starting,
     State,
 )
-from jumpstarter.exporter.hooks import HookExecutor
+from jumpstarter.exporter.hooks import HookExecutor, HookType, close_setup_record
+from jumpstarter.exporter.lease_hooks import HOOK_FAILURE_ACTIONS, HOOK_NAMES
 from jumpstarter.exporter.metrics_stream import MetricsStreamClient
 from jumpstarter.exporter.session import Session
 from jumpstarter.exporter.telemetry import TelemetryLogHandler
@@ -64,6 +67,9 @@ _RPC_MAX_RETRIES = 20
 _RPC_BACKOFF_BASE = 1.0
 _RPC_BACKOFF_CAP = 30.0
 _RPC_TIMEOUT = 30
+# The controller refused a hook transition: it is out of date (FAILED_PRECONDITION)
+# or invalid (INVALID_ARGUMENT). Sending it again cannot succeed.
+_LEASE_HOOK_REFUSED_CODES = frozenset({grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.INVALID_ARGUMENT})
 _FAIL_FAST_STREAM_CODES = frozenset({
     grpc.StatusCode.UNAUTHENTICATED,
     grpc.StatusCode.PERMISSION_DENIED,
@@ -306,6 +312,17 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     _controller_stream_failed: bool = field(init=False, default=False)
     """Skip controller RPCs during cleanup after a fatal stream failure."""
 
+    _controller_rpc_scopes: set[CancelScope] = field(init=False, default_factory=set)
+    """Scopes of controller RPCs in progress, cancelled when this process gives up on the
+    controller (_lose_controller): cleanup runs shielded, so it would otherwise wait
+    out their retries."""
+
+    _handed_off_lease: str | None = field(init=False, default=None)
+    """Live lease this process left in place for the next exporter process, if any."""
+
+    _lease_context: LeaseContext | None = field(init=False, default=None)
+    """Lease being worked on, if any; holds the release slot during a takeover."""
+
     _standalone: bool = field(init=False, default=False)
     """When True, exporter runs without a controller (TCP listener only).
 
@@ -428,10 +445,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             except Exception as e:
                 if not _is_retryable_stream_error(e):
                     if isinstance(e, grpc.aio.AioRpcError):
-                        self._controller_stream_failed = True
                         # A new process reloads rotated credentials; PermissionDenied
                         # can also mean the controller temporarily lost API access.
-                        self._exit_code = (
+                        self._lose_controller(
                             _TEMPORARY_STREAM_FAILURE_EXIT_CODE
                             if e.code() in _RESTARTABLE_STREAM_CODES else 1
                         )
@@ -458,12 +474,34 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             return math.inf
         remaining = budget - elapsed
         if remaining <= 0:
-            self._controller_stream_failed = True
-            self._exit_code = _TEMPORARY_STREAM_FAILURE_EXIT_CODE
+            self._lose_controller(_TEMPORARY_STREAM_FAILURE_EXIT_CODE)
             message = f"{stream_name} stream unavailable for {elapsed:.1f}s (budget {budget:.1f}s)"
             logger.error(message)
             raise TimeoutError(message)
         return remaining
+
+    def _lose_controller(self, exit_code: int) -> None:
+        """Give up on the controller: this process exits with exit_code.
+
+        Controller RPCs in progress stop at once, retries included: the next
+        process takes over what they were for.
+        """
+        self._controller_stream_failed = True
+        self._exit_code = exit_code
+        for scope in self._controller_rpc_scopes:
+            scope.cancel()
+
+    @contextmanager
+    def _until_controller_lost(self) -> Generator[None]:
+        """Run a controller RPC, and its retries, only until this process gives up on the controller."""
+        with CancelScope() as scope:
+            if self._controller_stream_failed:
+                scope.cancel()
+            self._controller_rpc_scopes.add(scope)
+            try:
+                yield
+            finally:
+                self._controller_rpc_scopes.discard(scope)
 
     def _listen_stream_factory(
         self, lease_name: str
@@ -506,15 +544,26 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 jumpstarter_pb2.RegisterRequest(
                     labels=self.labels,
                     reports=response.reports,
+                    # Lets the controller hold this exporter while its record owes cleanup.
+                    records_lease_hooks=self._records_lease_hooks,
                 )
             )
         # Mark exporter as registered internally
         self._registered = True
-        # Registration runs once before the lifecycle; lease phases own later status.
-        await self.report_status(ExporterStatus.AVAILABLE, "Exporter registered and available")
+        # AVAILABLE is reported with the first Status update, once the exporter
+        # knows it owes no hook work from a previous process.
 
         # Discover optional telemetry service endpoint.
         await self._setup_telemetry()
+
+    @property
+    def _records_lease_hooks(self) -> bool:
+        """Whether this exporter records its leases' hooks with the controller.
+
+        Not for exitOnLeaseEnd exporters, whose runtime does not outlive the
+        exporter process, nor standalone ones, which have no controller.
+        """
+        return self.hook_executor is not None and not self.exit_on_lease_end and not self._standalone
 
     async def _setup_telemetry(self) -> None:
         """Discover and connect to the optional telemetry service.
@@ -586,8 +635,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         description: str,
         *,
         non_retryable_codes: frozenset[grpc.StatusCode] = frozenset(),
-        lease_context: LeaseContext | None = None,
-        lease_key: LeaseKey | None = None,
+        stale: Callable[[], bool] | None = None,
+        until_done: bool = False,
     ) -> tuple[bool, grpc.StatusCode | None]:
         """Retry a unary gRPC call with exponential backoff.
 
@@ -596,44 +645,55 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             description: Human-readable description for log messages
             non_retryable_codes: gRPC status codes that should cause immediate return
                 without retry (e.g. UNIMPLEMENTED for unsupported RPCs)
-            lease_context: For release RPCs, stop if this lease is replaced or ended.
+            stale: Checked before every send, including retries. Once it returns
+                True the call is dropped: a release for a replaced or ended lease,
+                or the start of a setup whose lease has ended.
+            until_done: Retry every error but non_retryable_codes, with no limit on
+                attempts: for a call the exporter cannot go on without.
 
         Returns:
             (True, None) on success.
             (False, status_code) on non-retryable error or retry exhaustion.
-            (False, None) on non-gRPC exception or stale lease.
+            (False, None) on non-gRPC exception, when stale, or once this process
+            gives up on the controller (_lose_controller), even mid-retry.
         """
-        for attempt in range(_RPC_MAX_RETRIES + 1):
-            try:
-                if lease_context is not None and not self._lease_is_current(lease_context, lease_key):
-                    return False, None
-                async with self._controller_stub() as controller:
-                    # Channel setup also awaits; check immediately before every send.
-                    if lease_context is not None and not self._lease_is_current(lease_context, lease_key):
-                        logger.debug("Skipping %s for stale lease %s", description, lease_context.lease_name)
+        attempt = 0
+        with self._until_controller_lost():
+            while True:
+                try:
+                    async with self._controller_stub() as controller:
+                        # Channel setup also awaits; check immediately before every send.
+                        if self._controller_stream_failed:
+                            break
+                        if stale is not None and stale():
+                            logger.debug("Dropping %s: no longer current", description)
+                            return False, None
+                        await rpc_call(controller)
+                    return True, None
+                except grpc.aio.AioRpcError as e:
+                    if e.code() in non_retryable_codes:
+                        return False, e.code()
+                    if not until_done and (e.code() not in _TRANSIENT_GRPC_CODES or attempt >= _RPC_MAX_RETRIES):
+                        logger.exception("Failed to %s", description)
+                        return False, e.code()
+                    error = e
+                except Exception as e:  # noqa: BLE001
+                    if not until_done:
+                        logger.error("Failed to %s: %s", description, e)
                         return False, None
-                    await rpc_call(controller)
-                return True, None
-            except grpc.aio.AioRpcError as e:
-                if e.code() in non_retryable_codes:
-                    return False, e.code()
-                if e.code() in _TRANSIENT_GRPC_CODES and attempt < _RPC_MAX_RETRIES:
-                    backoff = min(_RPC_BACKOFF_BASE * (2**attempt), _RPC_BACKOFF_CAP)
-                    logger.warning(
-                        "Transient error %s (attempt %d/%d), retrying in %.1fs: %s",
-                        description,
-                        attempt + 1,
-                        _RPC_MAX_RETRIES + 1,
-                        backoff,
-                        e,
-                    )
-                    await anyio.sleep(backoff)
-                    continue
-                logger.exception("Failed to %s", description)
-                return False, e.code()
-            except Exception as e:  # noqa: BLE001
-                logger.error("Failed to %s: %s", description, e)
-                return False, None
+                    error = e
+                backoff = min(_RPC_BACKOFF_BASE * (2 ** min(attempt, 16)), _RPC_BACKOFF_CAP)
+                logger.warning(
+                    "Transient error %s (attempt %s), retrying in %.1fs: %s",
+                    description,
+                    attempt + 1 if until_done else f"{attempt + 1}/{_RPC_MAX_RETRIES + 1}",
+                    backoff,
+                    error,
+                )
+                await anyio.sleep(backoff)
+                attempt += 1
+        # Lost the controller: before a send (break), or during one or its backoff (cancelled).
+        logger.info("Gave up on %s: this exporter lost the controller", description)
         return False, None
 
     async def _send_report_status_rpc(self, request: jumpstarter_pb2.ReportStatusRequest) -> bool:
@@ -744,8 +804,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     jumpstarter_pb2.ReleaseLeaseRequest(name=lease_scope.lease_name), timeout=_RPC_TIMEOUT
                 ),
                 "release lease",
-                lease_context=lease_scope,
-                lease_key=lease_key,
+                stale=lambda: not self._lease_is_current(lease_scope, lease_key),
             )
 
         # The assignment may have changed while the RPC was pending.
@@ -755,6 +814,132 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             logger.info("Released lease %s via ReleaseLease RPC", lease_scope.lease_name)
         else:
             logger.warning("Failed to release lease %s; the lifecycle will finish locally", lease_scope.lease_name)
+
+    def _lease_gone(self, lease: LeaseContext) -> bool:
+        """Whether the lease has ended, been replaced, or the exporter is stopping now."""
+        snapshot, _ = self.fsm.inputs.snapshot_and_watch()
+        return (
+            (snapshot.shutdown is not None and snapshot.shutdown.mode == ShutdownMode.STOP_NOW)
+            or snapshot.lease_assignment is None
+            or snapshot.lease_assignment.key.name != lease.lease_name
+            or snapshot.lease_assignment.key.uid != lease.lease_uid
+        )
+
+    async def _record_lease_hook(
+        self,
+        lease: LeaseContext,
+        hook: HookType,
+        phase: LeaseHookPhase,
+        message: str = "",
+        on_failure: str = "",
+        attempts: int | None = None,
+    ) -> bool:
+        """Record a lifecycle hook transition of the lease with the controller.
+
+        attempts defaults to the hook's current attempt (HookPlan.attempt).
+
+        The record (Exporter.status.leaseHooks) outlives this process: a restarted
+        exporter uses it to resume the lease without repeating its beforeLease
+        hook, and to run an afterLease hook the lease still needs. Hooks start
+        only once their start is recorded, so a lease without a record had no
+        hook touch the device.
+
+        Every transition is recorded before the exporter moves on: a write is
+        retried for as long as the controller is unreachable. The exceptions are
+        a setup whose lease has ended before it started (it must not start), and
+        a process that has lost the controller: it is exiting, and the next
+        process reads a hook whose start or outcome it did not record as not
+        started or cut off.
+
+        Returns False if the transition was not recorded: the controller refused
+        it (for example the lease is no longer assigned), or this process gave up
+        on it. A hook whose start returns False must not run. A controller that
+        does not implement the call keeps no record: the lease's hooks then run
+        as before records existed.
+        """
+        if not lease.hooks.tracked:
+            return True
+        if attempts is None:
+            attempts = lease.hooks.attempt(hook)
+        request = jumpstarter_pb2.UpdateLeaseHooksRequest(
+            lease_name=lease.lease_name,
+            lease_uid=lease.lease_uid,
+            **{
+                hook: jumpstarter_pb2.LeaseHookState(
+                    phase=jumpstarter_pb2.LeaseHookPhase.ValueType(phase),
+                    on_failure=HOOK_FAILURE_ACTIONS.get(
+                        on_failure, jumpstarter_pb2.LEASE_HOOK_FAILURE_ACTION_UNSPECIFIED
+                    ),
+                    message=message,
+                    attempts=attempts,
+                )
+            },
+        )
+        setup_start = hook == "before_lease" and phase in (LeaseHookPhase.RUNNING, LeaseHookPhase.SKIPPED)
+        ok, code = await self._retry_rpc(
+            lambda ctrl: ctrl.UpdateLeaseHooks(request, timeout=_RPC_TIMEOUT),
+            f"record {HOOK_NAMES[hook]} hook {phase}",
+            non_retryable_codes=_LEASE_HOOK_REFUSED_CODES | {grpc.StatusCode.UNIMPLEMENTED},
+            # the lease is gone: do not set it up
+            stale=(lambda: self._lease_gone(lease)) if setup_start else None,
+            until_done=True,
+        )
+        if ok:
+            if hook == "before_lease":
+                lease.hooks.recorded = True
+            if phase == LeaseHookPhase.RUNNING:
+                lease.hooks.started[hook] = attempts
+            return True
+        if code == grpc.StatusCode.UNIMPLEMENTED:
+            logger.warning(
+                "Controller does not record lease hooks; the hooks of lease %s run without a record",
+                lease.lease_name,
+            )
+            lease.hooks.tracked = False
+            return True
+        if code in _LEASE_HOOK_REFUSED_CODES:
+            logger.warning(
+                "Controller refused to record %s hook %s for lease %s",
+                HOOK_NAMES[hook], phase, lease.lease_name,
+            )
+        else:
+            logger.warning(
+                "Did not record %s hook %s for lease %s: the lease ended, or the exporter lost the controller",
+                HOOK_NAMES[hook], phase, lease.lease_name,
+            )
+        return False
+
+    async def _record_start(self, lease: LeaseContext, hook: HookType) -> bool:
+        """Record that the hook starts; False if the controller refused, so it must not run.
+
+        A cut-off hook that fails instead of running again is already recorded as running.
+        """
+        return hook in lease.hooks.cut_off or await self._record_lease_hook(lease, hook, LeaseHookPhase.RUNNING)
+
+    async def _record_outcome(self, lease: LeaseContext, hook: HookType, warning: str | None) -> None:
+        """Record how a hook that returned ended: a warning is a failure handled with 'warn'."""
+        if warning:
+            await self._record_lease_hook(lease, hook, LeaseHookPhase.FAILED, warning, "warn")
+        else:
+            await self._record_lease_hook(lease, hook, LeaseHookPhase.SUCCEEDED)
+
+    async def _setup_did_not_start(self, lease: LeaseContext) -> None:
+        """Settle a setup that never ran in this process.
+
+        Only a previous process's setup needs cleanup. Even a fresh start can
+        have a record if the controller stored it but its reply was lost, so
+        close that possible record before skipping cleanup.
+        """
+        if not lease.hooks.recorded:
+            lease.skip_after_lease_hook = True
+        await close_setup_record(
+            lease, partial(self._record_lease_hook, lease), "beforeLease hook did not start before its lease ended"
+        )
+
+    def _on_interrupt(self, hook: HookType) -> str | None:
+        """The configured onInterrupt of a hook; None if no such hook is configured."""
+        config = getattr(self.hook_executor.config, hook) if self.hook_executor is not None else None
+        return config.on_interrupt if config is not None else None
 
     async def _unregister_with_controller(self):
         """Safely unregister from controller with timeout and error handling."""
@@ -767,10 +952,16 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 channel = await self.channel_factory()
                 try:
                     controller = jumpstarter_pb2_grpc.ControllerServiceStub(channel)
-                    await self.report_status(ExporterStatus.OFFLINE, "Exporter shutting down")
+                    message, reason = "Exporter shutting down", "Exporter shutdown"
+                    if self._handed_off_lease:
+                        # Unregister's reason becomes the Exporter's status message.
+                        message = reason = (
+                            f"Exporter shutting down; lease {self._handed_off_lease} resumes when it restarts"
+                        )
+                    await self.report_status(ExporterStatus.OFFLINE, message)
                     await controller.Unregister(
                         jumpstarter_pb2.UnregisterRequest(
-                            reason="Exporter shutdown",
+                            reason=reason,
                         )
                     )
                     logger.info("Controller unregistration completed successfully")
@@ -834,6 +1025,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             exporter_name=self.exporter_name,
             root_device=self.device_factory(),
             motd=self.motd,
+            # Registration only reads the device report. A new lease's session resets
+            # the device; resetting here could undo the setup of a lease this process
+            # resumes, which does not run again.
+            reset_device=False,
         ) as session:
             # Create a Unix socket
             async with session.serve_unix_async() as path:
@@ -850,7 +1045,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 yield session, path
 
     @asynccontextmanager
-    async def session_for_lease(self) -> AsyncGenerator[tuple[Session, str, str]]:
+    async def session_for_lease(self, reset_device: bool = True) -> AsyncGenerator[tuple[Session, str, str]]:
         """Create and manage an exporter Session context with separate hook socket.
 
         This creates two Unix sockets:
@@ -864,6 +1059,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         self.session(). Per-lease sessions do not re-register to avoid spurious
         status updates that can tear down the session prematurely.
 
+        Args:
+            reset_device: reset the device to its default state first; False for a
+                session that continues a lease an earlier exporter process served
+
         Yields:
             tuple[Session, str, str]: A tuple of (session, main_socket_path, hook_socket_path)
         """
@@ -874,6 +1073,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             exporter_name=self.exporter_name,
             root_device=self.device_factory(),
             motd=self.motd,
+            reset_device=reset_device,
         ) as session:
             # Create dual Unix sockets - one for clients, one for hooks
             async with session.serve_unix_with_hook_socket_async() as (main_path, hook_path):
@@ -1006,7 +1206,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             async with create_task_group() as supervisor:
                 try:
                     await supervisor.start(self._serve_background)
-                    await self._run_lifecycle(Available(self))
+                    await self._run_lifecycle(Starting(self))
                 finally:
                     # Stopping handles the normal path; errors/cancellation use the same cleanup.
                     await self.finish_shutdown()
