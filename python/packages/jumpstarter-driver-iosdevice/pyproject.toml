@@ -13,6 +13,7 @@ dependencies = [
     "cryptography>=43.0.3",
     "jumpstarter",
     "jumpstarter-driver-network",
+    "jumpstarter-driver-usbflux",
 ]
 
 [project.entry-points."jumpstarter.drivers"]

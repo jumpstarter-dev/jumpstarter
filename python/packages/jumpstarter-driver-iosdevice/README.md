@@ -22,6 +22,10 @@ under their respective licenses; Jumpstarter does not bundle or download them.
 | [usbfluxd](https://github.com/corellium/usbfluxd) | Access a remote usbmux endpoint from local tools |
 | [Appium](https://appium.io/docs/en/latest/) | WebDriver automation with XCUITest and WDA |
 
+The lease-scoped usbmux endpoint and the usbfluxd client adapter come from
+{doc}`jumpstarter-driver-usbflux <usbflux>`; this driver adds exporter-owned
+trust, HTTPS services and raw port forwards on top of it.
+
 The exporter needs a running usbmux daemon and a device running iOS 17.4 or
 later. Pair the device on the exporter before leasing it. Developer services
 also require Developer Mode, a compatible mounted developer image, and any

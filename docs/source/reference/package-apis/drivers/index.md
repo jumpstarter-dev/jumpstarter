@@ -29,6 +29,7 @@ Drivers that provide various communication interfaces:
 
 - {doc}`ADB <adb>` (`jumpstarter-driver-adb`) - Android Debug Bridge tunneling
 - {doc}`iOS Device <iosdevice>` (`jumpstarter-driver-iosdevice`) - Per-device iOS usbmux transport
+- {doc}`usbflux <usbflux>` (`jumpstarter-driver-usbflux`) - Lease-scoped usbmux endpoint with a usbfluxd client adapter
 - {doc}`BLE <ble>` (`jumpstarter-driver-ble`) - Bluetooth Low Energy communication
 - {doc}`BT Peer <bt-peer>` (`jumpstarter-driver-bt-peer`) - Bluetooth peer device powered by bumble
 - {doc}`CAN <can>` (`jumpstarter-driver-can`) - Controller Area Network communication
@@ -163,6 +164,7 @@ uboot.md
 uds.md
 uds-can.md
 uds-doip.md
+usbflux.md
 ustreamer.md
 video.md
 vnc.md

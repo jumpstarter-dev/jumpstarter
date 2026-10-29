@@ -19,11 +19,11 @@ from anyio.abc import SocketAttribute
 from anyio.lowlevel import checkpoint
 from anyio.streams.buffered import BufferedByteReceiveStream
 from anyio.streams.tls import TLSStream
+from jumpstarter_driver_usbflux.usbmux import UsbMuxError, encode_message, receive_message
 
 from .driver import IosDevice
 from .https import HttpsIdentity
 from .trust import ExporterTrustBroker
-from .usbmux import UsbMuxError, encode_message, receive_message
 from jumpstarter.common.exceptions import ConfigurationError
 
 UDID = "test-https-device"

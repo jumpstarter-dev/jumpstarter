@@ -86,6 +86,7 @@ members = [
     "jumpstarter-driver-uds",
     "jumpstarter-driver-uds-can",
     "jumpstarter-driver-uds-doip",
+    "jumpstarter-driver-usbflux",
     "jumpstarter-driver-ustreamer",
     "jumpstarter-driver-video",
     "jumpstarter-driver-vnc",
@@ -1842,6 +1843,7 @@ dependencies = [
     { name = "jumpstarter-driver-uds" },
     { name = "jumpstarter-driver-uds-can" },
     { name = "jumpstarter-driver-uds-doip" },
+    { name = "jumpstarter-driver-usbflux" },
     { name = "jumpstarter-driver-ustreamer" },
     { name = "jumpstarter-driver-video" },
     { name = "jumpstarter-driver-vnc" },
@@ -1912,6 +1914,7 @@ requires-dist = [
     { name = "jumpstarter-driver-uds", editable = "packages/jumpstarter-driver-uds" },
     { name = "jumpstarter-driver-uds-can", editable = "packages/jumpstarter-driver-uds-can" },
     { name = "jumpstarter-driver-uds-doip", editable = "packages/jumpstarter-driver-uds-doip" },
+    { name = "jumpstarter-driver-usbflux", editable = "packages/jumpstarter-driver-usbflux" },
     { name = "jumpstarter-driver-ustreamer", editable = "packages/jumpstarter-driver-ustreamer" },
     { name = "jumpstarter-driver-video", editable = "packages/jumpstarter-driver-video" },
     { name = "jumpstarter-driver-vnc", editable = "packages/jumpstarter-driver-vnc" },
@@ -2675,6 +2678,7 @@ dependencies = [
     { name = "cryptography" },
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-usbflux" },
 ]
 
 [package.dev-dependencies]
@@ -2689,6 +2693,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=43.0.3" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-usbflux", editable = "packages/jumpstarter-driver-usbflux" },
 ]
 
 [package.metadata.requires-dev]
@@ -3769,6 +3774,36 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-usbflux"
+source = { editable = "packages/jumpstarter-driver-usbflux" }
+dependencies = [
+    { name = "anyio" },
+    { name = "click" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-network" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.10.0" },
+    { name = "click", specifier = ">=8.0.0" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
 [[package]]

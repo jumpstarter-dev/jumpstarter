@@ -1,7 +1,9 @@
-from abc import ABCMeta, abstractmethod
+from abc import abstractmethod
+
+from jumpstarter_driver_usbflux.interface import UsbFluxInterface
 
 
-class IosDeviceInterface(metaclass=ABCMeta):
+class IosDeviceInterface(UsbFluxInterface):
     """One leased iOS device or simulator and its available transports.
 
     Raw Jumpstarter streams do not carry arguments. Implementations export a

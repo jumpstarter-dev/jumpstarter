@@ -11,9 +11,9 @@ from xml.parsers.expat import ExpatError
 from anyio import BrokenResourceError, ClosedResourceError, EndOfStream, IncompleteRead, Lock, fail_after, to_thread
 from anyio.streams.buffered import BufferedByteReceiveStream
 from jumpstarter_driver_network.driver import NetworkInterface
+from jumpstarter_driver_usbflux.usbmux import UsbMuxDaemon
 
 from .interface import IosDeviceInterface
-from .usbmux import UsbMuxDaemon
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.driver import Driver, export, exportstream
 

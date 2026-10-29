@@ -63,6 +63,7 @@ dependencies = [
   "jumpstarter-driver-uds",
   "jumpstarter-driver-uds-can",
   "jumpstarter-driver-uds-doip",
+  "jumpstarter-driver-usbflux",
   "jumpstarter-driver-ustreamer",
   "jumpstarter-driver-video",
   "jumpstarter-driver-vnc",

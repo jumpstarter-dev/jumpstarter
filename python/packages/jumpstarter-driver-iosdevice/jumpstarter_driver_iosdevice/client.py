@@ -1,27 +1,28 @@
-import asyncio
 import json
 import math
 import os
-import plistlib
 import ssl
 import subprocess
 import tempfile
 from collections.abc import Generator, Sequence
-from concurrent.futures import CancelledError
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from xml.parsers.expat import ExpatError
 
 import anyio
 import click
-from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
+from jumpstarter_driver_usbflux.adapters import (
+    CONNECT_TIMEOUT,
+    DISCONNECT_TIMEOUT,
+    UsbfluxAdapter,
+    forward_endpoint,
+    validate_port,
+)
+from jumpstarter_driver_usbflux.client import CommandGroup, cli_errors, wait_for_interrupt
 
 from jumpstarter.client import DriverClient
 
-CONNECT_TIMEOUT = 60.0
-DISCONNECT_TIMEOUT = 30.0
 PROTOCOLS = ("usbmux", "idb")
 MAX_CA_BYTES = 1024 * 1024
 
@@ -118,91 +119,6 @@ class HttpsEndpoint:
         return env
 
 
-def _is_cancelled(exc: BaseException) -> bool:
-    # These waits run in a worker thread, where get_cancelled_exc_class() cannot
-    # discover the backend. Trio is optional, so identify its exception by name.
-    return isinstance(exc, (asyncio.CancelledError, CancelledError)) or (
-        type(exc).__name__ == "Cancelled" and type(exc).__module__.startswith("trio")
-    )
-
-
-def _wait_for_interrupt(client: DriverClient) -> None:
-    """Wait in the portal so cancelling `jmp shell` unwinds the listeners."""
-    try:
-        client.portal.call(anyio.sleep_forever)
-    except (KeyboardInterrupt, SystemExit, GeneratorExit, RuntimeError):
-        return
-    except BaseException as exc:
-        if not _is_cancelled(exc):
-            raise
-
-
-def _validate_port(port: int, *, ephemeral: bool = False) -> None:
-    minimum = 0 if ephemeral else 1
-    if isinstance(port, bool) or not isinstance(port, int) or not minimum <= port <= 65535:
-        raise ValueError(f"Port must be an integer between {minimum} and 65535")
-
-
-@contextmanager
-def _cli_errors():
-    try:
-        yield
-    except (TypeError, ValueError, RuntimeError, OSError) as exc:
-        raise click.ClickException(str(exc)) from exc
-
-
-@contextmanager
-def _forward_endpoint(**kwargs):
-    # Raise caller errors outside the adapter's task group to preserve their type.
-    caller_error = None
-    with TcpPortforwardAdapter(**kwargs) as addr:
-        try:
-            yield f"{addr[0]}:{addr[1]}"
-        except BaseException as exc:  # noqa: BLE001 - preserve cancellation and caller exceptions outside the task group
-            caller_error = exc
-    if caller_error is not None:
-        raise caller_error
-
-
-class _IosGroup(click.Group):
-    """Keep arguments after `--` opaque to Click and to subcommand dispatch."""
-
-    def parse_args(self, ctx, args):
-        if "--" in args:
-            separator = args.index("--")
-            command = args[separator + 1 :]
-            args = args[:separator]
-            if not command:
-                raise click.UsageError("Provide a command after --", ctx)
-            ctx.meta["ios_command"] = command
-        return super().parse_args(ctx, args)
-
-
-def _usbflux_registered(usbfluxctl: str, target: str) -> bool:
-    """Whether usbfluxd still lists ``target``; unknown counts as registered."""
-    try:
-        result = subprocess.run(
-            [usbfluxctl, "list", "xml"], check=False, capture_output=True, timeout=DISCONNECT_TIMEOUT
-        )
-    except (subprocess.SubprocessError, OSError):
-        return True
-    # usbfluxctl's list exits nonzero even when it succeeds; read its plist instead.
-    try:
-        instances = plistlib.loads(result.stdout).get("Instances")
-    except (plistlib.InvalidFileException, ValueError, ExpatError, AttributeError):
-        return True
-    if not isinstance(instances, dict):
-        return True
-    host, port = target.rsplit(":", 1)
-    return any(
-        isinstance(instance, dict)
-        and not instance.get("IsUnix")
-        and instance.get("Host") == host
-        and instance.get("Port") == int(port)
-        for instance in instances.values()
-    )
-
-
 class IosDeviceClient(DriverClient):
     def info(self) -> dict:
         info = self.call("info")
@@ -222,7 +138,7 @@ class IosDeviceClient(DriverClient):
         Closing the context removes its listener and CA files. The exporter
         owns service resources until lease teardown or reset.
         """
-        _validate_port(port, ephemeral=True)
+        validate_port(port, ephemeral=True)
         envelope = self.call("https_info")
         if not isinstance(envelope, dict):
             raise TypeError("Invalid HTTPS endpoint response")
@@ -233,7 +149,7 @@ class IosDeviceClient(DriverClient):
             ca_file = Path(directory) / "ca.pem"
             ca_file.write_text(certificate, encoding="ascii")
             ca_file.chmod(0o600)
-            with _forward_endpoint(
+            with forward_endpoint(
                 client=self, method="connect_https", local_host="127.0.0.1", local_port=port
             ) as address:
                 yield HttpsEndpoint(url=f"https://{address}", ca_file=ca_file, metadata=metadata)
@@ -261,8 +177,8 @@ class IosDeviceClient(DriverClient):
         selects an unused local port. The yielded endpoint is ``127.0.0.1:port``.
         """
         protocol = self._protocol(protocol)
-        _validate_port(port, ephemeral=True)
-        with _forward_endpoint(
+        validate_port(port, ephemeral=True)
+        with forward_endpoint(
             client=self,
             method=f"connect_{protocol}",
             local_host="127.0.0.1",
@@ -286,40 +202,34 @@ class IosDeviceClient(DriverClient):
         Cleanup also covers a timed out or failed attach, and stays bounded.
         """
         protocol = self._protocol(protocol)
+        if protocol == "usbmux":
+            with UsbfluxAdapter(
+                client=self, method="connect_usbmux", port=port, usbfluxctl=usbfluxctl, timeout=timeout
+            ) as target:
+                yield target
+            return
         with self.serve(protocol, port=port) as target:
             host, local_port = target.rsplit(":", 1)
-            if protocol == "usbmux":
-                attach = [usbfluxctl, "add", target]
-                detach = [usbfluxctl, "del", target]
-            else:
-                attach = [idb, "connect", host, local_port]
-                detach = [idb, "disconnect", host, local_port]
-            cleanup = True
+            attach = [idb, "connect", host, local_port]
+            detach = [idb, "disconnect", host, local_port]
             try:
                 try:
                     result = subprocess.run(attach, check=False, capture_output=True, text=True, timeout=timeout)
                 except (subprocess.SubprocessError, OSError) as exc:
                     raise RuntimeError(f"Could not run {attach[0]} to attach {target}: {exc}") from exc
-                # usbfluxctl's `add` returns 2 when the endpoint was registered
-                # already. Do not delete a registration owned by another session.
-                if protocol == "usbmux" and result.returncode == 2:
-                    cleanup = False
                 if result.returncode:
                     message = (result.stderr or result.stdout or "no output").strip()
                     raise RuntimeError(f"{attach[0]} failed to attach {target}: {message}")
                 yield target
             finally:
-                if cleanup:
-                    try:
-                        result = subprocess.run(
-                            detach, check=False, capture_output=True, text=True, timeout=DISCONNECT_TIMEOUT
-                        )
-                        # Ctrl+C closes this listener before cleanup runs, and
-                        # usbfluxd then drops the dead remote by itself.
-                        if result.returncode and (protocol != "usbmux" or _usbflux_registered(usbfluxctl, target)):
-                            self.logger.warning("Could not detach %s: %s", target, result.stderr or result.stdout)
-                    except (subprocess.SubprocessError, OSError) as exc:
-                        self.logger.warning("Could not detach %s: %s", target, exc)
+                try:
+                    result = subprocess.run(
+                        detach, check=False, capture_output=True, text=True, timeout=DISCONNECT_TIMEOUT
+                    )
+                    if result.returncode:
+                        self.logger.warning("Could not detach %s: %s", target, result.stderr or result.stdout)
+                except (subprocess.SubprocessError, OSError) as exc:
+                    self.logger.warning("Could not detach %s: %s", target, exc)
 
     @contextmanager
     def forward(self, port: int, *, local_port: int | None = None) -> Generator[str, None, None]:
@@ -327,14 +237,14 @@ class IosDeviceClient(DriverClient):
 
         The local port defaults to the device port; use zero for an unused port.
         """
-        _validate_port(port)
+        validate_port(port)
         local_port = port if local_port is None else local_port
-        _validate_port(local_port, ephemeral=True)
+        validate_port(local_port, ephemeral=True)
         child = self.children.get(f"port_{port}")
         if child is None:
             configured = ", ".join(str(value) for value in self.info().get("forward_ports", [])) or "none"
             raise ValueError(f"Port {port} is not configured on this exporter; configured ports: {configured}")
-        with _forward_endpoint(client=child, local_host="127.0.0.1", local_port=local_port) as endpoint:
+        with forward_endpoint(client=child, local_host="127.0.0.1", local_port=local_port) as endpoint:
             yield endpoint
 
     def run(self, command: Sequence[str], protocol: str | None = None) -> int:
@@ -352,16 +262,16 @@ class IosDeviceClient(DriverClient):
             return result.returncode
 
     def cli(self):  # noqa: C901
-        @click.group(cls=_IosGroup, invoke_without_command=True)
+        @click.group(cls=CommandGroup, invoke_without_command=True)
         @click.option("--protocol", help="Protocol to use (defaults to the target's native protocol)")
         @click.pass_context
         def ios(ctx, protocol):
             """One iOS device. Run your own tool with: ios [--protocol NAME] -- COMMAND."""
-            command = ctx.meta.get("ios_command")
+            command = ctx.meta.get(CommandGroup.meta_key)
             if command is not None and ctx.invoked_subcommand != "https":
                 if ctx.invoked_subcommand is not None:
                     raise click.UsageError("Use ios -- COMMAND without a subcommand", ctx)
-                with _cli_errors():
+                with cli_errors():
                     returncode = self.run(command, protocol)
                 ctx.exit(returncode if returncode >= 0 else 128 - returncode)
             if ctx.invoked_subcommand is None:
@@ -372,8 +282,8 @@ class IosDeviceClient(DriverClient):
         @click.pass_context
         def https(ctx, port):
             """Expose HTTPS or run a command with its public CA trust environment."""
-            with _cli_errors(), self.https(port=port) as endpoint:
-                command = ctx.parent.meta.get("ios_command")
+            with cli_errors(), self.https(port=port) as endpoint:
+                command = ctx.parent.meta.get(CommandGroup.meta_key)
                 if command is None:
                     click.echo(
                         json.dumps(
@@ -384,7 +294,7 @@ class IosDeviceClient(DriverClient):
                             }
                         )
                     )
-                    _wait_for_interrupt(self)
+                    wait_for_interrupt(self)
                     return
                 result = self.portal.call(
                     partial(
@@ -411,7 +321,7 @@ class IosDeviceClient(DriverClient):
         @click.pass_context
         def serve(ctx, protocol, port):
             """Serve a local endpoint for your own tools until Ctrl+C."""
-            with _cli_errors():
+            with cli_errors():
                 protocol = self._protocol(protocol or ctx.parent.params["protocol"])
                 with self.serve(protocol, port=port) as target:
                     click.echo(target)
@@ -422,7 +332,7 @@ class IosDeviceClient(DriverClient):
                         click.echo(f"idb connect {host} {local_port}")
                         click.echo(f"export IDB_COMPANION={target}")
                     click.echo("Press Ctrl+C to stop")
-                    _wait_for_interrupt(self)
+                    wait_for_interrupt(self)
 
         @ios.command()
         @click.option("--protocol", help="Protocol to attach")
@@ -432,24 +342,24 @@ class IosDeviceClient(DriverClient):
         @click.pass_context
         def connect(ctx, protocol, port, usbfluxctl, idb):
             """Attach to your own usbfluxd or idb until Ctrl+C."""
-            with _cli_errors():
+            with cli_errors():
                 with self.connect(
                     protocol or ctx.parent.params["protocol"], port=port, usbfluxctl=usbfluxctl, idb=idb
                 ) as target:
                     click.echo(f"Connected at {target}")
                     click.echo("Press Ctrl+C to disconnect")
-                    _wait_for_interrupt(self)
+                    wait_for_interrupt(self)
                 click.echo("Disconnected")
 
         @ios.command()
         @click.argument("ports", nargs=-1, type=click.IntRange(1, 65535), required=True)
         def forward(ports):
             """Forward configured device PORTS on matching local loopback ports."""
-            with _cli_errors(), ExitStack() as stack:
+            with cli_errors(), ExitStack() as stack:
                 for port in dict.fromkeys(ports):
                     target = stack.enter_context(self.forward(port))
                     click.echo(f"{target} -> device:{port}")
                 click.echo("Press Ctrl+C to stop")
-                _wait_for_interrupt(self)
+                wait_for_interrupt(self)
 
         return ios

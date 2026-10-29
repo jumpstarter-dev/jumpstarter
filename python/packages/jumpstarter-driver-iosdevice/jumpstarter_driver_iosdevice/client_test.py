@@ -26,9 +26,10 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
+from jumpstarter_driver_usbflux.client import wait_for_interrupt
 
 from . import client as client_module
-from .client import CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, IosDeviceClient, _wait_for_interrupt
+from .client import CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, IosDeviceClient
 from .interface import IosDeviceInterface
 
 TARGET = "127.0.0.1:41000"
@@ -45,7 +46,7 @@ def client():
 
 @pytest.fixture
 def adapter():
-    with patch.object(client_module, "TcpPortforwardAdapter") as mocked:
+    with patch("jumpstarter_driver_usbflux.adapters.TcpPortforwardAdapter") as mocked:
         mocked.return_value.__enter__.return_value = ("127.0.0.1", 41000)
         mocked.return_value.__exit__.return_value = False
         yield mocked
@@ -61,7 +62,7 @@ def test_serve_selects_native_protocol_and_binds_only_loopback(client, adapter, 
     with patch.object(subprocess, "run") as run, client.serve() as target:
         assert target == TARGET
         adapter.assert_called_once_with(
-            client=client, method=f"connect_{protocol}", local_host="127.0.0.1", local_port=0
+            client=client, method=f"connect_{protocol}", local_host="127.0.0.1", local_port=0, reuse_port=True
         )
     adapter.return_value.__exit__.assert_called_once()
     run.assert_not_called()
@@ -227,7 +228,9 @@ def test_forward_uses_configured_child_and_matching_local_port(client, adapter):
     client.children["port_8100"] = child
     with client.forward(8100) as target:
         assert target == TARGET
-        adapter.assert_called_once_with(client=child, local_host="127.0.0.1", local_port=8100)
+        adapter.assert_called_once_with(
+            client=child, method="connect", local_host="127.0.0.1", local_port=8100, reuse_port=False
+        )
 
 
 def test_forward_can_choose_an_unused_local_port(client, adapter):
@@ -283,12 +286,12 @@ def test_tool_failure_closes_listener(client, adapter, failure):
     "failure", [KeyboardInterrupt(), SystemExit(), GeneratorExit(), RuntimeError("closed"), asyncio.CancelledError()]
 )
 def test_interrupt_unwinds_cli_wait(failure):
-    _wait_for_interrupt(MagicMock(portal=MagicMock(call=MagicMock(side_effect=failure))))
+    wait_for_interrupt(MagicMock(portal=MagicMock(call=MagicMock(side_effect=failure))))
 
 
 def test_unexpected_wait_error_propagates():
     with pytest.raises(ValueError, match="bug"):
-        _wait_for_interrupt(MagicMock(portal=MagicMock(call=MagicMock(side_effect=ValueError("bug")))))
+        wait_for_interrupt(MagicMock(portal=MagicMock(call=MagicMock(side_effect=ValueError("bug")))))
 
 
 def test_cli_info_and_surface(client):
@@ -303,7 +306,7 @@ def test_cli_info_and_surface(client):
 @pytest.mark.parametrize("protocol", ["usbmux", "idb"])
 def test_cli_serve_prints_usable_tool_command(client, adapter, protocol):
     client.call.return_value["protocols"] = [protocol]
-    with patch.object(client_module, "_wait_for_interrupt"), patch.object(subprocess, "run") as run:
+    with patch.object(client_module, "wait_for_interrupt"), patch.object(subprocess, "run") as run:
         result = CliRunner().invoke(client.cli(), ["serve"])
     assert result.exit_code == 0, result.output
     expected = f"export USBMUXD_SOCKET_ADDRESS={TARGET}" if protocol == "usbmux" else "idb connect 127.0.0.1 41000"
@@ -313,7 +316,7 @@ def test_cli_serve_prints_usable_tool_command(client, adapter, protocol):
 
 def test_cli_connect_disconnects_after_wait(client, adapter):
     with (
-        patch.object(client_module, "_wait_for_interrupt"),
+        patch.object(client_module, "wait_for_interrupt"),
         patch.object(subprocess, "run", return_value=_completed()) as run,
     ):
         result = CliRunner().invoke(client.cli(), ["connect"])
@@ -445,7 +448,7 @@ def test_https_context_owns_loopback_listener_and_public_ca_only(https_client, a
         assert https_client.call.return_value["metadata"]["features"][1]["input"] is True
         https_client.call.assert_called_once_with("https_info")
         adapter.assert_called_once_with(
-            client=https_client, method="connect_https", local_host="127.0.0.1", local_port=4321
+            client=https_client, method="connect_https", local_host="127.0.0.1", local_port=4321, reuse_port=False
         )
     assert not endpoint.ca_file.parent.exists()
     adapter.return_value.__exit__.assert_called_once()
@@ -578,7 +581,7 @@ def test_https_cli_prints_json_while_public_ca_exists(https_client, adapter):
     def wait(_client):
         paths.extend(Path(path).parent for path in Path(tempfile.gettempdir()).glob("jumpstarter-ios-https-*/ca.pem"))
 
-    with patch.object(client_module, "_wait_for_interrupt", side_effect=wait):
+    with patch.object(client_module, "wait_for_interrupt", side_effect=wait):
         result = CliRunner().invoke(https_client.cli(), ["https", "--port", "1234"])
     assert result.exit_code == 0, result.output
     info = json.loads(result.output)

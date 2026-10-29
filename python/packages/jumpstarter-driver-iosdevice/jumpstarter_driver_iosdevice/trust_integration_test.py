@@ -24,9 +24,9 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
+from jumpstarter_driver_usbflux.usbmux import UsbMuxError
 
 from .trust import ExporterTrustBroker
-from .usbmux import UsbMuxError
 
 pytestmark = pytest.mark.anyio
 UDID = "test-device"
@@ -585,9 +585,7 @@ async def test_device_refused_connect_is_a_result_and_keeps_plist_mode(paired_pe
         host, port = address
         async with await connect_tcp(host, port) as stream:
             reader = BufferedByteReceiveStream(stream)
-            await _write_mux(
-                stream, {"MessageType": "Connect", "DeviceID": DEVICE_ID, "PortNumber": socket.htons(RAW)}
-            )
+            await _write_mux(stream, {"MessageType": "Connect", "DeviceID": DEVICE_ID, "PortNumber": socket.htons(RAW)})
             _, response = await _read_mux(reader)
             assert response == {"MessageType": "Result", "Number": 3}
             await _write_mux(stream, {"MessageType": "ListDevices"})

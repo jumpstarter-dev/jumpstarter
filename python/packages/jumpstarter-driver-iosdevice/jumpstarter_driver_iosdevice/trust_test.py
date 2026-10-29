@@ -11,10 +11,10 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
+from jumpstarter_driver_usbflux.usbmux import UsbMuxDaemon, UsbMuxError, UsbMuxResultError, _memory_pair
 
 from . import trust
 from .trust import ExporterTrustBroker, _credentials, _receive_plist, _send_plist
-from .usbmux import UsbMuxDaemon, UsbMuxError, UsbMuxResultError, _memory_pair
 
 
 @pytest.fixture
