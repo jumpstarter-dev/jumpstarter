@@ -1,11 +1,14 @@
 import contextlib
 import time
+from collections.abc import AsyncGenerator
 from types import SimpleNamespace
 from typing import cast
 
 import anyio
 import pytest
 from anyio import create_memory_object_stream
+from anyio.abc import ObjectStream
+from anyio.streams.memory import MemoryObjectSendStream
 from anyio.streams.stapled import StapledObjectStream
 
 from . import driver as driver_module
@@ -348,3 +351,71 @@ def test_shutdown_releases_port_but_close_keeps_it(monkeypatch):
         assert driver._fanout._reader_task is None
 
     anyio.run(_run)
+
+
+class VanishingDevice:
+    """Loopback serial source that disappears and returns, like a power-cycled USB serial."""
+
+    def __init__(self):
+        self.present = True
+        self._tx: MemoryObjectSendStream[bytes] | None = None
+
+    @contextlib.asynccontextmanager
+    async def open(self) -> AsyncGenerator[ObjectStream[bytes]]:
+        if not self.present:
+            raise OSError("device not present")
+        tx, rx = create_memory_object_stream[bytes](32)
+        self._tx = tx
+        async with StapledObjectStream(tx, rx) as stream:
+            yield stream
+
+    def unplug(self):
+        assert self._tx is not None, "unplug() before the device was opened"
+        self.present = False
+        self._tx.close()  # reader sees EOF; reopen attempts fail until present again
+
+
+async def _read_until(stream, marker: bytes, timeout: float = 5) -> bytes:
+    seen = b""
+    with anyio.fail_after(timeout):
+        while marker not in seen:
+            seen += await stream.receive()
+    return seen
+
+
+@pytest.mark.parametrize(
+    "type_while_gone",
+    [
+        False,
+        pytest.param(
+            True,
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="fanout tears down the stream on input while the source is down (#1231)",
+            ),
+        ),
+    ],
+    ids=["idle", "typing"],
+)
+def test_console_stream_survives_device_power_cycle(type_while_gone):
+    """An attached console stays connected while the device vanishes and returns."""
+    device = VanishingDevice()
+    driver = PySerial(url="loop://")
+    driver._get_fanout()._source_factory = device.open
+
+    async def scenario(client):
+        async with client.stream_async(method="connect") as stream:
+            await stream.send(b"before")
+            await _read_until(stream, b"before")
+            device.unplug()
+            await _read_until(stream, b"[disconnected")
+            if type_while_gone:
+                await stream.send(b"x")
+                await anyio.sleep(0.5)  # let the keystroke reach the exporter
+            device.present = True
+            await _read_until(stream, b"[reconnected]")
+            await stream.send(b"after")
+            await _read_until(stream, b"after")
+
+    with serve(driver) as client:
+        client.portal.call(scenario, client)

@@ -14,6 +14,7 @@ from anyio import BrokenResourceError, EndOfStream, Event, fail_after
 from click.testing import CliRunner
 
 from .client import _stdin_supplies_data
+from .console import ConsoleStreamDrop
 from .driver import PySerial
 from jumpstarter.common.utils import serve
 
@@ -379,6 +380,16 @@ def test_console_command_structure(pyserial_client):
     alias_cmd = cli.commands["start-console"]
     assert alias_cmd is not None
     assert alias_cmd.hidden is True
+
+
+def test_console_stream_drop_exits_cleanly(pyserial_client):
+    """A dropped console stream (e.g. kicked) is reported as a click error (exit 1) and the console is not restarted."""
+    with patch("jumpstarter_driver_pyserial.client.Console.run", side_effect=ConsoleStreamDrop) as run:
+        result = CliRunner().invoke(pyserial_client.cli(), ["console"])
+
+    run.assert_called_once()
+    assert result.exit_code == 1
+    assert "serial connection closed" in result.output
 
 
 def test_cli_base_command(pyserial_client):
