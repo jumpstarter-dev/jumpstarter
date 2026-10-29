@@ -137,7 +137,7 @@ async def test_end_session_keeps_reservation_socket_and_final_status(monkeypatch
     with fail_after(5):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
-            await exporter._inputs.send(
+            await exporter.fsm.inputs.send(
                 jumpstarter_pb2.StatusResponse(leased=True, lease_name="A", client_name="client")
             )
             await exporter.wait_status(ExporterStatus.LEASE_READY)
@@ -147,19 +147,19 @@ async def test_end_session_keeps_reservation_socket_and_final_status(monkeypatch
                 assert (await stub.EndSession(jumpstarter_pb2.EndSessionRequest(), timeout=2)).success
                 await exporter.wait_status(ExporterStatus.AVAILABLE)
                 assert exporter._lease_context is lease and not exporter.closed.is_set()
-                assert exporter.runner is not None
-                assert isinstance(exporter.runner.current_state, AwaitingLeaseRelease)
+                assert exporter.fsm.runner is not None
+                assert isinstance(exporter.fsm.runner.current_state, AwaitingLeaseRelease)
                 status = await stub.GetStatus(empty_pb2.Empty(), timeout=2)
                 assert status.status == ExporterStatus.AVAILABLE.to_proto()
                 await stub.EndSession(jumpstarter_pb2.EndSessionRequest(), timeout=2)
                 exporter.stop(wait_for_lease_exit=True)
                 await checkpoint()
                 assert not exporter.closed.is_set()
-                exporter._inputs.publish_assignment(None)
+                exporter.fsm.inputs.publish_assignment(None)
     assert after_calls == ["A"]
     exporter.controller.ReleaseLease.assert_not_awaited()
     assert exporter.closed.is_set() and not Path(lease.socket_path).exists()
-    assert exporter.runner is not None and isinstance(exporter.runner.current_state, ExitFSM)
+    assert exporter.fsm.runner is not None and isinstance(exporter.fsm.runner.current_state, ExitFSM)
     assert ("stream closed", "Status") in exporter.trace and ("stream closed", "Listen") in exporter.trace
 
 
@@ -168,18 +168,18 @@ async def test_drain_alone_does_not_finish_active_lease():
     with fail_after(5):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
-            exporter._inputs.publish_assignment("A")
+            exporter.fsm.inputs.publish_assignment("A")
             await exporter.wait_status(ExporterStatus.LEASE_READY)
             lease = exporter.leases[0]
             exporter.stop(wait_for_lease_exit=True)
-            exporter._inputs.publish_assignment("A", "reevaluated")
+            exporter.fsm.inputs.publish_assignment("A", "reevaluated")
             while lease.client_name != "reevaluated":
                 await checkpoint()
-            assert exporter.runner is not None and isinstance(exporter.runner.current_state, LeaseReady)
+            assert exporter.fsm.runner is not None and isinstance(exporter.fsm.runner.current_state, LeaseReady)
             assert not exporter.closed.is_set() and not lease.end_session_requested
-            exporter._inputs.publish_assignment("B")
+            exporter.fsm.inputs.publish_assignment("B")
     assert [lease.lease_name for lease in exporter.leases] == ["A"]
-    assert exporter.runner is not None and isinstance(exporter.runner.current_state, ExitFSM)
+    assert exporter.fsm.runner is not None and isinstance(exporter.fsm.runner.current_state, ExitFSM)
 
 
 @pytest.mark.parametrize("replacement", ["A", "C"])
@@ -208,17 +208,17 @@ async def test_reassignment_waits_for_hooks_and_full_teardown(monkeypatch, repla
     with fail_after(8):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
-            exporter._inputs.publish_assignment("A", "client", {"build_id": "42"})
+            exporter.fsm.inputs.publish_assignment("A", "client", {"build_id": "42"})
             await entered.wait()
             old = exporter.leases[0]
-            exporter._inputs.publish_assignment(None if replacement == "A" else "B")
-            exporter._inputs.publish_assignment(replacement, "new-client")
+            exporter.fsm.inputs.publish_assignment(None if replacement == "A" else "B")
+            exporter.fsm.inputs.publish_assignment(replacement, "new-client")
             await checkpoint()
             assert ("after", "A") not in exporter.trace
             release.set()
             await exporter.closing.wait()
             assert len(exporter.leases) == 1 and not exporter.closed.is_set()
-            assert exporter.runner is not None and isinstance(exporter.runner.current_state, ClosingLease)
+            assert exporter.fsm.runner is not None and isinstance(exporter.fsm.runner.current_state, ClosingLease)
             assert exporter.close_gate is not None
             exporter.close_gate.set()
             await exporter.wait_status(ExporterStatus.LEASE_READY, replacement)
@@ -262,7 +262,7 @@ async def test_hook_failure_policy_and_cleanup_eligibility(monkeypatch, phase, p
     with fail_after(8):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
-            exporter._inputs.publish_assignment("A")  # Cleanup eligibility is not an assigned client name.
+            exporter.fsm.inputs.publish_assignment("A")  # Cleanup eligibility is not an assigned client name.
             if phase == "after_lease" or policy == "warn":
                 await exporter.wait_status(ExporterStatus.LEASE_READY)
                 if phase == "before_lease" and policy == "warn":
@@ -284,10 +284,10 @@ async def test_hook_failure_policy_and_cleanup_eligibility(monkeypatch, phase, p
                 assert not exporter.closed.is_set()
                 if policy == "endLease":
                     await exporter.closed.wait()
-                    exporter._inputs.publish_assignment("A", "duplicate", {"job": "changed"})
+                    exporter.fsm.inputs.publish_assignment("A", "duplicate", {"job": "changed"})
                 elif policy == "exit":
                     assert exporter.exit_code == 1
-                    shutdown = exporter._inputs.snapshot_and_watch()[0].shutdown
+                    shutdown = exporter.fsm.inputs.snapshot_and_watch()[0].shutdown
                     assert shutdown is not None and shutdown.mode == ShutdownMode.DRAIN
                 else:
                     exporter.leases[0].request_end_session()
@@ -340,7 +340,7 @@ async def test_terminal_stream_failure_defers_shutdown_and_overrides_hook_exit(m
     with fail_after(5):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
-            exporter._inputs.publish_assignment("A")
+            exporter.fsm.inputs.publish_assignment("A")
             await entered.wait()
             exporter.stop(wait_for_lease_exit=True, exit_code=1, should_unregister=True)
             fail_stream.set()
@@ -349,7 +349,7 @@ async def test_terminal_stream_failure_defers_shutdown_and_overrides_hook_exit(m
             finish_hook.set()
     assert exporter.exit_code == (1 if failure == "invalid" else 75)
     assert ("after", "A") in exporter.trace and exporter.closed.is_set()
-    shutdown = exporter._inputs.snapshot_and_watch()[0].shutdown
+    shutdown = exporter.fsm.inputs.snapshot_and_watch()[0].shutdown
     assert shutdown is not None and shutdown.should_unregister is False
     exporter.controller.ReleaseLease.assert_not_awaited()
 
@@ -362,10 +362,10 @@ async def test_exit_on_lease_end_stops_sidecar_after_teardown(monkeypatch):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
             await exporter.wait_status(ExporterStatus.AVAILABLE)
-            assert exporter._inputs.snapshot_and_watch()[0].shutdown is None
-            exporter._inputs.publish_assignment("A")
+            assert exporter.fsm.inputs.snapshot_and_watch()[0].shutdown is None
+            exporter.fsm.inputs.publish_assignment("A")
             await exporter.wait_status(ExporterStatus.LEASE_READY)
-            exporter._inputs.publish_assignment("B")
+            exporter.fsm.inputs.publish_assignment("B")
             await exporter.closing.wait()
             sidecar.assert_not_called()
             assert exporter.close_gate is not None
@@ -409,16 +409,16 @@ async def test_failure_unwinds_resources_and_never_admits_replacement(monkeypatc
     with fail_after(5):
         async with create_task_group() as tg:
             tg.start_soon(serve)
-            exporter._inputs.publish_assignment("A")
+            exporter.fsm.inputs.publish_assignment("A")
             if failure != "setup":
                 await exporter.wait_status(ExporterStatus.LEASE_READY)
                 if failure == "background":
                     fail_stream.set()
                 else:
-                    exporter._inputs.publish_assignment("B")
+                    exporter.fsm.inputs.publish_assignment("B")
     assert closed == ["driver"]
     assert len(exporter.leases) <= 1
-    assert exporter.runner is not None and not isinstance(exporter.runner.current_state, ExitFSM)
+    assert exporter.fsm.runner is not None and not isinstance(exporter.fsm.runner.current_state, ExitFSM)
     assert exporter._background_done.is_set()
     if exporter.leases:
         assert not Path(exporter.leases[0].socket_path).exists()
@@ -441,7 +441,7 @@ async def test_standalone_keeps_its_hook_and_shutdown_path(monkeypatch):
             exporter.stop()
     assert calls == ["BEFORE_LEASE_HOOK", "AFTER_LEASE_HOOK"]
     assert exporter._lease_context is None
-    assert exporter.runner is not None and isinstance(exporter.runner.current_state, ExitFSM)
+    assert exporter.fsm.runner is not None and isinstance(exporter.fsm.runner.current_state, ExitFSM)
 
 
 @pytest.mark.parametrize("finish", ["end_session", "stop"])
@@ -481,8 +481,8 @@ async def test_standalone_defers_requests_and_runs_cleanup_once(monkeypatch, fin
             if finish == "end_session":
                 await exporter.wait_status(ExporterStatus.AVAILABLE)
                 assert Path(lease.socket_path).exists()
-                assert exporter.runner is not None
-                assert isinstance(exporter.runner.current_state, AwaitingLeaseRelease)
+                assert exporter.fsm.runner is not None
+                assert isinstance(exporter.fsm.runner.current_state, AwaitingLeaseRelease)
                 exporter.stop()
     assert calls == ["before", "before done", "after"]
     assert lease is not None and not Path(lease.socket_path).exists()
@@ -511,7 +511,7 @@ async def test_standalone_before_failure_skips_after_hook(monkeypatch, policy):
     assert isinstance(exporter.channel_factory, AsyncMock)
     exporter.channel_factory.assert_not_awaited()
     assert exporter.exit_code == (1 if policy == "exit" else None)
-    assert exporter.runner is not None and isinstance(exporter.runner.current_state, ExitFSM)
+    assert exporter.fsm.runner is not None and isinstance(exporter.fsm.runner.current_state, ExitFSM)
 
 
 async def test_release_during_setup_skips_hooks_and_listen(monkeypatch):
@@ -534,9 +534,9 @@ async def test_release_during_setup_skips_hooks_and_listen(monkeypatch):
     with fail_after(5):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
-            exporter._inputs.publish_assignment("A")
+            exporter.fsm.inputs.publish_assignment("A")
             await prepared.wait()
-            exporter._inputs.publish_assignment(None)
+            exporter.fsm.inputs.publish_assignment(None)
             exporter.stop(wait_for_lease_exit=True)
             finish_setup.set()
     before.assert_not_awaited()
@@ -570,7 +570,7 @@ async def test_connections_finish_before_session_teardown(monkeypatch):
     with fail_after(5):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
-            exporter._inputs.publish_assignment("A")
+            exporter.fsm.inputs.publish_assignment("A")
             await connected.wait()
             exporter.stop()
     assert finished.is_set() and exporter.closed.is_set()
@@ -609,7 +609,7 @@ async def test_remote_connections_wait_for_published_before_hook_outcome(monkeyp
     with fail_after(5):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
-            exporter._inputs.publish_assignment("A")
+            exporter.fsm.inputs.publish_assignment("A")
             await entered.wait()
             await dialed.wait()
             assert not connected.is_set()
@@ -624,8 +624,8 @@ async def test_release_retries_check_assignment_generation_and_shutdown(monkeypa
     exporter = make_exporter()
     lease = LeaseContext("A")
     exporter._lease_context = lease
-    exporter._inputs.publish_assignment("A")
-    assignment = exporter._inputs.snapshot_and_watch()[0].assignment
+    exporter.fsm.inputs.publish_assignment("A")
+    assignment = exporter.fsm.inputs.snapshot_and_watch()[0].assignment
     assert assignment is not None
     error = grpc.aio.AioRpcError(grpc.StatusCode.UNAVAILABLE, grpc.aio.Metadata(), grpc.aio.Metadata(), "retry")
     exporter.controller.ReleaseLease.side_effect = error
@@ -634,8 +634,8 @@ async def test_release_retries_check_assignment_generation_and_shutdown(monkeypa
         if change == "stop_now":
             exporter.stop()
         else:
-            exporter._inputs.publish_assignment(None)
-            exporter._inputs.publish_assignment("A" if change == "same_name" else "B")
+            exporter.fsm.inputs.publish_assignment(None)
+            exporter.fsm.inputs.publish_assignment("A" if change == "same_name" else "B")
 
     monkeypatch.setattr("anyio.sleep", backoff)
     with fail_after(2):
@@ -667,8 +667,8 @@ async def test_stop_now_is_bounded_while_release_rpc_is_stalled(monkeypatch):
     with fail_after(2):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
-            exporter._inputs.publish_assignment("A")
+            exporter.fsm.inputs.publish_assignment("A")
             await releasing.wait()
             exporter.stop()
     assert exporter.closed.is_set()
-    assert exporter.runner is not None and isinstance(exporter.runner.current_state, ExitFSM)
+    assert exporter.fsm.runner is not None and isinstance(exporter.fsm.runner.current_state, ExitFSM)
