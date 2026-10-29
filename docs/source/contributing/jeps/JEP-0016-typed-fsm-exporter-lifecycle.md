@@ -21,9 +21,10 @@ and its use to make the controller-mode exporter lifecycle explicit. One task
 executes named states sequentially, while background tasks publish observations
 and requests without performing transitions. A state awaits its activity and
 returns a successor, returns `None` to let the runner wait for changed inputs, or
-returns `ExitFSM` to terminate. The accompanying reference implementations of
-`jumpstarter.fsm` and `jumpstarter.exporter.fsm` demonstrate the foundation;
-migrating the running exporter is a separate, subsequent step.
+returns `ExitFSM` to terminate. The accompanying implementation of
+`jumpstarter.fsm`, including its runner-owned resource stack, establishes the
+foundation. The exporter states in `jumpstarter.exporter.fsm` and migrating the
+running exporter are a separate, subsequent step.
 
 ## Motivation
 
@@ -60,14 +61,14 @@ lease or shutdown policy.
 from contextlib import AsyncExitStack
 
 
-class InputSource[SnapshotT](Protocol):
-    def snapshot_and_watch(self) -> tuple[SnapshotT, Event]: ...
+class InputSource[InputsT](Protocol):
+    def snapshot_and_watch(self) -> tuple[InputsT, Event]: ...
 
 
-class State[SnapshotT](Protocol):
+class State[InputsT](Protocol):
     async def run(
-        self, snapshot: SnapshotT, resources: AsyncExitStack
-    ) -> State[SnapshotT] | ExitFSM | None: ...
+        self, inputs: InputsT, resources: AsyncExitStack
+    ) -> State[InputsT] | ExitFSM | None: ...
 
 
 @dataclass(frozen=True)
@@ -75,7 +76,7 @@ class ExitFSM:
     """Stop evaluating states; the runner unwinds remaining resources before exit."""
 ```
 
-The fourth building block, `FSMRunner[SnapshotT]`, owns the current state, the
+The fourth building block, `FSMRunner[InputsT]`, owns the current state, the
 input wait, transition scheduling, and one `AsyncExitStack` spanning its run:
 
 ```python
@@ -109,7 +110,7 @@ current = runner.current_state
 flowchart TD
     Open["Runner opens AsyncExitStack"] --> Checkpoint["Cancellation and scheduling checkpoint"]
     Checkpoint --> Capture["Capture snapshot and change event"]
-    Capture --> Run["await state.run(snapshot, resources)"]
+    Capture --> Run["await state.run(inputs, resources)"]
     Run --> Result{"Returned value"}
     Result -->|None| Wait["Await captured event; retain current state"]
     Wait --> Checkpoint
@@ -124,41 +125,36 @@ flowchart TD
 
 ### Exporter specialization
 
-`jumpstarter.exporter.fsm` supplies exporter-specific assignment, shutdown, and
-snapshot types. Its `Inputs` class satisfies `InputSource[Snapshot]` structurally;
-it need not inherit from the protocol. Its `State` alias specializes the shared
-protocol for that snapshot type:
+`jumpstarter.exporter.fsm` supplies immutable `Inputs` containing the latest
+assignment and shutdown request. `InputBuffer` coalesces publications and wakes
+the runner; it satisfies `InputSource[Inputs]` structurally. The `State` alias
+specializes the shared protocol for those inputs:
 
 ```python
 from jumpstarter.fsm import State as FSMState
 
-type State = FSMState[Snapshot]
+type State = FSMState[Inputs]
 ```
 
 The shared runner knows nothing about leases, gRPC, drivers, or hook policies.
 Exporter states retain those decisions, together in one module initially. No
 empty exporter runner subclass or factory is required.
 
-### Scope and reference implementations
+### Scope and implementation
 
-This proposal includes a working foundation, not a completed exporter cutover:
+This increment implements the shared foundation, including the resource-stack
+contract. The exporter states and cutover follow in a separate PR:
 
-| Reference file | Purpose |
+| File | Purpose |
 | --- | --- |
 | `python/packages/jumpstarter/jumpstarter/fsm.py` | Generic interfaces, named single-use runner, current-state queries, and debug tracing |
 | `python/packages/jumpstarter/jumpstarter/fsm_test.py` | An independent boolean-input example and runner behavior checks |
-| `python/packages/jumpstarter/jumpstarter/exporter/fsm.py` | Exporter snapshots, assignment generations, persistent shutdown intent, and input notifications |
-| `python/packages/jumpstarter/jumpstarter/exporter/fsm_test.py` | Typed demonstration states and exporter-input checks using existing `LeaseContext` objects |
 
-The demo does not open real sessions or transports. Its compact `Cleanup` state
-stands in for completion; the after-hook, reservation wait, and transport-close
-separation below remains to be implemented. Neither reference module is wired
-into `Exporter.serve()` by this proposal's reference-code increment.
-
-The 2026-10-28 resource-lifetime revision is a planned follow-up: the reference
-code still implements `run(snapshot)`. Passing a runner-owned `AsyncExitStack`
-and verifying real awaited cleanup have not yet been implemented. The reported
-21 passing cases below cover the existing foundation, not this new guarantee.
+The exporter input model (`jumpstarter.exporter.fsm`: immutable `Inputs`,
+`InputBuffer`, assignment generations, persistent shutdown intent), the typed
+demonstration states, and the production lifecycle states are implemented by the
+subsequent integration PR, which wires `Exporter.serve()` to the runner. Neither
+module is invoked by this increment.
 
 The controller-mode migration reuses the existing hook execution, transport,
 reporting, and supervision facilities. Standalone TCP mode, connection bridging,
@@ -223,7 +219,7 @@ EndSession request belongs to its session's lease object, never a replacement.
 
 **Alternatives considered:**
 
-1. **Maintain an active/completed registry in `Inputs`:** validate ownership, but
+1. **Maintain an active/completed registry in `InputBuffer`:** validate ownership, but
    duplicate facts already represented by the current state.
 2. **Carry resource references with manual context entry/exit:** preserve a
    session across phases, but rely on reaching the cleanup state after every
@@ -235,8 +231,8 @@ EndSession request belongs to its session's lease object, never a replacement.
    dispatcher but introduce another set of lifetime and teardown boundaries.
 
 **Decision:** The runner creates one standard-library exit stack and passes it to
-`run(snapshot, resources)`. States own acquisition, use, and normal release;
-`Inputs` only stores inputs and notifies the runner.
+`run(inputs, resources)`. States own acquisition, use, and normal release;
+`InputBuffer` only stores inputs and notifies the runner.
 
 **Rationale:** The session survives transitions without a custom resource-owner
 framework. A state exception cannot bypass registered resource unwinding merely
@@ -271,10 +267,10 @@ activities, and becomes `ExitFSM` on successful termination. Observers must not
 mutate it. Exceptions/cancellation propagate and leave the last state queryable;
 the runner rejects concurrent or repeated execution.
 
-With the resource-stack revision, retain the last active state while final
-unwinding runs and publish the terminal `ExitFSM` state only after successful
-closure. A cleanup error must propagate rather than look like successful exit.
-Resource context managers must not suppress lifecycle exceptions/cancellation.
+Retain the last active state while final unwinding runs and publish the terminal
+`ExitFSM` state only after successful closure. A cleanup error must propagate
+rather than look like successful exit. Resource context managers must not
+suppress lifecycle exceptions/cancellation.
 
 DEBUG logs under `jumpstarter.fsm` include the configured runner name and
 distinguish logical state entry/exit from individual `run()` evaluations.
@@ -331,19 +327,19 @@ own flag and wake the runner even though the global snapshot is unchanged.
 ```{mermaid}
 sequenceDiagram
     participant Runner
-    participant Inputs
+    participant Buffer as InputBuffer
     participant State as Current state
     participant Producer
-    Runner->>Inputs: snapshot_and_watch()
-    Inputs-->>Runner: snapshot, event E1
-    Runner->>State: run(snapshot, resources)
-    Producer->>Inputs: Publish changed observation or wake after lease-local request
-    Note over Inputs: Create E2 and set E1
+    Runner->>Buffer: snapshot_and_watch()
+    Buffer-->>Runner: inputs, event E1
+    Runner->>State: run(inputs, resources)
+    Producer->>Buffer: Publish changed observation or wake after lease-local request
+    Note over Buffer: Create E2 and set E1
     State-->>Runner: None
     Note over Runner: Waiting on E1 returns immediately
-    Runner->>Inputs: snapshot_and_watch()
-    Inputs-->>Runner: Latest snapshot, event E2
-    Runner->>State: run(latest snapshot, resources)
+    Runner->>Buffer: snapshot_and_watch()
+    Buffer-->>Runner: Latest inputs, event E2
+    Runner->>State: run(latest inputs, resources)
 ```
 
 This is event-loop-only synchronization. Thread callbacks must be marshalled
@@ -414,7 +410,7 @@ overwriting a failed state and assuming it was observed.
 loop. Each state receives that same stack. For example, session preparation uses:
 
 ```python
-# Inside the admitting state's run(snapshot, resources):
+# Inside the admitting state's run(inputs, resources):
 session, main_path, hook_path = await resources.enter_async_context(
     self.exporter.session_for_lease()
 )
@@ -555,22 +551,21 @@ signal exit-code precedence and whether controller cleanup RPCs are appropriate.
 
 ### Unit tests and static verification
 
-The included reference has 21 passing cases: seven shared-runner cases using a
-boolean source, and fourteen exporter-specific cases. They use existing pytest,
-AnyIO event barriers, and bounded waits instead of sleep-based ordering.
+The foundation has 15 passing cases using an independent boolean source. They
+use existing pytest, AnyIO event barriers, and bounded waits instead of
+sleep-based ordering.
 
 Coverage includes current-state queries, read-only access, duplicate execution,
 logical transitions versus reevaluation, named logs, deterministic run timing,
-error/cancellation propagation and cleanup, input-payload omission, wakeup races,
-coalescing, generation boundaries, completed-assignment suppression, shutdown
-escalation, lease-local requests, and blocked teardown before replacement.
-Immediate-transition checks cover already-pending cancellation and producer
-progress with fresh snapshots through states that never yield internally.
-Existing cleanup assertions use test events; they do not prove cancellation-safe
-closing of actual async contexts. The resource-stack revision requires additional
-checks before those guarantees are considered verified.
+error/cancellation propagation and cleanup, and immediate transitions covering
+already-pending cancellation and producer progress with fresh inputs through
+states that never yield internally. Resource tests enter actual async contexts
+and await their cleanup. Exporter-input coverage (coalescing, generation
+boundaries, completed-assignment suppression, shutdown escalation, lease-local
+requests, and blocked teardown before replacement) is added by the integration
+increment.
 
-### Resource-stack verification to add
+### Resource-stack verification
 
 - A context entered by one state remains usable across successors and a `None`
   input wait; acquisition and closure occur in the runner's task.
@@ -580,6 +575,8 @@ checks before those guarantees are considered verified.
   actual awaited cleanup. Protected close finishes before `runner.run()` exits.
 - If later setup fails, previously registered resources close; the failing
   context cleans its own partially acquired resources.
+- Resource contexts receive the original failure for exception-aware cleanup,
+  but cannot suppress it and turn the lifecycle into successful completion.
 - Close failure/timeout propagates, retains diagnostic state, and never reports
   successful `ExitFSM`, completion, or availability for another lease.
 - Task groups exit without cancel-scope nesting errors; normal terminal exit and
@@ -587,19 +584,21 @@ checks before those guarantees are considered verified.
 - Update typed state methods and positive/negative probes for the added
   `AsyncExitStack` argument.
 
-### Static verification of the existing reference
+### Static verification
 
-Positive `assert_type()` checks pass for Python 3.12 and 3.14 targets. Seven
-temporary negative probes reject invalid state/successor returns, shutdown mode,
-metadata types, writes to `current_state`, and mismatched state/input-source
-snapshot types. Check intended diagnostics, not unrelated import failures.
+Positive `assert_type()` checks pass for Python 3.12 and 3.14 targets. Five
+temporary negative probes reject invalid state/successor returns, writes to
+`current_state`, mismatched state/input-source types, and legacy state methods
+missing the resource-stack argument. Check intended diagnostics, not unrelated
+import failures. Exporter-input probes (shutdown mode, metadata types) are added
+by the integration increment.
 
 From `python/`:
 
 ```sh
-uv run --isolated --directory packages/jumpstarter pytest -q jumpstarter/fsm_test.py jumpstarter/exporter/fsm_test.py
+uv run --isolated --directory packages/jumpstarter pytest -q jumpstarter/fsm_test.py
 make pkg-ty-jumpstarter
-uv run ruff check packages/jumpstarter/jumpstarter/fsm{,_test}.py packages/jumpstarter/jumpstarter/exporter/fsm{,_test}.py
+uv run ruff check packages/jumpstarter/jumpstarter/fsm{,_test}.py
 ```
 
 The new files pass independently on macOS; the existing package-wide native
@@ -639,16 +638,17 @@ drain and stop-now signals. Verify real device/sidecar lifetime and final-log
 access rather than relying only on synthetic state traces. Hardware availability
 and automation in the project's lab CI must be confirmed for that migration.
 
-Reviewers can run the reference suites and enable DEBUG for `jumpstarter.fsm`
-and `jumpstarter.exporter.fsm` to inspect evaluation timing and named transitions.
+Reviewers can run the foundation suite and enable DEBUG for `jumpstarter.fsm`
+to inspect evaluation timing and named transitions.
 
 ## Acceptance Criteria
 
-- [x] A domain-independent typed runner and exporter-input specialization are
-  provided as tested reference code, without production wiring.
+- [x] A domain-independent typed runner is provided as tested reference code,
+  without production wiring; the exporter-input specialization follows with the
+  integration increment.
 - [x] Independent input sources, external state queries, safe debug tracing,
   behavioral checks, and positive/negative typing verification work.
-- [ ] The runner-owned `AsyncExitStack` is passed to states; context lifetime,
+- [x] The runner-owned `AsyncExitStack` is passed to states; context lifetime,
   same-task LIFO teardown, bounded cancellation-safe closing, and supervisor exit
   pass the resource-stack checks above.
 - [ ] Real lifecycle/failure states own hook sequencing, status publication, and
@@ -669,8 +669,9 @@ to JEP review; including a reference does not mean the full lifecycle is accepte
 or implemented.
 
 Adding `resources: AsyncExitStack` changes the reference state method signature
-from `run(snapshot)` to `run(snapshot, resources)`. Update all reference states and
-type examples together before adoption; the change is currently planned only.
+from `run(inputs)` to `run(inputs, resources)`. Update all reference states and
+type examples together; this increment's implementation and checks use the
+revised signature.
 
 The later controller-mode migration deliberately changes ordinary stop handling
 during activities: requests wait for a bounded activity boundary rather than
@@ -725,8 +726,7 @@ input ownership registry alternatives are covered in DD-1 through DD-4.
   existing terminal-stream classification is preserved in every combined case.
 - Select concrete runtime dependencies and per-resource close bounds/fallbacks
   for real states, and confirm lab/CI coverage for hardware-backed migration
-  checks. The runner-owned exit stack and resource-local cleanup protection are
-  decided; their implementation and verification remain pending.
+  checks.
 
 ## Implementation History
 
@@ -736,9 +736,15 @@ input ownership registry alternatives are covered in DD-1 through DD-4.
   Production lifecycle integration remains pending.
 - 2026-10-28: Specify a runner-owned `AsyncExitStack` passed to state methods,
   explicit per-lease closure, resource-local bounded/shielded cleanup, and scoped
-  supervisor shutdown. This resource-lifetime revision is not yet implemented.
+  supervisor shutdown, initially as a design-only revision.
 - 2026-10-28: Add a runner checkpoint before snapshot capture and two regression
   cases for cancellation and producer progress through immediate transitions.
+- 2026-10-28: Name state data `Inputs` and its publishing/coalescing source
+  `InputBuffer`; state methods read `run(inputs: Inputs, resources: AsyncExitStack)`.
+- 2026-10-28: Implement the resource-stack contract with exception-aware
+  unwinding and awaited-cleanup checks in `jumpstarter.fsm`. Move the exporter
+  input reference to the subsequent integration PR; this PR keeps the shared
+  foundation only.
 
 ## References
 
