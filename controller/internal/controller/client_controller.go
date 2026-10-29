@@ -64,7 +64,7 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	tokenExpiry, err := r.reconcileStatusCredential(ctx, &client)
 	if err != nil {
-		return ctrl.Result{}, err
+		return RequeueConflict(logger, ctrl.Result{}, err)
 	}
 
 	if err := r.reconcileStatusEndpoint(ctx, &client); err != nil {
@@ -103,9 +103,9 @@ func (r *ClientReconciler) reconcileStatusCredential(
 	client *jumpstarterdevv1alpha1.Client,
 ) (time.Time, error) {
 	secret, expiry, err := ensureSecret(ctx, kclient.ObjectKey{
-		Name:      client.Name + "-client",
+		Name:      client.CredentialSecretName(),
 		Namespace: client.Namespace,
-	}, r.Client, r.Scheme, r.Signer, client.InternalSubject(), client)
+	}, r.Client, r.Scheme, r.Signer, client.InternalSubject(), client, nil)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("reconcileStatusCredential: failed to prepare credential for client: %w", err)
 	}

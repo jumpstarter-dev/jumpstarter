@@ -123,3 +123,37 @@ func TestNewSignerFromSeedDeterministic(t *testing.T) {
 		t.Error("tokens from same seed should validate against each other")
 	}
 }
+
+func TestTokenLifetime(t *testing.T) {
+	signer := newTestSigner(t)
+	now := time.Now().Truncate(time.Second)
+	for _, tc := range []struct {
+		name      string
+		claims    jwt.RegisteredClaims
+		malformed bool
+		want      time.Duration
+	}{
+		{name: "issued and expiry", claims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour))}, want: time.Hour},
+		{name: "missing issued", claims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour))}},
+		{name: "missing expiry", claims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(now)}},
+		{name: "malformed", malformed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			token := "invalid-token"
+			if !tc.malformed {
+				var err error
+				token, err = jwt.NewWithClaims(jwt.SigningMethodHS256, tc.claims).SignedString([]byte("test-key"))
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err := signer.TokenLifetime(token)
+			if (err != nil) != tc.malformed {
+				t.Fatalf("TokenLifetime error = %v, malformed = %v", err, tc.malformed)
+			}
+			if got != tc.want {
+				t.Errorf("TokenLifetime = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

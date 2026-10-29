@@ -1,3 +1,4 @@
+import inspect
 import logging
 import math
 import os
@@ -42,6 +43,11 @@ from jumpstarter.exporter.lease_context import LeaseContext
 from jumpstarter.exporter.metrics_stream import MetricsStreamClient
 from jumpstarter.exporter.session import Session
 from jumpstarter.exporter.telemetry import TelemetryLogHandler
+from jumpstarter.exporter.token_refresh import (
+    calculate_token_refresh_sleep,
+    calculate_token_rotation_retry_sleep,
+    is_internal_exporter_token,
+)
 from jumpstarter.logging import clear_log_context, set_log_context
 
 if TYPE_CHECKING:
@@ -58,6 +64,8 @@ _RPC_MAX_RETRIES = 20
 _RPC_BACKOFF_BASE = 1.0
 _RPC_BACKOFF_CAP = 30.0
 _RPC_TIMEOUT = 30
+_TOKEN_REFRESH_CHECK_INTERVAL = 3600.0
+_TOKEN_ROTATION_RETRY_INTERVAL = 3600.0
 _FAIL_FAST_STREAM_CODES = frozenset({
     grpc.StatusCode.UNAUTHENTICATED,
     grpc.StatusCode.PERMISSION_DENIED,
@@ -70,6 +78,11 @@ _RESTARTABLE_STREAM_CODES = frozenset({
     grpc.StatusCode.PERMISSION_DENIED,
 })
 _TEMPORARY_STREAM_FAILURE_EXIT_CODE = 75  # EX_TEMPFAIL; service managers may restart this.
+
+
+def _rpc_backoff(attempt: int) -> float:
+    # The exponent is clamped so unbounded retry loops cannot overflow.
+    return min(_RPC_BACKOFF_BASE * 2 ** min(attempt, 10), _RPC_BACKOFF_CAP)
 
 
 def _is_retryable_stream_error(error: Exception) -> bool:
@@ -218,11 +231,11 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     # jumpstarter.dev/name (#1058), so the name is not stored in labels.
     exporter_name: str = "unknown"
 
-    channel_factory: Callable[[], Awaitable[grpc.aio.Channel]]
+    channel_factory: Callable[[str], Awaitable[grpc.aio.Channel]]
     """Factory function for creating gRPC channels to communicate with the controller.
 
     Called multiple times throughout the exporter lifecycle to establish connections.
-    The factory should handle authentication, credentials, and channel configuration.
+    Receives the current token and handles authentication, credentials, and channel configuration.
     Used when creating controller stubs, unregistering, and establishing streams.
     """
 
@@ -280,6 +293,14 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     Set from ExporterConfigV1Alpha1.token so PushLogs calls can include
     the exporter's JWT as an Authorization header.
     """
+
+    on_token_rotated: Callable[[str], Awaitable[None] | None] | None = field(default=None)
+    """Optional callback invoked when the authentication token is rotated.
+
+    Passed the new token string. Can be async or sync.
+    """
+
+    _token_rotation_unsupported: bool = field(init=False, default=False)
 
     # Internal State Fields
 
@@ -466,7 +487,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
         The underlying channel is automatically closed when the context exits.
         """
-        channel = await self.channel_factory()
+        channel = await self.channel_factory(self.token)
         try:
             yield jumpstarter_pb2_grpc.ControllerServiceStub(channel)
         finally:
@@ -648,7 +669,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 ep.endpoint, grpc.ssl_channel_credentials()
             )
         stub = telemetry_pb2_grpc.TelemetryServiceStub(self._telemetry_channel)
-        handler = TelemetryLogHandler(stub, namespace=getattr(self, "namespace", "") or "", token=self.token)
+        # Token rotation replaces self.token; both consumers read it per request.
+        handler = TelemetryLogHandler(
+            stub, namespace=getattr(self, "namespace", "") or "", token=lambda: self.token
+        )
         handler.setLevel(_severity_to_level(ep.min_severity))
         logging.getLogger().addHandler(handler)
         self._telemetry_handler = handler
@@ -656,9 +680,95 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             stub,
             # JWT subject. Not the jumpstarter.dev/name label (#1058).
             identity=self.exporter_name,
-            token=self.token,
+            token=lambda: self.token,
         )
         logger.info("Telemetry log handler attached")
+
+    async def rotate_token(self) -> str:
+        """Request a newly signed authentication token from the controller.
+
+        Updates self.token and invokes the on_token_rotated callback if configured.
+
+        Returns:
+            The newly rotated token string.
+        """
+        async with self._controller_stub() as controller:
+            response: jumpstarter_pb2.RotateTokenResponse = await controller.RotateToken(
+                jumpstarter_pb2.RotateTokenRequest(),
+                timeout=_RPC_TIMEOUT,
+            )
+
+        new_token = response.token
+        self.token = new_token
+
+        if self.on_token_rotated is not None:
+            try:
+                res = self.on_token_rotated(new_token)
+                if inspect.isawaitable(res):
+                    await res
+            except Exception:
+                logger.exception("Error in on_token_rotated callback")
+
+        return new_token
+
+    async def _token_refresh_loop(self) -> None:
+        """Monitor token expiration and request a new token when it is about to expire."""
+        while True:
+            # The server also verifies the internal signature, issuer and exporter UID.
+            if not is_internal_exporter_token(self.token):
+                logger.debug("Token is not an internal exporter credential; automatic refresh disabled")
+                return
+            sleep_duration = calculate_token_refresh_sleep(self.token)
+            if sleep_duration is None:
+                logger.debug("Token does not have an expiry claim; automatic refresh disabled")
+                return
+
+            if sleep_duration > 0:
+                logger.debug("Token refresh scheduled in %.1f seconds", sleep_duration)
+                await sleep(min(sleep_duration, _TOKEN_REFRESH_CHECK_INTERVAL))
+                continue
+
+            if not await self._rotate_token_with_retry():
+                return
+
+    async def _rotate_token_with_retry(self) -> bool:
+        attempt = 0
+        while True:
+            # The controller rejects an expired token before it reaches rotation.
+            if calculate_token_rotation_retry_sleep(self.token, _TOKEN_ROTATION_RETRY_INTERVAL) <= 0:
+                logger.error("Exporter token expired; re-provision the exporter credential")
+                return False
+            try:
+                logger.info("Token is about to expire; requesting new token from controller")
+                await self.rotate_token()
+                self._token_rotation_unsupported = False
+                logger.info("Successfully refreshed exporter authentication token")
+                return True
+            except grpc.aio.AioRpcError as e:
+                code = e.code()
+                if code == grpc.StatusCode.UNAUTHENTICATED:
+                    # The status stream exits with 75, ending the whole jmp run process.
+                    logger.error("Failed to rotate token (%s): %s", code, e.details())
+                    return False
+                if code in (grpc.StatusCode.UNIMPLEMENTED, grpc.StatusCode.PERMISSION_DENIED):
+                    delay = calculate_token_rotation_retry_sleep(self.token, _TOKEN_ROTATION_RETRY_INTERVAL)
+                    if delay <= 0:
+                        continue  # reported as expired at the top of the loop
+                    if code == grpc.StatusCode.UNIMPLEMENTED:
+                        log = logger.debug if self._token_rotation_unsupported else logger.warning
+                        log("Controller does not support token rotation (UNIMPLEMENTED); retrying in %.1fs", delay)
+                        self._token_rotation_unsupported = True
+                    else:
+                        logger.warning("Token rotation denied (%s); retrying in %.1fs", e.details(), delay)
+                    await sleep(delay)
+                    return True
+                failure = f"{code}: {e.details()}"
+            except Exception as e:  # noqa: BLE001 - keep retrying after unexpected refresh failures
+                failure = str(e)
+            backoff = _rpc_backoff(attempt)
+            attempt += 1
+            logger.warning("Failed to rotate token (%s); retrying in %.1fs (attempt %d)", failure, backoff, attempt)
+            await sleep(backoff)
 
     async def _retry_rpc(
         self,
@@ -697,7 +807,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 if e.code() in non_retryable_codes:
                     return False, e.code()
                 if e.code() in _TRANSIENT_GRPC_CODES and attempt < _RPC_MAX_RETRIES:
-                    backoff = min(_RPC_BACKOFF_BASE * (2**attempt), _RPC_BACKOFF_CAP)
+                    backoff = _rpc_backoff(attempt)
                     logger.warning(
                         "Transient error %s (attempt %d/%d), retrying in %.1fs: %s",
                         description,
@@ -834,7 +944,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         logger.info("Unregistering exporter with controller")
         try:
             with move_on_after(10):  # 10 second timeout
-                channel = await self.channel_factory()
+                channel = await self.channel_factory(self.token)
                 try:
                     controller = jumpstarter_pb2_grpc.ControllerServiceStub(channel)
                     await self._report_status(ExporterStatus.OFFLINE, "Exporter shutting down")
@@ -1331,6 +1441,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 backoff=0.5,
                 outage_budget=self.status_stream_retry_timeout,
             ))
+            tg.start_soon(self._token_refresh_loop)
             # One loop, one writer of _lease_context. Status ticks come from the
             # controller RPC; LeaseFinished comes from handle_lease when it has
             # torn a lease down. Both are handled here, sequentially.
