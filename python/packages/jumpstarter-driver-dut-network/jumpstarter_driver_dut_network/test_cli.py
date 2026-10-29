@@ -6,6 +6,7 @@ Mocks the client methods to avoid needing a real driver / root privileges.
 """
 
 import json
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -17,8 +18,13 @@ from jumpstarter.common.utils import serve
 _DRIVER_MODULE = "jumpstarter_driver_dut_network.driver"
 
 
-def _make_driver(tmp_path, **overrides):
-    """Create a DutNetwork driver with all system calls mocked."""
+@contextmanager
+def _make_client(tmp_path, **overrides):
+    """Create a DutNetworkClient by serving a mocked driver.
+
+    System modules stay patched for the whole serve() lifetime so driver
+    cleanup also runs against mocks, not real syscalls.
+    """
     params = {
         "interface": "eth-dut",
         "subnet": "192.168.100.0/24",
@@ -53,15 +59,8 @@ def _make_driver(tmp_path, **overrides):
         mock_nftables.ensure_filter_forward.return_value = []
         mock_nftables.list_rules.return_value = "table ip jumpstarter_eth_dut { masquerade }"
         mock_nftables._table_name_for.return_value = "jumpstarter_eth_dut"
-        driver = DutNetwork(**params)  # ty: ignore[invalid-argument-type]
-
-    return driver
-
-
-def _make_client(tmp_path, **overrides):
-    """Create a DutNetworkClient by serving a mocked driver."""
-    driver = _make_driver(tmp_path, **overrides)
-    return serve(driver)
+        with serve(DutNetwork(**params)) as client:  # ty: ignore[invalid-argument-type]
+            yield client
 
 
 @pytest.fixture
