@@ -1198,6 +1198,42 @@ class TestRenderServiceWithCrossRefs:
 
 
 class TestRenderProtoDocWithCrossRefs:
+    def test_links_resolve_in_package_scope(self, tmp_path):
+        exporter_dir = tmp_path / "exporter"
+        client_dir = tmp_path / "client"
+        exporter_dir.mkdir()
+        client_dir.mkdir()
+        (exporter_dir / "controller.proto").write_text("""\
+syntax = "proto3";
+package demo.v1;
+service ControllerService {
+  rpc RotateToken(RotateTokenRequest) returns (RotateTokenResponse);
+}
+message RotateTokenRequest {}
+message RotateTokenResponse {}
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+}
+""")
+        (client_dir / "client.proto").write_text("""\
+syntax = "proto3";
+package demo.client.v1;
+service ClientService {
+  rpc RotateToken(RotateTokenRequest) returns (RotateTokenResponse);
+}
+message RotateTokenRequest {
+  demo.v1.Status status = 1;
+}
+message RotateTokenResponse {}
+""")
+        out = tmp_path / "out"
+        main(proto_dirs=[str(exporter_dir), str(client_dir)], output_dir=str(out))
+        controller = (out / "controller.md").read_text()
+        client = (out / "client.md").read_text()
+        assert "[`RotateTokenRequest`](controller.md#rotatetokenrequest)" in controller
+        assert "[`RotateTokenRequest`](client.md#rotatetokenrequest)" in client
+        assert "[`demo.v1.Status`](controller.md#status)" in client
+
     def test_renders_with_type_index(self):
         index = {"Widget": "widget.md#widget"}
         proto_data = ProtoFile(
