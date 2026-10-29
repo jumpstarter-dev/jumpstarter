@@ -373,8 +373,8 @@ class TestReportStatusGrpcErrorHandling:
         original = make_lease_context("old-lease")
         replacement = make_lease_context("new-lease")
         exporter._lease_context = original
-        exporter._inputs.publish_assignment(original.lease_name)
-        assignment = exporter._inputs.snapshot_and_watch()[0].assignment
+        exporter.fsm.inputs.publish_assignment(original.lease_name)
+        assignment = exporter.fsm.inputs.snapshot_and_watch()[0].assignment
         assert assignment is not None
         transient_error = AioRpcError(grpc.StatusCode.UNAVAILABLE, Metadata(), Metadata(), "Try again")
         controller, stub_ctx = _setup_mock_controller_stub(exporter)
@@ -384,7 +384,7 @@ class TestReportStatusGrpcErrorHandling:
             if lease_change == "replacement":
                 exporter._lease_context = replacement
             elif lease_change == "ended":
-                exporter._inputs.publish_assignment(None)
+                exporter.fsm.inputs.publish_assignment(None)
 
         with (
             patch.object(exporter, "_controller_stub", return_value=stub_ctx),

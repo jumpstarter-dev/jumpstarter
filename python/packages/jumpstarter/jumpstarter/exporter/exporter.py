@@ -35,13 +35,12 @@ from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.config.env import JMP_GRPC_INSECURE, JUMPSTARTER_GRPC_INSECURE
 from jumpstarter.config.exporter import DEFAULT_STATUS_STREAM_RETRY_TIMEOUT
 from jumpstarter.config.tls import TLSConfigV1Alpha1
-from jumpstarter.exporter.fsm import Available, InputBuffer, Inputs, LeaseKey, ShutdownMode, ShutdownRequest, State
+from jumpstarter.exporter.fsm import Available, ExporterFSM, LeaseKey, ShutdownMode, ShutdownRequest, State
 from jumpstarter.exporter.hooks import HookExecutor
 from jumpstarter.exporter.lease_context import LeaseContext
 from jumpstarter.exporter.metrics_stream import MetricsStreamClient
 from jumpstarter.exporter.session import Session
 from jumpstarter.exporter.telemetry import TelemetryLogHandler
-from jumpstarter.fsm import FSMRunner
 from jumpstarter.logging import clear_log_context, set_log_context
 
 if TYPE_CHECKING:
@@ -268,9 +267,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     relies on heartbeat timeout for implicit unregistration.
     """
 
-    _inputs: InputBuffer = field(init=False, default_factory=InputBuffer)
-    runner: FSMRunner[Inputs] | None = field(init=False, default=None)
-    """The lifecycle in either serving mode; current_state remains queryable after exit."""
+    fsm: ExporterFSM = field(init=False, default_factory=ExporterFSM)
+    """The lifecycle in either serving mode; its runner's current_state remains queryable after exit."""
 
     _background_done: Event = field(init=False, default_factory=Event)
     _shutdown_complete: bool = field(init=False, default=False)
@@ -351,12 +349,12 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         self, wait_for_lease_exit: bool = False, should_unregister: bool = False, exit_code: int | None = None
     ) -> None:
         """Publish shutdown intent; activities finish before the next state handles it."""
-        self._inputs.request_shutdown(ShutdownRequest(
+        self.fsm.inputs.request_shutdown(ShutdownRequest(
             ShutdownMode.DRAIN if wait_for_lease_exit and not self._standalone else ShutdownMode.STOP_NOW,
             exit_code=exit_code,
             should_unregister=should_unregister,
         ))
-        shutdown = self._inputs.snapshot_and_watch()[0].shutdown
+        shutdown = self.fsm.inputs.snapshot_and_watch()[0].shutdown
         assert shutdown is not None
         self._exit_code = shutdown.exit_code
 
@@ -695,7 +693,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             return False
         if key is None:
             return True
-        snapshot, _ = self._inputs.snapshot_and_watch()
+        snapshot, _ = self.fsm.inputs.snapshot_and_watch()
         return (
             snapshot.assignment is not None
             and snapshot.assignment.key == key
@@ -928,7 +926,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 background.start_soon(self._drain_status_reports)
                 self._start_telemetry_tasks(background)
                 background.start_soon(
-                    self._run_stream, "Status", self._status_stream_factory(), self._inputs,
+                    self._run_stream, "Status", self._status_stream_factory(), self.fsm.inputs,
                     self.status_stream_retry_timeout,
                 )
                 task_status.started()
@@ -953,7 +951,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 await self._background_done.wait()
             self._tg = None
         self._status_drain_active = False
-        shutdown = self._inputs.snapshot_and_watch()[0].shutdown
+        shutdown = self.fsm.inputs.snapshot_and_watch()[0].shutdown
         self._unregister = shutdown is not None and shutdown.should_unregister and not self._controller_stream_failed
         if self._unregister and self._registered:
             await self._unregister_with_controller()
@@ -982,9 +980,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         self._shutdown_complete = True
 
     async def _run_lifecycle(self, initial: State) -> None:
-        self.runner = FSMRunner(initial, self._inputs, name=self.exporter_name)
         try:
-            await self.runner.run()
+            await self.fsm.run(initial, name=self.exporter_name)
         finally:
             await self._finish_shutdown()
 
@@ -1018,7 +1015,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     ) -> None:
         """Run one standalone TCP session through the same lifecycle states."""
         self._standalone = True
-        self._inputs.publish_assignment("standalone")
+        self.fsm.inputs.publish_assignment("standalone")
         set_log_context(exporter=self.exporter_name, lease_id="standalone")
         try:
             context = self._standalone_session(host, port, tls_credentials=tls_credentials, interceptors=interceptors)

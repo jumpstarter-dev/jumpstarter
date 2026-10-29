@@ -156,9 +156,11 @@ exporter modes. Hardware-backed acceptance remains a pre-merge check.
 The demo does not open real sessions or transports. Its compact `Cleanup` state
 stands in for completion. Production states and integration checks implement the
 distinct after-hook, reservation wait, and transport-close phases below.
-`Exporter.serve()` now runs `FSMRunner(Available(...), inputs)` after registration;
+`Exporter.serve()` now runs the lifecycle through `ExporterFSM`, the wrapper in
+`jumpstarter.exporter.fsm` that owns the input buffer and the single-use
+`FSMRunner`, after registration;
 `serve_standalone_tcp()` supplies its TCP/Unix session context to the same states.
-The runner is available as `exporter.runner` for current-state queries in either mode.
+The runner is available as `exporter.fsm.runner` for current-state queries in either mode.
 
 All states use `run(inputs, resources)`. On failure the runner passes the exception
 to the stack's `__aexit__`, then re-raises it regardless of suppression, allowing

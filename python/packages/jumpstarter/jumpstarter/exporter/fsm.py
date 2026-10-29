@@ -17,7 +17,7 @@ from jumpstarter_protocol import jumpstarter_pb2
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus
 from jumpstarter.exporter.hooks import HookExecutionError
 from jumpstarter.exporter.lease_context import LeaseContext
-from jumpstarter.fsm import ExitFSM
+from jumpstarter.fsm import ExitFSM, FSMRunner
 from jumpstarter.fsm import State as FSMState
 from jumpstarter.logging import clear_log_context, set_log_context
 
@@ -144,6 +144,19 @@ class InputBuffer:
         await checkpoint()
 
 
+@dataclass
+class ExporterFSM:
+    """Owns the exporter lifecycle's input buffer and single-use runner."""
+
+    inputs: InputBuffer = field(default_factory=InputBuffer)
+    runner: FSMRunner[Inputs] | None = field(init=False, default=None)
+    """The lifecycle in either serving mode; current_state remains queryable after exit."""
+
+    async def run(self, initial: State, *, name: str) -> None:
+        self.runner = FSMRunner(initial, self.inputs, name=name)
+        await self.runner.run()
+
+
 def _stop_now(inputs: Inputs) -> bool:
     return inputs.shutdown is not None and inputs.shutdown.mode == ShutdownMode.STOP_NOW
 
@@ -176,7 +189,7 @@ class Available:
         lease = LeaseContext(
             lease_name=assignment.key.name,
             client_name=assignment.client_name,
-            wake=self.exporter._inputs.wake,
+            wake=self.exporter.fsm.inputs.wake,
         )
         self.exporter._lease_context = lease
         set_log_context(**{"lease_id": lease.lease_name, "exporter": self.exporter.exporter_name, **assignment.context})
