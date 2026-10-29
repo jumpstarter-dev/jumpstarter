@@ -34,6 +34,7 @@ rust/**/target/
 
 # Generated documentation
 docs/source/reference/grpc/*.md
+docs/source/introduction/exporter-fsm-diagram.md
 docs/build/
 docs/build_all/
 docs/source/reference/crds/*.md
