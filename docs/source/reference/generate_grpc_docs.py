@@ -360,22 +360,27 @@ def build_type_index(proto_files: list[ProtoFile]) -> dict[str, str]:
     for proto_file in proto_files:
         slug = proto_file["filename"].replace(".proto", "")
         md_file = f"{slug}.md"
+        prefix = f"{proto_file['package']}." if proto_file["package"] else ""
         for message in proto_file["messages"]:
             anchor = message["name"].replace(".", "").lower()
-            index[message["name"]] = f"{md_file}#{anchor}"
+            index[message["name"]] = index[prefix + message["name"]] = f"{md_file}#{anchor}"
         for enum_def in proto_file["enums"]:
             anchor = enum_def["name"].lower()
-            index[enum_def["name"]] = f"{md_file}#{anchor}"
+            index[enum_def["name"]] = index[prefix + enum_def["name"]] = f"{md_file}#{anchor}"
     return index
 
 
-def format_type_ref(type_name: str, type_index: dict[str, str]) -> str:
-    if type_name in type_index:
-        return f"[`{type_name}`]({type_index[type_name]})"
+def format_type_ref(type_name: str, type_index: dict[str, str], package: str = "") -> str:
+    # Resolve like protoc: innermost package scope first, so names shared across packages link correctly.
+    scopes = package.split(".") if package else []
+    for depth in range(len(scopes), -1, -1):
+        link = type_index.get(".".join([*scopes[:depth], type_name]))
+        if link is not None:
+            return f"[`{type_name}`]({link})"
     return f"`{type_name}`"
 
 
-def render_service(service: Service, *, type_index: dict[str, str] | None = None) -> str:
+def render_service(service: Service, *, type_index: dict[str, str] | None = None, package: str = "") -> str:
     sections = []
     sections.append(f"### {service['name']}\n")
     if service["description"]:
@@ -387,8 +392,8 @@ def render_service(service: Service, *, type_index: dict[str, str] | None = None
             streaming_prefix_in = "stream " if method["client_streaming"] else ""
             streaming_prefix_out = "stream " if method["server_streaming"] else ""
             if type_index is not None:
-                request_ref = format_type_ref(method["input_type"], type_index)
-                response_ref = format_type_ref(method["output_type"], type_index)
+                request_ref = format_type_ref(method["input_type"], type_index, package)
+                response_ref = format_type_ref(method["output_type"], type_index, package)
             else:
                 request_ref = f"`{method['input_type']}`"
                 response_ref = f"`{method['output_type']}`"
@@ -401,7 +406,7 @@ def render_service(service: Service, *, type_index: dict[str, str] | None = None
     return "\n".join(sections) + "\n"
 
 
-def render_message(message: Message, *, type_index: dict[str, str] | None = None) -> str:
+def render_message(message: Message, *, type_index: dict[str, str] | None = None, package: str = "") -> str:
     sections = []
     display_name = message["name"]
     sections.append(f"### {display_name}\n")
@@ -413,7 +418,7 @@ def render_message(message: Message, *, type_index: dict[str, str] | None = None
         for field in message["fields"]:
             desc = field["description"].replace("|", r"\|")
             if type_index is not None:
-                type_ref = format_type_ref(field["type"], type_index)
+                type_ref = format_type_ref(field["type"], type_index, package)
             else:
                 type_ref = f"`{field['type']}`"
             sections.append(
@@ -448,12 +453,12 @@ def render_proto_doc(proto_data: ProtoFile, *, type_index: dict[str, str] | None
     if proto_data["services"]:
         sections.append("## Services\n")
         for service in proto_data["services"]:
-            sections.append(render_service(service, type_index=type_index))
+            sections.append(render_service(service, type_index=type_index, package=proto_data["package"]))
 
     if proto_data["messages"]:
         sections.append("## Messages\n")
         for message in proto_data["messages"]:
-            sections.append(render_message(message, type_index=type_index))
+            sections.append(render_message(message, type_index=type_index, package=proto_data["package"]))
 
     if proto_data["enums"]:
         sections.append("## Enums\n")
