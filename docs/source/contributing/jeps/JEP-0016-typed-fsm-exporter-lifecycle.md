@@ -17,14 +17,14 @@
 ## Abstract
 
 This JEP proposes a small, typed finite state machine (FSM) runner for Jumpstarter
-and its use to make the controller-mode exporter lifecycle explicit. One task
+and its use to make the exporter lifecycle explicit in controller and standalone
+modes. One task
 executes named states sequentially, while background tasks publish observations
 and requests without performing transitions. A state awaits its activity and
 returns a successor, returns `None` to let the runner wait for changed inputs, or
-returns `ExitFSM` to terminate. The accompanying implementation of
-`jumpstarter.fsm`, including its runner-owned resource stack, establishes the
-foundation. The exporter states in `jumpstarter.exporter.fsm` and migrating the
-running exporter are a separate, subsequent step.
+returns `ExitFSM` to terminate. The accompanying implementation first establishes
+the reusable `jumpstarter.fsm` foundation, then migrates both exporter modes to
+the states in `jumpstarter.exporter.fsm`.
 
 ## Motivation
 
@@ -142,24 +142,32 @@ empty exporter runner subclass or factory is required.
 
 ### Scope and implementation
 
-This increment implements the shared foundation, including the resource-stack
-contract. The exporter states and cutover follow in a separate PR:
+The implementation in this branch includes the shared foundation and both
+exporter modes. Hardware-backed acceptance remains a pre-merge check.
 
-| File | Purpose |
+| Reference file | Purpose |
 | --- | --- |
 | `python/packages/jumpstarter/jumpstarter/fsm.py` | Generic interfaces, named single-use runner, current-state queries, and debug tracing |
 | `python/packages/jumpstarter/jumpstarter/fsm_test.py` | An independent boolean-input example and runner behavior checks |
+| `python/packages/jumpstarter/jumpstarter/exporter/fsm.py` | Exporter snapshots, input notifications, and production lifecycle/failure states |
+| `python/packages/jumpstarter/jumpstarter/exporter/fsm_test.py` | Typed demonstration states and exporter-input checks using existing `LeaseContext` objects |
+| `python/packages/jumpstarter/jumpstarter/exporter/fsm_lifecycle_test.py` | Production lifecycle checks using real session sockets and controlled controller/hook operations |
 
-The exporter input model (`jumpstarter.exporter.fsm`: immutable `Inputs`,
-`InputBuffer`, assignment generations, persistent shutdown intent), the typed
-demonstration states, and the production lifecycle states are implemented by the
-subsequent integration PR, which wires `Exporter.serve()` to the runner. Neither
-module is invoked by this increment.
+The demo does not open real sessions or transports. Its compact `Cleanup` state
+stands in for completion. Production states and integration checks implement the
+distinct after-hook, reservation wait, and transport-close phases below.
+`Exporter.serve()` now runs `FSMRunner(Available(...), inputs)` after registration;
+`serve_standalone_tcp()` supplies its TCP/Unix session context to the same states.
+The runner is available as `exporter.runner` for current-state queries in either mode.
 
-The controller-mode migration reuses the existing hook execution, transport,
-reporting, and supervision facilities. Standalone TCP mode, connection bridging,
-and process supervision are not redesigned. Shared helpers must keep their
-standalone callers working as controller-mode orchestration moves.
+All states use `run(inputs, resources)`. On failure the runner passes the exception
+to the stack's `__aexit__`, then re-raises it regardless of suppression, allowing
+exception-aware resource cleanup without hiding lifecycle failures. Successful
+exit closes remaining resources before publishing `ExitFSM`.
+
+Both modes reuse existing hook execution and session transports. Standalone mode
+shares hook sequencing and resource ownership with controller mode, removing the
+remaining hook-orchestration wrappers and duplicated `LeaseContext` phase flags.
 
 ## Design Decisions
 
@@ -268,9 +276,9 @@ mutate it. Exceptions/cancellation propagate and leave the last state queryable;
 the runner rejects concurrent or repeated execution.
 
 Retain the last active state while final unwinding runs and publish the terminal
-`ExitFSM` state only after successful closure. A cleanup error must propagate
-rather than look like successful exit. Resource context managers must not
-suppress lifecycle exceptions/cancellation.
+`ExitFSM` state only after successful
+closure. A cleanup error must propagate rather than look like successful exit.
+Resource context managers must not suppress lifecycle exceptions/cancellation.
 
 DEBUG logs under `jumpstarter.fsm` include the configured runner name and
 distinguish logical state entry/exit from individual `run()` evaluations.
@@ -297,7 +305,7 @@ behavioral checks establish those properties.
 | Active lease/resources | Current state's lease reference, not a global input registry |
 | Registered resource lifetime | Runner-owned `AsyncExitStack`, shared across state calls |
 | Completed assignment | `Available.last_completed`, updated only after teardown |
-| EndSession | Existing `LeaseContext.end_session_requested` event on that session's lease |
+| EndSession | Retained `LeaseContext.end_session_requested` boolean on that session's lease |
 | Notification | One coalescing AnyIO event, carrying no lifecycle payload |
 
 “Lifecycle owner” means the task executing `FSMRunner.run()` and its current
@@ -311,11 +319,19 @@ during a hook. A stream interruption is not an unleased observation: retain the
 last assignment through retries. Invalid assigned-lease names are rejected at
 publication; static types do not validate string contents.
 
-The session adapter sets its own lease's EndSession event and calls
-`inputs.wake("EndSession")` synchronously, without an intervening await. Duplicate
-requests are idempotent. An old session can at most cause an extra reevaluation;
-it cannot alter or clear the new lease's request. Never reuse a lease object for
-another assignment.
+The session adapter calls `lease.request_end_session()`, which sets that lease's
+boolean and calls `InputBuffer.wake("EndSession")` synchronously, without an
+intervening await. Duplicate requests are idempotent. An old session can at most
+cause an extra reevaluation; it cannot alter or clear the new lease's request.
+Never reuse a lease object for another assignment.
+
+`LeaseContext` retains only lease identity, session/socket/client references,
+EndSession intent, and a wake callback. It holds no events or lifecycle/status
+flags. Hook progress and cleanup eligibility follow from the current state and
+its successors; release follows from assignment generations. The session already
+owns protocol status, its message, and status-change notification. EndSession
+cannot be inferred from a phase: it is external intent that must survive an
+activity until a successor handles it.
 
 ### Race-safe waiting
 
@@ -371,7 +387,9 @@ failure outcome and own their policy-specific successors.
   key; otherwise prepare the session for the current assignment. Return `None`
   when there is nothing admissible.
 - **BeforeLeaseHook:** await the existing execution-only hook method and select
-  `LeaseReady` or `BeforeLeaseHookFailed` directly from its outcome.
+  `LeaseReady` or `BeforeLeaseHookFailed` directly from its outcome. Check the
+  latest assignment after session setup before starting Listen and hook work;
+  skip both hooks and close if setup completed for a revoked assignment.
 - **LeaseReady:** inspect shutdown mode, revocation/reassignment, and this lease's
   EndSession request. Return `None` while normal service continues.
 - **AfterLeaseHook:** run eligible cleanup once, then select
@@ -385,10 +403,16 @@ failure outcome and own their policy-specific successors.
 - **Stopping:** publish `OFFLINE`, finish applicable controller unregistration,
   telemetry, and runtime-sidecar shutdown, then return `ExitFSM()`.
 
-`EndSession` does **not** release the reservation or set `lease_ended`. Ordinary
-cleanup never requests controller release. The existing
-`TestCleanupDoesNotReleaseActiveLease` regression is part of the compatibility
-contract. Hook completion is not transport completion.
+`ReleasingLease` is reached only for an explicit `endLease` hook failure. It
+preserves the existing one-second failure-observation window, then attempts named
+release before local closure. Before-hook `exit`/`endLease` failures bypass the
+after-hook; successful or partially executed setup can require cleanup even when
+no client name was assigned.
+
+`EndSession` does **not** release the reservation. Ordinary cleanup never requests
+controller release. Production lifecycle tests verify that repeated EndSession
+requests run cleanup once and preserve the session until release or stop-now.
+Hook completion is not transport completion.
 
 The session and hook socket must exist before the before-hook and remain alive
 through after-hook execution and any release wait. Register `session_for_lease()`
@@ -396,6 +420,11 @@ with the runner-provided stack, keeping context entry/exit in the same lifecycle
 task, including exceptional cleanup if setup or a state raises. Listen,
 connection bridging, gRPC serving, and log delivery remain concurrent I/O tasks.
 Both hook phases retain driver-call access so hooks can use `j`.
+Remote Dial requests stay buffered while the session status is `BEFORE_LEASE_HOOK`,
+using its existing `_status_update_event` to wait for the published outcome. This
+keeps local hook access from accidentally enabling remote driver calls during
+setup without a duplicate lease-local event. Failure status is published before
+opening that routing gate.
 
 `ExporterStatus` is an output projection, not the entire state set. Both
 `Available` and `AwaitingLeaseRelease` may report `AVAILABLE`, but only the former
@@ -459,6 +488,12 @@ is not automatically retried by a later `aclose()`. A resource helper owns any
 required termination fallback. Similarly, failed `__aenter__` must clean its own
 partial allocations: the stack only registers contexts that entered successfully.
 
+Session server cleanup is shielded and bounded (five seconds, with an immediate
+gRPC stop fallback on timeout). Lease I/O cancellation/join is bounded to ten
+seconds. Driver shutdown and close attempt sibling cleanup and propagate collected
+failures; logging an error cannot turn incomplete teardown into availability.
+Driver lifecycle methods remain synchronous and need driver-specific I/O bounds.
+
 Keep AnyIO task groups and cancellation scopes explicitly nested in their owning
 task. They require same-task, reverse-order scope exit. Do not register a task
 group and then blindly wrap the entire `resources.aclose()` in a newer shield:
@@ -482,11 +517,17 @@ On normal shutdown, keep required I/O available through hook and resource cleanu
 then stop exporter-wide producer tasks. A background failure may cancel the runner
 earlier, so resource-local cleanup protection is required on that path too.
 
+The exporter keeps its background and lease-I/O groups in separate owning tasks.
+Their ordinary resource contexts cancel and await those tasks, so `Stopping` can
+join producers without cancelling the lifecycle task itself. Final status and
+unregistration run after the status-report worker has stopped; an old retry cannot
+overwrite the final report. The same exporter-wide cleanup is used on exceptions.
+
 ### Hook failure, shutdown, and stream policy
 
 Reuse `execute_before_lease_hook()` and `execute_after_lease_hook()`, which return
-a warning or raise. Move policy orchestration out of the `run_*_hook()` wrappers
-as their callers migrate; do not run old and new orchestration simultaneously.
+a warning or raise. Policy orchestration now lives entirely in states; the
+`run_*_hook()` wrappers and their readiness polling have been removed.
 
 - **Success, no hook, or `warn`:** continue and retain warning information.
 - **`endLease`:** report failure and request release of that named lease. Check
@@ -499,8 +540,8 @@ as their callers migrate; do not run old and new orchestration simultaneously.
   do not invent an `endLease` policy.
 
 Before-hook `endLease`/`exit` failures suppress the after-hook. Assigned client
-name alone is not a cleanup-eligibility test: `has_client()` does not mean a
-connection occurred and does not encode the before-hook outcome.
+name alone does not establish cleanup eligibility or encode the before-hook
+outcome; successor states make that decision.
 
 **Drain** admits no replacement and stops after the active lease finishes; it
 stops immediately when idle. **Stop-now** overrides drain and stops locally at
@@ -508,17 +549,40 @@ the next activity boundary without waiting for controller release. Protect only
 activities/cleanup that must finish, preserving their internal configured
 timeouts; never shield the entire generic runner.
 
-The reference input merge makes stop-now sticky, retains the first explicit
-exit code and nonempty reason, and never re-enables controller cleanup once
-disabled. This is reference behavior to review before production integration,
-particularly when hook failures, signals, and stream failures conflict.
+The input merge makes stop-now sticky. A stronger request supplies its explicit
+exit code/reason; equal or weaker modes retain the first explicit code/reason.
+Controller cleanup cannot be re-enabled once disabled. Thus a terminal stream
+stop-now with code 75 overrides a hook's drain request with code 1, while a later
+hook failure cannot downgrade that terminal result. CLI signal codes retain their
+existing precedence over exporter codes.
 
-Terminal stream failures currently raise into the task group. Their adapters
-must instead publish shutdown intent where required to honor deferral. Preserve
+Terminal stream adapters publish shutdown intent to honor activity deferral.
+The retry helper still raises to its callers; the lifecycle adapter handles
+classified terminal failures. Preserve
 classification: Status outage exhaustion and authentication/authorization
 failures use exit code 75; other fail-fast gRPC errors use 1. Preserve the CLI's
 signal exit-code precedence and whether controller cleanup RPCs are appropriate.
 `exit_on_lease_end` and sidecar shutdown must honor full lease teardown.
+
+FSM release attempts have a 30-second overall budget, including backoff, and
+recheck assignment generation and stop-now before every RPC attempt and after
+channel setup. The existing local-finish fallback applies after release failure
+or budget exhaustion. Status delivery remains a background operation; hook
+activities retain their configured timeouts. These bounds avoid waiting through
+the old approximately 18-minute unary-RPC retry sequence at a lease boundary.
+
+### Standalone lifecycle
+
+Standalone TCP mode publishes a single `standalone` assignment and supplies its
+TCP/Unix session context through `Available.session_context`. It uses the same
+states and runner-owned stack, without controller connection tasks or RPCs.
+`beforeLease` runs once at startup. EndSession runs eligible after-hook cleanup
+once and retains the server for final status/log access until the exporter stops.
+
+There is no controller reservation to drain: standalone stop requests, including
+drain requests, become stop-now and take effect after the current activity.
+An `endLease` hook failure retains the failed single session until stop; `exit`
+stops with code 1. Explicit before-hook failures skip the after-hook in both modes.
 
 ### Incremental migration
 
@@ -539,31 +603,35 @@ signal exit-code precedence and whether controller cleanup RPCs are appropriate.
    | Pending assignment replay | Latest observation plus generation |
    | Completed-lease suppression | `Available.last_completed` after teardown |
    | Scattered stop flags/checks | Persistent shutdown intent |
-   | Hook completion messages and racing cleanup paths | Sequential activity awaits and successors |
+    | Hook completion messages and racing cleanup paths | Sequential activity awaits and successors |
+    | `before_lease_hook`, `after_lease_hook_started`, `after_lease_hook_done`, `skip_after_lease_hook` | Hook states, successors, and session-status routing gate |
+    | `lease_ended` | Assignment generation checks and `ClosingLease` |
+    | `LeaseContext.current_status` / `status_message` | Session-owned status and message |
    | `LeaseFinished` | Awaited full resource teardown by the lifecycle task |
    | Multiple lifecycle status writers | One state/outcome publisher |
 
-6. Run relevant regressions and package/full type checks; adapt shared standalone
-   callers before deleting their helpers. A watchdog warning must never be used
-   as evidence that teardown completed.
+6. Reuse the lifecycle in standalone mode, remove its obsolete wrappers/events,
+   and run relevant regressions and package/full type checks. A watchdog warning
+   must never be used as evidence that teardown completed.
 
 ## Test Plan
 
 ### Unit tests and static verification
 
-The foundation has 15 passing cases using an independent boolean source. They
-use existing pytest, AnyIO event barriers, and bounded waits instead of
-sleep-based ordering.
+Shared-runner cases use an independent boolean source alongside exporter-input
+checks. They use existing pytest, AnyIO event barriers, and bounded waits instead
+of sleep-based ordering.
 
 Coverage includes current-state queries, read-only access, duplicate execution,
 logical transitions versus reevaluation, named logs, deterministic run timing,
-error/cancellation propagation and cleanup, and immediate transitions covering
-already-pending cancellation and producer progress with fresh inputs through
-states that never yield internally. Resource tests enter actual async contexts
-and await their cleanup. Exporter-input coverage (coalescing, generation
-boundaries, completed-assignment suppression, shutdown escalation, lease-local
-requests, and blocked teardown before replacement) is added by the integration
-increment.
+error/cancellation propagation and cleanup, input-payload omission, wakeup races,
+coalescing, generation boundaries, completed-assignment suppression, shutdown
+escalation, lease-local requests, and blocked teardown before replacement.
+Immediate-transition checks cover already-pending cancellation and producer
+progress with fresh snapshots through states that never yield internally.
+Resource tests enter actual async contexts and await their cleanup. The production
+lifecycle suite additionally uses real gRPC session sockets, exercises driver
+calls during both hook phases, and verifies producer and connection-task shutdown.
 
 ### Resource-stack verification
 
@@ -586,19 +654,18 @@ increment.
 
 ### Static verification
 
-Positive `assert_type()` checks pass for Python 3.12 and 3.14 targets. Five
-temporary negative probes reject invalid state/successor returns, writes to
-`current_state`, mismatched state/input-source types, and legacy state methods
-missing the resource-stack argument. Check intended diagnostics, not unrelated
-import failures. Exporter-input probes (shutdown mode, metadata types) are added
-by the integration increment.
+Positive `assert_type()` checks pass for Python 3.12 and 3.14 targets. Eight
+temporary negative probes reject invalid state/successor returns, shutdown mode,
+metadata types, writes to `current_state`, and mismatched state/input-source
+input types, including legacy state methods missing the resource-stack argument.
+Each diagnostic points to its intended statement.
 
 From `python/`:
 
 ```sh
-uv run --isolated --directory packages/jumpstarter pytest -q jumpstarter/fsm_test.py
+uv run --isolated --directory packages/jumpstarter pytest -q jumpstarter/fsm_test.py jumpstarter/exporter/fsm_test.py
 make pkg-ty-jumpstarter
-uv run ruff check packages/jumpstarter/jumpstarter/fsm{,_test}.py
+uv run ruff check packages/jumpstarter/jumpstarter/fsm{,_test}.py packages/jumpstarter/jumpstarter/exporter/fsm{,_test}.py
 ```
 
 The new files pass independently on macOS; the existing package-wide native
@@ -624,62 +691,76 @@ The real lifecycle migration must verify:
   and controller-cleanup policy.
 - Setup failure and exceptional cancellation close resources, and retries cannot
   become an immediate admission/failure loop.
+- Standalone mode uses the same states, defers requests during hooks, runs cleanup
+  once, retains final-status access after EndSession, and makes no controller RPCs.
 
-Run existing exporter, hook, session, retry, standalone, and CLI regressions plus
-the affected package and full `make ty` checks. These integration results are not
-claimed by the reference foundation.
+The integration suite checks these production states with controlled hooks and
+controller operations. Obsolete control-loop, `LeaseFinished`, and hook-wrapper
+tests are replaced by lifecycle tests for their observable guarantees. Hook
+execution, session, unary/stream retry, and sidecar-operation regressions remain.
+Run these and CLI regressions plus affected-package and full `make ty` checks.
+
+Verification on 2026-10-28 after standalone and `LeaseContext` cleanup: the core
+package suite (including doctests) has 1,083 passing tests and 20 existing XPASS
+cases; the exporter/shared-runner suite has 269 passing tests and the same 20 XPASS.
+CLI run/signal checks have 13 passing cases. All 63 focused FSM/input/lifecycle/
+LeaseContext checks pass. Core and CLI package typing pass for Linux. Native full
+`make ty` remains blocked by the macOS `errno.ENOMEDIUM` diagnostic noted above.
+The project's `--capture=no` setting is needed by shell tests that pass stdin to
+subprocesses.
 
 ### Hardware-in-the-loop and manual verification
 
 No hardware is required for the reference runner or input checks. Before
-controller-mode cutover, exercise a lab exporter with before/after hooks that
+merge, exercise a lab exporter with before/after hooks that
 perform driver calls, hold a hook while releasing/reassigning the lease, and send
 drain and stop-now signals. Verify real device/sidecar lifetime and final-log
 access rather than relying only on synthetic state traces. Hardware availability
 and automation in the project's lab CI must be confirmed for that migration.
 
-Reviewers can run the foundation suite and enable DEBUG for `jumpstarter.fsm`
-to inspect evaluation timing and named transitions.
+Reviewers can run the reference suites and enable DEBUG for `jumpstarter.fsm`
+and `jumpstarter.exporter.fsm` to inspect evaluation timing and named transitions.
 
 ## Acceptance Criteria
 
-- [x] A domain-independent typed runner is provided as tested reference code,
-  without production wiring; the exporter-input specialization follows with the
-  integration increment.
+- [x] A domain-independent typed runner and exporter-input specialization are
+  provided and used by both exporter modes.
 - [x] Independent input sources, external state queries, safe debug tracing,
   behavioral checks, and positive/negative typing verification work.
 - [x] The runner-owned `AsyncExitStack` is passed to states; context lifetime,
   same-task LIFO teardown, bounded cancellation-safe closing, and supervisor exit
   pass the resource-stack checks above.
-- [ ] Real lifecycle/failure states own hook sequencing, status publication, and
+- [x] Real lifecycle/failure states own hook sequencing, status publication, and
   resource teardown with one coherent exporter cutover.
-- [ ] Reservation/final-log behavior, driver gating, shutdown deferral, and stream
+- [x] Reservation/final-log behavior, driver gating, shutdown deferral, and stream
   failure classification pass exporter/CLI integration regressions.
-- [ ] Standalone callers remain supported and replaced coordination is removed
-  only after the lifecycle task assumes its responsibility.
-- [ ] Hardware-backed verification and operational documentation cover the
-  deliberate hook/shutdown deferral behavior before it becomes the default.
+- [x] Standalone shares the lifecycle; `LeaseContext` has no phase events or
+  duplicated status, and only external EndSession intent remains lease-local.
+- [x] Operational documentation covers hook/shutdown deferral in both modes.
+- [ ] Complete hardware-backed verification before merge.
 
 ## Backward Compatibility
 
-The reference increment is additive and not invoked by the current exporter.
-It does not change gRPC messages, CRDs, CLI flags, configuration, driver APIs, or
-current reservation/hook behavior. The proposed Python interfaces remain subject
-to JEP review; including a reference does not mean the full lifecycle is accepted
-or implemented.
+The implementation changes exporter orchestration without changing gRPC
+messages, CRDs, CLI flags, configuration, or exported driver methods. The Python
+interfaces and lifecycle policy remain subject to JEP review. Standalone TCP mode
+now uses the same FSM, retaining its single-session lifetime and local hook access.
 
 Adding `resources: AsyncExitStack` changes the reference state method signature
-from `run(inputs)` to `run(inputs, resources)`. Update all reference states and
-type examples together; this increment's implementation and checks use the
-revised signature.
+from `run(snapshot)` to `run(inputs, resources)`. Update all reference states and
+type examples together; the implementation and checks use the revised signature.
 
-The later controller-mode migration deliberately changes ordinary stop handling
+The migration deliberately changes ordinary stop handling in both modes
 during activities: requests wait for a bounded activity boundary rather than
 immediately cancelling the task group. This may leave old connection handling
 alive longer after revocation or finish setup for an already revoked assignment.
 Validate admission, driver access, and cleanup ordering explicitly. Preserve
 external status, failure policies, stream exit codes, and CLI signal precedence.
 No operator or wire-protocol upgrade is required.
+
+Session/driver teardown errors now propagate after remaining cleanup is attempted,
+rather than merely being logged. This intentionally prevents successful exit or
+replacement admission when a driver reports incomplete teardown.
 
 ## Consequences
 
@@ -708,9 +789,9 @@ No operator or wire-protocol upgrade is required.
 
 - **Only document the existing flags:** useful short-term, but retains scattered
   lifecycle decisions and competing cleanup paths.
-- **Replace the full exporter in the proposal PR:** makes design review depend on
-  a large behavioral cutover. Review the foundation and compatibility contract
-  first, then integrate incrementally.
+- **Migrate before verifying the foundation:** makes design review depend on a
+  large behavioral cutover. The implementation establishes the foundation and
+  resource-lifetime checks before integrating the real exporter.
 - **Force every component onto the shared runner:** reuse is optional; simple
   existing sequential code does not need conversion without a concrete benefit.
 
@@ -719,32 +800,32 @@ input ownership registry alternatives are covered in DD-1 through DD-4.
 
 ## Unresolved Questions
 
-- Confirm ordinary activity-boundary deferral and its operational bounds before
-  the real exporter cutover.
-- Finalize conflicting hook/signal/stream exit-code and controller-cleanup
-  precedence; the reference's first-explicit-code rule is not evidence that
-  existing terminal-stream classification is preserved in every combined case.
-- Select concrete runtime dependencies and per-resource close bounds/fallbacks
-  for real states, and confirm lab/CI coverage for hardware-backed migration
-  checks.
+- Confirm the activity-boundary behavior and resource-close bounds with a lab
+  exporter, including hardware drivers whose synchronous cleanup needs its own
+  I/O timeout. Automated coverage verifies simulated controller/hook scheduling
+  and real local sockets, not physical-device timing.
+- Confirm lab/CI coverage for hardware-backed migration checks before merge.
 
 ## Implementation History
 
 - 2026-10-26: Converted the exporter FSM design plan into this proposal and
   included the typed shared runner, exporter-input reference, and 19 checked
   behavioral cases in [PR #1250](https://github.com/jumpstarter-dev/jumpstarter/pull/1250).
-  Production lifecycle integration remains pending.
+  That increment left production lifecycle integration pending.
 - 2026-10-28: Specify a runner-owned `AsyncExitStack` passed to state methods,
   explicit per-lease closure, resource-local bounded/shielded cleanup, and scoped
   supervisor shutdown, initially as a design-only revision.
 - 2026-10-28: Add a runner checkpoint before snapshot capture and two regression
   cases for cancellation and producer progress through immediate transitions.
+- 2026-10-28: Implement the resource-stack contract and migrate controller-mode
+  orchestration to typed lifecycle/failure states. Replace pending-assignment
+  replay and `LeaseFinished` coordination; add real-session integration checks,
+  bounded release attempts, terminal-stream precedence, and strict teardown.
 - 2026-10-28: Name state data `Inputs` and its publishing/coalescing source
   `InputBuffer`; state methods read `run(inputs: Inputs, resources: AsyncExitStack)`.
-- 2026-10-28: Implement the resource-stack contract with exception-aware
-  unwinding and awaited-cleanup checks in `jumpstarter.fsm`. Move the exporter
-  input reference to the subsequent integration PR; this PR keeps the shared
-  foundation only.
+- 2026-10-28: Reuse the lifecycle for standalone TCP mode; remove hook wrappers,
+  readiness polling, and all `LeaseContext` events and duplicated status. Retain
+  EndSession as a boolean request; use session-status notification for routing.
 
 ## References
 
