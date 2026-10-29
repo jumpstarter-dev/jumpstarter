@@ -48,7 +48,7 @@ class _BufferedDuplexStream(StapledByteStream):
     async def send_eof(self):
         # Both halves share one socket. StapledByteStream's default closes the
         # sender entirely, which would discard the outstanding response too.
-        await self.send_stream.send_eof()
+        await self.send_stream.send_eof()  # ty: ignore[unresolved-attribute]
 
 
 def _uint(value, maximum=0xFFFFFFFF):
@@ -101,8 +101,8 @@ def _matches(device, udid, connection_type=None):
 
 
 def _memory_pair():
-    a_tx, a_rx = create_memory_object_stream[bytes](16)  # ty: ignore[call-non-callable]
-    b_tx, b_rx = create_memory_object_stream[bytes](16)  # ty: ignore[call-non-callable]
+    a_tx, a_rx = create_memory_object_stream[bytes](16)
+    b_tx, b_rx = create_memory_object_stream[bytes](16)
     return StapledObjectStream(a_tx, b_rx), StapledObjectStream(b_tx, a_rx)
 
 
@@ -160,6 +160,7 @@ class UsbMuxDaemon:
             if self.host is None:
                 stream = await connect_unix(self.path)
             else:
+                assert self.port is not None  # guaranteed by __post_init__: host and port are set together
                 stream = await connect_tcp(self.host, self.port)
         async with stream:
             yield stream

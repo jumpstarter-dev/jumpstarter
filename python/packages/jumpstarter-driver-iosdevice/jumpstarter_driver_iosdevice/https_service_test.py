@@ -93,7 +93,7 @@ class HttpDevice:
 async def running_https():
     peer = HttpDevice()
     listener = await create_tcp_listener(local_host="127.0.0.1")
-    host, port = listener.extra(SocketAttribute.local_address)
+    host, port = "127.0.0.1", listener.extra(SocketAttribute.local_port)
     driver = IosDevice(
         transport="network", udid=UDID, usbmux_host=host, usbmux_port=port, http_port=HTTP_PORT, connect_timeout=2
     )
