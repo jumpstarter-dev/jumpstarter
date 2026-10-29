@@ -608,6 +608,8 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, config
 		MountPath: "/etc/jumpstarter",
 		ReadOnly:  true,
 	})
+	// Set DefaultMode explicitly to avoid reconciliation loop (K8s defaults to 420/0644)
+	configDefaultMode := int32(420)
 	volumes = append(volumes, corev1.Volume{
 		Name: "controller-config",
 		VolumeSource: corev1.VolumeSource{
@@ -619,6 +621,7 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, config
 					Key:  "config",
 					Path: "config.yaml",
 				}},
+				DefaultMode: &configDefaultMode,
 			},
 		},
 	})

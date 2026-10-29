@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
@@ -100,6 +101,36 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		_ = k8sClient.Delete(ctx, &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: crNamespace},
 		})
+	})
+
+	It("does not rewrite the telemetry Deployment on a repeated reconcile", func() {
+		spec := makeJumpstarterSpec()
+		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
+			Enabled: true,
+			Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+		}
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       spec,
+		})).To(Succeed())
+		recorder := record.NewFakeRecorder(100)
+		r := newReconciler()
+		r.Recorder = recorder
+		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: crName, Namespace: crNamespace}}
+
+		_, err := r.Reconcile(ctx, request)
+		Expect(err).NotTo(HaveOccurred())
+		for len(recorder.Events) > 0 {
+			<-recorder.Events
+		}
+
+		// Owns(Deployment) turns every rewrite into another reconcile, so a field
+		// the API server defaults differently from the desired spec loops forever.
+		_, err = r.Reconcile(ctx, request)
+		Expect(err).NotTo(HaveOccurred())
+		for len(recorder.Events) > 0 {
+			Expect(<-recorder.Events).NotTo(ContainSubstring("TelemetryDeploymentUpdated"))
+		}
 	})
 
 	It("creates Deployment and Service when telemetry is enabled", func() {
