@@ -465,4 +465,98 @@ print("PYTHON_HOOK: complete")
 		})
 	})
 
+	// ====================================================================
+	// Group I: Exporter Restarts
+	// ====================================================================
+	Context("Group I: Exporter Restarts", func() {
+		const hookLog = "/tmp/jumpstarter-e2e-restart-hooks.log"
+		exporterRef := "exporters.jumpstarter.dev/test-exporter-hooks"
+
+		// hookRuns lists the hook runs recorded by exporter-hooks-restart.yaml.
+		hookRuns := func() []string {
+			data, err := os.ReadFile(hookLog)
+			if err != nil {
+				return nil
+			}
+			return strings.Split(strings.TrimSpace(string(data)), "\n")
+		}
+
+		// holdSetUpLease starts the exporter and returns a lease on it whose
+		// beforeLease hook has run. A pre-created lease outlives each shell.
+		holdSetUpLease := func() string {
+			Expect(os.Remove(hookLog)).To(Or(Succeed(), MatchError(os.ErrNotExist)))
+			DeferCleanup(func() { _ = os.Remove(hookLog) })
+			startHooksExporterSingle("exporter-hooks-restart.yaml")
+
+			lease := strings.TrimSpace(MustJmp("create", "lease", "--client", "test-client-hooks",
+				"--selector", "example.com/board=hooks", "--duration", "10m", "--output", "name"))
+			DeferCleanup(func() {
+				_, _ = Jmp("delete", "lease", "--client", "test-client-hooks", lease)
+			})
+
+			out, err := Jmp("shell", "--client", "test-client-hooks", "--lease", lease, "j", "power", "on")
+			Expect(err).NotTo(HaveOccurred(), out)
+			Expect(hookRuns()).To(Equal([]string{"before " + lease}))
+			return lease
+		}
+
+		// stopExporter stops the exporter the way systemctl stop/restart does (SIGTERM).
+		stopExporter := func() {
+			tracker.StopAll()
+			WaitForExporterOffline("test-exporter-hooks")
+		}
+
+		It("I1: exporter restart keeps the lease without rerunning hooks", func() {
+			lease := holdSetUpLease()
+
+			stopExporter()
+			Expect(hookRuns()).To(Equal([]string{"before " + lease}))
+			tracker.StartExporterSingle("test-exporter-hooks")
+			Eventually(func() string { return exporterState(Namespace(), exporterRef) },
+				defaultWaitTimeout, exporterPollPeriod).Should(Equal("LeaseReady|" + lease))
+
+			out, err := Jmp("shell", "--client", "test-client-hooks", "--lease", lease, "j", "power", "on")
+			Expect(err).NotTo(HaveOccurred(), out)
+			Expect(hookRuns()).To(Equal([]string{"before " + lease}))
+
+			// The lease really ends: now the afterLease hook runs, once.
+			MustJmp("delete", "lease", "--client", "test-client-hooks", lease)
+			Eventually(hookRuns, defaultWaitTimeout, exporterPollPeriod).Should(
+				Equal([]string{"before " + lease, "after " + lease}))
+			WaitForExporter("test-exporter-hooks")
+		})
+
+		It("I2: lease that ends while the exporter is down gets its afterLease hook on restart", func() {
+			lease := holdSetUpLease()
+
+			stopExporter()
+			MustJmp("delete", "lease", "--client", "test-client-hooks", lease)
+			Expect(hookRuns()).To(Equal([]string{"before " + lease}))
+
+			tracker.StartExporterSingle("test-exporter-hooks")
+			Eventually(hookRuns, defaultWaitTimeout, exporterPollPeriod).Should(
+				Equal([]string{"before " + lease, "after " + lease}))
+			WaitForExporter("test-exporter-hooks")
+			Expect(hookRuns()).To(Equal([]string{"before " + lease, "after " + lease}))
+		})
+
+		It("I3: a lease waiting for the exporter is set up only after the cleanup it owed", func() {
+			first := holdSetUpLease()
+
+			stopExporter()
+			MustJmp("delete", "lease", "--client", "test-client-hooks", first)
+			// The next lease waits for the board while the exporter is down.
+			second := strings.TrimSpace(MustJmp("create", "lease", "--client", "test-client-hooks",
+				"--selector", "example.com/board=hooks", "--duration", "10m", "--output", "name"))
+			DeferCleanup(func() {
+				_, _ = Jmp("delete", "lease", "--client", "test-client-hooks", second)
+			})
+
+			tracker.StartExporterSingle("test-exporter-hooks")
+			Eventually(func() string { return exporterState(Namespace(), exporterRef) },
+				defaultWaitTimeout, exporterPollPeriod).Should(Equal("LeaseReady|" + second))
+			Expect(hookRuns()).To(Equal([]string{"before " + first, "after " + first, "before " + second}))
+		})
+	})
+
 })
