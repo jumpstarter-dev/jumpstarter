@@ -34,6 +34,7 @@ DEVICE_ID = 42
 WIFI_DEVICE_ID = 43
 LOCKDOWN = 62078
 SERVICE = 54321
+RAW = 9100
 
 
 @pytest.fixture
@@ -188,8 +189,12 @@ class PairedDevice:
                 return
             elif kind == "Connect":
                 assert request["DeviceID"] == DEVICE_ID
-                await _write_mux(stream, {"MessageType": "Result", "Number": 0}, tag)
                 port = socket.ntohs(request["PortNumber"])
+                if port not in (LOCKDOWN, SERVICE):
+                    # usbmuxd answers a closed device port with a Result and keeps the client in plist mode.
+                    await _write_mux(stream, {"MessageType": "Result", "Number": 3}, tag)
+                    continue
+                await _write_mux(stream, {"MessageType": "Result", "Number": 0}, tag)
                 if port == LOCKDOWN:
                     await self._lockdown(stream)
                 elif port == SERVICE:
@@ -260,12 +265,18 @@ class PairedDevice:
 
 
 @asynccontextmanager
-async def _running(paired_peer, *, connection_type=None, **kwargs):
+async def _running(paired_peer, *, connection_type=None, allowed_ports=(), **kwargs):
     peer = PairedDevice(paired_peer, **kwargs)
     upstream = await create_tcp_listener(local_host="127.0.0.1")
     host, port = "127.0.0.1", upstream.extra(SocketAttribute.local_port)
     broker = ExporterTrustBroker(
-        udid=UDID, device_id=DEVICE_ID, host=host, port=port, timeout=2, connection_type=connection_type
+        udid=UDID,
+        device_id=DEVICE_ID,
+        host=host,
+        port=port,
+        timeout=2,
+        connection_type=connection_type,
+        allowed_ports=allowed_ports,
     )
     front = await create_tcp_listener(local_host="127.0.0.1")
     address = front.extra(SocketAttribute.local_address)
@@ -545,3 +556,74 @@ async def test_revocation_closes_active_tls_service_before_more_application_byte
             with pytest.raises((BrokenResourceError, ClosedResourceError, EndOfStream)):
                 await service.send(b"after-revocation")
         assert peer.received_service == [b"before-revocation"]
+
+
+async def test_finished_connection_stops_counting_before_its_context_exits(paired_peer):
+    async with _running(paired_peer) as (broker, _, _):
+        broker.max_connections = 1
+        async with broker.proxy(UDID) as first:
+            reader = BufferedByteReceiveStream(first)
+            await _write_mux(first, {"MessageType": "ListDevices"})
+            await _read_mux(reader)
+            assert len(broker._scopes) == 1
+            with pytest.raises(UsbMuxError, match="too many"):
+                async with broker.proxy(UDID):
+                    pass
+            # The tool hangs up; the exporter may keep the stream context open for a while.
+            await first.send_eof()
+            await sleep(0.05)
+            assert len(broker._scopes) == 0
+            async with broker.proxy(UDID) as second:
+                await _write_mux(second, {"MessageType": "ListDevices"})
+                _, response = await _read_mux(BufferedByteReceiveStream(second))
+                assert [item["DeviceID"] for item in response["DeviceList"]] == [DEVICE_ID]
+        assert len(broker._scopes) == 0
+
+
+async def test_device_refused_connect_is_a_result_and_keeps_plist_mode(paired_peer):
+    async with _running(paired_peer, allowed_ports=(RAW,)) as (broker, _, address):
+        host, port = address
+        async with await connect_tcp(host, port) as stream:
+            reader = BufferedByteReceiveStream(stream)
+            await _write_mux(
+                stream, {"MessageType": "Connect", "DeviceID": DEVICE_ID, "PortNumber": socket.htons(RAW)}
+            )
+            _, response = await _read_mux(reader)
+            assert response == {"MessageType": "Result", "Number": 3}
+            await _write_mux(stream, {"MessageType": "ListDevices"})
+            _, response = await _read_mux(reader)
+            assert [item["DeviceID"] for item in response["DeviceList"]] == [DEVICE_ID]
+        assert broker.is_active
+
+
+async def test_connect_with_stale_device_id_is_a_baddev_result(paired_peer):
+    async with _running(paired_peer) as (broker, peer, address):
+        response = await _mux_query(
+            address, {"MessageType": "Connect", "DeviceID": DEVICE_ID + 1, "PortNumber": socket.htons(LOCKDOWN)}
+        )
+        assert response == {"MessageType": "Result", "Number": 2}
+        assert not peer.requests
+        assert broker.is_active
+        response = await _mux_query(address, {"MessageType": "ListDevices"})
+        assert [item["DeviceID"] for item in response["DeviceList"]] == [DEVICE_ID]
+
+
+async def test_rejected_connect_does_not_consume_pending_service(paired_peer, tmp_path):
+    async with _running(paired_peer) as (_, peer, address):
+        record = await _public_record(address)
+        stream, _, context = await _start_session(address, record, tmp_path)
+        await _write_lockdown(stream, {"Request": "StartService", "Service": "test.service"})
+        response = await _read_lockdown(BufferedByteReceiveStream(stream))
+        await stream.aclose()
+        wire = socket.htons(response["Port"])
+        rejected = await _mux_query(address, {"MessageType": "Connect", "DeviceID": DEVICE_ID + 1, "PortNumber": wire})
+        assert rejected["Number"] != 0
+        raw = await _connect(address, response["Port"])
+        async with await TLSStream.wrap(
+            raw, server_side=False, ssl_context=context, standard_compatible=False
+        ) as service:
+            await service.send(b"still-valid")
+            assert await service.receive() == b"reply:still-valid"
+        assert peer.received_service == [b"still-valid"]
+        replay = await _mux_query(address, {"MessageType": "Connect", "DeviceID": DEVICE_ID, "PortNumber": wire})
+        assert replay["Number"] != 0

@@ -17,6 +17,7 @@ import tempfile
 import time
 from collections.abc import Collection
 from contextlib import asynccontextmanager, suppress
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -98,6 +99,8 @@ _WIRE_FIELDS = {
     "StartService": ("Service", "EscrowBag"),
     "Goodbye": (),
 }
+# The connection scope a proxied usbmux stream runs under; seen by its _serve task.
+_connection_scope: ContextVar["CancelScope | None"] = ContextVar("_connection_scope", default=None)
 
 
 async def _receive_plist(reader):
@@ -411,9 +414,11 @@ class ExporterTrustBroker(UsbMuxDaemon):
             loop = None
         with CancelScope() as scope:
             self._scopes[scope] = loop
+            token = _connection_scope.set(scope)
             try:
                 yield
             finally:
+                _connection_scope.reset(token)
                 self._scopes.pop(scope, None)
 
     @asynccontextmanager
@@ -424,6 +429,15 @@ class ExporterTrustBroker(UsbMuxDaemon):
             await self._start_monitor()
             async with super().proxy(udid) as stream:
                 yield stream
+
+    async def _serve(self, stream, udid):
+        try:
+            await super()._serve(stream, udid)
+        finally:
+            # The proxied connection is over once its usbmux loop ends, even if the
+            # exporter finalizes the stream context later; stop counting it toward
+            # max_connections so finished tool connections cannot exhaust the lease.
+            self._scopes.pop(_connection_scope.get(), None)
 
     @asynccontextmanager
     async def open_forward(self, port):
@@ -576,6 +590,21 @@ class ExporterTrustBroker(UsbMuxDaemon):
         self._services[virtual] = _Service(port, tls, self.device_id, now + self.service_ttl)
         return virtual
 
+    def _connect_target(self, port, device_id):
+        """Map a client's Connect port to (device port, TLS, service) or None to refuse it."""
+        if port == LOCKDOWN_PORT:
+            return port, False, None
+        service = self._services.get(port)
+        if service is None:
+            return (port, False, None) if port in self.allowed_ports else None
+        # Validate before consuming: a rejected attempt must not burn the single-use handle.
+        if service.device_id != device_id:
+            return None
+        del self._services[port]
+        if service.expires <= time.monotonic():
+            return None
+        return service.port, service.tls, service
+
     async def _connect_proxy(self, stream, reader, udid, tag, request):
         self._check()
         device_id, wire_port = request.get("DeviceID"), request.get("PortNumber")
@@ -583,30 +612,32 @@ class ExporterTrustBroker(UsbMuxDaemon):
             await stream.send(encode_message(_result(RESULT_BADCOMMAND), tag))
             return False
         port = socket.ntohs(wire_port)
-        if port == LOCKDOWN_PORT:
-            async with self.connect_device(udid, port, device_id=device_id) as upstream:
-                await stream.send(encode_message(_result(RESULT_OK), tag))
-                await self._lockdown(stream, reader, upstream)
-            return True
-        service = self._services.pop(port, None)
-        if service is not None:
-            if service.expires <= time.monotonic() or service.device_id != device_id:
-                await stream.send(encode_message(_result(RESULT_CONNREFUSED), tag))
-                return False
-            real_port, tls = service.port, service.tls
-        elif port in self.allowed_ports:
-            real_port, tls = port, False
-        else:
+        target = self._connect_target(port, device_id)
+        if target is None:
             await stream.send(encode_message(_result(RESULT_CONNREFUSED), tag))
             return False
-        async with self.connect_device(udid, real_port, device_id=device_id) as upstream:
-            if tls:
-                upstream = await self._tls(upstream)
-            await stream.send(encode_message(_result(RESULT_OK), tag))
-            downstream = _BufferedDuplexStream(stream, reader)
-            if service is not None:
-                downstream = await self._tls(downstream, server=True)
-            await self._relay_service(downstream, upstream, service is not None)
+        real_port, tls, service = target
+        accepted = False
+        try:
+            async with self.connect_device(udid, real_port, device_id=device_id) as upstream:
+                if tls:
+                    upstream = await self._tls(upstream)
+                await stream.send(encode_message(_result(RESULT_OK), tag))
+                accepted = True
+                if port == LOCKDOWN_PORT:
+                    await self._lockdown(stream, reader, upstream)
+                    return True
+                downstream = _BufferedDuplexStream(stream, reader)
+                if service is not None:
+                    downstream = await self._tls(downstream, server=True)
+                await self._relay_service(downstream, upstream, service is not None)
+        except UsbMuxResultError as exc:
+            if accepted:
+                raise  # The usbmux handshake is over; a Result frame would corrupt the relayed stream.
+            # Like usbmuxd, answer a stale DeviceID or a closed device port with a
+            # Result and keep the client in plist mode instead of dropping it.
+            await stream.send(encode_message(_result(exc.number), tag))
+            return False
         return True
 
     async def _relay_service(self, downstream, upstream, tls):
