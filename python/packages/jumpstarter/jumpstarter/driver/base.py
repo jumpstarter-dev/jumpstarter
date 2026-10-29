@@ -148,12 +148,14 @@ class Driver(
             child.propagate_log_level(level)
 
     def close(self):
+        errors: list[Exception] = []
         for child in self.children.values():
-            child.close()
-        # Remove the per-instance name filter added in __post_init__ so it does
-        # not leak on the (global) logger when the driver is torn down.
-        # Python retains the logger itself for the process lifetime.
-        self.logger.removeFilter(self._logger_filter)
+            try:
+                child.close()
+            except Exception as error:  # noqa: BLE001 - finish sibling cleanup before propagating failures
+                errors.append(error)
+        if errors:
+            raise ExceptionGroup("Child driver cleanup failed", errors)
 
     def shutdown(self):
         """Session-end teardown hook, run by the exporter before close().
@@ -167,11 +169,15 @@ class Driver(
         A failing child does not stop its siblings: their close() may no longer
         release resources, so skipping shutdown() could leak e.g. a serial port.
         """
+        errors: list[Exception] = []
         for name, child in self.children.items():
             try:
                 child.shutdown()
-            except Exception:
+            except Exception as error:
                 self.logger.warning("Error during shutdown of child %s", name, exc_info=True)
+                errors.append(error)
+        if errors:
+            raise ExceptionGroup("Child driver shutdown failed", errors)
 
     def reset(self):
         for child in self.children.values():
