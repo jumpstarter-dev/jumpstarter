@@ -202,4 +202,7 @@ class AndroidEmulatorPower(PowerInterface, Driver):
         yield PowerReading(voltage=0.0, current=0.0)
 
     def close(self):
-        self.off()
+        try:
+            self.off()
+        except Exception:
+            self.logger.exception("Failed to stop emulator during close")

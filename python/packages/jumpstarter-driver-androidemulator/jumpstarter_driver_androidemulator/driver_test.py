@@ -307,3 +307,66 @@ def test_power_on_waits_for_old_log_threads_before_restart(power):
     power.close()
     power.close()
     assert power._process is power._log_thread is None
+
+
+@pytest.mark.parametrize("failure_point", ["kill", "wait", "reap_timeout", "reader"])
+def test_close_logs_failure_and_continues_sibling_cleanup(power, caplog, failure_point):
+    from subprocess import TimeoutExpired
+
+    from jumpstarter.driver import Driver
+
+    process = MagicMock()
+    process.poll.return_value = None
+    power._process = process
+    reader = MagicMock()
+    reader.is_alive.return_value = False
+    power._log_thread = reader
+    sibling = MagicMock()
+    parent = power.parent
+    parent.children = {"power": power, "sibling": sibling}
+    failure = OSError("cannot stop emulator")
+    if failure_point == "kill":
+        process.kill.side_effect = failure
+    elif failure_point == "wait":
+        process.wait.side_effect = failure
+    elif failure_point == "reap_timeout":
+        failure = TimeoutExpired("emulator", 5)
+        process.wait.side_effect = failure
+    else:
+        process.poll.return_value = 1
+        reader.is_alive.return_value = True
+
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        Driver.close(parent)
+    sibling.close.assert_called_once()
+    assert power._process is process
+    assert power._log_thread is reader
+    errors = [record for record in caplog.records if record.exc_info is not None]
+    assert len(errors) == 1
+    assert errors[0].message == "Failed to stop emulator during close"
+    assert errors[0].exc_info is not None
+    if failure_point == "reader":
+        assert isinstance(errors[0].exc_info[1], TimeoutError)
+        with patch("subprocess.Popen") as popen, pytest.raises(TimeoutError):
+            power.on()
+    else:
+        assert errors[0].exc_info[1] is failure
+        with patch("subprocess.Popen") as popen:
+            power.on()
+    popen.assert_not_called()
+
+    process.poll.return_value = 1
+    process.wait.side_effect = None
+    process.kill.side_effect = None
+    reader.is_alive.return_value = False
+    Driver.close(parent)
+    assert sibling.close.call_count == 2
+    assert power._process is power._log_thread is None
+
+
+@pytest.mark.parametrize("failure", [KeyboardInterrupt(), SystemExit()])
+def test_close_does_not_swallow_base_exception(power, caplog, failure):
+    with patch.object(power, "off", side_effect=failure), pytest.raises(type(failure)) as exc:
+        power.close()
+    assert exc.value is failure
+    assert not caplog.records
