@@ -336,7 +336,7 @@ def test_close_logs_failure_and_continues_sibling_cleanup(power, caplog, failure
         process.poll.return_value = 1
         reader.is_alive.return_value = True
 
-    with patch("subprocess.run", side_effect=FileNotFoundError):
+    with caplog.at_level("ERROR", logger=power.logger.name), patch("subprocess.run", side_effect=FileNotFoundError):
         Driver.close(parent)
     sibling.close.assert_called_once()
     assert power._process is process
