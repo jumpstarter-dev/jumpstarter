@@ -325,7 +325,7 @@ class TestKubevirtConsole:
             patch("jumpstarter_driver_kubevirt.driver._build_console_ws_url") as mock_build_url,
             patch("jumpstarter_driver_kubevirt.driver.websockets") as mock_ws,
             patch("jumpstarter_driver_kubevirt.driver.WebsocketClientStream") as mock_wss,
-            patch("jumpstarter_driver_kubevirt.driver.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch("jumpstarter_driver_kubevirt.driver.sleep", new_callable=AsyncMock) as mock_sleep,
         ):
             mock_build_url.return_value = ("wss://example.com/console", {}, None)
             mock_ws.connect = make_connect_cm
