@@ -359,12 +359,13 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     def stop(
         self, wait_for_lease_exit: bool = False, should_unregister: bool = False, exit_code: int | None = None
     ) -> None:
-        """Publish shutdown intent; activities finish before the next state handles it."""
+        """Request shutdown, can come from the FSM itself or _run_stream."""
         self.fsm.inputs.request_shutdown(ShutdownRequest(
             ShutdownMode.DRAIN if wait_for_lease_exit and not self._standalone else ShutdownMode.STOP_NOW,
             exit_code=exit_code,
             should_unregister=should_unregister,
         ))
+        # reads back merged shutdown exit code.
         shutdown = self.fsm.inputs.snapshot().shutdown
         assert shutdown is not None
         self._exit_code = shutdown.exit_code
