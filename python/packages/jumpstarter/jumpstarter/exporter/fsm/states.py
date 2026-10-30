@@ -51,7 +51,7 @@ class Available:
         # Drain/stop-now already requested: never admit another lease.
         if inputs.shutdown:
             return Stopping(self.exporter)
-        if self.exporter._exporter_status != ExporterStatus.AVAILABLE:
+        if self.exporter.exporter_status != ExporterStatus.AVAILABLE:
             await self.exporter.report_status(ExporterStatus.AVAILABLE, "Available for new lease")
         lease_assignment = inputs.lease_assignment
         # Skip a stale snapshot of the lease we just tore down.
@@ -103,7 +103,7 @@ class BeforeLeaseHook:
             return ClosingLease(self.exporter, self.key, self.lease)
         _update_client(inputs, self.key, self.lease)
         # Controller mode: start Listen/dial tasks for this lease on the resource stack.
-        if not self.exporter._standalone:
+        if not self.exporter.standalone:
             await resources.enter_async_context(self.exporter.lease_connections(self.lease))
         executor = self.exporter.hook_executor
         warning = None
@@ -143,7 +143,7 @@ class LeaseReady:
         if _released(inputs, self.key) or _stop_now(inputs) or self.lease.end_session_requested:
             return AfterLeaseHook(self.exporter, self.key, self.lease)
         # Still serving: publish LEASE_READY once (including any before-hook warning).
-        if self.exporter._exporter_status != ExporterStatus.LEASE_READY:
+        if self.exporter.exporter_status != ExporterStatus.LEASE_READY:
             message = (
                 f"{HOOK_WARNING_PREFIX}beforeLease hook warning: {self.warning}"
                 if self.warning
@@ -172,7 +172,7 @@ class BeforeLeaseHookFailed:
     async def run(
         self, inputs: Inputs, resources: AsyncExitStack
     ) -> ReleasingLease | AwaitingLeaseRelease | AfterLeaseHook | None:
-        if self.exporter._exporter_status != ExporterStatus.BEFORE_LEASE_HOOK_FAILED:
+        if self.exporter.exporter_status != ExporterStatus.BEFORE_LEASE_HOOK_FAILED:
             await self.exporter.report_status(
                 ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
                 f"beforeLease hook failed: {self.error}",
@@ -273,14 +273,14 @@ class ReleasingLease:
     lease: LeaseContext
 
     async def run(self, inputs: Inputs, resources: AsyncExitStack) -> ClosingLease | AwaitingLeaseRelease:
-        if self.exporter._standalone:
+        if self.exporter.standalone:
             # Direct mode retains its single failed session until the exporter stops.
             return AwaitingLeaseRelease(self.exporter, self.key, self.lease)
         if not _released(inputs, self.key) and not _stop_now(inputs):
             # Preserve the existing observation window for clients polling failed status.
             await sleep(1)
             # Named ReleaseLease so a delayed retry cannot target a replacement.
-            await self.exporter._request_lease_release(self.lease, self.key)
+            await self.exporter.request_lease_release(self.lease, self.key)
         return ClosingLease(self.exporter, self.key, self.lease)
 
 
@@ -328,10 +328,10 @@ class ClosingLease:
         await resources.aclose()
         clear_log_context()
         set_log_context(exporter=self.exporter.exporter_name)
-        if self.exporter.exit_on_lease_end and not self.exporter._standalone:
+        if self.exporter.exit_on_lease_end and not self.exporter.standalone:
             self.exporter.stop(should_unregister=True)
         # One-shot / standalone sessions exit after this lease; otherwise reopen Available.
-        if inputs.shutdown or self.exporter.exit_on_lease_end or self.exporter._standalone:
+        if inputs.shutdown or self.exporter.exit_on_lease_end or self.exporter.standalone:
             return Stopping(self.exporter)
         # Available gets a fresh snapshot before it can admit any replacement.
         return Available(self.exporter, last_completed=self.key)
@@ -343,14 +343,14 @@ class Stopping:
 
     Activity state: publish offline status and complete applicable controller
     unregistration, telemetry, and runtime-sidecar shutdown via
-    ``Exporter._finish_shutdown``, then return ``ExitFSM()``.
+    ``Exporter.finish_shutdown``, then return ``ExitFSM()``.
     """
 
     exporter: Exporter
 
     async def run(self, inputs: Inputs, resources: AsyncExitStack) -> ExitFSM:
         # Offline status, unregister, telemetry, and sidecar cleanup live on Exporter.
-        await self.exporter._finish_shutdown()
+        await self.exporter.finish_shutdown()
         return ExitFSM()
 
 

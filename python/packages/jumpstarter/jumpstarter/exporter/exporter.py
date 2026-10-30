@@ -346,6 +346,16 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     def name(self) -> str:
         return self.exporter_name
 
+    @property
+    def exporter_status(self) -> ExporterStatus:
+        """Latest reported status; updated only via report_status()."""
+        return self._exporter_status
+
+    @property
+    def standalone(self) -> bool:
+        """True when running without a controller (TCP listener only)."""
+        return self._standalone
+
     def stop(
         self, wait_for_lease_exit: bool = False, should_unregister: bool = False, exit_code: int | None = None
     ) -> None:
@@ -355,7 +365,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             exit_code=exit_code,
             should_unregister=should_unregister,
         ))
-        shutdown = self.fsm.inputs.snapshot_and_watch()[0].shutdown
+        shutdown = self.fsm.inputs.snapshot().shutdown
         assert shutdown is not None
         self._exit_code = shutdown.exit_code
 
@@ -696,14 +706,14 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         """
         if key is None:
             return True
-        snapshot, _ = self.fsm.inputs.snapshot_and_watch()
+        snapshot = self.fsm.inputs.snapshot()
         return (
             snapshot.lease_assignment is not None
             and snapshot.lease_assignment.key == key
             and (snapshot.shutdown is None or snapshot.shutdown.mode != ShutdownMode.STOP_NOW)
         )
 
-    async def _request_lease_release(self, lease_scope: LeaseContext, lease_key: LeaseKey | None = None):
+    async def request_lease_release(self, lease_scope: LeaseContext, lease_key: LeaseKey | None = None):
         """Request the controller to release lease_scope's lease.
 
         Called when a lifecycle hook fails with on_failure='endLease'.
@@ -942,7 +952,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         if self._metrics_stream is not None:
             tg.start_soon(self._metrics_stream.run)
 
-    async def _finish_shutdown(self) -> None:
+    async def finish_shutdown(self) -> None:
         """Stop/join producers after lease cleanup, then close exporter-wide services."""
         if self._shutdown_complete:
             return
@@ -952,7 +962,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 await self._background_done.wait()
             self._tg = None
         self._status_drain_active = False
-        shutdown = self.fsm.inputs.snapshot_and_watch()[0].shutdown
+        shutdown = self.fsm.inputs.snapshot().shutdown
         self._unregister = shutdown is not None and shutdown.should_unregister and not self._controller_stream_failed
         if self._unregister and self._registered:
             await self._unregister_with_controller()
@@ -984,7 +994,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         try:
             await self.fsm.run(initial, name=self.exporter_name)
         finally:
-            await self._finish_shutdown()
+            await self.finish_shutdown()
 
     async def serve(self) -> None:
         """Run the controller-mode lifecycle in one task with background input producers."""
@@ -998,11 +1008,11 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     await self._run_lifecycle(Available(self))
                 finally:
                     # Stopping handles the normal path; errors/cancellation use the same cleanup.
-                    await self._finish_shutdown()
+                    await self.finish_shutdown()
                     supervisor.cancel_scope.cancel()
         finally:
             try:
-                await self._finish_shutdown()
+                await self.finish_shutdown()
             finally:
                 clear_log_context()
 
