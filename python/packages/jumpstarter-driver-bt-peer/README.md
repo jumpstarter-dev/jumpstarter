@@ -60,8 +60,10 @@ arrives, so the two can race without the track being left silent.
 
 `pause` and `stop-playback` send AVDTP SUSPEND, which leaves the stream OPEN
 and resumable rather than tearing it down; `resume` and `play` start it again.
-Pause keeps the track's position. While a stream is started with no track set
-the peer sends filler, so a track can be swapped in without renegotiating.
+Pause keeps the track's position, and `playback` reports it as `paused` rather
+than `playing`. A paused track stays paused across a DUT reconnect instead of
+restarting on its own. While a stream is started with no track set the peer
+sends filler, so a track can be swapped in without renegotiating.
 
 Anything ffmpeg can read is accepted; the client transcodes locally and
 uploads the encoded SBC, so the exporter does not need ffmpeg. Install it with
