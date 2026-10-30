@@ -253,14 +253,12 @@ class TestReportStatusGrpcErrorHandling:
         assert ExporterStatus.from_proto(exporter._pending_status_request.status) == ExporterStatus.LEASE_READY
 
     async def test_request_lease_release_succeeds_on_first_attempt(self):
-        """Release requests do not publish lifecycle status or relinquish local ownership."""
+        """Release requests do not publish lifecycle status."""
         exporter = _make_exporter_for_report_status()
-
-        lease_ctx = LeaseContext(
-            lease_name="test-lease",
-            client_name="test-client",
-        )
-        exporter._lease_context = lease_ctx
+        lease_ctx = LeaseContext(lease_name="test-lease", client_name="test-client")
+        exporter.fsm.inputs.publish_lease_assignment(lease_ctx.lease_name)
+        assignment = exporter.fsm.inputs.snapshot_and_watch()[0].lease_assignment
+        assert assignment is not None
 
         release_calls = []
         report_calls = []
@@ -280,31 +278,19 @@ class TestReportStatusGrpcErrorHandling:
         stub_ctx.__aexit__ = AsyncMock(return_value=False)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
-            await exporter._request_lease_release(lease_ctx)
+            await exporter._request_lease_release(lease_ctx, assignment.key)
 
-        # ReleaseLease called once with correct lease name
         assert len(release_calls) == 1
         assert release_calls[0].name == "test-lease"
-
         assert report_calls == []
-        assert exporter._lease_context is lease_ctx
 
     async def test_request_lease_release_rejects_stale_lease(self):
-        """A delayed release callback for a replaced lease must not release
-        the replacement lease.
-
-        Simulates the beforeLease endLease path: the hook fails for
-        'old-lease', the release is delayed, and a replacement lease is
-        granted before the callback fires.
-        """
+        """A delayed release for a replaced assignment must not ReleaseLease."""
         exporter = _make_exporter_for_report_status()
-
         stale_ctx = make_lease_context("old-lease")
-        replacement_ctx = LeaseContext(
-            lease_name="new-lease",
-            client_name="test-client",
-        )
-        exporter._lease_context = replacement_ctx
+        exporter.fsm.inputs.publish_lease_assignment("old-lease")
+        stale_key = exporter.fsm.inputs.snapshot_and_watch()[0].lease_assignment.key
+        exporter.fsm.inputs.publish_lease_assignment("new-lease")
 
         release_calls = []
 
@@ -320,11 +306,9 @@ class TestReportStatusGrpcErrorHandling:
         stub_ctx.__aexit__ = AsyncMock(return_value=False)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
-            await exporter._request_lease_release(stale_ctx)
+            await exporter._request_lease_release(stale_ctx, stale_key)
 
-        # No ReleaseLease RPC for the stale lease; replacement lease untouched
         assert release_calls == []
-        assert exporter._lease_context is replacement_ctx
 
     @pytest.mark.parametrize("error_code", [
         None,
@@ -333,14 +317,15 @@ class TestReportStatusGrpcErrorHandling:
         grpc.StatusCode.INVALID_ARGUMENT,
     ])
     async def test_request_lease_release_preserves_replacement_during_rpc(self, error_code):
-        """Replacing a lease during an RPC must not apply stale release side effects."""
+        """Replacing the assignment during an RPC must not apply stale side effects."""
         from grpc.aio import AioRpcError, Metadata
 
         exporter = _make_exporter_for_report_status()
         original = make_lease_context("old-lease")
-        exporter._lease_context = original
+        exporter.fsm.inputs.publish_lease_assignment(original.lease_name)
+        assignment = exporter.fsm.inputs.snapshot_and_watch()[0].lease_assignment
+        assert assignment is not None
         exporter._exporter_status = ExporterStatus.BEFORE_LEASE_HOOK_FAILED
-        replacement = make_lease_context("new-lease")
         rpc_started = Event()
         rpc_complete = Event()
 
@@ -355,13 +340,12 @@ class TestReportStatusGrpcErrorHandling:
         controller.ReleaseLease = AsyncMock(side_effect=release)
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), fail_after(5):
             async with create_task_group() as tg:
-                tg.start_soon(exporter._request_lease_release, original)
+                tg.start_soon(exporter._request_lease_release, original, assignment.key)
                 await rpc_started.wait()
-                exporter._lease_context = replacement
+                exporter.fsm.inputs.publish_lease_assignment("new-lease")
                 exporter._exporter_status = ExporterStatus.LEASE_READY
                 rpc_complete.set()
 
-        assert exporter._lease_context is replacement
         assert exporter._exporter_status == ExporterStatus.LEASE_READY
         controller.ReportStatus.assert_not_awaited()
 
@@ -371,8 +355,6 @@ class TestReportStatusGrpcErrorHandling:
 
         exporter = _make_exporter_for_report_status()
         original = make_lease_context("old-lease")
-        replacement = make_lease_context("new-lease")
-        exporter._lease_context = original
         exporter.fsm.inputs.publish_lease_assignment(original.lease_name)
         assignment = exporter.fsm.inputs.snapshot_and_watch()[0].lease_assignment
         assert assignment is not None
@@ -382,7 +364,7 @@ class TestReportStatusGrpcErrorHandling:
 
         async def during_backoff(delay):
             if lease_change == "replacement":
-                exporter._lease_context = replacement
+                exporter.fsm.inputs.publish_lease_assignment("new-lease")
             elif lease_change == "ended":
                 exporter.fsm.inputs.publish_lease_assignment(None)
 
@@ -396,7 +378,6 @@ class TestReportStatusGrpcErrorHandling:
         releases = controller.ReleaseLease.await_args_list
         assert len(releases) == (2 if lease_change == "unchanged" else 1)
         assert all(call.args[0].name == original.lease_name for call in releases)
-        assert exporter._lease_context is (replacement if lease_change == "replacement" else original)
         controller.ReportStatus.assert_not_awaited()
 
     @pytest.mark.parametrize("replace_on_attempt", [1, 2])
@@ -405,8 +386,9 @@ class TestReportStatusGrpcErrorHandling:
 
         exporter = _make_exporter_for_report_status()
         original = make_lease_context("old-lease")
-        exporter._lease_context = original
-        replacement = make_lease_context("new-lease")
+        exporter.fsm.inputs.publish_lease_assignment(original.lease_name)
+        assignment = exporter.fsm.inputs.snapshot_and_watch()[0].lease_assignment
+        assert assignment is not None
         controller, stub_ctx = _setup_mock_controller_stub(exporter)
         controller.ReleaseLease.side_effect = AioRpcError(
             grpc.StatusCode.UNAVAILABLE, Metadata(), Metadata(), "Try again",
@@ -414,26 +396,23 @@ class TestReportStatusGrpcErrorHandling:
 
         async def enter_stub():
             if stub_ctx.__aenter__.await_count == replace_on_attempt:
-                exporter._lease_context = replacement
+                exporter.fsm.inputs.publish_lease_assignment("new-lease")
             return controller
 
         stub_ctx.__aenter__.side_effect = enter_stub
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), patch("anyio.sleep"):
-            await exporter._request_lease_release(original)
+            await exporter._request_lease_release(original, assignment.key)
 
         assert controller.ReleaseLease.await_count == replace_on_attempt - 1
         controller.ReportStatus.assert_not_awaited()
-        assert exporter._lease_context is replacement
 
     async def test_request_lease_release_retries_on_transient_failure(self):
         """When ReleaseLease fails with UNAVAILABLE on first attempt, retry and succeed."""
         exporter = _make_exporter_for_report_status()
-
-        lease_ctx = LeaseContext(
-            lease_name="test-lease",
-            client_name="test-client",
-        )
-        exporter._lease_context = lease_ctx
+        lease_ctx = LeaseContext(lease_name="test-lease", client_name="test-client")
+        exporter.fsm.inputs.publish_lease_assignment(lease_ctx.lease_name)
+        assignment = exporter.fsm.inputs.snapshot_and_watch()[0].lease_assignment
+        assert assignment is not None
 
         unavailable_error = grpc.aio.AioRpcError(
             code=grpc.StatusCode.UNAVAILABLE,
@@ -465,24 +444,20 @@ class TestReportStatusGrpcErrorHandling:
         stub_ctx.__aexit__ = AsyncMock(return_value=False)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), patch("anyio.sleep"):
-            await exporter._request_lease_release(lease_ctx)
+            await exporter._request_lease_release(lease_ctx, assignment.key)
 
-        # ReleaseLease called twice (failed once, succeeded on retry)
         assert release_call_count == 2
         assert len(release_calls) == 1
         assert release_calls[0].name == "test-lease"
-
         assert report_calls == []
 
     async def test_request_lease_release_exhausts_retries(self):
         """Release exhaustion returns to the caller so its ClosingLease state can finish locally."""
         exporter = _make_exporter_for_report_status()
-
-        lease_ctx = LeaseContext(
-            lease_name="test-lease",
-            client_name="test-client",
-        )
-        exporter._lease_context = lease_ctx
+        lease_ctx = LeaseContext(lease_name="test-lease", client_name="test-client")
+        exporter.fsm.inputs.publish_lease_assignment(lease_ctx.lease_name)
+        assignment = exporter.fsm.inputs.snapshot_and_watch()[0].lease_assignment
+        assert assignment is not None
 
         unavailable_error = grpc.aio.AioRpcError(
             code=grpc.StatusCode.UNAVAILABLE,
@@ -513,13 +488,10 @@ class TestReportStatusGrpcErrorHandling:
         stub_ctx.__aexit__ = AsyncMock(return_value=False)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), patch("anyio.sleep"):
-            await exporter._request_lease_release(lease_ctx)
+            await exporter._request_lease_release(lease_ctx, assignment.key)
 
-        # ReleaseLease: _RPC_MAX_RETRIES + 1 attempts (all fail)
         assert release_call_count == _RPC_MAX_RETRIES + 1
-
         assert report_call_count == 0
-        assert exporter._lease_context is lease_ctx
 
     @pytest.mark.parametrize("error_code", [
         grpc.StatusCode.PERMISSION_DENIED,
@@ -532,7 +504,9 @@ class TestReportStatusGrpcErrorHandling:
 
         exporter = _make_exporter_for_report_status()
         lease_ctx = make_lease_context()
-        exporter._lease_context = lease_ctx
+        exporter.fsm.inputs.publish_lease_assignment(lease_ctx.lease_name)
+        assignment = exporter.fsm.inputs.snapshot_and_watch()[0].lease_assignment
+        assert assignment is not None
         controller, stub_ctx = _setup_mock_controller_stub(exporter)
         controller.ReleaseLease.side_effect = AioRpcError(error_code, Metadata(), Metadata(), "Release rejected")
 
@@ -540,7 +514,7 @@ class TestReportStatusGrpcErrorHandling:
             patch.object(exporter, "_controller_stub", return_value=stub_ctx),
             caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"),
         ):
-            await exporter._request_lease_release(lease_ctx)
+            await exporter._request_lease_release(lease_ctx, assignment.key)
 
         controller.ReleaseLease.assert_awaited_once()
         assert controller.ReleaseLease.await_args.args[0].name == "test-lease"

@@ -46,6 +46,7 @@ class LocalExporter(Exporter):
     closed: Event = field(default_factory=Event)
     close_gate: Event | None = None
     controller: MagicMock = field(default_factory=lambda: MagicMock(ReleaseLease=AsyncMock()))
+    _last_status_lease: str = ""
 
     @asynccontextmanager
     async def session(self):
@@ -58,25 +59,27 @@ class LocalExporter(Exporter):
     async def _send_report_status_rpc(self, request) -> bool:
         return True
 
-    async def report_status(self, status: ExporterStatus, message: str = "") -> None:
-        await super().report_status(status, message)
-        self.trace.append((status.name, self._lease_context.lease_name if self._lease_context else ""))
+    async def report_status(
+        self, status: ExporterStatus, message: str = "", *, lease: LeaseContext | None = None
+    ) -> None:
+        await super().report_status(status, message, lease=lease)
+        self._last_status_lease = lease.lease_name if lease else ""
+        self.trace.append((status.name, self._last_status_lease))
         changed, self.changed = self.changed, Event()
         changed.set()
 
     async def wait_status(self, status: ExporterStatus, lease_name: str | None = None) -> None:
         while True:
             changed = self.changed
-            if self._exporter_status == status and (
-                lease_name is None or (self._lease_context is not None and self._lease_context.lease_name == lease_name)
-            ):
+            if self._exporter_status == status and (lease_name is None or self._last_status_lease == lease_name):
                 return
             await changed.wait()
 
     @asynccontextmanager
     async def session_for_lease(self):
-        lease = self._lease_context
-        assert lease is not None
+        state = self.fsm.runner.current_state if self.fsm.runner else None
+        lease = getattr(state, "admitting", None)
+        assert isinstance(lease, LeaseContext)
         self.trace.append(("open", lease.lease_name))
         try:
             async with super().session_for_lease() as session:
@@ -146,9 +149,10 @@ async def test_end_session_keeps_reservation_socket_and_final_status(monkeypatch
                 stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
                 assert (await stub.EndSession(jumpstarter_pb2.EndSessionRequest(), timeout=2)).success
                 await exporter.wait_status(ExporterStatus.AVAILABLE)
-                assert exporter._lease_context is lease and not exporter.closed.is_set()
+                assert not exporter.closed.is_set()
                 assert exporter.fsm.runner is not None
                 assert isinstance(exporter.fsm.runner.current_state, AwaitingLeaseRelease)
+                assert exporter.fsm.runner.current_state.lease is lease
                 status = await stub.GetStatus(empty_pb2.Empty(), timeout=2)
                 assert status.status == ExporterStatus.AVAILABLE.to_proto()
                 await stub.EndSession(jumpstarter_pb2.EndSessionRequest(), timeout=2)
@@ -440,7 +444,6 @@ async def test_standalone_keeps_its_hook_and_shutdown_path(monkeypatch):
             await exporter.wait_status(ExporterStatus.LEASE_READY)
             exporter.stop()
     assert calls == ["BEFORE_LEASE_HOOK", "AFTER_LEASE_HOOK"]
-    assert exporter._lease_context is None
     assert exporter.fsm.runner is not None and isinstance(exporter.fsm.runner.current_state, ExitFSM)
 
 
@@ -468,8 +471,9 @@ async def test_standalone_defers_requests_and_runs_cleanup_once(monkeypatch, fin
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve_standalone_tcp, "127.0.0.1", 0)
             await entered.wait()
-            lease = exporter._lease_context
-            assert lease is not None
+            assert exporter.fsm.runner is not None
+            lease = exporter.fsm.runner.current_state.lease
+            assert isinstance(lease, LeaseContext)
             if finish == "end_session":
                 lease.request_end_session()
                 lease.request_end_session()
@@ -623,7 +627,6 @@ async def test_remote_connections_wait_for_published_before_hook_outcome(monkeyp
 async def test_release_retries_check_assignment_generation_and_shutdown(monkeypatch, change):
     exporter = make_exporter()
     lease = LeaseContext("A")
-    exporter._lease_context = lease
     exporter.fsm.inputs.publish_lease_assignment("A")
     assignment = exporter.fsm.inputs.snapshot_and_watch()[0].lease_assignment
     assert assignment is not None
@@ -642,7 +645,6 @@ async def test_release_retries_check_assignment_generation_and_shutdown(monkeypa
         await exporter._request_lease_release(lease, assignment.key)
     exporter.controller.ReleaseLease.assert_awaited_once()
     assert exporter.controller.ReleaseLease.await_args.args[0].name == "A"
-    assert exporter._lease_context is lease  # Only the lifecycle state releases ownership.
 
 
 async def test_stop_now_is_bounded_while_release_rpc_is_stalled(monkeypatch):
