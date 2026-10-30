@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
-import asyncio.subprocess
 import logging
+import sys
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -202,55 +201,45 @@ class TestRunCommand:
         manager._connections[conn.id] = conn
         return manager, conn.id
 
+    @pytest.fixture()
+    def fake_j(self, tmp_path):
+        def make(script: str) -> str:
+            path = tmp_path / "j"
+            path.write_text(f"#!{sys.executable}\nimport os, sys, time\n{script}\n")
+            path.chmod(0o755)
+            return str(path)
+
+        return make
+
     @pytest.mark.anyio
-    async def test_successful_command(self, manager_with_conn):
+    async def test_successful_command(self, manager_with_conn, fake_j):
         from jumpstarter_mcp.tools.commands import run_command
 
         manager, conn_id = manager_with_conn
+        j = fake_j("print(' '.join(sys.argv[1:]))")
 
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"hello\n", b""))
-        mock_proc.returncode = 0
-
-        with (
-            patch("shutil.which", return_value="/usr/bin/j"),
-            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
-        ):
+        with patch("shutil.which", return_value=j):
             result = await run_command(manager, conn_id, ["power", "on"])
 
         assert result["exit_code"] == 0
-        assert result["stdout"] == "hello\n"
+        assert result["stdout"] == "power on\n"
+        assert result["command"] == [j, "power", "on"]
         assert "timed_out" not in result
 
     @pytest.mark.anyio
-    async def test_timeout_captures_output(self, manager_with_conn):
+    async def test_timeout_keeps_the_output_printed_before_it(self, manager_with_conn, fake_j):
         from jumpstarter_mcp.tools.commands import run_command
 
         manager, conn_id = manager_with_conn
+        j = fake_j("print('partial', flush=True); sys.stderr.write('err'); sys.stderr.flush(); time.sleep(60)")
 
-        call_count = 0
-
-        async def fake_communicate():
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                await asyncio.sleep(999)
-            return (b"partial", b"err")
-
-        mock_proc = AsyncMock()
-        mock_proc.communicate = fake_communicate
-        mock_proc.kill = lambda: None
-        mock_proc.returncode = -9
-
-        with (
-            patch("shutil.which", return_value="/usr/bin/j"),
-            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
-        ):
+        with patch("shutil.which", return_value=j):
             result = await run_command(manager, conn_id, ["serial", "pipe"], timeout_seconds=1)
 
         assert result["timed_out"] is True
         assert result["timeout_seconds"] == 1
-        assert result["stdout"] == "partial"
+        assert result["stdout"] == "partial\n"
+        assert result["stderr"] == "err"
 
     @pytest.mark.anyio
     async def test_j_not_found(self, manager_with_conn):
@@ -265,24 +254,29 @@ class TestRunCommand:
         assert "not found" in result["error"]
 
     @pytest.mark.anyio
-    async def test_subprocess_stdin_is_devnull(self, manager_with_conn):
+    async def test_subprocess_stdin_is_empty(self, manager_with_conn, fake_j):
         """Subprocess must not inherit MCP's stdin (would consume JSON-RPC input)."""
         from jumpstarter_mcp.tools.commands import run_command
 
         manager, conn_id = manager_with_conn
+        j = fake_j("print(repr(sys.stdin.read()))")
 
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"ok\n", b""))
-        mock_proc.returncode = 0
+        with patch("shutil.which", return_value=j):
+            result = await run_command(manager, conn_id, ["power", "on"], timeout_seconds=5)
 
-        with (
-            patch("shutil.which", return_value="/usr/bin/j"),
-            patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec,
-        ):
-            await run_command(manager, conn_id, ["power", "on"])
+        assert result["stdout"] == "''\n"
 
-        _, kwargs = mock_exec.call_args
-        assert kwargs["stdin"] == asyncio.subprocess.DEVNULL
+    @pytest.mark.anyio
+    async def test_command_reaches_the_connection_socket(self, manager_with_conn, fake_j):
+        from jumpstarter_mcp.tools.commands import run_command
+
+        manager, conn_id = manager_with_conn
+        j = fake_j("print(os.environ['JUMPSTARTER_HOST'])")
+
+        with patch("shutil.which", return_value=j):
+            result = await run_command(manager, conn_id, ["power", "on"])
+
+        assert result["stdout"] == manager.get_connection(conn_id).socket_path + "\n"
 
 
 # ---------------------------------------------------------------------------
