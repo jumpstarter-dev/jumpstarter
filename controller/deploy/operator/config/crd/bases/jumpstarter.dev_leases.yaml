@@ -166,7 +166,6 @@ spec:
                 description: |-
                   List of client names that have shared access to this lease.
                   Only the lease owner can modify this list.
-                  (keep MaxItems in sync with MaxSharedWithEntries)
                 items:
                   type: string
                 maxItems: 10
