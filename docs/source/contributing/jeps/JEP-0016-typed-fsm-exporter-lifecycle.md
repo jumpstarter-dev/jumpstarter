@@ -126,9 +126,10 @@ flowchart TD
 ### Exporter specialization
 
 `jumpstarter.exporter.fsm` supplies immutable `Inputs` containing the latest
-assignment and shutdown request. `InputBuffer` coalesces publications and wakes
-the runner; it satisfies `InputSource[Inputs]` structurally. The `State` alias
-specializes the shared protocol for those inputs:
+`LeaseAssignment` and shutdown request. `InputBuffer` coalesces publications
+(`publish_lease_assignment`, `request_shutdown`) and wakes the runner; it
+satisfies `InputSource[Inputs]` structurally. The `State` alias specializes the
+shared protocol for those inputs:
 
 ```python
 from jumpstarter.fsm import State as FSMState
@@ -137,8 +138,10 @@ type State = FSMState[Inputs]
 ```
 
 The shared runner knows nothing about leases, gRPC, drivers, or hook policies.
-Exporter states retain those decisions, together in one module initially. No
-empty exporter runner subclass or factory is required.
+Exporter states retain those decisions in `jumpstarter.exporter.fsm.states`, with
+inputs in `jumpstarter.exporter.fsm.input`. No empty exporter runner subclass or
+factory is required. State class docstrings stay synchronized with this JEP via
+the exporter-fsm-docs-sync project rule.
 
 ### Scope and implementation
 
@@ -149,7 +152,10 @@ exporter modes. Hardware-backed acceptance remains a pre-merge check.
 | --- | --- |
 | `python/packages/jumpstarter/jumpstarter/fsm.py` | Generic interfaces, named single-use runner, current-state queries, and debug tracing |
 | `python/packages/jumpstarter/jumpstarter/fsm_test.py` | An independent boolean-input example and runner behavior checks |
-| `python/packages/jumpstarter/jumpstarter/exporter/fsm.py` | Exporter snapshots, input notifications, and production lifecycle/failure states |
+| `python/packages/jumpstarter/jumpstarter/exporter/fsm/__init__.py` | `ExporterFSM` wrapper and public re-exports for the exporter lifecycle package |
+| `python/packages/jumpstarter/jumpstarter/exporter/fsm/input.py` | Immutable snapshots, shutdown merge policy, and coalescing input notifications |
+| `python/packages/jumpstarter/jumpstarter/exporter/fsm/states.py` | Production lifecycle/failure states; class docstrings are the canonical phase descriptions |
+| `python/packages/jumpstarter/jumpstarter/exporter/fsm/lease_context.py` | Live lease references, socket paths, and the EndSession request shared across states |
 | `python/packages/jumpstarter/jumpstarter/exporter/fsm_test.py` | Typed demonstration states and exporter-input checks using existing `LeaseContext` objects |
 | `python/packages/jumpstarter/jumpstarter/exporter/fsm_lifecycle_test.py` | Production lifecycle checks using real session sockets and controlled controller/hook operations |
 
@@ -301,7 +307,7 @@ behavioral checks establish those properties.
 
 | Fact or request | Owner / representation |
 | --- | --- |
-| Controller assignment | Immutable latest assignment with lease key, client name, and copied read-only string metadata |
+| Controller lease assignment | Immutable latest `LeaseAssignment` with lease key, client name, and copied read-only string metadata |
 | Lease key | Lease name and publisher-assigned local generation |
 | Shutdown | Persistent mode, optional exit code, reason, and controller-cleanup policy |
 | Active lease/resources | Current state's lease reference, not a global input registry |
@@ -327,7 +333,7 @@ intervening await. Duplicate requests are idempotent. An old session can at most
 cause an extra reevaluation; it cannot alter or clear the new lease's request.
 Never reuse a lease object for another assignment.
 
-`LeaseContext` retains only lease identity, session/socket/client references,
+`jumpstarter.exporter.fsm.lease_context.LeaseContext` retains only lease identity, session/socket/client references,
 EndSession intent, and a wake callback. It holds no events or lifecycle/status
 flags. Hook progress and cleanup eligibility follow from the current state and
 its successors; release follows from assignment generations. The session already
@@ -575,7 +581,7 @@ the old approximately 18-minute unary-RPC retry sequence at a lease boundary.
 
 ### Standalone lifecycle
 
-Standalone TCP mode publishes a single `standalone` assignment and supplies its
+Standalone TCP mode publishes a single `standalone` lease assignment and supplies its
 TCP/Unix session context through `Available.session_context`. It uses the same
 states and runner-owned stack, without controller connection tasks or RPCs.
 `beforeLease` runs once at startup. EndSession runs eligible after-hook cleanup

@@ -20,8 +20,8 @@ from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1
 from jumpstarter.driver import Driver, export
 from jumpstarter.exporter.exporter import Exporter
 from jumpstarter.exporter.fsm import AwaitingLeaseRelease, ClosingLease, LeaseReady, ShutdownMode
+from jumpstarter.exporter.fsm.lease_context import LeaseContext
 from jumpstarter.exporter.hooks import HookExecutionError, HookExecutor
-from jumpstarter.exporter.lease_context import LeaseContext
 from jumpstarter.fsm import ExitFSM
 
 pytestmark = pytest.mark.anyio
@@ -58,8 +58,8 @@ class LocalExporter(Exporter):
     async def _send_report_status_rpc(self, request) -> bool:
         return True
 
-    async def _report_status(self, status: ExporterStatus, message: str = "") -> None:
-        await super()._report_status(status, message)
+    async def report_status(self, status: ExporterStatus, message: str = "") -> None:
+        await super().report_status(status, message)
         self.trace.append((status.name, self._lease_context.lease_name if self._lease_context else ""))
         changed, self.changed = self.changed, Event()
         changed.set()
@@ -155,7 +155,7 @@ async def test_end_session_keeps_reservation_socket_and_final_status(monkeypatch
                 exporter.stop(wait_for_lease_exit=True)
                 await checkpoint()
                 assert not exporter.closed.is_set()
-                exporter.fsm.inputs.publish_assignment(None)
+                exporter.fsm.inputs.publish_lease_assignment(None)
     assert after_calls == ["A"]
     exporter.controller.ReleaseLease.assert_not_awaited()
     assert exporter.closed.is_set() and not Path(lease.socket_path).exists()
@@ -168,16 +168,16 @@ async def test_drain_alone_does_not_finish_active_lease():
     with fail_after(5):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
-            exporter.fsm.inputs.publish_assignment("A")
+            exporter.fsm.inputs.publish_lease_assignment("A")
             await exporter.wait_status(ExporterStatus.LEASE_READY)
             lease = exporter.leases[0]
             exporter.stop(wait_for_lease_exit=True)
-            exporter.fsm.inputs.publish_assignment("A", "reevaluated")
+            exporter.fsm.inputs.publish_lease_assignment("A", "reevaluated")
             while lease.client_name != "reevaluated":
                 await checkpoint()
             assert exporter.fsm.runner is not None and isinstance(exporter.fsm.runner.current_state, LeaseReady)
             assert not exporter.closed.is_set() and not lease.end_session_requested
-            exporter.fsm.inputs.publish_assignment("B")
+            exporter.fsm.inputs.publish_lease_assignment("B")
     assert [lease.lease_name for lease in exporter.leases] == ["A"]
     assert exporter.fsm.runner is not None and isinstance(exporter.fsm.runner.current_state, ExitFSM)
 
@@ -208,11 +208,11 @@ async def test_reassignment_waits_for_hooks_and_full_teardown(monkeypatch, repla
     with fail_after(8):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
-            exporter.fsm.inputs.publish_assignment("A", "client", {"build_id": "42"})
+            exporter.fsm.inputs.publish_lease_assignment("A", "client", {"build_id": "42"})
             await entered.wait()
             old = exporter.leases[0]
-            exporter.fsm.inputs.publish_assignment(None if replacement == "A" else "B")
-            exporter.fsm.inputs.publish_assignment(replacement, "new-client")
+            exporter.fsm.inputs.publish_lease_assignment(None if replacement == "A" else "B")
+            exporter.fsm.inputs.publish_lease_assignment(replacement, "new-client")
             await checkpoint()
             assert ("after", "A") not in exporter.trace
             release.set()
@@ -262,7 +262,7 @@ async def test_hook_failure_policy_and_cleanup_eligibility(monkeypatch, phase, p
     with fail_after(8):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
-            exporter.fsm.inputs.publish_assignment("A")  # Cleanup eligibility is not an assigned client name.
+            exporter.fsm.inputs.publish_lease_assignment("A")  # Cleanup eligibility is not an assigned client name.
             if phase == "after_lease" or policy == "warn":
                 await exporter.wait_status(ExporterStatus.LEASE_READY)
                 if phase == "before_lease" and policy == "warn":
@@ -284,7 +284,7 @@ async def test_hook_failure_policy_and_cleanup_eligibility(monkeypatch, phase, p
                 assert not exporter.closed.is_set()
                 if policy == "endLease":
                     await exporter.closed.wait()
-                    exporter.fsm.inputs.publish_assignment("A", "duplicate", {"job": "changed"})
+                    exporter.fsm.inputs.publish_lease_assignment("A", "duplicate", {"job": "changed"})
                 elif policy == "exit":
                     assert exporter.exit_code == 1
                     shutdown = exporter.fsm.inputs.snapshot_and_watch()[0].shutdown
@@ -340,7 +340,7 @@ async def test_terminal_stream_failure_defers_shutdown_and_overrides_hook_exit(m
     with fail_after(5):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
-            exporter.fsm.inputs.publish_assignment("A")
+            exporter.fsm.inputs.publish_lease_assignment("A")
             await entered.wait()
             exporter.stop(wait_for_lease_exit=True, exit_code=1, should_unregister=True)
             fail_stream.set()
@@ -363,9 +363,9 @@ async def test_exit_on_lease_end_stops_sidecar_after_teardown(monkeypatch):
             tg.start_soon(exporter.serve)
             await exporter.wait_status(ExporterStatus.AVAILABLE)
             assert exporter.fsm.inputs.snapshot_and_watch()[0].shutdown is None
-            exporter.fsm.inputs.publish_assignment("A")
+            exporter.fsm.inputs.publish_lease_assignment("A")
             await exporter.wait_status(ExporterStatus.LEASE_READY)
-            exporter.fsm.inputs.publish_assignment("B")
+            exporter.fsm.inputs.publish_lease_assignment("B")
             await exporter.closing.wait()
             sidecar.assert_not_called()
             assert exporter.close_gate is not None
@@ -409,13 +409,13 @@ async def test_failure_unwinds_resources_and_never_admits_replacement(monkeypatc
     with fail_after(5):
         async with create_task_group() as tg:
             tg.start_soon(serve)
-            exporter.fsm.inputs.publish_assignment("A")
+            exporter.fsm.inputs.publish_lease_assignment("A")
             if failure != "setup":
                 await exporter.wait_status(ExporterStatus.LEASE_READY)
                 if failure == "background":
                     fail_stream.set()
                 else:
-                    exporter.fsm.inputs.publish_assignment("B")
+                    exporter.fsm.inputs.publish_lease_assignment("B")
     assert closed == ["driver"]
     assert len(exporter.leases) <= 1
     assert exporter.fsm.runner is not None and not isinstance(exporter.fsm.runner.current_state, ExitFSM)
@@ -534,9 +534,9 @@ async def test_release_during_setup_skips_hooks_and_listen(monkeypatch):
     with fail_after(5):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
-            exporter.fsm.inputs.publish_assignment("A")
+            exporter.fsm.inputs.publish_lease_assignment("A")
             await prepared.wait()
-            exporter.fsm.inputs.publish_assignment(None)
+            exporter.fsm.inputs.publish_lease_assignment(None)
             exporter.stop(wait_for_lease_exit=True)
             finish_setup.set()
     before.assert_not_awaited()
@@ -570,7 +570,7 @@ async def test_connections_finish_before_session_teardown(monkeypatch):
     with fail_after(5):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
-            exporter.fsm.inputs.publish_assignment("A")
+            exporter.fsm.inputs.publish_lease_assignment("A")
             await connected.wait()
             exporter.stop()
     assert finished.is_set() and exporter.closed.is_set()
@@ -609,7 +609,7 @@ async def test_remote_connections_wait_for_published_before_hook_outcome(monkeyp
     with fail_after(5):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
-            exporter.fsm.inputs.publish_assignment("A")
+            exporter.fsm.inputs.publish_lease_assignment("A")
             await entered.wait()
             await dialed.wait()
             assert not connected.is_set()
@@ -624,8 +624,8 @@ async def test_release_retries_check_assignment_generation_and_shutdown(monkeypa
     exporter = make_exporter()
     lease = LeaseContext("A")
     exporter._lease_context = lease
-    exporter.fsm.inputs.publish_assignment("A")
-    assignment = exporter.fsm.inputs.snapshot_and_watch()[0].assignment
+    exporter.fsm.inputs.publish_lease_assignment("A")
+    assignment = exporter.fsm.inputs.snapshot_and_watch()[0].lease_assignment
     assert assignment is not None
     error = grpc.aio.AioRpcError(grpc.StatusCode.UNAVAILABLE, grpc.aio.Metadata(), grpc.aio.Metadata(), "retry")
     exporter.controller.ReleaseLease.side_effect = error
@@ -634,8 +634,8 @@ async def test_release_retries_check_assignment_generation_and_shutdown(monkeypa
         if change == "stop_now":
             exporter.stop()
         else:
-            exporter.fsm.inputs.publish_assignment(None)
-            exporter.fsm.inputs.publish_assignment("A" if change == "same_name" else "B")
+            exporter.fsm.inputs.publish_lease_assignment(None)
+            exporter.fsm.inputs.publish_lease_assignment("A" if change == "same_name" else "B")
 
     monkeypatch.setattr("anyio.sleep", backoff)
     with fail_after(2):
@@ -661,13 +661,13 @@ async def test_stop_now_is_bounded_while_release_rpc_is_stalled(monkeypatch):
         await checkpoint()
 
     monkeypatch.setattr(executor, "execute_before_lease_hook", before)
-    monkeypatch.setattr("jumpstarter.exporter.fsm.sleep", visibility_delay)
+    monkeypatch.setattr("jumpstarter.exporter.fsm.states.sleep", visibility_delay)
     monkeypatch.setattr("jumpstarter.exporter.exporter._LEASE_RELEASE_TIMEOUT", 0.05)
     exporter.controller.ReleaseLease.side_effect = release
     with fail_after(2):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
-            exporter.fsm.inputs.publish_assignment("A")
+            exporter.fsm.inputs.publish_lease_assignment("A")
             await releasing.wait()
             exporter.stop()
     assert exporter.closed.is_set()

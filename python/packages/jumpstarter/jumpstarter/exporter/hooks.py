@@ -20,7 +20,7 @@ from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1
 from jumpstarter.exporter.session import Session
 
 if TYPE_CHECKING:
-    from jumpstarter.exporter.lease_context import LeaseContext
+    from jumpstarter.exporter.fsm.lease_context import LeaseContext
 
 logger = logging.getLogger(__name__)
 

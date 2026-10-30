@@ -35,9 +35,16 @@ from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.config.env import JMP_GRPC_INSECURE, JUMPSTARTER_GRPC_INSECURE
 from jumpstarter.config.exporter import DEFAULT_STATUS_STREAM_RETRY_TIMEOUT
 from jumpstarter.config.tls import TLSConfigV1Alpha1
-from jumpstarter.exporter.fsm import Available, ExporterFSM, LeaseKey, ShutdownMode, ShutdownRequest, State
+from jumpstarter.exporter.fsm import (
+    Available,
+    ExporterFSM,
+    LeaseContext,
+    LeaseKey,
+    ShutdownMode,
+    ShutdownRequest,
+    State,
+)
 from jumpstarter.exporter.hooks import HookExecutor
-from jumpstarter.exporter.lease_context import LeaseContext
 from jumpstarter.exporter.metrics_stream import MetricsStreamClient
 from jumpstarter.exporter.session import Session
 from jumpstarter.exporter.telemetry import TelemetryLogHandler
@@ -283,7 +290,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     _exporter_status: ExporterStatus = field(init=False, default=ExporterStatus.OFFLINE)
     """Current status of the exporter.
 
-    Updated via _report_status() and reported to controller and session.
+    Updated via report_status() and reported to controller and session.
     Possible values: OFFLINE, AVAILABLE, BEFORE_LEASE_HOOK, LEASE_READY,
     AFTER_LEASE_HOOK, BEFORE_LEASE_HOOK_FAILED, AFTER_LEASE_HOOK_FAILED.
     """
@@ -302,7 +309,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     _standalone: bool = field(init=False, default=False)
     """When True, exporter runs without a controller (TCP listener only).
 
-    _report_status and __aexit__ skip controller calls when _standalone is True.
+    report_status and __aexit__ skip controller calls when _standalone is True.
     """
 
     _lease_context: LeaseContext | None = field(init=False, default=None)
@@ -327,14 +334,14 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     _status_drain_active: bool = field(init=False, default=False)
     """True only while serve()'s task group is running and the drain task is active.
 
-    When True, _report_status enqueues status updates for background processing.
-    When False (registration, unregistration), _report_status awaits directly.
+    When True, report_status enqueues status updates for background processing.
+    When False (registration, unregistration), report_status awaits directly.
     """
 
     _pending_status_request: jumpstarter_pb2.ReportStatusRequest | None = field(init=False, default=None)
     """Latest status update pending delivery by the background drain task.
 
-    "Latest wins" semantics: if multiple _report_status calls happen while the
+    "Latest wins" semantics: if multiple report_status calls happen while the
     drain task is busy retrying, only the most recent one is sent.
     """
 
@@ -502,7 +509,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         # During per-lease registration, status is managed by serve() to avoid
         # overwriting LEASE_READY with AVAILABLE
         if self._lease_context is None:
-            await self._report_status(ExporterStatus.AVAILABLE, "Exporter registered and available")
+            await self.report_status(ExporterStatus.AVAILABLE, "Exporter registered and available")
 
         # Discover optional telemetry service endpoint.
         await self._setup_telemetry()
@@ -647,7 +654,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     async def _drain_status_reports(self):
         """Background task that sends status updates to the controller.
 
-        Runs during serve() to make _report_status non-blocking. Uses "latest wins"
+        Runs during serve() to make report_status non-blocking. Uses "latest wins"
         semantics: if multiple status updates arrive while retrying, only the most
         recent one is sent. This prevents blocking the client connection path when
         the controller is temporarily unreachable.
@@ -663,7 +670,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     request.message,
                 )
 
-    async def _report_status(self, status: ExporterStatus, message: str = ""):
+    async def report_status(self, status: ExporterStatus, message: str = ""):
         """Report the exporter status with the controller and session."""
         self._exporter_status = status
 
@@ -695,8 +702,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             return True
         snapshot, _ = self.fsm.inputs.snapshot_and_watch()
         return (
-            snapshot.assignment is not None
-            and snapshot.assignment.key == key
+            snapshot.lease_assignment is not None
+            and snapshot.lease_assignment.key == key
             and (snapshot.shutdown is None or snapshot.shutdown.mode != ShutdownMode.STOP_NOW)
         )
 
@@ -755,7 +762,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 channel = await self.channel_factory()
                 try:
                     controller = jumpstarter_pb2_grpc.ControllerServiceStub(channel)
-                    await self._report_status(ExporterStatus.OFFLINE, "Exporter shutting down")
+                    await self.report_status(ExporterStatus.OFFLINE, "Exporter shutting down")
                     await controller.Unregister(
                         jumpstarter_pb2.UnregisterRequest(
                             reason="Exporter shutdown",
@@ -957,7 +964,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             await self._unregister_with_controller()
         else:
             with move_on_after(10, shield=True):
-                await self._report_status(ExporterStatus.OFFLINE, "Exporter shutting down")
+                await self.report_status(ExporterStatus.OFFLINE, "Exporter shutting down")
         self._unregister = False
         self._registered = False
         if self._telemetry_handler is not None:
@@ -1015,7 +1022,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     ) -> None:
         """Run one standalone TCP session through the same lifecycle states."""
         self._standalone = True
-        self.fsm.inputs.publish_assignment("standalone")
+        self.fsm.inputs.publish_lease_assignment("standalone")
         set_log_context(exporter=self.exporter_name, lease_id="standalone")
         try:
             context = self._standalone_session(host, port, tls_credentials=tls_credentials, interceptors=interceptors)

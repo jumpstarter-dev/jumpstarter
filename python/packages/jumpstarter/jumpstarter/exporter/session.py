@@ -27,7 +27,7 @@ from jumpstarter.streams.router import RouterStream
 
 if TYPE_CHECKING:
     from jumpstarter.driver import Driver
-    from jumpstarter.exporter.lease_context import LeaseContext
+    from jumpstarter.exporter.fsm.lease_context import LeaseContext
 
 logger = logging.getLogger(__name__)
 
