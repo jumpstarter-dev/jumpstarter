@@ -156,8 +156,8 @@ exporter modes. Hardware-backed acceptance remains a pre-merge check.
 | `python/packages/jumpstarter/jumpstarter/exporter/fsm/input.py` | Immutable snapshots, shutdown merge policy, and coalescing input notifications |
 | `python/packages/jumpstarter/jumpstarter/exporter/fsm/states.py` | Production lifecycle/failure states; class docstrings are the canonical phase descriptions |
 | `python/packages/jumpstarter/jumpstarter/exporter/fsm/lease_context.py` | Live lease references, socket paths, and the EndSession request shared across states |
-| `python/packages/jumpstarter/jumpstarter/exporter/fsm_test.py` | Typed demonstration states and exporter-input checks using existing `LeaseContext` objects |
-| `python/packages/jumpstarter/jumpstarter/exporter/fsm_lifecycle_test.py` | Production lifecycle checks using real session sockets and controlled controller/hook operations |
+| `python/packages/jumpstarter/jumpstarter/exporter/fsm/fsm_test.py` | Typed demonstration states and exporter-input checks using existing `LeaseContext` objects |
+| `python/packages/jumpstarter/jumpstarter/exporter/fsm/fsm_lifecycle_test.py` | Production lifecycle checks using real session sockets and controlled controller/hook operations |
 
 The demo does not open real sessions or transports. Its compact `Cleanup` state
 stands in for completion. Production states and integration checks implement the
@@ -671,9 +671,9 @@ Each diagnostic points to its intended statement.
 From `python/`:
 
 ```sh
-uv run --isolated --directory packages/jumpstarter pytest -q jumpstarter/fsm_test.py jumpstarter/exporter/fsm_test.py
+uv run --isolated --directory packages/jumpstarter pytest -q jumpstarter/fsm_test.py jumpstarter/exporter/fsm/fsm_test.py
 make pkg-ty-jumpstarter
-uv run ruff check packages/jumpstarter/jumpstarter/fsm{,_test}.py packages/jumpstarter/jumpstarter/exporter/fsm{,_test}.py
+uv run ruff check packages/jumpstarter/jumpstarter/fsm{,_test}.py packages/jumpstarter/jumpstarter/exporter/fsm/fsm_test.py
 ```
 
 The new files pass independently on macOS; the existing package-wide native

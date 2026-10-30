@@ -1,6 +1,6 @@
 ---
 description: keep exporter FSM state docstrings synchronized with lifecycle docs
-globs: python/packages/jumpstarter/jumpstarter/exporter/fsm/**/*.py,python/packages/jumpstarter/jumpstarter/exporter/fsm_*.py,docs/source/contributing/jeps/JEP-0016-typed-fsm-exporter-lifecycle.md,docs/source/introduction/exporter-fsm*.md
+globs: python/packages/jumpstarter/jumpstarter/exporter/fsm/**/*.py,docs/source/contributing/jeps/JEP-0016-typed-fsm-exporter-lifecycle.md,docs/source/introduction/exporter-fsm*.md
 alwaysApply: false
 ---
 # Exporter FSM Documentation Synchronization
