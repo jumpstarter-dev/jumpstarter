@@ -2,7 +2,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from jumpstarter.exporter.lease_context import LeaseContext
+from jumpstarter.exporter.fsm.lease_context import LeaseContext
 
 
 def test_end_session_is_retained_on_its_lease_and_wakes_once() -> None:

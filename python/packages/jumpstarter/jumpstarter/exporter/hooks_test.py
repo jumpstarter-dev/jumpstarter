@@ -142,7 +142,7 @@ def hook_config() -> HookConfigV1Alpha1:
 
 @pytest.fixture
 def lease_scope():
-    from jumpstarter.exporter.lease_context import LeaseContext
+    from jumpstarter.exporter.fsm.lease_context import LeaseContext
 
     lease_scope = LeaseContext(
         lease_name="test-lease-123",
@@ -381,7 +381,7 @@ class TestHookExecutor:
         """
         from contextlib import contextmanager
 
-        from jumpstarter.exporter.lease_context import LeaseContext
+        from jumpstarter.exporter.fsm.lease_context import LeaseContext
 
         hook_config = HookConfigV1Alpha1(
             beforeLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="warn"),

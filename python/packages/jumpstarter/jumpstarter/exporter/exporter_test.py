@@ -14,7 +14,7 @@ from jumpstarter.exporter.exporter import (
     _RPC_MAX_RETRIES,
     _RPC_TIMEOUT,
 )
-from jumpstarter.exporter.lease_context import LeaseContext
+from jumpstarter.exporter.fsm.lease_context import LeaseContext
 
 pytestmark = pytest.mark.anyio
 
@@ -71,7 +71,7 @@ class TestReportStatusGrpcErrorHandling:
             patch.object(exporter, "_controller_stub", return_value=stub_ctx),
             caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"),
         ):
-            await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+            await exporter.report_status(ExporterStatus.AVAILABLE, "test")
 
         warning_msgs = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert any("ReportStatus not supported" in r.message for r in warning_msgs), (
@@ -103,7 +103,7 @@ class TestReportStatusGrpcErrorHandling:
             patch("anyio.sleep") as mock_sleep,
             caplog.at_level(logging.DEBUG, logger="jumpstarter.exporter.exporter"),
         ):
-            await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+            await exporter.report_status(ExporterStatus.AVAILABLE, "test")
 
         # Should log retry warnings (_RPC_MAX_RETRIES)
         warning_msgs = [r for r in caplog.records if r.levelno == logging.WARNING]
@@ -161,7 +161,7 @@ class TestReportStatusGrpcErrorHandling:
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), \
                 patch("anyio.sleep") as mock_sleep:
-            await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+            await exporter.report_status(ExporterStatus.AVAILABLE, "test")
 
         # Status was delivered on the third attempt
         assert ExporterStatus.AVAILABLE in delivered_statuses
@@ -185,7 +185,7 @@ class TestReportStatusGrpcErrorHandling:
         mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=permission_error)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
-            await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+            await exporter.report_status(ExporterStatus.AVAILABLE, "test")
 
         # Called exactly once (no retry)
         assert mock_controller.ReportStatus.call_count == 1
@@ -198,7 +198,7 @@ class TestReportStatusGrpcErrorHandling:
         mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=connection_error)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
-            await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+            await exporter.report_status(ExporterStatus.AVAILABLE, "test")
 
         # Called exactly once (no retry)
         assert mock_controller.ReportStatus.call_count == 1
@@ -220,7 +220,7 @@ class TestReportStatusGrpcErrorHandling:
         stub_ctx.__aexit__ = AsyncMock(return_value=False)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
-            await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+            await exporter.report_status(ExporterStatus.AVAILABLE, "test")
 
         # Verify timeout parameter was passed
         assert len(captured_calls) == 1
@@ -228,7 +228,7 @@ class TestReportStatusGrpcErrorHandling:
         assert captured_calls[0]["timeout"] == _RPC_TIMEOUT
 
     async def test_report_status_non_blocking_during_serve(self):
-        """Verify _report_status returns immediately when drain is active (serve running)."""
+        """Verify report_status returns immediately when drain is active (serve running)."""
         exporter = _make_exporter_for_report_status()
 
         # Simulate serve() drain active
@@ -236,8 +236,8 @@ class TestReportStatusGrpcErrorHandling:
         exporter._status_rpc_event = Event()
         exporter._pending_status_request = None
 
-        # Call _report_status — should return immediately without awaiting RPC
-        await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+        # Call report_status — should return immediately without awaiting RPC
+        await exporter.report_status(ExporterStatus.AVAILABLE, "test")
 
         # Verify it enqueued the request
         assert exporter._pending_status_request is not None
@@ -246,7 +246,7 @@ class TestReportStatusGrpcErrorHandling:
 
         # Now verify latest-wins: call again with different status
         exporter._status_rpc_event = Event()  # Reset
-        await exporter._report_status(ExporterStatus.LEASE_READY, "ready")
+        await exporter.report_status(ExporterStatus.LEASE_READY, "ready")
 
         # The pending request should be replaced
         assert exporter._pending_status_request.message == "ready"
@@ -373,8 +373,8 @@ class TestReportStatusGrpcErrorHandling:
         original = make_lease_context("old-lease")
         replacement = make_lease_context("new-lease")
         exporter._lease_context = original
-        exporter.fsm.inputs.publish_assignment(original.lease_name)
-        assignment = exporter.fsm.inputs.snapshot_and_watch()[0].assignment
+        exporter.fsm.inputs.publish_lease_assignment(original.lease_name)
+        assignment = exporter.fsm.inputs.snapshot_and_watch()[0].lease_assignment
         assert assignment is not None
         transient_error = AioRpcError(grpc.StatusCode.UNAVAILABLE, Metadata(), Metadata(), "Try again")
         controller, stub_ctx = _setup_mock_controller_stub(exporter)
@@ -384,7 +384,7 @@ class TestReportStatusGrpcErrorHandling:
             if lease_change == "replacement":
                 exporter._lease_context = replacement
             elif lease_change == "ended":
-                exporter.fsm.inputs.publish_assignment(None)
+                exporter.fsm.inputs.publish_lease_assignment(None)
 
         with (
             patch.object(exporter, "_controller_stub", return_value=stub_ctx),

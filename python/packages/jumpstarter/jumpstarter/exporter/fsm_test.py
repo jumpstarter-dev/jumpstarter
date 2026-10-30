@@ -12,15 +12,15 @@ from anyio import Event, create_task_group, fail_after
 from anyio.lowlevel import checkpoint
 
 from jumpstarter.exporter.fsm import (
-    Assignment,
     InputBuffer,
     Inputs,
+    LeaseAssignment,
     LeaseKey,
     ShutdownMode,
     ShutdownRequest,
     State,
 )
-from jumpstarter.exporter.lease_context import LeaseContext
+from jumpstarter.exporter.fsm.lease_context import LeaseContext
 from jumpstarter.fsm import ExitFSM, FSMRunner, InputSource
 
 
@@ -54,8 +54,8 @@ class Available:
     async def run(self, inputs: Inputs, resources: AsyncExitStack) -> BeforeHook | ExitFSM | None:
         if inputs.shutdown is not None:
             return ExitFSM()
-        if inputs.assignment is not None and inputs.assignment.key != self.last_completed:
-            key = inputs.assignment.key
+        if inputs.lease_assignment is not None and inputs.lease_assignment.key != self.last_completed:
+            key = inputs.lease_assignment.key
             lease = LeaseContext(lease_name=key.name)
             self.story.started.append((key, lease))
             return BeforeHook(self.story, key, lease)
@@ -102,8 +102,8 @@ class Ready:
         self.story.ready.set()
         self.story.observed = inputs
         if (
-            inputs.assignment is None
-            or inputs.assignment.key != self.key
+            inputs.lease_assignment is None
+            or inputs.lease_assignment.key != self.key
             or (inputs.shutdown is not None and inputs.shutdown.mode == ShutdownMode.STOP_NOW)
             or self.lease.end_session_requested
         ):
@@ -134,7 +134,7 @@ if TYPE_CHECKING:
         assert_type(await before.run(snapshot, resources), Ready | BeforeFailed)
         assert_type(await Cleanup(before.story, before.key, before.lease).run(snapshot, resources), Available | ExitFSM)
         assert_type(inputs.snapshot_and_watch(), tuple[Inputs, Event])
-        assert_type(snapshot.assignment, Assignment | None)
+        assert_type(snapshot.lease_assignment, LeaseAssignment | None)
         assert_type(snapshot.shutdown, ShutdownRequest | None)
         assert_type(before.lease.end_session_requested, bool)
         source: InputSource[Inputs] = inputs
@@ -161,7 +161,7 @@ async def test_sequential_activity_defers_inputs_and_uses_latest_snapshot(fail_h
             tg.start_soon(run)
             await story.waiting.wait()
             assert runner.current_state is initial
-            inputs.publish_assignment("A")
+            inputs.publish_lease_assignment("A")
             await story.entered.wait()
             current = runner.current_state
             assert isinstance(current, BeforeHook)
@@ -170,13 +170,13 @@ async def test_sequential_activity_defers_inputs_and_uses_latest_snapshot(fail_h
             original, _ = inputs.snapshot_and_watch()
             key, lease = story.started[0]
             for index in range(100):
-                inputs.publish_assignment(f"B{index}")
+                inputs.publish_lease_assignment(f"B{index}")
                 await checkpoint()
-            inputs.publish_assignment("C")
+            inputs.publish_lease_assignment("C")
             inputs.request_shutdown(ShutdownRequest(ShutdownMode.DRAIN, should_unregister=True))
             request_end_session(lease, inputs)
             assert story.trace == ["waiting", "before"]
-            assert original.assignment is not None and original.assignment.key.name == "A"
+            assert original.lease_assignment is not None and original.lease_assignment.key.name == "A"
             assert original.shutdown is None
             assert runner.current_state is current
             story.release.set()
@@ -184,7 +184,7 @@ async def test_sequential_activity_defers_inputs_and_uses_latest_snapshot(fail_h
 
     assert story.trace == ["waiting", "before", "failed" if fail_hook else "ready", "cleanup", "finished"]
     assert story.observed is not None
-    assert story.observed.assignment is not None and story.observed.assignment.key.name == "C"
+    assert story.observed.lease_assignment is not None and story.observed.lease_assignment.key.name == "C"
     assert story.observed.shutdown == ShutdownRequest(ShutdownMode.DRAIN, should_unregister=True)
     assert lease.end_session_requested
     assert story.closed == [key]
@@ -212,12 +212,12 @@ async def test_runner_captures_watch_before_state_can_await_and_return_none(leas
             if calls == 1:
                 entered.set()
                 await release.wait()
-                assert inputs.assignment is None  # This call still has its original inputs.
+                assert inputs.lease_assignment is None  # This call still has its original inputs.
                 return None
             if lease_local:
                 assert inputs == Inputs() and lease.end_session_requested
             else:
-                assert inputs.assignment is not None and inputs.assignment.key.name == "A"
+                assert inputs.lease_assignment is not None and inputs.lease_assignment.key.name == "A"
             return ExitFSM()
 
     async def run() -> None:
@@ -231,7 +231,7 @@ async def test_runner_captures_watch_before_state_can_await_and_return_none(leas
             if lease_local:
                 request_end_session(lease, inputs)
             else:
-                inputs.publish_assignment("A")
+                inputs.publish_lease_assignment("A")
             release.set()
             await finished.wait()
     assert calls == 2
@@ -241,16 +241,16 @@ async def test_runner_captures_watch_before_state_can_await_and_return_none(leas
 async def test_snapshot_watch_cannot_miss_update_before_wait() -> None:
     inputs = InputBuffer()
     original, changed = inputs.snapshot_and_watch()
-    inputs.publish_assignment("A")
-    inputs.publish_assignment("B")
-    inputs.publish_assignment("C")
+    inputs.publish_lease_assignment("A")
+    inputs.publish_lease_assignment("B")
+    inputs.publish_lease_assignment("C")
     with fail_after(2):
         await changed.wait()
     latest, next_change = inputs.snapshot_and_watch()
     assert original == Inputs()
-    assert latest.assignment is not None and latest.assignment.key == LeaseKey("C", 3)
+    assert latest.lease_assignment is not None and latest.lease_assignment.key == LeaseKey("C", 3)
     assert changed is not next_change and not next_change.is_set()
-    inputs.publish_assignment("C")
+    inputs.publish_lease_assignment("C")
     assert inputs.snapshot_and_watch() == (latest, next_change)
     assert not next_change.is_set()
 
@@ -258,29 +258,29 @@ async def test_snapshot_watch_cannot_miss_update_before_wait() -> None:
 @pytest.mark.anyio
 async def test_assignment_generations_preserve_release_boundaries() -> None:
     inputs = InputBuffer()
-    inputs.publish_assignment("A")
+    inputs.publish_lease_assignment("A")
     a = LeaseKey("A", 1)
-    inputs.publish_assignment("A", "client", {"job": "1"})
+    inputs.publish_lease_assignment("A", "client", {"job": "1"})
     snapshot, _ = inputs.snapshot_and_watch()
-    assert snapshot.assignment is not None and snapshot.assignment.key == a
-    inputs.publish_assignment(None)
-    inputs.publish_assignment("A")
+    assert snapshot.lease_assignment is not None and snapshot.lease_assignment.key == a
+    inputs.publish_lease_assignment(None)
+    inputs.publish_lease_assignment("A")
     replacement = LeaseKey("A", 3)
     snapshot, _ = inputs.snapshot_and_watch()
-    assert snapshot.assignment is not None and snapshot.assignment.key == replacement
-    inputs.publish_assignment("A", "another-client", {"job": "2"})
+    assert snapshot.lease_assignment is not None and snapshot.lease_assignment.key == replacement
+    inputs.publish_lease_assignment("A", "another-client", {"job": "2"})
     snapshot, _ = inputs.snapshot_and_watch()
-    assert snapshot.assignment is not None and snapshot.assignment.key == replacement
-    inputs.publish_assignment("B")
+    assert snapshot.lease_assignment is not None and snapshot.lease_assignment.key == replacement
+    inputs.publish_lease_assignment("B")
     snapshot, _ = inputs.snapshot_and_watch()
-    assert snapshot.assignment is not None and snapshot.assignment.key == LeaseKey("B", 4)
+    assert snapshot.lease_assignment is not None and snapshot.lease_assignment.key == LeaseKey("B", 4)
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("replacement_name", ["A", "B"])
 async def test_states_own_teardown_completion_and_lease_scoped_requests(replacement_name: str) -> None:
     inputs = InputBuffer()
-    inputs.publish_assignment("A")
+    inputs.publish_lease_assignment("A")
     story = Story(False, teardown=Event())
     story.release.set()
     finished = Event()
@@ -294,8 +294,8 @@ async def test_states_own_teardown_completion_and_lease_scoped_requests(replacem
             tg.start_soon(run)
             await story.ready.wait()
             old_key, old_lease = story.started[0]
-            inputs.publish_assignment(None)
-            inputs.publish_assignment(replacement_name)
+            inputs.publish_lease_assignment(None)
+            inputs.publish_lease_assignment(replacement_name)
             await story.closing.wait()
             assert len(story.started) == 1 and story.closed == []
             story.ready = Event()
@@ -324,7 +324,7 @@ async def test_states_own_teardown_completion_and_lease_scoped_requests(replacem
             assert story.closed == [old_key, new_key]
 
             # Available remembers completion even if client/context updates wake it again.
-            inputs.publish_assignment(replacement_name, "another-client", {"job": "2"})
+            inputs.publish_lease_assignment(replacement_name, "another-client", {"job": "2"})
             await checkpoint()
             assert len(story.started) == 2
             inputs.request_shutdown(ShutdownRequest(ShutdownMode.DRAIN))
@@ -335,24 +335,24 @@ async def test_states_own_teardown_completion_and_lease_scoped_requests(replacem
 async def test_assignment_snapshots_copy_metadata_and_validate_before_publishing() -> None:
     inputs = InputBuffer()
     metadata = {"job": "old"}
-    inputs.publish_assignment("A", "client", metadata)
+    inputs.publish_lease_assignment("A", "client", metadata)
     original, changed = inputs.snapshot_and_watch()
-    assert original.assignment is not None
+    assert original.lease_assignment is not None
     metadata["job"] = "new"
-    assert original.assignment.context == {"job": "old"}
-    assert isinstance(original.assignment.context, MappingProxyType)
+    assert original.lease_assignment.context == {"job": "old"}
+    assert isinstance(original.lease_assignment.context, MappingProxyType)
     with pytest.raises(FrozenInstanceError):
-        original.assignment.__setattr__("client_name", "mutated")
+        original.lease_assignment.__setattr__("client_name", "mutated")
     with pytest.raises(ValueError, match="non-empty name"):
-        inputs.publish_assignment("")
+        inputs.publish_lease_assignment("")
     assert inputs.snapshot_and_watch() == (original, changed)
     assert not changed.is_set()
-    inputs.publish_assignment("A", "client", metadata)
+    inputs.publish_lease_assignment("A", "client", metadata)
     latest, _ = inputs.snapshot_and_watch()
-    assert changed.is_set() and latest.assignment is not None
-    assert latest.assignment.key == original.assignment.key
-    assert latest.assignment.context == {"job": "new"}
-    assert original.assignment.context == {"job": "old"}
+    assert changed.is_set() and latest.lease_assignment is not None
+    assert latest.lease_assignment.key == original.lease_assignment.key
+    assert latest.lease_assignment.context == {"job": "new"}
+    assert original.lease_assignment.context == {"job": "old"}
     with pytest.raises(ValueError, match="positive generation"):
         LeaseKey("A", 0)
 
@@ -371,7 +371,7 @@ async def test_shutdown_escalates_without_losing_exit_or_cleanup_policy(first_co
     inputs.request_shutdown(ShutdownRequest(ShutdownMode.STOP_NOW, should_unregister=True))
     assert inputs.snapshot_and_watch() == (snapshot, changed)
     assert not changed.is_set()
-    inputs.publish_assignment("A")
+    inputs.publish_lease_assignment("A")
     snapshot, _ = inputs.snapshot_and_watch()
     story = Story(False)
     async with AsyncExitStack() as resources:
@@ -404,7 +404,7 @@ async def test_runner_logs_transitions_evaluations_duration_and_safe_inputs(
             story.waiting = Event()
             inputs.wake("manual recheck")
             await story.waiting.wait()
-            inputs.publish_assignment("A", "secret-client", {"token": "secret-token"})
+            inputs.publish_lease_assignment("A", "secret-client", {"token": "secret-token"})
             await story.entered.wait()
             assert "FSM exporter run BeforeHook started" in caplog.text
             assert "FSM exporter run BeforeHook ended" not in caplog.text
@@ -439,7 +439,8 @@ async def test_runner_logs_transitions_evaluations_duration_and_safe_inputs(
     ]
     assert durations == ["1.000000"] * 6
     assert any(
-        message.startswith("FSM inputs changed: assignment=LeaseKey(name='A', generation=1)") for message in messages
+        message.startswith("FSM inputs changed: lease_assignment=LeaseKey(name='A', generation=1)")
+        for message in messages
     )
     assert any("shutdown_mode=DRAIN" in message for message in messages)
     assert "FSM wakeup: EndSession" in messages and "FSM wakeup: manual recheck" in messages
