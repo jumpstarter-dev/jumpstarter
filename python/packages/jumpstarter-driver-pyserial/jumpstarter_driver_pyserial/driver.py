@@ -183,12 +183,12 @@ class PySerial(FanOutStreamMixin, Driver):
     def shutdown(self):
         """Session-end teardown: drop the serial link and stop the reader.
 
-        Runs on the exporter's event-loop thread from Session teardown. Close
-        the transport explicitly first rather than relying on the reader's
-        cleanup, which shutdown_sync() cancels but cannot await from this
-        synchronous path. pyserial-asyncio still releases the handle on a later
-        loop iteration (after flushing any buffered writes), not before this
-        returns.
+        Runs on the exporter's event-loop thread from Session teardown. In a
+        session the reader has already closed the transport when the session
+        stopped serving; outside one, shutdown_sync() can only cancel the reader,
+        not await it, so close the transport explicitly first. pyserial-asyncio
+        still releases the handle on a later loop iteration (after flushing any
+        buffered writes), not before this returns.
         """
         transport = self._transport
         if transport is None:
