@@ -1,0 +1,13 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: ios-simulator
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: REPLACE-WITH-EXPORTER-TOKEN
+export:
+  simulator:
+    type: jumpstarter_driver_iossimulator.driver.IosSimulator
+    config:
+      device_type: com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro
+      runtime: com.apple.CoreSimulator.SimRuntime.iOS-27-0
