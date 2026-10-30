@@ -822,6 +822,7 @@ async def test_play_sets_track_and_reports_status():
     status = json.loads(peer.playback_status())
     assert status == {
         "playing": True,
+        "paused": False,
         "name": "song.mp3",
         "loop": True,
         "bytes": result["bytes"],
@@ -838,7 +839,7 @@ async def test_play_sets_track_and_reports_status():
     assert json.loads(await peer.stop_playback())["status"] == "stopped"
     assert peer._track is None
     protocol.stream.state = State.OPEN
-    assert json.loads(peer.playback_status()) == {"playing": False, "streaming": False}
+    assert json.loads(peer.playback_status()) == {"playing": False, "paused": False, "streaming": False}
     assert json.loads(await peer.stop_playback())["status"] == "not_playing"
 
 
@@ -1551,3 +1552,91 @@ async def test_other_pdus_still_reach_the_base_class():
         protocol._on_command_pdu(PduId.GET_PLAY_STATUS, b"")
 
     base.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_paused_is_reported_and_survives_reconnect():
+    """A paused track must not read as playing, nor restart on reconnect."""
+    peer, protocol = _peer_with_session()
+    with _patch_resource(make_sbc_file(60)):
+        await peer.play("handle", name="song.mp3")
+
+    protocol.source.stream = protocol.stream
+    protocol.stream.state = State.STREAMING
+    await peer.pause()
+
+    status = json.loads(peer.playback_status())
+    assert status["playing"] is False
+    assert status["paused"] is True
+    assert peer._track is not None
+
+    # The DUT drops and reconnects; the track stays paused.
+    peer._on_avdtp_close()
+    reconnected = _fake_protocol()
+    peer._on_avdtp_connection(reconnected)
+    for _ in range(30):
+        await anyio.lowlevel.checkpoint()
+
+    reconnected.stream.start.assert_not_awaited()
+    assert json.loads(peer.playback_status())["paused"] is True
+
+    # And an explicit resume still works.
+    await peer.resume()
+    assert json.loads(peer.playback_status())["paused"] is False
+
+
+@pytest.mark.anyio
+async def test_play_clears_a_previous_pause():
+    peer, _protocol = _peer_with_session()
+    with _patch_resource(make_sbc_file(30)):
+        await peer.play("handle", name="first.sbc")
+    await peer.pause()
+    assert peer._paused is True
+
+    with _patch_resource(make_sbc_file(30)):
+        await peer.play("handle", name="second.sbc")
+
+    assert peer._paused is False
+    assert json.loads(peer.playback_status())["playing"] is True
+
+
+@pytest.mark.anyio
+async def test_a_queued_track_is_rechecked_against_the_discovered_sink():
+    """Queued before connection, it was only checked against the advertised max."""
+    peer = _running_peer()
+    peer._avrcp_delegate = _AvrcpDelegate()
+    peer._avrcp = MagicMock()
+
+    # bitpool 52 passes the advertised 2-53 ceiling with no session present.
+    with _patch_resource(make_sbc_file(40, bitpool=52)):
+        result = json.loads(await peer.play("handle", name="loud.sbc"))
+    assert result["streaming"] is False
+
+    # The DUT turns out to accept only 35.
+    protocol = _fake_protocol(sink=_sink_with_bitpool(2, 35))
+    peer._on_avdtp_connection(protocol)
+    for _ in range(50):
+        await anyio.lowlevel.checkpoint()
+
+    protocol.stream.start.assert_not_awaited()
+    failed = [e for e in peer._events if e["type"] == "stream_resume_failed"]
+    assert failed and "sink accepts 2-35" in failed[0]["error"]
+
+
+@pytest.mark.anyio
+async def test_a_queued_track_the_sink_accepts_still_starts():
+    peer = _running_peer()
+    peer._avrcp_delegate = _AvrcpDelegate()
+    peer._avrcp = MagicMock()
+
+    with _patch_resource(make_sbc_file(40, bitpool=52)):
+        await peer.play("handle", name="fine.sbc")
+
+    protocol = _fake_protocol(sink=_sink_with_bitpool(2, 53))
+    peer._on_avdtp_connection(protocol)
+    for _ in range(50):
+        if protocol.stream.start.await_count:
+            break
+        await anyio.lowlevel.checkpoint()
+
+    protocol.stream.start.assert_awaited_once()

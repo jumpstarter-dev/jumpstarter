@@ -500,6 +500,9 @@ class BtPeer(Driver):
     _events: deque = field(default_factory=lambda: deque(maxlen=1000), init=False, repr=False)
     _connections: dict[int, Connection] = field(default_factory=dict, init=False, repr=False)
     _track: _Track | None = field(default=None, init=False, repr=False)
+    # A paused track is kept but must not be reported as playing, nor started
+    # again behind the caller's back when the DUT reconnects.
+    _paused: bool = field(default=False, init=False, repr=False)
     _session: _A2dpSession | None = field(default=None, init=False, repr=False)
     _avrcp: AvrcpProtocol | None = field(default=None, init=False, repr=False)
     _avrcp_delegate: _AvrcpDelegate | None = field(default=None, init=False, repr=False)
@@ -556,7 +559,9 @@ class BtPeer(Driver):
         # connection and its AVDTP channel, in which case it had no session
         # to start a stream on and gave up. Pick the queued track up now,
         # otherwise it sits there silently until something calls play again.
-        if self._track is not None:
+        # A paused track stays paused: resuming it here would restart audio
+        # the caller deliberately stopped.
+        if self._track is not None and not self._paused:
             AsyncRunner.spawn(self._resume_queued_track())
 
     def _on_avdtp_close(self) -> None:
@@ -565,7 +570,17 @@ class BtPeer(Driver):
 
     async def _resume_queued_track(self) -> None:
         queued = self._track
+        if queued is None:
+            return
         try:
+            session = self._session
+            if session is not None:
+                # The track was validated before any sink was known, against
+                # the advertised ceiling. Now that one has been discovered,
+                # re-check it rather than streaming audio the sink cannot
+                # decode.
+                await session.prepare()
+                await _validate_sbc(queued.data, max_bitpool=session.max_bitpool)
             state = await self._ensure_streaming()
         except Exception as exc:  # noqa: BLE001
             if self._track is queued:
@@ -1032,9 +1047,11 @@ class BtPeer(Driver):
 
         metadata = _parse_metadata(metadata_json, default_title=name)
         previous_track = self._track
+        previous_paused = self._paused
         previous_metadata = self._avrcp_delegate.metadata if self._avrcp_delegate is not None else None
 
         self._track = _Track(name=name, data=data, loop=bool(loop))
+        self._paused = False
         if self._avrcp_delegate is not None:
             self._avrcp_delegate.metadata = metadata
 
@@ -1044,6 +1061,7 @@ class BtPeer(Driver):
             # Leaving the track installed would make playback_status claim to
             # be playing, and let a later AVDTP event start it unannounced.
             self._track = previous_track
+            self._paused = previous_paused
             if self._avrcp_delegate is not None and previous_metadata is not None:
                 self._avrcp_delegate.metadata = previous_metadata
             self._report_playback_status(PlayStatus.STOPPED)
@@ -1073,6 +1091,7 @@ class BtPeer(Driver):
         if self._track is None:
             return json.dumps({"status": "not_playing"})
         suspended = self._session is not None and await self._session.suspend()
+        self._paused = True
         self._report_playback_status(PlayStatus.PAUSED)
         self._emit("track_paused", {"name": self._track.name, "suspended": suspended})
         return json.dumps({"status": "paused", "name": self._track.name})
@@ -1082,6 +1101,7 @@ class BtPeer(Driver):
         """Restart a stream suspended by pause()."""
         if self._track is None:
             return json.dumps({"status": "not_playing"})
+        self._paused = False
         state = await self._ensure_streaming()
         if state.get("streaming"):
             self._report_playback_status(PlayStatus.PLAYING)
@@ -1095,6 +1115,7 @@ class BtPeer(Driver):
         if track is None:
             return json.dumps({"status": "not_playing"})
         self._track = None
+        self._paused = False
         suspended = self._session is not None and await self._session.suspend()
         self._report_playback_status(PlayStatus.STOPPED)
         self._emit("track_stopped", {"name": track.name, "suspended": suspended})
@@ -1107,10 +1128,11 @@ class BtPeer(Driver):
         session = self._session
         stream = session.source.stream if session is not None else None
         if track is None:
-            return json.dumps({"playing": False, "streaming": _is_streaming(stream)})
+            return json.dumps({"playing": False, "paused": False, "streaming": _is_streaming(stream)})
         metadata = self._avrcp_delegate.metadata if self._avrcp_delegate else TrackMetadata()
         return json.dumps({
-            "playing": True,
+            "playing": not self._paused,
+            "paused": self._paused,
             "name": track.name,
             "loop": track.loop,
             "bytes": len(track.data),
