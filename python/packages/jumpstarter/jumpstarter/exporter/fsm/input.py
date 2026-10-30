@@ -82,21 +82,10 @@ class InputBuffer:
 
     def wake(self, reason: str = "lease-local input") -> None:
         """Notify after updating lease-local inputs, even if the snapshot is unchanged."""
-        # ponytail: event-loop-only updates; marshal thread callbacks onto the loop if needed.
         changed = self._changed
         self._changed = Event()
         changed.set()
         logger.debug("FSM wakeup: %s", reason)
-
-    def _publish(self, inputs: Inputs) -> None:
-        if inputs != self._snapshot:
-            self._snapshot = inputs
-            logger.debug(
-                "FSM inputs changed: lease_assignment=%r shutdown_mode=%s",
-                inputs.lease_assignment.key if inputs.lease_assignment is not None else None,
-                inputs.shutdown.mode.name if inputs.shutdown is not None else None,
-            )
-            self.wake("snapshot changed")
 
     def publish_lease_assignment(
         self,
@@ -141,3 +130,14 @@ class InputBuffer:
             status.lease_name if status.leased else None, status.client_name, status.context
         )
         await checkpoint()
+
+    def _publish(self, inputs: Inputs) -> None:
+        """Install a new snapshot and wake the runner only when inputs actually changed."""
+        if inputs != self._snapshot:
+            self._snapshot = inputs
+            logger.debug(
+                "FSM inputs changed: lease_assignment=%r shutdown_mode=%s",
+                inputs.lease_assignment.key if inputs.lease_assignment is not None else None,
+                inputs.shutdown.mode.name if inputs.shutdown is not None else None,
+            )
+            self.wake("snapshot changed")
