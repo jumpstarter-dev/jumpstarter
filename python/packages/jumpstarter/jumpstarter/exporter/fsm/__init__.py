@@ -59,6 +59,7 @@ class ExporterFSM:
     runner: FSMRunner[Inputs] | None = field(init=False, default=None)
     """The lifecycle in either serving mode; current_state remains queryable after exit."""
 
-    async def run(self, initial: State, *, name: str) -> None:
-        self.runner = FSMRunner(initial, self.inputs, name=name)
+    async def run(self, initial: State) -> None:
+        # The exporter name is already in the log context; name the FSM itself.
+        self.runner = FSMRunner(initial, self.inputs, name="exporter")
         await self.runner.run()

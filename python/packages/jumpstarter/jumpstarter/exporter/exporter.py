@@ -993,7 +993,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
     async def _run_lifecycle(self, initial: State) -> None:
         try:
-            await self.fsm.run(initial, name=self.exporter_name)
+            await self.fsm.run(initial)
         finally:
             await self.finish_shutdown()
 
