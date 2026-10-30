@@ -1,9 +1,9 @@
 """Common utilities and types for cluster operations."""
 
-import asyncio
-import asyncio.subprocess
 import os
 from typing import Literal
+
+from anyio import run_process
 
 from ..exceptions import ClusterTypeValidationError
 
@@ -73,22 +73,19 @@ async def run_command(cmd: list[str]) -> tuple[int, str, str]:
         raise ValueError("Command list cannot be empty")
 
     try:
-        process = await asyncio.create_subprocess_exec(  # type: ignore[missing-argument]
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate()
-
-        # Use safe decoding to avoid UnicodeDecodeError
-        stdout_str = stdout.decode(errors="replace").strip()
-        stderr_str = stderr.decode(errors="replace").strip()
-
-        return process.returncode or 0, stdout_str, stderr_str
+        result = await run_process(cmd, check=False)
     except builtins.FileNotFoundError as e:
         raise RuntimeError(f"Command not found: {cmd[0]}") from e
     except PermissionError as e:
         raise RuntimeError(f"Permission denied executing command: {cmd[0]} - {e}") from e
     except OSError as e:
         raise RuntimeError(f"OS error executing command '{cmd[0]}': {e}") from e
+
+    # Use safe decoding to avoid UnicodeDecodeError
+    stdout_str = result.stdout.decode(errors="replace").strip()
+    stderr_str = result.stderr.decode(errors="replace").strip()
+
+    return result.returncode, stdout_str, stderr_str
 
 
 async def run_command_with_output(cmd: list[str]) -> int:
@@ -100,11 +97,12 @@ async def run_command_with_output(cmd: list[str]) -> int:
         raise ValueError("Command list cannot be empty")
 
     try:
-        process = await asyncio.create_subprocess_exec(*cmd)  # type: ignore[missing-argument]
-        return await process.wait()
+        result = await run_process(cmd, stdout=None, stderr=None, check=False)
     except builtins.FileNotFoundError as e:
         raise RuntimeError(f"Command not found: {cmd[0]}") from e
     except PermissionError as e:
         raise RuntimeError(f"Permission denied executing command: {cmd[0]} - {e}") from e
     except OSError as e:
         raise RuntimeError(f"OS error executing command '{cmd[0]}': {e}") from e
+
+    return result.returncode
