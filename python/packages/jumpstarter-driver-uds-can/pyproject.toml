@@ -22,7 +22,7 @@ UdsCan = "jumpstarter_driver_uds_can.driver:UdsCan"
 
 [dependency-groups]
 dev = [
-    "pytest>=8.3.2",
+    "pytest>=8.4",
     "pytest-cov>=5.0.0",
 ]
 

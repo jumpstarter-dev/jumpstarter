@@ -97,7 +97,7 @@ def test_check_dmesg_finds_marker_in_tail(monkeypatch):
     check_dmesg("Product: Android")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_set_device_mode_polls_dmesg_until_marker_found():
     """set_device_mode should poll dmesg until the expected marker appears."""
     tac = MagicMock()
@@ -128,7 +128,7 @@ async def test_set_device_mode_polls_dmesg_until_marker_found():
     assert call_count == 3
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_set_device_mode_raises_after_timeout():
     """set_device_mode should raise after check_timeout if marker never appears."""
     tac = MagicMock()

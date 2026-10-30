@@ -17,7 +17,7 @@ from jumpstarter.client.flasher import FlashPhase
 from jumpstarter.common.exceptions import ConfigurationError
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_execute_manifest_sleep_step():
     manifest = load_firmware_manifest(Path(__file__).parent / "examples" / "manifests" / "es22.yaml")
     manifest = manifest.model_copy(update={"steps": [SleepStep(sleep=0)]})
@@ -43,7 +43,7 @@ def test_qualcomm_flasher_requires_tac_child():
         QualcommFlasher(children={})
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_qualcomm_flasher_power_cycle(tmp_path):
     mock_tac = MagicMock()
     stream = AsyncMock()
@@ -57,7 +57,7 @@ async def test_qualcomm_flasher_power_cycle(tmp_path):
     assert stream.send.await_count > 0
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_qualcomm_flasher_boot_to_edl(tmp_path):
     mock_tac = MagicMock()
     stream = AsyncMock()

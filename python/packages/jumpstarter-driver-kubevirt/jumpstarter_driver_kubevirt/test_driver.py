@@ -65,7 +65,7 @@ class TestKubevirtPower:
 
         assert KubevirtPower.client() == "jumpstarter_driver_kubevirt.client.KubevirtPowerClient"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_on(self):
         power = self._make_power()
         mock_client = AsyncMock()
@@ -78,7 +78,7 @@ class TestKubevirtPower:
         assert call_kwargs.kwargs["name"] == "test-vm"
         assert call_kwargs.kwargs["namespace"] == "test-ns"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_off_halt(self):
         power = self._make_power()
         mock_client = AsyncMock()
@@ -90,7 +90,7 @@ class TestKubevirtPower:
         call_kwargs = mock_client.patch.call_args
         assert call_kwargs.kwargs["name"] == "test-vm"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_off_destroy(self):
         power = self._make_power()
         mock_client = AsyncMock()
@@ -101,7 +101,7 @@ class TestKubevirtPower:
         mock_client.delete.assert_called_once()
         mock_client.patch.assert_not_called()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_read_running(self):
         power = self._make_power()
         mock_client = AsyncMock()
@@ -126,7 +126,7 @@ class TestKubevirtPower:
         assert readings[0].voltage == 5.0
         assert readings[0].current == 1.0
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_read_stopped(self):
         power = self._make_power()
         mock_client = AsyncMock()
@@ -151,7 +151,7 @@ class TestKubevirtPower:
         assert readings[0].voltage == 0.0
         assert readings[0].current == 0.0
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_read_exception(self):
         power = self._make_power()
         mock_client = AsyncMock()
@@ -266,7 +266,7 @@ class TestKubevirtConsole:
         with pytest.raises(ValueError, match="vm_name not set"):
             console._resolve_vm_name()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_connect_success(self):
         from jumpstarter_driver_kubevirt.driver import KubevirtConsole
 
@@ -293,7 +293,7 @@ class TestKubevirtConsole:
             async with console.connect() as stream:
                 assert stream is mock_stream
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_connect_retry_on_not_running(self):
         from websockets.exceptions import InvalidStatus
 
@@ -376,7 +376,7 @@ class TestKubevirtStorage:
             assert result2 is mock_client
             assert mock_build.call_count == 1
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_flash_delete_then_create(self):
         from lightkube.core.exceptions import ApiError
 
@@ -394,7 +394,7 @@ class TestKubevirtStorage:
         mock_client.get.assert_called_once()
         mock_client.create.assert_called_once()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_flash_uses_configured_storage_settings(self):
         from lightkube.core.exceptions import ApiError
 
@@ -412,7 +412,7 @@ class TestKubevirtStorage:
         assert dv.spec["storage"]["accessModes"] == ["ReadWriteMany"]
         assert dv.spec["storage"]["resources"]["requests"]["storage"] == "40Gi"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_flash_delete_404_still_creates(self):
         from lightkube.core.exceptions import ApiError
 
@@ -430,7 +430,7 @@ class TestKubevirtStorage:
 
         mock_client.create.assert_called_once()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_flash_delete_other_error_raises(self):
         from lightkube.core.exceptions import ApiError
 
@@ -447,7 +447,7 @@ class TestKubevirtStorage:
         with pytest.raises(ApiError):
             await storage.flash("http://example.com/image.qcow2")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_flash_times_out_waiting_for_deletion(self):
         storage = self._make_storage(delete_timeout=0)
         mock_client = AsyncMock()

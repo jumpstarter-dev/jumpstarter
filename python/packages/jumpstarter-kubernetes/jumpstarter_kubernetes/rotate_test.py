@@ -39,7 +39,7 @@ CLIENT_DICT_NO_CREDENTIAL = {
 }
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_rotate_client_token_success():
     """Rotate deletes secret, waits for regeneration, returns new token."""
     api = ClientsV1Alpha1Api(namespace="default")
@@ -60,7 +60,7 @@ async def test_rotate_client_token_success():
     api.core_api.read_namespaced_secret.assert_called_with("test-client-client", "default")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_rotate_client_token_no_credential():
     """Rotate raises when client has no credential secret."""
     api = ClientsV1Alpha1Api(namespace="default")
@@ -73,7 +73,7 @@ async def test_rotate_client_token_no_credential():
         await api.rotate_client_token("test-client")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @patch("jumpstarter_kubernetes.clients.asyncio.sleep", new_callable=AsyncMock)
 async def test_rotate_client_token_timeout(mock_sleep):
     """Rotate raises on timeout when secret never regenerates (404 loop)."""
@@ -92,7 +92,7 @@ async def test_rotate_client_token_timeout(mock_sleep):
         await api.rotate_client_token("test-client")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_rotate_client_token_non_404_raises():
     """Non-404 ApiException is not swallowed by polling loop."""
     api = ClientsV1Alpha1Api(namespace="default")
@@ -111,7 +111,7 @@ async def test_rotate_client_token_non_404_raises():
     assert exc_info.value.status == 403  # type: ignore[attr-defined]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_rotate_client_token_no_status():
     """Rotate raises when client has no status."""
     api = ClientsV1Alpha1Api(namespace="default")
