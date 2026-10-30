@@ -291,7 +291,7 @@ async def test_hook_failure_policy_and_cleanup_eligibility(monkeypatch, phase, p
                     exporter.fsm.inputs.publish_lease_assignment("A", "duplicate", {"job": "changed"})
                 elif policy == "exit":
                     assert exporter.exit_code == 1
-                    shutdown = exporter.fsm.inputs.snapshot_and_watch()[0].shutdown
+                    shutdown = exporter.fsm.inputs.snapshot().shutdown
                     assert shutdown is not None and shutdown.mode == ShutdownMode.DRAIN
                 else:
                     exporter.leases[0].request_end_session()
@@ -353,7 +353,7 @@ async def test_terminal_stream_failure_defers_shutdown_and_overrides_hook_exit(m
             finish_hook.set()
     assert exporter.exit_code == (1 if failure == "invalid" else 75)
     assert ("after", "A") in exporter.trace and exporter.closed.is_set()
-    shutdown = exporter.fsm.inputs.snapshot_and_watch()[0].shutdown
+    shutdown = exporter.fsm.inputs.snapshot().shutdown
     assert shutdown is not None and shutdown.should_unregister is False
     exporter.controller.ReleaseLease.assert_not_awaited()
 
@@ -366,7 +366,7 @@ async def test_exit_on_lease_end_stops_sidecar_after_teardown(monkeypatch):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
             await exporter.wait_status(ExporterStatus.AVAILABLE)
-            assert exporter.fsm.inputs.snapshot_and_watch()[0].shutdown is None
+            assert exporter.fsm.inputs.snapshot().shutdown is None
             exporter.fsm.inputs.publish_lease_assignment("A")
             await exporter.wait_status(ExporterStatus.LEASE_READY)
             exporter.fsm.inputs.publish_lease_assignment("B")
@@ -604,7 +604,7 @@ async def test_remote_connections_wait_for_published_before_hook_outcome(monkeyp
 
     async def connection(*args):
         expected = ExporterStatus.BEFORE_LEASE_HOOK_FAILED if failed else ExporterStatus.LEASE_READY
-        assert exporter._exporter_status == expected
+        assert exporter.exporter_status == expected
         connected.set()
         await sleep_forever()
 
@@ -630,7 +630,7 @@ async def test_release_retries_check_assignment_generation_and_shutdown(monkeypa
     exporter = make_exporter()
     lease = LeaseContext("A")
     exporter.fsm.inputs.publish_lease_assignment("A")
-    assignment = exporter.fsm.inputs.snapshot_and_watch()[0].lease_assignment
+    assignment = exporter.fsm.inputs.snapshot().lease_assignment
     assert assignment is not None
     error = grpc.aio.AioRpcError(grpc.StatusCode.UNAVAILABLE, grpc.aio.Metadata(), grpc.aio.Metadata(), "retry")
     exporter.controller.ReleaseLease.side_effect = error
@@ -644,7 +644,7 @@ async def test_release_retries_check_assignment_generation_and_shutdown(monkeypa
 
     monkeypatch.setattr("anyio.sleep", backoff)
     with fail_after(2):
-        await exporter._request_lease_release(lease, assignment.key)
+        await exporter.request_lease_release(lease, assignment.key)
     exporter.controller.ReleaseLease.assert_awaited_once()
     assert exporter.controller.ReleaseLease.await_args.args[0].name == "A"
 

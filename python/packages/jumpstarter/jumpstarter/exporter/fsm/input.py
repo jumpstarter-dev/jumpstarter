@@ -77,6 +77,10 @@ class InputBuffer:
         self._changed = Event()
         self._generation = 0
 
+    def snapshot(self) -> Inputs:
+        """Latest inputs for one-off reads; the runner's watch event is not consumed."""
+        return self._snapshot
+
     def snapshot_and_watch(self) -> tuple[Inputs, Event]:
         return self._snapshot, self._changed
 
