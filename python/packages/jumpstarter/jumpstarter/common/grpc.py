@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import logging
 import os
@@ -10,7 +9,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 import grpc
-from anyio import fail_after
+from anyio import aclose_forcefully, connect_tcp, create_task_group, fail_after, getaddrinfo
+from anyio.streams.tls import TLSAttribute
 
 from jumpstarter.common.exceptions import CertificateDiscoveryError, ConfigurationError, ConnectionError
 
@@ -44,14 +44,14 @@ async def _try_connect_and_extract_cert(
     Raises exception on failure.
     """
     logger.debug(f"Attempting TLS connection to {ip_address}:{port} (timeout={timeout}s)")
-    _, writer = await asyncio.wait_for(
-        asyncio.open_connection(ip_address, port, ssl=ssl_context, server_hostname=hostname),
-        timeout=timeout,
-    )
+    with fail_after(timeout):
+        stream = await connect_tcp(ip_address, port, ssl_context=ssl_context, tls_hostname=hostname)
     logger.debug(f"Successfully connected to {ip_address}:{port}")
     try:
-        # Extract certificates
-        cert_chain = writer.get_extra_info("ssl_object")._sslobj.get_unverified_chain()
+        # Private API: the public get_unverified_chain() is Python 3.13+ and returns
+        # DER bytes, while these certificate objects can render themselves as PEM.
+        ssl_object = stream.extra(TLSAttribute.ssl_object)
+        cert_chain = ssl_object._sslobj.get_unverified_chain()  # ty: ignore[unresolved-attribute]
         root_certificates = ""
         for cert in cert_chain:
             root_certificates += cert.public_bytes()
@@ -59,7 +59,7 @@ async def _try_connect_and_extract_cert(
 
         return root_certificates.encode()
     finally:
-        writer.close()
+        await aclose_forcefully(stream)
 
 
 async def _ssl_channel_credentials_insecure(  # noqa: C901
@@ -94,10 +94,9 @@ async def _ssl_channel_credentials_insecure(  # noqa: C901
     # slow or rate-limited resolver would otherwise consume the whole timeout and
     # surface as "Timeout connecting to <host>:<port>" with no per-IP errors,
     # pointing at the server when the name was never resolved in the first place.
-    loop = asyncio.get_running_loop()
     try:
         with fail_after(timeout):
-            addr_info = await loop.getaddrinfo(hostname, port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM)
+            addr_info = await getaddrinfo(hostname, port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM)
     except socket.gaierror as e:
         raise CertificateDiscoveryError(f"Failed resolving {hostname}") from e
     except TimeoutError as e:
@@ -109,37 +108,16 @@ async def _ssl_channel_credentials_insecure(  # noqa: C901
 
     try:
         with fail_after(timeout):
-            # Try all IPs in parallel - race for first success
-            # Wrap tasks to include IP info with results/exceptions
-            async def try_with_ip(ip_address: str):
-                """Wrapper that returns (ip, result) on success or (ip, exception) on failure."""
+            # Try all IPs in parallel; the first success cancels the others.
+            successes: list[tuple[str, bytes]] = []
+            errors: dict[str, Exception] = {}
+
+            async def try_ip(ip_address: str) -> None:
                 try:
-                    result = await _try_connect_and_extract_cert(
+                    root_certificates = await _try_connect_and_extract_cert(
                         ip_address, port, ssl_context, hostname, timeout
                     )
-                    return (ip_address, result, None)
-                except Exception as e:  # noqa: BLE001
-                    return (ip_address, None, e)
-
-            tasks = []
-            for _family, _type, _proto, _canonname, sockaddr in addr_info:
-                ip_address = str(sockaddr[0])
-                task = asyncio.create_task(try_with_ip(ip_address))
-                tasks.append(task)
-
-            # Process tasks as they complete
-            errors = {}
-
-            try:
-                for future in asyncio.as_completed(tasks):
-                    ip_address, root_certificates, error = await future
-
-                    if error is None:
-                        # Success! Return immediately (cleanup in finally)
-                        logger.debug(f"Using certificates from {ip_address}:{port}")
-                        return grpc.ssl_channel_credentials(root_certificates=root_certificates)
-
-                    # This IP failed - log and continue trying other IPs
+                except Exception as error:  # noqa: BLE001
                     if isinstance(error, ssl.SSLError):
                         logger.log(
                             logging.ERROR if log_connection_failures else logging.DEBUG,
@@ -152,16 +130,21 @@ async def _ssl_channel_credentials_insecure(  # noqa: C901
                             ip_address, port, type(error).__name__, error,
                         )
                     errors[ip_address] = error
+                else:
+                    successes.append((ip_address, root_certificates))
+                    tg.cancel_scope.cancel()
 
-                # All IPs failed
+            async with create_task_group() as tg:
+                for ip_address in resolved_ips:
+                    tg.start_soon(try_ip, ip_address)
+
+            if not successes:
                 raise CertificateDiscoveryError(
                     f"Failed connecting to {hostname}:{port} - all IPs exhausted. Errors: {errors}"
                 )
-            finally:
-                # Cancel any remaining tasks
-                for task in tasks:
-                    if not task.done():
-                        task.cancel()
+            ip_address, root_certificates = successes[0]
+            logger.debug(f"Using certificates from {ip_address}:{port}")
+            return grpc.ssl_channel_credentials(root_certificates=root_certificates)
     except TimeoutError as e:
         raise CertificateDiscoveryError(
             f"Timeout connecting to {hostname}:{port} after {timeout}s (resolved to {', '.join(resolved_ips)})"
