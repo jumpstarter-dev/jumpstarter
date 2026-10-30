@@ -77,9 +77,6 @@ manifests: controller-gen ## Generate WebhookConfiguration and CustomResourceDef
 	$(CONTROLLER_GEN) 	crd webhook paths="./api/..." paths="./internal/..." \
 						output:crd:artifacts:config=deploy/operator/config/crd/bases/
 
-	# Regenerate operator install.yaml to include updated CRDs
-	$(MAKE) -C deploy/operator build-installer
-
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..." paths="./internal/..."
@@ -214,12 +211,6 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 			--tag ${DOCKER_REPO}:latest \
 			-f Containerfile .
 	- $(CONTAINER_TOOL) buildx rm jumpstarter-controller-builder
-
-.PHONY: build-installer
-build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
-	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default > dist/install.yaml
 
 ##@ Deployment
 
