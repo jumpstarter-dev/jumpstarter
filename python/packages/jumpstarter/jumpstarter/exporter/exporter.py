@@ -320,7 +320,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     _handed_off_lease: str | None = field(init=False, default=None)
     """Live lease this process left in place for the next exporter process, if any."""
 
-    _lease_context: LeaseContext | None = field(init=False, default=None)
+    lease_context: LeaseContext | None = field(init=False, default=None)
     """Lease being worked on, if any; holds the release slot during a takeover."""
 
     _standalone: bool = field(init=False, default=False)
@@ -545,7 +545,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     labels=self.labels,
                     reports=response.reports,
                     # Lets the controller hold this exporter while its record owes cleanup.
-                    records_lease_hooks=self._records_lease_hooks,
+                    records_lease_hooks=self.records_lease_hooks,
                 )
             )
         # Mark exporter as registered internally
@@ -557,7 +557,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         await self._setup_telemetry()
 
     @property
-    def _records_lease_hooks(self) -> bool:
+    def records_lease_hooks(self) -> bool:
         """Whether this exporter records its leases' hooks with the controller.
 
         Not for exitOnLeaseEnd exporters, whose runtime does not outlive the
@@ -774,6 +774,15 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             and (snapshot.shutdown is None or snapshot.shutdown.mode != ShutdownMode.STOP_NOW)
         )
 
+    def hand_off_lease(self, lease_name: str) -> None:
+        """Record the live lease left for the next exporter process."""
+        self._handed_off_lease = lease_name
+        logger.info(
+            "Exporter stopping during lease %s; leaving the lease in place for the "
+            "restarted exporter (afterLease hook deferred)",
+            lease_name,
+        )
+
     async def request_lease_release(self, lease_scope: LeaseContext, lease_key: LeaseKey | None = None):
         """Request the controller to release lease_scope's lease.
 
@@ -825,7 +834,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             or snapshot.lease_assignment.key.uid != lease.lease_uid
         )
 
-    async def _record_lease_hook(
+    async def record_lease_hook(
         self,
         lease: LeaseContext,
         hook: HookType,
@@ -909,21 +918,21 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             )
         return False
 
-    async def _record_start(self, lease: LeaseContext, hook: HookType) -> bool:
+    async def record_start(self, lease: LeaseContext, hook: HookType) -> bool:
         """Record that the hook starts; False if the controller refused, so it must not run.
 
         A cut-off hook that fails instead of running again is already recorded as running.
         """
-        return hook in lease.hooks.cut_off or await self._record_lease_hook(lease, hook, LeaseHookPhase.RUNNING)
+        return hook in lease.hooks.cut_off or await self.record_lease_hook(lease, hook, LeaseHookPhase.RUNNING)
 
-    async def _record_outcome(self, lease: LeaseContext, hook: HookType, warning: str | None) -> None:
+    async def record_outcome(self, lease: LeaseContext, hook: HookType, warning: str | None) -> None:
         """Record how a hook that returned ended: a warning is a failure handled with 'warn'."""
         if warning:
-            await self._record_lease_hook(lease, hook, LeaseHookPhase.FAILED, warning, "warn")
+            await self.record_lease_hook(lease, hook, LeaseHookPhase.FAILED, warning, "warn")
         else:
-            await self._record_lease_hook(lease, hook, LeaseHookPhase.SUCCEEDED)
+            await self.record_lease_hook(lease, hook, LeaseHookPhase.SUCCEEDED)
 
-    async def _setup_did_not_start(self, lease: LeaseContext) -> None:
+    async def setup_did_not_start(self, lease: LeaseContext) -> None:
         """Settle a setup that never ran in this process.
 
         Only a previous process's setup needs cleanup. Even a fresh start can
@@ -933,10 +942,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         if not lease.hooks.recorded:
             lease.skip_after_lease_hook = True
         await close_setup_record(
-            lease, partial(self._record_lease_hook, lease), "beforeLease hook did not start before its lease ended"
+            lease, partial(self.record_lease_hook, lease), "beforeLease hook did not start before its lease ended"
         )
 
-    def _on_interrupt(self, hook: HookType) -> str | None:
+    def on_interrupt(self, hook: HookType) -> str | None:
         """The configured onInterrupt of a hook; None if no such hook is configured."""
         config = getattr(self.hook_executor.config, hook) if self.hook_executor is not None else None
         return config.on_interrupt if config is not None else None

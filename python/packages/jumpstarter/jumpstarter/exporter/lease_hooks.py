@@ -87,7 +87,7 @@ class HookPlan:
 
     Attributes:
         tracked: hook transitions are recorded with the controller, so the lease can
-            outlive this process (see Exporter._record_lease_hook)
+            outlive this process (see Exporter.record_lease_hook)
         recorded: the controller holds a hook record for this lease
         resumed: the status to report for a lease whose setup ran in an earlier
             process, or that is in cleanup; None if setup runs in this one
