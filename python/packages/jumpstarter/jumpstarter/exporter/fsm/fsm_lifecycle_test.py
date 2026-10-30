@@ -79,7 +79,7 @@ class LocalExporter(Exporter):
     @asynccontextmanager
     async def session_for_lease(self, reset_device: bool = True):
         state = self.fsm.runner.current_state if self.fsm.runner else None
-        lease = getattr(state, "admitting", None) or self._lease_context
+        lease = getattr(state, "admitting", None) or self.lease_context
         assert isinstance(lease, LeaseContext)
         self.trace.append(("open", lease.lease_name))
         try:
