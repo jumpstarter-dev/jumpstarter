@@ -56,7 +56,7 @@ class FSMRunner[InputsT]:
         if self._started:
             raise RuntimeError("FSMRunner can only be run once")
         self._started = True
-        logger.debug("FSM %s enter %s", self._name, type(self._state).__name__)
+        logger.info("FSM %s enter %s", self._name, type(self._state).__name__)
         resources = AsyncExitStack()
         try:
             try:
@@ -68,13 +68,13 @@ class FSMRunner[InputsT]:
                     state_name = type(state).__name__
                     inputs, changed = self._inputs.snapshot_and_watch()
                     started = perf_counter()
-                    logger.debug("FSM %s run %s started", self._name, state_name)
+                    logger.info("FSM %s run %s started", self._name, state_name)
                     try:
                         successor = await state.run(inputs, resources)
                     finally:
-                        logger.debug("FSM %s run %s ended in %.6fs", self._name, state_name, perf_counter() - started)
+                        logger.info("FSM %s run %s ended in %.6fs", self._name, state_name, perf_counter() - started)
                     if successor is None:
-                        logger.debug("FSM %s wait %s for inputs", self._name, state_name)
+                        logger.info("FSM %s wait %s for inputs", self._name, state_name)
                         await changed.wait()
                     else:
                         if isinstance(successor, ExitFSM):
@@ -91,6 +91,6 @@ class FSMRunner[InputsT]:
             else:
                 await resources.aclose()
         except BaseException as error:
-            logger.debug("FSM %s stopped in %s (%s)", self._name, type(self._state).__name__, type(error).__name__)
+            logger.error("FSM %s stopped in %s (%s)", self._name, type(self._state).__name__, type(error).__name__)
             raise
-        logger.debug("FSM %s exited", self._name)
+        logger.info("FSM %s exited", self._name)
