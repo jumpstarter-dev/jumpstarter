@@ -386,6 +386,11 @@ class BeforeLeaseHookFailed:
         if isinstance(self.error, HookExecutionError):
             # Explicit before-hook failures never run the after-hook.
             if self.error.should_end_lease():
+                # A lease whose setup failed with endLease owes no cleanup: close
+                # its record, or the controller holds this exporter for it.
+                await self.exporter._record_lease_hook(
+                    self.lease, "after_lease", LeaseHookPhase.SKIPPED, "beforeLease hook failed"
+                )
                 return ReleasingLease(self.exporter, self.key, self.lease)
             # on_failure=exit: drain shutdown, keep reservation until controller releases.
             self.exporter.stop(wait_for_lease_exit=True, should_unregister=True, exit_code=1)

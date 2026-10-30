@@ -1000,6 +1000,30 @@ async def test_new_tracked_lease_records_hooks_and_resets_device(monkeypatch):
     assert hc.record["after_lease"].phase == LeaseHookPhase.SUCCEEDED
 
 
+async def test_end_lease_setup_failure_closes_the_hook_record(monkeypatch):
+    """The controller holds an exporter whose record owes an afterLease hook, so a
+    setup that fails with endLease must record the cleanup it will not run."""
+    exporter, hc = restart_exporter()
+    before = AsyncMock(side_effect=HookExecutionError("boom", "endLease", "before_lease"))
+    monkeypatch.setattr(exporter.hook_executor, "execute_before_lease_hook", before)
+    with fail_after(5):
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.serve)
+            await exporter.fsm.inputs.send(
+                status_with_hooks(lease_hooks_record(), leased=True, lease_name="A", lease_uid="u1")
+            )
+            await exporter.wait_status(ExporterStatus.BEFORE_LEASE_HOOK_FAILED)
+            # ReleasingLease keeps the failed status observable for a second
+            # before releasing, then closes the lease without waiting for the
+            # controller's unleased status.
+            await exporter.wait_status(ExporterStatus.AVAILABLE)
+            exporter.stop()
+    before.assert_awaited_once()
+    assert hc.record["after_lease"].phase == LeaseHookPhase.SKIPPED
+    assert hc.record["after_lease"].message == "beforeLease hook failed"
+    assert exporter.controller.ReleaseLease.await_count == 1
+
+
 async def test_registration_declares_hook_recording_and_defers_available():
     exporter, hc = restart_exporter()
     controller = hc.controller
