@@ -58,6 +58,8 @@ class Available:
     # Standalone TCP injects its session here; controller mode leaves this None
     # and falls back to exporter.session_for_lease() at admission.
     session_context: AbstractAsyncContextManager[tuple[Session, str, str]] | None = None
+    # Set only while entering the session context so test doubles can observe admission.
+    admitting: LeaseContext | None = None
 
     async def run(self, inputs: Inputs, resources: AsyncExitStack) -> BeforeLeaseHook | Stopping | None:
         if inputs.shutdown:
@@ -74,14 +76,17 @@ class Available:
             client_name=lease_assignment.client_name,
             wake=self.exporter.fsm.inputs.wake,
         )
-        self.exporter._lease_context = lease
         set_log_context(
             **{"lease_id": lease.lease_name, "exporter": self.exporter.exporter_name, **lease_assignment.context}
         )
         set_log_context(client=lease.client_name)
         logger.info("Starting new lease: %s", lease.lease_name)
-        context = self.session_context or self.exporter.session_for_lease()
-        session, main_path, hook_path = await resources.enter_async_context(context)
+        self.admitting = lease
+        try:
+            context = self.session_context or self.exporter.session_for_lease()
+            session, main_path, hook_path = await resources.enter_async_context(context)
+        finally:
+            self.admitting = None
         lease.session, lease.socket_path, lease.hook_socket_path = session, main_path, hook_path
         session.lease_context = lease
         session.update_status(ExporterStatus.BEFORE_LEASE_HOOK, "Preparing lease")
@@ -115,7 +120,9 @@ class BeforeLeaseHook:
         try:
             if executor:
                 if executor.config.before_lease:
-                    await self.exporter.report_status(ExporterStatus.BEFORE_LEASE_HOOK, "Running beforeLease hook")
+                    await self.exporter.report_status(
+                        ExporterStatus.BEFORE_LEASE_HOOK, "Running beforeLease hook", lease=self.lease
+                    )
                 # Ordinary stop/release updates are inputs. External cancellation also
                 # leaves this bounded hook time to finish before its session is closed.
                 with CancelScope(shield=True):
@@ -150,7 +157,7 @@ class LeaseReady:
                 if self.warning
                 else "Ready for commands"
             )
-            await self.exporter.report_status(ExporterStatus.LEASE_READY, message)
+            await self.exporter.report_status(ExporterStatus.LEASE_READY, message, lease=self.lease)
         return None
 
 
@@ -175,7 +182,9 @@ class BeforeLeaseHookFailed:
     ) -> ReleasingLease | AwaitingLeaseRelease | AfterLeaseHook | None:
         if self.exporter._exporter_status != ExporterStatus.BEFORE_LEASE_HOOK_FAILED:
             await self.exporter.report_status(
-                ExporterStatus.BEFORE_LEASE_HOOK_FAILED, f"beforeLease hook failed: {self.error}"
+                ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
+                f"beforeLease hook failed: {self.error}",
+                lease=self.lease,
             )
         if isinstance(self.error, HookExecutionError):
             # Explicit before-hook failures never run the after-hook.
@@ -210,13 +219,15 @@ class AfterLeaseHook:
         try:
             if executor:
                 if executor.config.after_lease:
-                    await self.exporter.report_status(ExporterStatus.AFTER_LEASE_HOOK, "Running afterLease hook")
+                    await self.exporter.report_status(
+                        ExporterStatus.AFTER_LEASE_HOOK, "Running afterLease hook", lease=self.lease
+                    )
                 with CancelScope(shield=True):
                     warning = await executor.execute_after_lease_hook(self.lease)
         except Exception as error:  # noqa: BLE001 - failure policy belongs to the successor state
             return AfterLeaseHookFailed(self.exporter, self.key, self.lease, error)
         message = f"{HOOK_WARNING_PREFIX}afterLease hook warning: {warning}" if warning else "Available for new lease"
-        await self.exporter.report_status(ExporterStatus.AVAILABLE, message)
+        await self.exporter.report_status(ExporterStatus.AVAILABLE, message, lease=self.lease)
         return AwaitingLeaseRelease(self.exporter, self.key, self.lease)
 
 
@@ -237,7 +248,9 @@ class AfterLeaseHookFailed:
 
     async def run(self, inputs: Inputs, resources: AsyncExitStack) -> ReleasingLease | AwaitingLeaseRelease:
         await self.exporter.report_status(
-            ExporterStatus.AFTER_LEASE_HOOK_FAILED, f"afterLease hook failed: {self.error}"
+            ExporterStatus.AFTER_LEASE_HOOK_FAILED,
+            f"afterLease hook failed: {self.error}",
+            lease=self.lease,
         )
         if isinstance(self.error, HookExecutionError):
             if self.error.should_end_lease():
@@ -302,7 +315,7 @@ class ClosingLease:
 
     Activity state: stop and join lease I/O, then await ``resources.aclose()`` for
     the session, sockets, and drivers. A failed close does not free the admission
-    slot. Clear lease-local context, then return ``Available(last_completed=key)``
+    slot. Clear lease-local log context, then return ``Available(last_completed=key)``
     to continue serving or ``Stopping`` when shutdown, exit-on-lease-end, or
     standalone mode requires exit.
     """
@@ -314,7 +327,6 @@ class ClosingLease:
     async def run(self, inputs: Inputs, resources: AsyncExitStack) -> Available | Stopping:
         # LIFO: stop and join lease I/O before closing its session, sockets, and drivers.
         await resources.aclose()
-        self.exporter._lease_context = None
         clear_log_context()
         set_log_context(exporter=self.exporter.exporter_name)
         if self.exporter.exit_on_lease_end and not self.exporter._standalone:

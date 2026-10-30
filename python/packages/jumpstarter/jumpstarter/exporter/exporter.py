@@ -312,12 +312,6 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     report_status and __aexit__ skip controller calls when _standalone is True.
     """
 
-    _lease_context: LeaseContext | None = field(init=False, default=None)
-    """Status-reporting reference to the lease owned by the current FSM state.
-
-    Only admission and successful closure change this reference.
-    """
-
     _telemetry_handler: "TelemetryLogHandler | None" = field(init=False, default=None)
     """Optional telemetry log handler that pushes log entries to jumpstarter-telemetry.
 
@@ -505,11 +499,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             )
         # Mark exporter as registered internally
         self._registered = True
-        # Only report AVAILABLE status during initial registration (no lease context)
-        # During per-lease registration, status is managed by serve() to avoid
-        # overwriting LEASE_READY with AVAILABLE
-        if self._lease_context is None:
-            await self.report_status(ExporterStatus.AVAILABLE, "Exporter registered and available")
+        # Registration runs once before the lifecycle; lease phases own later status.
+        await self.report_status(ExporterStatus.AVAILABLE, "Exporter registered and available")
 
         # Discover optional telemetry service endpoint.
         await self._setup_telemetry()
@@ -670,12 +661,14 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     request.message,
                 )
 
-    async def report_status(self, status: ExporterStatus, message: str = ""):
-        """Report the exporter status with the controller and session."""
+    async def report_status(
+        self, status: ExporterStatus, message: str = "", *, lease: LeaseContext | None = None
+    ):
+        """Report the exporter status with the controller and optional lease session."""
         self._exporter_status = status
 
-        if self._lease_context is not None and self._lease_context.session is not None:
-            self._lease_context.session.update_status(status, message)
+        if lease is not None and lease.session is not None:
+            lease.session.update_status(status, message)
 
         if self._standalone or self._controller_stream_failed:
             logger.debug("Updated local status to %s: %s", status, message)
@@ -696,8 +689,11 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 logger.info("Updated status to %s: %s", status, message)
 
     def _lease_is_current(self, lease: LeaseContext, key: LeaseKey | None = None) -> bool:
-        if self._lease_context is not lease:
-            return False
+        """True when key still matches the latest assignment and stop-now does not apply.
+
+        Without a key, the caller is not asking for assignment binding (legacy/test
+        paths); the named ReleaseLease RPC still targets lease.lease_name only.
+        """
         if key is None:
             return True
         snapshot, _ = self.fsm.inputs.snapshot_and_watch()
@@ -741,10 +737,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 lease_key=lease_key,
             )
 
-        # The lease may have changed while the RPC was pending.
-        if self._lease_context is not lease_scope or (
-            lease_key is not None and not self._lease_is_current(lease_scope, lease_key)
-        ):
+        # The assignment may have changed while the RPC was pending.
+        if lease_key is not None and not self._lease_is_current(lease_scope, lease_key):
             return
         if ok:
             logger.info("Released lease %s via ReleaseLease RPC", lease_scope.lease_name)
@@ -1043,7 +1037,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 root_device=self.device_factory(),
                 motd=self.motd,
             ) as session:
-                session.lease_context = self._lease_context
+                # Available sets session.lease_context after enter with the admitting lease.
                 async with session.serve_tcp_and_unix_async(
                     host, port, hook_path_str,
                     tls_credentials=tls_credentials,
