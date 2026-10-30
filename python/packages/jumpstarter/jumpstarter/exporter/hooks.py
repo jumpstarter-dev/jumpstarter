@@ -6,23 +6,55 @@ import select
 import stat
 import tempfile
 import time
+from collections.abc import Awaitable
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Protocol
 
 import anyio
 import anyio.lowlevel
 from anyio import to_thread
 
-from jumpstarter.common import LogSource
+from jumpstarter.common import LeaseHookPhase, LogSource
 from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_MOTD_FILE, JUMPSTARTER_HOST
 from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
+from jumpstarter.exporter.lease_hooks import HookType
 from jumpstarter.exporter.session import Session
 
 if TYPE_CHECKING:
     from jumpstarter.exporter.fsm.lease_context import LeaseContext
 
 logger = logging.getLogger(__name__)
+
+
+class RecordHook(Protocol):
+    """Records a hook transition with the controller.
+
+    on_failure is the failure action applied to a failed hook ('warn', 'endLease'
+    or 'exit'), empty if none was. Returns False if the controller refused the
+    transition, in which case the hook must not run.
+    """
+
+    def __call__(
+        self, hook: HookType, phase: LeaseHookPhase, message: str = "", on_failure: str = "",
+        attempts: int | None = None,
+    ) -> Awaitable[bool]: ...
+
+
+async def close_setup_record(lease_scope: "LeaseContext", record: RecordHook, message: str) -> None:
+    """Close a setup that cannot finish, even if its start's acknowledgement was lost.
+
+    The latest attempt may have committed without a reply. If it did not, an
+    interrupted previous attempt may still be running. The controller accepts
+    an outcome only for the matching running attempt and refuses absent records,
+    finished hooks and records belonging to a replacement lease.
+    """
+    attempt = lease_scope.hooks.attempt("before_lease")
+    if await record("before_lease", LeaseHookPhase.FAILED, message, attempts=attempt):
+        return
+    previous = lease_scope.hooks.started.get("before_lease")
+    if previous is not None and previous != attempt:
+        await record("before_lease", LeaseHookPhase.FAILED, message, attempts=previous)
 
 MAX_DRAIN_BYTES = 256 * 1024
 DRAIN_TIMEOUT_SECONDS = 2.0
@@ -53,6 +85,15 @@ def _flush_lines(buffer: bytes, output_lines: list[str]) -> bytes:
     return buffer
 
 
+def failure_ends_lease(on_failure: str) -> bool:
+    """Whether a hook failure with this onFailure action releases the lease.
+
+    Only 'endLease' does: 'exit' takes the exporter offline and leaves the lease
+    to its client or its expiry, and 'warn' continues.
+    """
+    return on_failure == "endLease"
+
+
 @dataclass
 class HookExecutionError(Exception):
     """Raised when a hook fails and on_failure is set to 'endLease' or 'exit'.
@@ -76,7 +117,7 @@ class HookExecutionError(Exception):
 
     def should_end_lease(self) -> bool:
         """Returns True only for an explicit lease release; exit requests exporter shutdown."""
-        return self.on_failure == "endLease"
+        return failure_ends_lease(self.on_failure)
 
 
 @dataclass
@@ -176,6 +217,13 @@ class HookExecutor:
         # Validate session is available for logging
         if lease_scope.session is None:
             raise RuntimeError("Cannot execute hook: lease_scope.session is None")
+
+        # A hook an exporter restart cut off, that is not run again, fails
+        # without running and is handled by its onFailure like any failure.
+        cut_off = lease_scope.hooks.cut_off.get(hook_type)
+        if cut_off is not None:
+            with lease_scope.session.context_log_source(__name__, log_source):
+                return self._handle_hook_failure(cut_off, hook_config.on_failure, hook_type)
 
         # Use existing session from lease_scope
         hook_env = self._create_hook_env(lease_scope)

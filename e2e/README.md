@@ -94,6 +94,9 @@ restarting the exporter.
 | H2: beforeLease fail+exit does NOT run afterLease hook | `exporter-hooks-before-fail-exit-with-after.yaml` (single-run) | shell fails | output lacks "AFTER_SHOULD_NOT_RUN"; exporter goes Offline |
 | H3: warning displayed when beforeLease hook fails with warn | `exporter-hooks-before-fail-warn.yaml` | shell succeeds | contains "Warning:" |
 | H4: warning displayed when afterLease hook fails with warn | `exporter-hooks-after-fail-warn.yaml` | shell succeeds | contains "Warning:" |
+| I1: exporter restart keeps the lease without rerunning hooks | `exporter-hooks-restart.yaml` (single-run; hooks append to `/tmp/jumpstarter-e2e-restart-hooks.log`) | `jmp create lease --duration 10m --output name`; `jmp shell --lease` runs `j power on`; SIGTERM the exporter and start it again; shell again; `jmp delete lease` | no hook runs on SIGTERM; exporter reports `LeaseReady` for the same lease after the restart; second shell succeeds; log has one `before` line until the lease is deleted, then one `after` line; exporter returns Available |
+| I2: lease that ends while the exporter is down gets its afterLease hook on restart | `exporter-hooks-restart.yaml` (single-run) | create lease + shell as in I1; SIGTERM the exporter; `jmp delete lease` while it is offline; start the exporter | no `after` line while offline; after the restart the log has one `after` line; exporter returns Available |
+| I3: a lease waiting for the exporter is set up only after the cleanup it owed | `exporter-hooks-restart.yaml` (single-run) | create lease + shell as in I1; SIGTERM the exporter; `jmp delete lease`, then `jmp create lease` for a second lease while it is offline; start the exporter | exporter reports `LeaseReady` for the second lease; log is `before` first, `after` first, `before` second, in that order |
 
 ---
 
