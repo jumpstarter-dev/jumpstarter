@@ -2,6 +2,7 @@
 
 import logging
 from contextlib import ExitStack, asynccontextmanager
+from unittest.mock import AsyncMock, MagicMock
 
 import grpc
 import pytest
@@ -67,7 +68,11 @@ def test_session_closes_driver_when_shutdown_hook_fails(caplog):
             self.closed = True
 
     driver = FailingShutdownDriver()
-    with caplog.at_level(logging.WARNING), Session(uuid=driver.uuid, root_device=driver, exporter_name="test-exporter"):
+    with (
+        caplog.at_level(logging.WARNING),
+        pytest.raises(ExceptionGroup, match="Session driver cleanup failed"),
+        Session(uuid=driver.uuid, root_device=driver, exporter_name="test-exporter"),
+    ):
         pass
 
     assert driver.closed
@@ -87,11 +92,59 @@ def test_driver_shutdown_continues_after_child_failure(caplog):
 
     later = RecordingDriver()
     root = CompositeDriver_(children={"failing": FailingShutdownDriver(), "later": later})
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.WARNING), pytest.raises(ExceptionGroup, match="Child driver shutdown failed"):
         root.shutdown()
 
     assert shut_down == [later]
     assert "Error during shutdown of child failing" in caplog.text
+
+
+def test_driver_close_finishes_siblings_before_propagating_failure():
+    closed = []
+
+    class FailingDriver(SimpleDriver):
+        def close(self):
+            raise RuntimeError("close failed")
+
+    class RecordingDriver(SimpleDriver):
+        def close(self):
+            closed.append(self)
+
+    later = RecordingDriver()
+    root = CompositeDriver_(children={"failing": FailingDriver(), "later": later})
+    with pytest.raises(ExceptionGroup, match="Child driver cleanup failed"):
+        root.close()
+    assert closed == [later]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure", ["cancel", "start", "timeout"])
+async def test_server_cleanup_is_protected_and_failed_close_propagates(monkeypatch, failure):
+    from anyio.lowlevel import checkpoint
+
+    stopped = []
+
+    async def stop(grace):
+        stopped.append(grace)
+        if failure == "timeout" and grace is not None:
+            await sleep_forever()
+        await checkpoint()
+
+    server = MagicMock(start=AsyncMock(), stop=AsyncMock(side_effect=stop))
+    if failure == "start":
+        server.start.side_effect = RuntimeError("start failed")
+    session = Session(root_device=SimpleDriver())
+    monkeypatch.setattr("jumpstarter.exporter.session._SERVER_CLOSE_TIMEOUT", 0.2)
+    with fail_after(2):
+        if failure == "cancel":
+            with CancelScope() as scope:
+                async with session._serve_grpc_server_async(server):
+                    scope.cancel()
+        else:
+            with pytest.raises(RuntimeError if failure == "start" else TimeoutError):
+                async with session._serve_grpc_server_async(server):
+                    pass
+    assert stopped == ([1.0, None] if failure == "timeout" else [1.0])
 
 
 def test_get_report_includes_descriptions():

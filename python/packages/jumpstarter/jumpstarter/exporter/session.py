@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Self
 from uuid import UUID
 
 import grpc
-from anyio import ContextManagerMixin, Event, TypedAttributeLookupError, sleep
+from anyio import ContextManagerMixin, Event, TypedAttributeLookupError, fail_after, sleep
 from anyio.from_thread import start_blocking_portal
 from jumpstarter_protocol import (
     jumpstarter_pb2,
@@ -27,9 +27,11 @@ from jumpstarter.streams.router import RouterStream
 
 if TYPE_CHECKING:
     from jumpstarter.driver import Driver
-    from jumpstarter.exporter.lease_context import LeaseContext
+    from jumpstarter.exporter.fsm.lease_context import LeaseContext
 
 logger = logging.getLogger(__name__)
+
+_SERVER_CLOSE_TIMEOUT = 5.0
 
 _GRPC_SERVER_OPTIONS_TCP_KEEPALIVE: list[tuple[str, int]] = [
     ("grpc.http2.min_ping_interval_without_data_ms", 10000),
@@ -65,14 +67,17 @@ class Session(
     @contextmanager
     def __contextmanager__(self) -> Generator[Self]:
         logging.getLogger().addHandler(self._logging_handler)
-        self.root_device.reset()
         set_log_context(exporter=self.exporter_name)
-        get_registry().adjust_active_sessions(exporter=self.exporter_name, delta=1.0)
+        active = False
         try:
+            self.root_device.reset()
+            get_registry().adjust_active_sessions(exporter=self.exporter_name, delta=1.0)
+            active = True
             yield self
         finally:
             try:
-                get_registry().adjust_active_sessions(exporter=self.exporter_name, delta=-1.0)
+                if active:
+                    get_registry().adjust_active_sessions(exporter=self.exporter_name, delta=-1.0)
             except Exception:
                 logger.warning(
                     "Failed to decrement active sessions metric for exporter %s",
@@ -80,25 +85,25 @@ class Session(
                     exc_info=True,
                 )
             unbind_log_context("exporter")
+            errors: list[Exception] = []
             try:
                 # shutdown() first: session-end teardown for drivers (e.g. the
                 # fan-out console) whose exported close() only kicks clients and
                 # must not tear down live resources. No-op for ordinary drivers.
                 self.root_device.shutdown()
-            except Exception:
+            except Exception as error:
                 logger.warning("Error during driver shutdown hook", exc_info=True)
+                errors.append(error)
             try:
                 self.root_device.close()
-            except Exception:
-                # Get driver name from report for more descriptive logging
-                try:
-                    report = self.root_device.report()
-                    driver_name = report.labels.get("jumpstarter.dev/name", self.root_device.__class__.__name__)
-                except AttributeError:
-                    driver_name = self.root_device.__class__.__name__
-                logger.exception("Error closing driver %s", driver_name)
+            except Exception as error:
+                logger.exception("Error closing driver %s", type(self.root_device).__name__)
+                errors.append(error)
             finally:
                 logging.getLogger().removeHandler(self._logging_handler)
+            if errors:
+                # A logged error is not successful teardown: do not admit another lease.
+                raise ExceptionGroup("Session driver cleanup failed", errors)
 
     def __init__(self, *args, root_device, exporter_name="unknown", motd=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -119,15 +124,8 @@ class Session(
     async def serve_port_async(self, port):
         server = grpc.aio.server()
         server.add_insecure_port(port)
-
-        jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
-        router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
-
-        await server.start()
-        try:
+        async with self._serve_grpc_server_async(server, grace=None):
             yield
-        finally:
-            await server.stop(grace=None)
 
     @asynccontextmanager
     async def serve_multi_port_async(self, *ports):
@@ -147,35 +145,29 @@ class Session(
             server.add_insecure_port(port)
             logger.debug("Session server listening on %s", port)
 
-        jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
-        router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
-
-        await server.start()
-        logger.info("Session server started on %d ports", len(ports))
-        try:
+        async with self._serve_grpc_server_async(server):
+            logger.info("Session server started on %d ports", len(ports))
             yield
-        finally:
-            logger.info("Stopping session server...")
-            # Use a short grace period to allow pending RPCs to complete
-            # This helps prevent SSL corruption from abrupt connection termination
-            await server.stop(grace=1.0)
-            # Brief delay to ensure all connections are fully closed
-            await sleep(0.1)
-            logger.info("Session server stopped")
 
     @asynccontextmanager
-    async def _serve_grpc_server_async(self, server):
+    async def _serve_grpc_server_async(self, server, grace: float | None = 1.0):
         """Register servicers, start server, yield, then shut down gracefully."""
-        jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
-        router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
-
-        await server.start()
         try:
+            jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
+            router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
+            await server.start()
             yield
         finally:
             logger.info("Stopping session server...")
-            await server.stop(grace=1.0)
-            await sleep(0.1)
+            try:
+                with fail_after(_SERVER_CLOSE_TIMEOUT, shield=True):
+                    await server.stop(grace=grace)
+                    if grace is not None:
+                        await sleep(0.1)
+            except TimeoutError:
+                with fail_after(_SERVER_CLOSE_TIMEOUT, shield=True):
+                    await server.stop(grace=None)
+                raise
             logger.info("Session server stopped")
 
     def _add_tcp_port(
@@ -422,7 +414,7 @@ class Session(
         """End the current session and trigger the afterLease hook.
 
         This is called by the client when it's done with the session. The method
-        signals the end_session_requested event and returns immediately, allowing
+        retains a lease-local request and returns immediately, allowing
         the client to keep receiving logs via LogStream while the afterLease hook
         runs asynchronously.
 
@@ -446,11 +438,7 @@ class Session(
                 message="No active lease context",
             )
 
-        # Signal that the client wants to end the session
-        # The afterLease hook will run asynchronously via _handle_end_session
-        logger.debug("Setting end_session_requested event...")
-        self.lease_context.end_session_requested.set()
-        logger.debug("end_session_requested event SET, returning response")
+        self.lease_context.request_end_session()
 
         # Return immediately - don't wait for afterLease hook
         # The client should continue receiving logs and monitor status for AVAILABLE

@@ -1,7 +1,11 @@
 """Tests for the exporter run module, specifically rapid failure detection."""
 
+import signal
+from contextlib import asynccontextmanager, contextmanager
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import anyio
 import pytest
 from click.testing import CliRunner
 
@@ -236,3 +240,41 @@ def test_run_uses_supervisor_exit_code(monkeypatch, tmp_path, supervisor_code):
 
     result = CliRunner().invoke(run_mod.run, ["--exporter-config", str(config)])
     assert result.exit_code == supervisor_code, result.output
+
+
+@pytest.mark.parametrize("received", [None, signal.SIGHUP, signal.SIGTERM])
+def test_child_preserves_signal_precedence_over_exporter_exit(monkeypatch, received):
+    entered, stopped = anyio.Event(), anyio.Event()
+    requests = []
+
+    async def serve():
+        entered.set()
+        if received is not None:
+            await stopped.wait()
+
+    def stop(**kwargs):
+        requests.append(kwargs)
+        stopped.set()
+
+    @asynccontextmanager
+    async def create_exporter():
+        yield SimpleNamespace(serve=serve, stop=stop, exit_code=75)
+
+    async def signals():
+        await entered.wait()
+        if received is not None:
+            yield received
+        await anyio.sleep_forever()
+
+    @contextmanager
+    def receiver(*args):
+        yield signals()
+
+    monkeypatch.setattr(run_mod, "open_signal_receiver", receiver)
+    monkeypatch.setattr(run_mod, "start_metrics_server", lambda address: ("127.0.0.1:0", None))
+    with pytest.raises(SystemExit) as caught:
+        run_mod._handle_child(SimpleNamespace(create_exporter=create_exporter))
+    assert caught.value.code == (75 if received is None else 128 + received)
+    assert requests == ([] if received is None else [{
+        "wait_for_lease_exit": received == signal.SIGHUP, "should_unregister": True,
+    }])

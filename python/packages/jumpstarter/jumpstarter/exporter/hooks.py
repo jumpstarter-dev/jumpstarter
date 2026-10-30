@@ -6,22 +6,21 @@ import select
 import stat
 import tempfile
 import time
-from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import anyio
 import anyio.lowlevel
-from anyio import CancelScope, to_thread
+from anyio import to_thread
 
-from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus, LogSource
+from jumpstarter.common import LogSource
 from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_MOTD_FILE, JUMPSTARTER_HOST
 from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
 from jumpstarter.exporter.session import Session
 
 if TYPE_CHECKING:
-    from jumpstarter.exporter.lease_context import LeaseContext
+    from jumpstarter.exporter.fsm.lease_context import LeaseContext
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +102,7 @@ class HookExecutor:
         """Create standardized hook environment variables.
 
         Args:
-            lease_scope: LeaseScope containing lease metadata and socket paths
+            lease_scope: LeaseContext containing lease metadata and socket paths
 
         Returns:
             Dictionary of environment variables for hook execution
@@ -158,7 +157,7 @@ class HookExecutor:
 
         Args:
             hook_config: Hook configuration including script, timeout, and on_failure
-            lease_scope: LeaseScope containing lease metadata and session
+            lease_scope: LeaseContext containing lease metadata and session
             log_source: Log source for hook output
 
         Returns:
@@ -606,7 +605,7 @@ class HookExecutor:
         """Execute the before-lease hook.
 
         Args:
-            lease_scope: LeaseScope with lease metadata and session
+            lease_scope: LeaseContext with lease metadata and session
 
         Returns:
             Warning message string if hook failed with on_failure='warn', None otherwise
@@ -629,7 +628,7 @@ class HookExecutor:
         """Execute the after-lease hook.
 
         Args:
-            lease_scope: LeaseScope with lease metadata and session
+            lease_scope: LeaseContext with lease metadata and session
 
         Returns:
             Warning message string if hook failed with on_failure='warn', None otherwise
@@ -647,272 +646,3 @@ class HookExecutor:
             lease_scope,
             LogSource.AFTER_LEASE_HOOK,
         )
-
-    async def _safe_release_lease(
-        self,
-        request_lease_release: Callable[["LeaseContext"], Awaitable[None]] | None,
-        lease_scope: "LeaseContext",
-    ) -> None:
-        """Call request_lease_release if provided, logging any errors.
-
-        lease_scope identifies the lease whose hook failed, so the exporter
-        can reject the release if that lease was replaced in the meantime.
-        """
-        if request_lease_release:
-            try:
-                await request_lease_release(lease_scope)
-            except Exception:
-                logger.exception("Failed to request lease release")
-
-    async def _wait_for_lease_ready(
-        self,
-        lease_scope: "LeaseContext",
-        report_status: Callable[["ExporterStatus", str], Awaitable[None]],
-    ) -> bool:
-        """Wait for lease scope to be fully populated by handle_lease.
-
-        Returns True if ready, False if the caller should bail out
-        (lease already ended or timeout waiting for session).
-        """
-        timeout = 30  # seconds
-        interval = 0.1  # seconds
-        elapsed = 0.0
-        while not lease_scope.is_ready():
-            if lease_scope.lease_ended.is_set():
-                logger.info(
-                    "Lease %s ended while waiting for session, skipping beforeLease hook",
-                    lease_scope.lease_name,
-                )
-                lease_scope.skip_after_lease_hook = True
-                return False
-            if elapsed >= timeout:
-                error_msg = "Timeout waiting for lease scope to be ready"
-                logger.exception(error_msg)
-                await report_status(ExporterStatus.BEFORE_LEASE_HOOK_FAILED, error_msg)
-                lease_scope.before_lease_hook.set()
-                return False
-            await anyio.sleep(interval)
-            elapsed += interval
-        return True
-
-    async def run_before_lease_hook(
-        self,
-        lease_scope: "LeaseContext",
-        report_status: Callable[["ExporterStatus", str], Awaitable[None]],
-        shutdown: Callable[..., None],
-        request_lease_release: Callable[["LeaseContext"], Awaitable[None]] | None = None,
-    ) -> None:
-        """Execute before-lease hook with full orchestration.
-
-        This method handles the complete lifecycle of running a before-lease hook:
-        - Waits for the lease scope to be ready (session/socket populated)
-        - Reports status changes via the provided callback
-        - Sets up the hook executor with the session for logging
-        - Executes the hook and handles errors
-        - Always signals the before_lease_hook event to unblock connections
-
-        Args:
-            lease_scope: LeaseScope containing session, socket_path, and sync event
-            report_status: Async callback to report status changes to controller
-            shutdown: Callback to trigger exporter shutdown (accepts optional exit_code kwarg)
-            request_lease_release: Async callback to request lease release from
-                controller; receives the LeaseContext of the lease whose hook failed
-        """
-        should_release = False
-        try:
-            if not await self._wait_for_lease_ready(lease_scope, report_status):
-                return
-
-            # Check if hook is configured
-            if not self.config.before_lease:
-                logger.debug("No before-lease hook configured")
-                await report_status(ExporterStatus.LEASE_READY, "Ready for commands")
-                return
-
-            # Skip hook if lease already ended (e.g. stale lease from backlog
-            # when the exporter couldn't keep up with lease churn)
-            if lease_scope.lease_ended.is_set():
-                logger.info(
-                    "Lease %s already ended, skipping beforeLease hook",
-                    lease_scope.lease_name,
-                )
-                lease_scope.skip_after_lease_hook = True
-                return
-
-            await report_status(ExporterStatus.BEFORE_LEASE_HOOK, "Running beforeLease hook")
-
-            # Execute hook with lease scope
-            logger.info("Executing before-lease hook for lease %s", lease_scope.lease_name)
-            warning = await self._execute_hook(
-                self.config.before_lease,
-                lease_scope,
-                LogSource.BEFORE_LEASE_HOOK,
-            )
-
-            if lease_scope.lease_ended.is_set():
-                logger.info(
-                    "Lease %s ended during beforeLease hook, skipping LEASE_READY transition",
-                    lease_scope.lease_name,
-                )
-                return
-
-            if warning:
-                msg = f"{HOOK_WARNING_PREFIX}beforeLease hook warning: {warning}"
-            else:
-                msg = "Ready for commands"
-            await report_status(ExporterStatus.LEASE_READY, msg)
-            logger.info("beforeLease hook completed successfully")
-
-        except HookExecutionError as e:
-            # warn returns a warning string; only endLease/exit normally raise this error.
-            if e.should_shutdown_exporter():
-                # on_failure='exit' - defer shutdown until client handles the failure
-                logger.error("beforeLease hook failed with on_failure='exit': %s", e)
-                lease_scope.skip_after_lease_hook = True
-                await report_status(
-                    ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
-                    f"beforeLease hook failed (on_failure=exit, shutting down): {e}",
-                )
-                await report_status(
-                    ExporterStatus.OFFLINE,
-                    "Exporter shutting down due to beforeLease hook failure",
-                )
-                # Defer shutdown: sets _stop_requested=True, actual stop after lease cleanup
-                shutdown(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
-            else:
-                # on_failure='endLease' - report failure, release in finally block
-                logger.error("beforeLease hook failed with on_failure='endLease': %s", e)
-                lease_scope.skip_after_lease_hook = True
-                # Defensive redundancy: this branch is only reached for endLease,
-                # but re-check the policy so a future policy change cannot
-                # silently start releasing leases here.
-                should_release = e.should_end_lease()
-                await report_status(
-                    ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
-                    f"beforeLease hook failed (on_failure=endLease): {e}",
-                )
-
-        except Exception as e:  # noqa: BLE001
-            logger.error("beforeLease hook failed with unexpected error: %s", e)
-            await report_status(
-                ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
-                f"beforeLease hook failed: {e}",
-            )
-            # Unexpected errors don't trigger shutdown - just block the lease
-
-        finally:
-            # Always set the event to unblock connections
-            lease_scope.before_lease_hook.set()
-
-            # Release lease for endLease failure mode.
-            # Shielded from cancellation to ensure the release completes
-            # even if the task group is being torn down.
-            if should_release:
-                with CancelScope(shield=True):
-                    await anyio.sleep(1.0)
-                    await self._safe_release_lease(request_lease_release, lease_scope)
-
-    async def run_after_lease_hook(
-        self,
-        lease_scope: "LeaseContext",
-        report_status: Callable[["ExporterStatus", str], Awaitable[None]],
-        shutdown: Callable[..., None],
-        request_lease_release: Callable[["LeaseContext"], Awaitable[None]] | None = None,
-    ) -> None:
-        """Execute after-lease hook with full orchestration.
-
-        This method handles the complete lifecycle of running an after-lease hook:
-        - Validates that the lease scope is ready
-        - Reports status changes via the provided callback
-        - Sets up the hook executor with the session for logging
-        - Executes the hook and handles errors
-        - Triggers shutdown on critical failures (HookExecutionError)
-        - Requests lease release only for an explicit on_failure='endLease' hook failure
-
-        Args:
-            lease_scope: LeaseScope containing session, socket_path, and client info
-            report_status: Async callback to report status changes to controller
-            shutdown: Callback to trigger exporter shutdown (accepts optional exit_code kwarg)
-            request_lease_release: Async callback to request lease release from
-                controller; receives the LeaseContext of the lease whose hook failed
-        """
-        should_release = False
-        try:
-            # Verify lease scope is ready - for after-lease this should always be true
-            # since we've already processed the lease, but check defensively
-            if not lease_scope.is_ready():
-                logger.warning("LeaseScope not ready for after-lease hook, skipping")
-                await report_status(ExporterStatus.AVAILABLE, "Available for new lease")
-                return
-
-            # Check if hook is configured
-            if not self.config.after_lease:
-                logger.debug("No after-lease hook configured")
-                await report_status(ExporterStatus.AVAILABLE, "Available for new lease")
-                return
-
-            await report_status(ExporterStatus.AFTER_LEASE_HOOK, "Running afterLease hooks")
-
-            # Execute hook with lease scope
-            logger.info("Executing after-lease hook for lease %s", lease_scope.lease_name)
-            warning = await self._execute_hook(
-                self.config.after_lease,
-                lease_scope,
-                LogSource.AFTER_LEASE_HOOK,
-            )
-
-            if warning:
-                msg = f"{HOOK_WARNING_PREFIX}afterLease hook warning: {warning}"
-            else:
-                msg = "Available for new lease"
-            await report_status(ExporterStatus.AVAILABLE, msg)
-            logger.info("afterLease hook completed successfully")
-
-        except HookExecutionError as e:
-            # warn returns a warning string; only endLease/exit normally raise this error.
-            if e.should_shutdown_exporter():
-                # on_failure='exit' - shut down the entire exporter
-                logger.exception("afterLease hook failed with on_failure='exit'")
-                await report_status(
-                    ExporterStatus.AFTER_LEASE_HOOK_FAILED,
-                    f"afterLease hook failed (on_failure=exit, shutting down): {e}",
-                )
-                await report_status(
-                    ExporterStatus.OFFLINE,
-                    "Exporter shutting down due to afterLease hook failure",
-                )
-                # No delay needed - client is already polling and will see the failure
-                logger.error("Shutting down exporter due to afterLease hook failure with on_failure='exit'")
-                # Exit code 1 tells the CLI not to restart the exporter
-                shutdown(exit_code=1, should_unregister=True, wait_for_lease_exit=True)
-            else:
-                # on_failure='endLease' - report failure to the client, then release the lease.
-                # AFTER_LEASE_HOOK_FAILED is a transient status: the client sees the failure,
-                # the lease is released in the finally block, and the exporter's main loop
-                # clears the lease context and accepts new leases.
-                # Defensive redundancy: this branch is only reached for endLease,
-                # but re-check the policy so a future policy change cannot
-                # silently start releasing leases here.
-                should_release = e.should_end_lease()
-                logger.error("afterLease hook failed with on_failure='endLease': %s", e)
-                await report_status(
-                    ExporterStatus.AFTER_LEASE_HOOK_FAILED,
-                    f"afterLease hook failed (on_failure=endLease): {e}",
-                )
-
-        except Exception as e:  # noqa: BLE001
-            # Unexpected errors: report failure but do not shut down.
-            # An orchestration error is not an explicit endLease hook failure.
-            logger.error("afterLease hook failed with unexpected error: %s", e)
-            await report_status(
-                ExporterStatus.AFTER_LEASE_HOOK_FAILED,
-                f"afterLease hook failed: {e}",
-            )
-
-        finally:
-            # Cleanup also runs on task cancellation and exporter shutdown.
-            # Those paths must not end an active reservation.
-            if should_release:
-                # Give the client time to observe the failure before release.
-                await anyio.sleep(1.0)
-                await self._safe_release_lease(request_lease_release, lease_scope)
