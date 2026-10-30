@@ -19,7 +19,7 @@ from jumpstarter.common import ExporterStatus
 from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
 from jumpstarter.driver import Driver, export
 from jumpstarter.exporter.exporter import Exporter
-from jumpstarter.exporter.fsm import AwaitingLeaseRelease, ClosingLease, LeaseReady, ShutdownMode
+from jumpstarter.exporter.fsm import AwaitingLeaseRelease, BeforeLeaseHook, ClosingLease, LeaseReady, ShutdownMode
 from jumpstarter.exporter.fsm.lease_context import LeaseContext
 from jumpstarter.exporter.hooks import HookExecutionError, HookExecutor
 from jumpstarter.fsm import ExitFSM
@@ -472,7 +472,9 @@ async def test_standalone_defers_requests_and_runs_cleanup_once(monkeypatch, fin
             tg.start_soon(exporter.serve_standalone_tcp, "127.0.0.1", 0)
             await entered.wait()
             assert exporter.fsm.runner is not None
-            lease = exporter.fsm.runner.current_state.lease
+            state = exporter.fsm.runner.current_state
+            assert isinstance(state, BeforeLeaseHook)
+            lease = state.lease
             assert isinstance(lease, LeaseContext)
             if finish == "end_session":
                 lease.request_end_session()
