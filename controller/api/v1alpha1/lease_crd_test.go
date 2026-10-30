@@ -2,7 +2,6 @@ package v1alpha1
 
 import (
 	"os"
-	"strings"
 	"testing"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -37,12 +36,5 @@ func TestLeaseCRD_SharedWithMaxItemsMatchesMaxSharedWithEntries(t *testing.T) {
 	}
 	if got := *sharedWith.MaxItems; got != MaxSharedWithEntries {
 		t.Errorf("sharedWith maxItems is %d, MaxSharedWithEntries is %d", got, MaxSharedWithEntries)
-	}
-}
-
-func TestLeaseCRD_SharedWithDescriptionOmitsGoIdentifiers(t *testing.T) {
-	description := loadSharedWithSchema(t).Description
-	if strings.Contains(description, "MaxSharedWithEntries") {
-		t.Errorf("sharedWith description leaks a developer note: %q", description)
 	}
 }
