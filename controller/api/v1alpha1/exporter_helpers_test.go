@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -136,4 +137,46 @@ func TestExporter_Usernames(t *testing.T) {
 			t.Errorf("got %v, want internal subject and custom username", got)
 		}
 	})
+}
+
+func TestExporterListToProtobufEnabled(t *testing.T) {
+	for _, enabled := range []struct {
+		name  string
+		value *bool
+		want  bool
+	}{
+		{"enabled", new(true), true},
+		{"disabled", new(false), false},
+		{"omitted", nil, true},
+	} {
+		for _, online := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/online=%t", enabled.name, online), func(t *testing.T) {
+				condition := metav1.ConditionFalse
+				state := ExporterStatusOffline
+				if online {
+					condition = metav1.ConditionTrue
+					state = ExporterStatusAvailable
+				}
+				exporters := ExporterList{Items: []Exporter{{
+					ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+					Spec:       ExporterSpec{Enabled: enabled.value},
+					Status: ExporterStatus{
+						ExporterStatusValue: state,
+						Conditions:          []metav1.Condition{{Type: string(ExporterConditionTypeOnline), Status: condition}},
+					},
+				}}}
+				response := exporters.ToProtobuf()
+				if len(response.Exporters) != 1 {
+					t.Fatalf("expected one exporter, got %d", len(response.Exporters))
+				}
+				got := response.Exporters[0]
+				if got.Enabled == nil || got.GetEnabled() != enabled.want {
+					t.Fatalf("enabled = %v, want present %t", got.Enabled, enabled.want)
+				}
+				if got.Status != stringToProtoStatus(state) {
+					t.Fatalf("status = %v, want %s", got.Status, state)
+				}
+			})
+		}
+	}
 }
