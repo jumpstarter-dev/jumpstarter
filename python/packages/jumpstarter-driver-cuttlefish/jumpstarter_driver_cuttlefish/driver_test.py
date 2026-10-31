@@ -491,12 +491,6 @@ def test_cvd_power_read_not_implemented(drv):
         list(power.read())
 
 
-def test_cvd_flasher_flash_not_implemented(drv):
-    flasher = drv.children["storage"]
-    with pytest.raises(NotImplementedError):
-        flasher.flash("source")
-
-
 def test_cvd_flasher_dump_not_implemented(drv):
     flasher = drv.children["storage"]
     with pytest.raises(NotImplementedError):
@@ -660,6 +654,20 @@ def test_managed_initialization_preserves_startup_runtime_id(drv, tmp_path):
     runtime_id.write_text("runtime-2")
     with pytest.raises(CuttlefishError, match="restarted"):
         Cuttlefish(**config)  # ty: ignore[invalid-argument-type]
+
+
+@pytest.mark.parametrize("instance,error", [
+    ({}, "loads images from None"),
+    ({"disk": {"default_build": "@ab/aosp-main/aosp_cf_x86_64_phone"}}, "loads images from @ab/aosp-main"),
+    ({"disk": {"default_build": "/images"}, "boot": {"kernel": {"build": "/kernels"}}}, "sets boot.kernel"),
+    ({"disk": {"default_build": "/images", "super": {"system": "/gsi"}}}, "sets disk.super"),
+])
+def test_flashing_needs_the_cvd_to_boot_from_images_dir(drv, instance, error):
+    # Otherwise a flash would succeed and change nothing the CVD boots. (drv
+    # stands in for adb, which constructing a driver needs.)
+    with pytest.raises(CuttlefishError, match=error):
+        Cuttlefish(images_dir="/images", env_config={"instances": [instance]})
+    Cuttlefish(images_dir="/images", env_config={"instances": [{"disk": {"default_build": "/images/"}}]})
 
 
 # --- WebRTC display over the lease ---

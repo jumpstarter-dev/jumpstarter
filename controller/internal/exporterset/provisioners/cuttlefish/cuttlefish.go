@@ -47,6 +47,10 @@ const (
 
 	exporterConfigPath       = "/etc/jumpstarter/exporters/config.yaml"
 	exporterNonRootUID int64 = 65532
+	// The image volume is group-writable for this supplemental group, so the
+	// exporter can rename flashed images over the ones cvd_user owns without
+	// changing the primary group its image expects.
+	exporterGID int64 = 65532
 
 	cuttlefishDriverType = "jumpstarter_driver_cuttlefish.driver.Cuttlefish"
 	netsimDriverType     = "jumpstarter_driver_netsim.driver.Netsim"
@@ -434,11 +438,7 @@ func (p *Provisioner) resolveImages(overrides *virtualtargetv1alpha1.ImageOverri
 }
 
 func resolveStorageConfig(parameters map[string]any) (storageConfig, error) {
-	config := storageConfig{
-		imageSize: resource.MustParse("20Gi"),
-		stateSize: resource.MustParse("20Gi"),
-		tmpSize:   resource.MustParse("4Gi"),
-	}
+	var config storageConfig
 	config.imageClaim, _ = parameters["image_volume_claim"].(string)
 	config.fetchImages, _ = parameters["fetch_images"].(bool)
 	if config.imageClaim != "" && config.fetchImages {
@@ -454,31 +454,48 @@ func resolveStorageConfig(parameters map[string]any) (storageConfig, error) {
 		}
 	}
 
-	if raw, exists := parameters["storage"]; exists {
-		storage, ok := raw.(map[string]any)
-		if !ok {
-			return config, fmt.Errorf("parameters.storage must be an object")
-		}
-		for key, target := range map[string]*resource.Quantity{
-			"imageSize": &config.imageSize, "stateSize": &config.stateSize, "tmpSize": &config.tmpSize,
-		} {
-			value, exists := storage[key]
-			if !exists {
-				continue
-			}
-			text, ok := value.(string)
-			quantity, err := resource.ParseQuantity(text)
-			if !ok || err != nil || quantity.Sign() <= 0 {
-				return config, fmt.Errorf("parameters.storage.%s must be a positive storage quantity", key)
-			}
-			*target = quantity
-		}
+	var err error
+	if config.imageSize, config.stateSize, config.tmpSize, err = resolveVolumeSizes(parameters); err != nil {
+		return config, err
 	}
 	config.budget = config.imageSize.DeepCopy()
 	config.budget.Add(config.stateSize)
 	config.budget.Add(config.tmpSize)
 	config.budget.Add(resource.MustParse("1Gi")) // Container layers and logs need space beyond the volume budgets.
 	return config, nil
+}
+
+// resolveVolumeSizes reads parameters.storage, keeping the defaults for volumes it does not set.
+func resolveVolumeSizes(parameters map[string]any) (image, state, tmp resource.Quantity, err error) {
+	image, state, tmp = resource.MustParse("20Gi"), resource.MustParse("20Gi"), resource.MustParse("4Gi")
+	raw, exists := parameters["storage"]
+	if !exists {
+		return image, state, tmp, nil
+	}
+	storage, ok := raw.(map[string]any)
+	if !ok {
+		return image, state, tmp, fmt.Errorf("parameters.storage must be an object")
+	}
+	// A fixed order, so the same input always reports the same invalid size.
+	for _, entry := range []struct {
+		key    string
+		target *resource.Quantity
+	}{{"imageSize", &image}, {"stateSize", &state}, {"tmpSize", &tmp}} {
+		value, exists := storage[entry.key]
+		if !exists {
+			continue
+		}
+		text, ok := value.(string)
+		if !ok {
+			return image, state, tmp, fmt.Errorf("parameters.storage.%s must be a positive storage quantity", entry.key)
+		}
+		quantity, parseErr := resource.ParseQuantity(text)
+		if parseErr != nil || quantity.Sign() <= 0 {
+			return image, state, tmp, fmt.Errorf("parameters.storage.%s must be a positive storage quantity", entry.key)
+		}
+		*entry.target = quantity
+	}
+	return image, state, tmp, nil
 }
 
 func resolveServiceAccount(parameters map[string]any) (string, error) {
@@ -501,6 +518,8 @@ func (p *Provisioner) RenderPod(
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) (*corev1.Pod, error) {
 	_ = ctx
+	// ExitAndReplace is also what keeps a lessee's flashed images from reaching
+	// the next lease: they live in this Pod's image volume and go with it.
 	if exporterSet.Spec.RecycleStrategy == virtualtargetv1alpha1.RecycleStrategyInPlaceReuse {
 		return nil, fmt.Errorf("managed Cuttlefish requires ExitAndReplace recycling")
 	}
@@ -545,6 +564,7 @@ func (p *Provisioner) RenderPod(
 			RestartPolicy:                corev1.RestartPolicyNever,
 			ServiceAccountName:           serviceAccount,
 			AutomountServiceAccountToken: new(false),
+			SecurityContext:              &corev1.PodSecurityContext{SupplementalGroups: []int64{exporterGID}},
 			InitContainers:               initContainers(img, storage, resources, rt, webrtc, exporter),
 			Containers:                   []corev1.Container{exporterContainer(img, rt)},
 			Volumes:                      volumes(storage, rt),
@@ -634,7 +654,11 @@ func exporterContainer(img images, rt runtimeConfig) corev1.Container {
 			healthStatePath, runtimeIDPath, rt.endpoint(), exporterConfigPath},
 		Env:             []corev1.EnvVar{{Name: "HOME", Value: "/tmp"}},
 		SecurityContext: exporterSecurityContext(),
-		VolumeMounts:    []corev1.VolumeMount{{Name: "cvd-state", MountPath: runtimeIDMount, ReadOnly: true}},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "cvd-state", MountPath: runtimeIDMount, ReadOnly: true},
+			// Flashing writes partition images where env_config loads them from.
+			{Name: "cvd-images", MountPath: fetchPath},
+		},
 		// With restartPolicy Never, a failed liveness check ends the exporter and lets ExitAndReplace recycle the Pod.
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{
@@ -780,8 +804,11 @@ func initContainers(img images, storage storageConfig, runtime corev1.ResourceRe
 		}
 		runtimeScript = webrtcNginxCommand(webrtc, upstreamPort) + startProxy + runtimeScript
 	}
+	// cvd_user keeps owning the images (cvd rewrites host tools there on every
+	// load); the exporter's group may add and rename files for flashing.
 	permissionsCommand := "mkdir -p " + cvdStatePath + " " + androidTmpPath +
-		" && chown -R " + rt.cvdUser + ":" + rt.cvdUser + " " + cvdStatePath + " " + androidTmpPath + " " + fetchPath
+		" && chown -R " + rt.cvdUser + ":" + rt.cvdUser + " " + cvdStatePath + " " + androidTmpPath + " " + fetchPath +
+		fmt.Sprintf(" && chgrp %d %s && chmod 2775 %s", exporterGID, fetchPath, fetchPath)
 	permissionsMounts := stateMounts
 	if rt.exec() {
 		// The exporter writes env_config here; the launcher creates its socket.
@@ -917,11 +944,8 @@ func enrichCuttlefishDriver(driver virtualtargetv1alpha1.DriverConfig, parameter
 	config["health_state_path"] = healthStatePath
 	config["runtime_id_path"] = runtimeIDPath
 	config["health_ports"] = ports
-	// Any other endpoint would bypass the managed runtime in this Pod.
-	for key, value := range map[string]any{"scheme": "http", "host": "127.0.0.1", "port": hostOrchestratorPort, "instance_num": 1} {
-		if err := pin(config, key, value); err != nil {
-			return driver, guest, err
-		}
+	if err := pinManagedRuntime(config, parameters); err != nil {
+		return driver, guest, err
 	}
 	setDefault(config, "group", "cvd")
 	setDefault(config, "name", "1")
@@ -957,7 +981,9 @@ func enrichCuttlefishDriver(driver virtualtargetv1alpha1.DriverConfig, parameter
 	if err != nil {
 		return driver, guest, err
 	}
-	setDefault(disk, "default_build", fetchPath)
+	if err := pinImageSources(instance, disk); err != nil {
+		return driver, guest, err
+	}
 	instance["disk"] = disk
 	graphics, err := configObject(instance, "graphics")
 	if err != nil {
@@ -1004,6 +1030,51 @@ func enrichCuttlefishDriver(driver virtualtargetv1alpha1.DriverConfig, parameter
 
 	driver, err = encodeConfig(driver, config)
 	return driver, guest, err
+}
+
+// imageOverrides are env_config properties that load images from somewhere
+// other than disk.default_build (cvd's load_config.proto).
+var imageOverrides = []struct{ parent, key string }{
+	{"boot", "build"}, {"boot", "kernel"}, {"boot", "bootloader"}, {"boot", "android_efi_loader"}, {"disk", "super"},
+}
+
+// pinImageSources makes the image volume the CVD's only image source. It is
+// where flashing replaces images, so a CVD loading any of them from elsewhere
+// would not boot what a lessee flashed.
+func pinImageSources(instance, disk map[string]any) error {
+	if err := pin(disk, "default_build", fetchPath); err != nil {
+		return err
+	}
+	for _, override := range imageOverrides {
+		if parent, ok := instance[override.parent].(map[string]any); ok {
+			if _, exists := parent[override.key]; exists {
+				return fmt.Errorf("managed Cuttlefish loads images only from the image volume, where flashing replaces them; "+
+					"got env_config.instances[0].%s.%s", override.parent, override.key)
+			}
+		}
+	}
+	return nil
+}
+
+// pinManagedRuntime points the driver at this Pod's runtime and image volume.
+// Any other endpoint would bypass the managed runtime. Flashing replaces images
+// where env_config loads them from, and the driver stays under the image
+// volume's limit, which kubelet enforces by evicting the Pod rather than
+// failing the write.
+func pinManagedRuntime(config, parameters map[string]any) error {
+	imageSize, _, _, err := resolveVolumeSizes(parameters)
+	if err != nil {
+		return err
+	}
+	for key, value := range map[string]any{
+		"scheme": "http", "host": "127.0.0.1", "port": hostOrchestratorPort, "instance_num": 1,
+		"images_dir": fetchPath, "images_volume_limit": imageSize.Value(),
+	} {
+		if err := pin(config, key, value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // pin sets config[key] to value and rejects a template value that differs.
