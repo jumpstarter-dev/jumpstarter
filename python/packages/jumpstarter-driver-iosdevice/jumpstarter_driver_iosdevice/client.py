@@ -5,6 +5,7 @@ import os
 import plistlib
 import ssl
 import subprocess
+import sys
 import tempfile
 from collections.abc import Generator, Sequence
 from concurrent.futures import CancelledError
@@ -324,15 +325,18 @@ class IosDeviceClient(DriverClient):
     def devicehub(self, *, pair: bool = False) -> None:
         """Show the leased device in Xcode's Device Hub on this Mac until interrupted.
 
-        Needs the virtual link from ``scripts/devicehub-link-macos.sh`` (run
+        Only macOS clients are supported. Needs the virtual link from ``scripts/devicehub-link-macos.sh`` (run
         once per boot with sudo). The first time a Mac uses a device, after it
         was unpaired in Device Hub, or with ``pair=True``, choose File > Pair
         Nearby Device… in Device Hub and type the code it shows when asked.
         """
+        if sys.platform != "darwin":
+            raise RuntimeError("Device Hub access needs a macOS client")
         from .devicehub_mac import serve
 
         async def code() -> str:
-            return await to_thread.run_sync(partial(click.prompt, "Code shown in Device Hub"))
+            # Abandoned if the Mac connects with an existing pairing while the prompt is open.
+            return await to_thread.run_sync(partial(click.prompt, "Code shown in Device Hub"), abandon_on_cancel=True)
 
         try:
             self.portal.call(partial(serve, self, code=code, force_pair=pair, notify=click.echo))
@@ -462,12 +466,14 @@ class IosDeviceClient(DriverClient):
                     _wait_for_interrupt(self)
                 click.echo("Disconnected")
 
-        @ios.command()
-        @click.option("--pair", "force_pair", is_flag=True, help="Pair this Mac with the device again")
-        def devicehub(force_pair):
-            """Show the device in Xcode's Device Hub on this Mac until Ctrl+C."""
-            with _cli_errors():
-                self.devicehub(pair=force_pair)
+        if sys.platform == "darwin":
+
+            @ios.command()
+            @click.option("--pair", "force_pair", is_flag=True, help="Pair this Mac with the device again")
+            def devicehub(force_pair):
+                """Show the device in Xcode's Device Hub on this Mac until Ctrl+C."""
+                with _cli_errors():
+                    self.devicehub(pair=force_pair)
 
         @ios.command()
         @click.argument("ports", nargs=-1, type=click.IntRange(1, 65535), required=True)

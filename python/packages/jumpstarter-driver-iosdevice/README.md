@@ -82,9 +82,12 @@ that connection uses plain TCP.
 | `http_port` | Device HTTP service to expose through verified HTTPS | int | no | — |
 | `connect_timeout` | Discovery and connection timeout, in seconds | float | no | `10.0` |
 | `kind` | Target label: `physical` or `corellium`; does not provision devices | str | no | `physical` |
+| `devicehub` | Let macOS clients show the device in Xcode's Device Hub | bool | no | `false` |
+| `devicehub_state` | File that keeps the Device Hub identity and paired Macs | str | no | — |
+| `devicehub_udid` | UDID the device presents in Device Hub | str | no | the device's UDID |
 
-`http_port` requires exporter trust mode and must not also appear in
-`forward_ports`. The operator starts the HTTP service. Lockdown port 62078
+`http_port` and `devicehub` require exporter trust mode. `http_port` must not
+also appear in `forward_ports`. The operator starts the HTTP service. Lockdown port 62078
 cannot be configured as `http_port` or forwarded raw in exporter mode.
 
 ## Usage
@@ -98,6 +101,7 @@ j ios -- idevice_id -l
 j ios connect
 j ios forward 9100
 j ios https
+j ios devicehub    # macOS clients only
 ```
 
 `serve` prints a loopback address and `USBMUXD_SOCKET_ADDRESS` for your tool.
@@ -109,6 +113,38 @@ An existing registration is left in place.
 `forward` accepts only configured device ports. Python's
 `forward(port, local_port=0)` selects a free local port; the default local port
 matches the device port. Raw forwards retain the application's protocol.
+
+### Device Hub (macOS clients only)
+
+With `devicehub: true` on the exporter, a Mac holding the lease can view and
+control the device in Xcode's Device Hub while the device stays plugged into
+the exporter. This needs a macOS client with Xcode 27 or later; the
+`devicehub` command is not offered on other platforms.
+
+Once per boot, create the virtual network link the Mac uses to reach the
+device. The script is in this package's `scripts` directory:
+
+```shell
+sudo ./scripts/devicehub-link-macos.sh
+```
+
+Then, inside a lease:
+
+```shell
+j ios devicehub
+```
+
+The first time a Mac uses a device, choose File > Pair Nearby Device… in
+Device Hub and type the code it shows when the command asks. Later leases show
+the device without a code. If Device Hub has not connected after 20 seconds,
+for example because the device was unpaired in Device Hub, the command offers
+to pair again; `--pair` asks for a code straight away. The device disappears
+from Device Hub when the command stops.
+
+Set `devicehub_state` to keep the device's Device Hub identity across exporter
+restarts; without it, every Mac pairs again after a restart. Set
+`devicehub_udid` only when the same Mac can also see the device directly, as on
+a test bench, so that Device Hub keeps the two apart.
 
 ### HTTPS services
 
@@ -164,6 +200,12 @@ Externally started device services remain owned by their launcher.
   every service and TCP port on the device without further filtering.
   `forward_ports` selects convenience forwards; it is not an access boundary.
   Reset or re-provision devices between untrusted tenants.
+- **Device Hub:** The Mac pairs with an identity held by the exporter, not with
+  the device, and reaches the device through the lease. Like other services,
+  the tunnel gives the Mac full access to the device. Pairing a Mac happens
+  inside a lease, and a paired Mac sees the device only while it holds a lease
+  and runs `j ios devicehub`. The link script makes the user's account able
+  to capture packets on every interface until the next reboot.
 - **Passthrough:** `trust_mode: passthrough` exposes the selected device's real
   pairing record for tools that require direct device TLS. Use it only when
   credential sharing is acceptable. Opaque lockdown traffic cannot receive the

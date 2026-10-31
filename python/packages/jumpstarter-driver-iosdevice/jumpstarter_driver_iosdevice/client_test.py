@@ -7,6 +7,7 @@ import socket
 import ssl
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 import urllib.error
@@ -291,9 +292,17 @@ def test_unexpected_wait_error_propagates():
         _wait_for_interrupt(MagicMock(portal=MagicMock(call=MagicMock(side_effect=ValueError("bug")))))
 
 
-def test_cli_info_and_surface(client):
+@pytest.mark.parametrize(
+    "platform,commands",
+    [
+        ("darwin", ["connect", "devicehub", "forward", "https", "info", "serve"]),
+        ("linux", ["connect", "forward", "https", "info", "serve"]),
+    ],
+)
+def test_cli_info_and_surface(client, monkeypatch, platform, commands):
+    monkeypatch.setattr(sys, "platform", platform)
     group = client.cli()
-    assert sorted(group.commands) == ["connect", "devicehub", "forward", "https", "info", "serve"]
+    assert sorted(group.commands) == commands
     result = CliRunner().invoke(group, ["info"])
     assert result.exit_code == 0, result.output
     assert "udid: leased-device" in result.output
@@ -656,3 +665,9 @@ def test_https_native_tls_crosses_opaque_adapter_and_requires_public_ca(https_cl
         server.server_close()
         worker.join(timeout=5)
         assert not worker.is_alive()
+
+
+def test_devicehub_needs_macos(client, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "linux")
+    with pytest.raises(RuntimeError, match="macOS"):
+        client.devicehub()

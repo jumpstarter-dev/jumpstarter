@@ -296,6 +296,8 @@ async def serve(client, *, code: Callable[[], Awaitable[str]], force_pair: bool,
                         f"Device Hub has not connected to {name}. If this Mac is not paired with it, "
                         "choose File > Pair Nearby Device… in Device Hub."
                     )
-                if connected.is_set() or not await _pair_unless_connected(client, code, connected):
+                    if not await _pair_unless_connected(client, code, connected):
+                        notify(f"Device Hub connected to {name}; this Mac is still paired, so no code is needed.")
+                if connected.is_set():
                     await anyio.sleep_forever()
             # Advertise afresh so the newly paired Mac looks at it again.
