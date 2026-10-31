@@ -13,6 +13,7 @@ timer that resends unacknowledged data.
 """
 
 import asyncio
+import errno
 import fcntl
 import ipaddress
 import logging
@@ -342,7 +343,9 @@ class Stack:
         try:
             self._bpf.write(frame)
         except OSError as error:
-            logger.warning("cannot send on %s: %s", self.interface, error)
+            # EBADF: the capture was closed while the stack shuts down.
+            if error.errno != errno.EBADF:
+                logger.warning("cannot send on %s: %s", self.interface, error)
 
     def _read_frames(self) -> None:
         assert self._bpf is not None and self._loop is not None

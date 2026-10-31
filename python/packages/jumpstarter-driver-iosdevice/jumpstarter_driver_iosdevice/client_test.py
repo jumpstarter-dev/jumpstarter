@@ -676,3 +676,20 @@ def test_devicehub_explains_macos_only(client, monkeypatch):
     assert result.exit_code != 0
     assert "only supported on macOS clients" in result.output
     assert "No such command" not in result.output
+    with pytest.raises(RuntimeError, match="only supported on macOS clients"), client.devicehub_wda("x.xctestrun"):
+        pass
+
+
+def test_devicehub_wda_needs_an_xctestrun(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    build = tmp_path / "WebDriverAgentRunner-Runner.app"
+    build.mkdir()
+    with pytest.raises(ValueError, match="not an .xctestrun file"), client.devicehub_wda(build):
+        pass
+
+
+def test_cli_devicehub_offers_wda(client, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    result = CliRunner().invoke(client.cli(), ["devicehub", "--help"])
+    assert result.exit_code == 0
+    assert "--wda" in result.output

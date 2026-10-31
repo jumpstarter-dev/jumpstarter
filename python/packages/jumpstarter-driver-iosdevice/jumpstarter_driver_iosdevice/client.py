@@ -10,10 +10,11 @@ import sys
 import tempfile
 from collections.abc import Generator, Sequence
 from concurrent.futures import CancelledError
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
+from typing import TYPE_CHECKING
 from xml.parsers.expat import ExpatError
 
 import anyio
@@ -22,6 +23,9 @@ from anyio import to_thread
 from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 
 from jumpstarter.client import DriverClient
+
+if TYPE_CHECKING:
+    from .devicehub_mac import WebDriverAgent
 
 CONNECT_TIMEOUT = 60.0
 DISCONNECT_TIMEOUT = 30.0
@@ -323,6 +327,18 @@ class IosDeviceClient(DriverClient):
                     except (subprocess.SubprocessError, OSError) as exc:
                         self.logger.warning("Could not detach %s: %s", target, exc)
 
+    def _require_macos(self) -> None:
+        if sys.platform != "darwin":
+            raise RuntimeError(
+                f"Device Hub is only supported on macOS clients with Xcode 27 or later; this client runs on "
+                f"{platform.system() or sys.platform}. Use `j ios serve` or Appium to reach the device from here."
+            )
+
+    @staticmethod
+    async def _devicehub_code() -> str:
+        # Abandoned if the Mac connects with an existing pairing while the prompt is open.
+        return await to_thread.run_sync(partial(click.prompt, "Code shown in Device Hub"), abandon_on_cancel=True)
+
     def devicehub(self, *, pair: bool = False) -> None:
         """Show the leased device in Xcode's Device Hub on this Mac until interrupted.
 
@@ -332,24 +348,47 @@ class IosDeviceClient(DriverClient):
         with ``pair=True``, choose File > Pair Nearby Device… in Device Hub and
         type the code it shows when asked.
         """
-        if sys.platform != "darwin":
-            raise RuntimeError(
-                f"Device Hub is only supported on macOS clients with Xcode 27 or later; this client runs on "
-                f"{platform.system() or sys.platform}. Use `j ios serve` or Appium to reach the device from here."
-            )
+        self._require_macos()
         from .devicehub_mac import serve
 
-        async def code() -> str:
-            # Abandoned if the Mac connects with an existing pairing while the prompt is open.
-            return await to_thread.run_sync(partial(click.prompt, "Code shown in Device Hub"), abandon_on_cancel=True)
-
         try:
-            self.portal.call(partial(serve, self, code=code, force_pair=pair, notify=click.echo))
+            self.portal.call(partial(serve, self, code=self._devicehub_code, force_pair=pair, notify=click.echo))
         except (KeyboardInterrupt, SystemExit, GeneratorExit):
             return
         except BaseException as exc:
             if not _is_cancelled(exc):
                 raise
+
+    @contextmanager
+    def devicehub_wda(
+        self, xctestrun: str | os.PathLike, *, pair: bool = False, timeout: float = 180.0
+    ) -> Generator["WebDriverAgent", None, None]:
+        """Show the device in Device Hub and run WebDriverAgent on it over the Device Hub tunnel.
+
+        ``xctestrun`` is the ``.xctestrun`` file of a WebDriverAgent build signed
+        for the device; Jumpstarter does not build or sign it. Xcode installs and
+        starts it through the lease, so tests can be watched and debugged in
+        Device Hub while they run. Yields the running agent; its
+        ``capabilities()`` configure an Appium XCUITest session. WebDriverAgent
+        stops, and the device becomes unavailable in Device Hub, when the
+        context closes. Pairing works as for ``devicehub()``.
+        """
+        self._require_macos()
+        path = Path(xctestrun)
+        if path.suffix != ".xctestrun" or not path.is_file():
+            raise ValueError(f"{path} is not an .xctestrun file; build WebDriverAgent with build-for-testing")
+        from .devicehub_mac import shown, webdriveragent
+
+        @asynccontextmanager
+        async def session():
+            async with (
+                shown(self, code=self._devicehub_code, force_pair=pair, notify=click.echo) as info,
+                webdriveragent(path, udids=info["udids"], timeout=timeout, notify=click.echo) as agent,
+            ):
+                yield agent
+
+        with self.portal.wrap_async_context_manager(session()) as agent:
+            yield agent
 
     @contextmanager
     def forward(self, port: int, *, local_port: int | None = None) -> Generator[str, None, None]:
@@ -474,10 +513,24 @@ class IosDeviceClient(DriverClient):
         # Hidden off macOS, but still answers with an explanation instead of "No such command".
         @ios.command(hidden=sys.platform != "darwin")
         @click.option("--pair", "force_pair", is_flag=True, help="Pair this Mac with the device again")
-        def devicehub(force_pair):
+        @click.option(
+            "--wda",
+            "xctestrun",
+            type=click.Path(exists=True, dir_okay=False, path_type=Path),
+            help="Also run WebDriverAgent from this signed .xctestrun build, for Appium",
+        )
+        def devicehub(force_pair, xctestrun):
             """Show the device in Xcode's Device Hub on this Mac until Ctrl+C."""
             with _cli_errors():
-                self.devicehub(pair=force_pair)
+                if xctestrun is None:
+                    self.devicehub(pair=force_pair)
+                    return
+                with self.devicehub_wda(xctestrun, pair=force_pair) as agent:
+                    click.echo(f"WebDriverAgent is ready at {agent.url}")
+                    click.echo("Appium capabilities:")
+                    click.echo(json.dumps(agent.capabilities(), indent=2))
+                    click.echo("Press Ctrl+C to stop WebDriverAgent and make the device unavailable.")
+                    _wait_for_interrupt(self)
 
         @ios.command()
         @click.argument("ports", nargs=-1, type=click.IntRange(1, 65535), required=True)

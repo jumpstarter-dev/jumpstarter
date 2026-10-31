@@ -8,21 +8,37 @@ the device is carried to the exporter through the lease.
 """
 
 import ctypes
+import json
 import logging
 import math
 import plistlib
+import re
 import select
+import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import time
-from collections.abc import Awaitable, Callable
-from contextlib import contextmanager, suppress
+import urllib.request
+from collections import deque
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import asynccontextmanager, suppress
+from dataclasses import dataclass
 from pathlib import Path
 from xml.parsers.expat import ExpatError
 
 import anyio
-from anyio import BrokenResourceError, ClosedResourceError, EndOfStream, create_task_group, from_thread, to_thread
+from anyio import (
+    BrokenResourceError,
+    ClosedResourceError,
+    EndOfStream,
+    create_task_group,
+    fail_after,
+    from_thread,
+    move_on_after,
+    to_thread,
+)
 
 from .netstack import Stack
 
@@ -43,6 +59,22 @@ MEDIA_STREAM_SUPPORT = Path(
     "/Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/Frameworks/"
     "CoreDeviceMediaStreamSupport.framework"
 )
+XCODEBUILD = ("xcodebuild", "test-without-building")
+WDA_READY = re.compile(r"ServerURLHere->(\S+)<-ServerURLHere")
+WDA_TIMEOUT = 180.0
+WDA_STOP_TIMEOUT = 15.0
+# xcodebuild output that explains a failed WebDriverAgent start.
+WDA_FAILURES = {
+    "Timed out while enabling automation mode": (
+        "the device refused UI automation: turn on Settings > Developer > Enable UI Automation and keep it unlocked"
+    ),
+    "ApplicationVerificationFailed": (
+        "the device rejected the WebDriverAgent build: its provisioning profile must include this device"
+    ),
+    "Unable to find a destination matching": (
+        "Xcode does not list the device; check that it is shown in Device Hub and that the build is for iOS devices"
+    ),
+}
 
 _flags = ctypes.c_uint32
 _ref = ctypes.c_void_p
@@ -307,20 +339,42 @@ async def _pair_unless_connected(client, code: Callable[[], Awaitable[str]], con
     return entered
 
 
-@contextmanager
-def advertised(identifier: str, auth_tag: str, port: int):
-    advert = Advert(identifier, auth_tag, port)
+async def _advertise_until_connected(client, code, info: dict, connected: anyio.Event, notify) -> Advert:
+    """Advertise the device until this Mac connects to it; the advert stays published."""
+    # Neither the exporter nor macOS tools can tell whether this Mac still holds its
+    # pairing: a Mac that unpaired, or never paired, ignores the advert. So pairing
+    # is offered from the start, and dropped if the Mac connects first.
+    name = info["name"]
+    advert = None
     try:
-        yield
-    finally:
-        advert.close()
+        while advert is None or not connected.is_set():
+            if advert is not None:
+                # Advertise afresh so the newly paired Mac looks at it again.
+                advert.close()
+            advert = Advert(info["identifier"], info["auth_tag"], CONTROL_PORT)
+            notify(
+                f"{name} is available in Device Hub. If it is not listed there, for example after Unpair, "
+                "choose File > Pair Nearby Device… in Device Hub to pair this Mac with it. "
+                "Press Ctrl+C to make it unavailable."
+            )
+            if await _pair_unless_connected(client, code, connected):
+                notify(f"This Mac is paired with {name}.")
+    except BaseException:
+        if advert is not None:
+            advert.close()
+        raise
+    return advert
 
 
-async def serve(client, *, code: Callable[[], Awaitable[str]], force_pair: bool, notify: Callable[[str], None]) -> None:
-    """Make the leased device appear in Device Hub until cancelled."""
+@asynccontextmanager
+async def shown(
+    client, *, code: Callable[[], Awaitable[str]], force_pair: bool, notify: Callable[[str], None]
+) -> AsyncGenerator[dict, None]:
+    """Show the leased device in Device Hub; enter once this Mac has connected to it."""
     if (warning := xcode_warning()) is not None:
         notify(f"Warning: {warning}")
     check_link()
+    error = None
     async with Stack(DEVICE_INTERFACE, DEVICE_ADDRESS) as stack, create_task_group() as tasks:
         accepted = stack.listen(CONTROL_PORT)
         connected = anyio.Event()
@@ -332,23 +386,216 @@ async def serve(client, *, code: Callable[[], Awaitable[str]], force_pair: bool,
                 tasks.start_soon(_carry, client, connection)
 
         tasks.start_soon(accept)
-        info = await client.call_async("devicehub_info", CONTROL_PORT)
-        name = info["name"]
-        if force_pair or not info.get("paired_hosts"):
-            notify(f"Pair this Mac with {name} once: in Device Hub choose File > Pair Nearby Device…")
-            await pair(client, code)
-        # Neither the exporter nor macOS tools can tell whether this Mac still holds its
-        # pairing: a Mac that unpaired, or never paired, ignores the advert. So pairing
-        # is offered from the start, and dropped if the Mac connects first.
+        advert = None
+        try:
+            info = await client.call_async("devicehub_info", CONTROL_PORT)
+            if force_pair or not info.get("paired_hosts"):
+                notify(f"Pair this Mac with {info['name']} once: in Device Hub choose File > Pair Nearby Device…")
+                await pair(client, code)
+            advert = await _advertise_until_connected(client, code, info, connected, notify)
+            yield info
+        except BaseException as exc:  # noqa: BLE001 - re-raised below, outside the task group
+            error = exc
+        finally:
+            if advert is not None:
+                advert.close()
+            tasks.cancel_scope.cancel()
+    if error is not None:
+        raise error
+
+
+async def serve(client, *, code: Callable[[], Awaitable[str]], force_pair: bool, notify: Callable[[str], None]) -> None:
+    """Make the leased device appear in Device Hub until cancelled."""
+    async with shown(client, code=code, force_pair=force_pair, notify=notify):
+        await anyio.sleep_forever()
+
+
+@dataclass(frozen=True)
+class WebDriverAgent:
+    """A WebDriverAgent running on the leased device, reached through the Device Hub tunnel."""
+
+    url: str
+    udid: str
+    platform_version: str
+
+    def capabilities(self) -> dict:
+        """Appium XCUITest capabilities for a session on this WebDriverAgent.
+
+        Appium reaches real devices through usbmux to find them, read their logs
+        and manage apps. This device is reached only through CoreDevice, so those
+        steps are skipped: start apps with ``mobile: activateApp`` instead of
+        ``appium:bundleId``.
+        """
+        return {
+            "platformName": "iOS",
+            "appium:automationName": "XCUITest",
+            "appium:udid": self.udid,
+            "appium:platformVersion": self.platform_version,
+            "appium:webDriverAgentUrl": self.url,
+            "appium:skipLogCapture": True,
+            "appium:noReset": True,
+        }
+
+
+def coredevice(udids: list[str]) -> dict | None:
+    """The CoreDevice record of the leased device, or None while macOS does not list it.
+
+    macOS lists the device under the UDID it presents until the first tunnel
+    reveals its own, so both are looked for.
+    """
+    with tempfile.TemporaryDirectory() as folder:
+        output = Path(folder) / "devices.json"
+        try:
+            subprocess.run(
+                ["xcrun", "devicectl", "list", "devices", "--quiet", "--json-output", str(output)],
+                capture_output=True,
+                check=True,
+                timeout=30,
+            )
+            devices = json.loads(output.read_text())["result"]["devices"]
+        except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError):
+            return None
+    for device in devices:
+        if isinstance(device, dict) and device.get("hardwareProperties", {}).get("udid") in udids:
+            return device
+    return None
+
+
+async def _listed(udids: list[str], timeout: float, *, tunnel: bool = False) -> dict:
+    with move_on_after(timeout):
         while True:
-            with advertised(info["identifier"], info["auth_tag"], CONTROL_PORT):
-                notify(
-                    f"{name} is available in Device Hub. If it is not listed there, for example after Unpair, "
-                    "choose File > Pair Nearby Device… in Device Hub to pair this Mac with it. "
-                    "Press Ctrl+C to make it unavailable."
-                )
-                if await _pair_unless_connected(client, code, connected):
-                    notify(f"This Mac is paired with {name}.")
-                if connected.is_set():
-                    await anyio.sleep_forever()
-            # Advertise afresh so the newly paired Mac looks at it again.
+            device = await to_thread.run_sync(coredevice, udids)
+            properties = (device or {}).get("connectionProperties", {})
+            if device is not None and (not tunnel or properties.get("tunnelIPAddress")):
+                return device
+            await anyio.sleep(1)
+    what = "a tunnel to the device" if tunnel else "the device"
+    raise RuntimeError(f"macOS did not list {what} within {timeout:.0f} seconds")
+
+
+def _wda_ready(url: str) -> bool:
+    try:
+        with urllib.request.urlopen(f"{url}/status", timeout=5) as response:
+            return bool(json.load(response).get("value", {}).get("ready"))
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def _wda_failure(lines) -> str:
+    output = "\n".join(lines)
+    for marker, reason in WDA_FAILURES.items():
+        if marker in output:
+            return f"WebDriverAgent did not start: {reason}"
+    errors = [line for line in lines if "error" in line.lower()]
+    return "WebDriverAgent did not start; xcodebuild reported:\n" + "\n".join((errors or list(lines))[-15:])
+
+
+def _connect(udid: str) -> None:
+    """Ask CoreDevice to connect to the device, which brings up its tunnel."""
+    with tempfile.TemporaryDirectory() as folder, suppress(OSError, subprocess.SubprocessError):
+        subprocess.run(
+            [
+                "xcrun",
+                "devicectl",
+                "device",
+                "info",
+                "details",
+                "--device",
+                udid,
+                "--quiet",
+                "--json-output",
+                str(Path(folder) / "details.json"),
+            ],
+            capture_output=True,
+            check=False,
+            timeout=60,
+        )
+
+
+@asynccontextmanager
+async def webdriveragent(
+    xctestrun: Path, *, udids: list[str], timeout: float = WDA_TIMEOUT, notify: Callable[[str], None]
+) -> AsyncGenerator[WebDriverAgent, None]:
+    """Start WebDriverAgent from a signed ``.xctestrun`` build over the Device Hub tunnel.
+
+    xcodebuild installs and runs it through CoreDevice, which reaches the device
+    only through the lease. It stops when the context closes.
+    """
+    device = await _listed(udids, timeout)
+    # Until its tunnel is up, macOS lists the device under the presented UDID, which
+    # xcodebuild does not offer as a destination.
+    await to_thread.run_sync(_connect, device["hardwareProperties"]["udid"])
+    device = await _listed(udids, timeout, tunnel=True)
+    udid = device["hardwareProperties"]["udid"]
+    notify(f"Starting WebDriverAgent from {xctestrun.name}…")
+    command = [*XCODEBUILD, "-xctestrun", str(xctestrun), "-destination", f"id={udid}"]
+    error = None
+    # Detached from the terminal: Ctrl+C reaches only this process, which stops
+    # xcodebuild itself, and xcodebuild cannot prompt for a password there.
+    async with await anyio.open_process(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    ) as process:
+        lines: deque[str] = deque(maxlen=200)
+        started = anyio.Event()
+        port: list[int] = []
+
+        async def read():
+            assert process.stdout is not None
+            buffer = b""
+            async for chunk in process.stdout:
+                buffer += chunk
+                *complete, buffer = buffer.split(b"\n")
+                for raw in complete:
+                    line = raw.decode(errors="replace")
+                    lines.append(line)
+                    if not started.is_set() and (match := WDA_READY.search(line)):
+                        port.append(int(match.group(1).rstrip("/").rsplit(":", 1)[1]))
+                        started.set()
+            # xcodebuild ended: before the ready line, that is a failure.
+            started.set()
+
+        async with create_task_group() as tasks:
+            tasks.start_soon(read)
+            try:
+                try:
+                    with fail_after(timeout):
+                        await started.wait()
+                    if not port:
+                        raise RuntimeError(_wda_failure(lines))
+                    device = await _listed(udids, timeout, tunnel=True)
+                    url = f"http://[{device['connectionProperties']['tunnelIPAddress']}]:{port[0]}"
+                    with fail_after(timeout):
+                        while not await to_thread.run_sync(_wda_ready, url):
+                            await anyio.sleep(1)
+                except TimeoutError:
+                    raise RuntimeError(f"WebDriverAgent was not ready within {timeout:.0f} seconds") from None
+                platform_version = str(device.get("deviceProperties", {}).get("osVersionNumber", ""))
+                # Listed under the device's own UDID once the tunnel is up.
+                udid = device["hardwareProperties"]["udid"]
+                yield WebDriverAgent(url=url, udid=udid, platform_version=platform_version)
+            except BaseException as exc:  # noqa: BLE001 - re-raised below, outside the task group
+                error = exc
+            finally:
+                with anyio.CancelScope(shield=True):
+                    await _stop(process)
+                tasks.cancel_scope.cancel()
+    if error is not None:
+        raise error
+
+
+async def _stop(process) -> None:
+    if process.returncode is not None:
+        return
+    # xcodebuild stops the test runner, and with it WebDriverAgent, on SIGINT.
+    with suppress(ProcessLookupError):
+        process.send_signal(signal.SIGINT)
+    with move_on_after(WDA_STOP_TIMEOUT):
+        await process.wait()
+        return
+    with suppress(ProcessLookupError):
+        process.kill()
+    await process.wait()

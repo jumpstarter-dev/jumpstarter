@@ -1,4 +1,6 @@
 import plistlib
+import sys
+from pathlib import Path
 
 import anyio
 import pytest
@@ -110,3 +112,95 @@ async def test_pairing_abandoned_when_still_paired_mac_connects(monkeypatch):
 
     assert await devicehub_mac._pair_unless_connected(client, code, client.connected) is False
     assert client.codes == []
+
+
+FAKE_XCODEBUILD = """
+import pathlib, signal, sys, time
+marker = pathlib.Path(sys.argv[1])
+mode = sys.argv[2]
+print("Testing started", flush=True)
+if mode == "automation":
+    print("Failed to initialize for UI testing: Timed out while enabling automation mode.", flush=True)
+    sys.exit(65)
+if mode == "silent":
+    print("something else went wrong", flush=True)
+    sys.exit(65)
+def stop(*_):
+    marker.write_text(" ".join(sys.argv[3:]))
+    sys.exit(0)
+signal.signal(signal.SIGINT, stop)
+print("ServerURLHere->http://192.168.1.79:8100<-ServerURLHere", flush=True)
+while True:
+    time.sleep(0.1)
+"""
+
+
+@pytest.fixture
+def fake_wda(tmp_path, monkeypatch):
+    script = tmp_path / "xcodebuild.py"
+    script.write_text(FAKE_XCODEBUILD)
+    marker = tmp_path / "stopped"
+    record = {
+        "hardwareProperties": {"udid": "DEVICE"},
+        "connectionProperties": {"tunnelIPAddress": "fd00::1"},
+        "deviceProperties": {"osVersionNumber": "27.0.1"},
+    }
+    monkeypatch.setattr(devicehub_mac, "coredevice", lambda udids: record if "DEVICE" in udids else None)
+    monkeypatch.setattr(devicehub_mac, "_wda_ready", lambda url: True)
+    monkeypatch.setattr(devicehub_mac, "_connect", lambda udid: None)
+
+    def use(mode):
+        monkeypatch.setattr(devicehub_mac, "XCODEBUILD", (sys.executable, str(script), str(marker), mode))
+
+    return use, marker
+
+
+@pytest.mark.anyio
+async def test_webdriveragent_runs_over_the_tunnel_and_stops(fake_wda):
+    use, marker = fake_wda
+    use("ok")
+    xctestrun = Path("WebDriverAgentRunner.xctestrun")
+    async with devicehub_mac.webdriveragent(xctestrun, udids=["STAND-IN", "DEVICE"], notify=lambda _: None) as agent:
+        # The tunnel address, not the Wi-Fi address WebDriverAgent prints.
+        assert agent.url == "http://[fd00::1]:8100"
+        assert agent.udid == "DEVICE"
+        assert agent.platform_version == "27.0.1"
+        assert not marker.exists()
+    assert marker.read_text() == "-xctestrun WebDriverAgentRunner.xctestrun -destination id=DEVICE"
+
+
+@pytest.mark.anyio
+async def test_webdriveragent_explains_refused_automation(fake_wda):
+    use, _ = fake_wda
+    use("automation")
+    with pytest.raises(RuntimeError, match="Enable UI Automation"):
+        async with devicehub_mac.webdriveragent(Path("x.xctestrun"), udids=["DEVICE"], notify=lambda _: None):
+            pass
+
+
+@pytest.mark.anyio
+async def test_webdriveragent_reports_xcodebuild_output(fake_wda):
+    use, _ = fake_wda
+    use("silent")
+    with pytest.raises(RuntimeError, match="something else went wrong"):
+        async with devicehub_mac.webdriveragent(Path("x.xctestrun"), udids=["DEVICE"], notify=lambda _: None):
+            pass
+
+
+@pytest.mark.anyio
+async def test_webdriveragent_keeps_caller_errors(fake_wda):
+    use, marker = fake_wda
+    use("ok")
+    with pytest.raises(KeyError):
+        async with devicehub_mac.webdriveragent(Path("x.xctestrun"), udids=["DEVICE"], notify=lambda _: None):
+            raise KeyError("from the test")
+    assert marker.exists()
+
+
+def test_webdriveragent_capabilities_avoid_usbmux():
+    agent = devicehub_mac.WebDriverAgent(url="http://[fd00::1]:8100", udid="DEVICE", platform_version="27.0.1")
+    capabilities = agent.capabilities()
+    assert capabilities["appium:webDriverAgentUrl"] == "http://[fd00::1]:8100"
+    assert capabilities["appium:platformVersion"] == "27.0.1"
+    assert capabilities["appium:skipLogCapture"] is True
+    assert "appium:bundleId" not in capabilities
