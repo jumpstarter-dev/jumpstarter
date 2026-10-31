@@ -2,6 +2,7 @@ import asyncio
 import json
 import math
 import os
+import platform
 import plistlib
 import ssl
 import subprocess
@@ -331,7 +332,10 @@ class IosDeviceClient(DriverClient):
         Nearby Device… in Device Hub and type the code it shows when asked.
         """
         if sys.platform != "darwin":
-            raise RuntimeError("Device Hub access needs a macOS client")
+            raise RuntimeError(
+                f"Device Hub is only supported on macOS clients with Xcode 27 or later; this client runs on "
+                f"{platform.system() or sys.platform}. Use `j ios serve` or Appium to reach the device from here."
+            )
         from .devicehub_mac import serve
 
         async def code() -> str:
@@ -466,14 +470,13 @@ class IosDeviceClient(DriverClient):
                     _wait_for_interrupt(self)
                 click.echo("Disconnected")
 
-        if sys.platform == "darwin":
-
-            @ios.command()
-            @click.option("--pair", "force_pair", is_flag=True, help="Pair this Mac with the device again")
-            def devicehub(force_pair):
-                """Show the device in Xcode's Device Hub on this Mac until Ctrl+C."""
-                with _cli_errors():
-                    self.devicehub(pair=force_pair)
+        # Hidden off macOS, but still answers with an explanation instead of "No such command".
+        @ios.command(hidden=sys.platform != "darwin")
+        @click.option("--pair", "force_pair", is_flag=True, help="Pair this Mac with the device again")
+        def devicehub(force_pair):
+            """Show the device in Xcode's Device Hub on this Mac until Ctrl+C."""
+            with _cli_errors():
+                self.devicehub(pair=force_pair)
 
         @ios.command()
         @click.argument("ports", nargs=-1, type=click.IntRange(1, 65535), required=True)

@@ -118,8 +118,11 @@ matches the device port. Raw forwards retain the application's protocol.
 
 With `devicehub: true` on the exporter, a Mac holding the lease can view and
 control the device in Xcode's Device Hub while the device stays plugged into
-the exporter. This needs a macOS client with Xcode 27 or later; the
-`devicehub` command is not offered on other platforms.
+the exporter. This needs a macOS client with Xcode 27 or later. On other
+platforms `devicehub` is left out of `j ios --help`, and running it, or calling
+`devicehub()` from Python, fails with an error that says so. On a Mac without
+Xcode 27, or before Xcode has been opened once to install its device support,
+`devicehub` warns that the device will not appear in Device Hub.
 
 Once per boot, create the virtual network link the Mac uses to reach the
 device. The script is in this package's `scripts` directory:

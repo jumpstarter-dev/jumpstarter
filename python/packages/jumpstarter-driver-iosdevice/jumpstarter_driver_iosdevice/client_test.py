@@ -292,17 +292,9 @@ def test_unexpected_wait_error_propagates():
         _wait_for_interrupt(MagicMock(portal=MagicMock(call=MagicMock(side_effect=ValueError("bug")))))
 
 
-@pytest.mark.parametrize(
-    "platform,commands",
-    [
-        ("darwin", ["connect", "devicehub", "forward", "https", "info", "serve"]),
-        ("linux", ["connect", "forward", "https", "info", "serve"]),
-    ],
-)
-def test_cli_info_and_surface(client, monkeypatch, platform, commands):
-    monkeypatch.setattr(sys, "platform", platform)
+def test_cli_info_and_surface(client):
     group = client.cli()
-    assert sorted(group.commands) == commands
+    assert sorted(group.commands) == ["connect", "devicehub", "forward", "https", "info", "serve"]
     result = CliRunner().invoke(group, ["info"])
     assert result.exit_code == 0, result.output
     assert "udid: leased-device" in result.output
@@ -667,7 +659,20 @@ def test_https_native_tls_crosses_opaque_adapter_and_requires_public_ca(https_cl
         assert not worker.is_alive()
 
 
-def test_devicehub_needs_macos(client, monkeypatch):
+@pytest.mark.parametrize("platform,listed", [("darwin", True), ("linux", False)])
+def test_cli_devicehub_listed_only_on_macos(client, monkeypatch, platform, listed):
+    monkeypatch.setattr(sys, "platform", platform)
+    result = CliRunner().invoke(client.cli(), ["--help"])
+    assert result.exit_code == 0, result.output
+    assert ("devicehub" in result.output) is listed
+
+
+def test_devicehub_explains_macos_only(client, monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
-    with pytest.raises(RuntimeError, match="macOS"):
+    monkeypatch.setattr("jumpstarter_driver_iosdevice.client.platform.system", lambda: "Linux")
+    with pytest.raises(RuntimeError, match="only supported on macOS clients.*runs on Linux"):
         client.devicehub()
+    result = CliRunner().invoke(client.cli(), ["devicehub"])
+    assert result.exit_code != 0
+    assert "only supported on macOS clients" in result.output
+    assert "No such command" not in result.output

@@ -10,6 +10,7 @@ the device is carried to the exporter through the lease.
 import ctypes
 import logging
 import math
+import plistlib
 import select
 import socket
 import subprocess
@@ -17,6 +18,8 @@ import sys
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import contextmanager, suppress
+from pathlib import Path
+from xml.parsers.expat import ExpatError
 
 import anyio
 from anyio import BrokenResourceError, ClosedResourceError, EndOfStream, create_task_group, from_thread, to_thread
@@ -34,6 +37,14 @@ CONTROL_PORT = 49152
 CONNECT_GRACE = 20.0
 PAIRABLE_HOST_SERVICE = "_remotepairing-pairable-host._tcp"
 SETUP_SCRIPT = "scripts/devicehub-link-macos.sh"
+XCODE_MINIMUM = 27
+DEVICE_HUB_APP = "Contents/Applications/DeviceHub.app"
+XCODE_FOLDERS = (Path("/Applications"), Path.home() / "Applications")
+# Installed system-wide when Xcode 27 is first opened; Device Hub streams through it.
+MEDIA_STREAM_SUPPORT = Path(
+    "/Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/Frameworks/"
+    "CoreDeviceMediaStreamSupport.framework"
+)
 
 _flags = ctypes.c_uint32
 _ref = ctypes.c_void_p
@@ -70,6 +81,39 @@ def _dns_sd():
     library = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
     library.DNSServiceRefSockFD.restype = ctypes.c_int
     return library
+
+
+def _xcode_apps() -> list[Path]:
+    apps = []
+    with suppress(OSError, subprocess.SubprocessError):
+        developer = subprocess.run(["xcode-select", "-p"], capture_output=True, text=True, check=True, timeout=5)
+        apps.append(Path(developer.stdout.strip()).parents[1])
+    for folder in XCODE_FOLDERS:
+        apps.extend(sorted(folder.glob("Xcode*.app")))
+    return list(dict.fromkeys(apps))
+
+
+def _xcode_version(app: Path) -> tuple[int, ...] | None:
+    try:
+        version = plistlib.loads((app / "Contents/version.plist").read_bytes())["CFBundleShortVersionString"]
+        return tuple(int(part) for part in str(version).split("."))
+    except (OSError, KeyError, ValueError, ExpatError):
+        return None
+
+
+def xcode_warning() -> str | None:
+    """Say why Device Hub cannot show the device on this Mac, or None when it can."""
+    apps = _xcode_apps()
+    if not any((app / DEVICE_HUB_APP).is_dir() for app in apps):
+        versions = [version for version in map(_xcode_version, apps) if version is not None]
+        found = "Xcode " + ".".join(map(str, max(versions))) if versions else "no Xcode"
+        return (
+            f"Device Hub needs Xcode {XCODE_MINIMUM} or later, but this Mac has {found}. "
+            "The device will not appear until a newer Xcode is installed."
+        )
+    if not MEDIA_STREAM_SUPPORT.is_dir():
+        return "Xcode has not finished installing its device support. Open Xcode once, then run this again."
+    return None
 
 
 def check_link() -> None:
@@ -267,6 +311,8 @@ def advertised(identifier: str, auth_tag: str, port: int):
 
 async def serve(client, *, code: Callable[[], Awaitable[str]], force_pair: bool, notify: Callable[[str], None]) -> None:
     """Make the leased device appear in Device Hub until cancelled."""
+    if (warning := xcode_warning()) is not None:
+        notify(f"Warning: {warning}")
     check_link()
     async with Stack(DEVICE_INTERFACE, DEVICE_ADDRESS) as stack, create_task_group() as tasks:
         accepted = stack.listen(CONTROL_PORT)
