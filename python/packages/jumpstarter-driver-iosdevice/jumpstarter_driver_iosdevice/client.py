@@ -327,9 +327,10 @@ class IosDeviceClient(DriverClient):
         """Show the leased device in Xcode's Device Hub on this Mac until interrupted.
 
         Only macOS clients are supported. Needs the virtual link from ``scripts/devicehub-link-macos.sh`` (run
-        once per boot with sudo). The first time a Mac uses a device, after it
-        was unpaired in Device Hub, or with ``pair=True``, choose File > Pair
-        Nearby Device… in Device Hub and type the code it shows when asked.
+        once per boot with sudo). The first time a Mac uses a device, whenever
+        the device is not listed in Device Hub (for example after Unpair), or
+        with ``pair=True``, choose File > Pair Nearby Device… in Device Hub and
+        type the code it shows when asked.
         """
         if sys.platform != "darwin":
             raise RuntimeError(

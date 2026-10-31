@@ -33,8 +33,6 @@ DEVICE_INTERFACE = "feth1"
 HOST_ADDRESS = "fd6a:7374:6a73::1"
 DEVICE_ADDRESS = "fd6a:7374:6a73::2"
 CONTROL_PORT = 49152
-# A Mac paired with the stand-in connects within seconds of seeing its advert.
-CONNECT_GRACE = 20.0
 PAIRABLE_HOST_SERVICE = "_remotepairing-pairable-host._tcp"
 SETUP_SCRIPT = "scripts/devicehub-link-macos.sh"
 XCODE_MINIMUM = 27
@@ -285,19 +283,28 @@ async def pair(client, code: Callable[[], Awaitable[str]], *, timeout: float = 3
 
 
 async def _pair_unless_connected(client, code: Callable[[], Awaitable[str]], connected: anyio.Event) -> bool:
-    """Wait for Device Hub to offer pairing; give up if the Mac connects meanwhile."""
-    paired = False
+    """Wait for Device Hub to offer pairing; give up if the Mac connects before a code is entered.
+
+    A newly paired Mac connects as soon as pairing succeeds, often before it returns.
+    """
+    entered = False
     async with create_task_group() as tasks:
 
         async def connects():
             await connected.wait()
-            tasks.cancel_scope.cancel()
+            if not entered:
+                tasks.cancel_scope.cancel()
+
+        async def entered_code() -> str:
+            nonlocal entered
+            value = await code()
+            entered = True
+            return value
 
         tasks.start_soon(connects)
-        await pair(client, code, timeout=math.inf)
-        paired = True
+        await pair(client, entered_code, timeout=math.inf)
         tasks.cancel_scope.cancel()
-    return paired
+    return entered
 
 
 @contextmanager
@@ -330,20 +337,18 @@ async def serve(client, *, code: Callable[[], Awaitable[str]], force_pair: bool,
         if force_pair or not info.get("paired_hosts"):
             notify(f"Pair this Mac with {name} once: in Device Hub choose File > Pair Nearby Device…")
             await pair(client, code)
-        # The exporter cannot tell which Macs still hold their pairing: a Mac that
-        # unpaired, or never paired, ignores the advert. Offer pairing if none comes.
+        # Neither the exporter nor macOS tools can tell whether this Mac still holds its
+        # pairing: a Mac that unpaired, or never paired, ignores the advert. So pairing
+        # is offered from the start, and dropped if the Mac connects first.
         while True:
             with advertised(info["identifier"], info["auth_tag"], CONTROL_PORT):
-                notify(f"{name} is available in Device Hub. Press Ctrl+C to remove it.")
-                with anyio.move_on_after(CONNECT_GRACE):
-                    await connected.wait()
-                if not connected.is_set():
-                    notify(
-                        f"Device Hub has not connected to {name}. If this Mac is not paired with it, "
-                        "choose File > Pair Nearby Device… in Device Hub."
-                    )
-                    if not await _pair_unless_connected(client, code, connected):
-                        notify(f"Device Hub connected to {name}; this Mac is still paired, so no code is needed.")
+                notify(
+                    f"{name} is available in Device Hub. If it is not listed there, for example after Unpair, "
+                    "choose File > Pair Nearby Device… in Device Hub to pair this Mac with it. "
+                    "Press Ctrl+C to make it unavailable."
+                )
+                if await _pair_unless_connected(client, code, connected):
+                    notify(f"This Mac is paired with {name}.")
                 if connected.is_set():
                     await anyio.sleep_forever()
             # Advertise afresh so the newly paired Mac looks at it again.

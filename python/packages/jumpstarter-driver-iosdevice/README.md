@@ -139,10 +139,11 @@ j ios devicehub
 
 The first time a Mac uses a device, choose File > Pair Nearby Device… in
 Device Hub and type the code it shows when the command asks. Later leases show
-the device without a code. If Device Hub has not connected after 20 seconds,
-for example because the device was unpaired in Device Hub, the command offers
-to pair again; `--pair` asks for a code straight away. The device disappears
-from Device Hub when the command stops.
+the device without a code. If the device is not listed in Device Hub, for
+example after Unpair, choose File > Pair Nearby Device… while the command runs:
+it asks for the new code. `--pair` asks for a code straight away. When the
+command stops, the device stays paired and moves to Device Hub's Unavailable
+section until the next lease.
 
 Set `devicehub_state` to keep the device's Device Hub identity across exporter
 restarts; without it, every Mac pairs again after a restart. Set

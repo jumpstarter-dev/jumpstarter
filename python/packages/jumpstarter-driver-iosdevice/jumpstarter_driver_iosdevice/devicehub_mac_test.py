@@ -1,5 +1,6 @@
 import plistlib
 
+import anyio
 import pytest
 
 from . import devicehub_mac
@@ -61,3 +62,51 @@ def test_xcode_apps_include_selected_and_installed(tmp_path, monkeypatch):
     monkeypatch.setattr(devicehub_mac.subprocess, "run", run)
     monkeypatch.setattr(devicehub_mac, "XCODE_FOLDERS", (tmp_path,))
     assert devicehub_mac._xcode_apps() == [selected, installed]
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+def _fake_pair(monkeypatch, *, connect_before_code: bool):
+    async def pair(client, code, *, timeout):
+        if connect_before_code:
+            client.connected.set()
+        entered = await code()
+        # A newly paired Mac connects before pairing returns.
+        client.connected.set()
+        await anyio.sleep(0.05)
+        client.codes.append(entered)
+
+    monkeypatch.setattr(devicehub_mac, "pair", pair)
+
+
+class _Client:
+    def __init__(self):
+        self.connected = anyio.Event()
+        self.codes = []
+
+
+@pytest.mark.anyio
+async def test_pairing_finishes_when_the_new_pairing_connects(monkeypatch):
+    _fake_pair(monkeypatch, connect_before_code=False)
+    client = _Client()
+
+    async def code():
+        return "123456"
+
+    assert await devicehub_mac._pair_unless_connected(client, code, client.connected) is True
+    assert client.codes == ["123456"]
+
+
+@pytest.mark.anyio
+async def test_pairing_abandoned_when_still_paired_mac_connects(monkeypatch):
+    _fake_pair(monkeypatch, connect_before_code=True)
+    client = _Client()
+
+    async def code():
+        await anyio.sleep_forever()
+
+    assert await devicehub_mac._pair_unless_connected(client, code, client.connected) is False
+    assert client.codes == []
