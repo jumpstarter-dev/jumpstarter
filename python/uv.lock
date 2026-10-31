@@ -36,6 +36,7 @@ members = [
     "jumpstarter-cli-driver",
     "jumpstarter-driver-adb",
     "jumpstarter-driver-androidemulator",
+    "jumpstarter-driver-appium",
     "jumpstarter-driver-ble",
     "jumpstarter-driver-bt-peer",
     "jumpstarter-driver-can",
@@ -1794,6 +1795,7 @@ dependencies = [
     { name = "jumpstarter-cli-driver" },
     { name = "jumpstarter-driver-adb" },
     { name = "jumpstarter-driver-androidemulator" },
+    { name = "jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-ble" },
     { name = "jumpstarter-driver-bt-peer" },
     { name = "jumpstarter-driver-can" },
@@ -1865,6 +1867,7 @@ requires-dist = [
     { name = "jumpstarter-cli-driver", editable = "packages/jumpstarter-cli-driver" },
     { name = "jumpstarter-driver-adb", editable = "packages/jumpstarter-driver-adb" },
     { name = "jumpstarter-driver-androidemulator", editable = "packages/jumpstarter-driver-androidemulator" },
+    { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-ble", editable = "packages/jumpstarter-driver-ble" },
     { name = "jumpstarter-driver-bt-peer", editable = "packages/jumpstarter-driver-bt-peer" },
     { name = "jumpstarter-driver-can", editable = "packages/jumpstarter-driver-can" },
@@ -2134,6 +2137,40 @@ requires-dist = [
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
 ]
 provides-extras = ["python-api"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-appium"
+source = { editable = "packages/jumpstarter-driver-appium" }
+dependencies = [
+    { name = "anyio" },
+    { name = "click" },
+    { name = "cryptography" },
+    { name = "h11" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-network" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.10.0" },
+    { name = "click", specifier = ">=8.0.0" },
+    { name = "cryptography", specifier = ">=43.0.3" },
+    { name = "h11", specifier = ">=0.16.0" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
+]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2712,6 +2749,7 @@ dependencies = [
     { name = "click" },
     { name = "cryptography" },
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-network" },
 ]
 
@@ -2726,6 +2764,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.0.0" },
     { name = "cryptography", specifier = ">=43.0.3" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
 ]
 

@@ -1,0 +1,48 @@
+[project]
+name = "jumpstarter-driver-appium"
+dynamic = ["version", "urls"]
+description = "Shared Appium interface for Jumpstarter UI automation targets"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    { name = "Kirk Brauer", email = "kirkebrauer@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "anyio>=4.10.0",
+    "click>=8.0.0",
+    "cryptography>=43.0.3",
+    "h11>=0.16.0",
+    "jumpstarter",
+    "jumpstarter-driver-network",
+]
+
+[project.entry-points."jumpstarter.drivers"]
+AppiumDriver = "jumpstarter_driver_appium.driver:AppiumDriver"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../../'}
+
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-report=html --cov-report=xml"
+log_cli = true
+log_cli_level = "INFO"
+testpaths = ["jumpstarter_driver_appium"]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=6.0.0",
+    "pytest>=8.3.3",
+]
