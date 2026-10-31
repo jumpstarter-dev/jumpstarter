@@ -293,7 +293,7 @@ def test_unexpected_wait_error_propagates():
 
 def test_cli_info_and_surface(client):
     group = client.cli()
-    assert sorted(group.commands) == ["connect", "forward", "https", "info", "serve"]
+    assert sorted(group.commands) == ["connect", "devicehub", "forward", "https", "info", "serve"]
     result = CliRunner().invoke(group, ["info"])
     assert result.exit_code == 0, result.output
     assert "udid: leased-device" in result.output

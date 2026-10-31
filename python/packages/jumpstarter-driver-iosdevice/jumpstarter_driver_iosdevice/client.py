@@ -16,6 +16,7 @@ from xml.parsers.expat import ExpatError
 
 import anyio
 import click
+from anyio import to_thread
 from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 
 from jumpstarter.client import DriverClient
@@ -320,6 +321,27 @@ class IosDeviceClient(DriverClient):
                     except (subprocess.SubprocessError, OSError) as exc:
                         self.logger.warning("Could not detach %s: %s", target, exc)
 
+    def devicehub(self, *, pair: bool = False) -> None:
+        """Show the leased device in Xcode's Device Hub on this Mac until interrupted.
+
+        Needs the virtual link from ``scripts/devicehub-link-macos.sh`` (run
+        once per boot with sudo). The first time a Mac uses a device, after it
+        was unpaired in Device Hub, or with ``pair=True``, choose File > Pair
+        Nearby Device… in Device Hub and type the code it shows when asked.
+        """
+        from .devicehub_mac import serve
+
+        async def code() -> str:
+            return await to_thread.run_sync(partial(click.prompt, "Code shown in Device Hub"))
+
+        try:
+            self.portal.call(partial(serve, self, code=code, force_pair=pair, notify=click.echo))
+        except (KeyboardInterrupt, SystemExit, GeneratorExit):
+            return
+        except BaseException as exc:
+            if not _is_cancelled(exc):
+                raise
+
     @contextmanager
     def forward(self, port: int, *, local_port: int | None = None) -> Generator[str, None, None]:
         """Forward an exporter-configured device port, binding only loopback.
@@ -439,6 +461,13 @@ class IosDeviceClient(DriverClient):
                     click.echo("Press Ctrl+C to disconnect")
                     _wait_for_interrupt(self)
                 click.echo("Disconnected")
+
+        @ios.command()
+        @click.option("--pair", "force_pair", is_flag=True, help="Pair this Mac with the device again")
+        def devicehub(force_pair):
+            """Show the device in Xcode's Device Hub on this Mac until Ctrl+C."""
+            with _cli_errors():
+                self.devicehub(pair=force_pair)
 
         @ios.command()
         @click.argument("ports", nargs=-1, type=click.IntRange(1, 65535), required=True)
