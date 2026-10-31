@@ -12,6 +12,7 @@ dependencies = [
     "click>=8.0.0",
     "cryptography>=43.0.3",
     "jumpstarter",
+    "jumpstarter-driver-appium",
     "jumpstarter-driver-network",
 ]
 
