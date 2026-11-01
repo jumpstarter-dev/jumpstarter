@@ -121,6 +121,9 @@ config:
 from appium import webdriver
 from appium.options.android import UiAutomator2Options
 
+from jumpstarter.common.utils import serve
+from jumpstarter_driver_androidemulator.driver import AndroidEmulator
+
 driver = AndroidEmulator(avd_name="Pixel_6", appium={"home": "/opt/appium/home"})
 with serve(driver) as client:
     client.power.on()

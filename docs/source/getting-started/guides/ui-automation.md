@@ -41,7 +41,7 @@ device's tools.
 | --- | --- | --- | --- |
 | Android device | {doc}`adb <../../reference/package-apis/drivers/adb>` | exporter | `appium:` |
 | Android emulator | {doc}`androidemulator <../../reference/package-apis/drivers/androidemulator>` | exporter | `appium:` |
-| iPhone or iPad on USB | {doc}`iosdevice <../../reference/package-apis/drivers/iosdevice>` | exporter | `appium:` with `wda_port` or WebDriverAgent launch capabilities |
+| iPhone or iPad on USB | {doc}`iosdevice <../../reference/package-apis/drivers/iosdevice>` | exporter | `appium:` with `wda_port` for an already running WebDriverAgent, or WebDriverAgent launch capabilities |
 | iOS simulator | {doc}`iossimulator <../../reference/package-apis/drivers/iossimulator>` | exporter (macOS) | `appium:` with a prebuilt simulator WebDriverAgent |
 | iPhone or iPad in Xcode's Device Hub | {doc}`iosdevice <../../reference/package-apis/drivers/iosdevice>` | this Mac | `devicehub_appium()` with your WebDriverAgent build |
 
@@ -93,11 +93,18 @@ The exporter's Appium cannot read files on your machine. Upload an application
 first, then pass the token it returns wherever Appium expects an application:
 
 ```python
-token = root.phone.appium.upload_app("build/app-debug.apk")
+token = root.phone.appium.upload_app("build/app-debug.apk")  # or an .ipa, or a .app bundle
 options.set_capability("appium:app", token)
-# or, inside a session:
+# or, inside a session; the argument is appPath on Android and app on iOS:
 driver.execute_script("mobile: installApp", {"appPath": token})
+driver.execute_script("mobile: installApp", {"app": token})
 ```
+
+With Device Hub, Appium on your Mac reaches the device only through
+WebDriverAgent, so it cannot install applications. Install them with Xcode, or
+with `xcrun devicectl device install app --device UDID PATH` using the
+`appium:udid` from `target.capabilities()`, then start them with
+`mobile: activateApp`.
 
 ## Command line
 
@@ -118,17 +125,24 @@ child sits next to `power` (`j simulator appium`).
 ## Prepare the exporter
 
 The exporter needs Node.js, Appium and the Appium driver for its targets:
-[UiAutomator2](https://github.com/appium/appium-uiautomator2-driver) and the
-Android SDK platform tools for Android,
-[XCUITest](https://github.com/appium/appium-xcuitest-driver) for iOS. Jumpstarter does not bundle,
-download, build or sign Appium, its drivers or WebDriverAgent.
+
+- Android: [UiAutomator2](https://github.com/appium/appium-uiautomator2-driver),
+  a JDK, and the Android SDK's platform tools and build tools, with `JAVA_HOME`
+  and `ANDROID_HOME` set in the exporter's environment.
+- iOS: [XCUITest](https://github.com/appium/appium-xcuitest-driver).
+
+Jumpstarter does not bundle, download, build or sign Appium, its drivers or
+WebDriverAgent.
 
 Containerized exporters pin these in their image. For example, on top of an
 exporter image:
 
 ```dockerfile
 FROM quay.io/jumpstarter-dev/jumpstarter:latest
-RUN dnf install -y nodejs npm && dnf clean all
+RUN dnf install -y nodejs npm java-21-openjdk-headless && dnf clean all
+# For Android targets, install the SDK's platform-tools and build-tools here, for
+# example with sdkmanager, and set JAVA_HOME to the JDK.
+ENV ANDROID_HOME=/opt/android-sdk
 ENV APPIUM_HOME=/opt/appium/home
 RUN npm install --prefix /opt/appium appium@3.8.0 && \
     /opt/appium/node_modules/.bin/appium driver install uiautomator2@8.7.3 && \
