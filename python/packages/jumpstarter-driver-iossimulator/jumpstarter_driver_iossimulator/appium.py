@@ -9,21 +9,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from jumpstarter_driver_appium.driver import AppiumDriver
+from jumpstarter_driver_appium.driver import AppiumDriver, validate_appium_config
 
 from jumpstarter.common.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from .driver import IosSimulator
 
-APPIUM_OPTIONS = frozenset({"executable", "home", "wda", "capabilities", "env", "startup_timeout", "max_upload_bytes"})
-
 
 def validate_appium(config: Any) -> None:
+    validate_appium_config(config, frozenset({"wda"}))
     if config is None:
         return
-    if not isinstance(config, dict) or set(config) - APPIUM_OPTIONS:
-        raise ConfigurationError(f"appium accepts only {', '.join(sorted(APPIUM_OPTIONS))}")
     wda = config.get("wda")
     if not isinstance(wda, str) or not wda.endswith(".app"):
         raise ConfigurationError("appium.wda must be the path of a prebuilt simulator WebDriverAgent .app")
