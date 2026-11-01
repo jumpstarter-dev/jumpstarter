@@ -9,24 +9,20 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from anyio import from_thread
-from jumpstarter_driver_appium.driver import AppiumDriver
+from jumpstarter_driver_appium.driver import AppiumDriver, validate_appium_config
 
 from jumpstarter.common.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from .driver import IosDevice
 
-APPIUM_OPTIONS = frozenset(
-    {"executable", "home", "capabilities", "env", "startup_timeout", "max_upload_bytes", "wda_port"}
-)
 CHUNK_SIZE = 65536
 
 
 def validate_appium(config: Any) -> None:
+    validate_appium_config(config, frozenset({"wda_port"}))
     if config is None:
         return
-    if not isinstance(config, dict) or set(config) - APPIUM_OPTIONS:
-        raise ConfigurationError(f"appium accepts only {', '.join(sorted(APPIUM_OPTIONS))}")
     port = config.get("wda_port")
     if port is not None and (type(port) is not int or not 1 <= port <= 65535):
         raise ConfigurationError("appium.wda_port must be a device port between 1 and 65535")

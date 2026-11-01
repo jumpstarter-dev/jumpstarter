@@ -27,6 +27,17 @@ from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.driver import Driver, export, exportstream
 
 MAX_CONNECTIONS = 128
+# The `appium:` options a target driver accepts from exporter configuration.
+APPIUM_OPTIONS = frozenset({"executable", "home", "capabilities", "env", "startup_timeout", "max_upload_bytes"})
+
+
+def validate_appium_config(config: Any, extra: frozenset[str] = frozenset()) -> None:
+    """Check a target driver's ``appium`` option before building its child."""
+    if config is None:
+        return
+    allowed = APPIUM_OPTIONS | extra
+    if not isinstance(config, dict) or set(config) - allowed:
+        raise ConfigurationError(f"appium accepts only {', '.join(sorted(allowed))}")
 
 
 class AppiumInterface(metaclass=ABCMeta):
@@ -143,6 +154,10 @@ class AppiumDriver(AppiumInterface, Driver):
             for key, value in self.fixed_capabilities().items()
             if not (_HOST_CAPABILITY.search(key.split(":", 1)[-1]) and isinstance(value, str))
         }
+
+    def denied_capabilities(self) -> frozenset[str]:
+        """Capability names, without their vendor prefix, that this target rejects."""
+        return frozenset()
 
     def session_capabilities(self) -> dict[str, Any]:
         """Capabilities chosen afresh for each new session, such as reserved ports."""
@@ -302,7 +317,9 @@ class AppiumDriver(AppiumInterface, Driver):
                 raise RuntimeError("Appium is not running; call info() first")
             if len(self._connections) >= MAX_CONNECTIONS:
                 raise RuntimeError("Too many active Appium connections")
-        policy = AppiumPolicy(self.fixed_capabilities(), self._resolve_app, self.session_capabilities)
+        policy = AppiumPolicy(
+            self.fixed_capabilities(), self._resolve_app, self.session_capabilities, self.denied_capabilities()
+        )
         with CancelScope() as scope:
             with self._lock:
                 self._connections[scope] = asyncio.get_running_loop()

@@ -50,6 +50,7 @@ class AppiumPolicy:
     the client sends. ``session`` returns capabilities chosen afresh for each
     new session, such as reserved ports. ``resolve`` maps an uploaded
     application token to its exporter path, raising ``PolicyError`` for unknown tokens.
+    ``denied`` names capabilities, without their vendor prefix, that the target rejects.
     """
 
     def __init__(
@@ -57,10 +58,12 @@ class AppiumPolicy:
         fixed: dict[str, Any],
         resolve: Callable[[str], str],
         session: Callable[[], dict[str, Any]] | None = None,
+        denied: frozenset[str] = frozenset(),
     ):
         self.fixed = dict(fixed)
         self.resolve = resolve
         self.session = session
+        self.denied = denied
 
     def request(self, method: str, path: str, body: bytes) -> bytes:
         """Return the body to forward, or raise ``PolicyError``."""
@@ -113,8 +116,8 @@ class AppiumPolicy:
             if key in self.fixed:
                 continue
             name = _name(key)
-            if key in _DENIED_STANDARD:
-                raise PolicyError(f"The {key} capability is not available on Jumpstarter targets")
+            if key in _DENIED_STANDARD or name in self.denied:
+                raise PolicyError(f"The {key} capability is not available on this Jumpstarter target")
             if name in _APP_KEYS:
                 value = self._apps(name, value)
             elif _HOST_CAPABILITY.search(name) and _has_text(value):
