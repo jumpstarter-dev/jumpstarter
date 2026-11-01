@@ -1,10 +1,9 @@
 """Tests for common cluster utilities and types."""
 
-import asyncio
-import asyncio.subprocess
 import os
+import sys
 import tempfile
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -186,74 +185,49 @@ class TestValidateClusterName:
 
 
 class TestRunCommand:
-    """Test run_command function."""
+    """Test run_command and run_command_with_output against real processes."""
 
     @pytest.mark.anyio
-    async def test_run_command_success(self):
-        with patch("asyncio.create_subprocess_exec") as mock_subprocess:
-            mock_process = AsyncMock()
-            mock_process.communicate.return_value = (b"output\n", b"")
-            mock_process.returncode = 0
-            mock_subprocess.return_value = mock_process
+    async def test_run_command_returns_exit_code_and_stripped_output(self):
+        returncode, stdout, stderr = await run_command(
+            [sys.executable, "-c", "import sys; print('output'); sys.stderr.write('warning\\n')"]
+        )
 
-            returncode, stdout, stderr = await run_command(["echo", "test"])
-
-            assert returncode == 0
-            assert stdout == "output"
-            assert stderr == ""
-            mock_subprocess.assert_called_once_with(
-                "echo", "test", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
+        assert (returncode, stdout, stderr) == (0, "output", "warning")
 
     @pytest.mark.anyio
     async def test_run_command_failure(self):
-        with patch("asyncio.create_subprocess_exec") as mock_subprocess:
-            mock_process = AsyncMock()
-            mock_process.communicate.return_value = (b"", b"error message\n")
-            mock_process.returncode = 1
-            mock_subprocess.return_value = mock_process
+        returncode, stdout, stderr = await run_command(
+            [sys.executable, "-c", "import sys; sys.stderr.write('error message\\n'); sys.exit(1)"]
+        )
 
-            returncode, stdout, stderr = await run_command(["false"])
+        assert (returncode, stdout, stderr) == (1, "", "error message")
 
-            assert returncode == 1
-            assert stdout == ""
-            assert stderr == "error message"
+    @pytest.mark.anyio
+    async def test_run_command_replaces_undecodable_output(self):
+        _, stdout, _ = await run_command([sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'\\xff')"])
+
+        assert stdout == "\ufffd"
+
+    @pytest.mark.anyio
+    async def test_run_command_rejects_an_empty_command(self):
+        with pytest.raises(ValueError, match="cannot be empty"):
+            await run_command([])
 
     @pytest.mark.anyio
     async def test_run_command_not_found(self):
-        with (
-            patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError("command not found")),
-            pytest.raises(RuntimeError, match="Command not found: nonexistent"),
-        ):
-            await run_command(["nonexistent"])
+        with pytest.raises(RuntimeError, match="Command not found: nonexistent-command"):
+            await run_command(["nonexistent-command"])
 
     @pytest.mark.anyio
     async def test_run_command_with_output_success(self):
-        with patch("asyncio.create_subprocess_exec") as mock_subprocess:
-            mock_process = AsyncMock()
-            mock_process.wait.return_value = 0
-            mock_subprocess.return_value = mock_process
-
-            returncode = await run_command_with_output(["echo", "test"])
-
-            assert returncode == 0
-            mock_subprocess.assert_called_once_with("echo", "test")
-
-    @pytest.mark.anyio
-    async def test_run_command_with_output_not_found(self):
-        with (
-            patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError("command not found")),
-            pytest.raises(RuntimeError, match="Command not found: nonexistent"),
-        ):
-            await run_command_with_output(["nonexistent"])
+        assert await run_command_with_output([sys.executable, "-c", "pass"]) == 0
 
     @pytest.mark.anyio
     async def test_run_command_with_output_failure(self):
-        with patch("asyncio.create_subprocess_exec") as mock_subprocess:
-            mock_process = AsyncMock()
-            mock_process.wait.return_value = 1
-            mock_subprocess.return_value = mock_process
+        assert await run_command_with_output([sys.executable, "-c", "raise SystemExit(3)"]) == 3
 
-            returncode = await run_command_with_output(["false"])
-
-            assert returncode == 1
+    @pytest.mark.anyio
+    async def test_run_command_with_output_not_found(self):
+        with pytest.raises(RuntimeError, match="Command not found: nonexistent-command"):
+            await run_command_with_output(["nonexistent-command"])

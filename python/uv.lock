@@ -1730,6 +1730,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pyyaml" },
     { name = "rich" },
+    { name = "sniffio" },
     { name = "structlog" },
     { name = "tenacity" },
     { name = "xdg-base-dirs" },
@@ -1759,6 +1760,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.9.1" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "rich", specifier = ">=14.0.0" },
+    { name = "sniffio", specifier = ">=1.3" },
     { name = "structlog", specifier = ">=24.1.0" },
     { name = "tenacity", specifier = ">=8.2.0" },
     { name = "xdg-base-dirs", specifier = ">=6.0.2" },
@@ -1976,6 +1978,7 @@ dev = [
 name = "jumpstarter-cli-common"
 source = { editable = "packages/jumpstarter-cli-common" }
 dependencies = [
+    { name = "anyio" },
     { name = "authlib" },
     { name = "certifi" },
     { name = "click" },
@@ -1996,6 +1999,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio", specifier = ">=4.4.0,!=4.6.2" },
     { name = "authlib", specifier = ">=1.4.1" },
     { name = "certifi", specifier = ">=2024.0.0" },
     { name = "click", specifier = ">=8.1.7.2" },
@@ -3894,6 +3898,7 @@ name = "jumpstarter-kubernetes"
 source = { editable = "packages/jumpstarter-kubernetes" }
 dependencies = [
     { name = "aiohttp" },
+    { name = "anyio" },
     { name = "jumpstarter" },
     { name = "kubernetes" },
     { name = "kubernetes-asyncio" },
@@ -3911,6 +3916,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.11.18" },
+    { name = "anyio", specifier = ">=4.4.0,!=4.6.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "kubernetes", specifier = ">=31.0.0" },
     { name = "kubernetes-asyncio", specifier = ">=31.1.0" },
