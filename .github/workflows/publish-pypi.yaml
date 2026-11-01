@@ -49,7 +49,7 @@ jobs:
 
       - name: Build all packages
         working-directory: python
-        run: uv build --all --out-dir dist
+        run: make build
 
       - name: Drop independently-versioned package
         working-directory: python

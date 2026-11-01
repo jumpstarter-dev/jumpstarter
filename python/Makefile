@@ -72,8 +72,12 @@ endif
 
 pkg-ty-all: $(addprefix pkg-ty-,$(PKG_TARGETS))
 
+# One uv process per package: `uv build --all` can deadlock on a cold cache
+# in a workspace this large (https://github.com/astral-sh/uv/issues/22348).
+BUILD_JOBS ?= $(shell getconf _NPROCESSORS_ONLN)
+
 build:
-	uv build --all --out-dir dist
+	printf '%s\n' packages/*/ | xargs -P $(BUILD_JOBS) -I{} uv build {} --out-dir dist
 
 # renovate: datasource=docker depName=docker.io/bufbuild/buf
 BUF_VERSION ?= 1.73.0
