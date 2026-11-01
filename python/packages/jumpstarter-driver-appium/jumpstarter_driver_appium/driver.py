@@ -116,11 +116,11 @@ class AppiumDriver(AppiumInterface, Driver):
     home: str | None = None
     """APPIUM_HOME holding the installed Appium drivers."""
     drivers: list[str] = field(default_factory=list)
-    """Appium drivers to load, such as ``xcuitest`` or ``uiautomator2``; all installed ones when empty."""
+    """Appium drivers to load, such as ``xcuitest``; all installed ones when empty."""
     capabilities: dict[str, Any] = field(default_factory=dict)
     """Capabilities fixed on every session; clients cannot override them."""
     env: dict[str, str] = field(default_factory=dict)
-    """Extra environment for the Appium process, such as ANDROID_ADB_SERVER_PORT."""
+    """Extra environment for the Appium process, such as USBMUXD_SOCKET_ADDRESS."""
     state_dir: str | None = None
     """Existing directory for the lease's private state; the system temporary directory by default."""
     startup_timeout: float = 60.0

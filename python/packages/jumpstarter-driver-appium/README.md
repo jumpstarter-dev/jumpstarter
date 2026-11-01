@@ -3,7 +3,7 @@
 `jumpstarter-driver-appium` gives every UI-automation target the same
 [Appium](https://appium.io/docs/en/latest/) client interface. Test code opens
 WebDriver sessions on one URL with the capabilities the target provides,
-whether the target is an iOS device, an iOS simulator or an Android device.
+whether the target is an iOS device or an iOS simulator, local or remote.
 
 Target drivers add an `appium` child built on `AppiumDriver`. It runs an
 operator-installed Appium on the exporter for each lease, listening on exporter
@@ -17,10 +17,10 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-appium
 ```
 
 The exporter needs Node.js, Appium and the Appium drivers for its targets, such
-as [XCUITest](https://github.com/appium/appium-xcuitest-driver) or
-[UiAutomator2](https://github.com/appium/appium-uiautomator2-driver).
-Containerized exporters usually pin them in their image. Jumpstarter does not
-bundle, download or build Appium, its drivers or WebDriverAgent.
+as [XCUITest](https://github.com/appium/appium-xcuitest-driver) for iOS.
+Containerized exporters usually pin them in their image; see
+{doc}`../../../getting-started/guides/ui-automation` for an example. Jumpstarter
+does not bundle, download or build Appium, its drivers or WebDriverAgent.
 
 To use the Python examples below, install
 [Appium-Python-Client](https://github.com/appium/python-client) on the client.
@@ -38,11 +38,11 @@ export:
     config:
       executable: /opt/appium/node_modules/.bin/appium
       home: /opt/appium/home
-      drivers: [uiautomator2]
+      drivers: [xcuitest]
       capabilities:
-        platformName: Android
-        appium:automationName: UiAutomator2
-        appium:udid: emulator-5554
+        platformName: iOS
+        appium:automationName: XCUITest
+        appium:udid: 00008140-001E05C80013C01C
 ```
 
 | Parameter | Description | Default |
@@ -51,7 +51,7 @@ export:
 | `home` | `APPIUM_HOME` holding the installed Appium drivers | inherited |
 | `drivers` | Appium drivers to load; all installed ones when empty | `[]` |
 | `capabilities` | Capabilities fixed on every session; clients cannot override them | `{}` |
-| `env` | Extra environment for Appium, such as `ANDROID_ADB_SERVER_PORT` | `{}` |
+| `env` | Extra environment for Appium, such as `USBMUXD_SOCKET_ADDRESS` | `{}` |
 | `state_dir` | Existing directory for the lease's private state | system temporary directory |
 | `startup_timeout` | Seconds to wait for Appium to become ready | `60` |
 | `max_upload_bytes` | Largest application a client may upload | 4 GiB |
@@ -130,10 +130,11 @@ from reaching beyond it:
   cannot make the exporter read its files or contact other hosts.
 - `app`, `otherApps` and `appPath` accept only tokens from `upload_app()`.
 
-Run Appium in a container that holds only what it needs to reach the device,
-such as the usbmuxd socket or adb, without the exporter's configuration or
-token, and on a network with no egress beyond the device. Reset or re-provision
-devices between untrusted tenants.
+Appium runs as a child process of the exporter, in the exporter's container, so
+the rules above, not a container boundary, are what keep a lease to its device.
+Keep exporter images to what the targets need, and reset or re-provision devices
+between untrusted tenants. See {doc}`../../../getting-started/guides/ui-automation`
+for an overview of every target.
 
 ## API Reference
 
