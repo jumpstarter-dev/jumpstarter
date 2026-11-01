@@ -114,6 +114,9 @@ class IosDeviceAppium(AppiumDriver):
                 if self._forward is None:
                     self._forward = _WdaForward(self.device, info["udid"], self.wda_port)
 
+    def target_key(self) -> tuple[str, str] | None:
+        return self._target
+
     def fixed_capabilities(self) -> dict[str, Any]:
         if self._target is None:
             raise RuntimeError("Appium has not been started for this device; call info() first")

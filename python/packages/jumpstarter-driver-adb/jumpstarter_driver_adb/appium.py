@@ -41,6 +41,9 @@ class AndroidAppium(AppiumDriver):
     def prepare(self) -> None:
         self._serial = self.android_serial()
 
+    def target_key(self) -> str | None:
+        return self._serial
+
     def fixed_capabilities(self) -> dict[str, Any]:
         if self._serial is None:
             raise RuntimeError("Appium has not been started for this device; call info() first")
