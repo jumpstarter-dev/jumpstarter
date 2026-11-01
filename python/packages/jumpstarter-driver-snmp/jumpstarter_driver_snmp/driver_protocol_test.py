@@ -26,6 +26,8 @@ from jumpstarter_driver_snmp.driver import AuthProtocol, PrivProtocol, SNMPError
 
 from jumpstarter.common.utils import serve
 
+pytestmark = pytest.mark.anyio
+
 
 @pytest.fixture(autouse=True)
 def _reset_event_loop():

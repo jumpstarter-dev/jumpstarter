@@ -642,9 +642,9 @@ version = "1.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dbus-fast", marker = "sys_platform == 'linux'" },
-    { name = "pyobjc-core", marker = "(python_full_version < '3.14' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
-    { name = "pyobjc-framework-corebluetooth", marker = "(python_full_version < '3.14' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
-    { name = "pyobjc-framework-libdispatch", marker = "(python_full_version < '3.14' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
+    { name = "pyobjc-core", marker = "(python_full_version < '3.14' and implementation_name != 'pypy' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
+    { name = "pyobjc-framework-corebluetooth", marker = "(python_full_version < '3.14' and implementation_name != 'pypy' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
+    { name = "pyobjc-framework-libdispatch", marker = "(python_full_version < '3.14' and implementation_name != 'pypy' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
     { name = "typing-extensions" },
     { name = "winrt-runtime", marker = "sys_platform == 'win32'" },
     { name = "winrt-windows-devices-bluetooth", marker = "sys_platform == 'win32'" },
@@ -1485,7 +1485,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.5" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.1.1" },
 ]
 
@@ -1743,8 +1743,6 @@ dev = [
     { name = "jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power" },
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "types-protobuf" },
 ]
@@ -1773,9 +1771,7 @@ dev = [
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "types-protobuf", specifier = ">=5.29.1" },
 ]
@@ -1931,8 +1927,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -1946,9 +1940,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -1964,8 +1956,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -1978,9 +1968,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -2003,8 +1991,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -2024,9 +2010,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -2041,8 +2025,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -2054,9 +2036,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -2091,7 +2071,7 @@ provides-extras = ["python-api"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2128,7 +2108,7 @@ provides-extras = ["python-api"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2147,7 +2127,6 @@ dependencies = [
 dev = [
     { name = "jumpstarter-testing" },
     { name = "pytest" },
-    { name = "pytest-anyio" },
     { name = "pytest-cov" },
 ]
 
@@ -2163,8 +2142,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "jumpstarter-testing", editable = "packages/jumpstarter-testing" },
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2180,7 +2158,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-anyio" },
     { name = "pytest-cov" },
 ]
 
@@ -2193,8 +2170,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2222,7 +2198,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -2250,7 +2226,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -2270,10 +2246,8 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "requests-mock" },
-    { name = "trio" },
 ]
 
 [package.metadata]
@@ -2289,11 +2263,9 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-asyncio", specifier = ">=0.25.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "requests-mock" },
-    { name = "trio", specifier = ">=0.28.0" },
 ]
 
 [[package]]
@@ -2312,7 +2284,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "requests-mock" },
 ]
@@ -2330,8 +2301,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=0.24.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "requests-mock", specifier = ">=1.12.0" },
 ]
@@ -2360,7 +2330,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2386,7 +2356,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -2401,7 +2371,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -2413,8 +2382,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=0.26.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2454,7 +2422,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -2485,7 +2453,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "pytest-httpserver", specifier = ">=1.0.0" },
 ]
@@ -2520,7 +2488,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2562,7 +2530,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2593,7 +2561,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -2611,7 +2579,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -2626,8 +2593,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=0.24.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2657,7 +2623,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2677,7 +2643,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -2694,8 +2659,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=0.24.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2714,7 +2678,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -2730,8 +2693,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -2756,7 +2718,7 @@ requires-dist = [{ name = "jumpstarter", editable = "packages/jumpstarter" }]
 [package.metadata.requires-dev]
 dev = [
     { name = "mitmproxy", specifier = ">=12.0" },
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "requests", specifier = ">=2.28.0" },
 ]
@@ -2780,7 +2742,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -2800,8 +2761,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=0.24.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2817,7 +2777,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "requests-mock" },
 ]
@@ -2831,8 +2790,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=0.24.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "requests-mock", specifier = ">=1.12.0" },
 ]
@@ -2852,7 +2810,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "types-paramiko" },
     { name = "types-pexpect" },
@@ -2871,8 +2828,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-asyncio", specifier = ">=0.26.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "types-paramiko", specifier = ">=3.5.0.20240928" },
     { name = "types-pexpect", specifier = ">=4.9.0.20241208" },
@@ -2906,7 +2862,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "pytest-mock", specifier = ">=3.14.0" },
 ]
@@ -2933,7 +2889,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2961,7 +2917,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -2993,7 +2949,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3010,7 +2966,6 @@ dependencies = [
 dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
-    { name = "trio" },
 ]
 
 [package.metadata]
@@ -3022,9 +2977,8 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
-    { name = "trio", specifier = ">=0.28.0" },
 ]
 
 [[package]]
@@ -3053,7 +3007,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3087,7 +3041,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "types-pexpect", specifier = ">=4.9.0.20241208" },
     { name = "types-pyserial", specifier = ">=3.5.0.20250130" },
@@ -3126,7 +3080,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "requests", specifier = ">=2.32.3" },
 ]
@@ -3146,7 +3100,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-anyio" },
     { name = "pytest-cov" },
 ]
 
@@ -3162,8 +3115,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -3184,7 +3136,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -3202,8 +3153,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3233,7 +3183,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -3261,7 +3211,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3275,7 +3225,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -3284,8 +3233,7 @@ requires-dist = [{ name = "jumpstarter", editable = "packages/jumpstarter" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=0.24.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3304,8 +3252,6 @@ dependencies = [
 dev = [
     { name = "jumpstarter-testing" },
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -3321,9 +3267,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "jumpstarter-testing", editable = "packages/jumpstarter-testing" },
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3349,7 +3293,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3381,7 +3325,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3399,7 +3343,6 @@ dependencies = [
 dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
-    { name = "trio" },
 ]
 
 [package.metadata]
@@ -3412,9 +3355,8 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
-    { name = "trio", specifier = ">=0.28.0" },
 ]
 
 [[package]]
@@ -3445,7 +3387,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3475,7 +3417,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3506,7 +3448,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "pytest-mqtt", specifier = ">=0.5.0" },
 ]
@@ -3525,8 +3467,6 @@ dependencies = [
 dev = [
     { name = "jumpstarter-testing" },
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -3541,9 +3481,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "jumpstarter-testing", editable = "packages/jumpstarter-testing" },
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3573,7 +3511,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3606,7 +3544,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "jumpstarter-driver-qemu", editable = "packages/jumpstarter-driver-qemu" },
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "rpmfile", specifier = ">=2.1.0" },
@@ -3635,7 +3573,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -3669,7 +3607,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -3699,7 +3637,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -3727,7 +3665,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -3759,7 +3697,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3791,7 +3729,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3817,7 +3755,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3847,7 +3785,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3947,7 +3885,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -3967,8 +3905,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -3985,9 +3921,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -4005,8 +3939,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -4021,9 +3953,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -4039,8 +3969,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -4053,9 +3981,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -4065,8 +3991,6 @@ source = { editable = "packages/jumpstarter-testing" }
 dependencies = [
     { name = "jumpstarter" },
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -4078,9 +4002,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -4470,7 +4392,7 @@ version = "0.12.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "mitmproxy-linux", marker = "sys_platform == 'linux'" },
-    { name = "mitmproxy-macos", marker = "(python_full_version < '3.14' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
+    { name = "mitmproxy-macos", marker = "(python_full_version < '3.14' and implementation_name != 'pypy' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
     { name = "mitmproxy-windows", marker = "(python_full_version < '3.14' and os_name == 'nt') or (os_name == 'nt' and sys_platform != 'linux')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/5d/5c/16a61303da76cd34aa6ddbd7ef6ac66d9ef8514c4d3a5b71831169d63236/mitmproxy_rs-0.12.9.tar.gz", hash = "sha256:c6ffc35c002c675cac534442d92d1cdebd66fafd63754ad33b92ae968ea6e449", size = 1334424, upload-time = "2026-01-30T14:54:15.043Z" }
@@ -4846,18 +4768,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/55/92/54a143712bb4d3fdc42ab488a1ea55df70e1c43684dccf096975d5e32cdd/oras-0.2.37.tar.gz", hash = "sha256:7e48f6b8cda08c11f612c16e2bdafc346b884be3a83b924495b5e43d34af0e1f", size = 44409, upload-time = "2025-06-13T16:21:30.442Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d3/f3/c1fd2053ff7301938f72ea8447190695f9a29d7398a8dd720129ccf6ac78/oras-0.2.37-py3-none-any.whl", hash = "sha256:5973f52287887813dad6affede51d7a699f443dacad1e98e5f50634ec80c9f37", size = 50243, upload-time = "2025-06-13T16:21:29.205Z" },
-]
-
-[[package]]
-name = "outcome"
-version = "1.3.0.post0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "attrs" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/98/df/77698abfac98571e65ffeb0c1fba8ffd692ab8458d617a0eed7d9a8d38f2/outcome-1.3.0.post0.tar.gz", hash = "sha256:9dcf02e65f2971b80047b377468e72a268e15c0af3cf1238e6ff14f7f91143b8", size = 21060, upload-time = "2023-10-26T04:26:04.361Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/55/8b/5ab7257531a5d830fc8000c476e63c935488d74609b50f9384a643ec0a62/outcome-1.3.0.post0-py2.py3-none-any.whl", hash = "sha256:e771c5ce06d1415e356078d3bdd68523f284b4ce5419828922b6871e65eda82b", size = 10692, upload-time = "2023-10-26T04:26:02.532Z" },
 ]
 
 [[package]]
@@ -5527,32 +5437,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/08/ba/45911d754e8eba3d5a841a5ce61a65a685ff1798421ac054f85aa8747dfb/pytest-8.4.1.tar.gz", hash = "sha256:7c67fd69174877359ed9371ec3af8a3d2b04741818c51e5e99cc1742251fa93c", size = 1517714, upload-time = "2025-06-18T05:48:06.109Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/29/16/c8a903f4c4dffe7a12843191437d7cd8e32751d5de349d45d3fe69544e87/pytest-8.4.1-py3-none-any.whl", hash = "sha256:539c70ba6fcead8e78eebbf1115e8b589e7565830d7d006a8723f19ac8a0afb7", size = 365474, upload-time = "2025-06-18T05:48:03.955Z" },
-]
-
-[[package]]
-name = "pytest-anyio"
-version = "0.0.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "anyio" },
-    { name = "pytest" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/00/44/a02e5877a671b0940f21a7a0d9704c22097b123ed5cdbcca9cab39f17acc/pytest-anyio-0.0.0.tar.gz", hash = "sha256:b41234e9e9ad7ea1dbfefcc1d6891b23d5ef7c9f07ccf804c13a9cc338571fd3", size = 1560, upload-time = "2021-06-29T22:57:30.846Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c6/25/bd6493ae85d0a281b6a0f248d0fdb1d9aa2b31f18bcd4a8800cf397d8209/pytest_anyio-0.0.0-py2.py3-none-any.whl", hash = "sha256:dc8b5c4741cb16ff90be37fddd585ca943ed12bbeb563de7ace6cd94441d8746", size = 1999, upload-time = "2021-06-29T22:57:29.158Z" },
-]
-
-[[package]]
-name = "pytest-asyncio"
-version = "1.0.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pytest" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/d0/d4/14f53324cb1a6381bef29d698987625d80052bb33932d8e7cbf9b337b17c/pytest_asyncio-1.0.0.tar.gz", hash = "sha256:d15463d13f4456e1ead2594520216b225a16f781e144f8fdf6c5bb4667c48b3f", size = 46960, upload-time = "2025-05-26T04:54:40.484Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/30/05/ce271016e351fddc8399e546f6e23761967ee09c8c568bbfbecb0c150171/pytest_asyncio-1.0.0-py3-none-any.whl", hash = "sha256:4f024da9f1ef945e680dc68610b52550e36590a67fd31bb3b4943979a1f90ef3", size = 15976, upload-time = "2025-05-26T04:54:39.035Z" },
 ]
 
 [[package]]
@@ -6642,23 +6526,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/eb/79/72064e6a701c2183016abbbfedaba506d81e30e232a68c9f0d6f6fcd1574/traitlets-5.14.3.tar.gz", hash = "sha256:9ed0579d3502c94b4b3732ac120375cda96f923114522847de4b3bb98b96b6b7", size = 161621, upload-time = "2024-04-19T11:11:49.746Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/00/c0/8f5d070730d7836adc9c9b6408dec68c6ced86b304a9b26a14df072a6e8c/traitlets-5.14.3-py3-none-any.whl", hash = "sha256:b74e89e397b1ed28cc831db7aea759ba6640cb3de13090ca145426688ff1ac4f", size = 85359, upload-time = "2024-04-19T11:11:46.763Z" },
-]
-
-[[package]]
-name = "trio"
-version = "0.30.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "attrs" },
-    { name = "cffi", marker = "(python_full_version < '3.14' and implementation_name != 'pypy' and os_name == 'nt') or (implementation_name != 'pypy' and os_name == 'nt' and sys_platform != 'linux')" },
-    { name = "idna" },
-    { name = "outcome" },
-    { name = "sniffio" },
-    { name = "sortedcontainers" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/01/c1/68d582b4d3a1c1f8118e18042464bb12a7c1b75d64d75111b297687041e3/trio-0.30.0.tar.gz", hash = "sha256:0781c857c0c81f8f51e0089929a26b5bb63d57f927728a5586f7e36171f064df", size = 593776, upload-time = "2025-04-21T00:48:19.507Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/69/8e/3f6dfda475ecd940e786defe6df6c500734e686c9cd0a0f8ef6821e9b2f2/trio-0.30.0-py3-none-any.whl", hash = "sha256:3bf4f06b8decf8d3cf00af85f40a89824669e2d033bb32469d34840edcfc22a5", size = 499194, upload-time = "2025-04-21T00:48:17.167Z" },
 ]
 
 [[package]]

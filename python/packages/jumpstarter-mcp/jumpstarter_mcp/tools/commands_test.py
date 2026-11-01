@@ -42,7 +42,7 @@ class PortalClient:
         return click.Group("j", commands={"on": click.Command("on")})
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("tool", ["drivers", "driver_methods", "explore"])
 async def test_introspection_dispatches_off_the_loop(tool):
     with fail_after(5):

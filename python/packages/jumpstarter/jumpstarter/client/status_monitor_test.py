@@ -729,7 +729,7 @@ class TestStatusMonitorWaiterConsistency:
                 assert monitor._active_waiters == 0
                 assert not monitor._running
         finally:
-            await server.stop(grace=None)
+            await server.stop(grace=1)
 
     @pytest.mark.parametrize(
         ("method", "targets"),
