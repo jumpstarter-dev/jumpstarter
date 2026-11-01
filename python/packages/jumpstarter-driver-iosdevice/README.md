@@ -251,7 +251,7 @@ Externally started device services remain owned by their launcher.
 
 With an `appium` block, the exporter runs [Appium](https://appium.io/docs/en/latest/)
 for the lease, and clients open sessions through the shared
-{doc}`Appium client <appium>` as they do for simulators.
+{doc}`Appium client <appium>` as they do for simulators and Android targets.
 The exporter needs Appium and its
 [XCUITest driver](https://github.com/appium/appium-xcuitest-driver), usually
 pinned in the exporter's container image; clients do not need Appium.

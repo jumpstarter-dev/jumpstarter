@@ -11,8 +11,8 @@ export:
     config:
       executable: /opt/appium/node_modules/.bin/appium
       home: /opt/appium/home
-      drivers: [xcuitest]
+      drivers: [uiautomator2]
       capabilities:
-        platformName: iOS
-        appium:automationName: XCUITest
-        appium:udid: 00008140-001E05C80013C01C
+        platformName: Android
+        appium:automationName: UiAutomator2
+        appium:udid: emulator-5554

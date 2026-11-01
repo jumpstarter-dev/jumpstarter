@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 dependencies = [
     "click>=8.0.0",
     "jumpstarter",
+    "jumpstarter-driver-appium",
     "jumpstarter-driver-network",
 ]
 

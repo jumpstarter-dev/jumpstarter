@@ -2078,6 +2078,7 @@ source = { editable = "packages/jumpstarter-driver-adb" }
 dependencies = [
     { name = "click" },
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-network" },
 ]
 
@@ -2097,6 +2098,7 @@ requires-dist = [
     { name = "adbutils", marker = "extra == 'python-api'", specifier = ">=2.8.7" },
     { name = "click", specifier = ">=8.0.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
 ]
 provides-extras = ["python-api"]
@@ -2113,6 +2115,7 @@ source = { editable = "packages/jumpstarter-driver-androidemulator" }
 dependencies = [
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-adb" },
+    { name = "jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-power" },
 ]
@@ -2133,6 +2136,7 @@ requires-dist = [
     { name = "adbutils", marker = "extra == 'python-api'", specifier = ">=2.8.7" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-adb", editable = "packages/jumpstarter-driver-adb" },
+    { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
 ]
