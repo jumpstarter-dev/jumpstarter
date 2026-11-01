@@ -444,6 +444,36 @@ def test_uncertain_session_lifecycle_stops_service(service, monkeypatch, operati
     assert service.process is None and not service.directory.exists()
 
 
+@pytest.mark.parametrize(("method", "suffix"), [("DELETE", ""), ("GET", "/source")])
+def test_session_appium_ended_is_forgotten_without_stopping(service, monkeypatch, method, suffix):
+    service.request("POST", "/session", caps())
+    backend = service._backend
+
+    def ended(method, path, body, **kwargs):
+        if path.startswith("/session/owned-session"):
+            return 404, {"value": {"error": "invalid session id", "message": "idle", "stacktrace": "x"}}
+        return backend(method, path, body, **kwargs)
+
+    monkeypatch.setattr(service, "_backend", ended)
+    status, result = service.request(method, f"/session/owned-session{suffix}", {})
+    assert status == 404 and result["value"]["error"] == "invalid session id"
+    assert service.process is not None and service._session is None and not service._reservations
+    monkeypatch.setattr(service, "_backend", backend)
+    assert service.request("POST", "/session", caps())[0] == 200
+
+
+def test_backend_failure_on_a_command_is_a_server_error(service, monkeypatch):
+    service.request("POST", "/session", caps())
+
+    def timeout(*args, **kwargs):
+        raise TimeoutError("backend timeout")
+
+    monkeypatch.setattr(service, "_backend", timeout)
+    with pytest.raises(module.ServiceError, match="Appium request failed"):
+        service.request("GET", "/session/owned-session/source", {})
+    assert service.process is not None and service._session == "owned-session"
+
+
 def test_refused_session_keeps_service_and_releases_reservations(service, monkeypatch):
     backend = service._backend
 

@@ -94,6 +94,11 @@ def _sanitized(status, result):
     return _error(status, code, f"Appium returned {code}")
 
 
+def _session_ended(status, result):
+    value = result.get("value") if isinstance(result, dict) else None
+    return status == 404 and isinstance(value, dict) and value.get("error") == "invalid session id"
+
+
 def _log_tail(path, limit=4096):
     try:
         with open(path, "rb") as log:
@@ -657,7 +662,8 @@ class AppiumProvider(HttpServiceProvider):
                 status, result = self._backend(method, path, forwarded if method == "POST" else None)
             except Exception as exc:
                 if not (creating or deleting):
-                    raise
+                    # Timeouts and malformed replies are Appium's failures, not the client's.
+                    raise ServiceError("The Appium request failed") from exc
                 # Session state is uncertain; require an explicit power cycle.
                 self._invalidate(f"session request failed: {exc!r}", keep)
                 raise ServiceError("The Appium session request failed; power off/on to start a fresh service") from exc
@@ -667,6 +673,11 @@ class AppiumProvider(HttpServiceProvider):
                 raise
             if creating:
                 return self._created(status, result, forwarded, keep)
+            if self._session is not None and _session_ended(status, result):
+                # Appium ends idle sessions itself (newCommandTimeout); the lease may start another.
+                logger.info("Appium already ended session %s", self._session)
+                self._forget_session()
+                return _sanitized(status, result)
             if deleting:
                 return self._deleted(status, result, keep)
             return _sanitized(status, result)
@@ -696,10 +707,13 @@ class AppiumProvider(HttpServiceProvider):
             self._invalidate(f"session deletion returned HTTP {status}", keep)
             raise ServiceError("Appium session deletion failed; power off/on to start a fresh service")
         if status < 300:
-            self._session = None
-            self._session_caps = None
-            self._release_reserved_ports()
+            self._forget_session()
         return status, result
+
+    def _forget_session(self):
+        self._session = None
+        self._session_caps = None
+        self._release_reserved_ports()
 
     def _invalidate(self, reason, keep):
         logger.warning(
