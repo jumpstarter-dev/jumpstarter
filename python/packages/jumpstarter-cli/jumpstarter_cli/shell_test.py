@@ -895,9 +895,11 @@ class TestMonitorTokenExpiry:
 class _FakeStatusMonitor:
     """Minimal stand-in for StatusMonitor in shell tests."""
 
-    def __init__(self, statuses=None, connection_lost=False):
+    def __init__(self, statuses=None, connection_lost=False, previous_status=None, status_message=""):
         self._statuses = list(statuses or [ExporterStatus.LEASE_READY])
         self._connection_lost = connection_lost
+        self._previous_status = previous_status
+        self._status_message = status_message
         self._get_status_unsupported = False
         self.end_session_called = False
 
@@ -906,8 +908,12 @@ class _FakeStatusMonitor:
         return self._statuses[0] if self._statuses else None
 
     @property
+    def previous_status(self):
+        return self._previous_status
+
+    @property
     def status_message(self):
-        return ""
+        return self._status_message
 
     @property
     def connection_lost(self):
@@ -1012,6 +1018,63 @@ class TestRunShellWithLeaseAsync:
 
         assert exit_code == 0
         client.end_session_async.assert_called_once()
+
+    @pytest.mark.parametrize(
+        "previous_status",
+        [ExporterStatus.AFTER_LEASE_HOOK_FAILED, ExporterStatus.AFTER_LEASE_HOOK],
+        ids=["hook-failed", "hook-interrupted"],
+    )
+    async def test_exporter_offline_before_after_lease_hook_completes_fails(self, previous_status):
+        """An exporter that goes OFFLINE without finishing afterLease fails the shell at once.
+
+        With on_failure=exit the exporter reports AFTER_LEASE_HOOK_FAILED and
+        OFFLINE back to back, then waits for the lease to be released before it
+        exits. The failure can come and go between two polls, leaving OFFLINE
+        and the status before it as all the client sees; waiting on for
+        AVAILABLE ran out the full afterLease timeout.
+        """
+        monitor = _FakeStatusMonitor(
+            statuses=[ExporterStatus.LEASE_READY, ExporterStatus.OFFLINE],
+            previous_status=previous_status,
+            status_message="Exporter shutting down due to afterLease hook failure",
+        )
+        client = _build_fake_client(monitor, get_status_return=ExporterStatus.LEASE_READY)
+        lease = _make_shell_lease(release=True, lease_ended=False)
+        cancel_scope = Mock(cancel_called=False)
+
+        @asynccontextmanager
+        async def fake_client_from_path(*_a, **_kw):
+            yield client
+
+        with (
+            patch("jumpstarter_cli.shell.client_from_path", side_effect=fake_client_from_path),
+            patch("jumpstarter_cli.shell._run_shell_only", return_value=0),
+            pytest.raises(ExporterOfflineError, match="Exporter shutting down due to afterLease hook failure"),
+        ):
+            await _run_shell_with_lease_async(lease, False, None, (), cancel_scope)
+
+    async def test_exporter_offline_after_after_lease_hook_completes_returns_exit_code(self):
+        """An exitOnLeaseEnd exporter goes OFFLINE after a completed afterLease; that is not a failure."""
+        monitor = _FakeStatusMonitor(
+            statuses=[ExporterStatus.LEASE_READY, ExporterStatus.OFFLINE],
+            previous_status=ExporterStatus.AVAILABLE,
+            status_message="Exporter shutting down",
+        )
+        client = _build_fake_client(monitor, get_status_return=ExporterStatus.LEASE_READY)
+        lease = _make_shell_lease(release=True, lease_ended=False)
+        cancel_scope = Mock(cancel_called=False)
+
+        @asynccontextmanager
+        async def fake_client_from_path(*_a, **_kw):
+            yield client
+
+        with (
+            patch("jumpstarter_cli.shell.client_from_path", side_effect=fake_client_from_path),
+            patch("jumpstarter_cli.shell._run_shell_only", return_value=42),
+        ):
+            exit_code = await _run_shell_with_lease_async(lease, False, None, (), cancel_scope)
+
+        assert exit_code == 42
 
     async def test_unreachable_after_shell_exit_returns_exit_code(self):
         """An exporter lost while the user is at the prompt must not trigger a reconnect.

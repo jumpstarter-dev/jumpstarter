@@ -181,7 +181,7 @@ arch detected via `qemu-guest-arch.sh`; Alpine guest image ensured via
 |---|---|---|
 | brings an Exporter Online with a Ready Pod | wait for ExporterSet-created Exporter, wait Online/Registered/Available, wait Pod Running+Ready | Pod ready; `target-runtime` container has the expected `qemu-system-*` binary |
 | leases, flashes Alpine, and boots to a console login marker | run `qemu_flash_boot.py` under `jmp shell --duration 1h` | script output contains "OK: matched marker" |
-| power cycles QEMU then rotates the Pod/Exporter and stays responsive | record old Pod name/UID; `j qemu power on/off` inside shell, verify qemu binary is the running process; wait old Pod+Exporter deleted, one new Pod/Exporter running w/ new UID; re-run `j qemu power on/off` | ExitAndReplace produced exactly one new, ready, differently-UID'd Pod/Exporter that still answers power commands |
+| power cycles QEMU then rotates the Pod/Exporter and stays responsive | `j qemu power on/off` inside shell, which reports the leased exporter from `$JMP_EXPORTER` and verifies the qemu binary is the running process in that Pod; wait for the leased Pod+Exporter to be deleted and exactly one other Pod/Exporter to be running; re-run `j qemu power on/off` | ExitAndReplace replaced the Pod/Exporter the lease used with exactly one new, ready Pod/Exporter that still answers power commands |
 
 ---
 
@@ -251,7 +251,9 @@ venv/binary isn't found.
   `--label-filter '!lease-churn'` (still includes `exporterset-qemu`).
   `e2e-compat-old-controller`/`e2e-compat-old-client` jobs run
   only on merge-queue/dispatch via `compat/run.sh`. PRs run amd64 only;
-  merge-queue and `workflow_dispatch` also run arm64.
+  merge-queue and `workflow_dispatch` also run arm64. Pushes to `main` run only
+  the image and wheel build jobs (both arches), no tests: that saves their
+  caches in `main`'s scope, the only one PRs and the merge queue can restore.
 - **`operator-only`** is a secondary label on 2 individual `It`s inside the `core`
   lane (`can login with simplified login` and `legacy client config contains CA
   certificate and works with secure TLS`) — excluded when running against a

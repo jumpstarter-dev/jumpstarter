@@ -509,6 +509,25 @@ fn e2e_echo() {
     server.kill().ok();
 }
 
+/// Wait (up to 5s) for a `serve` process to exit; kill it and fail otherwise.
+fn wait_for_exit(server: &mut Child, after: &str) -> std::process::ExitStatus {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        match server.try_wait() {
+            Ok(Some(status)) => return status,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(50));
+            }
+            Ok(None) => {
+                let _ = server.kill();
+                let _ = server.wait();
+                panic!("serve did not exit within 5s after {after}");
+            }
+            Err(e) => panic!("try_wait failed: {e}"),
+        }
+    }
+}
+
 #[test]
 fn e2e_shutdown_exits_serve() {
     let (mut server, _dir, sock) = start_server_process();
@@ -519,27 +538,37 @@ fn e2e_shutdown_exits_serve() {
         .expect("failed to run jumpstarter-exec shutdown");
     assert!(status.success(), "shutdown should exit 0");
 
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    loop {
-        match server.try_wait() {
-            Ok(Some(wait)) => {
-                assert!(
-                    wait.success(),
-                    "serve should exit 0 after shutdown, got {wait}"
-                );
-                return;
-            }
-            Ok(None) if std::time::Instant::now() < deadline => {
-                std::thread::sleep(std::time::Duration::from_millis(50));
-            }
-            Ok(None) => {
-                let _ = server.kill();
-                let _ = server.wait();
-                panic!("serve did not exit within 5s after shutdown");
-            }
-            Err(e) => panic!("try_wait failed: {e}"),
-        }
-    }
+    let wait = wait_for_exit(&mut server, "shutdown");
+    assert!(
+        wait.success(),
+        "serve should exit 0 after shutdown, got {wait}"
+    );
+}
+
+#[test]
+fn e2e_sigterm_shuts_serve_down() {
+    // kubelet stops the runtime container with SIGTERM, and it must end serve
+    // the way a Shutdown request does. As a container's PID 1, serve has no
+    // default action for SIGTERM, so an unhandled one is discarded until the
+    // grace period's SIGKILL; here, outside a PID namespace, the default
+    // action kills it instead. Either way the cleanup below is skipped.
+    let (mut server, _dir, sock) = start_server_process();
+
+    let status = Command::new("kill")
+        .args(["-TERM", &server.id().to_string()])
+        .status()
+        .expect("failed to run kill");
+    assert!(status.success(), "kill -TERM should succeed");
+
+    let wait = wait_for_exit(&mut server, "SIGTERM");
+    assert!(
+        wait.success(),
+        "serve should exit 0 after SIGTERM, got {wait}"
+    );
+    assert!(
+        !std::path::Path::new(&sock).exists(),
+        "serve should remove its socket on SIGTERM"
+    );
 }
 
 #[test]
