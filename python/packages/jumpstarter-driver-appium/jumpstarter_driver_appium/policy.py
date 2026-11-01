@@ -9,6 +9,7 @@ driver fixes. Everything else reaches Appium unchanged.
 
 import json
 import re
+import urllib.parse
 from collections.abc import Callable
 from typing import Any
 
@@ -27,6 +28,21 @@ _MAX_DEPTH = 64
 
 class PolicyError(ValueError):
     """A request is outside what a lease may ask of the exporter's Appium."""
+
+
+def _no_constant(name: str) -> Any:
+    raise PolicyError(f"Request bodies must be JSON; {name} is not a JSON number")
+
+
+def _route(path: str) -> str:
+    """Normalize a path the way Appium's router matches it, or more loosely.
+
+    Express routes case-insensitively and ignores a trailing slash, so
+    ``POST /Session/`` creates a session too. Matching more paths than Appium
+    only applies the new-session checks more often.
+    """
+    path = urllib.parse.unquote(path.split("?", 1)[0])
+    return re.sub(r"/+", "/", path).rstrip("/").lower()
 
 
 def _name(key: str) -> str:
@@ -70,12 +86,16 @@ class AppiumPolicy:
         if method != "POST" or not body:
             return body
         try:
-            document = json.loads(body)
+            document = json.loads(body, parse_constant=_no_constant)
+        except RecursionError as exc:
+            raise PolicyError("Request body is nested too deeply") from exc
+        except PolicyError:
+            raise
         except (ValueError, UnicodeDecodeError) as exc:
             raise PolicyError("Request bodies must be JSON") from exc
         if not isinstance(document, dict):
             raise PolicyError("Request bodies must be JSON objects")
-        if path.split("?", 1)[0].rstrip("/") == "/session":
+        if _route(path) == "/session":
             document = self.new_session(document)
         else:
             document = self._arguments(document, 0)

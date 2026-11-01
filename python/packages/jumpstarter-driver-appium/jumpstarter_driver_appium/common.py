@@ -73,10 +73,11 @@ class AppiumTarget:
         if not configured:
             return str(self.ca_file)
         combined = self.ca_file.with_name("node-extra-ca.pem")
-        existing = Path(configured).read_text(encoding="ascii")
-        if "PRIVATE KEY" in existing:
+        # Bundles such as certifi's carry non-ASCII comments; PEM readers skip them.
+        existing = Path(configured).read_bytes()
+        if b"PRIVATE KEY" in existing:
             raise ValueError("NODE_EXTRA_CA_CERTS must contain public certificates only")
-        combined.write_text(existing + "\n" + self.ca_file.read_text(encoding="ascii"), encoding="ascii")
+        combined.write_bytes(existing + b"\n" + self.ca_file.read_bytes())
         return str(combined)
 
     def environment(self, base: Mapping[str, str] | None = None) -> dict[str, str]:
