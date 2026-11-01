@@ -145,6 +145,9 @@ class DeviceHubBridge:
             "name": name,
             "model": model,
             "paired_hosts": len(self.identity.hosts),
+            # macOS lists the device under the presented UDID until its first tunnel
+            # reveals the device's own.
+            "udids": list(dict.fromkeys([self.presented_udid, self.udid])),
         }
 
     async def _request(self, name: str, body: dict) -> dict | None:

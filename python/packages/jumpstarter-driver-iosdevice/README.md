@@ -102,6 +102,7 @@ j ios connect
 j ios forward 9100
 j ios https
 j ios devicehub    # macOS clients only
+j ios devicehub --wda WebDriverAgentRunner.xctestrun
 ```
 
 `serve` prints a loopback address and `USBMUXD_SOCKET_ADDRESS` for your tool.
@@ -151,6 +152,59 @@ Set `devicehub_state` to keep the device's Device Hub identity across exporter
 restarts; without it, every Mac pairs again after a restart. Set
 `devicehub_udid` only when the same Mac can also see the device directly, as on
 a test bench, so that Device Hub keeps the two apart.
+
+### Appium through Device Hub
+
+Device Hub also gives Xcode on the Mac the device's developer services, so
+WebDriverAgent (WDA) can run over the same connection: tests run on the device
+while you watch them, and can pause to inspect it, in Device Hub.
+
+Build WDA once, signed with a provisioning profile that includes the device;
+Jumpstarter does not build or sign it. From the
+[WebDriverAgent](https://github.com/appium/appium-ios/tree/main/packages/webdriveragent) checkout that your
+Appium XCUITest driver uses:
+
+```shell
+xcodebuild build-for-testing -project WebDriverAgent.xcodeproj \
+  -scheme WebDriverAgentRunner -destination generic/platform=iOS \
+  -derivedDataPath wda DEVELOPMENT_TEAM=<team> \
+  PRODUCT_BUNDLE_IDENTIFIER=<your.prefix>.WebDriverAgentRunner
+```
+
+Turn on **Settings > Developer > Enable UI Automation** on the device. Then,
+inside a lease, pass the `.xctestrun` file the build wrote under
+`wda/Build/Products`:
+
+```shell
+j ios devicehub --wda wda/Build/Products/WebDriverAgentRunner_iphoneos27.1-arm64.xctestrun
+```
+
+The command shows the device in Device Hub, has Xcode install and start WDA
+through the lease, and prints WDA's address and the Appium capabilities for it.
+WDA stops when the command stops. From Python, `devicehub_wda()` does the same
+for the length of a `with` block:
+
+```python
+from appium import webdriver
+from appium.options.ios import XCUITestOptions
+
+from jumpstarter.common.utils import env
+
+with env() as root, root.ios.devicehub_wda("wda/Build/Products/WebDriverAgentRunner.xctestrun") as wda:
+    driver = webdriver.Remote("http://127.0.0.1:4723", options=XCUITestOptions().load_capabilities(wda.capabilities()))
+    try:
+        driver.execute_script("mobile: activateApp", {"bundleId": "com.apple.Preferences"})
+        print(driver.page_source)
+    finally:
+        driver.quit()
+```
+
+Run Appium on the Mac as usual; it reaches WDA at the device's address inside
+the Device Hub connection, not over Wi-Fi. Appium finds real devices, reads
+their logs and installs apps through usbmux, which this connection does not
+provide, so the capabilities skip those steps: start apps with
+`mobile: activateApp` rather than `appium:bundleId`, and install them with
+`xcrun devicectl device install app` while the device is shown.
 
 ### HTTPS services
 
