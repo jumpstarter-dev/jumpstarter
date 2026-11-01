@@ -103,7 +103,7 @@ the owned device set. `power.read()` is unsupported.
 With an `appium` block in the simulator's `config`, the exporter runs
 [Appium](https://appium.io/docs/en/latest/) for the lease and clients open
 sessions through the shared {doc}`Appium client <appium>`, the same way they do
-for physical devices and Android targets. The exporter needs Appium, its
+for physical devices. The exporter needs Appium, its
 [XCUITest driver](https://github.com/appium/appium-xcuitest-driver) and a
 complete prebuilt simulator
 [WebDriverAgent app](https://github.com/appium/WebDriverAgent); Jumpstarter does
