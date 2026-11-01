@@ -49,3 +49,8 @@ jobs:
       - name: Run operator e2e test
         working-directory: controller
         run: make test-operator-e2e-ci -j4 --output-sync=target
+        env:
+          # Each test context gets its own uniquely named namespace and
+          # NodePorts, so nothing needs the previous one to be gone. Waiting
+          # for it cost ~43s per context, over half of the suite.
+          E2E_NO_CLEANUP_WAIT: "true"
