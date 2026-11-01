@@ -1,13 +1,17 @@
-import asyncio
-import asyncio.subprocess
-import contextlib
+import codecs
 import os
-import signal
 import subprocess
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
+from anyio import EndOfStream, current_time, move_on_after
+
+from jumpstarter.common.process import OutputChunk, StreamingProcess, open_streaming_process
 from jumpstarter.driver import Driver, export
+
+# How long a script's output may stay quiet after it exits before the method
+# returns; a background job the script started may keep the pipes open.
+_QUIET_AFTER_EXIT_SECONDS = 0.1
 
 # Environment variables that are blocked because they allow privilege escalation.
 # A client that can set these can hijack the subprocess (e.g. LD_PRELOAD to load
@@ -135,38 +139,6 @@ class Shell(Driver):
 
         return combined_env
 
-    async def _read_process_output(self, process, read_all=False):
-        """Read data from stdout and stderr streams.
-
-        :param process: The subprocess to read from
-        :param read_all: If True, read all remaining data. If False, read with timeout.
-        :return: Tuple of (stdout_data, stderr_data)
-        """
-        stdout_data = ""
-        stderr_data = ""
-
-        # Read from stdout
-        if process.stdout:
-            with contextlib.suppress(Exception):
-                if read_all:
-                    chunk = await process.stdout.read()
-                else:
-                    chunk = await asyncio.wait_for(process.stdout.read(1024), timeout=0.01)
-                if chunk:
-                    stdout_data = chunk.decode('utf-8', errors='replace')
-
-        # Read from stderr
-        if process.stderr:
-            with contextlib.suppress(Exception):
-                if read_all:
-                    chunk = await process.stderr.read()
-                else:
-                    chunk = await asyncio.wait_for(process.stderr.read(1024), timeout=0.01)
-                if chunk:
-                    stderr_data = chunk.decode('utf-8', errors='replace')
-
-        return stdout_data, stderr_data
-
     async def _run_inline_shell_script(
         self, method, script, *args, env_vars=None, timeout=None
     ) -> AsyncGenerator[tuple[str, str, int | None], None]:
@@ -184,57 +156,40 @@ class Shell(Driver):
         """
         combined_env = self._validate_script_params(script, args, env_vars)
         cmd = self.shell + [script, method] + list(args)
-
-        # Start the process with pipes for streaming and new process group
-        self.logger.debug( f"running {method} with cmd: {cmd} and env: {combined_env} " f"and args: {args}")
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=combined_env,
-            cwd=self.cwd,
-            start_new_session=True,  # Create new process group
-        )
-
-        # Create a task to monitor the process timeout
-        start_time = asyncio.get_running_loop().time()
-
         if timeout is None:
             timeout = self.timeout
 
-        # Read output in real-time
-        while process.returncode is None:
-            if asyncio.get_running_loop().time() - start_time > timeout:
-                # Send SIGTERM to entire process group for graceful termination
+        self.logger.debug(f"running {method} with cmd: {cmd} and env: {combined_env} and args: {args}")
+        deadline = current_time() + timeout
+        decoders = {source: codecs.getincrementaldecoder("utf-8")(errors="replace") for source in ("stdout", "stderr")}
+        async with open_streaming_process(
+            cmd, env=combined_env, cwd=self.cwd, new_process_group=True, stop_grace=5.0
+        ) as process:
+            while True:
                 try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except (ProcessLookupError, OSError):
-                    # Process group might already be gone
-                    pass
+                    chunk = await self._next_chunk(process, deadline)
+                except TimeoutError:
+                    await process.stop()
+                    raise subprocess.TimeoutExpired(cmd, timeout) from None
+                if chunk is None:
+                    break
+                text = decoders[chunk.source].decode(chunk.data)
+                if text:
+                    yield (text, "", None) if chunk.source == "stdout" else ("", text, None)
+            returncode = await process.wait()
+        yield decoders["stdout"].decode(b"", final=True), decoders["stderr"].decode(b"", final=True), returncode
+
+    @staticmethod
+    async def _next_chunk(process: StreamingProcess, deadline: float) -> OutputChunk | None:
+        """The next output chunk, or None once the script has exited and its output has ended or gone quiet."""
+        while True:
+            remaining = deadline - current_time()
+            if remaining <= 0:
+                raise TimeoutError
+            with move_on_after(min(remaining, _QUIET_AFTER_EXIT_SECONDS)):
                 try:
-                    await asyncio.wait_for(process.wait(), timeout=5.0)
-                except TimeoutError:  # pragma: no cover
-                    try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                        self.logger.warning(f"SIGTERM failed to terminate {process.pid}, sending SIGKILL")
-                    except (ProcessLookupError, OSError):
-                        pass
-                raise subprocess.TimeoutExpired(cmd, timeout) from None
-
-            try:
-                stdout_data, stderr_data = await self._read_process_output(process, read_all=False)
-
-                # Yield any data we got
-                if stdout_data or stderr_data:
-                    yield stdout_data, stderr_data, None
-
-                # Small delay to prevent busy waiting
-                await asyncio.sleep(0.1)
-
-            except Exception:  # pragma: no cover  # noqa: BLE001
-                break
-
-        # Process completed, get return code and final output
-        returncode = process.returncode
-        remaining_stdout, remaining_stderr = await self._read_process_output(process, read_all=True)
-        yield remaining_stdout, remaining_stderr, returncode
+                    return await process.receive()
+                except EndOfStream:
+                    return None
+            if process.returncode is not None:
+                return None
