@@ -14,8 +14,11 @@ FAKE_APPIUM = textwrap.dedent(
     args = sys.argv[1:]
     assert args[0] == "server", args
     port = int(args[args.index("--port") + 1])
-    with open(args[args.index("--config") + 1]) as config:
-        started = {"args": args, "config": json.load(config), "env": dict(os.environ)}
+    config = {}
+    if "--config" in args:
+        with open(args[args.index("--config") + 1]) as source:
+            config = json.load(source)
+    started = {"args": args, "config": config, "env": dict(os.environ)}
     with open(os.environ["FAKE_APPIUM_RECORD"], "a") as record:
         record.write(json.dumps(started) + "\\n")
     if os.environ.get("FAKE_APPIUM_FAIL"):

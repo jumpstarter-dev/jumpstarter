@@ -184,9 +184,12 @@ j ios devicehub --wda wda/Build/Products/WebDriverAgentRunner_iphoneos27.1-arm64
 ```
 
 The command shows the device in Device Hub, has Xcode install and start WDA
-through the lease, and prints WDA's address and the Appium capabilities for it.
-WDA stops when the command stops. From Python, `devicehub_wda()` does the same
-for the length of a `with` block:
+through the lease, starts your installed Appium on this Mac, and prints the
+Appium URL, WDA's address and the capabilities to use. `--appium PATH` selects
+the Appium launcher, and `-- COMMAND` runs a command with the endpoint in its
+environment instead. Appium and WDA stop when the command stops. From Python,
+`devicehub_appium()` does the same for the length of a `with` block and yields
+the same target as `ios.appium.serve()`, so tests do not change between the two:
 
 ```python
 from appium import webdriver
@@ -194,8 +197,9 @@ from appium.options.ios import XCUITestOptions
 
 from jumpstarter.common.utils import env
 
-with env() as root, root.ios.devicehub_wda("wda/Build/Products/WebDriverAgentRunner.xctestrun") as wda:
-    driver = webdriver.Remote("http://127.0.0.1:4723", options=XCUITestOptions().load_capabilities(wda.capabilities()))
+with env() as root, root.ios.devicehub_appium("wda/Build/Products/WebDriverAgentRunner.xctestrun") as target:
+    options = XCUITestOptions().load_capabilities(target.capabilities())
+    driver = webdriver.Remote(target.url, options=options, client_config=target.client_config())
     try:
         driver.execute_script("mobile: activateApp", {"bundleId": "com.apple.Preferences"})
         print(driver.page_source)
@@ -203,12 +207,13 @@ with env() as root, root.ios.devicehub_wda("wda/Build/Products/WebDriverAgentRun
         driver.quit()
 ```
 
-Run Appium on the Mac as usual; it reaches WDA at the device's address inside
-the Device Hub connection, not over Wi-Fi. Appium finds real devices, reads
-their logs and installs apps through usbmux, which this connection does not
-provide, so the capabilities skip those steps: start apps with
-`mobile: activateApp` rather than `appium:bundleId`, and install them with
-`xcrun devicectl device install app` while the device is shown.
+Appium runs on the Mac here because only the Mac reaches WDA, at the device's
+address inside the Device Hub connection rather than over Wi-Fi. Install
+Appium and its XCUITest driver on the Mac; Jumpstarter does not bundle them.
+Appium finds real devices, reads their logs and installs apps through usbmux,
+which this connection does not provide, so the capabilities skip those steps:
+start apps with `mobile: activateApp` rather than `appium:bundleId`, and install
+them with `xcrun devicectl device install app` while the device is shown.
 
 ### HTTPS services
 
@@ -368,7 +373,7 @@ Client:
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_iosdevice.client.IosDeviceClient()
-    :members: info, serve, connect, forward, https, run
+    :members: info, serve, connect, forward, https, run, devicehub, devicehub_appium, appium
 ```
 
 HTTPS endpoint:
