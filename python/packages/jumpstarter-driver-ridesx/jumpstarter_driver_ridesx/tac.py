@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Sequence
+
+from anyio import current_time, move_on_after, sleep
 
 CommandDelay = tuple[str, float]
 PROMPT = b"CMD >> "
@@ -14,13 +15,16 @@ DEFAULT_TAC_COMMAND_TIMEOUT = 10.0
 async def _receive_until(
     data: bytes, stream, pattern: bytes, *, deadline: float, error_message: str
 ) -> bytes:
-    loop = asyncio.get_running_loop()
     while pattern not in data:
-        remaining = deadline - loop.time()
+        remaining = deadline - current_time()
+        # A stream that returns data without yielding to the event loop never
+        # lets the cancel scope fire, so the deadline is also checked here.
         if remaining <= 0:
             raise TimeoutError(error_message)
-        chunk = await asyncio.wait_for(stream.receive(), timeout=remaining)
-        data += chunk
+        with move_on_after(remaining) as scope:
+            data += await stream.receive()
+        if scope.cancelled_caught:
+            raise TimeoutError(error_message)
     return data
 
 
@@ -30,8 +34,7 @@ async def _send_power_command_on_stream(
     """Send a single power command on an already-open stream and wait for ok."""
     logger.info(f"Executing power command: {command}")
     await stream.send(f"{command}\r".encode())
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + timeout
+    deadline = current_time() + timeout
     data = await _receive_until(
         b"", stream, b"ok", deadline=deadline,
         error_message=f"Power command '{command}' timed out after {timeout}s",
@@ -60,14 +63,13 @@ async def send_power_commands_sequence(
         for command, delay in commands:
             await _send_power_command_on_stream(stream, logger, command, timeout=timeout)
             if delay > 0:
-                await asyncio.sleep(delay)
+                await sleep(delay)
 
 
 async def _send_tac_command_on_stream(stream, command: str, *, timeout: float) -> None:
     """Send a single TAC command on an already-open stream and wait for ok."""
     await stream.send(f"{command}\r".encode())
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + timeout
+    deadline = current_time() + timeout
     data = await _receive_until(
         b"", stream, b"ok", deadline=deadline,
         error_message=f"TAC command '{command}' timed out after {timeout}s",
@@ -95,4 +97,4 @@ async def send_tac_sequence(
         for command, delay in commands:
             await _send_tac_command_on_stream(stream, command, timeout=timeout)
             if delay > 0:
-                await asyncio.sleep(delay)
+                await sleep(delay)

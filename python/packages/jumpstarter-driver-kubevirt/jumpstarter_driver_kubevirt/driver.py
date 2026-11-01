@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import base64
 import logging
 import ssl
@@ -10,6 +9,7 @@ from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
 import websockets
+from anyio import fail_after, sleep
 from jumpstarter_driver_composite.driver import CompositeInterface
 from jumpstarter_driver_network.driver import NetworkInterface
 from jumpstarter_driver_network.streams.websocket import WebsocketClientStream
@@ -256,7 +256,7 @@ class KubevirtConsole(_KubevirtBase, NetworkInterface, Driver):
                         attempt + 1,
                         self.console_max_retries,
                     )
-                    await asyncio.sleep(self.console_retry_interval)
+                    await sleep(self.console_retry_interval)
                 else:
                     raise
 
@@ -300,7 +300,7 @@ class KubevirtStorage(_KubevirtBase, Driver):
                 raise
 
         if deleted:
-            async with asyncio.timeout(self.delete_timeout):
+            with fail_after(self.delete_timeout):
                 while True:
                     try:
                         await client.get(DataVolume, name=dv_name, namespace=self.namespace)
@@ -308,7 +308,7 @@ class KubevirtStorage(_KubevirtBase, Driver):
                         if e.status.code == 404:
                             break
                         raise
-                    await asyncio.sleep(self.delete_poll_interval)
+                    await sleep(self.delete_poll_interval)
 
         dv = DataVolume(
             metadata=ObjectMeta(
