@@ -12,6 +12,7 @@ import ctypes
 import json
 import logging
 import math
+import os
 import plistlib
 import re
 import select
@@ -146,16 +147,46 @@ def xcode_warning() -> str | None:
     return None
 
 
+LINK_MISSING = f"the Device Hub link is not set up; run `sudo sh {SETUP_SCRIPT}` once after each boot"
+
+
+def _bpf_accessible(folder: Path = Path("/dev")) -> bool:
+    devices = list(folder.glob("bpf*"))
+    return bool(devices) and all(os.access(device, os.R_OK | os.W_OK) for device in devices)
+
+
+def link_ready() -> bool:
+    """Whether this boot's virtual link exists and this account can use it."""
+    try:
+        output = subprocess.run(["ifconfig", HOST_INTERFACE], capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    return HOST_ADDRESS in output and _bpf_accessible()
+
+
+def set_up_link(*, confirm: Callable[[str], bool], notify: Callable[[str], None]) -> None:
+    """Create the virtual link with sudo once the user agrees; sudo asks for their password."""
+    notify(
+        "Device Hub reaches the leased device through a virtual network link on this Mac, which needs "
+        f"administrator rights once per boot. {SETUP_SCRIPT.name} creates feth0 and feth1 and lets your "
+        "account capture packets on every interface until the next reboot."
+    )
+    if not confirm("Set up the link now with sudo?"):
+        raise RuntimeError(LINK_MISSING)
+    try:
+        result = subprocess.run(["sudo", "sh", str(SETUP_SCRIPT)], check=False)
+    except OSError as error:
+        raise RuntimeError(f"{LINK_MISSING} ({error})") from error
+    if result.returncode != 0 or not link_ready():
+        raise RuntimeError(f"setting up the Device Hub link failed; {LINK_MISSING}")
+
+
 def check_link() -> None:
     """Fail with setup instructions unless the virtual link is configured."""
     if sys.platform != "darwin":
         raise RuntimeError("Device Hub access needs a Mac client")
-    try:
-        output = subprocess.run(["ifconfig", HOST_INTERFACE], capture_output=True, text=True, check=True).stdout
-    except (OSError, subprocess.CalledProcessError):
-        output = ""
-    if HOST_ADDRESS not in output:
-        raise RuntimeError(f"the Device Hub link is not set up; run `sudo sh {SETUP_SCRIPT}` once after each boot")
+    if not link_ready():
+        raise RuntimeError(LINK_MISSING)
 
 
 def _txt(entries: dict) -> bytes:

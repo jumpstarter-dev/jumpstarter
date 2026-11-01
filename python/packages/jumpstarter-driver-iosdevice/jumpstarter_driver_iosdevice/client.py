@@ -335,6 +335,17 @@ class IosDeviceClient(DriverClient):
             )
 
     @staticmethod
+    def _ensure_devicehub_link() -> None:
+        """Offer to create this boot's Device Hub link; sudo asks for the password in the terminal."""
+        from .devicehub_mac import LINK_MISSING, link_ready, set_up_link
+
+        if link_ready():
+            return
+        if not sys.stdin.isatty():
+            raise RuntimeError(LINK_MISSING)
+        set_up_link(confirm=partial(click.confirm, default=True), notify=click.echo)
+
+    @staticmethod
     async def _devicehub_code() -> str:
         # Abandoned if the Mac connects with an existing pairing while the prompt is open.
         return await to_thread.run_sync(partial(click.prompt, "Code shown in Device Hub"), abandon_on_cancel=True)
@@ -342,14 +353,16 @@ class IosDeviceClient(DriverClient):
     def devicehub(self, *, pair: bool = False) -> None:
         """Show the leased device in Xcode's Device Hub on this Mac until interrupted.
 
-        Only macOS clients are supported. Needs the virtual link from the
-        package's ``scripts/devicehub-link-macos.sh`` (run once per boot with
-        sudo). The first time a Mac uses a device, whenever
+        Only macOS clients are supported. Once per boot, Device Hub needs a
+        virtual network link; when it is missing, this explains it and asks to
+        create it with sudo, which prompts for the password. The first time a
+        Mac uses a device, whenever
         the device is not listed in Device Hub (for example after Unpair), or
         with ``pair=True``, choose File > Pair Nearby Device… in Device Hub and
         type the code it shows when asked.
         """
         self._require_macos()
+        self._ensure_devicehub_link()
         from .devicehub_mac import serve
 
         try:
@@ -378,6 +391,7 @@ class IosDeviceClient(DriverClient):
         path = Path(xctestrun)
         if path.suffix != ".xctestrun" or not path.is_file():
             raise ValueError(f"{path} is not an .xctestrun file; build WebDriverAgent with build-for-testing")
+        self._ensure_devicehub_link()
         from .devicehub_mac import shown, webdriveragent
 
         @asynccontextmanager

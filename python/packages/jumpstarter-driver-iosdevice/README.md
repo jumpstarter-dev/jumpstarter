@@ -126,16 +126,15 @@ platforms `devicehub` is left out of `j ios --help`, and running it, or calling
 Xcode 27, or before Xcode has been opened once to install its device support,
 `devicehub` warns that the device will not appear in Device Hub.
 
-Once per boot, create the virtual network link the Mac uses to reach the
-device. The script is installed with this package, in its
-`jumpstarter_driver_iosdevice/scripts` directory; `j ios devicehub` prints its
-full path when the link is missing:
+The Mac reaches the device through a virtual network link, created once per
+boot with administrator rights. When it is missing, `j ios devicehub` explains
+what it changes and offers to create it; `sudo` then asks for your password.
+The link lets your account capture packets on every interface until the next
+reboot. Without a terminal to answer in, the command prints the setup command
+instead; the script is installed with this package, in its
+`jumpstarter_driver_iosdevice/scripts` directory.
 
-```shell
-sudo sh "$(python3 -c 'from jumpstarter_driver_iosdevice.netstack import SETUP_SCRIPT; print(SETUP_SCRIPT)')"
-```
-
-Then, inside a lease:
+Inside a lease:
 
 ```shell
 j ios devicehub
@@ -162,7 +161,7 @@ while you watch them, and can pause to inspect it, in Device Hub.
 
 Build WDA once, signed with a provisioning profile that includes the device;
 Jumpstarter does not build or sign it. From the
-[WebDriverAgent](https://github.com/appium/WebDriverAgent) checkout that your
+[WebDriverAgent](https://github.com/appium/appium-ios/tree/main/packages/webdriveragent) checkout that your
 Appium XCUITest driver uses:
 
 ```shell

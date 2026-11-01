@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import click
 import pytest
 from anyio import connect_tcp
 from anyio.from_thread import start_blocking_portal
@@ -699,6 +700,7 @@ def test_devicehub_serves_until_it_returns(client, monkeypatch):
     from . import devicehub_mac
 
     monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(devicehub_mac, "link_ready", lambda: True)
     calls = []
 
     async def serve(device, **options):
@@ -718,6 +720,22 @@ def test_devicehub_serves_until_it_returns(client, monkeypatch):
         client.devicehub()
 
 
+def test_missing_devicehub_link_is_offered_in_a_terminal(client, monkeypatch):
+    from . import devicehub_mac
+
+    monkeypatch.setattr(devicehub_mac, "link_ready", lambda: False)
+    offered = []
+    monkeypatch.setattr(devicehub_mac, "set_up_link", lambda **options: offered.append(options))
+    monkeypatch.setattr(sys, "stdin", type("Terminal", (), {"isatty": lambda self: True})())
+    client._ensure_devicehub_link()
+    assert offered and offered[0]["notify"] is click.echo
+
+    monkeypatch.setattr(sys, "stdin", type("Pipe", (), {"isatty": lambda self: False})())
+    with pytest.raises(RuntimeError, match="Device Hub link is not set up"):
+        client._ensure_devicehub_link()
+    assert len(offered) == 1
+
+
 def test_devicehub_code_is_prompted_for(client, monkeypatch):
     monkeypatch.setattr(client_module.click, "prompt", lambda text: "123456" if "Device Hub" in text else "")
     assert client.portal.call(client._devicehub_code) == "123456"
@@ -728,6 +746,7 @@ def devicehub_wda(monkeypatch, tmp_path):
     from . import devicehub_mac
 
     monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(devicehub_mac, "link_ready", lambda: True)
     xctestrun = tmp_path / "WebDriverAgentRunner.xctestrun"
     xctestrun.write_text("")
     agent = devicehub_mac.WebDriverAgent(url="http://[fd00::1]:8100", udid="DEVICE", platform_version="27.0.1")

@@ -224,16 +224,16 @@ def test_check_link_needs_a_mac(monkeypatch):
         devicehub_mac.check_link()
 
 
+LINKED = f"feth0: flags\n\tinet6 {devicehub_mac.HOST_ADDRESS} prefixlen 64\n"
+
+
 @pytest.mark.parametrize(
-    "output,ready",
-    [
-        (f"feth0: flags\n\tinet6 {devicehub_mac.HOST_ADDRESS} prefixlen 64\n", True),
-        ("feth0: flags\n", False),
-        (None, False),
-    ],
+    "output,bpf,ready",
+    [(LINKED, True, True), (LINKED, False, False), ("feth0: flags\n", True, False), (None, True, False)],
 )
-def test_check_link_explains_the_setup_script(monkeypatch, output, ready):
+def test_check_link_explains_the_setup_script(monkeypatch, output, bpf, ready):
     monkeypatch.setattr(devicehub_mac.sys, "platform", "darwin")
+    monkeypatch.setattr(devicehub_mac, "_bpf_accessible", lambda: bpf)
 
     def run(command, **_kwargs):
         assert command == ["ifconfig", devicehub_mac.HOST_INTERFACE]
@@ -247,6 +247,63 @@ def test_check_link_explains_the_setup_script(monkeypatch, output, ready):
     else:
         with pytest.raises(RuntimeError, match=re.escape(f"sudo sh {devicehub_mac.SETUP_SCRIPT}")):
             devicehub_mac.check_link()
+
+
+def test_bpf_access_needs_every_capture_device(tmp_path):
+    assert devicehub_mac._bpf_accessible(tmp_path) is False
+    for index in range(2):
+        (tmp_path / f"bpf{index}").write_bytes(b"")
+    assert devicehub_mac._bpf_accessible(tmp_path) is True
+    (tmp_path / "bpf1").chmod(0o400)
+    assert devicehub_mac._bpf_accessible(tmp_path) is False
+
+
+@pytest.fixture
+def setup_run(monkeypatch):
+    calls, linked = [], []
+
+    def run(command, **_kwargs):
+        calls.append(command)
+        linked.append(True)
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr(devicehub_mac.subprocess, "run", run)
+    monkeypatch.setattr(devicehub_mac, "link_ready", lambda: bool(linked))
+    return calls, linked
+
+
+def test_link_is_set_up_with_sudo_once_the_user_agrees(setup_run):
+    calls, _ = setup_run
+    notes, questions = [], []
+
+    def confirm(question):
+        questions.append(question)
+        return True
+
+    devicehub_mac.set_up_link(confirm=confirm, notify=notes.append)
+    assert calls == [["sudo", "sh", str(devicehub_mac.SETUP_SCRIPT)]]
+    assert "once per boot" in notes[0] and "capture packets" in notes[0]
+    assert questions == ["Set up the link now with sudo?"]
+
+
+def test_declined_link_setup_explains_the_manual_step(setup_run):
+    calls, _ = setup_run
+    with pytest.raises(RuntimeError, match=re.escape(f"sudo sh {devicehub_mac.SETUP_SCRIPT}")):
+        devicehub_mac.set_up_link(confirm=lambda question: False, notify=lambda note: None)
+    assert calls == []
+
+
+@pytest.mark.parametrize("failure", ["exit", "missing-sudo", "still-missing"])
+def test_failed_link_setup_is_reported(monkeypatch, failure):
+    def run(command, **_kwargs):
+        if failure == "missing-sudo":
+            raise FileNotFoundError("sudo")
+        return type("Result", (), {"returncode": 1 if failure == "exit" else 0})()
+
+    monkeypatch.setattr(devicehub_mac.subprocess, "run", run)
+    monkeypatch.setattr(devicehub_mac, "link_ready", lambda: False)
+    with pytest.raises(RuntimeError, match="Device Hub link"):
+        devicehub_mac.set_up_link(confirm=lambda question: True, notify=lambda note: None)
 
 
 def test_setup_script_is_installed_with_the_package():
