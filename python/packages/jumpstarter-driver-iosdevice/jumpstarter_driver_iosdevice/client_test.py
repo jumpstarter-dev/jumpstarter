@@ -523,7 +523,11 @@ def test_https_metadata_rejects_private_key_even_alongside_valid_certificate(cli
 
 def test_https_environment_preserves_existing_trust_without_mutating_environment(https_client, adapter, tmp_path):
     original_ca = tmp_path / "existing.pem"
-    original_ca.write_text("# Existing configured roots\n" + https_client.call.return_value["ca_certificate"])
+    # certifi-style bundles name issuers such as "Főtanúsítvány" in comments.
+    original_ca.write_text(
+        "# Existing configured roots: Főtanúsítvány\n" + https_client.call.return_value["ca_certificate"],
+        encoding="utf-8",
+    )
     original = {
         "NODE_EXTRA_CA_CERTS": str(original_ca),
         "SSL_CERT_FILE": str(original_ca),

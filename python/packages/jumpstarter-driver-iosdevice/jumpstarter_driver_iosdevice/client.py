@@ -85,16 +85,15 @@ class HttpsEndpoint:
         path = Path(configured)
         if not path.is_file():
             raise ValueError(f"Configured CA bundle is not a regular file: {path}")
-        with path.open("r", encoding="ascii") as source:
+        # Bundles such as certifi's carry non-ASCII comments; PEM readers skip them.
+        with path.open("rb") as source:
             existing = source.read(8 * MAX_CA_BYTES + 1)
-        if len(existing) > 8 * MAX_CA_BYTES or "PRIVATE KEY" in existing:
+        if len(existing) > 8 * MAX_CA_BYTES or b"PRIVATE KEY" in existing:
             raise ValueError("Configured CA bundle must contain bounded public certificates only")
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="ascii", dir=self.ca_file.parent, suffix=".pem", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(dir=self.ca_file.parent, suffix=".pem", delete=False) as f:
             f.write(existing)
-            f.write("\n")
-            f.write(self.ca_file.read_text(encoding="ascii"))
+            f.write(b"\n")
+            f.write(self.ca_file.read_bytes())
             return f.name
 
     def environment(self, base=None) -> dict[str, str]:
