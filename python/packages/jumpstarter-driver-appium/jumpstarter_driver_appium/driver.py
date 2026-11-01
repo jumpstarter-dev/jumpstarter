@@ -144,16 +144,32 @@ class AppiumDriver(AppiumInterface, Driver):
             if not (_HOST_CAPABILITY.search(key.split(":", 1)[-1]) and isinstance(value, str))
         }
 
+    def session_capabilities(self) -> dict[str, Any]:
+        """Capabilities chosen afresh for each new session, such as reserved ports."""
+        return {}
+
     def server_environment(self) -> dict[str, str]:
         """Extra environment for the Appium process."""
         return dict(self.env)
+
+    def prepare(self) -> None:
+        """Check that the target can be automated before Appium starts; raise if not.
+
+        Runs without this driver's lock held. Hooks called under it, such as
+        ``state_root()``, must not wait for locks the target holds while
+        stopping Appium.
+        """
+
+    def state_root(self) -> str | None:
+        """Existing directory that holds the lease's private Appium state."""
+        return self.state_dir
 
     # Lease state.
 
     def _lease_directory(self) -> Path:
         with self._lock:
             if self._directory is None:
-                self._directory = Path(tempfile.mkdtemp(prefix="jumpstarter-appium-", dir=self.state_dir))
+                self._directory = Path(tempfile.mkdtemp(prefix="jumpstarter-appium-", dir=self.state_root()))
             return self._directory
 
     def _resolve_app(self, token: str) -> str:
@@ -164,6 +180,8 @@ class AppiumDriver(AppiumInterface, Driver):
         return str(path)
 
     def _start(self) -> _Server:
+        # Outside the lock: target drivers may take their own locks here.
+        self.prepare()
         with self._lock:
             if self._server is not None and self._server.process.poll() is None:
                 return self._server
@@ -251,7 +269,8 @@ class AppiumDriver(AppiumInterface, Driver):
                 process.wait(timeout=5)
         shutil.rmtree(server.directory, ignore_errors=True)
 
-    def _forget_lease(self) -> None:
+    def release(self) -> None:
+        """Stop Appium and remove the lease's uploads and private state."""
         self.stop_server()
         with self._lock:
             directory, self._directory = self._directory, None
@@ -260,11 +279,11 @@ class AppiumDriver(AppiumInterface, Driver):
             shutil.rmtree(directory, ignore_errors=True)
 
     def reset(self):
-        self._forget_lease()
+        self.release()
         super().reset()
 
     def close(self):
-        self._forget_lease()
+        self.release()
         super().close()
 
     # Exports.
@@ -283,7 +302,7 @@ class AppiumDriver(AppiumInterface, Driver):
                 raise RuntimeError("Appium is not running; call info() first")
             if len(self._connections) >= MAX_CONNECTIONS:
                 raise RuntimeError("Too many active Appium connections")
-        policy = AppiumPolicy(self.fixed_capabilities(), self._resolve_app)
+        policy = AppiumPolicy(self.fixed_capabilities(), self._resolve_app, self.session_capabilities)
         with CancelScope() as scope:
             with self._lock:
                 self._connections[scope] = asyncio.get_running_loop()

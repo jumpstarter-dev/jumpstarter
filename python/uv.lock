@@ -2779,6 +2779,7 @@ name = "jumpstarter-driver-iossimulator"
 source = { editable = "packages/jumpstarter-driver-iossimulator" }
 dependencies = [
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-iosdevice" },
     { name = "jumpstarter-driver-power" },
@@ -2793,6 +2794,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-iosdevice", editable = "packages/jumpstarter-driver-iosdevice" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },

@@ -47,13 +47,20 @@ class AppiumPolicy:
     """Check one request body at a time for one lease.
 
     ``fixed`` capabilities are set on every new session and replace any value
-    the client sends. ``resolve`` maps an uploaded application token to its
-    exporter path, raising ``PolicyError`` for unknown tokens.
+    the client sends. ``session`` returns capabilities chosen afresh for each
+    new session, such as reserved ports. ``resolve`` maps an uploaded
+    application token to its exporter path, raising ``PolicyError`` for unknown tokens.
     """
 
-    def __init__(self, fixed: dict[str, Any], resolve: Callable[[str], str]):
+    def __init__(
+        self,
+        fixed: dict[str, Any],
+        resolve: Callable[[str], str],
+        session: Callable[[], dict[str, Any]] | None = None,
+    ):
         self.fixed = dict(fixed)
         self.resolve = resolve
+        self.session = session
 
     def request(self, method: str, path: str, body: bytes) -> bytes:
         """Return the body to forward, or raise ``PolicyError``."""
@@ -82,6 +89,8 @@ class AppiumPolicy:
         if not all(isinstance(choice, dict) for choice in first):
             raise PolicyError("firstMatch entries must be objects")
         always = self._capabilities(always)
+        if self.session is not None:
+            self.fixed.update(self.session())
         always.update(self.fixed)
         first = [
             {key: value for key, value in self._capabilities(choice).items() if key not in self.fixed}
