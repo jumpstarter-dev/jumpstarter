@@ -103,7 +103,11 @@ with serve(driver) as client:
 
 With an `appium` block, the exporter runs [Appium](https://appium.io/docs/en/latest/)
 with its UiAutomator2 driver for the emulator, and clients use the shared
-{doc}`Appium client <appium>`, the same as for physical Android and iOS targets:
+{doc}`Appium client <appium>`, the same interface every UI-automation target
+provides. The
+{doc}`UI automation guide <../../../getting-started/guides/ui-automation>`
+explains why Jumpstarter uses Appium and how to set it up. Enable it in the
+emulator's `config`:
 
 ```yaml
 config:

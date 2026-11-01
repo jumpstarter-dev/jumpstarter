@@ -1,10 +1,34 @@
 # UI Automation with Appium
 
 Jumpstarter gives every UI-automation target the same
-[Appium](https://appium.io/docs/en/latest/) client interface: an iOS simulator,
-an iPhone or iPad on a USB bench, an Android device or an Android emulator, local
+[Appium](https://appium.io/docs/en/latest/) client interface, whatever its
+platform: physical devices, emulators and simulators, on Android or iOS, local
 or remote. A test asks the target for an Appium endpoint and opens WebDriver
 sessions on it; it does not change when the target does.
+
+## Why Appium
+
+Appium is Jumpstarter's default UI-automation framework because it suits how
+Jumpstarter is used:
+
+- **One API on every platform.** Appium speaks the W3C WebDriver protocol and
+  hands each session to a platform driver, such as UiAutomator2 for Android or
+  XCUITest for iOS, with further drivers for desktop and TV platforms. Tests use
+  the same client calls whichever device they drive, so one suite covers every
+  target, and every Jumpstarter target can offer the same interface.
+- **Python support.** Jumpstarter clients are written in Python, and the Appium
+  project maintains an official Python client,
+  [Appium-Python-Client](https://github.com/appium/python-client), built on
+  Selenium's Python bindings. It installs with `pip`, works with pytest and other
+  Python test runners, and accepts the configuration Jumpstarter hands it
+  directly. Clients in other languages, such as Java, JavaScript, Ruby or .NET,
+  can connect too.
+- **Nothing to install on the client.** Appium and its platform drivers run on
+  the exporter, next to the device, so clients need only a WebDriver client
+  library: no Appium, Node.js or platform SDKs.
+- **Open and established.** Appium is open source under the Apache 2.0 licence,
+  hosted by the OpenJS Foundation, and widely used, so existing Appium tests,
+  tools and experience carry over.
 
 ## How it works
 
@@ -15,10 +39,10 @@ device's tools.
 
 | Target | Driver | Appium runs | Configure |
 | --- | --- | --- | --- |
-| iOS simulator | {doc}`iossimulator <../../reference/package-apis/drivers/iossimulator>` | exporter (macOS) | `appium:` with a prebuilt simulator WebDriverAgent |
-| iPhone or iPad on USB | {doc}`iosdevice <../../reference/package-apis/drivers/iosdevice>` | exporter | `appium:` with `wda_port` or WebDriverAgent launch capabilities |
 | Android device | {doc}`adb <../../reference/package-apis/drivers/adb>` | exporter | `appium:` |
 | Android emulator | {doc}`androidemulator <../../reference/package-apis/drivers/androidemulator>` | exporter | `appium:` |
+| iPhone or iPad on USB | {doc}`iosdevice <../../reference/package-apis/drivers/iosdevice>` | exporter | `appium:` with `wda_port` or WebDriverAgent launch capabilities |
+| iOS simulator | {doc}`iossimulator <../../reference/package-apis/drivers/iossimulator>` | exporter (macOS) | `appium:` with a prebuilt simulator WebDriverAgent |
 | iPhone or iPad in Xcode's Device Hub | {doc}`iosdevice <../../reference/package-apis/drivers/iosdevice>` | this Mac | `devicehub_appium()` with your WebDriverAgent build |
 
 Device Hub is the one case where Appium runs on the client: WebDriverAgent is
@@ -94,9 +118,9 @@ child sits next to `power` (`j simulator appium`).
 ## Prepare the exporter
 
 The exporter needs Node.js, Appium and the Appium driver for its targets:
-[XCUITest](https://github.com/appium/appium-xcuitest-driver) for iOS,
-[UiAutomator2](https://github.com/appium/appium-uiautomator2-driver) for
-Android, plus the Android SDK platform tools. Jumpstarter does not bundle,
+[UiAutomator2](https://github.com/appium/appium-uiautomator2-driver) and the
+Android SDK platform tools for Android,
+[XCUITest](https://github.com/appium/appium-xcuitest-driver) for iOS. Jumpstarter does not bundle,
 download, build or sign Appium, its drivers or WebDriverAgent.
 
 Containerized exporters pin these in their image. For example, on top of an
