@@ -527,9 +527,25 @@ async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope
                                     # Wait for hook to complete using background monitor
                                     # This allows afterLease logs to be displayed in real-time
                                     result = await monitor.wait_for_any_of(
-                                        [ExporterStatus.AVAILABLE, ExporterStatus.AFTER_LEASE_HOOK_FAILED],
+                                        [
+                                            ExporterStatus.AVAILABLE,
+                                            ExporterStatus.AFTER_LEASE_HOOK_FAILED,
+                                            ExporterStatus.OFFLINE,
+                                        ],
                                         timeout=300.0,
                                     )
+                                    if result == ExporterStatus.OFFLINE:
+                                        # The exporter is shutting down, after an on_failure=exit
+                                        # hook failure or at the end of an exitOnLeaseEnd lease, and
+                                        # only waits for this lease to be released, so no other
+                                        # status follows. The outcome it reported just before can
+                                        # come and go between two polls; previous_status keeps it.
+                                        if monitor.previous_status != ExporterStatus.AVAILABLE:
+                                            raise ExporterOfflineError(
+                                                monitor.status_message
+                                                or "Exporter went offline before the afterLease hook completed"
+                                            )
+                                        result = ExporterStatus.AVAILABLE
                                     if result == ExporterStatus.AVAILABLE:
                                         if monitor.status_message and monitor.status_message.startswith(
                                             HOOK_WARNING_PREFIX  # pragma: no cover
