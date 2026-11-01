@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -39,6 +40,12 @@ const (
 	// where the attempt itself already costs a good fraction of a second.
 	qemuComposePollPeriod = 2 * time.Second
 )
+
+// leasedExporterPrefix marks the line a jmp shell script prints to report the
+// exporter its lease landed on, so the spec can pick it out of the output.
+const leasedExporterPrefix = "LEASED_EXPORTER="
+
+var leasedExporterLine = regexp.MustCompile(`(?m)^` + leasedExporterPrefix + `([a-z0-9][-.a-z0-9]*[a-z0-9])\r?$`)
 
 // qemuGuestArch holds native ExporterSet QEMU e2e identifiers for the host.
 type qemuGuestArch struct {
@@ -180,49 +187,45 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 	})
 
 	It("power cycles QEMU then rotates the Pod/Exporter and stays responsive", func() {
-		By("recording the current Running Pod name and UID")
-		var oldName, oldUID string
-		Eventually(func(g Gomega) {
-			out, err := Kubectl("-n", ns, "get", "pod",
-				"-l", guest.Selector,
-				"--field-selector=status.phase=Running",
-				"-o", "jsonpath={.items[0].metadata.name}")
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(out).NotTo(BeEmpty())
-			oldName = out
-			uid, err := Kubectl("-n", ns, "get", "pod", oldName,
-				"-o", "jsonpath={.metadata.uid}")
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(uid).NotTo(BeEmpty())
-			oldUID = uid
-		}, 2*time.Minute, qemuComposePollPeriod).Should(Succeed())
-
 		By(fmt.Sprintf("power on, assert %s is running, then power off", guest.QemuBinary))
 		// One lease: start QEMU via the runtime sidecar, confirm the expected
 		// qemu-system-* binary is the process that started, stop it, then
 		// release so exitOnLeaseEnd completes the Pod and ExitAndReplace recycles it.
+		//
+		// Everything below follows the exporter this lease landed on, which jmp
+		// shell names in JMP_EXPORTER (ExporterSet names each Pod after its
+		// Exporter). Asking the cluster for "the Running Pod" instead is
+		// ambiguous at this point: the previous spec's lease also ended with
+		// exitOnLeaseEnd, so its Pod is still Running (the sidecar outlives the
+		// exporter) while it waits to be recycled. A spec that recorded that Pod
+		// as the one to replace saw the recycle of its own lease as the
+		// replacement, then waited on a Pod that was about to be deleted.
 		powerScript := fmt.Sprintf(`
 set -eu
+echo "%s$JMP_EXPORTER"
 j qemu power on
-pod=$(kubectl -n %q get pod -l %q --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}')
-ps_out=$(kubectl -n %q exec "$pod" -c target-runtime -- ps -eo args=)
+ps_out=$(kubectl -n %q exec "$JMP_EXPORTER" -c target-runtime -- ps -eo args=)
 echo "$ps_out"
 echo "$ps_out" | grep -F %q
 j qemu power off
-`, ns, guest.Selector, ns, guest.QemuBinary)
-		MustJmp("shell", "--client", exporterSetQemuClientName,
+`, leasedExporterPrefix, ns, guest.QemuBinary)
+		out := MustJmp("shell", "--client", exporterSetQemuClientName,
 			"--selector", guest.Selector,
 			"--duration", "5m",
 			"--", "sh", "-c", powerScript)
+		m := leasedExporterLine.FindStringSubmatch(out)
+		Expect(m).NotTo(BeNil(), "jmp shell did not report the leased exporter: %s", out)
+		leased := m[1]
 
-		By("waiting for the old Pod/Exporter to be deleted and a single replacement Running")
+		By(fmt.Sprintf("waiting for leased %s to be deleted and a single replacement Running", leased))
+		var replacement string
 		Eventually(func(g Gomega) {
 			// Old Completed instance must be gone (controller deletes Exporter → cascade Pod).
-			_, err := Kubectl("-n", ns, "get", "pod", oldName)
-			g.Expect(err).To(HaveOccurred(), "old Pod %s should be deleted after ExitAndReplace", oldName)
+			_, err := Kubectl("-n", ns, "get", "pod", leased)
+			g.Expect(err).To(HaveOccurred(), "old Pod %s should be deleted after ExitAndReplace", leased)
 
-			_, err = Kubectl("-n", ns, "get", "exporter", oldName)
-			g.Expect(err).To(HaveOccurred(), "old Exporter %s should be deleted after ExitAndReplace", oldName)
+			_, err = Kubectl("-n", ns, "get", "exporter", leased)
+			g.Expect(err).To(HaveOccurred(), "old Exporter %s should be deleted after ExitAndReplace", leased)
 
 			podNames, err := Kubectl("-n", ns, "get", "pod",
 				"-l", guest.Selector,
@@ -231,11 +234,6 @@ j qemu power off
 			g.Expect(err).NotTo(HaveOccurred())
 			names := strings.Fields(strings.TrimSpace(podNames))
 			g.Expect(names).To(HaveLen(1), "expected exactly one Running Pod, got %v", names)
-
-			uid, err := Kubectl("-n", ns, "get", "pod", names[0],
-				"-o", "jsonpath={.metadata.uid}")
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(uid).NotTo(Equal(oldUID), "replacement Pod should have a new UID")
 
 			ready, err := Kubectl("-n", ns, "get", "pod", names[0],
 				"-o", "jsonpath={.status.containerStatuses[*].ready}")
@@ -246,19 +244,13 @@ j qemu power off
 				"-l", guest.Selector,
 				"-o", "jsonpath={range .items[*]}{.metadata.name}{' '}{end}")
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(strings.Fields(strings.TrimSpace(exporters))).To(HaveLen(1),
-				"expected exactly one Exporter after recycle, got %q", exporters)
+			g.Expect(strings.Fields(strings.TrimSpace(exporters))).To(Equal(names),
+				"expected the replacement Pod's Exporter to be the only one after recycle")
+			replacement = names[0]
 		}, 5*time.Minute, qemuComposePollPeriod).Should(Succeed())
 
-		By("waiting for the replacement exporter to become Available")
-		var exporterName string
-		Eventually(func() string {
-			exporterName = KubectlQuery("-n", ns, "get", "exporter",
-				"-l", guest.Selector,
-				"-o", "jsonpath={.items[0].metadata.name}")
-			return exporterName
-		}, 2*time.Minute, qemuPollPeriod).ShouldNot(BeEmpty())
-		WaitForExporter(exporterName)
+		By(fmt.Sprintf("waiting for replacement exporter %s to become Available", replacement))
+		WaitForExporter(replacement)
 
 		By("verifying the replacement still responds to qemu power on/off")
 		MustJmp("shell", "--client", exporterSetQemuClientName,

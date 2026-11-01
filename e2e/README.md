@@ -188,7 +188,7 @@ arch detected via `qemu-guest-arch.sh`; Alpine guest image ensured via
 |---|---|---|
 | brings an Exporter Online with a Ready Pod | wait for ExporterSet-created Exporter, wait Online/Registered/Available, wait Pod Running+Ready | Pod ready; `target-runtime` container has the expected `qemu-system-*` binary |
 | leases, flashes Alpine, and boots to a console login marker | run `qemu_flash_boot.py` under `jmp shell --duration 1h` | script output contains "OK: matched marker" |
-| power cycles QEMU then rotates the Pod/Exporter and stays responsive | record old Pod name/UID; `j qemu power on/off` inside shell, verify qemu binary is the running process; wait old Pod+Exporter deleted, one new Pod/Exporter running w/ new UID; re-run `j qemu power on/off` | ExitAndReplace produced exactly one new, ready, differently-UID'd Pod/Exporter that still answers power commands |
+| power cycles QEMU then rotates the Pod/Exporter and stays responsive | `j qemu power on/off` inside shell, which reports the leased exporter from `$JMP_EXPORTER` and verifies the qemu binary is the running process in that Pod; wait for the leased Pod+Exporter to be deleted and exactly one other Pod/Exporter to be running; re-run `j qemu power on/off` | ExitAndReplace replaced the Pod/Exporter the lease used with exactly one new, ready Pod/Exporter that still answers power commands |
 
 ---
 
