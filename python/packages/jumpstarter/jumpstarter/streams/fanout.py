@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import logging
+import threading
 from collections import deque
 from collections.abc import AsyncGenerator, Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppress
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
@@ -13,7 +13,7 @@ from anyio import (
     BrokenResourceError,
     ClosedResourceError,
 )
-from anyio.abc import ObjectStream
+from anyio.abc import ObjectStream, TaskGroup
 from anyio.from_thread import run_sync as run_sync_from_thread
 
 from jumpstarter.common.exceptions import CONSOLE_IN_USE_MARKER, JumpstarterException
@@ -27,6 +27,10 @@ _UNSET = object()
 # Max time an attach_*() call waits for the reader to open the source before
 # giving up, so a hung source_factory can't wedge an attach (or the write token).
 _SOURCE_READY_TIMEOUT = 30.0
+
+# Max time to wait for the source to close when the reader stops, so a source
+# whose close hangs can't wedge a detach or the end of a session.
+_SOURCE_CLOSE_TIMEOUT = 5.0
 
 
 class ExclusiveSessionActive(JumpstarterException):
@@ -213,12 +217,19 @@ class ObserverStream(_FanOutStreamBase):
             await self._fanout._detach(self._id, release_token=False)
 
 
+@dataclass(slots=True)
+class _Reader:
+    scope: anyio.CancelScope = field(default_factory=anyio.CancelScope)
+    done: anyio.Event = field(default_factory=anyio.Event)
+
+
 class StreamFanOut:
     """Fan-out a source stream to one exclusive writer and N observers.
 
     The source is opened via a factory and managed by the fan-out. A background
     reader loop reads from the source and distributes bytes to all attached
-    clients. The reader loop never blocks — all clients use bounded buffers
+    clients. The reader runs in the task group of ``running()``, so clients can
+    attach only inside that context. The reader loop never blocks — all clients use bounded buffers
     with configurable overflow policy.
 
     With always_on=True (default), the source stays open for the lifetime of
@@ -244,7 +255,9 @@ class StreamFanOut:
         self._lock = anyio.Lock()
         self._reader_running = False
         self._shutdown = False
-        self._reader_task: asyncio.Task[None] | None = None
+        self._reader: _Reader | None = None
+        self._task_group: TaskGroup | None = None
+        self._loop_thread: int | None = None
         self._started = False
         self._source_ready = anyio.Event()
         self._next_id = 0
@@ -271,7 +284,7 @@ class StreamFanOut:
 
         while not self._shutdown:
             try:
-                async with self._source_factory() as source:
+                async with self._open_source() as source:
                     self._source = source
                     backoff = 0.1
                     if not first_connect:
@@ -313,6 +326,17 @@ class StreamFanOut:
         self._source = None
         self._reader_running = False
 
+    @asynccontextmanager
+    async def _open_source(self) -> AsyncGenerator[ObjectStream[bytes], None]:
+        """Open the source and close it even while the reader is being cancelled."""
+        stack = AsyncExitStack()
+        source = await stack.enter_async_context(self._source_factory())
+        try:
+            yield source
+        finally:
+            with anyio.CancelScope(shield=True), anyio.move_on_after(_SOURCE_CLOSE_TIMEOUT):
+                await stack.aclose()
+
     def _broadcast_data(self, data: bytes) -> None:
         """Push data to all clients, pruning any whose buffer has closed.
 
@@ -336,45 +360,70 @@ class StreamFanOut:
             with suppress(Exception):
                 buf.push(msg)
 
-    async def _run_reader(self) -> None:
+    async def _run_reader(self, reader: _Reader) -> None:
         try:
-            await self._reader_loop()
-        except Exception:
-            if not self._shutdown:
-                logger.exception("Reader loop failed unexpectedly")
+            with reader.scope:
+                try:
+                    await self._reader_loop()
+                except Exception:
+                    if not self._shutdown:
+                        logger.exception("Reader loop failed unexpectedly")
+                # If the reader stops while we are not deliberately shutting down
+                # (e.g. _reader_loop raised a non-IO exception after the source was
+                # ready), reset the start state so the next attach restarts the
+                # reader instead of blocking on _source_ready until the timeout.
+                # This stays inside reader.scope: _stop_reader holds _lock while it
+                # waits for the reader, and must be able to cancel this lock wait.
+                if not self._shutdown:
+                    async with self._lock:
+                        for buf in self._clients.values():
+                            buf.close()
+                        self._clients.clear()
+                        self._write_token_holder = None
+                        self._reset_reader_state()
         finally:
-            # If the reader stops while we are not deliberately shutting down
-            # (e.g. _reader_loop raised a non-IO exception after the source was
-            # ready), reset the start state so the next attach restarts the
-            # reader instead of blocking on _source_ready until the timeout.
-            # During a real shutdown, _stop_reader/shutdown_sync own this reset.
-            if not self._shutdown:
-                async with self._lock:
-                    for buf in self._clients.values():
-                        buf.close()
-                    self._clients.clear()
-                    self._write_token_holder = None
-                    self._scrollback.clear()
-                    self._scrollback_bytes = 0
-                    self._source = None
-                    self._reader_running = False
-                    self._started = False
-                    self._source_ready = anyio.Event()
+            reader.done.set()
+
+    def _reset_reader_state(self) -> None:
+        self._reader = None
+        self._started = False
+        self._reader_running = False
+        self._source = None
+        self._scrollback.clear()
+        self._scrollback_bytes = 0
+        self._source_ready = anyio.Event()
 
     async def _ensure_started(self) -> None:
         """Start the reader loop. Must hold _lock."""
         if self._started or self._shutdown:
             return
+        if self._task_group is None:
+            raise RuntimeError("StreamFanOut is not running; attach inside running()")
         self._started = True
         self._source_ready = anyio.Event()
-        # Deliberately asyncio, not an anyio TaskGroup: the reader must outlive
-        # the attach_*() call that starts it and survive across the many later
-        # _detach() calls (in other tasks) that come and go. anyio has no
-        # detached-spawn primitive — a TaskGroup must enter/exit in one task,
-        # which would either tie the reader's lifetime to the first attacher or
-        # reintroduce a cross-task cancel-scope violation. jumpstarter runs
-        # exclusively on the asyncio backend, so create_task() is safe here.
-        self._reader_task = asyncio.get_running_loop().create_task(self._run_reader())
+        self._reader = _Reader()
+        self._task_group.start_soon(self._run_reader, self._reader)
+
+    @asynccontextmanager
+    async def running(self) -> AsyncGenerator[StreamFanOut, None]:
+        """Run the reader loop for as long as this context is open.
+
+        Leaving it boots every client and stops the reader, waiting for the
+        source to close.
+        """
+        if self._task_group is not None:
+            raise RuntimeError("StreamFanOut is already running")
+        try:
+            async with anyio.create_task_group() as tg:
+                self._task_group, self._loop_thread = tg, threading.get_ident()
+                try:
+                    yield self
+                finally:
+                    self._task_group = self._loop_thread = None
+                    self.kick_sync()
+                    tg.cancel_scope.cancel()
+        finally:
+            self._reset_reader_state()
 
     async def _wait_source_ready(self, timeout: float = _SOURCE_READY_TIMEOUT) -> None:
         """Wait for the reader loop to open the source. Call after releasing _lock.
@@ -412,14 +461,10 @@ class StreamFanOut:
 
         try:
             await self._wait_source_ready()
-        except TimeoutError:
-            await self._detach(client_id, release_token=True)
-            raise
-        stream = ExclusiveStream(self, client_id, buf)
-        try:
-            yield stream
+            yield ExclusiveStream(self, client_id, buf)
         finally:
-            await self._detach(client_id, release_token=True)
+            with anyio.CancelScope(shield=True):
+                await self._detach(client_id, release_token=True)
 
     @asynccontextmanager
     async def attach_observer(
@@ -439,14 +484,10 @@ class StreamFanOut:
 
         try:
             await self._wait_source_ready()
-        except TimeoutError:
-            await self._detach(client_id, release_token=False)
-            raise
-        stream = ObserverStream(self, client_id, buf)
-        try:
-            yield stream
+            yield ObserverStream(self, client_id, buf)
         finally:
-            await self._detach(client_id, release_token=False)
+            with anyio.CancelScope(shield=True):
+                await self._detach(client_id, release_token=False)
 
     async def _detach(self, client_id: int, release_token: bool) -> None:
         """Remove a client. Close source if last client and not always_on."""
@@ -469,19 +510,13 @@ class StreamFanOut:
     async def _stop_reader(self) -> None:
         """Stop the reader loop and wait for it to finish."""
         self._shutdown = True
-        task = self._reader_task
-        if task is not None:
-            task.cancel()
-            with suppress(asyncio.CancelledError, Exception):
-                await task
-            self._reader_task = None
-        self._started = False
-        self._reader_running = False
-        self._source = None
-        self._scrollback.clear()
-        self._scrollback_bytes = 0
+        reader = self._reader
+        if reader is not None:
+            reader.scope.cancel()
+            with anyio.CancelScope(shield=True), anyio.move_on_after(_SOURCE_CLOSE_TIMEOUT):
+                await reader.done.wait()
+        self._reset_reader_state()
         self._shutdown = False
-        self._source_ready = anyio.Event()
 
     def kick_sync(self) -> None:
         """Boot every attached client and release the write token.
@@ -507,18 +542,14 @@ class StreamFanOut:
         session-end teardown, not for a client-callable kick (use kick_sync).
 
         Must run on the event-loop thread; the caller (exporter Session
-        teardown) does. The reader task is cancelled but cannot be awaited from
-        a sync method, so drivers holding a physical handle (e.g. a serial
-        transport) should close it explicitly before calling this to guarantee
-        the resource is released before the next session opens it.
+        teardown) does. Inside a session the reader has already stopped and
+        closed the source when running() exited; otherwise it is cancelled here
+        but cannot be awaited from a sync method.
         """
         self._shutdown = True
-        if self._reader_task is not None:
-            try:
-                self._reader_task.cancel()
-            except Exception:
-                logger.debug("Failed to cancel reader task during shutdown", exc_info=True)
-            self._reader_task = None
+        if self._reader is not None:
+            self._reader.scope.cancel()
+            self._reader = None
         for buf in self._clients.values():
             buf.close()
         self._clients.clear()
@@ -616,17 +647,13 @@ class FanOutStreamMixin:
         Full teardown happens at session end via shutdown().
         """
         if self._fanout is not None:
-            try:
-                asyncio.get_running_loop()
-            except RuntimeError:
-                if self._fanout._reader_task is None:
-                    self._fanout.kick_sync()
-                else:
-                    # Needs an AnyIO worker thread (DriverCall runs exported sync
-                    # methods in one); a plain threading.Thread has no loop to hop to.
-                    run_sync_from_thread(self._fanout.kick_sync)
-            else:
+            loop_thread = self._fanout._loop_thread
+            if loop_thread is None or loop_thread == threading.get_ident():
                 self._fanout.kick_sync()
+            else:
+                # Needs an AnyIO worker thread (DriverCall runs exported sync
+                # methods in one); a plain threading.Thread has no loop to hop to.
+                run_sync_from_thread(self._fanout.kick_sync)
         if hasattr(super(), "close"):
             super().close()  # ty: ignore[unresolved-attribute]
 
