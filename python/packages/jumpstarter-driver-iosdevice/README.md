@@ -126,10 +126,12 @@ Xcode 27, or before Xcode has been opened once to install its device support,
 `devicehub` warns that the device will not appear in Device Hub.
 
 Once per boot, create the virtual network link the Mac uses to reach the
-device. The script is in this package's `scripts` directory:
+device. The script is installed with this package, in its
+`jumpstarter_driver_iosdevice/scripts` directory; `j ios devicehub` prints its
+full path when the link is missing:
 
 ```shell
-sudo ./scripts/devicehub-link-macos.sh
+sudo sh "$(python3 -c 'from jumpstarter_driver_iosdevice.netstack import SETUP_SCRIPT; print(SETUP_SCRIPT)')"
 ```
 
 Then, inside a lease:

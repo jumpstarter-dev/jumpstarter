@@ -26,6 +26,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Self
 
 from anyio import BrokenResourceError, ClosedResourceError, EndOfStream
@@ -53,6 +54,8 @@ WINDOW = 65535
 RETRANSMIT_INITIAL = 0.2
 RETRANSMIT_MAX = 3.0
 RETRANSMIT_LIMIT = 12
+# Installed with the package, so it is there for pip installs too.
+SETUP_SCRIPT = Path(__file__).parent / "scripts" / "devicehub-link-macos.sh"
 
 
 def interface_mac(name: str) -> bytes:
@@ -101,7 +104,7 @@ class Bpf:
             raise OSError("no BPF device is free")
         if not hasattr(self, "fd"):
             raise PermissionError(
-                "cannot open a BPF device; run scripts/devicehub-link-macos.sh with sudo after each boot"
+                f"cannot open a BPF device; run `sudo sh {SETUP_SCRIPT}` once after each boot"
             ) from last
         fcntl.ioctl(self.fd, BIOCSBLEN, struct.pack("I", BPF_BUFFER))
         fcntl.ioctl(self.fd, BIOCSETIF, struct.pack("16s16x", interface.encode()))

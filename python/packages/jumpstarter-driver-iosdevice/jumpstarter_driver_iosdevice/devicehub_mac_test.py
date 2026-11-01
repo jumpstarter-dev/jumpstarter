@@ -3,6 +3,7 @@ import io
 import json
 import os
 import plistlib
+import re
 import socket
 import sys
 from contextlib import asynccontextmanager
@@ -244,8 +245,13 @@ def test_check_link_explains_the_setup_script(monkeypatch, output, ready):
     if ready:
         devicehub_mac.check_link()
     else:
-        with pytest.raises(RuntimeError, match=f"sudo {devicehub_mac.SETUP_SCRIPT}"):
+        with pytest.raises(RuntimeError, match=re.escape(f"sudo sh {devicehub_mac.SETUP_SCRIPT}")):
             devicehub_mac.check_link()
+
+
+def test_setup_script_is_installed_with_the_package():
+    assert devicehub_mac.SETUP_SCRIPT.is_file()
+    assert devicehub_mac.SETUP_SCRIPT.read_text().startswith("#!/bin/sh")
 
 
 def test_txt_record_is_length_prefixed():

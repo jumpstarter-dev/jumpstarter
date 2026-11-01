@@ -6,7 +6,7 @@
 # device is reached through Jumpstarter, so the client answers for it on feth1
 # while macOS talks to it through feth0. Run once per boot:
 #
-#   sudo ./devicehub-link-macos.sh
+#   sudo sh devicehub-link-macos.sh
 #
 # Granting BPF access lets the user capture packets on every interface until
 # the next reboot, as Wireshark's ChmodBPF does.

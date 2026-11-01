@@ -1,7 +1,8 @@
 """Client side of Device Hub access, for a Mac holding a lease.
 
 The leased device appears to macOS as a network device on a private virtual
-Ethernet link (see ``scripts/devicehub-link-macos.sh``): the Mac owns
+Ethernet link (see ``scripts/devicehub-link-macos.sh``, installed with this
+package): the Mac owns
 ``feth0`` and this module answers for the device on ``feth1``. Its Bonjour
 advert is published only on that link, and every connection the Mac makes to
 the device is carried to the exporter through the lease.
@@ -40,7 +41,7 @@ from anyio import (
     to_thread,
 )
 
-from .netstack import Stack
+from .netstack import SETUP_SCRIPT, Stack
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,6 @@ HOST_ADDRESS = "fd6a:7374:6a73::1"
 DEVICE_ADDRESS = "fd6a:7374:6a73::2"
 CONTROL_PORT = 49152
 PAIRABLE_HOST_SERVICE = "_remotepairing-pairable-host._tcp"
-SETUP_SCRIPT = "scripts/devicehub-link-macos.sh"
 XCODE_MINIMUM = 27
 DEVICE_HUB_APP = "Contents/Applications/DeviceHub.app"
 XCODE_FOLDERS = (Path("/Applications"), Path.home() / "Applications")
@@ -155,10 +155,7 @@ def check_link() -> None:
     except (OSError, subprocess.CalledProcessError):
         output = ""
     if HOST_ADDRESS not in output:
-        raise RuntimeError(
-            f"the Device Hub link is not set up; run `sudo {SETUP_SCRIPT}` from jumpstarter-driver-iosdevice "
-            "once after each boot"
-        )
+        raise RuntimeError(f"the Device Hub link is not set up; run `sudo sh {SETUP_SCRIPT}` once after each boot")
 
 
 def _txt(entries: dict) -> bytes:
