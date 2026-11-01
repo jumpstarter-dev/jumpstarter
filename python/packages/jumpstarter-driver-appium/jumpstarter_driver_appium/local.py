@@ -25,9 +25,13 @@ def find_appium(executable: str) -> str:
     return resolved
 
 
+# Proxy settings, common on managed Macs, must not divert a loopback probe.
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
 def _ready(url: str) -> bool:
     try:
-        with urllib.request.urlopen(f"{url}/status", timeout=2) as response:
+        with _DIRECT.open(f"{url}/status", timeout=2) as response:
             return json.load(response).get("value", {}).get("ready") is True
     except (OSError, ValueError, AttributeError):
         return False

@@ -8,7 +8,6 @@ import subprocess
 import tempfile
 import threading
 import time
-import urllib.request
 import uuid
 from abc import ABCMeta, abstractmethod
 from contextlib import asynccontextmanager, suppress
@@ -22,6 +21,7 @@ from anyio import CancelScope, to_thread
 from .common import APP_TOKEN_PREFIX, check_app_name
 from .gateway import serve_http
 from .https import HttpsIdentity, https_endpoint
+from .local import _ready as local_ready
 from .policy import _HOST_CAPABILITY, AppiumPolicy, PolicyError
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.driver import Driver, export, exportstream
@@ -87,11 +87,7 @@ def _log_tail(path: Path, limit: int = 4096) -> str:
 
 
 def _ready(port: int) -> bool:
-    try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/status", timeout=2) as response:
-            return json.load(response).get("value", {}).get("ready") is True
-    except (OSError, ValueError, AttributeError):
-        return False
+    return local_ready(f"http://127.0.0.1:{port}")
 
 
 @dataclass
@@ -100,6 +96,7 @@ class _Server:
     port: int
     directory: Path
     identity: HttpsIdentity
+    target: Any = None
 
 
 @dataclass(kw_only=True)
@@ -175,6 +172,10 @@ class AppiumDriver(AppiumInterface, Driver):
         stopping Appium.
         """
 
+    def target_key(self) -> Any:
+        """Identify the device ``prepare()`` found; Appium restarts when it changes."""
+        return None
+
     def state_root(self) -> str | None:
         """Existing directory that holds the lease's private Appium state."""
         return self.state_dir
@@ -194,9 +195,28 @@ class AppiumDriver(AppiumInterface, Driver):
             raise PolicyError(f"Unknown application upload {token}; upload it again in this lease")
         return str(path)
 
-    def _start(self) -> _Server:
+    def _check_target(self) -> Any:
+        """Run ``prepare()``; stop Appium if its device is gone or another took its place.
+
+        Fixed capabilities pin new sessions only, so an existing session must not
+        outlive the device it was started for.
+        """
         # Outside the lock: target drivers may take their own locks here.
-        self.prepare()
+        try:
+            self.prepare()
+        except BaseException:
+            self.stop_server()
+            raise
+        key = self.target_key()
+        with self._lock:
+            server = self._server
+        if server is not None and server.target != key:
+            self.logger.warning("The target device changed; stopping the Appium started for the previous one")
+            self.stop_server()
+        return key
+
+    def _start(self) -> _Server:
+        key = self._check_target()
         with self._lock:
             if self._server is not None and self._server.process.poll() is None:
                 return self._server
@@ -250,7 +270,9 @@ class AppiumDriver(AppiumInterface, Driver):
                     stderr=subprocess.STDOUT,
                     start_new_session=True,
                 )
-            self._server = _Server(process=process, port=port, directory=directory, identity=HttpsIdentity.generate())
+            self._server = _Server(
+                process=process, port=port, directory=directory, identity=HttpsIdentity.generate(), target=key
+            )
             deadline = time.monotonic() + self.startup_timeout
             while not _ready(port):
                 if process.poll() is not None or time.monotonic() >= deadline:
@@ -311,6 +333,7 @@ class AppiumDriver(AppiumInterface, Driver):
     @exportstream
     @asynccontextmanager
     async def connect(self):
+        await to_thread.run_sync(self._check_target)
         with self._lock:
             server = self._server
             if server is None or server.process.poll() is not None:

@@ -175,6 +175,38 @@ def test_stop_starts_a_fresh_server(appium, fake_appium):
     assert len(records(fake_appium[1])) == 2
 
 
+class SwappableTarget(AppiumDriver):
+    device: str | None = "first"
+
+    def prepare(self):
+        if self.device is None:
+            raise RuntimeError("The device is not present")
+
+    def target_key(self):
+        return self.device
+
+
+@pytest.mark.parametrize("change", ["another device", "device gone"])
+def test_appium_stops_when_its_device_changes(fake_appium, tmp_path, change):
+    driver = SwappableTarget(executable=str(fake_appium[0]), state_dir=str(tmp_path))
+    with serve(driver) as client:
+        with client.serve() as target:
+            assert request(target, "GET", "/status")[0] == 200
+        first = driver._server
+        assert first is not None
+        driver.device = "second" if change == "another device" else None
+        if change == "another device":
+            with client.serve() as target:
+                assert request(target, "GET", "/status")[0] == 200
+            assert driver._server is not None and driver._server is not first
+            assert driver._server.target == "second"
+        else:
+            with pytest.raises(Exception, match="not present"):
+                client.info()
+            assert driver._server is None
+        assert first.process.poll() is not None
+
+
 def test_startup_failure_is_reported(fake_appium, monkeypatch, tmp_path):
     monkeypatch.setenv("FAKE_APPIUM_FAIL", "1")
     driver = AppiumDriver(executable=str(fake_appium[0]), state_dir=str(tmp_path))
