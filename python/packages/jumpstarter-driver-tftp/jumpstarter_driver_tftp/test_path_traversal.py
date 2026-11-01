@@ -2,74 +2,35 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from jumpstarter_driver_tftp.server import TftpErrorCode, TftpServer, TftpServerProtocol
+from jumpstarter_driver_tftp.server import TftpErrorCode, TftpRequestError, TftpServer
 
 
 @pytest.fixture
 def server():
-    operator = AsyncMock()
-    return TftpServer(
-        host="127.0.0.1",
-        port=0,
-        operator=operator,
-    )
+    return TftpServer(host="127.0.0.1", port=0, operator=AsyncMock())
 
 
-@pytest.fixture
-def protocol(server):
-    proto = TftpServerProtocol(server)
-    proto.transport = MagicMock()
-    return proto
+def _a_file():
+    stat = MagicMock()
+    stat.mode.is_file.return_value = True
+    return stat
 
 
 class TestResolveAndValidatePath:
     @pytest.mark.anyio
-    async def test_rejects_dot_dot_path(self, protocol):
-        result = await protocol._resolve_and_validate_path("..", ("127.0.0.1", 12345))
-        assert result is None
+    @pytest.mark.parametrize(
+        "filename", ["..", "../etc/passwd", "subdir/../../../etc/passwd", "subdir/..", "/etc/passwd"]
+    )
+    async def test_rejects_paths_outside_the_root(self, server, filename):
+        with pytest.raises(TftpRequestError) as rejected:
+            await server._resolve_and_validate_path(filename)
+
+        assert rejected.value.code == TftpErrorCode.ACCESS_VIOLATION
+        server.operator.stat.assert_not_called()
 
     @pytest.mark.anyio
-    async def test_rejects_dot_dot_prefix(self, protocol):
-        result = await protocol._resolve_and_validate_path("../etc/passwd", ("127.0.0.1", 12345))
-        assert result is None
+    @pytest.mark.parametrize("filename", ["boot.img", "file..name.txt"])
+    async def test_allows_files_in_the_root(self, server, filename):
+        server.operator.stat = AsyncMock(return_value=_a_file())
 
-    @pytest.mark.anyio
-    async def test_rejects_dot_dot_in_middle(self, protocol):
-        result = await protocol._resolve_and_validate_path("subdir/../../../etc/passwd", ("127.0.0.1", 12345))
-        assert result is None
-
-    @pytest.mark.anyio
-    async def test_rejects_dot_dot_at_end(self, protocol):
-        result = await protocol._resolve_and_validate_path("subdir/..", ("127.0.0.1", 12345))
-        assert result is None
-
-    @pytest.mark.anyio
-    async def test_allows_valid_filename(self, protocol, server):
-        stat_result = MagicMock()
-        stat_result.mode.is_file.return_value = True
-        server.operator.stat = AsyncMock(return_value=stat_result)
-
-        result = await protocol._resolve_and_validate_path("boot.img", ("127.0.0.1", 12345))
-        assert result == "boot.img"
-
-    @pytest.mark.anyio
-    async def test_allows_filename_containing_dots(self, protocol, server):
-        stat_result = MagicMock()
-        stat_result.mode.is_file.return_value = True
-        server.operator.stat = AsyncMock(return_value=stat_result)
-
-        result = await protocol._resolve_and_validate_path("file..name.txt", ("127.0.0.1", 12345))
-        assert result == "file..name.txt"
-
-    @pytest.mark.anyio
-    async def test_rejects_absolute_path(self, protocol):
-        result = await protocol._resolve_and_validate_path("/etc/passwd", ("127.0.0.1", 12345))
-        assert result is None
-
-    @pytest.mark.anyio
-    async def test_sends_access_violation_on_traversal(self, protocol):
-        await protocol._resolve_and_validate_path("../secret", ("127.0.0.1", 12345))
-        protocol.transport.sendto.assert_called_once()
-        sent_data = protocol.transport.sendto.call_args[0][0]
-        error_code = int.from_bytes(sent_data[2:4], "big")
-        assert error_code == TftpErrorCode.ACCESS_VIOLATION
+        assert await server._resolve_and_validate_path(filename) == filename
