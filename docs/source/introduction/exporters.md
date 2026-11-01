@@ -86,3 +86,10 @@ the client can access drivers, and an `afterLease` hook runs after the
 {term}`Hook`s are configured in the `hooks` section of the exporter config file and
 use the {term}`j` CLI to interact with exported devices. For full details, see
 [Hooks](hooks.md).
+
+The exporter runs these lease boundaries as an explicit state machine. The
+diagram below is generated from the production states in
+`jumpstarter.exporter.fsm` (regenerate with `make docs-generate-fsm`).
+
+```{include} exporter-fsm-diagram.md
+```

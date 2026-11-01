@@ -82,7 +82,7 @@ demo-play:
 # ---- Documentation targets ----
 
 .PHONY: docs docs-singlehtml docs-all docs-serve docs-serve-all docs-linkcheck \
-	docs-test docs-test-grpc docs-check-grpc docs-generate-crds docs-generate-grpc clean-docs
+	docs-test docs-test-grpc docs-check-grpc docs-generate-crds docs-generate-grpc docs-generate-fsm clean-docs
 
 docs-generate-crds:
 	$(UV_DOCS) python3 ../docs/source/reference/generate-crd-docs.py
@@ -90,16 +90,19 @@ docs-generate-crds:
 docs-generate-grpc:
 	$(UV_DOCS) python3 ../docs/source/reference/generate_grpc_docs.py
 
-docs: docs-generate-crds docs-generate-grpc
+docs-generate-fsm:
+	$(UV_DOCS) python3 ../docs/source/reference/generate_fsm_diagram.py
+
+docs: docs-generate-crds docs-generate-grpc docs-generate-fsm
 	$(UV_DOCS) $(MAKE) -C ../docs html SPHINXOPTS="-W --keep-going -n"
 
-docs-singlehtml: docs-generate-crds docs-generate-grpc
+docs-singlehtml: docs-generate-crds docs-generate-grpc docs-generate-fsm
 	$(UV_DOCS) $(MAKE) -C ../docs singlehtml
 
-docs-all: docs-generate-crds docs-generate-grpc
+docs-all: docs-generate-crds docs-generate-grpc docs-generate-fsm
 	$(UV_DOCS) $(MAKE) -C ../docs multiversion
 
-docs-serve: clean-docs docs-generate-crds docs-generate-grpc
+docs-serve: clean-docs docs-generate-crds docs-generate-grpc docs-generate-fsm
 	$(UV_DOCS) $(MAKE) -C ../docs serve
 
 docs-serve-all: clean-docs docs-all
@@ -118,10 +121,10 @@ docs-check-grpc:
 docs-test-grpc:
 	$(UV_DOCS) pytest --cov=../docs/source/reference --cov-report=xml:../docs/source/reference/coverage.xml ../docs/source/reference/generate_grpc_docs_test.py
 
-docs-test: docs-generate-crds docs-generate-grpc
+docs-test: docs-generate-crds docs-generate-grpc docs-generate-fsm
 	$(UV_DOCS) $(MAKE) -C ../docs doctest
 
-docs-linkcheck: docs-generate-crds docs-generate-grpc
+docs-linkcheck: docs-generate-crds docs-generate-grpc docs-generate-fsm
 	$(UV_DOCS) $(MAKE) -C ../docs linkcheck
 
 clean-docs:
