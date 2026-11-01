@@ -81,4 +81,11 @@ class AdbDeviceAppium(AndroidAppium):
         info = self.device.info()
         if info.get("present") != "yes":
             raise RuntimeError(info.get("reason") or "The Android device is not present")
-        return info["serial"]
+        serial = info["serial"]
+        # A configured serial is reported present without asking adb, so check that the
+        # server sees it: Appium must not keep a session on a device that has left.
+        states = {visible: state for visible, state, _ in self.device._visible_devices()}
+        if states.get(serial) != "device":
+            state = states.get(serial)
+            raise RuntimeError(f"The Android device {serial} is {state or 'not connected'}")
+        return serial
