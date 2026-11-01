@@ -10,10 +10,10 @@ from typing import TYPE_CHECKING
 from anyio import Event
 
 from jumpstarter.common import ExporterStatus
+from jumpstarter.exporter.lease_hooks import HookPlan
 
 if TYPE_CHECKING:
     from jumpstarter.exporter.session import Session
-
 
 @dataclass
 class LeaseContext:
@@ -25,6 +25,7 @@ class LeaseContext:
 
     Attributes:
         lease_name: Name of the current lease assigned by the controller
+        lease_uid: UID of that lease; tells it apart from an earlier lease with the same name
         session: The Session object managing the device and gRPC services (set in handle_lease)
         socket_path: Unix socket path where the session is serving (set in handle_lease)
         hook_socket_path: Separate Unix socket for hook j commands to avoid SSL frame corruption
@@ -36,10 +37,13 @@ class LeaseContext:
         client_name: Name of the client currently holding the lease (empty if unleased)
         current_status: Current exporter status (stored here for access before session is created)
         status_message: Message describing the current status
+        hooks: How this process runs the lease's hooks, and what the controller's hook record
+            shows of them (see lease_hooks)
     """
 
     lease_name: str
     before_lease_hook: Event
+    lease_uid: str = ""
     end_session_requested: Event = field(default_factory=Event)
     after_lease_hook_started: Event = field(default_factory=Event)
     after_lease_hook_done: Event = field(default_factory=Event)
@@ -51,6 +55,7 @@ class LeaseContext:
     current_status: ExporterStatus = field(default=ExporterStatus.AVAILABLE)
     status_message: str = field(default="")
     skip_after_lease_hook: bool = False
+    hooks: HookPlan = field(default_factory=HookPlan)
 
     def __post_init__(self):
         """Validate that required resources are present."""

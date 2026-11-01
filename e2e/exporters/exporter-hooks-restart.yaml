@@ -1,0 +1,15 @@
+export:
+  power:
+    type: jumpstarter_driver_power.driver.MockPower
+
+hooks:
+  beforeLease:
+    script: |
+      echo "before $LEASE_NAME" >> /tmp/jumpstarter-e2e-restart-hooks.log
+    timeout: 60
+    onFailure: warn
+  afterLease:
+    script: |
+      echo "after $LEASE_NAME" >> /tmp/jumpstarter-e2e-restart-hooks.log
+    timeout: 60
+    onFailure: warn
