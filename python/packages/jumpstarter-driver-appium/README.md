@@ -3,7 +3,14 @@
 `jumpstarter-driver-appium` gives every UI-automation target the same
 [Appium](https://appium.io/docs/en/latest/) client interface. Test code opens
 WebDriver sessions on one URL with the capabilities the target provides,
-whether the target is an iOS device, an iOS simulator or an Android device.
+whether the target is a physical device, an emulator or a simulator, on Android
+or iOS.
+
+Appium is Jumpstarter's default UI-automation framework: one WebDriver API for
+every platform it supports, an official Python client that installs with `pip`,
+and nothing to install on the client beyond that client library. See
+{doc}`../../../getting-started/guides/ui-automation` for the reasons in full and
+for setting up an exporter.
 
 Target drivers add an `appium` child built on `AppiumDriver`. It runs an
 operator-installed Appium on the exporter for each lease, listening on exporter
@@ -17,8 +24,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-appium
 ```
 
 The exporter needs Node.js, Appium and the Appium drivers for its targets, such
-as [XCUITest](https://github.com/appium/appium-xcuitest-driver) or
-[UiAutomator2](https://github.com/appium/appium-uiautomator2-driver).
+as [UiAutomator2](https://github.com/appium/appium-uiautomator2-driver) or
+[XCUITest](https://github.com/appium/appium-xcuitest-driver).
 Containerized exporters usually pin them in their image; see
 {doc}`../../../getting-started/guides/ui-automation` for an example. Jumpstarter
 does not bundle, download or build Appium, its drivers or WebDriverAgent.

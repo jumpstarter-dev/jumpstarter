@@ -102,10 +102,12 @@ the owned device set. `power.read()` is unsupported.
 
 With an `appium` block in the simulator's `config`, the exporter runs
 [Appium](https://appium.io/docs/en/latest/) for the lease and clients open
-sessions through the shared {doc}`Appium client <appium>`, the same way they do
-for physical devices and Android targets. The exporter needs Appium, its
-[XCUITest driver](https://github.com/appium/appium-xcuitest-driver) and a
-complete prebuilt simulator
+sessions through the shared {doc}`Appium client <appium>`, the same interface
+every UI-automation target provides. The
+{doc}`UI automation guide <../../../getting-started/guides/ui-automation>`
+explains why Jumpstarter uses Appium and how to set it up. The exporter needs
+Appium, its [XCUITest driver](https://github.com/appium/appium-xcuitest-driver)
+and a complete prebuilt simulator
 [WebDriverAgent app](https://github.com/appium/WebDriverAgent); Jumpstarter does
 not install or build them. Clients do not need Appium.
 

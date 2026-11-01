@@ -417,7 +417,10 @@ Reconnect after the DUT is back up; the local address will generally be a new po
 With an `appium` block, the exporter runs [Appium](https://appium.io/docs/en/latest/)
 with its [UiAutomator2 driver](https://github.com/appium/appium-uiautomator2-driver)
 for the lease, and clients open sessions through the shared
-{doc}`Appium client <appium>`, exactly as they do for iOS devices and simulators.
+{doc}`Appium client <appium>`, the same interface every UI-automation target
+provides. The
+{doc}`UI automation guide <../../../getting-started/guides/ui-automation>`
+explains why Jumpstarter uses Appium and how to set it up.
 Appium, UiAutomator2 and the Android SDK they use belong on the exporter,
 usually pinned in its container image; clients do not need Appium or adb.
 
