@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from . import driver as driver_module
 from .appium import AndroidEmulatorAppium
 from .driver import AndroidEmulator
 from jumpstarter.common.exceptions import ConfigurationError
@@ -25,8 +26,10 @@ def appium_child(emulator) -> AndroidEmulatorAppium:
 
 def test_appium_child_only_when_configured():
     assert "appium" not in AndroidEmulator(avd_name="test_avd").children
-    with pytest.raises(ConfigurationError):
+    # Rejected before the shared ADB server is referenced, which nothing would release.
+    with patch.object(driver_module, "AdbServer") as server, pytest.raises(ConfigurationError):
         AndroidEmulator(avd_name="test_avd", appium={"wda": "/opt/WDA.app"})
+    server.assert_not_called()
 
 
 def test_appium_is_pinned_to_the_running_emulator():

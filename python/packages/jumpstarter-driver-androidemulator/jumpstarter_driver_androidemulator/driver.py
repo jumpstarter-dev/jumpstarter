@@ -56,10 +56,12 @@ class AndroidEmulator(Driver):
         for name, port in [("console_port", self.console_port), ("adb_server_port", self.adb_server_port)]:
             if not isinstance(port, int) or port < 1 or port > 65535:
                 raise ConfigurationError(f"Invalid {name}: {port}")
+        # Before AdbServer takes its reference to the shared server, which a failed
+        # constructor would never release.
+        validate_appium_config(self.appium)
 
         self.children["adb"] = AdbServer(host="127.0.0.1", port=self.adb_server_port)
         self.children["power"] = AndroidEmulatorPower(parent=self)
-        validate_appium_config(self.appium)
         if self.appium is not None:
             self.children["appium"] = AndroidEmulatorAppium(parent=self, **self.appium)
 
