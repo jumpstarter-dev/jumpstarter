@@ -29,6 +29,7 @@ def adb(monkeypatch):
     monkeypatch.setattr(AdbDevice, "adb_env", MagicMock(return_value={}))
     present = {"transport": "usb", "present": "yes", "serial": SERIAL}
     monkeypatch.setattr(AdbDevice, "info", MagicMock(return_value=present))
+    monkeypatch.setattr(AdbDevice, "_visible_devices", MagicMock(return_value=[(SERIAL, "device", None)]))
 
 
 def new_session(target, always):
@@ -86,6 +87,33 @@ def test_absent_device_does_not_start_appium(appium, monkeypatch):
     driver = AdbDevice(usb_port="1-4.2", appium={"executable": str(appium)})
     with serve(driver) as client, pytest.raises(Exception, match="no device on usb:1-4.2"):
         client.appium.info()
+
+
+@pytest.mark.parametrize("visible,message", [([], "not connected"), ([(SERIAL, "offline", None)], "is offline")])
+def test_configured_serial_must_be_connected(appium, monkeypatch, visible, message):
+    # AdbDevice reports a configured serial present without asking adb.
+    monkeypatch.setattr(AdbDevice, "_visible_devices", MagicMock(return_value=visible))
+    driver = AdbDevice(serial=SERIAL, appium={"executable": str(appium)})
+    with serve(driver) as client, pytest.raises(Exception, match=message):
+        client.appium.info()
+    child = driver.children["appium"]
+    assert isinstance(child, AdbDeviceAppium) and child._server is None
+
+
+def test_appium_stops_when_the_device_leaves(appium, monkeypatch):
+    visible = MagicMock(return_value=[(SERIAL, "device", None)])
+    monkeypatch.setattr(AdbDevice, "_visible_devices", visible)
+    driver = AdbDevice(serial=SERIAL, appium={"executable": str(appium)})
+    child = driver.children["appium"]
+    assert isinstance(child, AdbDeviceAppium)
+    with serve(driver) as client:
+        client.appium.info()
+        server = child._server
+        assert server is not None
+        visible.return_value = []
+        with pytest.raises(Exception, match="not connected"):
+            client.appium.info()
+        assert child._server is None and server.process.poll() is not None
 
 
 def test_appium_stops_before_the_adb_server_is_released(appium):
