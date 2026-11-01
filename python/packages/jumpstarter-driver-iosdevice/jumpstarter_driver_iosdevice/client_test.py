@@ -693,3 +693,80 @@ def test_cli_devicehub_offers_wda(client, monkeypatch):
     result = CliRunner().invoke(client.cli(), ["devicehub", "--help"])
     assert result.exit_code == 0
     assert "--wda" in result.output
+
+
+def test_devicehub_serves_until_it_returns(client, monkeypatch):
+    from . import devicehub_mac
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    calls = []
+
+    async def serve(device, **options):
+        calls.append((device, options))
+
+    monkeypatch.setattr(devicehub_mac, "serve", serve)
+    client.devicehub(pair=True)
+    ((device, options),) = calls
+    assert device is client and options["force_pair"] is True
+    assert options["code"] == client._devicehub_code
+
+    async def broken(device, **options):
+        raise OSError("link went away")
+
+    monkeypatch.setattr(devicehub_mac, "serve", broken)
+    with pytest.raises(OSError, match="link went away"):
+        client.devicehub()
+
+
+def test_devicehub_code_is_prompted_for(client, monkeypatch):
+    monkeypatch.setattr(client_module.click, "prompt", lambda text: "123456" if "Device Hub" in text else "")
+    assert client.portal.call(client._devicehub_code) == "123456"
+
+
+@pytest.fixture
+def devicehub_wda(monkeypatch, tmp_path):
+    from . import devicehub_mac
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    xctestrun = tmp_path / "WebDriverAgentRunner.xctestrun"
+    xctestrun.write_text("")
+    agent = devicehub_mac.WebDriverAgent(url="http://[fd00::1]:8100", udid="DEVICE", platform_version="27.0.1")
+    seen = []
+
+    @asynccontextmanager
+    async def shown(device, *, code, force_pair, notify):
+        seen.append(("shown", force_pair))
+        yield {"udids": ["STAND-IN", "DEVICE"]}
+
+    @asynccontextmanager
+    async def webdriveragent(path, *, udids, timeout, notify):
+        seen.append(("webdriveragent", path, udids))
+        yield agent
+
+    monkeypatch.setattr(devicehub_mac, "shown", shown)
+    monkeypatch.setattr(devicehub_mac, "webdriveragent", webdriveragent)
+    return xctestrun, agent, seen
+
+
+def test_devicehub_wda_yields_the_running_agent(client, devicehub_wda):
+    xctestrun, agent, seen = devicehub_wda
+    with client.devicehub_wda(xctestrun, pair=True) as running:
+        assert running == agent
+    assert seen == [("shown", True), ("webdriveragent", xctestrun, ["STAND-IN", "DEVICE"])]
+
+
+def test_cli_devicehub_prints_webdriveragent_capabilities(client, devicehub_wda, monkeypatch):
+    xctestrun, _agent, _seen = devicehub_wda
+    monkeypatch.setattr(client_module, "_wait_for_interrupt", lambda device: None)
+    result = CliRunner().invoke(client.cli(), ["devicehub", "--wda", str(xctestrun)])
+    assert result.exit_code == 0, result.output
+    assert "WebDriverAgent is ready at http://[fd00::1]:8100" in result.output
+    assert '"appium:webDriverAgentUrl": "http://[fd00::1]:8100"' in result.output
+
+
+def test_cli_devicehub_without_wda_shows_the_device(client, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    with patch.object(client, "devicehub") as devicehub:
+        result = CliRunner().invoke(client.cli(), ["devicehub", "--pair"])
+    assert result.exit_code == 0, result.output
+    devicehub.assert_called_once_with(pair=True)

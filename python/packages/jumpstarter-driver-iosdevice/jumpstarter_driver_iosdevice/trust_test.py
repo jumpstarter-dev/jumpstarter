@@ -2,6 +2,7 @@ import datetime
 import plistlib
 import struct
 import time
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -299,3 +300,107 @@ async def test_invalidated_broker_cannot_read_or_connect():
     with pytest.raises(UsbMuxError):
         async with broker.open_forward(8100):
             raise AssertionError("revoked forward was exposed")
+
+
+async def _echo(stream):
+    while True:
+        await stream.send(await stream.receive())
+
+
+async def _unchanged(stream, *, server=False):
+    return stream
+
+
+async def _no_monitor():
+    return None
+
+
+async def _exporter_credentials():
+    return SimpleNamespace(host_id="HOST", system_buid="BUID")
+
+
+def _lockdown_broker(responses):
+    """A broker whose device answers lockdown requests from ``responses`` and echoes on services."""
+    broker = ExporterTrustBroker(udid="device", device_id=1)
+    requests, ports = [], []
+
+    async def lockdown(stream):
+        reader = BufferedByteReceiveStream(stream)
+        while True:
+            request = await _receive_plist(reader)
+            requests.append(request)
+            await _send_plist(stream, responses(request))
+
+    @asynccontextmanager
+    async def connect_device(udid, port, *, device_id=None):
+        assert (udid, device_id) == ("device", 1)
+        ports.append(port)
+        exporter, device = _memory_pair()
+        error = None
+        async with create_task_group() as tasks:
+            tasks.start_soon(lockdown if port == trust.LOCKDOWN_PORT else _echo, device)
+            try:
+                yield exporter
+            except BaseException as exc:  # noqa: BLE001 - re-raised outside the task group
+                error = exc
+            finally:
+                tasks.cancel_scope.cancel()
+        if error is not None:
+            raise error
+
+    vars(broker).update(
+        prepare=_exporter_credentials, connect_device=connect_device, _tls=_unchanged, _start_monitor=_no_monitor
+    )
+    return broker, requests, ports
+
+
+def _session_ok(request):
+    if request["Request"] == "StartSession":
+        assert (request["HostID"], request["SystemBUID"]) == ("HOST", "BUID")
+        return {"EnableSessionSSL": True}
+    if request["Request"] == "GetValue":
+        return {"Value": {"DeviceName": "iPhone"} if "Domain" not in request else "not a domain"}
+    return {"Port": 4000, "EnableServiceSSL": True}
+
+
+@pytest.mark.anyio
+async def test_lockdown_values_read_whole_domains_in_an_exporter_session():
+    broker, requests, ports = _lockdown_broker(_session_ok)
+    assert await broker.lockdown_values([None, "com.apple.security.mac.amfi"]) == {"NULL": {"DeviceName": "iPhone"}}
+    assert [request["Request"] for request in requests] == ["StartSession", "GetValue", "GetValue"]
+    assert requests[2]["Domain"] == "com.apple.security.mac.amfi"
+    assert ports == [trust.LOCKDOWN_PORT]
+
+
+@pytest.mark.anyio
+async def test_open_service_starts_it_as_the_exporter():
+    broker, requests, ports = _lockdown_broker(_session_ok)
+    async with broker.open_service("com.apple.internal.devicecompute.CoreDeviceProxy") as stream:
+        await stream.send(b"tunnel")
+        assert await stream.receive() == b"tunnel"
+    assert requests[1] == {
+        "Label": "Jumpstarter",
+        "Request": "StartService",
+        "Service": "com.apple.internal.devicecompute.CoreDeviceProxy",
+    }
+    assert ports == [trust.LOCKDOWN_PORT, 4000]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "start,service,message",
+    [
+        ({"Error": "InvalidHostID"}, {}, "refused the exporter's lockdown session"),
+        ({"EnableSessionSSL": False}, {}, "refused the exporter's lockdown session"),
+        ({"EnableSessionSSL": True}, {"Error": "InvalidService"}, "refused to start"),
+        ({"EnableSessionSSL": True}, {"Port": 0}, "invalid lockdown service endpoint"),
+        ({"EnableSessionSSL": True}, {"Port": 4000, "EnableServiceSSL": "yes"}, "invalid lockdown service endpoint"),
+    ],
+)
+async def test_open_service_refusals_are_errors(start, service, message):
+    broker, _requests, _ports = _lockdown_broker(
+        lambda request: start if request["Request"] == "StartSession" else service
+    )
+    with pytest.raises(UsbMuxError, match=message):
+        async with broker.open_service("com.apple.afc"):
+            pass

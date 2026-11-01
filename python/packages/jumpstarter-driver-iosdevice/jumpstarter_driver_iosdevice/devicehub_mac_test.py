@@ -1,11 +1,21 @@
+import asyncio
+import io
+import json
+import os
 import plistlib
+import socket
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import ClassVar
 
 import anyio
 import pytest
+from anyio import to_thread
+from anyio.abc import SocketAttribute
 
 from . import devicehub_mac
+from .usbmux import _memory_pair
 
 
 def _xcode(folder, version, *, device_hub):
@@ -204,3 +214,454 @@ def test_webdriveragent_capabilities_avoid_usbmux():
     assert capabilities["appium:platformVersion"] == "27.0.1"
     assert capabilities["appium:skipLogCapture"] is True
     assert "appium:bundleId" not in capabilities
+
+
+def test_check_link_needs_a_mac(monkeypatch):
+    monkeypatch.setattr(devicehub_mac.sys, "platform", "linux")
+    with pytest.raises(RuntimeError, match="needs a Mac client"):
+        devicehub_mac.check_link()
+
+
+@pytest.mark.parametrize(
+    "output,ready",
+    [
+        (f"feth0: flags\n\tinet6 {devicehub_mac.HOST_ADDRESS} prefixlen 64\n", True),
+        ("feth0: flags\n", False),
+        (None, False),
+    ],
+)
+def test_check_link_explains_the_setup_script(monkeypatch, output, ready):
+    monkeypatch.setattr(devicehub_mac.sys, "platform", "darwin")
+
+    def run(command, **_kwargs):
+        assert command == ["ifconfig", devicehub_mac.HOST_INTERFACE]
+        if output is None:
+            raise devicehub_mac.subprocess.CalledProcessError(1, command)
+        return type("Result", (), {"stdout": output})()
+
+    monkeypatch.setattr(devicehub_mac.subprocess, "run", run)
+    if ready:
+        devicehub_mac.check_link()
+    else:
+        with pytest.raises(RuntimeError, match=f"sudo {devicehub_mac.SETUP_SCRIPT}"):
+            devicehub_mac.check_link()
+
+
+def test_txt_record_is_length_prefixed():
+    assert devicehub_mac._txt({"ver": 26, "flags": 0}) == b"\x06ver=26\x07flags=0"
+
+
+def test_xcode_version_ignores_unreadable_bundles(tmp_path):
+    assert devicehub_mac._xcode_version(tmp_path / "Missing.app") is None
+
+
+class FakeDnsSd:
+    """libdns_sd's calls, answering browse and resolve requests from Python."""
+
+    def __init__(self, *, errors=(), answers=True):
+        self.errors = set(errors)
+        self.answers = answers
+        self.read, self.write = os.pipe()
+        os.write(self.write, b"x")
+        self.pending = []
+        self.deallocated = 0
+        self.registered = []
+
+    def close(self):
+        os.close(self.read)
+        os.close(self.write)
+
+    def _call(self, name, result=0):
+        return 1 if name in self.errors else result
+
+    def DNSServiceCreateConnection(self, _ref):
+        return self._call("connection")
+
+    def DNSServiceRegisterRecord(self, *args):
+        self.registered.append(("record", args[4]))
+        return self._call("record")
+
+    def DNSServiceRegister(self, *args):
+        self.registered.append(("service", args[3], args[4], args[9]))
+        return self._call("service")
+
+    def DNSServiceRefDeallocate(self, _ref):
+        self.deallocated += 1
+
+    def DNSServiceRefSockFD(self, _ref):
+        return self.read
+
+    def DNSServiceBrowse(self, _ref, _flags, _index, regtype, _domain, callback, _context):
+        assert regtype == devicehub_mac.PAIRABLE_HOST_SERVICE.encode()
+        if self.answers:
+            self.pending.append(lambda: callback(None, 0x2, 7, 0, b"Mac", regtype, b"local.", None))
+        return self._call("browse")
+
+    def DNSServiceResolve(self, _ref, _flags, index, name, _regtype, _domain, callback, _context):
+        assert (index, name) == (7, b"Mac")
+        self.pending.append(lambda: callback(None, 0, 7, 0, b"Mac", b"mac.local.", socket.htons(51515), 0, None, None))
+        return self._call("resolve")
+
+    def DNSServiceProcessResult(self, _ref):
+        while self.pending:
+            self.pending.pop(0)()
+
+
+@pytest.fixture
+def dns_sd(monkeypatch):
+    libraries = []
+
+    def make(**options):
+        library = FakeDnsSd(**options)
+        libraries.append(library)
+        monkeypatch.setattr(devicehub_mac, "_dns_sd", lambda: library)
+        return library
+
+    yield make
+    for library in libraries:
+        library.close()
+
+
+@pytest.mark.anyio
+async def test_pairable_host_is_browsed_and_resolved(dns_sd):
+    library = dns_sd()
+    assert await to_thread.run_sync(devicehub_mac.find_pairable_host, 5.0) == 51515
+    assert library.deallocated == 2
+
+
+@pytest.mark.anyio
+async def test_pairable_host_search_times_out(dns_sd):
+    dns_sd(answers=False)
+    with pytest.raises(TimeoutError, match="Pair Nearby Device"):
+        await to_thread.run_sync(devicehub_mac.find_pairable_host, 0.05)
+
+
+@pytest.mark.parametrize("error,message", [("browse", "cannot browse"), ("resolve", "cannot resolve")])
+@pytest.mark.anyio
+async def test_pairable_host_search_reports_dns_errors(dns_sd, error, message):
+    dns_sd(errors=[error])
+    with pytest.raises(OSError, match=message):
+        await to_thread.run_sync(devicehub_mac.find_pairable_host, 5.0)
+
+
+def test_advert_publishes_only_on_the_link(dns_sd, monkeypatch):
+    library = dns_sd()
+    monkeypatch.setattr(devicehub_mac.socket, "if_nametoindex", lambda name: 9)
+    advert = devicehub_mac.Advert("ABCDEF12-0000", "tag", devicehub_mac.CONTROL_PORT)
+    record, service = library.registered
+    assert record == ("record", b"jumpstarter-abcdef12.local.")
+    assert service[:3] == ("service", b"ABCDEF12-0000", b"_remotepairing._tcp")
+    assert b"authTag=tag" in service[3]
+    advert.close()
+    advert.close()
+    assert library.deallocated == 2
+
+
+@pytest.mark.parametrize(
+    "error,message",
+    [("connection", "mDNSResponder"), ("record", "device address"), ("service", "advertise the device")],
+)
+def test_advert_reports_dns_errors(dns_sd, monkeypatch, error, message):
+    dns_sd(errors=[error])
+    monkeypatch.setattr(devicehub_mac.socket, "if_nametoindex", lambda name: 9)
+    with pytest.raises(OSError, match=message):
+        devicehub_mac.Advert("ABCDEF12", "tag", devicehub_mac.CONTROL_PORT)
+
+
+@pytest.mark.anyio
+async def test_relay_carries_both_directions():
+    left, left_peer = _memory_pair()
+    right, right_peer = _memory_pair()
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(devicehub_mac.relay, left, right)
+        await left_peer.send(b"to the exporter")
+        assert await right_peer.receive() == b"to the exporter"
+        await right_peer.send(b"to the Mac")
+        assert await left_peer.receive() == b"to the Mac"
+        await left_peer.aclose()
+        with pytest.raises(anyio.EndOfStream):
+            await right_peer.receive()
+
+
+class FakeClient:
+    """The driver client calls Device Hub makes, backed by memory streams."""
+
+    def __init__(self, info=None):
+        self.calls = []
+        self.info = info or {"name": "iPhone", "identifier": "IDENTIFIER", "auth_tag": "tag", "paired_hosts": 1}
+        self.exporter_ends = []
+        self.fail_streams = False
+
+    async def call_async(self, method, *args):
+        self.calls.append((method, *args))
+        if method == "devicehub_info":
+            return self.info
+
+    @asynccontextmanager
+    async def stream_async(self, method):
+        if self.fail_streams:
+            raise RuntimeError("lease ended")
+        self.calls.append((method,))
+        stream, peer = _memory_pair()
+        self.exporter_ends.append(peer)
+        async with stream:
+            yield stream
+
+
+@pytest.mark.anyio
+async def test_mac_connections_are_carried_to_the_exporter():
+    client = FakeClient()
+    connection, mac = _memory_pair()
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(devicehub_mac._carry, client, connection)
+        await mac.send(b"RPPairing")
+        await anyio.wait_all_tasks_blocked()
+        assert await client.exporter_ends[0].receive() == b"RPPairing"
+        await mac.aclose()
+    assert client.calls == [("connect_devicehub",)]
+
+
+@pytest.mark.anyio
+async def test_failed_mac_connection_is_logged_not_raised(caplog):
+    client = FakeClient()
+    client.fail_streams = True
+    connection, _mac = _memory_pair()
+    await devicehub_mac._carry(client, connection)
+    assert "lease ended" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_pair_relays_device_hub_and_sends_the_code(monkeypatch):
+    client = FakeClient()
+    received = []
+
+    async def device_hub(stream):
+        async with stream:
+            received.append(await stream.receive())
+            await stream.send(b"pairing reply")
+
+    async with await anyio.create_tcp_listener(local_host="127.0.0.1") as listener:
+        port = listener.extra(SocketAttribute.local_port)
+        monkeypatch.setattr(devicehub_mac, "find_pairable_host", lambda timeout: port)
+
+        async def code():
+            await client.exporter_ends[0].send(b"pairing request")
+            return "654321"
+
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(listener.serve, device_hub)
+            with anyio.fail_after(10):
+                await devicehub_mac.pair(client, code, timeout=1)
+            tasks.cancel_scope.cancel()
+    assert received == [b"pairing request"]
+    assert await client.exporter_ends[0].receive() == b"pairing reply"
+    assert client.calls == [("connect_devicehub_pairing",), ("devicehub_pairing_code", "654321")]
+
+
+class FakeAdvert:
+    made: ClassVar[list["FakeAdvert"]] = []
+
+    def __init__(self, identifier, auth_tag, port):
+        self.args = (identifier, auth_tag, port)
+        self.closed = False
+        FakeAdvert.made.append(self)
+
+    def close(self):
+        self.closed = True
+
+
+@pytest.fixture
+def adverts(monkeypatch):
+    FakeAdvert.made = []
+    monkeypatch.setattr(devicehub_mac, "Advert", FakeAdvert)
+    return FakeAdvert.made
+
+
+@pytest.mark.anyio
+async def test_device_is_advertised_afresh_after_pairing(monkeypatch, adverts):
+    connected = anyio.Event()
+    attempts = []
+
+    async def pair_unless_connected(client, code, event):
+        attempts.append(len(adverts))
+        if len(attempts) == 2:
+            event.set()
+        return True
+
+    monkeypatch.setattr(devicehub_mac, "_pair_unless_connected", pair_unless_connected)
+    notes = []
+    advert = await devicehub_mac._advertise_until_connected(None, None, FakeClient().info, connected, notes.append)
+    assert attempts == [1, 2]
+    assert adverts[0].closed and advert is adverts[1] and not advert.closed
+    assert adverts[0].args == ("IDENTIFIER", "tag", devicehub_mac.CONTROL_PORT)
+    assert notes.count("This Mac is paired with iPhone.") == 2
+
+
+@pytest.mark.anyio
+async def test_failed_advertising_withdraws_the_advert(monkeypatch, adverts):
+    async def pair_unless_connected(client, code, event):
+        raise OSError("mDNSResponder went away")
+
+    monkeypatch.setattr(devicehub_mac, "_pair_unless_connected", pair_unless_connected)
+    with pytest.raises(OSError, match="went away"):
+        await devicehub_mac._advertise_until_connected(None, None, FakeClient().info, anyio.Event(), print)
+    assert adverts[0].closed
+
+
+class FakeStack:
+    def __init__(self, interface, address):
+        assert (interface, address) == (devicehub_mac.DEVICE_INTERFACE, devicehub_mac.DEVICE_ADDRESS)
+        self.queue = asyncio.Queue()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return None
+
+    def listen(self, port):
+        assert port == devicehub_mac.CONTROL_PORT
+        return self.queue
+
+
+@pytest.fixture
+def mac_session(monkeypatch, adverts):
+    stacks, carried, paired = [], [], []
+
+    def stack(interface, address):
+        stacks.append(FakeStack(interface, address))
+        return stacks[-1]
+
+    async def carry(client, connection):
+        carried.append(connection)
+
+    async def pair(client, code, timeout=300.0):
+        paired.append(await code())
+
+    async def pair_unless_connected(client, code, connected):
+        stacks[0].queue.put_nowait("connection from the Mac")
+        await connected.wait()
+        return False
+
+    monkeypatch.setattr(devicehub_mac, "xcode_warning", lambda: "Xcode is old")
+    monkeypatch.setattr(devicehub_mac, "check_link", lambda: None)
+    monkeypatch.setattr(devicehub_mac, "Stack", stack)
+    monkeypatch.setattr(devicehub_mac, "_carry", carry)
+    monkeypatch.setattr(devicehub_mac, "pair", pair)
+    monkeypatch.setattr(devicehub_mac, "_pair_unless_connected", pair_unless_connected)
+    return carried, paired, adverts
+
+
+async def _code():
+    return "111111"
+
+
+@pytest.mark.anyio
+async def test_shown_pairs_a_new_mac_and_carries_its_connections(mac_session):
+    carried, paired, adverts = mac_session
+    client = FakeClient({**FakeClient().info, "paired_hosts": 0})
+    notes = []
+    async with devicehub_mac.shown(client, code=_code, force_pair=False, notify=notes.append) as info:
+        assert info["name"] == "iPhone"
+        await anyio.wait_all_tasks_blocked()
+        assert carried == ["connection from the Mac"]
+        assert not adverts[0].closed
+    assert adverts[0].closed
+    assert paired == ["111111"]
+    assert notes[0] == "Warning: Xcode is old"
+    assert client.calls[0] == ("devicehub_info", devicehub_mac.CONTROL_PORT)
+
+
+@pytest.mark.anyio
+async def test_serve_skips_pairing_for_a_paired_mac_until_cancelled(mac_session):
+    carried, paired, adverts = mac_session
+    with anyio.move_on_after(0.2):
+        await devicehub_mac.serve(FakeClient(), code=_code, force_pair=False, notify=lambda _: None)
+    assert paired == [] and carried == ["connection from the Mac"]
+    assert adverts[0].closed
+
+
+@pytest.mark.anyio
+async def test_shown_keeps_caller_errors(mac_session):
+    with pytest.raises(KeyError):
+        async with devicehub_mac.shown(FakeClient(), code=_code, force_pair=True, notify=lambda _: None):
+            raise KeyError("from the test")
+
+
+def test_coredevice_finds_the_device_under_either_udid(monkeypatch):
+    devices = [{"hardwareProperties": {"udid": "OTHER"}}, "junk", {"hardwareProperties": {"udid": "DEVICE"}}]
+
+    def run(command, **_kwargs):
+        assert command[:4] == ["xcrun", "devicectl", "list", "devices"]
+        Path(command[-1]).write_text(json.dumps({"result": {"devices": devices}}))
+
+    monkeypatch.setattr(devicehub_mac.subprocess, "run", run)
+    assert devicehub_mac.coredevice(["STAND-IN", "DEVICE"]) == devices[2]
+    assert devicehub_mac.coredevice(["MISSING"]) is None
+
+
+def test_coredevice_is_none_when_devicectl_fails(monkeypatch):
+    def run(command, **_kwargs):
+        raise devicehub_mac.subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(devicehub_mac.subprocess, "run", run)
+    assert devicehub_mac.coredevice(["DEVICE"]) is None
+
+
+@pytest.mark.parametrize("tunnel,message", [(False, "list the device"), (True, "a tunnel to the device")])
+@pytest.mark.anyio
+async def test_listing_gives_up_after_the_timeout(monkeypatch, tunnel, message):
+    monkeypatch.setattr(devicehub_mac, "coredevice", lambda udids: {"connectionProperties": {}} if tunnel else None)
+    with pytest.raises(RuntimeError, match=message):
+        await devicehub_mac._listed(["DEVICE"], 0.05, tunnel=tunnel)
+
+
+def test_wda_ready_reads_the_status_endpoint(monkeypatch):
+    def urlopen(url, timeout):
+        assert url == "http://[fd00::1]:8100/status"
+        return io.BytesIO(json.dumps({"value": {"ready": True}}).encode())
+
+    monkeypatch.setattr(devicehub_mac.urllib.request, "urlopen", urlopen)
+    assert devicehub_mac._wda_ready("http://[fd00::1]:8100") is True
+
+    def unreachable(url, timeout):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(devicehub_mac.urllib.request, "urlopen", unreachable)
+    assert devicehub_mac._wda_ready("http://[fd00::1]:8100") is False
+
+
+def test_wda_failure_names_known_causes():
+    assert "provisioning profile" in devicehub_mac._wda_failure(["error: ApplicationVerificationFailed"])
+    assert devicehub_mac._wda_failure(["a", "b"]).endswith("a\nb")
+
+
+def test_connect_asks_coredevice_for_the_device(monkeypatch):
+    commands = []
+    monkeypatch.setattr(devicehub_mac.subprocess, "run", lambda command, **_kwargs: commands.append(command))
+    devicehub_mac._connect("DEVICE")
+    assert commands[0][:6] == ["xcrun", "devicectl", "device", "info", "details", "--device"]
+    assert commands[0][6] == "DEVICE"
+
+
+@pytest.mark.anyio
+async def test_webdriveragent_that_never_answers_times_out(fake_wda, monkeypatch):
+    use, marker = fake_wda
+    use("ok")
+    monkeypatch.setattr(devicehub_mac, "_wda_ready", lambda url: False)
+    with pytest.raises(RuntimeError, match="not ready within"):
+        async with devicehub_mac.webdriveragent(Path("x.xctestrun"), udids=["DEVICE"], timeout=0.5, notify=print):
+            pass
+    assert marker.exists()
+
+
+@pytest.mark.anyio
+async def test_stop_kills_an_xcodebuild_that_ignores_interrupts(monkeypatch):
+    monkeypatch.setattr(devicehub_mac, "WDA_STOP_TIMEOUT", 0.2)
+    script = "import signal, sys, time\nsignal.signal(signal.SIGINT, signal.SIG_IGN)\nprint(flush=True)\ntime.sleep(60)"
+    async with await anyio.open_process([sys.executable, "-c", script]) as process:
+        assert process.stdout is not None
+        await process.stdout.receive()
+        await devicehub_mac._stop(process)
+        assert process.returncode is not None
+        await devicehub_mac._stop(process)
