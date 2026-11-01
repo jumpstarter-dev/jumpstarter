@@ -18,6 +18,8 @@ Important project-specific rules and guidelines are located in the `.claude/rule
 
 - **`.claude/rules/e2e-doc-sync.md`**: Rules for keeping `e2e/README.md` aligned with E2E tests, runners, and CI labels (mirrors `.cursor/rules/e2e-doc-sync.mdc`). Read this when changing E2E behavior or E2E documentation.
 
+- **`.claude/rules/exporter-fsm-docs-sync.md`**: Rules for keeping exporter FSM state class docstrings aligned with JEP-0016 and lifecycle diagrams (mirrors `.cursor/rules/exporter-fsm-docs-sync.mdc`). Read this when changing `jumpstarter.exporter.fsm` states, inputs, or related docs.
+
 ## When to Read These Rules
 
 - **Always**: Read `project-structure.md` when working with files, packages, or understanding the codebase layout
@@ -26,6 +28,7 @@ Important project-specific rules and guidelines are located in the `.claude/rule
 - **When creating JEPs**: Read `jep-process.md` before proposing enhancements that affect multiple components, change public APIs, or require community discussion
 - **When touching the demo recording**: Read `demo-recording.md` before changing anything under `demo/`, re-recording `docs/source/_static/demo.cast`, or adjusting how the landing page plays it
 - **When modifying E2E tests or E2E docs**: Read `e2e-doc-sync.md` and keep `e2e/README.md` synchronized in the same PR
+- **When modifying exporter FSM states/inputs or their docs**: Read `exporter-fsm-docs-sync.md` and keep state docstrings, JEP-0016, and lifecycle diagrams synchronized in the same change
 - **When modifying structure**: Consult both files when making changes that affect project organization
 
 ## Key Information

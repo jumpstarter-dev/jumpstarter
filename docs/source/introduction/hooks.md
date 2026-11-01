@@ -4,7 +4,8 @@ Jumpstarter supports lifecycle hooks that execute shell scripts automatically be
 
 A `beforeLease` hook runs after a lease is assigned but
 before drivers are available to the client, and an `afterLease` hook runs after
-the {term}`session` ends but before the lease is released. Hooks are optional and
+the client finishes its {term}`session`, the lease ends, or the exporter stops.
+Hooks are optional and
 configured in the [Exporter](exporters.md) YAML configuration file (exporter config).
 
 Hooks execute on the exporter {term}`host` using a configurable interpreter (defaulting
@@ -42,7 +43,10 @@ sequenceDiagram
     Note over Hook: j power off
     Hook-->>Exporter: Exit code 0
     Exporter->>Exporter: Status: AVAILABLE
+    Note over Exporter: Keep session and final logs until reservation release
     Client->>Controller: Release lease
+    Controller->>Exporter: Lease released
+    Exporter->>Exporter: Close connections, session, and drivers
 ```
 
 The {term}`exporter` transitions through these states during a {term}`lease`:
@@ -53,16 +57,47 @@ The {term}`exporter` transitions through these states during a {term}`lease`:
 3. **`LEASE_READY`** - The {term}`hook` succeeded and the client can now access
    drivers.
 4. **Client {term}`session`** - The client uses drivers normally.
-5. **{term}`Session` ends** - The client disconnects or the {term}`lease` is released.
+5. **{term}`Session` finishes** - The client calls `EndSession`, or the controller
+   releases or reassigns the {term}`lease`. Disconnecting alone does not release
+   the reservation.
 6. **`AFTER_LEASE_HOOK`** - The `afterLease` script runs. The {term}`session` remains
    open so `j` commands can still interact with drivers.
-7. **`AVAILABLE`** - The {term}`hook` completed and the {term}`lease` is released. The
-   {term}`exporter` is ready for the next {term}`lease`.
+7. **`AVAILABLE`** - The {term}`hook` completed. The session keeps status and final
+   logs available until the controller releases the reservation; `EndSession`
+   alone does not release it.
+8. **Teardown** - Connections, session sockets, and drivers close before the
+   {term}`exporter` admits another {term}`lease`.
 
 ```{note}
 If no {term}`hook`s are configured, the {term}`exporter` transitions directly from {term}`lease`
 assignment to `LEASE_READY` and from {term}`session` end to `AVAILABLE`.
 ```
+
+### Lease Changes and Shutdown
+
+Lease changes and stop requests are retained while a hook is running. The hook
+finishes, subject to its configured timeout, before the exporter handles the latest
+request. Eligible cleanup runs once, with the same session and hook socket still
+open. A replacement lease starts only after teardown completes.
+
+In controller mode:
+
+- **`SIGHUP` (drain):** wait for the active reservation to end, then stop. An idle
+  exporter stops immediately. Finishing a session with `EndSession` alone does not
+  complete a drain while the controller still holds the reservation.
+- **`SIGTERM`, `SIGINT`, or `SIGQUIT` (stop-now):** finish the current hook and
+  eligible cleanup, then stop locally without waiting for controller release.
+  Stop-now overrides an earlier drain request.
+- **`--exit-on-lease-end`:** stop after the admitted lease's full teardown;
+  runtime-sidecar shutdown happens afterward.
+
+[Direct mode](../getting-started/guides/setup/direct-mode.md) uses the same hook
+sequencing, but has no reservation to drain. All stop requests, including `SIGHUP`,
+finish the current hook and eligible cleanup before closing the local session.
+EndSession runs cleanup once and keeps status and logs available until stop.
+
+Configure service or container shutdown grace to allow hook timeouts and resource
+cleanup. A teardown error stops the lifecycle instead of admitting another lease.
 
 ## Configuration
 
@@ -101,7 +136,7 @@ hooks:
 | Field                    | Type    | Default      | Description                                                                                                                                                                                |
 | ------------------------ | ------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `hooks.beforeLease`      | object  | *(none)*     | {term}`Hook` that runs after {term}`lease` assignment, before drivers are available                                                                                                                        |
-| `hooks.afterLease`       | object  | *(none)*     | {term}`Hook` that runs after the {term}`session` ends, before the {term}`lease` is released                                                                                                                        |
+| `hooks.afterLease`       | object  | *(none)*     | Cleanup {term}`hook` that runs when the session finishes, the lease ends, or the exporter stops, before session resources close |
 | `hooks.<hook>.exec`      | string  | *(auto)*     | Interpreter used to execute the script. Auto-detected from file extension when not set (`.py` uses the exporter's Python, `.sh` uses `/bin/sh`). Defaults to `/bin/sh` for inline scripts. |
 | `hooks.<hook>.script`    | string  | *(required)* | Inline script or path to a script file (auto-detected)                                                                                                                                     |
 | `hooks.<hook>.timeout`   | integer | `120`        | Maximum execution time in seconds                                                                                                                                                          |
@@ -161,16 +196,16 @@ emit a prompt.
 
 ## Logging
 
-{term}`Hook` output is streamed to the client in real time. Every line written to
-stdout or stderr by the {term}`hook` script is captured and forwarded to the client
-through the {term}`exporter`'s log stream. The `beforeLease` {term}`hook` output is tagged
+{term}`Hook` output is captured in the {term}`exporter`'s session log stream.
+In controller mode, client connections wait for the before-hook outcome; its buffered output is
+available once they connect. Connected clients receive after-hook output as the
+hook runs. The `beforeLease` {term}`hook` output is tagged
 with the `BEFORE_LEASE_HOOK` log source, and `afterLease` output is tagged
 with `AFTER_LEASE_HOOK`.
 
 {term}`Hook`s run inside a pseudo-terminal (PTY) to force line buffering, so output
-appears on the client as each line is written rather than being held in a
-block buffer. This means `echo` statements, `j` CLI output, and any other
-text written to the terminal will be visible immediately.
+is captured line by line rather than being held in a block buffer. This includes
+`echo` statements, `j` CLI output, and other text written to the terminal.
 
 ```{note}
 Because {term}`hook`s use a PTY, programs that detect terminal mode (such as
@@ -191,15 +226,15 @@ continues as if the {term}`hook` succeeded:
 
 - **`beforeLease`**: Drivers are unblocked and the client can connect normally.
   The exporter status transitions to `LEASE_READY`.
-- **`afterLease`**: The {term}`exporter` returns to `AVAILABLE` and the {term}`lease` is
-  released normally.
+- **`afterLease`**: The {term}`exporter` returns to `AVAILABLE` while retaining the
+  session until the client or controller releases the reservation.
 
 This is useful for {term}`hook`s that perform best-effort actions where failure should
 not disrupt the workflow.
 
 ### `endLease`
 
-The {term}`lease` is ended and the client is notified of the failure:
+In controller mode, the {term}`lease` is ended and the client is notified of the failure:
 
 The exporter requests release only when a hook fails with `onFailure: endLease`.
 Successful cleanup, `warn`, skipped hooks, cancellation, and unexpected
@@ -208,7 +243,8 @@ the client or controller expiry.
 
 - **`beforeLease`**: The exporter status transitions to
   `BEFORE_LEASE_HOOK_FAILED`. The client discovers the failure through status
-  polling and the {term}`lease` is released. The interactive shell is skipped.
+  polling and the {term}`lease` is released. The interactive shell and after-hook
+  are skipped.
 - **`afterLease`**: The exporter status transitions to
   `AFTER_LEASE_HOOK_FAILED`. Since the {term}`session` has already ended, this
   primarily serves as a signal to the client that cleanup did not complete
@@ -217,16 +253,25 @@ the client or controller expiry.
 This is the recommended mode for `beforeLease` validation {term}`hook`s where you want
 the client to know immediately that the {term}`device` is not ready.
 
+Direct mode has no reservation to release. It keeps the failed single session
+until the exporter stops; a before-hook failure still skips the after-hook.
+
 ### `exit`
 
 The {term}`exporter` shuts down entirely with exit code `1` (Failure):
 
-- **`beforeLease`**: The exporter status transitions to
-  `BEFORE_LEASE_HOOK_FAILED`. The {term}`exporter` then shuts down, going offline. The
-  shutdown is deferred until the client has had a chance to observe the failure
-  status.
-- **`afterLease`**: The exporter status transitions to
-  `AFTER_LEASE_HOOK_FAILED` and the {term}`exporter` shuts down immediately.
+- **`beforeLease`**: Report `BEFORE_LEASE_HOOK_FAILED` and request a drain. The
+  after-hook is skipped.
+- **`afterLease`**: Report `AFTER_LEASE_HOOK_FAILED` and request a drain.
+
+In controller mode, failure status and logs remain available until the controller
+releases the reservation, or a stronger stop-now request arrives. Teardown finishes
+before the exporter goes offline. A terminal controller-stream failure retains its
+own exit classification, and received signal codes take precedence over exporter
+exit codes.
+
+In direct mode, `exit` stops locally after the failure without waiting for a
+reservation release.
 
 The exit code `1` signals to service managers such as `systemd` that the shutdown
 was intentional. If your `systemd` unit uses `Restart=always`, you should

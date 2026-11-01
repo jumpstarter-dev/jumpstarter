@@ -42,9 +42,21 @@ hooks:
     timeout: 30
 ```
 
-The {term}`hook`s section is optional. `beforeLease` hook runs once when the {term}`exporter`
-starts (before any client connects), and `afterLease` hook runs on shutdown. {term}`Hook`
-scripts can use {term}`j` commands to interact with the drivers.
+The {term}`hook`s section is optional. `beforeLease` runs once during exporter
+startup. Eligible `afterLease` cleanup runs once when a client calls `EndSession`
+or the exporter shuts down. {term}`Hook` scripts can use {term}`j` commands to
+interact with the drivers.
+
+Direct mode uses the same lifecycle states as controller mode, with one session
+for the process lifetime. EndSession retains the server for final status and logs
+until the exporter stops; it does not start another hook cycle for a new client.
+Stop requests, including drain signals, finish the running hook and eligible
+cleanup before closing the session, subject to configured hook timeouts.
+
+A hook failure with `onFailure: endLease` keeps the failed session until stop;
+`onFailure: exit` stops the exporter with code `1`. Either policy skips the
+after-hook when the before-hook fails. See [Hooks](../../../introduction/hooks.md)
+for configuration and failure handling.
 
 ### Start the Exporter
 
