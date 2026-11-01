@@ -36,6 +36,18 @@ _HOP_BY_HOP = frozenset(
 _REQUEST_FRAMING = frozenset({b"content-length", b"transfer-encoding", b"host"})
 
 
+def _end_to_end(headers, dropped: frozenset[bytes]) -> list[tuple[bytes, bytes]]:
+    """Headers without the hop-by-hop ones, including those the message's Connection names."""
+    named = {
+        token.strip().lower()
+        for name, value in headers
+        if name == b"connection"
+        for token in value.split(b",")
+        if token.strip()
+    }
+    return [(name, value) for name, value in headers if name not in dropped and name not in named]
+
+
 class _Abort(Exception):
     """The response already started, so the only way to report failure is closing."""
 
@@ -88,7 +100,7 @@ async def _read_request(connection: h11.Connection, stream):
 
 
 async def _forward(connection: h11.Connection, stream, backend: tuple[str, int], request: h11.Request, body: bytes):
-    headers = [(name, value) for name, value in request.headers if name not in _HOP_BY_HOP | _REQUEST_FRAMING]
+    headers = _end_to_end(request.headers, _HOP_BY_HOP | _REQUEST_FRAMING)
     headers += [
         (b"Host", f"{backend[0]}:{backend[1]}".encode()),
         (b"Content-Length", str(len(body)).encode()),
@@ -128,7 +140,7 @@ async def _relay_response(client: h11.Connection, upstream, connection: h11.Conn
         elif isinstance(event, h11.InformationalResponse):
             continue
         elif isinstance(event, h11.Response):
-            kept = [(name, value) for name, value in event.headers if name not in _HOP_BY_HOP]
+            kept = _end_to_end(event.headers, _HOP_BY_HOP)
             await _send(stream, connection.send(h11.Response(status_code=event.status_code, headers=kept)))
             started.append(True)
         elif isinstance(event, h11.Data):
