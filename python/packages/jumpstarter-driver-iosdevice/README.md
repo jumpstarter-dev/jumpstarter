@@ -175,14 +175,19 @@ with env() as root, root.ios.serve() as usbmux, root.ios.https() as endpoint:
     tool_env["USBMUXD_SOCKET_ADDRESS"] = usbmux
     appium = subprocess.Popen(["appium", "server", "--address", "127.0.0.1", "--port", "4723"], env=tool_env)
     try:
+        deadline = time.monotonic() + 60
         while True:
+            if appium.poll() is not None or time.monotonic() > deadline:
+                raise RuntimeError("Appium did not start")
             try:
                 urllib.request.urlopen("http://127.0.0.1:4723/status", timeout=5)
                 break
             except OSError:
                 time.sleep(1)
+        device = endpoint.metadata["device"]
         options = XCUITestOptions()
-        options.udid = endpoint.metadata["device"]["udid"]
+        options.udid = device["udid"]
+        options.platform_version = device["version"]
         options.bundle_id = "your.installed.app"
         options.no_reset = True
         options.set_capability("appium:webDriverAgentUrl", endpoint.url)
@@ -197,7 +202,10 @@ with env() as root, root.ios.serve() as usbmux, root.ios.https() as endpoint:
 ```
 
 Appium trusts WDA's certificate through the `NODE_EXTRA_CA_CERTS` value from
-`environment()`. Keep both contexts open until Appium stops, and stop the
+`environment()`. The XCUITest driver needs `appium:platformVersion` on Linux and
+Windows clients; see its
+[guide for non-macOS hosts](https://github.com/appium/appium-xcuitest-driver/blob/master/docs/guides/non-macos-hosts.md)
+for their other prerequisites. Keep both contexts open until Appium stops, and stop the
 Appium and WDA processes you started before releasing the lease. For
 simulators, the exporter runs Appium itself; see {doc}`iossimulator`.
 

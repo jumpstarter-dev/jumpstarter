@@ -11,8 +11,10 @@ shared iOS client, backed by an operator-installed `idb_companion`.
 $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-iossimulator
 ```
 
-The exporter requires a logged-in macOS session, [Xcode](https://developer.apple.com/xcode/)
-command-line tools, an iOS 17.4+ simulator runtime, and
+The exporter requires a logged-in macOS session, the full
+[Xcode](https://developer.apple.com/xcode/) app selected as the active developer
+directory (`sudo xcode-select -s /Applications/Xcode.app`; the standalone
+command-line tools lack `simctl`), an iOS 17.4+ simulator runtime, and
 [idb_companion](https://github.com/facebook/idb). Install an idb client on each
 macOS or Linux client. External tools are installed separately under their
 respective licenses; the driver does not bundle or download them.
