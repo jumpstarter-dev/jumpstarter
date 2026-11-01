@@ -1,3 +1,4 @@
+import json
 import plistlib
 import struct
 from contextlib import asynccontextmanager
@@ -337,8 +338,8 @@ async def test_devicehub_exports_share_one_stand_in(tmp_path):
         patch.object(driver, "_require_device", AsyncMock(return_value=UDID)),
         patch.object(driver, "_broker_for_device", AsyncMock(side_effect=[first, second, second, second])),
     ):
-        info = await driver.devicehub_info(49152)
-        assert info["udids"] == ["STAND-IN", UDID] and state.exists()
+        await driver.devicehub_info(49152)
+        assert json.loads(state.read_text())["udid"] == "STAND-IN"
         bridge = driver._devicehub
         assert bridge is not None
         await driver.devicehub_pairing_code(123456)
