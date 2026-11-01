@@ -251,7 +251,9 @@ venv/binary isn't found.
   `--label-filter '!lease-churn'` (still includes `exporterset-qemu`).
   `e2e-compat-old-controller`/`e2e-compat-old-client` jobs run
   only on merge-queue/dispatch via `compat/run.sh`. PRs run amd64 only;
-  merge-queue and `workflow_dispatch` also run arm64.
+  merge-queue and `workflow_dispatch` also run arm64. Pushes to `main` run only
+  the image and wheel build jobs (both arches), no tests: that saves their
+  caches in `main`'s scope, the only one PRs and the merge queue can restore.
 - **`operator-only`** is a secondary label on 2 individual `It`s inside the `core`
   lane (`can login with simplified login` and `legacy client config contains CA
   certificate and works with secure TLS`) — excluded when running against a
