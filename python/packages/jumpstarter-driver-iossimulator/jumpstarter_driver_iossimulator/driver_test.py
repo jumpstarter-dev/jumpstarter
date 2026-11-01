@@ -616,7 +616,7 @@ def test_process_lookup_matches_only_this_users_lease_processes(monkeypatch):
     listing = "\n".join(
         [
             f"101 {os.getuid()} idb_companion --grpc-domain-sock {lease}/idb.sock",
-            f"102 {os.getuid()} node appium --config {lease}/appium-x/config.json",
+            f"102 {os.getuid()} python3 -m service --config {lease}/service-x/config.json",
             f"103 {os.getuid() + 1} idb_companion --grpc-domain-sock {lease}/idb.sock",
             f"104 {os.getuid()} idb_companion --grpc-domain-sock {lease}0/idb.sock",
             f"{os.getpid()} {os.getuid()} python {lease}/script.py",

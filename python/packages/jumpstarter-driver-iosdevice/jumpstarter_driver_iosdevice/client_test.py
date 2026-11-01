@@ -459,7 +459,7 @@ def test_https_context_owns_loopback_listener_and_public_ca_only(https_client, a
     [
         {},
         {"provider.example/options": {"formats": ["png", "custom"], "enabled": True, "ratio": 0.5, "limit": 2}},
-        {"service": "wda", "capabilities": {"appium:webDriverAgentUrl": "provider-defined", "arbitrary": None}},
+        {"service": "status", "settings": {"vendor:option": "provider-defined", "arbitrary": None}},
     ],
 )
 def test_https_metadata_is_provider_defined_without_vendor_defaults(https_client, adapter, metadata):
@@ -467,8 +467,6 @@ def test_https_metadata_is_provider_defined_without_vendor_defaults(https_client
     with https_client.https() as endpoint:
         assert endpoint.metadata == metadata
         assert json.loads(endpoint.environment({})["JUMPSTARTER_IOS_HTTPS_METADATA"]) == metadata
-    assert not hasattr(IosDeviceClient, "wda")
-    assert not hasattr(IosDeviceClient, "appium")
 
 
 @pytest.mark.parametrize(

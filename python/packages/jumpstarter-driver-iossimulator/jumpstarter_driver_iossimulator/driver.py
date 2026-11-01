@@ -539,7 +539,7 @@ class IosSimulator(CompositeInterface, Driver):
         device_set = entry / "devices"
         owned_set = stat.S_ISDIR(device_set.lstat().st_mode)
         # Shut simulators down gracefully first; then stop whatever still names
-        # this lease (companion, Appium), and only then delete.
+        # this lease (companion, HTTP service), and only then delete.
         if owned_set:
             self._simctl_all(device_set, "shutdown")
         pids = _processes_using(entry)

@@ -2,8 +2,8 @@
 
 `jumpstarter-driver-iosdevice` connects existing iOS tools to one leased iPhone
 or iPad through usbmux. The exporter owns device pairing; clients use a
-lease-scoped proxy identity. Device tools such as go-ios, libimobiledevice
-and Appium are installed separately.
+lease-scoped proxy identity. Device tools such as go-ios and libimobiledevice
+are installed separately.
 
 ## Installation
 
@@ -20,7 +20,6 @@ under their respective licenses; Jumpstarter does not bundle or download them.
 | [go-ios](https://github.com/danielpaulus/go-ios) | Device management and automation |
 | [libimobiledevice](https://github.com/libimobiledevice/libimobiledevice) | Device utilities and libraries |
 | [usbfluxd](https://github.com/corellium/usbfluxd) | Access a remote usbmux endpoint from local tools |
-| [Appium](https://appium.io/docs/en/latest/) | WebDriver automation with XCUITest and WDA |
 
 The exporter needs a running usbmux daemon and a device running iOS 17.4 or
 later. Pair the device on the exporter before leasing it. Developer services
@@ -40,9 +39,7 @@ Do this once per device, on the exporter host, with the device unlocked:
    tap **Enable** in the prompt, then confirm with the passcode. If the toggle is
    not shown, connect the device to Xcode or a developer tool once so iOS offers
    it.
-3. For WebDriverAgent and Appium, enable **Settings > Developer > Enable UI
-   Automation**.
-4. Verify from the exporter host with libimobiledevice: `idevice_id -l` lists
+3. Verify from the exporter host with libimobiledevice: `idevice_id -l` lists
    the UDID and `idevicepair validate` confirms the pairing.
 
 Keep the device unlocked while tools install or launch test runners; iOS may
@@ -144,70 +141,6 @@ All listeners bind `127.0.0.1`. Closing a context removes its listener and
 public CA files; keep the context open for the tool's entire lifetime. Exporter
 services and identities are revoked at lease teardown, reset or device detach.
 Externally started device services remain owned by their launcher.
-
-### Appium
-
-[Appium](https://appium.io/docs/en/latest/) with its
-[XCUITest driver](https://github.com/appium/appium-xcuitest-driver) reaches an
-operator-started [WebDriverAgent (WDA)](https://github.com/appium/WebDriverAgent)
-through `https()`. Set `http_port` to WDA's port, usually 8100, and do not also
-forward it. Jumpstarter does not install, sign or start WDA: pair the device on
-the exporter, enable Developer Mode, mount a developer image, install a signed
-WDA runner and your application, and start WDA with your device tools. Keep the
-device unlocked and approve testing when iOS asks.
-
-Run Appium on the client with the endpoint's trust environment and the lease's
-usbmux address, then connect a WebDriver client such as
-[Appium-Python-Client](https://github.com/appium/python-client):
-
-```python
-import subprocess
-import time
-import urllib.request
-
-from appium import webdriver
-from appium.options.ios import XCUITestOptions
-
-from jumpstarter.common.utils import env
-
-with env() as root, root.ios.serve() as usbmux, root.ios.https() as endpoint:
-    tool_env = endpoint.environment()
-    tool_env["USBMUXD_SOCKET_ADDRESS"] = usbmux
-    appium = subprocess.Popen(["appium", "server", "--address", "127.0.0.1", "--port", "4723"], env=tool_env)
-    try:
-        deadline = time.monotonic() + 60
-        while True:
-            if appium.poll() is not None or time.monotonic() > deadline:
-                raise RuntimeError("Appium did not start")
-            try:
-                urllib.request.urlopen("http://127.0.0.1:4723/status", timeout=5)
-                break
-            except OSError:
-                time.sleep(1)
-        device = endpoint.metadata["device"]
-        options = XCUITestOptions()
-        options.udid = device["udid"]
-        options.platform_version = device["version"]
-        options.bundle_id = "your.installed.app"
-        options.no_reset = True
-        options.set_capability("appium:webDriverAgentUrl", endpoint.url)
-        driver = webdriver.Remote("http://127.0.0.1:4723", options=options)
-        try:
-            print(driver.page_source)
-        finally:
-            driver.quit()
-    finally:
-        appium.terminate()
-        appium.wait()
-```
-
-Appium trusts WDA's certificate through the `NODE_EXTRA_CA_CERTS` value from
-`environment()`. The XCUITest driver needs `appium:platformVersion` on Linux and
-Windows clients; see its
-[guide for non-macOS hosts](https://github.com/appium/appium-xcuitest-driver/blob/master/docs/guides/non-macos-hosts.md)
-for their other prerequisites. Keep both contexts open until Appium stops, and stop the
-Appium and WDA processes you started before releasing the lease. For
-simulators, the exporter runs Appium itself; see {doc}`iossimulator`.
 
 ## Security and limits
 
