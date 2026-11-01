@@ -50,6 +50,10 @@ class Session(
     exporter_name: str = "unknown"
     mapping: dict[UUID, "Driver"]
     motd: str | None = None
+    reset_device: bool = True
+    """Reset the device to its default state when the session starts. False for the
+    registration session and for a session that continues a lease an earlier
+    exporter process set up."""
     lease_context: "LeaseContext | None" = field(init=False, default=None)
 
     _logging_queue: deque = field(init=False)
@@ -70,7 +74,8 @@ class Session(
         set_log_context(exporter=self.exporter_name)
         active = False
         try:
-            self.root_device.reset()
+            if self.reset_device:
+                self.root_device.reset()
             get_registry().adjust_active_sessions(exporter=self.exporter_name, delta=1.0)
             active = True
             yield self
@@ -105,12 +110,13 @@ class Session(
                 # A logged error is not successful teardown: do not admit another lease.
                 raise ExceptionGroup("Session driver cleanup failed", errors)
 
-    def __init__(self, *args, root_device, exporter_name="unknown", motd=None, **kwargs):
+    def __init__(self, *args, root_device, exporter_name="unknown", motd=None, reset_device=True, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.root_device = root_device
         self.exporter_name = exporter_name
         self.motd = motd
+        self.reset_device = reset_device
         self.mapping = {u: i for (u, _, _, i) in self.root_device.enumerate()}
 
         self._logging_queue = deque(maxlen=256)

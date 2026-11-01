@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, assert_type
 import pytest
 from anyio import Event, create_task_group, fail_after
 from anyio.lowlevel import checkpoint
+from jumpstarter_protocol import jumpstarter_pb2
+from jumpstarter_protocol.jumpstarter.v1.jumpstarter_pb2 import LEASE_HOOK_PHASE_RUNNING as RUNNING_STATE
 
 from jumpstarter.exporter.fsm import (
     InputBuffer,
@@ -21,6 +23,7 @@ from jumpstarter.exporter.fsm import (
     State,
 )
 from jumpstarter.exporter.fsm.lease_context import LeaseContext
+from jumpstarter.exporter.lease_hooks import Restart
 from jumpstarter.fsm import ExitFSM, FSMRunner, InputSource
 
 
@@ -358,6 +361,55 @@ async def test_assignment_snapshots_copy_metadata_and_validate_before_publishing
 
 
 @pytest.mark.anyio
+async def test_status_stream_latches_takeover_and_support_from_first_status_only() -> None:
+    inputs = InputBuffer()
+    record = jumpstarter_pb2.LeaseHooks(
+        lease_name="A",
+        lease_uid="u1",
+        client_name="client",
+        before_lease=jumpstarter_pb2.LeaseHookState(phase=RUNNING_STATE, attempts=1),
+    )
+    await inputs.send(jumpstarter_pb2.StatusResponse(lease_hooks=record))
+    first, _ = inputs.snapshot_and_watch()
+    assert first.status_seen and first.hooks_supported
+    assert first.takeover is not None
+    assert first.takeover.restart is Restart.CLEAN_UP  # not leased: cleanup is owed either way
+    assert (first.takeover.lease_name, first.takeover.lease_uid, first.takeover.client_name) == ("A", "u1", "client")
+
+    # A later record describes this process's own work, not work left owed by a previous one.
+    stale = jumpstarter_pb2.LeaseHooks(
+        lease_name="B", lease_uid="u2", before_lease=jumpstarter_pb2.LeaseHookState(phase=RUNNING_STATE)
+    )
+    await inputs.send(jumpstarter_pb2.StatusResponse(leased=True, lease_name="B", lease_uid="u2", lease_hooks=stale))
+    second, _ = inputs.snapshot_and_watch()
+    assert second.takeover is first.takeover
+
+    # A controller that keeps no records never latches one.
+    plain = InputBuffer()
+    await plain.send(jumpstarter_pb2.StatusResponse())
+    snapshot, _ = plain.snapshot_and_watch()
+    assert snapshot.status_seen and not snapshot.hooks_supported and snapshot.takeover is None
+
+
+@pytest.mark.anyio
+async def test_assignments_track_lease_uid_and_generation() -> None:
+    inputs = InputBuffer()
+    await inputs.send(jumpstarter_pb2.StatusResponse(leased=True, lease_name="A", lease_uid="u1"))
+    first, _ = inputs.snapshot_and_watch()
+    assert first.lease_assignment is not None and first.lease_assignment.key == LeaseKey("A", 1, "u1")
+    # Same lease, new observation: no replacement.
+    await inputs.send(
+        jumpstarter_pb2.StatusResponse(leased=True, lease_name="A", lease_uid="u1", client_name="client")
+    )
+    second, _ = inputs.snapshot_and_watch()
+    assert second.lease_assignment is not None and second.lease_assignment.key == LeaseKey("A", 1, "u1")
+    # A new lease reusing the name, told apart by its UID, is a replacement.
+    await inputs.send(jumpstarter_pb2.StatusResponse(leased=True, lease_name="A", lease_uid="u2"))
+    third, _ = inputs.snapshot_and_watch()
+    assert third.lease_assignment is not None and third.lease_assignment.key == LeaseKey("A", 2, "u2")
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("first_code", [None, 0, 1, 75])
 async def test_shutdown_escalates_without_losing_exit_or_cleanup_policy(first_code: int | None) -> None:
     inputs = InputBuffer()
@@ -439,7 +491,7 @@ async def test_runner_logs_transitions_evaluations_duration_and_safe_inputs(
     ]
     assert durations == ["1.000000"] * 6
     assert any(
-        message.startswith("FSM inputs changed: lease_assignment=LeaseKey(name='A', generation=1)")
+        message.startswith("FSM inputs changed: lease_assignment=LeaseKey(name='A', generation=1")
         for message in messages
     )
     assert any("shutdown_mode=DRAIN" in message for message in messages)
