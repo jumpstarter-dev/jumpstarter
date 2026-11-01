@@ -25,6 +25,8 @@ from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 from jumpstarter.client import DriverClient
 
 if TYPE_CHECKING:
+    from jumpstarter_driver_appium.client import AppiumClient
+
     from .devicehub_mac import WebDriverAgent
 
 CONNECT_TIMEOUT = 60.0
@@ -174,7 +176,8 @@ class _IosGroup(click.Group):
     """Keep arguments after `--` opaque to Click and to subcommand dispatch."""
 
     def parse_args(self, ctx, args):
-        if "--" in args:
+        # `appium` parses its own `-- COMMAND`.
+        if "--" in args and args[0] != "appium":
             separator = args.index("--")
             command = args[separator + 1 :]
             args = args[:separator]
@@ -210,6 +213,14 @@ def _usbflux_registered(usbfluxctl: str, target: str) -> bool:
 
 
 class IosDeviceClient(DriverClient):
+    @property
+    def appium(self) -> "AppiumClient":
+        """The device's Appium, when the exporter configures one; see the shared Appium client."""
+        child = self.children.get("appium")
+        if child is None:
+            raise AttributeError("Appium is not configured for this device on the exporter")
+        return child  # ty: ignore[invalid-return-type]
+
     def info(self) -> dict:
         info = self.call("info")
         # Generic RPC values carry every number as a float; ports are integers.
@@ -546,6 +557,9 @@ class IosDeviceClient(DriverClient):
                     click.echo(json.dumps(agent.capabilities(), indent=2))
                     click.echo("Press Ctrl+C to stop WebDriverAgent and make the device unavailable.")
                     _wait_for_interrupt(self)
+
+        if "appium" in self.children:
+            ios.add_command(self.appium.cli(), "appium")
 
         @ios.command()
         @click.argument("ports", nargs=-1, type=click.IntRange(1, 65535), required=True)

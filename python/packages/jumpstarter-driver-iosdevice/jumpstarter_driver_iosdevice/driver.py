@@ -13,6 +13,7 @@ from anyio import BrokenResourceError, ClosedResourceError, EndOfStream, Incompl
 from anyio.streams.buffered import BufferedByteReceiveStream
 from jumpstarter_driver_network.driver import NetworkInterface
 
+from .appium import IosDeviceAppium, validate_appium
 from .interface import IosDeviceInterface
 from .usbmux import UsbMuxDaemon
 from jumpstarter.common.exceptions import ConfigurationError
@@ -83,6 +84,7 @@ class IosDevice(IosDeviceInterface, Driver):
     devicehub: bool = False
     devicehub_state: str | None = None
     devicehub_udid: str | None = None
+    appium: dict | None = None
 
     def __post_init__(self):
         super().__post_init__()
@@ -97,6 +99,10 @@ class IosDevice(IosDeviceInterface, Driver):
             if name in self.children:
                 raise ConfigurationError(f"child {name} conflicts with forward_ports")
             self.children[name] = IosPortForward(device=self, port=port)
+        if self.appium is not None:
+            if "appium" in self.children:
+                raise ConfigurationError("child appium conflicts with the appium option")
+            self.children["appium"] = IosDeviceAppium(device=self, **self.appium)
 
     def _validate_config(self):  # noqa: C901
         if self.transport not in ("usb", "network"):
@@ -114,6 +120,7 @@ class IosDevice(IosDeviceInterface, Driver):
                 raise ConfigurationError("http_port requires exporter-owned trust")
             if self.http_port in self.forward_ports:
                 raise ConfigurationError("http_port must not also be exposed through forward_ports")
+        validate_appium(self.appium)
         if self.devicehub and self.trust_mode != "exporter":
             raise ConfigurationError("devicehub requires exporter-owned trust")
         if self.devicehub and not _TLS_PSK:
