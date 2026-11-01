@@ -1,6 +1,7 @@
 import errno
 import ipaddress
 import struct
+from unittest.mock import patch
 
 import anyio
 import pytest
@@ -280,21 +281,23 @@ async def test_closed_connection_refuses_io(stack):
         await connection.receive()
 
 
-async def test_send_errors_other_than_shutdown_are_logged(stack, caplog):
+async def test_send_errors_other_than_shutdown_are_logged(stack):
     def write(frame):
         raise OSError(errno.ENETDOWN, "network is down")
 
     stack._bpf.write = write
-    stack.send_ipv6(MAC_ETHER, DEVICE, MAC, PROTO_TCP, b"")
-    assert "cannot send on feth1" in caplog.text
-    caplog.clear()
+    with patch.object(netstack, "logger") as logger:
+        stack.send_ipv6(MAC_ETHER, DEVICE, MAC, PROTO_TCP, b"")
+    logger.warning.assert_called_once()
+    assert logger.warning.call_args.args[:2] == ("cannot send on %s: %s", "feth1")
 
     def closed(frame):
         raise OSError(errno.EBADF, "bad file descriptor")
 
     stack._bpf.write = closed
-    stack.send_ipv6(MAC_ETHER, DEVICE, MAC, PROTO_TCP, b"")
-    assert caplog.text == ""
+    with patch.object(netstack, "logger") as logger:
+        stack.send_ipv6(MAC_ETHER, DEVICE, MAC, PROTO_TCP, b"")
+    logger.warning.assert_not_called()
 
 
 def _bpf_record(data):

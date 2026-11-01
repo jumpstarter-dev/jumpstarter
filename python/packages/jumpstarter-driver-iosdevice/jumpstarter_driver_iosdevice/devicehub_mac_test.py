@@ -8,6 +8,7 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import ClassVar
+from unittest.mock import patch
 
 import anyio
 import pytest
@@ -422,12 +423,14 @@ async def test_mac_connections_are_carried_to_the_exporter():
 
 
 @pytest.mark.anyio
-async def test_failed_mac_connection_is_logged_not_raised(caplog):
+async def test_failed_mac_connection_is_logged_not_raised():
     client = FakeClient()
     client.fail_streams = True
     connection, _mac = _memory_pair()
-    await devicehub_mac._carry(client, connection)
-    assert "lease ended" in caplog.text
+    with patch.object(devicehub_mac, "logger") as logger:
+        await devicehub_mac._carry(client, connection)
+    logger.warning.assert_called_once()
+    assert str(logger.warning.call_args.args[1]) == "lease ended"
 
 
 @pytest.mark.anyio

@@ -3,12 +3,14 @@ import json
 import ssl
 import struct
 from contextlib import asynccontextmanager
+from unittest.mock import patch
 
 import anyio
 import pytest
 from anyio.streams.buffered import BufferedByteReceiveStream
 from anyio.streams.tls import TLSStream
 
+from . import devicehub
 from .devicehub import (
     CDTUNNEL_MAGIC,
     CORE_DEVICE_PROXY,
@@ -19,7 +21,7 @@ from .devicehub import (
     served,
 )
 from .remotepairing import ControlChannel, DeviceIdentity, RemotePairingError
-from .remotepairing_test import Host
+from .remotepairing_test import Host, logged
 from .usbmux import _memory_pair
 
 UDID = "00008110-001234567890001E"
@@ -162,13 +164,14 @@ async def test_mac_control_connection_requests_a_tunnel_and_unpairs(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_unexpected_first_byte_ends_the_connection(caplog):
+async def test_unexpected_first_byte_ends_the_connection():
     bridge = await _prepared()
-    async with served(lambda stream: serve_connection(bridge, stream)) as stream:
-        await stream.send(b"GET / HTTP/1.1\r\n")
-        with pytest.raises((anyio.EndOfStream, anyio.ClosedResourceError)):
-            await stream.receive()
-    assert "unexpected first byte" in caplog.text
+    with patch.object(devicehub, "logger") as logger:
+        async with served(lambda stream: serve_connection(bridge, stream)) as stream:
+            await stream.send(b"GET / HTTP/1.1\r\n")
+            with pytest.raises((anyio.EndOfStream, anyio.ClosedResourceError)):
+                await stream.receive()
+    assert logged(logger.warning) == ["Device Hub stream failed: unexpected first byte b'G' from the Mac"]
 
 
 @pytest.mark.anyio

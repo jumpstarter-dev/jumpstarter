@@ -3,6 +3,7 @@ import json
 import plistlib
 import struct
 from contextlib import asynccontextmanager
+from unittest.mock import patch
 
 import anyio
 import pytest
@@ -10,6 +11,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
+from . import remotepairing
 from .remotepairing import (
     PACKET_MAGIC,
     WIRE_PROTOCOL_VERSION,
@@ -38,6 +40,14 @@ from .usbmux import _memory_pair
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+def logged(method) -> list[str]:
+    """Messages passed to a patched logger method.
+
+    caplog stays empty on the Linux CI runner, so tests patch the module logger.
+    """
+    return [call.args[0] % call.args[1:] for call in method.call_args_list]
 
 
 def _identity(name="iPhone") -> DeviceIdentity:
@@ -394,7 +404,17 @@ async def test_unpaired_mac_fails_pair_verify():
 
 
 @pytest.mark.anyio
-async def test_channel_ignores_messages_it_does_not_understand(caplog):
+async def test_channel_ignores_messages_it_does_not_understand():
+    with patch.object(remotepairing, "logger") as logger:
+        await _send_unknown_messages()
+    warnings = logged(logger.warning)
+    assert "ignoring RemotePairing message ['unknown']" in warnings
+    assert "unsupported plain RemotePairing request ['somethingElse']" in warnings
+    assert "unsupported pairing kind 'unknownKind'" in warnings
+    assert "unsupported RemotePairing event ['somethingHappened']" in warnings
+
+
+async def _send_unknown_messages():
     async with device_channel(_identity()) as (stream, _channel):
         host = Host(stream, _identity("mac"))
         await host._send({"unknown": {}})
@@ -404,22 +424,19 @@ async def test_channel_ignores_messages_it_does_not_understand(caplog):
         await host._send_plain({"event": {"_0": {"somethingHappened": {}}}})
         response = await host.handshake()
     assert response["forRequestIdentifier"] == 5
-    assert "ignoring RemotePairing message ['unknown']" in caplog.text
-    assert "unsupported plain RemotePairing request ['somethingElse']" in caplog.text
-    assert "unsupported pairing kind 'unknownKind'" in caplog.text
-    assert "unsupported RemotePairing event ['somethingHappened']" in caplog.text
 
 
 @pytest.mark.anyio
-async def test_encrypted_event_is_logged_without_a_response(caplog):
+async def test_encrypted_event_is_logged_without_a_response():
     device, mac = _identity("device"), _identity("mac")
     device.hosts[mac.identifier] = mac.public_key
-    async with device_channel(device) as (stream, _channel):
-        host = Host(stream, mac)
-        await host.verify(device.public_key)
-        await host.send_encrypted({"event": {"_0": {}}})
-        assert (await host.request("ping"))["_1"] == {"ping": {}}
-    assert "encrypted RemotePairing event" in caplog.text
+    with patch.object(remotepairing, "logger") as logger:
+        async with device_channel(device) as (stream, _channel):
+            host = Host(stream, mac)
+            await host.verify(device.public_key)
+            await host.send_encrypted({"event": {"_0": {}}})
+            assert (await host.request("ping"))["_1"] == {"ping": {}}
+    assert "encrypted RemotePairing event: {'event': {'_0': {}}}" in logged(logger.info)
 
 
 @pytest.mark.anyio
