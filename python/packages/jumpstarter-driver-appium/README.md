@@ -146,3 +146,11 @@ devices between untrusted tenants.
 .. autoclass:: jumpstarter_driver_appium.common.AppiumTarget()
     :members: capabilities, ssl_context, client_config, environment
 ```
+
+Targets that only the client can reach, such as an iOS device shown through
+Device Hub, run the user's installed Appium on the client instead and yield the
+same `AppiumTarget`:
+
+```{eval-rst}
+.. autofunction:: jumpstarter_driver_appium.local.local_appium
+```

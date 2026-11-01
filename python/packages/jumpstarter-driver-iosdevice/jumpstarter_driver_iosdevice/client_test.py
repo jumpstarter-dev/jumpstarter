@@ -677,16 +677,80 @@ def test_devicehub_explains_macos_only(client, monkeypatch):
     assert result.exit_code != 0
     assert "only supported on macOS clients" in result.output
     assert "No such command" not in result.output
-    with pytest.raises(RuntimeError, match="only supported on macOS clients"), client.devicehub_wda("x.xctestrun"):
+    with pytest.raises(RuntimeError, match="only supported on macOS clients"), client.devicehub_appium("x.xctestrun"):
         pass
 
 
-def test_devicehub_wda_needs_an_xctestrun(client, monkeypatch, tmp_path):
+def test_devicehub_appium_needs_an_xctestrun(client, monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "platform", "darwin")
     build = tmp_path / "WebDriverAgentRunner-Runner.app"
     build.mkdir()
-    with pytest.raises(ValueError, match="not an .xctestrun file"), client.devicehub_wda(build):
+    with pytest.raises(ValueError, match="not an .xctestrun file"), client.devicehub_appium(build):
         pass
+
+
+@pytest.fixture
+def devicehub_wda(monkeypatch, tmp_path):
+    """Stand in for Device Hub and WebDriverAgent; run the stand-in Appium as the local one."""
+    from jumpstarter_driver_appium.testing import write_fake_appium
+
+    from . import devicehub_mac
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(devicehub_mac, "link_ready", lambda: True)
+    monkeypatch.setenv("FAKE_APPIUM_RECORD", str(tmp_path / "record.jsonl"))
+    shown = []
+
+    @asynccontextmanager
+    async def fake_shown(client, **kwargs):
+        shown.append(kwargs["force_pair"])
+        yield {"udids": ["STAND-IN", "DEVICE"]}
+
+    @asynccontextmanager
+    async def fake_webdriveragent(path, *, udids, **kwargs):
+        assert udids == ["STAND-IN", "DEVICE"]
+        yield devicehub_mac.WebDriverAgent(url="http://[fd00::1]:8100", udid="DEVICE", platform_version="27.0.1")
+
+    monkeypatch.setattr(devicehub_mac, "shown", fake_shown)
+    monkeypatch.setattr(devicehub_mac, "webdriveragent", fake_webdriveragent)
+    xctestrun = tmp_path / "WebDriverAgentRunner.xctestrun"
+    xctestrun.write_text("plist")
+    return xctestrun, write_fake_appium(tmp_path), shown
+
+
+def test_devicehub_appium_yields_a_local_appium_target(client, devicehub_wda):
+    xctestrun, appium, shown = devicehub_wda
+    with client.devicehub_appium(xctestrun, appium=str(appium), pair=True) as target:
+        assert target.url.startswith("http://127.0.0.1:") and target.ca_file is None
+        assert target.wda_url == "http://[fd00::1]:8100"
+        capabilities = target.capabilities()
+        assert capabilities["appium:udid"] == "DEVICE"
+        assert capabilities["appium:webDriverAgentUrl"] == "http://[fd00::1]:8100"
+        assert "appium:bundleId" not in capabilities
+        with urllib.request.urlopen(target.url + "/status", timeout=5) as response:
+            assert json.load(response)["value"]["ready"] is True
+    assert shown == [True]
+
+
+def test_devicehub_appium_checks_appium_before_pairing(client, devicehub_wda):
+    xctestrun, _, shown = devicehub_wda
+    with pytest.raises(RuntimeError, match="does not bundle"), client.devicehub_appium(xctestrun, appium="no-appium"):
+        pass
+    assert shown == []
+
+
+def test_cli_devicehub_runs_a_command_with_the_target(client, devicehub_wda):
+    xctestrun, appium, _ = devicehub_wda
+    check = (
+        "import os, sys; "
+        "sys.exit(0 if os.environ['JUMPSTARTER_APPIUM_WDA_URL'] == 'http://[fd00::1]:8100' "
+        "and os.environ['JUMPSTARTER_APPIUM_URL'].startswith('http://127.0.0.1:') else 3)"
+    )
+    args = ["devicehub", "--wda", str(xctestrun), "--appium", str(appium), "--", sys.executable, "-c", check]
+    result = CliRunner().invoke(client.cli(), args)
+    assert result.exit_code == 0, result.output
+    result = CliRunner().invoke(client.cli(), ["devicehub", "--", "true"])
+    assert result.exit_code != 0 and "only with --wda" in result.output
 
 
 def test_cli_devicehub_offers_wda(client, monkeypatch):
@@ -741,46 +805,15 @@ def test_devicehub_code_is_prompted_for(client, monkeypatch):
     assert client.portal.call(client._devicehub_code) == "123456"
 
 
-@pytest.fixture
-def devicehub_wda(monkeypatch, tmp_path):
-    from . import devicehub_mac
-
-    monkeypatch.setattr(sys, "platform", "darwin")
-    monkeypatch.setattr(devicehub_mac, "link_ready", lambda: True)
-    xctestrun = tmp_path / "WebDriverAgentRunner.xctestrun"
-    xctestrun.write_text("")
-    agent = devicehub_mac.WebDriverAgent(url="http://[fd00::1]:8100", udid="DEVICE", platform_version="27.0.1")
-    seen = []
-
-    @asynccontextmanager
-    async def shown(device, *, code, force_pair, notify):
-        seen.append(("shown", force_pair))
-        yield {"udids": ["STAND-IN", "DEVICE"]}
-
-    @asynccontextmanager
-    async def webdriveragent(path, *, udids, timeout, notify):
-        seen.append(("webdriveragent", path, udids))
-        yield agent
-
-    monkeypatch.setattr(devicehub_mac, "shown", shown)
-    monkeypatch.setattr(devicehub_mac, "webdriveragent", webdriveragent)
-    return xctestrun, agent, seen
-
-
-def test_devicehub_wda_yields_the_running_agent(client, devicehub_wda):
-    xctestrun, agent, seen = devicehub_wda
-    with client.devicehub_wda(xctestrun, pair=True) as running:
-        assert running == agent
-    assert seen == [("shown", True), ("webdriveragent", xctestrun, ["STAND-IN", "DEVICE"])]
-
-
-def test_cli_devicehub_prints_webdriveragent_capabilities(client, devicehub_wda, monkeypatch):
-    xctestrun, _agent, _seen = devicehub_wda
+def test_cli_devicehub_prints_the_appium_endpoint(client, devicehub_wda, monkeypatch):
+    xctestrun, appium, _ = devicehub_wda
     monkeypatch.setattr(client_module, "_wait_for_interrupt", lambda device: None)
-    result = CliRunner().invoke(client.cli(), ["devicehub", "--wda", str(xctestrun)])
+    result = CliRunner().invoke(client.cli(), ["devicehub", "--wda", str(xctestrun), "--appium", str(appium)])
     assert result.exit_code == 0, result.output
-    assert "WebDriverAgent is ready at http://[fd00::1]:8100" in result.output
-    assert '"appium:webDriverAgentUrl": "http://[fd00::1]:8100"' in result.output
+    endpoint = json.loads(result.output.splitlines()[0])
+    assert endpoint["url"].startswith("http://127.0.0.1:")
+    assert endpoint["wda_url"] == "http://[fd00::1]:8100"
+    assert endpoint["capabilities"]["appium:webDriverAgentUrl"] == "http://[fd00::1]:8100"
 
 
 def test_cli_devicehub_without_wda_shows_the_device(client, monkeypatch):
