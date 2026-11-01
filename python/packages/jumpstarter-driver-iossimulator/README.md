@@ -127,8 +127,8 @@ appium:
 | `env` | Extra environment for Appium |
 | `startup_timeout`, `max_upload_bytes` | See {doc}`appium` |
 
-Power the simulator on first; Appium starts with the first session and stops at
-power off:
+Power the simulator on first. Appium starts when `serve()` first asks for its
+endpoint, before any session, and stops at power off:
 
 ```python
 from appium import webdriver

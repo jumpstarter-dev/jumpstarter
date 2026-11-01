@@ -56,7 +56,7 @@ export:
 | Parameter | Description | Default |
 | --- | --- | --- |
 | `executable` | Appium launcher, resolved on the exporter's `PATH` | `appium` |
-| `home` | `APPIUM_HOME` holding the installed Appium drivers | inherited |
+| `home` | `APPIUM_HOME` holding the installed Appium drivers; set it, since Appium does not inherit the exporter's `APPIUM_*` variables | none |
 | `drivers` | Appium drivers to load; all installed ones when empty | `[]` |
 | `capabilities` | Capabilities fixed on every session; clients cannot override them | `{}` |
 | `env` | Extra environment for Appium, such as `ANDROID_ADB_SERVER_PORT` | `{}` |
