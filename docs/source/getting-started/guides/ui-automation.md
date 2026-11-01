@@ -53,6 +53,9 @@ Hub, replace `root.phone.appium.serve()` with
 `appium:automationName` and `appium:udid`. Add your own, for example
 `appium:bundleId`, before opening a session.
 
+If your client configuration allow-lists driver packages under `drivers.allow`,
+add `jumpstarter_driver_appium.*`, or the `appium` child cannot load.
+
 Install [Appium-Python-Client](https://github.com/appium/python-client) to run
 this example. Other WebDriver clients work too: use `target.ssl_context()` or
 `target.ca_file` for the lease's certificate authority, and keep certificate
