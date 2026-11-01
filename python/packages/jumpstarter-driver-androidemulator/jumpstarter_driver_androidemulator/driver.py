@@ -10,9 +10,11 @@ from subprocess import PIPE, TimeoutExpired
 from typing import IO
 
 from jumpstarter_driver_adb.driver import AdbServer
+from jumpstarter_driver_appium.driver import validate_appium_config
 from jumpstarter_driver_power.common import PowerReading
 from jumpstarter_driver_power.driver import PowerInterface
 
+from .appium import AndroidEmulatorAppium
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.driver import Driver, export
 
@@ -33,6 +35,7 @@ class AndroidEmulator(Driver):
     headless: bool = True
     console_port: int = 5554
     adb_server_port: int = 15037
+    appium: dict | None = None
 
     @classmethod
     def client(cls) -> str:
@@ -56,6 +59,9 @@ class AndroidEmulator(Driver):
 
         self.children["adb"] = AdbServer(host="127.0.0.1", port=self.adb_server_port)
         self.children["power"] = AndroidEmulatorPower(parent=self)
+        validate_appium_config(self.appium)
+        if self.appium is not None:
+            self.children["appium"] = AndroidEmulatorAppium(parent=self, **self.appium)
 
         self.logger.info(f"Android emulator configured: AVD={self.avd_name}, port={self.console_port}")
 
@@ -148,9 +154,15 @@ class AndroidEmulatorPower(PowerInterface, Driver):
         self._log_thread.start()
         self._stderr_thread.start()
 
+    def _stop_appium(self) -> None:
+        appium = self.parent.children.get("appium")
+        if appium is not None:
+            appium.stop_server()  # ty: ignore[unresolved-attribute]
+
     @export
     def off(self) -> None:
         """Stop the Android emulator."""
+        self._stop_appium()
         if self._process is None:
             self.logger.warning("Emulator not running, ignoring")
             return

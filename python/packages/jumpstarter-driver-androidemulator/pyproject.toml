@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 dependencies = [
     "jumpstarter",
     "jumpstarter-driver-adb",
+    "jumpstarter-driver-appium",
     "jumpstarter-driver-composite",
     "jumpstarter-driver-power",
 ]
@@ -39,6 +40,7 @@ asyncio_mode = "auto"
 
 [tool.uv.sources]
 jumpstarter-driver-adb = { workspace = true }
+jumpstarter-driver-appium = { workspace = true }
 jumpstarter-driver-composite = { workspace = true }
 jumpstarter-driver-power = { workspace = true }
 

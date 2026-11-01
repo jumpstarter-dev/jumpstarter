@@ -58,6 +58,7 @@ export:
 | headless        | Run without a window               | bool | no       | true       |
 | console_port    | Emulator console port              | int  | no       | 5554       |
 | adb_server_port | Port for the custom ADB server     | int  | no       | 15037      |
+| appium          | Run Appium on the exporter; see [Appium](#appium) | dict | no |   |
 
 ## Usage
 
@@ -97,6 +98,42 @@ with serve(driver) as client:
 
     client.power.off()
 ```
+
+### Appium
+
+With an `appium` block, the exporter runs [Appium](https://appium.io/docs/en/latest/)
+with its UiAutomator2 driver for the emulator, and clients use the shared
+{doc}`Appium client <appium>`, the same as for physical Android and iOS targets:
+
+```yaml
+config:
+  avd_name: "Pixel_6"
+  appium:
+    executable: /opt/appium/node_modules/.bin/appium
+    home: /opt/appium/home
+```
+
+```python
+from appium import webdriver
+from appium.options.android import UiAutomator2Options
+
+driver = AndroidEmulator(avd_name="Pixel_6", appium={"home": "/opt/appium/home"})
+with serve(driver) as client:
+    client.power.on()
+    with client.appium.serve() as target:
+        options = UiAutomator2Options().load_capabilities(target.capabilities())
+        session = webdriver.Remote(target.url, options=options, client_config=target.client_config())
+        try:
+            print(session.page_source)
+        finally:
+            session.quit()
+    client.power.off()
+```
+
+Power the emulator on first; Appium waits for it to finish booting. Sessions are
+pinned to `emulator-<console_port>` on the emulator's private ADB server, Appium
+never kills that server, and power off stops Appium. `j android appium` prints
+the endpoint. See {doc}`adb` for the capabilities Android targets reject.
 
 ## Architecture
 

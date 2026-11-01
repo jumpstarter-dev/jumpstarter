@@ -3,7 +3,7 @@
 `jumpstarter-driver-appium` gives every UI-automation target the same
 [Appium](https://appium.io/docs/en/latest/) client interface. Test code opens
 WebDriver sessions on one URL with the capabilities the target provides,
-whether the target is an iOS device or an iOS simulator, local or remote.
+whether the target is an iOS device, an iOS simulator or an Android device.
 
 Target drivers add an `appium` child built on `AppiumDriver`. It runs an
 operator-installed Appium on the exporter for each lease, listening on exporter
@@ -17,7 +17,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-appium
 ```
 
 The exporter needs Node.js, Appium and the Appium drivers for its targets, such
-as [XCUITest](https://github.com/appium/appium-xcuitest-driver) for iOS.
+as [XCUITest](https://github.com/appium/appium-xcuitest-driver) or
+[UiAutomator2](https://github.com/appium/appium-uiautomator2-driver).
 Containerized exporters usually pin them in their image; see
 {doc}`../../../getting-started/guides/ui-automation` for an example. Jumpstarter
 does not bundle, download or build Appium, its drivers or WebDriverAgent.
@@ -38,11 +39,11 @@ export:
     config:
       executable: /opt/appium/node_modules/.bin/appium
       home: /opt/appium/home
-      drivers: [xcuitest]
+      drivers: [uiautomator2]
       capabilities:
-        platformName: iOS
-        appium:automationName: XCUITest
-        appium:udid: 00008140-001E05C80013C01C
+        platformName: Android
+        appium:automationName: UiAutomator2
+        appium:udid: emulator-5554
 ```
 
 | Parameter | Description | Default |
@@ -51,7 +52,7 @@ export:
 | `home` | `APPIUM_HOME` holding the installed Appium drivers | inherited |
 | `drivers` | Appium drivers to load; all installed ones when empty | `[]` |
 | `capabilities` | Capabilities fixed on every session; clients cannot override them | `{}` |
-| `env` | Extra environment for Appium, such as `USBMUXD_SOCKET_ADDRESS` | `{}` |
+| `env` | Extra environment for Appium, such as `ANDROID_ADB_SERVER_PORT` | `{}` |
 | `state_dir` | Existing directory for the lease's private state | system temporary directory |
 | `startup_timeout` | Seconds to wait for Appium to become ready | `60` |
 | `max_upload_bytes` | Largest application a client may upload | 4 GiB |

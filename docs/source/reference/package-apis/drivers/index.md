@@ -106,7 +106,7 @@ Drivers for signal capture, analysis, and protocol decoding:
 
 General-purpose utility drivers:
 
-- {doc}`Appium <appium>` (`jumpstarter-driver-appium`) - Shared Appium interface for UI automation targets such as iOS devices and simulators
+- {doc}`Appium <appium>` (`jumpstarter-driver-appium`) - Shared Appium interface for UI automation on iOS and Android targets
 - {doc}`Shell <shell>` (`jumpstarter-driver-shell`) - Shell command execution
 - {doc}`SSH Mount <ssh-mount>` (`jumpstarter-driver-ssh-mount`) - SSHFS remote filesystem mounting
 - {doc}`TMT <tmt>` (`jumpstarter-driver-tmt`) - Test Management Tool wrapper

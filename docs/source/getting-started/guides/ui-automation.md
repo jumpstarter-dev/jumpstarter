@@ -2,8 +2,8 @@
 
 Jumpstarter gives every UI-automation target the same
 [Appium](https://appium.io/docs/en/latest/) client interface: an iOS simulator,
-an iPhone or iPad on a USB bench, or an iPhone or iPad shown in Xcode's Device
-Hub, local or remote. A test asks the target for an Appium endpoint and opens WebDriver
+an iPhone or iPad on a USB bench, an Android device or an Android emulator, local
+or remote. A test asks the target for an Appium endpoint and opens WebDriver
 sessions on it; it does not change when the target does.
 
 ## How it works
@@ -17,6 +17,8 @@ device's tools.
 | --- | --- | --- | --- |
 | iOS simulator | {doc}`iossimulator <../../reference/package-apis/drivers/iossimulator>` | exporter (macOS) | `appium:` with a prebuilt simulator WebDriverAgent |
 | iPhone or iPad on USB | {doc}`iosdevice <../../reference/package-apis/drivers/iosdevice>` | exporter | `appium:` with `wda_port` or WebDriverAgent launch capabilities |
+| Android device | {doc}`adb <../../reference/package-apis/drivers/adb>` | exporter | `appium:` |
+| Android emulator | {doc}`androidemulator <../../reference/package-apis/drivers/androidemulator>` | exporter | `appium:` |
 | iPhone or iPad in Xcode's Device Hub | {doc}`iosdevice <../../reference/package-apis/drivers/iosdevice>` | this Mac | `devicehub_appium()` with your WebDriverAgent build |
 
 Device Hub is the one case where Appium runs on the client: WebDriverAgent is
@@ -24,7 +26,7 @@ reachable only inside the Mac's Device Hub connection, so the Mac starts your
 installed Appium. It still yields the same target, so tests do not change.
 
 Every target pins the session to its own device. Capabilities such as
-`appium:udid` or the simulator's device set are fixed by the exporter and
+`appium:udid`, the device set or the ADB server are fixed by the exporter and
 replace whatever a client sends.
 
 ## Write the test once
@@ -44,14 +46,14 @@ with env() as root, root.phone.appium.serve() as target:
         driver.quit()
 ```
 
-`root.phone` is the target's export name. For a simulator, power it on first
-(`root.simulator.power.on()`) and use `root.simulator.appium`. For Device
+`root.phone` is the target's export name. For a simulator or emulator, power it
+on first (`root.simulator.power.on()`); Appium waits for it to boot. For Device
 Hub, replace `root.phone.appium.serve()` with
 `root.phone.devicehub_appium("WebDriverAgentRunner.xctestrun")`.
 
 `target.capabilities()` holds what the target fixes, such as `platformName`,
 `appium:automationName` and `appium:udid`. Add your own, for example
-`appium:bundleId`, before opening a session.
+`appium:bundleId` or `appium:appPackage`, before opening a session.
 
 If your client configuration allow-lists driver packages under `drivers.allow`,
 add `jumpstarter_driver_appium.*`, or the `appium` child cannot load.
@@ -67,10 +69,10 @@ The exporter's Appium cannot read files on your machine. Upload an application
 first, then pass the token it returns wherever Appium expects an application:
 
 ```python
-token = root.phone.appium.upload_app("build/MyApp.ipa")
+token = root.phone.appium.upload_app("build/app-debug.apk")
 options.set_capability("appium:app", token)
 # or, inside a session:
-driver.execute_script("mobile: installApp", {"app": token})
+driver.execute_script("mobile: installApp", {"appPath": token})
 ```
 
 ## Command line
@@ -86,14 +88,15 @@ j phone appium upload build/app.ipa     # print an application token
 The command receives `JUMPSTARTER_APPIUM_URL`, `JUMPSTARTER_APPIUM_CAPABILITIES`
 (JSON), `JUMPSTARTER_APPIUM_CA_FILE` and Node's `NODE_EXTRA_CA_CERTS`, so test
 runners in other languages can connect too. For iOS targets the export is
-usually `ios` (`j ios appium`), and for a simulator the `appium` child sits
-next to `power` (`j simulator appium`).
+usually `ios` (`j ios appium`), and for a simulator or emulator the `appium`
+child sits next to `power` (`j simulator appium`).
 
 ## Prepare the exporter
 
-The exporter needs Node.js, Appium and its
-[XCUITest driver](https://github.com/appium/appium-xcuitest-driver).
-Jumpstarter does not bundle,
+The exporter needs Node.js, Appium and the Appium driver for its targets:
+[XCUITest](https://github.com/appium/appium-xcuitest-driver) for iOS,
+[UiAutomator2](https://github.com/appium/appium-uiautomator2-driver) for
+Android, plus the Android SDK platform tools. Jumpstarter does not bundle,
 download, build or sign Appium, its drivers or WebDriverAgent.
 
 Containerized exporters pin these in their image. For example, on top of an
@@ -104,6 +107,7 @@ FROM quay.io/jumpstarter-dev/jumpstarter:latest
 RUN dnf install -y nodejs npm && dnf clean all
 ENV APPIUM_HOME=/opt/appium/home
 RUN npm install --prefix /opt/appium appium@3.8.0 && \
+    /opt/appium/node_modules/.bin/appium driver install uiautomator2@8.7.3 && \
     /opt/appium/node_modules/.bin/appium driver install xcuitest@12.22.8
 ```
 
@@ -112,13 +116,12 @@ Then point the target's `appium` block at that installation:
 ```yaml
 export:
   phone:
-    type: jumpstarter_driver_iosdevice.driver.IosDevice
+    type: jumpstarter_driver_adb.driver.AdbDevice
     config:
       usb_port: "1-4.2"
       appium:
         executable: /opt/appium/node_modules/.bin/appium
         home: /opt/appium/home
-        wda_port: 8100
 ```
 
 macOS exporters for simulators install Appium and its XCUITest driver on the
@@ -137,7 +140,8 @@ it to the device:
   exporter read its files or contact other hosts. Applications are accepted only
   as uploads.
 - Target-specific capabilities that would reach beyond the device, such as
-  erasing or shutting down the simulator, are fixed off.
+  starting emulators or another ADB host on Android, or erasing the simulator,
+  are rejected or fixed off.
 
 Leases still get full control of their device. Reset or re-provision devices
 between untrusted tenants, and keep exporters that serve untrusted tenants
