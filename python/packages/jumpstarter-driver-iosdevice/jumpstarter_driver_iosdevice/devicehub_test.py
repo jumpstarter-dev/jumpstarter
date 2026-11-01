@@ -103,6 +103,18 @@ async def test_prepare_creates_and_keeps_a_stand_in_identity(tmp_path):
 
 
 @pytest.mark.anyio
+async def test_existing_state_file_is_made_private(tmp_path):
+    state = tmp_path / "state.json"
+    state.write_text("{}")
+    state.chmod(0o644)
+    bridge = DeviceHubBridge(FakeBroker(), udid=UDID, state=state)
+    bridge.identity = DeviceIdentity.generate(name="iPhone", model="iPhone17,1", udid=UDID)
+    bridge._save()
+    assert state.stat().st_mode & 0o777 == 0o600
+    assert json.loads(state.read_text())["udid"] == UDID
+
+
+@pytest.mark.anyio
 async def test_stand_in_under_another_udid_has_its_own_identity(tmp_path):
     state = tmp_path / "state.json"
     await _prepared(tmp_path)
@@ -172,6 +184,18 @@ async def test_unexpected_first_byte_ends_the_connection():
             with pytest.raises((anyio.EndOfStream, anyio.ClosedResourceError)):
                 await stream.receive()
     assert logged(logger.warning) == ["Device Hub stream failed: unexpected first byte b'G' from the Mac"]
+
+
+@pytest.mark.anyio
+async def test_unexpected_handler_errors_are_logged_not_raised():
+    async def handler(stream):
+        raise ValueError("malformed handshake")
+
+    with patch.object(devicehub, "logger") as logger:
+        async with served(handler) as stream:
+            with pytest.raises((anyio.EndOfStream, anyio.ClosedResourceError)):
+                await stream.receive()
+    assert logged(logger.warning) == ["Device Hub stream failed: malformed handshake"]
 
 
 @pytest.mark.anyio

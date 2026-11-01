@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from anyio import BrokenResourceError, ClosedResourceError, EndOfStream
 
+from . import driver as driver_module
 from .driver import IosDevice, IosPortForward, _get_value, _serial_at_port
 from jumpstarter.common.exceptions import ConfigurationError
 
@@ -313,6 +314,11 @@ def test_devicehub_needs_exporter_trust():
         IosDevice(udid=UDID, devicehub=True, trust_mode="passthrough")
 
 
+def test_devicehub_needs_tls_psk():
+    with patch.object(driver_module, "_TLS_PSK", False), pytest.raises(ConfigurationError, match="Python 3.13"):
+        IosDevice(udid=UDID, devicehub=True)
+
+
 @pytest.mark.anyio
 async def test_devicehub_must_be_enabled():
     with pytest.raises(RuntimeError, match="set devicehub: true"):
@@ -324,7 +330,8 @@ async def test_devicehub_exports_share_one_stand_in(tmp_path):
     from .devicehub_test import FakeBroker
 
     state = tmp_path / "devicehub.json"
-    driver = IosDevice(udid=UDID, devicehub=True, devicehub_state=str(state), devicehub_udid="STAND-IN")
+    with patch.object(driver_module, "_TLS_PSK", True):
+        driver = IosDevice(udid=UDID, devicehub=True, devicehub_state=str(state), devicehub_udid="STAND-IN")
     first, second = FakeBroker(), FakeBroker()
     with (
         patch.object(driver, "_require_device", AsyncMock(return_value=UDID)),

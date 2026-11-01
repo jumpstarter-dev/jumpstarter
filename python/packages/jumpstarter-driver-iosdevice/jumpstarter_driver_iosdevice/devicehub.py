@@ -11,6 +11,7 @@ import base64
 import hashlib
 import json
 import logging
+import os
 import ssl
 import struct
 from collections import deque
@@ -81,7 +82,8 @@ async def _pump(source, destination) -> None:
     except (EndOfStream, BrokenResourceError, ClosedResourceError):
         pass
     # TLS streams cannot half-close; the caller tears the tunnel down instead.
-    with suppress(BrokenResourceError, ClosedResourceError, OSError, NotImplementedError):
+    # anyio's TLSStream.send_eof() raises TypeError once the TLS session has ended.
+    with suppress(BrokenResourceError, ClosedResourceError, OSError, NotImplementedError, TypeError):
         await destination.send_eof()
 
 
@@ -102,8 +104,11 @@ class DeviceHubBridge:
     def _save(self) -> None:
         if self.state is not None and self.identity is not None:
             self.state.parent.mkdir(parents=True, exist_ok=True)
-            self.state.write_text(json.dumps(self.identity.to_dict()))
-            self.state.chmod(0o600)
+            # The file holds the stand-in's signing key: never readable by others, even briefly.
+            descriptor = os.open(self.state, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "w") as file:
+                file.write(json.dumps(self.identity.to_dict()))
 
     async def _saved(self) -> None:
         self._save()
@@ -226,7 +231,7 @@ async def served(handler: Callable[[ByteStream], Awaitable[object]]):
                 await handler(server)
         except (EndOfStream, IncompleteRead, BrokenResourceError, ClosedResourceError, TimeoutError) as error:
             logger.info("Device Hub stream ended: %r", error)
-        except (RemotePairingError, OSError, ssl.SSLError) as error:
+        except Exception as error:  # noqa: BLE001 - a bad Mac connection or device detach must not fail the stream RPC
             logger.warning("Device Hub stream failed: %s", error)
 
     async with client, server, create_task_group() as tasks:

@@ -1,6 +1,7 @@
 import math
 import plistlib
 import re
+import ssl
 import struct
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -19,6 +20,8 @@ from jumpstarter.driver import Driver, export, exportstream
 
 LOCKDOWN_PORT = 62078
 MAX_LOCKDOWN_MESSAGE = 1024 * 1024
+# The Device Hub tunnel is TLS-PSK, which Python's ssl module offers from 3.13.
+_TLS_PSK = hasattr(ssl.SSLContext, "set_psk_server_callback")
 
 
 def _canonical_udid(value: str) -> str:
@@ -113,6 +116,8 @@ class IosDevice(IosDeviceInterface, Driver):
                 raise ConfigurationError("http_port must not also be exposed through forward_ports")
         if self.devicehub and self.trust_mode != "exporter":
             raise ConfigurationError("devicehub requires exporter-owned trust")
+        if self.devicehub and not _TLS_PSK:
+            raise ConfigurationError("devicehub needs Python 3.13 or later on the exporter for TLS-PSK")
         if self.trust_mode == "exporter" and LOCKDOWN_PORT in self.forward_ports:
             raise ConfigurationError("use ios serve for authenticated lockdown; forwarding port 62078 bypasses trust")
         if (
