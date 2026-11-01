@@ -108,7 +108,7 @@ every UI-automation target provides. The
 explains why Jumpstarter uses Appium and how to set it up. The exporter needs
 Appium, its [XCUITest driver](https://github.com/appium/appium-xcuitest-driver)
 and a complete prebuilt simulator
-[WebDriverAgent app](https://github.com/appium/WebDriverAgent); Jumpstarter does
+[WebDriverAgent app](https://github.com/appium/appium-ios/tree/main/packages/webdriveragent); Jumpstarter does
 not install or build them. Clients do not need Appium.
 
 ```yaml

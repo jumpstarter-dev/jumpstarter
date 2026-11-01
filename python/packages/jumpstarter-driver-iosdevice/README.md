@@ -262,7 +262,7 @@ The exporter needs Appium and its
 [XCUITest driver](https://github.com/appium/appium-xcuitest-driver), usually
 pinned in the exporter's container image; clients do not need Appium.
 Jumpstarter does not build, sign, install or bundle
-[WebDriverAgent (WDA)](https://github.com/appium/WebDriverAgent).
+[WebDriverAgent (WDA)](https://github.com/appium/appium-ios/tree/main/packages/webdriveragent).
 
 Appium reaches the device through the exporter's own usbmux daemon (the
 `usbmux_socket`, or `usbmux_host` for network transport) and every session is
