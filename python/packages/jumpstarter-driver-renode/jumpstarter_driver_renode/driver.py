@@ -260,7 +260,10 @@ class Renode(Driver):
 
         self.children["power"] = RenodePower(parent=self)
         self.children["flasher"] = RenodeFlasher(parent=self)
-        self.children["console"] = PySerial(url=self._pty, check_present=False)
+        # The power child enables the console's Ctrl-] x3 power-cycle hotkey.
+        self.children["console"] = PySerial(
+            url=self._pty, check_present=False, children={"power": self.children["power"]}
+        )
 
     def set_firmware(self, path: str, load_command: str) -> None:
         """Set the firmware path and load command for the next power-on."""

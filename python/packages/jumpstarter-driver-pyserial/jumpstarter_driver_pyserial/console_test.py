@@ -1,0 +1,266 @@
+import logging
+import os
+import threading
+import time
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from anyio import BrokenResourceError
+
+from .console import Console, ConsoleStreamDrop, HotkeyDetector
+from .driver import PySerial
+from jumpstarter.common.utils import serve
+
+
+def _start_console(client, power_control=None):
+    """Run Console.run() in a thread with a PTY substituted for stdin.
+
+    Returns (master_fd, thread, result_dict). Write keypresses to master_fd;
+    the result dict gets an 'exc' key if the console thread raises.
+    """
+    master_fd, slave_fd = os.openpty()
+    slave_file = os.fdopen(slave_fd, "rb", buffering=0)
+
+    mock_stdin = MagicMock()
+    mock_stdin.fileno.return_value = slave_fd
+    mock_stdin.buffer = slave_file
+
+    result = {}
+
+    def _run():
+        with patch("sys.stdin", mock_stdin):
+            console = Console(serial_client=client, power_control=power_control)
+            try:
+                console.run()
+            except Exception as e:  # noqa: BLE001 - test infrastructure captures all exceptions from console thread
+                result["exc"] = e
+        slave_file.close()
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    _wait_attached(client, t)
+    return master_fd, t, result
+
+
+def _wait_attached(client, thread, timeout=5):
+    """Wait until the console holds the write token, or its thread has already died.
+
+    Console.run() puts the tty in raw mode before it attaches, so once attached
+    keypresses are no longer discarded or line-buffered.
+    """
+    deadline = time.monotonic() + timeout
+    while thread.is_alive() and time.monotonic() < deadline:
+        if client.call("console_status")["write_token_held"]:
+            return
+        time.sleep(0.01)
+    assert not thread.is_alive(), "console did not attach"
+
+
+def test_ctrl_b_exits():
+    with serve(PySerial(url="loop://")) as client:
+        master_fd, t, result = _start_console(client)
+        try:
+            os.write(master_fd, b"a")
+            os.write(master_fd, b"\x02\x02\x02")
+            t.join(timeout=5)
+        finally:
+            os.close(master_fd)
+
+    assert not t.is_alive(), "console did not exit after Ctrl-B x3"
+    assert "exc" not in result
+
+
+class _FakePowerControl:
+    """Power client double that records the thread cycle() ran on."""
+
+    def __init__(self, error=None):
+        self.cycled = threading.Event()
+        self.cycle_thread = None
+        self.error = error
+
+    def cycle(self):
+        self.cycle_thread = threading.current_thread()
+        self.cycled.set()
+        if self.error is not None:
+            raise self.error
+
+
+def test_ctrl_bracket_triggers_power_cycle():
+    power = _FakePowerControl()
+
+    with serve(PySerial(url="loop://")) as client:
+        loop_thread = client.portal.call(threading.current_thread)
+        master_fd, t, result = _start_console(client, power_control=power)
+        try:
+            os.write(master_fd, b"\x1d\x1d\x1d")
+            assert power.cycled.wait(timeout=5), "power cycle was not triggered"
+            assert t.is_alive(), "console exited after power cycle"
+            os.write(master_fd, b"\x02\x02\x02")
+            t.join(timeout=5)
+        finally:
+            os.close(master_fd)
+
+    assert not t.is_alive()
+    assert "exc" not in result
+    # cycle() blocks, so it must not run on the thread of the event loop driving the console
+    assert power.cycle_thread is not None
+    assert power.cycle_thread is not loop_thread
+
+
+def test_power_cycle_failure_does_not_kill_console(caplog):
+    caplog.set_level(logging.WARNING, logger="jumpstarter_driver_pyserial.console")
+    power = _FakePowerControl(error=RuntimeError("PDU unreachable"))
+
+    with serve(PySerial(url="loop://")) as client:
+        master_fd, t, result = _start_console(client, power_control=power)
+        try:
+            os.write(master_fd, b"\x1d\x1d\x1d")
+            assert power.cycled.wait(timeout=5), "power cycle was not triggered"
+            time.sleep(0.1)
+            assert t.is_alive(), "console exited after a failed power cycle"
+            os.write(master_fd, b"\x02\x02\x02")
+            t.join(timeout=5)
+        finally:
+            os.close(master_fd)
+
+    assert not t.is_alive()
+    assert "exc" not in result
+    assert any("power cycle failed" in r.message for r in caplog.records)
+
+
+def test_ctrl_bracket_without_power_client():
+    with serve(PySerial(url="loop://")) as client:
+        master_fd, t, result = _start_console(client, power_control=None)
+        try:
+            os.write(master_fd, b"\x1d\x1d\x1d")
+            time.sleep(0.1)
+            assert t.is_alive(), "console exited unexpectedly on Ctrl-] without power client"
+            os.write(master_fd, b"\x02\x02\x02")
+            t.join(timeout=5)
+        finally:
+            os.close(master_fd)
+
+    assert not t.is_alive()
+    assert "exc" not in result
+
+
+def test_send_failure_does_not_kill_console(caplog):
+    """send() raising BrokenResourceError should not crash the console."""
+    caplog.set_level(logging.WARNING, logger="jumpstarter_driver_pyserial.console")
+
+    class _BrokenSendStream:
+        """Wrapper that breaks send() but keeps receive() working."""
+
+        def __init__(self, inner):
+            self._inner = inner
+
+        async def send(self, data):
+            raise BrokenResourceError("simulated send failure")
+
+        async def receive(self):
+            return await self._inner.receive()
+
+        async def aclose(self):
+            await self._inner.aclose()
+
+    with serve(PySerial(url="loop://")) as client:
+        original_stream_async = client.stream_async
+
+        @asynccontextmanager
+        async def wrapped_stream_async(method="connect"):
+            async with original_stream_async(method=method) as stream:
+                yield _BrokenSendStream(stream)
+
+        with patch.object(client, "stream_async", wrapped_stream_async):
+            master_fd, t, result = _start_console(client)
+            try:
+                os.write(master_fd, b"a")
+                time.sleep(0.1)
+                assert t.is_alive(), "console crashed on send failure"
+                os.write(master_fd, b"\x02\x02\x02")
+                t.join(timeout=5)
+            finally:
+                os.close(master_fd)
+
+    assert not t.is_alive()
+    assert "exc" not in result, f"console raised unexpected exception: {result.get('exc')}"
+
+    # three failed sends (a, ^B, ^B) warn once
+    warnings = [r for r in caplog.records if "send failed" in r.message]
+    assert len(warnings) == 1, f"expected exactly one send-failure warning, got {len(warnings)}"
+
+
+def test_receive_failure_raises_stream_drop():
+    """receive() raising BrokenResourceError should trigger ConsoleStreamDrop."""
+    broken_stream = AsyncMock()
+    broken_stream.receive.side_effect = BrokenResourceError("simulated receive failure")
+
+    with serve(PySerial(url="loop://")) as client:
+        original_stream_async = client.stream_async
+
+        @asynccontextmanager
+        async def wrapped_stream_async(method="connect"):
+            async with original_stream_async(method=method) as _stream:
+                yield broken_stream
+
+        with patch.object(client, "stream_async", wrapped_stream_async):
+            master_fd, t, result = _start_console(client)
+            try:
+                t.join(timeout=5)
+            finally:
+                os.close(master_fd)
+
+    assert not t.is_alive()
+    assert "exc" in result, "console did not raise an exception"
+    assert isinstance(result["exc"], ConsoleStreamDrop), f"expected ConsoleStreamDrop, got {type(result['exc'])}"
+
+
+def test_hotkey_detector_three_presses():
+    """Three consecutive presses of a registered key return its action."""
+    exit_action = AsyncMock()
+    detector = HotkeyDetector({b"\x02": exit_action, b"\x1d": AsyncMock()})
+    assert detector.feed(b"\x02") is None
+    assert detector.feed(b"\x02") is None
+    assert detector.feed(b"\x02") is exit_action
+
+
+def test_hotkey_detector_unrelated_byte_resets():
+    """An unrelated byte resets the counter."""
+    exit_action = AsyncMock()
+    detector = HotkeyDetector({b"\x02": exit_action})
+    assert detector.feed(b"\x02") is None
+    assert detector.feed(b"\x02") is None
+    assert detector.feed(b"a") is None
+    assert detector.feed(b"\x02") is None
+    assert detector.feed(b"\x02") is None
+    assert detector.feed(b"\x02") is exit_action
+
+
+def test_hotkey_detector_alternating_keys_resets():
+    """Alternating between registered keys resets rather than accumulating."""
+    exit_action = AsyncMock()
+    power_action = AsyncMock()
+    detector = HotkeyDetector({b"\x02": exit_action, b"\x1d": power_action})
+    assert detector.feed(b"\x02") is None
+    assert detector.feed(b"\x1d") is None
+    assert detector.feed(b"\x1d") is None
+    assert detector.feed(b"\x1d") is power_action
+
+
+def test_hotkey_detector_byte_outside_actions():
+    """A byte with no registered action returns None."""
+    detector = HotkeyDetector({b"\x02": AsyncMock()})
+    assert detector.feed(b"x") is None
+    assert detector.feed(b"y") is None
+
+
+def test_hotkey_detector_counter_resets_after_hit():
+    """After a hit, the counter resets so a 4th press does not immediately re-fire."""
+    exit_action = AsyncMock()
+    detector = HotkeyDetector({b"\x02": exit_action})
+    assert detector.feed(b"\x02") is None
+    assert detector.feed(b"\x02") is None
+    assert detector.feed(b"\x02") is exit_action
+    assert detector.feed(b"\x02") is None
+    assert detector.feed(b"\x02") is None
+    assert detector.feed(b"\x02") is exit_action
