@@ -16,6 +16,33 @@ use crate::protocol::{ClientMessage, ServerMessage};
 extern "C" {
     fn kill(pid: i32, sig: i32) -> i32;
     fn umask(mask: u32) -> u32;
+    fn signal(signum: i32, handler: usize) -> usize;
+}
+
+const SIGTERM: i32 = 15;
+
+/// Set by the SIGTERM handler; the accept loop in `serve_with` polls it.
+static TERM_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn on_sigterm(_signum: i32) {
+    // Only an atomic store: anything more is not async-signal-safe.
+    TERM_REQUESTED.store(true, Ordering::SeqCst);
+}
+
+/// Make SIGTERM shut `serve` down the way a Shutdown request does.
+///
+/// In a container `serve` is PID 1, and the kernel discards any signal PID 1
+/// has no handler for. Without this, kubelet's SIGTERM did nothing: every Pod
+/// waited out its termination grace period (30s by default) until the SIGKILL,
+/// which also skipped signalling Exec children (QEMU) and removing the socket.
+///
+/// Process-wide, so the binary installs it rather than `serve_with`, which
+/// tests run inside their own process.
+pub fn handle_sigterm() {
+    // SAFETY: on_sigterm only performs an atomic store.
+    unsafe {
+        signal(SIGTERM, on_sigterm as extern "C" fn(i32) as usize);
+    }
 }
 
 /// Options for `serve`.
@@ -178,6 +205,13 @@ pub fn serve_with(socket_path: &str, opts: ServeOptions) -> std::io::Result<()> 
     );
 
     while !state.is_shutdown() {
+        if TERM_REQUESTED.load(Ordering::SeqCst) {
+            log.info("SIGTERM received, shutting down", &[]);
+            // Refuses new Exec children; the running ones are signalled
+            // below, as for a Shutdown request.
+            let _ = state.begin_shutdown();
+            break;
+        }
         match listener.accept() {
             Ok((s, _)) => {
                 let log = Arc::clone(&log);
