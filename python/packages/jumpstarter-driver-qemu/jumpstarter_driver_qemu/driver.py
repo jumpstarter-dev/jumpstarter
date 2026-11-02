@@ -413,15 +413,18 @@ class QemuPower(PowerInterface, Driver):
 
     @export
     def off(self) -> None:
-        if hasattr(self, "_process"):
-            self._process.terminate()
-            try:
-                self._process.wait(timeout=5)
-            except TimeoutExpired:
-                self._process.kill()
-            del self._process
-        else:
+        process = getattr(self, "_process", None)
+        if process is None or process.poll() is not None:
             self.logger.warning("already powered off, ignoring request")
+        else:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except TimeoutExpired:
+                process.kill()
+
+        if process is not None:
+            del self._process
 
         if hasattr(self, "_cidata"):
             del self._cidata
