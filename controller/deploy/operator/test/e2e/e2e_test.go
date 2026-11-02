@@ -277,19 +277,6 @@ var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 			}
 			Eventually(verifyMetricsEndpointReady).Should(Succeed())
 
-			By("verifying that the controller manager is serving the metrics server")
-			verifyMetricsServerStarted := func(g Gomega) {
-				req := clientset.CoreV1().Pods(namespace).GetLogs(controllerPodName, &corev1.PodLogOptions{})
-				podLogs, err := req.Stream(ctx)
-				g.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = podLogs.Close() }()
-				buf := new(bytes.Buffer)
-				_, _ = io.Copy(buf, podLogs)
-				g.Expect(buf.String()).To(ContainSubstring("controller-runtime.metrics\tServing metrics server"),
-					"Metrics server not yet started")
-			}
-			Eventually(verifyMetricsServerStarted).Should(Succeed())
-
 			By("creating the curl-metrics pod to access the metrics endpoint")
 			curlPod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -338,10 +325,14 @@ var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 			}
 			Eventually(verifyCurlUp, 5*time.Minute).Should(Succeed())
 
-			By("getting the metrics by checking curl-metrics logs")
+			By("verifying the direct /metrics response")
 			metricsOutput := getMetricsOutput()
+			Expect(metricsOutput).To(ContainSubstring("# HELP"))
 			Expect(metricsOutput).To(ContainSubstring(
 				"controller_runtime_reconcile_total",
+			))
+			Expect(metricsOutput).To(ContainSubstring(
+				"go_goroutines",
 			))
 		})
 
