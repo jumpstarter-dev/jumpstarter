@@ -237,6 +237,12 @@ JSON lines through the production shipper blocks and query Loki's HTTP API for
 the exact stream labels and body fields. CI installs the pinned Loki binary and
 sets `LOKI_BIN`; local runs skip the live-Loki tests when it is absent.
 
+The gated Kubernetes deployment test, enabled with `SHIPPER_K8S_E2E=1`, deploys
+real Alloy and Vector DaemonSets with the generated ConfigMaps, a labeled
+log-source Pod, and an in-cluster Loki. It queries Loki through the Kubernetes
+service proxy and is intended for Kind or a disposable cluster; it is not part
+of the default unit-test suite.
+
 ## Conditions
 
 | Condition | True reason | False reasons |

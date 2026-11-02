@@ -1707,6 +1707,9 @@ all subsequent phases have E2E coverage from the start.
   Vector release `v0.61.0`: 2026-11-02
 - Live shipper delivery tests now push through the generated Alloy and Vector
   configurations into a real single-binary Loki `v3.7.9`: 2026-11-02
+- Added a gated Kind test that deploys Alloy and Vector DaemonSets, a log-source
+  Pod, and in-cluster Loki, then queries delivery through the Kubernetes service
+  proxy: 2026-11-02
 
 ## References
 
