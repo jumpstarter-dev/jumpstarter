@@ -1,17 +1,20 @@
 import asyncio
 import json
+import logging
 import os
 import platform
 import sys
 import tarfile
 from pathlib import Path
+from subprocess import TimeoutExpired
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import requests
 
-from jumpstarter_driver_qemu.driver import Qemu, QemuFlasher
+from jumpstarter_driver_qemu.driver import Qemu, QemuFlasher, QemuPower
 
 from jumpstarter.common.oci import OciCredentials
 from jumpstarter.common.utils import serve
@@ -21,6 +24,63 @@ from jumpstarter.common.utils import serve
 def anyio_backend():
     """Use only asyncio backend for anyio tests."""
     return "asyncio"
+
+
+@pytest.mark.parametrize("process_state", ["absent", 0, 1, -15])
+def test_power_off_recognizes_already_stopped_vm(caplog, process_state):
+    driver = Qemu()
+    power = driver.children["power"]
+    assert isinstance(power, QemuPower)
+    caplog.set_level(logging.WARNING, logger=power.logger.name)
+    process = MagicMock()
+    if process_state != "absent":
+        process.poll.return_value = process_state
+        power._process = process
+    power._cidata = TemporaryDirectory(dir=driver._tmp_dir.name)
+    try:
+        power.off()
+
+        assert "already powered off" in caplog.text
+        assert not hasattr(power, "_process")
+        assert not hasattr(power, "_cidata")
+        process.terminate.assert_not_called()
+        process.wait.assert_not_called()
+        process.kill.assert_not_called()
+
+        caplog.clear()
+        power.off()
+        assert "already powered off" in caplog.text
+    finally:
+        driver._tmp_dir.cleanup()
+
+
+@pytest.mark.parametrize("needs_kill", [False, True])
+def test_power_off_stops_live_vm(caplog, needs_kill):
+    driver = Qemu()
+    power = driver.children["power"]
+    assert isinstance(power, QemuPower)
+    caplog.set_level(logging.WARNING, logger=power.logger.name)
+    process = MagicMock()
+    process.poll.return_value = None
+    if needs_kill:
+        process.wait.side_effect = TimeoutExpired("qemu", 5)
+    power._process = process
+    power._cidata = TemporaryDirectory(dir=driver._tmp_dir.name)
+    try:
+        power.off()
+
+        process.terminate.assert_called_once_with()
+        process.wait.assert_called_once_with(timeout=5)
+        assert process.kill.call_count == int(needs_kill)
+        assert "already powered off" not in caplog.text
+        assert not hasattr(power, "_process")
+        assert not hasattr(power, "_cidata")
+
+        power.off()
+        assert "already powered off" in caplog.text
+        process.terminate.assert_called_once_with()
+    finally:
+        driver._tmp_dir.cleanup()
 
 
 @pytest.fixture(scope="session")
