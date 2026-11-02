@@ -79,6 +79,15 @@ def anyio_backend():
     return "asyncio"
 
 
+def pytest_collection_finish():
+    _keep_objects_created_before_the_tests_out_of_gc_scans()
+
+
+def _keep_objects_created_before_the_tests_out_of_gc_scans():
+    gc.collect()
+    gc.freeze()
+
+
 def _unfinished_grpc_operations() -> list[CallbackWrapper]:
     return [obj for obj in gc.get_objects() if isinstance(obj, CallbackWrapper) and _unfinished(obj)]
 
