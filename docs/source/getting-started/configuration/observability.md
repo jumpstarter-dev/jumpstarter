@@ -102,8 +102,8 @@ caused by disabling log shipping.
 
 ### Grafana Alloy
 
-The generated `alloy.alloy` rendering is validated against Grafana Alloy commit
-`43c40e25565d1fc0062b06c282c130c577559597` (`main`, 2026-10-28).
+The generated `alloy.alloy` rendering is validated against Grafana Alloy
+release `v1.21.3` (revision `f2108cd`, 2026-10-28).
 
 The rendering:
 

@@ -1,0 +1,250 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package jumpstarter
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
+	"testing"
+	"time"
+)
+
+// alloyLogBuffer serializes writes from Alloy's stdout and stderr.
+type alloyLogBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *alloyLogBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *alloyLogBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// TestAlloyLiveLogDelivery exercises the shared Alloy process/write path with a
+// real Alloy process. A local file source feeds a known JSON line into the
+// generated loki.process/loki.write blocks; a loopback loki.source.api +
+// loki.echo receiver asserts the delivered stream labels and body.
+func TestAlloyLiveLogDelivery(t *testing.T) {
+	alloyBin := os.Getenv("ALLOY_BIN")
+	if alloyBin == "" {
+		var err error
+		alloyBin, err = exec.LookPath("alloy")
+		if err != nil {
+			t.Skip("set ALLOY_BIN or install alloy to run the live Alloy delivery test")
+		}
+	}
+	if _, err := os.Stat(alloyBin); err != nil {
+		t.Skipf("Alloy binary %s is not available: %v", alloyBin, err)
+	}
+
+	receiverPort := freeLoopbackPort(t)
+	serverPort := freeLoopbackPort(t)
+	workDir := t.TempDir()
+	logPath := filepath.Join(workDir, "controller.log")
+	configPath := filepath.Join(workDir, "config.alloy")
+	storagePath := filepath.Join(workDir, "data")
+	receiverURL := fmt.Sprintf("http://127.0.0.1:%d/loki/api/v1/push", receiverPort)
+	readyURL := fmt.Sprintf("http://127.0.0.1:%d/ready", receiverPort)
+
+	config := fmt.Sprintf(`loki.source.api "test" {
+	http {
+		listen_address = "127.0.0.1"
+		listen_port    = %d
+	}
+	forward_to = [loki.echo.test.receiver]
+}
+
+loki.echo "test" {}
+
+local.file_match "test" {
+	path_targets = [{
+		__path__  = %q,
+		component = "controller",
+		namespace = "lab",
+	}]
+	sync_period = "100ms"
+}
+
+loki.source.file "test" {
+	targets    = local.file_match.test.targets
+	forward_to = [loki.process.jumpstarter.receiver]
+}
+
+%s`, receiverPort, logPath, fmt.Sprintf(alloyProcessWriteTemplate, receiverURL))
+
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatalf("write Alloy config: %v", err)
+	}
+	if strings.Contains(config, "basic_auth") || strings.Contains(config, "password") {
+		t.Fatal("generated Alloy config must remain credential-free")
+	}
+
+	cmd := exec.Command( //nolint:gosec // test-controlled binary and paths
+		alloyBin,
+		"run",
+		"--disable-reporting",
+		fmt.Sprintf("--server.http.listen-addr=127.0.0.1:%d", serverPort),
+		"--storage.path="+storagePath,
+		configPath,
+	)
+	logs := &alloyLogBuffer{}
+	cmd.Stdout = logs
+	cmd.Stderr = logs
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start Alloy: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		done := make(chan error, 1)
+		go func() { done <- cmd.Wait() }()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			_ = cmd.Process.Kill()
+			<-done
+		}
+	})
+
+	waitForHTTP(t, readyURL, 15*time.Second, logs)
+
+	line := `{"ts":"2026-11-02T10:00:00Z","level":"info","msg":"lease acquired","component":"controller","exporter":"board-1","lease_id":"lease-123","client":"client-1","build_id":"build-1","error":"line1\nline2"}`
+	if err := os.WriteFile(logPath, []byte(line+"\n"), 0o600); err != nil {
+		t.Fatalf("write controller log: %v", err)
+	}
+
+	received := waitForLogLine(t, logs, "lease-123", 30*time.Second)
+	labels, entry := parseEchoedEntry(t, received)
+
+	if len(labels) != 3 {
+		t.Fatalf("stream labels = %v, want exactly component/exporter/namespace", labels)
+	}
+	if labels["component"] != "controller" || labels["exporter"] != "board-1" || labels["namespace"] != "lab" {
+		t.Fatalf("unexpected stream labels: %v", labels)
+	}
+	for _, forbidden := range []string{"job", "pod", "container", "filename"} {
+		if _, ok := labels[forbidden]; ok {
+			t.Fatalf("stream labels contain forbidden label %q: %v", forbidden, labels)
+		}
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal([]byte(entry), &body); err != nil {
+		t.Fatalf("parse delivered JSON body: %v\nentry: %s", err, entry)
+	}
+	for key, want := range map[string]string{
+		"lease_id": "lease-123",
+		"client":   "client-1",
+		"build_id": "build-1",
+		"error":    "line1\nline2",
+	} {
+		if got, ok := body[key].(string); !ok || got != want {
+			t.Fatalf("body[%q] = %v, want %q; body: %v", key, body[key], want, body)
+		}
+	}
+
+	if got := strings.Count(logs.String(), "lease-123"); got != 1 {
+		t.Fatalf("expected exactly one delivered entry, found %d occurrences in Alloy output", got)
+	}
+}
+
+func freeLoopbackPort(t *testing.T) int {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("allocate loopback port: %v", err)
+	}
+	defer func() { _ = listener.Close() }()
+	return listener.Addr().(*net.TCPAddr).Port
+}
+
+func waitForHTTP(t *testing.T, url string, timeout time.Duration, logs *alloyLogBuffer) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(url) //nolint:gosec // test-controlled loopback URL
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s\nAlloy output:\n%s", url, logs.String())
+}
+
+func waitForLogLine(t *testing.T, logs *alloyLogBuffer, marker string, timeout time.Duration) string {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		for _, line := range strings.Split(logs.String(), "\n") {
+			if strings.Contains(line, "received log entry") && strings.Contains(line, marker) {
+				return line
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for delivered entry %q\nAlloy output:\n%s", marker, logs.String())
+	return ""
+}
+
+func parseEchoedEntry(t *testing.T, line string) (map[string]string, string) {
+	t.Helper()
+	labelsStart := strings.Index(line, `labels="`)
+	entryStart := strings.Index(line, `" entry="`)
+	if labelsStart < 0 || entryStart < 0 || entryStart <= labelsStart {
+		t.Fatalf("cannot find labels/entry in Alloy echo line: %s", line)
+	}
+	rawLabels := line[labelsStart+len(`labels="`) : entryStart]
+	rawLabels = strings.ReplaceAll(rawLabels, `\"`, `"`)
+
+	labels := make(map[string]string)
+	labelRE := regexp.MustCompile(`([a-zA-Z_][a-zA-Z0-9_]*)="([^"]*)"`)
+	for _, match := range labelRE.FindAllStringSubmatch(rawLabels, -1) {
+		labels[match[1]] = match[2]
+	}
+
+	entryField := line[entryStart+len(`" entry="`):]
+	end := strings.Index(entryField, `" entry_timestamp=`)
+	if end < 0 {
+		t.Fatalf("cannot find end of entry field in Alloy echo line: %s", line)
+	}
+	rawEntry := entryField[:end]
+	entry, err := strconv.Unquote(`"` + rawEntry + `"`)
+	if err != nil {
+		t.Fatalf("unescape delivered entry: %v\nraw entry: %s", err, rawEntry)
+	}
+	return labels, entry
+}
