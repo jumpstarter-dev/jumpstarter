@@ -231,6 +231,12 @@ kubectl -n jumpstarter-lab get configmap jumpstarter-log-shipper \
 vector validate --no-environment /tmp/vector.yaml
 ```
 
+The operator's live-delivery tests run the generated Alloy and Vector
+configurations against a real single-binary Loki `v3.7.9`. The tests push known
+JSON lines through the production shipper blocks and query Loki's HTTP API for
+the exact stream labels and body fields. CI installs the pinned Loki binary and
+sets `LOKI_BIN`; local runs skip the live-Loki tests when it is absent.
+
 ## Conditions
 
 | Condition | True reason | False reasons |

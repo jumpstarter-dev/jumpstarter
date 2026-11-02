@@ -1705,6 +1705,8 @@ all subsequent phases have E2E coverage from the start.
 - Grafana Alloy pin moved to release `v1.21.3` (revision `f2108cd`): 2026-11-02
 - Vector support promoted to official Phase 5 support and validated against
   Vector release `v0.61.0`: 2026-11-02
+- Live shipper delivery tests now push through the generated Alloy and Vector
+  configurations into a real single-binary Loki `v3.7.9`: 2026-11-02
 
 ## References
 
