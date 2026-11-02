@@ -302,7 +302,7 @@ func TestRenderShipper(t *testing.T) {
 	}{
 		{"promtail", "promtail.yaml", []string{"kubernetes_sd_configs", "jumpstarter_dev_log_scrape", "component", "exporter"}},
 		{"alloy", "alloy.alloy", []string{"discovery.kubernetes", "jumpstarter_dev_log_scrape", "selectors", "spec.nodeName", "stage.labels", "stage.label_keep", "component", "exporter", "namespace"}},
-		{"vector", "vector.yaml", []string{"kubernetes_logs", "jumpstarter.dev/log-scrape=true", "labels:", "component", "exporter"}},
+		{"vector", "vector.yaml", []string{"kubernetes_logs", "jumpstarter.dev/log-scrape=true", "jumpstarter_loki_without_exporter", "kubernetes.pod_namespace", "path:", "compression: none", "component", "exporter"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -324,8 +324,12 @@ func TestRenderShipper(t *testing.T) {
 			if !strings.Contains(content, js.Namespace) {
 				t.Errorf("rendering missing namespace %q", js.Namespace)
 			}
-			if !strings.Contains(content, "{{LOKI_URL}}") {
-				t.Errorf("rendering missing placeholder")
+			placeholder := "{{LOKI_URL}}"
+			if tc.name == shipperTypeVector {
+				placeholder = "http://loki.invalid:3100"
+			}
+			if !strings.Contains(content, placeholder) {
+				t.Errorf("rendering missing placeholder %q", placeholder)
 			}
 		})
 	}
@@ -352,7 +356,10 @@ func TestRenderShipperDoesNotPromotePodLabels(t *testing.T) {
 	}
 }
 
-var updateAlloyGolden = flag.Bool("update-alloy-golden", false, "update testdata/logshipper/alloy.alloy.golden")
+var (
+	updateAlloyGolden  = flag.Bool("update-alloy-golden", false, "update testdata/logshipper/alloy.alloy.golden")
+	updateVectorGolden = flag.Bool("update-vector-golden", false, "update testdata/logshipper/vector.yaml.golden")
+)
 
 func TestRenderAlloyGolden(t *testing.T) {
 	js := testJumpstarter()
@@ -374,6 +381,52 @@ func TestRenderAlloyGolden(t *testing.T) {
 	}
 	if string(want) != got {
 		t.Fatalf("alloy rendering differs from %s; rerun with -update-alloy-golden", golden)
+	}
+}
+
+func TestRenderVectorGolden(t *testing.T) {
+	js := testJumpstarter()
+	_, got := renderShipper(js, shipperTypeVector)
+	golden := filepath.Join("testdata", "logshipper", "vector.yaml.golden")
+
+	if *updateVectorGolden {
+		if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil {
+			t.Fatalf("create golden directory: %v", err)
+		}
+		if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
+			t.Fatalf("write golden file: %v", err)
+		}
+	}
+
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatalf("read golden file: %v", err)
+	}
+	if string(want) != got {
+		t.Fatalf("Vector rendering differs from %s; rerun with -update-vector-golden", golden)
+	}
+}
+
+func TestVectorRenderingValidates(t *testing.T) {
+	vectorBin := os.Getenv("VECTOR_BIN")
+	if vectorBin == "" {
+		var err error
+		vectorBin, err = exec.LookPath("vector")
+		if err != nil {
+			t.Skip("set VECTOR_BIN or install vector to run Vector validation")
+		}
+	}
+
+	js := testJumpstarter()
+	_, content := renderShipper(js, shipperTypeVector)
+	path := filepath.Join(t.TempDir(), "vector.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write vector config: %v", err)
+	}
+
+	cmd := exec.Command(vectorBin, "validate", "--no-environment", path)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("vector validate failed: %v\n%s", err, out)
 	}
 }
 
@@ -414,6 +467,25 @@ func TestRenderShipperUsesConfiguredLokiURL(t *testing.T) {
 	}
 	if strings.Contains(content, "{{LOKI_URL}}") {
 		t.Fatal("placeholder should be replaced when URL is configured")
+	}
+}
+
+func TestRenderVectorSplitsLokiURL(t *testing.T) {
+	js := testJumpstarter()
+	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
+		Loki: operatorv1alpha1.TelemetryLokiConfig{URL: "https://loki.example:3100/loki/api/v1/push"},
+	}
+	_, content := renderShipper(js, shipperTypeVector)
+	for _, want := range []string{
+		`endpoint: "https://loki.example:3100"`,
+		`path: "/loki/api/v1/push"`,
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("Vector rendering missing %q:\n%s", want, content)
+		}
+	}
+	if strings.Contains(content, "/loki/api/v1/push/loki") {
+		t.Errorf("Vector rendering duplicates the Loki push path:\n%s", content)
 	}
 }
 
@@ -464,6 +536,28 @@ func TestAlloyConfigMapReadmeMentionsValidatedVersion(t *testing.T) {
 	} {
 		if !strings.Contains(readme, want) {
 			t.Errorf("Alloy README missing %q", want)
+		}
+	}
+}
+
+func TestVectorConfigMapReadmeMentionsValidatedVersion(t *testing.T) {
+	js := testJumpstarter()
+	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+	js.Spec.Telemetry.Logging.Shipper.Type = shipperTypeVector
+
+	cm := buildLogShipperConfigMap(js)
+	if cm == nil {
+		t.Fatal("expected Vector ConfigMap")
+	}
+	readme := cm.Data["README.md"]
+	for _, want := range []string{
+		vectorValidatedVersion,
+		"vector validate",
+		"VECTOR_SELF_NODE_NAME",
+		"/var/log/pods",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Errorf("Vector README missing %q", want)
 		}
 	}
 }
