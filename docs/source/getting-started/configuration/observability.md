@@ -74,13 +74,15 @@ shipper configuration key plus a `README.md`:
 
 | Type | Key |
 | --- | --- |
-| `promtail` | `promtail.yaml` (provisional/deferred) |
+| `promtail` | `promtail.yaml` |
 | `alloy` | `alloy.alloy` |
 | `vector` | `vector.yaml` |
 | `none` | no ConfigMap |
 
-Grafana Alloy and Vector are the supported Phase 5 shippers. Promtail support is
-provisional and deferred pending the `__path__` and DaemonSet-safety work.
+Grafana Alloy, Vector, and Promtail are the supported Phase 5 shippers. Promtail
+is pinned to release `v3.6.0`, the last release with a published Linux binary;
+it is deprecated upstream in favor of Alloy, so new deployments should prefer
+Alloy or Vector.
 
 Merge the key into your existing shipper deployment. The snippet:
 
@@ -196,6 +198,34 @@ environment or an external secret injection mechanism. A single-replica Vector
 Deployment is not a supported substitute for the DaemonSet because the source
 reads node-local pod log files.
 
+### Promtail
+
+The generated `promtail.yaml` rendering is validated with
+`promtail -check-syntax` against Promtail release `v3.6.0`.
+
+The rendering:
+
+- selects pods labeled `jumpstarter.dev/log-scrape="true"` in the CR namespace;
+- resolves the pod log path with `__path__ =
+  /var/log/pods/*<pod-uid>/<container>/*.log`;
+- adds a `cri` stage before JSON parsing so Kubernetes CRI log prefixes are
+  stripped;
+- promotes `component`, `exporter`, and `namespace`;
+- drops the default `job`, `filename`, and `stream` labels, so the stream-label
+  set is exact;
+- keeps `client`, `lease_id`, and lease `spec.context` keys in the JSON body.
+
+Promtail automatically restricts `kubernetes_sd_configs` pod discovery using
+the `HOSTNAME` environment variable as a `spec.nodeName` selector. Set
+`HOSTNAME` from the pod's `spec.nodeName` and run Promtail with
+`-config.expand-env`; the generated relabel rule uses `${HOSTNAME}` as a second
+safety check. The Helm chart DaemonSet must mount `/var/log/pods` read-only and
+`/run/promtail` for positions, and grant `get`, `list`, and `watch` on pods,
+namespaces, and nodes.
+
+Configure Loki authentication in the Promtail `clients` entry from the
+shipper's own Secret; never put credentials in the generated ConfigMap.
+
 ## Validate
 
 ```sh
@@ -209,7 +239,10 @@ Validate the generated shipper configuration with the shipper's own tool:
 ```sh
 kubectl -n jumpstarter-lab get configmap jumpstarter-log-shipper \
   -o jsonpath='{.data.promtail\.yaml}' > /tmp/promtail.yaml
-promtail -check-config.file=/tmp/promtail.yaml
+HOSTNAME=test-node promtail \
+  -config.file=/tmp/promtail.yaml \
+  -config.expand-env \
+  -check-syntax
 ```
 
 For Alloy use both `alloy validate` and `alloy fmt --test`; for Vector use
@@ -231,16 +264,17 @@ kubectl -n jumpstarter-lab get configmap jumpstarter-log-shipper \
 vector validate --no-environment /tmp/vector.yaml
 ```
 
-The operator's live-delivery tests run the generated Alloy and Vector
-configurations against a real single-binary Loki `v3.7.9`. The tests push known
-JSON lines through the production shipper blocks and query Loki's HTTP API for
-the exact stream labels and body fields. CI installs the pinned Loki binary and
-sets `LOKI_BIN`; local runs skip the live-Loki tests when it is absent.
+The operator's live-delivery tests run the generated Alloy, Vector, and
+Promtail configurations against a real single-binary Loki `v3.7.9`. The tests
+push known JSON lines through the production shipper blocks and query Loki's
+HTTP API for the exact stream labels and body fields. CI installs the pinned
+Loki binary and sets `LOKI_BIN`; local runs skip the live-Loki tests when it is
+absent.
 
 The gated Kubernetes deployment test, enabled with `SHIPPER_K8S_E2E=1`, deploys
-real Alloy and Vector DaemonSets with the generated ConfigMaps, a labeled
-log-source Pod, and an in-cluster Loki. It queries Loki through the Kubernetes
-service proxy and is intended for Kind or a disposable cluster; the
+real Alloy, Vector, and Promtail DaemonSets with the generated ConfigMaps, a
+labeled log-source Pod, and an in-cluster Loki. It queries Loki through the
+Kubernetes service proxy and is intended for Kind or a disposable cluster; the
 `controller-kind` CI workflow runs it after the operator e2e suite. It is not
 part of the default unit-test suite.
 
