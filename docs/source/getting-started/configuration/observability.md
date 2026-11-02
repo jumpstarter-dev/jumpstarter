@@ -240,8 +240,9 @@ sets `LOKI_BIN`; local runs skip the live-Loki tests when it is absent.
 The gated Kubernetes deployment test, enabled with `SHIPPER_K8S_E2E=1`, deploys
 real Alloy and Vector DaemonSets with the generated ConfigMaps, a labeled
 log-source Pod, and an in-cluster Loki. It queries Loki through the Kubernetes
-service proxy and is intended for Kind or a disposable cluster; it is not part
-of the default unit-test suite.
+service proxy and is intended for Kind or a disposable cluster; the
+`controller-kind` CI workflow runs it after the operator e2e suite. It is not
+part of the default unit-test suite.
 
 ## Conditions
 
