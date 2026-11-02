@@ -2,7 +2,7 @@ from pathlib import Path
 
 import grpc
 import pytest
-from anyio import Event, fail_after
+from anyio import Event, fail_after, run
 
 CONFTEST = Path(__file__).parents[1] / "conftest.py"
 
@@ -32,6 +32,15 @@ async def test_a_call_counts_as_unfinished_until_it_completes(unfinished_grpc_op
     await server.stop(grace=1)
 
     assert during
+    assert not unfinished_grpc_operations()
+
+
+def test_a_server_that_never_started_leaves_nothing_unfinished(unfinished_grpc_operations):
+    async def create_a_server():
+        grpc.aio.server()
+
+    run(create_a_server)
+
     assert not unfinished_grpc_operations()
 
 

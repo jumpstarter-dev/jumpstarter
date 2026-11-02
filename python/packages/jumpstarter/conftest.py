@@ -84,9 +84,17 @@ def _unfinished_grpc_operations() -> list[CallbackWrapper]:
 
 
 def _unfinished(operation: CallbackWrapper) -> bool:
-    """Whether gRPC may still complete the operation; a cancelled waiter does not stop it."""
     futures = [referent for referent in gc.get_referents(operation) if callable(getattr(referent, "done", None))]
-    return any(not future.done() or future.cancelled() for future in futures)
+    return any(_may_still_complete(future) for future in futures)
+
+
+def _may_still_complete(future) -> bool:
+    """A cancelled waiter does not stop gRPC from completing the operation. A future still pending
+    after its loop closed never had a waiter, since closing the loop cancels every task: a server
+    that never started leaves one for a shutdown that gRPC never runs."""
+    if future.cancelled():
+        return True
+    return not future.done() and not future.get_loop().is_closed()
 
 
 @pytest.fixture
