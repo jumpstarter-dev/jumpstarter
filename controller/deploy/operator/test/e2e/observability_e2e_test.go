@@ -43,12 +43,12 @@ var _ = Describe("Observability integration", Ordered, func() {
 		namespace := CreateTestNamespace()
 		DeferCleanup(func() { DeleteTestNamespace(namespace) })
 
-		By("creating a Jumpstarter CR with the promtail shipper enabled")
+		By("creating a Jumpstarter CR with the vector shipper enabled")
 		js := &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: namespace},
 		}
 		js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
-		js.Spec.Telemetry.Logging.Shipper.Type = "promtail"
+		js.Spec.Telemetry.Logging.Shipper.Type = "vector"
 		Expect(k8sClient.Create(ctx, js)).To(Succeed())
 
 		By("waiting for the controller and router metrics Services")
@@ -68,7 +68,7 @@ var _ = Describe("Observability integration", Ordered, func() {
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
 				Name: crName + "-log-shipper", Namespace: namespace,
 			}, cm)).To(Succeed())
-			g.Expect(cm.Data).To(HaveKey("promtail.yaml"))
+			g.Expect(cm.Data).To(HaveKey("vector.yaml"))
 			g.Expect(cm.Data).To(HaveKey("README.md"))
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
@@ -103,7 +103,7 @@ var _ = Describe("Observability integration", Ordered, func() {
 			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: namespace},
 		}
 		js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
-		js.Spec.Telemetry.Logging.Shipper.Type = "promtail"
+		js.Spec.Telemetry.Logging.Shipper.Type = "vector"
 		Expect(k8sClient.Create(ctx, js)).To(Succeed())
 
 		Eventually(func(g Gomega) {

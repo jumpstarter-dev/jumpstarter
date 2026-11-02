@@ -18,6 +18,7 @@ package jumpstarter
 
 import (
 	"fmt"
+	"net/url"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
 )
@@ -26,6 +27,10 @@ import (
 // generated Alloy rendering with `alloy validate` and `alloy fmt --test`.
 const alloyValidatedVersion = "v1.21.3"
 
+// vectorValidatedVersion is the Vector release used to validate the generated
+// Vector rendering with `vector validate`.
+const vectorValidatedVersion = "v0.61.0"
+
 // lokiURL returns the configured Loki endpoint or the documented placeholder.
 // Credentials are never embedded; the shipper's own Secret supplies them.
 func lokiURL(js *operatorv1alpha1.Jumpstarter) string {
@@ -33,6 +38,27 @@ func lokiURL(js *operatorv1alpha1.Jumpstarter) string {
 		return js.Spec.Telemetry.Loki.URL
 	}
 	return "{{LOKI_URL}}"
+}
+
+// vectorLokiEndpointAndPath splits a Loki push URL into the base endpoint and
+// path expected by the Vector loki sink. Vector appends path to endpoint, so
+// passing a full push URL as endpoint would duplicate /loki/api/v1/push.
+func vectorLokiEndpointAndPath(raw string) (endpoint, path string) {
+	if raw == "" || raw == "{{LOKI_URL}}" {
+		return "http://loki.invalid:3100", "/loki/api/v1/push"
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return raw, "/loki/api/v1/push"
+	}
+	path = u.EscapedPath()
+	if path == "" {
+		path = "/loki/api/v1/push"
+	}
+	if u.RawQuery != "" {
+		path += "?" + u.RawQuery
+	}
+	return u.Scheme + "://" + u.Host, path
 }
 
 // renderShipper returns the ConfigMap key and content for the selected shipper.
@@ -163,7 +189,7 @@ loki.write "default" {
 }
 `
 
-const vectorTemplate = `# Jumpstarter log shipper configuration for Vector.
+const vectorSourceTemplate = `# Jumpstarter log shipper configuration for Vector.
 # Merge into your Vector configuration. If the Loki URL below is a
 # placeholder, replace it with your push endpoint (or set
 # spec.telemetry.loki.url on the Jumpstarter CR).
@@ -173,29 +199,65 @@ sources:
     extra_label_selector: "jumpstarter.dev/log-scrape=true"
     extra_field_selector: "metadata.namespace=%s"
 
-transforms:
-  jumpstarter_parse:
+`
+
+const vectorProcessBlocks = `  jumpstarter_parse:
     type: remap
     inputs: [jumpstarter_pods]
     source: |
       parsed, err = parse_json(.message)
       if err == null {
         .component = parsed.component
-        .exporter = parsed.exporter
+        if exists(parsed.exporter) && !is_null(parsed.exporter) && parsed.exporter != "" {
+          .exporter = parsed.exporter
+        } else {
+          del(.exporter)
+        }
+      } else {
+        del(.exporter)
       }
 
-sinks:
-  jumpstarter_loki:
-    type: loki
+  jumpstarter_with_exporter:
+    type: filter
     inputs: [jumpstarter_parse]
+    condition: 'exists(.exporter) && !is_null(.exporter) && .exporter != ""'
+
+  jumpstarter_without_exporter:
+    type: filter
+    inputs: [jumpstarter_parse]
+    condition: '!exists(.exporter) || is_null(.exporter) || .exporter == ""'
+
+`
+
+const vectorSinksTemplate = `sinks:
+  jumpstarter_loki_with_exporter:
+    type: loki
+    inputs: [jumpstarter_with_exporter]
     endpoint: "%s"
+    path: "%s"
+    compression: none
     encoding:
       codec: text
     labels:
       component: "{{ component }}"
       exporter: "{{ exporter }}"
-      namespace: "{{ kubernetes.namespace_name }}"
+      namespace: "{{ kubernetes.pod_namespace }}"
+
+  jumpstarter_loki_without_exporter:
+    type: loki
+    inputs: [jumpstarter_without_exporter]
+    endpoint: "%s"
+    path: "%s"
+    compression: none
+    encoding:
+      codec: text
+    labels:
+      component: "{{ component }}"
+      namespace: "{{ kubernetes.pod_namespace }}"
 `
+
+const vectorTemplate = vectorSourceTemplate + `transforms:
+` + vectorProcessBlocks + vectorSinksTemplate
 
 // renderPromtail renders the Promtail configuration.
 func renderPromtail(js *operatorv1alpha1.Jumpstarter) string {
@@ -209,7 +271,8 @@ func renderAlloy(js *operatorv1alpha1.Jumpstarter) string {
 
 // renderVector renders the Vector configuration.
 func renderVector(js *operatorv1alpha1.Jumpstarter) string {
-	return fmt.Sprintf(vectorTemplate, js.Namespace, lokiURL(js))
+	endpoint, path := vectorLokiEndpointAndPath(lokiURL(js))
+	return fmt.Sprintf(vectorTemplate, js.Namespace, endpoint, path, endpoint, path)
 }
 
 // renderShipperReadme documents how to use the generated configuration.
@@ -249,9 +312,9 @@ Query them with a JSON filter, for example:
 
 ## Note
 
-Vector cannot conditionally omit a templated label; when a log line has no
-"exporter" field the Vector rendering emits exporter="" rather than omitting it.
-Promtail and Alloy omit the label.
+When a log line has no "exporter" field, the Vector rendering routes it through
+a separate sink without the exporter label. All supported shippers omit the
+label when it is absent.
 
 A cluster log shipper is required to see controller and router logs in Loki.
 `, js.Name, js.Namespace, key, shipper)
@@ -267,6 +330,20 @@ The snippet assumes the Alloy Helm chart DaemonSet, where HOSTNAME is the
 Kubernetes node name. For a single-replica Deployment, remove the
 selectors.field line or enable Alloy clustering.
 `, alloyValidatedVersion)
+	}
+
+	if shipper == shipperTypeVector {
+		readme += fmt.Sprintf(`
+## Vector validation
+
+The Vector rendering is validated with "vector validate" against Vector release
+%s.
+
+The snippet assumes the Vector Helm chart DaemonSet, which sets
+VECTOR_SELF_NODE_NAME from spec.nodeName and mounts /var/log/pods. The operator
+splits the configured Loki URL into the sink endpoint and /loki/api/v1/push
+path. Two Loki sinks keep the exporter label only when it is present.
+`, vectorValidatedVersion)
 	}
 
 	return readme
