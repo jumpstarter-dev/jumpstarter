@@ -28,7 +28,6 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
-	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
 	"github.com/prometheus/client_golang/prometheus"
@@ -93,17 +92,11 @@ type TelemetryService struct {
 	// ExemplarKeys allowlist applied on the telemetry merge path.
 	ExemplarKeys []string
 
-	// Signer is used to validate bearer tokens on every PushLogs call and
-	// MetricsStream. Tokens are issued by the controller from the same
-	// CONTROLLER_KEY seed, so the telemetry binary can verify them locally
-	// without a k8s client.
+	// Signer verifies the telemetry token on every PushLogs call and
+	// MetricsStream. The controller issues it from GetServiceEndpoints with
+	// the same CONTROLLER_KEY seed, so the telemetry binary can verify it
+	// locally without a k8s client.
 	Signer *oidc.Signer
-
-	// ClientAuthn authenticates external OIDC client tokens when Signer
-	// rejects them. Identity mapping matches the controller: namespace and
-	// kind come from gRPC metadata, and the client name is derived from the
-	// username. Nil keeps the internal-token-only path.
-	ClientAuthn authentication.ContextAuthenticator
 
 	// Logger overrides log.FromContext when set (used by tests to capture output).
 	Logger *logr.Logger

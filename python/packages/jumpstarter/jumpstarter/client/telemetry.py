@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from types import SimpleNamespace
 
 import grpc
+from anyio import create_task_group
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, telemetry_pb2_grpc
 
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
+from jumpstarter.common.telemetry_token import TelemetryCredential
 from jumpstarter.config.env import JMP_GRPC_INSECURE, JUMPSTARTER_GRPC_INSECURE
 from jumpstarter.exporter.telemetry import TelemetryLogHandler
 
@@ -45,20 +47,23 @@ class ClientTelemetry:
     insecure: bool
     namespace: str
     min_severity: str
-    token: Callable[[], str]
+    token: TelemetryCredential
+    discover: Callable[[], Awaitable[jumpstarter_pb2.GetServiceEndpointsResponse]]
     identity_metadata: tuple[tuple[str, str], ...]
     handler: TelemetryLogHandler | None = None
     channel: grpc.aio.Channel | None = None
     _closed: bool = False
 
     async def run(self) -> None:
-        """Open the channel once, then flush until cancelled."""
+        """Open the channel once, then flush and renew the token until cancelled."""
         if not await self._open():
             return
         handler = self.handler
         if handler is None:
             return
-        await handler.flush_loop()
+        async with create_task_group() as tg:
+            tg.start_soon(self.token.renew, self.discover)
+            await handler.flush_loop()
 
     async def _open(self) -> bool:
         if self._closed or self.handler is not None:
@@ -134,13 +139,16 @@ async def attach_client_telemetry(config) -> ClientTelemetry | None:
     attached from ``ClientTelemetry.run`` after the telemetry channel opens,
     so shell startup does not wait on the telemetry process.
     """
+    async def discover() -> jumpstarter_pb2.GetServiceEndpointsResponse:
+        # A new channel carries the config's current token.
+        async with await config.channel() as channel:
+            return await jumpstarter_pb2_grpc.ControllerServiceStub(channel).GetServiceEndpoints(
+                jumpstarter_pb2.GetServiceEndpointsRequest(),
+                timeout=_RPC_TIMEOUT,
+            )
+
     try:
-        channel = await config.channel()
-        stub = jumpstarter_pb2_grpc.ControllerServiceStub(channel)
-        resp = await stub.GetServiceEndpoints(
-            jumpstarter_pb2.GetServiceEndpointsRequest(),
-            timeout=_RPC_TIMEOUT,
-        )
+        resp = await discover()
     except Exception as exc:  # noqa: BLE001
         logger.debug("GetServiceEndpoints unavailable: %s", exc)
         return None
@@ -164,15 +172,13 @@ async def attach_client_telemetry(config) -> ClientTelemetry | None:
     if client_name:
         identity_metadata.append(("jumpstarter-name", client_name))
 
-    def current_token() -> str:
-        return getattr(config, "token", None) or ""
-
     return ClientTelemetry(
         endpoint=ep.endpoint,
         certificate=ep.certificate or "",
         insecure=bool(getattr(tls, "insecure", False)),
         namespace=namespace,
         min_severity=ep.min_severity,
-        token=current_token,
+        token=TelemetryCredential(ep),
+        discover=discover,
         identity_metadata=tuple(identity_metadata),
     )

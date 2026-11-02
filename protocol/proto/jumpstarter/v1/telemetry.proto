@@ -8,6 +8,7 @@ import "google/protobuf/timestamp.proto";
 
 // A service that reverse-scrapes exporter metrics and receives structured logs.
 // Implemented by jumpstarter-telemetry; not part of the controller.
+// Callers authenticate with the TelemetryEndpoint.token from GetServiceEndpoints.
 service TelemetryService {
   // Persistent bidirectional stream: telemetry sends scrape requests,
   // exporter responds with metric snapshots (structured families plus optional OpenMetrics text).

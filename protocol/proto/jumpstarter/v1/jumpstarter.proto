@@ -336,6 +336,12 @@ message TelemetryEndpoint {
   string endpoint = 1;      // gRPC address (host:port).
   string certificate = 2;   // Optional CA certificate PEM for TLS verification.
   string min_severity = 3;  // Minimum log severity to forward (e.g. "info", "warning").
+  // Bearer token for TelemetryService calls, naming the caller's exporter or
+  // client. It is valid only for telemetry and never outlives the credential
+  // that requested it. Call GetServiceEndpoints again for a new one before
+  // token_expiry.
+  string token = 4;
+  google.protobuf.Timestamp token_expiry = 5; // When token expires.
 }
 
 // Request to rotate the authentication token for an exporter.
