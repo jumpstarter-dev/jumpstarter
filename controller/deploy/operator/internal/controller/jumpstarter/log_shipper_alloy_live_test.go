@@ -174,7 +174,7 @@ func freeLoopbackPort(t *testing.T) int {
 	return listener.Addr().(*net.TCPAddr).Port
 }
 
-func waitForHTTP(t *testing.T, url string, timeout time.Duration, logs *alloyLogBuffer) {
+func waitForHTTP(t *testing.T, url string, timeout time.Duration, logs fmt.Stringer) {
 	t.Helper()
 	client := &http.Client{Timeout: 2 * time.Second}
 	deadline := time.Now().Add(timeout)

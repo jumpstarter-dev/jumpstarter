@@ -42,6 +42,7 @@ const (
 	defaultLokiImage      = "grafana/loki:3.7.9"
 	defaultAlloyImage     = "grafana/alloy:v1.21.3"
 	defaultVectorImage    = "timberio/vector:0.61.0-debian"
+	defaultPromtailImage  = "grafana/promtail:3.6.0"
 	defaultLogImage       = "busybox:1.36"
 	shipperConfigName     = "jumpstarter-shipper-config"
 	shipperServiceAccount = "jumpstarter-shipper"
@@ -98,7 +99,7 @@ func TestKubernetesShipperDeployment(t *testing.T) {
 	createLokiForKubernetesTest(t, ctx, clientset, namespace.Name)
 	createShipperRBAC(t, ctx, clientset, namespace.Name)
 
-	for _, shipper := range []string{shipperTypeAlloy, shipperTypeVector} {
+	for _, shipper := range []string{shipperTypePromtail, shipperTypeAlloy, shipperTypeVector} {
 		t.Run(shipper, func(t *testing.T) {
 			runKubernetesShipperCase(t, ctx, clientset, namespace.Name, shipper)
 		})
@@ -387,8 +388,11 @@ func buildShipperDaemonSet(namespace, shipper, configKey string) *appsv1.DaemonS
 	name := shipper + "-shipper"
 	labels := map[string]string{"app": name}
 	configFile := "config.alloy"
-	if shipper == shipperTypeVector {
+	switch shipper {
+	case shipperTypeVector:
 		configFile = "vector.yaml"
+	case shipperTypePromtail:
+		configFile = "promtail.yaml"
 	}
 
 	container := corev1.Container{
@@ -417,7 +421,9 @@ func buildShipperDaemonSet(namespace, shipper, configKey string) *appsv1.DaemonS
 		VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 	}}
 
-	if shipper == shipperTypeAlloy {
+	hostPathType := corev1.HostPathDirectory
+	switch shipper {
+	case shipperTypeAlloy:
 		container.Args = []string{
 			"run",
 			"--disable-reporting",
@@ -426,10 +432,9 @@ func buildShipperDaemonSet(namespace, shipper, configKey string) *appsv1.DaemonS
 			"/etc/alloy/config.alloy",
 		}
 		container.Env = []corev1.EnvVar{nodeNameEnv("HOSTNAME")}
-	} else {
+	case shipperTypeVector:
 		container.Args = []string{"--config", "/etc/vector/vector.yaml"}
 		container.Env = []corev1.EnvVar{nodeNameEnv("VECTOR_SELF_NODE_NAME")}
-		hostPathType := corev1.HostPathDirectory
 		volumes = append(volumes, corev1.Volume{
 			Name: "pod-logs",
 			VolumeSource: corev1.VolumeSource{
@@ -441,6 +446,25 @@ func buildShipperDaemonSet(namespace, shipper, configKey string) *appsv1.DaemonS
 			MountPath: "/var/log/pods",
 			ReadOnly:  true,
 		})
+	case shipperTypePromtail:
+		container.Args = []string{
+			"-config.file=/etc/promtail/promtail.yaml",
+			"-config.expand-env",
+		}
+		container.Env = []corev1.EnvVar{nodeNameEnv("HOSTNAME")}
+		volumes = append(volumes, corev1.Volume{
+			Name: "pod-logs",
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{Path: "/var/log/pods", Type: &hostPathType},
+			},
+		}, corev1.Volume{
+			Name:         "positions",
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		})
+		container.VolumeMounts = append(container.VolumeMounts,
+			corev1.VolumeMount{Name: "pod-logs", MountPath: "/var/log/pods", ReadOnly: true},
+			corev1.VolumeMount{Name: "positions", MountPath: "/run/promtail"},
+		)
 	}
 
 	return &appsv1.DaemonSet{
@@ -466,6 +490,8 @@ func shipperImage(shipper string) string {
 		return envOrDefault("ALLOY_IMAGE", defaultAlloyImage)
 	case shipperTypeVector:
 		return envOrDefault("VECTOR_IMAGE", defaultVectorImage)
+	case shipperTypePromtail:
+		return envOrDefault("PROMTAIL_IMAGE", defaultPromtailImage)
 	default:
 		return ""
 	}
@@ -585,6 +611,39 @@ func waitForLokiServiceEntries(t *testing.T, ctx context.Context, clientset *kub
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
+	dumpShipperDiagnostics(t, ctx, clientset, namespace)
 	t.Fatalf("timed out waiting for %d Loki entries containing %q via service proxy: %v", want, marker, lastErr)
 	return nil
 }
+
+func dumpShipperDiagnostics(t *testing.T, ctx context.Context, clientset *kubernetes.Clientset, namespace string) {
+	t.Helper()
+	pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		t.Logf("list pods for diagnostics: %v", err)
+		return
+	}
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		t.Logf("diagnostic pod %s phase=%s labels=%v", pod.Name, pod.Status.Phase, pod.Labels)
+		for _, container := range pod.Spec.Containers {
+			raw, err := clientset.CoreV1().Pods(namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
+				Container: container.Name,
+				TailLines: int64Ptr(100),
+			}).DoRaw(ctx)
+			if err != nil {
+				t.Logf("logs %s/%s: %v", pod.Name, container.Name, err)
+				continue
+			}
+			t.Logf("logs %s/%s:\n%s", pod.Name, container.Name, raw)
+		}
+	}
+	cm, err := clientset.CoreV1().ConfigMaps(namespace).Get(ctx, shipperConfigName, metav1.GetOptions{})
+	if err == nil {
+		for key, value := range cm.Data {
+			t.Logf("diagnostic config %s:\n%s", key, value)
+		}
+	}
+}
+
+func int64Ptr(value int64) *int64 { return &value }

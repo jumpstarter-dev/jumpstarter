@@ -300,7 +300,7 @@ func TestRenderShipper(t *testing.T) {
 		key     string
 		markers []string
 	}{
-		{"promtail", "promtail.yaml", []string{"kubernetes_sd_configs", "jumpstarter_dev_log_scrape", "component", "exporter"}},
+		{"promtail", "promtail.yaml", []string{"kubernetes_sd_configs", "jumpstarter_dev_log_scrape", "__path__", "/var/log/pods", "cri", "labeldrop", "filename", "component", "exporter"}},
 		{"alloy", "alloy.alloy", []string{"discovery.kubernetes", "jumpstarter_dev_log_scrape", "selectors", "spec.nodeName", "stage.labels", "stage.label_keep", "component", "exporter", "namespace"}},
 		{"vector", "vector.yaml", []string{"kubernetes_logs", "jumpstarter.dev/log-scrape=true", "jumpstarter_loki_without_exporter", "kubernetes.pod_namespace", "path:", "compression: none", "component", "exporter"}},
 	}
@@ -357,8 +357,9 @@ func TestRenderShipperDoesNotPromotePodLabels(t *testing.T) {
 }
 
 var (
-	updateAlloyGolden  = flag.Bool("update-alloy-golden", false, "update testdata/logshipper/alloy.alloy.golden")
-	updateVectorGolden = flag.Bool("update-vector-golden", false, "update testdata/logshipper/vector.yaml.golden")
+	updatePromtailGolden = flag.Bool("update-promtail-golden", false, "update testdata/logshipper/promtail.yaml.golden")
+	updateAlloyGolden    = flag.Bool("update-alloy-golden", false, "update testdata/logshipper/alloy.alloy.golden")
+	updateVectorGolden   = flag.Bool("update-vector-golden", false, "update testdata/logshipper/vector.yaml.golden")
 )
 
 func TestRenderAlloyGolden(t *testing.T) {
@@ -381,6 +382,53 @@ func TestRenderAlloyGolden(t *testing.T) {
 	}
 	if string(want) != got {
 		t.Fatalf("alloy rendering differs from %s; rerun with -update-alloy-golden", golden)
+	}
+}
+
+func TestRenderPromtailGolden(t *testing.T) {
+	js := testJumpstarter()
+	_, got := renderShipper(js, shipperTypePromtail)
+	golden := filepath.Join("testdata", "logshipper", "promtail.yaml.golden")
+
+	if *updatePromtailGolden {
+		if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil {
+			t.Fatalf("create golden directory: %v", err)
+		}
+		if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
+			t.Fatalf("write golden file: %v", err)
+		}
+	}
+
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatalf("read golden file: %v", err)
+	}
+	if string(want) != got {
+		t.Fatalf("Promtail rendering differs from %s; rerun with -update-promtail-golden", golden)
+	}
+}
+
+func TestPromtailRenderingValidates(t *testing.T) {
+	promtailBin := os.Getenv("PROMTAIL_BIN")
+	if promtailBin == "" {
+		var err error
+		promtailBin, err = exec.LookPath("promtail")
+		if err != nil {
+			t.Skip("set PROMTAIL_BIN or install promtail to run Promtail validation")
+		}
+	}
+
+	js := testJumpstarter()
+	_, content := renderShipper(js, shipperTypePromtail)
+	path := filepath.Join(t.TempDir(), "promtail.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write promtail config: %v", err)
+	}
+
+	cmd := exec.Command(promtailBin, "-config.file="+path, "-config.expand-env", "-check-syntax")
+	cmd.Env = append(os.Environ(), "NODE_NAME=test-node")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("promtail check-syntax failed: %v\n%s", err, out)
 	}
 }
 
@@ -558,6 +606,29 @@ func TestVectorConfigMapReadmeMentionsValidatedVersion(t *testing.T) {
 	} {
 		if !strings.Contains(readme, want) {
 			t.Errorf("Vector README missing %q", want)
+		}
+	}
+}
+
+func TestPromtailConfigMapReadmeMentionsValidatedVersion(t *testing.T) {
+	js := testJumpstarter()
+	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+	js.Spec.Telemetry.Logging.Shipper.Type = shipperTypePromtail
+
+	cm := buildLogShipperConfigMap(js)
+	if cm == nil {
+		t.Fatal("expected Promtail ConfigMap")
+	}
+	readme := cm.Data["README.md"]
+	for _, want := range []string{
+		promtailValidatedVersion,
+		"promtail -check-syntax",
+		"HOSTNAME",
+		"/var/log/pods",
+		"__path__",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Errorf("Promtail README missing %q", want)
 		}
 	}
 }

@@ -31,6 +31,11 @@ const alloyValidatedVersion = "v1.21.3"
 // Vector rendering with `vector validate`.
 const vectorValidatedVersion = "v0.61.0"
 
+// promtailValidatedVersion is the last Promtail release with a published Linux
+// binary. Promtail is deprecated upstream; this pin is the compatibility target
+// for the Phase 5 all-three-shipper requirement.
+const promtailValidatedVersion = "v3.6.0"
+
 // lokiURL returns the configured Loki endpoint or the documented placeholder.
 // Credentials are never embedded; the shipper's own Secret supplies them.
 func lokiURL(js *operatorv1alpha1.Jumpstarter) string {
@@ -75,10 +80,28 @@ func renderShipper(js *operatorv1alpha1.Jumpstarter, shipper string) (key, conte
 	}
 }
 
+const promtailPipelineStages = `      - cri: {}
+      - json:
+          expressions:
+            component: component
+            exporter: exporter
+      - labels:
+          component:
+          exporter:
+      - labeldrop:
+          - filename
+          - job
+          - stream
+`
+
 const promtailTemplate = `# Jumpstarter log shipper configuration for Promtail.
 # Merge into your Promtail scrape_configs. If the Loki URL below is a
 # placeholder, replace it with your push endpoint (or set
 # spec.telemetry.loki.url on the Jumpstarter CR).
+#
+# Run Promtail with -config.expand-env and set HOSTNAME from spec.nodeName.
+# Promtail also uses HOSTNAME for its automatic node selector.
+# The Promtail Helm chart mounts /var/log/pods and /run/promtail.
 server:
   http_listen_port: 9080
   grpc_listen_port: 0
@@ -100,17 +123,21 @@ scrape_configs:
       - source_labels: [__meta_kubernetes_pod_label_jumpstarter_dev_log_scrape]
         regex: "true"
         action: keep
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        regex: "${HOSTNAME}"
+        action: keep
       - source_labels: [__meta_kubernetes_namespace]
         target_label: namespace
+      - source_labels:
+          - __meta_kubernetes_pod_uid
+          - __meta_kubernetes_pod_container_name
+        separator: /
+        target_label: __path__
+        replacement: /var/log/pods/*$1/*.log
+      - action: labeldrop
+        regex: job|pod|container|stream|instance
     pipeline_stages:
-      - json:
-          expressions:
-            component: component
-            exporter: exporter
-      - labels:
-          component:
-          exporter:
-`
+` + promtailPipelineStages
 
 const alloyScrapeTemplate = `// Jumpstarter log shipper configuration for Grafana Alloy.
 // Merge into your Alloy configuration. If the Loki URL below is a
@@ -344,6 +371,21 @@ VECTOR_SELF_NODE_NAME from spec.nodeName and mounts /var/log/pods. The operator
 splits the configured Loki URL into the sink endpoint and /loki/api/v1/push
 path. Two Loki sinks keep the exporter label only when it is present.
 `, vectorValidatedVersion)
+	}
+
+	if shipper == shipperTypePromtail {
+		readme += fmt.Sprintf(`
+## Promtail validation
+
+The Promtail rendering is validated with "promtail -check-syntax" against
+Promtail release %s.
+
+Run Promtail with -config.expand-env and set HOSTNAME from spec.nodeName.
+Promtail also uses HOSTNAME for its automatic node selector. The Helm chart
+DaemonSet mounts /var/log/pods and /run/promtail. The config resolves the pod
+log path with __path__, strips the Kubernetes CRI prefix, and drops the default
+job/filename labels so Loki receives exactly component, exporter, and namespace.
+`, promtailValidatedVersion)
 	}
 
 	return readme

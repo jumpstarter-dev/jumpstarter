@@ -68,5 +68,16 @@ jobs:
           echo "LOKI_BIN=/tmp/loki/loki-linux-amd64" >> "$GITHUB_ENV"
           /tmp/loki/loki-linux-amd64 --version
 
+      - name: Install Promtail v3.6.0
+        run: |
+          curl -fsSL -o /tmp/promtail-linux-amd64.zip \
+            https://github.com/grafana/loki/releases/download/v3.6.0/promtail-linux-amd64.zip
+          echo "81f3c8b57f25dce4ea04215c25f0b24bf19ce9941902718039bd74c3e439ad87  /tmp/promtail-linux-amd64.zip" | sha256sum -c -
+          mkdir -p /tmp/promtail
+          unzip -q /tmp/promtail-linux-amd64.zip -d /tmp/promtail
+          chmod +x /tmp/promtail/promtail-linux-amd64
+          echo "PROMTAIL_BIN=/tmp/promtail/promtail-linux-amd64" >> "$GITHUB_ENV"
+          /tmp/promtail/promtail-linux-amd64 --version
+
       - name: Run operator tests
         run: make -C controller/deploy/operator test
