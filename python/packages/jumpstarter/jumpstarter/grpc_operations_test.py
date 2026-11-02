@@ -1,6 +1,10 @@
+from pathlib import Path
+
 import grpc
 import pytest
 from anyio import Event, fail_after
+
+CONFTEST = Path(__file__).parents[1] / "conftest.py"
 
 
 @pytest.mark.anyio
@@ -29,3 +33,32 @@ async def test_a_call_counts_as_unfinished_until_it_completes(unfinished_grpc_op
 
     assert during
     assert not unfinished_grpc_operations()
+
+
+def test_only_the_test_that_leaks_is_blamed(pytester):
+    pytester.makeconftest(CONFTEST.read_text())
+    pytester.makepyfile(
+        """
+        import grpc
+        import pytest
+
+        servers = []
+
+
+        @pytest.mark.anyio
+        async def test_leaves_a_server_running():
+            server = grpc.aio.server()
+            server.add_insecure_port("127.0.0.1:0")
+            await server.start()
+            servers.append(server)
+
+
+        def test_runs_after_the_leak():
+            pass
+        """
+    )
+
+    result = pytester.runpytest_subprocess(timeout=60)
+
+    result.assert_outcomes(passed=2, errors=1)
+    result.stdout.fnmatch_lines(["*ERROR at teardown of test_leaves_a_server_running*"])
