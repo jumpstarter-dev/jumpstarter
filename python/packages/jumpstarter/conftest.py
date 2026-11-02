@@ -104,16 +104,20 @@ def unfinished_grpc_operations():
 
 # gRPC never releases an operation whose result went to a closed event loop, so
 # remember what was reported instead of failing every test that follows.
-_reported_grpc_operations: set[int] = set()
+_reported_grpc_operations: set[CallbackWrapper] = set()
+
+
+def _new_unfinished_grpc_operations() -> set[CallbackWrapper]:
+    return set(_unfinished_grpc_operations()) - _reported_grpc_operations
 
 
 @pytest.fixture(autouse=True)
 def _no_unfinished_grpc_operations():
     yield
-    unfinished = {id(operation) for operation in _unfinished_grpc_operations()} - _reported_grpc_operations
+    unfinished = _new_unfinished_grpc_operations()
     if unfinished:
         gc.collect()
-        unfinished = {id(operation) for operation in _unfinished_grpc_operations()} - _reported_grpc_operations
+        unfinished = _new_unfinished_grpc_operations()
     _reported_grpc_operations.update(unfinished)
     assert not unfinished, (
         f"the test left {len(unfinished)} gRPC operation(s) unfinished; their results would reach "
