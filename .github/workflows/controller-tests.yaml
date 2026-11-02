@@ -36,5 +36,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-operator-bin-
 
+      - name: Install Grafana Alloy v1.21.3
+        run: |
+          curl -fsSL -o /tmp/alloy-linux-amd64.zip \
+            https://github.com/grafana/alloy/releases/download/v1.21.3/alloy-linux-amd64.zip
+          echo "50d23af2d0f98c00beac6ce9a365693e60f87fb76b6cad6fe1d161e80588af6d  /tmp/alloy-linux-amd64.zip" | sha256sum -c -
+          mkdir -p /tmp/alloy
+          unzip -q /tmp/alloy-linux-amd64.zip -d /tmp/alloy
+          chmod +x /tmp/alloy/alloy-linux-amd64
+          echo "ALLOY_BIN=/tmp/alloy/alloy-linux-amd64" >> "$GITHUB_ENV"
+          /tmp/alloy/alloy-linux-amd64 --version
+
       - name: Run operator tests
         run: make -C controller/deploy/operator test

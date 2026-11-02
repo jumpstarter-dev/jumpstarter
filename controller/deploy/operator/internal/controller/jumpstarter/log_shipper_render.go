@@ -22,9 +22,9 @@ import (
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
 )
 
-// alloyValidatedCommit is the Grafana Alloy revision used to validate the
+// alloyValidatedVersion is the Grafana Alloy release used to validate the
 // generated Alloy rendering with `alloy validate` and `alloy fmt --test`.
-const alloyValidatedCommit = "43c40e25565d1fc0062b06c282c130c577559597"
+const alloyValidatedVersion = "v1.21.3"
 
 // lokiURL returns the configured Loki endpoint or the documented placeholder.
 // Credentials are never embedded; the shipper's own Secret supplies them.
@@ -86,7 +86,7 @@ scrape_configs:
           exporter:
 `
 
-const alloyTemplate = `// Jumpstarter log shipper configuration for Grafana Alloy.
+const alloyScrapeTemplate = `// Jumpstarter log shipper configuration for Grafana Alloy.
 // Merge into your Alloy configuration. If the Loki URL below is a
 // placeholder, replace it with your push endpoint (or set
 // spec.telemetry.loki.url on the Jumpstarter CR).
@@ -128,7 +128,11 @@ loki.source.kubernetes "jumpstarter" {
 	forward_to = [loki.process.jumpstarter.receiver]
 }
 
-loki.process "jumpstarter" {
+`
+
+// alloyProcessWriteTemplate is shared by the generated shipper config and the
+// live delivery test so both exercise the same stream-label and write path.
+const alloyProcessWriteTemplate = `loki.process "jumpstarter" {
 	stage.json {
 		expressions = {
 			component = "component",
@@ -200,7 +204,7 @@ func renderPromtail(js *operatorv1alpha1.Jumpstarter) string {
 
 // renderAlloy renders the Grafana Alloy configuration.
 func renderAlloy(js *operatorv1alpha1.Jumpstarter) string {
-	return fmt.Sprintf(alloyTemplate, js.Namespace, lokiURL(js))
+	return fmt.Sprintf(alloyScrapeTemplate, js.Namespace) + fmt.Sprintf(alloyProcessWriteTemplate, lokiURL(js))
 }
 
 // renderVector renders the Vector configuration.
@@ -257,12 +261,12 @@ A cluster log shipper is required to see controller and router logs in Loki.
 ## Alloy validation
 
 The Alloy rendering is validated with "alloy validate" and
-"alloy fmt --test" against Grafana Alloy commit %s.
+"alloy fmt --test" against Grafana Alloy release %s.
 
 The snippet assumes the Alloy Helm chart DaemonSet, where HOSTNAME is the
 Kubernetes node name. For a single-replica Deployment, remove the
 selectors.field line or enable Alloy clustering.
-`, alloyValidatedCommit)
+`, alloyValidatedVersion)
 	}
 
 	return readme
