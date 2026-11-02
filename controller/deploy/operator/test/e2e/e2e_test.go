@@ -509,6 +509,24 @@ provisioning:
 			Eventually(verifyConfigMap, 1*time.Minute).Should(Succeed())
 		})
 
+		It("should serve live controller and router metrics", func() {
+			expectServiceMetrics(dynamicTestNamespace, "jumpstarter-controller-metrics", "8080", func(g Gomega, body string) {
+				families := parsePrometheusFamilies(g, body)
+				g.Expect(families).To(HaveKey("jumpstarter_lease_acquisitions_total"))
+				g.Expect(families).To(HaveKey("go_goroutines"))
+				g.Expect(families).To(HaveKey("controller_runtime_reconcile_total"))
+				expectMetricLabelValue(g, families["jumpstarter_lease_acquisitions_total"], "result", "success")
+				expectMetricLabelValue(g, families["jumpstarter_lease_acquisitions_total"], "result", "failure")
+			})
+
+			expectServiceMetrics(dynamicTestNamespace, "jumpstarter-router-metrics", "8080", func(g Gomega, body string) {
+				families := parsePrometheusFamilies(g, body)
+				g.Expect(families).To(HaveKey("go_goroutines"))
+				g.Expect(families).To(HaveKey("process_start_time_seconds"))
+				g.Expect(families).To(HaveKey("promhttp_metric_handler_requests_total"))
+			})
+		})
+
 		It("should clamp controller replicas > 1 to 1 with a warning event", func() {
 			By("updating Jumpstarter controller replicas to 3")
 			jumpstarter := &operatorv1alpha1.Jumpstarter{}

@@ -38,6 +38,7 @@ import (
 const (
 	telemetryE2EServiceName = "jumpstarter-telemetry"
 	telemetryE2EPort        = 9093
+	telemetryE2EMetricsPort = 8080
 	telemetryE2ECertSuffix  = "-telemetry-tls"
 )
 
@@ -156,6 +157,16 @@ spec:
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(svc.Spec.Ports[0].Port).To(Equal(int32(telemetryE2EPort)))
 			g.Expect(svc.Spec.Selector).To(HaveKeyWithValue("app", "jumpstarter-telemetry"))
+
+			var metricsPort *corev1.ServicePort
+			for i := range svc.Spec.Ports {
+				if svc.Spec.Ports[i].Name == "metrics" {
+					metricsPort = &svc.Spec.Ports[i]
+					break
+				}
+			}
+			g.Expect(metricsPort).NotTo(BeNil(), "expected telemetry metrics service port")
+			g.Expect(metricsPort.Port).To(Equal(int32(telemetryE2EMetricsPort)))
 		}, 2*time.Minute).Should(Succeed())
 
 		Eventually(func(g Gomega) {
@@ -186,6 +197,14 @@ spec:
 	It("should report TelemetryDeploymentReady when the deployment is available", func() {
 		waitForCondition(telemetryTestNamespace, jumpstarterName,
 			operatorv1alpha1.ConditionTypeTelemetryDeploymentReady, metav1.ConditionTrue, 5*time.Minute)
+	})
+
+	It("should serve live telemetry metrics", func() {
+		expectServiceMetrics(telemetryTestNamespace, telemetryE2EServiceName, "8080", func(g Gomega, body string) {
+			families := parseOpenMetricsFamilies(g, body)
+			g.Expect(families).To(HaveKey("jumpstarter_telemetry_dropped_total"))
+			expectMetricLabelValue(g, families["jumpstarter_telemetry_dropped_total"], "destination", "loki")
+		})
 	})
 
 	It("should remove telemetry resources when telemetry is disabled", func() {
