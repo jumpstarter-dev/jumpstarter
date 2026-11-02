@@ -271,9 +271,27 @@ deploy_controller() {
     cd "$REPO_ROOT"
     
     log_info "Deploying controller with CA certificate using operator..."
-    OPERATOR_USE_DEX=true DEX_CA_FILE="$REPO_ROOT/ca.pem" make -C controller deploy
+    OPERATOR_USE_DEX=true OPERATOR_ENABLE_TELEMETRY=true DEX_CA_FILE="$REPO_ROOT/ca.pem" make -C controller deploy
     
     log_info "✓ Controller deployed"
+}
+
+# Step 4b: Let exporters and jmp on this host reach telemetry
+expose_telemetry() {
+    local host="jumpstarter-telemetry.${JS_NAMESPACE}.svc"
+
+    # The controller advertises the in-cluster Service name. A NodePort that
+    # kind maps to host port 9093 serves it, as for dex.
+    log_info "Exposing telemetry on host port 9093..."
+    kubectl apply -n "${JS_NAMESPACE}" -f "$SCRIPT_DIR/manifests/telemetry-nodeport.yaml"
+
+    if ! grep -Fq "${host}" /etc/hosts 2>/dev/null; then
+        log_warn "About to add '${host}' to /etc/hosts (requires sudo)"
+        echo "127.0.0.1 ${host}" | sudo tee -a /etc/hosts
+        log_info "✓ Added telemetry to /etc/hosts"
+    else
+        log_info "✓ ${host} already in /etc/hosts"
+    fi
 }
 
 # Step 5: Install jumpstarter (shared helper)
@@ -386,6 +404,9 @@ main() {
     echo ""
     
     deploy_controller
+    echo ""
+    
+    expose_telemetry
     echo ""
     
     install_jumpstarter
