@@ -47,5 +47,15 @@ jobs:
           echo "ALLOY_BIN=/tmp/alloy/alloy-linux-amd64" >> "$GITHUB_ENV"
           /tmp/alloy/alloy-linux-amd64 --version
 
+      - name: Install Vector v0.61.0
+        run: |
+          curl -fsSL -o /tmp/vector.tar.gz \
+            https://github.com/vectordotdev/vector/releases/download/v0.61.0/vector-0.61.0-x86_64-unknown-linux-musl.tar.gz
+          echo "e1609b8a55ef1c1fc4fd88633e2bc6366e9a4022f6f1ae846cadd27af5237621  /tmp/vector.tar.gz" | sha256sum -c -
+          mkdir -p /tmp/vector
+          tar -xzf /tmp/vector.tar.gz -C /tmp/vector
+          echo "VECTOR_BIN=/tmp/vector/vector-x86_64-unknown-linux-musl/bin/vector" >> "$GITHUB_ENV"
+          /tmp/vector/vector-x86_64-unknown-linux-musl/bin/vector --version
+
       - name: Run operator tests
         run: make -C controller/deploy/operator test

@@ -1703,6 +1703,8 @@ all subsequent phases have E2E coverage from the start.
   `alloy fmt --test` against Grafana Alloy commit
   `43c40e25565d1fc0062b06c282c130c577559597`: 2026-10-28
 - Grafana Alloy pin moved to release `v1.21.3` (revision `f2108cd`): 2026-11-02
+- Vector support promoted to official Phase 5 support and validated against
+  Vector release `v0.61.0`: 2026-11-02
 
 ## References
 
