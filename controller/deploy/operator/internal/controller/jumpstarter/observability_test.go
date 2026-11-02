@@ -252,6 +252,30 @@ func TestDesiredServiceMonitors(t *testing.T) {
 	}
 }
 
+func TestDesiredServiceMonitorsExcludesDisabledOrZeroReplicaTelemetry(t *testing.T) {
+	tests := []struct {
+		name string
+		spec *operatorv1alpha1.TelemetryConfig
+	}{
+		{"nil telemetry", nil},
+		{"telemetry disabled", &operatorv1alpha1.TelemetryConfig{Enabled: false}},
+		{"telemetry zero replicas", func() *operatorv1alpha1.TelemetryConfig {
+			zero := int32(0)
+			return &operatorv1alpha1.TelemetryConfig{Enabled: true, Replicas: &zero}
+		}()},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			js := testJumpstarter()
+			js.Spec.Telemetry = tc.spec
+			if got := len(desiredServiceMonitors(js)); got != 2 {
+				t.Fatalf("expected 2 monitors, got %d", got)
+			}
+		})
+	}
+}
+
 func TestDesiredServiceMonitorsAddsConfiguredLabels(t *testing.T) {
 	js := testJumpstarter()
 	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
