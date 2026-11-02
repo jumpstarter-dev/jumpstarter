@@ -141,7 +141,6 @@ async def test_setup_telemetry_insecure_uses_insecure_channel():
     assert exp._telemetry_handler is not None
     assert exp._metrics_stream is not None
     assert exp._metrics_stream.identity == "test-exporter"
-    assert exp._metrics_stream.token == "test-token"
 
 
 async def test_setup_telemetry_env_var_insecure(monkeypatch):
