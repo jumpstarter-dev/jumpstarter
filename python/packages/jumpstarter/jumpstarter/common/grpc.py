@@ -28,7 +28,7 @@ def is_controller_unavailable(error: Exception) -> bool:
         return True
     if code == grpc.StatusCode.INTERNAL and "RST_STREAM" in details.upper():
         return True
-    # Controllers can expose startup authentication failures as UNKNOWN.
+    # Older controllers report startup authentication failures as UNKNOWN rather than UNAVAILABLE.
     return code == grpc.StatusCode.UNKNOWN and (
         "oidc: authenticator not initialized" in details or details == "Stream removed"
     )
@@ -222,6 +222,9 @@ def translate_grpc_exceptions():
         if e.code().name == "UNKNOWN":
             # an error returned from our functions
             raise ConnectionError(f"grpc controller responded: {e.details()}") from None
+        if e.code().name == "UNAUTHENTICATED":
+            # Keep the details: re-authentication is triggered by "token is expired".
+            raise ConnectionError(f"authentication failed: {e.details()}") from None
         if e.code().name == "FAILED_PRECONDITION":
             raise ConnectionError(e.details() or "") from None
         else:

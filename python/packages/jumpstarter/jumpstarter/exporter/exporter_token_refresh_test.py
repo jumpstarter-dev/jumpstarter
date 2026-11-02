@@ -208,7 +208,8 @@ async def test_refresh_retries_after_rotation_failure(error, retry_delay):
 @pytest.mark.anyio
 @pytest.mark.parametrize("remaining", [10.0, 0.0])
 @pytest.mark.parametrize("error", [
-    # The controller reports an expired token as UNKNOWN, not UNAUTHENTICATED.
+    pytest.param(FakeRpcError(grpc.StatusCode.UNAUTHENTICATED, "oidc: token is expired"), id="unauthenticated"),
+    # Older controllers report an expired token as UNKNOWN.
     pytest.param(FakeRpcError(grpc.StatusCode.UNKNOWN, "oidc: token is expired"), id="unknown"),
     pytest.param(FakeRpcError(grpc.StatusCode.UNIMPLEMENTED), id="unimplemented"),
     pytest.param(FakeRpcError(grpc.StatusCode.PERMISSION_DENIED), id="denied"),

@@ -747,7 +747,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             except grpc.aio.AioRpcError as e:
                 code = e.code()
                 if code == grpc.StatusCode.UNAUTHENTICATED:
-                    # The status stream exits with 75, ending the whole jmp run process.
+                    # The controller rejected the credential itself (expired by its clock,
+                    # or from an issuer it does not trust), so renewal cannot succeed.
                     logger.error("Failed to rotate token (%s): %s", code, e.details())
                     return False
                 if code in (grpc.StatusCode.UNIMPLEMENTED, grpc.StatusCode.PERMISSION_DENIED):
