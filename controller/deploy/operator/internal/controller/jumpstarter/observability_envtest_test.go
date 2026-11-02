@@ -86,6 +86,88 @@ var _ = Describe("Observability reconciliation", func() {
 		Expect(reason).To(Equal("Created"))
 	})
 
+	It("prunes stale ServiceMonitors without deleting foreign monitors", func() {
+		js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{Enabled: true}
+		Expect(k8sClient.Update(ctx, js)).To(Succeed())
+		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
+
+		for _, name := range []string{
+			"jumpstarter-controller-metrics",
+			"jumpstarter-router-metrics",
+			"jumpstarter-telemetry-metrics",
+		} {
+			sm := &unstructured.Unstructured{}
+			sm.SetGroupVersionKind(serviceMonitorGVK)
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace.Name}, sm)).To(Succeed(),
+				"expected ServiceMonitor %s", name)
+		}
+
+		// This monitor has matching labels but no owner reference. Pruning by
+		// label would delete it; pruning by controller ownership must not.
+		foreign := &unstructured.Unstructured{}
+		foreign.SetGroupVersionKind(serviceMonitorGVK)
+		foreign.SetName("foreign-monitor")
+		foreign.SetNamespace(namespace.Name)
+		foreign.SetLabels(map[string]string{
+			metricsServiceLabel:          "true",
+			"app.kubernetes.io/name":     "jumpstarter",
+			"app.kubernetes.io/instance": js.Name,
+		})
+		Expect(k8sClient.Create(ctx, foreign)).To(Succeed())
+
+		js.Spec.Telemetry.Enabled = false
+		Expect(k8sClient.Update(ctx, js)).To(Succeed())
+		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
+
+		telemetry := &unstructured.Unstructured{}
+		telemetry.SetGroupVersionKind(serviceMonitorGVK)
+		err := k8sClient.Get(ctx, types.NamespacedName{
+			Name: "jumpstarter-telemetry-metrics", Namespace: namespace.Name,
+		}, telemetry)
+		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "telemetry ServiceMonitor should be pruned: %v", err)
+
+		for _, name := range []string{
+			"jumpstarter-controller-metrics",
+			"jumpstarter-router-metrics",
+			"foreign-monitor",
+		} {
+			sm := &unstructured.Unstructured{}
+			sm.SetGroupVersionKind(serviceMonitorGVK)
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace.Name}, sm)).To(Succeed(),
+				"expected ServiceMonitor %s to remain", name)
+		}
+
+		ready, reason, message := r.serviceMonitorCondition(ctx, js)
+		Expect(ready).To(BeTrue())
+		Expect(reason).To(Equal("Created"))
+		Expect(message).To(ContainSubstring("2 workloads"))
+
+		js.Spec.Telemetry.Metrics.ServiceMonitor = boolPtr(false)
+		Expect(k8sClient.Update(ctx, js)).To(Succeed())
+		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
+
+		for _, name := range []string{
+			"jumpstarter-controller-metrics",
+			"jumpstarter-router-metrics",
+			"jumpstarter-telemetry-metrics",
+		} {
+			sm := &unstructured.Unstructured{}
+			sm.SetGroupVersionKind(serviceMonitorGVK)
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace.Name}, sm)
+			Expect(apierrors.IsNotFound(err)).To(BeTrue(), "ServiceMonitor %s should be pruned: %v", name, err)
+		}
+
+		sm := &unstructured.Unstructured{}
+		sm.SetGroupVersionKind(serviceMonitorGVK)
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: "foreign-monitor", Namespace: namespace.Name,
+		}, sm)).To(Succeed(), "foreign ServiceMonitor should remain")
+
+		ready, reason, _ = r.serviceMonitorCondition(ctx, js)
+		Expect(ready).To(BeFalse())
+		Expect(reason).To(Equal("Disabled"))
+	})
+
 	It("keeps the router metrics Service during router service cleanup", func() {
 		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
 
