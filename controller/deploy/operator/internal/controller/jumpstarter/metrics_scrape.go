@@ -262,52 +262,92 @@ func toInterfaceMap(in map[string]string) map[string]interface{} {
 }
 
 // reconcileServiceMonitors creates, updates, or removes ServiceMonitors.
-// Removal happens when the feature is disabled or the CRD is not installed.
+// Removal happens when the feature is disabled, a workload is no longer
+// desired (for example telemetry is disabled), or the CRD is not installed.
 func (r *JumpstarterReconciler) reconcileServiceMonitors(ctx context.Context, js *operatorv1alpha1.Jumpstarter, crdAvailable bool) error {
 	log := logf.FromContext(ctx)
 
-	if !serviceMonitorEnabled(js) || !crdAvailable {
-		for _, component := range []string{"controller", "router", "telemetry"} {
-			if err := r.deleteObjectIfExists(ctx, types.NamespacedName{Name: metricsServiceName(js, component), Namespace: js.Namespace}, &unstructured.Unstructured{
-				Object: map[string]interface{}{"apiVersion": serviceMonitorGroup + "/" + serviceMonitorVersion, "kind": serviceMonitorKind},
-			}); err != nil {
-				return err
-			}
-		}
+	if !crdAvailable {
+		// The ServiceMonitor API is not served. Its custom resources are
+		// removed with the CRD, so there is nothing left to prune.
 		return nil
 	}
 
-	for _, desired := range desiredServiceMonitors(js) {
+	var desired []*unstructured.Unstructured
+	if serviceMonitorEnabled(js) {
+		desired = desiredServiceMonitors(js)
+	}
+
+	desiredNames := make(map[string]struct{}, len(desired))
+	for _, desiredMonitor := range desired {
+		desiredNames[desiredMonitor.GetName()] = struct{}{}
 		existing := &unstructured.Unstructured{}
-		existing.SetGroupVersionKind(desired.GroupVersionKind())
-		err := r.Get(ctx, types.NamespacedName{Name: desired.GetName(), Namespace: desired.GetNamespace()}, existing)
+		existing.SetGroupVersionKind(desiredMonitor.GroupVersionKind())
+		err := r.Get(ctx, types.NamespacedName{Name: desiredMonitor.GetName(), Namespace: desiredMonitor.GetNamespace()}, existing)
 		if apierrors.IsNotFound(err) {
-			if err := controllerutil.SetControllerReference(js, desired, r.Scheme); err != nil {
+			if err := controllerutil.SetControllerReference(js, desiredMonitor, r.Scheme); err != nil {
 				return err
 			}
-			if err := r.Create(ctx, desired); err != nil {
-				return fmt.Errorf("create servicemonitor %s: %w", desired.GetName(), err)
+			if err := r.Create(ctx, desiredMonitor); err != nil {
+				return fmt.Errorf("create servicemonitor %s: %w", desiredMonitor.GetName(), err)
 			}
-			log.Info("Created ServiceMonitor", "name", desired.GetName())
+			log.Info("Created ServiceMonitor", "name", desiredMonitor.GetName())
 			continue
 		}
 		if err != nil {
 			return err
 		}
-		if equality.Semantic.DeepEqual(existing.Object["spec"], desired.Object["spec"]) &&
-			equality.Semantic.DeepEqual(existing.GetLabels(), desired.GetLabels()) {
+		if equality.Semantic.DeepEqual(existing.Object["spec"], desiredMonitor.Object["spec"]) &&
+			equality.Semantic.DeepEqual(existing.GetLabels(), desiredMonitor.GetLabels()) {
 			continue
 		}
-		existing.Object["spec"] = desired.Object["spec"]
-		existing.SetLabels(desired.GetLabels())
+		existing.Object["spec"] = desiredMonitor.Object["spec"]
+		existing.SetLabels(desiredMonitor.GetLabels())
 		if err := controllerutil.SetControllerReference(js, existing, r.Scheme); err != nil {
 			return err
 		}
 		if err := r.Update(ctx, existing); err != nil {
-			return fmt.Errorf("update servicemonitor %s: %w", desired.GetName(), err)
+			return fmt.Errorf("update servicemonitor %s: %w", desiredMonitor.GetName(), err)
 		}
-		log.Info("Updated ServiceMonitor", "name", desired.GetName())
+		log.Info("Updated ServiceMonitor", "name", desiredMonitor.GetName())
 	}
+
+	return r.pruneServiceMonitors(ctx, js, desiredNames)
+}
+
+// pruneServiceMonitors deletes ServiceMonitors owned by this Jumpstarter CR
+// that are no longer desired. Ownership is checked with the controller
+// reference, not labels, because serviceMonitorLabels may override the
+// operator's labels.
+func (r *JumpstarterReconciler) pruneServiceMonitors(ctx context.Context, js *operatorv1alpha1.Jumpstarter, desired map[string]struct{}) error {
+	log := logf.FromContext(ctx)
+
+	monitors := &unstructured.UnstructuredList{}
+	monitors.SetGroupVersionKind(schema.GroupVersionKind{
+		Group: serviceMonitorGroup, Version: serviceMonitorVersion, Kind: serviceMonitorKind + "List",
+	})
+	if err := r.List(ctx, monitors, client.InNamespace(js.Namespace)); err != nil {
+		return fmt.Errorf("list servicemonitors: %w", err)
+	}
+
+	for i := range monitors.Items {
+		monitor := &monitors.Items[i]
+		if _, ok := desired[monitor.GetName()]; ok {
+			continue
+		}
+		if !metav1.IsControlledBy(monitor, js) {
+			continue
+		}
+
+		monitor.SetGroupVersionKind(schema.GroupVersionKind{
+			Group: serviceMonitorGroup, Version: serviceMonitorVersion, Kind: serviceMonitorKind,
+		})
+		if err := r.Delete(ctx, monitor); err != nil && !apierrors.IsNotFound(err) && !apimeta.IsNoMatchError(err) {
+			return fmt.Errorf("delete stale servicemonitor %s: %w", monitor.GetName(), err)
+		}
+		log.Info("Deleted stale ServiceMonitor", "name", monitor.GetName())
+	}
+
 	return nil
 }
 
