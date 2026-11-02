@@ -171,7 +171,10 @@ class DeviceHubBridge:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.minimum_version = context.maximum_version = ssl.TLSVersion.TLSv1_2
         context.set_ciphers("PSK")
-        context.set_psk_server_callback(lambda _identity: key)
+        # jmp puts truststore's SSLContext in place of ssl.SSLContext. Up to 0.10.5 it
+        # keeps a PSK callback to itself instead of passing it to the context it wraps,
+        # and OpenSSL then refuses every PSK cipher suite: "no shared cipher".
+        getattr(context, "_ctx", context).set_psk_server_callback(lambda _identity: key)
         return context
 
     async def serve_tunnel(self, stream: ByteStream, reader: BufferedByteReceiveStream | None = None) -> None:

@@ -37,6 +37,40 @@ TUNNEL_RESPONSE = {
     "clientParameters": {"address": "fd00::2"},
     "serverRSDPort": 58783,
 }
+# The cipher suites a Mac offers for its tunnel, all TLS 1.2 PSK.
+MAC_TUNNEL_CIPHERS = "PSK-AES128-GCM-SHA256:PSK-AES256-GCM-SHA384:PSK-AES256-CBC-SHA384:PSK-AES128-CBC-SHA256"
+STDLIB_CONTEXT = ssl.SSLContext
+# The ssl module's own setters look SSLContext up by name, so a replacement must bypass them.
+STDLIB_SETTERS = super(STDLIB_CONTEXT, STDLIB_CONTEXT)
+
+
+class TruststoreContext(STDLIB_CONTEXT):
+    """Like truststore 0.10.5's SSLContext, which jmp puts in place of ssl.SSLContext."""
+
+    def __init__(self, protocol):
+        self._ctx = STDLIB_CONTEXT(protocol)
+
+    def set_ciphers(self, ciphers):
+        self._ctx.set_ciphers(ciphers)
+
+    def wrap_bio(self, *args, **kwargs):
+        return self._ctx.wrap_bio(*args, **kwargs)
+
+    @property
+    def minimum_version(self):
+        return self._ctx.minimum_version
+
+    @minimum_version.setter
+    def minimum_version(self, value):
+        STDLIB_SETTERS.minimum_version.__set__(self._ctx, value)  # ty: ignore[unresolved-attribute]
+
+    @property
+    def maximum_version(self):
+        return self._ctx.maximum_version
+
+    @maximum_version.setter
+    def maximum_version(self, value):
+        STDLIB_SETTERS.maximum_version.__set__(self._ctx, value)  # ty: ignore[unresolved-attribute]
 
 
 @pytest.fixture
@@ -208,18 +242,23 @@ async def test_served_keeps_caller_errors():
             raise KeyError("from the test")
 
 
+def _mac_context(key: bytes) -> ssl.SSLContext:
+    context = STDLIB_CONTEXT(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    context.minimum_version = context.maximum_version = ssl.TLSVersion.TLSv1_2
+    context.set_ciphers(MAC_TUNNEL_CIPHERS)
+    context.set_psk_client_callback(lambda _hint: (None, key))
+    return context
+
+
 @pytest.mark.skipif(not hasattr(ssl.SSLContext, "set_psk_client_callback"), reason="TLS-PSK needs Python 3.13")
 @pytest.mark.anyio
 async def test_tunnel_is_spliced_onto_the_device_tunnel():
     bridge = await _prepared()
     key = b"p" * 32
     bridge._tunnel_keys.append(key)
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    context.minimum_version = context.maximum_version = ssl.TLSVersion.TLSv1_2
-    context.set_ciphers("PSK")
-    context.set_psk_client_callback(lambda _hint: (None, key))
+    context = _mac_context(key)
 
     async with served(lambda stream: serve_connection(bridge, stream)) as stream:
         tunnel = await TLSStream.wrap(stream, server_side=False, ssl_context=context, standard_compatible=False)
@@ -229,6 +268,21 @@ async def test_tunnel_is_spliced_onto_the_device_tunnel():
         assert await tunnel.receive() == b"ipv6 packet"
     assert bridge.broker.services == [CORE_DEVICE_PROXY]
     assert bridge.broker.requests == [{"type": "clientHandshakeRequest", "mtu": 16000}]
+
+
+@pytest.mark.skipif(not hasattr(ssl.SSLContext, "set_psk_client_callback"), reason="TLS-PSK needs Python 3.13")
+@pytest.mark.anyio
+async def test_tunnel_keeps_its_psk_when_ssl_context_is_replaced():
+    bridge = await _prepared()
+    key = b"p" * 32
+    bridge._tunnel_keys.append(key)
+    context = _mac_context(key)
+
+    with patch.object(ssl, "SSLContext", TruststoreContext):
+        async with served(lambda stream: serve_connection(bridge, stream)) as stream:
+            tunnel = await TLSStream.wrap(stream, server_side=False, ssl_context=context, standard_compatible=False)
+            await tunnel.send(_cdtunnel({"type": "clientHandshakeRequest", "mtu": 16000}))
+            assert await _read_cdtunnel(BufferedByteReceiveStream(tunnel)) == TUNNEL_RESPONSE
 
 
 @pytest.mark.anyio
