@@ -222,7 +222,10 @@ func (s *lokiTestServer) queryRange(query string, start, end time.Time) ([]lokiE
 	if result.Status != "success" {
 		return nil, fmt.Errorf("Loki query status %q", result.Status)
 	}
+	return lokiEntriesFromResponse(result)
+}
 
+func lokiEntriesFromResponse(result lokiQueryResponse) ([]lokiEntry, error) {
 	var entries []lokiEntry
 	for _, stream := range result.Data.Result {
 		for _, value := range stream.Values {
