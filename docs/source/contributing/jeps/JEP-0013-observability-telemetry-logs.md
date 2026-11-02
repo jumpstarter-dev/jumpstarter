@@ -1710,6 +1710,10 @@ all subsequent phases have E2E coverage from the start.
 - Added a gated Kind test that deploys Alloy and Vector DaemonSets, a log-source
   Pod, and in-cluster Loki, then queries delivery through the Kubernetes service
   proxy: 2026-11-02
+- Promoted Promtail compatibility support to official Phase 5 support using the
+  final published Linux binary, Promtail `v3.6.0`; added CRI parsing, node
+  filtering, exact-label handling, real-Loki delivery, and Kind DaemonSet
+  coverage: 2026-11-02
 
 ## References
 
