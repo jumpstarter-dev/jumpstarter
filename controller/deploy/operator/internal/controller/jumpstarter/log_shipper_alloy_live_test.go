@@ -18,7 +18,6 @@ package jumpstarter
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -53,42 +52,22 @@ func (b *alloyLogBuffer) String() string {
 }
 
 // TestAlloyLiveLogDelivery exercises the shared Alloy process/write path with a
-// real Alloy process. A local file source feeds a known JSON line into the
-// generated loki.process/loki.write blocks; a loopback loki.source.api +
-// loki.echo receiver asserts the delivered stream labels and body.
+// real Alloy process and a real Loki. A local file source feeds known JSON
+// lines into the generated loki.process/loki.write blocks; Loki's query API
+// asserts the delivered stream labels, exporter omission, and JSON body.
 func TestAlloyLiveLogDelivery(t *testing.T) {
-	alloyBin := os.Getenv("ALLOY_BIN")
-	if alloyBin == "" {
-		var err error
-		alloyBin, err = exec.LookPath("alloy")
-		if err != nil {
-			t.Skip("set ALLOY_BIN or install alloy to run the live Alloy delivery test")
-		}
-	}
-	if _, err := os.Stat(alloyBin); err != nil {
-		t.Skipf("Alloy binary %s is not available: %v", alloyBin, err)
-	}
+	alloyBin := testBinary(t, "ALLOY_BIN", "alloy",
+		"set ALLOY_BIN or install alloy to run the live Alloy delivery test")
+	loki := startLokiTestServer(t)
 
-	receiverPort := freeLoopbackPort(t)
 	serverPort := freeLoopbackPort(t)
 	workDir := t.TempDir()
 	logPath := filepath.Join(workDir, "controller.log")
 	configPath := filepath.Join(workDir, "config.alloy")
 	storagePath := filepath.Join(workDir, "data")
-	receiverURL := fmt.Sprintf("http://127.0.0.1:%d/loki/api/v1/push", receiverPort)
-	readyURL := fmt.Sprintf("http://127.0.0.1:%d/ready", receiverPort)
+	readyURL := fmt.Sprintf("http://127.0.0.1:%d/ready", serverPort)
 
-	config := fmt.Sprintf(`loki.source.api "test" {
-	http {
-		listen_address = "127.0.0.1"
-		listen_port    = %d
-	}
-	forward_to = [loki.echo.test.receiver]
-}
-
-loki.echo "test" {}
-
-local.file_match "test" {
+	config := fmt.Sprintf(`local.file_match "test" {
 	path_targets = [{
 		__path__  = %q,
 		component = "controller",
@@ -102,7 +81,7 @@ loki.source.file "test" {
 	forward_to = [loki.process.jumpstarter.receiver]
 }
 
-%s`, receiverPort, logPath, fmt.Sprintf(alloyProcessWriteTemplate, receiverURL))
+%s`, logPath, fmt.Sprintf(alloyProcessWriteTemplate, loki.URL+"/loki/api/v1/push"))
 
 	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
 		t.Fatalf("write Alloy config: %v", err)
@@ -139,43 +118,49 @@ loki.source.file "test" {
 
 	waitForHTTP(t, readyURL, 15*time.Second, logs)
 
-	line := `{"ts":"2026-11-02T10:00:00Z","level":"info","msg":"lease acquired","component":"controller","exporter":"board-1","lease_id":"lease-123","client":"client-1","build_id":"build-1","error":"line1\nline2"}`
-	if err := os.WriteFile(logPath, []byte(line+"\n"), 0o600); err != nil {
+	run := fmt.Sprintf("alloy-live-%d", time.Now().UnixNano())
+	withMarker := run + "-with"
+	withoutMarker := run + "-without"
+	withExporter := fmt.Sprintf(`{"ts":"2026-11-02T10:00:00Z","level":"info","msg":"lease acquired","component":"controller","exporter":"board-1","lease_id":%q,"client":"client-1","build_id":"build-1","error":"line1\nline2"}`, withMarker)
+	withoutExporter := fmt.Sprintf(`{"ts":"2026-11-02T10:00:01Z","level":"info","msg":"lease released","component":"controller","lease_id":%q,"client":"client-2","build_id":"build-2"}`, withoutMarker)
+	if err := os.WriteFile(logPath, []byte(withExporter+"\n"+withoutExporter+"\n"), 0o600); err != nil {
 		t.Fatalf("write controller log: %v", err)
 	}
 
-	received := waitForLogLine(t, logs, "lease-123", 30*time.Second)
-	labels, entry := parseEchoedEntry(t, received)
+	entries := loki.waitForEntries(t, run, 2, 60*time.Second)
 
-	if len(labels) != 3 {
-		t.Fatalf("stream labels = %v, want exactly component/exporter/namespace", labels)
-	}
-	if labels["component"] != "controller" || labels["exporter"] != "board-1" || labels["namespace"] != "lab" {
-		t.Fatalf("unexpected stream labels: %v", labels)
-	}
-	for _, forbidden := range []string{"job", "pod", "container", "filename"} {
-		if _, ok := labels[forbidden]; ok {
-			t.Fatalf("stream labels contain forbidden label %q: %v", forbidden, labels)
-		}
+	withEntry := findLokiEntry(t, entries, withMarker)
+	requireLokiLabels(t, withEntry, map[string]string{
+		"component": "controller",
+		"exporter":  "board-1",
+		"namespace": "lab",
+	})
+	withoutEntry := findLokiEntry(t, entries, withoutMarker)
+	requireLokiLabels(t, withoutEntry, map[string]string{
+		"component": "controller",
+		"namespace": "lab",
+	})
+	if _, ok := withoutEntry.Labels["exporter"]; ok {
+		t.Fatalf("exporter-less stream must not contain exporter label: %v", withoutEntry.Labels)
 	}
 
-	var body map[string]any
-	if err := json.Unmarshal([]byte(entry), &body); err != nil {
-		t.Fatalf("parse delivered JSON body: %v\nentry: %s", err, entry)
-	}
+	withBody := parseLokiJSONBody(t, withEntry)
 	for key, want := range map[string]string{
-		"lease_id": "lease-123",
+		"lease_id": withMarker,
 		"client":   "client-1",
 		"build_id": "build-1",
 		"error":    "line1\nline2",
 	} {
-		if got, ok := body[key].(string); !ok || got != want {
-			t.Fatalf("body[%q] = %v, want %q; body: %v", key, body[key], want, body)
+		if got, ok := withBody[key].(string); !ok || got != want {
+			t.Fatalf("with-exporter body[%q] = %v, want %q; body: %v", key, withBody[key], want, withBody)
 		}
 	}
-
-	if got := strings.Count(logs.String(), "lease-123"); got != 1 {
-		t.Fatalf("expected exactly one delivered entry, found %d occurrences in Alloy output", got)
+	withoutBody := parseLokiJSONBody(t, withoutEntry)
+	if got := withoutBody["lease_id"]; got != withoutMarker {
+		t.Fatalf("without-exporter body lease_id = %v, want %s", got, withoutMarker)
+	}
+	if got := withoutBody["client"]; got != "client-2" {
+		t.Fatalf("without-exporter body client = %v, want client-2", got)
 	}
 }
 
@@ -191,9 +176,10 @@ func freeLoopbackPort(t *testing.T) int {
 
 func waitForHTTP(t *testing.T, url string, timeout time.Duration, logs *alloyLogBuffer) {
 	t.Helper()
+	client := &http.Client{Timeout: 2 * time.Second}
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(url) //nolint:gosec // test-controlled loopback URL
+		resp, err := client.Get(url) //nolint:gosec // test-controlled loopback URL
 		if err == nil {
 			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {

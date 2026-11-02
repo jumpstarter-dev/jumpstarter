@@ -57,5 +57,16 @@ jobs:
           echo "VECTOR_BIN=/tmp/vector/vector-x86_64-unknown-linux-musl/bin/vector" >> "$GITHUB_ENV"
           /tmp/vector/vector-x86_64-unknown-linux-musl/bin/vector --version
 
+      - name: Install Loki v3.7.9
+        run: |
+          curl -fsSL -o /tmp/loki-linux-amd64.zip \
+            https://github.com/grafana/loki/releases/download/v3.7.9/loki-linux-amd64.zip
+          echo "17a5fae28ce733b3560c27c76620920b169bd2aea9473947b733b511f92e81dd  /tmp/loki-linux-amd64.zip" | sha256sum -c -
+          mkdir -p /tmp/loki
+          unzip -q /tmp/loki-linux-amd64.zip -d /tmp/loki
+          chmod +x /tmp/loki/loki-linux-amd64
+          echo "LOKI_BIN=/tmp/loki/loki-linux-amd64" >> "$GITHUB_ENV"
+          /tmp/loki/loki-linux-amd64 --version
+
       - name: Run operator tests
         run: make -C controller/deploy/operator test
