@@ -1702,6 +1702,7 @@ all subsequent phases have E2E coverage from the start.
 - Grafana Alloy log-shipper rendering validated with `alloy validate` and
   `alloy fmt --test` against Grafana Alloy commit
   `43c40e25565d1fc0062b06c282c130c577559597`: 2026-10-28
+- Grafana Alloy pin moved to release `v1.21.3` (revision `f2108cd`): 2026-11-02
 
 ## References
 

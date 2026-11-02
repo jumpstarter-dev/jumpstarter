@@ -446,7 +446,7 @@ func TestBuildLogShipperConfigMap(t *testing.T) {
 	}
 }
 
-func TestAlloyConfigMapReadmeMentionsValidatedCommit(t *testing.T) {
+func TestAlloyConfigMapReadmeMentionsValidatedVersion(t *testing.T) {
 	js := testJumpstarter()
 	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
 	js.Spec.Telemetry.Logging.Shipper.Type = shipperTypeAlloy
@@ -457,7 +457,7 @@ func TestAlloyConfigMapReadmeMentionsValidatedCommit(t *testing.T) {
 	}
 	readme := cm.Data["README.md"]
 	for _, want := range []string{
-		alloyValidatedCommit,
+		alloyValidatedVersion,
 		"alloy validate",
 		"alloy fmt --test",
 		"single-replica Deployment",
