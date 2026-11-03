@@ -79,7 +79,7 @@ var _ = Describe("createTelemetryDeployment JEP-0013 Phase 3", func() {
 	It("sets GRPC_TELEMETRY_ENDPOINT to the in-cluster telemetry Service", func() {
 		js := phase3TelemetryJS("jumpstarter-lab")
 		c := createTelemetryDeployment(js, "", telemetryLokiPod{}).Spec.Template.Spec.Containers[0]
-		Expect(envValue(c, "GRPC_TELEMETRY_ENDPOINT")).To(Equal(telemetryEndpointFor(js.Namespace)))
+		Expect(envValue(c, "GRPC_TELEMETRY_ENDPOINT")).To(Equal(telemetryEndpointFor(js)))
 	})
 
 	It("exposes container port metrics on 8080", func() {
@@ -133,7 +133,7 @@ var _ = Describe("Telemetry ConfigMap certificate (JEP-0013 TLS)", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg.Telemetry).NotTo(BeNil())
 		Expect(cfg.Telemetry.Enabled).To(BeTrue())
-		Expect(cfg.Telemetry.Endpoint).To(Equal(telemetryEndpointFor(crNamespace)))
+		Expect(cfg.Telemetry.Endpoint).To(Equal(telemetryEndpointFor(js)))
 		Expect(cfg.Telemetry.Certificate).To(Equal(testPEM))
 	})
 

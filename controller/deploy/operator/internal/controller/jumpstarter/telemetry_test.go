@@ -414,7 +414,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		configData := getConfigData()
 		Expect(configData).To(ContainSubstring("telemetry"))
 		Expect(configData).To(ContainSubstring("enabled: true"))
-		Expect(configData).To(ContainSubstring(telemetryServiceName))
+		Expect(configData).To(ContainSubstring("telemetry.example.com:443"))
 		Expect(configData).To(ContainSubstring("warning"))
 	})
 
@@ -543,7 +543,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			envNames[env.Name] = env.Value
 		}
 		Expect(envNames).To(HaveKey("CONTROLLER_KEY"))
-		Expect(envNames).To(HaveKeyWithValue("GRPC_TELEMETRY_ENDPOINT", telemetryEndpointFor("default")))
+		Expect(envNames).To(HaveKeyWithValue("GRPC_TELEMETRY_ENDPOINT", telemetryEndpointFor(js)))
 		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_CERT_PEM", "/tls/tls.crt"))
 		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_KEY_PEM", "/tls/tls.key"))
 
@@ -591,7 +591,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			envNames[env.Name] = env.Value
 		}
 		Expect(envNames).To(HaveKey("CONTROLLER_KEY"))
-		Expect(envNames).To(HaveKeyWithValue("GRPC_TELEMETRY_ENDPOINT", telemetryEndpointFor("default")))
+		Expect(envNames).To(HaveKeyWithValue("GRPC_TELEMETRY_ENDPOINT", telemetryEndpointFor(js)))
 		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_CERT_PEM", "/tls/tls.crt"))
 		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_KEY_PEM", "/tls/tls.key"))
 
@@ -635,7 +635,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 				envNames[env.Name] = env.Value
 			}
 		}
-		Expect(envNames).To(HaveKeyWithValue("GRPC_TELEMETRY_ENDPOINT", telemetryEndpointFor("default")))
+		Expect(envNames).To(HaveKeyWithValue("GRPC_TELEMETRY_ENDPOINT", telemetryEndpointFor(js)))
 		Expect(container.Env[0].Name).To(Equal("CONTROLLER_KEY"))
 		Expect(envNames).NotTo(HaveKey("EXTERNAL_CERT_PEM"))
 
@@ -800,7 +800,9 @@ var _ = Describe("Telemetry Lifecycle", func() {
 
 var _ = Describe("telemetryEndpointFor", func() {
 	It("returns the correct in-cluster endpoint format", func() {
-		endpoint := telemetryEndpointFor("my-namespace")
+		endpoint := telemetryEndpointFor(&operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "my-namespace"},
+		})
 		Expect(endpoint).To(Equal(fmt.Sprintf("%s.my-namespace.svc:%d", telemetryServiceName, telemetryPort)))
 	})
 })

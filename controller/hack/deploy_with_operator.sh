@@ -134,6 +134,13 @@ END
             class: "nginx"
 END
 )
+  TELEMETRY_ENDPOINT_CONFIG=$(cat <<-END
+        - address: ${TELEMETRY_ENDPOINT}
+          ingress:
+            enabled: true
+            class: "nginx"
+END
+)
 else
   # For kind, NodePorts are mapped to host ports via extraPortMappings (30010->8082, etc.)
   # For k3s, NodePorts are directly accessible on the host
@@ -158,6 +165,13 @@ END
           nodeport:
             enabled: true
             port: 30014
+END
+)
+  TELEMETRY_ENDPOINT_CONFIG=$(cat <<-END
+        - address: ${TELEMETRY_ENDPOINT}
+          nodeport:
+            enabled: true
+            port: 30015
 END
 )
 fi
@@ -218,7 +232,10 @@ if [ "${OPERATOR_ENABLE_TELEMETRY:-}" = "true" ]; then
   TELEMETRY_CONFIG="  telemetry:
     enabled: true
     image: ${TELEMETRY_IMG}
-    imagePullPolicy: IfNotPresent"
+    imagePullPolicy: IfNotPresent
+    grpc:
+      endpoints:
+${TELEMETRY_ENDPOINT_CONFIG}"
 fi
 
 cat <<EOF > "${TMPFILE}"
@@ -294,4 +311,3 @@ check_grpc_endpoints
 
 # Print success banner
 print_deployment_success
-

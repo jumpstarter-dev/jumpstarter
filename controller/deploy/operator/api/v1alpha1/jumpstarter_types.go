@@ -285,12 +285,12 @@ type DeprecatedLabelsConfig struct {
 }
 
 // TelemetryConfig defines configuration for the telemetry service deployment.
-// When enabled, the operator creates a Deployment and ClusterIP Service for
-// jumpstarter-telemetry, which receives structured log entries from exporters.
+// When enabled, the operator creates a Deployment, an internal scrape Service,
+// and configured gRPC endpoints for exporters and clients.
 type TelemetryConfig struct {
 	// Enable the telemetry service deployment.
-	// When enabled, the operator deploys a jumpstarter-telemetry pod and a ClusterIP
-	// Service, and configures the controller to advertise the endpoint to exporters.
+	// When enabled, the operator deploys telemetry, its internal scrape Service, and
+	// configured gRPC endpoints advertised to exporters and clients by the controller.
 	// +kubebuilder:default=false
 	Enabled bool `json:"enabled,omitempty"`
 
@@ -324,8 +324,7 @@ type TelemetryConfig struct {
 	// Logging configuration for the telemetry log ingestion path.
 	Logging TelemetryLoggingConfig `json:"logging,omitempty"`
 
-	// gRPC configuration for the telemetry service.
-	// Use this to configure TLS when not using cert-manager.
+	// gRPC endpoint exposure and TLS configuration for the telemetry service.
 	GRPC TelemetryGRPCConfig `json:"grpc,omitempty"`
 
 	// Metrics configures reverse-scrape fan-out and Prometheus exposition.
@@ -372,15 +371,20 @@ type TelemetryBackpressureConfig struct {
 	QueueDepth int32 `json:"queueDepth,omitempty"`
 }
 
-// TelemetryGRPCConfig defines gRPC configuration for the telemetry service.
-// This is a simplified version of GRPCConfig since telemetry is internal-only
-// (ClusterIP) and doesn't need external endpoints or keepalive settings.
+// TelemetryGRPCConfig defines TLS and endpoint configuration for telemetry ingestion.
 type TelemetryGRPCConfig struct {
 	// TLS configuration for secure gRPC communication with the telemetry service.
 	// When spec.certManager.enabled is true, this is ignored and certificates are
 	// automatically managed by cert-manager.
 	// When spec.certManager.enabled is false, you can provide your own TLS secret here.
 	TLS TLSConfig `json:"tls,omitempty"`
+
+	// Endpoints expose telemetry to exporters and clients using the same networking
+	// methods as the controller. The first address is advertised by GetServiceEndpoints;
+	// a missing port defaults to 443. When omitted, telemetry.<baseDomain> is generated.
+	// Without a baseDomain or endpoints, the internal ClusterIP address is advertised.
+	// +kubebuilder:validation:XValidation:rule="self.all(e, has(e.address) && e.address != '')",message="telemetry endpoints require an address"
+	Endpoints []Endpoint `json:"endpoints,omitempty"`
 }
 
 // TelemetryMetricsConfig configures telemetry /metrics reverse-scrape behavior.

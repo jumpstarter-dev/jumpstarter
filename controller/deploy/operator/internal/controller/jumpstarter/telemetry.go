@@ -23,8 +23,10 @@ import (
 	"time"
 
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
+	routev1 "github.com/openshift/api/route/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -35,6 +37,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/internal/controller/jumpstarter/endpoints"
 )
 
 const (
@@ -112,17 +115,74 @@ func (r *JumpstarterReconciler) reconcileTelemetryServiceAccount(ctx context.Con
 	return nil
 }
 
-// reconcileTelemetryServiceStage reconciles only the telemetry ClusterIP Service.
+// reconcileTelemetryServiceStage reconciles internal scraping and gRPC exposure.
 // It is called from the Services/networking stage of the reconcile loop.
 func (r *JumpstarterReconciler) reconcileTelemetryServiceStage(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
 	if jumpstarter.Spec.Telemetry == nil || !jumpstarter.Spec.Telemetry.Enabled {
-		return r.cleanupTelemetryService(ctx, jumpstarter)
+		if err := r.cleanupTelemetryService(ctx, jumpstarter); err != nil {
+			return err
+		}
+		return r.cleanupTelemetryEndpoints(ctx, jumpstarter, nil)
 	}
 
 	if err := r.reconcileTelemetryService(ctx, jumpstarter); err != nil {
 		return fmt.Errorf("failed to reconcile telemetry service: %w", err)
 	}
 
+	wanted := make(map[string]bool)
+	for i, endpoint := range jumpstarter.Spec.Telemetry.GRPC.Endpoints {
+		name := fmt.Sprintf("%s-grpc-%d", telemetryServiceName, i)
+		port := corev1.ServicePort{
+			Name:       name,
+			Port:       telemetryPort,
+			TargetPort: intstr.FromInt(telemetryPort),
+			Protocol:   corev1.ProtocolTCP,
+		}
+		labels := telemetryLabels(jumpstarter)
+		if err := r.EndpointReconciler.ReconcileGRPCEndpoint(ctx, jumpstarter, &endpoint, port, labels, labels); err != nil {
+			return err
+		}
+		for _, suffix := range endpoints.ServiceSuffixes(&endpoint) {
+			wanted[name+suffix] = true
+		}
+		if endpoint.Ingress != nil && endpoint.Ingress.Enabled {
+			wanted[name+"-ing"] = true
+		}
+		if endpoint.Route != nil && endpoint.Route.Enabled {
+			wanted[name+"-route"] = true
+		}
+	}
+	return r.cleanupTelemetryEndpoints(ctx, jumpstarter, wanted)
+}
+
+// cleanupTelemetryEndpoints removes exposure resources no longer requested by the CR.
+// Match names and ownership rather than labels, which endpoint configuration can override.
+func (r *JumpstarterReconciler) cleanupTelemetryEndpoints(ctx context.Context, js *operatorv1alpha1.Jumpstarter, wanted map[string]bool) error {
+	lists := []client.ObjectList{&corev1.ServiceList{}}
+	if r.EndpointReconciler.IngressAvailable {
+		lists = append(lists, &networkingv1.IngressList{})
+	}
+	if r.EndpointReconciler.RouteAvailable {
+		lists = append(lists, &routev1.RouteList{})
+	}
+	for _, list := range lists {
+		if err := r.List(ctx, list, client.InNamespace(js.Namespace)); err != nil {
+			return err
+		}
+		items, err := meta.ExtractList(list)
+		if err != nil {
+			return err
+		}
+		for _, item := range items {
+			obj := item.(client.Object)
+			if strings.HasPrefix(obj.GetName(), telemetryServiceName+"-grpc-") &&
+				metav1.IsControlledBy(obj, js) && !wanted[obj.GetName()] {
+				if err := r.Delete(ctx, obj); err != nil && !errors.IsNotFound(err) {
+					return err
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -503,7 +563,7 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSec
 			},
 		},
 		// Advertised endpoint for self-signed SAN generation (must match controller ConfigMap).
-		{Name: "GRPC_TELEMETRY_ENDPOINT", Value: telemetryEndpointFor(jumpstarter.Namespace)},
+		{Name: "GRPC_TELEMETRY_ENDPOINT", Value: telemetryEndpointFor(jumpstarter)},
 	}
 
 	var volumeMounts []corev1.VolumeMount
@@ -798,9 +858,13 @@ func (r *JumpstarterReconciler) telemetryCAFromCertSecret(ctx context.Context, j
 	return "", nil
 }
 
-// telemetryEndpointFor returns the in-cluster gRPC endpoint for the telemetry service.
-func telemetryEndpointFor(namespace string) string {
-	return fmt.Sprintf("%s.%s.svc:%d", telemetryServiceName, namespace, telemetryPort)
+// telemetryEndpointFor returns the primary advertised endpoint, defaulting to TLS port 443.
+// Keep the legacy in-cluster address when neither endpoints nor a baseDomain are configured.
+func telemetryEndpointFor(js *operatorv1alpha1.Jumpstarter) string {
+	if js.Spec.Telemetry != nil && len(js.Spec.Telemetry.GRPC.Endpoints) > 0 {
+		return ensurePort(js.Spec.Telemetry.GRPC.Endpoints[0].Address, "443")
+	}
+	return fmt.Sprintf("%s.%s.svc:%d", telemetryServiceName, js.Namespace, telemetryPort)
 }
 
 // telemetryLabels returns the standard labels for telemetry resources.

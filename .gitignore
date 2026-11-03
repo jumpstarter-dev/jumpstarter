@@ -40,6 +40,7 @@ docs/source/reference/crds/*.md
 !docs/source/reference/crds/index.md
 
 # Local tooling
+.scratch/
 .specify/
 .envrc
 specs/

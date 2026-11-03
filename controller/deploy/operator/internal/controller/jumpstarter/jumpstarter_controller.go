@@ -266,13 +266,13 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile Services (controller, router, login endpoints, and telemetry ClusterIP)
+	// Reconcile controller, router, and login networking
 	if err := r.reconcileServices(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile Services")
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile Telemetry ClusterIP Service (part of the networking stage)
+	// Reconcile telemetry's internal scrape Service and gRPC endpoint exposure
 	if err := r.reconcileTelemetryServiceStage(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile Telemetry service")
 		return ctrl.Result{}, err
@@ -1308,7 +1308,7 @@ func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *op
 		if telemetryReplicas(t) > 0 {
 			telemetryCfg := &config.Telemetry{
 				Enabled:  true,
-				Endpoint: telemetryEndpointFor(jumpstarter.Namespace),
+				Endpoint: telemetryEndpointFor(jumpstarter),
 			}
 			if t.Logging.Filter.MinSeverity != "" {
 				telemetryCfg.Logging.Filter.MinSeverity = t.Logging.Filter.MinSeverity
@@ -1504,7 +1504,7 @@ func ensurePort(address, defaultPort string) string {
 
 	// No port found, need to add one
 	// net.JoinHostPort handles IPv6 addresses correctly (adds brackets if needed)
-	return net.JoinHostPort(address, defaultPort)
+	return net.JoinHostPort(strings.Trim(address, "[]"), defaultPort)
 }
 
 // routerServiceNamePrefix is the prefix of every service name
@@ -1765,7 +1765,7 @@ func (r *JumpstarterReconciler) cleanupExcessRouterServices(ctx context.Context,
 		for endpointIdx := range jumpstarter.Spec.Routers.GRPC.Endpoints {
 			serviceName := r.buildServiceNameForReplicaEndpoint(jumpstarter, replicaIdx, endpointIdx)
 			endpoint := &jumpstarter.Spec.Routers.GRPC.Endpoints[endpointIdx]
-			for _, suffix := range endpoints.RouterServiceSuffixes(endpoint) {
+			for _, suffix := range endpoints.ServiceSuffixes(endpoint) {
 				wanted[serviceName+suffix] = struct{}{}
 			}
 		}
