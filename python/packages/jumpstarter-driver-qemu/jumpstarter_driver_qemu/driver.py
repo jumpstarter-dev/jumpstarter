@@ -413,9 +413,12 @@ class QemuPower(PowerInterface, Driver):
 
     @export
     def off(self) -> None:
+        self._power_off(warn_if_off=True)
+
+    def _power_off(self, *, warn_if_off: bool) -> None:
         process = getattr(self, "_process", None)
         if process is None or process.poll() is not None:
-            self.logger.warning("already powered off, ignoring request")
+            self.logger.log(logging.WARNING if warn_if_off else logging.DEBUG, "already powered off, ignoring request")
         else:
             process.terminate()
             try:
@@ -434,7 +437,8 @@ class QemuPower(PowerInterface, Driver):
         raise NotImplementedError
 
     def close(self):
-        self.off()
+        # Teardown may reach this shared driver through both QEMU and its console.
+        self._power_off(warn_if_off=False)
 
 
 class Hostfwd(BaseModel):
