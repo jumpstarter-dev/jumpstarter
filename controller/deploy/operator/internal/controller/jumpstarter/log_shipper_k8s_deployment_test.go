@@ -362,6 +362,7 @@ func createLogSourcePod(t *testing.T, ctx context.Context, clientset *kubernetes
 			Namespace:    namespace,
 			Labels: map[string]string{
 				"jumpstarter.dev/log-scrape": "true",
+				"component":                  "controller",
 			},
 		},
 		Spec: corev1.PodSpec{

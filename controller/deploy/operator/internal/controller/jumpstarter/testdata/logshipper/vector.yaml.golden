@@ -13,10 +13,23 @@ transforms:
     type: remap
     inputs: [jumpstarter_pods]
     source: |
+      .component = "unknown"
+      if exists(.kubernetes.pod_labels.component) &&
+         is_string(.kubernetes.pod_labels.component) &&
+         .kubernetes.pod_labels.component != "" {
+        .component = .kubernetes.pod_labels.component
+      }
+
       parsed, err = parse_json(.message)
-      if err == null {
-        .component = parsed.component
-        if exists(parsed.exporter) && !is_null(parsed.exporter) && parsed.exporter != "" {
+      if err == null && is_object(parsed) {
+        if exists(parsed.component) &&
+           is_string(parsed.component) &&
+           parsed.component != "" {
+          .component = parsed.component
+        }
+        if exists(parsed.exporter) &&
+           is_string(parsed.exporter) &&
+           parsed.exporter != "" {
           .exporter = parsed.exporter
         } else {
           del(.exporter)

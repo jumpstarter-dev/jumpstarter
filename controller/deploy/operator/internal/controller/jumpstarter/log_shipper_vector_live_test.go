@@ -29,8 +29,8 @@ import (
 
 // TestVectorLiveLogDelivery exercises the shared Vector remap/filter/sink path
 // with a real Vector process and a real Loki. A file source feeds known JSON
-// lines into the production processing blocks; Loki's query API asserts labels,
-// exporter omission, and original JSON body preservation.
+// and non-JSON lines into the production processing blocks; Loki's query API
+// asserts labels, exporter omission, component fallback, and body preservation.
 func TestVectorLiveLogDelivery(t *testing.T) {
 	vectorBin := vectorTestBinary(t)
 	loki := startLokiTestServer(t)
@@ -57,6 +57,7 @@ transforms:
     inputs: [jumpstarter_file]
     source: |
       .kubernetes.pod_namespace = "lab"
+      .kubernetes.pod_labels.component = "controller"
 
 %s%s`, dataDir, logPath, vectorProcessBlocks, fmt.Sprintf(vectorSinksTemplate, loki.URL, "/loki/api/v1/push", loki.URL, "/loki/api/v1/push"))
 
@@ -70,14 +71,26 @@ transforms:
 	run := fmt.Sprintf("vector-live-%d", time.Now().UnixNano())
 	withMarker := run + "-with"
 	withoutMarker := run + "-without"
+	nonJSONMarker := run + "-nonjson"
+	missingMarker := run + "-missing"
+	nonStringMarker := run + "-nonstring"
+	emptyMarker := run + "-empty"
 	withExporter := fmt.Sprintf(`{"ts":"2026-11-02T10:00:00Z","level":"info","msg":"with exporter","component":"controller","exporter":"board-1","lease_id":%q,"client":"client-1","build_id":"build-1","error":"line1\nline2"}`, withMarker)
 	withoutExporter := fmt.Sprintf(`{"ts":"2026-11-02T10:00:01Z","level":"info","msg":"without exporter","component":"controller","lease_id":%q,"client":"client-2","build_id":"build-2"}`, withoutMarker)
-	if err := os.WriteFile(logPath, []byte(withExporter+"\n"+withoutExporter+"\n"), 0o600); err != nil {
+	nonJSON := fmt.Sprintf("I1103 19:10:01.000000       1 vector-live.go:1] %s non-JSON line", nonJSONMarker)
+	missingComponent := fmt.Sprintf(`{"ts":"2026-11-02T10:00:02Z","level":"info","msg":"missing component","lease_id":%q}`, missingMarker)
+	nonStringComponent := fmt.Sprintf(`{"ts":"2026-11-02T10:00:03Z","level":"info","msg":"non-string component","component":123,"lease_id":%q}`, nonStringMarker)
+	emptyComponent := fmt.Sprintf(`{"ts":"2026-11-02T10:00:04Z","level":"info","msg":"empty component","component":"","exporter":"board-empty","lease_id":%q}`, emptyMarker)
+	logLines := []string{withExporter, withoutExporter, nonJSON, missingComponent, nonStringComponent, emptyComponent}
+	if err := os.WriteFile(logPath, []byte(strings.Join(logLines, "\n")+"\n"), 0o600); err != nil {
 		t.Fatalf("write controller log: %v", err)
 	}
 
-	startVectorForTest(t, vectorBin, configPath)
-	entries := loki.waitForEntries(t, run, 2, 60*time.Second)
+	vectorLogs := startVectorForTest(t, vectorBin, configPath)
+	entries := loki.waitForEntries(t, run, len(logLines), 60*time.Second)
+	if logs := vectorLogs.String(); strings.Contains(logs, "template_failed") || strings.Contains(logs, "Missing fields") {
+		t.Fatalf("Vector reported a label template failure:\n%s", logs)
+	}
 
 	withEntry := findLokiEntry(t, entries, withMarker)
 	requireLokiLabels(t, withEntry, map[string]string{
@@ -111,6 +124,46 @@ transforms:
 	}
 	if got := withoutBody["client"]; got != "client-2" {
 		t.Fatalf("without-exporter body client = %v, want client-2", got)
+	}
+
+	nonJSONEntry := findLokiEntry(t, entries, nonJSONMarker)
+	requireLokiLabels(t, nonJSONEntry, map[string]string{
+		"component": "controller",
+		"namespace": "lab",
+	})
+	if nonJSONEntry.Line != nonJSON {
+		t.Fatalf("non-JSON body = %q, want unchanged %q", nonJSONEntry.Line, nonJSON)
+	}
+
+	missingEntry := findLokiEntry(t, entries, missingMarker)
+	requireLokiLabels(t, missingEntry, map[string]string{
+		"component": "controller",
+		"namespace": "lab",
+	})
+	missingBody := parseLokiJSONBody(t, missingEntry)
+	if got := missingBody["lease_id"]; got != missingMarker {
+		t.Fatalf("missing-component body lease_id = %v, want %s", got, missingMarker)
+	}
+
+	nonStringEntry := findLokiEntry(t, entries, nonStringMarker)
+	requireLokiLabels(t, nonStringEntry, map[string]string{
+		"component": "controller",
+		"namespace": "lab",
+	})
+	nonStringBody := parseLokiJSONBody(t, nonStringEntry)
+	if got := nonStringBody["component"]; got != float64(123) {
+		t.Fatalf("non-string-component body component = %v, want 123", got)
+	}
+
+	emptyEntry := findLokiEntry(t, entries, emptyMarker)
+	requireLokiLabels(t, emptyEntry, map[string]string{
+		"component": "controller",
+		"exporter":  "board-empty",
+		"namespace": "lab",
+	})
+	emptyBody := parseLokiJSONBody(t, emptyEntry)
+	if got := emptyBody["lease_id"]; got != emptyMarker {
+		t.Fatalf("empty-component body lease_id = %v, want %s", got, emptyMarker)
 	}
 }
 
