@@ -5,6 +5,7 @@ import os
 import platform
 import sys
 import tarfile
+from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
 from subprocess import TimeoutExpired
 from tempfile import TemporaryDirectory
@@ -13,17 +14,309 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import requests
+from anyio import BrokenResourceError, ClosedResourceError, EndOfStream, Event, fail_after, move_on_after, sleep
+from click.testing import CliRunner
+from jumpstarter_driver_composite.driver import Composite, Proxy
+from jumpstarter_driver_pyserial.client import PySerialClient
+from jumpstarter_driver_pyserial.console import Console
+from jumpstarter_driver_pyserial.driver import PySerial
+from qemu.qmp.protocol import Runstate
 
-from jumpstarter_driver_qemu.driver import Qemu, QemuFlasher, QemuPower
+from jumpstarter_driver_qemu.driver import Qemu, QemuConsole, QemuFlasher, QemuPower, _QemuSerialStream
 
 from jumpstarter.common.oci import OciCredentials
 from jumpstarter.common.utils import serve
+from jumpstarter.streams.fanout import ReadOnlyStreamError
 
 
 @pytest.fixture
 def anyio_backend():
     """Use only asyncio backend for anyio tests."""
     return "asyncio"
+
+
+@pytest.fixture
+def qemu_serial(monkeypatch):
+    """Exercise real serial PTYs without launching a VM or downloading an image."""
+    driver = Qemu()
+    power = driver.children["power"]
+    console = driver.children["console"]
+    assert isinstance(power, QemuPower)
+    assert isinstance(console, QemuConsole)
+    ptys = []
+
+    def launch(*_args, **_kwargs):
+        master, slave = os.openpty()
+        os.set_blocking(master, False)
+        ptys.append((master, slave))
+        process = MagicMock()
+        process.poll.return_value = None
+
+        def terminate():
+            os.close(master)
+            os.close(slave)
+            ptys.remove((master, slave))
+            process.poll.return_value = 0
+
+        process.terminate.side_effect = terminate
+        process.kill.side_effect = terminate
+        return process
+
+    async def execute(command):
+        if command == "query-chardev":
+            return [{"label": "serial0", "filename": f"pty:{os.ttyname(ptys[-1][1])}"}]
+        return {}
+
+    qmp = MagicMock()
+    qmp.runstate = Runstate.RUNNING
+    qmp.execute = AsyncMock(side_effect=execute)
+    qmp.disconnect = AsyncMock()
+    monkeypatch.setattr("jumpstarter_driver_qemu.driver.Popen", launch)
+    monkeypatch.setattr("jumpstarter_driver_qemu.driver.QMPClient", lambda _name: qmp)
+    try:
+        yield driver, power, console, ptys
+    finally:
+        power.off()
+        for master, slave in ptys:
+            os.close(master)
+            os.close(slave)
+        driver._tmp_dir.cleanup()
+
+
+async def wait_serial_open(console):
+    with fail_after(2):
+        while console._transport is None:
+            await sleep(0.01)
+
+
+async def read_pty(master):
+    with fail_after(2):
+        while True:
+            try:
+                return os.read(master, 1024)
+            except BlockingIOError:
+                await sleep(0.01)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("method", ["connect", "observe"])
+@pytest.mark.parametrize("process_state", ["absent", "exited", "stopped"])
+async def test_off_console_is_open_silent_and_does_not_touch_pty(qemu_serial, method, process_state):
+    _driver, power, console, _ptys = qemu_serial
+    if process_state != "absent":
+        await power.on()
+        if process_state == "stopped":
+            power.off()
+        else:
+            power._process.poll.return_value = 1
+    fanout = console._get_fanout()
+    try:
+        with patch.object(PySerial, "_open_source") as physical_open, fail_after(2):
+            async with getattr(console, method)() as stream:
+                if method == "connect":
+                    await stream.send(b"discard while off")
+                else:
+                    with pytest.raises(ReadOnlyStreamError):
+                        await stream.send(b"read-only")
+                with move_on_after(0.15) as idle:
+                    await stream.receive()
+                    raise AssertionError("An unpowered serial line must stay silent")
+                assert idle.cancelled_caught
+                assert fanout.status()["reader_running"]
+                physical_open.assert_not_called()
+    finally:
+        await fanout.close()
+
+
+@pytest.mark.anyio
+async def test_console_does_not_open_stale_pty_during_startup(qemu_serial, monkeypatch):
+    driver, power, console, _ptys = qemu_serial
+    fanout = console._get_fanout()
+    preparing = Event()
+    finish_preparation = Event()
+    opened = []
+    original_open = PySerial._open_source
+    Path(driver._pty).symlink_to("/dev/null")
+    driver.validate_partition("root").touch()
+
+    async def image_info(*_args, **_kwargs):
+        preparing.set()
+        await finish_preparation.wait()
+        return SimpleNamespace(check_returncode=lambda: None, stdout=b'{"format": "raw", "virtual-size": 0}')
+
+    @asynccontextmanager
+    async def physical_open(self):
+        opened.append(self.url)
+        async with original_open(self) as stream:
+            yield stream
+
+    monkeypatch.setattr("jumpstarter_driver_qemu.driver.run_process", image_info)
+    monkeypatch.setattr(PySerial, "_open_source", physical_open)
+    startup = asyncio.create_task(power.on())
+    try:
+        with fail_after(2):
+            await preparing.wait()
+            async with console.connect() as stream:
+                await stream.send(b"discard during startup")
+                await sleep(0.15)
+                assert not opened
+                assert power._serial_process is None
+                finish_preparation.set()
+                await startup
+                await wait_serial_open(console)
+                assert opened == [driver._pty]
+                assert power._serial_process is power._process
+    finally:
+        startup.cancel()
+        await asyncio.gather(startup, return_exceptions=True)
+        await fanout.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("error_type", [RuntimeError, PermissionError, BrokenResourceError, EndOfStream])
+async def test_live_vm_serial_failure_stays_visible(qemu_serial, error_type):
+    _driver, power, _console, _ptys = qemu_serial
+    await power.on()
+    error = error_type("unexpected serial failure")
+
+    @asynccontextmanager
+    async def factory():
+        raise error
+        yield  # pragma: no cover
+
+    async with _QemuSerialStream(power=power, source_factory=factory) as stream:
+        with pytest.raises(error_type) as exc_info:
+            await stream.receive()
+        assert exc_info.value is error
+        await stream.send_eof()
+    with pytest.raises(ClosedResourceError):
+        await stream.send(b"closed")
+    with pytest.raises(ClosedResourceError):
+        await stream.receive()
+
+
+@pytest.mark.anyio
+async def test_power_change_during_port_open_discards_stale_source(qemu_serial):
+    _driver, power, _console, _ptys = qemu_serial
+    await power.on()
+    opening = Event()
+    finish_open = Event()
+    old_source = AsyncMock()
+    old_source.receive.return_value = b"stale output"
+    new_source = AsyncMock()
+    new_source.receive.return_value = b"current output"
+    attempts = 0
+
+    @asynccontextmanager
+    async def factory():
+        nonlocal attempts
+        attempts += 1
+        source = old_source if attempts == 1 else new_source
+        if attempts == 1:
+            opening.set()
+            await finish_open.wait()
+        try:
+            yield source
+        finally:
+            await source.aclose()
+
+    async with _QemuSerialStream(power=power, source_factory=factory) as stream:
+        receiving = asyncio.create_task(stream.receive())
+        try:
+            with fail_after(2):
+                await opening.wait()
+                power.off()
+                await power.on()
+                finish_open.set()
+                assert await receiving == b"current output"
+            old_source.receive.assert_not_awaited()
+            old_source.aclose.assert_awaited_once()
+        finally:
+            receiving.cancel()
+            await asyncio.gather(receiving, return_exceptions=True)
+    new_source.aclose.assert_awaited_once()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("restart", [False, True])
+async def test_stopped_startup_cannot_publish_stale_serial_readiness(qemu_serial, monkeypatch, restart):
+    _driver, power, _console, ptys = qemu_serial
+    disconnecting = Event()
+    finish_disconnect = Event()
+    qmp = MagicMock()
+    qmp.runstate = Runstate.RUNNING
+
+    async def execute(command):
+        if command == "query-chardev":
+            return [{"label": "serial0", "filename": f"pty:{os.ttyname(ptys[-1][1])}"}]
+        return {}
+
+    async def disconnect():
+        if not disconnecting.is_set():
+            disconnecting.set()
+            await finish_disconnect.wait()
+
+    qmp.execute = AsyncMock(side_effect=execute)
+    qmp.disconnect = AsyncMock(side_effect=disconnect)
+    monkeypatch.setattr("jumpstarter_driver_qemu.driver.QMPClient", lambda _name: qmp)
+    startup = asyncio.create_task(power.on())
+    try:
+        with fail_after(2):
+            await disconnecting.wait()
+            power.off()
+            if restart:
+                await power.on()
+            expected = power._serial_process
+            finish_disconnect.set()
+            await startup
+            assert power._serial_process is expected
+            assert (expected is not None) == restart
+    finally:
+        startup.cancel()
+        await asyncio.gather(startup, return_exceptions=True)
+
+
+@pytest.mark.anyio
+async def test_serial_shutdown_releases_physical_port(qemu_serial):
+    _driver, power, console, _ptys = qemu_serial
+    await power.on()
+    fanout = console._get_fanout()
+    try:
+        async with console.connect():
+            await wait_serial_open(console)
+            serial_port = console._transport.serial
+            assert serial_port.is_open
+            console.shutdown()
+            with fail_after(2):
+                while serial_port.is_open:
+                    await sleep(0.01)
+    finally:
+        await fanout.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("returncode", [None, 0, 1, -15])
+async def test_power_on_does_not_replace_process_before_power_off(monkeypatch, returncode):
+    driver = Qemu()
+    power = driver.children["power"]
+    assert isinstance(power, QemuPower)
+    process = MagicMock()
+    process.poll.return_value = returncode
+    power._process = process
+    power._cidata = TemporaryDirectory(dir=driver._tmp_dir.name)
+    cidata_path = Path(power._cidata.name)
+    launch = MagicMock(side_effect=AssertionError("An existing process must not be replaced"))
+    monkeypatch.setattr("jumpstarter_driver_qemu.driver.Popen", launch)
+    try:
+        await power.on()
+
+        # Keep the pre-existing guard even after process exit: replacing it while
+        # an off() worker is still cleaning up would lose the new process state.
+        launch.assert_not_called()
+        assert power._process is process
+        assert cidata_path.exists()
+    finally:
+        driver._tmp_dir.cleanup()
 
 
 @pytest.mark.parametrize("process_state", ["absent", 0, 1, -15])
@@ -118,6 +411,143 @@ def test_qemu_teardown_is_quiet_and_idempotent(caplog, process_state):
         process.kill.assert_not_called()
     finally:
         driver._tmp_dir.cleanup()
+
+
+@pytest.mark.anyio
+async def test_console_and_observer_survive_power_cycles_without_reconnecting(qemu_serial, caplog):
+    _driver, power, console, ptys = qemu_serial
+    caplog.set_level(logging.WARNING)
+    fanout = console._get_fanout()
+    try:
+        with fail_after(5):
+            async with console.connect() as stream, console.observe() as observer:
+                logical_source = fanout._source
+                reader = fanout._reader_task
+                holder = fanout._write_token_holder
+                await stream.send(b"discard before first boot")
+                for _ in range(2):
+                    await power.on()
+                    await wait_serial_open(console)
+                    master = ptys[-1][0]
+                    with pytest.raises(BlockingIOError):
+                        os.read(master, 1024)  # Offline input must never be replayed.
+                    os.write(master, b"boot output\n")
+                    assert await stream.receive() == b"boot output\n"
+                    assert await observer.receive() == b"boot output\n"
+                    await stream.send(b"typed while running")
+                    assert await read_pty(master) == b"typed while running"
+                    power.off()
+                    await stream.send(b"discard while off")
+                    while console._transport is not None:
+                        await sleep(0.01)
+                    assert fanout._source is logical_source
+                    assert fanout._reader_task is reader
+                    assert fanout._write_token_holder == holder
+                assert "Source disconnected" not in caplog.text
+    finally:
+        await fanout.close()
+
+
+@pytest.mark.anyio
+async def test_write_racing_with_power_off_does_not_close_console(qemu_serial, monkeypatch, caplog):
+    _driver, power, console, _ptys = qemu_serial
+    caplog.set_level(logging.WARNING)
+    fanout = console._get_fanout()
+    try:
+        async with console.connect() as stream:
+            await power.on()
+            await wait_serial_open(console)
+            logical_source = fanout._source
+            assert isinstance(logical_source, _QemuSerialStream)
+
+            async def disconnect_on_write(_data):
+                power.off()
+                raise BrokenResourceError
+
+            assert logical_source._source is not None
+            monkeypatch.setattr(logical_source._source, "send", disconnect_on_write)
+            await stream.send(b"typed at disconnect")
+            with fail_after(2):
+                while console._transport is not None:
+                    await sleep(0.01)
+            assert fanout._source is logical_source
+            assert fanout.status()["write_token_held"]
+            assert "Source disconnected" not in caplog.text
+    finally:
+        await fanout.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("error_type", [RuntimeError, PermissionError, BrokenResourceError, EndOfStream])
+async def test_live_vm_write_failure_stays_visible(qemu_serial, monkeypatch, error_type):
+    _driver, power, console, _ptys = qemu_serial
+    fanout = console._get_fanout()
+    try:
+        await power.on()
+        async with console.connect() as stream:
+            await wait_serial_open(console)
+            logical_source = fanout._source
+            assert isinstance(logical_source, _QemuSerialStream)
+            assert logical_source._source is not None
+            error = error_type("unexpected write failure")
+            monkeypatch.setattr(logical_source._source, "send", AsyncMock(side_effect=error))
+            with pytest.raises(error_type) as exc_info:
+                await stream.send(b"input")
+            assert exc_info.value is error
+    finally:
+        await fanout.close()
+
+
+def test_client_stream_survives_offline_input_and_power_cycles(qemu_serial):
+    driver, _power, console, ptys = qemu_serial
+    with serve(driver) as client:
+        async def exercise():
+            with fail_after(5):
+                async with client.console.stream_async("connect") as stream:
+                    for _ in range(2):
+                        await stream.send(b"discard while off")
+                        await sleep(0.15)
+                        await client.power.call_async("on")
+                        await wait_serial_open(console)
+                        master = ptys[-1][0]
+                        with pytest.raises(BlockingIOError):
+                            os.read(master, 1024)
+                        os.write(master, b"boot\n")
+                        assert await stream.receive() == b"boot\n"
+                        await stream.send(b"working input")
+                        assert await read_pty(master) == b"working input"
+                        await client.power.call_async("off")
+
+        client.portal.call(exercise)
+
+
+@pytest.mark.parametrize("route", ["nested", "reference"])
+@pytest.mark.parametrize("observe", [False, True])
+def test_cli_opens_off_console_with_hotkeys_and_references(qemu_serial, monkeypatch, route, observe):
+    driver, power, _console, _ptys = qemu_serial
+    root = Composite(
+        children={"qemu": driver, "power": Proxy(ref="qemu.power"), "console": Proxy(ref="qemu.console")}
+    )
+    original_run = Console._Console__run  # ty: ignore[unresolved-attribute]
+
+    async def bounded_run(self):
+        with fail_after(5):
+            await original_run(self)
+
+    monkeypatch.setattr(Console, "_Console__run", bounded_run)
+    with serve(root) as client:
+        qemu = client.children["qemu"]
+        console_client = qemu.children["console"] if route == "nested" else client.children["console"]
+        assert isinstance(console_client, PySerialClient)
+        assert console_client.uuid == qemu.children["console"].uuid
+        commands = ["qemu", "console", "console"] if route == "nested" else ["console", "console"]
+        if observe:
+            commands.append("--observe")
+        keys = ("" if observe else "\x1d" * 3) + "\x02" * 3
+        with patch.object(Console, "setraw", return_value=nullcontext()):
+            result = CliRunner().invoke(client.cli(), commands, input=keys)
+        assert result.exit_code == 0, result.exception
+        assert (power._serial_process is None) == observe
 
 
 @pytest.fixture(scope="session")
