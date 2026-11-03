@@ -300,7 +300,7 @@ func TestRenderShipper(t *testing.T) {
 	}{
 		{"promtail", "promtail.yaml", []string{"kubernetes_sd_configs", "jumpstarter_dev_log_scrape", "__path__", "/var/log/pods", "cri", "labeldrop", "filename", "component", "exporter"}},
 		{"alloy", "alloy.alloy", []string{"discovery.kubernetes", "jumpstarter_dev_log_scrape", "selectors", "spec.nodeName", "stage.labels", "stage.label_keep", "component", "exporter", "namespace"}},
-		{"vector", "vector.yaml", []string{"kubernetes_logs", "jumpstarter.dev/log-scrape=true", "jumpstarter_loki_without_exporter", "kubernetes.pod_namespace", "path:", "compression: none", "component", "exporter"}},
+		{"vector", "vector.yaml", []string{"kubernetes_logs", "jumpstarter.dev/log-scrape=true", "jumpstarter_loki_without_exporter", "kubernetes.pod_namespace", "kubernetes.pod_labels.component", "is_object(parsed)", `component = "unknown"`, "path:", "compression: none", "component", "exporter"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -601,6 +601,8 @@ func TestVectorConfigMapReadmeMentionsValidatedVersion(t *testing.T) {
 		"vector validate",
 		"VECTOR_SELF_NODE_NAME",
 		"/var/log/pods",
+		`pod's "component" label`,
+		"unknown",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Errorf("Vector README missing %q", want)

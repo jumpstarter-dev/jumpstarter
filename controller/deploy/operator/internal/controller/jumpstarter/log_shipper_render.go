@@ -232,10 +232,23 @@ const vectorProcessBlocks = `  jumpstarter_parse:
     type: remap
     inputs: [jumpstarter_pods]
     source: |
+      .component = "unknown"
+      if exists(.kubernetes.pod_labels.component) &&
+         is_string(.kubernetes.pod_labels.component) &&
+         .kubernetes.pod_labels.component != "" {
+        .component = .kubernetes.pod_labels.component
+      }
+
       parsed, err = parse_json(.message)
-      if err == null {
-        .component = parsed.component
-        if exists(parsed.exporter) && !is_null(parsed.exporter) && parsed.exporter != "" {
+      if err == null && is_object(parsed) {
+        if exists(parsed.component) &&
+           is_string(parsed.component) &&
+           parsed.component != "" {
+          .component = parsed.component
+        }
+        if exists(parsed.exporter) &&
+           is_string(parsed.exporter) &&
+           parsed.exporter != "" {
           .exporter = parsed.exporter
         } else {
           del(.exporter)
@@ -370,6 +383,10 @@ The snippet assumes the Vector Helm chart DaemonSet, which sets
 VECTOR_SELF_NODE_NAME from spec.nodeName and mounts /var/log/pods. The operator
 splits the configured Loki URL into the sink endpoint and /loki/api/v1/push
 path. Two Loki sinks keep the exporter label only when it is present.
+
+When a JSON line has no usable "component" field, or the line is not JSON, the
+rendering uses the pod's "component" label and finally "unknown". The raw line
+is forwarded unchanged.
 `, vectorValidatedVersion)
 	}
 
