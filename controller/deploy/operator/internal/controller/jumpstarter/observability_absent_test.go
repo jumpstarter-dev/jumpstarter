@@ -19,7 +19,9 @@ package jumpstarter
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/internal/controller/testutils"
@@ -29,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
@@ -77,7 +80,8 @@ func TestServiceMonitorCRDAbsent(t *testing.T) {
 		t.Fatalf("create jumpstarter: %v", err)
 	}
 
-	r := &JumpstarterReconciler{Client: c, Scheme: scheme.Scheme}
+	recorder := record.NewFakeRecorder(64)
+	r := &JumpstarterReconciler{Client: c, Scheme: scheme.Scheme, Recorder: recorder}
 
 	available, err := r.serviceMonitorCRDAvailable(ctx)
 	if err != nil {
@@ -105,4 +109,55 @@ func TestServiceMonitorCRDAbsent(t *testing.T) {
 	if !apimeta.IsNoMatchError(err) {
 		t.Fatalf("expected NoMatch error for absent CRD, got %v", err)
 	}
+
+	t.Run("deterministic requeue window", func(t *testing.T) {
+		const (
+			requeueCycles = 5
+			wantRequeue   = 2 * time.Minute
+		)
+
+		elapsed := time.Duration(0)
+		for i := range requeueCycles {
+			if err := r.reconcileObservability(ctx, js); err != nil {
+				t.Fatalf("reconcile %d must succeed without the CRD: %v", i+1, err)
+			}
+			if err := r.updateStatus(ctx, js); err != nil {
+				t.Fatalf("status update %d must succeed: %v", i+1, err)
+			}
+
+			requeueAfter := r.observabilityRequeueAfter(ctx, js, nil)
+			if requeueAfter != wantRequeue {
+				t.Fatalf("requeue %d = %s, want %s", i+1, requeueAfter, wantRequeue)
+			}
+			elapsed += requeueAfter
+
+			condition := apimeta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypeServiceMonitorReady)
+			if condition == nil {
+				t.Fatalf("ServiceMonitorReady condition missing after reconcile %d", i+1)
+			}
+			if condition.Status != metav1.ConditionFalse || condition.Reason != "CRDNotFound" {
+				t.Fatalf("ServiceMonitorReady after reconcile %d = %s/%s, want False/CRDNotFound",
+					i+1, condition.Status, condition.Reason)
+			}
+		}
+
+		if elapsed != 10*time.Minute {
+			t.Fatalf("virtual requeue window = %s, want 10m", elapsed)
+		}
+
+		crdMissingEvents := 0
+		for {
+			select {
+			case event := <-recorder.Events:
+				if strings.Contains(event, "ServiceMonitorCRDMissing") {
+					crdMissingEvents++
+				}
+			default:
+				if crdMissingEvents != 1 {
+					t.Fatalf("ServiceMonitorCRDMissing events = %d, want 1 transition event", crdMissingEvents)
+				}
+				return
+			}
+		}
+	})
 }
