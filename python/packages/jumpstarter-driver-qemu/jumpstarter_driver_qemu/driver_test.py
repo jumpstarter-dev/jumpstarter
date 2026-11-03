@@ -83,6 +83,43 @@ def test_power_off_stops_live_vm(caplog, needs_kill):
         driver._tmp_dir.cleanup()
 
 
+@pytest.mark.parametrize("process_state", ["absent", "exited", "running"])
+def test_qemu_teardown_is_quiet_and_idempotent(caplog, process_state):
+    driver = Qemu()
+    power = driver.children["power"]
+    assert isinstance(power, QemuPower)
+    caplog.set_level(logging.DEBUG, logger=power.logger.name)
+    process = MagicMock()
+    if process_state != "absent":
+        process.poll.return_value = None if process_state == "running" else 1
+        power._process = process
+    power._cidata = TemporaryDirectory(dir=driver._tmp_dir.name)
+    try:
+        # The power child is shared with the console, so a root close reaches it
+        # twice. Repeating teardown must remain safe and quiet as well.
+        driver.close()
+        driver.close()
+
+        records = [
+            (record.levelno, record.getMessage())
+            for record in caplog.records
+            if record.name == power.logger.name
+        ]
+        assert records
+        assert set(records) == {(logging.DEBUG, "already powered off, ignoring request")}
+        assert not hasattr(power, "_process")
+        assert not hasattr(power, "_cidata")
+        if process_state == "running":
+            process.terminate.assert_called_once_with()
+            process.wait.assert_called_once_with(timeout=5)
+        else:
+            process.terminate.assert_not_called()
+            process.wait.assert_not_called()
+        process.kill.assert_not_called()
+    finally:
+        driver._tmp_dir.cleanup()
+
+
 @pytest.fixture(scope="session")
 def ovmf(tmpdir_factory):
     tmp_path = tmpdir_factory.mktemp("ovmf")
