@@ -1,8 +1,10 @@
 import asyncio
+import getpass
 import os
 import plistlib
 import re
 import socket
+import subprocess
 from contextlib import asynccontextmanager
 from typing import ClassVar
 from unittest.mock import patch
@@ -153,13 +155,57 @@ def test_check_link_explains_the_setup_script(monkeypatch, output, bpf, ready):
             devicehub_mac.check_link()
 
 
-def test_bpf_access_needs_every_capture_device(tmp_path):
+def test_bpf_access_needs_one_usable_capture_device(tmp_path):
     assert devicehub_mac._bpf_accessible(tmp_path) is False
-    for index in range(2):
+    for index in range(3):
         (tmp_path / f"bpf{index}").write_bytes(b"")
     assert devicehub_mac._bpf_accessible(tmp_path) is True
+    # The spare device macOS adds after the last one is root-only; it must not undo the setup.
+    (tmp_path / "bpf2").chmod(0)
+    assert devicehub_mac._bpf_accessible(tmp_path) is True
+    (tmp_path / "bpf0").chmod(0o400)
     (tmp_path / "bpf1").chmod(0o400)
     assert devicehub_mac._bpf_accessible(tmp_path) is False
+
+
+LINK_STATE = f"feth0: flags\n\tinet6 {devicehub_mac.HOST_ADDRESS} prefixlen 64\n\tpeer: feth1\n"
+
+
+@pytest.mark.skipif(not devicehub_mac.SETUP_SCRIPT.is_file(), reason="needs the packaged link script")
+@pytest.mark.parametrize(
+    "state,calls",
+    [
+        (LINK_STATE, ["feth0 up", "feth1 up"]),
+        (
+            None,
+            [
+                "feth0 create",
+                "feth1 create",
+                "feth0 peer feth1",
+                f"feth0 inet6 {devicehub_mac.HOST_ADDRESS} prefixlen 64 alias",
+                "feth0 up",
+                "feth1 up",
+            ],
+        ),
+    ],
+)
+def test_link_script_can_run_again(tmp_path, state, calls):
+    """Running the script on a linked Mac only hands over the capture devices macOS added since."""
+    tools, devices = tmp_path / "tools", tmp_path / "dev"
+    tools.mkdir()
+    devices.mkdir()
+    (devices / "bpf0").write_bytes(b"")
+    log = tmp_path / "ifconfig.log"
+    if state is not None:
+        (tmp_path / "state").write_text(state)
+    fake = tools / "ifconfig"
+    fake.write_text(f'#!/bin/sh\n[ $# -eq 1 ] && exec cat "{tmp_path}/state"\necho "$@" >> "{log}"\n')
+    fake.chmod(0o755)
+    script = tmp_path / "link.sh"
+    script.write_text(devicehub_mac.SETUP_SCRIPT.read_text().replace("/dev/bpf*", f"{devices}/bpf*"))
+    env = {**os.environ, "SUDO_USER": getpass.getuser(), "PATH": f"{tools}{os.pathsep}{os.environ['PATH']}"}
+    subprocess.run(["sh", str(script)], check=True, env=env, capture_output=True)
+    assert log.read_text().splitlines() == calls
 
 
 @pytest.fixture

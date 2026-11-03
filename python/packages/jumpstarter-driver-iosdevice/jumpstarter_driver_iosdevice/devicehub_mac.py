@@ -126,8 +126,9 @@ LINK_MISSING = f"the Device Hub link is not set up; run `sudo sh {SETUP_SCRIPT}`
 
 
 def _bpf_accessible(folder: Path = Path("/dev")) -> bool:
-    devices = list(folder.glob("bpf*"))
-    return bool(devices) and all(os.access(device, os.R_OK | os.W_OK) for device in devices)
+    # macOS adds a root-owned spare node after the last capture device whenever one is opened, so
+    # some device is always out of reach after the setup script ran; one usable device is enough.
+    return any(os.access(device, os.R_OK | os.W_OK) for device in folder.glob("bpf*"))
 
 
 def link_ready() -> bool:
