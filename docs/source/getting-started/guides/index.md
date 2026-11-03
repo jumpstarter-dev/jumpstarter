@@ -9,7 +9,7 @@ development workflow.
   into your existing workflows and systems
 - [KubeVirt Provisioner](kubevirt-provisioner.md): Create VMs on a remote
   KubeVirt cluster using the `kubevirt.jumpstarter.dev` provisioner
-- [UI Automation with Appium](ui-automation.md): Drive iOS and Android targets
+- [Appium UI Automation](ui-automation.md): Drive iOS and Android targets
   through one Appium interface
 
 ```{toctree}

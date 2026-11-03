@@ -1,4 +1,4 @@
-# UI Automation with Appium
+# Appium UI Automation
 
 Jumpstarter gives every UI-automation target the same
 [Appium](https://appium.io/docs/en/latest/) client interface, whatever its
