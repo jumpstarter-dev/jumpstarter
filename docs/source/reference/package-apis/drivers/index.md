@@ -14,6 +14,7 @@ function:
 
 Drivers that control the power state and basic operation of devices:
 
+- {doc}`CoPilot <copilot>` (`jumpstarter-driver-copilot`) - BayLibre CoPilot GPIO, relay and supply control
 - {doc}`Power <power>` (`jumpstarter-driver-power`) - Power control for devices
 - {doc}`gpiod <gpiod>` (`jumpstarter-driver-gpiod`) - GPIO hardware control via libgpiod
 - {doc}`Yepkit <yepkit>` (`jumpstarter-driver-yepkit`) - Yepkit USB hub hardware control
@@ -115,6 +116,7 @@ androidemulator.md
 ble.md
 bt-peer.md
 can.md
+copilot.md
 corellium.md
 cuttlefish.md
 dds.md

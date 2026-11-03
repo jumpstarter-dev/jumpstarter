@@ -1,0 +1,51 @@
+[project]
+name = "jumpstarter-driver-copilot"
+dynamic = ["version", "urls"]
+description = "BayLibre CoPilot GPIO, relay and power control"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    { name = "Guillaume La Roque", email = "glaroque@baylibre.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8.1.7.2",
+    "jumpstarter-driver-composite",
+    "jumpstarter",
+    "jumpstarter-driver-gpiod",
+    "jumpstarter-driver-power",
+    "gpiod>=2.2; platform_system == 'Linux'",
+]
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../../'}
+
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/jumpstarter/archive/{commit_hash}.zip"
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-report=html --cov-report=xml"
+log_cli = true
+log_cli_level = "INFO"
+testpaths = ["jumpstarter_driver_copilot"]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=6.0.0",
+    "pytest>=8.3.3",
+]
+
+[project.entry-points."jumpstarter.drivers"]
+CoPilotGPIO = "jumpstarter_driver_copilot.driver:CoPilotGPIO"
+CoPilotOutput = "jumpstarter_driver_copilot.driver:CoPilotOutput"
+CoPilotPower = "jumpstarter_driver_copilot.driver:CoPilotPower"
+CoPilotUSB = "jumpstarter_driver_copilot.driver:CoPilotUSB"
