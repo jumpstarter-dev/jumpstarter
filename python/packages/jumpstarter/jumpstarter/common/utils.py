@@ -105,6 +105,9 @@ def _run_process(
         return 126
     if lease is not None:
         lease.lease_ending_callback = partial(lease_ending_handler, process)
+        # Access was lost before the shell started, so nothing signalled it
+        if getattr(lease, "lease_revoked", False):
+            lease_ending_handler(process, lease, timedelta(0))
     returncode = process.wait()
     if returncode < 0:
         # wait() reports signal deaths as -N; report them as a shell does. Log
