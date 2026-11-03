@@ -159,6 +159,13 @@ func (r *Reconciler) ReconcileControllerEndpoint(ctx context.Context, owner meta
 		"app": "jumpstarter-controller",
 	}
 
+	return r.ReconcileGRPCEndpoint(ctx, owner, endpoint, servicePort, podSelector, baseLabels)
+}
+
+// ReconcileGRPCEndpoint exposes a TLS gRPC backend using the configured networking methods.
+// Only servicePort is exposed; other ports on the selected pods remain internal.
+func (r *Reconciler) ReconcileGRPCEndpoint(ctx context.Context, owner metav1.Object, endpoint *operatorv1alpha1.Endpoint,
+	servicePort corev1.ServicePort, podSelector, baseLabels map[string]string) error {
 	// Create a service for each enabled service type
 	// This allows multiple service types to coexist for the same endpoint
 	// Note: ClusterIP uses no suffix (most common for in-cluster communication)
@@ -184,7 +191,12 @@ func (r *Reconciler) ReconcileControllerEndpoint(ctx context.Context, owner meta
 
 	// LoadBalancer service
 	if endpoint.LoadBalancer != nil && endpoint.LoadBalancer.Enabled {
-		if err := r.createService(ctx, owner, servicePort, "-lb", corev1.ServiceTypeLoadBalancer,
+		lbPort := servicePort
+		lbPort.NodePort = 0
+		if endpoint.LoadBalancer.Port > 0 {
+			lbPort.Port = endpoint.LoadBalancer.Port
+		}
+		if err := r.createService(ctx, owner, lbPort, "-lb", corev1.ServiceTypeLoadBalancer,
 			podSelector, baseLabels, endpoint.LoadBalancer.Annotations, endpoint.LoadBalancer.Labels); err != nil {
 			return err
 		}
@@ -194,7 +206,7 @@ func (r *Reconciler) ReconcileControllerEndpoint(ctx context.Context, owner meta
 	if endpoint.NodePort != nil && endpoint.NodePort.Enabled {
 		// Copy servicePort and set NodePort if specified
 		nodePortServicePort := servicePort
-		if endpoint.NodePort.Port > 0 {
+		if nodePortServicePort.NodePort == 0 && endpoint.NodePort.Port > 0 {
 			nodePortServicePort.NodePort = endpoint.NodePort.Port
 		}
 		if err := r.createService(ctx, owner, nodePortServicePort, "-np", corev1.ServiceTypeNodePort,
@@ -214,7 +226,9 @@ func (r *Reconciler) ReconcileControllerEndpoint(ctx context.Context, owner meta
 			annotations = endpoint.ClusterIP.Annotations
 			labels = endpoint.ClusterIP.Labels
 		}
-		if err := r.createService(ctx, owner, servicePort, "", corev1.ServiceTypeClusterIP,
+		clusterPort := servicePort
+		clusterPort.NodePort = 0
+		if err := r.createService(ctx, owner, clusterPort, "", corev1.ServiceTypeClusterIP,
 			podSelector, baseLabels, annotations, labels); err != nil {
 			return err
 		}
@@ -242,73 +256,12 @@ func (r *Reconciler) ReconcileRouterReplicaEndpoint(ctx context.Context, owner m
 		"app": baseAppLabel, // e.g., "jumpstarter-router-0"
 	}
 
-	// Create a service for each enabled service type
-	// This allows multiple service types to coexist for the same endpoint
-	// Note: ClusterIP uses no suffix (most common for in-cluster communication)
-	//       LoadBalancer uses "-lb" suffix, NodePort uses "-np" suffix
-
-	// Ingress resource (uses ClusterIP service)
-	if endpoint.Ingress != nil && endpoint.Ingress.Enabled {
-		serviceName := servicePort.Name
-		// Create the Ingress resource pointing to the ClusterIP service
-		if err := r.createIngressForEndpoint(ctx, owner, serviceName, servicePort.Port, endpoint, baseLabels); err != nil {
-			return err
-		}
-	}
-
-	// Route resource (uses ClusterIP service)
-	if endpoint.Route != nil && endpoint.Route.Enabled {
-		serviceName := servicePort.Name
-		// Create the Route resource pointing to the ClusterIP service
-		if err := r.createRouteForEndpoint(ctx, owner, serviceName, servicePort.Port, endpoint, baseLabels); err != nil {
-			return err
-		}
-	}
-
-	// LoadBalancer service
-	if endpoint.LoadBalancer != nil && endpoint.LoadBalancer.Enabled {
-		if err := r.createService(ctx, owner, servicePort, "-lb", corev1.ServiceTypeLoadBalancer,
-			podSelector, baseLabels, endpoint.LoadBalancer.Annotations, endpoint.LoadBalancer.Labels); err != nil {
-			return err
-		}
-	}
-
-	// NodePort service
-	if endpoint.NodePort != nil && endpoint.NodePort.Enabled {
-		// Copy servicePort and set NodePort if specified.
-		// Only set NodePort from endpoint config if not already set on the servicePort.
-		// The caller may have already calculated a per-replica NodePort.
-		nodePortServicePort := servicePort
-		if servicePort.NodePort == 0 && endpoint.NodePort.Port > 0 {
-			nodePortServicePort.NodePort = endpoint.NodePort.Port
-		}
-		if err := r.createService(ctx, owner, nodePortServicePort, "-np", corev1.ServiceTypeNodePort,
-			podSelector, baseLabels, endpoint.NodePort.Annotations, endpoint.NodePort.Labels); err != nil {
-			return err
-		}
-	}
-
-	// ClusterIP service (no suffix for cleaner in-cluster service names)
-	if needsClusterIPService(endpoint) {
-		// Merge annotations and labels from ClusterIP config if present
-		var annotations, labels map[string]string
-		if endpoint.ClusterIP != nil {
-			annotations = endpoint.ClusterIP.Annotations
-			labels = endpoint.ClusterIP.Labels
-		}
-		if err := r.createService(ctx, owner, servicePort, "", corev1.ServiceTypeClusterIP,
-			podSelector, baseLabels, annotations, labels); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return r.ReconcileGRPCEndpoint(ctx, owner, endpoint, servicePort, podSelector, baseLabels)
 }
 
-// RouterServiceSuffixes returns the name suffixes of the Services that
-// ReconcileRouterReplicaEndpoint creates for endpoint: "" for ClusterIP,
+// ServiceSuffixes returns the name suffixes of the Services created for endpoint: "" for ClusterIP,
 // "-lb" for LoadBalancer and "-np" for NodePort.
-func RouterServiceSuffixes(endpoint *operatorv1alpha1.Endpoint) []string {
+func ServiceSuffixes(endpoint *operatorv1alpha1.Endpoint) []string {
 	var suffixes []string
 	if needsClusterIPService(endpoint) {
 		suffixes = append(suffixes, "")
