@@ -504,6 +504,169 @@ var _ = Describe("Lease Controller", func() {
 		})
 	})
 
+	When("the highest priority exporter is already leased", func() {
+		It("should lease the next available exporter from a lower priority group", func() {
+			ctx := context.Background()
+
+			// Give the exporters distinct labels so policies can rank them apart
+			exporter1 := getExporter(ctx, testExporter1DutA.Name)
+			exporter1.Labels["tier"] = "high"
+			Expect(k8sClient.Update(ctx, exporter1)).To(Succeed())
+
+			high := &jumpstarterdevv1alpha1.ExporterAccessPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-policy-high",
+					Namespace: "default",
+				},
+				Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+					ExporterSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{"dut": "a", "tier": "high"},
+					},
+					Policies: []jumpstarterdevv1alpha1.Policy{
+						{
+							Priority: 10,
+							From: []jumpstarterdevv1alpha1.From{{
+								ClientSelector: metav1.LabelSelector{
+									MatchLabels: map[string]string{"name": "client"},
+								},
+							}},
+						},
+					},
+				},
+			}
+			low := &jumpstarterdevv1alpha1.ExporterAccessPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-policy-low",
+					Namespace: "default",
+				},
+				Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+					ExporterSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{"dut": "a"},
+					},
+					Policies: []jumpstarterdevv1alpha1.Policy{
+						{
+							Priority: 5,
+							From: []jumpstarterdevv1alpha1.From{{
+								ClientSelector: metav1.LabelSelector{
+									MatchLabels: map[string]string{"name": "client"},
+								},
+							}},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, high)).To(Succeed())
+			DeferCleanup(func() { Expect(k8sClient.Delete(ctx, high)).To(Succeed()) })
+			Expect(k8sClient.Create(ctx, low)).To(Succeed())
+			DeferCleanup(func() { Expect(k8sClient.Delete(ctx, low)).To(Succeed()) })
+
+			// Pin the first lease to the high priority exporter
+			lease1 := leaseDutA2Sec.DeepCopy()
+			lease1.Name = lease1Name
+			lease1.Spec.Duration = &metav1.Duration{Duration: 30 * time.Second}
+			lease1.Spec.ExporterRef = &corev1.LocalObjectReference{Name: testExporter1DutA.Name}
+			Expect(k8sClient.Create(ctx, lease1)).To(Succeed())
+			_ = reconcileLease(ctx, lease1)
+
+			updatedLease1 := getLease(ctx, lease1Name)
+			Expect(updatedLease1.Status.ExporterRef.Name).To(Equal(testExporter1DutA.Name))
+			Expect(updatedLease1.Status.Priority).To(Equal(10))
+
+			// The second lease must fall back to the lower priority exporter
+			lease2 := leaseDutA2Sec.DeepCopy()
+			lease2.Name = lease2Name
+			lease2.Spec.Duration = &metav1.Duration{Duration: 30 * time.Second}
+			Expect(k8sClient.Create(ctx, lease2)).To(Succeed())
+			_ = reconcileLease(ctx, lease2)
+
+			updatedLease2 := getLease(ctx, lease2Name)
+			Expect(updatedLease2.Status.ExporterRef.Name).To(Equal(testExporter2DutA.Name))
+			Expect(updatedLease2.Status.Priority).To(Equal(5))
+
+			// Assignment is stable across further reconciles
+			_ = reconcileLease(ctx, lease2)
+			Expect(getLease(ctx, lease2Name).Status.ExporterRef.Name).To(Equal(testExporter2DutA.Name))
+		})
+	})
+
+	When("the better ranked non-spot exporters are not ready", func() {
+		It("should not lease a ready spot access exporter", func() {
+			ctx := context.Background()
+
+			// Give the exporters distinct labels so policies can tell them apart
+			exporter1 := getExporter(ctx, testExporter1DutA.Name)
+			exporter1.Labels["tier"] = "regular"
+			Expect(k8sClient.Update(ctx, exporter1)).To(Succeed())
+			exporter2 := getExporter(ctx, testExporter2DutA.Name)
+			exporter2.Labels["tier"] = "spot"
+			Expect(k8sClient.Update(ctx, exporter2)).To(Succeed())
+
+			regular := &jumpstarterdevv1alpha1.ExporterAccessPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-policy-regular",
+					Namespace: "default",
+				},
+				Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+					ExporterSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{"tier": "regular"},
+					},
+					Policies: []jumpstarterdevv1alpha1.Policy{
+						{
+							Priority: 10,
+							From: []jumpstarterdevv1alpha1.From{{
+								ClientSelector: metav1.LabelSelector{
+									MatchLabels: map[string]string{"name": "client"},
+								},
+							}},
+						},
+					},
+				},
+			}
+			spot := &jumpstarterdevv1alpha1.ExporterAccessPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-policy-spot",
+					Namespace: "default",
+				},
+				Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+					ExporterSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{"tier": "spot"},
+					},
+					Policies: []jumpstarterdevv1alpha1.Policy{
+						{
+							Priority:   10,
+							SpotAccess: true,
+							From: []jumpstarterdevv1alpha1.From{{
+								ClientSelector: metav1.LabelSelector{
+									MatchLabels: map[string]string{"name": "client"},
+								},
+							}},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, regular)).To(Succeed())
+			DeferCleanup(func() { Expect(k8sClient.Delete(ctx, regular)).To(Succeed()) })
+			Expect(k8sClient.Create(ctx, spot)).To(Succeed())
+			DeferCleanup(func() { Expect(k8sClient.Delete(ctx, spot)).To(Succeed()) })
+
+			// The non-spot exporter is online but not ready (cleaning up a previous lease)
+			setExporterNotReady(ctx, testExporter1DutA.Name, jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHook)
+
+			lease := leaseDutA2Sec.DeepCopy()
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).To(BeNil())
+			condition := meta.FindStatusCondition(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+			)
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Reason).To(Equal("SpotAccess"))
+		})
+	})
+
 	When("trying to lease exporters, and some matching exporters are online and while others are offline", func() {
 		It("should acquire lease for the online exporters", func() {
 			lease := leaseDutA2Sec.DeepCopy()
@@ -611,7 +774,7 @@ var _ = Describe("Lease Controller", func() {
 
 			updatedLease := getLease(ctx, lease.Name)
 			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
-			Expect(updatedLease.Status.ExporterRef.Name).To(Equal(testExporter1DutA.Name))
+			Expect(updatedLease.Status.ExporterRef.Name).To(BeElementOf([]string{testExporter1DutA.Name, testExporter2DutA.Name}))
 		})
 	})
 
@@ -1173,6 +1336,49 @@ var _ = Describe("orderApprovedExporters", func() {
 			Expect(ordered[4].Policy.SpotAccess).To(BeTrue())
 			Expect(ordered[4].Exporter.Name).To(Equal(testExporter2DutA.Name))
 
+		})
+	})
+})
+
+var _ = Describe("eligibleExporters", func() {
+	When("candidates are equally ranked", func() {
+		It("should return each distinct exporter exactly once", func() {
+			candidates := []ApprovedExporter{
+				{Policy: jumpstarterdevv1alpha1.Policy{Priority: 10}, Exporter: *testExporter1DutA},
+				{Policy: jumpstarterdevv1alpha1.Policy{Priority: 10}, Exporter: *testExporter2DutA},
+				// the same exporter approved by a second policy rule must not
+				// get a bigger share of the random draw
+				{Policy: jumpstarterdevv1alpha1.Policy{Priority: 10}, Exporter: *testExporter1DutA},
+			}
+			eligible := eligibleExporters(candidates)
+			Expect(eligible).To(HaveLen(2))
+			names := []string{eligible[0].Exporter.Name, eligible[1].Exporter.Name}
+			Expect(names).To(ConsistOf(testExporter1DutA.Name, testExporter2DutA.Name))
+		})
+	})
+
+	When("candidates are ranked differently", func() {
+		It("should only keep the best ranked group", func() {
+			candidates := []ApprovedExporter{
+				{Policy: jumpstarterdevv1alpha1.Policy{Priority: 10}, Exporter: *testExporter1DutA},
+				{Policy: jumpstarterdevv1alpha1.Policy{Priority: 10}, Exporter: *testExporter2DutA},
+				{Policy: jumpstarterdevv1alpha1.Policy{Priority: 5}, Exporter: *testExporter3DutB},
+				{Policy: jumpstarterdevv1alpha1.Policy{Priority: 100, SpotAccess: true}, Exporter: *testExporter2DutA},
+			}
+			eligible := eligibleExporters(candidates)
+			Expect(eligible).To(HaveLen(2))
+			names := []string{eligible[0].Exporter.Name, eligible[1].Exporter.Name}
+			Expect(names).To(ConsistOf(testExporter1DutA.Name, testExporter2DutA.Name))
+			for _, e := range eligible {
+				Expect(e.Policy.Priority).To(Equal(10))
+				Expect(e.Policy.SpotAccess).To(BeFalse())
+			}
+		})
+	})
+
+	When("there are no candidates", func() {
+		It("should return none", func() {
+			Expect(eligibleExporters(nil)).To(BeEmpty())
 		})
 	})
 })
