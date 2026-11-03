@@ -76,8 +76,9 @@ var _ = Describe("createTelemetryDeployment JEP-0013 Phase 3", func() {
 		Expect(c.Args).To(ContainElement("-exemplar-keys=client,board-type"))
 	})
 
-	It("sets GRPC_TELEMETRY_ENDPOINT to the in-cluster telemetry Service", func() {
+	It("sets GRPC_TELEMETRY_ENDPOINT to the configured public address", func() {
 		js := phase3TelemetryJS("jumpstarter-lab")
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{{Address: "telemetry.example.com:443"}}
 		c := createTelemetryDeployment(js, "", telemetryLokiPod{}).Spec.Template.Spec.Containers[0]
 		Expect(envValue(c, "GRPC_TELEMETRY_ENDPOINT")).To(Equal(telemetryEndpointFor(js)))
 	})
@@ -128,6 +129,7 @@ var _ = Describe("Telemetry ConfigMap certificate (JEP-0013 TLS)", func() {
 			Data: map[string][]byte{"tls.crt": []byte(testPEM)},
 		})).To(Succeed())
 
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{{Address: "telemetry.example.com:443"}}
 		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		cfg, err := r.buildConfig(ctx, js)
 		Expect(err).NotTo(HaveOccurred())
@@ -149,6 +151,7 @@ var _ = Describe("Telemetry ConfigMap certificate (JEP-0013 TLS)", func() {
 			},
 		}
 
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{{Address: "telemetry.example.com:443"}}
 		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		cfg, err := r.buildConfig(ctx, js)
 		Expect(err).NotTo(HaveOccurred())

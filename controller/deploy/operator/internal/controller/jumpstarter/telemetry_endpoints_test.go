@@ -65,12 +65,27 @@ var _ = Describe("Telemetry endpoints", func() {
 		Expect(telemetryEndpointFor(js)).To(Equal("telemetry.example.com:443"))
 		if routes {
 			Expect(ep.Route.Enabled).To(BeTrue())
-		} else if ingress {
-			Expect(ep.Ingress.Enabled).To(BeTrue())
 		} else {
-			Expect(ep.ClusterIP.Enabled).To(BeTrue())
+			Expect(ep.Ingress.Enabled).To(BeTrue())
 		}
-	}, Entry("OpenShift", true, true), Entry("Kubernetes ingress", false, true), Entry("ClusterIP fallback", false, false))
+	}, Entry("OpenShift", true, true), Entry("Kubernetes ingress", false, true))
+
+	It("requires explicit exposure when neither Route nor Ingress is available", func() {
+		endpoints.ApplyEndpointDefaults(&js.Spec, false, false)
+		Expect(js.Spec.Telemetry.GRPC.Endpoints).To(BeEmpty())
+		_, err := r.buildConfig(ctx, js)
+		Expect(err).To(MatchError(ContainSubstring("telemetry requires spec.telemetry.grpc.endpoints")))
+	})
+
+	DescribeTable("honors explicit exposure without Route or Ingress", func(endpoint operatorv1alpha1.Endpoint) {
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{endpoint}
+		endpoints.ApplyEndpointDefaults(&js.Spec, false, false)
+		Expect(js.Spec.Telemetry.GRPC.Endpoints).To(Equal([]operatorv1alpha1.Endpoint{endpoint}))
+		Expect(telemetryEndpointFor(js)).To(Equal(endpoint.Address))
+	},
+		Entry("NodePort", operatorv1alpha1.Endpoint{Address: "telemetry.example.com:30015", NodePort: &operatorv1alpha1.NodePortConfig{Enabled: true, Port: 30015}}),
+		Entry("LoadBalancer", operatorv1alpha1.Endpoint{Address: "telemetry.example.com:443", LoadBalancer: &operatorv1alpha1.LoadBalancerConfig{Enabled: true, Port: 443}}),
+	)
 
 	It("does not enable telemetry implicitly", func() {
 		js.Spec.Telemetry.Enabled = false
@@ -201,10 +216,12 @@ var _ = Describe("Telemetry endpoints", func() {
 		Expect(r.Get(ctx, client.ObjectKey{Name: serviceName, Namespace: js.Namespace}, &corev1.Service{})).To(Succeed())
 	})
 
-	It("keeps legacy internal discovery when no endpoints or baseDomain are configured", func() {
+	It("requires explicit exposure when no baseDomain is configured", func() {
 		js.Spec.BaseDomain = ""
 		endpoints.ApplyEndpointDefaults(&js.Spec, false, false)
-		Expect(telemetryEndpointFor(js)).To(Equal("jumpstarter-telemetry.lab.svc:9093"))
+		Expect(telemetryEndpointFor(js)).To(BeEmpty())
+		_, err := r.buildConfig(ctx, js)
+		Expect(err).To(MatchError(ContainSubstring("telemetry requires spec.telemetry.grpc.endpoints")))
 		js.Spec.CertManager.Server = &operatorv1alpha1.ServerCertConfig{IssuerRef: &operatorv1alpha1.IssuerReference{Name: "public-ca"}}
 		Expect(r.reconcileTelemetryCertificate(ctx, js, cmmeta.ObjectReference{Name: "public-ca"})).To(MatchError(ContainSubstring("telemetry requires a public")))
 	})

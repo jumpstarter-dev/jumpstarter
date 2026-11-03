@@ -18,7 +18,8 @@ cluster using the Jumpstarter {term}`operator`.
 - `grpc.jumpstarter.example.com`
 - `router.jumpstarter.example.com`
 - `login.jumpstarter.example.com`
-- `telemetry.jumpstarter.example.com` (when telemetry is enabled)
+- `telemetry.jumpstarter.example.com` (when telemetry is enabled and a Route or
+  Ingress API is available)
 ```
 
 ## Install
@@ -200,10 +201,11 @@ returned by the controller's `GetServiceEndpoints` RPC. They do not tunnel
 telemetry through the controller or router, so its DNS name and port must be
 reachable from both clients and exporters, including those outside Kubernetes.
 
-Enable telemetry with `spec.telemetry.enabled: true`. With `spec.baseDomain` set,
-the operator generates `telemetry.<baseDomain>` and selects a Route on OpenShift,
-an Ingress on Kubernetes, or ClusterIP when neither API is available. For an
-explicit configuration, use the same endpoint fields as the controller:
+Enable telemetry with `spec.telemetry.enabled: true`. With `spec.baseDomain` set
+and a Route or Ingress API available, the operator generates `telemetry.<baseDomain>`
+and selects a Route on OpenShift or an Ingress on Kubernetes. Otherwise configure
+explicit reachable endpoints, for example NodePort or LoadBalancer; there is no
+implicit internal `.svc` fallback. Use the same endpoint fields as the controller:
 
 ```yaml
 spec:
@@ -238,13 +240,14 @@ endpoints:
 For a LoadBalancer use `loadBalancer: {enabled: true, port: 443}` and advertise
 `:443`. The advertised port must match what the caller actually reaches; for
 example, kind can map a NodePort to a different host port. Addresses without a
-port default to `443`. An internal-only configuration can explicitly use
-`clusterIP: {enabled: true}` with a cluster-reachable address and port `9093`.
+port default to `443`. Use `clusterIP: {enabled: true}` when an externally managed
+proxy exposes the Service; advertise the proxy's reachable DNS name and port.
 
 The first configured address is advertised to callers; additional endpoints are
 exposed and included in the certificate, but are not automatic client failover
-targets. With neither a baseDomain nor endpoints, the legacy internal address
-`jumpstarter-telemetry.<namespace>.svc:9093` remains the default.
+targets. If no endpoint is configured and the operator cannot generate external
+exposure, reconciliation fails with a configuration error rather than advertising
+an internal `.svc` address or an unreachable hostname.
 
 Cert-manager certificates include all configured endpoint hostnames. External
 issuers omit the automatically added internal service names. Without cert-manager,

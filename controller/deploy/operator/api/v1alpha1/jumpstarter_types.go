@@ -381,8 +381,9 @@ type TelemetryGRPCConfig struct {
 
 	// Endpoints expose telemetry to exporters and clients using the same networking
 	// methods as the controller. The first address is advertised by GetServiceEndpoints;
-	// a missing port defaults to 443. When omitted, telemetry.<baseDomain> is generated.
-	// Without a baseDomain or endpoints, the internal ClusterIP address is advertised.
+	// a missing port defaults to 443. When omitted, telemetry.<baseDomain> is generated
+	// if a baseDomain and Route or Ingress API are available. Otherwise explicit
+	// endpoints are required, for example NodePort or LoadBalancer exposure.
 	// +kubebuilder:validation:XValidation:rule="self.all(e, has(e.address) && e.address != '')",message="telemetry endpoints require an address"
 	Endpoints []Endpoint `json:"endpoints,omitempty"`
 }

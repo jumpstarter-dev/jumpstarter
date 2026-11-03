@@ -858,12 +858,12 @@ func (r *JumpstarterReconciler) telemetryCAFromCertSecret(ctx context.Context, j
 }
 
 // telemetryEndpointFor returns the primary advertised endpoint, defaulting to TLS port 443.
-// Keep the legacy in-cluster address when neither endpoints nor a baseDomain are configured.
+// An empty result means the user must configure an externally reachable endpoint.
 func telemetryEndpointFor(js *operatorv1alpha1.Jumpstarter) string {
 	if js.Spec.Telemetry != nil && len(js.Spec.Telemetry.GRPC.Endpoints) > 0 {
 		return ensurePort(js.Spec.Telemetry.GRPC.Endpoints[0].Address, "443")
 	}
-	return fmt.Sprintf("%s.%s.svc:%d", telemetryServiceName, js.Namespace, telemetryPort)
+	return ""
 }
 
 // telemetryLabels returns the standard labels for telemetry resources.

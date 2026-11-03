@@ -50,7 +50,7 @@ func ensureEndpointServiceType(endpoint *operatorv1alpha1.Endpoint, routeAvailab
 // It also ensures all existing endpoints have a service type enabled.
 func ApplyEndpointDefaults(spec *operatorv1alpha1.JumpstarterSpec, routeAvailable, ingressAvailable bool) {
 	if spec.Telemetry != nil && spec.Telemetry.Enabled {
-		if len(spec.Telemetry.GRPC.Endpoints) == 0 && spec.BaseDomain != "" {
+		if len(spec.Telemetry.GRPC.Endpoints) == 0 && spec.BaseDomain != "" && (routeAvailable || ingressAvailable) {
 			spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{{
 				Address: fmt.Sprintf("telemetry.%s", spec.BaseDomain),
 			}}
