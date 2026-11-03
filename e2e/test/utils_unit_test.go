@@ -30,9 +30,14 @@ func TestIsNoLeasesFound(t *testing.T) {
 			want:   true,
 		},
 		{
-			name:   "message embedded in output",
+			name:   "error-prefixed CLI message",
 			output: "Error: no leases found matching the criteria\n",
 			want:   true,
+		},
+		{
+			name:   "unrelated error containing the message",
+			output: "Error: connection failed: no leases found matching the criteria",
+			want:   false,
 		},
 		{
 			name:   "different error",
