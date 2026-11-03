@@ -43,8 +43,6 @@ func testJumpstarter() *operatorv1alpha1.Jumpstarter {
 	}
 }
 
-func boolPtr(v bool) *bool { return &v }
-
 func TestServiceMonitorEnabled(t *testing.T) {
 	tests := []struct {
 		name string
@@ -60,13 +58,13 @@ func TestServiceMonitorEnabled(t *testing.T) {
 		{"explicit false", func() *operatorv1alpha1.Jumpstarter {
 			js := testJumpstarter()
 			js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
-			js.Spec.Telemetry.Metrics.ServiceMonitor = boolPtr(false)
+			js.Spec.Telemetry.Metrics.ServiceMonitor = new(false)
 			return js
 		}(), false},
 		{"explicit true", func() *operatorv1alpha1.Jumpstarter {
 			js := testJumpstarter()
 			js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
-			js.Spec.Telemetry.Metrics.ServiceMonitor = boolPtr(true)
+			js.Spec.Telemetry.Metrics.ServiceMonitor = new(true)
 			return js
 		}(), true},
 	}
@@ -228,25 +226,25 @@ func TestDesiredServiceMonitors(t *testing.T) {
 		if monitor.GetKind() != serviceMonitorKind || monitor.GetAPIVersion() != serviceMonitorGroup+"/"+serviceMonitorVersion {
 			t.Errorf("%s wrong GVK %s/%s", monitor.GetName(), monitor.GetAPIVersion(), monitor.GetKind())
 		}
-		spec, ok := monitor.Object["spec"].(map[string]interface{})
+		spec, ok := monitor.Object["spec"].(map[string]any)
 		if !ok {
 			t.Fatalf("%s missing spec", monitor.GetName())
 		}
-		endpoints, ok := spec["endpoints"].([]interface{})
+		endpoints, ok := spec["endpoints"].([]any)
 		if !ok || len(endpoints) != 1 {
 			t.Fatalf("%s endpoints = %v", monitor.GetName(), spec["endpoints"])
 		}
-		endpoint := endpoints[0].(map[string]interface{})
+		endpoint := endpoints[0].(map[string]any)
 		if endpoint["port"] != metricsPortName {
 			t.Errorf("%s endpoint port = %v, want %s", monitor.GetName(), endpoint["port"], metricsPortName)
 		}
-		if spec["namespaceSelector"].(map[string]interface{})["matchNames"].([]interface{})[0] != js.Namespace {
+		if spec["namespaceSelector"].(map[string]any)["matchNames"].([]any)[0] != js.Namespace {
 			t.Errorf("%s namespaceSelector mismatch", monitor.GetName())
 		}
 	}
 
 	telemetry := desiredServiceMonitors(js)[2]
-	selector := telemetry.Object["spec"].(map[string]interface{})["selector"].(map[string]interface{})["matchLabels"].(map[string]interface{})
+	selector := telemetry.Object["spec"].(map[string]any)["selector"].(map[string]any)["matchLabels"].(map[string]any)
 	if selector["component"] != "telemetry" || selector["controller"] != js.Name {
 		t.Errorf("telemetry selector = %v", selector)
 	}
@@ -670,7 +668,7 @@ func TestSnippetsParse(t *testing.T) {
 
 	t.Run("promtail parses as YAML", func(t *testing.T) {
 		_, content := renderShipper(js, shipperTypePromtail)
-		var parsed map[string]interface{}
+		var parsed map[string]any
 		if err := yaml.Unmarshal([]byte(content), &parsed); err != nil {
 			t.Fatalf("promtail rendering is not valid YAML: %v", err)
 		}
@@ -681,7 +679,7 @@ func TestSnippetsParse(t *testing.T) {
 
 	t.Run("vector parses as YAML", func(t *testing.T) {
 		_, content := renderShipper(js, shipperTypeVector)
-		var parsed map[string]interface{}
+		var parsed map[string]any
 		if err := yaml.Unmarshal([]byte(content), &parsed); err != nil {
 			t.Fatalf("vector rendering is not valid YAML: %v", err)
 		}
