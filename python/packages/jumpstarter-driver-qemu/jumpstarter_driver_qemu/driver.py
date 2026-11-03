@@ -6,7 +6,8 @@ import logging
 import os
 import platform
 import shutil
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
@@ -16,7 +17,8 @@ from tempfile import TemporaryDirectory
 from typing import Literal
 
 import yaml
-from anyio import fail_after, run_process, sleep
+from anyio import BrokenResourceError, ClosedResourceError, EndOfStream, fail_after, run_process, sleep
+from anyio.abc import ObjectStream
 from anyio.streams.file import FileReadStream, FileWriteStream
 from jumpstarter_driver_network.driver import TcpNetwork, UnixNetwork, VsockNetwork
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
@@ -207,6 +209,8 @@ class QemuFlasher(FlasherInterface, Driver):
 @dataclass(kw_only=True)
 class QemuPower(PowerInterface, Driver):
     parent: Qemu
+    # Publish serial readiness only after startup, and withdraw it before stopping.
+    _serial_process: Popen[bytes] | None = field(default=None, init=False, repr=False)
 
     @export
     async def on(self) -> None:  # noqa: C901
@@ -387,7 +391,8 @@ class QemuPower(PowerInterface, Driver):
                 f"{blk_device},drive=cidata",
             ]
 
-        self._process = Popen(self.parent._wrap_command(cmdline), stdin=PIPE)  # noqa: ASYNC220
+        process = Popen(self.parent._wrap_command(cmdline), stdin=PIPE)  # noqa: ASYNC220
+        self._process = process
 
         qmp = QMPClient(self.parent.hostname)
 
@@ -410,12 +415,15 @@ class QemuPower(PowerInterface, Driver):
 
         await qmp.execute("system_reset")
         await qmp.disconnect()
+        if getattr(self, "_process", None) is process and process.poll() is None:
+            self._serial_process = process
 
     @export
     def off(self) -> None:
         self._power_off(warn_if_off=True)
 
     def _power_off(self, *, warn_if_off: bool) -> None:
+        self._serial_process = None
         process = getattr(self, "_process", None)
         if process is None or process.poll() is not None:
             self.logger.log(logging.WARNING if warn_if_off else logging.DEBUG, "already powered off, ignoring request")
@@ -439,6 +447,80 @@ class QemuPower(PowerInterface, Driver):
     def close(self):
         # Teardown may reach this shared driver through both QEMU and its console.
         self._power_off(warn_if_off=False)
+
+
+@dataclass(kw_only=True)
+class _QemuSerialStream(ObjectStream[bytes]):
+    """Keep a logical serial line open while QEMU's physical PTY comes and goes."""
+
+    power: QemuPower
+    source_factory: Callable[[], AbstractAsyncContextManager[ObjectStream[bytes]]]
+    _stack: AsyncExitStack = field(default_factory=AsyncExitStack, init=False)
+    _source: ObjectStream[bytes] | None = field(default=None, init=False)
+    _process: Popen[bytes] | None = field(default=None, init=False)
+    _closed: bool = field(default=False, init=False)
+
+    def _current_process(self) -> Popen[bytes] | None:
+        process = self.power._serial_process
+        return process if process is not None and process.poll() is None else None
+
+    async def _disconnect(self) -> None:
+        self._source = None
+        self._process = None
+        await self._stack.aclose()
+
+    async def receive(self) -> bytes:
+        while not self._closed:
+            process = self._current_process()
+            if process is None:
+                await self._disconnect()
+                await sleep(0.1)
+                continue
+            try:
+                if process is not self._process:
+                    await self._disconnect()
+                    self._source = await self._stack.enter_async_context(self.source_factory())
+                    self._process = process
+                    # Power may have changed while the physical port was opening.
+                    if self._current_process() is not process:
+                        continue
+                assert self._source is not None
+                return await self._source.receive()
+            except (OSError, BrokenResourceError, ClosedResourceError, EndOfStream):
+                await self._disconnect()
+                if self._current_process() is process:
+                    raise  # A live VM's unexpected serial failure must stay visible.
+        raise ClosedResourceError
+
+    async def send(self, item: bytes) -> None:
+        if self._closed:
+            raise ClosedResourceError
+        source = self._source
+        process = self._process
+        if source is None or process is None or self._current_process() is not process:
+            return  # An unpowered serial line silently discards input; never replay it.
+        try:
+            await source.send(item)
+        except (OSError, BrokenResourceError, ClosedResourceError, EndOfStream):
+            if self._current_process() is process:
+                raise
+
+    async def send_eof(self) -> None:
+        pass  # A serial line has no half-close.
+
+    async def aclose(self) -> None:
+        self._closed = True
+        await self._disconnect()
+
+
+@dataclass(kw_only=True)
+class QemuConsole(PySerial):
+    power: QemuPower
+
+    @asynccontextmanager
+    async def _open_source(self):
+        async with _QemuSerialStream(power=self.power, source_factory=super()._open_source) as stream:
+            yield stream
 
 
 class Hostfwd(BaseModel):
@@ -500,15 +582,16 @@ class Qemu(Driver):
         self.hostfwd = {k: Hostfwd.model_validate(v) for k, v in self.hostfwd.items()}
         self.default_partitions = {k: Path(v) for k, v in self.default_partitions.items()}
 
-        self.children["power"] = QemuPower(parent=self)
+        power = QemuPower(parent=self)
+        self.children["power"] = power
         self.children["flasher"] = QemuFlasher(parent=self)
 
         if self.launcher_socket:
             self.children["console"] = UnixNetwork(path=self._serial_socket)
         else:
             # The power child enables the console's Ctrl-] x3 power-cycle hotkey.
-            self.children["console"] = PySerial(
-                url=self._pty, check_present=False, children={"power": self.children["power"]}
+            self.children["console"] = QemuConsole(
+                power=power, url=self._pty, check_present=False, children={"power": power}
             )
 
         self.children["vnc"] = UnixNetwork(path=self._vnc)
