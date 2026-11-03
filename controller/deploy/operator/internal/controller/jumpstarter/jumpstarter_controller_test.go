@@ -1247,7 +1247,6 @@ var _ = Describe("ensurePort", func() {
 		Entry("hostname without port", "example.com", "443", "example.com:443"),
 		Entry("hostname with port", "example.com:8083", "443", "example.com:8083"),
 		Entry("IPv6 without port", "2001:db8::1", "443", "[2001:db8::1]:443"),
-		Entry("bracketed IPv6 without port", "[2001:db8::1]", "443", "[2001:db8::1]:443"),
 		Entry("IPv6 with port", "[2001:db8::1]:8083", "443", "[2001:db8::1]:8083"),
 		Entry("malformed - too many colons", "host:port:extra", "443", "[host:port:extra]:443"),
 		Entry("malformed - empty string", "", "443", ":443"),

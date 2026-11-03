@@ -22,7 +22,6 @@ import (
 	"maps"
 	"net"
 	"slices"
-	"strings"
 	"time"
 
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
@@ -651,7 +650,7 @@ func extractHostname(address string) string {
 
 	// If SplitHostPort failed, there's no port in the address
 	// Return the full address (handles plain IPv6, IPv4, or hostname)
-	return strings.Trim(address, "[]")
+	return address
 }
 
 // isExternalIssuer returns true when the Jumpstarter CR is configured to use

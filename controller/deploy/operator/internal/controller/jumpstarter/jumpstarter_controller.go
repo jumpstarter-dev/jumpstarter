@@ -1504,7 +1504,7 @@ func ensurePort(address, defaultPort string) string {
 
 	// No port found, need to add one
 	// net.JoinHostPort handles IPv6 addresses correctly (adds brackets if needed)
-	return net.JoinHostPort(strings.Trim(address, "[]"), defaultPort)
+	return net.JoinHostPort(address, defaultPort)
 }
 
 // routerServiceNamePrefix is the prefix of every service name
@@ -1765,7 +1765,7 @@ func (r *JumpstarterReconciler) cleanupExcessRouterServices(ctx context.Context,
 		for endpointIdx := range jumpstarter.Spec.Routers.GRPC.Endpoints {
 			serviceName := r.buildServiceNameForReplicaEndpoint(jumpstarter, replicaIdx, endpointIdx)
 			endpoint := &jumpstarter.Spec.Routers.GRPC.Endpoints[endpointIdx]
-			for _, suffix := range endpoints.ServiceSuffixes(endpoint) {
+			for _, suffix := range endpoints.RouterServiceSuffixes(endpoint) {
 				wanted[serviceName+suffix] = struct{}{}
 			}
 		}
