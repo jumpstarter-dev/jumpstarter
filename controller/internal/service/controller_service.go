@@ -664,10 +664,7 @@ func (s *ControllerService) UpdateLeaseHooks(
 		return nil, err
 	}
 
-	logger = logger.WithValues("exporter", types.NamespacedName{
-		Namespace: exporter.Namespace,
-		Name:      exporter.Name,
-	}, "lease", req.GetLeaseName())
+	logger = withExporter(logger, exporter.Name).WithValues("lease", req.GetLeaseName())
 
 	// Validation reads the record, so patch with an optimistic lock and re-read
 	// on conflict rather than overwrite a concurrent change.
