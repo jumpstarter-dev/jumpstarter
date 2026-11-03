@@ -306,24 +306,32 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// Requeue periodically to pick up changes. Use a shorter interval while the
-	// telemetry CA secret is not yet ready so the controller ConfigMap converges quickly.
+	requeueAfter := r.observabilityRequeueAfter(ctx, &jumpstarter, observabilityErr)
+	return ctrl.Result{RequeueAfter: requeueAfter}, nil
+}
+
+// observabilityRequeueAfter keeps the normal periodic reconciliation interval
+// but shortens it while observability needs attention. A missing ServiceMonitor
+// CRD uses a two-minute poll so a later-installed CRD converges within five
+// minutes without a hot loop.
+func (r *JumpstarterReconciler) observabilityRequeueAfter(
+	ctx context.Context,
+	js *operatorv1alpha1.Jumpstarter,
+	observabilityErr error,
+) time.Duration {
 	requeueAfter := 30 * time.Minute
 	if observabilityErr != nil {
 		requeueAfter = 2 * time.Minute
 	}
-	if r.telemetryCANeedsRequeue(ctx, &jumpstarter) {
+	if r.telemetryCANeedsRequeue(ctx, js) {
 		requeueAfter = telemetryCARequeueInterval
 	}
-	// While Prometheus autodiscovery is enabled but the ServiceMonitor CRD is not
-	// installed, poll faster so the objects appear within five minutes of the CRD
-	// being installed, without a hot loop.
-	if serviceMonitorEnabled(&jumpstarter) && requeueAfter > 2*time.Minute {
+	if serviceMonitorEnabled(js) && requeueAfter > 2*time.Minute {
 		if available, err := r.serviceMonitorCRDAvailable(ctx); err == nil && !available {
 			requeueAfter = 2 * time.Minute
 		}
 	}
-	return ctrl.Result{RequeueAfter: requeueAfter}, nil
+	return requeueAfter
 }
 
 // emitEventf emits a Kubernetes event on the Jumpstarter object.
