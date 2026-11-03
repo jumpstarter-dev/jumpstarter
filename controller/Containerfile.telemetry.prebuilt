@@ -1,8 +1,15 @@
 # CI-only runtime image for the jumpstarter-telemetry binary.
+#
+# The intermediate files stage makes the host-compiled binary executable
+# explicitly, independent of the caller's umask. The Makefile also chmods the
+# staged binary; this stage protects direct image builds as well.
 FROM registry.access.redhat.com/ubi9/ubi-minimal:9.9-1794467051@sha256:baafce2d34783a28b4a472779f304e97e00f9d35c99553bc53b068b14344d9a9 AS certs
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/ubi-minimal:9.9-1794467051@sha256:baafce2d34783a28b4a472779f304e97e00f9d35c99553bc53b068b14344d9a9 AS files
+COPY telemetry /telemetry
+RUN chmod 0755 /telemetry
 FROM registry.access.redhat.com/ubi9/ubi-micro:9.9-1794478307@sha256:dbd325b96bcd432dd42816d31412bdf1dc0fb973b79ed310344bc23c76c068db
 WORKDIR /
 COPY --from=certs /etc/pki/tls/certs/ca-bundle.crt /etc/pki/tls/certs/ca-bundle.crt
-COPY telemetry /telemetry
+COPY --from=files /telemetry /telemetry
 USER 65532:65532
 ENTRYPOINT ["/telemetry"]
