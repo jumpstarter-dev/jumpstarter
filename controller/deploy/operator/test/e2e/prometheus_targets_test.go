@@ -46,6 +46,13 @@ const (
 		"releases/download/v0.94.2/stripped-down-crds.yaml"
 	prometheusServiceAccount = "prometheus-jumpstarter-e2e"
 	prometheusCRName         = "jumpstarter-e2e"
+
+	// Discovery includes Prometheus Operator config reload and target
+	// discovery, which Jumpstarter does not control. Scrape freshness is
+	// measured separately once a target has been discovered.
+	prometheusScrapeInterval         = 5 * time.Second
+	prometheusTargetDiscoveryTimeout = 120 * time.Second
+	prometheusScrapeFreshness        = 2 * prometheusScrapeInterval
 )
 
 var prometheusGVK = schema.GroupVersionKind{
@@ -133,9 +140,9 @@ var _ = Describe("Prometheus target health", Ordered, func() {
 				g.Expect(target.Health).To(Equal("up"))
 				g.Expect(target.LastError).To(BeEmpty())
 				g.Expect(target.LastScrape).NotTo(BeZero())
-				g.Expect(time.Since(target.LastScrape)).To(BeNumerically("<", 30*time.Second))
+				g.Expect(time.Since(target.LastScrape)).To(BeNumerically("<=", prometheusScrapeFreshness))
 			}
-		}, 90*time.Second, 2*time.Second).Should(Succeed())
+		}, prometheusTargetDiscoveryTimeout, 2*time.Second).Should(Succeed())
 
 		targetResult, err := getPrometheusTargets()
 		Expect(err).NotTo(HaveOccurred())
@@ -147,7 +154,7 @@ var _ = Describe("Prometheus target health", Ordered, func() {
 			Expect(target.Health).To(Equal("up"))
 			Expect(target.LastError).To(BeEmpty())
 			Expect(target.LastScrape).NotTo(BeZero())
-			Expect(time.Since(target.LastScrape)).To(BeNumerically("<", 30*time.Second))
+			Expect(time.Since(target.LastScrape)).To(BeNumerically("<=", prometheusScrapeFreshness))
 			Expect(target.ScrapeURL).To(ContainSubstring("/metrics"))
 			if strings.Contains(target.ScrapePool, "controller-metrics") {
 				seen["controller"] = true
@@ -299,8 +306,8 @@ func createPrometheusInstance(testNamespace string) {
 		"spec": map[string]any{
 			"serviceAccountName": prometheusServiceAccount,
 			"replicas":           int64(1),
-			"scrapeInterval":     "5s",
-			"evaluationInterval": "5s",
+			"scrapeInterval":     prometheusScrapeInterval.String(),
+			"evaluationInterval": prometheusScrapeInterval.String(),
 			"retention":          "1h",
 			"serviceMonitorSelector": map[string]any{
 				"matchLabels": map[string]any{jumpstarterMetricsLabel: "true"},
