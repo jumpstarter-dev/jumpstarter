@@ -629,7 +629,7 @@ func dumpShipperDiagnostics(t *testing.T, ctx context.Context, clientset *kubern
 		for _, container := range pod.Spec.Containers {
 			raw, err := clientset.CoreV1().Pods(namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
 				Container: container.Name,
-				TailLines: int64Ptr(100),
+				TailLines: new(int64(100)),
 			}).DoRaw(ctx)
 			if err != nil {
 				t.Logf("logs %s/%s: %v", pod.Name, container.Name, err)
@@ -645,5 +645,3 @@ func dumpShipperDiagnostics(t *testing.T, ctx context.Context, clientset *kubern
 		}
 	}
 }
-
-func int64Ptr(value int64) *int64 { return &value }
