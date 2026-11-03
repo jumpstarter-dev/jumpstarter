@@ -26,6 +26,10 @@ When `metrics.serviceMonitor` is `true` (the default) the operator:
 - creates one `ServiceMonitor` per running workload **if** the
   `monitoring.coreos.com/v1` CRD is installed.
 
+Every generated `ServiceMonitor` carries the stable selector label
+`jumpstarter.dev/metrics: "true"`. The Prometheus `serviceMonitorSelector` must
+select that label, either directly or by using `serviceMonitorLabels` below.
+
 ```yaml
 apiVersion: operator.jumpstarter.dev/v1alpha1
 kind: Jumpstarter
@@ -44,7 +48,11 @@ spec:
 objects match your Prometheus `serviceMonitorSelector`. kube-prometheus-stack
 usually selects a Helm release label such as `release: kube-prometheus-stack`;
 if your Prometheus uses a different selector, set the matching labels here.
-The labels do not change the metrics Service selector.
+The labels do not change the metrics Service selector. The `controller-kind`
+target-health test installs a minimal Prometheus Operator and Prometheus
+instance, then asserts that the generated ServiceMonitors produce `up` targets
+for controller and router within two 5-second scrape intervals, with no
+additional scrape configuration.
 
 If the Prometheus Operator is not installed, reconciliation still succeeds: the
 metrics Services are created, ServiceMonitors are skipped, and the
