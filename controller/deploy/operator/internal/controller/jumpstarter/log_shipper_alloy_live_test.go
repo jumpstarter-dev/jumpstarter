@@ -195,7 +195,7 @@ func waitForLogLine(t *testing.T, logs *alloyLogBuffer, marker string, timeout t
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		for _, line := range strings.Split(logs.String(), "\n") {
+		for line := range strings.SplitSeq(logs.String(), "\n") {
 			if strings.Contains(line, "received log entry") && strings.Contains(line, marker) {
 				return line
 			}
@@ -223,11 +223,11 @@ func parseEchoedEntry(t *testing.T, line string) (map[string]string, string) {
 	}
 
 	entryField := line[entryStart+len(`" entry="`):]
-	end := strings.Index(entryField, `" entry_timestamp=`)
-	if end < 0 {
+	before, _, ok := strings.Cut(entryField, `" entry_timestamp=`)
+	if !ok {
 		t.Fatalf("cannot find end of entry field in Alloy echo line: %s", line)
 	}
-	rawEntry := entryField[:end]
+	rawEntry := before
 	entry, err := strconv.Unquote(`"` + rawEntry + `"`)
 	if err != nil {
 		t.Fatalf("unescape delivered entry: %v\nraw entry: %s", err, rawEntry)

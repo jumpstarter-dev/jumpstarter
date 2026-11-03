@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -227,20 +228,18 @@ func desiredServiceMonitors(js *operatorv1alpha1.Jumpstarter) []*unstructured.Un
 		monitor.SetNamespace(js.Namespace)
 		labels := metricsServiceLabels(js, component)
 		if js.Spec.Telemetry != nil {
-			for k, v := range js.Spec.Telemetry.Metrics.ServiceMonitorLabels {
-				labels[k] = v
-			}
+			maps.Copy(labels, js.Spec.Telemetry.Metrics.ServiceMonitorLabels)
 		}
 		monitor.SetLabels(labels)
-		monitor.Object["spec"] = map[string]interface{}{
-			"namespaceSelector": map[string]interface{}{
-				"matchNames": []interface{}{js.Namespace},
+		monitor.Object["spec"] = map[string]any{
+			"namespaceSelector": map[string]any{
+				"matchNames": []any{js.Namespace},
 			},
-			"selector": map[string]interface{}{
+			"selector": map[string]any{
 				"matchLabels": toInterfaceMap(serviceMonitorSelector(js, component)),
 			},
-			"endpoints": []interface{}{
-				map[string]interface{}{
+			"endpoints": []any{
+				map[string]any{
 					"port": metricsPortName,
 					"path": "/metrics",
 				},
@@ -251,10 +250,10 @@ func desiredServiceMonitors(js *operatorv1alpha1.Jumpstarter) []*unstructured.Un
 	return monitors
 }
 
-// toInterfaceMap converts map[string]string to map[string]interface{} for
+// toInterfaceMap converts map[string]string to map[string]any for
 // unstructured objects.
-func toInterfaceMap(in map[string]string) map[string]interface{} {
-	out := make(map[string]interface{}, len(in))
+func toInterfaceMap(in map[string]string) map[string]any {
+	out := make(map[string]any, len(in))
 	for k, v := range in {
 		out[k] = v
 	}

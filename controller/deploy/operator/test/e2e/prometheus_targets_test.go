@@ -289,32 +289,32 @@ func waitForPrometheusReady() {
 
 func createPrometheusInstance(testNamespace string) {
 	By("creating a minimal Prometheus instance")
-	prom := &unstructured.Unstructured{Object: map[string]interface{}{
+	prom := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "monitoring.coreos.com/v1",
 		"kind":       "Prometheus",
-		"metadata": map[string]interface{}{
+		"metadata": map[string]any{
 			"name":      prometheusCRName,
 			"namespace": prometheusNamespace,
 		},
-		"spec": map[string]interface{}{
+		"spec": map[string]any{
 			"serviceAccountName": prometheusServiceAccount,
 			"replicas":           int64(1),
 			"scrapeInterval":     "5s",
 			"evaluationInterval": "5s",
 			"retention":          "1h",
-			"serviceMonitorSelector": map[string]interface{}{
-				"matchLabels": map[string]interface{}{jumpstarterMetricsLabel: "true"},
+			"serviceMonitorSelector": map[string]any{
+				"matchLabels": map[string]any{jumpstarterMetricsLabel: "true"},
 			},
-			"serviceMonitorNamespaceSelector": map[string]interface{}{
-				"matchLabels": map[string]interface{}{
+			"serviceMonitorNamespaceSelector": map[string]any{
+				"matchLabels": map[string]any{
 					"kubernetes.io/metadata.name": testNamespace,
 				},
 			},
-			"podMonitorSelector": map[string]interface{}{},
-			"probeSelector":      map[string]interface{}{},
-			"resources": map[string]interface{}{
-				"requests": map[string]interface{}{"cpu": "50m", "memory": "128Mi"},
-				"limits":   map[string]interface{}{"memory": "512Mi"},
+			"podMonitorSelector": map[string]any{},
+			"probeSelector":      map[string]any{},
+			"resources": map[string]any{
+				"requests": map[string]any{"cpu": "50m", "memory": "128Mi"},
+				"limits":   map[string]any{"memory": "512Mi"},
 			},
 		},
 	}}

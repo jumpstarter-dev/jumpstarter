@@ -142,7 +142,7 @@ var _ = Describe("Observability reconciliation", func() {
 		Expect(reason).To(Equal("Created"))
 		Expect(message).To(ContainSubstring("2 workloads"))
 
-		js.Spec.Telemetry.Metrics.ServiceMonitor = boolPtr(false)
+		js.Spec.Telemetry.Metrics.ServiceMonitor = new(false)
 		Expect(k8sClient.Update(ctx, js)).To(Succeed())
 		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
 
