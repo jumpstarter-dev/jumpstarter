@@ -8,6 +8,7 @@ from . import telemetry_pb2 as jumpstarter_dot_v1_dot_telemetry__pb2
 class TelemetryServiceStub:
     """A service that reverse-scrapes exporter metrics and receives structured logs.
     Implemented by jumpstarter-telemetry; not part of the controller.
+    Callers authenticate with the TelemetryEndpoint.token from GetServiceEndpoints.
     """
 
     def __init__(self, channel):
@@ -31,6 +32,7 @@ class TelemetryServiceStub:
 class TelemetryServiceServicer:
     """A service that reverse-scrapes exporter metrics and receives structured logs.
     Implemented by jumpstarter-telemetry; not part of the controller.
+    Callers authenticate with the TelemetryEndpoint.token from GetServiceEndpoints.
     """
 
     def MetricsStream(self, request_iterator, context):
@@ -72,6 +74,7 @@ def add_TelemetryServiceServicer_to_server(servicer, server):
 class TelemetryService:
     """A service that reverse-scrapes exporter metrics and receives structured logs.
     Implemented by jumpstarter-telemetry; not part of the controller.
+    Callers authenticate with the TelemetryEndpoint.token from GetServiceEndpoints.
     """
 
     @staticmethod

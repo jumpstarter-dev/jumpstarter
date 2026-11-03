@@ -32,17 +32,17 @@ func TestAuthenticateExporter_InvalidTokenDoesNotLeakParseError(t *testing.T) {
 	hub := testSigner(t)
 	expired := testSigner(t)
 	expired.SetTokenLifetime(-time.Hour)
-	expiredTok, err := expired.Token("exporter:jumpstarter:alice:uid1")
-	if err != nil {
-		t.Fatalf("expired token: %v", err)
-	}
+	expiredTok := mustToken(t, expired, "exporter:jumpstarter:alice:uid1")
 	other, err := oidc.NewSignerFromSeed([]byte("other-seed"), hub.Issuer(), hub.Audience())
 	if err != nil {
 		t.Fatalf("other signer: %v", err)
 	}
-	foreignTok, err := other.Token("exporter:jumpstarter:alice:uid1")
+	foreignTok := mustToken(t, other, "exporter:jumpstarter:alice:uid1")
+	// Same key and subject, but issued for the controller: telemetry cannot
+	// tell whether its Exporter still exists or still names the caller.
+	controllerTok, err := hub.Token("exporter:jumpstarter:alice:uid1")
 	if err != nil {
-		t.Fatalf("foreign token: %v", err)
+		t.Fatalf("controller credential: %v", err)
 	}
 
 	cases := []struct {
@@ -53,6 +53,7 @@ func TestAuthenticateExporter_InvalidTokenDoesNotLeakParseError(t *testing.T) {
 		{name: "malformed", token: "not-a-real-token", leak: "malformed"},
 		{name: "expired", token: expiredTok, leak: "expired"},
 		{name: "wrong key", token: foreignTok, leak: "signature"},
+		{name: "controller credential", token: controllerTok, leak: "audience"},
 	}
 
 	svc := &TelemetryService{Signer: hub}

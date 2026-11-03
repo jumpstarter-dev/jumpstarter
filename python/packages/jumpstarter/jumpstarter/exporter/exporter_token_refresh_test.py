@@ -17,8 +17,6 @@ from jumpstarter.config.common import ObjectMeta
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 from jumpstarter.config.tls import TLSConfigV1Alpha1
 from jumpstarter.exporter import Exporter
-from jumpstarter.exporter.metrics_stream import MetricsStreamClient
-from jumpstarter.exporter.telemetry import TelemetryLogHandler
 
 
 def _make_jwt(payload: dict) -> str:
@@ -42,53 +40,14 @@ class FakeRpcError(grpc.aio.AioRpcError):
 
 
 @pytest.mark.anyio
-async def test_rotation_updates_token_callback_and_telemetry():
+async def test_exporter_rotate_token_async_callback():
     mock_ctrl = AsyncMock()
-    mock_ctrl.GetServiceEndpoints.return_value = jumpstarter_pb2.GetServiceEndpointsResponse(
-        telemetry_endpoints=[jumpstarter_pb2.TelemetryEndpoint(endpoint="telemetry:443")]
-    )
     mock_ctrl.RotateToken.return_value = jumpstarter_pb2.RotateTokenResponse(token="rotated-token-value")
-
-    telemetry = MagicMock()
-    telemetry.PushLogs = AsyncMock()
-    metrics_streams = []
-
-    def metrics_stream(**kwargs):
-        metrics_streams.append(kwargs)
-        raise RuntimeError("stream refused")
-
-    telemetry.MetricsStream = metrics_stream
-
-    async def telemetry_tokens(handler: TelemetryLogHandler, stream: MetricsStreamClient):
-        handler.emit(logging.LogRecord("test", logging.INFO, __file__, 1, "message", (), None))
-        await handler._flush()
-        attempts = len(metrics_streams)
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(stream.run)
-            with anyio.fail_after(1):
-                while len(metrics_streams) == attempts:
-                    await anyio.sleep(0.01)
-            tg.cancel_scope.cancel()
-        return telemetry.PushLogs.call_args.kwargs["metadata"], metrics_streams[-1]["metadata"]
-
     on_rotated = AsyncMock()
-    exporter = _exporter_with_token("old-token", on_token_rotated=on_rotated, tls=TLSConfigV1Alpha1(insecure=True))
-    with (
-        patch("jumpstarter.exporter.exporter.jumpstarter_pb2_grpc.ControllerServiceStub", return_value=mock_ctrl),
-        patch("jumpstarter.exporter.exporter.grpc.aio.insecure_channel"),
-        patch("jumpstarter.exporter.exporter.telemetry_pb2_grpc.TelemetryServiceStub", return_value=telemetry),
-    ):
-        await exporter._setup_telemetry()
-        handler, stream = exporter._telemetry_handler, exporter._metrics_stream
-        assert handler is not None and stream is not None
-        try:
-            old = [("authorization", "Bearer old-token")]
-            assert await telemetry_tokens(handler, stream) == (old, old)
-            token = await exporter.rotate_token()
-            new = [("authorization", "Bearer rotated-token-value")]
-            assert await telemetry_tokens(handler, stream) == (new, new)
-        finally:
-            logging.getLogger().removeHandler(handler)
+    exporter = _exporter_with_token("old-token", on_token_rotated=on_rotated)
+
+    with patch("jumpstarter.exporter.exporter.jumpstarter_pb2_grpc.ControllerServiceStub", return_value=mock_ctrl):
+        token = await exporter.rotate_token()
 
     assert token == "rotated-token-value"
     assert exporter.token == "rotated-token-value"

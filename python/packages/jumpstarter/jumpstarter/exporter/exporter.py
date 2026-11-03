@@ -35,6 +35,7 @@ from jumpstarter_protocol import (
 from jumpstarter.common import ExporterStatus, Metadata, TemporarySocket
 from jumpstarter.common.exceptions import CertificateDiscoveryError
 from jumpstarter.common.streams import connect_router_stream
+from jumpstarter.common.telemetry_token import TelemetryCredential
 from jumpstarter.config.env import JMP_GRPC_INSECURE, JUMPSTARTER_GRPC_INSECURE
 from jumpstarter.config.exporter import DEFAULT_STATUS_STREAM_RETRY_TIMEOUT
 from jumpstarter.config.tls import TLSConfigV1Alpha1
@@ -418,6 +419,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     _metrics_stream: MetricsStreamClient | None = field(init=False, default=None)
     """Optional MetricsStream client. Started next to the log flush loop when telemetry is configured."""
 
+    _telemetry_credential: TelemetryCredential | None = field(init=False, default=None)
+    """Token sent on telemetry calls. Renewed next to the log flush loop."""
+
     _status_drain_active: bool = field(init=False, default=False)
     """True only while serve()'s task group is running and the drain task is active.
 
@@ -630,11 +634,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             return
 
         try:
-            async with self._controller_stub() as controller:
-                resp = await controller.GetServiceEndpoints(
-                    jumpstarter_pb2.GetServiceEndpointsRequest(),
-                    timeout=_RPC_TIMEOUT,
-                )
+            resp = await self._get_service_endpoints()
         except grpc.aio.AioRpcError as e:
             # Older controllers that don't support this RPC return UNIMPLEMENTED.
             # Any other error is also non-fatal — telemetry is best-effort.
@@ -669,10 +669,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 ep.endpoint, grpc.ssl_channel_credentials()
             )
         stub = telemetry_pb2_grpc.TelemetryServiceStub(self._telemetry_channel)
-        # Token rotation replaces self.token; both consumers read it per request.
-        handler = TelemetryLogHandler(
-            stub, namespace=getattr(self, "namespace", "") or "", token=lambda: self.token
-        )
+        # Both consumers read the token per request, so renewal reaches them.
+        credential = TelemetryCredential(ep)
+        self._telemetry_credential = credential
+        handler = TelemetryLogHandler(stub, namespace=getattr(self, "namespace", "") or "", token=credential)
         handler.setLevel(_severity_to_level(ep.min_severity))
         logging.getLogger().addHandler(handler)
         self._telemetry_handler = handler
@@ -680,9 +680,16 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             stub,
             # JWT subject. Not the jumpstarter.dev/name label (#1058).
             identity=self.exporter_name,
-            token=lambda: self.token,
+            token=credential,
         )
         logger.info("Telemetry log handler attached")
+
+    async def _get_service_endpoints(self) -> jumpstarter_pb2.GetServiceEndpointsResponse:
+        async with self._controller_stub() as controller:
+            return await controller.GetServiceEndpoints(
+                jumpstarter_pb2.GetServiceEndpointsRequest(),
+                timeout=_RPC_TIMEOUT,
+            )
 
     async def rotate_token(self) -> str:
         """Request a newly signed authentication token from the controller.
@@ -1419,6 +1426,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             await self._telemetry_channel.close()
             self._telemetry_channel = None
         self._metrics_stream = None
+        self._telemetry_credential = None
 
     async def _run_control_plane(
         self,
@@ -1455,11 +1463,13 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     break
 
     def _start_telemetry_tasks(self, tg: TaskGroup) -> None:
-        """Start PushLogs flush and MetricsStream next to the control-plane tasks."""
+        """Start PushLogs flush, MetricsStream and token renewal next to the control-plane tasks."""
         if self._telemetry_handler is not None:
             tg.start_soon(self._telemetry_handler.flush_loop)
         if self._metrics_stream is not None:
             tg.start_soon(self._metrics_stream.run)
+        if self._telemetry_credential is not None:
+            tg.start_soon(self._telemetry_credential.renew, self._get_service_endpoints)
 
     async def _apply_status(
         self,

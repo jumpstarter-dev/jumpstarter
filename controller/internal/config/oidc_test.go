@@ -98,6 +98,16 @@ func TestInternalTokenAuthenticationErrorCodes(t *testing.T) {
 		t.Fatalf("expired token: ok=%v err=%v, want Unauthenticated naming the expiry", ok, err)
 	}
 
+	// Telemetry tokens are signed with the controller key for another audience;
+	// they must not work as controller credentials.
+	telemetryToken, err := signer.WithAudience(oidc.TelemetryAudience).Token("exporter:default:test:uid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := authenticateBearer(auth, telemetryToken); ok || err == nil {
+		t.Fatalf("telemetry token: ok=%v err=%v, want rejection", ok, err)
+	}
+
 	// A signature failure can also mean the issuer's keys could not be fetched.
 	ok, err = authenticateBearer(auth, signedToken(t, generateKey(t), signer.Issuer(), signer.Audience(), now.Add(time.Hour)))
 	if ok || err == nil {

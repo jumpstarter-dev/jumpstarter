@@ -1,10 +1,13 @@
 """Tests for exporter telemetry setup: _severity_to_level and _setup_telemetry."""
 
 import logging
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import grpc
 import pytest
+from google.protobuf.timestamp_pb2 import Timestamp
+from jumpstarter_protocol import jumpstarter_pb2
 
 from jumpstarter.exporter.exporter import Exporter, _severity_to_level
 
@@ -36,6 +39,7 @@ def make_bare_exporter():
     exp._telemetry_handler = None
     exp._telemetry_channel = None
     exp._metrics_stream = None
+    exp._telemetry_credential = None
     exp.labels = {"jumpstarter.dev/name": "test-exporter"}
     exp.exporter_name = "test-exporter"
     exp.token = "test-token"
@@ -47,10 +51,10 @@ def make_bare_exporter():
 
 
 def make_endpoint(endpoint="telemetry:19093", certificate="", min_severity="info"):
-    ep = MagicMock()
-    ep.endpoint = endpoint
-    ep.certificate = certificate
-    ep.min_severity = min_severity
+    ep = jumpstarter_pb2.TelemetryEndpoint(
+        endpoint=endpoint, certificate=certificate, min_severity=min_severity, token="telemetry-token"
+    )
+    ep.token_expiry.CopyFrom(Timestamp(seconds=int(time.time()) + 3600))
     return ep
 
 
@@ -223,13 +227,43 @@ async def test_setup_telemetry_applies_min_severity():
     assert exp._metrics_stream is not None
 
 
+async def test_setup_telemetry_authenticates_with_issued_token():
+    """Telemetry accepts the token the controller issued, not the exporter's controller credential."""
+    exp = make_bare_exporter()
+    exp.tls.insecure = True
+    resp = MagicMock()
+    resp.telemetry_endpoints = [make_endpoint()]
+    push = AsyncMock()
+    telemetry = MagicMock(PushLogs=push)
+
+    with (
+        patch.object(exp, "_controller_stub", return_value=make_controller_stub_ctx(resp)()),
+        patch("jumpstarter.exporter.exporter.grpc.aio.insecure_channel", return_value=MagicMock()),
+        patch("jumpstarter.exporter.exporter.telemetry_pb2_grpc.TelemetryServiceStub", return_value=telemetry),
+    ):
+        await exp._setup_telemetry()
+    handler = exp._telemetry_handler
+    assert handler is not None and exp._metrics_stream is not None
+    try:
+        handler.emit(logging.LogRecord("test", logging.INFO, "test.py", 1, "hello", (), None))
+        await handler._flush()
+    finally:
+        logging.getLogger().removeHandler(handler)
+
+    bearer = ("authorization", "Bearer telemetry-token")
+    assert [bearer in call.kwargs["metadata"] for call in push.await_args_list] == [True]
+    assert exp._metrics_stream._call_kwargs() == {"metadata": [bearer]}
+
+
 def test_start_telemetry_tasks_starts_flush_loop_and_metrics_stream():
-    """MetricsStream runs next to PushLogs flush_loop (JEP-0013 reverse-scrape)."""
+    """MetricsStream and token renewal run next to PushLogs flush_loop (JEP-0013 reverse-scrape)."""
     exp = make_bare_exporter()
     handler = MagicMock()
     stream = MagicMock()
+    credential = MagicMock()
     exp._telemetry_handler = handler
     exp._metrics_stream = stream
+    exp._telemetry_credential = credential
     tg = MagicMock()
 
     exp._start_telemetry_tasks(tg)
@@ -237,6 +271,7 @@ def test_start_telemetry_tasks_starts_flush_loop_and_metrics_stream():
     started = [c.args[0] for c in tg.start_soon.call_args_list]
     assert handler.flush_loop in started
     assert stream.run in started
+    assert credential.renew in started
 
 
 def test_start_telemetry_tasks_skips_when_telemetry_disabled():
