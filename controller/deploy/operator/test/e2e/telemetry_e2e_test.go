@@ -309,7 +309,7 @@ spec:
             enabled: true
             port: 30083
 %s`, jumpstarterName, telemetryTLSTestNamespace, baseDomain, image, baseDomain, image, baseDomain,
-			telemetryYAMLBlock(baseDomain, 30083))
+			telemetryYAMLBlock(baseDomain, 30084))
 
 		Expect(applyYAML(jumpstarterYAML)).To(Succeed())
 	})
