@@ -247,7 +247,9 @@ const noLeasesFoundMessage = "no leases found matching the criteria"
 
 // IsNoLeasesFound reports whether jmp output indicates that no leases matched.
 func IsNoLeasesFound(output string) bool {
-	return strings.Contains(output, noLeasesFoundMessage)
+	output = strings.TrimSpace(output)
+	return output == noLeasesFoundMessage ||
+		output == "Error: "+noLeasesFoundMessage
 }
 
 // MustJmpAllowingNoLeases runs a jmp command and treats an empty lease result as
