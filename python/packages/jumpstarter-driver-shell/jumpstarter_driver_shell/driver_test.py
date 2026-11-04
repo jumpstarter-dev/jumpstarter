@@ -337,3 +337,16 @@ def test_cancelled_call_kills_the_process_group(command):
         finally:
             if _alive(pid):
                 os.kill(pid, signal.SIGKILL)
+
+
+def test_timeout_does_not_wait_for_unread_output():
+    """A timed-out method that filled its output pipe is cleaned up without waiting out the grace period"""
+    shell = Shell(methods={"chatty": {"command": "head -c 600000 /dev/zero | tr '\\0' a", "timeout": 1}})
+
+    with serve(shell) as client:
+        start = time.monotonic()
+        _stdout, stderr, returncode = _collect_streaming_output(client, "chatty")
+        elapsed = time.monotonic() - start
+
+    assert returncode == 199, stderr
+    assert elapsed < 4, f"cleanup took {elapsed:.1f}s"

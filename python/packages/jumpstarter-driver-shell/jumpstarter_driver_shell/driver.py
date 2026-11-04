@@ -250,7 +250,9 @@ class Shell(Driver):
     @staticmethod
     async def _wait_for_process_group(process):
         """Wait for the script, then for what it left in its process group"""
-        await process.wait()
+        # Not process.wait(): it also waits for the pipes, which nobody reads any more
+        while process.returncode is None:
+            await asyncio.sleep(0.1)
         while True:
             try:
                 os.killpg(process.pid, 0)
