@@ -293,6 +293,18 @@ def fake_appium_url(tmp_path, monkeypatch):
         yield url
 
 
+async def http_get(port: int, path: str) -> bytes:
+    """The whole response to one request, or what arrived before the connection dropped."""
+    response = b""
+    async with await anyio.connect_tcp("127.0.0.1", port) as stream:
+        await stream.send(f"GET {path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n".encode())
+        try:
+            while True:
+                response += await stream.receive()
+        except (anyio.EndOfStream, anyio.BrokenResourceError):
+            return response
+
+
 def test_one_failed_connection_does_not_stop_the_gateway(policy, monkeypatch, fake_appium_url):
     async def explode(method, path, body):
         if path == "/explode":
@@ -301,19 +313,11 @@ def test_one_failed_connection_does_not_stop_the_gateway(policy, monkeypatch, fa
 
     monkeypatch.setattr(policy, "handle", explode)
 
-    async def get(port, path):
-        async with await anyio.connect_tcp("127.0.0.1", port) as stream:
-            await stream.send(f"GET {path} HTTP/1.1\r\nHost: x\r\n\r\n".encode())
-            try:
-                return await stream.receive()
-            except (anyio.EndOfStream, anyio.BrokenResourceError):
-                return b""
-
     async def main():
         async with gateway(fake_appium_url, policy) as url:
             port = int(url.rsplit(":", 1)[1])
-            assert await get(port, "/explode") == b""
-            assert b'"ready": true' in await get(port, "/status")
+            assert await http_get(port, "/explode") == b""
+            assert b'"ready": true' in await http_get(port, "/status")
 
     anyio.run(main)
 
@@ -332,9 +336,7 @@ def test_a_client_resetting_before_accept_does_not_stop_the_gateway(policy, fake
                 abrupt.sendall(b"GET /status HTTP/1.1\r\n\r\n")
                 abrupt.close()
             await anyio.sleep(0.1)
-            async with await anyio.connect_tcp("127.0.0.1", port) as stream:
-                await stream.send(b"GET /status HTTP/1.1\r\nHost: x\r\n\r\n")
-                assert b'"ready": true' in await stream.receive()
+            assert b'"ready": true' in await http_get(port, "/status")
 
     anyio.run(main)
 
