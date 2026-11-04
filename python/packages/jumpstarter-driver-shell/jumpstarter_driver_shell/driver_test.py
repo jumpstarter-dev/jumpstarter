@@ -152,6 +152,17 @@ def test_cli_exit_codes():
         assert returncode == 42
 
 
+def test_cli_returns_the_method_return_code_as_an_int():
+    """j exits with what the CLI returns, which must be an int: driver results arrive as floats"""
+    shell = Shell(methods={"exit2": "exit 2", "timeout": {"command": "sleep 30", "timeout": 1}})
+
+    with serve(shell) as client:
+        cli = client.cli()
+        for method, expected in (("exit2", 2), ("timeout", 199)):
+            result = cli([method], standalone_mode=False)
+            assert type(result) is int and result == expected, f"{method}: {result!r}"
+
+
 def test_cli_custom_descriptions_unified_format():
     """Test that CLI methods use custom descriptions with unified format"""
     shell = Shell(
