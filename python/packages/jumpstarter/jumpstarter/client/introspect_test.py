@@ -471,3 +471,125 @@ class TestParamDescription:
         params = walk_click_tree(root)["subcommands"]["send"]["params"]
         # str(click.Path()) is an object repr, which is useless in a prompt.
         assert params[0]["type"] == "path"
+
+
+class TestIterClientMembers:
+    def _members(self, cls):
+        from jumpstarter.client.introspect import iter_client_members
+
+        return {m.name: m for m in iter_client_members(cls)}
+
+    def test_classifies_member_shapes(self):
+        from contextlib import contextmanager
+        from functools import cached_property
+
+        from jumpstarter.client import DriverClient
+
+        class ShapesClient(DriverClient):
+            def on(self) -> None: ...
+
+            def read(self):
+                yield 1
+
+            @contextmanager
+            def session(self):
+                yield self
+
+            async def poll(self): ...
+
+            @property
+            def hostname(self) -> str:
+                return "dut"
+
+            @cached_property
+            def prompt(self) -> str:
+                return "=>"
+
+            def reset(self) -> None: ...
+
+            def _private(self): ...
+
+            def cli(self): ...
+
+        kinds = {name: member.kind for name, member in self._members(ShapesClient).items()}
+        assert kinds == {
+            "on": "method",
+            "read": "generator",
+            "session": "contextmanager",
+            "poll": "async",
+            "hostname": "property",
+            "prompt": "property",
+            # reset is driver API (probe-rs), not base plumbing; private names,
+            # cli and the DriverClient helpers (call, stream, close, status) never appear
+            "reset": "method",
+        }
+
+    def test_subclass_override_of_base_member_is_kept(self):
+        from jumpstarter.client import DriverClient
+
+        class StatusClient(DriverClient):
+            # a driver API method shadowing the base class's status property, as some drivers do
+            def status(self) -> str | None:  # ty: ignore[invalid-property-type-override]
+                return "on"
+
+        members = self._members(StatusClient)
+        assert members["status"].kind == "method"
+        assert members["status"].owner is StatusClient
+
+    def test_foreign_bases_are_skipped(self):
+        from jumpstarter.client import DriverClient
+
+        class Foreign:
+            def send(self, msg): ...
+
+        Foreign.__module__ = "can.bus"
+
+        class BusClient(DriverClient, Foreign):
+            def recv(self): ...
+
+        members = self._members(BusClient)
+        assert "recv" in members
+        assert "send" not in members
+
+    def test_out_of_tree_client_is_driver_api(self):
+        from jumpstarter.client import DriverClient
+
+        class FooClient(DriverClient):
+            def ping(self) -> None: ...
+
+        # an in-house driver package, not named jumpstarter_*
+        FooClient.__module__ = "acme_drivers.client"
+
+        members = self._members(FooClient)
+        assert members["ping"].owner is FooClient
+        assert "call" not in members
+
+    def test_out_of_tree_subclass_keeps_base_members(self):
+        from jumpstarter.client import DriverClient
+
+        class PowerLikeClient(DriverClient):
+            def on(self) -> None: ...
+
+            def off(self) -> None: ...
+
+        class AcmePowerClient(PowerLikeClient):
+            def on(self) -> None: ...
+
+            def settle(self) -> None: ...
+
+        AcmePowerClient.__module__ = "acme_drivers.power"
+
+        members = self._members(AcmePowerClient)
+        assert members["on"].owner is AcmePowerClient
+        assert members["settle"].owner is AcmePowerClient
+        assert members["off"].owner is PowerLikeClient
+
+    def test_does_not_evaluate_properties(self):
+        from jumpstarter.client import DriverClient
+
+        class ExplodingClient(DriverClient):
+            @property
+            def boom(self):
+                raise AssertionError("evaluated")
+
+        assert self._members(ExplodingClient)["boom"].kind == "property"

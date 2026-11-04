@@ -1,0 +1,4 @@
+# A Linux machine over SSH: SSHLibrary keywords through a Jumpstarter tunnel.
+# Set SSH_USER and SSH_IDENTITY_FILE (or SSH_PASSWORD); see README.md.
+paths = ["tests"]
+output-dir = "results"

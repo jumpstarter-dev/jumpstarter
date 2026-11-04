@@ -1,0 +1,4 @@
+# No client resource: the suites import jumpstarter_robot.Jumpstarter with the
+# basic example's exporter.yaml and discover its drivers when the run connects.
+paths = ["tests"]
+output-dir = "results"

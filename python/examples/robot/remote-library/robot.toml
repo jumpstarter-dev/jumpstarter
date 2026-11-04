@@ -1,0 +1,4 @@
+# A Robot Framework remote library server on the board, reached through a
+# Jumpstarter port forward. Locally, board_remote_server.py plays the board.
+paths = ["tests"]
+output-dir = "results"

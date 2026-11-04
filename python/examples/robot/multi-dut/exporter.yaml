@@ -1,0 +1,20 @@
+# Two identical mock boards on one exporter, for role libraries (Use Device).
+# The boards are the basic example's mock board (jumpstarter_example_robot).
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: mock-pair
+endpoint: ""
+token: ""
+export:
+  dut1:
+    type: jumpstarter_example_robot.mockdut.MockDut
+    children:
+      power: {type: jumpstarter_example_robot.mockdut.MockDutPower, config: {board: dut1}}
+      console: {type: jumpstarter_example_robot.mockdut.MockDutConsole, config: {board: dut1, hostname: dut1}}
+  dut2:
+    type: jumpstarter_example_robot.mockdut.MockDut
+    children:
+      power: {type: jumpstarter_example_robot.mockdut.MockDutPower, config: {board: dut2}}
+      console: {type: jumpstarter_example_robot.mockdut.MockDutConsole, config: {board: dut2, hostname: dut2}}
