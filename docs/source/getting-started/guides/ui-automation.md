@@ -83,7 +83,9 @@ If your client configuration allow-lists driver packages under `drivers.allow`,
 add `jumpstarter_driver_appium.*`, or the `appium` child cannot load.
 
 Install [Appium-Python-Client](https://github.com/appium/python-client) to run
-this example. Other WebDriver clients work too: use `target.ssl_context()` or
+this example. For complete pytest suites that drive the built-in Settings app
+through a local exporter, see `python/examples/appium-android-emulator` and
+`python/examples/appium-ios-simulator` in the repository. Other WebDriver clients work too: use `target.ssl_context()` or
 `target.ca_file` for the lease's certificate authority, and keep certificate
 verification enabled.
 
