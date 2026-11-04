@@ -842,6 +842,12 @@ long-lived `MetricsStream` to one Telemetry replica.
   Alternative (3) adds operational complexity with no benefit given
   the reverse-scrape model.
 
+**Phase 5 implementation note:** The operator uses the equivalent
+per-endpoint `ServiceMonitor` path described in *Phase 5 implementation
+details*. A separate `PodMonitor` is not required because Prometheus Operator
+creates one target per ready Telemetry Service endpoint with `pod`/`instance`
+labels.
+
 ### DD-9: Idempotency vs. best-effort
 
 **Context:** With the reverse-scrape model, metrics idempotency is a
@@ -1463,6 +1469,11 @@ beyond publishing a credential-free shipper configuration (**DD-4**).
 - `LogShipperReady=True` reports that the generated `<cr>-log-shipper`
   ConfigMap exists and is up to date. It does not mean a shipper is
   running or delivering logs.
+- Telemetry HA metrics use the existing `ServiceMonitor` path. Prometheus
+  Operator creates one target per ready Service endpoint with `pod` and
+  `instance` labels; with three Telemetry replicas this produced three
+  distinct targets. For DD-8's per-replica scrape and `sum` semantics this is
+  equivalent to a `PodMonitor`; no separate PodMonitor is required.
 
 ## Test Plan
 
