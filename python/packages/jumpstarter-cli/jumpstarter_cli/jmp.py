@@ -54,7 +54,7 @@ else:
     jmp.add_command(mcp)
 
 try:
-    from jumpstarter_robot.cli import robot
+    from jumpstarter_robot.cli import robot  # ty: ignore[unresolved-import]  # optional: jumpstarter-robot
 except ModuleNotFoundError as exc:
     if exc.name != "jumpstarter_robot":
         raise
