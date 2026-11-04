@@ -399,7 +399,11 @@ class IosDeviceClient(DriverClient):
         starts it through the lease, so tests can be watched and debugged in
         Device Hub while they run. ``appium`` is your installed Appium launcher,
         with its XCUITest driver. Yields the same target as ``appium.serve()``
-        on other devices; its ``wda_url`` is WebDriverAgent itself. Appium and
+        on other devices, and sessions accept the same capabilities, with
+        tokens from the target's own ``upload_app()``: a gateway in front of
+        Appium installs applications with devicectl (see the
+        ``devicehub_appium`` module). Its
+        ``wda_url`` is WebDriverAgent itself. Appium and
         WebDriverAgent stop, and the device becomes unavailable in Device Hub,
         when the context closes. Pairing works as for ``devicehub()``.
         """
@@ -410,6 +414,7 @@ class IosDeviceClient(DriverClient):
         from jumpstarter_driver_appium.common import AppiumTarget
         from jumpstarter_driver_appium.local import find_appium, local_appium
 
+        from .devicehub_appium import DEVICECTL_ENVIRONMENT, Applications, Devicectl, DeviceHubPolicy, gateway
         from .devicehub_mac import shown, webdriveragent
 
         find_appium(appium)  # Before pairing and starting WebDriverAgent.
@@ -423,8 +428,17 @@ class IosDeviceClient(DriverClient):
             ):
                 yield agent
 
-        with self.portal.wrap_async_context_manager(session()) as agent, local_appium(appium) as url:
-            yield AppiumTarget(url=url, default_capabilities=agent.capabilities(), wda_url=agent.url)
+        applications = Applications()
+        with (
+            self.portal.wrap_async_context_manager(session()) as agent,
+            local_appium(appium, env={**os.environ, **DEVICECTL_ENVIRONMENT}) as url,
+        ):
+            capabilities = agent.capabilities()
+            policy = DeviceHubPolicy(capabilities, applications, Devicectl(agent.udid))
+            with self.portal.wrap_async_context_manager(gateway(url, policy)) as endpoint:
+                yield AppiumTarget(
+                    url=endpoint, default_capabilities=capabilities, wda_url=agent.url, uploader=applications.add
+                )
 
     @contextmanager
     def forward(self, port: int, *, local_port: int | None = None) -> Generator[str, None, None]:

@@ -103,7 +103,7 @@ Appium on the exporter cannot read files on the client, so upload applications
 first and pass the returned token where Appium expects an application:
 
 ```python
-token = root.appium.upload_app("build/MyApp.ipa")
+token = root.appium.upload_app("build/MyApp.ipa")  # or target.upload_app(...) inside serve()
 options.set_capability("appium:app", token)
 # or later, inside a session:
 driver.execute_script("mobile: installApp", {"app": token})
@@ -153,12 +153,13 @@ for an overview of every target.
     :members: serve, upload_app, stop, info
 
 .. autoclass:: jumpstarter_driver_appium.common.AppiumTarget()
-    :members: capabilities, ssl_context, client_config, environment
+    :members: capabilities, upload_app, ssl_context, client_config, environment
 ```
 
 Targets that only the client can reach, such as an iOS device shown through
 Device Hub, run the user's installed Appium on the client instead and yield the
-same `AppiumTarget`:
+same `AppiumTarget`. They put the same policy in front of it, so sessions accept
+the same capabilities and `upload_app()` tokens as on the exporter:
 
 ```{eval-rst}
 .. autofunction:: jumpstarter_driver_appium.local.local_appium

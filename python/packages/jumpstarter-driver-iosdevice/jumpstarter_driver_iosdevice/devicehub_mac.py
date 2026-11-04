@@ -451,9 +451,9 @@ class WebDriverAgent:
         """Appium XCUITest capabilities for a session on this WebDriverAgent.
 
         Appium reaches real devices through usbmux to find them, read their logs
-        and manage apps. This device is reached only through CoreDevice, so those
-        steps are skipped: start apps with ``mobile: activateApp`` instead of
-        ``appium:bundleId``.
+        and manage apps. This device is reached only through CoreDevice, so these
+        skip finding the device and capturing its logs; the gateway in
+        ``devicehub_appium`` handles applications.
         """
         return {
             "platformName": "iOS",
@@ -462,7 +462,6 @@ class WebDriverAgent:
             "appium:platformVersion": self.platform_version,
             "appium:webDriverAgentUrl": self.url,
             "appium:skipLogCapture": True,
-            "appium:noReset": True,
         }
 
 

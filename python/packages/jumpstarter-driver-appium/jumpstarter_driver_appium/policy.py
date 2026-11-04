@@ -11,6 +11,7 @@ import json
 import re
 import urllib.parse
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from .common import APP_TOKEN_PREFIX
@@ -28,6 +29,14 @@ _MAX_DEPTH = 64
 
 class PolicyError(ValueError):
     """A request is outside what a lease may ask of the exporter's Appium."""
+
+
+@dataclass(frozen=True)
+class Reply:
+    """A response the policy gives itself instead of forwarding the request to Appium."""
+
+    status: int
+    document: dict[str, Any]
 
 
 def _no_constant(name: str) -> Any:
@@ -80,6 +89,14 @@ class AppiumPolicy:
         self.resolve = resolve
         self.session = session
         self.denied = denied
+
+    async def handle(self, method: str, path: str, body: bytes) -> "bytes | Reply":
+        """Return the body to forward or a ``Reply`` to send instead, or raise ``PolicyError``.
+
+        Targets whose Appium cannot do part of a request themselves override
+        this to do it first, for example to install an application.
+        """
+        return self.request(method, path, body)
 
     def request(self, method: str, path: str, body: bytes) -> bytes:
         """Return the body to forward, or raise ``PolicyError``."""

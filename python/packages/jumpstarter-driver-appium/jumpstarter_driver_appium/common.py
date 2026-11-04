@@ -2,7 +2,7 @@ import json
 import os
 import re
 import ssl
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -24,15 +24,17 @@ def check_app_name(name: str) -> str:
 class AppiumTarget:
     """An Appium server for one leased target, valid inside its context.
 
-    Open WebDriver sessions on ``url`` with ``capabilities()``. Where Appium
-    runs is the driver's choice: on the exporter, reached over the lease, or on
-    this machine for targets only it can reach.
+    Open WebDriver sessions on ``url`` with ``capabilities()``, and give
+    applications from ``upload_app()`` as ``appium:app``. Where Appium runs is
+    the driver's choice: on the exporter, reached over the lease, or on this
+    machine for targets only it can reach. Sessions behave the same either way.
     """
 
     url: str
     default_capabilities: Mapping[str, Any] = field(default_factory=dict)
     ca_file: Path | None = None
     wda_url: str | None = None
+    uploader: Callable[[Path], str] | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self):
         frozen = json.loads(json.dumps(dict(self.default_capabilities), allow_nan=False))
@@ -45,6 +47,16 @@ class AppiumTarget:
     def capabilities(self) -> dict[str, Any]:
         """W3C capabilities for a session on this target; add your own before use."""
         return json.loads(json.dumps(dict(self.default_capabilities)))
+
+    def upload_app(self, path: str | os.PathLike) -> str:
+        """Make an application available to this target; returns the token to use as ``appium:app``.
+
+        The token also works as the ``app`` argument of ``mobile: installApp``.
+        """
+        self._check_active()
+        if self.uploader is None:
+            raise RuntimeError("This Appium target does not accept applications")
+        return self.uploader(Path(path))
 
     def ssl_context(self) -> ssl.SSLContext | None:
         """Python's normal trust plus this target's CA, or None for plain HTTP."""

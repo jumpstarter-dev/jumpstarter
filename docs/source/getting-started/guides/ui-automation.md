@@ -95,18 +95,24 @@ The exporter's Appium cannot read files on your machine. Upload an application
 first, then pass the token it returns wherever Appium expects an application:
 
 ```python
-token = root.phone.appium.upload_app("build/app-debug.apk")  # or an .ipa, or a .app bundle
+token = target.upload_app("build/app-debug.apk")  # or an .ipa, or a .app bundle
 options.set_capability("appium:app", token)
 # or, inside a session; the argument is appPath on Android and app on iOS:
 driver.execute_script("mobile: installApp", {"appPath": token})
 driver.execute_script("mobile: installApp", {"app": token})
 ```
 
-With Device Hub, Appium on your Mac reaches the device only through
-WebDriverAgent, so it cannot install applications. Install them with Xcode, or
-with `xcrun devicectl device install app --device UDID PATH` using the
-`appium:udid` from `target.capabilities()`, then start them with
-`mobile: activateApp`.
+`root.phone.appium.upload_app()` does the same without serving Appium first.
+Installed applications start with `appium:bundleId` (iOS) or
+`appium:appPackage` (Android). A token works only on the target that issued it.
+
+Device Hub sessions accept the same capabilities, with tokens from the Device
+Hub target's own `upload_app()`. Appium on your Mac cannot install applications
+over Device Hub, so Jumpstarter installs them with `xcrun devicectl` before
+Appium sees the request, resetting an installed copy as Appium does, and starts
+an `appium:app` by its bundle identifier. Web views, MJPEG screen streaming and
+`mobile: listApps` are not available over Device Hub; see
+{doc}`iosdevice <../../reference/package-apis/drivers/iosdevice>`.
 
 ## Command line
 

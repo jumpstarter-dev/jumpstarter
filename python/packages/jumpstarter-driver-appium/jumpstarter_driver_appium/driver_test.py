@@ -145,6 +145,12 @@ def test_uploaded_apps_resolve_on_the_exporter(appium, tmp_path):
         assert status == 200 and result["value"]["body"]["args"][0]["app"] == always["appium:app"]
         status, result = session(target, {"appium:app": APP_TOKEN_PREFIX + "missing/x.ipa"})
         assert status == 400
+        # The target uploads the same way, for code that only holds the target.
+        status, result = session(target, {"appium:app": target.upload_app(app)})
+        assert status == 200
+        assert Path(result["value"]["capabilities"]["capabilities"]["alwaysMatch"]["appium:app"]).read_bytes() == (
+            b"ipa-bytes"
+        )
 
 
 def test_upload_rejects_unsupported_names(appium, tmp_path):
