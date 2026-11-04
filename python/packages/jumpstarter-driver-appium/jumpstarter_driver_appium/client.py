@@ -169,7 +169,10 @@ class AppiumClient(DriverClient):
             ca_file.chmod(0o600)
             with _forward_endpoint(client=self, method="connect", local_host="127.0.0.1", local_port=port) as addr:
                 yield AppiumTarget(
-                    url=f"https://{addr[0]}:{addr[1]}", default_capabilities=capabilities, ca_file=ca_file
+                    url=f"https://{addr[0]}:{addr[1]}",
+                    default_capabilities=capabilities,
+                    ca_file=ca_file,
+                    uploader=self.upload_app,
                 )
 
     def upload_app(self, path: str | os.PathLike) -> str:

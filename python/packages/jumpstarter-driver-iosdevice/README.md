@@ -202,9 +202,10 @@ from jumpstarter.common.utils import env
 
 with env() as root, root.ios.devicehub_appium("wda/Build/Products/WebDriverAgentRunner.xctestrun") as target:
     options = XCUITestOptions().load_capabilities(target.capabilities())
+    options.set_capability("appium:bundleId", "com.apple.Preferences")
+    # or an application of your own: options.set_capability("appium:app", target.upload_app("build/MyApp.ipa"))
     driver = webdriver.Remote(target.url, options=options, client_config=target.client_config())
     try:
-        driver.execute_script("mobile: activateApp", {"bundleId": "com.apple.Preferences"})
         print(driver.page_source)
     finally:
         driver.quit()
@@ -213,10 +214,27 @@ with env() as root, root.ios.devicehub_appium("wda/Build/Products/WebDriverAgent
 Appium runs on the Mac here because only the Mac reaches WDA, at the device's
 address inside the Device Hub connection rather than over Wi-Fi. Install
 Appium and its XCUITest driver on the Mac; Jumpstarter does not bundle them.
-Appium finds real devices, reads their logs and installs apps through usbmux,
-which this connection does not provide, so the capabilities skip those steps:
-start apps with `mobile: activateApp` rather than `appium:bundleId`, and install
-them with `xcrun devicectl device install app` while the device is shown.
+
+Sessions behave as on the exporter's Appium. Appium installs apps, reads logs
+and resets devices through usbmux, which this connection does not provide, so
+the target's URL is a gateway in front of it that applies the exporter's rules
+and fills the gap:
+
+- `appium:app`, `appium:otherApps` and `mobile: installApp` take tokens from
+  `target.upload_app()` (an `.ipa`, a zipped `.app` or an `.app` bundle built
+  for devices). The gateway installs them with `xcrun devicectl`, removing an
+  installed copy first unless you ask for `appium:noReset`, as Appium does,
+  and starts `appium:app` by its bundle identifier. Tokens from
+  `ios.appium.upload_app()` belong to the exporter's Appium and do not work
+  here.
+- `appium:bundleId` works: Appium checks for installed apps through devicectl.
+- `mobile: removeApp` uninstalls with devicectl, and `mobile: killApp` stops
+  the app as `mobile: terminateApp` does.
+- `appium:fullReset`, `appium:usePreinstalledWDA` and `appium:mjpegServerPort`
+  are ignored, as on the simulator, where the target fixes them;
+  `appium:resetLocationService` and `appium:customSSLCert` are rejected.
+- Web views, MJPEG screen streaming, `mobile: listApps` and the device's logs
+  also need usbmux and are not available.
 
 ### HTTPS services
 

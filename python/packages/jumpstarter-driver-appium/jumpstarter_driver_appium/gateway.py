@@ -13,7 +13,7 @@ import anyio
 import h11
 from anyio import BrokenResourceError, ClosedResourceError, EndOfStream
 
-from .policy import AppiumPolicy, PolicyError
+from .policy import AppiumPolicy, PolicyError, Reply
 
 logger = logging.getLogger(__name__)
 
@@ -167,14 +167,17 @@ async def serve_http(stream, *, backend: tuple[str, int], policy: AppiumPolicy) 
             return
         request, body = received
         try:
-            body = policy.request(request.method.decode("ascii"), request.target.decode("ascii"), body)
+            body = await policy.handle(request.method.decode("ascii"), request.target.decode("ascii"), body)
         except PolicyError as exc:
             await _respond(connection, stream, *_error(400, "invalid argument", str(exc)[:512]))
         else:
-            try:
-                await _forward(connection, stream, backend, request, body)
-            except _Abort:
-                return
+            if isinstance(body, Reply):
+                await _respond(connection, stream, body.status, json.dumps(body.document).encode())
+            else:
+                try:
+                    await _forward(connection, stream, backend, request, body)
+                except _Abort:
+                    return
         if connection.our_state is not h11.DONE or connection.their_state is not h11.DONE:
             return
         connection.start_next_cycle()

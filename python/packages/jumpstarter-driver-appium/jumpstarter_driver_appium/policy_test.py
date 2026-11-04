@@ -120,4 +120,8 @@ def test_target_environment_extends_node_trust(tmp_path):
 def test_plain_http_target():
     target = AppiumTarget(url="http://127.0.0.1:4723", wda_url="http://[fd00::1]:8100")
     assert target.ssl_context() is None
+    with pytest.raises(RuntimeError, match="does not accept applications"):
+        target.upload_app("App.ipa")
+    uploading = AppiumTarget(url="http://127.0.0.1:4723", uploader=lambda path: f"token:{path.name}")
+    assert uploading.upload_app("build/App.ipa") == "token:App.ipa"
     assert target.environment({})["JUMPSTARTER_APPIUM_WDA_URL"] == "http://[fd00::1]:8100"

@@ -732,6 +732,50 @@ def test_devicehub_appium_yields_a_local_appium_target(client, devicehub_wda):
     assert shown == [True]
 
 
+def test_devicehub_appium_sessions_install_uploads_like_the_exporter(client, devicehub_wda, monkeypatch, tmp_path):
+    from . import devicehub_appium
+    from .devicehub_appium_test import make_app
+
+    xctestrun, appium, _ = devicehub_wda
+    installed = []
+
+    async def install(device, app):
+        installed.append((app, device.udid))
+
+    async def missing(device, identifier):
+        return False
+
+    monkeypatch.setattr(devicehub_appium.Devicectl, "install", install)
+    monkeypatch.setattr(devicehub_appium.Devicectl, "installed", missing)
+    app = make_app(tmp_path)
+    with client.devicehub_appium(xctestrun, appium=str(appium)) as target:
+        token = target.upload_app(app)
+        caps = {"appium:app": token, "appium:udid": "OTHER"}
+        request = urllib.request.Request(
+            target.url + "/session",
+            data=json.dumps({"capabilities": {"alwaysMatch": caps, "firstMatch": [{}]}}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            always = json.load(response)["value"]["capabilities"]["capabilities"]["alwaysMatch"]
+        install_app = urllib.request.Request(
+            target.url + "/session/s1/appium/device/install_app", data=json.dumps({"appPath": token}).encode()
+        )
+        with urllib.request.urlopen(install_app, timeout=5) as response:
+            assert json.load(response) == {"value": None}
+        rejected = urllib.request.Request(
+            target.url + "/session/s1/appium/device/install_app", data=b'{"appPath": "/x"}'
+        )
+        with pytest.raises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(rejected, timeout=5)
+        assert error.value.code == 400
+    assert always["appium:bundleId"] == "com.example.App" and "appium:app" not in always
+    assert always["appium:udid"] == "DEVICE"
+    assert installed == [(app, "DEVICE"), (app, "DEVICE")]
+    record = Path(os.environ["FAKE_APPIUM_RECORD"]).read_text().splitlines()
+    assert json.loads(record[-1])["env"]["APPIUM_XCUITEST_PREFER_DEVICECTL"] == "1"
+
+
 def test_devicehub_appium_checks_appium_before_pairing(client, devicehub_wda):
     xctestrun, _, shown = devicehub_wda
     with pytest.raises(RuntimeError, match="does not bundle"), client.devicehub_appium(xctestrun, appium="no-appium"):
