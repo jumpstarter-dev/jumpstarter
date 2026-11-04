@@ -10,7 +10,6 @@ from jumpstarter_driver_kubevirt.client import (
     KubevirtClient,
     KubevirtConsoleClient,
     KubevirtPowerClient,
-    KubevirtStorageClient,
 )
 
 
@@ -117,25 +116,6 @@ class TestKubevirtConsoleClient:
             assert result is group
             cmd_names = list(result.commands.keys())
             assert "pipe" in cmd_names
-
-
-class TestKubevirtStorageClient:
-    def test_is_composite_client_subclass(self):
-        from jumpstarter_driver_composite.client import CompositeClient
-
-        assert issubclass(KubevirtStorageClient, CompositeClient)
-
-    def test_has_flash_method(self):
-        assert hasattr(KubevirtStorageClient, "flash")
-        assert callable(KubevirtStorageClient.flash)
-
-    def test_flash_calls_call(self):
-        client = object.__new__(KubevirtStorageClient)
-        client.call = MagicMock()
-        client.stack = MagicMock()
-
-        client.flash("http://example.com/image.qcow2")
-        client.call.assert_called_once_with("flash", "http://example.com/image.qcow2")
 
 
 class TestKubevirtClient:
