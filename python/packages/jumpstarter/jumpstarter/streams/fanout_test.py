@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock
 
 import anyio
 import pytest
@@ -15,6 +17,7 @@ from anyio.lowlevel import checkpoint
 from anyio.streams.stapled import StapledObjectStream
 from anyio.to_thread import run_sync as run_sync_in_worker
 
+from .common import create_memory_stream
 from .fanout import (
     BufferOverflowError,
     ClientBuffer,
@@ -371,22 +374,122 @@ class TestStreamFanOut:
         assert buf._close_error is err
 
     @pytest.mark.anyio
-    async def test_exclusive_send_when_source_none(self):
+    @pytest.mark.parametrize("always_on", [False, True])
+    async def test_exclusive_discards_offline_input_without_replay(self, always_on, caplog):
+        caplog.set_level(logging.WARNING, logger="jumpstarter.streams.fanout")
         _a_tx, a_rx = create_memory_object_stream[bytes](32)
-        b_tx, _b_rx = create_memory_object_stream[bytes](32)
+        b_tx, b_rx = create_memory_object_stream[bytes](32)
 
         @asynccontextmanager
         async def factory():
             yield StapledObjectStream(b_tx, a_rx)
 
+        fanout = StreamFanOut(source_factory=factory, always_on=always_on)
+
+        try:
+            with anyio.fail_after(2):
+                async with fanout.attach_exclusive() as stream:
+                    source = fanout._source
+                    fanout._source = None
+                    await stream.send(b"")
+                    assert not stream._buffer._buf
+                    await stream.send(b"x")
+                    await stream.send(b"discard this")
+                    await stream.send(b"and this")
+                    assert not stream._buffer._buf
+                    assert fanout._write_token_holder == stream._id
+                    assert [record.getMessage() for record in caplog.records] == [
+                        "Discarding input: source not connected"
+                    ] * 4
+                    assert all(record.levelno == logging.WARNING for record in caplog.records)
+
+                    fanout._source = source
+                    await stream.send(b"after reconnect")
+                    assert await b_rx.receive() == b"after reconnect"
+                    assert not b_rx.statistics().current_buffer_used
+        finally:
+            await fanout.close()
+
+    @pytest.mark.anyio
+    async def test_discarding_offline_input_is_cancellable(self):
+        source, _device = create_memory_stream()
+
+        @asynccontextmanager
+        async def factory():
+            async with source:
+                yield source
+
+        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        try:
+            async with fanout.attach_exclusive() as stream:
+                fanout._source = None
+                with anyio.CancelScope() as scope:
+                    scope.cancel()
+                    await stream.send(b"cancelled input")
+                    raise AssertionError("Discarding input must allow cancellation")
+                assert scope.cancelled_caught
+                assert not stream._buffer._buf
+        finally:
+            await fanout.close()
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        "error_type",
+        [
+            OSError,
+            TimeoutError,
+            BrokenResourceError,
+            ClosedResourceError,
+            RuntimeError,
+            ValueError,
+            asyncio.InvalidStateError,
+        ],
+    )
+    @pytest.mark.parametrize("disconnect_during_write", [False, True])
+    async def test_source_write_failure_propagates(self, monkeypatch, error_type, disconnect_during_write):
+        source, _device = create_memory_stream()
+
+        @asynccontextmanager
+        async def factory():
+            async with source:
+                yield source
+
+        error = error_type("source write failure")
         fanout = StreamFanOut(source_factory=factory, always_on=False)
 
-        async with fanout.attach_exclusive() as stream:
-            fanout._source = None
-            with pytest.raises(BrokenResourceError):
-                await stream.send(b"no source")
+        async def fail(data):
+            if disconnect_during_write:
+                fanout._source = None
+            raise error
 
-        await fanout.close()
+        monkeypatch.setattr(source, "send", AsyncMock(side_effect=fail))
+        try:
+            async with fanout.attach_exclusive() as stream:
+                with pytest.raises(error_type) as exc_info:
+                    await stream.send(b"input")
+                assert exc_info.value is error
+                assert not stream._buffer._buf
+        finally:
+            await fanout.close()
+
+    @pytest.mark.anyio
+    async def test_offline_writer_still_checks_token(self):
+        source, _device = create_memory_stream()
+
+        @asynccontextmanager
+        async def factory():
+            async with source:
+                yield source
+
+        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        try:
+            async with fanout.attach_exclusive() as stream:
+                fanout._source = None
+                await fanout.release_write_token()
+                with pytest.raises(WriteTokenRevokedError):
+                    await stream.send(b"must not be silently discarded")
+        finally:
+            await fanout.close()
 
     @pytest.mark.anyio
     async def test_send_eof_is_noop(self):

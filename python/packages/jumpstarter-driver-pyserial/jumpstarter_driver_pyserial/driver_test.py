@@ -15,6 +15,7 @@ from . import driver as driver_module
 from .client import PySerialClient
 from .driver import PySerial, ThrottledStream
 from jumpstarter.common.utils import serve
+from jumpstarter.streams.fanout import ExclusiveStream
 
 
 def test_bare_pyserial():
@@ -383,21 +384,31 @@ async def _read_until(stream, marker: bytes, timeout: float = 5) -> bytes:
     return seen
 
 
+@pytest.fixture
+def processed_input(monkeypatch):
+    """Observe exporter-side processing without adding acknowledgements to the wire."""
+    events = {}
+    original_send = ExclusiveStream.send
+
+    async def send(stream, data):
+        await original_send(stream, data)
+        if event := events.get(data):
+            event.set()
+
+    def track(data):
+        events[data] = anyio.Event()
+        return events[data]
+
+    monkeypatch.setattr(ExclusiveStream, "send", send)
+    return track
+
+
 @pytest.mark.parametrize(
     "type_while_gone",
-    [
-        False,
-        pytest.param(
-            True,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="fanout tears down the stream on input while the source is down (#1231)",
-            ),
-        ),
-    ],
+    [False, True],
     ids=["idle", "typing"],
 )
-def test_console_stream_survives_device_power_cycle(type_while_gone):
+def test_console_stream_survives_device_power_cycle(type_while_gone, processed_input):
     """An attached console stays connected while the device vanishes and returns."""
     device = VanishingDevice()
     driver = PySerial(url="loop://")
@@ -410,12 +421,99 @@ def test_console_stream_survives_device_power_cycle(type_while_gone):
             device.unplug()
             await _read_until(stream, b"[disconnected")
             if type_while_gone:
+                processed = processed_input(b"x")
                 await stream.send(b"x")
-                await anyio.sleep(0.5)  # let the keystroke reach the exporter
+                # Wait for exporter-side processing before restoring the device.
+                with anyio.fail_after(5):
+                    await processed.wait()
             device.present = True
             await _read_until(stream, b"[reconnected]")
             await stream.send(b"after")
             await _read_until(stream, b"after")
+
+    with serve(driver) as client:
+        client.portal.call(scenario, client)
+
+
+@pytest.mark.parametrize("always_on", [False, True])
+def test_offline_input_preserves_console_rpc_and_observer(always_on, processed_input):
+    """An outage discards input, not the logical RPC, token, or observer."""
+    device = VanishingDevice()
+    driver = PySerial(url="loop://", always_on=always_on)
+    fanout = driver._get_fanout()
+    fanout._source_factory = device.open
+
+    async def scenario(client):
+        with anyio.fail_after(5):
+            async with (
+                client.stream_async("connect") as stream,
+                client.stream_async("observe") as observer,
+            ):
+                rpc = stream.stream.context
+                holder = fanout._write_token_holder
+                reader = fanout._reader_task
+                for _ in range(2):
+                    await stream.send(b"before outage")
+                    await _read_until(stream, b"before outage")
+                    await _read_until(observer, b"before outage")
+                    device.unplug()
+                    await _read_until(stream, b"[disconnected")
+                    assert fanout._source is None
+
+                    processed = processed_input(b"offline keystrokes")
+                    await stream.send(b"offline keystrokes")
+                    # Wait for exporter-side processing before restoring the device.
+                    await processed.wait()
+                    assert not rpc.done()
+                    assert fanout._write_token_holder == holder
+                    assert fanout._reader_task is reader
+
+                    device.present = True
+                    output = await _read_until(stream, b"[reconnected]")
+                    assert b"offline keystrokes" not in output
+                    assert b"input discarded" not in output
+                    observed = await _read_until(observer, b"[reconnected]")
+                    assert b"input discarded" not in observed
+                    await stream.send(b"after outage")
+                    assert await _read_until(stream, b"after outage") == b"after outage"
+                    assert await _read_until(observer, b"after outage") == b"after outage"
+                    assert not rpc.done()
+                    assert fanout._write_token_holder == holder
+
+    with serve(driver) as client:
+        client.portal.call(scenario, client)
+
+
+@pytest.mark.parametrize("always_on", [False, True])
+@pytest.mark.parametrize("termination", ["close", "shutdown", "revoke"])
+def test_offline_console_still_terminates(always_on, termination, processed_input):
+    device = VanishingDevice()
+    driver = PySerial(url="loop://", always_on=always_on)
+    driver._get_fanout()._source_factory = device.open
+
+    async def scenario(client):
+        with anyio.fail_after(5):
+            async with client.stream_async("connect") as stream:
+                device.unplug()
+                await _read_until(stream, b"[disconnected")
+                processed = processed_input(b"offline input")
+                await stream.send(b"offline input")
+                await processed.wait()
+
+                if termination == "close":
+                    await client.call_async("close")
+                elif termination == "shutdown":
+                    driver.shutdown()
+                else:
+                    await client.call_async("release_console")
+                    await _read_until(stream, b"[write token revoked]")
+                    await stream.send(b"revoked input")
+
+                with pytest.raises((anyio.EndOfStream, anyio.BrokenResourceError)):
+                    # Retry notifications may already be queued; only a stream
+                    # error counts as termination, not an in-band message.
+                    while True:
+                        await stream.receive()
 
     with serve(driver) as client:
         client.portal.call(scenario, client)

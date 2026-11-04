@@ -15,6 +15,7 @@ from anyio import (
 )
 from anyio.abc import ObjectStream
 from anyio.from_thread import run_sync as run_sync_from_thread
+from anyio.lowlevel import checkpoint
 
 from jumpstarter.common.exceptions import CONSOLE_IN_USE_MARKER, JumpstarterException
 from jumpstarter.driver.decorators import export, exportstream
@@ -185,14 +186,17 @@ class _FanOutStreamBase:
 
 
 class ExclusiveStream(_FanOutStreamBase):
-    """Read+write stream for the write token holder."""
+    """Read+write stream for the write token holder. Discards input while the source is absent."""
 
     async def send(self, data: bytes) -> None:
         if self._id != self._fanout._write_token_holder:
             raise WriteTokenRevokedError("write token revoked")
         source = self._fanout._source
         if source is None:
-            raise BrokenResourceError("source not connected")
+            # Allow cancellation even though there is no physical IO to await.
+            await checkpoint()
+            logger.warning("Discarding input: source not connected")
+            return
         await source.send(data)
 
     async def aclose(self) -> None:
