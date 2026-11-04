@@ -319,5 +319,6 @@ configuration.
   without that label; Alloy and Promtail omit the label through their native
   pipelines. Vector also falls back to the pod's `component` label, then
   `"unknown"`, when a line has no usable JSON `component`.
-- The feature does not install, configure, or upgrade Prometheus, Loki, or any
-  shipper, and does not manage their credentials.
+- The feature does not deploy, operate, or manage Prometheus, Loki, or any
+  shipper; it only labels workloads and publishes integration configuration,
+  and does not manage shipper credentials.
