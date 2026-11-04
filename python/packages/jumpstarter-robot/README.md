@@ -26,7 +26,7 @@ use:
 | --- | --- | --- |
 | `ssh` | SSHLibrary | `Open SSH Connection` and SSHLibrary keywords on leased Linux devices |
 | `android` | adbutils | the ADB keywords |
-| `appium` | AppiumLibrary, Appium-Python-Client, Selenium, `jumpstarter-driver-appium` | `Open Appium Application` and AppiumLibrary keywords |
+| `appium` | AppiumLibrary, `jumpstarter-driver-appium` | `Start Appium` and AppiumLibrary keywords |
 | `mobile` | `android` and `appium` | Android and iOS app testing |
 
 Without an extra, its keywords still exist and are documented; they fail with
@@ -182,7 +182,6 @@ driver's own path:
 | `SSHWrapperClient` | `<Prefix> Connect` | `Open SSH Connection` |
 | `AdbClient`, `AdbDeviceClient`, `AndroidEmulatorClient` | `<Prefix> Connect` | `Open ADB Device` |
 | `IosDeviceClient` | `<Prefix> Connect` | `Open iOS Device` |
-| `AppiumClient` | `<Prefix> Open Application` | `Open Appium Application` |
 | `PySerialClient` | `<Prefix> Open Console` | `Open Console` |
 | `VideoClient`, `NanoKVMUSBVideoClient` | `<Prefix> Capture Snapshot` | `Capture Video Snapshot` |
 
@@ -430,20 +429,27 @@ written to `${OUTPUT DIR}/jumpstarter/console-<alias>-<n>.log`.
 
 ### Appium
 
-These keywords open AppiumLibrary sessions on a leased target's Appium, with
-the lease's certificate verified. Import `AppiumLibrary` in the suite; all its
-keywords then act on the application opened here. Do not use AppiumLibrary's
-own `Open Application` against a Jumpstarter Appium server: it defaults to
-`ignore_certificates=True` and `direct_connection=True`, and cannot name the
-lease's certificate authority.
+`Start Appium` serves a leased target's Appium on a loopback HTTPS port.
+Import `AppiumLibrary` in the suite and open the session with its
+`Open Application`:
+
+```robotframework
+${appium}=    Start Appium    emulator.appium
+Open Application    ${appium.url}    &{appium.capabilities}    appium:appPackage=com.android.settings
+```
+
+`Start Appium` and `Start Device Hub Appium` return a dictionary: `url`,
+`capabilities` (the ones the target fixes: its platform, automation name and
+device), `ca_file` (the lease's CA certificate, for other WebDriver clients),
+`wda_url` (Device Hub only), `alias`, `path` and `session`. Pass an
+`Upload App` token to `Open Application` as `appium:app`. `Stop Appium` does
+not close applications; close them first with `Close All Applications`.
 
 | Keyword | Arguments | Description |
 | --- | --- | --- |
-| `Get Appium Target` | `alias=None` | Describe a running Appium server: ``url``, ``ca_file``, ``capabilities`` and ``wda_url``. |
-| `Open Appium Application` | `server_or_path, alias=None, app=None, *, session=None, **capabilities` | Open an AppiumLibrary application on a Jumpstarter Appium server; returns its index. |
-| `Start Appium Server` | `path=appium, port=0, alias=None, scope=global, session=None` | Serve the Appium of the driver at ``path`` on a loopback HTTPS port; returns its URL. |
-| `Start Device Hub Appium` | `path, xctestrun, appium=appium, alias=None, scope=global, session=None` | Show an iOS device in Device Hub, run WebDriverAgent and Appium on this Mac; returns Appium's URL. |
-| `Stop Appium Server` | `alias=None` | Close the applications opened through an Appium server, then stop serving it. |
+| `Start Appium` | `path=appium, port=0, alias=None, scope=global, session=None` | Serve the Appium of the driver at ``path`` on a loopback HTTPS port; returns its URL and capabilities. |
+| `Start Device Hub Appium` | `path, xctestrun, appium=appium, alias=None, scope=global, session=None` | Show an iOS device in Device Hub, run WebDriverAgent and Appium on this Mac; returns the same as `Start Appium`. |
+| `Stop Appium` | `alias=None` | Stop serving an Appium server; close its applications first (``Close All Applications``). |
 | `Upload App` | `path, file, session=None` | Upload an application to the Appium driver at ``path``; returns its ``jumpstarter-app:`` token. |
 
 ### SSH

@@ -1,8 +1,9 @@
 *** Settings ***
 Documentation       Upload Appium's ApiDemos sample app and drive it.
 ...
-...                 Shows the explicit upload: ``Appium Upload App`` returns a
-...                 ``jumpstarter-app:`` token that the session installs.
+...                 ``Appium Upload App`` uploads the APK to the exporter and returns a
+...                 ``jumpstarter-app:`` token; ``Open Application`` installs it from
+...                 ``appium:app``.
 
 Resource            ../../resources/android.resource
 
@@ -15,7 +16,8 @@ Install And Drive Sample App
     Skip Unless Sample App Present
     ${token}=    Appium Upload App    ${SAMPLE_APP}
     Should Start With    ${token}    jumpstarter-app:
-    Appium Open Application    alias=sample    app=${token}    &{APPIUM_CAPS}
+    Open Application    ${APPIUM.url}    alias=sample
+    ...    &{APPIUM.capabilities}    &{APPIUM_CAPS}    appium:app=${token}
     Dismiss System Dialogs
     Wait Until Page Contains Element    accessibility_id=Views    timeout=30s
     Click Element    accessibility_id=Views

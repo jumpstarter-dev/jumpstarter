@@ -4324,17 +4324,13 @@ android = [
     { name = "adbutils" },
 ]
 appium = [
-    { name = "appium-python-client" },
     { name = "jumpstarter-driver-appium" },
     { name = "robotframework-appiumlibrary" },
-    { name = "selenium" },
 ]
 mobile = [
     { name = "adbutils" },
-    { name = "appium-python-client" },
     { name = "jumpstarter-driver-appium" },
     { name = "robotframework-appiumlibrary" },
-    { name = "selenium" },
 ]
 ssh = [
     { name = "robotframework-sshlibrary" },
@@ -4343,7 +4339,6 @@ ssh = [
 [package.dev-dependencies]
 dev = [
     { name = "adbutils" },
-    { name = "appium-python-client" },
     { name = "jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network" },
@@ -4359,15 +4354,12 @@ dev = [
     { name = "pytest-cov" },
     { name = "robotframework-appiumlibrary" },
     { name = "robotframework-sshlibrary" },
-    { name = "selenium" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "adbutils", marker = "extra == 'android'", specifier = ">=2.8.7" },
     { name = "adbutils", marker = "extra == 'mobile'", specifier = ">=2.8.7" },
-    { name = "appium-python-client", marker = "extra == 'appium'", specifier = ">=5.1.1" },
-    { name = "appium-python-client", marker = "extra == 'mobile'", specifier = ">=5.1.1" },
     { name = "click", specifier = ">=8.1.7.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-appium", marker = "extra == 'appium'", editable = "packages/jumpstarter-driver-appium" },
@@ -4376,8 +4368,6 @@ requires-dist = [
     { name = "robotframework-appiumlibrary", marker = "extra == 'appium'", specifier = ">=3.0,<4" },
     { name = "robotframework-appiumlibrary", marker = "extra == 'mobile'", specifier = ">=3.0,<4" },
     { name = "robotframework-sshlibrary", marker = "extra == 'ssh'", specifier = ">=3.8.0" },
-    { name = "selenium", marker = "extra == 'appium'", specifier = ">=4.26" },
-    { name = "selenium", marker = "extra == 'mobile'", specifier = ">=4.26" },
     { name = "tomlkit", specifier = ">=0.13.0" },
 ]
 provides-extras = ["android", "appium", "mobile", "ssh"]
@@ -4385,7 +4375,6 @@ provides-extras = ["android", "appium", "mobile", "ssh"]
 [package.metadata.requires-dev]
 dev = [
     { name = "adbutils", specifier = ">=2.8.7" },
-    { name = "appium-python-client", specifier = ">=5.1.1" },
     { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
@@ -4401,7 +4390,6 @@ dev = [
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "robotframework-appiumlibrary", specifier = ">=3.0,<4" },
     { name = "robotframework-sshlibrary", specifier = ">=3.8.0" },
-    { name = "selenium", specifier = ">=4.26" },
 ]
 
 [[package]]
