@@ -4,15 +4,25 @@ Documentation       Platform-neutral mobile flows, shared by the Android and iOS
 ...                 Nothing here names a platform. The platform resource
 ...                 (``android.resource`` or ``ios.resource``) imports this file and
 ...                 defines what it uses: the variables ``${SESSION_NAME}``,
-...                 ``${EXPORTER_TEMPLATE}``, ``${APPIUM}``, ``&{SETTINGS_CAPS}``,
-...                 ``${SETTINGS_SEARCH}`` and ``${SETTINGS_SEARCH_FIELD}``, and the
-...                 keywords ``Skip Unless Tooling Present`` and ``Log Device Diagnostics``.
+...                 ``${EXPORTER_TEMPLATE}``, ``${APPIUM_PATH}``, ``&{APPIUM_CAPS}``,
+...                 ``&{SETTINGS_CAPS}``, ``${SETTINGS_SEARCH}`` and
+...                 ``${SETTINGS_SEARCH_FIELD}``, and the keywords
+...                 ``Skip Unless Tooling Present`` and ``Log Device Diagnostics``.
 ...                 Both client resources alias their power and Appium drivers to
 ...                 ``Device Power`` and ``Appium``, so ``Device Power On`` and
-...                 ``Appium Open Application`` mean the same on both platforms.
+...                 ``Appium Upload App`` mean the same on both platforms.
+...
+...                 `Start Device Appium` keeps the running server in ``${APPIUM}``:
+...                 AppiumLibrary's ``Open Application`` takes its ``url`` and
+...                 ``capabilities``.
 
 Library             OperatingSystem
 Library             AppiumLibrary
+
+
+*** Variables ***
+# The running Appium server, set by `Start Device Appium`: ``url`` and ``capabilities``.
+${APPIUM}       ${None}
 
 
 *** Keywords ***
@@ -71,11 +81,16 @@ Serve Exporter Template
 Boot Device
     Device Power On
     Prepare Platform For Appium
-    Start Appium Server    ${APPIUM}
+    Start Device Appium
+
+Start Device Appium
+    [Documentation]    Serve the device's Appium and keep it in ``${APPIUM}`` for ``Open Application``.
+    ${appium}=    Start Appium    ${APPIUM_PATH}
+    Set Global Variable    ${APPIUM}    ${appium}
 
 Shut Down Device
     Run Keyword And Ignore Error    Close All Applications
-    Run Keyword And Ignore Error    Stop Appium Server
+    Run Keyword And Ignore Error    Stop Appium
     Device Power Off
 
 Skip Unless Executable
@@ -86,7 +101,8 @@ Skip Unless Executable
     RETURN    ${found}
 
 Open Settings App
-    Appium Open Application    alias=settings    &{SETTINGS_CAPS}    &{APPIUM_CAPS}
+    Open Application    ${APPIUM.url}    alias=settings
+    ...    &{APPIUM.capabilities}    &{APPIUM_CAPS}    &{SETTINGS_CAPS}
     Dismiss System Dialogs
 
 Search Settings For

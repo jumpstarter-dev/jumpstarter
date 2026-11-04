@@ -1,8 +1,9 @@
 *** Settings ***
 Documentation       Drive Appium's UIKitCatalog sample app.
 ...
-...                 Shows the implicit upload: a local ``app=`` path is uploaded by
-...                 ``Appium Open Application`` itself.
+...                 ``Appium Upload App`` uploads the zipped app to the exporter and
+...                 returns a ``jumpstarter-app:`` token; ``Open Application``
+...                 installs it from ``appium:app``.
 
 Resource            ../../resources/ios.resource
 
@@ -13,7 +14,10 @@ Suite Teardown      Release Device
 *** Test Cases ***
 Install And Drive Sample App
     Skip Unless Sample App Present
-    Appium Open Application    alias=sample    app=${SAMPLE_APP}    &{APPIUM_CAPS}
+    ${token}=    Appium Upload App    ${SAMPLE_APP}
+    Should Start With    ${token}    jumpstarter-app:
+    Open Application    ${APPIUM.url}    alias=sample
+    ...    &{APPIUM.capabilities}    &{APPIUM_CAPS}    appium:app=${token}
     Dismiss System Dialogs
     Wait Until Page Contains Element    accessibility_id=Buttons    timeout=60s
     Click Element    accessibility_id=Buttons

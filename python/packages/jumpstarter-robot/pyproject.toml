@@ -21,8 +21,6 @@ jmp-robot = "jumpstarter_robot.cli:robot"
 appium = [
   "jumpstarter-driver-appium",
   "robotframework-appiumlibrary>=3.0,<4",
-  "Appium-Python-Client>=5.1.1",
-  "selenium>=4.26",
 ]
 ssh = ["robotframework-sshlibrary>=3.8.0"]
 android = ["adbutils>=2.8.7"]
@@ -39,8 +37,6 @@ dev = [
   "adbutils>=2.8.7",
   "jumpstarter-driver-appium",
   "robotframework-appiumlibrary>=3.0,<4",
-  "Appium-Python-Client>=5.1.1",
-  "selenium>=4.26",
   "jumpstarter-driver-composite",
   "jumpstarter-driver-network",
   "jumpstarter-driver-opendal",

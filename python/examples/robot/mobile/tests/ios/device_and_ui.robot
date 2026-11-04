@@ -12,9 +12,9 @@ Suite Teardown      Release Device
 App Survives Device Reboot
     Open Settings App
     Close Application
-    Stop Appium Server
+    Stop Appium
     Device Power Cycle    wait=1
-    Start Appium Server    ${APPIUM}
+    Start Device Appium
     Open Settings App
     Wait Until Page Contains Element    ${SETTINGS_SEARCH}    timeout=30s
     [Teardown]    Run Keyword And Ignore Error    Close Application
