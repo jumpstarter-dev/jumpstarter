@@ -34,11 +34,14 @@ def _alive(pid):
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
+    if not os.path.isdir("/proc"):
+        return True
     try:
         with open(f"/proc/{pid}/stat") as stat:
             return stat.read().rsplit(") ", 1)[1][0] != "Z"
-    except FileNotFoundError:
-        return True
+    except (FileNotFoundError, ProcessLookupError):
+        # Reaped since the kill() above
+        return False
 
 
 def _wait_until_gone(pid, timeout=10):
