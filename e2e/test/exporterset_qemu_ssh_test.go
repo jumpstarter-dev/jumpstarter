@@ -70,24 +70,46 @@ var _ = Describe("ExporterSet QEMU-SSH E2E Tests", Label("exporterset-qemu-ssh")
 	})
 
 	AfterAll(func() {
-		By("cleaning up ExporterSet resources and client")
-		// Delete ExporterSet before VirtualTargetClass so the remote-cleanup
-		// finalizer can still resolve SSH credentials. Bound waits so a stuck
-		// finalizer cannot burn the suite timeout (host cleanup sweeps leftovers).
-		_, _ = Kubectl("delete", "--ignore-not-found", "--timeout=2m",
-			"-n", ns, "exportersets.virtualtarget.jumpstarter.dev", "qemu-ssh-e2e")
-		_, _ = Kubectl("patch", "--ignore-not-found",
-			"-n", ns, "exportersets.virtualtarget.jumpstarter.dev", "qemu-ssh-e2e",
-			"--type=merge", "-p", `{"metadata":{"finalizers":null}}`)
-		_, _ = Kubectl("delete", "--ignore-not-found", "--wait=false",
-			"-n", ns, "exportersets.virtualtarget.jumpstarter.dev", "qemu-ssh-e2e")
-		_, _ = Kubectl("delete", "--ignore-not-found", "--timeout=30s",
-			"-n", ns, "virtualtargetclasses.virtualtarget.jumpstarter.dev", "qemu-ssh-e2e")
-		DeleteClient(exporterSetQemuSSHClientName)
-
-		By("cleaning up host-side Podman/quadlet leftovers")
+		// Host-side teardown (Podman containers, quadlets, SSH key + sshd
+		// override) and the OIDC client must run even if a k8s delete below
+		// fails on a stuck finalizer — otherwise containers and root SSH
+		// access leak on a shared runner. DeferCleanup runs these at teardown
+		// (LIFO, so after the verification below) on every path, including
+		// failures, without masking the original error.
 		setupScript := filepath.Join(RepoRoot(), "e2e", "scripts", "setup-qemu-ssh-e2e.sh")
-		_, _ = RunCmd("bash", setupScript, "--cleanup")
+		DeferCleanup(func() {
+			By("cleaning up host-side Podman/quadlet/SSH leftovers")
+			out, err := RunCmd("bash", setupScript, "--cleanup")
+			Expect(err).NotTo(HaveOccurred(), "host cleanup failed: %s", out)
+		})
+		DeferCleanup(DeleteClient, exporterSetQemuSSHClientName)
+
+		By("cleaning up ExporterSet resources")
+		// Delete ExporterSet before VirtualTargetClass so the remote-cleanup
+		// finalizer can still resolve SSH credentials.
+		// NOTE: VTC must exist when the ExporterSet finalizer runs — the
+		// controller intentionally refuses cleanup if the class was deleted
+		// first (it cannot recover SSH user/port). A future validating
+		// webhook should block VTC deletion while ExporterSets reference it.
+		// It is therefore NOT deferred: if the ExporterSet delete above fails,
+		// deleting the VTC would wedge the stuck ExporterSet permanently.
+		out, err := Kubectl("delete", "--ignore-not-found", "--timeout=2m",
+			"-n", ns, "exportersets.virtualtarget.jumpstarter.dev", "qemu-ssh-e2e")
+		Expect(err).NotTo(HaveOccurred(), "ExporterSet cleanup failed: %s", out)
+
+		By("verifying controller cleanup removed e2e containers")
+		// Check before the deferred host --cleanup so a silent controller
+		// failure (e.g. SSH connect returned nil) is not masked by the script.
+		out, err = RunCmd("sudo", "podman", "ps", "-a",
+			"--filter", "name=qemu-ssh-e2e",
+			"--format", "{{.Names}}")
+		Expect(err).NotTo(HaveOccurred(), "podman ps failed: %s", out)
+		Expect(strings.TrimSpace(out)).To(BeEmpty(),
+			"controller Cleanup should have removed all e2e containers, found: %s", out)
+
+		out, err = Kubectl("delete", "--ignore-not-found", "--timeout=30s",
+			"-n", ns, "virtualtargetclasses.virtualtarget.jumpstarter.dev", "qemu-ssh-e2e")
+		Expect(err).NotTo(HaveOccurred(), "VirtualTargetClass cleanup failed: %s", out)
 	})
 
 	AfterEach(func() {
@@ -124,6 +146,93 @@ var _ = Describe("ExporterSet QEMU-SSH E2E Tests", Label("exporterset-qemu-ssh")
 			g.Expect(strings.ToLower(out)).To(ContainSubstring("up"),
 				"running containers:\n%s", out)
 		}, 2*time.Minute, qemuSSHPollPeriod).Should(Succeed())
+	})
+
+	// Runs before the power-cycle lease test so it starts from a never-leased
+	// exporter. A prior lease would leave an exporter that lingers as
+	// Online=True for up to the controller's ~1m offline timeout after
+	// exitOnLeaseEnd takes it down, and the settle below could mistake that
+	// dying exporter for a healthy target.
+	It("recycles a terminal exporter and refills the pool (ExitAndReplace)", func() {
+		// recycleStrategy ExitAndReplace + minAvailableReplicas 1: with
+		// exitOnLeaseEnd, releasing a lease makes the exporter exit and go
+		// offline; the controller deletes it and scale-up deploys a fresh
+		// replacement on the host.
+		By("recording the current Available exporter")
+		var oldName, oldUID string
+		Eventually(func() string {
+			oldName = KubectlQuery("-n", ns, "get", "exporter",
+				"-l", qemuSSHSelector,
+				"-o", "jsonpath={.items[0].metadata.name}")
+			return oldName
+		}, 5*time.Minute, qemuSSHPollPeriod).ShouldNot(BeEmpty())
+		// Online + Registered + Available with no lease, so we only lease a
+		// genuinely ready exporter.
+		WaitForExporter(oldName)
+		oldUID = KubectlQuery("-n", ns, "get", "exporter", oldName, "-o", "jsonpath={.metadata.uid}")
+		Expect(oldUID).NotTo(BeEmpty())
+
+		By(fmt.Sprintf("leasing and releasing %s so exitOnLeaseEnd makes it terminal", oldName))
+		// A bare acquire/release is enough to end a lease and trigger the exit;
+		// no QEMU boot needed, which keeps the recycle assertion fast.
+		cmd := JmpCmd(
+			"shell",
+			"--client", exporterSetQemuSSHClientName,
+			"--selector", qemuSSHSelector,
+			"--duration", "2m",
+			"--",
+			"sh", "-c", "true",
+		)
+		cmd.Env = append(os.Environ(), "JUMPSTARTER_GRPC_INSECURE=1")
+		out, err := cmd.CombinedOutput()
+		GinkgoWriter.Write(out)
+		Expect(err).NotTo(HaveOccurred(), "lease acquire/release failed: %s", string(out))
+
+		By("waiting for the old exporter to be deleted and a single replacement to appear")
+		var newName string
+		Eventually(func(g Gomega) {
+			_, err := Kubectl("-n", ns, "get", "exporter", oldName)
+			g.Expect(err).To(HaveOccurred(),
+				"old exporter %s should be deleted after ExitAndReplace", oldName)
+
+			names := strings.Fields(strings.TrimSpace(KubectlQuery("-n", ns, "get", "exporter",
+				"-l", qemuSSHSelector,
+				"-o", "jsonpath={range .items[*]}{.metadata.name}{' '}{end}")))
+			g.Expect(names).To(HaveLen(1), "expected exactly one exporter after recycle, got %v", names)
+			newName = names[0]
+			g.Expect(newName).NotTo(Equal(oldName))
+			newUID := KubectlQuery("-n", ns, "get", "exporter", newName, "-o", "jsonpath={.metadata.uid}")
+			g.Expect(newUID).NotTo(Equal(oldUID), "replacement exporter should have a new UID")
+		}, 6*time.Minute, qemuSSHPollPeriod).Should(Succeed())
+
+		By(fmt.Sprintf("waiting for replacement exporter %s to become Online", newName))
+		WaitForExporter(newName)
+
+		By(fmt.Sprintf("verifying %s containers are up and %s containers are gone", newName, oldName))
+		Eventually(func(g Gomega) {
+			// Replacement containers must be running. Filter by the full
+			// (unique) exporter name, not the shared qemu-ssh-e2e prefix, so a
+			// lingering old container can't satisfy the check.
+			up, err := RunCmd("sudo", "podman", "ps",
+				"--filter", "name="+newName,
+				"--format", "{{.Names}} {{.Status}}")
+			g.Expect(err).NotTo(HaveOccurred(), "podman ps failed")
+			g.Expect(up).To(ContainSubstring(newName+"-exporter"),
+				"replacement containers not up:\n%s\nall:\n%s", up, podmanQemuSSHAll())
+			g.Expect(up).To(ContainSubstring(newName+"-runtime"),
+				"replacement containers not up:\n%s\nall:\n%s", up, podmanQemuSSHAll())
+			g.Expect(strings.ToLower(up)).To(ContainSubstring("up"),
+				"replacement containers not up:\n%s", up)
+
+			// The old exporter's containers must be fully removed by Cleanup
+			// (ps -a catches stopped-but-not-removed leftovers, not just running).
+			old, err := RunCmd("sudo", "podman", "ps", "-a",
+				"--filter", "name="+oldName,
+				"--format", "{{.Names}} {{.Status}}")
+			g.Expect(err).NotTo(HaveOccurred(), "podman ps -a failed")
+			g.Expect(strings.TrimSpace(old)).To(BeEmpty(),
+				"old exporter %s containers still present after recycle:\n%s", oldName, old)
+		}, 3*time.Minute, qemuSSHPollPeriod).Should(Succeed())
 	})
 
 	It("can lease, power on, and power off through the SSH-deployed exporter", func() {

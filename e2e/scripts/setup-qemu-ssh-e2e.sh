@@ -50,19 +50,24 @@ detect_arch() {
 }
 
 # ── Host IP reachable from Kind pods ─────────────────────────────────
+# First IPv4 gateway of a docker network (empty if none). The template prints
+# one gateway per line so a dual-stack network (IPv4 + IPv6 IPAM entries) is not
+# concatenated into a single invalid value like "172.18.0.1fc00:f853::1".
+docker_ipv4_gateway() {
+    docker network inspect "$1" \
+        -f '{{range .IPAM.Config}}{{if .Gateway}}{{println .Gateway}}{{end}}{{end}}' \
+        2>/dev/null | grep -Em1 '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || true
+}
+
 detect_host_ip() {
     # Prefer the kind network gateway (how pods reach the Docker host).
     if command -v docker &>/dev/null; then
-        HOST_IP=$(docker network inspect kind \
-            -f '{{range .IPAM.Config}}{{if .Gateway}}{{.Gateway}}{{end}}{{end}}' \
-            2>/dev/null || true)
+        HOST_IP=$(docker_ipv4_gateway kind)
     fi
 
     # Fallback: default docker bridge gateway.
     if [ -z "${HOST_IP:-}" ] && command -v docker &>/dev/null; then
-        HOST_IP=$(docker network inspect bridge \
-            -f '{{range .IPAM.Config}}{{if .Gateway}}{{.Gateway}}{{end}}{{end}}' \
-            2>/dev/null || true)
+        HOST_IP=$(docker_ipv4_gateway bridge)
     fi
 
     # Fallback: default route on the host.
@@ -159,78 +164,69 @@ ensure_podman() {
     fi
 }
 
+# Load one image into rootful Podman. Prefers a saved tarball (CI artifact,
+# then /tmp), then falls back to a local docker image piped into podman.
+# Returns non-zero if nothing could be loaded.
+podman_load_image() {
+    local name=$1 path_ci=$2 path_local=$3 docker_ref=$4
+
+    local tarfile=""
+    if [ -f "$path_ci" ]; then
+        tarfile="$path_ci"
+    elif [ -f "$path_local" ]; then
+        tarfile="$path_local"
+    fi
+
+    if [ -n "$tarfile" ]; then
+        sudo podman load -i "$tarfile"
+        log_info "Loaded $name from $tarfile"
+        return 0
+    fi
+
+    # Fall back to docker→podman if docker already has the image.
+    if command -v docker &>/dev/null && docker image inspect "$docker_ref" &>/dev/null; then
+        docker save "$docker_ref" | sudo podman load
+        log_info "Loaded $name from local docker image $docker_ref"
+        return 0
+    fi
+
+    return 1
+}
+
 load_podman_images() {
     log_info "Loading container images into Podman..."
 
+    # NOTE: this deliberately does not reuse load_image()/kind_load_image()
+    # from controller/hack/utils — those load images into the kind cluster,
+    # whereas qemu-ssh needs them in the host's rootful podman store (where the
+    # SSH-deployed quadlet containers run).
     local loaded=0
-
-    # Prefer CI artifact paths, then local /tmp fallbacks.
-    for pair in \
-        "exporter:/tmp/artifacts/exporter-image.tar:/tmp/exporter-image.tar" \
-        "qemu-runtime:/tmp/artifacts/qemu-runtime-image.tar:/tmp/qemu-runtime-image.tar"
-    do
-        IFS=: read -r name path_ci path_local <<<"$pair"
-        local tarfile=""
-        if [ -f "$path_ci" ]; then
-            tarfile="$path_ci"
-        elif [ -f "$path_local" ]; then
-            tarfile="$path_local"
-        fi
-
-        if [ -n "$tarfile" ]; then
-            sudo podman load -i "$tarfile"
-            log_info "Loaded $name from $tarfile"
+    # fields: name  ci-path  local-path  docker-ref
+    while read -r name path_ci path_local docker_ref; do
+        [ -n "$name" ] || continue
+        if podman_load_image "$name" "$path_ci" "$path_local" "$docker_ref"; then
             loaded=$((loaded + 1))
+        elif [ -n "${CI:-}" ]; then
+            log_error "Missing image for $name (looked in $path_ci and $path_local)"
+            exit 1
         else
-            # Fall back to docker→podman if docker already has the image.
-            local docker_ref=""
-            case "$name" in
-                exporter) docker_ref="quay.io/jumpstarter-dev/jumpstarter:latest" ;;
-                qemu-runtime) docker_ref="quay.io/jumpstarter-dev/virtual/qemu-runtime:latest" ;;
-            esac
-            if command -v docker &>/dev/null && docker image inspect "$docker_ref" &>/dev/null; then
-                docker save "$docker_ref" | sudo podman load
-                log_info "Loaded $name from local docker image $docker_ref"
-                loaded=$((loaded + 1))
-            else
-                if [ -n "${CI:-}" ]; then
-                    log_error "Missing image for $name (looked in $path_ci and $path_local)"
-                    exit 1
-                fi
-                log_warn "No image tarball for $name; Podman must already have $docker_ref"
-            fi
+            log_warn "No image tarball for $name; Podman must already have $docker_ref"
         fi
-    done
+    done <<'EOF'
+exporter /tmp/artifacts/exporter-image.tar /tmp/exporter-image.tar quay.io/jumpstarter-dev/jumpstarter:latest
+qemu-runtime /tmp/artifacts/qemu-runtime-image.tar /tmp/qemu-runtime-image.tar quay.io/jumpstarter-dev/virtual/qemu-runtime:latest
+EOF
 
     log_info "Loaded $loaded image(s) into Podman"
 }
 
-# ── K8s Secret + provisioner ─────────────────────────────────────────
+# ── K8s Secret ───────────────────────────────────────────────────────
 create_ssh_secret() {
     log_info "Creating SSH credentials Secret in namespace $NS..."
     kubectl -n "$NS" create secret generic e2e-qemu-ssh-key \
         --from-file=ssh-privatekey="$SSH_KEY_PATH" \
         --dry-run=client -o yaml | kubectl apply -f -
     log_info "Secret e2e-qemu-ssh-key created/updated"
-}
-
-enable_provisioner() {
-    log_info "Enabling qemu-ssh.jumpstarter.dev provisioner..."
-
-    local current
-    current=$(kubectl -n "$NS" get jumpstarter jumpstarter \
-        -o jsonpath='{.spec.exporterSets.provisioners}' 2>/dev/null || echo "[]")
-
-    if echo "$current" | grep -q "qemu-ssh.jumpstarter.dev"; then
-        log_info "qemu-ssh provisioner already enabled"
-    else
-        kubectl -n "$NS" patch jumpstarter jumpstarter --type=json \
-            -p '[{"op":"add","path":"/spec/exporterSets/provisioners/-","value":{"name":"qemu-ssh.jumpstarter.dev","enabled":true}}]'
-    fi
-
-    log_info "Waiting for qemu-ssh exporterset-controller deployment..."
-    kubectl -n "$NS" wait --timeout=180s --for=condition=Available \
-        deployment -l provisioner=qemu-ssh-jumpstarter-dev
 }
 
 # ── Render manifest ──────────────────────────────────────────────────
@@ -297,6 +293,19 @@ cleanup() {
         sudo podman volume rm -f $volumes 2>/dev/null || true
     fi
 
+    # Remove SSH key and sshd override created by setup.
+    if [ -f "${SSH_KEY_PATH}.pub" ]; then
+        local pubkey
+        pubkey=$(cat "${SSH_KEY_PATH}.pub")
+        if sudo test -f /root/.ssh/authorized_keys; then
+            sudo sed -i "\|${pubkey}|d" /root/.ssh/authorized_keys
+            log_info "Removed e2e public key from /root/.ssh/authorized_keys"
+        fi
+    fi
+    sudo rm -f /etc/ssh/sshd_config.d/99-e2e-qemu-ssh.conf
+    sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd 2>/dev/null || true
+    rm -rf "$SSH_KEY_DIR"
+
     log_info "Host cleanup done"
 }
 
@@ -317,7 +326,6 @@ main() {
     ensure_podman
     load_podman_images
     create_ssh_secret
-    enable_provisioner
     render_manifest
     write_env
 
