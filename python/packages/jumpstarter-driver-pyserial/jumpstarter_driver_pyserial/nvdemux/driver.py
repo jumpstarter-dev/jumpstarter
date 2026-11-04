@@ -1,6 +1,7 @@
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from anyio import sleep
 from anyio._backends._asyncio import StreamReaderWrapper, StreamWriterWrapper
@@ -8,14 +9,15 @@ from serial_asyncio import open_serial_connection
 
 from ..driver import AsyncSerial
 from .manager import DemuxerManager
-from jumpstarter.driver import Driver, exportstream
+from jumpstarter.driver import Driver
+from jumpstarter.streams.fanout import FanOutStreamMixin
 
 # Default glob pattern for NVIDIA Tegra On-Platform Operator devices
 NV_DEVICE_PATTERN = "/dev/serial/by-id/usb-NVIDIA_Tegra_On-Platform_Operator_*-if01"
 
 
 @dataclass(kw_only=True)
-class NVDemuxSerial(Driver):
+class NVDemuxSerial(FanOutStreamMixin, Driver):
     """Serial driver for NVIDIA TCU demultiplexed UART channels.
 
     This driver wraps the nv_tcu_demuxer tool to extract a specific demultiplexed
@@ -36,9 +38,16 @@ class NVDemuxSerial(Driver):
     Note:
         Multiple instances can be created with different targets. All instances
         must use the same demuxer_path, device, and chip configuration.
+
+    All attached clients share one open of the pts via :class:`FanOutStreamMixin`,
+    so read-only ``observe`` clients do not steal bytes from the console.
     """
 
     driver_type = "serial"
+
+    # The pts only exists while the demuxer has that target; re-resolve it on
+    # each attach instead of keeping the pty open for the exporter's lifetime.
+    _fanout_always_on: ClassVar[bool] = False
 
     demuxer_path: str
     device: str = field(default=NV_DEVICE_PATTERN)
@@ -72,7 +81,6 @@ class NVDemuxSerial(Driver):
             self.logger.error("Failed to register with DemuxerManager: %s", e)
             raise
 
-
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_pyserial.client.PySerialClient"
@@ -86,10 +94,9 @@ class NVDemuxSerial(Driver):
 
         super().close()
 
-    @exportstream
     @asynccontextmanager
-    async def connect(self):
-        """Connect to the demultiplexed serial port.
+    async def _open_source(self):
+        """Open the demultiplexed serial port for the fan-out reader.
 
         Waits for the demuxer to be ready (device connected and pts path discovered)
         before opening the serial connection.
@@ -101,9 +108,7 @@ class NVDemuxSerial(Driver):
         while not pts_path:
             elapsed = time.monotonic() - pts_start
             if elapsed >= self.timeout:
-                raise TimeoutError(
-                    f"Timeout waiting for demuxer to become ready (device pattern: {self.device})"
-                )
+                raise TimeoutError(f"Timeout waiting for demuxer to become ready (device pattern: {self.device})")
             await sleep(0.1)
             pts_path = manager.get_pts_path(str(self.uuid))
 
