@@ -24,6 +24,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/ginlog"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -39,7 +40,7 @@ type DashboardService struct {
 }
 
 func (s *DashboardService) Start(ctx context.Context) error {
-	r := gin.Default()
+	r := ginlog.NewEngine("controller", ctrl.Log.WithName("dashboard"))
 
 	r.SetHTMLTemplate(template.Must(template.ParseFS(fs, "templates/*")))
 
