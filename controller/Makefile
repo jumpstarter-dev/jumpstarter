@@ -31,11 +31,12 @@ endif
 
 GOARCH ?= $(shell go env GOARCH)
 
-# CONTAINER_TOOL defines the container tool to be used for building images.
-# Be aware that the target commands are only tested with Docker which is
-# scaffolded by default. However, you might want to replace it to use other
-# tools. (i.e. podman)
-CONTAINER_TOOL ?= podman
+# CONTAINER_TOOL builds the images: podman if it is installed, otherwise docker.
+# hack/deploy_with_operator.sh loads the images from the same tool.
+ifndef CONTAINER_TOOL
+CONTAINER_TOOL := $(if $(shell command -v podman 2>/dev/null),podman,docker)
+endif
+export CONTAINER_TOOL
 
 # Cluster type: kind (default) or k3s
 CLUSTER_TYPE ?= kind
