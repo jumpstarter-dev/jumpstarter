@@ -51,6 +51,9 @@ class LogFanOut:
             with self._lock:
                 # By identity: deques holding the same records compare equal
                 self._subscribers = [q for q in self._subscribers if q is not queue]
+                if not self._subscribers:
+                    # The backlog is empty while any stream is open, so this keeps order
+                    self._backlog.extend(queue)
 
 
 class LogHandler(logging.Handler):
