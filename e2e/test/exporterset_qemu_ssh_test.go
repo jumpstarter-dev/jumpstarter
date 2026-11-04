@@ -70,24 +70,46 @@ var _ = Describe("ExporterSet QEMU-SSH E2E Tests", Label("exporterset-qemu-ssh")
 	})
 
 	AfterAll(func() {
-		By("cleaning up ExporterSet resources and client")
-		// Delete ExporterSet before VirtualTargetClass so the remote-cleanup
-		// finalizer can still resolve SSH credentials. Bound waits so a stuck
-		// finalizer cannot burn the suite timeout (host cleanup sweeps leftovers).
-		_, _ = Kubectl("delete", "--ignore-not-found", "--timeout=2m",
-			"-n", ns, "exportersets.virtualtarget.jumpstarter.dev", "qemu-ssh-e2e")
-		_, _ = Kubectl("patch", "--ignore-not-found",
-			"-n", ns, "exportersets.virtualtarget.jumpstarter.dev", "qemu-ssh-e2e",
-			"--type=merge", "-p", `{"metadata":{"finalizers":null}}`)
-		_, _ = Kubectl("delete", "--ignore-not-found", "--wait=false",
-			"-n", ns, "exportersets.virtualtarget.jumpstarter.dev", "qemu-ssh-e2e")
-		_, _ = Kubectl("delete", "--ignore-not-found", "--timeout=30s",
-			"-n", ns, "virtualtargetclasses.virtualtarget.jumpstarter.dev", "qemu-ssh-e2e")
-		DeleteClient(exporterSetQemuSSHClientName)
-
-		By("cleaning up host-side Podman/quadlet leftovers")
+		// Host-side teardown (Podman containers, quadlets, SSH key + sshd
+		// override) and the OIDC client must run even if a k8s delete below
+		// fails on a stuck finalizer — otherwise containers and root SSH
+		// access leak on a shared runner. DeferCleanup runs these at teardown
+		// (LIFO, so after the verification below) on every path, including
+		// failures, without masking the original error.
 		setupScript := filepath.Join(RepoRoot(), "e2e", "scripts", "setup-qemu-ssh-e2e.sh")
-		_, _ = RunCmd("bash", setupScript, "--cleanup")
+		DeferCleanup(func() {
+			By("cleaning up host-side Podman/quadlet/SSH leftovers")
+			out, err := RunCmd("bash", setupScript, "--cleanup")
+			Expect(err).NotTo(HaveOccurred(), "host cleanup failed: %s", out)
+		})
+		DeferCleanup(DeleteClient, exporterSetQemuSSHClientName)
+
+		By("cleaning up ExporterSet resources")
+		// Delete ExporterSet before VirtualTargetClass so the remote-cleanup
+		// finalizer can still resolve SSH credentials.
+		// NOTE: VTC must exist when the ExporterSet finalizer runs — the
+		// controller intentionally refuses cleanup if the class was deleted
+		// first (it cannot recover SSH user/port). A future validating
+		// webhook should block VTC deletion while ExporterSets reference it.
+		// It is therefore NOT deferred: if the ExporterSet delete above fails,
+		// deleting the VTC would wedge the stuck ExporterSet permanently.
+		out, err := Kubectl("delete", "--ignore-not-found", "--timeout=2m",
+			"-n", ns, "exportersets.virtualtarget.jumpstarter.dev", "qemu-ssh-e2e")
+		Expect(err).NotTo(HaveOccurred(), "ExporterSet cleanup failed: %s", out)
+
+		By("verifying controller cleanup removed e2e containers")
+		// Check before the deferred host --cleanup so a silent controller
+		// failure (e.g. SSH connect returned nil) is not masked by the script.
+		out, err = RunCmd("sudo", "podman", "ps", "-a",
+			"--filter", "name=qemu-ssh-e2e",
+			"--format", "{{.Names}}")
+		Expect(err).NotTo(HaveOccurred(), "podman ps failed: %s", out)
+		Expect(strings.TrimSpace(out)).To(BeEmpty(),
+			"controller Cleanup should have removed all e2e containers, found: %s", out)
+
+		out, err = Kubectl("delete", "--ignore-not-found", "--timeout=30s",
+			"-n", ns, "virtualtargetclasses.virtualtarget.jumpstarter.dev", "qemu-ssh-e2e")
+		Expect(err).NotTo(HaveOccurred(), "VirtualTargetClass cleanup failed: %s", out)
 	})
 
 	AfterEach(func() {

@@ -172,12 +172,11 @@ func (p *Provisioner) IsDeployed(
 }
 
 // Cleanup tears down the remote containers via SSH and removes the
-// host annotation.
-//
-// Must not return a hard error when the VirtualTargetClass is already
-// gone: kubectl delete -f often removes the VTC before the ExporterSet
-// finalizer runs, and a failing Cleanup would wedge the finalizer
-// forever.
+// host annotation. It requires the VirtualTargetClass to still exist so
+// cleanup uses the same effective host settings (SSH user, port) as Deploy.
+// If the VTC is deleted first, Cleanup returns an error and the
+// ExporterSet finalizer will not clear. A validating webhook should
+// block VTC deletion while ExporterSets reference it (TODO).
 func (p *Provisioner) Cleanup(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
@@ -207,8 +206,9 @@ func (p *Provisioner) Cleanup(
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("get VirtualTargetClass for cleanup: %w", err)
 		}
-		logger.Info("VirtualTargetClass already deleted, cleaning up from annotations",
-			"exporter", exporter.Name, "vtc", es.Spec.VirtualTargetClassName)
+		return fmt.Errorf(
+			"VirtualTargetClass %s not found; delete ExporterSet %s before its class: %w",
+			es.Spec.VirtualTargetClassName, es.Name, err)
 	} else {
 		classParams = vtc.Spec.Parameters
 		if secretName == "" && vtc.Spec.CredentialsSecretRef != nil {
@@ -474,7 +474,7 @@ func (p *Provisioner) readSSHKeyFromSecret(
 }
 
 // annotateHost records host assignment (and credentials Secret) on the
-// Exporter CR so Cleanup can tear down without the VirtualTargetClass.
+// Exporter CR for use during Cleanup.
 func (p *Provisioner) annotateHost(
 	ctx context.Context,
 	exporter *jumpstarterdevv1alpha1.Exporter,

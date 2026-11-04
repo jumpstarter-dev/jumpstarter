@@ -19,12 +19,15 @@ package qemussh
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestProvisionerName(t *testing.T) {
@@ -75,6 +78,51 @@ func TestIsDeployed_withAnnotation(t *testing.T) {
 	}
 	if !deployed {
 		t.Error("IsDeployed should be true with host annotation")
+	}
+}
+
+func TestCleanup_requiresVirtualTargetClassForNonDefaultPort(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := virtualtargetv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+
+	parameters, err := json.Marshal(map[string]any{
+		"host": map[string]any{
+			"name": "lab-host-1.example.com",
+			"user": "deploy-user",
+			"port": 2222,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	exporterSet := &virtualtargetv1alpha1.ExporterSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-exporterset", Namespace: "test-ns"},
+		Spec: virtualtargetv1alpha1.ExporterSetSpec{
+			VirtualTargetClassName: "test-class",
+			Parameters:             &apiextensionsv1.JSON{Raw: parameters},
+		},
+	}
+	exporter := &jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-exp",
+			Namespace: "test-ns",
+			Annotations: map[string]string{
+				AnnotationHost:              "lab-host-1.example.com",
+				AnnotationCredentialsSecret: "test-ssh-secret",
+			},
+		},
+	}
+
+	provisioner := New("v1.0.0", fake.NewClientBuilder().WithScheme(scheme).Build())
+	err = provisioner.Cleanup(context.Background(), exporterSet, exporter)
+	if err == nil {
+		t.Fatal("Cleanup should fail when the deployed VirtualTargetClass is deleted")
+	}
+	if !strings.Contains(err.Error(), "delete ExporterSet test-exporterset before its class") {
+		t.Errorf("Cleanup error = %q, want missing VirtualTargetClass guidance", err)
 	}
 }
 

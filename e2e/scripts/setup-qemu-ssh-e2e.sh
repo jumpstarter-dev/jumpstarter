@@ -297,6 +297,19 @@ cleanup() {
         sudo podman volume rm -f $volumes 2>/dev/null || true
     fi
 
+    # Remove SSH key and sshd override created by setup.
+    if [ -f "${SSH_KEY_PATH}.pub" ]; then
+        local pubkey
+        pubkey=$(cat "${SSH_KEY_PATH}.pub")
+        if sudo test -f /root/.ssh/authorized_keys; then
+            sudo sed -i "\|${pubkey}|d" /root/.ssh/authorized_keys
+            log_info "Removed e2e public key from /root/.ssh/authorized_keys"
+        fi
+    fi
+    sudo rm -f /etc/ssh/sshd_config.d/99-e2e-qemu-ssh.conf
+    sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd 2>/dev/null || true
+    rm -rf "$SSH_KEY_DIR"
+
     log_info "Host cleanup done"
 }
 

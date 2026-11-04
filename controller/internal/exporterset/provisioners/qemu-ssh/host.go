@@ -27,8 +27,7 @@ const (
 	AnnotationHost = "qemu-ssh.jumpstarter.dev/host"
 
 	// AnnotationCredentialsSecret records the SSH credentials Secret
-	// name so Cleanup can tear down remote resources even if the
-	// VirtualTargetClass has already been deleted.
+	// name alongside the host assigned during Deploy.
 	AnnotationCredentialsSecret = "qemu-ssh.jumpstarter.dev/credentials-secret"
 
 	// defaultSSHUser is used when no user is specified.

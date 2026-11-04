@@ -45,7 +45,7 @@ config:
     - email: "test-client-exporterset-qemu-ssh@example.com"
       hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
       username: "test-client-exporterset-qemu-ssh"
-      userID: "e8gf8162-8891-8c9g-e86e-77f2c1c7a931"
+      userID: "a191c017-e5b4-4087-94c9-77320342e30d"
   connectors:
     - name: kubernetes
       type: oidc
