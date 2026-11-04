@@ -62,6 +62,23 @@ def test_launch_shell_no_motd_for_command(tmp_path, monkeypatch, capfd):
     assert "Welcome to my-exporter!" not in capfd.readouterr().out
 
 
+def test_launch_shell_reports_the_spawned_process_to_its_caller(tmp_path):
+    spawned = []
+    true_cmd = shutil.which("true")
+    assert true_cmd is not None
+    exit_code = launch_shell(
+        host=str(tmp_path / "test.sock"),
+        context="remote",
+        allow=["*"],
+        unsafe=False,
+        use_profiles=False,
+        command=(true_cmd,),
+        on_process=spawned.append,
+    )
+    assert exit_code == 0
+    assert len(spawned) == 1 and spawned[0].poll() is not None
+
+
 def test_launch_shell_command_not_found(tmp_path, capfd):
     exit_code = launch_shell(
         host=str(tmp_path / "test.sock"),

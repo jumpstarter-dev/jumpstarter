@@ -4,7 +4,10 @@ import json
 import logging
 import math
 import signal
+import subprocess
+import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -23,9 +26,11 @@ from jumpstarter_cli_common.exceptions import find_exception_in_group, handle_ex
 from jumpstarter_cli.shell import (
     _attempt_token_recovery,
     _cancel_if_connection_lost,
+    _hangup_child,
     _monitor_shared_access,
     _monitor_token_expiry,
     _resolve_lease_from_active_async,
+    _run_shell_command,
     _run_shell_with_lease_async,
     _shell_with_signal_handling,
     _try_refresh_token,
@@ -91,6 +96,80 @@ class _DummyConfig:
         m = Mock()
         m.retry_timeout = 0.0
         yield m
+
+
+def test_hangup_child_signals_a_still_running_process():
+    process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        _hangup_child([process])
+        process.wait(timeout=10)
+        assert process.returncode == -signal.SIGHUP
+    finally:
+        process.kill()
+        process.wait()
+
+
+def test_hangup_child_leaves_an_exited_or_missing_process_alone():
+    _hangup_child([])
+    process = subprocess.Popen([sys.executable, "-c", ""])
+    process.wait(timeout=10)
+    _hangup_child([process])  # No signal to an exited process, and no error.
+
+
+def test_a_child_reported_by_launch_shell_is_hung_up(tmp_path):
+    # The exact composition the shell session uses: a process reported through
+    # launch_shell's callback is hung up by _hangup_child.
+    child = []
+
+    def run():
+        return launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+            command=("sleep", "30"),
+            on_process=child.append,
+        )
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(run)
+        while not child:
+            time.sleep(0.01)
+        _hangup_child(child)
+        assert future.result(timeout=10) == 128 + signal.SIGHUP
+
+
+async def test_cancelling_the_session_hangs_up_a_running_child():
+    config = SimpleNamespace(
+        drivers=SimpleNamespace(allow=["*"], unsafe=False), shell=SimpleNamespace(use_profiles=False)
+    )
+    lease = SimpleNamespace(exporter_name="test", name=None, exporter_labels=None)
+    exit_codes = []
+    scopes = {}
+
+    async def session():
+        with anyio.CancelScope() as scope:
+            scopes["scope"] = scope
+            await _run_shell_command(
+                lease, config, ("sleep", "5"), "/tmp/jmp-test.sock", None, exit_codes.append
+            )
+
+    async def cancel_session():
+        await anyio.sleep(0.5)
+        scopes["scope"].cancel()
+
+    with anyio.fail_after(20):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(session)
+            tg.start_soon(cancel_session)
+
+    # The worker thread reports the child's exit code once the hangup lands.
+    for _ in range(100):
+        if exit_codes:
+            break
+        await anyio.sleep(0.05)
+    assert exit_codes == [128 + signal.SIGHUP]
 
 
 def test_shell_passes_exporter_name_to_lease_async():
@@ -1124,12 +1203,13 @@ class TestRunShellWithLeaseAsync:
         assert exit_code == 42
         client.end_session_async.assert_not_called()
 
-    async def test_unreachable_after_shell_exit_returns_exit_code(self):
-        """An exporter lost while the user is at the prompt must not trigger a reconnect.
+    async def test_unreachable_while_shell_runs_unwinds_the_session(self):
+        """An exporter lost while the user is at the prompt unwinds the session.
 
-        The failure surfaces from the listener task group, but the shell runs in
-        a thread that cannot be cancelled, so it only lands once the user exits.
-        By then the session is over and the exit code is the right answer.
+        The shell command's await is abandoned on cancellation, so the loss
+        surfaces right away instead of waiting for the user to exit: the shell
+        is hung up rather than left running blind, and the error reaches the
+        caller's retry loop without the exit code.
         """
         monitor = _FakeStatusMonitor()
         client = _build_fake_client(monitor, get_status_return=ExporterStatus.LEASE_READY)
@@ -1152,20 +1232,27 @@ class TestRunShellWithLeaseAsync:
         lease.serve_unix_async = serve_unix_async
 
         def slow_shell(*_a, **_kw):
-            time.sleep(0.3)
+            time.sleep(1.0)
             return 42
 
         @asynccontextmanager
         async def fake_client_from_path(*_a, **_kw):
             yield client
 
+        started = time.monotonic()
         with (
             patch("jumpstarter_cli.shell.client_from_path", side_effect=fake_client_from_path),
             patch("jumpstarter_cli.shell._run_shell_only", side_effect=slow_shell),
+            pytest.raises((BaseExceptionGroup, ExporterUnreachableError)) as excinfo,
         ):
-            exit_code = await _run_shell_with_lease_async(lease, False, None, (), cancel_scope)
+            await _run_shell_with_lease_async(lease, False, None, (), cancel_scope)
 
-        assert exit_code == 42
+        # The session unwound without waiting out the shell's full second.
+        assert time.monotonic() - started < 0.5
+        error = excinfo.value
+        assert isinstance(error, ExporterUnreachableError) or find_exception_in_group(
+            error, ExporterUnreachableError
+        ) is not None
 
     async def test_unreachable_before_shell_starts_propagates(self):
         """An exporter that never answers must still reach the caller's retry loop."""

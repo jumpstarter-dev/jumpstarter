@@ -1,5 +1,6 @@
 import logging
 import os
+import signal
 import sys
 import time
 from contextlib import ExitStack
@@ -64,7 +65,7 @@ _SHARED_ACCESS_POLL_SECONDS = 15
 _LEASE_CHECK_TIMEOUT_SECONDS = 5
 
 
-def _run_shell_only(lease, config, command, path: str, motd: str | None = None) -> int:
+def _run_shell_only(lease, config, command, path: str, motd: str | None = None, on_process=None) -> int:
     """Run just the shell command without log streaming."""
     allow = config.drivers.allow if config is not None else getattr(lease, "allow", [])
     unsafe = config.drivers.unsafe if config is not None else getattr(lease, "unsafe", False)
@@ -82,7 +83,40 @@ def _run_shell_only(lease, config, command, path: str, motd: str | None = None) 
         insecure=insecure,
         passphrase=passphrase,
         motd=motd,
+        on_process=on_process,
     )
+
+
+def _hangup_child(child: list) -> None:
+    """Hang up the shell's child process when its session unwinds.
+
+    The worker thread running the child cannot be cancelled, so without this the
+    child would outlive the session (Ctrl+C, SIGTERM, an expiring token) and keep
+    holding its lease. Killing this process outright still orphans the child;
+    there is no portable mechanism for that.
+    """
+    if child and child[0].poll() is None:
+        child[0].send_signal(signal.SIGHUP)
+
+
+async def _run_shell_command(lease, config, command, path, motd, on_shell_exit):
+    """Run the shell command in a worker thread, hanging it up if the session unwinds.
+
+    The await is abandoned on cancellation, so the finally runs while the child is
+    still running; the worker thread then reports the child's exit code through
+    on_shell_exit once the hangup (or the command itself) finishes it.
+    """
+    child = []
+
+    def _run_and_record():
+        code = _run_shell_only(lease, config, command, path, motd, on_process=child.append)
+        on_shell_exit(code)
+        return code
+
+    try:
+        return await anyio.to_thread.run_sync(_run_and_record, abandon_on_cancel=True)
+    finally:
+        _hangup_child(child)
 
 
 def _warn_about_expired_token(lease_name: str, selector: str) -> None:
@@ -515,16 +549,9 @@ async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope
                         except Exception:  # pragma: no cover  # noqa: BLE001
                             logger.debug("Failed to fetch motd, continuing without it")
 
-                    # Run the shell command. The exit code is reported from
-                    # inside the thread: run_sync is not cancellable, so if the
-                    # enclosing task group is already unwinding, the await below
-                    # raises instead of returning and the value would be lost.
-                    def _run_and_record():
-                        code = _run_shell_only(lease, config, command, path, motd)
-                        on_shell_exit(code)
-                        return code
-
-                    exit_code = await anyio.to_thread.run_sync(_run_and_record)
+                    # Run the shell command. If the session unwinds before the
+                    # child exits, its exit code is still reported from the thread.
+                    exit_code = await _run_shell_command(lease, config, command, path, motd, on_shell_exit)
 
                     # Shell has exited. For auto-created leases (release=True), call
                     # EndSession to trigger afterLease hook while keeping log stream

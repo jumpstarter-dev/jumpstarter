@@ -2,6 +2,7 @@ import logging
 import os
 import signal
 import sys
+from collections.abc import Callable
 from contextlib import ExitStack, asynccontextmanager, contextmanager
 from datetime import timedelta
 from functools import partial
@@ -90,6 +91,7 @@ def _run_process(
     cmd: list[str],
     env: dict[str, str],
     lease=None,
+    on_process: Callable[[Popen], None] | None = None,
 ) -> int:
     """Helper to run a process with an option to set a lease ending callback."""
     try:
@@ -103,6 +105,8 @@ def _run_process(
     except OSError as exc:
         print(f"Error: cannot execute {cmd[0]}: {exc}", file=sys.stderr)
         return 126
+    if on_process is not None:
+        on_process(process)
     if lease is not None:
         lease.lease_ending_callback = partial(lease_ending_handler, process)
         # Access was lost before the shell started, so nothing signalled it
@@ -215,6 +219,7 @@ def launch_shell(
     insecure: bool = False,
     passphrase: str | None = None,
     motd: str | None = None,
+    on_process: Callable[[Popen], None] | None = None,
 ) -> int:
     """Launch a shell with a custom prompt indicating the exporter type.
 
@@ -227,6 +232,8 @@ def launch_shell(
         command: Optional command to run instead of launching an interactive shell
         lease: Optional Lease object to set up lease ending callback
         motd: Optional message of the day printed before interactive shells
+        on_process: Optional callback receiving the spawned process, so a caller
+            whose session unwinds can terminate it instead of orphaning it
 
     Returns:
         The exit code of the shell or command process
@@ -240,7 +247,7 @@ def launch_shell(
     )
 
     if command:
-        return _run_process(list(command), common_env, lease)
+        return _run_process(list(command), common_env, lease, on_process)
 
     if motd:
         print(motd, flush=True)
@@ -254,11 +261,11 @@ def launch_shell(
         cmd = [shell]
         if not use_profiles:
             cmd.extend(["--norc", "--noprofile"])
-        return _run_process(cmd, env, lease)
+        return _run_process(cmd, env, lease, on_process)
 
     elif shell_name == "fish":
         cmd = [shell, "--init-command", _fish_prompt_fn(context, bolt, arrow, opts.no_color)]
-        return _run_process(cmd, common_env, lease)
+        return _run_process(cmd, common_env, lease, on_process)
 
     elif shell_name == "zsh":
         env = common_env | {"PS1": _zsh_ps1(context, bolt, arrow, opts.no_color)}
@@ -269,7 +276,7 @@ def launch_shell(
         if not use_profiles:
             cmd.append("--no-rcs")
         cmd.extend(["-o", "inc_append_history", "-o", "share_history"])
-        return _run_process(cmd, env, lease)
+        return _run_process(cmd, env, lease, on_process)
 
     else:
-        return _run_process([shell], common_env, lease)
+        return _run_process([shell], common_env, lease, on_process)
