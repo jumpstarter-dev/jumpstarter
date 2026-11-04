@@ -157,7 +157,7 @@ def extract_main_version(serial, timeout=60, log_buffer=None) -> dict[str, str]:
             (r"Chip Ver\s*:\s*([^\r\n]+)[\r\n]", "chip_version", 1),
             (r"Loader Build Info:\s*([^\r\n]+)[\r\n]", "abl_build", 1),
             (r"CDT Version:\d+,Platform ID:(\d+),Major ID:(\d+),Minor ID:(\d+),Subtype:(\d+)", "cdt_platform_id", 1),
-            (r"\[RM\]Resource Manager version:\s*(\S+)", "rm_version", 1),
+            (r"\[RM\]Resource Manager version:\s*(\S+)\s", "rm_version", 1),
             (r"Hypervisor\s+cold\s+boot[^:]*:\s*gunyah-[^\s]+\s+(perf|debug|prod)", "hypervisor", 1),
             (r"Hypervisor.*?(perf|debug|prod)", "hypervisor", 1),
         ],
@@ -179,6 +179,7 @@ def identify_firmware_variant(qc_image_version: str | None, rm_version: str | No
         "BOOT.MXF.1.2-00369-LEMANS-3": "ES14",
         "BOOT.MXF.1.2-00347-LEMANS-2": "ES13",
         "BOOT.MXF.1.2-00333-LEMANS-1": "ES12",
+        "BOOT.MXF.1.2.c4-00019-LEMANS-1": "CS6",
     }
     if qc_image_version in known_variants:
         return known_variants[qc_image_version]
