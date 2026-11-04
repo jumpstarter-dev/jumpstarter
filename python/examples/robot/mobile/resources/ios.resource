@@ -12,7 +12,7 @@ Resource            common.resource
 *** Variables ***
 ${SESSION_NAME}             ios
 ${EXPORTER_TEMPLATE}        ${CURDIR}/../exporter-ios.yaml
-${APPIUM}                   simulator.appium
+${APPIUM_PATH}              simulator.appium
 ${SAMPLE_APP}               ${CURDIR}/../apps/UIKitCatalog-iphonesimulator.zip
 # Placeholders of exporter-ios.yaml, from the environment or `robot -v`.
 # IOS_RUNTIME defaults to the newest installed runtime that supports IOS_DEVICE_TYPE.

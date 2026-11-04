@@ -26,8 +26,22 @@ the [basic one](../basic/README.md), whose run does not include these suites.
 | `scripts/fetch-sample-apps.sh` | Downloads the pinned sample apps into `apps/`, checking their SHA256 |
 
 Both clients alias their power driver to `Device Power` and their Appium
-driver to `Appium`, so `common.resource` says `Device Power On` and `Appium
-Open Application` and each suite resolves them against its own device.
+driver to `Appium`, so keywords such as `Device Power On` and `Appium Upload
+App` mean the same in both platforms' suites, and each suite resolves them
+against its own device.
+
+The device's Appium is served once, when the device boots: `Start Appium`
+returns the server's `url` and the `capabilities` the device fixes (platform,
+automation name, device), and `common.resource` keeps them in `${APPIUM}`.
+Apps open with AppiumLibrary's standard `Open Application`:
+
+```robotframework
+${appium}=    Start Appium    emulator.appium
+Open Application    ${appium.url}    &{appium.capabilities}
+...    appium:appPackage=com.android.settings    appium:appActivity=.Settings
+```
+
+Close the applications (`Close All Applications`) before `Stop Appium`.
 
 ## Prerequisites
 
@@ -139,10 +153,9 @@ The script downloads pinned releases into `apps/` (ignored by git) and checks
 each file's SHA256. The pins (ApiDemos v6.0.18, UIKitCatalog v4.0.5) are
 maintained by hand at the top of the script.
 
-The suites show both ways to install an app: Android uploads explicitly with
-`Appium Upload App` and passes the returned `jumpstarter-app:` token as
-`app=`; iOS passes the local zip as `app=` and lets `Appium Open Application`
-upload it.
+`sample_app.robot` uploads the app to the exporter with `Appium Upload App`
+and passes the returned `jumpstarter-app:` token to `Open Application` as
+`appium:app`.
 
 ## Regenerating the clients
 

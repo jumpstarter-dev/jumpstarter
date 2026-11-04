@@ -150,17 +150,42 @@ SSHLibrary against any machine with an SSH server through a local exporter.
 ## Appium apps
 
 The [guide](../../../getting-started/guides/robot-framework.md#mobile-app-testing-with-appium)
-shows how `Open Appium Application` hands a verified WebDriver session to
-[AppiumLibrary](https://github.com/serhatbolsu/robotframework-appiumlibrary).
-In addition:
+shows how `Start Appium` and
+[AppiumLibrary](https://github.com/serhatbolsu/robotframework-appiumlibrary)'s
+`Open Application` open a session. `Start Appium` returns a dictionary:
 
-- An `app=` argument with a local `.apk`, `.ipa` or `.app` uploads it to the
-  exporter first; `Upload App` uploads explicitly and returns a
-  `jumpstarter-app:` token.
-- With `session=`, `Open Appium Application` uses only that session's Appium
-  servers.
-- For an iPhone in Xcode's Device Hub, `Start Device Hub Appium` runs
-  WebDriverAgent and Appium on your Mac.
+| Key | Value |
+| --- | --- |
+| `url` | the loopback HTTPS URL of the target's Appium |
+| `capabilities` | the capabilities the target fixes: its platform, automation name and device; pass them as `&{appium.capabilities}` |
+| `ca_file` | the lease's CA certificate, for WebDriver clients other than AppiumLibrary |
+| `wda_url` | the WebDriverAgent URL with Device Hub, otherwise `None` |
+| `alias`, `path`, `session` | the server's alias, its driver path and its session |
+
+Starting it again while it runs returns the same server. The server stops at
+the end of its `scope` (`global` by default), when its session closes, or with
+`Stop Appium`, which stops the server started or used last unless given an
+alias.
+
+- **Applications**: the exporter's Appium cannot read files on your machine.
+  `Upload App` uploads an `.apk`, `.aab`, `.apks`, `.ipa` or `.zip` file, or an
+  `.app` bundle, and returns a `jumpstarter-app:` token to pass to
+  `Open Application` as `appium:app=${token}`.
+- **Device Hub**: for an iPhone in Xcode's Device Hub,
+  `Start Device Hub Appium` runs WebDriverAgent and Appium on your Mac and
+  returns the same dictionary. Appium runs locally there, so
+  `Open Application` can take local `appium:app` paths.
+- **Stopping**: `Stop Appium` does not close applications. Close them first
+  with AppiumLibrary's `Close All Applications` or `Close Application`:
+
+```robotframework
+*** Test Cases ***
+Sample App Opens
+    ${appium}=    Start Appium    emulator.appium
+    ${token}=    Upload App    emulator.appium    ${CURDIR}/apps/app-debug.apk
+    Open Application    ${appium.url}    &{appium.capabilities}    appium:app=${token}
+    [Teardown]    Run Keywords    Close All Applications    AND    Stop Appium
+```
 
 ## One set of tests for Android and iOS
 
@@ -191,16 +216,11 @@ resource = "client-ios.resource"
 The emulator and simulator drivers create their `power` and `appium` children
 at run time, so the example also commits each client's `nodes` table (see
 [Client resources](client-resources.md#without-the-exporter-config-a-committed-driver-mapping)).
-`Device Power On` and `Appium Open Application` then mean the same on both
-platforms, and the suite directory selects the platform:
-
-```text
-resources/common.resource     shared user keywords: boot the device, open Settings, search it
-resources/android.resource    AppiumLibrary, client-android.resource, common.resource, Android locators
-resources/ios.resource        AppiumLibrary, client-ios.resource, common.resource, iOS locators
-tests/android/__init__.robot  Suite Setup and Teardown, Test Tags mobile android
-tests/ios/__init__.robot      Suite Setup and Teardown, Test Tags mobile ios
-```
+`Device Power On` and `Appium Upload App` then mean the same on both
+platforms. Shared user keywords
+boot the device, start Appium and open applications; each platform's resource
+supplies its client resource, driver paths, capabilities and locators, and the
+suite directory selects the platform.
 
 Each suite file imports its platform's resource, so any file or folder runs
 on its own: `robot tests/` runs both platforms, `robot tests/android` one, and

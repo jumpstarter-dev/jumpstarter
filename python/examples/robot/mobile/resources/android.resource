@@ -12,7 +12,7 @@ Resource            common.resource
 *** Variables ***
 ${SESSION_NAME}             android
 ${EXPORTER_TEMPLATE}        ${CURDIR}/../exporter-android.yaml
-${APPIUM}                   emulator.appium
+${APPIUM_PATH}              emulator.appium
 ${SAMPLE_APP}               ${CURDIR}/../apps/ApiDemos-debug.apk
 # Placeholders of exporter-android.yaml, from the environment or `robot -v`.
 ${ANDROID_SDK}              %{ANDROID_HOME=%{ANDROID_SDK_ROOT=}}

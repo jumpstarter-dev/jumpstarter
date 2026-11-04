@@ -497,11 +497,11 @@ options, driver contexts, streams and SSH, ADB and iOS connections, see
 Jumpstarter targets with an `appium` child (see
 [Appium UI Automation](ui-automation.md)) work with
 [AppiumLibrary](https://github.com/serhatbolsu/robotframework-appiumlibrary).
-`Open Appium Application` serves the target's Appium on a loopback HTTPS
-port, verifies the lease's certificate, and hands the WebDriver session to
-AppiumLibrary, so all of
+`Start Appium` serves the target's Appium on a loopback HTTPS port and returns
+its `url` and the `capabilities` the target fixes. AppiumLibrary's
+`Open Application` opens the session, and all of
 [its keywords](https://serhatbolsu.github.io/robotframework-appiumlibrary/AppiumLibrary.html)
-act on the app:
+then act on the app:
 
 ```robotframework
 *** Settings ***
@@ -511,18 +511,12 @@ Resource    ../client-android.resource
 *** Test Cases ***
 Settings Opens
     Device Power On
-    Open Appium Application    emulator.appium    alias=settings
+    ${appium}=    Start Appium    emulator.appium
+    Open Application    ${appium.url}    &{appium.capabilities}
     ...    appium:appPackage=com.android.settings    appium:appActivity=.Settings
     Wait Until Page Contains Element    class=android.widget.FrameLayout    timeout=20s
     Capture Page Screenshot
-    [Teardown]    Run Keywords    Close All Applications    AND    Stop Appium Server
-```
-
-```{warning}
-Do not use AppiumLibrary's own `Open Application` with a Jumpstarter Appium
-server. It defaults to `ignore_certificates=True` and `direct_connection=True`
-and cannot trust the lease's certificate authority. `Open Appium Application`
-keeps certificate verification on and never uses direct connections.
+    [Teardown]    Run Keywords    Close All Applications    AND    Stop Appium
 ```
 
 `python/examples/robot/mobile` runs one set of tests on an Android emulator
