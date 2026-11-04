@@ -306,9 +306,17 @@ def test_mixed_format_methods():
         assert cli.commands['default_cmd'].help == "Method using default command"
 
 
-def test_cancelled_call_kills_the_process_group():
+@pytest.mark.parametrize(
+    "command",
+    [
+        "sleep 60 & echo $!; wait",
+        # Ignores SIGTERM and no longer holds the method's output, so only SIGKILL stops it
+        "( trap '' TERM; exec sleep 60 ) >/dev/null 2>&1 & echo $!; wait",
+    ],
+)
+def test_cancelled_call_kills_the_process_group(command):
     """Cancelling a call before its script ends, as a client disconnect or Ctrl-C does, kills its process group"""
-    shell = Shell(methods={"hold": "sleep 60 & echo $!; wait"})
+    shell = Shell(methods={"hold": command})
 
     async def start_then_cancel(client):
         pid = None

@@ -232,17 +232,28 @@ class Shell(Driver):
                 await self._terminate_process_group(process)
 
     async def _terminate_process_group(self, process):
-        """Send SIGTERM to the script's process group, then SIGKILL if it is still running after 5 seconds."""
+        """Send SIGTERM to the script's process group, then SIGKILL if any of it is still running after 5 seconds."""
         try:
             os.killpg(process.pid, signal.SIGTERM)
         except (ProcessLookupError, OSError):
             # Process group might already be gone
             pass
         try:
-            await asyncio.wait_for(process.wait(), timeout=5.0)
-        except TimeoutError:  # pragma: no cover
+            await asyncio.wait_for(self._wait_for_process_group(process), timeout=5.0)
+        except TimeoutError:
             try:
                 os.killpg(process.pid, signal.SIGKILL)
-                self.logger.warning(f"SIGTERM failed to terminate {process.pid}, sending SIGKILL")
+                self.logger.warning(f"SIGTERM did not stop process group {process.pid}, sending SIGKILL")
             except (ProcessLookupError, OSError):
                 pass
+
+    @staticmethod
+    async def _wait_for_process_group(process):
+        """Wait for the script, then for what it left in its process group"""
+        await process.wait()
+        while True:
+            try:
+                os.killpg(process.pid, 0)
+            except OSError:
+                return
+            await asyncio.sleep(0.1)
