@@ -111,6 +111,31 @@ clients implement their own CLI interface that will appear in the `j` command in
 
 Good examples can be found in `python/packages/jumpstarter-driver-shell/jumpstarter_driver_shell/client.py`, `python/packages/jumpstarter-driver-pyserial/jumpstarter_driver_pyserial/client.py` or `python/packages/jumpstarter-driver-probe-rs/jumpstarter_driver_probe_rs/client.py`.
 
+# Robot Framework keywords
+
+Every public method of a client class is already a Robot Framework keyword through the
+`jumpstarter-robot` package, named after the driver's tree path (`Dut Power On`,
+`Dutlink Power Cycle    wait=5`), with arguments, types and docs taken from the method's signature
+and docstring. Write type hints and docstrings on client
+methods: they become the keyword's argument conversion and documentation.
+
+To curate keywords, use the decorators in `jumpstarter.client.decorators.robot`. They mirror Robot
+Framework's own `robot.api.deco` and do not make the driver depend on Robot Framework:
+
+```python
+from jumpstarter.client.decorators import robot
+
+class PowerClient(DriverClient):
+    @robot.keyword("Should Be On", tags=["assert"])  # the driver's path prefix is still added
+    def should_be_on(self) -> None: ...
+
+    @robot.not_keyword  # hide a public method
+    def helper(self): ...
+```
+
+`@robot.library(auto_keywords=False)` on the class exposes only `@robot.keyword` methods, as in
+Robot Framework. See `python/packages/jumpstarter-driver-power/jumpstarter_driver_power/client.py`.
+
 # Composite drivers
 
 Drives which have children drivers should be composite drivers, and the client interface should

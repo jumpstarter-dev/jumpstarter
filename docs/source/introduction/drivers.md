@@ -305,3 +305,27 @@ with serve(GenericDriver()) as client:
     data = list(client.get_data())
     assert len(data) == 3
 ```
+
+## Robot Framework Keywords
+
+Every public method of a client class is also a
+[Robot Framework](../getting-started/guides/robot-framework.md)
+keyword, such as `Generic Query` or `Generic Get Data` for a driver exported as
+`generic`, with its arguments, types and documentation taken from the method's
+signature and docstring. Write type hints and docstrings on client methods, and
+curate the keywords with the decorators in `jumpstarter.client.decorators.robot`,
+next to the `driver_click_group` helper that builds a driver's `j` commands:
+
+```python
+from jumpstarter.client.decorators import robot
+
+
+class GenericClient(DriverClient):
+    @robot.keyword("Should Respond", tags=["assert"])
+    def should_respond(self, param: str) -> None:
+        """Fail unless the device answers ``param``."""
+        assert self.query(param)
+
+    @robot.not_keyword
+    def with_stream(self, callback): ...
+```

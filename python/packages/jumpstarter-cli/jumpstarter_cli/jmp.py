@@ -53,5 +53,13 @@ except ModuleNotFoundError as exc:
 else:
     jmp.add_command(mcp)
 
+try:
+    from jumpstarter_robot.cli import robot
+except ModuleNotFoundError as exc:
+    if exc.name != "jumpstarter_robot":
+        raise
+else:
+    jmp.add_command(robot)
+
 if __name__ == "__main__":
     jmp()

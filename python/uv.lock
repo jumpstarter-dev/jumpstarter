@@ -96,12 +96,14 @@ members = [
     "jumpstarter-example-appium-android-emulator",
     "jumpstarter-example-appium-ios-simulator",
     "jumpstarter-example-automotive",
+    "jumpstarter-example-robot",
     "jumpstarter-example-soc-pytest",
     "jumpstarter-example-xcp-ecu",
     "jumpstarter-imagehash",
     "jumpstarter-kubernetes",
     "jumpstarter-mcp",
     "jumpstarter-protocol",
+    "jumpstarter-robot",
     "jumpstarter-testing",
 ]
 constraints = [
@@ -1328,6 +1330,27 @@ wheels = [
 ]
 
 [[package]]
+name = "geographiclib"
+version = "2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/df/78/4892343230a9d29faa1364564e525307a37e54ad776ea62c12129dbba704/geographiclib-2.1.tar.gz", hash = "sha256:6a6545e6262d0ed3522e13c515713718797e37ed8c672c31ad7b249f372ef108", size = 37004, upload-time = "2025-08-21T21:34:26Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/31/b3/802576f2ea5dcb48501bb162e4c7b7b3ca5654a42b2c968ef98a797a4c79/geographiclib-2.1-py3-none-any.whl", hash = "sha256:e2a873b9b9e7fc38721ad73d5f4e6c9ed140d428a339970f505c07056997d40b", size = 40740, upload-time = "2025-08-21T21:34:24.955Z" },
+]
+
+[[package]]
+name = "geopy"
+version = "2.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "geographiclib" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/da/0c/b4e42a0495293f6c94364baba4c657c68bc8d8efec784259cc943f4ba28b/geopy-2.5.0.tar.gz", hash = "sha256:7b6c849f18108dcce4faa3d614e2801107b465f7b05fd3c1db9db12e225ae950", size = 122254, upload-time = "2026-07-12T19:50:06.051Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/66/e5/de8b557b279e31cdfb2070ac83eb45dc7e29bd93cd544128756f658e52c7/geopy-2.5.0-py3-none-any.whl", hash = "sha256:8ad8cc226b505ca4d272ae9a2eeba08b8a2c565fc9a04eaefc33ad49c32b51aa", size = 114619, upload-time = "2026-07-12T19:50:04.839Z" },
+]
+
+[[package]]
 name = "google-auth"
 version = "2.40.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1868,6 +1891,7 @@ dependencies = [
     { name = "jumpstarter-kubernetes" },
     { name = "jumpstarter-mcp" },
     { name = "jumpstarter-protocol" },
+    { name = "jumpstarter-robot" },
     { name = "jumpstarter-testing" },
 ]
 
@@ -1939,6 +1963,7 @@ requires-dist = [
     { name = "jumpstarter-kubernetes", editable = "packages/jumpstarter-kubernetes" },
     { name = "jumpstarter-mcp", editable = "packages/jumpstarter-mcp" },
     { name = "jumpstarter-protocol", editable = "packages/jumpstarter-protocol" },
+    { name = "jumpstarter-robot", editable = "packages/jumpstarter-robot" },
     { name = "jumpstarter-testing", editable = "packages/jumpstarter-testing" },
 ]
 
@@ -4062,6 +4087,55 @@ requires-dist = [
 ]
 
 [[package]]
+name = "jumpstarter-example-robot"
+version = "0.1.0"
+source = { editable = "examples/robot" }
+dependencies = [
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-androidemulator" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-iossimulator" },
+    { name = "jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-opendal" },
+    { name = "jumpstarter-driver-power" },
+    { name = "jumpstarter-driver-shell" },
+    { name = "jumpstarter-driver-ssh" },
+    { name = "jumpstarter-robot", extra = ["mobile", "ssh"] },
+    { name = "robotframework-appiumlibrary" },
+    { name = "robotframework-pabot" },
+    { name = "robotframework-sshlibrary" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "robotcode", extra = ["analyze", "repl", "runner"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-androidemulator", editable = "packages/jumpstarter-driver-androidemulator" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-iossimulator", editable = "packages/jumpstarter-driver-iossimulator" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
+    { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
+    { name = "jumpstarter-driver-shell", editable = "packages/jumpstarter-driver-shell" },
+    { name = "jumpstarter-driver-ssh", editable = "packages/jumpstarter-driver-ssh" },
+    { name = "jumpstarter-robot", extras = ["mobile", "ssh"], editable = "packages/jumpstarter-robot" },
+    { name = "robotframework-appiumlibrary", specifier = ">=3.0,<4" },
+    { name = "robotframework-pabot", specifier = ">=5.0.0" },
+    { name = "robotframework-sshlibrary", specifier = ">=3.8.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "robotcode", extras = ["analyze", "repl", "runner"], specifier = ">=2.8.0" },
+]
+
+[[package]]
 name = "jumpstarter-example-soc-pytest"
 version = "0.1.0"
 source = { virtual = "examples/soc-pytest" }
@@ -4233,6 +4307,101 @@ dev = [
     { name = "pytest-anyio", specifier = ">=0.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.0.0" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-robot"
+source = { editable = "packages/jumpstarter-robot" }
+dependencies = [
+    { name = "click" },
+    { name = "jumpstarter" },
+    { name = "robotframework" },
+    { name = "tomlkit" },
+]
+
+[package.optional-dependencies]
+android = [
+    { name = "adbutils" },
+]
+appium = [
+    { name = "appium-python-client" },
+    { name = "jumpstarter-driver-appium" },
+    { name = "robotframework-appiumlibrary" },
+    { name = "selenium" },
+]
+mobile = [
+    { name = "adbutils" },
+    { name = "appium-python-client" },
+    { name = "jumpstarter-driver-appium" },
+    { name = "robotframework-appiumlibrary" },
+    { name = "selenium" },
+]
+ssh = [
+    { name = "robotframework-sshlibrary" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "adbutils" },
+    { name = "appium-python-client" },
+    { name = "jumpstarter-driver-appium" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-opendal" },
+    { name = "jumpstarter-driver-power" },
+    { name = "jumpstarter-driver-pyserial" },
+    { name = "jumpstarter-driver-shell" },
+    { name = "jumpstarter-driver-ssh" },
+    { name = "paramiko" },
+    { name = "pytest" },
+    { name = "pytest-anyio" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "robotframework-appiumlibrary" },
+    { name = "robotframework-sshlibrary" },
+    { name = "selenium" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "adbutils", marker = "extra == 'android'", specifier = ">=2.8.7" },
+    { name = "adbutils", marker = "extra == 'mobile'", specifier = ">=2.8.7" },
+    { name = "appium-python-client", marker = "extra == 'appium'", specifier = ">=5.1.1" },
+    { name = "appium-python-client", marker = "extra == 'mobile'", specifier = ">=5.1.1" },
+    { name = "click", specifier = ">=8.1.7.2" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-appium", marker = "extra == 'appium'", editable = "packages/jumpstarter-driver-appium" },
+    { name = "jumpstarter-driver-appium", marker = "extra == 'mobile'", editable = "packages/jumpstarter-driver-appium" },
+    { name = "robotframework", specifier = ">=7.0" },
+    { name = "robotframework-appiumlibrary", marker = "extra == 'appium'", specifier = ">=3.0,<4" },
+    { name = "robotframework-appiumlibrary", marker = "extra == 'mobile'", specifier = ">=3.0,<4" },
+    { name = "robotframework-sshlibrary", marker = "extra == 'ssh'", specifier = ">=3.8.0" },
+    { name = "selenium", marker = "extra == 'appium'", specifier = ">=4.26" },
+    { name = "selenium", marker = "extra == 'mobile'", specifier = ">=4.26" },
+    { name = "tomlkit", specifier = ">=0.13.0" },
+]
+provides-extras = ["android", "appium", "mobile", "ssh"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "adbutils", specifier = ">=2.8.7" },
+    { name = "appium-python-client", specifier = ">=5.1.1" },
+    { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
+    { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
+    { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
+    { name = "jumpstarter-driver-shell", editable = "packages/jumpstarter-driver-shell" },
+    { name = "jumpstarter-driver-ssh", editable = "packages/jumpstarter-driver-ssh" },
+    { name = "paramiko", specifier = ">=3.4.0" },
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-anyio", specifier = ">=0.0.0" },
+    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+    { name = "robotframework-appiumlibrary", specifier = ">=3.0,<4" },
+    { name = "robotframework-sshlibrary", specifier = ">=3.8.0" },
+    { name = "selenium", specifier = ">=4.26" },
 ]
 
 [[package]]
@@ -6155,6 +6324,179 @@ wheels = [
 ]
 
 [[package]]
+name = "robotcode"
+version = "2.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "robotcode-core" },
+    { name = "robotcode-plugin" },
+    { name = "robotcode-robot" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/32/8d/ec077aa7a3f843a19db1bfdf438f62b635571f104e68fc7bf2d51a286c7a/robotcode-2.8.0.tar.gz", hash = "sha256:da7e84dd7216a4c01b67168b5b299a0964c062a8a812adfc044ae1720e34f773", size = 188888, upload-time = "2026-10-26T01:53:48.354Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/78/34/e4b67aaba2d5881e2a777982f9b7124920e4379fee50c2563f6deb7958cd/robotcode-2.8.0-py3-none-any.whl", hash = "sha256:72d8ea995512e92eb9ebde3347b0fe4f50f0a4ec27eabb0c314ee108b798e154", size = 20219, upload-time = "2026-10-26T01:53:58.394Z" },
+]
+
+[package.optional-dependencies]
+analyze = [
+    { name = "robotcode-analyze" },
+]
+repl = [
+    { name = "robotcode-repl" },
+]
+runner = [
+    { name = "robotcode-runner" },
+]
+
+[[package]]
+name = "robotcode-analyze"
+version = "2.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "robotcode" },
+    { name = "robotcode-plugin" },
+    { name = "robotcode-robot" },
+    { name = "robotframework" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2c/29/78f824beebb1c43ba0a910a5c0463afe57f75c7b5ad9a032e31380020db7/robotcode_analyze-2.8.0.tar.gz", hash = "sha256:3ad7c1fc65298903154865583879a4be42b14ac3a72eee30a69cb817b5b95678", size = 26545, upload-time = "2026-10-26T01:53:55.124Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/46/5a/58e236699b06d9b778880176f9fa62bae768bf807617c67b02f555ac6d64/robotcode_analyze-2.8.0-py3-none-any.whl", hash = "sha256:1dae9c1499438c4571211c45b14301733239790f9e141697961d72b24642ff73", size = 30478, upload-time = "2026-10-26T01:54:06.789Z" },
+]
+
+[[package]]
+name = "robotcode-core"
+version = "2.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/12/ea/477274ba4e6a26b0b2258ba989d75d624c9d6a8bcd4ea8b3108e28c7009f/robotcode_core-2.8.0.tar.gz", hash = "sha256:31b5a38edba888adbd31ab1bd54d5cab9a5c049a0f124b5c9f379ba6db99be43", size = 75562, upload-time = "2026-10-26T01:54:03.78Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fc/88/ee716c8ab0c54fe712fcd22cbc8b68bd2af9c302f1dfb350b36b638f82b6/robotcode_core-2.8.0-py3-none-any.whl", hash = "sha256:dc49ccea68fff23c9bdbb7781aa3e14f2bbc8f36562cf1504dde3b363058625e", size = 82748, upload-time = "2026-10-26T01:53:52.667Z" },
+]
+
+[[package]]
+name = "robotcode-modifiers"
+version = "2.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "robotframework" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e3/8b/2d7bcc3b9b4af0073440cf18bf92d5b0d62da1c1c3c9d7bea26a31c6ac9d/robotcode_modifiers-2.8.0.tar.gz", hash = "sha256:667eb5253e3bad6207a6655dfccd05830a09a99c6cb742ad7ec72d8d1fb1caf0", size = 6780, upload-time = "2026-10-26T01:53:57.644Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/76/76/92ecdc54514e2b1c62c1f9f28a204ce7e47923839f5c5b1c58ab2c8bba16/robotcode_modifiers-2.8.0-py3-none-any.whl", hash = "sha256:a460c21dee0930f39d6282ffd2a93c76da13c9c16a74b058c387e782ba0fcef8", size = 5701, upload-time = "2026-10-26T01:54:04.447Z" },
+]
+
+[[package]]
+name = "robotcode-plugin"
+version = "2.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "colorama" },
+    { name = "pluggy" },
+    { name = "rich" },
+    { name = "tomli-w" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/eb/ba/64279b9533afdc310247da11ac76c6c905bc5007b355555c71a9398940a2/robotcode_plugin-2.8.0.tar.gz", hash = "sha256:7e62970534ad01a126546d132f4cc6fb613a75840a7a2b0bffc408b460a94ba5", size = 16323, upload-time = "2026-10-26T01:54:05.138Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/71/d1/3e656a5756f54674ddecb4805822eef867f00091ef2d5fc3160983fbb801/robotcode_plugin-2.8.0-py3-none-any.whl", hash = "sha256:5ebe3a9c2da5f3f66efcfd27057c67c62641d91e73c2ce7684e52e8e98c9c1a3", size = 17448, upload-time = "2026-10-26T01:53:49.565Z" },
+]
+
+[[package]]
+name = "robotcode-repl"
+version = "2.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "prompt-toolkit" },
+    { name = "robotcode-runner" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/19/b1/b4a9cfdae11fbbd6a4d836a66362e20f21581416506c71305a32e8223e15/robotcode_repl-2.8.0.tar.gz", hash = "sha256:cec9bf6b0560a2b806a90e9c27a63071779fdf810c8ba0f0894e8c1d7323a81d", size = 106949, upload-time = "2026-10-26T01:53:51.76Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9f/86/67f3e79aff427d6624093e5e1855402b69f5e80a3cdcfeeda550f68e096e/robotcode_repl-2.8.0-py3-none-any.whl", hash = "sha256:e7966715e21b098e621c1c3e4129f199813f186d70044a9316675b71d8d93d9f", size = 117271, upload-time = "2026-10-26T01:53:59.952Z" },
+]
+
+[[package]]
+name = "robotcode-robot"
+version = "2.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "platformdirs" },
+    { name = "robotcode-core" },
+    { name = "robotframework" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0b/92/2605eabc70b037e284e8abeecd5137391aadb43ceb6eab2420d5fc631e20/robotcode_robot-2.8.0.tar.gz", hash = "sha256:438376896040757429f5be40b1de58f54286f1769e41229c93213912183a8031", size = 214354, upload-time = "2026-10-26T01:54:05.878Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c4/ab/5d99d8d28e81eb4e3021982a37f0dd653adf46e26c2f3e17b4f5d2a322ae/robotcode_robot-2.8.0-py3-none-any.whl", hash = "sha256:d992937d2d2f949f267b19d09ebce825a6dc0523f3fb7a55690bb1487488c3e4", size = 234506, upload-time = "2026-10-26T01:54:00.887Z" },
+]
+
+[[package]]
+name = "robotcode-runner"
+version = "2.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "robotcode" },
+    { name = "robotcode-modifiers" },
+    { name = "robotcode-plugin" },
+    { name = "robotcode-robot" },
+    { name = "robotframework" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/49/60/c9436ed4b30e6b99dd1496eca0ac816dea58fa016fa7cf810c0cebd41147/robotcode_runner-2.8.0.tar.gz", hash = "sha256:62b1fad01bb71c8e2db7787c36a07b45066c8479fa494d0b8e39c67aedc5a91e", size = 65961, upload-time = "2026-10-26T01:53:56.943Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d7/89/48c65bb1b2bc047f356f690a8f6999b0ea4bacc8fc68e10e42c43ec9ac62/robotcode_runner-2.8.0-py3-none-any.whl", hash = "sha256:aec2a5d9b8957c7fc9f9e4ed6203f1aef6e858895a9cba45144de4bfbecdfe8b", size = 74754, upload-time = "2026-10-26T01:53:53.749Z" },
+]
+
+[[package]]
+name = "robotframework"
+version = "7.5.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/99/82/c7e3f8acb173c63e17cbdffdadf95a55520c0139cc548ce9ac963424361b/robotframework-7.5.1.tar.gz", hash = "sha256:00f63dc7b0477a137f8a9c1f2e14db8084a4d187a76f3fec6c2567875c32b932", size = 686670, upload-time = "2026-11-02T21:35:34.339Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2b/a3/6d528a8ac42a03ba4b9f6642b80ea37de2d18086d458c044bb6a6a8df5b9/robotframework-7.5.1-py3-none-any.whl", hash = "sha256:a46196098d92a30cb8b68c426d8d9a35b048d7936fc2cd9959b8c5c6f57524c8", size = 844474, upload-time = "2026-11-02T21:35:32.447Z" },
+]
+
+[[package]]
+name = "robotframework-appiumlibrary"
+version = "3.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "appium-python-client" },
+    { name = "decorator" },
+    { name = "docutils" },
+    { name = "geopy" },
+    { name = "robotframework" },
+    { name = "selenium" },
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4b/17/ab8c7c8a06daa561520a33261369ede02383cd562a24123b744494a94e76/robotframework_appiumlibrary-3.2.1.tar.gz", hash = "sha256:f1a56efbbc00ea63ab577a18dcf4fcf5c262aa1cdbcab3ba97f971f75e255dfd", size = 40044, upload-time = "2025-12-15T20:16:02.642Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/29/e6/21572505b7af0d933591861b821ee538fbd413adab09011a916aa05ed03f/robotframework_appiumlibrary-3.2.1-py3-none-any.whl", hash = "sha256:9bae5a078101a3eb667aef05829caa853dc7544ab36caf0e8ca5a79480ed464e", size = 47794, upload-time = "2025-12-15T20:16:01.278Z" },
+]
+
+[[package]]
+name = "robotframework-pabot"
+version = "5.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "robotframework" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d6/16/285f1737483a93f7ab38456e97bd34d101a4a9713ba01050fecf51096bef/robotframework_pabot-5.2.2.tar.gz", hash = "sha256:497c3d72551c76eda21029df6a28c6b2ed227e63c4a8510e1c6a0690b9e2be91", size = 106974, upload-time = "2026-02-18T21:04:22.827Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f5/15/f5da87828441f53f5126dda3dd1fdf1fd73b8f5fdf490659b56dd2dc3a80/robotframework_pabot-5.2.2-py3-none-any.whl", hash = "sha256:e7b95d031e9f04b77312b04a1fd835b9791f022b3436b63b507a720bfec05bb4", size = 71801, upload-time = "2026-02-18T21:04:21.313Z" },
+]
+
+[[package]]
+name = "robotframework-sshlibrary"
+version = "3.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "paramiko" },
+    { name = "robotframework" },
+    { name = "scp" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/23/e9/74f3345024645a1e874c53064787a324eaecfb0c594c189699474370a147/robotframework-sshlibrary-3.8.0.tar.gz", hash = "sha256:aedf8a02bcb7344404cf8575d0ada25d6c7dc2fcb65de2113c4e07c63d2446c2", size = 51417, upload-time = "2021-11-18T10:02:12.203Z" }
+
+[[package]]
 name = "roman-numerals"
 version = "4.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -6428,6 +6770,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/f7/86/5185061a1fcc41d18c5dc2463969b3a3964b31d9ac67b2fb05d4c7ff7670/scipy-1.18.0-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:9aac6192fac56bf2ca534389d24623f07b39ff83317d58287285e7fbd622ff76", size = 37472480, upload-time = "2026-06-19T15:01:35.136Z" },
     { url = "https://files.pythonhosted.org/packages/31/8e/f04c68e39919a010d34f2ee1367fd705b0a25a02f609d755f0bfbc0a15fc/scipy-1.18.0-cp314-cp314t-win_amd64.whl", hash = "sha256:e40baea28ae7f5475c779741e2d90b1247c78531207b49c7030e698ff81cee3f", size = 37365390, upload-time = "2026-06-19T15:01:38.091Z" },
     { url = "https://files.pythonhosted.org/packages/d5/19/969dc072906c84dd0a3b05dcf57ea750936087d7873549e408b35cfc3f97/scipy-1.18.0-cp314-cp314t-win_arm64.whl", hash = "sha256:368e0a705903c466aa5f08eefb39e6b1b6b2d659e7352a31fd9e2438365be0f8", size = 25279661, upload-time = "2026-06-19T15:01:40.817Z" },
+]
+
+[[package]]
+name = "scp"
+version = "0.16.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "paramiko" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/38/c3/4d0230664b7c505ba2fa7bf9fe4bee83f6f1fa195e865ad7f92b12917e59/scp-0.16.2.tar.gz", hash = "sha256:d049f9aa77db4042c44b922cecabe97ef0716fb334a95701d68d1c7991684fc2", size = 13248, upload-time = "2026-10-06T20:52:21.711Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d9/e9/5bcfe3b31ba522adb5983d718121e3c34879981dd39bdb7b5dd1ced5ecbf/scp-0.16.2-py2.py3-none-any.whl", hash = "sha256:98d2e9ecdbe09e6bd41c22d6b69a93f203589a6590624685373e81f8bfdc60fd", size = 8961, upload-time = "2026-10-06T20:52:32.157Z" },
 ]
 
 [[package]]

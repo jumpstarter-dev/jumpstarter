@@ -1,0 +1,38 @@
+[project]
+name = "jumpstarter-example-robot"
+version = "0.1.0"
+description = "Robot Framework examples for Jumpstarter, runnable locally against a mock board"
+authors = [{ name = "Kirk Brauer", email = "kirkebrauer@gmail.com" }]
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+dependencies = [
+  "jumpstarter",
+  "jumpstarter-robot[mobile,ssh]",
+  "jumpstarter-driver-composite",
+  "jumpstarter-driver-network",
+  "jumpstarter-driver-opendal",
+  "jumpstarter-driver-power",
+  "jumpstarter-driver-shell",
+  "jumpstarter-driver-ssh",
+  "jumpstarter-driver-androidemulator",
+  "jumpstarter-driver-iossimulator",
+  "robotframework-appiumlibrary>=3.0,<4",
+  "robotframework-sshlibrary>=3.8.0",
+  "robotframework-pabot>=5.0.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3.2", "robotcode[analyze,repl,runner]>=2.8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["jumpstarter_example_robot"]
+
+# A real (editable) package, so plain `robot` can import the mock board's
+# drivers and client named in exporter.yaml and the generated resources.
+[tool.hatch.build.targets.wheel]
+packages = ["jumpstarter_example_robot"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -6,7 +6,7 @@ import click
 from .common import PowerReading
 from jumpstarter.client import DriverClient
 from jumpstarter.client.core import DriverMethodNotImplemented
-from jumpstarter.client.decorators import driver_click_group
+from jumpstarter.client.decorators import driver_click_group, robot
 
 
 def _require_status(state: str | None) -> str:
@@ -47,8 +47,29 @@ class PowerClient(DriverClient):
         except DriverMethodNotImplemented:
             return None
 
+    @robot.keyword("Should Be On", tags=["assert"])
+    def should_be_on(self) -> None:
+        """Fail unless the driver reports the power is on."""
+        self._should_be("on")
+
+    @robot.keyword("Should Be Off", tags=["assert"])
+    def should_be_off(self) -> None:
+        """Fail unless the driver reports the power is off."""
+        self._should_be("off")
+
+    def _should_be(self, expected: str) -> None:
+        state = self.status()
+        if state is None:
+            raise AssertionError("this power driver does not report its state")
+        if state != expected:
+            raise AssertionError(f"power is {state}, expected {expected}")
+
     def read(self) -> Generator[PowerReading, None, None]:
-        """Read power data from the device."""
+        """Read power data from the device.
+
+        The stream does not end on its own; Robot Framework keywords read the
+        first ``max_items`` readings.
+        """
 
         for v in self.streamingcall("read"):
             yield PowerReading.model_validate(v, strict=True)

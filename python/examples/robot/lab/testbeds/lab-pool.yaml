@@ -1,0 +1,14 @@
+# Testbed for parallel runs with pabot: every process leases its own board
+# from the pool the selector matches.
+#
+#   pabot --processes 4 -d results -V testbeds/lab-pool.yaml tests/
+#
+# reuse-lease is off so that processes never attach to the same lease created
+# outside the run: each process runs the suite setup in tests/__init__.robot,
+# whose Acquire Lease acquires a fresh lease, released at the end.
+JUMPSTARTER:
+  config: lab
+  selector: board=mockdut,pool=ci
+  reuse-lease: false
+  acquisition-timeout: 30 minutes   # wait for a free board when the pool is busy
+PASSWORD: change-me

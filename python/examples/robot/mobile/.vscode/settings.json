@@ -1,0 +1,4 @@
+{
+  // Open mobile/ as its own workspace folder so RobotCode uses mobile/robot.toml.
+  "python.defaultInterpreterPath": "../../../.venv/bin/python"
+}

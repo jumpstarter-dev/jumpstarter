@@ -17,3 +17,14 @@ class ${DRIVER_CLASS}Client(DriverClient):
     def method2(self):
         self.call("method2")
 
+    # Every public method above is already a Robot Framework keyword
+    # ("<Prefix> Method1"). Decorate a method to rename, tag or hide it
+    # (from jumpstarter.client.decorators import robot):
+    #
+    # @robot.keyword("Should Be Ready", tags=["assert"])
+    # def should_be_ready(self) -> None:
+    #     """Fail unless the device reports ready."""
+    #
+    # @robot.not_keyword
+    # def internal_helper(self): ...
+
