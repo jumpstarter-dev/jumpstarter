@@ -1,5 +1,10 @@
 
+import os
+import signal
+import time
+
 import pytest
+from anyio import CancelScope
 
 from .driver import Shell
 from jumpstarter.common.utils import serve
@@ -21,6 +26,26 @@ def _collect_streaming_output(client, method_name, env_vars=None, *args):
             final_returncode = returncode
 
     return "".join(stdout_parts), "".join(stderr_parts), final_returncode
+
+
+def _alive(pid):
+    """Whether pid is running; a zombie waiting to be reaped is not."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    try:
+        with open(f"/proc/{pid}/stat") as stat:
+            return stat.read().rsplit(") ", 1)[1][0] != "Z"
+    except FileNotFoundError:
+        return True
+
+
+def _wait_until_gone(pid, timeout=10):
+    deadline = time.monotonic() + timeout
+    while _alive(pid):
+        assert time.monotonic() < deadline, f"process {pid} still running after {timeout}s"
+        time.sleep(0.05)
 
 
 @pytest.fixture
@@ -279,3 +304,25 @@ def test_mixed_format_methods():
         assert cli.commands['simple'].help == "Execute the simple shell method"
         assert cli.commands['detailed'].help == "A detailed command with description"
         assert cli.commands['default_cmd'].help == "Method using default command"
+
+
+def test_cancelled_call_kills_the_process_group():
+    """Cancelling a call before its script ends, as a client disconnect or Ctrl-C does, kills its process group"""
+    shell = Shell(methods={"hold": "sleep 60 & echo $!; wait"})
+
+    async def start_then_cancel(client):
+        pid = None
+        with CancelScope() as scope:
+            async for stdout, _stderr, _returncode in client.streamingcall_async("call_method", "hold", {}):
+                pid = int(stdout)
+                # Delivered while the client waits for the next chunk, which cancels the RPC
+                scope.cancel()
+        return pid
+
+    with serve(shell) as client:
+        pid = client.portal.call(start_then_cancel, client)
+        try:
+            _wait_until_gone(pid)
+        finally:
+            if _alive(pid):
+                os.kill(pid, signal.SIGKILL)
