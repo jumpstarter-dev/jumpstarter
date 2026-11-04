@@ -93,6 +93,8 @@ members = [
     "jumpstarter-driver-xcp",
     "jumpstarter-driver-yepkit",
     "jumpstarter-example-android-emulator",
+    "jumpstarter-example-appium-android-emulator",
+    "jumpstarter-example-appium-ios-simulator",
     "jumpstarter-example-automotive",
     "jumpstarter-example-soc-pytest",
     "jumpstarter-example-xcp-ecu",
@@ -340,6 +342,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f1/b4/636b3b65173d3ce9a38ef5f0522789614e590dab6a8d505340a4efe4c567/anyio-4.10.0.tar.gz", hash = "sha256:3f3fae35c96039744587aa5b8371e7e8e603c0702999535961dd336026973ba6", size = 213252, upload-time = "2025-08-04T08:54:26.451Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6f/12/e5e0282d673bb9746bacfb6e2dba8719989d3660cdb2ea79aee9a9651afb/anyio-4.10.0-py3-none-any.whl", hash = "sha256:60e474ac86736bbfd6f210f7a61218939c318f43f9972497381f1c5e930ed3d1", size = 107213, upload-time = "2025-08-04T08:54:24.882Z" },
+]
+
+[[package]]
+name = "appium-python-client"
+version = "6.1.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "selenium" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4f/5d/2748f6aa5115b9e1a2cb9a2ffb5a91ff026bfb29234fd95343ce0d98381d/appium_python_client-6.1.4.tar.gz", hash = "sha256:27154754d2735c74c8dbe9b71cdb6c7f70277f1d9de0a99e305c33049a123fe9", size = 252505, upload-time = "2026-11-02T06:34:41.56Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/45/27/db61bd7a24105bb64839e26d8602c2b7c9f2118cbc9d4b6ffc1b9813e27c/appium_python_client-6.1.4-py3-none-any.whl", hash = "sha256:36d4e01ae5a77553ede84e552320d52ad4f688252750f0da94b86046c62f924f", size = 344530, upload-time = "2026-11-02T06:34:39.873Z" },
 ]
 
 [[package]]
@@ -765,11 +780,11 @@ wheels = [
 
 [[package]]
 name = "certifi"
-version = "2025.6.15"
+version = "2026.10.23"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/73/f7/f14b46d4bcd21092d7d3ccef689615220d8a08fb25e564b65d20738e672e/certifi-2025.6.15.tar.gz", hash = "sha256:d747aa5a8b9bbbb1bb8c22bb13e22bd1f18e9796defa16bab421f7f7a317323b", size = 158753, upload-time = "2025-06-15T02:45:51.329Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fd/11/b524cbd9bbdaca58608e4cf4053fd463417549e1959fa8d3aa18319f9555/certifi-2026.10.23.tar.gz", hash = "sha256:a9895e6e2758b371e0545e321a3a8fd1fcfd9829ada8824a936dfb16aaaf36cd", size = 136225, upload-time = "2026-10-23T11:36:16.478Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/84/ae/320161bd181fc06471eed047ecce67b693fd7515b16d495d8932db763426/certifi-2025.6.15-py3-none-any.whl", hash = "sha256:2e0c7ce7cb5d8f8634ca55d2ba7e6ec2689a2fd6537d8dec1296a477a4910057", size = 157650, upload-time = "2025-06-15T02:45:49.977Z" },
+    { url = "https://files.pythonhosted.org/packages/32/d1/a3652fe2c19134d0d15922177821d863cbd7e842d53a21bbe7e8e3a1b5ac/certifi-2026.10.23-py3-none-any.whl", hash = "sha256:e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1", size = 135082, upload-time = "2026-10-23T11:36:14.763Z" },
 ]
 
 [[package]]
@@ -3984,6 +3999,52 @@ requires-dist = [
 ]
 
 [[package]]
+name = "jumpstarter-example-appium-android-emulator"
+version = "0.1.0"
+source = { virtual = "examples/appium-android-emulator" }
+dependencies = [
+    { name = "appium-python-client" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-androidemulator" },
+    { name = "jumpstarter-driver-appium" },
+    { name = "jumpstarter-testing" },
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "appium-python-client", specifier = ">=5.0.0" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-androidemulator", editable = "packages/jumpstarter-driver-androidemulator" },
+    { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
+    { name = "jumpstarter-testing", editable = "packages/jumpstarter-testing" },
+    { name = "pytest", specifier = ">=8.3.2" },
+]
+
+[[package]]
+name = "jumpstarter-example-appium-ios-simulator"
+version = "0.1.0"
+source = { virtual = "examples/appium-ios-simulator" }
+dependencies = [
+    { name = "appium-python-client" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-appium" },
+    { name = "jumpstarter-driver-iossimulator" },
+    { name = "jumpstarter-testing" },
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "appium-python-client", specifier = ">=5.0.0" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
+    { name = "jumpstarter-driver-iossimulator", editable = "packages/jumpstarter-driver-iossimulator" },
+    { name = "jumpstarter-testing", editable = "packages/jumpstarter-testing" },
+    { name = "pytest", specifier = ">=8.3.2" },
+]
+
+[[package]]
 name = "jumpstarter-example-automotive"
 version = "0.1.0"
 source = { virtual = "examples/automotive" }
@@ -5620,6 +5681,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pysocks"
+version = "1.7.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bd/11/293dd436aea955d45fc4e8a35b6ae7270f5b8e00b53cf6c024c83b657a11/PySocks-1.7.1.tar.gz", hash = "sha256:3f8804571ebe159c380ac6de37643bb4685970655d3bba243530d6558b799aa0", size = 284429, upload-time = "2019-09-20T02:07:35.714Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/59/b4572118e098ac8e46e399a1dd0f2d85403ce8bbaad9ec79373ed6badaf9/PySocks-1.7.1-py3-none-any.whl", hash = "sha256:2725bd0a9925919b9b51739eea5f9e2bae91e83288108a9ad338b2e3a4435ee5", size = 16725, upload-time = "2019-09-20T02:06:22.938Z" },
+]
+
+[[package]]
 name = "pyspellchecker"
 version = "0.8.3"
 source = { registry = "https://pypi.org/simple" }
@@ -6361,6 +6431,23 @@ wheels = [
 ]
 
 [[package]]
+name = "selenium"
+version = "4.52.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "certifi" },
+    { name = "trio" },
+    { name = "trio-websocket" },
+    { name = "typing-extensions" },
+    { name = "urllib3", extra = ["socks"] },
+    { name = "websocket-client" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/96/07/d9a9ca4bbcfaad6e07e8034ccd719ef42032ab25a421fb9171baad4ed734/selenium-4.52.0.tar.gz", hash = "sha256:40f423c598cc85390c403ef626c9d3457c1ae834d4cf1f38637ebba3cb6f0d7a", size = 1062139, upload-time = "2026-10-29T13:09:43.51Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e6/37/c6d36e31c9d79ff97c5e77345be34f08f39942d9a36afe8b0fa2878344b2/selenium-4.52.0-py3-none-any.whl", hash = "sha256:caa2860d486f71cdeb21fee3248c2f604bba590120dfb4d3d18c4d7cf97c6f1f", size = 12076163, upload-time = "2026-10-29T13:09:41.294Z" },
+]
+
+[[package]]
 name = "semver"
 version = "3.0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -6761,7 +6848,7 @@ wheels = [
 
 [[package]]
 name = "trio"
-version = "0.30.0"
+version = "0.35.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
@@ -6771,9 +6858,23 @@ dependencies = [
     { name = "sniffio" },
     { name = "sortedcontainers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/01/c1/68d582b4d3a1c1f8118e18042464bb12a7c1b75d64d75111b297687041e3/trio-0.30.0.tar.gz", hash = "sha256:0781c857c0c81f8f51e0089929a26b5bb63d57f927728a5586f7e36171f064df", size = 593776, upload-time = "2025-04-21T00:48:19.507Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9c/e2/1db4e79abb730bbf048c1024a622b0e1e895f5b0e18c59f3f6b3e4b296ef/trio-0.35.0.tar.gz", hash = "sha256:7efb295c78a0ecd1235c5759e620b5da564ca80d2efcb0055423588547248b96", size = 609525, upload-time = "2026-10-31T23:36:55.506Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/69/8e/3f6dfda475ecd940e786defe6df6c500734e686c9cd0a0f8ef6821e9b2f2/trio-0.30.0-py3-none-any.whl", hash = "sha256:3bf4f06b8decf8d3cf00af85f40a89824669e2d033bb32469d34840edcfc22a5", size = 499194, upload-time = "2025-04-21T00:48:17.167Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/c6/77f116686de6b1bb4159ef70d476ef75576ad7819d4eeb783f6efb40f380/trio-0.35.0-py3-none-any.whl", hash = "sha256:9a062a029487c1bdbcc1b2543b729a0bde857ce478b1512c84f391f628e0c5c9", size = 513178, upload-time = "2026-10-31T23:36:53.705Z" },
+]
+
+[[package]]
+name = "trio-websocket"
+version = "0.12.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "outcome" },
+    { name = "trio" },
+    { name = "wsproto" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d1/3c/8b4358e81f2f2cfe71b66a267f023a91db20a817b9425dd964873796980a/trio_websocket-0.12.2.tar.gz", hash = "sha256:22c72c436f3d1e264d0910a3951934798dcc5b00ae56fc4ee079d46c7cf20fae", size = 33549, upload-time = "2025-02-25T05:16:58.947Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c7/19/eb640a397bba49ba49ef9dbe2e7e5c04202ba045b6ce2ec36e9cadc51e04/trio_websocket-0.12.2-py3-none-any.whl", hash = "sha256:df605665f1db533f4a386c94525870851096a223adcb97f72a07e8b4beba45b6", size = 21221, upload-time = "2025-02-25T05:16:57.545Z" },
 ]
 
 [[package]]
@@ -6913,11 +7014,16 @@ sdist = { url = "https://files.pythonhosted.org/packages/ad/53/6c420ddf6949097d6
 
 [[package]]
 name = "urllib3"
-version = "2.5.0"
+version = "2.8.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/15/22/9ee70a2574a4f4599c47dd506532914ce044817c7752a79b6a51286319bc/urllib3-2.5.0.tar.gz", hash = "sha256:3fc47733c7e419d4bc3f6b3dc2b4f890bb743906a30d56ba4a5bfa4bbff92760", size = 393185, upload-time = "2025-06-18T14:07:41.644Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e3/05/b17359e1cefb4f909b5e40b1b90a496d987258916dbbf88e842c729f510e/urllib3-2.8.0.tar.gz", hash = "sha256:63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63", size = 458972, upload-time = "2026-09-15T19:29:36.253Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a7/c2/fe1e52489ae3122415c51f387e221dd0773709bad6c6cdaa599e8a2c5185/urllib3-2.5.0-py3-none-any.whl", hash = "sha256:e6b01673c0fa6a13e374b50871808eb3bf7046c4b125b216f6bf1cc604cff0dc", size = 129795, upload-time = "2025-06-18T14:07:40.39Z" },
+    { url = "https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl", hash = "sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3", size = 135717, upload-time = "2026-09-15T19:29:34.577Z" },
+]
+
+[package.optional-dependencies]
+socks = [
+    { name = "pysocks" },
 ]
 
 [[package]]
