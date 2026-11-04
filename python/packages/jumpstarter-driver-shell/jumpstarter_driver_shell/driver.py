@@ -205,20 +205,7 @@ class Shell(Driver):
         # Read output in real-time
         while process.returncode is None:
             if asyncio.get_running_loop().time() - start_time > timeout:
-                # Send SIGTERM to entire process group for graceful termination
-                try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except (ProcessLookupError, OSError):
-                    # Process group might already be gone
-                    pass
-                try:
-                    await asyncio.wait_for(process.wait(), timeout=5.0)
-                except TimeoutError:  # pragma: no cover
-                    try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                        self.logger.warning(f"SIGTERM failed to terminate {process.pid}, sending SIGKILL")
-                    except (ProcessLookupError, OSError):
-                        pass
+                await self._terminate_process_group(process)
                 raise subprocess.TimeoutExpired(cmd, timeout) from None
 
             try:
@@ -238,3 +225,19 @@ class Shell(Driver):
         returncode = process.returncode
         remaining_stdout, remaining_stderr = await self._read_process_output(process, read_all=True)
         yield remaining_stdout, remaining_stderr, returncode
+
+    async def _terminate_process_group(self, process):
+        """Send SIGTERM to the script's process group, then SIGKILL if it is still running after 5 seconds."""
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except (ProcessLookupError, OSError):
+            # Process group might already be gone
+            pass
+        try:
+            await asyncio.wait_for(process.wait(), timeout=5.0)
+        except TimeoutError:  # pragma: no cover
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+                self.logger.warning(f"SIGTERM failed to terminate {process.pid}, sending SIGKILL")
+            except (ProcessLookupError, OSError):
+                pass
