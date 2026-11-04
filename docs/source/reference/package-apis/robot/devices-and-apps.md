@@ -173,8 +173,11 @@ alias.
   `Open Application` as `appium:app=${token}`.
 - **Device Hub**: for an iPhone in Xcode's Device Hub,
   `Start Device Hub Appium` runs WebDriverAgent and Appium on your Mac and
-  returns the same dictionary. Appium runs locally there, so
-  `Open Application` can take local `appium:app` paths.
+  returns the same dictionary. Sessions take the same capabilities as on the
+  exporter, so the same tests run on both: `appium:bundleId` starts installed
+  apps, and `Upload App` with the device's driver path (or the server's alias)
+  returns a token for `appium:app`, which Jumpstarter installs on the device.
+  Tokens work only on the target that issued them.
 - **Stopping**: `Stop Appium` does not close applications. Close them first
   with AppiumLibrary's `Close All Applications` or `Close Application`:
 
