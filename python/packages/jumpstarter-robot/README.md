@@ -442,15 +442,17 @@ Open Application    ${appium.url}    &{appium.capabilities}    appium:appPackage
 `capabilities` (the ones the target fixes: its platform, automation name and
 device), `ca_file` (the lease's CA certificate, for other WebDriver clients),
 `wda_url` (Device Hub only), `alias`, `path` and `session`. Pass an
-`Upload App` token to `Open Application` as `appium:app`. `Stop Appium` does
-not close applications; close them first with `Close All Applications`.
+`Upload App` token to `Open Application` as `appium:app`; with Device Hub,
+give `Upload App` the device's driver path or the server's alias, and sessions
+otherwise behave as on the exporter. `Stop Appium` does not close
+applications; close them first with `Close All Applications`.
 
 | Keyword | Arguments | Description |
 | --- | --- | --- |
 | `Start Appium` | `path=appium, port=0, alias=None, scope=global, session=None` | Serve the Appium of the driver at ``path`` on a loopback HTTPS port; returns its URL and capabilities. |
 | `Start Device Hub Appium` | `path, xctestrun, appium=appium, alias=None, scope=global, session=None` | Show an iOS device in Device Hub, run WebDriverAgent and Appium on this Mac; returns the same as `Start Appium`. |
 | `Stop Appium` | `alias=None` | Stop serving an Appium server; close its applications first (``Close All Applications``). |
-| `Upload App` | `path, file, session=None` | Upload an application to the Appium driver at ``path``; returns its ``jumpstarter-app:`` token. |
+| `Upload App` | `path, file, session=None` | Upload an application for the Appium at ``path``; returns its ``jumpstarter-app:`` token. |
 
 ### SSH
 

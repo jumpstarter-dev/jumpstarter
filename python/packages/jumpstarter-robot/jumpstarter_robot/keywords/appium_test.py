@@ -39,6 +39,11 @@ FIXED = {"platformName": "Android", "appium:uuid": "emu-1"}
 HUB_CALLS: list[tuple] = []
 
 
+def _hub_upload(path: Path) -> str:
+    HUB_CALLS.append(("upload", path.name))
+    return f"jumpstarter-app:hub/{path.name}"
+
+
 @dataclass(kw_only=True)
 class FakeHub(Driver):
     @classmethod
@@ -55,6 +60,7 @@ class FakeHubClient(DriverClient):
                 url="http://127.0.0.1:4723",
                 default_capabilities={"platformName": "iOS", "appium:uuid": "IPHONE-1"},
                 wda_url="http://127.0.0.1:8100",
+                uploader=_hub_upload,
             )
         finally:
             HUB_CALLS.append(("exit",))
@@ -259,6 +265,21 @@ def test_device_hub_appium_returns_the_same_shape(client, keywords, tmp_path):
     keywords.stop_appium("hub")
     assert HUB_CALLS[-1] == ("exit",)
     assert bridge.servers() == []
+
+
+def test_upload_app_goes_to_a_device_hub_server(client, keywords, tmp_path):
+    keywords.start_device_hub_appium("hub", str(tmp_path / "WDA.xctestrun"), alias="phone")
+    ipa = tmp_path / "Demo.ipa"
+    ipa.write_bytes(b"ipa")
+    # By driver path or alias: the Device Hub target issues its own tokens.
+    assert keywords.upload_app("hub", str(ipa)) == "jumpstarter-app:hub/Demo.ipa"
+    assert keywords.upload_app("phone", str(ipa)) == "jumpstarter-app:hub/Demo.ipa"
+    assert HUB_CALLS[1:] == [("upload", "Demo.ipa"), ("upload", "Demo.ipa")]
+    with pytest.raises(Failure, match="does not exist"):
+        keywords.upload_app("phone", str(tmp_path / "missing.ipa"))
+    # The exporter's Appium still takes uploads without a running server.
+    assert keywords.upload_app("appium", str(_apk(tmp_path))).endswith("/demo.apk")
+    keywords.stop_appium("phone")
 
 
 def test_device_hub_needs_an_ios_device(client, keywords, tmp_path):
