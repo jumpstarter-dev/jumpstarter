@@ -69,6 +69,7 @@ jumpstarter-imagehash = { workspace = true }
 jumpstarter-kubernetes = { workspace = true }
 jumpstarter-mcp = { workspace = true }
 jumpstarter-protocol = { workspace = true }
+jumpstarter-robot = { workspace = true }
 jumpstarter-testing = { workspace = true }
 hatch-pin-jumpstarter = { workspace = true }
 

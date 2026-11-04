@@ -1,0 +1,5 @@
+{
+  // The workspace venv (python/.venv), which has jumpstarter-robot, the drivers and this example installed:
+  // `uv sync --all-packages --all-extras` in python/. RobotCode reads paths, output-dir and python-path from robot.toml.
+  "python.defaultInterpreterPath": "../../../.venv/bin/python"
+}

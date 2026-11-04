@@ -15,6 +15,9 @@ ExporterSet is the Schema for the exportersets API.
 | `spec.images.runtime` | object | Runtime overrides the provisioner-specific runtime container image (e.g. QEMU runtime for the qemu.jumpstarter.dev provisioner). |
 | `spec.images.runtime.image` | string | Image is the container image reference (e.g. "quay.io/org/repo:tag"). |
 | `spec.images.runtime.imagePullPolicy` | `Always` \| `Never` \| `IfNotPresent` | ImagePullPolicy defines the pull policy for the container image. |
+| `spec.images.turn` | object | Turn overrides the Cuttlefish TURN relay container image. |
+| `spec.images.turn.image` | string | Image is the container image reference (e.g. "quay.io/org/repo:tag"). |
+| `spec.images.turn.imagePullPolicy` | `Always` \| `Never` \| `IfNotPresent` | ImagePullPolicy defines the pull policy for the container image. |
 | `spec.maxReplicas` | integer | MaxReplicas is the maximum number of instances (ceiling). 0 means no upper bound. (default: `4`) |
 | `spec.minAvailableReplicas` | integer | MinAvailableReplicas is the warm buffer: ready and unleased instances. (default: `0`) |
 | `spec.minReplicas` | integer | MinReplicas is the minimum number of instances (floor). (default: `0`) |

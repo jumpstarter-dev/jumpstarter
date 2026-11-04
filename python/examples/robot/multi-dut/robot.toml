@@ -1,0 +1,11 @@
+# Two identical mock boards on one exporter. `jmp robot generate`
+# writes client.resource; with `roles = true` the boards' identical drivers become
+# role libraries (Power, Console) that `Use Device` points at one board, plus a
+# @{MULTI_DEVICES} list named after the session.
+paths = ["tests"]
+output-dir = "results"
+
+[tool.jumpstarter.client.multi]
+exporter-config = "exporter.yaml"
+resource = "client.resource"
+roles = true

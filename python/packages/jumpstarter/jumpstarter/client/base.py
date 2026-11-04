@@ -6,7 +6,9 @@ from __future__ import annotations
 
 from contextlib import ExitStack, contextmanager
 from dataclasses import field
+from types import AsyncGeneratorType
 
+import anyio
 from anyio.from_thread import BlockingPortal
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
@@ -14,6 +16,25 @@ from pydantic.dataclasses import dataclass
 from .core import AsyncDriverClient
 from jumpstarter.common.importlib import _format_missing_driver_message
 from jumpstarter.streams.blocking import BlockingStream
+
+_CANCELLED_READ_GRACE = 5.0
+"""Seconds a cancelled streaming read gets to unwind before the stream is left to it"""
+
+
+async def _aclose_stream(generator: AsyncGeneratorType) -> None:
+    """Close a streaming call's async generator from the portal.
+
+    A read that was cancelled from the caller's thread may still be unwinding,
+    and aclose() on a running generator raises. Wait for the read to finish:
+    its cancellation already closed the generator, and aclose() is then a
+    no-op. Should it outlast the grace period, the cancelled read finishes the
+    generator itself, so there is nothing left to close.
+    """
+    with anyio.move_on_after(_CANCELLED_READ_GRACE):
+        while generator.ag_running:
+            await anyio.sleep(0.01)
+    if not generator.ag_running:
+        await generator.aclose()
 
 
 @dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
@@ -63,11 +84,31 @@ class DriverClient(AsyncDriverClient):
         :rtype: Generator[Any, None, None]
         """
         generator = self.portal.call(self.streamingcall_async, method, *args)
-        while True:
+        try:
+            while True:
+                future = self.portal.start_task_soon(generator.__anext__)
+                try:
+                    item = future.result()
+                except StopAsyncIteration:
+                    break
+                except BaseException:
+                    # Interrupted while waiting for an item (a Robot Framework
+                    # timeout raises in this thread): the read is still pending
+                    # in the portal. Cancelling it cancels the driver-side stream.
+                    # A read that failed on its own is done, and cancel() is a no-op.
+                    future.cancel()
+                    raise
+                yield item
+        finally:
+            # A caller that stops early (islice, break) closes this generator;
+            # close the async one too, so the driver-side stream is cancelled
+            # instead of being left running until the session ends. A portal
+            # that has already stopped took the stream down with it.
             try:
-                yield self.portal.call(generator.__anext__)
-            except StopAsyncIteration:
-                break
+                self.portal.call(_aclose_stream, generator)
+            except RuntimeError as exc:
+                if "portal is not running" not in str(exc):
+                    raise
 
     @contextmanager
     def stream(self, method="connect"):
@@ -162,3 +203,21 @@ class StubDriverClient(DriverClient):
         raise a helpful ImportError instead of AttributeError.
         """
         self._raise_missing_error()
+
+
+def resolve_root_child(root: DriverClient, name: str) -> DriverClient:
+    """Resolve the first segment of a driver tree path against the client root.
+
+    The named export entry is either a child of the root composite (the
+    exporter's tree), the root client itself (a config-served single entry),
+    or, for a bare single-driver ``serve()`` whose root carries no name label
+    and no children, the root unambiguously.
+    """
+    if name in root.children:
+        return root.children[name]
+    root_name = root.labels.get("jumpstarter.dev/name")
+    if root_name == name:
+        return root
+    if root_name is None and not root.children:
+        return root
+    raise KeyError(f"driver {name!r} not found under the exporter root")

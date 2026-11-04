@@ -21,6 +21,9 @@ VirtualTargetClass is the Schema for the virtualtargetclasses API.
 | `spec.images.runtime` | object | Runtime overrides the provisioner-specific runtime container image (e.g. QEMU runtime for the qemu.jumpstarter.dev provisioner). |
 | `spec.images.runtime.image` | string | Image is the container image reference (e.g. "quay.io/org/repo:tag"). |
 | `spec.images.runtime.imagePullPolicy` | `Always` \| `Never` \| `IfNotPresent` | ImagePullPolicy defines the pull policy for the container image. |
+| `spec.images.turn` | object | Turn overrides the Cuttlefish TURN relay container image. |
+| `spec.images.turn.image` | string | Image is the container image reference (e.g. "quay.io/org/repo:tag"). |
+| `spec.images.turn.imagePullPolicy` | `Always` \| `Never` \| `IfNotPresent` | ImagePullPolicy defines the pull policy for the container image. |
 | `spec.parameters` | object | Parameters holds provisioner-specific configuration as a nested object. The active provisioner validates merged parameters during reconcile. |
 | `spec.provisioner` | string | Provisioner identifies which exporter-set controller handles this class. Example: "qemu.jumpstarter.dev", "corellium.jumpstarter.dev" |
 | `spec.reclaimPolicy` | `Delete` \| `Retain` | ReclaimPolicy controls what happens to the virtual target after lease release. Delete: target is destroyed (default). Retain: target is preserved for debugging. (default: `Delete`) |
