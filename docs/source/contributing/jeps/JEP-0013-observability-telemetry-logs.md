@@ -12,7 +12,7 @@ orphan: true
 | **Status**        | Accepted                                                              |
 | **Type**          | Standards Track                                                       |
 | **Created**       | 2026-04-23                                                            |
-| **Updated**       | 2026-05-04                                                            |
+| **Updated**       | 2026-11-04                                                            |
 | **Discussion**    | https://github.com/jumpstarter-dev/jumpstarter/pull/631               |
 | **Requires**      | -                                                                     |
 | **Supersedes**    | -                                                                     |
@@ -1438,6 +1438,32 @@ Telemetry service adds this CA to its TLS root pool when connecting to
 Loki. `insecureSkipVerify` disables certificate verification entirely
 and should only be used in development or testing environments.
 
+### Phase 5 implementation details
+
+The following items landed with the Phase 5 implementation. They are
+implementation details and additive extensions; they do not change the
+Phase 5 acceptance criteria, and they do not extend the operator's role
+beyond publishing a credential-free shipper configuration (**DD-4**).
+
+- `spec.telemetry.logging.shipper.type` (`none`, `promtail`, `alloy`,
+  `vector`; default `none`) is an implementation extension field. For any
+  value other than `none`, the operator publishes a credential-free
+  `<cr>-log-shipper` ConfigMap containing one shipper configuration key
+  plus a `README.md`. It does not deploy or manage the shipper; running
+  Promtail, Grafana Alloy, or Vector remains an operator responsibility.
+- `spec.telemetry.metrics.serviceMonitorLabels` is an additive
+  implementation field that adds labels to generated `ServiceMonitor`
+  resources so they match a Prometheus `serviceMonitorSelector` (for
+  example `release: kube-prometheus-stack`).
+- For Controller and Router logs scraped by the shipper, `namespace` is
+  derived from Kubernetes pod metadata by the shipper rather than read
+  from the JSON body. This preserves the observable stream-label contract
+  (`component`, `exporter`, `namespace`) even when a JSON line does not
+  contain `namespace`.
+- `LogShipperReady=True` reports that the generated `<cr>-log-shipper`
+  ConfigMap exists and is up to date. It does not mean a shipper is
+  running or delivering logs.
+
 ## Test Plan
 
 ### Unit Tests
@@ -1714,6 +1740,18 @@ all subsequent phases have E2E coverage from the start.
   final published Linux binary, Promtail `v3.6.0`; added CRI parsing, node
   filtering, exact-label handling, real-Loki delivery, and Kind DaemonSet
   coverage: 2026-11-02
+- Added Prometheus Operator `v0.94.2` target-health validation: E2E assertions
+  against the real `/api/v1/targets` endpoint for Controller and Router,
+  confirming autodiscovery without manual scrape configuration: 2026-11-04
+- Bounded target discovery at 120 seconds; once a target is discovered, scrape
+  freshness is bounded by two configured scrape intervals: 2026-11-04
+- Added Vector component fallback for non-JSON lines and JSON lines with a
+  missing, empty, null, or non-string `component`: use the valid JSON
+  `component`, then the pod `component` label, then `unknown`; the raw line is
+  forwarded unchanged: 2026-11-04
+- Operator E2E result on this branch: 64 passed, 0 failed, 1 skipped, with the
+  gated shipper delivery and Prometheus target-health tests passing
+  separately. The monorepo CLI E2E suite was not rerun: 2026-11-04
 
 ## References
 
