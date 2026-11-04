@@ -54,6 +54,14 @@ export:
           command: "tar -czf backup.tar.gz /data && rsync backup.tar.gz remote:/backups/"
           description: "Create and sync backup (may take a while)"
           timeout: 1800  # 30 minutes instead of default 5 minutes
+        # Commands can use j against the lease's other drivers
+        reset_board:
+          command: |
+            j storage flash https://domain.com/my-base-image.raw.xz
+            j power cycle
+          description: "Reflash the board and boot it to a known state"
+          timeout: 900
+          session: true
         # You can mix both formats
         simple_echo: "echo 'simple'"
       # optional parameters
@@ -68,7 +76,7 @@ export:
 
 | Parameter | Description | Type | Required | Default |
 |-----------|-------------|------|----------|---------|
-| `methods` | Dictionary of methods. Values can be:<br/>- String: just the command<br/>- Dict: `{command: "...", description: "...", timeout: ...}` | `dict[str, str \| dict]` | Yes | - |
+| `methods` | Dictionary of methods. Values can be:<br/>- String: just the command<br/>- Dict: `{command: "...", description: "...", timeout: ..., session: ...}` | `dict[str, str \| dict]` | Yes | - |
 | `cwd` | Working directory for shell commands | `str` | No | `None` |
 | `log_level` | Logging level | `str` | No | `"INFO"` |
 | `shell` | Shell command to execute scripts | `list[str]` | No | `["bash", "-c"]` |
@@ -80,6 +88,7 @@ For the dict format, each method supports:
 - `command`: The shell command to execute (optional, defaults to `"echo Hello"`)
 - `description`: CLI help text (optional, defaults to `"Execute the {method_name} shell method"`)
 - `timeout`: Command-specific timeout in seconds (optional, defaults to global `timeout` value)
+- `session`: Let the command use `j` against the lease's other drivers, as hooks can (optional, defaults to `false`)
 
 **Note:** You can mix both formats in the same configuration - use string format for simple commands and dict format when you want custom descriptions or timeouts.
 
