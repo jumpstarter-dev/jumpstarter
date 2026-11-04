@@ -1749,6 +1749,9 @@ all subsequent phases have E2E coverage from the start.
   missing, empty, null, or non-string `component`: use the valid JSON
   `component`, then the pod `component` label, then `unknown`; the raw line is
   forwarded unchanged: 2026-11-04
+- Routed Controller/Router klog output and Gin request/recovery logs through
+  the structured JSON logger, including release mode and structured recovery;
+  the shipper fallback remains for unexpected third-party text: 2026-11-04
 - Operator E2E result on this branch: 64 passed, 0 failed, 1 skipped, with the
   gated shipper delivery and Prometheus target-health tests passing
   separately. The monorepo CLI E2E suite was not rerun: 2026-11-04

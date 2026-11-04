@@ -69,7 +69,10 @@ ServiceMonitors are removed.
 ## Log shipper configuration
 
 Controller and Router write JSON lines to stdout and never hold Loki
-credentials. To ship their logs, select a shipper type:
+credentials. This includes klog output and Gin request/recovery logs, which are
+routed through the same structured logger with the `component` field. The
+shipper fallback still handles any unexpected third-party text. To ship their
+logs, select a shipper type:
 
 ```yaml
 spec:
