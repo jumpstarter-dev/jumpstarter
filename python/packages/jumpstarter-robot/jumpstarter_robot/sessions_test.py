@@ -171,6 +171,8 @@ class TestRegistry:
         assert sessions.lease_end_policy("lab") == "fatal"
 
     def test_conflicting_lease_end_policy_warns(self, caplog):
+        # In-process Robot runs can leave the root logger above WARNING.
+        caplog.set_level("WARNING", logger="jumpstarter_robot.sessions")
         sessions.set_lease_end_policy("fatal")  # the default, but now explicit
         sessions.set_lease_end_policy("fatal")
         assert "on_lease_end" not in caplog.text
@@ -284,6 +286,8 @@ class TestSession:
                 session.resolve("power.child")
 
     def test_closers_run_lifo_once_and_errors_are_logged(self, tree, caplog):
+        # In-process Robot runs can leave the root logger above WARNING.
+        caplog.set_level("WARNING", logger="jumpstarter_robot.sessions")
         session = Session.from_client(tree)
         order = []
         session.on_close(lambda: order.append(1))
@@ -571,6 +575,8 @@ class TestLeaseReuse:
         assert [call[2] for call in config.calls] == ["given", None]  # the client reads JMP_LEASE itself
 
     def test_listing_failure_acquires_a_new_lease(self, config, caplog):
+        # In-process Robot runs can leave the root logger above WARNING.
+        caplog.set_level("WARNING", logger="jumpstarter_robot.sessions")
         async def broken(only_active=True):
             raise ConnectionError("controller unreachable")
 
