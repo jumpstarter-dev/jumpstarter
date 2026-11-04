@@ -41,6 +41,7 @@ The project uses **UV workspace** for dependency management:
 - **`jumpstarter-protocol/`**: gRPC protocol definitions (excluded from linting)
 - **`jumpstarter-kubernetes/`**: Kubernetes integration
 - **`jumpstarter-testing/`**: Testing utilities
+- **`jumpstarter-robot/`**: Robot Framework libraries (per-driver keyword libraries, sessions, client resource generator)
 - **`jumpstarter-imagehash/`**: Image hashing utilities
 
 ### CLI Packages

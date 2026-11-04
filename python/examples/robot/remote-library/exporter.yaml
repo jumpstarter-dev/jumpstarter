@@ -1,0 +1,16 @@
+# A board that runs a Robot Framework remote library server on port 8271, for
+# tests/remote_library.robot. Locally the "board" is board_remote_server.py;
+# on a lab exporter the TcpNetwork driver points at the board's address instead.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: remote-board
+endpoint: ""
+token: ""
+export:
+  remote:
+    type: jumpstarter_driver_network.driver.TcpNetwork
+    config:
+      host: 127.0.0.1
+      port: 8271

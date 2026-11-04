@@ -67,3 +67,15 @@ def test_status_is_none_when_the_driver_has_no_status():
         result = CliRunner().invoke(client.cli(), ["status"])
         assert result.exit_code != 0
         assert "does not report its state" in result.output
+
+
+def test_should_be_on_and_off():
+    with serve(MockPower()) as client:
+        client.on()
+        client.should_be_on()
+        try:
+            client.should_be_off()
+        except AssertionError as e:
+            assert "expected off" in str(e)
+        else:
+            raise AssertionError("should_be_off passed while the power is on")

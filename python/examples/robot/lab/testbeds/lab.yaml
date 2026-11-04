@@ -1,0 +1,14 @@
+# Testbed: the same suites against a board from a lab controller.
+#
+#   robot -d results -V testbeds/lab.yaml tests/
+#
+# The suite setup in tests/__init__.robot (Acquire Lease) attaches to an active
+# lease of this client with exactly this selector, if you created one
+# (jmp create lease --client lab -l board=mockdut,lab=eu --duration 2h);
+# otherwise it acquires a new lease for `duration` and releases it at the end.
+# A session variable on the command line (-v JMP_BOARD_SELECTOR:...) still wins.
+JUMPSTARTER:
+  config: lab                  # client config alias (`jmp config client list`), a YAML path, or env
+  selector: board=mockdut,lab=eu
+  duration: 1 hour
+PASSWORD: change-me            # better: robot -v PASSWORD:... or a Python variable file reading a secret

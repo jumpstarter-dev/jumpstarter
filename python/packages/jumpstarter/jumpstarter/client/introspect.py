@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import logging
 from collections.abc import Mapping
 from contextlib import ExitStack, asynccontextmanager
+from dataclasses import dataclass
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import click
 import click.core
 from anyio import to_thread
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 
-from .base import StubDriverClient
+from .base import DriverClient, StubDriverClient
 from .client import client_from_path
 
 if TYPE_CHECKING:
@@ -99,7 +101,6 @@ _BASE_METHODS = {
     "log_stream_async",
     "open_stream",
     "close",
-    "reset",
     "cli",
     "call_async",
     "streamingcall_async",
@@ -119,6 +120,90 @@ _INTERNAL_METHODS = {
     "wait_for_lease_ready",
     "wait_for_lease_ready_monitored",
 }
+
+
+MemberKind = Literal["method", "generator", "contextmanager", "property", "async"]
+
+
+@dataclass(frozen=True)
+class ClientMember:
+    """One public member of a client class, as a frontend sees it.
+
+    ``function`` is the plain function behind the member (the getter for a
+    property), so frontends can read its signature, type hints and decorator
+    metadata without touching an instance.
+    """
+
+    name: str
+    kind: MemberKind
+    function: Any
+    owner: type
+
+
+def _is_client_base(klass: type) -> bool:
+    """Whether ``klass`` is client plumbing rather than driver API.
+
+    Decided by what the class is, not where it lives, so a client from an
+    out-of-tree package is driver API like any other. The jumpstarter client
+    base classes are plumbing, and so is every class that is not a
+    DriverClient at all: ``can.BusABC`` behind CanClient, anyio's context
+    manager mixins and ``object`` carry methods that are not the driver's
+    interface.
+    """
+    # NativeDriverClient: the native-core client base, where a build provides one
+    return (
+        klass in (DriverClient, StubDriverClient)
+        or not issubclass(klass, DriverClient)
+        or klass.__name__ == "NativeDriverClient"
+    )
+
+
+def _classify(raw: Any) -> tuple[MemberKind, Any] | None:
+    if isinstance(raw, property):
+        return ("property", raw.fget) if raw.fget is not None else None
+    if isinstance(raw, functools.cached_property):
+        return "property", raw.func
+    if isinstance(raw, (staticmethod, classmethod)):
+        raw = raw.__func__
+    if not inspect.isfunction(raw):
+        return None
+    if inspect.iscoroutinefunction(raw) or inspect.isasyncgenfunction(raw):
+        return "async", raw
+    if inspect.isgeneratorfunction(raw):
+        return "generator", raw
+    wrapped = getattr(raw, "__wrapped__", None)
+    if wrapped is not None and (inspect.isgeneratorfunction(wrapped) or inspect.isasyncgenfunction(wrapped)):
+        return "contextmanager", raw
+    return "method", raw
+
+
+def iter_client_members(cls: type) -> list[ClientMember]:
+    """List the public driver API of a client class, without an instance.
+
+    Walks the class and its bases statically (``vars()``), so properties that
+    would make a driver call are never evaluated. The first definition along
+    the MRO wins, and client plumbing classes are skipped whole, which keeps a
+    subclass override such as PowerClient's ``status`` method while dropping
+    the base ``status`` property. ``cli``, ``close`` and
+    the other base helpers in ``_BASE_METHODS`` are never driver API.
+    """
+    members: list[ClientMember] = []
+    seen: set[str] = set()
+    for klass in cls.__mro__:
+        if _is_client_base(klass):
+            continue
+        for name, raw in vars(klass).items():
+            if name in seen:
+                continue
+            seen.add(name)
+            if name.startswith("_") or name in _BASE_METHODS or name in _INTERNAL_METHODS or name.endswith("_async"):
+                continue
+            classified = _classify(raw)
+            if classified is None:
+                continue
+            kind, function = classified
+            members.append(ClientMember(name=name, kind=kind, function=function, owner=klass))
+    return members
 
 
 def _get_public_method_names(obj: Any) -> list[str]:

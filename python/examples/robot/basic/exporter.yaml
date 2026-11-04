@@ -1,0 +1,29 @@
+# A mock board, served in-process by the Robot Framework examples ("local
+# mode"): no controller, hardware or `jmp shell` needed.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: mock-bench
+endpoint: ""
+token: ""
+export:
+  dut:
+    type: jumpstarter_example_robot.mockdut.MockDut
+    children:
+      power:
+        type: jumpstarter_example_robot.mockdut.MockDutPower
+        config:
+          board: dut
+      console:
+        type: jumpstarter_example_robot.mockdut.MockDutConsole
+        config:
+          board: dut
+  storage:
+    type: jumpstarter_driver_opendal.driver.MockStorageMuxFlasher
+  shell:
+    type: jumpstarter_driver_shell.driver.Shell
+    config:
+      methods:
+        hello: "echo \"$GREETING $@\""
+        fail: "echo \"failing on purpose\" >&2; exit 3"

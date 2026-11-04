@@ -1,0 +1,69 @@
+[project]
+name = "jumpstarter-robot"
+dynamic = ["version", "urls"]
+description = "Robot Framework libraries and keywords for Jumpstarter drivers"
+authors = [{ name = "Kirk Brauer", email = "kirkebrauer@gmail.com" }]
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+dependencies = [
+  "jumpstarter",
+  "click>=8.1.7.2",
+  "robotframework>=7.0",
+  "tomlkit>=0.13.0",
+]
+
+# `jmp robot` too, when jumpstarter-cli is installed
+[project.scripts]
+jmp-robot = "jumpstarter_robot.cli:robot"
+
+[project.optional-dependencies]
+appium = [
+  "jumpstarter-driver-appium",
+  "robotframework-appiumlibrary>=3.0,<4",
+  "Appium-Python-Client>=5.1.1",
+  "selenium>=4.26",
+]
+ssh = ["robotframework-sshlibrary>=3.8.0"]
+android = ["adbutils>=2.8.7"]
+mobile = ["jumpstarter-robot[appium,android]"]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3.2",
+  "pytest-anyio>=0.0.0",
+  "pytest-asyncio>=0.0.0",
+  "pytest-cov>=5.0.0",
+  "paramiko>=3.4.0",
+  "robotframework-sshlibrary>=3.8.0",
+  "adbutils>=2.8.7",
+  "jumpstarter-driver-appium",
+  "robotframework-appiumlibrary>=3.0,<4",
+  "Appium-Python-Client>=5.1.1",
+  "selenium>=4.26",
+  "jumpstarter-driver-composite",
+  "jumpstarter-driver-network",
+  "jumpstarter-driver-opendal",
+  "jumpstarter-driver-power",
+  "jumpstarter-driver-pyserial",
+  "jumpstarter-driver-shell",
+  "jumpstarter-driver-ssh",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["jumpstarter_robot"]
+
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../../' }
+
+[build-system]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"

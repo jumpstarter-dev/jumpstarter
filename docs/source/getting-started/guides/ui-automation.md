@@ -130,6 +130,32 @@ runners in other languages can connect too. For iOS targets the export is
 usually `ios` (`j ios appium`), and for a simulator or emulator the `appium`
 child sits next to `power` (`j simulator appium`).
 
+## Robot Framework
+
+The `jumpstarter-robot` package drives these targets from
+[Robot Framework](https://robotframework.org/) with
+[AppiumLibrary](https://github.com/serhatbolsu/robotframework-appiumlibrary):
+
+```robotframework
+*** Settings ***
+Library     AppiumLibrary
+Resource    client.resource
+
+*** Test Cases ***
+Open Settings
+    Open Appium Application    phone.appium    appium:appPackage=com.android.settings
+    Capture Page Screenshot
+```
+
+`Open Appium Application` serves the target's Appium and opens the session
+with the lease's certificate verified, and `Upload App` uploads applications.
+Do not use AppiumLibrary's own `Open Application` against a Jumpstarter
+target: it defaults to `ignore_certificates=True` and `direct_connection=True`,
+which turn off certificate verification and let Appium redirect the session
+around the lease's tunnel. See the
+[Robot Framework guide](robot-framework.md#mobile-app-testing-with-appium)
+for Android emulator and iOS simulator suites.
+
 ## Prepare the exporter
 
 The exporter needs Node.js, Appium and the Appium driver for its targets:
