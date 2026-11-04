@@ -50,9 +50,13 @@ usually selects a Helm release label such as `release: kube-prometheus-stack`;
 if your Prometheus uses a different selector, set the matching labels here.
 The labels do not change the metrics Service selector. The `controller-kind`
 target-health test installs a minimal Prometheus Operator and Prometheus
-instance, then asserts that the generated ServiceMonitors produce `up` targets
-for controller and router within two 5-second scrape intervals, with no
-additional scrape configuration.
+instance and asserts that the generated ServiceMonitors produce `up` targets
+for controller and router within 120 seconds, with no additional scrape
+configuration. The 120-second bound covers Prometheus Operator discovery and
+configuration reload; scrape freshness is measured separately, and once a
+target is discovered its last scrape is no older than two configured scrape
+intervals. That interval comes from the Prometheus CR (the test configures five
+seconds), so a slower scrape configuration relaxes the freshness check.
 
 If the Prometheus Operator is not installed, reconciliation still succeeds: the
 metrics Services are created, ServiceMonitors are skipped, and the
@@ -174,8 +178,18 @@ The rendering:
   only when the JSON line contains it;
 - promotes `component`, `exporter`, and `namespace`; the namespace value comes
   from `kubernetes.pod_namespace`;
+- falls back to the pod's `component` label when the JSON line has no usable
+  `component`, then to `"unknown"` when the label is also missing or empty;
 - keeps `client`, `lease_id`, and lease `spec.context` keys in the original
   JSON body.
+
+Vector's remap transform resolves the `component` stream label in three steps:
+a valid, non-empty JSON `component` field is used when present; otherwise the
+pod's `component` label is used; otherwise `"unknown"` is used. Non-JSON lines,
+and JSON lines whose `component` is missing, empty, `null`, or not a string, are
+forwarded unchanged with that fallback. Only `component`, `exporter`, and
+`namespace` are stream labels; no high-cardinality pod or container labels are
+promoted.
 
 The operator splits `spec.telemetry.loki.url` into the Vector sink `endpoint`
 and `/loki/api/v1/push` path. The rendering uses `compression: none` and the
@@ -302,7 +316,8 @@ configuration.
 - Only Controller and Router pods carry the discovery labels. Telemetry logs are
   pushed by the Telemetry service and are not scraped from stdout.
 - Vector uses two Loki sinks so lines without an `exporter` field are sent
-  without that label. Alloy and Promtail omit the label through their native
-  pipelines.
+  without that label; Alloy and Promtail omit the label through their native
+  pipelines. Vector also falls back to the pod's `component` label, then
+  `"unknown"`, when a line has no usable JSON `component`.
 - The feature does not install, configure, or upgrade Prometheus, Loki, or any
   shipper, and does not manage their credentials.
