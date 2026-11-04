@@ -45,9 +45,9 @@ func TestRuntimeContainerFile_basic(t *testing.T) {
 	mustContain(t, got, "User=0")
 	mustContain(t, got, "Volume=jumpstarter-rpi4-virtual-abc12-shared:/shared:z")
 	mustContain(t, got, "JUMPSTARTER_EXEC_LOG_FIELDS=component=exporter,exporter=rpi4-virtual-abc12,namespace=jumpstarter")
-	mustContain(t, got, "User=0")
 	mustContain(t, got, "[Service]")
 	mustContain(t, got, "Restart=always")
+	mustContain(t, got, "TimeoutStopSec=60")
 	mustContain(t, got, "[Install]")
 	mustContain(t, got, "WantedBy=default.target")
 	mustNotContain(t, got, "AddDevice")
@@ -125,6 +125,7 @@ func TestExporterContainerFile_basic(t *testing.T) {
 	mustContain(t, got, "Exec=jmp run --exporter-config /etc/jumpstarter/exporters/rpi4-virtual-abc12.yaml")
 	mustContain(t, got, "[Service]")
 	mustContain(t, got, "Restart=on-failure")
+	mustContain(t, got, "TimeoutStopSec=60")
 	mustContain(t, got, "[Install]")
 	mustContain(t, got, "WantedBy=default.target")
 }

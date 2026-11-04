@@ -102,10 +102,12 @@ func (p *Provisioner) EnrichExporterExport(
 // Deploy sets up the exporter on a remote host via SSH:
 //  1. Read SSH key from credentialsSecretRef
 //  2. Select a host with free capacity
-//  3. Connect via SSH
-//  4. Write exporter config, quadlet files
-//  5. Create shared volume, reload systemd, start containers
-//  6. Annotate the Exporter CR with the host assignment
+//  3. Record the host assignment on the Exporter CR, before any remote
+//     containers exist, so Cleanup can always tear them down
+//  4. Connect via SSH
+//  5. Write exporter config, quadlet files
+//  6. Create shared volume, reload systemd, start containers
+//  7. Mark the Exporter CR deployed
 func (p *Provisioner) Deploy(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
@@ -132,6 +134,15 @@ func (p *Provisioner) Deploy(
 		"host", host.Name,
 	)
 
+	// Record the host assignment BEFORE creating any remote containers, so
+	// Cleanup can always find and tear them down even if the deploy below (or
+	// marking it complete) fails partway. readSSHKey above already required a
+	// credentials Secret, so CredentialsSecretRef is set here.
+	credSecret := vtc.Spec.CredentialsSecretRef.Name
+	if err := p.recordHostAssignment(ctx, exporter, host.Name, credSecret); err != nil {
+		return fmt.Errorf("record host assignment for %s: %w", exporter.Name, err)
+	}
+
 	conn, err := Connect(SSHConnectConfig{
 		Host:       host.Name,
 		Port:       host.Port,
@@ -147,19 +158,20 @@ func (p *Provisioner) Deploy(
 		return err
 	}
 
-	credSecret := ""
-	if vtc.Spec.CredentialsSecretRef != nil {
-		credSecret = vtc.Spec.CredentialsSecretRef.Name
-	}
-	if err := p.annotateHost(ctx, exporter, host.Name, credSecret); err != nil {
-		return fmt.Errorf("annotate exporter %s with host: %w", exporter.Name, err)
+	// Mark deployment complete. IsDeployed gates on this annotation (not the
+	// host assignment), so a failure here leaves the exporter retryable:
+	// deployInstance is idempotent and the host is already recorded.
+	if err := p.markDeployed(ctx, exporter); err != nil {
+		return fmt.Errorf("mark exporter %s deployed: %w", exporter.Name, err)
 	}
 
 	return nil
 }
 
-// IsDeployed checks whether the exporter has a host assignment
-// annotation (meaning Deploy was previously called successfully).
+// IsDeployed reports whether Deploy previously ran to completion, signalled by
+// the "deployed" annotation. The host annotation alone is set before the
+// remote containers are created (so Cleanup can find them) and must not count
+// as deployed, or a partial deploy would never be retried.
 func (p *Provisioner) IsDeployed(
 	_ context.Context,
 	exporter *jumpstarterdevv1alpha1.Exporter,
@@ -167,17 +179,15 @@ func (p *Provisioner) IsDeployed(
 	if exporter.Annotations == nil {
 		return false, nil
 	}
-	_, ok := exporter.Annotations[AnnotationHost]
-	return ok, nil
+	return exporter.Annotations[AnnotationDeployed] == "true", nil
 }
 
 // Cleanup tears down the remote containers via SSH and removes the
-// host annotation.
-//
-// Must not return a hard error when the VirtualTargetClass is already
-// gone: kubectl delete -f often removes the VTC before the ExporterSet
-// finalizer runs, and a failing Cleanup would wedge the finalizer
-// forever.
+// host annotation. It requires the VirtualTargetClass to still exist so
+// cleanup uses the same effective host settings (SSH user, port) as Deploy.
+// If the VTC is deleted first, Cleanup returns an error and the
+// ExporterSet finalizer will not clear. A validating webhook should
+// block VTC deletion while ExporterSets reference it (TODO).
 func (p *Provisioner) Cleanup(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
@@ -197,7 +207,6 @@ func (p *Provisioner) Cleanup(
 		return nil
 	}
 
-	var classParams *apiextensionsv1.JSON
 	vtcKey := client.ObjectKey{
 		Namespace: es.Namespace,
 		Name:      es.Spec.VirtualTargetClassName,
@@ -207,20 +216,13 @@ func (p *Provisioner) Cleanup(
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("get VirtualTargetClass for cleanup: %w", err)
 		}
-		logger.Info("VirtualTargetClass already deleted, cleaning up from annotations",
-			"exporter", exporter.Name, "vtc", es.Spec.VirtualTargetClassName)
-	} else {
-		classParams = vtc.Spec.Parameters
-		if secretName == "" && vtc.Spec.CredentialsSecretRef != nil {
-			secretName = vtc.Spec.CredentialsSecretRef.Name
-		}
+		return fmt.Errorf(
+			"VirtualTargetClass %s not found; delete ExporterSet %s before its class: %w",
+			es.Spec.VirtualTargetClassName, es.Name, err)
 	}
-
-	if secretName == "" {
-		logger.Error(nil, "no SSH credentials secret for cleanup, skipping remote teardown",
-			"exporter", exporter.Name)
-		return nil
-	}
+	// Deploy records the credentials Secret alongside the host annotation, so a
+	// non-empty host annotation (checked above) implies a non-empty secretName.
+	classParams := vtc.Spec.Parameters
 
 	privateKey, err := p.readSSHKeyFromSecret(ctx, es.Namespace, secretName)
 	if err != nil {
@@ -405,18 +407,21 @@ func (p *Provisioner) teardownInstance(
 	runtimeSvc := RuntimeServiceName(name)
 	exporterSvc := ExporterServiceName(name)
 
-	// Bound stop: QEMU under TCG can ignore SIGTERM for a long time and
-	// wedge ExporterSet finalizers / e2e AfterAll. Force-kill after 60s,
-	// then remove containers explicitly.
+	// Stop the services first. An explicit `systemctl stop` suppresses the
+	// runtime unit's Restart=always, and TimeoutStopSec (set in the quadlet)
+	// bounds it so a SIGTERM-ignoring QEMU under TCG can't wedge the
+	// finalizer. The outer `timeout` caps the ssh command itself. We do NOT
+	// `podman rm -f` yet: removing a container while its unit still exists
+	// would race the restart policy and resurrect it.
 	if _, err := conn.RunCommand(ctx, fmt.Sprintf(
-		"timeout 60 systemctl stop %s %s 2>/dev/null || "+
-			"systemctl kill --kill-who=all %s %s 2>/dev/null || true; "+
-			"podman rm -f %s-exporter %s-runtime 2>/dev/null || true",
-		exporterSvc, runtimeSvc, exporterSvc, runtimeSvc, name, name,
+		"timeout 150 systemctl stop %s %s 2>/dev/null || true",
+		exporterSvc, runtimeSvc,
 	)); err != nil {
 		logger.Error(err, "failed to stop services", "exporter", name)
 	}
 
+	// Remove the quadlet unit files and reload so the generated units are
+	// gone and cannot restart the containers.
 	for _, path := range []string{
 		filepath.Join(QuadletDir, ExporterContainerFileName(name)),
 		filepath.Join(QuadletDir, RuntimeContainerFileName(name)),
@@ -426,15 +431,21 @@ func (p *Provisioner) teardownInstance(
 			logger.Error(err, "failed to remove file", "path", path)
 		}
 	}
+	if _, err := conn.RunCommand(ctx, "systemctl daemon-reload"); err != nil {
+		logger.Error(err, "failed to reload systemd after cleanup")
+	}
+
+	// Units are gone now, so force-removing any stragglers is race-free.
+	if _, err := conn.RunCommand(ctx,
+		fmt.Sprintf("podman rm -f %s-exporter %s-runtime 2>/dev/null || true",
+			name, name)); err != nil {
+		logger.Error(err, "failed to remove containers", "exporter", name)
+	}
 
 	volumeName := PodmanVolumeName(name)
 	if _, err := conn.RunCommand(ctx,
 		fmt.Sprintf("podman volume rm -f %s 2>/dev/null || true", volumeName)); err != nil {
 		logger.Error(err, "failed to remove volume", "volume", volumeName)
-	}
-
-	if _, err := conn.RunCommand(ctx, "systemctl daemon-reload"); err != nil {
-		logger.Error(err, "failed to reload systemd after cleanup")
 	}
 }
 
@@ -473,13 +484,21 @@ func (p *Provisioner) readSSHKeyFromSecret(
 	return key, nil
 }
 
-// annotateHost records host assignment (and credentials Secret) on the
-// Exporter CR so Cleanup can tear down without the VirtualTargetClass.
-func (p *Provisioner) annotateHost(
+// recordHostAssignment persists the host (and credentials Secret) on the
+// Exporter CR before any remote containers are created, so Cleanup can always
+// locate and tear them down even if deployment later fails partway.
+//
+// It patches rather than updates: Deploy calls this and markDeployed around a
+// long-running deployInstance, during which another controller may update the
+// Exporter (status, LastSeen). A JSON merge patch touches only these
+// annotations, so it neither conflicts on a stale resourceVersion nor clobbers
+// concurrent changes.
+func (p *Provisioner) recordHostAssignment(
 	ctx context.Context,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 	hostName, credentialsSecret string,
 ) error {
+	patch := client.MergeFrom(exporter.DeepCopy())
 	if exporter.Annotations == nil {
 		exporter.Annotations = make(map[string]string)
 	}
@@ -487,7 +506,22 @@ func (p *Provisioner) annotateHost(
 	if credentialsSecret != "" {
 		exporter.Annotations[AnnotationCredentialsSecret] = credentialsSecret
 	}
-	return p.Client.Update(ctx, exporter)
+	return p.Client.Patch(ctx, exporter, patch)
+}
+
+// markDeployed records that remote deployment completed. IsDeployed gates on
+// this annotation, so an incomplete deploy is retried. It patches for the same
+// conflict-avoidance reason as recordHostAssignment.
+func (p *Provisioner) markDeployed(
+	ctx context.Context,
+	exporter *jumpstarterdevv1alpha1.Exporter,
+) error {
+	patch := client.MergeFrom(exporter.DeepCopy())
+	if exporter.Annotations == nil {
+		exporter.Annotations = make(map[string]string)
+	}
+	exporter.Annotations[AnnotationDeployed] = "true"
+	return p.Client.Patch(ctx, exporter, patch)
 }
 
 // resolveImages returns the exporter and runtime images, applying

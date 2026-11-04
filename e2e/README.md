@@ -205,6 +205,7 @@ OIDC client `test-client-exporterset-qemu-ssh`. AfterAll deletes CRs and runs
 | Test Name | Steps | Pass Check |
 |---|---|---|
 | brings an Exporter Online via SSH-deployed Podman containers | wait for ExporterSet-created Exporter, wait Online/Registered/Available; check `sudo podman ps` for e2e containers | exporter Available; exporter+runtime containers Up |
+| recycles a terminal exporter and refills the pool (ExitAndReplace) | record the Available exporter, lease+release so exitOnLeaseEnd makes it terminal, wait for recycle (runs before the power-cycle test so it starts from a never-leased exporter) | old exporter deleted; one replacement with a new UID comes Online; replacement's containers Up |
 | can lease, power on, and power off through the SSH-deployed exporter | `jmp shell` → `j qemu power on && sleep 5 && j qemu power off` | no error |
 
 ---
