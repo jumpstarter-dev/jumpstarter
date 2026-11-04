@@ -236,8 +236,9 @@ class AppiumKeywords:
         ``path`` is an iOS device driver, ``xctestrun`` the ``.xctestrun`` file
         of a WebDriverAgent build signed for the device, and ``appium`` your
         installed Appium launcher with the XCUITest driver. Returns the same
-        ``url`` and ``capabilities`` as `Start Appium`. Appium runs here, so
-        ``Open Application`` can take local ``app`` paths. Everything stops, and
+        ``url`` and ``capabilities`` as `Start Appium`, and sessions take the
+        same capabilities as on the exporter: give `Upload App` the same
+        ``path`` for an ``appium:app`` token. Everything stops, and
         the device leaves Device Hub, with `Stop Appium` or at the end of
         ``scope``. macOS only.
 
@@ -258,12 +259,15 @@ class AppiumKeywords:
 
     @keyword(tags=["appium"])
     def upload_app(self, path: str, file: str, session: str | None = None) -> str:
-        """Upload an application to the Appium driver at ``path``; returns its ``jumpstarter-app:`` token.
+        """Upload an application for the Appium at ``path``; returns its ``jumpstarter-app:`` token.
 
-        ``file`` is an ``.apk``, ``.aab``, ``.apks``, ``.ipa`` or ``.zip`` file,
-        or an ``.app`` bundle directory, which is zipped first. Give the token
-        to ``Open Application`` as ``appium:app``. Uploads last until the
-        target is reset or the lease ends.
+        ``path`` is an Appium driver, or the alias or driver path of a running
+        server, such as one from `Start Device Hub Appium`, which takes its
+        applications this way. ``file`` is an ``.apk``, ``.aab``, ``.apks``,
+        ``.ipa`` or ``.zip`` file, or an ``.app`` bundle directory. Give the
+        token to ``Open Application`` as ``appium:app``. Uploads last until the
+        target is reset or the lease ends; a token works only on the target
+        that issued it.
 
         | ${token}= | Upload App | appium | ${CURDIR}/apps/ApiDemos-debug.apk |
         | Open Application | ${appium.url} | &{appium.capabilities} | appium:app=${token} |
@@ -271,8 +275,15 @@ class AppiumKeywords:
         with sessions.lock(), mapped_errors("Upload App"):
             opened = context.session(session)
             opened.check_alive()
-            node = _node(opened, path, "upload_app", "an Appium driver")
             local = Path(file).expanduser()
+            server = _find(path, session)
+            if server is not None and getattr(server.target, "uploader", None) is not None:
+                if not local.exists():
+                    raise JumpstarterRobotError(f"application '{file}' does not exist")
+                token = server.target.upload_app(local.absolute())
+                robot_logger.info(f"Uploaded {local.name} as {token}")
+                return token
+            node = _node(opened, path, "upload_app", "an Appium driver")
             if not local.exists():
                 raise JumpstarterRobotError(f"application '{file}' does not exist")
             token = node.upload_app(local.absolute())
