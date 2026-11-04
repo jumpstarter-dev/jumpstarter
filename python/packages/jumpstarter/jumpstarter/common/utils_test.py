@@ -1,4 +1,12 @@
+import os
+import pty
+import select
 import shutil
+import tempfile
+import threading
+import time
+from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -258,6 +266,149 @@ def test_launch_shell_zsh_prompt_is_plain_when_no_color(tmp_path, monkeypatch):
     assert "%F{" not in ps1  # No zsh color sequences
     assert "⚡" in ps1
     assert "➤" in ps1
+
+
+def test_launch_shell_zsh_isolated_config(tmp_path, monkeypatch):
+    created = []
+
+    def fake_temporary_directory(**kwargs):
+        @contextmanager
+        def _dir():
+            path = tempfile.mkdtemp(dir=str(tmp_path))
+            created.append(path)
+            yield path
+
+        return _dir()
+
+    monkeypatch.setattr("jumpstarter.common.utils.TemporaryDirectory", fake_temporary_directory)
+    for var in ("ZDOTDIR", "HISTSIZE", "SAVEHIST"):
+        monkeypatch.delenv(var, raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "zsh")
+    assert exit_code == 0
+    assert "--no-rcs" not in call[0][0]
+    env = call[1].get("env", {})
+    assert env["ZDOTDIR"] == created[0]
+    assert env["HISTSIZE"] == "50000"
+    assert env["SAVEHIST"] == "10000"
+    assert "history-incremental-search-backward" in (Path(created[0]) / ".zshrc").read_text()
+    assert "unsetopt GLOBALRCS" in (Path(created[0]) / ".zshenv").read_text()
+
+
+def test_launch_shell_zsh_with_profiles_keeps_user_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHELL", str(tmp_path / "zsh"))
+    monkeypatch.delenv("ZDOTDIR", raising=False)
+    with patch("jumpstarter.common.utils.Popen") as mock_popen:
+        mock_popen.return_value.wait.return_value = 0
+        exit_code = launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=True,
+        )
+    assert exit_code == 0
+    assert "--no-rcs" not in mock_popen.call_args[0][0]
+    assert "ZDOTDIR" not in mock_popen.call_args[1].get("env", {})
+
+
+def _pty_read(fd, timeout=3.0):
+    out = b""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        ready, _, _ = select.select([fd], [], [], 0.1)
+        if ready:
+            try:
+                chunk = os.read(fd, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            out += chunk
+            deadline = max(deadline, time.time() + 0.5)
+    return out
+
+
+def _pty_send(fd, data, timeout=1.5):
+    os.write(fd, data)
+    return _pty_read(fd, timeout)
+
+
+@pytest.mark.skipif(shutil.which("zsh") is None, reason="zsh not available")
+def test_launch_shell_zsh_history_and_reverse_search(tmp_path, monkeypatch):
+    """Isolated zsh recalls history at the first prompt and binds ^R."""
+    import jumpstarter.common.utils as utils_module
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".zsh_history").write_text("echo PREVIOUS_SESSION_COMMAND\n")
+    (home / ".zshrc").write_text("touch $HOME/RC_WAS_SOURCED\n")
+
+    monkeypatch.setenv("SHELL", shutil.which("zsh"))
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.setenv("NO_COLOR", "1")
+    for var in ("HISTFILE", "HISTSIZE", "SAVEHIST", "ZDOTDIR"):
+        monkeypatch.delenv(var, raising=False)
+
+    master_fd, slave_fd = pty.openpty()
+    slave = os.fdopen(slave_fd, "w+b", buffering=0)
+    monkeypatch.setattr(utils_module.sys, "stdin", slave)
+    monkeypatch.setattr(utils_module.sys, "stdout", slave)
+    monkeypatch.setattr(utils_module.sys, "stderr", slave)
+
+    real_popen = utils_module.Popen
+    spawned = {}
+
+    def recording_popen(*args, **kwargs):
+        proc = real_popen(*args, **kwargs)
+        spawned["proc"] = proc
+        return proc
+
+    monkeypatch.setattr(utils_module, "Popen", recording_popen)
+
+    result = {}
+
+    def run_launch_shell():
+        result["rc"] = launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="pytest",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+        )
+
+    thread = threading.Thread(target=run_launch_shell, daemon=True)
+
+    try:
+        thread.start()
+        prompt = _pty_read(master_fd)
+        assert b"pytest" in prompt, f"jmp prompt not shown: {prompt!r}"
+
+        out = _pty_send(master_fd, b"\x1b[A")
+        assert b"PREVIOUS_SESSION_COMMAND" in out, f"Up-arrow did not recall history: {out!r}"
+
+        _pty_send(master_fd, b"\x15")
+        out = _pty_send(master_fd, b"\x12")
+        assert b"i-search:" in out, f"Ctrl-R did not start a search: {out!r}"
+
+        _pty_send(master_fd, b"\x15")
+        _pty_send(master_fd, b"echo SESSION_WRITTEN\n")
+        _pty_send(master_fd, b"exit\n")
+        thread.join(timeout=10)
+        assert not thread.is_alive(), "shell did not exit"
+        assert result["rc"] == 0
+
+        assert "SESSION_WRITTEN" in (home / ".zsh_history").read_text()
+        assert not (home / "RC_WAS_SOURCED").exists()
+    finally:
+        proc = spawned.get("proc")
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        if thread.is_alive():
+            thread.join(timeout=5)
+        slave.close()
+        os.close(master_fd)
 
 
 def test_exporter_metadata_from_env(monkeypatch):

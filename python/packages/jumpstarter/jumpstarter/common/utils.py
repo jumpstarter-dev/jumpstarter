@@ -5,7 +5,9 @@ import sys
 from contextlib import ExitStack, asynccontextmanager, contextmanager
 from datetime import timedelta
 from functools import partial
+from pathlib import Path
 from subprocess import Popen
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING
 
 from anyio.from_thread import BlockingPortal, start_blocking_portal
@@ -200,6 +202,26 @@ def _zsh_ps1(context: str, bolt: str, arrow: str, no_color: bool) -> str:
     return f"%F{{8}}%1~ %F{{yellow}}{bolt}%F{{white}}{context} %F{{yellow}}{arrow}%f "
 
 
+_ZSH_ZSHENV = "unsetopt GLOBALRCS\n"
+
+_ZSH_ZSHRC = """\
+bindkey '^R' history-incremental-search-backward
+unset ZDOTDIR
+"""
+
+
+@contextmanager
+def _zsh_isolated_config(env: dict[str, str]):
+    """Run zsh without the user's rc files but with working history."""
+    env.setdefault("HISTSIZE", "50000")
+    env.setdefault("SAVEHIST", "10000")
+    with TemporaryDirectory(prefix="jmp-zsh-") as zdotdir:
+        (Path(zdotdir) / ".zshenv").write_text(_ZSH_ZSHENV)
+        (Path(zdotdir) / ".zshrc").write_text(_ZSH_ZSHRC)
+        env["ZDOTDIR"] = zdotdir
+        yield
+
+
 def launch_shell(
     host: str,
     context: str,
@@ -262,11 +284,11 @@ def launch_shell(
         if "HISTFILE" not in env:
             env["HISTFILE"] = os.path.join(os.path.expanduser("~"), ".zsh_history")
 
-        cmd = [shell]
-        if not use_profiles:
-            cmd.append("--no-rcs")
-        cmd.extend(["-o", "inc_append_history", "-o", "share_history"])
-        return _run_process(cmd, env, lease)
+        cmd = [shell, "-o", "inc_append_history", "-o", "share_history"]
+        if use_profiles:
+            return _run_process(cmd, env, lease)
+        with _zsh_isolated_config(env):
+            return _run_process(cmd, env, lease)
 
     else:
         return _run_process([shell], common_env, lease)
