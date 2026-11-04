@@ -202,29 +202,34 @@ class Shell(Driver):
         if timeout is None:
             timeout = self.timeout
 
-        # Read output in real-time
-        while process.returncode is None:
-            if asyncio.get_running_loop().time() - start_time > timeout:
+        try:
+            # Read output in real-time
+            while process.returncode is None:
+                if asyncio.get_running_loop().time() - start_time > timeout:
+                    await self._terminate_process_group(process)
+                    raise subprocess.TimeoutExpired(cmd, timeout) from None
+
+                try:
+                    stdout_data, stderr_data = await self._read_process_output(process, read_all=False)
+
+                    # Yield any data we got
+                    if stdout_data or stderr_data:
+                        yield stdout_data, stderr_data, None
+
+                    # Small delay to prevent busy waiting
+                    await asyncio.sleep(0.1)
+
+                except Exception:  # pragma: no cover  # noqa: BLE001
+                    break
+
+            # Process completed, get return code and final output
+            returncode = process.returncode
+            remaining_stdout, remaining_stderr = await self._read_process_output(process, read_all=True)
+            yield remaining_stdout, remaining_stderr, returncode
+        finally:
+            # The call ended before the script, e.g. because the client went away
+            if process.returncode is None:
                 await self._terminate_process_group(process)
-                raise subprocess.TimeoutExpired(cmd, timeout) from None
-
-            try:
-                stdout_data, stderr_data = await self._read_process_output(process, read_all=False)
-
-                # Yield any data we got
-                if stdout_data or stderr_data:
-                    yield stdout_data, stderr_data, None
-
-                # Small delay to prevent busy waiting
-                await asyncio.sleep(0.1)
-
-            except Exception:  # pragma: no cover  # noqa: BLE001
-                break
-
-        # Process completed, get return code and final output
-        returncode = process.returncode
-        remaining_stdout, remaining_stderr = await self._read_process_output(process, read_all=True)
-        yield remaining_stdout, remaining_stderr, returncode
 
     async def _terminate_process_group(self, process):
         """Send SIGTERM to the script's process group, then SIGKILL if it is still running after 5 seconds."""
