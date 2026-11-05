@@ -1,5 +1,4 @@
 import logging
-from collections import deque
 from collections.abc import Generator
 from contextlib import asynccontextmanager, contextmanager, suppress
 from dataclasses import dataclass, field
@@ -15,7 +14,7 @@ from jumpstarter_protocol import (
     router_pb2_grpc,
 )
 
-from .logging import LogHandler
+from .logging import LogFanOut, LogHandler
 from jumpstarter.common import ExporterStatus, LogSource, Metadata, TemporarySocket
 from jumpstarter.common.streams import ResourceStreamRequest, StreamRequestMetadata
 from jumpstarter.logging import set_log_context, unbind_log_context
@@ -50,7 +49,7 @@ class Session(
     motd: str | None = None
     lease_context: "LeaseContext | None" = field(init=False, default=None)
 
-    _logging_queue: deque = field(init=False)
+    _log_fanout: LogFanOut = field(init=False)
     _logging_handler: LogHandler = field(init=False)
     _current_status: ExporterStatus = field(init=False, default=ExporterStatus.AVAILABLE)
     _status_message: str = field(init=False, default="")
@@ -108,8 +107,8 @@ class Session(
         self.motd = motd
         self.mapping = {u: i for (u, _, _, i) in self.root_device.enumerate()}
 
-        self._logging_queue = deque(maxlen=256)
-        self._logging_handler = LogHandler(self._logging_queue, LogSource.SYSTEM)
+        self._log_fanout = LogFanOut(maxlen=256)
+        self._logging_handler = LogHandler(self._log_fanout, LogSource.SYSTEM)
         self._status_update_event = Event()
 
         # Map all driver logs to DRIVER source
@@ -369,12 +368,13 @@ class Session(
             await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(e))
 
     async def LogStream(self, request, context):
-        while not context.done():
-            try:
-                yield self._logging_queue.popleft()
-            except IndexError:
-                # Short polling interval for real-time log streaming
-                await sleep(0.05)
+        with self._log_fanout.subscribe() as queue:
+            while not context.done():
+                try:
+                    yield queue.popleft()
+                except IndexError:
+                    # Short polling interval for real-time log streaming
+                    await sleep(0.05)
 
     def update_status(self, status: int | ExporterStatus, message: str = ""):
         """Update the current exporter status for the session and signal status change.

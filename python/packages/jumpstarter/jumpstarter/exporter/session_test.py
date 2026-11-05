@@ -5,7 +5,16 @@ from contextlib import ExitStack, asynccontextmanager
 
 import grpc
 import pytest
-from anyio import BrokenResourceError, CancelScope, connect_tcp, fail_after, sleep_forever
+from anyio import (
+    BrokenResourceError,
+    CancelScope,
+    connect_tcp,
+    create_task_group,
+    fail_after,
+    move_on_after,
+    sleep,
+    sleep_forever,
+)
 from anyio.from_thread import BlockingPortal
 from google.protobuf import empty_pb2
 from jumpstarter_protocol import router_pb2_grpc
@@ -436,22 +445,38 @@ def test_driverclickgroup_uses_methods_description_as_override():
         assert help_text == "Client default: Power off"
 
 
-def test_logging_queue_maxlen_256():
-    """Issue A2: Logging queue deque maxlen should be 256 (not 32).
+@pytest.mark.anyio
+async def test_log_stream_delivers_records_logged_before_it_opened(caplog):
+    """The first LogStream receives up to 256 records logged before it opened.
 
-    The deque was originally sized at 32, which caused log messages to be
-    dropped during hook execution. Verify the fix sets maxlen=256.
+    Hooks start logging before the client opens its LogStream; a 32-record
+    buffer once dropped the start of their output (issue A2).
     """
+    from jumpstarter_protocol import jumpstarter_pb2_grpc
+
+    log = logging.getLogger("jumpstarter.test.log_stream_backlog")
     driver = SimpleDriver()
+    session = Session(uuid=driver.uuid, labels=driver.labels, root_device=driver)
+    seen: list[str] = []
+    records = [f"early {i}" for i in range(256)]
 
-    with serve(driver) as _:
-        session = Session(
-            uuid=driver.uuid,
-            labels=driver.labels,
-            root_device=driver,
-        )
+    def early(messages: list[str]) -> list[str]:
+        return [message for message in messages if message.startswith("early")]
 
-        assert session._logging_queue.maxlen == 256
+    with session, caplog.at_level(logging.INFO, logger=log.name):
+        async with (
+            session.serve_tcp_async("127.0.0.1", 0) as port,
+            grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel,
+            create_task_group() as tg,
+        ):
+            for record in records:
+                log.info(record)
+            stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+            tg.start_soon(_read_log_messages, stub.LogStream(empty_pb2.Empty()), seen)
+            await _wait_until(lambda: len(early(seen)) >= len(records))
+            tg.cancel_scope.cancel()
+
+    assert early(seen) == records
 
 
 @pytest.mark.anyio
@@ -733,6 +758,82 @@ async def test_log_stream_without_enriched_fields():
             assert len(msg.structured_fields) == 0
 
             log_stream.cancel()
+
+
+async def _read_log_messages(call, into: list[str]) -> None:
+    """Append the message of every LogStream response to `into` until cancelled."""
+    async for response in call:
+        into.append(response.message)
+
+
+async def _wait_until(predicate, tick=None, timeout: float = 5.0) -> None:
+    """Poll until predicate() holds or the timeout passes, calling tick() before each poll."""
+    with move_on_after(timeout):
+        while not predicate():
+            if tick is not None:
+                tick()
+            await sleep(0.05)
+
+
+@pytest.mark.anyio
+async def test_log_stream_gives_every_reader_every_record(caplog):
+    """Every open LogStream receives every record, as each client sharing a lease opens its own.
+
+    A record logged before any reader connects goes to the first reader only,
+    and a reader keeps receiving after another one disconnects.
+    """
+    from jumpstarter_protocol import jumpstarter_pb2_grpc
+
+    log = logging.getLogger("jumpstarter.test.log_stream_readers")
+    driver = SimpleDriver()
+    session = Session(uuid=driver.uuid, labels=driver.labels, root_device=driver)
+    owner_seen: list[str] = []
+    joiner_seen: list[str] = []
+
+    def matching(seen: list[str], prefix: str) -> list[str]:
+        return [message for message in seen if message.startswith(prefix)]
+
+    with session, caplog.at_level(logging.INFO, logger=log.name):
+        async with (
+            session.serve_tcp_async("127.0.0.1", 0) as port,
+            grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel,
+            create_task_group() as tg,
+        ):
+            stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+
+            log.info("logged before any reader")
+            tg.start_soon(_read_log_messages, stub.LogStream(empty_pb2.Empty()), owner_seen)
+            await _wait_until(lambda: "logged before any reader" in owner_seen)
+
+            joiner_scope = CancelScope()
+
+            async def read_joiner():
+                with joiner_scope:
+                    await _read_log_messages(stub.LogStream(empty_pb2.Empty()), joiner_seen)
+
+            tg.start_soon(read_joiner)
+            # The joiner's stream is open once a record logged after it started reaches it
+            await _wait_until(lambda: matching(joiner_seen, "probe"), tick=lambda: log.info("probe"))
+
+            records = [f"record {i}" for i in range(20)]
+            for record in records:
+                log.info(record)
+            await _wait_until(
+                lambda: len(matching(owner_seen, "record")) >= 20 and len(matching(joiner_seen, "record")) >= 20
+            )
+            assert matching(owner_seen, "record") == records
+            assert matching(joiner_seen, "record") == records
+            assert "logged before any reader" not in joiner_seen
+
+            joiner_scope.cancel()
+            after = [f"after the joiner left {i}" for i in range(10)]
+            for record in after:
+                log.info(record)
+                await sleep(0.1)
+            await _wait_until(lambda: len(matching(owner_seen, "after")) >= 10)
+            assert matching(owner_seen, "after") == after
+
+            tg.cancel_scope.cancel()
 
 
 # ============================================================================
