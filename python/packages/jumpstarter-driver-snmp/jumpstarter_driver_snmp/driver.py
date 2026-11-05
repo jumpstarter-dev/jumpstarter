@@ -1,9 +1,9 @@
-import asyncio
 import socket
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 from typing import Any
 
+from anyio import Event, fail_after
 from pysnmp.carrier.asyncio.dgram import udp
 from pysnmp.entity import config, engine
 from pysnmp.entity.rfc3413 import cmdgen
@@ -126,7 +126,7 @@ class SNMPServer(Driver):
     def client(cls) -> str:
         return "jumpstarter_driver_snmp.client.SNMPServerClient"
 
-    def _create_snmp_callback(self, result: dict[str, Any], response_received: asyncio.Event):
+    def _create_snmp_callback(self, result: dict[str, Any], response_received: Event):
         def callback(snmpEngine, sendRequestHandle, errorIndication, errorStatus, errorIndex, varBinds, cbCtx):
             self.logger.debug(f"Callback {errorIndication} {errorStatus} {errorIndex} {varBinds}")
             if errorIndication:
@@ -147,7 +147,7 @@ class SNMPServer(Driver):
 
         return callback
 
-    async def _run_snmp_dispatcher(self, snmp_engine: engine.SnmpEngine, response_received: asyncio.Event):
+    async def _run_snmp_dispatcher(self, snmp_engine: engine.SnmpEngine, response_received: Event):
         """Run the SNMP dispatcher until response is received"""
         snmp_engine.open_dispatcher()
         try:
@@ -168,7 +168,7 @@ class SNMPServer(Driver):
             self.logger.info(f"Sending power {state.name} command to {self.host}")
 
             # Create event in async context (required for Python 3.14+)
-            response_received = asyncio.Event()
+            response_received = Event()
 
             # Set up SNMP engine
             snmp_engine = self._setup_snmp()
@@ -186,10 +186,8 @@ class SNMPServer(Driver):
 
             # Run dispatcher with timeout
             try:
-                await asyncio.wait_for(
-                    self._run_snmp_dispatcher(snmp_engine, response_received),
-                    self.timeout
-                )
+                with fail_after(self.timeout):
+                    await self._run_snmp_dispatcher(snmp_engine, response_received)
             except TimeoutError:
                 self.logger.warning(f"SNMP operation timed out after {self.timeout} seconds")
                 result["error"] = "SNMP operation timed out"
