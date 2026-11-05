@@ -2,7 +2,7 @@ import logging
 import os
 import stat
 import sys
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 
 import click
 from anyio import BrokenResourceError, EndOfStream, create_task_group, open_file
@@ -13,6 +13,7 @@ from pexpect.fdpexpect import fdspawn
 
 from .console import Console, ConsoleStreamDrop
 from jumpstarter.client import DriverClient
+from jumpstarter.client.core import DriverMethodNotImplemented
 from jumpstarter.client.decorators import driver_click_group
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,23 @@ class PySerialClient(DriverClient):
         with PexpectAdapter(client=self) as adapter:
             yield adapter
 
+    @asynccontextmanager
+    async def _pipe_stream(self, method: str):
+        """Open a pipe stream, falling back to connect when observe is unavailable.
+
+        Older exporters do not export observe; without the fallback a read-only
+        pipe fails there. The fallback takes the exclusive write token.
+        """
+        try:
+            async with self.stream_async(method=method) as stream:
+                yield stream
+        except DriverMethodNotImplemented:
+            if method != "observe":
+                raise
+            click.echo("observe not available on this exporter, falling back to connect (exclusive access)", err=True)
+            async with self.stream_async(method="connect") as stream:
+                yield stream
+
     async def _pipe_serial(
         self,
         output_file: str | None = None,
@@ -84,7 +102,7 @@ class PySerialClient(DriverClient):
         # job tailing serial into a file while someone drives the console.
         use_observe = observe or not input_enabled
         method = "observe" if use_observe else "connect"
-        async with self.stream_async(method=method) as stream:
+        async with self._pipe_stream(method) as stream:
             # Fire-and-forget mode: only forward stdin and exit when stdin reaches EOF.
             if no_output:
                 if input_enabled:
