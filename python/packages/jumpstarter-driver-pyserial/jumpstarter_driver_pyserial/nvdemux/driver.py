@@ -109,7 +109,9 @@ class NVDemuxSerial(FanOutStreamMixin, Driver):
         while not pts_path:
             elapsed = time.monotonic() - pts_start
             if elapsed >= self.timeout:
-                raise TimeoutError(f"Timeout waiting for demuxer to become ready (device pattern: {self.device})")
+                raise TimeoutError(
+                    f"Timeout waiting for demuxer to become ready (device pattern: {self.device})",
+                )
             await sleep(0.1)
             pts_path = manager.get_pts_path(str(self.uuid))
 
