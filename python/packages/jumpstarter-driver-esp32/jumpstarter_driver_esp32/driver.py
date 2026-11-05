@@ -3,8 +3,10 @@ import gc
 import os
 import tempfile
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from typing import Any
 
 import esptool.cmds
 from anyio import to_thread
@@ -22,6 +24,7 @@ class Esp32Flasher(FlasherInterface, Driver):
     """
 
     baudrate: int = 115200
+    flash_baudrate: int = 460800
     chip: str = "esp32"
 
     @property
@@ -90,6 +93,23 @@ class Esp32Flasher(FlasherInterface, Driver):
             except (OSError, ValueError):
                 continue
 
+    @contextmanager
+    def _stub_session(self) -> Generator[Any, None, None]:
+        """Connect, load the flasher stub and raise the baud rate.
+
+        The chip is reset into its application once the body succeeds.
+        """
+        esp = self._connect_esp()
+        try:
+            if not esp.IS_STUB:
+                esp = esp.run_stub()
+            if self.flash_baudrate > self.baudrate:
+                esp.change_baud(self.flash_baudrate)
+            yield esp
+            esp.hard_reset()
+        finally:
+            self._close_esp(esp)
+
     @export
     async def flash(self, source, target: str | None = None):
         address = int(target or "0", 0)
@@ -99,15 +119,8 @@ class Esp32Flasher(FlasherInterface, Driver):
                     await stream.send(chunk)
 
             def _do_flash():
-                esp = self._connect_esp()
-                try:
-                    if not esp.IS_STUB:
-                        esp = esp.run_stub()
-                    with open(filename, "rb") as f:
-                        esptool.cmds.write_flash(esp, [(address, f)])
-                    esp.hard_reset()
-                finally:
-                    self._close_esp(esp)
+                with self._stub_session() as esp, open(filename, "rb") as f:
+                    esptool.cmds.write_flash(esp, [(address, f)])
 
             await to_thread.run_sync(_do_flash)
 
@@ -117,14 +130,8 @@ class Esp32Flasher(FlasherInterface, Driver):
         with _temporary_filename() as filename:
 
             def _do_read():
-                esp = self._connect_esp()
-                try:
-                    if not esp.IS_STUB:
-                        esp = esp.run_stub()
+                with self._stub_session() as esp:
                     esptool.cmds.read_flash(esp, address, size, filename)
-                    esp.hard_reset()
-                finally:
-                    self._close_esp(esp)
 
             await to_thread.run_sync(_do_read)
 
@@ -147,14 +154,8 @@ class Esp32Flasher(FlasherInterface, Driver):
 
     @export
     def erase(self):
-        esp = self._connect_esp()
-        try:
-            if not esp.IS_STUB:
-                esp = esp.run_stub()
+        with self._stub_session() as esp:
             esptool.cmds.erase_flash(esp)
-            esp.hard_reset()
-        finally:
-            self._close_esp(esp)
 
     @export
     def hard_reset(self):
