@@ -273,6 +273,8 @@ def launch_shell(
         cmd = [shell]
         if not use_profiles:
             cmd.extend(["--norc", "--noprofile"])
+            env.setdefault("HISTSIZE", "50000")
+            env.setdefault("HISTFILESIZE", "50000")
         return _run_process(cmd, env, lease)
 
     elif shell_name == "fish":

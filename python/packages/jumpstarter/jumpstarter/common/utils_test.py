@@ -244,6 +244,35 @@ def test_launch_shell_bash_prompt_is_plain_when_no_color(tmp_path, monkeypatch):
     assert "➤" in ps1
 
 
+def test_launch_shell_bash_isolated_history_env(tmp_path, monkeypatch):
+    for var in ("HISTSIZE", "HISTFILESIZE"):
+        monkeypatch.delenv(var, raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fake.bash")
+    assert exit_code == 0
+    env = call[1].get("env", {})
+    assert env["HISTSIZE"] == "50000"
+    assert env["HISTFILESIZE"] == "50000"
+
+
+def test_launch_shell_bash_with_profiles_keeps_user_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHELL", str(tmp_path / "fake.bash"))
+    for var in ("HISTSIZE", "HISTFILESIZE"):
+        monkeypatch.delenv(var, raising=False)
+    with patch("jumpstarter.common.utils.Popen") as mock_popen:
+        mock_popen.return_value.wait.return_value = 0
+        exit_code = launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=True,
+        )
+    assert exit_code == 0
+    env = mock_popen.call_args[1].get("env", {})
+    assert "HISTSIZE" not in env
+    assert "HISTFILESIZE" not in env
+
+
 def test_launch_shell_fish_prompt_is_plain_when_no_color(tmp_path, monkeypatch):
     monkeypatch.setenv("NO_COLOR", "1")
     monkeypatch.delenv("NO_ICONS", raising=False)
@@ -400,6 +429,78 @@ def test_launch_shell_zsh_history_and_reverse_search(tmp_path, monkeypatch):
 
         assert "SESSION_WRITTEN" in (home / ".zsh_history").read_text()
         assert not (home / "RC_WAS_SOURCED").exists()
+    finally:
+        proc = spawned.get("proc")
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        if thread.is_alive():
+            thread.join(timeout=5)
+        slave.close()
+        os.close(master_fd)
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+def test_launch_shell_bash_does_not_truncate_history(tmp_path, monkeypatch):
+    """Isolated bash keeps long history files intact on exit."""
+    import jumpstarter.common.utils as utils_module
+
+    home = tmp_path / "home"
+    home.mkdir()
+    histfile = home / ".bash_history"
+    histfile.write_text("".join(f"echo line{i:04d}\n" for i in range(1, 1001)))
+
+    monkeypatch.setenv("SHELL", shutil.which("bash"))
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.setenv("NO_COLOR", "1")
+    for var in ("HISTFILE", "HISTSIZE", "HISTFILESIZE"):
+        monkeypatch.delenv(var, raising=False)
+
+    master_fd, slave_fd = pty.openpty()
+    slave = os.fdopen(slave_fd, "w+b", buffering=0)
+    monkeypatch.setattr(utils_module.sys, "stdin", slave)
+    monkeypatch.setattr(utils_module.sys, "stdout", slave)
+    monkeypatch.setattr(utils_module.sys, "stderr", slave)
+
+    real_popen = utils_module.Popen
+    spawned = {}
+
+    def recording_popen(*args, **kwargs):
+        proc = real_popen(*args, **kwargs)
+        spawned["proc"] = proc
+        return proc
+
+    monkeypatch.setattr(utils_module, "Popen", recording_popen)
+
+    result = {}
+
+    def run_launch_shell():
+        result["rc"] = launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="pytest",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+        )
+
+    thread = threading.Thread(target=run_launch_shell, daemon=True)
+
+    try:
+        thread.start()
+        prompt = _pty_read(master_fd)
+        assert b"pytest" in prompt, f"jmp prompt not shown: {prompt!r}"
+
+        _pty_send(master_fd, b"echo SESSION_WRITTEN\n")
+        _pty_send(master_fd, b"exit\n")
+        thread.join(timeout=10)
+        assert not thread.is_alive(), "shell did not exit"
+        assert result["rc"] == 0
+
+        content = histfile.read_text()
+        assert "SESSION_WRITTEN" in content
+        assert "echo line0001" in content, "history file was truncated"
+        assert content.count("\n") >= 1000, "history file was truncated"
     finally:
         proc = spawned.get("proc")
         if proc is not None and proc.poll() is None:
