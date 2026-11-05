@@ -157,3 +157,21 @@ async def test_nvdemux_streams_share_source_until_session_shutdown():
             open_serial.assert_awaited_once_with(url="/dev/pts/5", baudrate=115200)
 
         await closed.wait()
+
+
+@pytest.mark.anyio
+async def test_nvdemux_attach_fails_at_configured_timeout():
+    """A missing pts fails the attach at the configured timeout, not fan-out's 30s default."""
+    with (
+        patch("jumpstarter_driver_pyserial.nvdemux.driver.DemuxerManager") as mock_manager_class,
+        fail_after(5),
+    ):
+        manager = mock_manager_class.get_instance.return_value
+        manager.get_pts_path.return_value = None
+        driver = NVDemuxSerial(demuxer_path="/usr/bin/demuxer", timeout=0.2)
+        try:
+            with pytest.raises(TimeoutError, match="source not ready within 0.2s"):
+                async with driver.connect():
+                    pass
+        finally:
+            driver.shutdown()

@@ -132,7 +132,7 @@ export:
 | chip           | Chip type for demuxer (`T234` for Orin, `T264` for Thor)                                        | str   | no       | `T264`                                                                    |
 | baudrate       | Baud rate for the serial connection                                                             | int   | no       | 115200                                                                    |
 | cps            | Characters per second throttling limit                                                          | float | no       | None                                                                      |
-| timeout        | Timeout in seconds waiting for demuxer to detect pts                                            | float | no       | 10.0                                                                      |
+| timeout        | Timeout in seconds waiting for demuxer to detect pts; also bounds the first client attach         | float | no       | 10.0                                                                      |
 | poll_interval  | Interval in seconds to poll for device reappearance after disconnect                            | float | no       | 1.0                                                                       |
 
 #### Device Auto-Detection

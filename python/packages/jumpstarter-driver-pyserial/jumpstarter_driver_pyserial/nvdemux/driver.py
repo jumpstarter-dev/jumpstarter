@@ -82,6 +82,10 @@ class NVDemuxSerial(FanOutStreamMixin, Driver):
     def client(cls) -> str:
         return "jumpstarter_driver_pyserial.client.PySerialClient"
 
+    def _get_fanout_source_ready_timeout(self) -> float:
+        """Bound the initial attach wait by the configured demuxer timeout."""
+        return self.timeout
+
     def close(self):
         """Unregister from the DemuxerManager."""
         if self._registered:
