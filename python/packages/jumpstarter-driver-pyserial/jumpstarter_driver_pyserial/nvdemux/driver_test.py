@@ -1,15 +1,13 @@
 """Tests for NVDemuxSerial driver."""
 
 import tempfile
-from contextlib import asynccontextmanager
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-from anyio import create_memory_object_stream
-from anyio.streams.stapled import StapledObjectStream
+from anyio import Event, create_memory_object_stream, fail_after
 
 from .driver import NVDemuxSerial
+from jumpstarter.exporter.session import Session
 
 
 @pytest.fixture
@@ -43,32 +41,6 @@ def test_nvdemux_registration():
             assert call_kwargs["device"] == device_file.name
             assert call_kwargs["chip"] == "T264"
             assert call_kwargs["target"] == "CCPLEX: 0"
-        finally:
-            driver.close()
-
-
-def test_nvdemux_gets_pts_from_manager():
-    """Test that connect() gets pts path from manager."""
-    with (
-        tempfile.NamedTemporaryFile() as device_file,
-        patch("jumpstarter_driver_pyserial.nvdemux.driver.DemuxerManager") as mock_manager_class,
-    ):
-        mock_manager = MagicMock()
-        mock_manager_class.get_instance.return_value = mock_manager
-        mock_manager.get_pts_path.return_value = "/dev/pts/5"
-
-        driver = NVDemuxSerial(
-            demuxer_path="/usr/bin/demuxer",
-            device=device_file.name,
-            target="CCPLEX: 0",
-            timeout=0.1,
-        )
-
-        try:
-            # Should call get_pts_path when checking pts availability
-            # (We can't test connect() easily without mocking serial, but we can test the logic)
-            pts_path = mock_manager.get_pts_path(str(driver.uuid))
-            assert pts_path == "/dev/pts/5"
         finally:
             driver.close()
 
@@ -149,56 +121,39 @@ def test_nvdemux_client_class():
 
 
 @pytest.mark.anyio
-async def test_nvdemux_observe_streams_demuxed_output():
-    """``j serial pipe`` (observe) reads the demuxed pts, sharing one open with connect."""
-    source_tx, source_rx = create_memory_object_stream[bytes](32)
-    sink_tx, _sink_rx = create_memory_object_stream[bytes](32)
+async def test_nvdemux_streams_share_source_until_session_shutdown():
+    """Observers and consoles share one pts across attachments; session teardown closes it."""
+    tx, rx = create_memory_object_stream[bytes](1)
+    closed = Event()
 
-    @asynccontextmanager
-    async def fake_async_serial(**_kwargs):
-        yield StapledObjectStream(sink_tx, source_rx)
+    async def read(_max_bytes):
+        return await rx.receive()
 
-    writer = SimpleNamespace(transport=SimpleNamespace(set_write_buffer_limits=lambda **_kwargs: None))
-    opens = []
-
-    async def fake_open_serial_connection(*, url, baudrate):
-        opens.append((url, baudrate))
-        return object(), writer
-
-    polls = 0
-
-    def get_pts_path(_driver_id):
-        nonlocal polls
-        polls += 1
-        return None if polls == 1 else "/dev/pts/5"
+    writer = MagicMock()
+    writer.close.side_effect = closed.set
 
     with (
-        tempfile.NamedTemporaryFile() as device_file,
+        tx,
+        rx,
         patch("jumpstarter_driver_pyserial.nvdemux.driver.DemuxerManager") as mock_manager_class,
         patch(
             "jumpstarter_driver_pyserial.nvdemux.driver.open_serial_connection",
-            fake_open_serial_connection,
-        ),
-        patch("jumpstarter_driver_pyserial.nvdemux.driver.AsyncSerial", fake_async_serial),
+            return_value=(MagicMock(read=read), writer),
+        ) as open_serial,
+        fail_after(3),
     ):
-        mock_manager = MagicMock()
-        mock_manager_class.get_instance.return_value = mock_manager
-        # First poll misses, second one resolves: exercises the pts wait loop.
-        mock_manager.get_pts_path.side_effect = get_pts_path
+        manager = mock_manager_class.get_instance.return_value
+        manager.get_pts_path.side_effect = [None, "/dev/pts/5"]
+        driver = NVDemuxSerial(demuxer_path="/usr/bin/demuxer")
 
-        driver = NVDemuxSerial(
-            demuxer_path="/usr/bin/demuxer",
-            device=device_file.name,
-            target="CCPLEX: 0",
-            timeout=1.0,
-        )
-        try:
-            async with driver.connect() as console, driver.observe() as observer:
-                await source_tx.send(b"CCPLEX boot\n")
-                assert await console.receive() == b"CCPLEX boot\n"
-                assert await observer.receive() == b"CCPLEX boot\n"
-                # One physical open shared by both clients, from the resolved pts.
-                assert opens == [("/dev/pts/5", 115200)]
-                assert polls >= 2
-        finally:
-            driver.close()
+        with Session(root_device=driver):
+            for data in (b"CCPLEX boot\n", b"CCPLEX ready\n"):
+                async with driver.connect() as console, driver.observe() as observer:
+                    await tx.send(data)
+                    assert await console.receive() == data
+                    assert await observer.receive() == data
+                assert not closed.is_set()
+
+            open_serial.assert_awaited_once_with(url="/dev/pts/5", baudrate=115200)
+
+        await closed.wait()

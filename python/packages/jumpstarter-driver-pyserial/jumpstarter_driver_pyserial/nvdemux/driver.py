@@ -1,7 +1,6 @@
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import ClassVar
 
 from anyio import sleep
 from anyio._backends._asyncio import StreamReaderWrapper, StreamWriterWrapper
@@ -41,13 +40,11 @@ class NVDemuxSerial(FanOutStreamMixin, Driver):
 
     All attached clients share one open of the pts via :class:`FanOutStreamMixin`,
     so read-only ``observe`` clients do not steal bytes from the console.
+    The reader stays open between attachments and stops at session shutdown;
+    the demuxer owns the pts lifetime.
     """
 
     driver_type = "serial"
-
-    # The pts only exists while the demuxer has that target; re-resolve it on
-    # each attach instead of keeping the pty open for the exporter's lifetime.
-    _fanout_always_on: ClassVar[bool] = False
 
     demuxer_path: str
     device: str = field(default=NV_DEVICE_PATTERN)
