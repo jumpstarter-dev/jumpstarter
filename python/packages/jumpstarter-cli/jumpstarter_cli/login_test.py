@@ -1,10 +1,10 @@
-import asyncio
 import json
 import ssl
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import click
 import pytest
+from anyio import run
 from click.testing import CliRunner
 
 from jumpstarter_cli.jmp import jmp
@@ -90,7 +90,7 @@ def test_fetch_auth_config_maps_timeout_to_click_exception(monkeypatch) -> None:
     monkeypatch.setattr("jumpstarter_cli.login.aiohttp.ClientSession", FakeClientSession)
 
     with pytest.raises(click.ClickException, match="Timed out while connecting"):
-        asyncio.run(fetch_auth_config("login.example.com"))
+        run(fetch_auth_config, "login.example.com")
 
 
 def test_fetch_auth_config_maps_json_decode_error(monkeypatch) -> None:
@@ -122,7 +122,7 @@ def test_fetch_auth_config_maps_json_decode_error(monkeypatch) -> None:
     monkeypatch.setattr("jumpstarter_cli.login.aiohttp.ClientSession", FakeClientSession)
 
     with pytest.raises(click.ClickException, match="Invalid JSON response received"):
-        asyncio.run(fetch_auth_config("login.example.com"))
+        run(fetch_auth_config, "login.example.com")
 
 
 def test_login_cli_shows_timeout_message(monkeypatch) -> None:

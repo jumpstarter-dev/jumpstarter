@@ -1,12 +1,14 @@
 import os
 import tempfile
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 import yaml
+from anyio import to_thread
 from jumpstarter_protocol import kubernetes_pb2
 from pydantic import ValidationError
 
@@ -17,6 +19,7 @@ from jumpstarter.config.client import (
     ClientConfigV1Alpha1Drivers,
     ClientConfigV1Alpha1Lease,
     ShellConfigV1Alpha1,
+    _blocking_compat,
 )
 from jumpstarter.config.common import ObjectMeta
 from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_NAME, JMP_NAMESPACE, JMP_TOKEN
@@ -752,3 +755,22 @@ async def test_list_exporters_with_leases_preserves_exporter_fields():
     dumped = result.model_dump(mode="json")["exporters"][0]
     assert dumped["status"] is not None
     assert dumped["lease"]["name"] == "lease-a"
+
+
+@_blocking_compat
+async def _add(a, b=0):
+    return a + b
+
+
+def test_blocking_compat_runs_to_completion_without_a_loop():
+    assert _add(1, b=2) == 3
+
+
+@pytest.mark.anyio
+async def test_blocking_compat_returns_an_awaitable_inside_a_task():
+    assert await _add(1, b=2) == 3
+
+
+@pytest.mark.anyio
+async def test_blocking_compat_runs_to_completion_in_a_worker_thread():
+    assert await to_thread.run_sync(partial(_add, 1, b=2)) == 3

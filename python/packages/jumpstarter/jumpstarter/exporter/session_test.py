@@ -5,7 +5,7 @@ from contextlib import ExitStack, asynccontextmanager
 
 import grpc
 import pytest
-from anyio import BrokenResourceError, CancelScope, connect_tcp, fail_after, sleep_forever
+from anyio import BrokenResourceError, CancelScope, connect_tcp, fail_after, run, sleep_forever
 from anyio.from_thread import BlockingPortal
 from google.protobuf import empty_pb2
 from jumpstarter_protocol import router_pb2_grpc
@@ -120,8 +120,7 @@ def test_get_report_includes_descriptions():
         )
 
         # Call GetReport
-        import asyncio
-        response = asyncio.run(session.GetReport(empty_pb2.Empty(), None))
+        response = run(session.GetReport, empty_pb2.Empty(), None)
 
         # Build a map of uuid -> report for easy lookup
         reports_by_uuid = {r.uuid: r for r in response.reports}
@@ -201,8 +200,7 @@ def test_empty_description_not_included():
             root_device=driver,
         )
 
-        import asyncio
-        response = asyncio.run(session.GetReport(empty_pb2.Empty(), None))
+        response = run(session.GetReport, empty_pb2.Empty(), None)
 
         # Empty string should not be included in the report
         reports_by_uuid = {r.uuid: r for r in response.reports}
@@ -214,7 +212,6 @@ def test_empty_description_not_included():
 
 def test_get_report_includes_motd():
     """Test that GetReport includes the motd when set on the session"""
-    import asyncio
 
     driver = SimpleDriver()
 
@@ -224,7 +221,7 @@ def test_get_report_includes_motd():
         root_device=driver,
         motd="Welcome to my-exporter!",
     )
-    response = asyncio.run(session.GetReport(empty_pb2.Empty(), None))
+    response = run(session.GetReport, empty_pb2.Empty(), None)
     assert response.motd == "Welcome to my-exporter!"
 
     session_without_motd = Session(
@@ -232,7 +229,7 @@ def test_get_report_includes_motd():
         labels=driver.labels,
         root_device=driver,
     )
-    response = asyncio.run(session_without_motd.GetReport(empty_pb2.Empty(), None))
+    response = run(session_without_motd.GetReport, empty_pb2.Empty(), None)
     assert response.motd == ""
 
 
@@ -362,8 +359,7 @@ def test_methods_description_included_in_getreport():
             root_device=driver,
         )
 
-        import asyncio
-        response = asyncio.run(session.GetReport(empty_pb2.Empty(), None))
+        response = run(session.GetReport, empty_pb2.Empty(), None)
 
         # Find the driver's report
         reports_by_uuid = {r.uuid: r for r in response.reports}
