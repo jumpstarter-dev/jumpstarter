@@ -62,7 +62,7 @@ async def _fake_client_from_path_fails_setup(path, portal, stack, allow, unsafe)
     yield  # pragma: no cover - unreachable, keeps this an async generator
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_connection_teardown_failure_does_not_kill_other_connections(monkeypatch):
     """One connection's post-startup failure must not tear down its siblings.
 
@@ -92,7 +92,7 @@ async def test_connection_teardown_failure_does_not_kill_other_connections(monke
         assert conn_b.id in manager.connections, "connection B was cancelled by connection A's unrelated failure"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_lease_ended_race_during_teardown_does_not_kill_other_connections(monkeypatch):
     """A lease_ended flip that races a post-startup teardown must stay isolated.
 
@@ -126,7 +126,7 @@ async def test_lease_ended_race_during_teardown_does_not_kill_other_connections(
         assert conn_b.id in manager.connections, "connection B was cancelled by connection A's lease_ended race"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_cancellation_after_startup_is_not_reported_as_a_failure(monkeypatch):
     """Cancelling the shared task group post-startup must not log a failure.
 
@@ -158,7 +158,7 @@ async def test_cancellation_after_startup_is_not_reported_as_a_failure(monkeypat
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_pre_startup_failure_propagates_to_connect_caller(monkeypatch):
     """A failure before task_status.started() must still reach connect().
 
@@ -175,7 +175,7 @@ async def test_pre_startup_failure_propagates_to_connect_caller(monkeypatch):
 
 
 class TestLeaseEndingCallback:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_enqueues_notification(self, monkeypatch):
         monkeypatch.setattr("jumpstarter_mcp.connections.client_from_path", _fake_client_from_path)
         _RAISE_ON_TEARDOWN.clear()
@@ -195,7 +195,7 @@ class TestLeaseEndingCallback:
         events = manager.drain_events()
         assert any("lease-a" in e["message"] for e in events)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_silences_closed_resource_error(self, monkeypatch):
         monkeypatch.setattr("jumpstarter_mcp.connections.client_from_path", _fake_client_from_path)
         _RAISE_ON_TEARDOWN.clear()
@@ -210,7 +210,7 @@ class TestLeaseEndingCallback:
 
         callback(lease_a, timedelta(seconds=30))
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_uses_unknown_for_missing_exporter_name(self, monkeypatch):
         monkeypatch.setattr("jumpstarter_mcp.connections.client_from_path", _fake_client_from_path)
         _RAISE_ON_TEARDOWN.clear()

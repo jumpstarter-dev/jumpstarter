@@ -856,7 +856,7 @@ class TestLeaseAccessControl:
         assert [lease.name for lease in result.leases] == ["test-lease", "shared-ok"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_lease_from_protobuf_parses_shared_with_fields():
     from jumpstarter_protocol import client_pb2
 
@@ -877,7 +877,7 @@ async def test_lease_from_protobuf_parses_shared_with_fields():
     assert not lease.is_accessible_by("bob")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_create_lease_sets_tags_on_protobuf():
     from jumpstarter_protocol import client_pb2
 
@@ -909,7 +909,7 @@ async def test_create_lease_sets_tags_on_protobuf():
     assert result.tags == {"team": "devops", "ci-job": "999"}
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_exporters_passes_show_hidden_labels_to_proto():
     from jumpstarter_protocol import client_pb2
 
@@ -929,7 +929,7 @@ async def test_list_exporters_passes_show_hidden_labels_to_proto():
     assert call_args.show_hidden_labels is True
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_exporters_show_hidden_labels_defaults_false():
     from jumpstarter_protocol import client_pb2
 
