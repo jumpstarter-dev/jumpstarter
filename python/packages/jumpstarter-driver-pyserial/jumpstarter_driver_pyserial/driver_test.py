@@ -1,4 +1,5 @@
 import contextlib
+import logging
 import time
 from collections.abc import AsyncGenerator
 from types import SimpleNamespace
@@ -436,8 +437,9 @@ def test_console_stream_survives_device_power_cycle(type_while_gone, processed_i
 
 
 @pytest.mark.parametrize("always_on", [False, True])
-def test_offline_input_preserves_console_rpc_and_observer(always_on, processed_input):
+def test_offline_input_preserves_console_rpc_and_observer(always_on, processed_input, caplog):
     """An outage discards input, not the logical RPC, token, or observer."""
+    caplog.set_level(logging.WARNING, logger="jumpstarter.streams.fanout")
     device = VanishingDevice()
     driver = PySerial(url="loop://", always_on=always_on)
     fanout = driver._get_fanout()
@@ -452,7 +454,7 @@ def test_offline_input_preserves_console_rpc_and_observer(always_on, processed_i
                 rpc = stream.stream.context
                 holder = fanout._write_token_holder
                 reader = fanout._reader_task
-                for _ in range(2):
+                for outage in range(2):
                     await stream.send(b"before outage")
                     await _read_until(stream, b"before outage")
                     await _read_until(observer, b"before outage")
@@ -464,6 +466,10 @@ def test_offline_input_preserves_console_rpc_and_observer(always_on, processed_i
                     await stream.send(b"offline keystrokes")
                     # Wait for exporter-side processing before restoring the device.
                     await processed.wait()
+                    assert sum(
+                        record.getMessage() == "Discarding input until source reconnects"
+                        for record in caplog.records
+                    ) == outage + 1
                     assert not rpc.done()
                     assert fanout._write_token_holder == holder
                     assert fanout._reader_task is reader

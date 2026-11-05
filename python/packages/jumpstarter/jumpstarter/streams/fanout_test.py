@@ -10,6 +10,7 @@ import pytest
 from anyio import (
     BrokenResourceError,
     ClosedResourceError,
+    EndOfStream,
     create_memory_object_stream,
     create_task_group,
 )
@@ -17,6 +18,7 @@ from anyio.lowlevel import checkpoint
 from anyio.streams.stapled import StapledObjectStream
 from anyio.to_thread import run_sync as run_sync_in_worker
 
+from . import fanout as fanout_module
 from .common import create_memory_stream
 from .fanout import (
     BufferOverflowError,
@@ -393,14 +395,15 @@ class TestStreamFanOut:
                     fanout._source = None
                     await stream.send(b"")
                     assert not stream._buffer._buf
+                    assert not caplog.records
                     await stream.send(b"x")
                     await stream.send(b"discard this")
                     await stream.send(b"and this")
                     assert not stream._buffer._buf
                     assert fanout._write_token_holder == stream._id
                     assert [record.getMessage() for record in caplog.records] == [
-                        "Discarding input: source not connected"
-                    ] * 4
+                        "Discarding input until source reconnects"
+                    ]
                     assert all(record.levelno == logging.WARNING for record in caplog.records)
 
                     fanout._source = source
@@ -408,6 +411,99 @@ class TestStreamFanOut:
                     assert await b_rx.receive() == b"after reconnect"
                     assert not b_rx.statistics().current_buffer_used
         finally:
+            await fanout.close()
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("source_connected", "change"), [(False, "reconnect"), (False, "revoke"), (True, "revoke")]
+    )
+    async def test_send_checks_state_after_checkpoint(self, monkeypatch, source_connected, change):
+        source, device = create_memory_stream()
+
+        @asynccontextmanager
+        async def factory():
+            async with source:
+                yield source
+
+        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        try:
+            with anyio.fail_after(2):
+                async with fanout.attach_exclusive() as stream:
+                    if not source_connected:
+                        fanout._source = None
+
+                    async def checkpoint_and_change_state():
+                        await checkpoint()
+                        if change == "reconnect":
+                            fanout._source = source
+                        else:
+                            await fanout.release_write_token()
+
+                    monkeypatch.setattr(fanout_module, "checkpoint", checkpoint_and_change_state)
+                    if change == "reconnect":
+                        await stream.send(b"after reconnect")
+                        assert await device.receive() == b"after reconnect"
+                    else:
+                        with pytest.raises(WriteTokenRevokedError):
+                            await stream.send(b"revoked input")
+                        assert not device.receive_stream.statistics().current_buffer_used
+        finally:
+            await fanout.close()
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("read_error", [EndOfStream, OSError, BrokenResourceError, ClosedResourceError])
+    async def test_source_is_unavailable_before_teardown(self, monkeypatch, read_error):
+        source, _device = create_memory_stream()
+        replacement, new_device = create_memory_stream()
+        fail_read = anyio.Event()
+        closing = anyio.Event()
+        allow_close = anyio.Event()
+        opened = False
+
+        async def receive():
+            await fail_read.wait()
+            raise read_error("source disconnected")
+
+        monkeypatch.setattr(source, "receive", receive)
+        send = AsyncMock(wraps=source.send)
+        monkeypatch.setattr(source, "send", send)
+
+        @asynccontextmanager
+        async def factory():
+            nonlocal opened
+            if opened:
+                async with replacement:
+                    yield replacement
+            else:
+                opened = True
+                async with source:
+                    try:
+                        yield source
+                    finally:
+                        closing.set()
+                        await allow_close.wait()
+
+        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        try:
+            with anyio.fail_after(2):
+                async with fanout.attach_exclusive() as stream:
+                    fail_read.set()
+                    await closing.wait()
+                    assert fanout._source is None
+                    assert not fanout.status()["reader_running"]
+                    await stream.send(b"during source teardown")
+                    send.assert_not_awaited()
+
+                    allow_close.set()
+                    output = b""
+                    while b"[reconnected]" not in output:
+                        output += await stream.receive()
+                    assert fanout._source is replacement
+                    assert fanout._write_token_holder == stream._id
+                    await stream.send(b"after reconnect")
+                    assert await new_device.receive() == b"after reconnect"
+        finally:
+            allow_close.set()
             await fanout.close()
 
     @pytest.mark.anyio

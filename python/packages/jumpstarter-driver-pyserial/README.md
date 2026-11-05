@@ -63,8 +63,8 @@ any configuration (qemu: except in sidecar mode).
 ### Input during reconnection
 
 While the serial source is known to be disconnected, input is discarded rather
-than closing the console. Each discarded write logs a warning; input is not
-buffered or replayed.
+than closing the console. The first discarded input during each outage logs a
+warning; input is not buffered or replayed.
 
 
 ### Config parameters
