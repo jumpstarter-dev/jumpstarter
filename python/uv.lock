@@ -2550,7 +2550,7 @@ dev = [
 requires-dist = [
     { name = "anyio", specifier = ">=4.10.0" },
     { name = "click", specifier = ">=8.3.1" },
-    { name = "esptool", specifier = ">=4.0" },
+    { name = "esptool", specifier = ">=5.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
     { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
