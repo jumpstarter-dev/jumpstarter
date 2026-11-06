@@ -135,6 +135,7 @@ metadata:
 spec:
   minReplicas: 1
   maxReplicas: 3
+  recycleStrategy: ExitAndReplace
   selector:
     matchLabels:
       app: kubevirt-pool
@@ -223,12 +224,40 @@ j storage flash /path/to/new-image.qcow2
 
 ## Lifecycle
 
-- **Create**: ExporterSet controller → provisioner creates VM + Services on
-  target cluster → exporter pod starts on management cluster
-- **Running**: Exporter pod uses kubeconfig to control VM via KubeVirt API
-- **Delete**: `reclaimPolicy: Delete` → provisioner deletes VM and Services on
-  target cluster. Services also have `ownerReferences` to the VM as a
-  secondary cleanup mechanism.
+The exporter runs as the main container in its management-cluster pod. The
+ExporterSet's `recycleStrategy` controls what happens when a lease ends:
+
+| Strategy | Lease release | Exporter crash |
+|----------|---------------|----------------|
+| `ExitAndReplace` (default) | The exporter exits, its pod completes, and the controller retires the old Exporter and provisions a replacement as needed by the pool. | The pod fails without restarting. The controller preserves the VM while the lease is active and recycles it after the lease ends. |
+| `InPlaceReuse` | The exporter keeps running and the next lease uses the same VM and disks. | Kubernetes restarts the exporter in the same pod, preserving the VM and disks. |
+
+When an Exporter is retired, the VirtualTargetClass's `reclaimPolicy` determines
+what happens to its remote resources:
+
+- `Delete`: The provisioner deletes the VM and its Services. KubeVirt/CDI
+  garbage collection removes the VM-owned DataVolumes and PVCs. A replacement
+  gets a new Exporter and VM identity.
+- `Retain`: The VM, disks, and Services remain for manual recovery or cleanup.
+  A replacement still gets a new identity; it does not reuse the retained VM.
+
+Remote cleanup errors leave the old Exporter in place so the controller can
+retry. Active leases prevent retirement under either reclaim policy.
+
+### Upgrading existing exporter pods
+
+Pods created by older controllers run the exporter as a restarting sidecar
+alongside `keepalive`. Upgrading the controller does not change these existing
+pods. After upgrading, disable each old Exporter to drain it:
+
+```bash
+kubectl -n <management-namespace> patch exporter <old-exporter> \
+  --type merge -p '{"spec":{"enabled":false}}'
+```
+
+The controller waits for any active lease to end, cleans up according to the
+reclaim policy, and refills the pool with the new pod layout. Deleting only the
+pod preserves the Exporter and its existing VM.
 
 ## Networking
 
