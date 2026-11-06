@@ -49,6 +49,12 @@ class SNMPServer(Driver):
     auth_key: str | None = field(default=None)
     priv_protocol: PrivProtocol = field(default=PrivProtocol.NONE)
     priv_key: str | None = field(default=None)
+    # Integer values written to the control OID for power on/off. Most PDUs
+    # use 1=on/0=off, but some vendors differ -- e.g. APC PowerNet uses
+    # 1=on/2=off (immediateOn/immediateOff), where the default off value (0)
+    # is ignored by the PDU.
+    on_value: int = field(default=PowerState.ON.value)
+    off_value: int = field(default=PowerState.OFF.value)
     timeout: float = field(default=5.0)
 
     def __post_init__(self):
@@ -165,7 +171,8 @@ class SNMPServer(Driver):
         result = {"success": False, "error": None}
 
         try:
-            self.logger.info(f"Sending power {state.name} command to {self.host}")
+            value = self.on_value if state == PowerState.ON else self.off_value
+            self.logger.info(f"Sending power {state.name} command (i {value}) to {self.host}")
 
             # Create event in async context (required for Python 3.14+)
             response_received = asyncio.Event()
@@ -180,7 +187,7 @@ class SNMPServer(Driver):
                 "my-target",
                 None,
                 "",
-                [(self.full_oid, rfc1902.Integer(state.value))],
+                [(self.full_oid, rfc1902.Integer(value))],
                 callback,
             )
 
