@@ -202,39 +202,60 @@ class Shell(Driver):
         if timeout is None:
             timeout = self.timeout
 
-        # Read output in real-time
-        while process.returncode is None:
-            if asyncio.get_running_loop().time() - start_time > timeout:
-                # Send SIGTERM to entire process group for graceful termination
-                try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except (ProcessLookupError, OSError):
-                    # Process group might already be gone
-                    pass
-                try:
-                    await asyncio.wait_for(process.wait(), timeout=5.0)
-                except TimeoutError:  # pragma: no cover
-                    try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                        self.logger.warning(f"SIGTERM failed to terminate {process.pid}, sending SIGKILL")
-                    except (ProcessLookupError, OSError):
-                        pass
-                raise subprocess.TimeoutExpired(cmd, timeout) from None
+        try:
+            # Read output in real-time
+            while process.returncode is None:
+                if asyncio.get_running_loop().time() - start_time > timeout:
+                    await self._terminate_process_group(process)
+                    raise subprocess.TimeoutExpired(cmd, timeout) from None
 
+                try:
+                    stdout_data, stderr_data = await self._read_process_output(process, read_all=False)
+
+                    # Yield any data we got
+                    if stdout_data or stderr_data:
+                        yield stdout_data, stderr_data, None
+
+                    # Small delay to prevent busy waiting
+                    await asyncio.sleep(0.1)
+
+                except Exception:  # pragma: no cover  # noqa: BLE001
+                    break
+
+            # Process completed, get return code and final output
+            returncode = process.returncode
+            remaining_stdout, remaining_stderr = await self._read_process_output(process, read_all=True)
+            yield remaining_stdout, remaining_stderr, returncode
+        finally:
+            # The call ended before the script, e.g. because the client went away
+            if process.returncode is None:
+                await self._terminate_process_group(process)
+
+    async def _terminate_process_group(self, process):
+        """Send SIGTERM to the script's process group, then SIGKILL if any of it is still running after 5 seconds."""
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except (ProcessLookupError, OSError):
+            # Process group might already be gone
+            pass
+        try:
+            await asyncio.wait_for(self._wait_for_process_group(process), timeout=5.0)
+        except TimeoutError:
             try:
-                stdout_data, stderr_data = await self._read_process_output(process, read_all=False)
+                os.killpg(process.pid, signal.SIGKILL)
+                self.logger.warning(f"SIGTERM did not stop process group {process.pid}, sending SIGKILL")
+            except (ProcessLookupError, OSError):
+                pass
 
-                # Yield any data we got
-                if stdout_data or stderr_data:
-                    yield stdout_data, stderr_data, None
-
-                # Small delay to prevent busy waiting
-                await asyncio.sleep(0.1)
-
-            except Exception:  # pragma: no cover  # noqa: BLE001
-                break
-
-        # Process completed, get return code and final output
-        returncode = process.returncode
-        remaining_stdout, remaining_stderr = await self._read_process_output(process, read_all=True)
-        yield remaining_stdout, remaining_stderr, returncode
+    @staticmethod
+    async def _wait_for_process_group(process):
+        """Wait for the script, then for what it left in its process group"""
+        # Not process.wait(): it also waits for the pipes, which nobody reads any more
+        while process.returncode is None:
+            await asyncio.sleep(0.1)
+        while True:
+            try:
+                os.killpg(process.pid, 0)
+            except OSError:
+                return
+            await asyncio.sleep(0.1)

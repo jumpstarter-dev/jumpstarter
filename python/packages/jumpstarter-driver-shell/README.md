@@ -83,6 +83,11 @@ For the dict format, each method supports:
 
 **Note:** You can mix both formats in the same configuration - use string format for simple commands and dict format when you want custom descriptions or timeouts.
 
+Each method runs in its own process group. When the method times out, or the call
+ends before the command does (the client disconnects, or `j` is interrupted or
+killed), the whole group is sent `SIGTERM`, then `SIGKILL` if it is still running
+5 seconds later.
+
 ## Usage
 
 The shell driver also provides a CLI when using `jmp shell`. All configured methods become available as CLI commands, except for methods starting with `_` which are considered private and hidden from the end user.

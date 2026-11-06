@@ -1,5 +1,10 @@
 
+import os
+import signal
+import time
+
 import pytest
+from anyio import CancelScope
 
 from .driver import Shell
 from jumpstarter.common.utils import serve
@@ -21,6 +26,29 @@ def _collect_streaming_output(client, method_name, env_vars=None, *args):
             final_returncode = returncode
 
     return "".join(stdout_parts), "".join(stderr_parts), final_returncode
+
+
+def _alive(pid):
+    """Whether pid is running; a zombie waiting to be reaped is not."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    if not os.path.isdir("/proc"):
+        return True
+    try:
+        with open(f"/proc/{pid}/stat") as stat:
+            return stat.read().rsplit(") ", 1)[1][0] != "Z"
+    except (FileNotFoundError, ProcessLookupError):
+        # Reaped since the kill() above
+        return False
+
+
+def _wait_until_gone(pid, timeout=10):
+    deadline = time.monotonic() + timeout
+    while _alive(pid):
+        assert time.monotonic() < deadline, f"process {pid} still running after {timeout}s"
+        time.sleep(0.05)
 
 
 @pytest.fixture
@@ -290,3 +318,46 @@ def test_mixed_format_methods():
         assert cli.commands['simple'].help == "Execute the simple shell method"
         assert cli.commands['detailed'].help == "A detailed command with description"
         assert cli.commands['default_cmd'].help == "Method using default command"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "sleep 60 & echo $!; wait",
+        # Ignores SIGTERM and no longer holds the method's output, so only SIGKILL stops it
+        "( trap '' TERM; exec sleep 60 ) >/dev/null 2>&1 & echo $!; wait",
+    ],
+)
+def test_cancelled_call_kills_the_process_group(command):
+    """Cancelling a call before its script ends, as a client disconnect or Ctrl-C does, kills its process group"""
+    shell = Shell(methods={"hold": command})
+
+    async def start_then_cancel(client):
+        pid = None
+        with CancelScope() as scope:
+            async for stdout, _stderr, _returncode in client.streamingcall_async("call_method", "hold", {}):
+                pid = int(stdout)
+                # Delivered while the client waits for the next chunk, which cancels the RPC
+                scope.cancel()
+        return pid
+
+    with serve(shell) as client:
+        pid = client.portal.call(start_then_cancel, client)
+        try:
+            _wait_until_gone(pid)
+        finally:
+            if _alive(pid):
+                os.kill(pid, signal.SIGKILL)
+
+
+def test_timeout_does_not_wait_for_unread_output():
+    """A timed-out method that filled its output pipe is cleaned up without waiting out the grace period"""
+    shell = Shell(methods={"chatty": {"command": "head -c 600000 /dev/zero | tr '\\0' a", "timeout": 1}})
+
+    with serve(shell) as client:
+        start = time.monotonic()
+        _stdout, stderr, returncode = _collect_streaming_output(client, "chatty")
+        elapsed = time.monotonic() - start
+
+    assert returncode == 199, stderr
+    assert elapsed < 4, f"cleanup took {elapsed:.1f}s"
