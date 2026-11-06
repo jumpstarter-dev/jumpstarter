@@ -429,6 +429,14 @@ class AsyncDriverClient(Metadata):
 
     @asynccontextmanager
     async def stream_async(self, method):
+        def stream_error(code: StatusCode, details: str | None) -> DriverError | None:
+            """Translate a terminal RPC status to a typed client error."""
+            if error := _console_in_use_error(code, details):
+                return error
+            if code == StatusCode.NOT_FOUND:
+                return DriverMethodNotImplemented(details or f"method {method} not found on driver")
+            return None
+
         context = self.stub.Stream(
             metadata=StreamRequestMetadata.model_construct(request=DriverStreamRequest(uuid=self.uuid, method=method))
             .model_dump(mode="json", round_trip=True)
@@ -437,14 +445,14 @@ class AsyncDriverClient(Metadata):
         try:
             metadata = dict(list(await context.initial_metadata()))
         except AioRpcError as exc:
-            if error := _console_in_use_error(exc.code(), exc.details()):
+            if error := stream_error(exc.code(), exc.details()):
                 raise error from None
             raise
         # An exporter that aborts before sending headers (e.g. console in use)
         # resolves initial_metadata() empty rather than raising; the status only
         # surfaces on the first read, which RouterStream turns into a generic
         # BrokenResourceError. Check it here while it is still inspectable.
-        if context.done() and (error := _console_in_use_error(await context.code(), await context.details())):
+        if context.done() and (error := stream_error(await context.code(), await context.details())):
             raise error
         async with MetadataStream(stream=RouterStream(context=context), metadata=metadata) as stream:
             yield stream
