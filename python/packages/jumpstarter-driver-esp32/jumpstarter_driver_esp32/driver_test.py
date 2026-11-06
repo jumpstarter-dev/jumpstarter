@@ -142,15 +142,31 @@ def test_flash_esp_idf_build(mock_esptool, tmp_path, point_at):
     assert _written(mock_esptool) == [(0x2000, b"boot"), (0x20000, b"app")]
 
 
-def _report_progress(esp, addr_data, **kwargs):
-    """A write_flash that reports progress the way esptool does while writing."""
-    _, data = addr_data[0]
-    log.progress_bar(0, len(data))
-    log.progress_bar(len(data), len(data))
+@pytest.mark.parametrize(("kwargs", "skip_flashed"), [({}, True), ({"skip_unchanged": False}, False)])
+def test_flash_skip_unchanged(mock_esptool, tmp_path, kwargs, skip_flashed):
+    with serve(_make_driver()) as client:
+        client.flash(_images(tmp_path, {"0x0": b"\x00" * 64}), **kwargs)
+
+    assert mock_esptool["write_flash"].call_args.kwargs["skip_flashed"] is skip_flashed
+
+
+def _write_only(*addresses):
+    """A write_flash that writes, and reports progress for, only these addresses.
+
+    esptool reports no progress for an image it skips as already flashed.
+    """
+
+    def fake_write_flash(esp, addr_data, **kwargs):
+        address, data = addr_data[0]
+        if address in addresses:
+            log.progress_bar(0, len(data))
+            log.progress_bar(len(data), len(data))
+
+    return fake_write_flash
 
 
 def test_flash_stream_reports_progress(mock_esptool, tmp_path):
-    mock_esptool["write_flash"].side_effect = _report_progress
+    mock_esptool["write_flash"].side_effect = _write_only(0x1000)
 
     with serve(_make_driver()) as client:
         statuses = list(client.flash_stream(_images(tmp_path, {"0x1000": b"a" * 64, "0x2000": b"b" * 64})))
@@ -159,11 +175,10 @@ def test_flash_stream_reports_progress(mock_esptool, tmp_path):
     assert [(s.step_index, s.step_name, s.message, s.progress) for s in statuses[1:-1]] == [
         (1, "0x1000.bin @ 0x1000", "writing", 0.0),
         (1, "0x1000.bin @ 0x1000", "writing", 1.0),
-        (2, "0x2000.bin @ 0x2000", "writing", 0.0),
-        (2, "0x2000.bin @ 0x2000", "writing", 1.0),
+        (2, "0x2000.bin @ 0x2000", "unchanged, not rewritten", None),
     ]
     assert statuses[-1].phase == FlashPhase.COMPLETE
-    assert statuses[-1].message == "Flashed 2 image(s)"
+    assert statuses[-1].message == "Flashed 2 image(s): 1 written, 1 unchanged"
 
 
 @pytest.mark.parametrize(("first_size", "refused"), [(0x1000, False), (0x1001, True)])
@@ -200,7 +215,7 @@ def test_cli_flash_targets(mock_esptool, tmp_path, monkeypatch):
     # log_cli swaps sys.stdout whenever the exporter thread logs.
     printed = []
     monkeypatch.setattr(click, "echo", lambda message=None, **kwargs: printed.append(message))
-    mock_esptool["write_flash"].side_effect = _report_progress
+    mock_esptool["write_flash"].side_effect = _write_only(0x1000)
     images = _images(tmp_path, {"0x1000": b"boot", "0x8000": b"table"})
     args = ["flash"] + [arg for address, path in images.items() for arg in ("-t", f"{address}:{path}")]
 
@@ -212,9 +227,8 @@ def test_cli_flash_targets(mock_esptool, tmp_path, monkeypatch):
         "Connected to ESP32-D0WD-V3 (revision v3.1)",
         "[1/2] 0x1000.bin @ 0x1000: writing 0%",
         "[1/2] 0x1000.bin @ 0x1000: writing 100%",
-        "[2/2] 0x8000.bin @ 0x8000: writing 0%",
-        "[2/2] 0x8000.bin @ 0x8000: writing 100%",
-        "Flashed 2 image(s)",
+        "[2/2] 0x8000.bin @ 0x8000: unchanged, not rewritten",
+        "Flashed 2 image(s): 1 written, 1 unchanged",
     ]
 
 
