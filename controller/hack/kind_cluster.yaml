@@ -35,7 +35,7 @@ nodes:
   - containerPort: 32000 # dex nodeport
     hostPort: 5556
     protocol: TCP
-  - containerPort: 30015 # telemetry nodeport (e2e/manifests/telemetry-nodeport.yaml)
+  - containerPort: 30015 # telemetry nodeport (operator-managed)
     hostPort: 9093
     protocol: TCP
   - containerPort: 443

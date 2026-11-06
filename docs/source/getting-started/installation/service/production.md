@@ -18,6 +18,8 @@ cluster using the Jumpstarter {term}`operator`.
 - `grpc.jumpstarter.example.com`
 - `router.jumpstarter.example.com`
 - `login.jumpstarter.example.com`
+- `telemetry.jumpstarter.example.com` (when telemetry is enabled and a Route or
+  Ingress API is available)
 ```
 
 ## Install
@@ -191,6 +193,73 @@ Configure through `spec.authentication.jwt` in the `Jumpstarter` CR. The
 {term}`operator` applies this to {term}`controller` runtime settings but does
 not install your identity provider. See
 [Authentication](../../configuration/authentication.md) for examples.
+
+### Telemetry endpoints
+
+Exporters and `jmp shell` connect **directly** to the telemetry gRPC endpoint
+returned by the controller's `GetServiceEndpoints` RPC. They do not tunnel
+telemetry through the controller or router, so its DNS name and port must be
+reachable from both clients and exporters, including those outside Kubernetes.
+
+Enable telemetry with `spec.telemetry.enabled: true`. With `spec.baseDomain` set
+and a Route or Ingress API available, the operator generates `telemetry.<baseDomain>`
+and selects a Route on OpenShift or an Ingress on Kubernetes. Otherwise configure
+explicit reachable endpoints, for example NodePort or LoadBalancer; there is no
+implicit internal `.svc` fallback. Use the same endpoint fields as the controller:
+
+```yaml
+spec:
+  baseDomain: jumpstarter.example.com
+  certManager:
+    enabled: true
+  telemetry:
+    enabled: true
+    grpc:
+      endpoints:
+        - address: telemetry.jumpstarter.example.com:443
+          ingress:
+            enabled: true
+            class: nginx
+```
+
+Replace `ingress` with `route: {enabled: true}` on OpenShift. Ingress and Route
+use TLS passthrough, including for the long-lived exporter metrics stream.
+Configure DNS to point at your ingress/router or external service address.
+
+NodePort, LoadBalancer, and ClusterIP are also supported:
+
+```yaml
+# Under spec.telemetry.grpc:
+endpoints:
+  - address: telemetry.jumpstarter.example.com:30015
+    nodeport:
+      enabled: true
+      port: 30015
+```
+
+For a LoadBalancer use `loadBalancer: {enabled: true, port: 443}` and advertise
+`:443`. The advertised port must match what the caller actually reaches; for
+example, kind can map a NodePort to a different host port. Addresses without a
+port default to `443`. Use `clusterIP: {enabled: true}` when an externally managed
+proxy exposes the Service; advertise the proxy's reachable DNS name and port.
+
+The first configured address is advertised to callers; additional endpoints are
+exposed and included in the certificate, but are not automatic client failover
+targets. If no endpoint is configured and the operator cannot generate external
+exposure, reconciliation fails with a configuration error rather than advertising
+an internal `.svc` address or an unreachable hostname.
+
+Cert-manager certificates include all configured endpoint hostnames. External
+issuers omit the automatically added internal service names. Without cert-manager,
+set `spec.telemetry.grpc.tls.certSecret` to a TLS Secret valid for the advertised
+hostname; include `ca.crt` for a private CA. The controller supplies the CA and a
+short-lived telemetry token to authenticated callers. Changing an advertised
+address requires restarting existing callers to move their telemetry channels.
+
+Only the TLS gRPC ingestion port is exposed. HTTP `/metrics`, `/healthz`, and
+`/readyz` remain on the internal `jumpstarter-telemetry` ClusterIP service (port
+8080). Removed endpoints and disabled networking methods are cleaned up by the
+operator; disabling telemetry removes its exposure resources too.
 
 ### cert-manager
 

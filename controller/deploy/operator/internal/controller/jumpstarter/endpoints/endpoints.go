@@ -102,7 +102,7 @@ func (r *Reconciler) createOrUpdateService(ctx context.Context, service *corev1.
 			// Preserve existing NodePorts to prevent "port already allocated" errors
 			if service.Spec.Type == corev1.ServiceTypeNodePort || service.Spec.Type == corev1.ServiceTypeLoadBalancer {
 				for i := range existingService.Spec.Ports {
-					if existingService.Spec.Ports[i].NodePort != 0 && i < len(service.Spec.Ports) {
+					if existingService.Spec.Ports[i].NodePort != 0 && i < len(service.Spec.Ports) && service.Spec.Ports[i].NodePort == 0 {
 						service.Spec.Ports[i].NodePort = existingService.Spec.Ports[i].NodePort
 					}
 				}

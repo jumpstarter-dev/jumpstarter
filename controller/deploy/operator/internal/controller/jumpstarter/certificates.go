@@ -381,6 +381,9 @@ func (r *JumpstarterReconciler) reconcileTelemetryCertificate(ctx context.Contex
 	certName := GetTelemetryCertSecretName(js)
 	includeInternalNames := !isExternalIssuer(js)
 	dnsNames := r.collectTelemetryDNSNames(js, includeInternalNames)
+	if len(dnsNames) == 0 {
+		return fmt.Errorf("telemetry requires a public grpc.endpoints address or baseDomain when using an external issuer")
+	}
 	return r.reconcileServerCertificate(ctx, js, issuerRef, certName, "telemetry", dnsNames, nil)
 }
 
@@ -394,6 +397,13 @@ func (r *JumpstarterReconciler) collectTelemetryDNSNames(js *operatorv1alpha1.Ju
 			fmt.Sprintf("%s.%s.svc", telemetryServiceName, js.Namespace),
 			fmt.Sprintf("%s.%s.svc.cluster.local", telemetryServiceName, js.Namespace),
 		)
+	}
+	if js.Spec.Telemetry != nil {
+		for _, endpoint := range js.Spec.Telemetry.GRPC.Endpoints {
+			if host := extractHostname(endpoint.Address); host != "" && !contains(dnsNames, host) {
+				dnsNames = append(dnsNames, host)
+			}
+		}
 	}
 	return dnsNames
 }
