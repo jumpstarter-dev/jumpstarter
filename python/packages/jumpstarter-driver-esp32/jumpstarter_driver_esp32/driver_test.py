@@ -3,10 +3,12 @@ from unittest.mock import MagicMock, PropertyMock
 
 import click
 import pytest
+from esptool.logger import log
 from jumpstarter_driver_pyserial.driver import PySerial
 
 from .driver import Esp32Flasher, _parse_region
 from jumpstarter.client.core import DriverInvalidArgument
+from jumpstarter.client.flasher import FlashPhase
 from jumpstarter.common.utils import serve
 
 
@@ -140,6 +142,30 @@ def test_flash_esp_idf_build(mock_esptool, tmp_path, point_at):
     assert _written(mock_esptool) == [(0x2000, b"boot"), (0x20000, b"app")]
 
 
+def _report_progress(esp, addr_data, **kwargs):
+    """A write_flash that reports progress the way esptool does while writing."""
+    _, data = addr_data[0]
+    log.progress_bar(0, len(data))
+    log.progress_bar(len(data), len(data))
+
+
+def test_flash_stream_reports_progress(mock_esptool, tmp_path):
+    mock_esptool["write_flash"].side_effect = _report_progress
+
+    with serve(_make_driver()) as client:
+        statuses = list(client.flash_stream(_images(tmp_path, {"0x1000": b"a" * 64, "0x2000": b"b" * 64})))
+
+    assert statuses[0].message == "Connected to ESP32-D0WD-V3 (revision v3.1)"
+    assert [(s.step_index, s.step_name, s.message, s.progress) for s in statuses[1:-1]] == [
+        (1, "0x1000.bin @ 0x1000", "writing", 0.0),
+        (1, "0x1000.bin @ 0x1000", "writing", 1.0),
+        (2, "0x2000.bin @ 0x2000", "writing", 0.0),
+        (2, "0x2000.bin @ 0x2000", "writing", 1.0),
+    ]
+    assert statuses[-1].phase == FlashPhase.COMPLETE
+    assert statuses[-1].message == "Flashed 2 image(s)"
+
+
 @pytest.mark.parametrize(("first_size", "refused"), [(0x1000, False), (0x1001, True)])
 def test_flash_refuses_images_sharing_a_sector(mock_esptool, tmp_path, first_size, refused):
     images = _images(tmp_path, {"0x1000": b"a" * first_size, "0x2000": b"b"})
@@ -174,6 +200,7 @@ def test_cli_flash_targets(mock_esptool, tmp_path, monkeypatch):
     # log_cli swaps sys.stdout whenever the exporter thread logs.
     printed = []
     monkeypatch.setattr(click, "echo", lambda message=None, **kwargs: printed.append(message))
+    mock_esptool["write_flash"].side_effect = _report_progress
     images = _images(tmp_path, {"0x1000": b"boot", "0x8000": b"table"})
     args = ["flash"] + [arg for address, path in images.items() for arg in ("-t", f"{address}:{path}")]
 
@@ -183,8 +210,10 @@ def test_cli_flash_targets(mock_esptool, tmp_path, monkeypatch):
     assert _written(mock_esptool) == [(0x1000, b"boot"), (0x8000, b"table")]
     assert printed == [
         "Connected to ESP32-D0WD-V3 (revision v3.1)",
-        "[1/2] 0x1000.bin @ 0x1000: written",
-        "[2/2] 0x8000.bin @ 0x8000: written",
+        "[1/2] 0x1000.bin @ 0x1000: writing 0%",
+        "[1/2] 0x1000.bin @ 0x1000: writing 100%",
+        "[2/2] 0x8000.bin @ 0x8000: writing 0%",
+        "[2/2] 0x8000.bin @ 0x8000: writing 100%",
         "Flashed 2 image(s)",
     ]
 
