@@ -26,6 +26,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2" //nolint:revive
 	. "github.com/onsi/gomega"    //nolint:revive
+	"go.yaml.in/yaml/v3"
 )
 
 // Telemetry cannot look up Exporters or Clients, so it accepts only the token
@@ -79,6 +80,19 @@ var _ = Describe("Telemetry E2E Tests", Label("telemetry"), Ordered, func() {
 	BeforeAll(func() {
 		tracker = NewProcessTracker()
 		since = time.Now().Add(-2 * time.Second).UTC().Format(time.RFC3339)
+
+		// Exercise the operator's public endpoint, not a host alias for a .svc name.
+		baseDomain := strings.TrimSpace(MustKubectl("-n", Namespace(), "get", "jumpstarter", "jumpstarter", "-o", "jsonpath={.spec.baseDomain}"))
+		var cfg struct {
+			Telemetry struct {
+				Endpoint    string `yaml:"endpoint"`
+				Certificate string `yaml:"certificate"`
+			} `yaml:"telemetry"`
+		}
+		config := MustKubectl("-n", Namespace(), "get", "configmap", "jumpstarter-controller", "-o", "jsonpath={.data.config}")
+		Expect(yaml.Unmarshal([]byte(config), &cfg)).To(Succeed())
+		Expect(cfg.Telemetry.Endpoint).To(HavePrefix("telemetry." + baseDomain + ":"))
+		Expect(cfg.Telemetry.Certificate).NotTo(BeEmpty(), "both callers must verify telemetry TLS using the advertised CA")
 
 		CreateOIDCClient(clientName)
 		CreateOIDCExporter(exporterName, selector)
