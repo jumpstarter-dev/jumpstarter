@@ -101,6 +101,7 @@ development.
 | connect_timeout | Timeout (seconds) for adb commands | float | no | 30.0 |
 | server_port | Which ADB server to use. By default, the adb server is automatically started and shared. | int | no | 15037 |
 | adopt_existing_server | Use an ADB server already listening on `server_port` rather than starting another. With `false` the driver owns the server *only if the port was free* — see below | bool | no | true |
+| appium | Run Appium on the exporter for this device; see [Appium](#appium) | dict | no | — |
 
 Always prefer the specific `usb_port` over a device `serial`.
 A serial identifies *a specific device*; the port identifies *a USB port*, which stays consistent even if the DUT is swapped out.
@@ -411,6 +412,51 @@ exporter restart.
 
 Reconnect after the DUT is back up; the local address will generally be a new port.
 
+## Appium
+
+With an `appium` block, the exporter runs [Appium](https://appium.io/docs/en/latest/)
+with its [UiAutomator2 driver](https://github.com/appium/appium-uiautomator2-driver)
+for the lease, and clients open sessions through the shared
+{doc}`Appium client <appium>`, the same interface every UI-automation target
+provides. The
+{doc}`UI automation guide <../../../getting-started/guides/ui-automation>`
+explains why Jumpstarter uses Appium and how to set it up.
+Appium, UiAutomator2 and the Android SDK they use belong on the exporter,
+usually pinned in its container image; clients do not need Appium or adb.
+
+```yaml
+export:
+  phone:
+    type: jumpstarter_driver_adb.driver.AdbDevice
+    config:
+      usb_port: "1-4.2"
+      appium:
+        executable: /opt/appium/node_modules/.bin/appium
+        home: /opt/appium/home
+```
+
+Appium uses the exporter's shared ADB server. Every session is pinned to the
+device's serial (or `host:port` for `transport: tcp`) and to that server, with
+`appium:suppressKillServer` fixed on so Appium never kills a server other drivers
+share. `appium:avd`, `appium:avdArgs`, `appium:avdEnv` and `appium:remoteAdbHost`
+are rejected. The options are described in {doc}`appium`.
+
+```python
+from appium import webdriver
+from appium.options.android import UiAutomator2Options
+
+from jumpstarter.common.utils import env
+
+with env() as root, root.phone.appium.serve() as target:
+    options = UiAutomator2Options().load_capabilities(target.capabilities())
+    options.set_capability("appium:app", root.phone.appium.upload_app("build/app-debug.apk"))
+    driver = webdriver.Remote(target.url, options=options, client_config=target.client_config())
+    try:
+        print(driver.page_source)
+    finally:
+        driver.quit()
+```
+
 ## Transports
 
 | | `usb` | `tcp` |
@@ -534,6 +580,7 @@ For a networked device you want in *your* ADB server, prefer an `AdbDevice` with
 | `j <device>.adb connect` | Add this device to your own ADB server; holds until Ctrl+C |
 | `j <device>.adb serve` | Serve the device's adbd at a local address; holds until Ctrl+C |
 | `j <device>.adb info` | Show the device's transport, selector and whether it is present |
+| `j <device>.adb appium` | With `appium` configured: the device's Appium endpoint; see [Appium](#appium) |
 
 Options for `connect` and `serve`:
 

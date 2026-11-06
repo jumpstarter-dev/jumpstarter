@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 dependencies = [
     "jumpstarter",
     "jumpstarter-driver-adb",
+    "jumpstarter-driver-appium",
     "jumpstarter-driver-composite",
     "jumpstarter-driver-power",
 ]
@@ -31,7 +32,7 @@ Homepage = "https://jumpstarter.dev"
 source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
 
 [tool.pytest.ini_options]
-addopts = "--cov --cov-report=html --cov-report=xml"
+addopts = "--cov=. --cov-report=html --cov-report=xml"
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_androidemulator"]
@@ -39,6 +40,7 @@ asyncio_mode = "auto"
 
 [tool.uv.sources]
 jumpstarter-driver-adb = { workspace = true }
+jumpstarter-driver-appium = { workspace = true }
 jumpstarter-driver-composite = { workspace = true }
 jumpstarter-driver-power = { workspace = true }
 

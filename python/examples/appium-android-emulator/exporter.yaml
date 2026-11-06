@@ -1,0 +1,22 @@
+# A local exporter for `jmp shell --exporter-config exporter.yaml`. The endpoint
+# and token are never used in local mode.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: appium-android-emulator
+endpoint: grpc.jumpstarter.example.com:443
+token: "dummytoken"
+export:
+  android:
+    type: jumpstarter_driver_androidemulator.driver.AndroidEmulator
+    config:
+      avd_name: "jumpstarter_test"
+      headless: true
+      console_port: 5554
+      adb_server_port: 15037
+      appium:
+        # Appium and its UiAutomator2 driver, as installed by
+        # `npm install -g appium` and `appium driver install uiautomator2`.
+        executable: appium
+        home: ~/.appium

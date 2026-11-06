@@ -1,8 +1,9 @@
 # iOS Simulator Driver
 
 `jumpstarter-driver-iossimulator` manages a simulator on a local macOS exporter.
-It provides a `power` child for lifecycle control and an `ios` child for the
-shared iOS client, backed by an operator-installed `idb_companion`.
+It provides a `power` child for lifecycle control, an `ios` child for the
+shared iOS client, backed by an operator-installed `idb_companion`, and an
+optional `appium` child for UI automation.
 
 ## Installation
 
@@ -97,6 +98,64 @@ removes the partially created simulator; a failed restart only stops it, keeping
 the lease's data for a retry. `off(destroy=True)`, reset and session close delete
 the owned device set. `power.read()` is unsupported.
 
+### Appium
+
+With an `appium` block in the simulator's `config`, the exporter runs
+[Appium](https://appium.io/docs/en/latest/) for the lease and clients open
+sessions through the shared {doc}`Appium client <appium>`, the same interface
+every UI-automation target provides. The
+{doc}`UI automation guide <../../../getting-started/guides/ui-automation>`
+explains why Jumpstarter uses Appium and how to set it up. The exporter needs
+Appium, its [XCUITest driver](https://github.com/appium/appium-xcuitest-driver)
+and a complete prebuilt simulator
+[WebDriverAgent app](https://github.com/appium/appium-ios/tree/main/packages/webdriveragent); Jumpstarter does
+not install or build them. Clients do not need Appium.
+
+```yaml
+appium:
+  executable: /opt/appium/node_modules/.bin/appium
+  home: /opt/appium/home
+  wda: /opt/appium/WebDriverAgentRunner-Runner.app
+```
+
+| Option | Description |
+| --- | --- |
+| `wda` | Prebuilt simulator WebDriverAgent `.app` (required) |
+| `executable` | Appium launcher; default `appium` on the exporter's `PATH` |
+| `home` | `APPIUM_HOME` holding the XCUITest driver |
+| `capabilities` | Extra capabilities fixed on every session |
+| `env` | Extra environment for Appium |
+| `startup_timeout`, `max_upload_bytes` | See {doc}`appium` |
+
+Power the simulator on first. Appium starts when `serve()` first asks for its
+endpoint, before any session, and stops at power off:
+
+```python
+from appium import webdriver
+from appium.options.ios import XCUITestOptions
+
+with serve(driver) as simulator:
+    simulator.power.on()
+    app = simulator.appium.upload_app("build/MyApp.app")
+    with simulator.appium.serve() as target:
+        options = XCUITestOptions().load_capabilities(target.capabilities())
+        options.set_capability("appium:app", app)
+        session = webdriver.Remote(target.url, options=options, client_config=target.client_config())
+        try:
+            print(session.page_source)
+        finally:
+            session.quit()
+```
+
+Inside a `jmp shell`, `j simulator appium` prints the endpoint and
+`j simulator appium -- COMMAND` runs a command with it in the environment.
+
+Sessions are pinned to the lease's simulator, its private device set and the
+configured WebDriverAgent, whatever the client asks for. Appium can install
+apps uploaded with `upload_app()`, launch them by `appium:bundleId` and capture
+logs. Capabilities that would erase or shut down the simulator are fixed off,
+because they would break the lease's idb companion.
+
 ### Optional HTTPS service
 
 A trusted exporter configuration can add an HTTPS service for the lease's
@@ -127,6 +186,7 @@ certificate and hostname verification enabled. The CLI passes
 `JUMPSTARTER_IOS_HTTPS_METADATA` to the command. The client API is shared with
 the {doc}`iOS device driver <iosdevice>`.
 
+
 ## Security and limitations
 
 Each lease owns a private device set and companion Unix socket. Lifecycle
@@ -137,13 +197,24 @@ Device Hub. Only local macOS execution is supported.
 The owning exporter holds a lock on its lease directory. If an exporter exits
 without cleanup, for example after a crash, the next lease or session reset in
 the same `state_dir` shuts down and deletes that lease's simulators, stops
-processes still using its directory, such as its companion and HTTP service,
-and removes it. Live leases and directories without a lease lock are never touched.
+processes still using its directory, such as its companion, Appium or HTTP
+service, and removes it. Live leases and directories without a lease lock are never touched.
 
 Simulators share the Mac's network namespace, so arbitrary TCP forwarding is
 unavailable. A configured HTTP provider is trusted exporter code and must
 restrict access to its simulator. Its constructor must clean partial resources
 on failure; its idempotent `close()` must revoke streams and remove owned state.
+
+Appium listens on exporter loopback and reaches clients over the lease through
+verified HTTPS; see {doc}`appium` for the requests it rejects. Its loopback port
+is plain HTTP, so other processes and accounts on the exporter Mac could reach
+it directly. WebDriverAgent's
+HTTP server is bound to loopback, and non-listening wildcard reservations stop
+its MJPEG broadcaster from serving the simulator's screen to the network.
+Standard screenshots remain available. Appium uses a private `HOME` but may open
+Simulator.app, and `isHeadless` is fixed off so Appium does not stop an existing
+UI process. Use a dedicated exporter for automation; concurrent GUI workflows
+are outside this isolation boundary.
 
 ## API Reference
 
@@ -153,6 +224,8 @@ on failure; its idempotent `close()` must revoke streams and remove owned state.
 .. autoclass:: jumpstarter_driver_iosdevice.client.IosDeviceClient()
    :members: info, serve, connect, https
    :no-index:
+
+.. autoclass:: jumpstarter_driver_iossimulator.appium.IosSimulatorAppium()
 
 .. autoclass:: jumpstarter_driver_iossimulator.http_service.HttpServiceProvider()
    :members:

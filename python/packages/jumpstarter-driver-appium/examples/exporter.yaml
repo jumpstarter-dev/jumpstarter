@@ -1,0 +1,18 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: appium-demo
+endpoint: grpc.jumpstarter.example.com:443
+token: "<token>"
+export:
+  appium:
+    type: jumpstarter_driver_appium.driver.AppiumDriver
+    config:
+      executable: /opt/appium/node_modules/.bin/appium
+      home: /opt/appium/home
+      drivers: [uiautomator2]
+      capabilities:
+        platformName: Android
+        appium:automationName: UiAutomator2
+        appium:udid: emulator-5554
