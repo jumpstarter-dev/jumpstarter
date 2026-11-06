@@ -58,7 +58,6 @@ export:
         simple_echo: "echo 'simple'"
       # optional parameters
       cwd: "/tmp"
-      log_level: "INFO"
       shell:
         - "/bin/bash"
         - "-c"
@@ -70,7 +69,6 @@ export:
 |-----------|-------------|------|----------|---------|
 | `methods` | Dictionary of methods. Values can be:<br/>- String: just the command<br/>- Dict: `{command: "...", description: "...", timeout: ...}` | `dict[str, str \| dict]` | Yes | - |
 | `cwd` | Working directory for shell commands | `str` | No | `None` |
-| `log_level` | Logging level | `str` | No | `"INFO"` |
 | `shell` | Shell command to execute scripts | `list[str]` | No | `["bash", "-c"]` |
 | `timeout` | Command timeout in seconds | `int` | No | `300` |
 
