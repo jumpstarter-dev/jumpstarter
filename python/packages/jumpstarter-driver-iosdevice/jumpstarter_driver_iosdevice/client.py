@@ -2,9 +2,11 @@ import asyncio
 import json
 import math
 import os
+import platform
 import plistlib
 import ssl
 import subprocess
+import sys
 import tempfile
 from collections.abc import Generator, Sequence
 from concurrent.futures import CancelledError
@@ -16,6 +18,7 @@ from xml.parsers.expat import ExpatError
 
 import anyio
 import click
+from anyio import to_thread
 from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 
 from jumpstarter.client import DriverClient
@@ -320,6 +323,52 @@ class IosDeviceClient(DriverClient):
                     except (subprocess.SubprocessError, OSError) as exc:
                         self.logger.warning("Could not detach %s: %s", target, exc)
 
+    def _require_macos(self) -> None:
+        if sys.platform != "darwin":
+            raise RuntimeError(
+                f"Device Hub is only supported on macOS clients with Xcode 27 or later; this client runs on "
+                f"{platform.system() or sys.platform}. Use `j ios serve` to reach the device from here."
+            )
+
+    @staticmethod
+    def _ensure_devicehub_link() -> None:
+        """Offer to create this boot's Device Hub link; sudo asks for the password in the terminal."""
+        from .devicehub_mac import LINK_MISSING, link_ready, set_up_link
+
+        if link_ready():
+            return
+        if not sys.stdin.isatty():
+            raise RuntimeError(LINK_MISSING)
+        set_up_link(confirm=partial(click.confirm, default=True), notify=click.echo)
+
+    @staticmethod
+    async def _devicehub_code() -> str:
+        # Abandoned if the Mac connects with an existing pairing while the prompt is open.
+        return await to_thread.run_sync(partial(click.prompt, "Code shown in Device Hub"), abandon_on_cancel=True)
+
+    def devicehub(self, *, pair: bool = False) -> None:
+        """Show the leased device in Xcode's Device Hub on this Mac until interrupted.
+
+        Only macOS clients are supported. Once per boot, Device Hub needs a
+        virtual network link; when it is missing, this explains it and asks to
+        create it with sudo, which prompts for the password. The first time a
+        Mac uses a device, whenever
+        the device is not listed in Device Hub (for example after Unpair), or
+        with ``pair=True``, choose File > Pair Nearby Device… in Device Hub and
+        type the code it shows when asked.
+        """
+        self._require_macos()
+        self._ensure_devicehub_link()
+        from .devicehub_mac import serve
+
+        try:
+            self.portal.call(partial(serve, self, code=self._devicehub_code, force_pair=pair, notify=click.echo))
+        except (KeyboardInterrupt, SystemExit, GeneratorExit):
+            return
+        except BaseException as exc:
+            if not _is_cancelled(exc):
+                raise
+
     @contextmanager
     def forward(self, port: int, *, local_port: int | None = None) -> Generator[str, None, None]:
         """Forward an exporter-configured device port, binding only loopback.
@@ -439,6 +488,14 @@ class IosDeviceClient(DriverClient):
                     click.echo("Press Ctrl+C to disconnect")
                     _wait_for_interrupt(self)
                 click.echo("Disconnected")
+
+        # Hidden off macOS, but still answers with an explanation instead of "No such command".
+        @ios.command(hidden=sys.platform != "darwin")
+        @click.option("--pair", "force_pair", is_flag=True, help="Pair this Mac with the device again")
+        def devicehub(force_pair):
+            """Show the device in Xcode's Device Hub on this Mac until Ctrl+C."""
+            with _cli_errors():
+                self.devicehub(pair=force_pair)
 
         @ios.command()
         @click.argument("ports", nargs=-1, type=click.IntRange(1, 65535), required=True)

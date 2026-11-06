@@ -7,6 +7,7 @@ import socket
 import ssl
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 import urllib.error
@@ -18,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import click
 import pytest
 from anyio import connect_tcp
 from anyio.from_thread import start_blocking_portal
@@ -293,7 +295,7 @@ def test_unexpected_wait_error_propagates():
 
 def test_cli_info_and_surface(client):
     group = client.cli()
-    assert sorted(group.commands) == ["connect", "forward", "https", "info", "serve"]
+    assert sorted(group.commands) == ["connect", "devicehub", "forward", "https", "info", "serve"]
     result = CliRunner().invoke(group, ["info"])
     assert result.exit_code == 0, result.output
     assert "udid: leased-device" in result.output
@@ -656,3 +658,75 @@ def test_https_native_tls_crosses_opaque_adapter_and_requires_public_ca(https_cl
         server.server_close()
         worker.join(timeout=5)
         assert not worker.is_alive()
+
+
+@pytest.mark.parametrize("platform,listed", [("darwin", True), ("linux", False)])
+def test_cli_devicehub_listed_only_on_macos(client, monkeypatch, platform, listed):
+    monkeypatch.setattr(sys, "platform", platform)
+    result = CliRunner().invoke(client.cli(), ["--help"])
+    assert result.exit_code == 0, result.output
+    assert ("devicehub" in result.output) is listed
+
+
+def test_devicehub_explains_macos_only(client, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr("jumpstarter_driver_iosdevice.client.platform.system", lambda: "Linux")
+    with pytest.raises(RuntimeError, match="only supported on macOS clients.*runs on Linux"):
+        client.devicehub()
+    result = CliRunner().invoke(client.cli(), ["devicehub"])
+    assert result.exit_code != 0
+    assert "only supported on macOS clients" in result.output
+    assert "No such command" not in result.output
+
+
+def test_devicehub_serves_until_it_returns(client, monkeypatch):
+    from . import devicehub_mac
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(devicehub_mac, "link_ready", lambda: True)
+    calls = []
+
+    async def serve(device, **options):
+        calls.append((device, options))
+
+    monkeypatch.setattr(devicehub_mac, "serve", serve)
+    client.devicehub(pair=True)
+    ((device, options),) = calls
+    assert device is client and options["force_pair"] is True
+    assert options["code"] == client._devicehub_code
+
+    async def broken(device, **options):
+        raise OSError("link went away")
+
+    monkeypatch.setattr(devicehub_mac, "serve", broken)
+    with pytest.raises(OSError, match="link went away"):
+        client.devicehub()
+
+
+def test_missing_devicehub_link_is_offered_in_a_terminal(client, monkeypatch):
+    from . import devicehub_mac
+
+    monkeypatch.setattr(devicehub_mac, "link_ready", lambda: False)
+    offered = []
+    monkeypatch.setattr(devicehub_mac, "set_up_link", lambda **options: offered.append(options))
+    monkeypatch.setattr(sys, "stdin", type("Terminal", (), {"isatty": lambda self: True})())
+    client._ensure_devicehub_link()
+    assert offered and offered[0]["notify"] is click.echo
+
+    monkeypatch.setattr(sys, "stdin", type("Pipe", (), {"isatty": lambda self: False})())
+    with pytest.raises(RuntimeError, match="Device Hub link is not set up"):
+        client._ensure_devicehub_link()
+    assert len(offered) == 1
+
+
+def test_devicehub_code_is_prompted_for(client, monkeypatch):
+    monkeypatch.setattr(client_module.click, "prompt", lambda text: "123456" if "Device Hub" in text else "")
+    assert client.portal.call(client._devicehub_code) == "123456"
+
+
+def test_cli_devicehub_shows_the_device(client, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    with patch.object(client, "devicehub") as devicehub:
+        result = CliRunner().invoke(client.cli(), ["devicehub", "--pair"])
+    assert result.exit_code == 0, result.output
+    devicehub.assert_called_once_with(pair=True)

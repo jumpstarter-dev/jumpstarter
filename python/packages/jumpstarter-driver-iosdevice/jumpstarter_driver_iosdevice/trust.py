@@ -498,6 +498,68 @@ class ExporterTrustBroker(UsbMuxDaemon):
             async with https_forward(identity, upstream, timeout=self.timeout) as stream:
                 yield stream
 
+    @asynccontextmanager
+    async def _session(self):
+        """An exporter-owned lockdown session, authenticated with the real pairing."""
+        identity = await self.prepare()
+        async with self.connect_device(self.udid, LOCKDOWN_PORT, device_id=self.device_id) as lockdown:
+            reader = BufferedByteReceiveStream(lockdown)
+            with fail_after(self.timeout):
+                await _send_plist(
+                    lockdown,
+                    {
+                        "Label": "Jumpstarter",
+                        "Request": "StartSession",
+                        "HostID": identity.host_id,
+                        "SystemBUID": identity.system_buid,
+                    },
+                )
+                response = await _receive_plist(reader)
+            if "Error" in response or response.get("EnableSessionSSL") is not True:
+                raise UsbMuxError(f"device refused the exporter's lockdown session: {response.get('Error')}")
+            secured = await self._tls(_BufferedDuplexStream(lockdown, reader))
+            yield secured, BufferedByteReceiveStream(secured)
+
+    async def lockdown_values(self, domains: Collection[str | None]) -> dict[str, dict]:
+        """Read whole lockdown domains, keyed as CoreDevice expects (``NULL`` is the default)."""
+        values = {}
+        async with self._scope():
+            await self._start_monitor()
+            async with self._session() as (secured, reader):
+                for domain in domains:
+                    request = {"Label": "Jumpstarter", "Request": "GetValue"}
+                    if domain is not None:
+                        request["Domain"] = domain
+                    with fail_after(self.timeout):
+                        await _send_plist(secured, request)
+                        response = await _receive_plist(reader)
+                    if isinstance(response.get("Value"), dict):
+                        values[domain or "NULL"] = response["Value"]
+        return values
+
+    @asynccontextmanager
+    async def open_service(self, service: str):
+        """Start a lockdown service as the exporter and connect to it.
+
+        Unlike client connections, nothing is proxied here: the exporter uses
+        its own pairing and pins the device certificate on every TLS hop.
+        """
+        async with self._scope():
+            await self._start_monitor()
+            async with self._session() as (secured, reader):
+                with fail_after(self.timeout):
+                    await _send_plist(secured, {"Label": "Jumpstarter", "Request": "StartService", "Service": service})
+                    response = await _receive_plist(reader)
+            if "Error" in response:
+                raise UsbMuxError(f"device refused to start {service}: {response['Error']}")
+            port, tls = response.get("Port"), response.get("EnableServiceSSL", False)
+            if not _uint(port, 65535) or not port or type(tls) is not bool:
+                raise UsbMuxError("invalid lockdown service endpoint")
+            async with self.connect_device(self.udid, port, device_id=self.device_id) as stream:
+                if tls:
+                    stream = await self._tls(stream)
+                yield stream
+
     async def _dispatch(self, stream, reader, udid, tag, request):
         self._check()
         await self._device_id(self.udid)

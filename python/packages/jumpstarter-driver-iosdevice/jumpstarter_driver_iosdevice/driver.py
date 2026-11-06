@@ -1,6 +1,7 @@
 import math
 import plistlib
 import re
+import ssl
 import struct
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -19,6 +20,8 @@ from jumpstarter.driver import Driver, export, exportstream
 
 LOCKDOWN_PORT = 62078
 MAX_LOCKDOWN_MESSAGE = 1024 * 1024
+# The Device Hub tunnel is TLS-PSK, which Python's ssl module offers from 3.13.
+_TLS_PSK = hasattr(ssl.SSLContext, "set_psk_server_callback")
 
 
 def _canonical_udid(value: str) -> str:
@@ -77,6 +80,9 @@ class IosDevice(IosDeviceInterface, Driver):
     forward_ports: list[int] = field(default_factory=list)
     http_port: int | None = None
     connect_timeout: float = 10.0
+    devicehub: bool = False
+    devicehub_state: str | None = None
+    devicehub_udid: str | None = None
 
     def __post_init__(self):
         super().__post_init__()
@@ -85,6 +91,7 @@ class IosDevice(IosDeviceInterface, Driver):
         self._https_broker = None
         self._trust_generation = None
         self._trust_lock = Lock()
+        self._devicehub = None
         for port in self.forward_ports:
             name = f"port_{port}"
             if name in self.children:
@@ -107,6 +114,10 @@ class IosDevice(IosDeviceInterface, Driver):
                 raise ConfigurationError("http_port requires exporter-owned trust")
             if self.http_port in self.forward_ports:
                 raise ConfigurationError("http_port must not also be exposed through forward_ports")
+        if self.devicehub and self.trust_mode != "exporter":
+            raise ConfigurationError("devicehub requires exporter-owned trust")
+        if self.devicehub and not _TLS_PSK:
+            raise ConfigurationError("devicehub needs Python 3.13 or later on the exporter for TLS-PSK")
         if self.trust_mode == "exporter" and LOCKDOWN_PORT in self.forward_ports:
             raise ConfigurationError("use ios serve for authenticated lockdown; forwarding port 62078 bypasses trust")
         if (
@@ -314,6 +325,50 @@ class IosDevice(IosDeviceInterface, Driver):
                 self._https_broker = None
                 raise
         async with broker.open_https_forward(self.http_port) as stream:
+            yield stream
+
+    async def _devicehub_bridge(self):
+        from .devicehub import DeviceHubBridge
+
+        if not self.devicehub:
+            raise RuntimeError("Device Hub access is not enabled; set devicehub: true on the exporter")
+        udid = await self._require_device()
+        broker = await self._broker_for_device(udid)
+        if self._devicehub is None or self._devicehub.udid != udid:
+            state = Path(self.devicehub_state) if self.devicehub_state else None
+            self._devicehub = DeviceHubBridge(broker, udid=udid, state=state, presented_udid=self.devicehub_udid)
+        self._devicehub.broker = broker
+        return self._devicehub
+
+    @export
+    async def devicehub_info(self, port: int) -> dict:
+        """Prepare the stand-in a Mac pairs with; ``port`` is where the client accepts the Mac."""
+        bridge = await self._devicehub_bridge()
+        return await bridge.prepare(int(port))
+
+    @export
+    async def devicehub_pairing_code(self, code: str) -> None:
+        """Pass the code Device Hub shows to a pairing in progress."""
+        (await self._devicehub_bridge()).set_pairing_code(str(code))
+
+    @exportstream
+    @asynccontextmanager
+    async def connect_devicehub(self):
+        """A connection the Mac made to the stand-in: its control channel or its tunnel."""
+        from .devicehub import serve_connection, served
+
+        bridge = await self._devicehub_bridge()
+        async with served(lambda stream: serve_connection(bridge, stream)) as stream:
+            yield stream
+
+    @exportstream
+    @asynccontextmanager
+    async def connect_devicehub_pairing(self):
+        """The stand-in's side of "Pair Nearby Device", driven by the exporter."""
+        from .devicehub import served
+
+        bridge = await self._devicehub_bridge()
+        async with served(bridge.serve_pairing) as stream:
             yield stream
 
     @exportstream
