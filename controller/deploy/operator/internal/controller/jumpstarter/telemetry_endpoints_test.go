@@ -128,6 +128,21 @@ var _ = Describe("Telemetry endpoints", func() {
 		Expect(cert.Spec.DNSNames).To(Equal([]string{"telemetry.example.com"}))
 	})
 
+	It("strips brackets from IPv6 addresses for discovery and certificates", func() {
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{{Address: "[2001:db8::1]"}}
+		Expect(telemetryEndpointFor(js)).To(Equal("[2001:db8::1]:443"))
+		Expect(r.collectTelemetryDNSNames(js, false)).To(ConsistOf("2001:db8::1"))
+
+		js.Spec.CertManager.Server = &operatorv1alpha1.ServerCertConfig{
+			IssuerRef: &operatorv1alpha1.IssuerReference{Name: "public-ca", Kind: "ClusterIssuer"},
+		}
+		Expect(r.reconcileTelemetryCertificate(ctx, js, cmmeta.ObjectReference{Name: "public-ca", Kind: "ClusterIssuer"})).To(Succeed())
+		cert := &certmanagerv1.Certificate{}
+		Expect(r.Get(ctx, client.ObjectKey{Name: GetTelemetryCertSecretName(js), Namespace: js.Namespace}, cert)).To(Succeed())
+		Expect(cert.Spec.IPAddresses).To(Equal([]string{"2001:db8::1"}))
+		Expect(cert.Spec.DNSNames).To(BeEmpty())
+	})
+
 	DescribeTable("creates only gRPC exposure", func(ep operatorv1alpha1.Endpoint, suffix string, serviceType corev1.ServiceType, externalPort int32) {
 		ep.Address = "telemetry.example.com:443"
 		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{ep}
@@ -167,6 +182,32 @@ var _ = Describe("Telemetry endpoints", func() {
 		Entry("Ingress", operatorv1alpha1.Endpoint{Ingress: &operatorv1alpha1.IngressConfig{Enabled: true, Class: "nginx"}}, "", corev1.ServiceTypeClusterIP, int32(9093)),
 		Entry("Route", operatorv1alpha1.Endpoint{Route: &operatorv1alpha1.RouteConfig{Enabled: true}}, "", corev1.ServiceTypeClusterIP, int32(9093)),
 		Entry("ClusterIP", operatorv1alpha1.Endpoint{ClusterIP: &operatorv1alpha1.ClusterIPConfig{Enabled: true}}, "", corev1.ServiceTypeClusterIP, int32(9093)),
+	)
+
+	DescribeTable("matches the LoadBalancer Service port to the advertised endpoint", func(address string, lb operatorv1alpha1.LoadBalancerConfig, wantPort int32, wantAddress string) {
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{{Address: address, LoadBalancer: &lb}}
+		Expect(r.reconcileTelemetryServiceStage(ctx, js)).To(Succeed())
+		service := &corev1.Service{}
+		Expect(r.Get(ctx, client.ObjectKey{Name: serviceName + "-lb", Namespace: js.Namespace}, service)).To(Succeed())
+		Expect(service.Spec.Ports[0].Port).To(Equal(wantPort))
+		Expect(service.Spec.Ports[0].TargetPort.IntValue()).To(Equal(telemetryPort))
+		Expect(telemetryEndpointFor(js)).To(Equal(wantAddress))
+	},
+		Entry("portless address defaults to 443", "telemetry.example.com", operatorv1alpha1.LoadBalancerConfig{Enabled: true}, int32(443), "telemetry.example.com:443"),
+		Entry("address port is honored", "telemetry.example.com:8443", operatorv1alpha1.LoadBalancerConfig{Enabled: true}, int32(8443), "telemetry.example.com:8443"),
+		Entry("explicit port wins", "telemetry.example.com", operatorv1alpha1.LoadBalancerConfig{Enabled: true, Port: 444}, int32(444), "telemetry.example.com:443"),
+	)
+
+	DescribeTable("rejects exposure the cluster does not provide", func(ep operatorv1alpha1.Endpoint, disable func(*endpoints.Reconciler), message string) {
+		ep.Address = "telemetry.example.com:443"
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{ep}
+		disable(r.EndpointReconciler)
+		Expect(r.reconcileTelemetryServiceStage(ctx, js)).To(MatchError(ContainSubstring(message)))
+	},
+		Entry("Ingress", operatorv1alpha1.Endpoint{Ingress: &operatorv1alpha1.IngressConfig{Enabled: true}},
+			func(er *endpoints.Reconciler) { er.IngressAvailable = false }, "Ingress API is not available"),
+		Entry("Route", operatorv1alpha1.Endpoint{Route: &operatorv1alpha1.RouteConfig{Enabled: true}},
+			func(er *endpoints.Reconciler) { er.RouteAvailable = false }, "Route API is not available"),
 	)
 
 	It("updates NodePorts and cleans up removed endpoints and networking methods", func() {

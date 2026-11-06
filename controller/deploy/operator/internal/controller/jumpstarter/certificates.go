@@ -27,6 +27,7 @@ import (
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/internal/controller/jumpstarter/endpoints"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -400,7 +401,7 @@ func (r *JumpstarterReconciler) collectTelemetryDNSNames(js *operatorv1alpha1.Ju
 	}
 	if js.Spec.Telemetry != nil {
 		for _, endpoint := range js.Spec.Telemetry.GRPC.Endpoints {
-			if host := extractHostname(endpoint.Address); host != "" && !contains(dnsNames, host) {
+			if host := endpoints.ExtractHostname(endpoint.Address); host != "" && !contains(dnsNames, host) {
 				dnsNames = append(dnsNames, host)
 			}
 		}
@@ -427,7 +428,7 @@ func (r *JumpstarterReconciler) collectControllerDNSNames(js *operatorv1alpha1.J
 	// Add DNS names from configured endpoints
 	for _, endpoint := range js.Spec.Controller.GRPC.Endpoints {
 		if endpoint.Address != "" {
-			host := extractHostname(endpoint.Address)
+			host := endpoints.ExtractHostname(endpoint.Address)
 			if host != "" && !contains(dnsNames, host) {
 				dnsNames = append(dnsNames, host)
 			}
@@ -466,7 +467,7 @@ func (r *JumpstarterReconciler) collectRouterDNSNames(js *operatorv1alpha1.Jumps
 	for _, endpoint := range js.Spec.Routers.GRPC.Endpoints {
 		if endpoint.Address != "" {
 			address := r.substituteReplica(endpoint.Address, replicaIndex)
-			host := extractHostname(address)
+			host := endpoints.ExtractHostname(address)
 			if host != "" && !contains(dnsNames, host) {
 				dnsNames = append(dnsNames, host)
 			}
@@ -635,22 +636,6 @@ func GetControllerCertSecretName(js *operatorv1alpha1.Jumpstarter) string {
 // GetRouterCertSecretName returns the name of a router TLS secret.
 func GetRouterCertSecretName(js *operatorv1alpha1.Jumpstarter, replicaIndex int32) string {
 	return fmt.Sprintf(js.Name+routerCertSuffix, replicaIndex)
-}
-
-// extractHostname extracts the hostname from an address (removes port if present).
-// It properly handles IPv4, IPv6 (bracketed), and host:port forms.
-func extractHostname(address string) string {
-	// Try to split host and port using net.SplitHostPort
-	// This correctly handles [IPv6]:port, hostname:port, and IPv4:port
-	host, _, err := net.SplitHostPort(address)
-	if err == nil {
-		// Successfully split host and port
-		return host
-	}
-
-	// If SplitHostPort failed, there's no port in the address
-	// Return the full address (handles plain IPv6, IPv4, or hostname)
-	return address
 }
 
 // isExternalIssuer returns true when the Jumpstarter CR is configured to use

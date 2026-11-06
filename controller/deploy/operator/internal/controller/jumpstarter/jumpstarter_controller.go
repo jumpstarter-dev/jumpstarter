@@ -1506,9 +1506,11 @@ func ensurePort(address, defaultPort string) string {
 		return address
 	}
 
-	// No port found, need to add one
-	// net.JoinHostPort handles IPv6 addresses correctly (adds brackets if needed)
-	return net.JoinHostPort(address, defaultPort)
+	// No port found, need to add one.
+	// net.JoinHostPort brackets IPv6 literals, so strip any brackets the address
+	// already carries to avoid producing "[[2001:db8::1]]:443".
+	host := strings.TrimSuffix(strings.TrimPrefix(address, "["), "]")
+	return net.JoinHostPort(host, defaultPort)
 }
 
 // routerServiceNamePrefix is the prefix of every service name

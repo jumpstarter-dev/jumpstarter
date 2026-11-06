@@ -18,6 +18,9 @@ package endpoints
 
 import (
 	"context"
+	"fmt"
+	"net"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,11 +36,17 @@ func (r *Reconciler) ReconcileTelemetryEndpoint(ctx context.Context, owner metav
 		"component": "telemetry", "app": "jumpstarter-telemetry", "controller": owner.GetName(),
 	}
 	if endpoint.Ingress != nil && endpoint.Ingress.Enabled {
+		if !r.IngressAvailable {
+			return fmt.Errorf("telemetry endpoint %q enables ingress, but the Ingress API is not available in the cluster", endpoint.Address)
+		}
 		if err := r.createIngressForEndpoint(ctx, owner, servicePort.Name, servicePort.Port, endpoint, labels); err != nil {
 			return err
 		}
 	}
 	if endpoint.Route != nil && endpoint.Route.Enabled {
+		if !r.RouteAvailable {
+			return fmt.Errorf("telemetry endpoint %q enables route, but the Route API is not available in the cluster", endpoint.Address)
+		}
 		if err := r.createRouteForEndpoint(ctx, owner, servicePort.Name, servicePort.Port, endpoint, labels); err != nil {
 			return err
 		}
@@ -46,6 +55,14 @@ func (r *Reconciler) ReconcileTelemetryEndpoint(ctx context.Context, owner metav
 		lbPort := servicePort
 		if endpoint.LoadBalancer.Port > 0 {
 			lbPort.Port = endpoint.LoadBalancer.Port
+		} else if _, port, err := net.SplitHostPort(endpoint.Address); err == nil {
+			// The advertised endpoint is ensurePort(address, "443"): expose the
+			// same port here or clients would dial a closed port.
+			if p, err := strconv.Atoi(port); err == nil {
+				lbPort.Port = int32(p)
+			}
+		} else {
+			lbPort.Port = 443
 		}
 		if err := r.createService(ctx, owner, lbPort, "-lb", corev1.ServiceTypeLoadBalancer,
 			labels, labels, endpoint.LoadBalancer.Annotations, endpoint.LoadBalancer.Labels); err != nil {

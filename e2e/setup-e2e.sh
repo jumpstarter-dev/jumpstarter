@@ -269,9 +269,6 @@ deploy_controller() {
     log_info "Deploying jumpstarter controller..."
     
     cd "$REPO_ROOT"
-    
-    # Free the NodePort used by the old e2e-only Service before the operator owns it.
-    kubectl -n "${JS_NAMESPACE}" delete service jumpstarter-telemetry-e2e-np --ignore-not-found
 
     log_info "Deploying controller with CA certificate using operator..."
     OPERATOR_USE_DEX=true OPERATOR_ENABLE_TELEMETRY=true DEX_CA_FILE="$REPO_ROOT/ca.pem" make -C controller deploy

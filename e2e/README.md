@@ -27,8 +27,7 @@ cluster created before that mapping existed must be recreated with
 `.e2e-setup-complete`, QEMU guest image prefetched. Tests run via `make e2e-run`
 → `e2e/run-e2e.sh` (`go run ginkgo`) with `JUMPSTARTER_GRPC_INSECURE=1`.
 
-Rerunning setup removes the legacy `jumpstarter-telemetry-e2e-np` Service, if
-present, before the operator allocates its NodePort. No `.svc` host alias is needed.
+No `.svc` host alias is needed for telemetry.
 
 ---
 
