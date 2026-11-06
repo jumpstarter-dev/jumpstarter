@@ -5,7 +5,7 @@
     - scorecard-test
     - olm-bundle-validation
     # renovate: image
-    image: quay.io/operator-framework/scorecard-test:v1.41.1
+    image: quay.io/operator-framework/scorecard-test:v1.42.3
     labels:
       suite: olm
       test: olm-bundle-validation-test
@@ -16,7 +16,7 @@
     - scorecard-test
     - olm-crds-have-validation
     # renovate: image
-    image: quay.io/operator-framework/scorecard-test:v1.41.1
+    image: quay.io/operator-framework/scorecard-test:v1.42.3
     labels:
       suite: olm
       test: olm-crds-have-validation-test
@@ -27,7 +27,7 @@
     - scorecard-test
     - olm-crds-have-resources
     # renovate: image
-    image: quay.io/operator-framework/scorecard-test:v1.41.1
+    image: quay.io/operator-framework/scorecard-test:v1.42.3
     labels:
       suite: olm
       test: olm-crds-have-resources-test
@@ -38,7 +38,7 @@
     - scorecard-test
     - olm-spec-descriptors
     # renovate: image
-    image: quay.io/operator-framework/scorecard-test:v1.41.1
+    image: quay.io/operator-framework/scorecard-test:v1.42.3
     labels:
       suite: olm
       test: olm-spec-descriptors-test
@@ -49,7 +49,7 @@
     - scorecard-test
     - olm-status-descriptors
     # renovate: image
-    image: quay.io/operator-framework/scorecard-test:v1.41.1
+    image: quay.io/operator-framework/scorecard-test:v1.42.3
     labels:
       suite: olm
       test: olm-status-descriptors-test
