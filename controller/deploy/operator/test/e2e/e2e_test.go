@@ -256,6 +256,7 @@ var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 
 			By("waiting for the metrics endpoint to be ready")
 			verifyMetricsEndpointReady := func(g Gomega) {
+				//nolint:staticcheck // SA1019: Endpoints retained for compatibility; migrate to EndpointSlice separately.
 				endpoints := &corev1.Endpoints{}
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      metricsServiceName,
@@ -275,19 +276,6 @@ var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 				g.Expect(hasPort).To(BeTrue(), "Metrics endpoint is not ready")
 			}
 			Eventually(verifyMetricsEndpointReady).Should(Succeed())
-
-			By("verifying that the controller manager is serving the metrics server")
-			verifyMetricsServerStarted := func(g Gomega) {
-				req := clientset.CoreV1().Pods(namespace).GetLogs(controllerPodName, &corev1.PodLogOptions{})
-				podLogs, err := req.Stream(ctx)
-				g.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = podLogs.Close() }()
-				buf := new(bytes.Buffer)
-				_, _ = io.Copy(buf, podLogs)
-				g.Expect(buf.String()).To(ContainSubstring("controller-runtime.metrics\tServing metrics server"),
-					"Metrics server not yet started")
-			}
-			Eventually(verifyMetricsServerStarted).Should(Succeed())
 
 			By("creating the curl-metrics pod to access the metrics endpoint")
 			curlPod := &corev1.Pod{
@@ -337,10 +325,14 @@ var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 			}
 			Eventually(verifyCurlUp, 5*time.Minute).Should(Succeed())
 
-			By("getting the metrics by checking curl-metrics logs")
+			By("verifying the direct /metrics response")
 			metricsOutput := getMetricsOutput()
+			Expect(metricsOutput).To(ContainSubstring("# HELP"))
 			Expect(metricsOutput).To(ContainSubstring(
 				"controller_runtime_reconcile_total",
+			))
+			Expect(metricsOutput).To(ContainSubstring(
+				"go_goroutines",
 			))
 		})
 
@@ -515,6 +507,24 @@ provisioning:
 				g.Expect(actualRouterObj).To(Equal(expectedRouterObj), "config map 'router' entry did not match expected")
 			}
 			Eventually(verifyConfigMap, 1*time.Minute).Should(Succeed())
+		})
+
+		It("should serve live controller and router metrics", func() {
+			expectServiceMetrics(dynamicTestNamespace, "jumpstarter-controller-metrics", "8080", func(g Gomega, body string) {
+				families := parsePrometheusFamilies(g, body)
+				g.Expect(families).To(HaveKey("jumpstarter_lease_acquisitions_total"))
+				g.Expect(families).To(HaveKey("go_goroutines"))
+				g.Expect(families).To(HaveKey("controller_runtime_reconcile_total"))
+				expectMetricLabelValue(g, families["jumpstarter_lease_acquisitions_total"], "result", "success")
+				expectMetricLabelValue(g, families["jumpstarter_lease_acquisitions_total"], "result", "failure")
+			})
+
+			expectServiceMetrics(dynamicTestNamespace, "jumpstarter-router-metrics", "8080", func(g Gomega, body string) {
+				families := parsePrometheusFamilies(g, body)
+				g.Expect(families).To(HaveKey("go_goroutines"))
+				g.Expect(families).To(HaveKey("process_start_time_seconds"))
+				g.Expect(families).To(HaveKey("promhttp_metric_handler_requests_total"))
+			})
 		})
 
 		It("should clamp controller replicas > 1 to 1 with a warning event", func() {

@@ -167,6 +167,11 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 		}
 	}
 
+	// Informational observability conditions. These are deliberately excluded
+	// from allReady: the Prometheus Operator and any log shipper are optional, so
+	// their absence must not report Jumpstarter as degraded.
+	emitServiceMonitorCRDMissing, emitLogShipperConfigured := r.reconcileObservabilityStatus(ctx, js)
+
 	// Set overall Ready condition
 	readyMessage := "All components are ready"
 	if !allReady {
@@ -196,8 +201,34 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 			js.Name, js.Namespace)
 	}
 
+	// Emit transition events only after the status update succeeds.
+	if emitServiceMonitorCRDMissing {
+		r.emitEventf(js, corev1.EventTypeWarning, "ServiceMonitorCRDMissing",
+			"monitoring.coreos.com/v1 ServiceMonitor CRD is not installed; Prometheus autodiscovery is inactive")
+	}
+	if emitLogShipperConfigured {
+		r.emitEventf(js, corev1.EventTypeNormal, "LogShipperConfigured",
+			"Log shipper configuration generated: name=%s namespace=%s", js.Name, js.Namespace)
+	}
+
 	log.V(1).Info("Status updated", "ready", allReady)
 	return nil
+}
+
+// reconcileObservabilityStatus sets the informational observability conditions
+// and reports which transition events should be emitted. Keeping it separate
+// from updateStatus keeps that function's complexity within the lint threshold.
+func (r *JumpstarterReconciler) reconcileObservabilityStatus(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (emitServiceMonitorCRDMissing, emitLogShipperConfigured bool) {
+	prevServiceMonitor := meta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypeServiceMonitorReady)
+	smReady, smReason, smMessage := r.serviceMonitorCondition(ctx, js)
+	setCondition(js, operatorv1alpha1.ConditionTypeServiceMonitorReady, smReady, smReason, smMessage)
+
+	prevLogShipper := meta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypeLogShipperReady)
+	lsReady, lsReason, lsMessage := r.logShipperCondition(ctx, js)
+	setCondition(js, operatorv1alpha1.ConditionTypeLogShipperReady, lsReady, lsReason, lsMessage)
+
+	return smReason == "CRDNotFound" && (prevServiceMonitor == nil || prevServiceMonitor.Reason != "CRDNotFound"),
+		lsReason == "Created" && (prevLogShipper == nil || prevLogShipper.Reason != "Created")
 }
 
 // checkCertManagerCRDs checks if cert-manager CRDs are installed in the cluster

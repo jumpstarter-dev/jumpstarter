@@ -36,5 +36,48 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-operator-bin-
 
+      - name: Install Grafana Alloy v1.21.3
+        run: |
+          curl -fsSL -o /tmp/alloy-linux-amd64.zip \
+            https://github.com/grafana/alloy/releases/download/v1.21.3/alloy-linux-amd64.zip
+          echo "50d23af2d0f98c00beac6ce9a365693e60f87fb76b6cad6fe1d161e80588af6d  /tmp/alloy-linux-amd64.zip" | sha256sum -c -
+          mkdir -p /tmp/alloy
+          unzip -q /tmp/alloy-linux-amd64.zip -d /tmp/alloy
+          chmod +x /tmp/alloy/alloy-linux-amd64
+          echo "ALLOY_BIN=/tmp/alloy/alloy-linux-amd64" >> "$GITHUB_ENV"
+          /tmp/alloy/alloy-linux-amd64 --version
+
+      - name: Install Vector v0.61.0
+        run: |
+          curl -fsSL -o /tmp/vector.tar.gz \
+            https://github.com/vectordotdev/vector/releases/download/v0.61.0/vector-0.61.0-x86_64-unknown-linux-musl.tar.gz
+          echo "e1609b8a55ef1c1fc4fd88633e2bc6366e9a4022f6f1ae846cadd27af5237621  /tmp/vector.tar.gz" | sha256sum -c -
+          mkdir -p /tmp/vector
+          tar -xzf /tmp/vector.tar.gz -C /tmp/vector
+          echo "VECTOR_BIN=/tmp/vector/vector-x86_64-unknown-linux-musl/bin/vector" >> "$GITHUB_ENV"
+          /tmp/vector/vector-x86_64-unknown-linux-musl/bin/vector --version
+
+      - name: Install Loki v3.7.9
+        run: |
+          curl -fsSL -o /tmp/loki-linux-amd64.zip \
+            https://github.com/grafana/loki/releases/download/v3.7.9/loki-linux-amd64.zip
+          echo "17a5fae28ce733b3560c27c76620920b169bd2aea9473947b733b511f92e81dd  /tmp/loki-linux-amd64.zip" | sha256sum -c -
+          mkdir -p /tmp/loki
+          unzip -q /tmp/loki-linux-amd64.zip -d /tmp/loki
+          chmod +x /tmp/loki/loki-linux-amd64
+          echo "LOKI_BIN=/tmp/loki/loki-linux-amd64" >> "$GITHUB_ENV"
+          /tmp/loki/loki-linux-amd64 --version
+
+      - name: Install Promtail v3.6.0
+        run: |
+          curl -fsSL -o /tmp/promtail-linux-amd64.zip \
+            https://github.com/grafana/loki/releases/download/v3.6.0/promtail-linux-amd64.zip
+          echo "81f3c8b57f25dce4ea04215c25f0b24bf19ce9941902718039bd74c3e439ad87  /tmp/promtail-linux-amd64.zip" | sha256sum -c -
+          mkdir -p /tmp/promtail
+          unzip -q /tmp/promtail-linux-amd64.zip -d /tmp/promtail
+          chmod +x /tmp/promtail/promtail-linux-amd64
+          echo "PROMTAIL_BIN=/tmp/promtail/promtail-linux-amd64" >> "$GITHUB_ENV"
+          /tmp/promtail/promtail-linux-amd64 --version
+
       - name: Run operator tests
         run: make -C controller/deploy/operator test

@@ -1,0 +1,75 @@
+# Jumpstarter log shipper configuration for Vector.
+# Merge into your Vector configuration. If the Loki URL below is a
+# placeholder, replace it with your push endpoint (or set
+# spec.telemetry.loki.url on the Jumpstarter CR).
+sources:
+  jumpstarter_pods:
+    type: kubernetes_logs
+    extra_label_selector: "jumpstarter.dev/log-scrape=true"
+    extra_field_selector: "metadata.namespace=lab"
+
+transforms:
+  jumpstarter_parse:
+    type: remap
+    inputs: [jumpstarter_pods]
+    source: |
+      .component = "unknown"
+      if exists(.kubernetes.pod_labels.component) &&
+         is_string(.kubernetes.pod_labels.component) &&
+         .kubernetes.pod_labels.component != "" {
+        .component = .kubernetes.pod_labels.component
+      }
+
+      parsed, err = parse_json(.message)
+      if err == null && is_object(parsed) {
+        if exists(parsed.component) &&
+           is_string(parsed.component) &&
+           parsed.component != "" {
+          .component = parsed.component
+        }
+        if exists(parsed.exporter) &&
+           is_string(parsed.exporter) &&
+           parsed.exporter != "" {
+          .exporter = parsed.exporter
+        } else {
+          del(.exporter)
+        }
+      } else {
+        del(.exporter)
+      }
+
+  jumpstarter_with_exporter:
+    type: filter
+    inputs: [jumpstarter_parse]
+    condition: 'exists(.exporter) && !is_null(.exporter) && .exporter != ""'
+
+  jumpstarter_without_exporter:
+    type: filter
+    inputs: [jumpstarter_parse]
+    condition: '!exists(.exporter) || is_null(.exporter) || .exporter == ""'
+
+sinks:
+  jumpstarter_loki_with_exporter:
+    type: loki
+    inputs: [jumpstarter_with_exporter]
+    endpoint: "http://loki.invalid:3100"
+    path: "/loki/api/v1/push"
+    compression: none
+    encoding:
+      codec: text
+    labels:
+      component: "{{ component }}"
+      exporter: "{{ exporter }}"
+      namespace: "{{ kubernetes.pod_namespace }}"
+
+  jumpstarter_loki_without_exporter:
+    type: loki
+    inputs: [jumpstarter_without_exporter]
+    endpoint: "http://loki.invalid:3100"
+    path: "/loki/api/v1/push"
+    compression: none
+    encoding:
+      codec: text
+    labels:
+      component: "{{ component }}"
+      namespace: "{{ kubernetes.pod_namespace }}"

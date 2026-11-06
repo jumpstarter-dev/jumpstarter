@@ -1,0 +1,55 @@
+# Jumpstarter log shipper configuration for Promtail.
+# Merge into your Promtail scrape_configs. If the Loki URL below is a
+# placeholder, replace it with your push endpoint (or set
+# spec.telemetry.loki.url on the Jumpstarter CR).
+#
+# Run Promtail with -config.expand-env and set HOSTNAME from spec.nodeName.
+# Promtail also uses HOSTNAME for its automatic node selector.
+# The Promtail Helm chart mounts /var/log/pods and /run/promtail.
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /run/promtail/positions.yaml
+
+clients:
+  - url: "{{LOKI_URL}}"
+
+scrape_configs:
+  - job_name: jumpstarter
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - lab
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_jumpstarter_dev_log_scrape]
+        regex: "true"
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        regex: "${HOSTNAME}"
+        action: keep
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels:
+          - __meta_kubernetes_pod_uid
+          - __meta_kubernetes_pod_container_name
+        separator: /
+        target_label: __path__
+        replacement: /var/log/pods/*$1/*.log
+      - action: labeldrop
+        regex: job|pod|container|stream|instance
+    pipeline_stages:
+      - cri: {}
+      - json:
+          expressions:
+            component: component
+            exporter: exporter
+      - labels:
+          component:
+          exporter:
+      - labeldrop:
+          - filename
+          - job
+          - stream

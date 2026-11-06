@@ -455,7 +455,7 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, fu
 		It("can create a lease with context metadata", func() {
 			WaitForExporters("test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy")
 			DeferCleanup(func() {
-				MustJmp("delete", "leases", "--client", "test-client-oidc", "--all")
+				MustJmpAllowingNoLeases("delete", "leases", "--client", "test-client-oidc", "--all")
 			})
 
 			out := MustJmp("create", "lease",
@@ -562,7 +562,7 @@ spec:
 			// Register cleanup up front so a lease created in a cycle that then
 			// fails its assertion cannot bleed into those specs.
 			DeferCleanup(func() {
-				MustJmp("delete", "leases", "--client", "test-client-oidc", "--all")
+				MustJmpAllowingNoLeases("delete", "leases", "--client", "test-client-oidc", "--all")
 			})
 
 			for i := 1; i <= 20; i++ {
