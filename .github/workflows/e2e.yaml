@@ -88,13 +88,15 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/controller-image.tar
-          key: controller-image-${{ matrix.arch }}-${{ hashFiles('.go-version', 'controller/Makefile', 'controller/Containerfile', 'controller/Containerfile.prebuilt', 'controller/go.mod', 'controller/go.sum', 'controller/cmd/**', 'controller/api/**', 'controller/internal/**') }}
+          # The tar also holds the telemetry image; the prefix changed when it was added.
+          key: controller-telemetry-image-${{ matrix.arch }}-${{ hashFiles('.go-version', 'controller/Makefile', 'controller/Containerfile', 'controller/Containerfile.prebuilt', 'controller/Containerfile.telemetry.prebuilt', 'controller/go.mod', 'controller/go.sum', 'controller/cmd/**', 'controller/api/**', 'controller/internal/**') }}
 
       - name: Build controller image
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           make -C controller docker-build-ci
-          docker save quay.io/jumpstarter-dev/jumpstarter-controller:latest -o /tmp/controller-image.tar
+          docker save quay.io/jumpstarter-dev/jumpstarter-controller:latest \
+            quay.io/jumpstarter-dev/jumpstarter-telemetry:latest -o /tmp/controller-image.tar
 
       - name: Upload controller image
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

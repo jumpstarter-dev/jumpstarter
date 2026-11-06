@@ -13,7 +13,14 @@ it; it can't generate the prerequisite/steps/pass-check text.
 ## Global prerequisites (`make e2e-run`, non-compat suite)
 
 Built by `make e2e-setup` (`e2e/setup-e2e.sh`): kind cluster, dex OIDC provider +
-TLS CA, controller/operator deployed via `make -C controller deploy`, namespace
+TLS CA, controller/operator deployed via `make -C controller deploy` with
+telemetry enabled (`OPERATOR_ENABLE_TELEMETRY=true`, which requires the locally
+built telemetry image), telemetry reachable from the host as
+`jumpstarter-telemetry.jumpstarter-lab.svc:9093` (NodePort 30015 from
+`e2e/manifests/telemetry-nodeport.yaml`, mapped to host port 9093 by
+`controller/hack/kind_cluster.yaml`, plus an `/etc/hosts` entry; a kind
+cluster created before that mapping existed must be recreated with
+`make -C controller clean`), namespace
 `jumpstarter-lab`, service accounts `test-client-sa`/`test-exporter-sa`,
 `/etc/jumpstarter/exporters` dir, endpoint/login-endpoint env written to
 `.e2e-setup-complete`, QEMU guest image prefetched. Tests run via `make e2e-run`
@@ -196,6 +203,25 @@ in compat suites** (old controllers lack this logging; the Describe is not label
 |---|---|---|
 | controller logs client authentication failures with the peer address | corrupt token in client's local yaml config, `jmp get exporters --client test-client-authlog` | command errors; controller logs (since test start) eventually contain "client authentication failed" with a `"peer"` field; corrupted token value never appears in logs |
 | controller logs exporter authentication failures with the peer address | corrupt token in exporter's yaml config, start exporter once | controller logs eventually contain "exporter authentication failed" with `"peer"`; token value never appears in logs |
+
+---
+
+## Lane: `telemetry` (`telemetry_test.go`)
+
+Prereq: self-contained — creates its own dex OIDC client/exporter
+(`test-client-telemetry` / `test-exporter-telemetry`, label
+`example.com/board=telemetry`), logs both in with the password grant, applies the
+driver overlay `exporter.yaml`, runs the exporter in loop mode, and takes one
+lease for both specs with `jmp shell --client test-client-telemetry --selector
+example.com/board=telemetry j power on`. Needs the
+global telemetry setup. Telemetry runs without Loki, so it writes PushLogs entries
+to its stdout. **Not run in compat suites**: older controllers issue no
+telemetry token.
+
+| Test Name | Steps | Pass Check |
+|---|---|---|
+| reports metrics from an exporter logged in through dex | none (uses the setup lease) | telemetry `/metrics` (read through the API server pod proxy on port 8080) eventually has `jumpstarter_operation_duration_seconds_count{driver_type="power",exporter="test-exporter-telemetry",operation="on",result="success"}` |
+| receives logs from that exporter and from jmp shell | none (uses the setup lease) | telemetry pod logs since the lane started eventually hold a JSON entry with `component=exporter`, `exporter=test-exporter-telemetry` and one with `component=cli`, `client=test-client-telemetry` |
 
 ---
 
