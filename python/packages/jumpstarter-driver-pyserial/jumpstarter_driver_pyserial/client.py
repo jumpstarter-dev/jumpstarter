@@ -2,7 +2,7 @@ import logging
 import os
 import stat
 import sys
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import contextmanager
 
 import click
 from anyio import BrokenResourceError, EndOfStream, create_task_group, open_file
@@ -61,22 +61,32 @@ class PySerialClient(DriverClient):
         with PexpectAdapter(client=self) as adapter:
             yield adapter
 
-    @asynccontextmanager
-    async def _pipe_stream(self, method: str):
-        """Open a pipe stream, falling back to connect when observe is unavailable.
+    async def _has_observe(self) -> bool:
+        """Whether the exporter supports observe mode (console fanout).
+
+        observe and console_status are both provided by FanOutStreamMixin, so
+        console_status doubles as the capability probe.
+        """
+        try:
+            await self.call_async("console_status")
+        except DriverMethodNotImplemented:
+            return False
+        return True
+
+    async def _console_method(self, observe: bool, writes: bool) -> str:
+        """Pick the pipe stream method, falling back to connect when observe is unavailable.
 
         Older exporters do not export observe; without the fallback a read-only
         pipe fails there. The fallback takes the exclusive write token.
         """
-        try:
-            async with self.stream_async(method=method) as stream:
-                yield stream
-        except DriverMethodNotImplemented:
-            if method != "observe":
-                raise
-            click.echo("observe not available on this exporter, falling back to connect (exclusive access)", err=True)
-            async with self.stream_async(method="connect") as stream:
-                yield stream
+        if writes and not observe:
+            return "connect"
+        if await self._has_observe():
+            return "observe"
+        if observe:
+            raise DriverMethodNotImplemented("observe mode is not available on this exporter")
+        click.echo("observe not available on this exporter, falling back to connect (exclusive access)", err=True)
+        return "connect"
 
     async def _pipe_serial(
         self,
@@ -100,9 +110,8 @@ class PySerialClient(DriverClient):
         # write to the port. A plain logging/monitoring pipe (no stdin) must
         # attach read-only so it never locks out an interactive user — e.g. a CI
         # job tailing serial into a file while someone drives the console.
-        use_observe = observe or not input_enabled
-        method = "observe" if use_observe else "connect"
-        async with self._pipe_stream(method) as stream:
+        method = await self._console_method(observe=observe, writes=input_enabled)
+        async with self.stream_async(method=method) as stream:
             # Fire-and-forget mode: only forward stdin and exit when stdin reaches EOF.
             if no_output:
                 if input_enabled:

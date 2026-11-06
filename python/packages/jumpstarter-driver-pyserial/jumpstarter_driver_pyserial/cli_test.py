@@ -335,6 +335,7 @@ async def test_pipe_serial_selects_stream_mode(pyserial_client, observe, input_e
         return (0, 0)
 
     with (
+        patch.object(pyserial_client, "call_async", new_callable=AsyncMock),
         patch.object(pyserial_client, "stream_async", side_effect=stream_async),
         patch.object(
             pyserial_client, "_serial_to_output", new_callable=AsyncMock, side_effect=serial_to_output
@@ -356,18 +357,39 @@ async def test_pipe_serial_falls_back_to_connect_without_observe(pyserial_client
     @asynccontextmanager
     async def stream_async(*, method):
         methods.append(method)
-        if method == "observe":
-            raise DriverMethodNotImplemented("method observe not found on driver")
         yield object()
 
+    async def call_async(method, *args):
+        if method == "console_status":
+            raise DriverMethodNotImplemented("method console_status not found on driver")
+        raise AssertionError(f"unexpected call: {method}")
+
     with (
+        patch.object(pyserial_client, "call_async", side_effect=call_async),
         patch.object(pyserial_client, "stream_async", side_effect=stream_async),
         patch.object(pyserial_client, "_serial_to_output", new_callable=AsyncMock) as output,
     ):
         await pyserial_client._pipe_serial(input_enabled=False, observe=False)
 
-    assert methods == ["observe", "connect"]
+    assert methods == ["connect"]
     output.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_pipe_serial_observe_unavailable_raises(pyserial_client):
+    """An explicit observe request does not silently fall back to the write token."""
+
+    async def call_async(method, *args):
+        if method == "console_status":
+            raise DriverMethodNotImplemented("method console_status not found on driver")
+        raise AssertionError(f"unexpected call: {method}")
+
+    with (
+        patch.object(pyserial_client, "call_async", side_effect=call_async),
+        patch.object(pyserial_client, "stream_async"),
+        pytest.raises(DriverMethodNotImplemented, match="observe mode is not available"),
+    ):
+        await pyserial_client._pipe_serial(input_enabled=False, observe=True)
 
 
 @pytest.mark.anyio
