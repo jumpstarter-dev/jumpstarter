@@ -27,16 +27,19 @@ class Esp32FlasherClient(FlasherClient):
         target: str | None = None,
         operator: Operator | dict[str, Operator] | None = None,
         compression: Compression | None = None,
+        skip_unchanged: bool = True,
     ):
         """Flash one or more images in a single esptool session.
 
         ``path`` is an image (a file or a URL), an ``{address: image}``
         mapping, or an ESP-IDF build directory. A single image is written at
-        ``target``, 0x0 by default.
+        ``target``, 0x0 by default. With ``skip_unchanged``, images that
+        already match the flash are not rewritten. It has no effect with
+        ``operator``, which goes through the base flasher, one image per call.
         """
         if operator is not None:
             return super().flash(path, target=target, operator=operator, compression=compression)
-        for _ in self.flash_stream(path, target=target, compression=compression):
+        for _ in self.flash_stream(path, target=target, compression=compression, skip_unchanged=skip_unchanged):
             pass
 
     def flash_stream(
@@ -45,13 +48,14 @@ class Esp32FlasherClient(FlasherClient):
         *,
         target: str | None = None,
         compression: Compression | None = None,
+        skip_unchanged: bool = True,
     ) -> Generator[FlashStatus, None, None]:
         """Like ``flash``, yielding progress updates as the images are written."""
         images = _resolve_images(path, target)
         layout, upload = _layout(images)
         try:
             with _upload(client=self, data=upload) as handle:
-                for value in self.streamingcall("flash_images", handle, layout, compression):
+                for value in self.streamingcall("flash_images", handle, layout, compression, skip_unchanged):
                     yield FlashStatus.model_validate(value)
         # The upload's task group wraps errors raised while it is open, hence except*.
         except* DriverMethodNotImplemented:
@@ -92,7 +96,13 @@ class Esp32FlasherClient(FlasherClient):
             help="Write FILE at ADDRESS; repeat to write several images in one session",
         )
         @click.option("--compression", type=click.Choice(Compression, case_sensitive=False))
-        def flash(file, address, targets, compression):
+        @click.option(
+            "--skip-unchanged/--no-skip-unchanged",
+            default=True,
+            show_default=True,
+            help="Leave images that already match the flash unwritten",
+        )
+        def flash(file, address, targets, compression, skip_unchanged):
             """Flash firmware to ESP32
 
             FILE is an image, a URL, or an ESP-IDF build directory: its
@@ -101,7 +111,9 @@ class Esp32FlasherClient(FlasherClient):
             if bool(file) == bool(targets):
                 raise click.UsageError("Give either FILE or --target/-t")
             path = _parse_target_specs(targets) if targets else file
-            for status in self.flash_stream(path, target=address, compression=compression):
+            for status in self.flash_stream(
+                path, target=address, compression=compression, skip_unchanged=skip_unchanged
+            ):
                 # The upload's progress bar is still live while the statuses
                 # arrive. rich keeps it in place by redirecting sys.stdout,
                 # which click.echo bypasses unless it is handed sys.stdout.
