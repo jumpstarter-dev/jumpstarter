@@ -117,6 +117,12 @@ var _ = Describe("Telemetry endpoints", func() {
 		Expect(r.collectTelemetryDNSNames(js, true)).To(ContainElement("jumpstarter-telemetry.lab.svc"))
 	})
 
+	It("normalizes bracketed IPv6 addresses for discovery and certificate identities", func() {
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{{Address: "[2001:db8::1]"}}
+		Expect(telemetryEndpointFor(js)).To(Equal("[2001:db8::1]:443"))
+		Expect(r.collectTelemetryDNSNames(js, false)).To(Equal([]string{"2001:db8::1"}))
+	})
+
 	It("issues an external-issuer certificate for the public hostname, without internal names", func() {
 		endpoints.ApplyEndpointDefaults(&js.Spec, true, true)
 		js.Spec.CertManager.Server = &operatorv1alpha1.ServerCertConfig{

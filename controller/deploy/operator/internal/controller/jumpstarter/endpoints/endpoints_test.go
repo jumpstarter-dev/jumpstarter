@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
 )
@@ -501,6 +502,38 @@ var _ = Describe("Endpoints Reconciler", func() {
 			err = k8sClient.Create(ctx, owner)
 			if err != nil && !errors.IsAlreadyExists(err) {
 				Expect(err).NotTo(HaveOccurred())
+			}
+		})
+
+		It("keeps the replica NodePort separate from ClusterIP and LoadBalancer exposure", func() {
+			c := fake.NewClientBuilder().WithScheme(k8sClient.Scheme()).WithObjects(owner).Build()
+			r := &Reconciler{Client: c, Scheme: k8sClient.Scheme()}
+			endpoint := &operatorv1alpha1.Endpoint{
+				NodePort:     &operatorv1alpha1.NodePortConfig{Enabled: true, Port: 30310},
+				LoadBalancer: &operatorv1alpha1.LoadBalancerConfig{Enabled: true, Port: 8443},
+				ClusterIP:    &operatorv1alpha1.ClusterIPConfig{Enabled: true},
+			}
+			port := corev1.ServicePort{
+				Name: "router-ports", Port: 8083, TargetPort: intstr.FromInt(8083), NodePort: 30311,
+			}
+			Expect(r.ReconcileRouterReplicaEndpoint(ctx, owner, 1, 0, endpoint, port)).To(Succeed())
+			for _, want := range []struct {
+				suffix         string
+				serviceType    corev1.ServiceType
+				port, nodePort int32
+			}{
+				{"", corev1.ServiceTypeClusterIP, 8083, 0},
+				{"-lb", corev1.ServiceTypeLoadBalancer, 8443, 0},
+				{"-np", corev1.ServiceTypeNodePort, 8083, 30311},
+			} {
+				service := &corev1.Service{}
+				Expect(c.Get(ctx, types.NamespacedName{Name: port.Name + want.suffix, Namespace: namespace}, service)).To(Succeed())
+				Expect(service.Spec.Type).To(Equal(want.serviceType))
+				Expect(service.Spec.Selector).To(HaveKeyWithValue("app", "test-router-router-1"))
+				Expect(service.Spec.Ports).To(HaveLen(1))
+				Expect(service.Spec.Ports[0].Port).To(Equal(want.port))
+				Expect(service.Spec.Ports[0].NodePort).To(Equal(want.nodePort))
+				Expect(service.Spec.Ports[0].TargetPort.IntValue()).To(Equal(8083))
 			}
 		})
 

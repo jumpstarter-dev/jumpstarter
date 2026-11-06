@@ -138,10 +138,11 @@ func (r *JumpstarterReconciler) reconcileTelemetryServiceStage(ctx context.Conte
 			TargetPort: intstr.FromInt(telemetryPort),
 			Protocol:   corev1.ProtocolTCP,
 		}
-		if err := r.EndpointReconciler.ReconcileTelemetryEndpoint(ctx, jumpstarter, &endpoint, port); err != nil {
+		labels := telemetryLabels(jumpstarter)
+		if err := r.EndpointReconciler.ReconcileGRPCEndpoint(ctx, jumpstarter, &endpoint, port, labels, labels); err != nil {
 			return err
 		}
-		for _, suffix := range endpoints.RouterServiceSuffixes(&endpoint) {
+		for _, suffix := range endpoints.ServiceSuffixes(&endpoint) {
 			wanted[name+suffix] = true
 		}
 		if endpoint.Ingress != nil && endpoint.Ingress.Enabled {
