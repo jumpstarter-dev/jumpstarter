@@ -8,6 +8,7 @@ import pytest
 from anyio import (
     BrokenResourceError,
     CancelScope,
+    Event,
     connect_tcp,
     create_task_group,
     fail_after,
@@ -25,8 +26,9 @@ from jumpstarter.common import ExporterStatus, TemporaryTcpListener
 from jumpstarter.common.resources import ResourceMetadata
 from jumpstarter.common.streams import ResourceStreamRequest, StreamRequestMetadata
 from jumpstarter.common.utils import serve
-from jumpstarter.driver import Driver, export
+from jumpstarter.driver import Driver, export, session_env
 from jumpstarter.exporter.auth import PASSPHRASE_METADATA_KEY, PassphraseInterceptor
+from jumpstarter.exporter.lease_context import LeaseContext
 from jumpstarter.exporter.session import Session
 from jumpstarter.streams.common import forward_stream
 from jumpstarter.streams.router import RouterStream
@@ -890,6 +892,58 @@ async def test_driver_calls_gated_on_exporter_status(status, allowed):
                         with pytest.raises(ExporterNotReady, match=f"status: {status.name}"):
                             async for _ in client.streamingcall_async("count"):
                                 pass
+
+
+class SessionEnvDriver(Driver):
+    """Driver reporting the session env its calls see, from a unary and a streaming export."""
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @export
+    def env(self) -> dict[str, str]:
+        return session_env()
+
+    @export
+    async def env_stream(self):
+        yield session_env()
+
+
+@pytest.mark.anyio
+async def test_driver_calls_get_the_session_env_during_a_lease():
+    """Driver calls see the env hooks get, pointing at the hook socket, and only while they run."""
+    driver = SessionEnvDriver()
+    lease = LeaseContext(lease_name="test-lease", before_lease_hook=Event(), client_name="test-client")
+    with Session(uuid=driver.uuid, labels=driver.labels, root_device=driver) as session:
+        session.lease_context = lease
+        session.update_status(ExporterStatus.LEASE_READY)
+        async with session.serve_unix_with_hook_socket_async() as (main_path, hook_path), BlockingPortal() as portal:
+            lease.socket_path = main_path
+            lease.hook_socket_path = hook_path
+            expected = {
+                "JUMPSTARTER_HOST": str(hook_path),
+                "JMP_DRIVERS_ALLOW": "UNSAFE",
+                "LEASE_NAME": "test-lease",
+                "CLIENT_NAME": "test-client",
+            }
+            with ExitStack() as stack:
+                async with client_from_path(main_path, portal, stack, allow=[], unsafe=True) as client:
+                    assert await client.call_async("env") == expected
+                    assert [env async for env in client.streamingcall_async("env_stream")] == [expected]
+            assert session_env() == {}
+
+
+@pytest.mark.anyio
+async def test_driver_calls_get_no_session_env_outside_a_lease():
+    driver = SessionEnvDriver()
+    with Session(uuid=driver.uuid, labels=driver.labels, root_device=driver) as session:
+        session.update_status(ExporterStatus.LEASE_READY)
+        async with session.serve_unix_async() as path, BlockingPortal() as portal:
+            with ExitStack() as stack:
+                async with client_from_path(path, portal, stack, allow=[], unsafe=True) as client:
+                    assert await client.call_async("env") == {}
+                    assert [env async for env in client.streamingcall_async("env_stream")] == [{}]
 
 
 # ============================================================================

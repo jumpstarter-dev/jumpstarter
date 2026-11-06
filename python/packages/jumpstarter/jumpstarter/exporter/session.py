@@ -17,6 +17,7 @@ from jumpstarter_protocol import (
 from .logging import LogFanOut, LogHandler
 from jumpstarter.common import ExporterStatus, LogSource, Metadata, TemporarySocket
 from jumpstarter.common.streams import ResourceStreamRequest, StreamRequestMetadata
+from jumpstarter.driver.context import session_env_var
 from jumpstarter.logging import set_log_context, unbind_log_context
 from jumpstarter.metrics import get_registry
 from jumpstarter.streams.common import forward_stream
@@ -328,14 +329,26 @@ class Session(
             ],
         )
 
+    def _bind_session_env(self) -> None:
+        """Make the lease's session reachable from the driver call, see jumpstarter.driver.session_env().
+
+        grpc.aio runs each RPC in a task of its own, so the value goes away with the call.
+        """
+        if self.lease_context is not None and (self.lease_context.hook_socket_path or self.lease_context.socket_path):
+            session_env_var.set(self.lease_context.session_env())
+
     async def DriverCall(self, request, context):
+        """Serve a unary driver call, with the lease's session env bound for it."""
         logger.debug("DriverCall(uuid=%s, method=%s)", request.uuid, request.method)
         await self._check_status_for_driver_call(context)
+        self._bind_session_env()
         return await self[UUID(request.uuid)].DriverCall(request, context)
 
     async def StreamingDriverCall(self, request, context):
+        """Serve a streaming driver call, with the lease's session env bound for it."""
         logger.debug("StreamingDriverCall(uuid=%s, method=%s)", request.uuid, request.method)
         await self._check_status_for_driver_call(context)
+        self._bind_session_env()
         async for v in self[UUID(request.uuid)].StreamingDriverCall(request, context):
             yield v
 
