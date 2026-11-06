@@ -10,6 +10,8 @@ from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 from jumpstarter_driver_power.client import VirtualPowerClient
 
 from jumpstarter.client.base import StubDriverClient
+from jumpstarter.client.flasher import FlasherClient, _parse_path
+from jumpstarter.common.exceptions import ArgumentError
 
 
 def _parse(raw: str) -> dict | list | str:
@@ -82,6 +84,31 @@ class CvdPowerClient(VirtualPowerClient):
             _run_with_progress("Power cycling", lambda: self.cycle(wait))
 
         return power
+
+
+class CvdFlasherClient(FlasherClient):
+    """Replace partition images of the CVD: ``j cuttlefish storage flash -t boot:boot.img``.
+
+    Flashing destroys the running CVD; power on afterwards to boot the new
+    images. Defined here so that allowing ``jumpstarter_driver_cuttlefish.*``
+    covers flashing.
+    """
+
+    def flash(self, path, *, target=None, compression=None):
+        # Each target is a separate flash: check them all before replacing any,
+        # so a typo in the last one cannot leave the first ones half-updated.
+        targets = list(path) if isinstance(path, dict) else [target]
+        available = self.call("partitions")
+        unknown = [name for name in targets if name not in available]
+        if unknown:
+            raise ArgumentError(
+                f"unknown partition {', '.join(map(repr, unknown))}; this build has: {', '.join(available)}"
+            )
+        sources = path.values() if isinstance(path, dict) else [path]
+        missing = [str(source) for source in sources if (local := _parse_path(source)[0]) and not local.is_file()]
+        if missing:
+            raise ArgumentError(f"no such file: {', '.join(missing)}")
+        return super().flash(path, target=target, compression=compression)
 
 
 class CuttlefishClient(CompositeClient):

@@ -1,22 +1,28 @@
 import contextlib
 import json
 import os
+import re
 import subprocess
 import threading
 import time
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, AsyncIterator, Generator
+from contextlib import aclosing
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import ClassVar
 
 import requests
+from anyio import fail_after, to_thread
 from jumpstarter_driver_adb.driver import AdbServer
 from jumpstarter_driver_network.driver import TcpNetwork
 from jumpstarter_driver_power.driver import PowerReading, VirtualPowerInterface
 
 from .cvdcli import cvd_argv, exec_binary, fleet_to_cvds, stderr_tail
+from .image import Worker, install, space_left, stage
 from jumpstarter.driver import Driver, export
 from jumpstarter.driver.flasher import FlasherInterface
+from jumpstarter.streams.encoding import AutoDecompressIterator
 
 
 class CuttlefishError(Exception):
@@ -34,6 +40,13 @@ TARGET_STATE = {
     "create": "running", "start": "running", "restart": "running", "powerwash": "running",
     "stop": "off", "delete": "off", "reset": "off", "powerbtn": None,
 }
+
+# env_config properties that load images from somewhere other than
+# disk.default_build (cvd's load_config.proto). With any of them set, a flash
+# to images_dir would not change what the CVD boots.
+IMAGE_OVERRIDES = (
+    ("boot", "build"), ("boot", "kernel"), ("boot", "bootloader"), ("boot", "android_efi_loader"), ("disk", "super"),
+)
 
 
 class HostOrchestratorBackend:
@@ -263,7 +276,20 @@ class Cuttlefish(Driver):
     health_state_path: str = ""
     runtime_id_path: str = ""
     health_ports: list[int] = field(default_factory=list)
+    # Flashing: the directory env_config loads the CVD's images from, writable
+    # by the exporter. The provisioner injects it with the volume's size limit,
+    # which kubelet enforces by evicting the Pod rather than failing a write.
+    images_dir: str = ""
+    images_volume_limit: int = 0
+    # Abort a flash when its source sends nothing for this long; downloads
+    # have been seen to stall forever with the connection still open.
+    flash_idle_timeout: float = 120
     _operation_lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
+    # The flash in progress, if any. Taken and released under _flash_lock,
+    # which guards nothing else and is never held across I/O.
+    _flashing: Worker | None = field(default=None, init=False, repr=False)
+    _flash_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _images_replaced: bool = field(default=False, init=False, repr=False)
     _health: dict = field(default_factory=dict, init=False, repr=False)
     _backend: "HostOrchestratorBackend | CvdCliBackend" = field(init=False, repr=False)
     _cvd_group: str | None = field(default=None, init=False, repr=False)
@@ -282,6 +308,8 @@ class Cuttlefish(Driver):
                 raise CuttlefishError("Cuttlefish runtime restarted before driver initialization")
             self._health.update(self._backend.health_fields(), ports=self.health_ports)
             self._write_health()
+        if self.images_dir:
+            self._validate_image_sources()
 
         self.children["power"] = CvdPower(parent=self)
         self.children["storage"] = CvdFlasher(parent=self)
@@ -292,6 +320,18 @@ class Cuttlefish(Driver):
             self.children["webui"] = TcpNetwork(host="127.0.0.1", port=self.webui_port)
         if self.turn_port:
             self.children["turn"] = TcpNetwork(host="127.0.0.1", port=self.turn_port)
+
+    def _validate_image_sources(self):
+        """Flashing replaces images in images_dir, so every instance must boot from there and only there."""
+        for instance in self.env_config.get("instances", []):
+            source = instance.get("disk", {}).get("default_build")
+            if not source or Path(source) != Path(self.images_dir):
+                raise CuttlefishError(
+                    f"flashing writes to images_dir {self.images_dir}, but env_config loads images from {source}"
+                )
+            elsewhere = [".".join(path) for path in IMAGE_OVERRIDES if path[1] in instance.get(path[0], {})]
+            if elsewhere:
+                raise CuttlefishError(f"flashing writes to images_dir, but env_config sets {', '.join(elsewhere)}")
 
     def _validate_managed_config(self):
         instances = self.env_config.get("instances", [])
@@ -345,10 +385,12 @@ class Cuttlefish(Driver):
         if op not in TARGET_STATE:
             raise CuttlefishError(f"unknown operation {op!r}")
         if not self.managed:
+            self._refuse_while_flashing(op)
             return self._backend.operate(
                 op, group or self._cvd_group or self.group, name or self._cvd_name or self.name, data, timeout,
             )
         with self._operation_lock:
+            self._refuse_while_flashing(op)
             group = group or self._cvd_group or self.group
             name = name or self._cvd_name or self.name
             if op == "create":
@@ -360,9 +402,13 @@ class Cuttlefish(Driver):
             self._write_health()
             try:
                 result = self._backend.operate(op, group, name, data, timeout)
-            except Exception:
-                self._health["state"] = "failed"
+            except Exception as e:
+                recovered = op == "create" and self._remove_failed_boot()
+                self._health["state"] = "off" if recovered else "failed"
                 self._write_health()
+                if recovered:
+                    hint = "power on failed after a flash; the CVD was removed, flash again or release the lease"
+                    raise CuttlefishError(f"{hint}\n{e}") from e
                 raise
             if isinstance(result, dict) and op == "create":
                 cvds = result.get("cvds", [])
@@ -375,6 +421,95 @@ class Cuttlefish(Driver):
             )
             self._write_health()
             return result
+
+    def _remove_failed_boot(self) -> bool:
+        """After a flash, delete the CVD a failed create left; True once the inventory is confirmed empty.
+
+        The health probe fails the Pod after a failed operation, which is right
+        when the pool's own build does not boot. After a flash the cause may be
+        the lessee's images, and the member is discarded when the lease ends
+        anyway, so it stays for another flash, provided the runtime still
+        answers and removes the failed CVD; the probe keeps checking that it
+        answers. The driver cannot tell a guest that does not boot from a
+        runtime that cannot start one. A failed ``cvd load`` leaves its group
+        listed as "Boot Failed" under a name the runtime assigned and the driver
+        never learned, where it blocks the next create.
+        """
+        if not self._images_replaced:
+            return False
+        try:
+            return not self._delete_cvds(self._all_cvds()) and self._all_cvds() == []
+        except CuttlefishError:
+            return False
+
+    def _all_cvds(self) -> list[dict]:
+        """The runtime's whole inventory; raises rather than mistake a bad answer for none."""
+        listed = self._backend.list_cvds()
+        if not isinstance(listed, dict) or not isinstance(listed.get("cvds"), list):
+            raise CuttlefishError(f"invalid CVD inventory: {listed!r}")
+        return listed["cvds"]
+
+    def _refuse_while_flashing(self, op: str) -> None:
+        # A CVD started now would be assembled over images that are about to be replaced.
+        if self._flashing and TARGET_STATE[op] == "running":
+            raise CuttlefishError(f"cannot {op} the CVD while a flash is in progress; retry when it completes")
+
+    def _start_flash(self) -> Worker:
+        """Take the device for a flash; until ``_finish_flash``, nothing may start a CVD."""
+        with self._flash_lock:
+            if self._flashing:
+                raise CuttlefishError("another flash is in progress")
+            self._flashing = Worker()
+            return self._flashing
+
+    def _finish_flash(self, worker: Worker) -> None:
+        """Release the device once every step the flash queued on ``worker`` has run."""
+
+        def release():
+            with self._flash_lock:
+                if self._flashing is worker:
+                    self._flashing = None
+
+        worker.close(release)
+
+    def _destroy_for_flash(self) -> None:
+        """Destroy the CVD before its images change.
+
+        ``cvd load`` lays the instance's composite disk and overlay out over the
+        base images, so the CVD cannot survive a change to them; destroying it
+        also resets userdata.
+        """
+        with self._operation_lock:
+            # Every CVD in a managed Pod boots from this image volume, under
+            # whatever group the runtime named it; a restarted exporter has not
+            # learned that name. An unmanaged host may hold other tenants' CVDs.
+            existing = self._all_cvds() if self.managed else self._get_existing_cvds()
+            if existing:
+                self.logger.info("Destroying %d CVD(s) before flashing", len(existing))
+                self._auto_disconnect_adb()
+                failed = self._delete_cvds(existing)
+                if failed:
+                    raise CuttlefishError(f"cannot flash: failed to destroy {', '.join(failed)}")
+
+    def _delete_cvds(self, cvds: list[dict]) -> list[str]:
+        """Delete the given inventory entries and forget the tracked CVD; return those that failed."""
+        failed = []
+        deleted_groups = set()
+        for cvd in cvds:
+            group = cvd.get("group", self.group)
+            name = cvd.get("name", self.name)
+            if self._backend.delete_is_group_scoped:
+                if group in deleted_groups:
+                    continue
+                deleted_groups.add(group)
+            try:
+                self._do_operation("delete", None, 300, group, name)
+            except CuttlefishError:
+                self.logger.warning("Failed to delete CVD %s/%s", group, name)
+                failed.append(f"{group}/{name}")
+        self._cvd_group = None
+        self._cvd_name = None
+        return failed
 
     def _get_existing_cvds(self) -> list[dict]:
         """Return CVDs belonging to this driver's group.
@@ -655,20 +790,7 @@ class CvdPower(VirtualPowerInterface, Driver):
         self.logger.warning(
             "Found %d stale CVDs in group %s, deleting", len(existing), self.parent._cvd_group or self.parent.group
         )
-        failed = []
-        deleted_groups = set()
-        for cvd in existing:
-            group = cvd.get("group", self.parent.group)
-            name = cvd.get("name", self.parent.name)
-            if self.parent._backend.delete_is_group_scoped:
-                if group in deleted_groups:
-                    continue
-                deleted_groups.add(group)
-            try:
-                self.parent._do_operation("delete", None, 300, group, name)
-            except CuttlefishError:
-                self.logger.warning("Failed to delete stale CVD %s/%s", group, name)
-                failed.append(f"{group}/{name}")
+        failed = self.parent._delete_cvds(existing)
         if failed:
             raise CuttlefishError(
                 f"cannot create CVD - failed to delete stale CVDs: {', '.join(failed)}. "
@@ -742,19 +864,93 @@ class CvdPower(VirtualPowerInterface, Driver):
         raise NotImplementedError("no power telemetry for virtual devices")
 
 
+PARTITION_NAME = re.compile(r"[a-z0-9_]+")
+# Headroom below the image volume's size limit. Kubelet measures usage
+# periodically and evicts the whole Pod when it is exceeded; it also covers
+# the at most one chunk a flash writes before noticing it is over budget, and
+# what cvd load writes there itself (vbmeta padding, host tool links).
+IMAGES_VOLUME_MARGIN = 256 * 1024 * 1024
+
+
 @dataclass(kw_only=True)
 class CvdFlasher(FlasherInterface, Driver):
-    """Flasher for Cuttlefish devices (not yet implemented).
+    """Replace partition images the CVD boots from.
 
-    Planned: upload artifacts to Host Orchestrator via its upload API.
+    A flash stages the new image next to ``<target>.img`` in ``images_dir``
+    while the CVD keeps running, then destroys the CVD, renames the image into
+    place and leaves the device off. The next power on creates a fresh CVD from
+    the new images with the unchanged env_config, so userdata starts empty.
     """
 
     parent: Cuttlefish
 
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter_driver_cuttlefish.client.CvdFlasherClient"
+
     @export
-    def flash(self, source, target: str | None = None) -> None:
-        raise NotImplementedError("CvdFlasher.flash() not yet implemented")
+    def partitions(self) -> list[str]:
+        """Partitions this build has, i.e. the valid flash targets."""
+        return sorted(path.stem for path in self._images_dir().glob("*.img"))
+
+    @export
+    async def flash(self, source, target: str | None = None) -> None:
+        """Flash ``source`` (a stream or URL; gzip, xz, bz2 and zstd are detected) to partition ``target``."""
+        image = await to_thread.run_sync(self._image_path, target)
+        staged = image.with_name(image.name + ".partial")
+        # Every blocking step runs on the flash's own worker, and the flash ends
+        # with a step queued behind them all, so it cannot end while one of its
+        # steps still runs, however the caller goes away.
+        worker = self.parent._start_flash()
+        try:
+            limit = self.parent.images_volume_limit
+            budget = await worker.run(space_left, image.parent, limit, IMAGES_VOLUME_MARGIN) if limit else None
+            async with self.resource(source) as res, aclosing(self._chunks(res)) as chunks:
+                await stage(chunks, staged, budget, worker)
+            # Only a complete image costs the running CVD.
+            try:
+                await worker.run(self.parent._destroy_for_flash)
+                await worker.run(self._install, staged, image)
+            except BaseException:
+                worker.submit(partial(staged.unlink, missing_ok=True))
+                raise
+        finally:
+            self.parent._finish_flash(worker)
+            # Return, even cancelled, only with the device free again.
+            await worker.drained()
+        self.logger.info("Flashed %s; power on to boot it", image.name)
 
     @export
     def dump(self, target, partition: str | None = None) -> None:
         raise NotImplementedError("dump not supported for Cuttlefish devices")
+
+    def _images_dir(self) -> Path:
+        if not self.parent.images_dir:
+            raise CuttlefishError("flashing needs images_dir, the directory the CVD's images are loaded from")
+        return Path(self.parent.images_dir)
+
+    def _image_path(self, target: str | None) -> Path:
+        images = self._images_dir()
+        if target and PARTITION_NAME.fullmatch(target) and (images / f"{target}.img").is_file():
+            return images / f"{target}.img"
+        raise CuttlefishError(f"unknown partition {target!r}; this build has: {', '.join(self.partitions())}")
+
+    def _install(self, staged: Path, image: Path) -> None:
+        install(staged, image)
+        # Recorded by the step that replaced the image, not by a caller that may
+        # have stopped waiting for it.
+        self.parent._images_replaced = True
+
+    async def _chunks(self, res) -> AsyncGenerator[bytes, None]:
+        """The decompressed image, abandoning a source that goes quiet."""
+        timeout = self.parent.flash_idle_timeout
+        chunks: AsyncIterator[bytes] = AutoDecompressIterator(source=res)
+        while True:
+            try:
+                with fail_after(timeout):
+                    chunk = await anext(chunks)
+            except StopAsyncIteration:
+                return
+            except TimeoutError as e:
+                raise CuttlefishTimeout(f"no image data received for {timeout}s; flash abandoned") from e
+            yield chunk
