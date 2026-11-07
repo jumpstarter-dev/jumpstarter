@@ -47,7 +47,7 @@ class Esp32FlasherClient(FlasherClient):
         target: str | None = None,
         compression: Compression | None = None,
     ) -> Generator[FlashStatus, None, None]:
-        """Like ``flash``, yielding a status update as each image is written."""
+        """Like ``flash``, yielding progress updates as the images are written."""
         images = _resolve_images(path, target)
         # The exporter fetches a URL itself, so a URL cannot share an upload
         # with other images and gets a session of its own.
@@ -126,8 +126,9 @@ class Esp32FlasherClient(FlasherClient):
             if targets and address is not None:
                 raise click.UsageError("--address applies to FILE; give each --target its own address")
             path = _parse_target_specs(targets) if targets else file
+            show = _StatusPrinter()
             for status in self.flash_stream(path, target=address, compression=compression):
-                _print_status(status)
+                show(status)
 
         @base.command()
         def chip_info():
@@ -157,11 +158,24 @@ class Esp32FlasherClient(FlasherClient):
         return base
 
 
-def _print_status(status: FlashStatus):
-    if status.step_index is None:
-        _echo(status.message)
-    else:
-        _echo(f"[{status.step_index}/{status.total_steps}] {status.step_name}: {status.message}")
+class _StatusPrinter:
+    """Print flash progress one line at a time, every 10% of an image."""
+
+    def __init__(self):
+        self._last: tuple[int, int] | None = None
+
+    def __call__(self, status: FlashStatus):
+        if status.step_index is None:
+            _echo(status.message)
+            return
+        prefix = f"[{status.step_index}/{status.total_steps}] {status.step_name}:"
+        if status.progress is None:
+            _echo(f"{prefix} {status.message}")
+            return
+        key = (status.step_index, int(status.progress * 10))
+        if key != self._last:
+            self._last = key
+            _echo(f"{prefix} {status.message} {status.progress:.0%}")
 
 
 def _echo(line: str):
