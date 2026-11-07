@@ -176,11 +176,13 @@ class Esp32Flasher(FlasherInterface, Driver):
         esp,
         image: _Image,
         *,
+        skip_unchanged: bool,
         report: Callable[[FlashStatus], None],
         step: int,
         steps: int,
-    ):
-        """Write one image, reporting esptool's progress."""
+    ) -> bool:
+        """Write one image; return False when it already matched the flash."""
+        written = False
         last_report: float | None = None
 
         def status(message: str, progress: float | None) -> FlashStatus:
@@ -194,7 +196,8 @@ class Esp32Flasher(FlasherInterface, Driver):
             )
 
         def on_progress(done: int, total: int):
-            nonlocal last_report
+            nonlocal written, last_report
+            written = True
             now = time.monotonic()
             if done < total and last_report is not None and now - last_report < PROGRESS_INTERVAL:
                 return
@@ -203,14 +206,23 @@ class Esp32Flasher(FlasherInterface, Driver):
 
         _progress.callback = on_progress
         try:
-            esptool.cmds.write_flash(esp, [(image.address, image.data)])
+            esptool.cmds.write_flash(esp, [(image.address, image.data)], skip_flashed=skip_unchanged)
         finally:
             _progress.callback = None
+        # esptool reports no progress for an image it skipped as already flashed
+        if not written:
+            report(status("unchanged, not rewritten", None))
+        return written
 
-    def _write_images(self, esp, images: list[_Image], *, report: Callable[[FlashStatus], None]):
-        """Write every image in order."""
+    def _write_images(self, esp, images: list[_Image], *, skip_unchanged: bool, report) -> int:
+        """Write every image in order; return how many were left unchanged."""
+        unchanged = 0
         for step, image in enumerate(images, 1):
-            self._write_image(esp, image, report=report, step=step, steps=len(images))
+            if not self._write_image(
+                esp, image, skip_unchanged=skip_unchanged, report=report, step=step, steps=len(images)
+            ):
+                unchanged += 1
+        return unchanged
 
     async def _receive(self, source) -> bytes:
         data = bytearray()
@@ -232,17 +244,21 @@ class Esp32Flasher(FlasherInterface, Driver):
 
         def work():
             with self._stub_session() as esp:
-                self._write_images(esp, [image], report=self._log_status)
+                self._write_images(esp, [image], skip_unchanged=False, report=self._log_status)
 
         await to_thread.run_sync(work)
 
     @export
-    async def flash_images(self, source, layout: list[dict]) -> AsyncGenerator[FlashStatus, None]:
+    async def flash_images(
+        self, source, layout: list[dict], skip_unchanged: bool = True
+    ) -> AsyncGenerator[FlashStatus, None]:
         """Write several images in one esptool session, reporting progress.
 
         ``source`` carries the images back to back, and ``layout`` gives each
         one's ``address``, ``size`` and ``name`` in the same order. The last
-        entry may leave out its size to take the rest of the stream.
+        entry may leave out its size to take the rest of the stream. With
+        ``skip_unchanged``, an image that already matches the flash is not
+        rewritten.
         """
         images = _split_images(await self._receive(source), layout)
 
@@ -252,11 +268,11 @@ class Esp32Flasher(FlasherInterface, Driver):
         def report(status: FlashStatus | None):
             loop.call_soon_threadsafe(updates.put_nowait, status)
 
-        def work():
+        def work() -> int:
             try:
                 with self._stub_session() as esp:
                     report(FlashStatus(phase=FlashPhase.STEP, message=f"Connected to {esp.get_chip_description()}"))
-                    self._write_images(esp, images, report=report)
+                    return self._write_images(esp, images, skip_unchanged=skip_unchanged, report=report)
             finally:
                 report(None)
 
@@ -267,7 +283,7 @@ class Esp32Flasher(FlasherInterface, Driver):
         try:
             while (status := await updates.get()) is not None:
                 yield status
-            await worker
+            unchanged = await worker
         finally:
             if not worker.done():
                 # The client went away mid-flash. Let the write finish so that
@@ -277,7 +293,11 @@ class Esp32Flasher(FlasherInterface, Driver):
                 if not worker.cancelled() and worker.exception() is not None:
                     self.logger.warning("flash failed after the client left: %s", worker.exception())
 
-        yield FlashStatus(phase=FlashPhase.COMPLETE, message=f"Flashed {len(images)} image(s)")
+        written = len(images) - unchanged
+        yield FlashStatus(
+            phase=FlashPhase.COMPLETE,
+            message=f"Flashed {len(images)} image(s): {written} written, {unchanged} unchanged",
+        )
 
     @export
     async def dump(self, target, partition: str | None = None):

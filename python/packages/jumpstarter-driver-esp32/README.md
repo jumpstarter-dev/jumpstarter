@@ -88,6 +88,9 @@ j storage flash build/
 # Flash several images in one session
 j storage flash -t 0x2000:bootloader.bin -t 0x10000:partition-table.bin -t 0x20000:app.bin
 
+# Rewrite images even when they already match the flash
+j storage flash build/ --no-skip-unchanged
+
 # Get chip info
 j storage chip-info
 
@@ -108,7 +111,9 @@ j serial pipe
 ```
 
 `j storage flash` writes every image in one esptool session, prints progress
-for each, and then resets the chip.
+for each, and then resets the chip. An image that already matches the flash
+is not rewritten: esptool compares checksums on the chip first, so flashing a
+rebuilt project only writes the images that changed.
 
 ### Python API
 

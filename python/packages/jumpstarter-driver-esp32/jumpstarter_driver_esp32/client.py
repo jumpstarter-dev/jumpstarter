@@ -28,16 +28,18 @@ class Esp32FlasherClient(FlasherClient):
         target: str | None = None,
         operator: Operator | dict[str, Operator] | None = None,
         compression: Compression | None = None,
+        skip_unchanged: bool = True,
     ):
         """Flash one or more images in a single esptool session.
 
         ``path`` is an image, an ``{address: image}`` mapping, or an ESP-IDF
         build directory (or its ``flasher_args.json``). A single image is
-        written at ``target``, 0x0 by default.
+        written at ``target``, 0x0 by default. With ``skip_unchanged``, images
+        that already match the flash are not rewritten.
         """
         if operator is not None:
             return super().flash(path, target=target, operator=operator, compression=compression)
-        for _ in self.flash_stream(path, target=target, compression=compression):
+        for _ in self.flash_stream(path, target=target, compression=compression, skip_unchanged=skip_unchanged):
             pass
 
     def flash_stream(
@@ -46,6 +48,7 @@ class Esp32FlasherClient(FlasherClient):
         *,
         target: str | None = None,
         compression: Compression | None = None,
+        skip_unchanged: bool = True,
     ) -> Generator[FlashStatus, None, None]:
         """Like ``flash``, yielding progress updates as the images are written."""
         images = _resolve_images(path, target)
@@ -57,14 +60,14 @@ class Esp32FlasherClient(FlasherClient):
             groups = [images]
         try:
             for group in groups:
-                yield from self._flash_group(group, compression)
+                yield from self._flash_group(group, compression, skip_unchanged)
         # An upload's task group wraps errors raised while it is open, hence except*.
         except* DriverMethodNotImplemented:
             # The exporter predates flash_images: one call, and one session, per image.
             super().flash({hex(address): image for address, image in images}, compression=compression)
 
     def _flash_group(
-        self, images: list[tuple[int, PathBuf]], compression: Compression | None
+        self, images: list[tuple[int, PathBuf]], compression: Compression | None, skip_unchanged: bool
     ) -> Generator[FlashStatus, None, None]:
         url = _parse_path(images[0][1])[1]
         if url is not None:
@@ -78,7 +81,7 @@ class Esp32FlasherClient(FlasherClient):
             ]
             upload = _upload_files(client=self, paths=paths, compression=compression)
         with upload as handle:
-            for value in self.streamingcall("flash_images", handle, layout):
+            for value in self.streamingcall("flash_images", handle, layout, skip_unchanged):
                 yield FlashStatus.model_validate(value)
 
     def get_chip_info(self) -> dict[str, str]:
@@ -115,7 +118,13 @@ class Esp32FlasherClient(FlasherClient):
             help="Write FILE at ADDRESS; repeat to write several images in one session",
         )
         @click.option("--compression", type=click.Choice(Compression, case_sensitive=False))
-        def flash(file, address, targets, compression):
+        @click.option(
+            "--skip-unchanged/--no-skip-unchanged",
+            default=True,
+            show_default=True,
+            help="Leave images that already match the flash unwritten",
+        )
+        def flash(file, address, targets, compression, skip_unchanged):
             """Flash firmware to ESP32
 
             FILE is an image, a URL, or an ESP-IDF build directory: its
@@ -127,7 +136,8 @@ class Esp32FlasherClient(FlasherClient):
                 raise click.UsageError("--address applies to FILE; give each --target its own address")
             path = _parse_target_specs(targets) if targets else file
             show = _StatusPrinter()
-            for status in self.flash_stream(path, target=address, compression=compression):
+            for status in self.flash_stream(path, target=address, compression=compression,
+                                            skip_unchanged=skip_unchanged):
                 show(status)
 
         @base.command()
