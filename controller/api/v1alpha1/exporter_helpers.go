@@ -41,16 +41,6 @@ func (e *Exporter) CredentialSecretName() string {
 	return e.Name + "-exporter"
 }
 
-func (e *Exporter) Usernames(prefix string) []string {
-	usernames := []string{prefix + e.InternalSubject()}
-
-	if e.Spec.Username != nil {
-		usernames = append(usernames, *e.Spec.Username)
-	}
-
-	return usernames
-}
-
 func (e *Exporter) ToProtobuf() *cpb.Exporter {
 	// get online status from conditions (deprecated, kept for backward compatibility)
 	isOnline := meta.IsStatusConditionTrue(e.Status.Conditions, string(ExporterConditionTypeOnline))
