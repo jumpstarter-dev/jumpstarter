@@ -10,13 +10,3 @@ func (c *Client) InternalSubject() string {
 func (c *Client) CredentialSecretName() string {
 	return c.Name + "-client"
 }
-
-func (c *Client) Usernames(prefix string) []string {
-	usernames := []string{prefix + c.InternalSubject()}
-
-	if c.Spec.Username != nil {
-		usernames = append(usernames, *c.Spec.Username)
-	}
-
-	return usernames
-}

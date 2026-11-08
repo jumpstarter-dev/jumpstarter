@@ -2,11 +2,12 @@ package authorization
 
 import (
 	"context"
-	"slices"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -38,7 +39,7 @@ func (b *BasicAuthorizer) Authorize(
 		}, &e); err != nil {
 			return authorizer.DecisionDeny, "failed to get exporter", err
 		}
-		if slices.Contains(e.Usernames(b.prefix), attributes.GetUser().GetName()) {
+		if b.identifies(attributes.GetUser(), e.InternalSubject(), e.Spec.Username) {
 			return authorizer.DecisionAllow, "", nil
 		} else {
 			return authorizer.DecisionDeny, "", nil
@@ -50,7 +51,9 @@ func (b *BasicAuthorizer) Authorize(
 			Name:      attributes.GetName(),
 		}, &c)
 		if err != nil {
-			if apierrors.IsNotFound(err) && b.provisioning {
+			// An internal token names a Client that existed when it was issued.
+			// If that Client is gone, so is the token's authority.
+			if apierrors.IsNotFound(err) && b.provisioning && !authentication.IsInternal(attributes.GetUser()) {
 				c = jumpstarterdevv1alpha1.Client{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: attributes.GetNamespace(),
@@ -68,7 +71,7 @@ func (b *BasicAuthorizer) Authorize(
 			}
 		}
 
-		if slices.Contains(c.Usernames(b.prefix), attributes.GetUser().GetName()) {
+		if b.identifies(attributes.GetUser(), c.InternalSubject(), c.Spec.Username) {
 			return authorizer.DecisionAllow, "", nil
 		} else {
 			return authorizer.DecisionDeny, "", nil
@@ -76,4 +79,15 @@ func (b *BasicAuthorizer) Authorize(
 	default:
 		return authorizer.DecisionDeny, "invalid object kind", nil
 	}
+}
+
+// identifies reports whether u is the object with internalSubject and the
+// optional username from its spec. A token the controller signed identifies
+// an object only by its internal subject, and a token from an external issuer
+// only by the username, so neither can stand in for the other.
+func (b *BasicAuthorizer) identifies(u user.Info, internalSubject string, username *string) bool {
+	if authentication.IsInternal(u) {
+		return u.GetName() == b.prefix+internalSubject
+	}
+	return username != nil && u.GetName() == *username
 }
