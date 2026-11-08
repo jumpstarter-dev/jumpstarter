@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -120,9 +121,11 @@ func (b *MetadataAttributesGetter) ContextAttributes(
 	// Determine the resource name
 	var resourceName string
 
-	// Internal tokens (e.g., "internal:...") and Kubernetes service accounts don't use
-	// auto-provisioning - the resource already exists, so accept the provided name.
-	if strings.HasPrefix(userInfo.GetName(), "internal:") || isKubernetesServiceAccount(userInfo.GetName()) {
+	// Internal tokens and Kubernetes service accounts don't use auto-provisioning -
+	// the resource already exists, so accept the provided name. A token is internal
+	// because the controller signed it, not because its username looks internal:
+	// an external issuer's claim mapping can produce the same prefix.
+	if authentication.IsInternal(userInfo) || isKubernetesServiceAccount(userInfo.GetName()) {
 		if providedName == "" {
 			return nil, status.Errorf(codes.InvalidArgument, "resource name required for pre-existing authentication")
 		}
