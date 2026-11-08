@@ -3,16 +3,10 @@ package config
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apiserver/pkg/apis/apiserver"
-	apiserverv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
-	tokenunion "k8s.io/apiserver/pkg/authentication/token/union"
-	"k8s.io/apiserver/pkg/server/dynamiccertificates"
-	koidc "k8s.io/apiserver/plugin/pkg/authenticator/token/oidc"
 )
 
 func LoadAuthenticationConfiguration(
@@ -37,87 +31,9 @@ func LoadAuthenticationConfiguration(
 		signer.SetTokenLifetime(lifetime)
 	}
 
-	config.JWT = append(config.JWT, apiserverv1beta1.JWTAuthenticator{
-		Issuer: apiserverv1beta1.Issuer{
-			URL:                  signer.Issuer(),
-			CertificateAuthority: certificateAuthority,
-			Audiences:            []string{signer.Audience()},
-		},
-		ClaimMappings: apiserverv1beta1.ClaimMappings{
-			Username: apiserverv1beta1.PrefixedClaimOrExpression{
-				Claim:  "sub",
-				Prefix: &config.Internal.Prefix,
-			},
-		},
-	})
-
-	authn, err := newJWTAuthenticator(
-		ctx,
-		scheme,
-		config,
-	)
+	authn, err := oidc.NewAuthenticator(ctx, scheme, config.JWT, signer, certificateAuthority, config.Internal.Prefix)
 	if err != nil {
 		return nil, "", err
 	}
-
 	return authn, config.Internal.Prefix, nil
-}
-
-// LoadExternalJWTAuthenticators builds authenticators for configured external
-// OIDC issuers. The internal controller signer is omitted; callers that already
-// verify controller-issued tokens with Signer should use this for the rest.
-// An empty JWT list returns a nil authenticator.
-func LoadExternalJWTAuthenticators(
-	ctx context.Context,
-	scheme *runtime.Scheme,
-	config Authentication,
-) (authenticator.Token, error) {
-	if len(config.JWT) == 0 {
-		return nil, nil
-	}
-	return newJWTAuthenticator(ctx, scheme, config)
-}
-
-// Reference: https://github.com/kubernetes/kubernetes/blob/v1.32.1/pkg/kubeapiserver/authenticator/config.go#L244
-func newJWTAuthenticator(
-	ctx context.Context,
-	scheme *runtime.Scheme,
-	config Authentication,
-) (authenticator.Token, error) {
-	var jwtAuthenticators []authenticator.Token
-	for _, jwtAuthenticator := range config.JWT {
-		var oidcCAContent koidc.CAContentProvider
-		if len(jwtAuthenticator.Issuer.CertificateAuthority) > 0 {
-			var oidcCAError error
-			if _, err := os.Stat(jwtAuthenticator.Issuer.CertificateAuthority); err == nil {
-				oidcCAContent, oidcCAError = dynamiccertificates.NewDynamicCAContentFromFile(
-					"oidc-authenticator",
-					jwtAuthenticator.Issuer.CertificateAuthority,
-				)
-				jwtAuthenticator.Issuer.CertificateAuthority = ""
-			} else {
-				oidcCAContent, oidcCAError = dynamiccertificates.NewStaticCAContent(
-					"oidc-authenticator",
-					[]byte(jwtAuthenticator.Issuer.CertificateAuthority),
-				)
-			}
-			if oidcCAError != nil {
-				return nil, oidcCAError
-			}
-		}
-		var jwtAuthenticatorUnversioned apiserver.JWTAuthenticator
-		if err := scheme.Convert(&jwtAuthenticator, &jwtAuthenticatorUnversioned, nil); err != nil {
-			return nil, err
-		}
-		oidcAuth, err := koidc.New(ctx, koidc.Options{
-			JWTAuthenticator:     jwtAuthenticatorUnversioned,
-			CAContentProvider:    oidcCAContent,
-			SupportedSigningAlgs: koidc.AllValidSigningAlgorithms(),
-		})
-		if err != nil {
-			return nil, err
-		}
-		jwtAuthenticators = append(jwtAuthenticators, oidcAuth)
-	}
-	return tokenunion.NewFailOnError(jwtAuthenticators...), nil
 }
