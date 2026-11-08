@@ -5,10 +5,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authentication/user"
 )
 
@@ -244,11 +246,17 @@ func TestContextAttributes_InternalOIDC(t *testing.T) {
 				providedName: "arbitrary-name",
 				expectError:  false,
 			},
+			{
+				name:         "internal with a configured prefix - should accept",
+				username:     "jmp:exporter:default:my-exporter:uuid",
+				providedName: "my-exporter",
+				expectError:  false,
+			},
 		}
 
 		for _, tc := range testcases {
 			t.Run(tc.name, func(t *testing.T) {
-				userInfo := &user.DefaultInfo{Name: tc.username}
+				userInfo := internalUser(t, tc.username)
 
 				// Create context with metadata
 				md := metadata.Pairs(
@@ -390,4 +398,51 @@ func TestContextAttributes_KubernetesServiceAccount(t *testing.T) {
 			})
 		}
 	})
+}
+
+// An external issuer whose claim mapping yields the internal prefix must not be
+// able to name the resource it acts as.
+func TestContextAttributes_ExternalUsernameWithInternalPrefix(t *testing.T) {
+	getter := NewMetadataAttributesGetter(MetadataAttributesGetterConfig{
+		NamespaceKey: "test-namespace",
+		ResourceKey:  "test-resource",
+		NameKey:      "test-name",
+	})
+	userInfo := &user.DefaultInfo{Name: "internal:exporter:default:my-exporter:uuid"}
+
+	md := metadata.Pairs(
+		"test-namespace", "default",
+		"test-resource", "Exporter",
+		"test-name", "my-exporter",
+	)
+	_, err := getter.ContextAttributes(metadata.NewIncomingContext(context.Background(), md), userInfo)
+	if status.Code(err) != codes.InvalidArgument || !strings.Contains(err.Error(), "resource name mismatch") {
+		t.Fatalf("expected a resource name mismatch, got %v", err)
+	}
+
+	md = metadata.Pairs(
+		"test-namespace", "default",
+		"test-resource", "Exporter",
+	)
+	attrs, err := getter.ContextAttributes(metadata.NewIncomingContext(context.Background(), md), userInfo)
+	if err != nil {
+		t.Fatalf("expected no error but got: %v", err)
+	}
+	if attrs.GetName() != "exporter-default-my-exporter-uuid" {
+		t.Errorf("expected the name derived from the username, got %q", attrs.GetName())
+	}
+}
+
+// internalUser authenticates name through the controller's own issuer path,
+// the only one that marks a user internal.
+func internalUser(t *testing.T, name string) user.Info {
+	t.Helper()
+	issued := authenticator.TokenFunc(func(context.Context, string) (*authenticator.Response, bool, error) {
+		return &authenticator.Response{User: &user.DefaultInfo{Name: name}}, true, nil
+	})
+	resp, ok, err := authentication.InternalTokenAuthenticator(issued).AuthenticateToken(context.Background(), "")
+	if err != nil || !ok {
+		t.Fatalf("internal authenticator: ok=%v err=%v", ok, err)
+	}
+	return resp.User
 }
