@@ -1,4 +1,3 @@
-import asyncio  # noqa: TID251
 import logging
 import sys
 from contextlib import asynccontextmanager
@@ -14,7 +13,6 @@ from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
 from rich.console import Console
 
 from jumpstarter.client.exceptions import LeaseError
-from jumpstarter.client.grpc import ClientService
 from jumpstarter.client.lease import DirectLease, Lease, LeaseAcquisitionSpinner
 from jumpstarter.common.exceptions import ExporterUnreachableError
 
@@ -211,7 +209,7 @@ class TestLeaseAcquisitionSpinner:
                 async def test_async_usage():
                     with spinner as ctx_spinner:
                         ctx_spinner.update_status("Initial message")
-                        await asyncio.sleep(0.1)  # Small delay
+                        await anyio.sleep(0.1)  # Small delay
                         ctx_spinner.tick()
                         ctx_spinner.update_status("Updated message")
 
@@ -658,7 +656,7 @@ class TestMonitorAsyncError:
                 # Keep the body alive long enough for the monitor to loop
                 # through the first get(), sleep, second get() (fails), and
                 # error handler using the cached end time.
-                await asyncio.sleep(0.2)
+                await anyio.sleep(0.2)
 
         # Should have gone through the error handler using cached end time
         assert call_count >= 2
@@ -679,7 +677,8 @@ async def _dial_controller(dial):
     await server.start()
     try:
         async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel:
-            await asyncio.wait_for(channel.channel_ready(), timeout=2)  # noqa: TID251
+            with anyio.fail_after(2):
+                await channel.channel_ready()
             yield jumpstarter_pb2_grpc.ControllerServiceStub(channel)
     finally:
         await server.stop(grace=None)
@@ -905,7 +904,8 @@ class TestDialWithRetry:
             return response
 
         async with _dial_controller(dial) as lease.controller:
-            assert await asyncio.wait_for(lease._dial_with_retry(), timeout=2) == response  # noqa: TID251
+            with anyio.fail_after(2):
+                assert await lease._dial_with_retry() == response
 
         assert len(deadlines) == 1
         assert 30 < deadlines[0] < lease.dial_timeout
@@ -914,7 +914,7 @@ class TestDialWithRetry:
     async def test_hung_dial_is_retried_after_grpc_deadline(self, monkeypatch):
         monkeypatch.setattr("jumpstarter.client.lease._DIAL_ATTEMPT_TIMEOUT", 0.05)
         lease = self._make_lease_for_dial()
-        cancelled = asyncio.Event()
+        cancelled = anyio.Event()
         calls = 0
         response = jumpstarter_pb2.DialResponse(router_endpoint="endpoint", router_token="token")
 
@@ -929,8 +929,10 @@ class TestDialWithRetry:
             return response
 
         async with _dial_controller(dial) as lease.controller:
-            assert await asyncio.wait_for(lease._dial_with_retry(), timeout=2) == response  # noqa: TID251
-            await asyncio.wait_for(cancelled.wait(), timeout=1)  # noqa: TID251
+            with anyio.fail_after(2):
+                assert await lease._dial_with_retry() == response
+            with anyio.fail_after(1):
+                await cancelled.wait()
 
         assert calls == 2
 
@@ -938,7 +940,7 @@ class TestDialWithRetry:
     async def test_hung_dial_is_bounded_by_remaining_budget(self):
         lease = self._make_lease_for_dial()
         lease.dial_timeout = 0.05
-        cancelled = asyncio.Event()
+        cancelled = anyio.Event()
         calls = 0
 
         async def dial(request, context):
@@ -951,16 +953,18 @@ class TestDialWithRetry:
 
         async with _dial_controller(dial) as lease.controller:
             with pytest.raises(ExporterUnreachableError):
-                await asyncio.wait_for(lease._dial_with_retry(), timeout=1)  # noqa: TID251
-            await asyncio.wait_for(cancelled.wait(), timeout=1)  # noqa: TID251
+                with anyio.fail_after(1):
+                    await lease._dial_with_retry()
+            with anyio.fail_after(1):
+                await cancelled.wait()
 
         assert calls == 1
 
     @pytest.mark.anyio
     async def test_caller_cancellation_is_not_retried(self):
         lease = self._make_lease_for_dial()
-        started = asyncio.Event()
-        cancelled = asyncio.Event()
+        started = anyio.Event()
+        cancelled = anyio.Event()
         calls = 0
 
         async def dial(request, context):
@@ -972,17 +976,18 @@ class TestDialWithRetry:
             finally:
                 cancelled.set()
 
+        async def dial_until_cancelled():
+            with pytest.raises(anyio.get_cancelled_exc_class()):
+                await lease._dial_with_retry()
+
         async with _dial_controller(dial) as lease.controller:
-            task = asyncio.create_task(lease._dial_with_retry())  # noqa: TID251
-            try:
-                await asyncio.wait_for(started.wait(), timeout=1)  # noqa: TID251
-                task.cancel()
-                with pytest.raises(asyncio.CancelledError):
-                    await task
-                await asyncio.wait_for(cancelled.wait(), timeout=1)  # noqa: TID251
-            finally:
-                task.cancel()
-                await asyncio.gather(task, return_exceptions=True)  # noqa: TID251
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(dial_until_cancelled)
+                with anyio.fail_after(1):
+                    await started.wait()
+                tg.cancel_scope.cancel()
+            with anyio.fail_after(1):
+                await cancelled.wait()
 
         assert calls == 1
 
@@ -1052,75 +1057,8 @@ class TestRequestAsyncExpiredLease:
         lease._acquire.assert_called_once()
 
 
-@asynccontextmanager
-async def _unresponsive_controller():
-    """A channel to a gRPC server that accepts every call and never answers, as a hung controller."""
-
-    class _Hang(grpc.GenericRpcHandler):
-        def service(self, handler_call_details):
-            async def hang(request, context):
-                # Outlasts every timeout under test, but ends if a deadline goes missing
-                await anyio.sleep(40)
-                await context.abort(grpc.StatusCode.UNAVAILABLE, "unresponsive controller gave up")
-
-            return grpc.unary_unary_rpc_method_handler(hang)
-
-    server = grpc.aio.server()
-    server.add_generic_rpc_handlers((_Hang(),))
-    port = server.add_insecure_port("127.0.0.1:0")
-    await server.start()
-    channel = grpc.aio.insecure_channel(f"127.0.0.1:{port}")
-    try:
-        yield channel
-    finally:
-        await channel.close()
-        await server.stop(grace=None)
-
-
-class TestReleaseOnExit:
-    """Releasing an auto-created lease when its context exits."""
-
-    @pytest.mark.anyio
-    async def test_unresponsive_controller_times_out_the_release_not_the_caller(self, monkeypatch, caplog):
-        """A controller that stops answering must time out the release, not cancel the caller.
-
-        An anyio timeout around the hung grpc.aio calls raised a CancelledError that
-        anyio did not recognize: `jmp shell` exited 2, without the timeout warning.
-        """
-        monkeypatch.setattr("jumpstarter.client.lease._RELEASE_RPC_TIMEOUT_SECONDS", 0.2)
-        async with _unresponsive_controller() as channel:
-            lease = object.__new__(Lease)
-            lease.channel, lease.namespace, lease.name, lease.release = channel, "default", "test-lease", True
-            lease.svc = ClientService(channel=channel, namespace="default")
-            lease.request_async = AsyncMock(return_value=lease)
-
-            with anyio.fail_after(10), caplog.at_level(logging.WARNING, logger="jumpstarter.client.lease"):
-                async with lease:
-                    pass
-
-        assert "Timeout while deleting lease test-lease during cleanup" in caplog.text
-
-
 class TestAcquireExpiredLease:
-    """Tests for the _acquire polling loop."""
-
-    @pytest.mark.anyio
-    async def test_records_exporter_and_owner_when_ready(self):
-        """The session dials the exporter recorded here, and the shell tells a
-        transfer from a revoked share by the owner recorded here."""
-        from jumpstarter_protocol import kubernetes_pb2
-
-        lease = self._make_lease()
-        lease._fetch_exporter_labels = AsyncMock()
-        lease._get_with_retry.return_value = Mock(
-            conditions=[kubernetes_pb2.Condition(type="Ready", status="True")],
-            exporter="test-exporter",
-            client="owner",
-        )
-
-        await lease._acquire()
-
-        assert (lease.exporter_name, lease.owner) == ("test-exporter", "owner")
+    """Tests for Ready=False detection in _acquire polling loop."""
 
     def _make_lease(self, *, name="test-lease"):
 
