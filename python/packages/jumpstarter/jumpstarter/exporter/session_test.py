@@ -131,7 +131,7 @@ def test_get_report_includes_descriptions():
         )
 
         # Call GetReport
-        import asyncio
+        import asyncio  # noqa: TID251
         response = asyncio.run(session.GetReport(empty_pb2.Empty(), None))
 
         # Build a map of uuid -> report for easy lookup
@@ -212,7 +212,7 @@ def test_empty_description_not_included():
             root_device=driver,
         )
 
-        import asyncio
+        import asyncio  # noqa: TID251
         response = asyncio.run(session.GetReport(empty_pb2.Empty(), None))
 
         # Empty string should not be included in the report
@@ -225,7 +225,7 @@ def test_empty_description_not_included():
 
 def test_get_report_includes_motd():
     """Test that GetReport includes the motd when set on the session"""
-    import asyncio
+    import asyncio  # noqa: TID251
 
     driver = SimpleDriver()
 
@@ -373,7 +373,7 @@ def test_methods_description_included_in_getreport():
             root_device=driver,
         )
 
-        import asyncio
+        import asyncio  # noqa: TID251
         response = asyncio.run(session.GetReport(empty_pb2.Empty(), None))
 
         # Find the driver's report

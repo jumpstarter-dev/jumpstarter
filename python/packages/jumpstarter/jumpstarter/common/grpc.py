@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: TID251
 import base64
 import logging
 import os
@@ -44,7 +44,7 @@ async def _try_connect_and_extract_cert(
     Raises exception on failure.
     """
     logger.debug(f"Attempting TLS connection to {ip_address}:{port} (timeout={timeout}s)")
-    _, writer = await asyncio.wait_for(
+    _, writer = await asyncio.wait_for(  # noqa: TID251
         asyncio.open_connection(ip_address, port, ssl=ssl_context, server_hostname=hostname),
         timeout=timeout,
     )
@@ -124,14 +124,14 @@ async def _ssl_channel_credentials_insecure(  # noqa: C901
             tasks = []
             for _family, _type, _proto, _canonname, sockaddr in addr_info:
                 ip_address = str(sockaddr[0])
-                task = asyncio.create_task(try_with_ip(ip_address))
+                task = asyncio.create_task(try_with_ip(ip_address))  # noqa: TID251
                 tasks.append(task)
 
             # Process tasks as they complete
             errors = {}
 
             try:
-                for future in asyncio.as_completed(tasks):
+                for future in asyncio.as_completed(tasks):  # noqa: TID251
                     ip_address, root_certificates, error = await future
 
                     if error is None:

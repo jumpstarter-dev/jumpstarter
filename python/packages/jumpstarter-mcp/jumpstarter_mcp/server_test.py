@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
-import asyncio.subprocess
+import asyncio  # noqa: TID251
+import asyncio.subprocess  # noqa: TID251
 import logging
 import time
 from dataclasses import dataclass

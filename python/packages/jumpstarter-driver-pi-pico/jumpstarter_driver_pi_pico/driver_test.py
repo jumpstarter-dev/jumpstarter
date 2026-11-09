@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: TID251
 from dataclasses import dataclass, field
 from unittest.mock import MagicMock
 

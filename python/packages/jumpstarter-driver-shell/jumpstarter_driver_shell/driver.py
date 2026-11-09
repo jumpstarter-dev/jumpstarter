@@ -1,5 +1,5 @@
-import asyncio
-import asyncio.subprocess
+import asyncio  # noqa: TID251
+import asyncio.subprocess  # noqa: TID251
 import contextlib
 import os
 import signal
@@ -161,7 +161,7 @@ class Shell(Driver):
                 if read_all:
                     chunk = await process.stdout.read()
                 else:
-                    chunk = await asyncio.wait_for(process.stdout.read(1024), timeout=0.01)
+                    chunk = await asyncio.wait_for(process.stdout.read(1024), timeout=0.01)  # noqa: TID251
                 if chunk:
                     stdout_data = chunk.decode('utf-8', errors='replace')
 
@@ -171,7 +171,7 @@ class Shell(Driver):
                 if read_all:
                     chunk = await process.stderr.read()
                 else:
-                    chunk = await asyncio.wait_for(process.stderr.read(1024), timeout=0.01)
+                    chunk = await asyncio.wait_for(process.stderr.read(1024), timeout=0.01)  # noqa: TID251
                 if chunk:
                     stderr_data = chunk.decode('utf-8', errors='replace')
 
@@ -223,7 +223,7 @@ class Shell(Driver):
                     # Process group might already be gone
                     pass
                 try:
-                    await asyncio.wait_for(process.wait(), timeout=5.0)
+                    await asyncio.wait_for(process.wait(), timeout=5.0)  # noqa: TID251
                 except TimeoutError:  # pragma: no cover
                     try:
                         os.killpg(process.pid, signal.SIGKILL)

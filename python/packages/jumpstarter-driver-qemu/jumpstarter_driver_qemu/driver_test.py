@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: TID251
 import json
 import os
 import platform
@@ -622,7 +622,7 @@ async def test_flash_oci_inner_wait_timeout():
     flasher = driver.children["flasher"]
     mock_process = _create_mock_process(stdout_lines=["output\n"])
 
-    original_wait_for = asyncio.wait_for
+    original_wait_for = asyncio.wait_for  # noqa: TID251
     timeout_fired = False
 
     async def mock_wait_for(awaitable, *, timeout):

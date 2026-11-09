@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: TID251
 import subprocess
 from concurrent.futures import CancelledError
 from contextlib import contextmanager

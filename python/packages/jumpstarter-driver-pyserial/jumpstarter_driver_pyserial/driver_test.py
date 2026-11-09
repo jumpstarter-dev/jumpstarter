@@ -307,7 +307,7 @@ def test_close_noop_when_no_stream():
 
 def test_last_detach_closes_transport(monkeypatch):
     """The default lazy reader releases the transport after the last detach."""
-    import asyncio
+    import asyncio  # noqa: TID251
     from unittest.mock import MagicMock
 
     async def _run():
@@ -355,7 +355,7 @@ def test_shutdown_releases_port_but_close_keeps_it(monkeypatch):
     This checks the configured always-on behavior; with the default lazy
     reader, detaching the last client closes the port instead.
     """
-    import asyncio
+    import asyncio  # noqa: TID251
     from unittest.mock import MagicMock
 
     async def _run():

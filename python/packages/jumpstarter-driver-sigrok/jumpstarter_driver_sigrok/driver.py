@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: TID251
 import subprocess
 from base64 import b64encode
 from collections.abc import AsyncIterator
@@ -126,7 +126,7 @@ class Sigrok(Driver):
         finally:
             process.terminate()
             try:
-                await asyncio.wait_for(process.wait(), timeout=5)
+                await asyncio.wait_for(process.wait(), timeout=5)  # noqa: TID251
             except TimeoutError:  # pragma: no cover
                 process.kill()
 

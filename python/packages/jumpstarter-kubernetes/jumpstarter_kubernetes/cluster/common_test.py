@@ -1,7 +1,7 @@
 """Tests for common cluster utilities and types."""
 
-import asyncio
-import asyncio.subprocess
+import asyncio  # noqa: TID251
+import asyncio.subprocess  # noqa: TID251
 import os
 import tempfile
 from unittest.mock import AsyncMock, patch

@@ -28,7 +28,7 @@ debugging, or headless via mitmdump for CI/CD pipelines.
 
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: TID251
 import base64
 import fnmatch
 import json

@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: TID251
 import os
 import threading
 from dataclasses import dataclass, field
@@ -109,8 +109,8 @@ class Tftp(Driver):
     async def _run_server(self):
         try:
             assert self.server is not None
-            server_task = asyncio.create_task(self.server.start())
-            await asyncio.gather(server_task, self._wait_for_shutdown())
+            server_task = asyncio.create_task(self.server.start())  # noqa: TID251
+            await asyncio.gather(server_task, self._wait_for_shutdown())  # noqa: TID251
         except asyncio.CancelledError:
             self.logger.info("Server task cancelled")
             raise

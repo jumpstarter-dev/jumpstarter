@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: TID251
 import logging
 import socket
 from unittest.mock import MagicMock, patch

@@ -8,7 +8,7 @@ mocking the pysnmp internals as in driver_test.py.
 
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: TID251
 import socket
 import threading
 import time

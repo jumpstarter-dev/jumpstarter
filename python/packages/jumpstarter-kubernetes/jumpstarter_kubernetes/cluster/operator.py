@@ -1,7 +1,7 @@
 """Operator-based Jumpstarter installation."""
 
-import asyncio
-import asyncio.subprocess
+import asyncio  # noqa: TID251
+import asyncio.subprocess  # noqa: TID251
 from typing import Literal
 
 from ..callbacks import OutputCallback, SilentCallback
