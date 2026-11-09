@@ -41,6 +41,13 @@ class Proxy(Driver):
         except KeyError:
             raise ConfigurationError(f"Proxy driver {name} references nonexistent driver {self.ref}") from None
 
+    @property
+    def target(self) -> Driver:
+        """The driver this proxy refers to, once enumerate() has resolved it"""
+        if not self._proxy_target:
+            raise RuntimeError("Proxy target not resolved. Call enumerate() before accessing 'target'")
+        return self._proxy_target
+
     def report(self, *, parent=None, name=None):
         if not self._proxy_target:
             raise RuntimeError("Proxy target not resolved. Call enumerate() before report()")

@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import anyio.to_thread
+from jumpstarter_driver_composite.driver import Proxy
 from jumpstarter_driver_http.driver import HttpServer
 from jumpstarter_driver_tftp.driver import Tftp
 from jumpstarter_driver_uboot.driver import UbootConsole
@@ -41,15 +42,18 @@ class BaseFlasher(Driver):
                 remove_created_on_close=True,
                 advertised_host=self.exporter_ip,
             )
-        self.tftp = self.children["tftp"]
-
         if "http" not in self.children:
             self.children["http"] = HttpServer(
                 root_dir=self.http_dir,
                 remove_created_on_close=True,
                 advertised_host=self.exporter_ip,
             )
-        self.http = self.children["http"]
+
+        # A ref: child is a Proxy that only resolves at enumerate(), so check it on use.
+        # Check direct children now, so a wrong type fails when the exporter starts.
+        for name, cls in (("tftp", Tftp), ("http", HttpServer)):
+            if not isinstance(self.children[name], Proxy):
+                self._child(name, cls)
 
         # Ensure required children are present, the following are not auto-created
         if "serial" not in self.children:
@@ -77,6 +81,25 @@ class BaseFlasher(Driver):
     def client(cls) -> str:
         return "jumpstarter_driver_flashers.client.BaseFlasherClient"
 
+    def _child[T: Driver](self, name: str, cls: type[T]) -> T:
+        """Return child `name`, following a ref:, checked to be a `cls`"""
+        child = self.children[name]
+        if isinstance(child, Proxy):
+            child = child.target
+        if not isinstance(child, cls):
+            raise ConfigurationError(
+                f"'{name}' child of BaseFlasher must be a {cls.__name__} driver, got {type(child).__name__}"
+            )
+        return child
+
+    @property
+    def tftp(self) -> Tftp:
+        return self._child("tftp", Tftp)
+
+    @property
+    def http(self) -> HttpServer:
+        return self._child("http", HttpServer)
+
     @export
     async def get_default_target(self):
         """Return the default target"""
@@ -98,7 +121,7 @@ class BaseFlasher(Driver):
             fls_path = Path("/usr/local/bin/fls")
         if not fls_path.exists():
             raise ConfigurationError("fls binary not found at /usr/local/bin/fls-aarch64 or /usr/local/bin/fls")
-        await self.http.storage.copy_exporter_file(fls_path, "fls")  # ty: ignore[unresolved-attribute]
+        await self.http.storage.copy_exporter_file(fls_path, "fls")
 
     @export
     async def setup_flasher_bundle(self, force_flash_bundle: str | None = None):
@@ -115,19 +138,19 @@ class BaseFlasher(Driver):
         manifest = await self.get_flasher_manifest()
         kernel_path = await self._get_file_path(manifest.spec.kernel.file)
         self.logger.info(f"Setting up kernel in tftp: {kernel_path}")
-        await self.tftp.storage.copy_exporter_file(kernel_path, kernel_path.name)  # ty: ignore[unresolved-attribute]
+        await self.tftp.storage.copy_exporter_file(kernel_path, kernel_path.name)
 
         initram_file = manifest.get_initram_file()
         if initram_file:
             initram_path = await self._get_file_path(initram_file)
             self.logger.info(f"Setting up initram in tftp: {initram_path}")
-            await self.tftp.storage.copy_exporter_file(initram_path, initram_path.name)  # ty: ignore[unresolved-attribute]
+            await self.tftp.storage.copy_exporter_file(initram_path, initram_path.name)
 
         dtb_file = manifest.get_dtb_file(self.variant) if manifest.spec.dtb else None
         if dtb_file:
             dtb_path = await self._get_file_path(dtb_file)
             self.logger.info(f"Setting up dtb in tftp: {dtb_path}")
-            await self.tftp.storage.copy_exporter_file(dtb_path, dtb_path.name)  # ty: ignore[unresolved-attribute]
+            await self.tftp.storage.copy_exporter_file(dtb_path, dtb_path.name)
 
     @export
     def set_dtb(self, handle):
