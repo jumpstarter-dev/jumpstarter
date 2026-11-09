@@ -8,7 +8,7 @@ from jumpstarter_driver_pyserial.driver import PySerial
 from jumpstarter_driver_tftp.driver import Tftp
 
 from .driver import BaseFlasher
-from jumpstarter.client.core import DriverInvalidArgument
+from jumpstarter.client.core import DriverError, DriverInvalidArgument
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.common.utils import serve
 
@@ -233,6 +233,37 @@ def test_drivers_flashers_get_cacert_configured(temp_dirs, tmp_path):
     )
     with serve(flasher) as client:
         assert client.call("get_cacert") == "-----BEGIN CERTIFICATE-----\n"
+
+
+def test_drivers_flashers_setup_fls_binary(complete_flasher, tmp_path, monkeypatch):
+    """The exporter's fls binary is copied into the http root for the DUT to fetch"""
+    fls = tmp_path / "fls-aarch64"
+    fls.write_bytes(b"\x7fELF fake fls")
+    monkeypatch.setattr("jumpstarter_driver_flashers.driver.FLS_BINARY_PATHS", (fls,))
+
+    with serve(complete_flasher) as client:
+        client.call("setup_fls_binary")
+        assert client.http.storage.read_bytes("fls") == b"\x7fELF fake fls"
+
+
+def test_drivers_flashers_setup_fls_binary_missing(complete_flasher, tmp_path, monkeypatch):
+    monkeypatch.setattr("jumpstarter_driver_flashers.driver.FLS_BINARY_PATHS", (tmp_path / "nope",))
+
+    with serve(complete_flasher) as client, pytest.raises(DriverError, match="fls binary not found"):
+        client.call("setup_fls_binary")
+
+
+def test_drivers_flashers_get_fls_version(temp_dirs):
+    cache, http, tftp = temp_dirs
+    default = BaseFlasher(cache_dir=cache, http_dir=http, tftp_dir=tftp,
+                          children={"serial": PySerial(url="loop://"), "power": MockPower()})
+    with serve(default) as client:
+        assert client.call("get_fls_version") is None
+
+    pinned = BaseFlasher(cache_dir=cache, http_dir=http, tftp_dir=tftp, fls_version="0.4.0",
+                         children={"serial": PySerial(url="loop://"), "power": MockPower()})
+    with serve(pinned) as client:
+        assert client.call("get_fls_version") == "0.4.0"
 
 
 def test_drivers_flashers_rejects_wrong_tftp_child(temp_dirs):
