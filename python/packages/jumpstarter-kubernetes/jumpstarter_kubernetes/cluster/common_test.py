@@ -1,10 +1,12 @@
 """Tests for common cluster utilities and types."""
 
 import os
+import signal
 import sys
 import tempfile
 from unittest.mock import patch
 
+import anyio
 import pytest
 
 from jumpstarter_kubernetes.cluster.common import (
@@ -218,6 +220,28 @@ class TestRunCommand:
     async def test_run_command_not_found(self):
         with pytest.raises(RuntimeError, match="Command not found: nonexistent-command"):
             await run_command(["nonexistent-command"])
+
+    @pytest.mark.anyio
+    async def test_cancelled_run_command_stops_the_child(self, tmp_path):
+        pid_file = tmp_path / "pid"
+        child = f"import os, time; open({str(pid_file)!r}, 'w').write(str(os.getpid())); time.sleep(30)"
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(run_command, [sys.executable, "-c", child])
+            with anyio.fail_after(10):
+                while not pid_file.exists() or not pid_file.read_text():
+                    await anyio.sleep(0.01)
+            tg.cancel_scope.cancel()
+
+        pid = int(pid_file.read_text())
+        try:
+            with pytest.raises(ProcessLookupError):
+                os.kill(pid, 0)
+        finally:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
     @pytest.mark.anyio
     async def test_run_command_with_output_success(self):
