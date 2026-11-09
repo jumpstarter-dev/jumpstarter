@@ -12,6 +12,10 @@ from .bundle import FlasherBundleManifestV1Alpha1
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.driver import Driver, export
 
+# Where the exporter image installs the aarch64 fls build served to the DUT
+# (see python/Containerfile), in order of preference.
+FLS_BINARY_PATHS = (Path("/usr/local/bin/fls-aarch64"), Path("/usr/local/bin/fls"))
+
 
 @dataclass(kw_only=True)
 class BaseFlasher(Driver):
@@ -28,6 +32,9 @@ class BaseFlasher(Driver):
     http_dir: str = field(default="/var/www/html")
     cacert: str | None = field(default=None)
     exporter_ip: str | None = field(default=None)
+    # fls version the DUT downloads from GitHub releases. None: serve the fls
+    # binary installed in the exporter image instead (no GitHub access needed).
+    fls_version: str | None = field(default=None)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -114,13 +121,16 @@ class BaseFlasher(Driver):
             return f.read()
 
     @export
+    async def get_fls_version(self) -> str | None:
+        """Return the fls version to download from GitHub, or None to serve the exporter's own binary"""
+        return self.fls_version or None
+
+    @export
     async def setup_fls_binary(self):
         """Copy local fls binary to HTTP server root for DUT download"""
-        fls_path = Path("/usr/local/bin/fls-aarch64")
-        if not fls_path.exists():
-            fls_path = Path("/usr/local/bin/fls")
-        if not fls_path.exists():
-            raise ConfigurationError("fls binary not found at /usr/local/bin/fls-aarch64 or /usr/local/bin/fls")
+        fls_path = next((p for p in FLS_BINARY_PATHS if p.exists()), None)
+        if fls_path is None:
+            raise ConfigurationError(f"fls binary not found at {' or '.join(str(p) for p in FLS_BINARY_PATHS)}")
         await self.http.storage.copy_exporter_file(fls_path, "fls")
 
     @export
