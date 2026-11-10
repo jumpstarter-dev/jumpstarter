@@ -94,7 +94,7 @@ def test_no_unreferenced_base_definitions(schemas):
 
 def test_qemu_keeps_types_and_definitions(schemas):
     if "Qemu" not in schemas:
-        pytest.skip("qemu driver not installed")
+        pytest.skip("qemu driver not installed")  # ty: ignore[call-non-callable]
     qemu = schemas["Qemu"]
     assert qemu["error"] is None
     assert qemu["properties"]["hostfwd"]["additionalProperties"]["$ref"] == "#/$defs/Hostfwd"
@@ -104,7 +104,7 @@ def test_qemu_keeps_types_and_definitions(schemas):
 @pytest.mark.parametrize("name", ["DigitalInput", "DigitalOutput", "PowerSwitch"])
 def test_gpio_drivers_exclude_runtime_fields(schemas, name):
     if name not in schemas:
-        pytest.skip(f"{name} not installed")
+        pytest.skip(f"{name} not installed")  # ty: ignore[call-non-callable]
     schema = schemas[name]
     assert schema["error"] is None
     assert "_chip" not in schema["properties"]
