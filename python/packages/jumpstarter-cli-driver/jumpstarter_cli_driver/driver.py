@@ -1,6 +1,7 @@
 import dataclasses
 import inspect
 import sys
+import typing
 from contextlib import redirect_stdout
 from importlib.metadata import entry_points
 from typing import Any
@@ -8,7 +9,7 @@ from typing import Any
 import click
 from jumpstarter_cli_common.opt import OutputType, opt_output_all
 from jumpstarter_cli_common.print import model_print
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter, create_model
 
 
 class DriverEntry(BaseModel):
@@ -64,7 +65,7 @@ class DriverSchema(BaseModel):
 
     def rich_add_rows(self, table):
         keys = ", ".join(sorted(self.properties)) if self.properties else ""
-        table.add_row(self.name, self.error or keys, ", ".join(self.required))
+        table.add_row(self.name, keys or (self.error or ""), ", ".join(self.required))
 
     def rich_add_names(self, names):
         names.append(self.name)
@@ -114,27 +115,57 @@ def _client_class_path(cls: type) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _fields_without_schema(cls: type, base_fields: set[str]) -> tuple[dict[str, Any], list[str]]:
-    """Config keys recovered from the dataclass when JSON Schema generation fails.
+def _resolve_annotation(cls: type, annotation: Any) -> Any:
+    """Resolve a single string annotation, so one bad field cannot poison the rest."""
+    if not isinstance(annotation, str):
+        return annotation
+    try:
+        return eval(annotation, vars(sys.modules[cls.__module__]), {cls.__name__: cls})
+    except Exception:
+        return annotation
 
-    Some drivers hold fields whose types pydantic cannot model. Their names and
-    annotations are still worth reporting: without types a consumer can still
-    complete the keys and tell required from optional.
-    """
+
+def _config_fields(cls: type, base_fields: set[str]) -> list[tuple[dataclasses.Field, Any]]:
+    """Constructor fields that belong to the driver's own config, with resolved types."""
+    try:
+        hints = typing.get_type_hints(cls, include_extras=True)
+    except Exception:
+        hints = {}
+    return [
+        (field, hints.get(field.name) or _resolve_annotation(cls, field.type))
+        for field in dataclasses.fields(typing.cast(Any, cls))
+        if field.name not in base_fields and field.init
+    ]
+
+
+def _config_model(cls: type, fields: list[tuple[dataclasses.Field, Any]]):
+    kwargs = {}
+    for field, annotation in fields:
+        if field.default is not dataclasses.MISSING:
+            kwargs[field.name] = (annotation, field.default)
+        elif field.default_factory is not dataclasses.MISSING:
+            kwargs[field.name] = (annotation, Field(default_factory=field.default_factory))
+        else:
+            kwargs[field.name] = (annotation, ...)
+    return create_model(f"{cls.__name__}Config", **kwargs)
+
+
+def _per_field_schema(fields: list[tuple[dataclasses.Field, Any]]):
+    """Best-effort schema: degrade only the fields pydantic cannot model."""
     properties: dict[str, Any] = {}
     required: list[str] = []
-    if not dataclasses.is_dataclass(cls):
-        return properties, required
-    for field in dataclasses.fields(cls):
-        if field.name in base_fields or not field.init:
-            continue
-        annotation = field.type if isinstance(field.type, str) else getattr(field.type, "__name__", None)
-        properties[field.name] = {"title": field.name} | (
-            {"description": f"type: {annotation}"} if annotation else {}
-        )
+    defs: dict[str, Any] = {}
+    for field, annotation in fields:
+        try:
+            schema = TypeAdapter(annotation).json_schema(ref_template="#/$defs/{model}")
+            defs.update(schema.pop("$defs", {}))
+        except Exception:
+            name = annotation if isinstance(annotation, str) else getattr(annotation, "__name__", None)
+            schema = {"title": field.name} | ({"description": f"type: {name}"} if name else {})
+        properties[field.name] = schema
         if field.default is dataclasses.MISSING and field.default_factory is dataclasses.MISSING:
             required.append(field.name)
-    return properties, required
+    return properties, required, defs
 
 
 def _schema_for_entry_point(entry_point, base_fields: set[str]) -> DriverSchema:
@@ -151,26 +182,29 @@ def _schema_for_entry_point(entry_point, base_fields: set[str]) -> DriverSchema:
         # One uninstallable driver must not sink the whole listing.
         entry.error = f"{type(e).__name__}: {e}"
         return entry
+    if not isinstance(cls, type) or not dataclasses.is_dataclass(cls):
+        entry.error = f"Entry point did not resolve to a dataclass driver: {cls!r}"
+        return entry
 
     entry.description = _first_docstring_line(cls)
     entry.client = _client_class_path(cls)
+    fields = _config_fields(cls, base_fields)
     try:
-        schema = TypeAdapter(cls).json_schema()
+        # Build the schema from config fields only: runtime-only fields
+        # (init=False, or handles like TemporaryDirectory) are not user config
+        # and pydantic cannot model many of them.
+        schema = TypeAdapter(_config_model(cls, fields)).json_schema()
+        entry.defs = schema.get("$defs", {})
+        # Recursive models can put the root object in $defs as well.
+        if schema.get("$ref", "").startswith("#/$defs/"):
+            schema = entry.defs[schema["$ref"].removeprefix("#/$defs/")]
     except Exception as e:
+        # Unmodelable constructor fields must not sink the rest of the schema.
         entry.error = f"{type(e).__name__}: {e}"
-        if dataclasses.is_dataclass(cls):
-            entry.properties, entry.required = _fields_without_schema(cls, base_fields)
+        entry.properties, entry.required, entry.defs = _per_field_schema(fields)
         return entry
-
-    entry.defs = schema.get("$defs", {})
-    # Recursive dataclasses can put the root object in $defs as well.
-    if schema.get("$ref", "").startswith("#/$defs/"):
-        schema = entry.defs[schema["$ref"].removeprefix("#/$defs/")]
-    excluded_fields = set(base_fields)
-    if dataclasses.is_dataclass(cls):
-        excluded_fields.update(field.name for field in dataclasses.fields(cls) if not field.init)
-    entry.properties = {k: v for k, v in schema.get("properties", {}).items() if k not in excluded_fields}
-    entry.required = [r for r in schema.get("required", []) if r not in excluded_fields]
+    entry.properties = schema.get("properties", {})
+    entry.required = schema.get("required", [])
     return entry
 
 
