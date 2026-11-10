@@ -46,7 +46,7 @@ class GptpClient(DriverClient):
         """
         self.call("stop")
 
-    def status(self) -> GptpStatus:
+    def status(self) -> GptpStatus:  # ty: ignore[invalid-property-type-override]
         """Query the current PTP synchronization status.
 
         Returns:

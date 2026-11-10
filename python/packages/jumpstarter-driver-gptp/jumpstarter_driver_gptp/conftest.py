@@ -132,25 +132,25 @@ class StatefulPtp4l(MockGptpBackend):
         self._transition_to("SLAVE")
         self._servo_state = "s1"
 
-    def set_priority1(self, value: int):
+    def set_priority1(self, priority: int):
         """Set priority1 and simulate BMCA re-evaluation.
 
         Args:
-            value: New priority1 value (0-255, per IEEE 1588-2019 §7.6.2.2).
+            priority: New priority1 value (0-255, per IEEE 1588-2019 §7.6.2.2).
 
         Raises:
-            ValueError: If value is outside 0-255.
+            ValueError: If priority is outside 0-255.
             PtpNotStartedError: If not started.
         """
-        if not 0 <= value <= 255:
+        if not 0 <= priority <= 255:
             raise ValueError(
-                f"Invalid priority1: {value}. Must be 0-255 per IEEE 1588-2019 §7.6.2.2"
+                f"Invalid priority1: {priority}. Must be 0-255 per IEEE 1588-2019 §7.6.2.2"
             )
         self.require_started()
-        self._priority1 = value
-        if value < 128 and self._port_state in ("SLAVE", "LISTENING", "PASSIVE"):
+        self._priority1 = priority
+        if priority < 128 and self._port_state in ("SLAVE", "LISTENING", "PASSIVE"):
             self._transition_to("MASTER")
-        self._call_log.append(f"set_priority1({value})")
+        self._call_log.append(f"set_priority1({priority})")
 
 
 @pytest.fixture

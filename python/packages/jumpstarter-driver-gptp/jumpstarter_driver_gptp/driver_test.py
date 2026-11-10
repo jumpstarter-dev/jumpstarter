@@ -205,7 +205,7 @@ class TestPydanticModels:
 
     def test_gptp_status_invalid_port_state(self):
         with pytest.raises(ValueError):
-            GptpStatus(port_state="INVALID_STATE")  # type: ignore[arg-type]
+            GptpStatus(port_state="INVALID_STATE")
 
     def test_gptp_offset_model(self):
         offset = GptpOffset(
@@ -225,7 +225,7 @@ class TestPydanticModels:
 
     def test_gptp_sync_event_invalid_type(self):
         with pytest.raises(ValidationError):
-            GptpSyncEvent(event_type="invalid")  # type: ignore[arg-type]
+            GptpSyncEvent(event_type="invalid")  # ty: ignore[invalid-argument-type]
 
     def test_gptp_port_stats(self):
         stats = GptpPortStats(sync_count=10, followup_count=10)
@@ -250,15 +250,15 @@ class TestDriverConfigValidation:
 
     def test_gptp_invalid_profile(self):
         with pytest.raises((ValueError, ValidationError)):
-            Gptp(interface="eth0", profile="invalid_profile")  # type: ignore[arg-type]
+            Gptp(interface="eth0", profile="invalid_profile")  # ty: ignore[invalid-argument-type]
 
     def test_gptp_invalid_transport(self):
         with pytest.raises((ValueError, ValidationError)):
-            Gptp(interface="eth0", transport="SCTP")  # type: ignore[arg-type]
+            Gptp(interface="eth0", transport="SCTP")  # ty: ignore[invalid-argument-type]
 
     def test_gptp_invalid_role(self):
         with pytest.raises((ValueError, ValidationError)):
-            Gptp(interface="eth0", role="observer")  # type: ignore[arg-type]
+            Gptp(interface="eth0", role="observer")  # ty: ignore[invalid-argument-type]
 
     def test_gptp_invalid_interface_name(self):
         with pytest.raises(ValueError, match="Invalid interface name"):
@@ -978,7 +978,7 @@ class TestGptpWithMockedSubprocess:
         await self._start_driver(driver, mock_proc)
         await self._wait_for_lines(lines_done)
 
-        driver._ptp4l_proc.returncode = 1  # type: ignore[assignment]
+        driver._ptp4l_proc.returncode = 1  # ty: ignore[invalid-assignment]
         with pytest.raises(RuntimeError, match="exited unexpectedly"):
             driver._require_started()
 
