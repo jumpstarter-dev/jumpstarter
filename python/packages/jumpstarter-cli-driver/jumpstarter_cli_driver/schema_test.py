@@ -1,8 +1,11 @@
 """Driver-schema discovery is independent of optional installed drivers."""
 
+from __future__ import annotations
+
 import json
-from dataclasses import field
+from dataclasses import dataclass, field
 from enum import Enum
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -10,7 +13,6 @@ import pytest
 import yaml
 from click.testing import CliRunner
 from pydantic import BaseModel
-from pydantic.dataclasses import dataclass
 
 from . import driver
 from jumpstarter.driver import Driver
@@ -33,6 +35,9 @@ class ConfigDriver(Driver):
     port: int
     endpoint: Endpoint = field(default_factory=Endpoint)
     runtime_state: int = field(default=0, init=False)
+    # Non-pydantic runtime handle, like Qemu's TemporaryDirectory. It must not
+    # break schema generation even though pydantic cannot model it.
+    runtime_dir: TemporaryDirectory = field(default_factory=TemporaryDirectory, init=False)
 
     @classmethod
     def client(cls):
@@ -43,8 +48,28 @@ class ConfigDriver(Driver):
 
 
 @dataclass(kw_only=True)
-class RecursiveDriver(ConfigDriver):
+class RecursiveDriver(Driver):
+    """A self-referencing config, without runtime fields."""
+
+    host: str
+    port: int
     peer: "RecursiveDriver | None" = None
+
+    @classmethod
+    def client(cls):
+        return "example.client.ConfigClient"
+
+
+@dataclass(kw_only=True)
+class OpaqueDriver(Driver):
+    """A driver with one constructor field pydantic cannot model."""
+
+    host: str
+    tempdir: TemporaryDirectory = field(default_factory=TemporaryDirectory)
+
+    @classmethod
+    def client(cls):
+        return "example.client.OpaqueClient"
 
 
 def entry_point(name="Config", cls=ConfigDriver):
@@ -104,13 +129,34 @@ def test_recursive_root_schema(installed):
     assert "RecursiveDriver" in schema["defs"]
 
 
-def test_fallback_recovers_only_constructor_keys(installed):
-    with patch("jumpstarter_cli_driver.driver.TypeAdapter", side_effect=ValueError("unsupported field")):
-        schema = schema_json()[0]["drivers"][0]
-    assert schema["error"] == "ValueError: unsupported field"
-    assert set(schema["properties"]) == {"host", "port", "endpoint"}
-    assert set(schema["required"]) == {"host", "port"}
-    assert schema["defs"] == {}
+def test_unmodelable_field_degrades_only_itself(installed):
+    entry, _ = installed
+    entry.load.return_value = OpaqueDriver
+    schema = schema_json()[0]["drivers"][0]
+    assert schema["error"] is not None
+    # The rest of the schema keeps its types.
+    assert schema["properties"]["host"]["type"] == "string"
+    # Only the offending field is degraded.
+    assert "type" not in schema["properties"]["tempdir"]
+    assert set(schema["properties"]) == {"host", "tempdir"}
+    assert set(schema["required"]) == {"host"}
+
+
+def test_table_shows_recovered_keys_when_schema_fails(installed):
+    entry, _ = installed
+    entry.load.return_value = OpaqueDriver
+    result = CliRunner().invoke(driver, ["schema"])
+    assert result.exit_code == 0
+    assert "tempdir" in result.stdout
+    assert "Unable to generate" not in result.stdout
+
+
+def test_non_class_entry_point_is_reported(installed):
+    entry, _ = installed
+    entry.load.return_value = "not a driver"
+    schema = schema_json()[0]["drivers"][0]
+    assert schema["error"].startswith("Entry point did not resolve")
+    assert schema["properties"] == {}
 
 
 def test_broken_import_does_not_hide_other_drivers(installed):
