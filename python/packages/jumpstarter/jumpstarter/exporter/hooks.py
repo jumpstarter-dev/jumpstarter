@@ -16,7 +16,7 @@ import anyio.lowlevel
 from anyio import CancelScope, to_thread
 
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus, LogSource
-from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_MOTD_FILE, JUMPSTARTER_HOST
+from jumpstarter.config.env import JMP_MOTD_FILE
 from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
 from jumpstarter.exporter.session import Session
 
@@ -129,12 +129,9 @@ class HookExecutor:
                 "(may cause SSL issues if client is connected)",
                 socket_path,
             )
+        hook_env.update(lease_scope.session_env())
         hook_env.update(
             {
-                JUMPSTARTER_HOST: str(socket_path),
-                JMP_DRIVERS_ALLOW: "UNSAFE",  # Allow all drivers for local access
-                "LEASE_NAME": lease_scope.lease_name,
-                "CLIENT_NAME": lease_scope.client_name,
                 # Signal noninteractive mode to the child process.
                 # Even though hooks run in a PTY (for line-buffered output), they
                 # are not interactive sessions. These variables prevent programs
