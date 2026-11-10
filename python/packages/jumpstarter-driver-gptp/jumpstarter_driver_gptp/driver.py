@@ -10,6 +10,7 @@ import tempfile
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import field
+from typing import Literal
 
 from pydantic import ConfigDict, validate_call
 from pydantic.dataclasses import dataclass
@@ -51,8 +52,8 @@ class ParsedLogLine:
         self.offset_ns: float | None = None
         self.freq_ppb: float | None = None
         self.path_delay_ns: float | None = None
-        self.servo_state: str | None = None
-        self.port_state: str | None = None
+        self.servo_state: ServoState | None = None
+        self.port_state: PortState | None = None
         self.event: str | None = None
 
 
@@ -72,7 +73,10 @@ def parse_ptp4l_log_line(line: str) -> ParsedLogLine | None:
     if m:
         result = ParsedLogLine()
         result.offset_ns = float(m.group(1))
-        result.servo_state = m.group(2)
+        try:
+            result.servo_state = ServoState(m.group(2))
+        except ValueError:
+            result.servo_state = None
         result.freq_ppb = float(m.group(3))
         result.path_delay_ns = float(m.group(4))
         return result
@@ -80,7 +84,10 @@ def parse_ptp4l_log_line(line: str) -> ParsedLogLine | None:
     m = _PORT_STATE_RE.search(line)
     if m:
         result = ParsedLogLine()
-        result.port_state = m.group(2)
+        try:
+            result.port_state = PortState(m.group(2))
+        except ValueError:
+            result.port_state = None
         result.event = m.group(3)
         return result
 
@@ -168,9 +175,9 @@ class Gptp(Driver):
 
     interface: str
     domain: int = 0
-    profile: str = "gptp"
-    transport: str = "L2"
-    role: str = "auto"
+    profile: Literal["gptp", "default"] = "gptp"
+    transport: Literal["L2", "UDPv4", "UDPv6"] = "L2"
+    role: Literal["master", "slave", "auto"] = "auto"
     sync_system_clock: bool = True
     ptp4l_extra_args: list[str] = field(default_factory=list)
 
@@ -183,8 +190,8 @@ class Gptp(Driver):
     _config_file_path: str | None = field(
         init=False, default=None, repr=False
     )
-    _port_state: str = field(init=False, default="INITIALIZING")
-    _servo_state: str = field(init=False, default="s0")
+    _port_state: PortState = field(init=False, default=PortState.INITIALIZING)
+    _servo_state: ServoState = field(init=False, default=ServoState.UNLOCKED)
     _last_offset_ns: float = field(init=False, default=0.0)
     _last_path_delay_ns: float = field(init=False, default=0.0)
     _last_freq_ppb: float = field(init=False, default=0.0)
@@ -264,8 +271,8 @@ class Gptp(Driver):
 
     def _synchronized_invalidate(self) -> None:
         """Reset sync-related state when ptp4l dies or stops."""
-        self._port_state = "INITIALIZING"
-        self._servo_state = "s0"
+        self._port_state = PortState.INITIALIZING
+        self._servo_state = ServoState.UNLOCKED
 
     def _on_reader_done(self, task: asyncio.Task) -> None:
         """Log unhandled exceptions from the background reader task."""
@@ -301,7 +308,7 @@ class Gptp(Driver):
                 self._last_offset_ns = parsed.offset_ns
                 self._last_freq_ppb = parsed.freq_ppb or 0.0
                 self._last_path_delay_ns = parsed.path_delay_ns or 0.0
-                if parsed.servo_state:
+                if parsed.servo_state is not None:
                     self._servo_state = parsed.servo_state
                 self._stats["sync_count"] = self._stats.get("sync_count", 0) + 1
             if parsed.port_state is not None:
@@ -372,11 +379,12 @@ class Gptp(Driver):
                 priority1=self._priority1,
             )
 
-            fd = tempfile.mkstemp(suffix=".cfg", prefix="ptp4l_")
-            os.fchmod(fd[0], 0o600)
-            with os.fdopen(fd[0], "w") as f:
+            fd_num, self._config_file_path = tempfile.mkstemp(
+                suffix=".cfg", prefix="ptp4l_"
+            )
+            os.fchmod(fd_num, 0o600)
+            with os.fdopen(fd_num, "w") as f:
                 f.write(config_content)
-            self._config_file_path = fd[1]
 
             hw_ts = await self._supports_hw_timestamping()
             ts_flag = "-H" if hw_ts else "-S"
@@ -405,17 +413,23 @@ class Gptp(Driver):
             except FileNotFoundError as err:
                 raise RuntimeError("ptp4l not found — install linuxptp") from err
 
-            self._port_state = "INITIALIZING"
-            self._servo_state = "s0"
+            self._port_state = PortState.INITIALIZING
+            self._servo_state = ServoState.UNLOCKED
             self._priority1 = 128
             self._stats = {}
+            ptp4l_proc = self._ptp4l_proc
             self._reader_task = asyncio.create_task(self._read_ptp4l_output())
             self._reader_task.add_done_callback(self._on_reader_done)
 
             await asyncio.sleep(0.5)
-            if self._ptp4l_proc is not None and self._ptp4l_proc.returncode is not None:
+            # Snapshot before sleep: reader may clear self._ptp4l_proc on EOF.
+            if (
+                ptp4l_proc is None
+                or ptp4l_proc.returncode is not None
+                or self._ptp4l_proc is None
+            ):
                 raise RuntimeError(
-                    f"ptp4l exited immediately with code {self._ptp4l_proc.returncode}"
+                    f"ptp4l exited immediately with code {ptp4l_proc.returncode if ptp4l_proc else None}"
                 )
 
             if self.sync_system_clock and hw_ts:
@@ -433,10 +447,12 @@ class Gptp(Driver):
                     start_new_session=True,
                 )
 
+                phc2sys_proc = self._phc2sys_proc
                 await asyncio.sleep(0.5)
-                if self._phc2sys_proc.returncode is not None:
+                if phc2sys_proc is None or phc2sys_proc.returncode is not None:
                     raise RuntimeError(
-                        f"phc2sys exited immediately with code {self._phc2sys_proc.returncode}"
+                        f"phc2sys exited immediately with code "
+                        f"{phc2sys_proc.returncode if phc2sys_proc else None}"
                     )
         except Exception:
             await self._cleanup()
@@ -472,10 +488,10 @@ class Gptp(Driver):
         """
         self._require_started()
         return GptpStatus(
-            port_state=PortState(self._port_state),
+            port_state=self._port_state,
             offset_ns=self._last_offset_ns,
             mean_delay_ns=self._last_path_delay_ns,
-            servo_state=ServoState(self._servo_state),
+            servo_state=self._servo_state,
         )
 
     @export
@@ -502,8 +518,12 @@ class Gptp(Driver):
     def get_port_stats(self) -> GptpPortStats:
         """Get PTP port statistics.
 
+        Only ``sync_count`` is populated from ptp4l log parsing. The other
+        counters (followup, pdelay, announce) remain 0 until ptp4l UDS
+        management socket integration is added.
+
         Returns:
-            Port statistics counters (sync, followup, pdelay, announce).
+            Port statistics counters (currently only ``sync_count`` is live).
 
         Raises:
             RuntimeError: If ptp4l is not started.
@@ -586,7 +606,10 @@ class Gptp(Driver):
             RuntimeError: If ptp4l is not started.
         """
         self._require_started()
-        return self._port_state == "SLAVE" and self._servo_state == "s2"
+        return (
+            self._port_state == PortState.SLAVE
+            and self._servo_state == ServoState.LOCKED
+        )
 
     @export
     async def read(self) -> AsyncGenerator[GptpSyncEvent, None]:
@@ -612,13 +635,13 @@ class Gptp(Driver):
             if self._port_state != prev_state:
                 event_type = "state_change"
                 prev_state = self._port_state
-            if self._port_state == "FAULTY":
+            if self._port_state == PortState.FAULTY:
                 event_type = "fault"
 
             yield GptpSyncEvent(
                 event_type=event_type,
-                port_state=PortState(self._port_state) if self._port_state in PortState.__members__ else None,
-                servo_state=ServoState(self._servo_state) if self._servo_state in ("s0", "s1", "s2") else None,
+                port_state=self._port_state,
+                servo_state=self._servo_state,
                 offset_ns=self._last_offset_ns,
                 path_delay_ns=self._last_path_delay_ns,
                 freq_ppb=self._last_freq_ppb,

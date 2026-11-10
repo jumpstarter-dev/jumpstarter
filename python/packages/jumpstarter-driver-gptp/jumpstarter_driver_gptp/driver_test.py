@@ -24,6 +24,7 @@ from .common import (
     GptpStatus,
     GptpSyncEvent,
     PortState,
+    ServoState,
 )
 from .conftest import PtpStateError
 from .driver import (
@@ -51,20 +52,20 @@ class TestPtp4lLogParsing:
         assert result.offset_ns == -23
         assert result.freq_ppb == 1234
         assert result.path_delay_ns == 567
-        assert result.servo_state == "s2"
+        assert result.servo_state == ServoState.LOCKED
 
     def test_parse_port_state_change(self):
         line = "ptp4l[1234.567]: port 1: LISTENING to SLAVE on MASTER_CLOCK_SELECTED"
         result = parse_ptp4l_log_line(line)
         assert result is not None
-        assert result.port_state == "SLAVE"
+        assert result.port_state == PortState.SLAVE
         assert result.event == "MASTER_CLOCK_SELECTED"
 
     def test_parse_init_line(self):
         line = "ptp4l[0.000]: port 1: INITIALIZING to LISTENING on INIT_COMPLETE"
         result = parse_ptp4l_log_line(line)
         assert result is not None
-        assert result.port_state == "LISTENING"
+        assert result.port_state == PortState.LISTENING
 
     def test_parse_unrecognized_line(self):
         line = "ptp4l[0.000]: some unrecognized message"
@@ -75,20 +76,20 @@ class TestPtp4lLogParsing:
         line = "ptp4l[5.678]: port 1: SLAVE to FAULTY on FAULT_DETECTED"
         result = parse_ptp4l_log_line(line)
         assert result is not None
-        assert result.port_state == "FAULTY"
+        assert result.port_state == PortState.FAULTY
 
     def test_parse_master_state(self):
         line = "ptp4l[2.000]: port 1: LISTENING to MASTER on ANNOUNCE_RECEIPT_TIMEOUT_EXPIRES"
         result = parse_ptp4l_log_line(line)
         assert result is not None
-        assert result.port_state == "MASTER"
+        assert result.port_state == PortState.MASTER
 
     def test_parse_large_offset(self):
         line = "ptp4l[10.000]: master offset  999999999 s0 freq  -50000 path delay  12345"
         result = parse_ptp4l_log_line(line)
         assert result is not None
         assert result.offset_ns == 999999999
-        assert result.servo_state == "s0"
+        assert result.servo_state == ServoState.UNLOCKED
         assert result.freq_ppb == -50000
 
     def test_parse_negative_freq(self):
@@ -96,6 +97,7 @@ class TestPtp4lLogParsing:
         result = parse_ptp4l_log_line(line)
         assert result is not None
         assert result.freq_ppb == -9999
+        assert result.servo_state == ServoState.CALIBRATING
 
     def test_parse_offset_without_master_prefix(self):
         line = "ptp4l[1.000]: offset   -100 s2 freq  +500 path delay   200"
@@ -107,7 +109,7 @@ class TestPtp4lLogParsing:
         line = "ptp4l[1.000]: port 1 (eth0): INITIALIZING to LISTENING on INIT_COMPLETE"
         result = parse_ptp4l_log_line(line)
         assert result is not None
-        assert result.port_state == "LISTENING"
+        assert result.port_state == PortState.LISTENING
 
 
 class TestPtp4lConfigGeneration:
@@ -247,16 +249,16 @@ class TestDriverConfigValidation:
         assert driver.profile == "gptp"
 
     def test_gptp_invalid_profile(self):
-        with pytest.raises(ValueError, match="profile"):
-            Gptp(interface="eth0", profile="invalid_profile")
+        with pytest.raises((ValueError, ValidationError)):
+            Gptp(interface="eth0", profile="invalid_profile")  # type: ignore[arg-type]
 
     def test_gptp_invalid_transport(self):
-        with pytest.raises(ValueError, match="transport"):
-            Gptp(interface="eth0", transport="SCTP")
+        with pytest.raises((ValueError, ValidationError)):
+            Gptp(interface="eth0", transport="SCTP")  # type: ignore[arg-type]
 
     def test_gptp_invalid_role(self):
-        with pytest.raises(ValueError, match="role"):
-            Gptp(interface="eth0", role="observer")
+        with pytest.raises((ValueError, ValidationError)):
+            Gptp(interface="eth0", role="observer")  # type: ignore[arg-type]
 
     def test_gptp_invalid_interface_name(self):
         with pytest.raises(ValueError, match="Invalid interface name"):
@@ -727,31 +729,42 @@ def _make_mock_process(stdout_lines=None, returncode=None, eof_blocks=True):
         eof_blocks: If True, block forever after lines are exhausted
             instead of returning EOF immediately. This prevents the
             reader task from nullifying _ptp4l_proc.
+
+    Returns:
+        Tuple of (mock_proc, lines_done Event). The event is set after
+        all stdout_lines have been consumed by the reader.
     """
     mock_proc = AsyncMock()
     mock_proc.returncode = returncode
+    lines_done = asyncio.Event()
 
     if stdout_lines is not None:
-        read_iter = iter(stdout_lines)
+        lines = list(stdout_lines)
+        cursor = [0]
 
         async def readline():
-            try:
-                return next(read_iter)
-            except StopIteration:
-                if eof_blocks:
-                    await asyncio.sleep(3600)
-                return b""
+            if cursor[0] < len(lines):
+                line = lines[cursor[0]]
+                cursor[0] += 1
+                if cursor[0] >= len(lines):
+                    lines_done.set()
+                return line
+            lines_done.set()
+            if eof_blocks:
+                await asyncio.Future()  # block until cancelled
+            return b""
 
         mock_stdout = MagicMock()
         mock_stdout.readline = readline
         mock_proc.stdout = mock_stdout
     else:
         mock_proc.stdout = None
+        lines_done.set()
 
     mock_proc.terminate = MagicMock()
     mock_proc.kill = MagicMock()
     mock_proc.wait = AsyncMock(return_value=0)
-    return mock_proc
+    return mock_proc, lines_done
 
 
 class TestGptpWithMockedSubprocess:
@@ -769,8 +782,12 @@ class TestGptpWithMockedSubprocess:
         ):
             await driver.start()
 
+    async def _wait_for_lines(self, lines_done: asyncio.Event, timeout: float = 2.0) -> None:
+        """Wait for the mock reader to consume all prepared stdout lines."""
+        await asyncio.wait_for(lines_done.wait(), timeout=timeout)
+
     async def test_start_and_stop_lifecycle(self):
-        mock_proc = _make_mock_process(stdout_lines=[
+        mock_proc, lines_done = _make_mock_process(stdout_lines=[
             b"ptp4l[0.000]: port 1: INITIALIZING to LISTENING on INIT_COMPLETE\n",
             b"ptp4l[1.000]: master offset   -23 s2 freq  +1234 path delay   567\n",
         ])
@@ -780,7 +797,7 @@ class TestGptpWithMockedSubprocess:
         assert driver._ptp4l_proc is not None
         assert driver._config_file_path == "/tmp/test.cfg"
 
-        await asyncio.sleep(0.2)
+        await self._wait_for_lines(lines_done)
 
         with patch("jumpstarter_driver_gptp.driver.os.unlink"):
             await driver.stop()
@@ -788,7 +805,7 @@ class TestGptpWithMockedSubprocess:
         assert driver._config_file_path is None
 
     async def test_start_already_running_raises(self):
-        mock_proc = _make_mock_process(stdout_lines=[
+        mock_proc, _lines_done = _make_mock_process(stdout_lines=[
             b"ptp4l[0.000]: port 1: INITIALIZING to LISTENING on INIT_COMPLETE\n",
         ])
 
@@ -816,7 +833,9 @@ class TestGptpWithMockedSubprocess:
             await driver.start()
 
     async def test_start_ptp4l_exits_immediately(self):
-        mock_proc = _make_mock_process(stdout_lines=[], returncode=1)
+        mock_proc, _lines_done = _make_mock_process(
+            stdout_lines=[], returncode=1, eof_blocks=False
+        )
         driver = Gptp(interface="eth0", sync_system_clock=False)
         with (
             patch("jumpstarter_driver_gptp.driver.asyncio.create_subprocess_exec", return_value=mock_proc),
@@ -830,24 +849,30 @@ class TestGptpWithMockedSubprocess:
             await driver.start()
 
     async def test_status_returns_gptp_status(self):
-        mock_proc = _make_mock_process(stdout_lines=[
+        mock_proc, lines_done = _make_mock_process(stdout_lines=[
             b"ptp4l[1.000]: master offset   -23 s2 freq  +1234 path delay   567\n",
         ])
 
         driver = Gptp(interface="eth0", sync_system_clock=False)
         await self._start_driver(driver, mock_proc)
-        await asyncio.sleep(0.2)
+        await self._wait_for_lines(lines_done)
 
         status = driver.status()
         assert isinstance(status, GptpStatus)
+        assert status.offset_ns == -23.0
+        assert status.servo_state == ServoState.LOCKED
 
         offset = driver.get_offset()
         assert isinstance(offset, GptpOffset)
+        assert offset.offset_from_master_ns == -23.0
 
         stats = driver.get_port_stats()
         assert isinstance(stats, GptpPortStats)
+        assert stats.sync_count >= 1
+        assert stats.followup_count == 0  # only sync_count is live from logs
 
-        assert isinstance(driver.is_synchronized(), bool)
+        # Offset line alone does not move port into SLAVE.
+        assert driver.is_synchronized() is False
 
         with patch("jumpstarter_driver_gptp.driver.os.unlink"):
             await driver.stop()
@@ -863,7 +888,7 @@ class TestGptpWithMockedSubprocess:
             await driver.stop()
 
     async def test_get_clock_identity_raises_not_implemented(self):
-        mock_proc = _make_mock_process(stdout_lines=[
+        mock_proc, _lines_done = _make_mock_process(stdout_lines=[
             b"ptp4l[0.000]: port 1: INITIALIZING to LISTENING on INIT_COMPLETE\n",
         ])
 
@@ -875,7 +900,7 @@ class TestGptpWithMockedSubprocess:
             await driver.stop()
 
     async def test_get_parent_info_raises_not_implemented(self):
-        mock_proc = _make_mock_process(stdout_lines=[
+        mock_proc, _lines_done = _make_mock_process(stdout_lines=[
             b"ptp4l[0.000]: port 1: INITIALIZING to LISTENING on INIT_COMPLETE\n",
         ])
 
@@ -887,7 +912,7 @@ class TestGptpWithMockedSubprocess:
             await driver.stop()
 
     async def test_set_priority1_validation_and_not_implemented(self):
-        mock_proc = _make_mock_process(stdout_lines=[
+        mock_proc, _lines_done = _make_mock_process(stdout_lines=[
             b"ptp4l[0.000]: port 1: INITIALIZING to LISTENING on INIT_COMPLETE\n",
         ])
 
@@ -903,7 +928,7 @@ class TestGptpWithMockedSubprocess:
             await driver.stop()
 
     async def test_read_ptp4l_output_updates_state(self):
-        mock_proc = _make_mock_process(stdout_lines=[
+        mock_proc, lines_done = _make_mock_process(stdout_lines=[
             b"ptp4l[0.000]: port 1: INITIALIZING to LISTENING on INIT_COMPLETE\n",
             b"ptp4l[1.000]: port 1: LISTENING to SLAVE on MASTER_CLOCK_SELECTED\n",
             b"ptp4l[2.000]: master offset   -42 s2 freq  +500 path delay   100\n",
@@ -911,11 +936,11 @@ class TestGptpWithMockedSubprocess:
 
         driver = Gptp(interface="eth0", sync_system_clock=False)
         await self._start_driver(driver, mock_proc)
-        await asyncio.sleep(0.3)
+        await self._wait_for_lines(lines_done)
 
-        assert driver._port_state == "SLAVE"
+        assert driver._port_state == PortState.SLAVE
         assert driver._last_offset_ns == -42.0
-        assert driver._servo_state == "s2"
+        assert driver._servo_state == ServoState.LOCKED
         assert driver._last_freq_ppb == 500.0
         assert driver._last_path_delay_ns == 100.0
 
@@ -923,14 +948,14 @@ class TestGptpWithMockedSubprocess:
             await driver.stop()
 
     async def test_read_generator(self):
-        mock_proc = _make_mock_process(stdout_lines=[
+        mock_proc, lines_done = _make_mock_process(stdout_lines=[
             b"ptp4l[1.000]: master offset   -23 s2 freq  +1234 path delay   567\n",
         ])
         mock_proc.returncode = None
 
         driver = Gptp(interface="eth0", sync_system_clock=False)
         await self._start_driver(driver, mock_proc)
-        await asyncio.sleep(0.2)
+        await self._wait_for_lines(lines_done)
 
         events = []
         async for event in driver.read():
@@ -939,18 +964,19 @@ class TestGptpWithMockedSubprocess:
                 break
         assert len(events) == 1
         assert events[0].event_type in ("sync", "state_change", "fault")
+        assert events[0].offset_ns == -23.0
 
         with patch("jumpstarter_driver_gptp.driver.os.unlink"):
             await driver.stop()
 
     async def test_require_started_after_process_exit(self):
-        mock_proc = _make_mock_process(stdout_lines=[
+        mock_proc, lines_done = _make_mock_process(stdout_lines=[
             b"ptp4l[0.000]: port 1: INITIALIZING to LISTENING on INIT_COMPLETE\n",
         ])
 
         driver = Gptp(interface="eth0", sync_system_clock=False)
         await self._start_driver(driver, mock_proc)
-        await asyncio.sleep(0.2)
+        await self._wait_for_lines(lines_done)
 
         driver._ptp4l_proc.returncode = 1  # type: ignore[assignment]
         with pytest.raises(RuntimeError, match="exited unexpectedly"):
@@ -961,23 +987,40 @@ class TestGptpWithMockedSubprocess:
 
     async def test_on_reader_done_logs_exception(self):
         driver = Gptp(interface="eth0")
-        task = asyncio.create_task(asyncio.sleep(0))
-        await task
-        driver._on_reader_done(task)
 
-        failing_task = asyncio.create_task(asyncio.sleep(0))
-        failing_task.cancel()
-        try:
-            await failing_task
-        except asyncio.CancelledError:
-            pass
-        driver._on_reader_done(failing_task)
+        # Successful completion: no error logged.
+        ok_task = asyncio.create_task(asyncio.sleep(0))
+        await ok_task
+        with patch.object(driver.logger, "error") as mock_error:
+            driver._on_reader_done(ok_task)
+            mock_error.assert_not_called()
+
+        # Cancelled task: no error logged.
+        cancelled_task = asyncio.create_task(asyncio.sleep(0))
+        cancelled_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await cancelled_task
+        with patch.object(driver.logger, "error") as mock_error:
+            driver._on_reader_done(cancelled_task)
+            mock_error.assert_not_called()
+
+        # Failed task: error is logged.
+        async def _boom():
+            raise RuntimeError("reader boom")
+
+        fail_task = asyncio.create_task(_boom())
+        with pytest.raises(RuntimeError, match="reader boom"):
+            await fail_task
+        with patch.object(driver.logger, "error") as mock_error:
+            driver._on_reader_done(fail_task)
+            mock_error.assert_called_once()
+            assert "reader boom" in str(mock_error.call_args)
 
     async def test_start_with_hw_timestamping_and_phc2sys(self):
-        ptp4l_proc = _make_mock_process(stdout_lines=[
+        ptp4l_proc, _ptp4l_done = _make_mock_process(stdout_lines=[
             b"ptp4l[0.000]: port 1: INITIALIZING to LISTENING on INIT_COMPLETE\n",
         ])
-        phc2sys_proc = _make_mock_process()
+        phc2sys_proc, _phc_done = _make_mock_process()
         phc2sys_proc.returncode = None
 
         call_tracker = [0]
