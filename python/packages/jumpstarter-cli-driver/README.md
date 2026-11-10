@@ -29,9 +29,9 @@ JSON and YAML return a `drivers` list. Each entry contains:
   fields are excluded.
 - `defs`: definitions referenced as `#/$defs/...` inside those fragments.
   Consumers combining driver schemas must preserve and namespace these references.
-- `error`: an import/schema-generation error, or `null` on success. Schema
-  generation failures retain best-effort dataclass field names and required
-  keys, without claiming complete type information.
+- `error`: an import/schema-generation error, or `null` on success. A field
+  pydantic cannot model degrades only that field: the others keep their types,
+  and the entry names are still complete.
 
 A broken driver does not hide the other results. Inspect each entry's `error`;
 exit status zero does not mean every driver produced a complete schema.
