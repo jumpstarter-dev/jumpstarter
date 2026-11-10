@@ -34,4 +34,4 @@ class MetadataStream(ObjectStream[bytes]):
         metadata = {}
         with suppress(TypedAttributeLookupError):
             metadata = self.stream.extra(MetadataStreamAttributes.metadata)
-        return self.stream.extra_attributes | {MetadataStreamAttributes.metadata: lambda: metadata | self.metadata}
+        return {**self.stream.extra_attributes, MetadataStreamAttributes.metadata: lambda: metadata | self.metadata}

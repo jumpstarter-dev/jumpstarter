@@ -91,7 +91,7 @@ class Tftp(Driver):
             self.server = TftpServer(
                 host=self.host,
                 port=self.port,
-                operator=self.children["storage"]._operator,
+                operator=self.children["storage"]._operator,  # ty: ignore[unresolved-attribute]
                 logger=self.logger,
             )
         except Exception as e:
@@ -108,6 +108,7 @@ class Tftp(Driver):
 
     async def _run_server(self):
         try:
+            assert self.server is not None
             server_task = asyncio.create_task(self.server.start())
             await asyncio.gather(server_task, self._wait_for_shutdown())
         except asyncio.CancelledError:

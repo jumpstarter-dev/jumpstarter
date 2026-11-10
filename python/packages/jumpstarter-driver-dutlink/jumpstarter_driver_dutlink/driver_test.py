@@ -62,6 +62,15 @@ def test_drivers_dutlink_serial():
         serial_test(client)
 
 
+def test_console_wires_power_child():
+    """The console gets the power child so its hotkey can power-cycle the DUT.
+
+    Skipped without a connected DUTLink board (see conftest.py).
+    """
+    instance = Dutlink(storage_device=STORAGE_DEVICE)
+    assert instance.children["console"].children["power"] is instance.children["power"]
+
+
 def test_drivers_dutlink():
     instance = Dutlink(storage_device=STORAGE_DEVICE)
 

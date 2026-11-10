@@ -33,7 +33,7 @@ async def check_kubernetes_access(context: str | None = None, kubectl: str = "ku
 
 async def get_kubectl_contexts(kubectl: str = "kubectl") -> list[KubectlContext]:
     """Get all kubectl contexts."""
-    contexts = []
+    contexts: list[KubectlContext] = []
 
     try:
         cmd = [kubectl, "config", "view", "-o", "json"]
@@ -138,8 +138,8 @@ def _parse_json_with_prefix(stdout: str) -> dict:
 def _apply_cr_result(result_data: dict, cr_result: CrInstanceResult) -> None:
     if cr_result["installed"] is True:
         result_data["installed"] = True
-        result_data["namespace"] = cr_result["namespace"]
-        result_data["status"] = cr_result["status"]
+        result_data["namespace"] = cr_result["namespace"]  # ty: ignore[invalid-key]
+        result_data["status"] = cr_result["status"]  # ty: ignore[invalid-key]
     elif "error" in cr_result:
         result_data["error"] = cr_result["error"]
 
@@ -166,7 +166,7 @@ async def check_jumpstarter_installation(
 
         if returncode != 0:
             result_data["error"] = f"Command failed: {stderr or stdout}"
-            return V1Alpha1JumpstarterInstance(**result_data)  # type: ignore[missing-argument]
+            return V1Alpha1JumpstarterInstance(**result_data)  # ty: ignore[invalid-argument-type]
 
         crds = _parse_json_with_prefix(stdout)
         jumpstarter_crds = [
@@ -187,7 +187,7 @@ async def check_jumpstarter_installation(
     except RuntimeError as e:
         result_data["error"] = f"Command failed: {e}"
 
-    return V1Alpha1JumpstarterInstance(**result_data)  # type: ignore[missing-argument]
+    return V1Alpha1JumpstarterInstance(**result_data)  # ty: ignore[invalid-argument-type]
 
 
 async def get_cluster_info(
@@ -212,7 +212,7 @@ async def get_cluster_info(
                 server="unknown",
                 user="unknown",
                 namespace="unknown",
-                is_current=False,
+                isCurrent=False,
                 type="remote",
                 accessible=False,
                 jumpstarter=V1Alpha1JumpstarterInstance(installed=False),
@@ -253,8 +253,8 @@ async def get_cluster_info(
             server=context_info["server"],
             user=context_info["user"],
             namespace=context_info["namespace"],
-            is_current=context_info["current"],
-            type=cluster_type,
+            isCurrent=context_info["current"],
+            type=cluster_type,  # ty: ignore[invalid-argument-type]
             accessible=cluster_accessible,
             version=cluster_version,
             jumpstarter=jumpstarter_info,
@@ -267,7 +267,7 @@ async def get_cluster_info(
             server="unknown",
             user="unknown",
             namespace="unknown",
-            is_current=False,
+            isCurrent=False,
             type="remote",
             accessible=False,
             jumpstarter=V1Alpha1JumpstarterInstance(installed=False),
@@ -303,7 +303,7 @@ async def list_clusters(
             server="error",
             user="error",
             namespace="error",
-            is_current=False,
+            isCurrent=False,
             type="remote",
             accessible=False,
             jumpstarter=V1Alpha1JumpstarterInstance(installed=False),

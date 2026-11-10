@@ -2,7 +2,6 @@ package oidc
 
 import (
 	"context"
-	"fmt"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
@@ -49,8 +48,9 @@ func VerifyOIDCToken(
 		return nil, err
 	}
 
+	// No configured issuer matches the token, which retrying cannot change.
 	if !ok {
-		return nil, fmt.Errorf("failed to authenticate token")
+		return nil, status.Error(codes.Unauthenticated, "failed to authenticate token")
 	}
 
 	return attr.ContextAttributes(ctx, resp.User)

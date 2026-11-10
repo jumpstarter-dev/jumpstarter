@@ -26,12 +26,14 @@ import (
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/cuttlefish"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/qemu"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -2019,7 +2021,7 @@ func TestEnsureExporterPods_configSecretHasEndpointAndToken(t *testing.T) {
 func TestEnsureExporterPods_driversAppearedInConfig(t *testing.T) {
 	es := makeExporterSet(func(e *virtualtargetv1alpha1.ExporterSet) {
 		e.Spec.Template.Spec.Drivers = []virtualtargetv1alpha1.DriverConfig{
-			{Name: "power", Type: "jumpstarter_driver_power.driver.QemuPower"},
+			{Name: "qemu", Type: "jumpstarter_driver_qemu.driver.Qemu"},
 		}
 	})
 	exp := makeExporterWithCredential()
@@ -2036,11 +2038,11 @@ func TestEnsureExporterPods_driversAppearedInConfig(t *testing.T) {
 	}
 
 	content := string(secret.Data[exporterConfigKey])
-	if !strings.Contains(content, "power:") {
-		t.Errorf("expected 'power:' in config YAML, got:\n%s", content)
+	if !strings.Contains(content, "qemu:") {
+		t.Errorf("expected 'qemu:' in config YAML, got:\n%s", content)
 	}
-	if !strings.Contains(content, "QemuPower") {
-		t.Errorf("expected 'QemuPower' in config YAML, got:\n%s", content)
+	if !strings.Contains(content, "jumpstarter_driver_qemu.driver.Qemu") {
+		t.Errorf("expected Qemu driver type in config YAML, got:\n%s", content)
 	}
 }
 
@@ -2411,5 +2413,125 @@ func TestIsExporterOffline_offline(t *testing.T) {
 	}
 	if !isExporterOffline(exp) {
 		t.Fatal("expected true when exporter is offline")
+	}
+}
+
+func TestReconcile_demandDriven_onePendingLeaseCreatesOneExporter(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 0
+		es.Spec.MinAvailableReplicas = 0
+		es.Spec.MaxReplicas = 5
+	})
+	lease := makePendingLease("pending-1", map[string]string{"exporterset": "demo-set"})
+
+	r, c := newReconciler(t, es, makeVTC(), lease)
+
+	// The freshly created Exporter stays offline while it boots; the next cycles
+	// must count it as capacity for the waiting lease instead of adding more.
+	for range 4 {
+		reconcileOnce(t, r)
+	}
+
+	exporters := listExporters(t, c)
+	if len(exporters) != 1 {
+		t.Fatalf("expected 1 Exporter for 1 pending lease, got %d", len(exporters))
+	}
+}
+
+func TestReconcile_demandDriven_ignoresLeasesPinnedToAnExporter(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 0
+		es.Spec.MinAvailableReplicas = 0
+		es.Spec.MaxReplicas = 5
+	})
+	// jmp create lease --name <exporter> yields an empty selector and an ExporterRef.
+	lease := makePendingLease("pinned-1", nil)
+	lease.Spec.ExporterRef = &corev1.LocalObjectReference{Name: "some-physical-board"}
+
+	r, c := newReconciler(t, es, makeVTC(), lease)
+
+	reconcileOnce(t, r)
+
+	exporters := listExporters(t, c)
+	if len(exporters) != 0 {
+		t.Fatalf("expected 0 Exporters (lease is pinned to a named exporter), got %d", len(exporters))
+	}
+	if requests := r.findExporterSetsForLease(context.Background(), lease); len(requests) != 0 {
+		t.Fatalf("got %d requests for a pinned lease, want 0", len(requests))
+	}
+}
+
+func TestMergeImages_turn(t *testing.T) {
+	vtc := &virtualtargetv1alpha1.ImageOverrides{
+		Turn: &virtualtargetv1alpha1.ImageSpec{Image: "class-turn:1", ImagePullPolicy: corev1.PullAlways},
+	}
+	es := &virtualtargetv1alpha1.ImageOverrides{
+		Turn: &virtualtargetv1alpha1.ImageSpec{Image: "set-turn:2", ImagePullPolicy: corev1.PullNever},
+	}
+	for _, tc := range []struct {
+		name string
+		set  *virtualtargetv1alpha1.ImageOverrides
+		want *virtualtargetv1alpha1.ImageSpec
+	}{
+		{"inherited", &virtualtargetv1alpha1.ImageOverrides{}, vtc.Turn},
+		{"overridden", es, es.Turn},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mergeImages(vtc, tc.set)
+			if got.Turn == nil || *got.Turn != *tc.want {
+				t.Fatalf("TURN merge = %#v", got.Turn)
+			}
+			got.Turn.Image = "changed"
+			if vtc.Turn.Image != "class-turn:1" || es.Turn.Image != "set-turn:2" {
+				t.Fatal("merge aliased its input")
+			}
+		})
+	}
+}
+
+func TestCuttlefishValidationEvents(t *testing.T) {
+	for _, phase := range []string{"config", "pod"} {
+		t.Run(phase, func(t *testing.T) {
+			es := makeExporterSet()
+			es.Spec.Template.Spec.Drivers = []virtualtargetv1alpha1.DriverConfig{{
+				Name: "cuttlefish", Type: "jumpstarter_driver_cuttlefish.driver.Cuttlefish",
+			}}
+			exp := makeExporter("invalid-display", false, false, true)
+			credential := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "credentials", Namespace: nsDefault},
+				Data:       map[string][]byte{"token": []byte("test-token")},
+			}
+			exp.Status.Credential = &corev1.LocalObjectReference{Name: credential.Name}
+			r, c := newReconciler(t, credential)
+			r.Provisioner = cuttlefish.New("dev")
+			recorder := record.NewFakeRecorder(1)
+			r.Recorder = recorder
+			parameters := map[string]any{
+				"webrtc_turn": "true", "fetch_images": true,
+				"runtime_privileged": true, "service_account_name": "cuttlefish-runtime",
+			}
+			var err error
+			reason := "ExporterConfigFailed"
+			if phase == "config" {
+				err = r.syncConfigSecret(context.Background(), es, makeVTC(), exp, "", parameters)
+			} else {
+				reason = "PodRenderFailed"
+				err = r.createExporterPod(context.Background(), es, makeVTC(), parameters, nil, exp)
+			}
+			if err == nil || !strings.Contains(err.Error(), "webrtc_turn must be a boolean") {
+				t.Fatalf("validation error = %v", err)
+			}
+			select {
+			case event := <-recorder.Events:
+				if !strings.Contains(event, "Warning "+reason) || !strings.Contains(event, "webrtc_turn must be a boolean") {
+					t.Fatalf("validation event = %q", event)
+				}
+			default:
+				t.Fatal("validation failure emitted no event")
+			}
+			if len(listPods(t, c)) != 0 {
+				t.Fatal("invalid configuration created a Pod")
+			}
+		})
 	}
 }

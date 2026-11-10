@@ -82,7 +82,7 @@ async def run_command(cmd: list[str]) -> tuple[int, str, str]:
         stdout_str = stdout.decode(errors="replace").strip()
         stderr_str = stderr.decode(errors="replace").strip()
 
-        return process.returncode, stdout_str, stderr_str
+        return process.returncode or 0, stdout_str, stderr_str
     except builtins.FileNotFoundError as e:
         raise RuntimeError(f"Command not found: {cmd[0]}") from e
     except PermissionError as e:

@@ -29,7 +29,7 @@ def _make_ssh_child(default_username="testuser", ssh_identity=None, ssh_identity
         kwargs["ssh_identity"] = ssh_identity
     if ssh_identity_file is not None:
         kwargs["ssh_identity_file"] = ssh_identity_file
-    return SSHWrapper(**kwargs)
+    return SSHWrapper(**kwargs)  # ty: ignore[invalid-argument-type]
 
 
 def test_ssh_mount_requires_ssh_child():

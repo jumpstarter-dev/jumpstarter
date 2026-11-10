@@ -123,7 +123,7 @@ class Exporter(BaseModel):
         return cls(
             namespace=namespace,
             name=name,
-            labels=data.labels,
+            labels=dict(data.labels),
             online=data.online,
             status=status,
             enabled=data.enabled if data.HasField("enabled") else True,
@@ -248,7 +248,7 @@ class Lease(BaseModel):
             exporter=exporter,
             effective_begin_time=effective_begin_time,
             effective_end_time=effective_end_time,
-            conditions=data.conditions,
+            conditions=list(data.conditions),
             deprecated_labels=dict(data.deprecated_labels),
             shared_with=list(data.shared_with),
             effective_shared_with=list(data.effective_shared_with),
@@ -332,7 +332,7 @@ class Lease(BaseModel):
     def rich_add_names(self, names):
         names.append(self.name)
 
-    @computed_field  # ty: ignore[invalid-argument-type]
+    @computed_field
     @property
     def status(self) -> str:
         """Derived lease status, also included in serialized output"""
@@ -529,20 +529,21 @@ class ClientService:
             exporters = await self.stub.ListExporters(
                 client_pb2.ListExportersRequest(  # type: ignore[call-arg]
                     parent=f"namespaces/{self.namespace}",
-                    page_size=page_size,  # type: ignore[arg-type]
-                    page_token=page_token,  # type: ignore[arg-type]
-                    filter=filter,  # type: ignore[arg-type]
+                    page_size=page_size,  # ty: ignore[invalid-argument-type]
+                    page_token=page_token,  # ty: ignore[invalid-argument-type]
+                    filter=filter,  # ty: ignore[invalid-argument-type]
                     show_hidden_labels=show_hidden_labels,
                 )
             )
         return ExporterList.from_protobuf(exporters)
 
-    async def GetLease(self, *, name: str):
+    async def GetLease(self, *, name: str, timeout: float | None = None):
         with translate_grpc_exceptions():
             lease = await self.stub.GetLease(
                 client_pb2.GetLeaseRequest(
                     name=f"namespaces/{self.namespace}/leases/{name}",
-                )
+                ),
+                timeout=timeout,
             )
         return Lease.from_protobuf(lease)
 
@@ -559,9 +560,9 @@ class ClientService:
             leases = await self.stub.ListLeases(
                 client_pb2.ListLeasesRequest(  # type: ignore[call-arg]
                     parent=f"namespaces/{self.namespace}",
-                    page_size=page_size,  # type: ignore[arg-type]
-                    page_token=page_token,  # type: ignore[arg-type]
-                    filter=extract_match_labels_filter(filter),  # type: ignore[arg-type]
+                    page_size=page_size,  # ty: ignore[invalid-argument-type]
+                    page_token=page_token,  # ty: ignore[invalid-argument-type]
+                    filter=extract_match_labels_filter(filter),  # ty: ignore[invalid-argument-type]
                     only_active=only_active,
                     tag_filter=tag_filter or "",
                 )
@@ -673,12 +674,13 @@ class ClientService:
             lease = await self.stub.UpdateLease(req)
         return Lease.from_protobuf(lease)
 
-    async def DeleteLease(self, *, name: str):
+    async def DeleteLease(self, *, name: str, timeout: float | None = None):
         with translate_grpc_exceptions():
             await self.stub.DeleteLease(
                 client_pb2.DeleteLeaseRequest(
                     name=f"namespaces/{self.namespace}/leases/{name}",
-                )
+                ),
+                timeout=timeout,
             )
 
     async def RotateToken(self) -> str:
@@ -708,8 +710,8 @@ class MultipathExporterStub:
     def __post_init__(self, channels):
         for channel in channels:
             stub = SimpleNamespace()
-            jumpstarter_pb2_grpc.ExporterServiceStub.__init__(stub, channel)  # type: ignore[arg-type]
-            router_pb2_grpc.RouterServiceStub.__init__(stub, channel)  # type: ignore[arg-type]
+            jumpstarter_pb2_grpc.ExporterServiceStub.__init__(stub, channel)  # type: ignore[arg-type]  # ty: ignore[too-many-positional-arguments]
+            router_pb2_grpc.RouterServiceStub.__init__(stub, channel)  # type: ignore[arg-type]  # ty: ignore[too-many-positional-arguments]
             self.__stubs[channel] = stub
 
     def __getattr__(self, name):

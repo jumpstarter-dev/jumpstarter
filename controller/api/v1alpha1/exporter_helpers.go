@@ -37,6 +37,10 @@ func (e *Exporter) InternalSubject() string {
 	return strings.Join([]string{"exporter", namespace, e.Name, uid}, ":")
 }
 
+func (e *Exporter) CredentialSecretName() string {
+	return e.Name + "-exporter"
+}
+
 func (e *Exporter) Usernames(prefix string) []string {
 	usernames := []string{prefix + e.InternalSubject()}
 
@@ -91,5 +95,65 @@ func (l *ExporterList) ToProtobuf() *cpb.ListExportersResponse {
 	return &cpb.ListExportersResponse{
 		Exporters:     jexporters,
 		NextPageToken: l.Continue,
+	}
+}
+
+var leaseHookPhaseToProto = map[LeaseHookPhase]pb.LeaseHookPhase{
+	LeaseHookPhaseRunning:   pb.LeaseHookPhase_LEASE_HOOK_PHASE_RUNNING,
+	LeaseHookPhaseSucceeded: pb.LeaseHookPhase_LEASE_HOOK_PHASE_SUCCEEDED,
+	LeaseHookPhaseFailed:    pb.LeaseHookPhase_LEASE_HOOK_PHASE_FAILED,
+	LeaseHookPhaseSkipped:   pb.LeaseHookPhase_LEASE_HOOK_PHASE_SKIPPED,
+}
+
+var leaseHookFailureActionToProto = map[string]pb.LeaseHookFailureAction{
+	"warn":     pb.LeaseHookFailureAction_LEASE_HOOK_FAILURE_ACTION_WARN,
+	"endLease": pb.LeaseHookFailureAction_LEASE_HOOK_FAILURE_ACTION_END_LEASE,
+	"exit":     pb.LeaseHookFailureAction_LEASE_HOOK_FAILURE_ACTION_EXIT,
+}
+
+// LeaseHookPhaseFromProto converts a proto hook phase; ok is false for an unspecified or unknown phase.
+func LeaseHookPhaseFromProto(phase pb.LeaseHookPhase) (LeaseHookPhase, bool) {
+	for k, v := range leaseHookPhaseToProto {
+		if v == phase {
+			return k, true
+		}
+	}
+	return "", false
+}
+
+// LeaseHookFailureActionFromProto converts a proto failure action to its onFailure
+// config value; unspecified or unknown actions map to "".
+func LeaseHookFailureActionFromProto(action pb.LeaseHookFailureAction) string {
+	for k, v := range leaseHookFailureActionToProto {
+		if v == action {
+			return k
+		}
+	}
+	return ""
+}
+
+func (s *LeaseHookStatus) ToProtobuf() *pb.LeaseHookState {
+	if s == nil {
+		return nil
+	}
+	return &pb.LeaseHookState{
+		Phase:     leaseHookPhaseToProto[s.Phase],
+		OnFailure: leaseHookFailureActionToProto[s.OnFailure],
+		Message:   s.Message,
+		Attempts:  uint32(max(s.Attempts, 0)),
+	}
+}
+
+// ToProtobuf converts the record; a nil record gives an empty, non-nil message.
+func (h *ExporterLeaseHooks) ToProtobuf() *pb.LeaseHooks {
+	if h == nil {
+		return &pb.LeaseHooks{}
+	}
+	return &pb.LeaseHooks{
+		LeaseName:   h.LeaseRef.Name,
+		LeaseUid:    string(h.LeaseUID),
+		ClientName:  h.ClientName,
+		BeforeLease: h.BeforeLease.ToProtobuf(),
+		AfterLease:  h.AfterLease.ToProtobuf(),
 	}
 }

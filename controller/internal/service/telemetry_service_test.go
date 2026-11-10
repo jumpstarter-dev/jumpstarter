@@ -19,16 +19,24 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/config"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
@@ -51,16 +59,12 @@ func testSigner(t *testing.T) *oidc.Signer {
 	return signer
 }
 
-// authedCtx returns a context containing a valid bearer token for subject.
+// authedCtx returns a context containing a telemetry token for subject.
 func authedCtx(t *testing.T, signer *oidc.Signer, subject string) context.Context {
 	t.Helper()
-	token, err := signer.Token(subject)
-	if err != nil {
-		t.Fatalf("failed to issue test token: %v", err)
-	}
 	return metadata.NewIncomingContext(
 		context.Background(),
-		metadata.Pairs("authorization", "Bearer "+token),
+		metadata.Pairs("authorization", "Bearer "+mustToken(t, signer, subject)),
 	)
 }
 
@@ -120,7 +124,7 @@ func TestGetServiceEndpoints_DisabledConfig_ReturnsEmptyList(t *testing.T) {
 }
 
 func TestGetServiceEndpoints_WithEndpoint_ReturnsEndpoint(t *testing.T) {
-	svc, ctx := authSuccessServiceCtx(t, &config.Telemetry{
+	svc, _ := authSuccessServiceCtx(t, &config.Telemetry{
 		Enabled:     true,
 		Endpoint:    "telemetry.jumpstarter.svc:9093",
 		Certificate: "--- PEM ---",
@@ -128,8 +132,9 @@ func TestGetServiceEndpoints_WithEndpoint_ReturnsEndpoint(t *testing.T) {
 			Filter: config.TelemetryLoggingFilter{MinSeverity: "warning"},
 		},
 	})
+	svc.Signer = testSigner(t)
 
-	resp, err := svc.GetServiceEndpoints(ctx, &pb.GetServiceEndpointsRequest{})
+	resp, err := svc.GetServiceEndpoints(externalCredential(t, nil), &pb.GetServiceEndpointsRequest{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -150,12 +155,13 @@ func TestGetServiceEndpoints_WithEndpoint_ReturnsEndpoint(t *testing.T) {
 }
 
 func TestGetServiceEndpoints_DefaultsMinSeverityToInfo(t *testing.T) {
-	svc, ctx := authSuccessServiceCtx(t, &config.Telemetry{
+	svc, _ := authSuccessServiceCtx(t, &config.Telemetry{
 		Enabled:  true,
 		Endpoint: "telemetry:9093",
 	})
+	svc.Signer = testSigner(t)
 
-	resp, err := svc.GetServiceEndpoints(ctx, &pb.GetServiceEndpointsRequest{})
+	resp, err := svc.GetServiceEndpoints(externalCredential(t, nil), &pb.GetServiceEndpointsRequest{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -165,6 +171,91 @@ func TestGetServiceEndpoints_DefaultsMinSeverityToInfo(t *testing.T) {
 	}
 	if resp.TelemetryEndpoints[0].MinSeverity != "info" {
 		t.Errorf("MinSeverity = %q, want %q (default)", resp.TelemetryEndpoints[0].MinSeverity, "info")
+	}
+}
+
+// externalCredential returns a context carrying a bearer token that the
+// controller did not sign, as an external OIDC issuer would issue it.
+func externalCredential(t *testing.T, expiresAt *jwt.NumericDate) context.Context {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.RegisteredClaims{
+		Issuer:    "https://dex.example.com",
+		Subject:   "dex-user",
+		Audience:  []string{"jumpstarter-cli"},
+		ExpiresAt: expiresAt,
+	}).SignedString(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+token))
+}
+
+// Telemetry cannot map an external credential to an Exporter or Client, so
+// the controller issues a token naming the identity it authenticated.
+func TestGetServiceEndpoints_TelemetryTokenNamesExternalCaller(t *testing.T) {
+	now := time.Now()
+	shortExpiry := jwt.NewNumericDate(now.Add(10 * time.Minute))
+	cfg := &config.Telemetry{Enabled: true, Endpoint: "telemetry:9093"}
+	tests := []struct {
+		name             string
+		service          func(*testing.T, *config.Telemetry) (*ControllerService, context.Context)
+		credentialExpiry *jwt.NumericDate
+		wantKind         string
+		wantName         string
+		// zero: the lifetime bound applies.
+		wantExpiry time.Time
+	}{
+		{"exporter credential expires first", authSuccessServiceCtx, shortExpiry, "exporter", "test-exporter", shortExpiry.Time},
+		{"client credential outlives the bound", authSuccessClientServiceCtx, jwt.NewNumericDate(now.Add(3 * time.Hour)), "client", "test-client", time.Time{}},
+		{"credential without expiry", authSuccessServiceCtx, nil, "exporter", "test-exporter", time.Time{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc, _ := tt.service(t, cfg)
+			svc.Signer = testSigner(t)
+
+			resp, err := svc.GetServiceEndpoints(externalCredential(t, tt.credentialExpiry), &pb.GetServiceEndpointsRequest{})
+			if err != nil {
+				t.Fatalf("GetServiceEndpoints: %v", err)
+			}
+			ep := resp.TelemetryEndpoints[0]
+			if ep.Token == "" {
+				t.Fatal("no telemetry token issued")
+			}
+			gotExpiry := ep.TokenExpiry.AsTime()
+			if tt.wantExpiry.IsZero() {
+				bound := time.Now().Add(telemetryTokenLifetime)
+				if gotExpiry.After(bound) || gotExpiry.Before(bound.Add(-5*time.Second)) {
+					t.Errorf("token_expiry = %v, want about %v", gotExpiry, bound)
+				}
+			} else if !gotExpiry.Equal(tt.wantExpiry) {
+				t.Errorf("token_expiry = %v, want the credential expiry %v", gotExpiry, tt.wantExpiry)
+			}
+			tokenExpiry, err := svc.Signer.TokenExpiry(ep.Token)
+			if err != nil || !tokenExpiry.Equal(gotExpiry) {
+				t.Errorf("token exp = %v (%v), want token_expiry %v", tokenExpiry, err, gotExpiry)
+			}
+
+			telemetry := &TelemetryService{Signer: testSigner(t)}
+			ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+ep.Token))
+			id, err := telemetry.authenticatePushLogs(ctx)
+			if err != nil {
+				t.Fatalf("PushLogs authentication: %v", err)
+			}
+			if id.kind != tt.wantKind || id.namespace != "default" || id.name != tt.wantName {
+				t.Errorf("PushLogs identity = %+v, want %s default/%s", id, tt.wantKind, tt.wantName)
+			}
+			if tt.wantKind == "exporter" {
+				exporter, err := telemetry.authenticateExporter(ctx)
+				if err != nil || exporter.key() != "default/"+tt.wantName {
+					t.Errorf("MetricsStream identity = %+v (%v), want default/%s", exporter, err, tt.wantName)
+				}
+			}
+		})
 	}
 }
 
@@ -180,6 +271,17 @@ func TestGetServiceEndpoints_EnabledNoEndpoint_FailedPrecondition(t *testing.T) 
 	}
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("expected codes.FailedPrecondition, got %v", status.Code(err))
+	}
+}
+
+// An empty response tells callers telemetry is disabled, so they stop renewing.
+func TestGetServiceEndpoints_TokenIssuanceFailure_ReturnsError(t *testing.T) {
+	svc, ctx := authSuccessServiceCtx(t, &config.Telemetry{Enabled: true, Endpoint: "telemetry:9093"})
+	svc.Signer = nil
+
+	resp, err := svc.GetServiceEndpoints(ctx, &pb.GetServiceEndpointsRequest{})
+	if status.Code(err) != codes.Internal {
+		t.Fatalf("expected codes.Internal, got %v (response %v)", err, resp)
 	}
 }
 
@@ -498,9 +600,155 @@ func startTelemetryGRPCServer(t *testing.T, signer *oidc.Signer) (addr string, l
 	return addr, logBuf, cleanup
 }
 
+func TestTelemetryService_StartDrainsLokiAfterGRPCStops(t *testing.T) {
+	signer := testSigner(t)
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := lis.Addr().String()
+	if err := lis.Close(); err != nil {
+		t.Fatalf("close listener: %v", err)
+	}
+
+	t.Setenv("EXTERNAL_CERT_PEM", "")
+	t.Setenv("EXTERNAL_KEY_PEM", "")
+	t.Setenv("GRPC_TELEMETRY_ENDPOINT", addr)
+
+	var (
+		mu           sync.Mutex
+		pushRejected bool
+		bodyHasEntry bool
+		probe        func() error
+		releaseOnce  sync.Once
+	)
+	release := make(chan struct{})
+	releaseFlush := func() { releaseOnce.Do(func() { close(release) }) }
+	entered := make(chan struct{})
+	var enteredOnce sync.Once
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		rejected := false
+		if probe != nil {
+			rejected = probe() != nil
+		}
+		mu.Lock()
+		if rejected {
+			pushRejected = true
+		}
+		if bytes.Contains(body, []byte("drain-me")) {
+			bodyHasEntry = true
+		}
+		mu.Unlock()
+		enteredOnce.Do(func() { close(entered) })
+		<-release
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	// Last registered cleanup runs first. Release the handler before Close,
+	// which waits for that handler to return.
+	t.Cleanup(srv.Close)
+	t.Cleanup(releaseFlush)
+
+	pusher, err := NewLokiPusher(LokiConfig{URL: srv.URL, QueueDepth: 10}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Keep the entry queued until the shutdown flush. A tick during gRPC
+	// stop would post it while PushLogs is still accepted.
+	pusher.flushInterval = time.Hour
+
+	svc := &TelemetryService{
+		BindAddr:        addr,
+		MetricsBindAddr: "0",
+		Signer:          signer,
+		Loki:            pusher,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- svc.Start(ctx)
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	var conn *grpc.ClientConn
+	tlsCreds := credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec // test-only self-signed cert
+	token := mustToken(t, signer, "exporter:jumpstarter:drain:1")
+	for time.Now().Before(deadline) {
+		conn, err = grpc.NewClient(addr, grpc.WithTransportCredentials(tlsCreds))
+		if err != nil {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		client := pb.NewTelemetryServiceClient(conn)
+		probeCtx := metadata.NewOutgoingContext(
+			context.Background(),
+			metadata.Pairs("authorization", "Bearer "+token),
+		)
+		probe = func() error {
+			_, err := client.PushLogs(probeCtx, &pb.PushLogsRequest{})
+			return err
+		}
+		_, err = client.PushLogs(probeCtx, &pb.PushLogsRequest{})
+		if err == nil || status.Code(err) != codes.Unavailable {
+			break
+		}
+		_ = conn.Close()
+		conn = nil
+		time.Sleep(10 * time.Millisecond)
+	}
+	if conn == nil {
+		cancel()
+		releaseFlush()
+		<-errCh
+		t.Fatal("telemetry gRPC server did not become ready")
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	svc.Loki.Enqueue(logEntry("drain-me"))
+	cancel()
+
+	select {
+	case <-entered:
+	case err := <-errCh:
+		t.Fatalf("Start returned before the Loki flush: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the shutdown Loki flush")
+	}
+
+	select {
+	case err := <-errCh:
+		t.Fatalf("Start returned while the Loki flush was still in flight: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	releaseFlush()
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not return after the Loki flush")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !bodyHasEntry {
+		t.Fatal("shutdown flush did not include the queued log entry")
+	}
+	if !pushRejected {
+		t.Fatal("shutdown flush ran while gRPC was still accepting PushLogs")
+	}
+}
+
+// mustToken returns a telemetry token for subject, as GetServiceEndpoints issues it.
 func mustToken(t *testing.T, signer *oidc.Signer, subject string) string {
 	t.Helper()
-	token, err := signer.Token(subject)
+	token, err := signer.WithAudience(oidc.TelemetryAudience).Token(subject)
 	if err != nil {
 		t.Fatalf("sign token: %v", err)
 	}
@@ -656,8 +904,12 @@ func TestTelemetryService_PushLogs_RejectsInvalidToken(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected PushLogs to fail with an invalid token")
 	}
-	if !strings.Contains(err.Error(), "invalid token") {
-		t.Errorf("expected 'invalid token' in error, got: %v", err)
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected a gRPC status, got %v", err)
+	}
+	if st.Message() != "invalid token" {
+		t.Fatalf("client message = %q, want %q (must not wrap jwt parse error)", st.Message(), "invalid token")
 	}
 }
 
@@ -728,20 +980,145 @@ func TestTelemetryService_PushLogs_AllFieldsLogged(t *testing.T) {
 	}
 }
 
-func TestTelemetryService_PushLogs_RejectsNonExporterToken(t *testing.T) {
+func TestTelemetryService_PushLogs_LokiDoesNotAlsoLogIngestedEntries(t *testing.T) {
+	var logBuf bytes.Buffer
+	testLogger := zap.New(zap.WriteTo(&logBuf))
+
+	signer := testSigner(t)
+	pusher := &LokiPusher{queueDepth: 10, now: time.Now}
+	svc := &TelemetryService{BindAddr: ":0", Signer: signer, Loki: pusher}
+	ctx := logf.IntoContext(authedCtx(t, signer, "exporter:jumpstarter:lab-exporter:abc123"), testLogger)
+
+	resp, err := svc.PushLogs(ctx, &pb.PushLogsRequest{Entries: []*pb.LogEntry{{
+		Severity: "error",
+		Message:  "flash failed",
+		Exporter: "lab-exporter",
+	}}})
+	if err != nil {
+		t.Fatalf("PushLogs returned error: %v", err)
+	}
+	if resp.Accepted != 1 {
+		t.Fatalf("Accepted = %d, want 1", resp.Accepted)
+	}
+	if strings.Contains(logBuf.String(), "flash failed") {
+		t.Fatalf("ingested event was also written to stdout:\n%s", logBuf.String())
+	}
+
+	pusher.mu.Lock()
+	defer pusher.mu.Unlock()
+	if len(pusher.entries) != 1 {
+		t.Fatalf("queued entries = %d, want 1", len(pusher.entries))
+	}
+	if pusher.entries[0].GetMessage() != "flash failed" {
+		t.Fatalf("queued message = %q", pusher.entries[0].GetMessage())
+	}
+}
+
+func TestTelemetryService_PushLogs_AcceptsClientToken(t *testing.T) {
 	signer := testSigner(t)
 	svc := &TelemetryService{BindAddr: ":0", Signer: signer}
-	// A client token has a different subject format — must be rejected.
-	ctx := authedCtx(t, signer, "client:jumpstarter:some-client:uid1")
+	ctx := authedCtx(t, signer, "client:jumpstarter:ci-client:uid1")
 
-	_, err := svc.PushLogs(ctx, &pb.PushLogsRequest{Entries: []*pb.LogEntry{
-		{Severity: "info", Message: "sneaky"},
+	resp, err := svc.PushLogs(ctx, &pb.PushLogsRequest{Entries: []*pb.LogEntry{
+		{Severity: "info", Message: "from jmp", Component: "cli"},
 	}})
-	if err == nil {
-		t.Fatal("expected PushLogs to reject a non-exporter token")
+	if err != nil {
+		t.Fatalf("PushLogs with client token: %v", err)
 	}
-	if !strings.Contains(err.Error(), "not an exporter token") {
-		t.Errorf("expected 'not an exporter token' in error, got: %v", err)
+	if resp.Accepted != 1 {
+		t.Errorf("Accepted = %d, want 1", resp.Accepted)
+	}
+}
+
+func TestTelemetryService_PushLogs_OverwritesClientFromToken(t *testing.T) {
+	signer := testSigner(t)
+	pusher, err := NewLokiPusher(LokiConfig{URL: "http://127.0.0.1:1", QueueDepth: 8}, testDroppedCounter())
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &TelemetryService{BindAddr: ":0", Signer: signer, Loki: pusher}
+	ctx := authedCtx(t, signer, "client:jumpstarter:ci-client:uid1")
+
+	resp, err := svc.PushLogs(ctx, &pb.PushLogsRequest{Entries: []*pb.LogEntry{{
+		Severity:  "info",
+		Message:   "from jmp",
+		Component: "cli",
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Accepted != 1 {
+		t.Fatalf("Accepted = %d, want 1", resp.Accepted)
+	}
+	queued := pusher.queued()
+	if len(queued) != 1 {
+		t.Fatalf("queued = %d, want 1", len(queued))
+	}
+	if queued[0].Client != "ci-client" {
+		t.Errorf("client = %q, want token identity ci-client", queued[0].Client)
+	}
+	if queued[0].Namespace != "jumpstarter" {
+		t.Errorf("namespace = %q, want jumpstarter", queued[0].Namespace)
+	}
+	if queued[0].Exporter != "" {
+		t.Errorf("client PushLogs must not stamp exporter from the client name, got %q", queued[0].Exporter)
+	}
+}
+
+func TestTelemetryService_PushLogs_DropsClientExporterClaim(t *testing.T) {
+	signer := testSigner(t)
+	pusher, err := NewLokiPusher(LokiConfig{URL: "http://127.0.0.1:1", QueueDepth: 8}, testDroppedCounter())
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &TelemetryService{BindAddr: ":0", Signer: signer, Loki: pusher}
+	ctx := authedCtx(t, signer, "client:jumpstarter:ci-client:uid1")
+
+	resp, err := svc.PushLogs(ctx, &pb.PushLogsRequest{Entries: []*pb.LogEntry{
+		{Severity: "info", Message: "ok", Component: "cli"},
+		{Severity: "info", Message: "spoofed", Component: "cli", Exporter: "spoofed"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Accepted != 1 {
+		t.Errorf("Accepted = %d, want 1", resp.Accepted)
+	}
+	if resp.Dropped != 1 {
+		t.Errorf("Dropped = %d, want 1", resp.Dropped)
+	}
+	queued := pusher.queued()
+	if len(queued) != 1 {
+		t.Fatalf("queued = %d, want 1", len(queued))
+	}
+	if queued[0].Message != "ok" {
+		t.Errorf("queued message = %q, want ok", queued[0].Message)
+	}
+	if queued[0].Exporter != "" {
+		t.Errorf("exporter = %q, want empty", queued[0].Exporter)
+	}
+	if queued[0].Client != "ci-client" {
+		t.Errorf("client = %q, want token identity ci-client", queued[0].Client)
+	}
+}
+
+func TestTelemetryService_PushLogs_RejectsWrongClient(t *testing.T) {
+	signer := testSigner(t)
+	svc := &TelemetryService{BindAddr: ":0", Signer: signer}
+	ctx := authedCtx(t, signer, "client:jumpstarter:ci-client:uid1")
+
+	resp, err := svc.PushLogs(ctx, &pb.PushLogsRequest{Entries: []*pb.LogEntry{
+		{Severity: "info", Message: "ok", Component: "cli", Client: "ci-client"},
+		{Severity: "info", Message: "bad", Component: "cli", Client: "other-client"},
+	}})
+	if err != nil {
+		t.Fatalf("expected mismatch entries to be dropped, not fail the RPC: %v", err)
+	}
+	if resp.Accepted != 1 {
+		t.Errorf("Accepted = %d, want 1", resp.Accepted)
+	}
+	if resp.Dropped != 1 {
+		t.Errorf("Dropped = %d, want 1", resp.Dropped)
 	}
 }
 
@@ -1045,5 +1422,32 @@ func TestGetServiceEndpoints_AuthFailure_LogsWithPeer(t *testing.T) {
 	}
 	if !strings.Contains(logged, "10.0.0.5") {
 		t.Errorf("expected peer IP in log, got:\n%s", logged)
+	}
+}
+
+func TestTelemetryService_PushLogs_LokiDoesNotAlsoLogClientEntries(t *testing.T) {
+	var logBuf bytes.Buffer
+	testLogger := zap.New(zap.WriteTo(&logBuf))
+	signer := testSigner(t)
+	pusher := &LokiPusher{queueDepth: 10, now: time.Now}
+	svc := &TelemetryService{BindAddr: ":0", Signer: signer, Loki: pusher}
+	ctx := logf.IntoContext(authedCtx(t, signer, "client:jumpstarter:ci-client:uid1"), testLogger)
+
+	resp, err := svc.PushLogs(ctx, &pb.PushLogsRequest{Entries: []*pb.LogEntry{{
+		Severity: "error",
+		Message:  "flash failed",
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Accepted != 1 {
+		t.Fatalf("Accepted = %d, want 1", resp.Accepted)
+	}
+	if strings.Contains(logBuf.String(), "flash failed") {
+		t.Fatalf("ingested entry was also written to stdout:\n%s", logBuf.String())
+	}
+	queued := pusher.queued()
+	if len(queued) != 1 || queued[0].Message != "flash failed" {
+		t.Fatalf("queued = %#v, want the ingested entry", queued)
 	}
 }

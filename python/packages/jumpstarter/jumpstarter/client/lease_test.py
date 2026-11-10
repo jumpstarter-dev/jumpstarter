@@ -8,12 +8,14 @@ from unittest.mock import AsyncMock, Mock, patch
 import anyio
 import grpc
 import pytest
+from anyio.from_thread import BlockingPortal
 from grpc.aio import AioRpcError
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
 from rich.console import Console
 
 from jumpstarter.client.exceptions import LeaseError
-from jumpstarter.client.lease import Lease, LeaseAcquisitionSpinner
+from jumpstarter.client.grpc import ClientService
+from jumpstarter.client.lease import DirectLease, Lease, LeaseAcquisitionSpinner
 from jumpstarter.common.exceptions import ExporterUnreachableError
 
 
@@ -357,6 +359,29 @@ class TestLeaseAcquisitionSpinner:
             spinner.update_status("Message 4")
 
             assert mock_spinner.update.call_count == 4
+
+
+class TestDirectLeaseContextManager:
+    """Tests that DirectLease works as both async and sync context managers."""
+
+    def _make_direct_lease(self):
+        return DirectLease(
+            address="localhost:50051",
+            portal=Mock(spec=BlockingPortal),
+            allow=[],
+            unsafe=False,
+        )
+
+    @pytest.mark.anyio
+    async def test_async_context_manager_returns_self(self):
+        lease = self._make_direct_lease()
+        async with lease as value:
+            assert value is lease
+
+    def test_sync_context_manager_returns_self(self):
+        lease = self._make_direct_lease()
+        with lease as value:
+            assert value is lease
 
 
 class TestRequestAsyncOwnership:
@@ -1027,8 +1052,75 @@ class TestRequestAsyncExpiredLease:
         lease._acquire.assert_called_once()
 
 
+@asynccontextmanager
+async def _unresponsive_controller():
+    """A channel to a gRPC server that accepts every call and never answers, as a hung controller."""
+
+    class _Hang(grpc.GenericRpcHandler):
+        def service(self, handler_call_details):
+            async def hang(request, context):
+                # Outlasts every timeout under test, but ends if a deadline goes missing
+                await anyio.sleep(40)
+                await context.abort(grpc.StatusCode.UNAVAILABLE, "unresponsive controller gave up")
+
+            return grpc.unary_unary_rpc_method_handler(hang)
+
+    server = grpc.aio.server()
+    server.add_generic_rpc_handlers((_Hang(),))
+    port = server.add_insecure_port("127.0.0.1:0")
+    await server.start()
+    channel = grpc.aio.insecure_channel(f"127.0.0.1:{port}")
+    try:
+        yield channel
+    finally:
+        await channel.close()
+        await server.stop(grace=None)
+
+
+class TestReleaseOnExit:
+    """Releasing an auto-created lease when its context exits."""
+
+    @pytest.mark.anyio
+    async def test_unresponsive_controller_times_out_the_release_not_the_caller(self, monkeypatch, caplog):
+        """A controller that stops answering must time out the release, not cancel the caller.
+
+        An anyio timeout around the hung grpc.aio calls raised a CancelledError that
+        anyio did not recognize: `jmp shell` exited 2, without the timeout warning.
+        """
+        monkeypatch.setattr("jumpstarter.client.lease._RELEASE_RPC_TIMEOUT_SECONDS", 0.2)
+        async with _unresponsive_controller() as channel:
+            lease = object.__new__(Lease)
+            lease.channel, lease.namespace, lease.name, lease.release = channel, "default", "test-lease", True
+            lease.svc = ClientService(channel=channel, namespace="default")
+            lease.request_async = AsyncMock(return_value=lease)
+
+            with anyio.fail_after(10), caplog.at_level(logging.WARNING, logger="jumpstarter.client.lease"):
+                async with lease:
+                    pass
+
+        assert "Timeout while deleting lease test-lease during cleanup" in caplog.text
+
+
 class TestAcquireExpiredLease:
-    """Tests for Ready=False detection in _acquire polling loop."""
+    """Tests for the _acquire polling loop."""
+
+    @pytest.mark.anyio
+    async def test_records_exporter_and_owner_when_ready(self):
+        """The session dials the exporter recorded here, and the shell tells a
+        transfer from a revoked share by the owner recorded here."""
+        from jumpstarter_protocol import kubernetes_pb2
+
+        lease = self._make_lease()
+        lease._fetch_exporter_labels = AsyncMock()
+        lease._get_with_retry.return_value = Mock(
+            conditions=[kubernetes_pb2.Condition(type="Ready", status="True")],
+            exporter="test-exporter",
+            client="owner",
+        )
+
+        await lease._acquire()
+
+        assert (lease.exporter_name, lease.owner) == ("test-exporter", "owner")
 
     def _make_lease(self, *, name="test-lease"):
 
@@ -1093,7 +1185,7 @@ class TestServeUnixAsync:
 
         with pytest.raises(ExporterUnreachableError, match="exporter is offline"):
             async with lease.serve_unix_async():
-                pytest.fail("Listener started despite initial Dial failure")
+                pytest.fail("Listener started despite initial Dial failure")  # ty: ignore[invalid-argument-type]
         lease.controller.Dial.assert_awaited_once()
 
     @pytest.mark.anyio

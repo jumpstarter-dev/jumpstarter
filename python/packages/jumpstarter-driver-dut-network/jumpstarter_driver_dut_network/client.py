@@ -16,7 +16,7 @@ class DutNetworkClient(DriverClient):
     and inspect NAT rules.
     """
 
-    def status(self) -> dict:
+    def status(self) -> dict:  # ty: ignore[invalid-property-type-override]
         """Get network status including interface state, leases, and NAT info."""
         return self.call("status")
 

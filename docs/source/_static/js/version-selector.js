@@ -14,6 +14,17 @@ document.addEventListener('DOMContentLoaded', function () {
 
     overlay.classList.add('versjon-inline');
 
+    document.addEventListener('click', function (event) {
+        if (!overlay.contains(event.target)) {
+            var btn = overlay.querySelector('.versjon');
+            var content = overlay.querySelector('.versjon-content');
+            if (content && content.style.maxHeight) {
+                content.style.maxHeight = null;
+                if (btn) btn.classList.remove('active');
+            }
+        }
+    });
+
     var sidebarDrawer = document.querySelector('.sidebar-drawer');
     if (!sidebarDrawer) return;
 

@@ -21,10 +21,9 @@ from anyio.to_thread import run_sync
 warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"authlib\.")
 
 from authlib.integrations.requests_client import OAuth2Session  # noqa: E402
-from joserfc.errors import JoseError  # noqa: E402
-from joserfc.jws import extract_compact  # noqa: E402
 from yarl import URL  # noqa: E402
 
+from jumpstarter.common.jwt import decode_jwt_payload as decode_jwt  # noqa: E402
 from jumpstarter.config.env import JMP_OIDC_CALLBACK_PORT, JMP_OIDC_DEVICE_FLOW  # noqa: E402
 
 
@@ -114,7 +113,7 @@ class Config:
 
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         else:
-            session.verify = os.environ.get("SSL_CERT_FILE") or certifi.where()
+            session.verify = os.environ.get("SSL_CERT_FILE") or certifi.where()  # ty: ignore[invalid-assignment]
         return session
 
     async def token_exchange_grant(self, token: str, **kwargs):
@@ -191,7 +190,8 @@ class Config:
             await runner.cleanup()
             raise click.ClickException(f"Failed to start callback server on port {port}: {e}") from None
 
-        redirect_uri = f"http://localhost:{site._server.sockets[0].getsockname()[1]}/callback"
+        assert site._server is not None
+        redirect_uri = f"http://localhost:{site._server.sockets[0].getsockname()[1]}/callback"  # ty: ignore[unresolved-attribute]
 
         client = self.client(redirect_uri=redirect_uri)
 
@@ -326,13 +326,6 @@ class Config:
             raise click.ClickException(
                 "Device authorization timed out waiting for user approval. Please try again."
             )
-
-
-def decode_jwt(token: str):
-    try:
-        return json.loads(extract_compact(token.encode()).payload)
-    except (ValueError, KeyError, TypeError, JoseError) as e:  # pragma: no cover
-        raise ValueError(f"Invalid JWT format: {e}") from e
 
 
 def decode_jwt_issuer(token: str):

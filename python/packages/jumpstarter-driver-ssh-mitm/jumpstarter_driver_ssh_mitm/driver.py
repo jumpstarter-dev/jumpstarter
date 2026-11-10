@@ -244,7 +244,7 @@ class SSHMITM(Driver):
 
     def _get_target_connection(self) -> tuple[str, int]:
         """Get DUT host and port from TCP child driver."""
-        tcp_driver: TcpNetwork = self.children["tcp"]
+        tcp_driver: TcpNetwork = self.children["tcp"]  # ty: ignore[invalid-assignment]
         return tcp_driver.host, tcp_driver.port or 22
 
     def _load_private_key(self, key_data: str) -> paramiko.PKey:

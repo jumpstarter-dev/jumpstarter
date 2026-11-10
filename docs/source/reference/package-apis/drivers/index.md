@@ -14,6 +14,7 @@ function:
 
 Drivers that control the power state and basic operation of devices:
 
+- {doc}`CoPilot <copilot>` (`jumpstarter-driver-copilot`) - BayLibre CoPilot GPIO, relay and supply control
 - {doc}`Power <power>` (`jumpstarter-driver-power`) - Power control for devices
 - {doc}`gpiod <gpiod>` (`jumpstarter-driver-gpiod`) - GPIO hardware control via libgpiod
 - {doc}`Yepkit <yepkit>` (`jumpstarter-driver-yepkit`) - Yepkit USB hub hardware control
@@ -31,6 +32,7 @@ Drivers that provide various communication interfaces:
 - {doc}`BLE <ble>` (`jumpstarter-driver-ble`) - Bluetooth Low Energy communication
 - {doc}`BT Peer <bt-peer>` (`jumpstarter-driver-bt-peer`) - Bluetooth peer device powered by bumble
 - {doc}`CAN <can>` (`jumpstarter-driver-can`) - Controller Area Network communication
+- {doc}`DDS <dds>` (`jumpstarter-driver-dds`) - DDS (Data Distribution Service) pub/sub communication using Eclipse CycloneDDS
 - {doc}`HTTP <http>` (`jumpstarter-driver-http`) - HTTP communication
 - {doc}`mitmproxy <mitmproxy>` (`jumpstarter-driver-mitmproxy`) - HTTP/HTTPS interception, mocking, and traffic recording
 - {doc}`DUT Network <dut-network>` (`jumpstarter-driver-dut-network`) - DUT network isolation with bridge, DHCP, DNS, and NAT
@@ -115,8 +117,10 @@ androidemulator.md
 ble.md
 bt-peer.md
 can.md
+copilot.md
 corellium.md
 cuttlefish.md
+dds.md
 doip.md
 dut-network.md
 dutlink.md

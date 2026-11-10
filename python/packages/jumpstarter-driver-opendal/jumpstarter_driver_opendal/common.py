@@ -100,7 +100,7 @@ class Capability(BaseModel):
 
     create_dir: bool
     delete: bool
-    copy: bool
+    copy: bool  # ty: ignore[invalid-attribute-override]
     rename: bool
 
     list: bool

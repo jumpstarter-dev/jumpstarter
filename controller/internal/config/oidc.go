@@ -63,6 +63,21 @@ func LoadAuthenticationConfiguration(
 	return authn, config.Internal.Prefix, nil
 }
 
+// LoadExternalJWTAuthenticators builds authenticators for configured external
+// OIDC issuers. The internal controller signer is omitted; callers that already
+// verify controller-issued tokens with Signer should use this for the rest.
+// An empty JWT list returns a nil authenticator.
+func LoadExternalJWTAuthenticators(
+	ctx context.Context,
+	scheme *runtime.Scheme,
+	config Authentication,
+) (authenticator.Token, error) {
+	if len(config.JWT) == 0 {
+		return nil, nil
+	}
+	return newJWTAuthenticator(ctx, scheme, config)
+}
+
 // Reference: https://github.com/kubernetes/kubernetes/blob/v1.32.1/pkg/kubeapiserver/authenticator/config.go#L244
 func newJWTAuthenticator(
 	ctx context.Context,

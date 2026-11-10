@@ -162,7 +162,7 @@ def _nat_probe() -> bool:
 def nat_available() -> None:
     """Run the NAT probe once per session (at test time, not import time)."""
     if not _nat_probe():
-        pytest.skip("nftables NAT between namespaces not available")  # type: ignore[misc]
+        pytest.skip("nftables NAT between namespaces not available")  # ty: ignore[too-many-positional-arguments]
 
 
 class NetworkTestEnv:
@@ -249,7 +249,7 @@ class NetworkTestEnv:
             "state_dir": self.state_dir,
         }
         params.update(kwargs)
-        return DutNetwork(**params)  # type: ignore[missing-argument]
+        return DutNetwork(**params)  # ty: ignore[invalid-argument-type]
 
 
 @pytest.fixture

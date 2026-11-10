@@ -117,7 +117,7 @@ class MockUdsEcu:
         while self._running:
             data = self._stack.recv(block=True, timeout=0.1)
             if data is not None:
-                response = _build_uds_response(data)
+                response = _build_uds_response(bytes(data))
                 self._stack.send(response, send_timeout=2)
 
     def stop(self):

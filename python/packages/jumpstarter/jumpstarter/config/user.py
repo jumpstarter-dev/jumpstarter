@@ -75,7 +75,7 @@ class UserConfigV1Alpha1(BaseModel):
         """Check if a user config exists, otherwise create an empty one."""
         if cls.exists() is False:
             os.makedirs(cls.BASE_CONFIG_PATH, exist_ok=True)
-            config = cls(config=UserConfigV1Alpha1Config(current_client=None))
+            config = cls(config=UserConfigV1Alpha1Config.model_validate({"current-client": None}))
             cls.save(config)
             return config
         # Always return the current user config if it exists

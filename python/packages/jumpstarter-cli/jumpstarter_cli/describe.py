@@ -293,21 +293,21 @@ def describe_client(alias: str | None, output: OutputType):
 
     token_expiry, token_status = _token_details(config.token)
 
-    description = ClientDescription(
-        alias=config.alias,
-        path=str(config.path) if config.path else None,
-        current=current_alias is not None and config.alias == current_alias,
-        name=config.metadata.name,
-        namespace=config.metadata.namespace,
-        endpoint=config.endpoint,
-        tls_ca_configured=bool(config.tls.ca),
-        tls_insecure=config.tls.insecure,
-        drivers_allow=config.drivers.allow,
-        drivers_unsafe=config.drivers.unsafe,
-        token_expiry=token_expiry,
-        token_status=token_status,
-        refresh_token_stored=bool(config.refresh_token),
-    )
+    description = ClientDescription.model_validate({
+        "alias": config.alias,
+        "path": str(config.path) if config.path else None,
+        "current": current_alias is not None and config.alias == current_alias,
+        "name": config.metadata.name,
+        "namespace": config.metadata.namespace,
+        "endpoint": config.endpoint,
+        "tlsCaConfigured": bool(config.tls.ca),
+        "tlsInsecure": config.tls.insecure,
+        "driversAllow": config.drivers.allow,
+        "driversUnsafe": config.drivers.unsafe,
+        "tokenExpiry": token_expiry,
+        "tokenStatus": token_status,
+        "refreshTokenStored": bool(config.refresh_token),
+    })
 
     if output:
         model_print(description, output)

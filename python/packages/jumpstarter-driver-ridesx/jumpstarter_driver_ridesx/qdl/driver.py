@@ -560,6 +560,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         finally:
             if tar_proc is not None:
                 try:
+                    assert tar_proc.stdin is not None
                     tar_proc.stdin.close()
                 except BrokenPipeError:
                     pass

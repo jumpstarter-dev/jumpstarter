@@ -1,20 +1,34 @@
 """Tests for session GetReport with descriptions and methods_description"""
 
 import logging
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager
 
 import grpc
 import pytest
-from anyio import BrokenResourceError, CancelScope, connect_tcp, fail_after, sleep_forever
+from anyio import (
+    BrokenResourceError,
+    CancelScope,
+    Event,
+    connect_tcp,
+    create_task_group,
+    fail_after,
+    move_on_after,
+    sleep,
+    sleep_forever,
+)
+from anyio.from_thread import BlockingPortal
 from google.protobuf import empty_pb2
 from jumpstarter_protocol import router_pb2_grpc
 
-from jumpstarter.common import TemporaryTcpListener
+from jumpstarter.client.client import client_from_path
+from jumpstarter.client.core import ExporterNotReady
+from jumpstarter.common import ExporterStatus, TemporaryTcpListener
 from jumpstarter.common.resources import ResourceMetadata
 from jumpstarter.common.streams import ResourceStreamRequest, StreamRequestMetadata
 from jumpstarter.common.utils import serve
-from jumpstarter.driver import Driver
+from jumpstarter.driver import Driver, export, session_env
 from jumpstarter.exporter.auth import PASSPHRASE_METADATA_KEY, PassphraseInterceptor
+from jumpstarter.exporter.lease_context import LeaseContext
 from jumpstarter.exporter.session import Session
 from jumpstarter.streams.common import forward_stream
 from jumpstarter.streams.router import RouterStream
@@ -46,7 +60,10 @@ def test_session_unbinds_exporter_log_context():
     driver = SimpleDriver()
     with Session(uuid=driver.uuid, root_device=driver, exporter_name="test-exporter") as session:
         assert session.exporter_name == "test-exporter"
+        assert session.name == "test-exporter"
         assert structlog.contextvars.get_contextvars().get("exporter") == "test-exporter"
+    # Driver names still come from the label, not the session property.
+    assert driver.name == "unknown"
     assert "exporter" not in structlog.contextvars.get_contextvars()
 
 
@@ -430,22 +447,38 @@ def test_driverclickgroup_uses_methods_description_as_override():
         assert help_text == "Client default: Power off"
 
 
-def test_logging_queue_maxlen_256():
-    """Issue A2: Logging queue deque maxlen should be 256 (not 32).
+@pytest.mark.anyio
+async def test_log_stream_delivers_records_logged_before_it_opened(caplog):
+    """The first LogStream receives up to 256 records logged before it opened.
 
-    The deque was originally sized at 32, which caused log messages to be
-    dropped during hook execution. Verify the fix sets maxlen=256.
+    Hooks start logging before the client opens its LogStream; a 32-record
+    buffer once dropped the start of their output (issue A2).
     """
+    from jumpstarter_protocol import jumpstarter_pb2_grpc
+
+    log = logging.getLogger("jumpstarter.test.log_stream_backlog")
     driver = SimpleDriver()
+    session = Session(uuid=driver.uuid, labels=driver.labels, root_device=driver)
+    seen: list[str] = []
+    records = [f"early {i}" for i in range(256)]
 
-    with serve(driver) as _:
-        session = Session(
-            uuid=driver.uuid,
-            labels=driver.labels,
-            root_device=driver,
-        )
+    def early(messages: list[str]) -> list[str]:
+        return [message for message in messages if message.startswith("early")]
 
-        assert session._logging_queue.maxlen == 256
+    with session, caplog.at_level(logging.INFO, logger=log.name):
+        async with (
+            session.serve_tcp_async("127.0.0.1", 0) as port,
+            grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel,
+            create_task_group() as tg,
+        ):
+            for record in records:
+                log.info(record)
+            stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+            tg.start_soon(_read_log_messages, stub.LogStream(empty_pb2.Empty()), seen)
+            await _wait_until(lambda: len(early(seen)) >= len(records))
+            tg.cancel_scope.cancel()
+
+    assert early(seen) == records
 
 
 @pytest.mark.anyio
@@ -727,6 +760,190 @@ async def test_log_stream_without_enriched_fields():
             assert len(msg.structured_fields) == 0
 
             log_stream.cancel()
+
+
+async def _read_log_messages(call, into: list[str]) -> None:
+    """Append the message of every LogStream response to `into` until cancelled."""
+    async for response in call:
+        into.append(response.message)
+
+
+async def _wait_until(predicate, tick=None, timeout: float = 5.0) -> None:
+    """Poll until predicate() holds or the timeout passes, calling tick() before each poll."""
+    with move_on_after(timeout):
+        while not predicate():
+            if tick is not None:
+                tick()
+            await sleep(0.05)
+
+
+@pytest.mark.anyio
+async def test_log_stream_gives_every_reader_every_record(caplog):
+    """Every open LogStream receives every record, as each client sharing a lease opens its own.
+
+    A record logged before any reader connects goes to the first reader only,
+    and a reader keeps receiving after another one disconnects.
+    """
+    from jumpstarter_protocol import jumpstarter_pb2_grpc
+
+    log = logging.getLogger("jumpstarter.test.log_stream_readers")
+    driver = SimpleDriver()
+    session = Session(uuid=driver.uuid, labels=driver.labels, root_device=driver)
+    owner_seen: list[str] = []
+    joiner_seen: list[str] = []
+
+    def matching(seen: list[str], prefix: str) -> list[str]:
+        return [message for message in seen if message.startswith(prefix)]
+
+    with session, caplog.at_level(logging.INFO, logger=log.name):
+        async with (
+            session.serve_tcp_async("127.0.0.1", 0) as port,
+            grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel,
+            create_task_group() as tg,
+        ):
+            stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+
+            log.info("logged before any reader")
+            tg.start_soon(_read_log_messages, stub.LogStream(empty_pb2.Empty()), owner_seen)
+            await _wait_until(lambda: "logged before any reader" in owner_seen)
+
+            joiner_scope = CancelScope()
+
+            async def read_joiner():
+                with joiner_scope:
+                    await _read_log_messages(stub.LogStream(empty_pb2.Empty()), joiner_seen)
+
+            tg.start_soon(read_joiner)
+            # The joiner's stream is open once a record logged after it started reaches it
+            await _wait_until(lambda: matching(joiner_seen, "probe"), tick=lambda: log.info("probe"))
+
+            records = [f"record {i}" for i in range(20)]
+            for record in records:
+                log.info(record)
+            await _wait_until(
+                lambda: len(matching(owner_seen, "record")) >= 20 and len(matching(joiner_seen, "record")) >= 20
+            )
+            assert matching(owner_seen, "record") == records
+            assert matching(joiner_seen, "record") == records
+            assert "logged before any reader" not in joiner_seen
+
+            joiner_scope.cancel()
+            after = [f"after the joiner left {i}" for i in range(10)]
+            for record in after:
+                log.info(record)
+                await sleep(0.1)
+            await _wait_until(lambda: len(matching(owner_seen, "after")) >= 10)
+            assert matching(owner_seen, "after") == after
+
+            tg.cancel_scope.cancel()
+
+
+# ============================================================================
+# Driver call status gate
+# ============================================================================
+
+
+class GatedDriver(Driver):
+    """Driver with one unary and one streaming export, covering both gated RPCs."""
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @export
+    def ping(self) -> str:
+        return "pong"
+
+    @export
+    async def count(self):
+        yield 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "status, allowed",
+    [
+        (ExporterStatus.LEASE_READY, True),
+        # hooks run `j` commands against the session while these are set
+        (ExporterStatus.BEFORE_LEASE_HOOK, True),
+        (ExporterStatus.AFTER_LEASE_HOOK, True),
+        (ExporterStatus.AVAILABLE, False),
+        (ExporterStatus.BEFORE_LEASE_HOOK_FAILED, False),
+        (ExporterStatus.AFTER_LEASE_HOOK_FAILED, False),
+        (ExporterStatus.OFFLINE, False),
+        # the controller lets this through for exporters that predate status reporting; the exporter must not
+        (ExporterStatus.UNSPECIFIED, False),
+    ],
+)
+async def test_driver_calls_gated_on_exporter_status(status, allowed):
+    """Driver calls are refused with ExporterNotReady unless the exporter is ready or running a hook."""
+    driver = GatedDriver()
+    with Session(uuid=driver.uuid, labels=driver.labels, root_device=driver) as session:
+        session.update_status(status)
+        async with session.serve_unix_async() as path, BlockingPortal() as portal:
+            with ExitStack() as stack:
+                async with client_from_path(path, portal, stack, allow=[], unsafe=True) as client:
+                    if allowed:
+                        assert await client.call_async("ping") == "pong"
+                        assert [value async for value in client.streamingcall_async("count")] == [1]
+                    else:
+                        with pytest.raises(ExporterNotReady, match=f"status: {status.name}"):
+                            await client.call_async("ping")
+                        with pytest.raises(ExporterNotReady, match=f"status: {status.name}"):
+                            async for _ in client.streamingcall_async("count"):
+                                pass
+
+
+class SessionEnvDriver(Driver):
+    """Driver reporting the session env its calls see, from a unary and a streaming export."""
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @export
+    def env(self) -> dict[str, str]:
+        return session_env()
+
+    @export
+    async def env_stream(self):
+        yield session_env()
+
+
+@pytest.mark.anyio
+async def test_driver_calls_get_the_session_env_during_a_lease():
+    """Driver calls see the env hooks get, pointing at the hook socket, and only while they run."""
+    driver = SessionEnvDriver()
+    lease = LeaseContext(lease_name="test-lease", before_lease_hook=Event(), client_name="test-client")
+    with Session(uuid=driver.uuid, labels=driver.labels, root_device=driver) as session:
+        session.lease_context = lease
+        session.update_status(ExporterStatus.LEASE_READY)
+        async with session.serve_unix_with_hook_socket_async() as (main_path, hook_path), BlockingPortal() as portal:
+            lease.socket_path = main_path
+            lease.hook_socket_path = hook_path
+            expected = {
+                "JUMPSTARTER_HOST": str(hook_path),
+                "JMP_DRIVERS_ALLOW": "UNSAFE",
+                "LEASE_NAME": "test-lease",
+                "CLIENT_NAME": "test-client",
+            }
+            with ExitStack() as stack:
+                async with client_from_path(main_path, portal, stack, allow=[], unsafe=True) as client:
+                    assert await client.call_async("env") == expected
+                    assert [env async for env in client.streamingcall_async("env_stream")] == [expected]
+            assert session_env() == {}
+
+
+@pytest.mark.anyio
+async def test_driver_calls_get_no_session_env_outside_a_lease():
+    driver = SessionEnvDriver()
+    with Session(uuid=driver.uuid, labels=driver.labels, root_device=driver) as session:
+        session.update_status(ExporterStatus.LEASE_READY)
+        async with session.serve_unix_async() as path, BlockingPortal() as portal:
+            with ExitStack() as stack:
+                async with client_from_path(path, portal, stack, allow=[], unsafe=True) as client:
+                    assert await client.call_async("env") == {}
+                    assert [env async for env in client.streamingcall_async("env_stream")] == [{}]
 
 
 # ============================================================================

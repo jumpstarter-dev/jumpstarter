@@ -167,7 +167,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         name: str,
         show_hidden_labels: bool = False,
     ):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
         return await svc.GetExporter(name=name, show_hidden_labels=show_hidden_labels)
 
     async def _collect_all_leases(self, svc, page_size=100, only_active=True, filter=None, tag_filter=None):
@@ -203,7 +203,7 @@ class ClientConfigV1Alpha1(BaseSettings):
     ):
         from jumpstarter.client.grpc import ExporterList
 
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
         all_exporters = []
         page_token = None
         while True:
@@ -253,9 +253,9 @@ class ClientConfigV1Alpha1(BaseSettings):
         tags: dict[str, str] | None = None,
         allow_disabled: bool = False,
         context: dict[str, str] | None = None,
-        shared_with: list[str] | None = None,
+        shared_with: list[str] | None = None,  # ty: ignore[invalid-type-form]
     ):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
         return await svc.CreateLease(
             selector=selector,
             exporter_name=exporter_name,
@@ -274,7 +274,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         self,
         name: str,
     ):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
         await svc.DeleteLease(
             name=name,
         )
@@ -285,7 +285,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         self,
         name: str,
     ):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
         return await svc.GetLease(
             name=name,
         )
@@ -299,7 +299,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         page_size: int = 100,
         tag_filter: str | None = None,
     ):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
         return await self._collect_all_leases(
             svc, page_size=page_size, only_active=only_active, filter=filter, tag_filter=tag_filter,
         )
@@ -312,10 +312,10 @@ class ClientConfigV1Alpha1(BaseSettings):
         duration: timedelta | None = None,
         begin_time: datetime | None = None,
         client: str | None = None,
-        add_shared_with: list[str] | None = None,
-        remove_shared_with: list[str] | None = None,
+        add_shared_with: list[str] | None = None,  # ty: ignore[invalid-type-form]
+        remove_shared_with: list[str] | None = None,  # ty: ignore[invalid-type-form]
     ):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
         return await svc.UpdateLease(
             name=name,
             duration=duration,
@@ -328,7 +328,7 @@ class ClientConfigV1Alpha1(BaseSettings):
     @_blocking_compat
     @_handle_connection_error
     async def rotate_token(self) -> str:
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
         return await svc.RotateToken()
 
     @asynccontextmanager
@@ -369,7 +369,7 @@ class ClientConfigV1Alpha1(BaseSettings):
             )
             async with Lease(
                 channel=await self.channel(),
-                namespace=self.metadata.namespace,
+                namespace=self.metadata.namespace or "",
                 name=lease_name,
                 selector=selector,
                 requested_exporter_name=exporter_name,
@@ -379,7 +379,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 unsafe=self.drivers.unsafe,
                 release=release_lease,
                 tls_config=self.tls,
-                grpc_options=self.grpcOptions,
+                grpc_options=self.grpcOptions or {},
                 client_name=self.metadata.name,
                 allow_disabled=allow_disabled,
                 acquisition_timeout=acquisition_timeout_seconds,
@@ -504,7 +504,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         if cls.CLIENT_CONFIGS_PATH.exists() is False:
             # Return an empty list if the dir does not exist
             return ClientConfigListV1Alpha1(
-                current_config=None,
+                currentConfig=None,
                 items=[],
             )
 
@@ -522,7 +522,7 @@ class ClientConfigV1Alpha1(BaseSettings):
             current_config = current_client.alias if current_client is not None else None
 
         return ClientConfigListV1Alpha1(
-            current_config=current_config,
+            currentConfig=current_config,
             items=list(map(make_config, files)),
         )
 

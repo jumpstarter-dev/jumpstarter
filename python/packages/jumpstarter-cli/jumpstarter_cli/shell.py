@@ -38,6 +38,7 @@ from .login import relogin_client
 from jumpstarter.client import DirectLease
 from jumpstarter.client.client import client_from_path, fetch_motd
 from jumpstarter.client.exceptions import LeaseError
+from jumpstarter.client.telemetry import attach_client_telemetry
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus
 from jumpstarter.common.exceptions import (
     ConnectionError,
@@ -55,10 +56,12 @@ logger = logging.getLogger(__name__)
 # Refresh token when less than this many seconds remain
 _TOKEN_REFRESH_THRESHOLD_SECONDS = 120
 
-# How often a shared (non-owner) client re-checks that it still has access to
-# the lease. This bounds the exposure window between an owner revoking a share
-# and the shared client's live session tearing itself down.
+# How often a client re-checks that it still has access to the lease. This
+# bounds the exposure window between an owner revoking a share (or transferring
+# the lease) and the client's live session tearing itself down.
 _SHARED_ACCESS_POLL_SECONDS = 15
+# gRPC deadline for the one-off lease reads that decide how a session ends
+_LEASE_CHECK_TIMEOUT_SECONDS = 5
 
 
 def _run_shell_only(lease, config, command, path: str, motd: str | None = None) -> int:
@@ -280,23 +283,25 @@ async def _monitor_token_expiry(config, lease, cancel_scope, token_state=None) -
 
 
 async def _monitor_shared_access(lease, cancel_scope) -> None:
-    """Cooperatively exit a shared client's session when its access is revoked.
+    """End the session once this client has lost access to the lease.
 
     Revoking a share (owner running `jmp share remove`, or an access-policy
-    change dropping the client from the lease's effective set) does NOT forcibly
-    tear down a router stream the exporter has already established — the
-    controller only stops granting *new* connections. So to honor a revocation
-    for a live session, the shared client polls its own lease and exits when it
-    is no longer in the effective (granted) share set.
+    change dropping the client from the lease's effective set) or transferring
+    the lease does NOT forcibly tear down a router stream the exporter has
+    already established — the controller only stops granting *new* connections.
+    So to honor either for a live session, the client polls its own lease and
+    ends the session once it is neither the owner nor in the effective
+    (granted) share set.
 
     This is a *soft*, cooperative guarantee with a bounded exposure window (up to
-    one poll interval): a shared client that ignores this signal, or whose clock
-    is stopped, keeps its existing stream until the exporter itself drops it. The
+    one poll interval): a client that ignores this signal, or whose clock is
+    stopped, keeps its existing stream until the exporter itself drops it. The
     hard guarantee remains the owner's: `jmp delete lease` / release ends the
-    lease for everyone. (A transfer has the same live-stream gap today.)
+    lease for everyone.
 
-    Only shared (non-owner) clients are monitored — an owner losing the lease is
-    handled by the natural lease_ended / delete path.
+    A lease that ended is left to the lease monitor, which ends the session for
+    every client: the controller clears the share set when a lease ends, so it
+    would otherwise look like revoked access.
     """
     client_name = lease.client_name
     if not client_name:
@@ -310,19 +315,75 @@ async def _monitor_shared_access(lease, cancel_scope) -> None:
             logger.debug("shared-access monitor: could not refresh lease %s", lease.name, exc_info=True)
             await anyio.sleep(_SHARED_ACCESS_POLL_SECONDS)
             continue
-        # Owners are never revoked this way; only react to lost *shared* access.
-        if client_name != fresh.client and not fresh.is_accessible_by(client_name):
+        if fresh.effective_end_time is not None:
+            return
+        if not fresh.is_accessible_by(client_name):
+            # The owner is recorded at acquisition, so a transfer before the
+            # first poll still reads as a transfer
+            if fresh.client != lease.owner:
+                reason = f"Lease {lease.name} has been transferred to {fresh.client}."
+            else:
+                reason = "Shared access to this lease has been revoked."
+            click.echo(click.style(f"\n{reason} Exiting session.", fg="yellow", bold=True))
             lease.lease_revoked = True
-            click.echo(
-                click.style(
-                    "\nShared access to this lease has been revoked. Exiting session.",
-                    fg="yellow",
-                    bold=True,
-                )
-            )
-            cancel_scope.cancel()
+            if lease.lease_ending_callback is not None:
+                # The shell runs in a worker thread that cancellation cannot
+                # stop; end it the way lease expiry does.
+                lease.lease_ending_callback(lease, timedelta(0))
+            else:
+                # No shell yet; launch_shell ends one that starts after this.
+                cancel_scope.cancel()
             return
         await anyio.sleep(_SHARED_ACCESS_POLL_SECONDS)
+
+
+async def _still_owns_lease(lease) -> bool:
+    """Whether the controller confirms this client still holds the lease.
+
+    EndSession runs the afterLease hook on whatever lease the exporter is
+    serving, without checking who asks, so the lease must still be ours.
+    lease_revoked is not enough: the shared-access monitor polls every
+    _SHARED_ACCESS_POLL_SECONDS, and an owner who transfers the lease and
+    exits straight away gets here before the monitor has noticed.
+
+    Anything short of the controller's confirmation counts as no. The
+    exporter runs the hook itself when the lease ends, so skipping EndSession
+    only means this session does not watch it.
+    """
+    try:
+        fresh = await lease.get(timeout=_LEASE_CHECK_TIMEOUT_SECONDS)
+    except Exception:
+        logger.debug("Ownership check for lease %s failed", lease.name, exc_info=True)
+        logger.info(
+            "Could not confirm that lease %s is still ours, so its afterLease hook will run when the lease ends",
+            lease.name,
+        )
+        return False
+    if fresh.client != lease.client_name:
+        logger.info("Lease %s now belongs to %s, so its afterLease hook is theirs to run", lease.name, fresh.client)
+        return False
+    return fresh.effective_end_time is None
+
+
+async def _lease_has_ended(lease) -> bool:
+    """Whether the controller says the lease has ended.
+
+    A Dial on an ended lease fails like one on a lost exporter or, for a shared
+    client, like one on a transferred lease, since the controller clears the
+    share set when the lease ends. The lease monitor may not have polled since,
+    least of all during the first Dial, which runs before it starts. A lease
+    never stops being ended, so a read after the failure tells them apart. If
+    the controller cannot be reached, the failure keeps its usual meaning.
+    """
+    try:
+        fresh = await lease.get(timeout=_LEASE_CHECK_TIMEOUT_SECONDS)
+    except Exception:
+        logger.debug("Could not check whether lease %s has ended", lease.name, exc_info=True)
+        return False
+    if fresh.effective_end_time is None:
+        return False
+    logger.info("Lease %s ended at %s", lease.name, fresh.effective_end_time)
+    return True
 
 
 async def _cancel_if_connection_lost(monitor, coro):
@@ -469,11 +530,13 @@ async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope
                     # EndSession to trigger afterLease hook while keeping log stream
                     # and status monitor open. For pre-created leases (release=False),
                     # skip EndSession so the exporter stays in LEASE_READY and the
-                    # user can reconnect later.
+                    # user can reconnect later. A lease transferred away belongs to
+                    # its new owner, so its afterLease hook is not ours to run.
                     if (
                         lease.release
                         and lease.name
                         and not lease.lease_ended
+                        and not lease.lease_revoked
                         and not cancel_scope.cancel_called
                         and not monitor._get_status_unsupported
                     ):
@@ -513,6 +576,8 @@ async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope
 
                         if monitor.connection_lost:
                             logger.debug("Connection already lost, skipping afterLease hook")
+                        elif not await _still_owns_lease(lease):
+                            logger.debug("Lease %s is no longer ours, skipping afterLease hook", lease.name)
                         else:
                             logger.info("Running afterLease hook (Ctrl+C to skip)...")
                             try:
@@ -587,8 +652,15 @@ async def _shell_with_signal_handling(  # noqa: C901
             err.set_config(config)
             raise err
 
+    telemetry = None
     async with create_task_group() as tg:
         tg.start_soon(signal_handler, tg.cancel_scope)
+
+        telemetry = await attach_client_telemetry(config)
+        if telemetry is not None:
+            # Dial, including tls.insecure certificate discovery, runs here so a
+            # down telemetry service cannot block or fail lease startup.
+            tg.start_soon(telemetry.run)
 
         try:
             try:
@@ -628,7 +700,7 @@ async def _shell_with_signal_handling(  # noqa: C901
                                 if tg.cancel_scope.cancel_called:
                                     exit_code = 2
                                     break
-                                if lease.lease_ended:
+                                if lease.lease_ended or await _lease_has_ended(lease):
                                     break  # lease expired naturally — exit cleanly
                                 if lease.lease_transferred:
                                     raise ExporterOfflineError(
@@ -696,6 +768,12 @@ async def _shell_with_signal_handling(  # noqa: C901
         finally:
             if not tg.cancel_scope.cancel_called:
                 tg.cancel_scope.cancel()
+            # Close even when the task group is failing. Shield the flush so a
+            # cancellation that caused the exit cannot skip it, and keep it
+            # inside the handler's own shutdown budget.
+            if telemetry is not None:
+                with anyio.CancelScope(shield=True):
+                    await telemetry.aclose()
 
     return exit_code
 

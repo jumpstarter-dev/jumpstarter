@@ -26,7 +26,7 @@ from jumpstarter.streams.router import RouterStream
 class MockRouter(router_pb2_grpc.RouterServiceServicer):
     pending: dict[str, AnyByteStream] = field(default_factory=dict)
 
-    async def Stream(self, _request_iterator, context):
+    async def Stream(self, _request_iterator, context):  # ty: ignore[invalid-method-override]
         event = Event()
         context.add_done_callback(lambda _: event.set())
         authorization = dict(list(context.invocation_metadata()))["authorization"]

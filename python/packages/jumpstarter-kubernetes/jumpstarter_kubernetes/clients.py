@@ -36,7 +36,7 @@ class V1Alpha1Client(JsonBaseModel):
     @staticmethod
     def from_dict(dict: dict):
         return V1Alpha1Client(
-            api_version=dict["apiVersion"],
+            apiVersion=dict["apiVersion"],
             kind=dict["kind"],
             metadata=V1ObjectMeta(
                 creation_timestamp=dict["metadata"]["creationTimestamp"],
@@ -75,7 +75,7 @@ class V1Alpha1Client(JsonBaseModel):
 
 
 class V1Alpha1ClientList(V1Alpha1List[V1Alpha1Client]):
-    kind: Literal["ClientList"] = Field(default="ClientList")
+    kind: Literal["ClientList"] = Field(default="ClientList", frozen=True)
 
     @staticmethod
     def from_dict(dict: dict):

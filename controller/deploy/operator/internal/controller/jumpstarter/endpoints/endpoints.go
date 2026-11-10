@@ -289,10 +289,7 @@ func (r *Reconciler) ReconcileRouterReplicaEndpoint(ctx context.Context, owner m
 	}
 
 	// ClusterIP service (no suffix for cleaner in-cluster service names)
-	// Create ClusterIP if explicitly enabled OR if Ingress/Route need it
-	if (endpoint.ClusterIP != nil && endpoint.ClusterIP.Enabled) ||
-		(endpoint.Ingress != nil && endpoint.Ingress.Enabled) ||
-		(endpoint.Route != nil && endpoint.Route.Enabled) {
+	if needsClusterIPService(endpoint) {
 		// Merge annotations and labels from ClusterIP config if present
 		var annotations, labels map[string]string
 		if endpoint.ClusterIP != nil {
@@ -306,6 +303,31 @@ func (r *Reconciler) ReconcileRouterReplicaEndpoint(ctx context.Context, owner m
 	}
 
 	return nil
+}
+
+// RouterServiceSuffixes returns the name suffixes of the Services that
+// ReconcileRouterReplicaEndpoint creates for endpoint: "" for ClusterIP,
+// "-lb" for LoadBalancer and "-np" for NodePort.
+func RouterServiceSuffixes(endpoint *operatorv1alpha1.Endpoint) []string {
+	var suffixes []string
+	if needsClusterIPService(endpoint) {
+		suffixes = append(suffixes, "")
+	}
+	if endpoint.LoadBalancer != nil && endpoint.LoadBalancer.Enabled {
+		suffixes = append(suffixes, "-lb")
+	}
+	if endpoint.NodePort != nil && endpoint.NodePort.Enabled {
+		suffixes = append(suffixes, "-np")
+	}
+	return suffixes
+}
+
+// needsClusterIPService reports whether endpoint gets a ClusterIP Service:
+// when it is enabled explicitly, or for an Ingress or Route to point at.
+func needsClusterIPService(endpoint *operatorv1alpha1.Endpoint) bool {
+	return (endpoint.ClusterIP != nil && endpoint.ClusterIP.Enabled) ||
+		(endpoint.Ingress != nil && endpoint.Ingress.Enabled) ||
+		(endpoint.Route != nil && endpoint.Route.Enabled)
 }
 
 // ReconcileLoginEndpoint reconciles a login endpoint with edge TLS termination.

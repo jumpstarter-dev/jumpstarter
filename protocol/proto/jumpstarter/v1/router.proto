@@ -4,12 +4,11 @@ syntax = "proto3";
 
 package jumpstarter.v1;
 
-// Router service for multiplexing bidirectional streams between clients and exporters.
-// Claims:
-// iss: jumpstarter controller
-// aud: jumpstarter router
-// sub: jumpstarter client/exporter
-// stream: stream id.
+// Router service for pairing bidirectional streams between clients and exporters.
+// The controller issues JWTs with these claims:
+// iss: https://jumpstarter.dev/stream
+// aud: https://jumpstarter.dev/router
+// sub: stream ID shared by the two peers.
 service RouterService {
   // Stream connects caller to another caller of the same stream.
   rpc Stream(stream StreamRequest) returns (stream StreamResponse);

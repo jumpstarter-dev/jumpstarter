@@ -42,7 +42,7 @@ class MockResponse:
 
 
 TEST_CLIENT = V1Alpha1Client(
-    api_version="jumpstarter.dev/v1alpha1",
+    apiVersion="jumpstarter.dev/v1alpha1",
     kind="Client",
     metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
     status=V1Alpha1ClientStatus(
@@ -132,7 +132,7 @@ def test_get_client(_load_kube_config_mock, get_client_mock: AsyncMock):
 CLIENTS_LIST = V1Alpha1ClientList(
     items=[
         V1Alpha1Client(
-            api_version="jumpstarter.dev/v1alpha1",
+            apiVersion="jumpstarter.dev/v1alpha1",
             kind="Client",
             metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
             status=V1Alpha1ClientStatus(
@@ -140,7 +140,7 @@ CLIENTS_LIST = V1Alpha1ClientList(
             ),
         ),
         V1Alpha1Client(
-            api_version="jumpstarter.dev/v1alpha1",
+            apiVersion="jumpstarter.dev/v1alpha1",
             kind="Client",
             metadata=V1ObjectMeta(name="another", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
             status=V1Alpha1ClientStatus(
@@ -297,14 +297,14 @@ def test_get_clients(_load_kube_config_mock, list_clients_mock: AsyncMock):
 
 
 TEST_EXPORTER = V1Alpha1Exporter(
-    api_version="jumpstarter.dev/v1alpha1",
+    apiVersion="jumpstarter.dev/v1alpha1",
     kind="Exporter",
     metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
     status=V1Alpha1ExporterStatus(
         endpoint="grpc://example.com:443",
         credential=V1ObjectReference(name="test-credential"),
         devices=[],  # type: ignore[call-arg]
-        exporter_status="Available",
+        exporterStatus="Available",
     ),
 )
 
@@ -394,7 +394,7 @@ def test_get_exporter(_load_kube_config_mock, get_exporter_mock: AsyncMock):
 
 
 TEST_EXPORTER_DEVICES = V1Alpha1Exporter(
-    api_version="jumpstarter.dev/v1alpha1",
+    apiVersion="jumpstarter.dev/v1alpha1",
     kind="Exporter",
     metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
     status=V1Alpha1ExporterStatus(
@@ -404,7 +404,7 @@ TEST_EXPORTER_DEVICES = V1Alpha1Exporter(
             V1Alpha1ExporterDevice(labels={"hardware": "rpi4"}, uuid="82a8ac0d-d7ff-4009-8948-18a3c5c607b1"),
             V1Alpha1ExporterDevice(labels={"hardware": "rpi4"}, uuid="f7cd30ac-64a3-42c6-ba31-b25f033b97c1"),
         ],
-        exporter_status="Available",
+        exporterStatus="Available",
     ),
 )
 
@@ -517,25 +517,25 @@ def test_get_exporter_devices(_load_kube_config_mock, get_exporter_mock: AsyncMo
 EXPORTERS_LIST = V1Alpha1ExporterList(
     items=[
         V1Alpha1Exporter(
-            api_version="jumpstarter.dev/v1alpha1",
+            apiVersion="jumpstarter.dev/v1alpha1",
             kind="Exporter",
             metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
             status=V1Alpha1ExporterStatus(
                 endpoint="grpc://example.com:443",
                 credential=V1ObjectReference(name="test-credential"),
                 devices=[],  # type: ignore[call-arg]
-                exporter_status="Available",
+                exporterStatus="Available",
             ),
         ),
         V1Alpha1Exporter(
-            api_version="jumpstarter.dev/v1alpha1",
+            apiVersion="jumpstarter.dev/v1alpha1",
             kind="Exporter",
             metadata=V1ObjectMeta(name="another", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
             status=V1Alpha1ExporterStatus(
                 endpoint="grpc://example.com:443",
                 credential=V1ObjectReference(name="another-credential"),
                 devices=[],  # type: ignore[call-arg]
-                exporter_status="Available",
+                exporterStatus="Available",
             ),
         ),
     ]
@@ -671,7 +671,7 @@ def test_get_exporters(_load_kube_config_mock, list_exporters_mock: AsyncMock):
 EXPORTER_DEVICES_LIST = V1Alpha1ExporterList(
     items=[
         V1Alpha1Exporter(
-            api_version="jumpstarter.dev/v1alpha1",
+            apiVersion="jumpstarter.dev/v1alpha1",
             kind="Exporter",
             metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
             status=V1Alpha1ExporterStatus(
@@ -680,11 +680,11 @@ EXPORTER_DEVICES_LIST = V1Alpha1ExporterList(
                 devices=[  # type: ignore[call-arg]
                     V1Alpha1ExporterDevice(labels={"hardware": "rpi4"}, uuid="82a8ac0d-d7ff-4009-8948-18a3c5c607b1")
                 ],
-                exporter_status="Available",
+                exporterStatus="Available",
             ),
         ),
         V1Alpha1Exporter(
-            api_version="jumpstarter.dev/v1alpha1",
+            apiVersion="jumpstarter.dev/v1alpha1",
             kind="Exporter",
             metadata=V1ObjectMeta(name="another", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
             status=V1Alpha1ExporterStatus(
@@ -693,7 +693,7 @@ EXPORTER_DEVICES_LIST = V1Alpha1ExporterList(
                 devices=[  # type: ignore[call-arg]
                     V1Alpha1ExporterDevice(labels={"hardware": "rpi4"}, uuid="f7cd30ac-64a3-42c6-ba31-b25f033b97c1"),
                 ],
-                exporter_status="Available",
+                exporterStatus="Available",
             ),
         ),
     ]
@@ -844,7 +844,7 @@ def test_get_exporters_devices(_load_kube_config_mock, list_exporters_mock: Asyn
 
 
 IN_PROGRESS_LEASE = V1Alpha1Lease(
-    api_version="jumpstarter.dev/v1alpha1",
+    apiVersion="jumpstarter.dev/v1alpha1",
     kind="Lease",
     metadata=V1ObjectMeta(
         name="82a8ac0d-d7ff-4009-8948-18a3c5c607b1",
@@ -852,8 +852,8 @@ IN_PROGRESS_LEASE = V1Alpha1Lease(
         creation_timestamp="2024-01-01T21:00:00Z",
     ),
     status=V1Alpha1LeaseStatus(
-        begin_time="2024-01-01T21:00:00Z",
-        end_time=None,
+        beginTime="2024-01-01T21:00:00Z",
+        endTime=None,
         ended=False,
         exporter=V1ObjectReference(name="test_exporter"),
         conditions=[
@@ -870,12 +870,12 @@ IN_PROGRESS_LEASE = V1Alpha1Lease(
     spec=V1Alpha1LeaseSpec(
         client=V1ObjectReference(name="test_client"),
         duration="5m",
-        selector=V1Alpha1LeaseSelector(match_labels={"hardware": "rpi4"}),
+        selector=V1Alpha1LeaseSelector(matchLabels={"hardware": "rpi4"}),
     ),
 )
 
 FINISHED_LEASE = V1Alpha1Lease(
-    api_version="jumpstarter.dev/v1alpha1",
+    apiVersion="jumpstarter.dev/v1alpha1",
     kind="Lease",
     metadata=V1ObjectMeta(
         name="82a8ac0d-d7ff-4009-8948-18a3c5c607b2",
@@ -883,8 +883,8 @@ FINISHED_LEASE = V1Alpha1Lease(
         creation_timestamp="2024-01-01T21:00:00Z",
     ),
     status=V1Alpha1LeaseStatus(
-        begin_time="2024-01-01T21:00:00Z",
-        end_time="2024-01-01T22:00:00Z",
+        beginTime="2024-01-01T21:00:00Z",
+        endTime="2024-01-01T22:00:00Z",
         ended=True,
         exporter=V1ObjectReference(name="test_exporter"),
         conditions=[
@@ -901,7 +901,7 @@ FINISHED_LEASE = V1Alpha1Lease(
     spec=V1Alpha1LeaseSpec(
         client=V1ObjectReference(name="test_client"),
         duration="1h",
-        selector=V1Alpha1LeaseSelector(match_labels={}),
+        selector=V1Alpha1LeaseSelector(matchLabels={}),
     ),
 )
 
@@ -1279,7 +1279,7 @@ def test_get_cluster_by_name(get_cluster_info_mock: AsyncMock):
         server="https://127.0.0.1:6443",
         user="kind-kind-test",
         namespace="default",
-        is_current=True,
+        isCurrent=True,
         type="kind",
         accessible=True,
         version="1.28.0",
@@ -1302,7 +1302,7 @@ def test_get_cluster_not_found(get_cluster_info_mock: AsyncMock):
         server="",
         user="",
         namespace="default",
-        is_current=False,
+        isCurrent=False,
         type="remote",
         accessible=False,
         jumpstarter=V1Alpha1JumpstarterInstance(installed=False),
@@ -1336,7 +1336,7 @@ def test_get_clusters_list(list_clusters_mock: AsyncMock):
                 server="https://127.0.0.1:6443",
                 user="kind-kind-test",
                 namespace="default",
-                is_current=True,
+                isCurrent=True,
                 type="kind",
                 accessible=True,
                 version="1.28.0",
@@ -1348,7 +1348,7 @@ def test_get_clusters_list(list_clusters_mock: AsyncMock):
                 server="https://192.168.49.2:8443",
                 user="minikube",
                 namespace="default",
-                is_current=False,
+                isCurrent=False,
                 type="minikube",
                 accessible=True,
                 version="1.28.0",
@@ -1385,7 +1385,7 @@ def test_get_cluster_without_name_lists_all(list_clusters_mock: AsyncMock):
                 server="https://127.0.0.1:6443",
                 user="kind-kind-test",
                 namespace="default",
-                is_current=True,
+                isCurrent=True,
                 type="kind",
                 accessible=True,
                 version="1.28.0",

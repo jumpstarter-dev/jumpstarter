@@ -44,7 +44,7 @@ tls:
 endpoint: "jumpstarter.my-lab.com:1443" # The Jumpstarter service endpoint
 token: "******************" # An authentication token
 drivers:
-  allow: ["jumpstarter_drivers_*", "vendorpackage.*"] # Driver packages the client can dynamically load
+  allow: ["jumpstarter_driver_*", "vendorpackage.*"] # Globs matched against the full class path of driver clients
   unsafe: false # Allow any driver package to load dynamically
 leases:
   acquisition_timeout: 7200 # Timeout in seconds for lease acquisition (default: 7200)

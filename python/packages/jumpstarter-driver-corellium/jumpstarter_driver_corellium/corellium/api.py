@@ -69,7 +69,7 @@ class ApiClient:
 
         for device in data:
             if device['model'] == model:
-                return Device(**device) # ty: ignore[missing-argument]
+                return Device(**device)
 
         return None
 
@@ -95,7 +95,7 @@ class ApiClient:
 
             raise CorelliumApiException(msgerr) from e
 
-        return Instance(**data) # ty: ignore[missing-argument]
+        return Instance(**data)
 
     def get_instance(self, instance_ref: str) -> Instance | None:
         """

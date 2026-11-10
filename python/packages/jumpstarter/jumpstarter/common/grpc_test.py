@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import socket
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import grpc
 import pytest
@@ -13,6 +13,7 @@ from jumpstarter.common.grpc import (
     is_controller_unavailable,
     translate_grpc_exceptions,
 )
+from jumpstarter.config.client import ClientConfigV1Alpha1, _attach_config_if_expired_token
 
 
 def test_default_options_preserve_existing_defaults():
@@ -22,7 +23,7 @@ def test_default_options_preserve_existing_defaults():
 
 
 def test_user_options_override_defaults():
-    user_options = {"grpc.keepalive_time_ms": 50000}
+    user_options: dict[str, str | int] = {"grpc.keepalive_time_ms": 50000}
     options = dict(_override_default_grpc_options(user_options))
     assert options["grpc.keepalive_time_ms"] == 50000
 
@@ -35,6 +36,37 @@ def test_translate_grpc_failed_precondition_preserves_details():
             trailing_metadata=None,  # type: ignore[arg-type]
             details="requested exporter is disabled",
         )
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        grpc.StatusCode.UNAUTHENTICATED,
+        # Older controllers report an expired token as UNKNOWN.
+        grpc.StatusCode.UNKNOWN,
+    ],
+)
+def test_translated_expired_token_triggers_reauthentication(code):
+    config = MagicMock(spec=ClientConfigV1Alpha1)
+    with pytest.raises(ConnectionError) as caught, translate_grpc_exceptions():
+        raise grpc.aio.AioRpcError(
+            code=code,
+            initial_metadata=None,  # type: ignore[arg-type]
+            trailing_metadata=None,  # type: ignore[arg-type]
+            details="oidc: verify token: oidc: token is expired (Token Expiry: 2026-11-02 10:00:00 +0000 UTC)",
+        )
+    _attach_config_if_expired_token(caught.value, config)
+    assert caught.value.get_config() is config
+
+
+def test_controller_starting_up_is_unavailable():
+    error = grpc.aio.AioRpcError(
+        code=grpc.StatusCode.UNAVAILABLE,
+        initial_metadata=None,  # type: ignore[arg-type]
+        trailing_metadata=None,  # type: ignore[arg-type]
+        details="oidc: authenticator not initialized",
+    )
+    assert is_controller_unavailable(error)
 
 
 def _addr_info(*ips):

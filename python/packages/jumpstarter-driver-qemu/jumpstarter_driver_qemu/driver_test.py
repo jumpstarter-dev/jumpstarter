@@ -51,7 +51,7 @@ def get_native_arch_config():
     elif native_arch == "aarch64":
         return "aarch64", "aarch64"
     else:
-        pytest.skip(f"Unsupported architecture: {native_arch}")  # ty: ignore[call-non-callable]
+        pytest.skip(f"Unsupported architecture: {native_arch}")  # ty: ignore[too-many-positional-arguments]
 
 
 @pytest.mark.xfail(
@@ -297,6 +297,12 @@ def test_disk_dir_stays_with_shared_in_tests(tmp_path):
 def test_disk_dir_is_slash_disk_in_production_sidecar():
     driver = Qemu(launcher_socket="/shared/launcher.sock")
     assert driver._disk_dir == "/disk"
+
+
+def test_console_wires_power_child():
+    """The console gets the power child so its hotkey can power-cycle the VM."""
+    driver = Qemu()
+    assert driver.children["console"].children["power"] is driver.children["power"]
 
 
 def test_cidata_uses_tmp_by_default():
@@ -621,7 +627,7 @@ async def test_flash_oci_inner_wait_timeout():
 
     async def mock_wait_for(awaitable, *, timeout):
         nonlocal timeout_fired
-        if not timeout_fired:  # ty: ignore[unresolved-reference]
+        if not timeout_fired:
             timeout_fired = True
             if hasattr(awaitable, "close"):
                 awaitable.close()

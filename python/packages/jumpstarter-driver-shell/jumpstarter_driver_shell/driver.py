@@ -7,7 +7,7 @@ import subprocess
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
-from jumpstarter.driver import Driver, export
+from jumpstarter.driver import Driver, export, session_env
 
 # Environment variables that are blocked because they allow privilege escalation.
 # A client that can set these can hijack the subprocess (e.g. LD_PRELOAD to load
@@ -38,32 +38,42 @@ class Shell(Driver):
     # methods field defines the methods exported and their shell scripts
     # Supports two formats:
     # 1. Simple string: method_name: "command"
-    # 2. Dict with description: method_name: {command: "...", description: "...", timeout: ...}
+    # 2. Dict with description: method_name: {command: "...", description: "...", timeout: ..., session: ...}
     methods: dict[str, str | dict[str, str | int]]
     shell: list[str] = field(default_factory=lambda: ["bash", "-c"])
     timeout: int = 300
     cwd: str | None = None
 
     def __post_init__(self):
+        """Collect the method descriptions and reject a session flag that is not a boolean."""
         super().__post_init__()
         # Extract descriptions from methods configuration and populate methods_description
         for method_name, method_config in self.methods.items():
             if isinstance(method_config, dict) and "description" in method_config:
-                self.methods_description[method_name] = method_config["description"]
+                self.methods_description[method_name] = str(method_config["description"])
+            if isinstance(method_config, dict) and not isinstance(method_config.get("session", False), bool):
+                raise TypeError(f"method {method_name}: session must be true or false")
 
     def _get_method_command(self, method: str) -> str:
         """Extract the command string from a method configuration"""
         method_config = self.methods[method]
         if isinstance(method_config, str):
             return method_config
-        return method_config.get("command", "echo Hello")
+        return str(method_config.get("command", "echo Hello"))
 
     def _get_method_timeout(self, method: str) -> int:
         """Extract the timeout from a method configuration, fallback to global timeout"""
         method_config = self.methods[method]
         if isinstance(method_config, str):
             return self.timeout
-        return method_config.get("timeout", self.timeout)
+        return int(method_config.get("timeout", self.timeout))
+
+    def _get_method_session_env(self, method: str) -> dict[str, str]:
+        """The lease's session env for a method configured with session: true, else nothing"""
+        method_config = self.methods[method]
+        if isinstance(method_config, dict) and method_config.get("session"):
+            return session_env()
+        return {}
 
     @classmethod
     def client(cls) -> str:
@@ -183,11 +193,12 @@ class Shell(Driver):
                            returncode is None until the process completes.
         """
         combined_env = self._validate_script_params(script, args, env_vars)
+        combined_env.update(self._get_method_session_env(method))
         cmd = self.shell + [script, method] + list(args)
 
         # Start the process with pipes for streaming and new process group
         self.logger.debug( f"running {method} with cmd: {cmd} and env: {combined_env} " f"and args: {args}")
-        process = await asyncio.create_subprocess_exec(  # ty: ignore[missing-argument]
+        process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,

@@ -86,13 +86,9 @@ func startTestHub(t *testing.T, timeout time.Duration) (*TelemetryService, pb.Te
 
 func exporterStreamCtx(t *testing.T, svc *TelemetryService, subject string) context.Context {
 	t.Helper()
-	token, err := svc.Signer.Token(subject)
-	if err != nil {
-		t.Fatalf("Token: %v", err)
-	}
 	return metadata.NewOutgoingContext(
 		context.Background(),
-		metadata.Pairs("authorization", "Bearer "+token),
+		metadata.Pairs("authorization", "Bearer "+mustToken(t, svc.Signer, subject)),
 	)
 }
 
@@ -230,11 +226,12 @@ func TestMetricsStream_RejectsNonExporterToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MetricsStream: %v", err)
 	}
+	// The server rejects before reading, so Send can see io.EOF; Recv carries the status.
 	if err := stream.Send(&pb.MetricsStreamRequest{
 		Msg: &pb.MetricsStreamRequest_Register{
 			Register: &pb.MetricsRegister{Identity: "ci"},
 		},
-	}); err != nil {
+	}); err != nil && !errors.Is(err, io.EOF) {
 		t.Fatalf("Send: %v", err)
 	}
 	_, err = stream.Recv()

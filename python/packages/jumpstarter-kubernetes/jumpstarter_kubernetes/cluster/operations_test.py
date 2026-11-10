@@ -170,7 +170,7 @@ class TestCreateClusterAndInstall:
     async def test_create_cluster_and_install_unsupported_cluster_type(self):
         """Test that creating a cluster with an unsupported cluster type raises ClusterTypeValidationError."""
         with pytest.raises(ClusterTypeValidationError) as exc_info:
-            await create_cluster_and_install("remote", False, "test-cluster", "", "", "kind", "minikube")
+            await create_cluster_and_install("remote", False, "test-cluster", "", "", "kind", "minikube")  # ty: ignore[invalid-argument-type]
 
         assert "Unsupported cluster_type: remote" in str(exc_info.value)
 

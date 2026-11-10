@@ -536,10 +536,10 @@ class TestStreamFanOut:
 
     def test_extra_returns_attribute_value(self):
         buf = ClientBuffer(max_bytes=1024)
-        stream = ExclusiveStream(fanout=None, client_id=1, buffer=buf)  # type: ignore[arg-type]
+        stream = ExclusiveStream(fanout=None, client_id=1, buffer=buf)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         original = type(stream).extra_attributes
         try:
-            type(stream).extra_attributes = property(
+            type(stream).extra_attributes = property(  # ty: ignore[invalid-assignment]
                 lambda self: {"peername": lambda: ("127.0.0.1", 8080)}
             )
             assert stream.extra("peername") == ("127.0.0.1", 8080)

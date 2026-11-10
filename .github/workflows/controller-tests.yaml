@@ -38,3 +38,11 @@ jobs:
 
       - name: Run operator tests
         run: make -C controller/deploy/operator test
+
+      - name: Check generated code and manifests are up to date
+        run: |
+          git add --intent-to-add .
+          git diff --exit-code || {
+            echo "::error::Generated code or manifests are out of date. Run 'make manifests generate fmt' in controller/ and controller/deploy/operator/ and commit the result."
+            exit 1
+          }

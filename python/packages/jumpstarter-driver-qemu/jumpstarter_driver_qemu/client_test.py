@@ -1,8 +1,10 @@
-from unittest.mock import patch
+import platform
+from unittest.mock import PropertyMock, patch
 
 import pytest
 from pydantic import SecretStr
 
+from jumpstarter_driver_qemu.client import QemuClient
 from jumpstarter_driver_qemu.driver import Qemu
 
 from jumpstarter.common.oci import OciCredentials
@@ -14,6 +16,12 @@ def qemu_client():
     """Serve a QEMU driver and yield the composite client for client-side tests."""
     with serve(Qemu()) as client:
         yield client
+
+
+def _skip_without_ssh_on_macos(qemu_client) -> None:
+    """A bare Qemu() exports ssh only when vhost-vsock is available."""
+    if platform.system() == "Darwin" and "ssh" not in qemu_client.children:
+        pytest.skip("ssh child is absent on macOS")  # ty: ignore[too-many-positional-arguments]
 
 
 def test_flash_oci_forwards_authenticated_credentials(qemu_client):
@@ -50,3 +58,33 @@ def test_flash_oci_forwards_none_when_unauthenticated(qemu_client):
     assert args[0] == "flash_oci"
     assert args[3] is None
     assert args[4] is None
+
+
+def test_shell_disables_agent_when_password_is_set(qemu_client):
+    """A configured guest password must not fall through to the SSH agent."""
+    _skip_without_ssh_on_macos(qemu_client)
+    with patch("jumpstarter_driver_qemu.client.FabricAdapter") as adapter:
+        adapter.return_value.__enter__.return_value = "conn"
+        with qemu_client.shell() as conn:
+            assert conn == "conn"
+
+    assert adapter.call_args.kwargs["user"] == "jumpstarter"
+    assert adapter.call_args.kwargs["connect_kwargs"] == {
+        "password": "password",
+        "allow_agent": False,
+        "look_for_keys": False,
+    }
+
+
+def test_shell_keeps_key_auth_when_password_is_empty(qemu_client):
+    """An empty password keeps agent and discovered-key authentication."""
+    _skip_without_ssh_on_macos(qemu_client)
+    with (
+        patch.object(QemuClient, "password", new_callable=PropertyMock, return_value=""),
+        patch("jumpstarter_driver_qemu.client.FabricAdapter") as adapter,
+    ):
+        adapter.return_value.__enter__.return_value = "conn"
+        with qemu_client.shell():
+            pass
+
+    assert adapter.call_args.kwargs["connect_kwargs"] == {"password": ""}

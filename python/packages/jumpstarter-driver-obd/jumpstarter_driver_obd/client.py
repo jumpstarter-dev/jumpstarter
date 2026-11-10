@@ -19,7 +19,7 @@ class OBDClient(DriverClient):
         """
         return self.call("clear_dtc")
 
-    def status(self) -> OBDConnectionStatus:
+    def status(self) -> OBDConnectionStatus:  # ty: ignore[invalid-property-type-override]
         """Connection state."""
         return OBDConnectionStatus(self.call("status"))
 

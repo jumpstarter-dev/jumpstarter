@@ -5,6 +5,7 @@ import click.testing
 import pytest
 
 from jumpstarter.client.flasher import FlashPhase, FlashStatus, StreamingFlasherClient, _parse_path
+from jumpstarter.streams.encoding import Compression
 
 
 class TestParsePath:
@@ -377,7 +378,7 @@ class TestCompressionWarning:
             patch.object(client, "call", return_value=None),warnings.catch_warnings(record=True) as w
         ):
             warnings.simplefilter("always")
-            client._flash_single("https://example.com/image.bin", target=None, compression="zstd")
+            client._flash_single("https://example.com/image.bin", target=None, compression=Compression.ZSTD)
             assert len(w) == 1
             assert "compression parameter is ignored" in str(w[0].message)
 
@@ -399,7 +400,7 @@ class TestCompressionWarning:
             patch.object(client, "call", return_value=None),warnings.catch_warnings(record=True) as w
         ):
             warnings.simplefilter("always")
-            client._flash_single(str(test_file), target=None, compression="zstd")
+            client._flash_single(str(test_file), target=None, compression=Compression.ZSTD)
             assert len(w) == 0
 
     def test_dump_http_with_compression_warns(self):
@@ -418,7 +419,7 @@ class TestCompressionWarning:
             patch.object(client, "call", return_value=None),warnings.catch_warnings(record=True) as w
         ):
             warnings.simplefilter("always")
-            client.dump("https://example.com/dump.bin", target=None, compression="zstd")
+            client.dump("https://example.com/dump.bin", target=None, compression=Compression.ZSTD)
             assert len(w) == 1
             assert "compression parameter is ignored" in str(w[0].message)
 

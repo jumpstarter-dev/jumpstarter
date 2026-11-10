@@ -57,7 +57,7 @@ class NetsimClient(DriverClient):
     def stop_capture(self, capture_id: str) -> str:
         return self.call("stop_capture", capture_id)
 
-    def status(self) -> str:
+    def status(self) -> str:  # ty: ignore[invalid-property-type-override]
         return self.call("status")
 
     def cli(self):  # noqa: C901

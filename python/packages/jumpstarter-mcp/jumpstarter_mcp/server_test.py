@@ -232,7 +232,7 @@ class TestRunCommand:
 
         async def fake_communicate():
             nonlocal call_count
-            call_count += 1  # ty: ignore[unresolved-reference]
+            call_count += 1
             if call_count == 1:
                 await asyncio.sleep(999)
             return (b"partial", b"err")

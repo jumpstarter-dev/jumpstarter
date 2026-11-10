@@ -36,6 +36,30 @@ export:
       #cps: Avoid using cps when using --no-output.
 ```
 
+Example configuration with power control: a power driver referenced as the
+`power` child of the serial device enables the Ctrl-] x3 power-cycle hotkey in
+`console` (the console stays attached while the board re-enumerates):
+```yaml
+export:
+  serial:
+    type: jumpstarter_driver_pyserial.driver.PySerial
+    config:
+      url: "/dev/ttyUSB0"
+      baudrate: 115200
+    children:
+      power:
+        ref: "power" # any power driver
+  power:
+    type: jumpstarter_driver_yepkit.driver.Ykush
+    config:
+      serial: "YK112233"
+      port: "1"
+```
+
+Drivers that create their own console (qemu, renode, dutlink, corellium) wire
+their power driver into it automatically, so the hotkey works there without
+any configuration (qemu: except in sidecar mode).
+
 
 ### Config parameters
 
@@ -108,7 +132,7 @@ export:
 | chip           | Chip type for demuxer (`T234` for Orin, `T264` for Thor)                                        | str   | no       | `T264`                                                                    |
 | baudrate       | Baud rate for the serial connection                                                             | int   | no       | 115200                                                                    |
 | cps            | Characters per second throttling limit                                                          | float | no       | None                                                                      |
-| timeout        | Timeout in seconds waiting for demuxer to detect pts                                            | float | no       | 10.0                                                                      |
+| timeout        | Timeout in seconds waiting for demuxer to detect pts; also bounds the first client attach         | float | no       | 10.0                                                                      |
 | poll_interval  | Interval in seconds to poll for device reappearance after disconnect                            | float | no       | 1.0                                                                       |
 
 #### Device Auto-Detection
@@ -162,7 +186,9 @@ Start an interactive serial console with direct terminal access.
 j serial console
 ```
 
-Exit the console by pressing CTRL+B three times.
+**Hotkeys:**
+- **CTRL+B x3**: Exit the console
+- **CTRL+] x3**: Power cycle the board (when the serial device has a `power` child, see above)
 
 Use `--observe` to attach in read-only (watch-only) mode. Observers receive
 serial output but cannot write, so they can watch a session another client is

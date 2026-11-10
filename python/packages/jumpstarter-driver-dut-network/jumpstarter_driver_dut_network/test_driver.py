@@ -47,7 +47,7 @@ def _make_driver(tmp_path, **overrides):
         mock_nftables.ensure_filter_forward.return_value = []
         mock_nftables.list_rules.return_value = ""
         mock_nftables._table_name_for.return_value = "jumpstarter_eth_dut"
-        driver = DutNetwork(**params)  # type: ignore[missing-argument]
+        driver = DutNetwork(**params)  # ty: ignore[invalid-argument-type]
 
     return driver, mock_iproute, mock_nftables, mock_dnsmasq
 
@@ -239,7 +239,7 @@ class TestTransactionalSetup:
                 upstream_interface=None,
                 nat_mode="masquerade",
                 state_dir=str(tmp_path),
-            )  # type: ignore[missing-argument]
+            )
 
 
 class TestDriverSetupMasquerade:
@@ -839,7 +839,7 @@ class TestVlanCreationRollback:
                     dhcp_enabled=True,
                     dhcp_range_start="192.168.100.100",
                     dhcp_range_end="192.168.100.200",
-                    addresses=addrs,
+                    addresses=addrs,  # ty: ignore[invalid-argument-type]
                     dns_servers=["8.8.8.8"],
                     state_dir=str(tmp_path),
                 )
@@ -887,7 +887,7 @@ class TestVlanCreationRollback:
                     dhcp_enabled=True,
                     dhcp_range_start="192.168.100.100",
                     dhcp_range_end="192.168.100.200",
-                    addresses=addrs,
+                    addresses=addrs,  # ty: ignore[invalid-argument-type]
                     dns_servers=["8.8.8.8"],
                     state_dir=str(tmp_path),
                 )

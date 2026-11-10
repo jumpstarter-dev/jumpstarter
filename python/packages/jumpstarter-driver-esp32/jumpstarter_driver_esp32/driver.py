@@ -50,7 +50,7 @@ class Esp32Flasher(FlasherInterface, Driver):
             e.__traceback__ = None
             self._force_release_port(port)
             raise
-        self.logger.debug("_connect_esp: connected to %s", esp.get_chip_description())  # type: ignore[attr-defined]
+        self.logger.debug("_connect_esp: connected to %s", esp.get_chip_description())  # ty: ignore[unresolved-attribute]
         return esp
 
     def _close_esp(self, esp):

@@ -31,6 +31,7 @@ const (
 //
 // A service that reverse-scrapes exporter metrics and receives structured logs.
 // Implemented by jumpstarter-telemetry; not part of the controller.
+// Callers authenticate with the TelemetryEndpoint.token from GetServiceEndpoints.
 type TelemetryServiceClient interface {
 	// Persistent bidirectional stream: telemetry sends scrape requests,
 	// exporter responds with metric snapshots (structured families plus optional OpenMetrics text).
@@ -76,6 +77,7 @@ func (c *telemetryServiceClient) PushLogs(ctx context.Context, in *PushLogsReque
 //
 // A service that reverse-scrapes exporter metrics and receives structured logs.
 // Implemented by jumpstarter-telemetry; not part of the controller.
+// Callers authenticate with the TelemetryEndpoint.token from GetServiceEndpoints.
 type TelemetryServiceServer interface {
 	// Persistent bidirectional stream: telemetry sends scrape requests,
 	// exporter responds with metric snapshots (structured families plus optional OpenMetrics text).

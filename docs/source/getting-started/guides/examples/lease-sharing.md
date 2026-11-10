@@ -109,9 +109,13 @@ each entry is currently active.
   connections.
 - A shared client's **live** `jmp shell` session polls its own access and exits
   on its own within a short interval (currently 15 seconds), so there is a
-  bounded window during which an already-open session can still be used.
+  bounded window during which an already-open session can still be used. Its
+  shell is sent `SIGHUP`, as when the lease ends.
 - Removal does **not** forcibly tear down a router stream the exporter has
   already established.
+
+Transferring the lease clears its share list, so the previous owner's and every
+shared client's `jmp shell` session ends the same way.
 
 If you need to cut off everyone immediately — including the owner and all shared
 clients — end the lease itself:

@@ -130,6 +130,10 @@ func RuntimeContainerFile(cfg QuadletConfig) (string, error) {
 	b.WriteString("[Container]\n")
 	fmt.Fprintf(&b, "ContainerName=%s-runtime\n", cfg.Name)
 	fmt.Fprintf(&b, "Image=%s\n", cfg.RuntimeImage)
+	// The runtime image defaults to USER 65532; jumpstarter-exec must
+	// bind /shared/launcher.sock on a root-owned volume. Match in-cluster
+	// QEMU, which runs the sidecar as uid 0.
+	b.WriteString("User=0\n")
 	fmt.Fprintf(&b, "Volume=%s:%s:z\n", volumeName, sharedMountPath)
 	fmt.Fprintf(&b,
 		"Environment=JUMPSTARTER_EXEC_LOG_FIELDS=component=exporter,exporter=%s,namespace=%s\n",

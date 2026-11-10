@@ -6,7 +6,7 @@ from jumpstarter.driver.flasher import FlasherInterface, StreamingFlasherInterfa
 class TestFlasherInterfaceABC:
     def test_cannot_instantiate_directly(self):
         with pytest.raises(TypeError, match="abstract method"):
-            FlasherInterface()
+            FlasherInterface()  # ty: ignore[call-non-callable]
 
     def test_subclass_without_flash_raises(self):
         class Incomplete(FlasherInterface):
@@ -14,7 +14,7 @@ class TestFlasherInterfaceABC:
                 pass
 
         with pytest.raises(TypeError, match="abstract method"):
-            Incomplete()
+            Incomplete()  # ty: ignore[call-non-callable]
 
     def test_subclass_without_dump_raises(self):
         class Incomplete(FlasherInterface):
@@ -22,7 +22,7 @@ class TestFlasherInterfaceABC:
                 pass
 
         with pytest.raises(TypeError, match="abstract method"):
-            Incomplete()
+            Incomplete()  # ty: ignore[call-non-callable]
 
     def test_complete_subclass_can_be_instantiated(self):
         class Complete(FlasherInterface):
@@ -42,14 +42,14 @@ class TestFlasherInterfaceABC:
 class TestStreamingFlasherInterfaceABC:
     def test_cannot_instantiate_directly(self):
         with pytest.raises(TypeError, match="abstract method"):
-            StreamingFlasherInterface()
+            StreamingFlasherInterface()  # ty: ignore[call-non-callable]
 
     def test_subclass_without_flash_raises(self):
         class Incomplete(StreamingFlasherInterface):
             pass
 
         with pytest.raises(TypeError, match="abstract method"):
-            Incomplete()
+            Incomplete()  # ty: ignore[call-non-callable]
 
     def test_complete_subclass_can_be_instantiated(self):
         class Complete(StreamingFlasherInterface):

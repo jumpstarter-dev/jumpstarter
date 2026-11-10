@@ -23,7 +23,7 @@ class CanMessage(BaseModel):
     error_state_indicator: bool
 
     @classmethod
-    def construct(cls, msg):
+    def construct(cls, msg):  # ty: ignore[invalid-method-override]
         return cls.model_construct(
             timestamp=msg.timestamp,
             arbitration_id=msg.arbitration_id,
@@ -107,17 +107,17 @@ class IsoTpAddress(BaseModel):
     tx_only: bool
 
     @classmethod
-    def validate(cls, addr: isotp.Address):
+    def validate(cls, addr: isotp.Address):  # ty: ignore[invalid-method-override]
         return cls(
             addressing_mode=addr._addressing_mode,
             txid=addr._txid,
             rxid=addr._rxid,
             target_address=addr._target_address,
             source_address=addr._source_address,
-            physical_id=addr.physical_id  # ty: ignore[possibly-unbound-attribute]
+            physical_id=addr.physical_id
             if hasattr(addr, "physical_id")
             else None,
-            functional_id=addr.functional_id  # ty: ignore[possibly-unbound-attribute]
+            functional_id=addr.functional_id
             if hasattr(addr, "functional_id")
             else None,
             address_extension=addr._address_extension,
@@ -149,7 +149,7 @@ class IsoTpAsymmetricAddress(BaseModel):
     rx_addr: IsoTpAddress
 
     @classmethod
-    def validate(cls, addr: isotp.AsymmetricAddress):
+    def validate(cls, addr: isotp.AsymmetricAddress):  # ty: ignore[invalid-method-override]
         return cls(
             tx_addr=IsoTpAddress.validate(addr.tx_addr),
             rx_addr=IsoTpAddress.validate(addr.rx_addr),

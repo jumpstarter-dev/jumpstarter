@@ -45,7 +45,7 @@ def driver_click_group(client: "DriverClient", **kwargs: Any) -> Callable:
         if getattr(client, "description", None):
             kwargs["help"] = client.description
 
-        group = DriverClickGroup(client, name=f.__name__, callback=f, **kwargs)  # type: ignore[attr-defined]
+        group = DriverClickGroup(client, name=f.__name__, callback=f, **kwargs)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
 
         # Transfer Click parameters attached by decorators like @click.option
         group.params = getattr(f, "__click_params__", [])
@@ -88,19 +88,23 @@ class DriverClickGroup(click.Group):
         super().__init__(*args, **kwargs)
         self.client = client
 
-    def command(self, *args: Any, **kwargs: Any) -> Callable:
+    def command(self, *args: Any, **kwargs: Any) -> Callable:  # ty: ignore[invalid-method-override]
         """Command decorator with server methods_description override and alias support.
 
         Pass ``aliases=["name", ...]`` to register additional names for the
         same command.  Aliases are hidden from ``--help`` so they don't clutter
         the output, but work exactly like the canonical name.
         """
+        # Accept the bare @group.command form (no parentheses), like click.Group.
+        if len(args) == 1 and callable(args[0]) and not kwargs:
+            return self.command()(args[0])
+
         aliases: list[str] = kwargs.pop("aliases", [])
 
         def decorator(f: Callable) -> click.Command:
             name = kwargs.get("name")
             if not name:
-                name = f.__name__.lower().replace("_", "-")  # type: ignore[attr-defined]
+                name = f.__name__.lower().replace("_", "-")  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
 
             if name in self.client.methods_description:
                 kwargs["help"] = self.client.methods_description[name]

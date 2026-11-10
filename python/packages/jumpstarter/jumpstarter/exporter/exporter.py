@@ -1,3 +1,4 @@
+import inspect
 import logging
 import math
 import os
@@ -34,13 +35,20 @@ from jumpstarter_protocol import (
 from jumpstarter.common import ExporterStatus, Metadata, TemporarySocket
 from jumpstarter.common.exceptions import CertificateDiscoveryError
 from jumpstarter.common.streams import connect_router_stream
+from jumpstarter.common.telemetry_token import TelemetryCredential
 from jumpstarter.config.env import JMP_GRPC_INSECURE, JUMPSTARTER_GRPC_INSECURE
 from jumpstarter.config.exporter import DEFAULT_STATUS_STREAM_RETRY_TIMEOUT
 from jumpstarter.config.tls import TLSConfigV1Alpha1
 from jumpstarter.exporter.hooks import HookExecutor
 from jumpstarter.exporter.lease_context import LeaseContext
+from jumpstarter.exporter.metrics_stream import MetricsStreamClient
 from jumpstarter.exporter.session import Session
 from jumpstarter.exporter.telemetry import TelemetryLogHandler
+from jumpstarter.exporter.token_refresh import (
+    calculate_token_refresh_sleep,
+    calculate_token_rotation_retry_sleep,
+    is_internal_exporter_token,
+)
 from jumpstarter.logging import clear_log_context, set_log_context
 
 if TYPE_CHECKING:
@@ -57,6 +65,8 @@ _RPC_MAX_RETRIES = 20
 _RPC_BACKOFF_BASE = 1.0
 _RPC_BACKOFF_CAP = 30.0
 _RPC_TIMEOUT = 30
+_TOKEN_REFRESH_CHECK_INTERVAL = 3600.0
+_TOKEN_ROTATION_RETRY_INTERVAL = 3600.0
 _FAIL_FAST_STREAM_CODES = frozenset({
     grpc.StatusCode.UNAUTHENTICATED,
     grpc.StatusCode.PERMISSION_DENIED,
@@ -71,6 +81,11 @@ _RESTARTABLE_STREAM_CODES = frozenset({
 _TEMPORARY_STREAM_FAILURE_EXIT_CODE = 75  # EX_TEMPFAIL; service managers may restart this.
 
 
+def _rpc_backoff(attempt: int) -> float:
+    # The exponent is clamped so unbounded retry loops cannot overflow.
+    return min(_RPC_BACKOFF_BASE * 2 ** min(attempt, 10), _RPC_BACKOFF_CAP)
+
+
 def _is_retryable_stream_error(error: Exception) -> bool:
     if isinstance(error, grpc.aio.AioRpcError):
         return error.code() not in _FAIL_FAST_STREAM_CODES
@@ -81,14 +96,6 @@ def _is_retryable_stream_error(error: Exception) -> bool:
 # happens-before edge, not a timer), so this only logs — it never releases the
 # slot — keeping a wedged teardown diagnosable without reintroducing a timeout.
 _LEASE_FINISHED_WATCHDOG = 30.0
-
-# Status codes indicating old controller without exporter auth on ReleaseLease
-_RELEASE_LEASE_UNSUPPORTED_CODES = frozenset({
-    grpc.StatusCode.PERMISSION_DENIED,
-    grpc.StatusCode.INVALID_ARGUMENT,
-    grpc.StatusCode.UNAUTHENTICATED,
-    grpc.StatusCode.UNIMPLEMENTED,
-})
 
 _SEVERITY_MAP = {
     "debug": logging.DEBUG,
@@ -221,13 +228,15 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
     # Public Configuration Fields
 
+    # JWT subject for this exporter. Register no longer carries
+    # jumpstarter.dev/name (#1058), so the name is not stored in labels.
     exporter_name: str = "unknown"
 
-    channel_factory: Callable[[], Awaitable[grpc.aio.Channel]]
+    channel_factory: Callable[[str], Awaitable[grpc.aio.Channel]]
     """Factory function for creating gRPC channels to communicate with the controller.
 
     Called multiple times throughout the exporter lifecycle to establish connections.
-    The factory should handle authentication, credentials, and channel configuration.
+    Receives the current token and handles authentication, credentials, and channel configuration.
     Used when creating controller stubs, unregistering, and establishing streams.
     """
 
@@ -285,6 +294,14 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     Set from ExporterConfigV1Alpha1.token so PushLogs calls can include
     the exporter's JWT as an Authorization header.
     """
+
+    on_token_rotated: Callable[[str], Awaitable[None] | None] | None = field(default=None)
+    """Optional callback invoked when the authentication token is rotated.
+
+    Passed the new token string. Can be async or sync.
+    """
+
+    _token_rotation_unsupported: bool = field(init=False, default=False)
 
     # Internal State Fields
 
@@ -389,15 +406,6 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     a reference holder and doesn't manage resource lifecycles directly.
     """
 
-    _release_lease_unsupported: bool = field(init=False, default=False)
-    """Caches whether the controller doesn't support exporter auth on ReleaseLease.
-
-    When True, _request_lease_release skips the ReleaseLease RPC and goes straight
-    to the deprecated ReportStatus(release_lease=true) fallback. Avoids rediscovering
-    the auth rejection on every lease cycle.
-    TODO: Remove this field when all controllers support ReleaseLease for exporters.
-    """
-
     _telemetry_handler: "TelemetryLogHandler | None" = field(init=False, default=None)
     """Optional telemetry log handler that pushes log entries to jumpstarter-telemetry.
 
@@ -407,6 +415,12 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
     _telemetry_channel: grpc.aio.Channel | None = field(init=False, default=None)
     """gRPC channel to the telemetry service. Closed on exporter shutdown."""
+
+    _metrics_stream: MetricsStreamClient | None = field(init=False, default=None)
+    """Optional MetricsStream client. Started next to the log flush loop when telemetry is configured."""
+
+    _telemetry_credential: TelemetryCredential | None = field(init=False, default=None)
+    """Token sent on telemetry calls. Renewed next to the log flush loop."""
 
     _status_drain_active: bool = field(init=False, default=False)
     """True only while serve()'s task group is running and the drain task is active.
@@ -424,6 +438,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
     _status_rpc_event: Event = field(init=False, default_factory=Event)
     """Signals the drain task that a new status update is pending."""
+
+    @property
+    def name(self) -> str:
+        return self.exporter_name
 
     @property
     def _lease_state(self) -> LeaseState:
@@ -473,7 +491,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
         The underlying channel is automatically closed when the context exits.
         """
-        channel = await self.channel_factory()
+        channel = await self.channel_factory(self.token)
         try:
             yield jumpstarter_pb2_grpc.ControllerServiceStub(channel)
         finally:
@@ -607,19 +625,16 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         """Discover and connect to the optional telemetry service.
 
         Calls GetServiceEndpoints on the controller. When a telemetry endpoint is
-        returned, a gRPC channel is created and TelemetryLogHandler is attached
-        to the root Python logger. Safe to call multiple times; subsequent calls
+        returned, a gRPC channel is created, TelemetryLogHandler is attached
+        to the root Python logger, and a MetricsStreamClient is prepared for
+        reverse-scrape. Safe to call multiple times; subsequent calls
         are no-ops if a handler is already configured.
         """
         if self._telemetry_handler is not None:
             return
 
         try:
-            async with self._controller_stub() as controller:
-                resp = await controller.GetServiceEndpoints(
-                    jumpstarter_pb2.GetServiceEndpointsRequest(),
-                    timeout=_RPC_TIMEOUT,
-                )
+            resp = await self._get_service_endpoints()
         except grpc.aio.AioRpcError as e:
             # Older controllers that don't support this RPC return UNIMPLEMENTED.
             # Any other error is also non-fatal — telemetry is best-effort.
@@ -654,11 +669,114 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 ep.endpoint, grpc.ssl_channel_credentials()
             )
         stub = telemetry_pb2_grpc.TelemetryServiceStub(self._telemetry_channel)
-        handler = TelemetryLogHandler(stub, namespace=getattr(self, "namespace", "") or "", token=self.token)
+        # Both consumers read the token per request, so renewal reaches them.
+        credential = TelemetryCredential(ep)
+        self._telemetry_credential = credential
+        handler = TelemetryLogHandler(stub, namespace=getattr(self, "namespace", "") or "", token=credential)
         handler.setLevel(_severity_to_level(ep.min_severity))
         logging.getLogger().addHandler(handler)
         self._telemetry_handler = handler
+        self._metrics_stream = MetricsStreamClient(
+            stub,
+            # JWT subject. Not the jumpstarter.dev/name label (#1058).
+            identity=self.exporter_name,
+            token=credential,
+        )
         logger.info("Telemetry log handler attached")
+
+    async def _get_service_endpoints(self) -> jumpstarter_pb2.GetServiceEndpointsResponse:
+        async with self._controller_stub() as controller:
+            return await controller.GetServiceEndpoints(
+                jumpstarter_pb2.GetServiceEndpointsRequest(),
+                timeout=_RPC_TIMEOUT,
+            )
+
+    async def rotate_token(self) -> str:
+        """Request a newly signed authentication token from the controller.
+
+        Updates self.token and invokes the on_token_rotated callback if configured.
+
+        Returns:
+            The newly rotated token string.
+        """
+        async with self._controller_stub() as controller:
+            response: jumpstarter_pb2.RotateTokenResponse = await controller.RotateToken(
+                jumpstarter_pb2.RotateTokenRequest(),
+                timeout=_RPC_TIMEOUT,
+            )
+
+        new_token = response.token
+        self.token = new_token
+
+        if self.on_token_rotated is not None:
+            try:
+                res = self.on_token_rotated(new_token)
+                if inspect.isawaitable(res):
+                    await res
+            except Exception:
+                logger.exception("Error in on_token_rotated callback")
+
+        return new_token
+
+    async def _token_refresh_loop(self) -> None:
+        """Monitor token expiration and request a new token when it is about to expire."""
+        while True:
+            # The server also verifies the internal signature, issuer and exporter UID.
+            if not is_internal_exporter_token(self.token):
+                logger.debug("Token is not an internal exporter credential; automatic refresh disabled")
+                return
+            sleep_duration = calculate_token_refresh_sleep(self.token)
+            if sleep_duration is None:
+                logger.debug("Token does not have an expiry claim; automatic refresh disabled")
+                return
+
+            if sleep_duration > 0:
+                logger.debug("Token refresh scheduled in %.1f seconds", sleep_duration)
+                await sleep(min(sleep_duration, _TOKEN_REFRESH_CHECK_INTERVAL))
+                continue
+
+            if not await self._rotate_token_with_retry():
+                return
+
+    async def _rotate_token_with_retry(self) -> bool:
+        attempt = 0
+        while True:
+            # The controller rejects an expired token before it reaches rotation.
+            if calculate_token_rotation_retry_sleep(self.token, _TOKEN_ROTATION_RETRY_INTERVAL) <= 0:
+                logger.error("Exporter token expired; re-provision the exporter credential")
+                return False
+            try:
+                logger.info("Token is about to expire; requesting new token from controller")
+                await self.rotate_token()
+                self._token_rotation_unsupported = False
+                logger.info("Successfully refreshed exporter authentication token")
+                return True
+            except grpc.aio.AioRpcError as e:
+                code = e.code()
+                if code == grpc.StatusCode.UNAUTHENTICATED:
+                    # The controller rejected the credential itself (expired by its clock,
+                    # or from an issuer it does not trust), so renewal cannot succeed.
+                    logger.error("Failed to rotate token (%s): %s", code, e.details())
+                    return False
+                if code in (grpc.StatusCode.UNIMPLEMENTED, grpc.StatusCode.PERMISSION_DENIED):
+                    delay = calculate_token_rotation_retry_sleep(self.token, _TOKEN_ROTATION_RETRY_INTERVAL)
+                    if delay <= 0:
+                        continue  # reported as expired at the top of the loop
+                    if code == grpc.StatusCode.UNIMPLEMENTED:
+                        log = logger.debug if self._token_rotation_unsupported else logger.warning
+                        log("Controller does not support token rotation (UNIMPLEMENTED); retrying in %.1fs", delay)
+                        self._token_rotation_unsupported = True
+                    else:
+                        logger.warning("Token rotation denied (%s); retrying in %.1fs", e.details(), delay)
+                    await sleep(delay)
+                    return True
+                failure = f"{code}: {e.details()}"
+            except Exception as e:  # noqa: BLE001 - keep retrying after unexpected refresh failures
+                failure = str(e)
+            backoff = _rpc_backoff(attempt)
+            attempt += 1
+            logger.warning("Failed to rotate token (%s); retrying in %.1fs (attempt %d)", failure, backoff, attempt)
+            await sleep(backoff)
 
     async def _retry_rpc(
         self,
@@ -666,6 +784,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         description: str,
         *,
         non_retryable_codes: frozenset[grpc.StatusCode] = frozenset(),
+        lease_context: LeaseContext | None = None,
     ) -> tuple[bool, grpc.StatusCode | None]:
         """Retry a unary gRPC call with exponential backoff.
 
@@ -674,22 +793,29 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             description: Human-readable description for log messages
             non_retryable_codes: gRPC status codes that should cause immediate return
                 without retry (e.g. UNIMPLEMENTED for unsupported RPCs)
+            lease_context: For release RPCs, stop if this lease is replaced or ended.
 
         Returns:
             (True, None) on success.
             (False, status_code) on non-retryable error or retry exhaustion.
-            (False, None) on non-gRPC exception.
+            (False, None) on non-gRPC exception or stale lease.
         """
         for attempt in range(_RPC_MAX_RETRIES + 1):
             try:
                 async with self._controller_stub() as controller:
+                    # Channel setup also awaits; check immediately before every send.
+                    if lease_context is not None and (
+                        self._lease_context is not lease_context or lease_context.lease_ended.is_set()
+                    ):
+                        logger.debug("Skipping %s for stale lease %s", description, lease_context.lease_name)
+                        return False, None
                     await rpc_call(controller)
                 return True, None
             except grpc.aio.AioRpcError as e:
                 if e.code() in non_retryable_codes:
                     return False, e.code()
                 if e.code() in _TRANSIENT_GRPC_CODES and attempt < _RPC_MAX_RETRIES:
-                    backoff = min(_RPC_BACKOFF_BASE * (2**attempt), _RPC_BACKOFF_CAP)
+                    backoff = _rpc_backoff(attempt)
                     logger.warning(
                         "Transient error %s (attempt %d/%d), retrying in %.1fs: %s",
                         description,
@@ -770,90 +896,53 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             if await self._send_report_status_rpc(request):
                 logger.info("Updated status to %s: %s", status, message)
 
-    async def _send_compat_release(self, lease_name: str):
-        """Release lease via ReportStatus with release_lease=true (DEPRECATED).
+    async def _request_lease_release(self, lease_scope: LeaseContext):
+        """Request the controller to release lease_scope's lease.
 
-        Backward-compat fallback for controllers that don't support exporter auth
-        on ReleaseLease. Uses non-AVAILABLE status to block new lease assignment
-        (filterOutNotReadyExporters) until the final AVAILABLE status, preventing
-        retry from releasing a newly-assigned lease.
+        Called when a lifecycle hook fails with on_failure='endLease'.
+        Ordinary hook completion, client disconnection, and exporter cleanup
+        must not request release; the client or controller ends those leases.
 
-        TODO: Remove when all controllers support ReleaseLease for exporters.
-        """
-        release_status = self._exporter_status
-        if release_status == ExporterStatus.AVAILABLE:
-            release_status = ExporterStatus.AFTER_LEASE_HOOK
+        Each hook gets this callback bound to its own lease, so a delayed call
+        cannot release, or report AVAILABLE over, a replacement lease.
 
-        if await self._send_report_status_rpc(
-            jumpstarter_pb2.ReportStatusRequest(
-                status=release_status.to_proto(),
-                message="Lease released (compat: ReportStatus with release_lease)",
-                release_lease=True,
-            )
-        ):
-            logger.info("Requested controller to release lease %s (compat path)", lease_name)
-
-    async def _request_lease_release(self):
-        """Request the controller to release the current lease.
-
-        Called after the afterLease hook completes to ensure the lease is
-        released even if the client disconnects unexpectedly. This moves
-        the lease release responsibility from the client to the exporter.
-
-        Tries the ReleaseLease RPC first (semantically correct, retry-safe).
-        Falls back to ReportStatus(release_lease=true) for old controllers that
-        don't support exporter auth on ReleaseLease (deprecated path).
+        Uses the named ReleaseLease RPC, supported for exporters since controller
+        v0.9.0, so retries cannot target a replacement lease.
         """
         if self._controller_stream_failed:
             logger.info("Skipping lease-release RPC after controller stream failure")
             return
-        if not self._lease_context or not self._lease_context.lease_name:
-            logger.debug("No active lease to release")
-            return
-
-        # If the lease has already ended (controller sent leased=false, or a previous
-        # call already released it), skip the release RPC.
-        if self._lease_context.lease_ended.is_set():
-            logger.debug("Lease already ended, skipping release request")
+        # The lease already ended (controller sent leased=false, or a previous
+        # call released it), or a replacement took the slot: nothing to release.
+        if self._lease_context is not lease_scope or lease_scope.lease_ended.is_set():
+            logger.debug("Lease %s no longer active, skipping release request", lease_scope.lease_name)
             return
 
         if self._standalone:
-            self._lease_context.lease_ended.set()
+            lease_scope.lease_ended.set()
             return
 
-        lease_name = self._lease_context.lease_name
+        ok, _ = await self._retry_rpc(
+            lambda ctrl: ctrl.ReleaseLease(
+                jumpstarter_pb2.ReleaseLeaseRequest(name=lease_scope.lease_name), timeout=_RPC_TIMEOUT
+            ),
+            "release lease",
+            lease_context=lease_scope,
+        )
 
-        if self._release_lease_unsupported:
-            await self._send_compat_release(lease_name)
-        else:
-            ok, code = await self._retry_rpc(
-                lambda ctrl: ctrl.ReleaseLease(
-                    jumpstarter_pb2.ReleaseLeaseRequest(name=lease_name), timeout=_RPC_TIMEOUT
-                ),
-                "release lease",
-                non_retryable_codes=_RELEASE_LEASE_UNSUPPORTED_CODES,
-            )
-
-            if ok:
-                logger.info("Released lease %s via ReleaseLease RPC", lease_name)
-            elif code in _RELEASE_LEASE_UNSUPPORTED_CODES:
-                self._release_lease_unsupported = True
-                logger.info(
-                    "Controller doesn't support ReleaseLease for exporters (%s), "
-                    "falling back to ReportStatus with release_lease",
-                    code.name,
-                )
-                await self._send_compat_release(lease_name)
-            else:
-                logger.warning("Failed to release lease %s after retries, proceeding to AVAILABLE", lease_name)
-
+        # The lease may have changed while the RPC was pending.
+        if self._lease_context is not lease_scope:
+            return
+        if ok:
+            logger.info("Released lease %s via ReleaseLease RPC", lease_scope.lease_name)
+        elif not lease_scope.lease_ended.is_set():
+            logger.warning("Failed to release lease %s, proceeding to AVAILABLE", lease_scope.lease_name)
         await self._report_status(ExporterStatus.AVAILABLE, "Exporter available after lease release")
 
         # Directly signal lease ended so handle_lease can exit.
         # The controller may not send another leased=False after our release request,
         # so we signal it ourselves as a fallback.
-        if self._lease_context and not self._lease_context.lease_ended.is_set():
-            self._lease_context.lease_ended.set()
+        lease_scope.lease_ended.set()
 
     async def _unregister_with_controller(self):
         """Safely unregister from controller with timeout and error handling."""
@@ -863,7 +952,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         logger.info("Unregistering exporter with controller")
         try:
             with move_on_after(10):  # 10 second timeout
-                channel = await self.channel_factory()
+                channel = await self.channel_factory(self.token)
                 try:
                     controller = jumpstarter_pb2_grpc.ControllerServiceStub(channel)
                     await self._report_status(ExporterStatus.OFFLINE, "Exporter shutting down")
@@ -1336,6 +1425,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         if self._telemetry_channel is not None:
             await self._telemetry_channel.close()
             self._telemetry_channel = None
+        self._metrics_stream = None
+        self._telemetry_credential = None
 
     async def _run_control_plane(
         self,
@@ -1350,8 +1441,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             self._pending_status_request = None
             self._status_drain_active = True
             tg.start_soon(self._drain_status_reports)
-            if self._telemetry_handler is not None:
-                tg.start_soon(self._telemetry_handler.flush_loop)
+            self._start_telemetry_tasks(tg)
             tg.start_soon(partial(
                 self._retry_stream,
                 "Status",
@@ -1360,6 +1450,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 backoff=0.5,
                 outage_budget=self.status_stream_retry_timeout,
             ))
+            tg.start_soon(self._token_refresh_loop)
             # One loop, one writer of _lease_context. Status ticks come from the
             # controller RPC; LeaseFinished comes from handle_lease when it has
             # torn a lease down. Both are handled here, sequentially.
@@ -1370,6 +1461,15 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     continue
                 if await self._apply_status(message, tg):
                     break
+
+    def _start_telemetry_tasks(self, tg: TaskGroup) -> None:
+        """Start PushLogs flush, MetricsStream and token renewal next to the control-plane tasks."""
+        if self._telemetry_handler is not None:
+            tg.start_soon(self._telemetry_handler.flush_loop)
+        if self._metrics_stream is not None:
+            tg.start_soon(self._metrics_stream.run)
+        if self._telemetry_credential is not None:
+            tg.start_soon(self._telemetry_credential.renew, self._get_service_endpoints)
 
     async def _apply_status(
         self,

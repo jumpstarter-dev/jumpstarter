@@ -58,6 +58,7 @@ $enddefinitions $end
 
     # Sample 0 at time 0us = 0s
     s0 = samples[0]
+    assert isinstance(s0, Sample)
     assert s0.time == 0.0
     # Channel names come directly from VCD (not mapped)
     assert s0.values["D0"] == 1
@@ -70,6 +71,7 @@ $enddefinitions $end
 
     # Sample 1 at time 5us = 0.000005s
     s1 = samples[1]
+    assert isinstance(s1, Sample)
     assert abs(s1.time - 0.000005) < 1e-12
     assert s1.values["D0"] == 0
     assert s1.values["D1"] == 1
@@ -78,6 +80,7 @@ $enddefinitions $end
 
     # Sample 2 at time 10us = 0.00001s
     s2 = samples[2]
+    assert isinstance(s2, Sample)
     assert abs(s2.time - 0.00001) < 1e-12
     assert s2.values["D0"] == 0  # Z converted to 0
     assert s2.values["D1"] == 0
@@ -87,6 +90,7 @@ $enddefinitions $end
 
     # Sample 3 at time 25us = 0.000025s
     s3 = samples[3]
+    assert isinstance(s3, Sample)
     assert abs(s3.time - 0.000025) < 1e-12
     assert s3.values["D0"] == 1
     assert s3.values["D1"] == 1
@@ -98,6 +102,7 @@ $enddefinitions $end
 
     # Sample 4 at time 100us = 0.0001s
     s4 = samples[4]
+    assert isinstance(s4, Sample)
     assert abs(s4.time - 0.0001) < 1e-12
     assert s4.values["D0"] == 0
     assert s4.values["D1"] == 0
@@ -132,11 +137,14 @@ $enddefinitions $end
 
         samples = list(result.decode())
         assert len(samples) == 2, f"Expected 2 samples for timescale {timescale_str}"
+        s_first, s_second = samples[0], samples[1]
+        assert isinstance(s_first, Sample)
+        assert isinstance(s_second, Sample)
         # First sample at time 0
-        assert samples[0].time == 0.0
+        assert s_first.time == 0.0
         # Second sample at expected time
-        assert samples[1].time == pytest.approx(expected_time_s, rel=1e-9), \
-            f"Timescale {timescale_str}: expected {expected_time_s}s, got {samples[1].time}s"
+        assert s_second.time == pytest.approx(expected_time_s, rel=1e-9), \
+            f"Timescale {timescale_str}: expected {expected_time_s}s, got {s_second.time}s"
 
 
 def test_vcd_parser_empty_timestamps():
@@ -160,9 +168,13 @@ $enddefinitions $end
     samples = list(result.decode())
     # Should have 3 samples (empty timestamp line skipped)
     assert len(samples) == 3
-    assert samples[0].time == 0.0
-    assert samples[1].time == 1e-8  # 10ns
-    assert samples[2].time == 2e-8  # 20ns
+    s0, s1, s2 = samples[0], samples[1], samples[2]
+    assert isinstance(s0, Sample)
+    assert isinstance(s1, Sample)
+    assert isinstance(s2, Sample)
+    assert s0.time == 0.0
+    assert s1.time == 1e-8  # 10ns
+    assert s2.time == 2e-8  # 20ns
 
 
 def test_vcd_parser_large_channel_count():
@@ -211,6 +223,7 @@ $enddefinitions $end
 
     # Verify second sample
     s1 = samples[1]
+    assert isinstance(s1, Sample)
     assert abs(s1.time - 1e-7) < 1e-15  # 100ns
     assert s1.values["CH0"] == 0
     assert s1.values["CH93"] == 1

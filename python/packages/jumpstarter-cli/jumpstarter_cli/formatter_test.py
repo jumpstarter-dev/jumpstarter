@@ -65,4 +65,5 @@ def test_rst_stripping_command_original_help_preserves_rst():
             $ jmp shell --exporter foo
         """
 
+    assert cmd.help is not None
     assert ".. code-block:: bash" in cmd.help

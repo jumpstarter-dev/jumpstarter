@@ -92,7 +92,7 @@ def test_ble_driver_connect_stream():
 
 def test_ble_notify_handler():
     """Test the notification handler puts data into the stream."""
-    send_stream, receive_stream = anyio.create_memory_object_stream[bytearray](max_buffer_size=10)  # ty: ignore[call-non-callable]
+    send_stream, receive_stream = anyio.create_memory_object_stream[bytearray](max_buffer_size=10)
     sender = MagicMock()
     test_data = bytearray(b"test_notification")
 
@@ -104,11 +104,11 @@ def test_ble_notify_handler():
 
 def test_ble_notify_handler_queue_full(capsys):
     """Test the notification handler handles a full buffer gracefully."""
-    send_stream, _receive_stream = anyio.create_memory_object_stream[bytearray](max_buffer_size=1)  # ty: ignore[call-non-callable]
+    send_stream, _receive_stream = anyio.create_memory_object_stream[bytearray](max_buffer_size=1)
     sender = MagicMock()
 
     # Fill the buffer
-    send_stream.send_nowait(b"first")
+    send_stream.send_nowait(bytearray(b"first"))
 
     # This should print a warning, not raise
     _ble_notify_handler(sender, bytearray(b"second"), send_stream)

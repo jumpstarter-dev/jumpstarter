@@ -91,6 +91,7 @@ async def create_client(
 ):
     """Create a client object in the Kubernetes cluster"""
     validate_name(name)
+    assert name is not None
     try:
         confirm_insecure_tls(insecure_tls, nointeractive)
         async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
@@ -167,6 +168,7 @@ async def create_exporter(
 ):
     """Create an exporter object in the Kubernetes cluster"""
     validate_name(name)
+    assert name is not None
     try:
         confirm_insecure_tls(insecure_tls, nointeractive)
         async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:

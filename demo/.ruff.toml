@@ -1,0 +1,7 @@
+# Keep the demo scripts linted the same way as python/pyproject.toml, which
+# does not cover this directory.
+target-version = "py312"
+line-length = 120
+
+[lint]
+extend-select = ["I", "C", "E", "F", "W", "B", "ERA"]

@@ -82,8 +82,9 @@ def check(state_path: str) -> None:
         raise RuntimeError("Cuttlefish inventory no longer matches this exporter")
     if cvds[0].get("status") != "Running":
         raise RuntimeError("CVD stopped unexpectedly")
-    if not set(state["ports"]).issubset(listening_ports()):
-        raise RuntimeError("Cuttlefish simulator listener is missing")
+    missing = sorted(set(state["ports"]) - listening_ports())
+    if missing:
+        raise RuntimeError(f"Cuttlefish TCP listeners are missing on ports: {', '.join(map(str, missing))}")
 
 
 def wait_ready(endpoint: str, attempts: int = 60, interval: float = 5) -> None:

@@ -171,15 +171,20 @@ export:
 | name            | CVD instance name within the group  | str  | no       | "1"         |
 | instance_num    | CVD instance number (determines ADB/netsim/HCI ports). Must match HO's assigned slot. Pinning avoids drift (see `env_config` example). | int  | no       | 1           |
 | adb_server_port | ADB server port on the exporter     | int  | no       | 15037       |
-| boot_timeout    | Seconds to wait for boot on power on| int  | no       | 300         |
+| boot_timeout    | Seconds to wait for boot on power on; values above 600 also extend the creation timeout | int | no | 300 |
 | env_config      | Default env_config for CVD creation | dict | no       | {}          |
 | launcher_socket | Exec backend: `jumpstarter-exec` launcher socket shared with the Cuttlefish runtime container. When set, every operation runs `cvd` there instead of calling Host Orchestrator. Injected by the ExporterSet provisioner with `backend: exec`. | str | no | "" |
 | cvd_user        | Exec backend: non-root user that runs `jumpstarter-exec serve` and its `cvd` children in the runtime container. Must match the owner of CVD state; Host Orchestrator uses `httpcvd`. | str | no | "" |
+| webui_port      | Port of the in-Pod nginx vhost serving the WebRTC client page with a TURN-aware `/infra_config`. Creates a `webui` child when set. Injected by the ExporterSet provisioner with `webrtc_turn: true`. | int | no | 0 |
+| turn_port       | Port of the in-Pod TURN relay carrying WebRTC media. Creates a `turn` child when set, and is also the local port `j cuttlefish webrtc --forward` binds. | int | no | 0 |
 
-This is a **composite driver** with three children:
+This is a **composite driver** with three core children and two optional display children:
+
 - **power** — `VirtualPowerInterface`: `j power on`, `j power off [--destroy]`, `j power cycle`
 - **storage** — `FlasherInterface`: not yet implemented (planned: HO artifact upload API)
 - **adb** — ADB server for device communication
+- **webui** — TCP endpoint for the WebRTC client page, when provisioned
+- **turn** — TCP endpoint for the TURN relay, when provisioned
 
 The exporter config also typically includes sibling drivers:
 - **netsim** (`jumpstarter-driver-netsim`) — virtual radio control (BLE, WiFi, UWB) via netsim REST API
@@ -202,9 +207,34 @@ The driver has two interchangeable backends behind the same exported methods:
   see the same `group`, `name`, `status` and `adb_port` fields. `list_operations`
   is unavailable because `cvd` runs synchronously.
 
-The exec backend is only meaningful inside a managed Pod, where the ExporterSet
+The exec backend requires `managed: true` and is only supported inside a managed Pod, where the ExporterSet
 provisioner stages `jumpstarter-exec` and the socket on a shared volume and does
 not start Host Orchestrator at all; see the deployment guide linked above.
+
+### WebRTC display
+
+`j cuttlefish webrtc` prints the display URL. With `--forward` it makes that URL
+usable from wherever the client runs, without any ingress to the exporter Pod:
+
+```bash
+j cuttlefish webrtc --forward
+# WebRTC display: http://127.0.0.1:41235/devices/cvd_1-1-1/files/client.html
+# TURN relay:     127.0.0.1:3478
+# Press Ctrl+C to stop
+```
+
+Both the UI and a TURN listener are forwarded over the lease. The browser's
+TURN allocation has a Pod-IP UDP relay candidate; the streamer's Pod-IP host
+candidate sends media to it within their shared network namespace. Coturn
+passes that media back to the browser over the forwarded TCP connection. The
+TURN port cannot be remapped - `/infra_config` advertises
+`turn:127.0.0.1:<turn_port>` and the browser has no way to learn a different one -
+so the command fails if that local port is taken.
+The display vhost accepts only local Host headers and same-origin browser
+requests; native programs on the same computer can still use the local port.
+
+This requires `webrtc_turn: true` on the ExporterSet; without it the driver has
+no `webui`/`turn` children and the command says so.
 
 ## Usage
 
@@ -229,6 +259,9 @@ j cuttlefish status
 # List all CVDs
 j cuttlefish list
 
+# Forward the provisioned display and TURN relay until Ctrl+C
+j cuttlefish webrtc --forward
+
 # Get this CVD's details
 j cuttlefish get
 
@@ -245,6 +278,11 @@ j cuttlefish powerbtn
 j cuttlefish ops
 
 ```
+
+The display command requires the CVD to be powered on and its WebRTC device ID
+to be present in inventory. Only one `--forward` using a given `turn_port` can run
+on a workstation at a time. Concurrent displays require ExporterSets with
+different `turn_port` values; `--ui-port` changes only the local UI port.
 
 ### Python API
 
@@ -304,6 +342,8 @@ endpoint until completion or timeout.
 `power.on()` waits for full boot by default (`boot_timeout=300`). It polls
 `adb connect` + `adb devices` until the device is online, then waits for
 `sys.boot_completed=1`. Set `boot_timeout: 0` to skip the wait.
+For slow nested hosts, a value above 600 also extends the `cvd load` timeout,
+because that command waits for boot before returning.
 
 ### CVD Build Sources
 

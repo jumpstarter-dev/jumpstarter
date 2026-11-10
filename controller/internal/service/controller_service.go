@@ -20,7 +20,9 @@ import (
 	"cmp"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"slices"
@@ -28,6 +30,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/exp/maps"
 
@@ -63,6 +66,8 @@ import (
 	k8suuid "k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -85,12 +90,15 @@ type ControllerService struct {
 	LeasePolicy      *config.LeasePolicy
 	HiddenLabels     *config.HiddenLabels
 	DeprecatedLabels *config.DeprecatedLabels
+	Recorder         record.EventRecorder
 	Signer           *oidc.Signer
 	TelemetryConfig  *config.Telemetry
-	listenQueues     sync.Map
-	leaseLocks       sync.Map
-	authOnce         sync.Once
-	auth             *auth.Auth
+	// StatusHeartbeatInterval defaults to 10 seconds.
+	StatusHeartbeatInterval time.Duration
+	listenQueues            sync.Map
+	leaseLocks              sync.Map
+	authOnce                sync.Once
+	auth                    *auth.Auth
 }
 
 type listenQueue struct {
@@ -252,11 +260,37 @@ func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstar
 	return s.getAuth().VerifyExporter(ctx)
 }
 
+// Record credentials only on fresh authentication, never on stream heartbeats.
+func (s *ControllerService) recordExporterCredential(ctx context.Context, exporter *jumpstarterdevv1alpha1.Exporter) error {
+	credential, err := authentication.BearerTokenFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	hash := controller.TokenHash(credential)
+	if exporter.Annotations[controller.AuthenticatedTokenHashAnnotation] == hash {
+		return nil
+	}
+	original := client.MergeFrom(exporter.DeepCopy())
+	if exporter.Annotations == nil {
+		exporter.Annotations = map[string]string{}
+	}
+	exporter.Annotations[controller.AuthenticatedTokenHashAnnotation] = hash
+	if err := s.Client.Patch(ctx, exporter, original); err != nil {
+		log.FromContext(ctx).Error(err, "unable to record exporter credential", "exporter", exporter.Name, "namespace", exporter.Namespace)
+		return status.Errorf(codes.Internal, "unable to record exporter credential: %s", err)
+	}
+	return nil
+}
+
 func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
 	logger := log.FromContext(ctx)
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := s.recordExporterCredential(ctx, exporter); err != nil {
 		return nil, err
 	}
 
@@ -301,6 +335,13 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 		})
 	}
 	exporter.Status.Devices = devices
+	// Set on every registration. An exporter replaced by a version that does not
+	// record its lease hooks drops the record: it is not held by it, and a later
+	// upgrade does not act on hooks it never saw.
+	exporter.Status.RecordsLeaseHooks = req.GetRecordsLeaseHooks()
+	if !exporter.Status.RecordsLeaseHooks {
+		exporter.Status.LeaseHooks = nil
+	}
 
 	if err := s.Client.Status().Patch(ctx, exporter, original); err != nil {
 		logger.Error(err, "unable to update exporter status")
@@ -319,8 +360,13 @@ func (s *ControllerService) GetServiceEndpoints(
 	ctx context.Context,
 	req *pb.GetServiceEndpointsRequest,
 ) (*pb.GetServiceEndpointsResponse, error) {
-	// Require a valid exporter token — endpoint discovery is not public.
-	if _, err := s.authenticateExporter(ctx); err != nil {
+	// Require a valid exporter or client token — endpoint discovery is not public.
+	var subject string
+	if exporter, err := s.authenticateExporter(ctx); err == nil {
+		subject = exporter.InternalSubject()
+	} else if jclient, err2 := s.authenticateClient(ctx); err2 == nil {
+		subject = jclient.InternalSubject()
+	} else {
 		return nil, err
 	}
 
@@ -332,14 +378,121 @@ func (s *ControllerService) GetServiceEndpoints(
 		if s.TelemetryConfig.Endpoint == "" {
 			return nil, status.Error(codes.FailedPrecondition, "telemetry is enabled but no endpoint is configured; set telemetry.endpoint in the ConfigMap or GRPC_TELEMETRY_ENDPOINT on the controller pod")
 		}
+		// Telemetry accepts nothing else, so the endpoint is useless without a token.
+		// An error, not an empty response: callers stop renewing when told
+		// telemetry is disabled.
+		token, expiry, err := s.telemetryToken(ctx, subject)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "unable to issue telemetry token")
+			return nil, status.Error(codes.Internal, "unable to issue telemetry token")
+		}
 		resp.TelemetryEndpoints = append(resp.TelemetryEndpoints, &pb.TelemetryEndpoint{
 			Endpoint:    s.TelemetryConfig.Endpoint,
 			Certificate: s.TelemetryConfig.Certificate,
 			MinSeverity: cmp.Or(s.TelemetryConfig.Logging.Filter.MinSeverity, "info"),
+			Token:       token,
+			TokenExpiry: timestamppb.New(expiry),
 		})
 	}
 
 	return resp, nil
+}
+
+// telemetryTokenLifetime bounds a telemetry token. Callers renew it through
+// GetServiceEndpoints, which re-checks their credential.
+const telemetryTokenLifetime = time.Hour
+
+// telemetryToken signs a token for TelemetryService calls that names the
+// authenticated exporter or client by its internal subject. Telemetry has no
+// Kubernetes API access, so it cannot map an external OIDC user to an Exporter
+// or Client; the controller has already done that here. The token never
+// outlives the credential that requested it.
+func (s *ControllerService) telemetryToken(ctx context.Context, subject string) (string, time.Time, error) {
+	if s.Signer == nil {
+		return "", time.Time{}, errors.New("token signer not configured")
+	}
+	credential, err := authentication.BearerTokenFromContext(ctx)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	// JWT exp has whole-second precision; report the expiry the token carries.
+	expiry := time.Now().Add(telemetryTokenLifetime).Truncate(time.Second)
+	// The authenticator has verified the credential, so its exp can be read
+	// unverified. Credentials without exp only get the lifetime bound.
+	credentialExpiry, err := s.Signer.TokenExpiry(credential)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("read credential expiry: %w", err)
+	}
+	if !credentialExpiry.IsZero() && credentialExpiry.Before(expiry) {
+		expiry = credentialExpiry
+	}
+	token, err := s.Signer.WithAudience(oidc.TelemetryAudience).TokenWithExpiry(subject, expiry)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return token, expiry, nil
+}
+
+// RotateToken signs a new token for the authenticated exporter, updates the
+// corresponding Secret in Kubernetes, and returns the new token and its expiry.
+func (s *ControllerService) RotateToken(
+	ctx context.Context,
+	req *pb.RotateTokenRequest,
+) (*pb.RotateTokenResponse, error) {
+	exporter, err := s.authenticateExporter(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	logger := log.FromContext(ctx).WithValues(
+		"exporter", exporter.Name,
+		"namespace", exporter.Namespace,
+		"operation", "rotate_token",
+	)
+	resp, err := s.rotateExporterToken(ctx, exporter)
+	switch code := status.Code(err); code {
+	case codes.OK:
+		logger.Info("token rotated", "result", "success")
+	case codes.PermissionDenied, codes.Aborted:
+		logger.Info("token rotation rejected", "result", "rejected", "code", code.String(), "reason", status.Convert(err).Message())
+	default:
+		logger.Error(err, "token rotation failed", "result", "error", "code", code.String())
+	}
+	return resp, err
+}
+
+func (s *ControllerService) rotateExporterToken(
+	ctx context.Context,
+	exporter *jumpstarterdevv1alpha1.Exporter,
+) (*pb.RotateTokenResponse, error) {
+	if s.Signer == nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "token signer not configured")
+	}
+
+	credential, err := authentication.BearerTokenFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	subject, err := s.Signer.ParseSubject(credential)
+	if err != nil || subject != exporter.InternalSubject() {
+		return nil, status.Error(codes.PermissionDenied, "only internal exporter tokens can be rotated")
+	}
+
+	token, expiry, err := auth.RotateExporterCredential(ctx, s.Client, s.Signer, client.ObjectKey{
+		Namespace: exporter.Namespace,
+		Name:      exporter.CredentialSecretName(),
+	}, exporter.InternalSubject(), credential)
+	if err != nil {
+		if errors.Is(err, auth.ErrExporterTokenLineage) && s.Recorder != nil {
+			s.Recorder.Event(exporter, corev1.EventTypeWarning, "RotationDenied", "Token rotation denied: credential is outside the current or previous token lineage")
+		}
+		return nil, err
+	}
+
+	return &pb.RotateTokenResponse{
+		Token:  token,
+		Expiry: expiry,
+	}, nil
 }
 
 func (s *ControllerService) Unregister(
@@ -452,14 +605,26 @@ func (s *ControllerService) handleExporterLeaseRelease(
 		return fmt.Errorf("failed to get lease: %w", err)
 	}
 
+	logger = logger.WithValues(
+		"lease", lease.Name,
+		"namespace", lease.Namespace,
+		"exporter", exporter.Name,
+		"path", "ReportStatus",
+	)
+
 	// Verify the lease is actually held by this exporter
 	if lease.Status.ExporterRef == nil || lease.Status.ExporterRef.Name != exporter.Name {
+		logger.Info("Lease release request rejected", "outcome", "rejected")
 		return fmt.Errorf("lease %s is not held by exporter %s", lease.Name, exporter.Name)
 	}
 
 	// Check if lease is already ended or marked for release
 	if lease.Status.Ended || lease.Spec.Release {
-		logger.Info("Lease already ended or marked for release", "lease", lease.Name)
+		outcome := "already_released"
+		if lease.Status.Ended {
+			outcome = "already_ended"
+		}
+		logger.Info("Lease release request is idempotent", "outcome", outcome)
 		return nil
 	}
 
@@ -471,11 +636,248 @@ func (s *ControllerService) handleExporterLeaseRelease(
 		return fmt.Errorf("failed to mark lease for release: %w", err)
 	}
 
-	logger.Info("Lease marked for release by exporter",
-		"lease", lease.Name,
-		"exporter", exporter.Name)
+	logger.Info("Lease marked for release by exporter", "outcome", "newly_marked")
 
 	return nil
+}
+
+// UpdateLeaseHooks records a lifecycle hook transition in the exporter's lease
+// hook record (Status.LeaseHooks). Exporters call it before starting a hook and
+// after it finishes, so the record outlives the exporter process.
+func (s *ControllerService) UpdateLeaseHooks(
+	ctx context.Context,
+	req *pb.UpdateLeaseHooksRequest,
+) (*pb.LeaseHooks, error) {
+	logger := log.FromContext(ctx)
+
+	exporter, err := s.authenticateExporter(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	logger = logger.WithValues("exporter", types.NamespacedName{
+		Namespace: exporter.Namespace,
+		Name:      exporter.Name,
+	}, "lease", req.GetLeaseName())
+
+	// Validation reads the record, so patch with an optimistic lock and re-read
+	// on conflict rather than overwrite a concurrent change.
+	first := true
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if !first {
+			if err := s.Client.Get(ctx, client.ObjectKeyFromObject(exporter), exporter); err != nil {
+				return err
+			}
+		}
+		first = false
+		lease, err := s.assignedLease(ctx, exporter)
+		if err != nil {
+			return err
+		}
+		assigned := leaseAssignment{}
+		if lease != nil {
+			assigned = leaseAssignment{uid: lease.UID, client: lease.Spec.ClientRef.Name}
+		}
+		original := client.MergeFromWithOptions(exporter.DeepCopy(), client.MergeFromWithOptimisticLock{})
+		changed, err := applyLeaseHookUpdate(exporter, assigned, req, metav1.Now())
+		if err != nil || !changed {
+			return err
+		}
+		return s.Client.Status().Patch(ctx, exporter, original)
+	})
+	if err != nil {
+		if _, ok := status.FromError(err); ok {
+			logger.Info("Rejected lease hook update", "reason", err.Error())
+			return nil, err
+		}
+		if apierrors.IsInvalid(err) {
+			// Retrying the same update cannot succeed.
+			logger.Info("Rejected invalid lease hook update", "reason", err.Error())
+			return nil, status.Errorf(codes.InvalidArgument, "invalid lease hook update: %s", err)
+		}
+		logger.Error(err, "unable to update lease hooks")
+		return nil, status.Errorf(codes.Internal, "unable to update lease hooks: %s", err)
+	}
+
+	logger.Info("Recorded lease hook state", "leaseHooks", exporter.Status.LeaseHooks)
+	return exporter.Status.LeaseHooks.ToProtobuf(), nil
+}
+
+// maxLeaseHookMessageLength bounds the failure or skip reason stored for a hook,
+// so a long hook error cannot make the Exporter object too large to store.
+const maxLeaseHookMessageLength = 1024
+
+// truncateUTF8 shortens s to at most n bytes without splitting a character.
+func truncateUTF8(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
+}
+
+// parseLeaseHookUpdate validates an UpdateLeaseHooks request and returns the
+// hook it updates ("beforeLease" or "afterLease") and the requested state.
+func parseLeaseHookUpdate(
+	req *pb.UpdateLeaseHooksRequest,
+	now metav1.Time,
+) (string, *jumpstarterdevv1alpha1.LeaseHookStatus, error) {
+	if req.GetLeaseName() == "" {
+		return "", nil, status.Error(codes.InvalidArgument, "lease name is required")
+	}
+	if req.GetLeaseUid() == "" {
+		return "", nil, status.Error(codes.InvalidArgument, "lease UID is required")
+	}
+	var hookName string
+	var update *pb.LeaseHookState
+	switch hook := req.GetHook().(type) {
+	case *pb.UpdateLeaseHooksRequest_BeforeLease:
+		hookName, update = "beforeLease", hook.BeforeLease
+	case *pb.UpdateLeaseHooksRequest_AfterLease:
+		hookName, update = "afterLease", hook.AfterLease
+	default:
+		return "", nil, status.Error(codes.InvalidArgument, "hook is required")
+	}
+	phase, ok := jumpstarterdevv1alpha1.LeaseHookPhaseFromProto(update.GetPhase())
+	if !ok {
+		return "", nil, status.Errorf(codes.InvalidArgument, "invalid %s hook phase %s", hookName, update.GetPhase())
+	}
+	return hookName, &jumpstarterdevv1alpha1.LeaseHookStatus{
+		Phase:              phase,
+		OnFailure:          jumpstarterdevv1alpha1.LeaseHookFailureActionFromProto(update.GetOnFailure()),
+		Message:            truncateUTF8(update.GetMessage(), maxLeaseHookMessageLength),
+		Attempts:           int32(min(max(update.GetAttempts(), 1), math.MaxInt32)),
+		LastTransitionTime: now,
+	}, nil
+}
+
+// leaseAssignment identifies the lease assigned to an exporter: its UID ("" if
+// none is assigned, or the lease has ended or no longer exists) and its client.
+type leaseAssignment struct {
+	uid    types.UID
+	client string
+}
+
+// assignedLease returns the live lease whose assignment still matches the
+// exporter. leaseRef is reconciled asynchronously and can refer to an ended or
+// deleted lease, or to a name since reused by an unassigned lease or another exporter.
+func (s *ControllerService) assignedLease(
+	ctx context.Context,
+	exporter *jumpstarterdevv1alpha1.Exporter,
+) (*jumpstarterdevv1alpha1.Lease, error) {
+	if exporter.Status.LeaseRef == nil {
+		return nil, nil
+	}
+	var lease jumpstarterdevv1alpha1.Lease
+	key := types.NamespacedName{Namespace: exporter.Namespace, Name: exporter.Status.LeaseRef.Name}
+	if err := s.Client.Get(ctx, key, &lease); err != nil {
+		return nil, client.IgnoreNotFound(err)
+	}
+	if lease.Status.Ended || lease.Status.ExporterRef == nil || lease.Status.ExporterRef.Name != exporter.Name {
+		return nil, nil
+	}
+	return &lease, nil
+}
+
+// applyLeaseHookUpdate applies one hook transition to the exporter's lease hook
+// record, returning whether it changed. Each hook moves from unset to Running
+// (or straight to Skipped), and from Running to a finished phase of the same
+// attempt. Running again with more attempts is a re-run after an exporter
+// restart cut the hook off.
+// Repeating the current state is accepted, so exporters can retry the call.
+//
+// A lease is identified by name and UID, since a name can be reused once the
+// lease is deleted. assigned is the lease assigned to the exporter (with an
+// empty UID if none is, or it no longer exists). No update is accepted for a
+// lease once another lease is assigned to the exporter, including a newer lease
+// with the same name: hooks of an old lease must not run on a board handed to
+// its replacement. A beforeLease hook starts (or re-runs) only for the assigned
+// lease, and a new lease starts a new record, which keeps the lease's client
+// for hooks that run after the lease has ended. afterLease updates need
+// beforeLease to have finished.
+func applyLeaseHookUpdate(
+	exporter *jumpstarterdevv1alpha1.Exporter,
+	assigned leaseAssignment,
+	req *pb.UpdateLeaseHooksRequest,
+	now metav1.Time,
+) (bool, error) {
+	leaseName, leaseUID := req.GetLeaseName(), types.UID(req.GetLeaseUid())
+	hookName, next, err := parseLeaseHookUpdate(req, now)
+	if err != nil {
+		return false, err
+	}
+
+	leaseRef := exporter.Status.LeaseRef
+	if assigned.uid == "" {
+		leaseRef = nil // the assigned lease is gone
+	}
+	isAssigned := leaseRef != nil && leaseRef.Name == leaseName && assigned.uid == leaseUID
+	if leaseRef != nil && !isAssigned {
+		return false, status.Errorf(codes.FailedPrecondition,
+			"exporter is assigned to lease %s (uid %s), not %s (uid %s)", leaseRef.Name, assigned.uid, leaseName, leaseUID)
+	}
+	record := exporter.Status.LeaseHooks
+	if !record.IsFor(leaseName, leaseUID) {
+		record = nil
+	}
+
+	var current **jumpstarterdevv1alpha1.LeaseHookStatus
+	if hookName == "beforeLease" {
+		// Setup starts (or re-runs) only for the assigned lease; one that was
+		// running when the lease ended may still finish.
+		if !isAssigned && (record == nil || next.Phase == jumpstarterdevv1alpha1.LeaseHookPhaseRunning) {
+			return false, status.Errorf(codes.FailedPrecondition, "lease %s is not assigned to this exporter", leaseName)
+		}
+		if record == nil {
+			record = &jumpstarterdevv1alpha1.ExporterLeaseHooks{
+				LeaseRef:   corev1.LocalObjectReference{Name: leaseName},
+				LeaseUID:   leaseUID,
+				ClientName: assigned.client,
+			}
+		}
+		if record.AfterLease != nil {
+			return false, status.Errorf(codes.FailedPrecondition, "afterLease hook of lease %s has already started", leaseName)
+		}
+		current = &record.BeforeLease
+	} else {
+		if record == nil {
+			return false, status.Errorf(codes.FailedPrecondition, "no lease hook record for lease %s", leaseName)
+		}
+		if record.BeforeLease == nil || !record.BeforeLease.Phase.Finished() {
+			return false, status.Errorf(codes.FailedPrecondition, "beforeLease hook of lease %s has not finished", leaseName)
+		}
+		current = &record.AfterLease
+	}
+
+	if prev := *current; prev != nil {
+		if prev.Phase == next.Phase && prev.Attempts == next.Attempts &&
+			prev.OnFailure == next.OnFailure && prev.Message == next.Message {
+			return false, nil
+		}
+		switch {
+		case prev.Phase.Finished():
+			return false, status.Errorf(codes.FailedPrecondition,
+				"%s hook of lease %s has already finished (%s)", hookName, leaseName, prev.Phase)
+		case next.Phase == jumpstarterdevv1alpha1.LeaseHookPhaseRunning && next.Attempts <= prev.Attempts:
+			return false, status.Errorf(codes.FailedPrecondition,
+				"%s hook of lease %s is already running (attempt %d)", hookName, leaseName, prev.Attempts)
+		case next.Phase != jumpstarterdevv1alpha1.LeaseHookPhaseRunning && next.Attempts != prev.Attempts:
+			// A late outcome from an earlier attempt, for example one an exporter
+			// process sent before it was replaced, must not finish a newer one.
+			return false, status.Errorf(codes.FailedPrecondition,
+				"%s hook of lease %s is running attempt %d, not %d", hookName, leaseName, prev.Attempts, next.Attempts)
+		}
+	} else if next.Phase != jumpstarterdevv1alpha1.LeaseHookPhaseRunning &&
+		next.Phase != jumpstarterdevv1alpha1.LeaseHookPhaseSkipped {
+		return false, status.Errorf(codes.FailedPrecondition,
+			"%s hook of lease %s has not started", hookName, leaseName)
+	}
+
+	*current = next
+	exporter.Status.LeaseHooks = record
+	return true, nil
 }
 
 // protoStatusToString converts the proto ExporterStatus enum to the CRD string value
@@ -672,6 +1074,10 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 		return err
 	}
 
+	if err := s.recordExporterCredential(ctx, exporter); err != nil {
+		return err
+	}
+
 	logger = logger.WithValues("exporter", types.NamespacedName{
 		Namespace: exporter.Namespace,
 		Name:      exporter.Name,
@@ -688,7 +1094,7 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 
 	defer watcher.Stop()
 
-	ticker := time.NewTicker(time.Second * 10)
+	ticker := time.NewTicker(cmp.Or(s.StatusHeartbeatInterval, 10*time.Second))
 
 	defer ticker.Stop()
 
@@ -756,31 +1162,32 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 				// the watcher stops functioning
 				watchedLastSeen = exporter.Status.LastSeen.DeepCopy()
 
-				leased := exporter.Status.LeaseRef != nil
+				lease, err := s.assignedLease(ctx, exporter)
+				if err != nil {
+					logger.Error(err, "failed to get lease on exporter")
+					return err
+				}
+				leased := lease != nil
 				leaseName := (*string)(nil)
+				leaseUID := (*string)(nil)
 				clientName := (*string)(nil)
 				var leaseContext map[string]string
-
 				if leased {
-					leaseName = &exporter.Status.LeaseRef.Name
-					var lease jumpstarterdevv1alpha1.Lease
-					if err := s.Client.Get(
-						ctx,
-						types.NamespacedName{Namespace: exporter.Namespace, Name: *leaseName},
-						&lease,
-					); err != nil {
-						logger.Error(err, "failed to get lease on exporter")
-						return err
-					}
+					leaseName = &lease.Name
 					clientName = &lease.Spec.ClientRef.Name
 					leaseContext = lease.Spec.Context
+					leaseUID = new(string(lease.UID))
 				}
 
 				status := pb.StatusResponse{
 					Leased:     leased,
 					LeaseName:  leaseName,
+					LeaseUid:   leaseUID,
 					ClientName: clientName,
 					Context:    leaseContext,
+					// Always set, even when empty: its presence tells the exporter
+					// that this controller keeps lease hook records.
+					LeaseHooks: exporter.Status.LeaseHooks.ToProtobuf(),
 				}
 				if proto.Equal(lastPbStatusResponse, &status) {
 					jlog.Verbose(logger, "Not sending status update to exporter, it is the same as the last one")
@@ -1097,13 +1504,26 @@ func (s *ControllerService) releaseLeaseAsExporter(
 		return nil, status.Errorf(codes.Internal, "failed to get lease: %s", err)
 	}
 
+	logger := log.FromContext(ctx).WithValues(
+		"lease", lease.Name,
+		"namespace", lease.Namespace,
+		"exporter", exporter.Name,
+		"path", "ReleaseLease",
+	)
+
 	if lease.Status.ExporterRef == nil || lease.Status.ExporterRef.Name != exporter.Name {
+		logger.Info("Lease release request rejected", "outcome", "rejected")
 		return nil, status.Errorf(codes.FailedPrecondition,
 			"lease %s is not held by exporter %s", req.Name, exporter.Name)
 	}
 
 	// Idempotent: already ended or marked for release
 	if lease.Status.Ended || lease.Spec.Release {
+		outcome := "already_released"
+		if lease.Status.Ended {
+			outcome = "already_ended"
+		}
+		logger.Info("Lease release request is idempotent", "outcome", outcome)
 		return &pb.ReleaseLeaseResponse{}, nil
 	}
 
@@ -1111,8 +1531,61 @@ func (s *ControllerService) releaseLeaseAsExporter(
 	lease.Spec.Release = true
 
 	if err := s.Client.Patch(ctx, &lease, original); err != nil {
+		logger.Error(err, "failed to mark lease for release", "outcome", "failed")
 		return nil, status.Errorf(codes.Internal, "failed to mark lease for release: %s", err)
 	}
+
+	logger.Info("Lease marked for release by exporter", "outcome", "newly_marked")
+
+	return &pb.ReleaseLeaseResponse{}, nil
+}
+
+func (s *ControllerService) releaseLeaseAsClient(
+	ctx context.Context,
+	jclient *jumpstarterdevv1alpha1.Client,
+	req *pb.ReleaseLeaseRequest,
+) (*pb.ReleaseLeaseResponse, error) {
+	var lease jumpstarterdevv1alpha1.Lease
+	if err := s.Client.Get(ctx, types.NamespacedName{
+		Namespace: jclient.Namespace,
+		Name:      req.Name,
+	}, &lease); err != nil {
+		return nil, err
+	}
+
+	logger := log.FromContext(ctx).WithValues(
+		"lease", lease.Name,
+		"namespace", lease.Namespace,
+		"client", jclient.Name,
+		"path", "ReleaseLease",
+	)
+
+	// Release is destructive and ends the lease for everyone, so it is restricted
+	// to the owner. Shared clients keep read/list/dial access via IsAccessibleBy.
+	if !lease.IsOwnedBy(jclient.Name) {
+		logger.Info("Lease release request rejected", "outcome", "rejected")
+		return nil, status.Errorf(codes.PermissionDenied, "ReleaseLease permission denied: only lease owner can release")
+	}
+
+	// Idempotent: already ended or marked for release
+	if lease.Status.Ended || lease.Spec.Release {
+		outcome := "already_released"
+		if lease.Status.Ended {
+			outcome = "already_ended"
+		}
+		logger.Info("Lease release request is idempotent", "outcome", outcome)
+		return &pb.ReleaseLeaseResponse{}, nil
+	}
+
+	original := client.MergeFrom(lease.DeepCopy())
+	lease.Spec.Release = true
+
+	if err := s.Client.Patch(ctx, &lease, original); err != nil {
+		logger.Error(err, "failed to mark lease for release", "outcome", "failed")
+		return nil, err
+	}
+
+	logger.Info("Lease marked for release by client", "outcome", "newly_marked")
 
 	return &pb.ReleaseLeaseResponse{}, nil
 }
@@ -1135,33 +1608,7 @@ func (s *ControllerService) ReleaseLease(
 		return nil, err
 	}
 
-	var lease jumpstarterdevv1alpha1.Lease
-	if err := s.Client.Get(ctx, types.NamespacedName{
-		Namespace: jclient.Namespace,
-		Name:      req.Name,
-	}, &lease); err != nil {
-		return nil, err
-	}
-
-	// Release is destructive and ends the lease for everyone, so it is restricted
-	// to the owner. Shared clients keep read/list/dial access via IsAccessibleBy.
-	if !lease.IsOwnedBy(jclient.Name) {
-		return nil, status.Errorf(codes.PermissionDenied, "ReleaseLease permission denied: only lease owner can release")
-	}
-
-	// Idempotent: already ended or marked for release
-	if lease.Status.Ended || lease.Spec.Release {
-		return &pb.ReleaseLeaseResponse{}, nil
-	}
-
-	original := client.MergeFrom(lease.DeepCopy())
-	lease.Spec.Release = true
-
-	if err := s.Client.Patch(ctx, &lease, original); err != nil {
-		return nil, err
-	}
-
-	return &pb.ReleaseLeaseResponse{}, nil
+	return s.releaseLeaseAsClient(ctx, jclient, req)
 }
 
 func (s *ControllerService) ListLeases(

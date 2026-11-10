@@ -293,7 +293,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 				return fmt.Errorf("reconcileStatusExporterRef: failed to list matching exporters: %w", err)
 			}
 			// Filter out disabled exporters from selector-based listing
-			matchingExporters = filterOutDisabledExporters(listed.Items)
+			matchingExporters = filterOutDisabledExporters(listed.Items, lease.Spec.AllowDisabled)
 			if len(matchingExporters) == 0 && len(listed.Items) > 0 {
 				lease.SetStatusUnsatisfiable(
 					"AllDisabled",
@@ -721,22 +721,37 @@ func filterOutLeasedExporters(exporters []ApprovedExporter) []ApprovedExporter {
 // filterOutNotReadyExporters filters out exporters that are not in a ready state
 // to accept new leases. Only exporters with Available status (or unset status for
 // backwards compatibility with old exporters) are considered ready.
+//
+// An exporter that records its lease hooks is also not ready while its record
+// says the previous lease still needs its afterLease hook, so the next lease
+// never gets a board that still owes cleanup. This does not depend on the
+// status it reported: status reports are asynchronous, and one sent before the
+// record changed can arrive after it. An exporter that does not record its
+// hooks (for example one rolled back to an older version) is not held by a
+// record it left behind.
 func filterOutNotReadyExporters(approvedExporters []ApprovedExporter) []ApprovedExporter {
 	return slices.DeleteFunc(
 		slices.Clone(approvedExporters),
 		func(approvedExporter ApprovedExporter) bool {
-			status := approvedExporter.Exporter.Status.ExporterStatusValue
+			exporterStatus := approvedExporter.Exporter.Status
+			if exporterStatus.RecordsLeaseHooks && exporterStatus.LeaseHooks.OwesAfterLease() {
+				return true
+			}
 			// Allow Available or unset (backwards compat with old exporters that don't report status)
-			return status != jumpstarterdevv1alpha1.ExporterStatusAvailable &&
-				status != jumpstarterdevv1alpha1.ExporterStatusUnspecified &&
-				status != ""
+			return exporterStatus.ExporterStatusValue != jumpstarterdevv1alpha1.ExporterStatusAvailable &&
+				exporterStatus.ExporterStatusValue != jumpstarterdevv1alpha1.ExporterStatusUnspecified &&
+				exporterStatus.ExporterStatusValue != ""
 		},
 	)
 }
 
-// filterOutDisabledExporters removes exporters that have spec.enabled set to false.
-// Exporters with nil Enabled (backward compatibility) or Enabled=true are kept.
-func filterOutDisabledExporters(exporters []jumpstarterdevv1alpha1.Exporter) []jumpstarterdevv1alpha1.Exporter {
+// filterOutDisabledExporters removes exporters that have spec.enabled set to false,
+// unless allowDisabled is true. Exporters with nil Enabled (backward compatibility)
+// or Enabled=true are always kept.
+func filterOutDisabledExporters(exporters []jumpstarterdevv1alpha1.Exporter, allowDisabled bool) []jumpstarterdevv1alpha1.Exporter {
+	if allowDisabled {
+		return slices.Clone(exporters)
+	}
 	return slices.DeleteFunc(
 		slices.Clone(exporters),
 		func(exporter jumpstarterdevv1alpha1.Exporter) bool {
@@ -826,6 +841,12 @@ func exporterChangedForPendingLeases() predicate.Funcs {
 		oldLeased := oldExp.Status.LeaseRef != nil
 		newLeased := newExp.Status.LeaseRef != nil
 		if oldLeased != newLeased {
+			return true
+		}
+		// Readiness also depends on whether the exporter records its lease hooks
+		// and still owes an afterLease hook (filterOutNotReadyExporters).
+		if oldExp.Status.RecordsLeaseHooks != newExp.Status.RecordsLeaseHooks ||
+			oldExp.Status.LeaseHooks.OwesAfterLease() != newExp.Status.LeaseHooks.OwesAfterLease() {
 			return true
 		}
 		if !labels.Equals(labels.Set(oldExp.Labels), labels.Set(newExp.Labels)) {

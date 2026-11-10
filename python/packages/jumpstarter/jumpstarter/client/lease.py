@@ -41,10 +41,18 @@ logger = logging.getLogger(__name__)
 
 # Allow the controller's 30-second exporter readiness wait to finish.
 _DIAL_ATTEMPT_TIMEOUT = 35.0
+# Per call, so releasing a lease takes at most twice this.
+_RELEASE_RPC_TIMEOUT_SECONDS = 15.0
+
+
+def _deadline_exceeded(exc: BaseException) -> bool:
+    """Whether *exc* is a gRPC call that ran out of its deadline, as translated by translate_grpc_exceptions."""
+    cause = exc.__cause__
+    return isinstance(cause, AioRpcError) and cause.code() == grpc.StatusCode.DEADLINE_EXCEEDED
 
 
 @dataclass(kw_only=True)
-class DirectLease(ContextManagerMixin, AsyncContextManagerMixin):
+class DirectLease:
     """Lease-like object for direct connection to an exporter (no controller).
 
     Used when connecting via jmp shell --tls-grpc host:port. Yields the address
@@ -65,6 +73,18 @@ class DirectLease(ContextManagerMixin, AsyncContextManagerMixin):
     exporter_labels: dict[str, str] = field(default_factory=dict, init=False)
     release: bool = field(default=False, init=False)
     lease_ended: bool = field(default=False, init=False)
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        pass
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        pass
 
     @asynccontextmanager
     async def serve_unix_async(self):
@@ -94,7 +114,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     tls_config: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
     grpc_options: dict[str, Any] = field(default_factory=dict)
     client_name: str | None = None  # Name of the current client, used for ownership validation
-    allow_disabled: bool = False  # Allow leasing a disabled exporter (only effective with exporter_name)
+    allow_disabled: bool = False  # Allow leasing a disabled exporter (works with exporter_name and selector)
     acquisition_timeout: int = field(default=7200)  # Timeout in seconds for lease acquisition, polled in 5s intervals
     dial_timeout: float = field(default=60.0)  # Timeout in seconds for Dial retry loop when exporter not ready
     retry_timeout: float = field(default=300.0)  # Retry timeout for unreachable exporter (0 to disable)
@@ -105,12 +125,10 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     )  # Called when lease is ending
     lease_ended: bool = field(default=False, init=False)  # Set when lease expires naturally
     lease_transferred: bool = field(default=False, init=False)  # Set when lease is transferred to another client
-    lease_revoked: bool = field(default=False, init=False)  # Set when this (shared) client loses shared access
+    lease_revoked: bool = field(default=False, init=False)  # Set when this client loses access to the lease
+    owner: str | None = field(default=None, init=False)  # The lease's owner when it was acquired
 
     def __post_init__(self):
-        if hasattr(super(), "__post_init__"):
-            super().__post_init__()
-
         self.controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel)
         self.svc = ClientService(channel=self.channel, namespace=self.namespace)
 
@@ -143,10 +161,18 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 logger.warning(warning)
         logger.info("Acquiring lease %s for selector %s for duration %s", self.name, self.selector, self.duration)
 
-    async def get(self):
+    async def get(self, *, timeout: float | None = None):
+        """Fetch the lease from the controller.
+
+        timeout is a gRPC deadline. Prefer it to an anyio timeout around the
+        call: a cancelled grpc.aio call can raise a CancelledError that anyio
+        does not recognize as its own, which cancels the caller's task group
+        instead of timing out.
+        """
         with translate_grpc_exceptions():
             svc = ClientService(channel=self.channel, namespace=self.namespace)
-            return await svc.GetLease(name=self.name)
+            assert self.name is not None  # pragma: no cover
+            return await svc.GetLease(name=self.name, timeout=timeout)
 
     @retry(
         wait=wait_exponential_jitter(initial=1, max=120, jitter=1),
@@ -264,6 +290,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                             logger.debug("Lease %s acquired", self.name)
                             spinner.update_status(f"Lease {self.name} acquired successfully!", force=True)
                             self.exporter_name = result.exporter
+                            self.owner = result.client
                             await self._fetch_exporter_labels()
                             break
 
@@ -318,21 +345,20 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
             yield value
         finally:
             if self.release and self.name:
-                # Shield cleanup from cancellation to ensure it completes
+                # Shield cleanup from cancellation to ensure it completes. Each
+                # call is bounded by a gRPC deadline; see get() for why not fail_after.
                 with CancelScope(shield=True):
                     try:
-                        with fail_after(30):
-                            # skip the message if the lease is already expired
-                            lease = await self.get()
-                            if not lease.effective_end_time:
-                                logger.info("Releasing Lease %s", self.name)
-                            await self.svc.DeleteLease(
-                                name=self.name,
-                            )
-                    except TimeoutError:
-                        logger.warning("Timeout while deleting lease %s during cleanup", self.name)
-                    except Exception:  # noqa: BLE001
-                        logger.debug("Error during lease cleanup for %s (likely already expired)", self.name)
+                        # skip the message if the lease is already expired
+                        lease = await self.get(timeout=_RELEASE_RPC_TIMEOUT_SECONDS)
+                        if not lease.effective_end_time:
+                            logger.info("Releasing Lease %s", self.name)
+                        await self.svc.DeleteLease(name=self.name, timeout=_RELEASE_RPC_TIMEOUT_SECONDS)
+                    except Exception as e:  # noqa: BLE001
+                        if _deadline_exceeded(e):
+                            logger.warning("Timeout while deleting lease %s during cleanup", self.name)
+                        else:
+                            logger.debug("Error during lease cleanup for %s (likely already expired)", self.name)
 
     @contextmanager
     def __contextmanager__(self) -> Generator[Self]:
@@ -356,6 +382,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 )
             try:
                 # Unary grpc.aio calls need timeout=; AnyIO timeouts can leak CancelledError.
+                assert self.name is not None
                 return await self.controller.Dial(
                     jumpstarter_pb2.DialRequest(lease_name=self.name),
                     timeout=min(_DIAL_ATTEMPT_TIMEOUT, remaining),
@@ -556,6 +583,7 @@ class LeaseAcquisitionSpinner:
         """
         if self.spinner and self._should_show_spinner:
             self._current_message = f"[blue]{message}[/blue]"
+            assert self.start_time is not None
             elapsed = datetime.now(tz=UTC) - self.start_time
             elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
             self.spinner.update(f"{self._current_message} [dim]({elapsed_str})[/dim]")
@@ -568,6 +596,7 @@ class LeaseAcquisitionSpinner:
             )
 
             if should_log:
+                assert self.start_time is not None
                 elapsed = now - self.start_time
                 elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
                 logger.info(f"{message} ({elapsed_str})")
@@ -576,6 +605,7 @@ class LeaseAcquisitionSpinner:
     def tick(self):
         """Update the spinner with current elapsed time without changing the message."""
         if self.spinner and self._should_show_spinner and self._current_message:
+            assert self.start_time is not None
             elapsed = datetime.now(tz=UTC) - self.start_time
             elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
             # Use the stored current message and update with new elapsed time

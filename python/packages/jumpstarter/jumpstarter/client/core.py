@@ -14,7 +14,7 @@ from anyio import create_task_group
 from google.protobuf import empty_pb2
 from grpc import StatusCode
 from grpc.aio import AioRpcError
-from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
+from jumpstarter_protocol import jumpstarter_pb2
 from rich.logging import RichHandler
 
 from jumpstarter.client.status_monitor import StatusMonitor
@@ -67,11 +67,7 @@ def _console_in_use_error(code: StatusCode, details: str | None) -> DriverError 
 
 
 @dataclass(kw_only=True)
-class AsyncDriverClient(
-    Metadata,
-    jumpstarter_pb2_grpc.ExporterServiceStub,
-    router_pb2_grpc.RouterServiceStub,
-):
+class AsyncDriverClient(Metadata):
     """
     Async driver client base class
 
@@ -85,7 +81,7 @@ class AsyncDriverClient(
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
-            super().__post_init__()
+            super().__post_init__()  # ty: ignore[unresolved-attribute]
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.setLevel(self.log_level)
         # Initialize status monitor (not a dataclass field to avoid Pydantic type resolution issues)
@@ -468,11 +464,11 @@ class AsyncDriverClient(
         )
         metadata = dict(list(await context.initial_metadata()))
         async with MetadataStream(stream=RouterStream(context=context), metadata=metadata) as rstream:
-            metadata = ResourceMetadata(**rstream.extra(MetadataStreamAttributes.metadata))  # type: ignore[call-arg]
+            metadata = ResourceMetadata(**rstream.extra(MetadataStreamAttributes.metadata))  # type: ignore[call-arg]  # ty: ignore[invalid-argument-type]
             if metadata.x_jmp_accept_encoding is None:
-                stream = compress_stream(stream, content_encoding)  # type: ignore[arg-type]
+                stream = compress_stream(stream, content_encoding)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
-            async with forward_stream(ProgressStream(stream=stream), rstream):
+            async with forward_stream(ProgressStream(stream=stream), rstream):  # ty: ignore[invalid-argument-type]
                 yield metadata.resource.model_dump(mode="json")
 
     @asynccontextmanager

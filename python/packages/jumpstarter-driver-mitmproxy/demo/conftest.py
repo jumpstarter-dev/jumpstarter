@@ -15,7 +15,7 @@ from http.server import HTTPServer
 
 import pytest
 import requests
-from backend import DemoBackendHandler  # ty: ignore[unresolved-import]
+from backend import DemoBackendHandler
 
 BACKEND_PORT = 9000
 PROXY_PORT = 8080

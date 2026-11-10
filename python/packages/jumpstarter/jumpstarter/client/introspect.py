@@ -67,7 +67,7 @@ def _describe_param(param: click.Parameter) -> dict[str, Any]:
     return described
 
 
-def walk_click_tree(cmd: click.core.BaseCommand, path: list[str] | None = None) -> dict[str, Any]:  # ty: ignore[unresolved-attribute]
+def walk_click_tree(cmd: click.core.BaseCommand, path: list[str] | None = None) -> dict[str, Any]:  # ty: ignore[invalid-type-form]
     """Recursively walk a Click command tree and return structured JSON.
 
     Returns command names, help text, parameters (with types and defaults),

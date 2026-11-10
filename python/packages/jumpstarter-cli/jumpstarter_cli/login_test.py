@@ -522,6 +522,9 @@ def test_authentication_preserves_client_config_path(tmp_path, monkeypatch, mode
     elif config_location == "explicit_path_alias_collision":
         assert (clients / "client.yaml").read_bytes() == unrelated_before
     if mode == "login_without_refresh_token" and alias_path:
-        assert UserConfigV1Alpha1.load().config.current_client.path.resolve() == path.resolve()
+        current_client = UserConfigV1Alpha1.load().config.current_client
+        assert current_client is not None
+        assert current_client.path is not None
+        assert current_client.path.resolve() == path.resolve()
     else:
         assert UserConfigV1Alpha1.USER_CONFIG_PATH.read_bytes() == user_config_before

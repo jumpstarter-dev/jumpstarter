@@ -65,7 +65,7 @@ var reservedExtraFieldKeys = map[string]struct{}{
 }
 
 // TelemetryService receives structured log entries from exporters and clients,
-// logs them via structured stdout, and will forward them to Loki in a future phase.
+// logs them via structured stdout, and optionally forwards them to Loki.
 //
 // TLS: the server always uses TLS. When EXTERNAL_CERT_PEM and EXTERNAL_KEY_PEM
 // env vars point to certificate/key files (mounted by the operator from a Secret),
@@ -92,19 +92,26 @@ type TelemetryService struct {
 	// ExemplarKeys allowlist applied on the telemetry merge path.
 	ExemplarKeys []string
 
-	// Signer is used to validate bearer tokens on every PushLogs call and
-	// MetricsStream. Tokens are issued by the controller from the same
-	// CONTROLLER_KEY seed, so the telemetry binary can verify them locally
-	// without a k8s client.
+	// Signer verifies the telemetry token on every PushLogs call and
+	// MetricsStream. The controller issues it from GetServiceEndpoints with
+	// the same CONTROLLER_KEY seed, so the telemetry binary can verify it
+	// locally without a k8s client.
 	Signer *oidc.Signer
 
 	// Logger overrides log.FromContext when set (used by tests to capture output).
 	Logger *logr.Logger
 
+	// LokiConfig is used by Start to construct a LokiPusher when Loki is nil.
+	LokiConfig LokiConfig
+
+	// Loki, when non-nil, forwards accepted PushLogs entries to Loki's HTTP API.
+	Loki *LokiPusher
+
 	stateMu         sync.Mutex
 	conns           map[string]*metricsConn
 	scrapeTimeouts  *prometheus.CounterVec
 	parseErrors     *prometheus.CounterVec
+	droppedTotal    *prometheus.CounterVec
 	metricsRegistry *prometheus.Registry
 	metricsAddr     string
 	grpcReady       atomic.Bool
@@ -112,11 +119,13 @@ type TelemetryService struct {
 	scrapeGroup singleflight.Group
 }
 
-// PushLogs receives a batch of structured log entries and writes them via the
-// controller-runtime logger (structured JSON to stdout).
-// Future phase: forward to Loki push API.
+// PushLogs receives a batch of structured log entries. When a Loki pusher is
+// configured, accepted entries are queued for Loki and are not also written to
+// stdout. Otherwise they are written via the controller-runtime logger
+// (structured JSON to stdout). The service's own operational diagnostics are
+// still logged normally.
 func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest) (*pb.PushLogsResponse, error) {
-	id, err := s.authenticateExporter(ctx)
+	id, err := s.authenticatePushLogs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -135,68 +144,76 @@ func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest
 
 	var accepted uint32
 	for _, entry := range entries {
-		// Drop entries that claim to be from a different exporter or namespace
-		// than what the token authorises. Counted as dropped rather than failing
-		// the whole batch so valid entries in the same request are still written.
-		if entry.Exporter != "" && entry.Exporter != claimedName {
-			dropped++
-			continue
+		// Drop entries that claim an identity the token does not authorise.
+		// Counted as dropped rather than failing the whole batch so valid
+		// entries in the same request are still written. A client token
+		// authorises no exporter, so a non-empty Exporter is dropped too.
+		if id.kind == "exporter" {
+			if entry.Exporter != "" && entry.Exporter != claimedName {
+				dropped++
+				continue
+			}
+		} else {
+			if entry.Client != "" && entry.Client != claimedName {
+				dropped++
+				continue
+			}
+			if entry.Exporter != "" {
+				dropped++
+				continue
+			}
 		}
 		if entry.Namespace != "" && entry.Namespace != claimedNamespace {
 			dropped++
 			continue
 		}
 
-		// Always log the authenticated identity. After the mismatch checks
-		// above, any non-empty entry fields already match the token; using
-		// the token values makes the server the source of truth for Loki
-		// stream labels even when the entry omitted them.
+		prepared := prepareLogEntry(id, entry)
+		if s.Loki != nil {
+			s.Loki.Enqueue(prepared)
+			accepted++
+			continue
+		}
+
+		// Structured stdout is the delivery path only when Loki is not
+		// configured. The token values are the source of truth for identity
+		// fields even when the entry omitted them.
 		kvs := []any{
-			"component", entry.Component,
-			logFieldExporter, claimedName,
+			"component", prepared.Component,
 			"namespace", claimedNamespace,
-			"severity", entry.Severity,
+			"severity", prepared.Severity,
 		}
-		if entry.Timestamp != nil {
-			kvs = append(kvs, "ts", entry.Timestamp.AsTime().Format(time.RFC3339Nano))
+		if prepared.Exporter != "" {
+			kvs = append(kvs, logFieldExporter, prepared.Exporter)
 		}
-		if entry.Lease != "" {
-			kvs = append(kvs, "lease", entry.Lease)
+		if prepared.Timestamp != nil {
+			kvs = append(kvs, "ts", prepared.Timestamp.AsTime().Format(time.RFC3339Nano))
 		}
-		if entry.Client != "" {
-			kvs = append(kvs, "client", entry.Client)
+		if prepared.Lease != "" {
+			kvs = append(kvs, "lease", prepared.Lease)
 		}
-		if entry.Operation != "" {
-			kvs = append(kvs, "operation", entry.Operation)
+		if prepared.Client != "" {
+			kvs = append(kvs, "client", prepared.Client)
 		}
-		if entry.Result != "" {
-			kvs = append(kvs, "result", entry.Result)
+		if prepared.Operation != "" {
+			kvs = append(kvs, "operation", prepared.Operation)
 		}
-		if entry.DriverType != "" {
-			kvs = append(kvs, "driver_type", entry.DriverType)
+		if prepared.Result != "" {
+			kvs = append(kvs, "result", prepared.Result)
+		}
+		if prepared.DriverType != "" {
+			kvs = append(kvs, "driver_type", prepared.DriverType)
 		}
 
-		// Enforce extra_fields limits and strip reserved keys so an exporter
-		// cannot shadow trusted fields in downstream log parsers.
-		count := 0
-		for k, v := range entry.ExtraFields {
-			if count >= maxExtraFields {
-				break
-			}
-			if _, reserved := reservedExtraFieldKeys[k]; reserved {
-				continue
-			}
-			k = truncate(k, maxKeyLen)
-			v = truncate(v, maxValueLen)
+		for k, v := range prepared.ExtraFields {
 			kvs = append(kvs, k, v)
-			count++
 		}
 
-		switch strings.ToLower(entry.Severity) {
+		switch strings.ToLower(prepared.Severity) {
 		case "error", "critical":
-			logger.Error(nil, entry.Message, kvs...)
+			logger.Error(nil, prepared.Message, kvs...)
 		default:
-			logger.Info(entry.Message, kvs...)
+			logger.Info(prepared.Message, kvs...)
 		}
 		accepted++
 	}
@@ -212,6 +229,48 @@ func (s *TelemetryService) pushLogsLogger(ctx context.Context) logr.Logger {
 		return s.Logger.WithName("telemetry")
 	}
 	return log.FromContext(ctx).WithName("telemetry")
+}
+
+// prepareLogEntry copies entry with identity overwritten from the token and
+// extra_fields truncated / stripped of reserved keys.
+func prepareLogEntry(id telemetryIdentity, entry *pb.LogEntry) *pb.LogEntry {
+	out := &pb.LogEntry{
+		Timestamp:  entry.Timestamp,
+		Severity:   entry.Severity,
+		Message:    entry.Message,
+		Component:  entry.Component,
+		Lease:      entry.Lease,
+		Client:     entry.Client,
+		Operation:  entry.Operation,
+		Result:     entry.Result,
+		DriverType: entry.DriverType,
+		Namespace:  id.namespace,
+	}
+	if id.kind == "exporter" {
+		out.Exporter = id.name
+	} else {
+		out.Client = id.name
+		out.Exporter = ""
+	}
+	if len(entry.ExtraFields) == 0 {
+		return out
+	}
+	extra := make(map[string]string, len(entry.ExtraFields))
+	count := 0
+	for k, v := range entry.ExtraFields {
+		if count >= maxExtraFields {
+			break
+		}
+		if _, reserved := reservedExtraFieldKeys[k]; reserved {
+			continue
+		}
+		extra[truncate(k, maxKeyLen)] = truncate(v, maxValueLen)
+		count++
+	}
+	if len(extra) > 0 {
+		out.ExtraFields = extra
+	}
+	return out
 }
 
 // truncate returns s truncated to at most n bytes (rune-safe: truncates at rune boundary).
@@ -296,6 +355,19 @@ func (s *TelemetryService) Start(ctx context.Context) error {
 	s.initScrapeTimeouts()
 	s.grpcReady.Store(true)
 
+	if s.Loki == nil {
+		pusher, lokiErr := NewLokiPusher(s.LokiConfig, s.droppedTotal)
+		if lokiErr != nil {
+			logger.Error(lokiErr, "Loki push disabled")
+		} else {
+			s.Loki = pusher
+		}
+	}
+	// Not a child of ctx. Cancelling the process context stops HTTP and gRPC
+	// first; the final Loki flush starts only after that, from the defer.
+	stopLoki := startLokiRun(s.Loki)
+	defer stopLoki()
+
 	httpShutdown, err := s.startMetricsHTTP()
 	if err != nil {
 		s.grpcReady.Store(false)
@@ -343,6 +415,26 @@ func (s *TelemetryService) Start(ctx context.Context) error {
 		}
 		srv.Stop()
 		return err
+	}
+}
+
+// startLokiRun flushes until stop is called, then once more inside Run.
+// stop blocks until that flush returns. A nil pusher makes stop a no-op.
+func startLokiRun(p *LokiPusher) func() {
+	if p == nil {
+		return func() {}
+	}
+	// Independent of the process context so SIGTERM does not flush while
+	// PushLogs is still being accepted.
+	lokiCtx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		p.Run(lokiCtx)
+	}()
+	return func() {
+		cancel()
+		<-done
 	}
 }
 

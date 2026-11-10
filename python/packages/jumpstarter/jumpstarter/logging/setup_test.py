@@ -429,7 +429,7 @@ class TestAutoDetect:
     def test_auto_text_when_tty(self):
         """Auto mode should produce human-readable text when stderr is a TTY."""
         stream = io.StringIO()
-        stream.isatty = lambda: True  # type: ignore[assignment]
+        stream.isatty = lambda: True  # ty: ignore[invalid-assignment]
 
         with patch("jumpstarter.logging.setup.sys.stderr", stream):
             setup_logging(component="exporter", log_format="auto")
@@ -451,7 +451,7 @@ class TestAutoDetect:
     def test_json_format_override(self):
         """Explicit json format should always produce JSON even with TTY."""
         stream = io.StringIO()
-        stream.isatty = lambda: True  # type: ignore[assignment]
+        stream.isatty = lambda: True  # ty: ignore[invalid-assignment]
 
         with patch("jumpstarter.logging.setup.sys.stderr", stream):
             setup_logging(component="exporter", log_format="json")

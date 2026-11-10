@@ -18,7 +18,7 @@ class MockFlasherClient(BaseFlasherClient):
         self._redaction_values = set()
         self.children = {}
         self.methods_description = {}
-        self.logger = type(
+        self.logger = type(  # ty: ignore[invalid-assignment]
             "MockLogger",
             (),
             {
