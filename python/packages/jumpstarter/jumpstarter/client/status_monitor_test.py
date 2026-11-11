@@ -918,32 +918,42 @@ class TestStatusMonitorStatusMessageUpdate:
         assert result is True
         assert monitor.status_message == "hook script exited with code 1"
 
-    async def test_wait_for_any_of_updates_status_message(self) -> None:
-        """Test that wait_for_any_of verification poll updates _status_message.
+    @pytest.mark.parametrize(
+        "previous_status",
+        [ExporterStatus.AFTER_LEASE_HOOK_FAILED, None],
+        ids=["reported", "omitted"],
+    )
+    async def test_wait_for_any_of_verification_poll_replaces_cached_status(self, previous_status) -> None:
+        """The wait_for_any_of verification poll must replace every cached field.
 
-        When connection_lost is True and the verification poll recovers,
-        _status_message must be updated from the response so callers don't
-        read a stale message from a previous status.
+        When connection_lost is True and the verification poll recovers, the
+        message and the previous status must come from the response, so callers
+        don't read them stale from an earlier status. jmp shell reads the
+        status before OFFLINE to tell whether the afterLease hook failed.
         """
         stub = MockExporterStub([
             create_status_response(
-                ExporterStatus.AFTER_LEASE_HOOK_FAILED,
+                ExporterStatus.OFFLINE,
                 version=5,
-                message="hook script exited with code 1",
+                message="Exporter shutting down due to afterLease hook failure",
+                previous_status=previous_status,
             ),
         ])
         monitor = StatusMonitor(stub, poll_interval=0.1)
         monitor._running = True
         monitor._connection_lost = True
-        monitor._status_message = "Ready for commands"  # stale from LEASE_READY
+        # Stale, from LEASE_READY right after AVAILABLE
+        monitor._status_message = "Ready for commands"
+        monitor._previous_status = ExporterStatus.AVAILABLE
 
         result = await monitor.wait_for_any_of(
-            [ExporterStatus.AVAILABLE, ExporterStatus.AFTER_LEASE_HOOK_FAILED],
+            [ExporterStatus.AVAILABLE, ExporterStatus.AFTER_LEASE_HOOK_FAILED, ExporterStatus.OFFLINE],
             timeout=2.0,
         )
 
-        assert result == ExporterStatus.AFTER_LEASE_HOOK_FAILED
-        assert monitor.status_message == "hook script exited with code 1"
+        assert result == ExporterStatus.OFFLINE
+        assert monitor.status_message == "Exporter shutting down due to afterLease hook failure"
+        assert monitor.previous_status == previous_status
 
 
 class TestStatusMonitorUnavailableRetryDelay:
