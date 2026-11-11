@@ -102,7 +102,7 @@ var _ = Describe("Endpoint port admission", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(found).To(BeTrue())
 		for _, method := range []string{"nodeport", "loadBalancer"} {
-			configured[0].(map[string]interface{})[method].(map[string]interface{})["port"] = int64(0)
+			configured[0].(map[string]any)[method].(map[string]any)["port"] = int64(0)
 		}
 		Expect(unstructured.SetNestedSlice(data, configured, "spec", "telemetry", "grpc", "endpoints")).To(Succeed())
 		obj := &unstructured.Unstructured{Object: data}
