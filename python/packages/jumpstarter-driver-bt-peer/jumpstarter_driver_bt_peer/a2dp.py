@@ -61,9 +61,47 @@ class SbcConfig:
     def describe(self) -> str:
         return f"{self.min_bitpool}-{self.max_bitpool}"
 
+    def narrowed_to(self, other: "SbcConfig") -> "SbcConfig":
+        """The range both this and `other` can honour.
+
+        An intersection, not a replacement. The spec allows a bitpool up to
+        250 and the peer pins 53, so a sink's range may be *wider* as well as
+        narrower; taking the sink's outright would let the peer offer, and
+        `validate_sbc` then accept, audio the peer never advertised it could
+        send.
+        """
+        narrowed = SbcConfig(
+            max(self.min_bitpool, other.min_bitpool),
+            min(self.max_bitpool, other.max_bitpool),
+        )
+        if narrowed.min_bitpool > narrowed.max_bitpool:
+            raise BtPeerError(
+                f"the DUT's SBC sink wants bitpool {other.describe()}, which does not "
+                f"overlap the {self.describe()} the peer advertises; "
+                "there is no bitpool both sides accept"
+            )
+        return narrowed
+
 
 # What the peer offers before any stream has been configured.
 ADVERTISED = SbcConfig(SBC_MIN_BITPOOL, SBC_MAX_BITPOOL)
+
+
+def _sbc_range(capabilities) -> SbcConfig | None:
+    """The SBC bitpool range carried by a capability list, if it has one."""
+    for capability in capabilities:
+        if not isinstance(capability, MediaCodecCapabilities):
+            continue
+        info = capability.media_codec_information
+        if isinstance(info, SbcMediaCodecInformation):
+            return SbcConfig(info.minimum_bitpool_value, info.maximum_bitpool_value)
+    return None
+
+
+def _is_sbc(capability) -> bool:
+    return isinstance(capability, MediaCodecCapabilities) and isinstance(
+        capability.media_codec_information, SbcMediaCodecInformation
+    )
 
 
 class ByteReader:
@@ -117,13 +155,18 @@ class Track:
         self._packets = None
 
 
-def sbc_capabilities() -> MediaCodecCapabilities:
-    """The single SBC configuration the peer advertises.
+def sbc_capabilities(config: SbcConfig = ADVERTISED) -> MediaCodecCapabilities:
+    """The single SBC configuration the peer advertises, over `config`'s range.
 
     The peer is the AVDTP acceptor, so the sink picks a configuration out of
     whatever is offered. Advertising exactly one means play() can reject
     mismatched audio up front instead of letting it reach the speakers as
     noise.
+
+    Takes a range rather than reading the pinned constants, because the offer
+    for a given stream is narrowed to what its sink accepts. It has to be a
+    fresh object each time: MediaCodecCapabilities serializes itself once, in
+    __init__, and everything downstream reads that cached buffer.
     """
     S = SbcMediaCodecInformation
     return MediaCodecCapabilities(
@@ -135,8 +178,8 @@ def sbc_capabilities() -> MediaCodecCapabilities:
             block_length=S.BlockLength.BL_16,
             subbands=S.Subbands.S_8,
             allocation_method=S.AllocationMethod.LOUDNESS,
-            minimum_bitpool_value=SBC_MIN_BITPOOL,
-            maximum_bitpool_value=SBC_MAX_BITPOOL,
+            minimum_bitpool_value=config.min_bitpool,
+            maximum_bitpool_value=config.max_bitpool,
         ),
     )
 
@@ -272,7 +315,8 @@ class A2dpSession:
                 "the DUT exposes no free SBC audio sink endpoint; "
                 "is Bluetooth media enabled on the head unit?"
             )
-        self._clamp_offer_to_sink(sink)
+        # Before create_stream, which is what sends SET_CONFIGURATION.
+        self._offer_to_sink(sink)
         return await self.protocol.create_stream(self.source, sink)
 
     async def prepare(self) -> SbcConfig:
@@ -282,24 +326,26 @@ class A2dpSession:
         from the sink's capabilities, because either side may have set it.
         When the DUT sends SET_CONFIGURATION itself -- a head unit that drives
         the negotiation rather than waiting -- the stream is already
-        configured by the time play() runs, `_open_stream` reuses it,
-        `_clamp_offer_to_sink` never sees the sink, and anything cached from
-        that path would still be the advertised ceiling. Reading the
-        configuration covers both directions.
+        configured by the time play() runs, `_open_stream` reuses it and
+        `_offer_to_sink` never sees the sink. Reading the configuration covers
+        both directions.
+
+        It is intersected with what the peer advertises even so: on that
+        DUT-initiated path nothing has narrowed the offer, and bumble accepts
+        whatever range the head unit asked for, which may fall outside the
+        pinned one.
         """
         await self._open_stream()
-        for capability in self.source.configuration:
-            if not isinstance(capability, MediaCodecCapabilities):
-                continue
-            info = capability.media_codec_information
-            if isinstance(info, SbcMediaCodecInformation):
-                config = SbcConfig(info.minimum_bitpool_value, info.maximum_bitpool_value)
-                self._emit("stream_configured", {
-                    "minimum_bitpool": config.min_bitpool,
-                    "maximum_bitpool": config.max_bitpool,
-                })
-                return config
-        raise BtPeerError("the AVDTP stream was configured without an SBC codec")
+        configured = _sbc_range(self.source.configuration)
+        if configured is None:
+            raise BtPeerError("the AVDTP stream was configured without an SBC codec")
+
+        config = ADVERTISED.narrowed_to(configured)
+        self._emit("stream_configured", {
+            "minimum_bitpool": config.min_bitpool,
+            "maximum_bitpool": config.max_bitpool,
+        })
+        return config
 
     async def start(self) -> dict[str, Any]:
         """Put the stream into STREAMING, initiating it if necessary.
@@ -324,30 +370,43 @@ class A2dpSession:
         await stream.stop()
         return True
 
-    def _clamp_offer_to_sink(self, sink) -> None:
-        """Narrow the advertised bitpool range to what the sink accepts.
+    def _offer_to_sink(self, sink) -> None:
+        """Narrow this stream's offer to the range both sides accept.
 
         The sink rejects a configuration whose bitpool range is wider than
-        its own, so the offer has to be clamped before SET_CONFIGURATION.
+        its own, so the offer has to be narrowed before SET_CONFIGURATION.
+        Raises if the two ranges do not overlap at all, which is better found
+        here than as a rejected SET_CONFIGURATION or, worse, as noise.
+
         Only reached when the peer initiates; when the DUT configures the
-        stream it picks the range itself.
+        stream it picks the range itself, and `prepare` reads it back.
+
+        Two things this deliberately does not do:
+
+        - It does not mutate the existing capability.
+          MediaCodecCapabilities caches its serialized bytes in __init__ and
+          `ServiceCapabilities.serialize_capabilities` emits that buffer, so
+          writing to `media_codec_information` narrows what this driver
+          believes it offered without changing a byte on the wire.
+        - It does not touch `source.capabilities`. bumble aliases
+          `configuration` to the same list, and capabilities answer
+          GET_CAPABILITIES -- they are what the peer *can* do, which is still
+          the full advertised range. Only the offer for this stream narrows.
         """
-        for capability in sink.capabilities:
-            if not isinstance(capability, MediaCodecCapabilities):
-                continue
-            remote = capability.media_codec_information
-            if not isinstance(remote, SbcMediaCodecInformation):
-                continue
-            for local_capability in self.source.capabilities:
-                local = getattr(local_capability, "media_codec_information", None)
-                if isinstance(local, SbcMediaCodecInformation):
-                    local.minimum_bitpool_value = remote.minimum_bitpool_value
-                    local.maximum_bitpool_value = remote.maximum_bitpool_value
-            self._emit("sink_bitpool", {
-                "minimum": remote.minimum_bitpool_value,
-                "maximum": remote.maximum_bitpool_value,
-            })
+        remote = _sbc_range(sink.capabilities)
+        if remote is None:
             return
+        offer = ADVERTISED.narrowed_to(remote)
+        self.source.configuration = [
+            sbc_capabilities(offer) if _is_sbc(capability) else capability
+            for capability in self.source.capabilities
+        ]
+        self._emit("sink_bitpool", {
+            "sink_minimum": remote.min_bitpool,
+            "sink_maximum": remote.max_bitpool,
+            "offered_minimum": offer.min_bitpool,
+            "offered_maximum": offer.max_bitpool,
+        })
 
 
 async def validate_sbc(data: bytes, config: SbcConfig = ADVERTISED) -> SbcFrame:
