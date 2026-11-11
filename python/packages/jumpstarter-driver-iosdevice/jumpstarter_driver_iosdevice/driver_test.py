@@ -1,11 +1,13 @@
+import json
 import plistlib
 import struct
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from anyio import BrokenResourceError, ClosedResourceError
+from anyio import BrokenResourceError, ClosedResourceError, EndOfStream
 
+from . import driver as driver_module
 from .driver import IosDevice, IosPortForward, _get_value, _serial_at_port
 from jumpstarter.common.exceptions import ConfigurationError
 
@@ -306,3 +308,46 @@ async def test_revoked_broker_rotates_even_when_device_id_is_reused():
     ):
         assert await driver._broker_for_device(UDID) is second
     first.aclose.assert_awaited_once()
+
+
+def test_devicehub_needs_exporter_trust():
+    with pytest.raises(ConfigurationError, match="devicehub requires exporter-owned trust"):
+        IosDevice(udid=UDID, devicehub=True, trust_mode="passthrough")
+
+
+def test_devicehub_needs_tls_psk():
+    with patch.object(driver_module, "_TLS_PSK", False), pytest.raises(ConfigurationError, match="Python 3.13"):
+        IosDevice(udid=UDID, devicehub=True)
+
+
+@pytest.mark.anyio
+async def test_devicehub_must_be_enabled():
+    with pytest.raises(RuntimeError, match="set devicehub: true"):
+        await IosDevice(udid=UDID).devicehub_info(49152)
+
+
+@pytest.mark.anyio
+async def test_devicehub_exports_share_one_stand_in(tmp_path):
+    from .devicehub_test import FakeBroker
+
+    state = tmp_path / "devicehub.json"
+    with patch.object(driver_module, "_TLS_PSK", True):
+        driver = IosDevice(udid=UDID, devicehub=True, devicehub_state=str(state), devicehub_udid="STAND-IN")
+    first, second = FakeBroker(), FakeBroker()
+    with (
+        patch.object(driver, "_require_device", AsyncMock(return_value=UDID)),
+        patch.object(driver, "_broker_for_device", AsyncMock(side_effect=[first, second, second, second])),
+    ):
+        await driver.devicehub_info(49152)
+        assert json.loads(state.read_text())["udid"] == "STAND-IN"
+        bridge = driver._devicehub
+        assert bridge is not None
+        await driver.devicehub_pairing_code(123456)
+        assert driver._devicehub is bridge and bridge.broker is second
+        assert bridge._code == "123456"
+        async with driver.connect_devicehub() as stream:
+            await stream.send(b"not a Device Hub connection")
+            with pytest.raises((EndOfStream, ClosedResourceError)):
+                await stream.receive()
+        async with driver.connect_devicehub_pairing() as stream:
+            assert (await stream.receive()).startswith(b"RPPairing")
