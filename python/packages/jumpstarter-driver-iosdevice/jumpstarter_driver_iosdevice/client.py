@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: TID251
 import json
 import math
 import os
