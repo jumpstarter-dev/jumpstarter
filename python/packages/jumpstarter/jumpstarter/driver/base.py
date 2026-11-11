@@ -122,6 +122,9 @@ class Driver(
             super().__post_init__()  # ty: ignore[unresolved-attribute]
 
         display_name = f"driver.{self.__class__.__name__}"
+        # ponytail: accept 16-bit collisions at 5-10 active same-class drivers
+        # (~0.015-0.069%); widen the suffix if stronger isolation is needed.
+        # The name filter below hides the suffix in emitted records.
         self.logger = get_logger(f"{display_name}.{str(self.uuid)[-4:]}", LogSource.DRIVER)
         self._logger_filter = _DriverLoggerNameFilter(display_name)
         self.logger.addFilter(self._logger_filter)
@@ -133,6 +136,10 @@ class Driver(
         If a driver has an explicit ``log_level``, that value wins; otherwise
         it inherits the level from its parent.  Called once from
         ``Session.__init__`` after the full driver tree is constructed.
+
+        Logger names do not mirror the driver tree, so ``NOTSET`` would not
+        inherit from the parent driver. INFO preserves the existing default
+        when no driver in the ancestry specifies a level.
         """
         level = self.log_level if self.log_level is not None else inherited
         self.logger.setLevel(level)
@@ -144,6 +151,7 @@ class Driver(
             child.close()
         # Remove the per-instance name filter added in __post_init__ so it does
         # not leak on the (global) logger when the driver is torn down.
+        # Python retains the logger itself for the process lifetime.
         self.logger.removeFilter(self._logger_filter)
 
     def shutdown(self):
