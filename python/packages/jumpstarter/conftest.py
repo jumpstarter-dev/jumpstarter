@@ -1,4 +1,5 @@
 import gc
+from asyncio import Task  # noqa: TID251
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from ipaddress import IPv4Address
@@ -13,7 +14,7 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from grpc._cython.cygrpc import CallbackWrapper
+from grpc._cython.cygrpc import CallbackFailureHandler, CallbackWrapper
 from jumpstarter_protocol import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
@@ -93,8 +94,12 @@ def _unfinished_grpc_operations() -> list[CallbackWrapper]:
 
 
 def _unfinished(operation: CallbackWrapper) -> bool:
-    futures = [referent for referent in gc.get_referents(operation) if callable(getattr(referent, "done", None))]
-    return any(_may_still_complete(future) for future in futures)
+    return _may_still_complete(_waiter(operation))
+
+
+def _waiter(operation: CallbackWrapper):
+    (waiter,) = (referent for referent in gc.get_referents(operation) if callable(getattr(referent, "done", None)))
+    return waiter
 
 
 def _may_still_complete(future) -> bool:
@@ -130,8 +135,33 @@ def _no_unfinished_grpc_operations():
     _reported_grpc_operations.update(unfinished)
     assert not unfinished, (
         f"the test left {len(unfinished)} gRPC operation(s) unfinished; their results would reach "
-        "its closed event loop during a later test"
+        "its closed event loop during a later test:\n" + "\n".join(f"- {_describe(op)}" for op in unfinished)
     )
+
+
+def _describe(operation: CallbackWrapper) -> str:
+    return f"{_kind(operation)}, {_waiter_state(operation)}"
+
+
+def _kind(operation: CallbackWrapper) -> str:
+    (failure_handler,) = (
+        referent for referent in gc.get_referents(operation) if isinstance(referent, CallbackFailureHandler)
+    )
+    details = gc.get_referents(failure_handler)
+    batches = [detail for detail in details if isinstance(detail, tuple)]
+    if batches:
+        return f"batch of {', '.join(type(op).__name__ for op in batches[0])}"
+    (failure,) = (detail for detail in details if isinstance(detail, type))
+    return f"operation failing with {failure.__name__}"
+
+
+def _waiter_state(operation: CallbackWrapper) -> str:
+    waiter = _waiter(operation)
+    if waiter.cancelled():
+        return "waiter cancelled"
+    callers = [getattr(callback, "__self__", None) for callback, _ in waiter._callbacks or ()]
+    waiting_tasks = [caller for caller in callers if isinstance(caller, Task)]
+    return "waiter pending" + "".join(f" in {task.get_coro().__qualname__}" for task in waiting_tasks)
 
 
 key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
