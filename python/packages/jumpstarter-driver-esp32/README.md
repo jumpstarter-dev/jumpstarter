@@ -34,10 +34,15 @@ export:
 
 ### Config parameters
 
-| Parameter | Description                          | Type | Required | Default       |
-| --------- | ------------------------------------ | ---- | -------- | ------------- |
-| baudrate  | Baud rate for esptool communication  | int  | no       | 115200        |
-| chip      | Target chip type                     | str  | no       | esp32         |
+| Parameter      | Description                                    | Type | Required | Default |
+| -------------- | ---------------------------------------------- | ---- | -------- | ------- |
+| baudrate       | Baud rate for connecting to the ROM bootloader | int  | no       | 115200  |
+| flash_baudrate | Baud rate once the flasher stub runs           | int  | no       | 460800  |
+| chip           | Target chip type                               | str  | no       | esp32   |
+
+Flash, dump and erase switch to `flash_baudrate` after loading esptool's
+flasher stub, as `esptool.py` and `idf.py` do. Lower it if a USB-serial bridge
+or cable is unreliable at that speed.
 
 The ESP32 driver requires a `serial` child driver (PySerial) for serial port
 access. DTR/RTS control signals and the serial port path are managed through
