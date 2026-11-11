@@ -19,6 +19,10 @@ env:
   # overlaps the two long containers (hooks, core) rather than competing for CPU.
   E2E_PROCS: "2"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   changes:
     if: github.repository_owner == 'jumpstarter-dev'
