@@ -243,6 +243,13 @@ example, kind can map a NodePort to a different host port. Addresses without a
 port default to `443`. Use `clusterIP: {enabled: true}` when an externally managed
 proxy exposes the Service; advertise the proxy's reachable DNS name and port.
 
+Explicit NodePorts must be unique across the controller, login, router replicas,
+and telemetry. Controller gRPC and login each support one enabled NodePort endpoint;
+routers and telemetry support multiple. Changing or reordering explicit NodePorts
+recreates the affected Services before assigning the ports, briefly interrupting
+their connections. Automatically allocated ports and suspended router Services
+are preserved.
+
 The first configured address is advertised to callers; additional endpoints are
 exposed and included in the certificate, but are not automatic client failover
 targets. If no endpoint is configured and the operator cannot generate external

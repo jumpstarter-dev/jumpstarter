@@ -125,6 +125,9 @@ func (r *JumpstarterReconciler) reconcileTelemetryServiceStage(ctx context.Conte
 		return r.cleanupTelemetryEndpoints(ctx, jumpstarter, nil)
 	}
 
+	if err := r.prepareNodePorts(ctx, jumpstarter); err != nil {
+		return err
+	}
 	if err := r.reconcileTelemetryService(ctx, jumpstarter); err != nil {
 		return fmt.Errorf("failed to reconcile telemetry service: %w", err)
 	}

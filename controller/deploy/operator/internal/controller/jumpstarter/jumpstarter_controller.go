@@ -454,6 +454,9 @@ func (r *JumpstarterReconciler) reconcileRouterDeployment(ctx context.Context, j
 // reconcileServices reconciles all services
 func (r *JumpstarterReconciler) reconcileServices(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
+	if err := r.prepareNodePorts(ctx, jumpstarter); err != nil {
+		return err
+	}
 
 	// Reconcile controller services
 	for _, endpoint := range jumpstarter.Spec.Controller.GRPC.Endpoints {
