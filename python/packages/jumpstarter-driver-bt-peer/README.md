@@ -76,6 +76,14 @@ AVDTP acceptor and the DUT's sink picks from whatever is offered. Pinning it
 means a mismatched file is rejected with an explanation instead of arriving as
 noise.
 
+A sink may accept a narrower bitpool range than the one advertised, and either
+side may be the one to configure the stream — some head units send
+`SET_CONFIGURATION` themselves rather than waiting for the source. `play`
+therefore checks an upload against the range read back from the configured
+stream, whoever set it, rather than against the advertised ceiling. A track
+loaded before the DUT connected is re-checked once a stream exists, so a file
+the sink cannot decode is reported instead of streamed.
+
 The mode is stereo rather than joint stereo because ffmpeg's SBC encoder
 chooses the channel mode from the bitrate and offers no way to override it: it
 emits joint stereo below roughly 192 kbps and plain stereo above. Pre-encoded
