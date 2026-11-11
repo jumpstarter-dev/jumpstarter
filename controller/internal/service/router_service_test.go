@@ -51,7 +51,12 @@ func connectPeer(t *testing.T, lis *bufconn.Listener, token string) *routerPeer 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	ctx := metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+token)
+	// Bounds every blocking call on the stream if forwarding regresses. gRPC
+	// sends the deadline to the router, so it must stay well above
+	// requireStreamEnds' 3s, or a stuck survivor would end by deadline and pass.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	t.Cleanup(cancel)
+	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
 	stream, err := pb.NewRouterServiceClient(conn).Stream(ctx)
 	if err != nil {
 		t.Fatal(err)
