@@ -80,6 +80,12 @@ Commands:
 # Flash MicroPython firmware
 j storage flash firmware.bin --address 0x1000
 
+# Flash an ESP-IDF build: flasher_args.json lists the images and offsets
+j storage flash build/
+
+# Flash several images in one session
+j storage flash -t 0x2000:bootloader.bin -t 0x10000:partition-table.bin -t 0x20000:app.bin
+
 # Get chip info
 j storage chip-info
 
@@ -99,6 +105,9 @@ j serial console
 j serial pipe
 ```
 
+`j storage flash` writes every image in one esptool session and then resets
+the chip.
+
 ### Python API
 
 ```python
@@ -110,6 +119,10 @@ print(info["mac"])       # e.g. "5c:01:3b:68:ab:0c"
 
 # Flash firmware
 client.storage.flash("/path/to/firmware.bin", target="0x1000")
+
+# Flash an ESP-IDF build, or several images, in one esptool session
+client.storage.flash("/path/to/build")
+client.storage.flash({"0x2000": "bootloader.bin", "0x10000": "partition-table.bin", "0x20000": "app.bin"})
 
 # Enter download mode
 client.storage.enter_bootloader()
@@ -130,5 +143,5 @@ console.expect(">>>")
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_esp32.client.Esp32FlasherClient()
-    :members: flash, dump, get_chip_info, erase, hard_reset, enter_bootloader
+    :members: flash, flash_stream, dump, get_chip_info, erase, hard_reset, enter_bootloader
 ```

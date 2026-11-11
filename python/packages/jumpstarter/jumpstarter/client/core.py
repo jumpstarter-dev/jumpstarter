@@ -418,7 +418,7 @@ class AsyncDriverClient(Metadata):
             match e.code():
                 case StatusCode.FAILED_PRECONDITION:
                     raise ExporterNotReady(e.details() or "") from None
-                case StatusCode.UNIMPLEMENTED:
+                case StatusCode.NOT_FOUND | StatusCode.UNIMPLEMENTED:
                     raise DriverMethodNotImplemented(e.details() or "") from None
                 case StatusCode.INVALID_ARGUMENT:
                     raise DriverInvalidArgument(e.details() or "") from None
