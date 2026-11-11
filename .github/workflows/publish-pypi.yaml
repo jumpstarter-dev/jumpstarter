@@ -1,0 +1,84 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types:
+      - published       # fires when a GitHub Release is created (drafts excluded)
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Final release tag to build and publish (e.g. v0.9.0)"
+        required: true
+
+jobs:
+  publish:
+    name: Build and publish to PyPI
+    # Only final releases go to PyPI; RCs are published to the internal
+    # package repo instead. RC releases are created with --prerelease.
+    # For workflow_dispatch, github.event.release is empty, so this passes.
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write  # required for trusted publishing (OIDC)
+    steps:
+      - name: Validate release tag
+        id: release
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: ${TAG} is not a final release tag (expected vMAJOR.MINOR.PATCH)"
+            exit 1
+          fi
+          echo "Expected release tag: $TAG"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      # For release events inputs.tag is empty, so checkout uses the
+      # workflow ref (the release tag). For manual runs, check out the
+      # selected tag so hatch-vcs derives the release version.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+
+      - name: Build all packages
+        working-directory: python
+        run: uv build --all --out-dir dist
+
+      - name: Drop independently-versioned package
+        working-directory: python
+        run: rm -f dist/hatch_pin_jumpstarter-*
+
+      - name: Verify versions match tag
+        working-directory: python
+        run: |
+          TAG="${{ steps.release.outputs.version }}"
+          echo "Expected version: $TAG"
+          BAD=""
+          for f in dist/*; do
+            [ -e "$f" ] || continue
+            b=$(basename "$f")
+            case "$b" in
+              *.whl)    v="${b%.whl}"; v="${v%-*}"; v="${v%-*}"; v="${v%-*}"; v="${v##*-}" ;;
+              *.tar.gz) v="${b%.tar.gz}"; v="${v##*-}" ;;
+              *)        v="" ;;
+            esac
+            [ "$v" = "$TAG" ] || BAD="$BAD $b"
+          done
+          if [ -n "$BAD" ]; then
+            echo "ERROR: Files with unexpected version (expected $TAG):"
+            echo "$BAD"
+            exit 1
+          fi
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python/dist
+          skip-existing: true
