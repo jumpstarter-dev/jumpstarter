@@ -149,10 +149,9 @@ var _ = Describe("ExporterSet QEMU-SSH E2E Tests", Label("exporterset-qemu-ssh")
 	})
 
 	// Runs before the power-cycle lease test so it starts from a never-leased
-	// exporter. A prior lease would leave an exporter that lingers as
-	// Online=True for up to the controller's ~1m offline timeout after
-	// exitOnLeaseEnd takes it down, and the settle below could mistake that
-	// dying exporter for a healthy target.
+	// exporter. After a lease with exitOnLeaseEnd the old exporter is shutting
+	// down while its replacement boots, and the lookups below expect exactly one
+	// Available exporter.
 	It("recycles a terminal exporter and refills the pool (ExitAndReplace)", func() {
 		// recycleStrategy ExitAndReplace + minAvailableReplicas 1: with
 		// exitOnLeaseEnd, releasing a lease makes the exporter exit and go

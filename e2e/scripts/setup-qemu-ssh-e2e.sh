@@ -8,10 +8,12 @@
 #   3. Ensure sshd is running and listens on all interfaces
 #   4. Install Podman (rootful) if missing
 #   5. Load exporter + qemu-runtime images into Podman
-#   6. Detect the host IP reachable from Kind pods
+#   6. Detect the host IP reachable from Kind pods (IP= overrides)
 #   7. Create the K8s Secret with the SSH private key
-#   8. Enable qemu-ssh.jumpstarter.dev in the Jumpstarter CR
-#   9. Render the arch-aware manifest with the detected host IP
+#   8. Render the arch-aware manifest with the detected host IP
+#
+# The Jumpstarter CR must already enable qemu-ssh.jumpstarter.dev; the e2e
+# deploy template (controller/hack/deploy_with_operator.sh) does.
 #
 # Usage:
 #   bash e2e/scripts/setup-qemu-ssh-e2e.sh           # setup
@@ -24,6 +26,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# Shared helpers: get_external_ip, container_tool, container_image_exists.
+# shellcheck source=../../controller/hack/utils
+source "$REPO_ROOT/controller/hack/utils"
+
 NS="${E2E_TEST_NS:-jumpstarter-lab}"
 SSH_KEY_DIR="$REPO_ROOT/.e2e/ssh"
 SSH_KEY_PATH="$SSH_KEY_DIR/id_ed25519"
@@ -32,7 +38,6 @@ RENDERED_MANIFEST="$REPO_ROOT/.e2e/exporterset-qemu-ssh-kind.yaml"
 TEMPLATE_MANIFEST="$REPO_ROOT/e2e/manifests/exporterset-qemu-ssh-kind.yaml"
 
 log_info()  { echo -e "\033[0;32m[INFO]\033[0m $*"; }
-log_warn()  { echo -e "\033[1;33m[WARN]\033[0m $*"; }
 log_error() { echo -e "\033[0;31m[ERROR]\033[0m $*"; }
 
 # ── Guest arch ───────────────────────────────────────────────────────
@@ -50,33 +55,16 @@ detect_arch() {
 }
 
 # ── Host IP reachable from Kind pods ─────────────────────────────────
-# First IPv4 gateway of a docker network (empty if none). The template prints
-# one gateway per line so a dual-stack network (IPv4 + IPv6 IPAM entries) is not
-# concatenated into a single invalid value like "172.18.0.1fc00:f853::1".
-docker_ipv4_gateway() {
-    docker network inspect "$1" \
-        -f '{{range .IPAM.Config}}{{if .Gateway}}{{println .Gateway}}{{end}}{{end}}' \
-        2>/dev/null | grep -Em1 '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || true
-}
-
 detect_host_ip() {
-    # Prefer the kind network gateway (how pods reach the Docker host).
-    if command -v docker &>/dev/null; then
-        HOST_IP=$(docker_ipv4_gateway kind)
-    fi
-
-    # Fallback: default docker bridge gateway.
-    if [ -z "${HOST_IP:-}" ] && command -v docker &>/dev/null; then
-        HOST_IP=$(docker_ipv4_gateway bridge)
-    fi
-
-    # Fallback: default route on the host.
-    if [ -z "${HOST_IP:-}" ]; then
-        HOST_IP=$(ip -4 route show default 2>/dev/null | awk '{print $3; exit}' || true)
-    fi
-
-    if [ -z "${HOST_IP:-}" ]; then
-        log_error "Could not detect host IP reachable from Kind"
+    # The host's primary address works from both sides: from the host
+    # (verify_ssh below) and from Kind nodes, which route out through the host's
+    # default route. This also covers rootless Podman, whose bridge gateway lives
+    # in a per-user network namespace and is reachable from neither. Set IP to
+    # override on a multi-homed host (VPN, several NICs) where the default
+    # route's source address is not the one Kind should use.
+    HOST_IP="${IP:-$(get_external_ip || true)}"
+    if [ -z "$HOST_IP" ]; then
+        log_error "Could not determine the host IP reachable from Kind (set IP to override)"
         exit 1
     fi
     log_info "Host IP (from Kind): ${HOST_IP}"
@@ -164,60 +152,33 @@ ensure_podman() {
     fi
 }
 
-# Load one image into rootful Podman. Prefers a saved tarball (CI artifact,
-# then /tmp), then falls back to a local docker image piped into podman.
-# Returns non-zero if nothing could be loaded.
-podman_load_image() {
-    local name=$1 path_ci=$2 path_local=$3 docker_ref=$4
-
-    local tarfile=""
-    if [ -f "$path_ci" ]; then
-        tarfile="$path_ci"
-    elif [ -f "$path_local" ]; then
-        tarfile="$path_local"
-    fi
-
-    if [ -n "$tarfile" ]; then
-        sudo podman load -i "$tarfile"
-        log_info "Loaded $name from $tarfile"
-        return 0
-    fi
-
-    # Fall back to docker→podman if docker already has the image.
-    if command -v docker &>/dev/null && docker image inspect "$docker_ref" &>/dev/null; then
-        docker save "$docker_ref" | sudo podman load
-        log_info "Loaded $name from local docker image $docker_ref"
-        return 0
-    fi
-
-    return 1
-}
-
-load_podman_images() {
-    log_info "Loading container images into Podman..."
-
-    # NOTE: this deliberately does not reuse load_image()/kind_load_image()
-    # from controller/hack/utils — those load images into the kind cluster,
-    # whereas qemu-ssh needs them in the host's rootful podman store (where the
-    # SSH-deployed quadlet containers run).
-    local loaded=0
-    # fields: name  ci-path  local-path  docker-ref
-    while read -r name path_ci path_local docker_ref; do
-        [ -n "$name" ] || continue
-        if podman_load_image "$name" "$path_ci" "$path_local" "$docker_ref"; then
-            loaded=$((loaded + 1))
-        elif [ -n "${CI:-}" ]; then
-            log_error "Missing image for $name (looked in $path_ci and $path_local)"
-            exit 1
-        else
-            log_warn "No image tarball for $name; Podman must already have $docker_ref"
+# Copy the exporter and runtime images into rootful Podman's store, where the
+# SSH-deployed quadlet containers run. The images live in the store of the tool
+# that built them (CONTAINER_TOOL, exported by controller/Makefile; docker in
+# CI), so save from that tool rather than tracking artifact tarball paths.
+# NOTE: this deliberately does not use load_image()/kind_load_image() from the
+# same helpers — those load into the kind cluster, not the host's rootful
+# Podman store.
+load_rootful_podman_images() {
+    log_info "Loading container images into rootful Podman..."
+    local tool image
+    tool=$(container_tool)
+    for image in \
+        quay.io/jumpstarter-dev/jumpstarter:latest \
+        quay.io/jumpstarter-dev/virtual/qemu-runtime:latest; do
+        # A local operator may have pre-loaded the image into rootful Podman.
+        if sudo podman image exists "$image"; then
+            log_info "$image already in rootful Podman"
+            continue
         fi
-    done <<'EOF'
-exporter /tmp/artifacts/exporter-image.tar /tmp/exporter-image.tar quay.io/jumpstarter-dev/jumpstarter:latest
-qemu-runtime /tmp/artifacts/qemu-runtime-image.tar /tmp/qemu-runtime-image.tar quay.io/jumpstarter-dev/virtual/qemu-runtime:latest
-EOF
-
-    log_info "Loaded $loaded image(s) into Podman"
+        if ! container_image_exists "$image"; then
+            log_error "$image is not in the $tool image store" \
+                "(build it, or set CONTAINER_TOOL to the tool that built it)"
+            exit 1
+        fi
+        "$tool" save "$image" | sudo podman load
+        log_info "Loaded $image into rootful Podman from $tool"
+    done
 }
 
 # ── K8s Secret ───────────────────────────────────────────────────────
@@ -236,6 +197,7 @@ render_manifest() {
 
     # MEM is arch-agnostic tiny size; aarch64 firmware paths come from enrichment.
     sed \
+        -e "s/__NAMESPACE__/${NS}/g" \
         -e "s/__HOST_IP__/${HOST_IP}/g" \
         -e "s/__GUEST_ARCH__/${GUEST_ARCH}/g" \
         "$TEMPLATE_MANIFEST" > "$RENDERED_MANIFEST"
@@ -324,7 +286,7 @@ main() {
     ensure_sshd
     verify_ssh
     ensure_podman
-    load_podman_images
+    load_rootful_podman_images
     create_ssh_secret
     render_manifest
     write_env

@@ -24,6 +24,7 @@ import (
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -200,6 +201,65 @@ func TestCleanup_requiresVirtualTargetClassForNonDefaultPort(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "delete ExporterSet test-exporterset before its class") {
 		t.Errorf("Cleanup error = %q, want missing VirtualTargetClass guidance", err)
+	}
+}
+
+// An Exporter deployed before the credentials annotation existed carries only
+// the host annotation. Cleanup must fall back to the class's
+// credentialsSecretRef instead of wedging the finalizer on an empty name.
+func TestCleanup_credentialsSecretFallsBackToClass(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := virtualtargetv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+
+	parameters, err := json.Marshal(map[string]any{
+		"host": map[string]any{
+			"name": "lab-host-1.example.com",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	exporterSet := &virtualtargetv1alpha1.ExporterSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-exporterset", Namespace: "test-ns"},
+		Spec: virtualtargetv1alpha1.ExporterSetSpec{
+			VirtualTargetClassName: "test-class",
+			Parameters:             &apiextensionsv1.JSON{Raw: parameters},
+		},
+	}
+	vtc := &virtualtargetv1alpha1.VirtualTargetClass{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-class", Namespace: "test-ns"},
+		Spec: virtualtargetv1alpha1.VirtualTargetClassSpec{
+			CredentialsSecretRef: &corev1.LocalObjectReference{Name: "class-ssh-key"},
+		},
+	}
+	// Present but missing ssh-privatekey: reading it fails with the secret name,
+	// which proves the fallback was used without opening an SSH connection.
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "class-ssh-key", Namespace: "test-ns"},
+	}
+	exporter := &jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-exp",
+			Namespace: "test-ns",
+			Annotations: map[string]string{
+				AnnotationHost: "lab-host-1.example.com",
+			},
+		},
+	}
+
+	provisioner := New("v1.0.0", fake.NewClientBuilder().WithScheme(scheme).WithObjects(vtc, secret).Build())
+	err = provisioner.Cleanup(context.Background(), exporterSet, exporter)
+	if err == nil {
+		t.Fatal("Cleanup should fail reading a credentials Secret without ssh-privatekey")
+	}
+	if !strings.Contains(err.Error(), `"class-ssh-key"`) {
+		t.Errorf("Cleanup error = %q, want the class's credentials Secret name", err)
 	}
 }
 
@@ -381,5 +441,42 @@ func TestMergeClassAndSetParameters_hostFromExporterSet(t *testing.T) {
 	}
 	if merged["arch"] != "x86_64" {
 		t.Errorf("arch = %v, want x86_64", merged["arch"])
+	}
+}
+
+// When the VirtualTargetClass sets host.user/host.port and the ExporterSet
+// overrides only host.name, the merge must keep the class's user/port (deep
+// merge), or Cleanup would SSH with the wrong settings and orphan containers.
+func TestMergeClassAndSetParameters_hostSubfieldsFromClass(t *testing.T) {
+	classRaw, err := json.Marshal(map[string]any{
+		"host": map[string]any{
+			"user": "deploy",
+			"port": 2222,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	setRaw, err := json.Marshal(map[string]any{
+		"host": map[string]any{
+			"name": "lab-2.example.com",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	merged := mergeClassAndSetParameters(
+		&apiextensionsv1.JSON{Raw: classRaw},
+		&apiextensionsv1.JSON{Raw: setRaw},
+	)
+
+	host, err := ParseHost(merged)
+	if err != nil {
+		t.Fatalf("ParseHost: %v", err)
+	}
+	if host.Name != "lab-2.example.com" || host.User != "deploy" || host.Port != 2222 {
+		t.Errorf("host = %+v, want name=lab-2.example.com user=deploy port=2222 "+
+			"(class host.user/port must survive an ExporterSet host.name override)", host)
 	}
 }

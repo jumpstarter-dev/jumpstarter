@@ -195,10 +195,13 @@ arch detected via `qemu-guest-arch.sh`; Alpine guest image ensured via
 ## Lane: `exporterset-qemu-ssh` (`exporterset_qemu_ssh_test.go`)
 
 Prereq: `setup-qemu-ssh-e2e.sh` configures root SSH + rootful Podman on the CI
-runner, loads exporter/runtime images into Podman (from `/tmp/artifacts/` in CI),
-detects the Kind-reachable host IP (docker/kind bridge gateway), enables the
-`qemu-ssh.jumpstarter.dev` provisioner, and renders
-`.e2e/exporterset-qemu-ssh-kind.yaml` from `manifests/exporterset-qemu-ssh-kind.yaml`.
+runner (needs passwordless `sudo`), copies exporter/runtime images into rootful
+Podman's store from the container tool that built them, detects the
+Kind-reachable host IP (the host's primary address; `IP=` overrides), creates
+the SSH Secret, and renders `.e2e/exporterset-qemu-ssh-kind.yaml` from
+`manifests/exporterset-qemu-ssh-kind.yaml`. The cluster must enable
+`qemu-ssh.jumpstarter.dev`; the e2e deploy template
+`controller/hack/deploy_with_operator.sh` (used by `make e2e-setup`) does.
 OIDC client `test-client-exporterset-qemu-ssh`. AfterAll deletes CRs and runs
 `setup-qemu-ssh-e2e.sh --cleanup` for host-side quadlets/containers.
 

@@ -182,12 +182,13 @@ func (p *Provisioner) IsDeployed(
 	return exporter.Annotations[AnnotationDeployed] == "true", nil
 }
 
-// Cleanup tears down the remote containers via SSH and removes the
-// host annotation. It requires the VirtualTargetClass to still exist so
-// cleanup uses the same effective host settings (SSH user, port) as Deploy.
-// If the VTC is deleted first, Cleanup returns an error and the
-// ExporterSet finalizer will not clear. A validating webhook should
-// block VTC deletion while ExporterSets reference it (TODO).
+// Cleanup tears down the remote containers via SSH.
+//
+// It requires the VirtualTargetClass to still exist so cleanup uses the same
+// effective host settings (SSH user, port) as Deploy. If the VTC is deleted
+// first, Cleanup returns an error and the ExporterSet finalizer will not
+// clear. A validating webhook should block VTC deletion while ExporterSets
+// reference it (TODO).
 func (p *Provisioner) Cleanup(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
@@ -220,8 +221,19 @@ func (p *Provisioner) Cleanup(
 			"VirtualTargetClass %s not found; delete ExporterSet %s before its class: %w",
 			es.Spec.VirtualTargetClassName, es.Name, err)
 	}
-	// Deploy records the credentials Secret alongside the host annotation, so a
-	// non-empty host annotation (checked above) implies a non-empty secretName.
+	// Deploy records the credentials Secret alongside the host annotation, but
+	// an Exporter deployed by an older version (or annotated by hand) may carry
+	// only the host. Fall back to the class's credentialsSecretRef: an empty
+	// name would make the Get below fail with a non-NotFound error and wedge
+	// the ExporterSet finalizer permanently.
+	if secretName == "" && vtc.Spec.CredentialsSecretRef != nil {
+		secretName = vtc.Spec.CredentialsSecretRef.Name
+	}
+	if secretName == "" {
+		logger.Info("no SSH credentials Secret recorded and none on the class, "+
+			"skipping remote teardown", "exporter", exporter.Name)
+		return nil
+	}
 	classParams := vtc.Spec.Parameters
 
 	privateKey, err := p.readSSHKeyFromSecret(ctx, es.Namespace, secretName)
@@ -503,9 +515,7 @@ func (p *Provisioner) recordHostAssignment(
 		exporter.Annotations = make(map[string]string)
 	}
 	exporter.Annotations[AnnotationHost] = hostName
-	if credentialsSecret != "" {
-		exporter.Annotations[AnnotationCredentialsSecret] = credentialsSecret
-	}
+	exporter.Annotations[AnnotationCredentialsSecret] = credentialsSecret
 	return p.Client.Patch(ctx, exporter, patch)
 }
 
@@ -640,17 +650,35 @@ func mergeClassAndSetParameters(
 	classParams *apiextensionsv1.JSON,
 	setParams *apiextensionsv1.JSON,
 ) map[string]any {
-	merged := map[string]any{}
+	base := map[string]any{}
 	if classParams != nil && classParams.Raw != nil {
-		_ = json.Unmarshal(classParams.Raw, &merged)
+		_ = json.Unmarshal(classParams.Raw, &base)
 	}
+	override := map[string]any{}
 	if setParams != nil && setParams.Raw != nil {
-		override := map[string]any{}
-		if err := json.Unmarshal(setParams.Raw, &override); err == nil {
-			maps.Copy(merged, override)
-		}
+		_ = json.Unmarshal(setParams.Raw, &override)
 	}
-	return merged
+	return deepMergeParams(base, override)
+}
+
+// deepMergeParams recursively overlays override on base: nested maps merge,
+// scalars (and non-map values) replace. It mirrors the reconciler's deepMerge so
+// Cleanup resolves the identical host settings (user, port) that Deploy used — a
+// shallow merge would drop class-level host sub-fields when an ExporterSet
+// overrides only host.name, and Cleanup would then SSH with the wrong user/port.
+func deepMergeParams(base, override map[string]any) map[string]any {
+	result := make(map[string]any, len(base)+len(override))
+	maps.Copy(result, base)
+	for k, v := range override {
+		if baseMap, ok := result[k].(map[string]any); ok {
+			if overrideMap, ok := v.(map[string]any); ok {
+				result[k] = deepMergeParams(baseMap, overrideMap)
+				continue
+			}
+		}
+		result[k] = v
+	}
+	return result
 }
 
 // --- ExporterConfig types (mirrors exporterconfig.go in parent package) ---

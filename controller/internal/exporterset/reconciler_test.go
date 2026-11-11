@@ -2401,9 +2401,11 @@ func TestIsExporterOffline_online(t *testing.T) {
 }
 
 func TestIsExporterOffline_offline(t *testing.T) {
+	// Seen, then the heartbeat went stale (older than the offline threshold) and
+	// the controller flipped Online=False: this is genuinely offline.
 	exp := &jumpstarterdevv1alpha1.Exporter{
 		Status: jumpstarterdevv1alpha1.ExporterStatus{
-			LastSeen: metav1.Now(),
+			LastSeen: metav1.NewTime(time.Now().Add(-2 * time.Minute)),
 			Conditions: []metav1.Condition{
 				{
 					Type:   string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
@@ -2413,7 +2415,7 @@ func TestIsExporterOffline_offline(t *testing.T) {
 		},
 	}
 	if !isExporterOffline(exp) {
-		t.Fatal("expected true when exporter was seen and is offline")
+		t.Fatal("expected true when exporter was seen and its heartbeat is stale")
 	}
 }
 
@@ -2433,6 +2435,56 @@ func TestIsExporterOffline_neverSeen(t *testing.T) {
 	}
 	if isExporterOffline(exp) {
 		t.Fatal("expected false when Online=False but LastSeen is zero (still starting)")
+	}
+}
+
+// An exporter that reports Offline (graceful shutdown) gets a fresh LastSeen in
+// the same status patch that sets Online=False, because ReportStatus treats the
+// report itself as the last heartbeat. That is terminal immediately: waiting for
+// the heartbeat to age out would hold a dead exporter's slot in a capped pool
+// for up to a minute.
+func TestIsExporterOffline_explicitOfflineReportIsImmediate(t *testing.T) {
+	exp := &jumpstarterdevv1alpha1.Exporter{
+		Status: jumpstarterdevv1alpha1.ExporterStatus{
+			LastSeen:            metav1.Now(),
+			ExporterStatusValue: jumpstarterdevv1alpha1.ExporterStatusOffline,
+			StatusMessage:       "Exporter shutting down",
+			Conditions: []metav1.Condition{
+				{
+					Type:    string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+					Status:  metav1.ConditionFalse,
+					Reason:  "Offline",
+					Message: "Exporter shutting down",
+				},
+			},
+		},
+	}
+	if !isExporterOffline(exp) {
+		t.Fatal("expected true when the exporter explicitly reported Offline, " +
+			"even with a fresh LastSeen")
+	}
+}
+
+// Race: the first heartbeat sets LastSeen to now, but the Online condition is
+// still the old "Never seen"/False until a second update flips it to True. The
+// exporter is healthy and connecting, not terminal, so it must not be recycled.
+func TestIsExporterOffline_justConnectedConditionLagging(t *testing.T) {
+	exp := &jumpstarterdevv1alpha1.Exporter{
+		Status: jumpstarterdevv1alpha1.ExporterStatus{
+			LastSeen: metav1.Now(),
+			Conditions: []metav1.Condition{
+				{
+					Type:    string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+					Status:  metav1.ConditionFalse,
+					Reason:  "Seen",
+					Message: "Never seen",
+				},
+			},
+		},
+	}
+	if isExporterOffline(exp) {
+		t.Fatal("expected false when LastSeen is fresh but the Online condition " +
+			"has not caught up (first-heartbeat race)")
 	}
 }
 
