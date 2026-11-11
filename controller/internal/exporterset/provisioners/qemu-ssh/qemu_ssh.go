@@ -21,12 +21,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"path/filepath"
 	"strings"
+	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -35,6 +36,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+// Compile-time check: *Provisioner must implement the Deployer interface.
+var _ exporterset.Deployer = (*Provisioner)(nil)
 
 const (
 	// ProvisionerName is the provisioner identifier for
@@ -57,7 +61,7 @@ const (
 //
 // It implements both the exporterset.Provisioner interface (Name,
 // RenderPod, EnrichExporterExport, Cleanup) and the
-// exporterset.Deployer interface (Deploy, IsDeployed).
+// exporterset.Deployer interface (Deploy, DeployedAt).
 type Provisioner struct {
 	Version string
 	Client  client.Client
@@ -158,7 +162,7 @@ func (p *Provisioner) Deploy(
 		return err
 	}
 
-	// Mark deployment complete. IsDeployed gates on this annotation (not the
+	// Mark deployment complete. DeployedAt gates on this annotation (not the
 	// host assignment), so a failure here leaves the exporter retryable:
 	// deployInstance is idempotent and the host is already recorded.
 	if err := p.markDeployed(ctx, exporter); err != nil {
@@ -168,26 +172,35 @@ func (p *Provisioner) Deploy(
 	return nil
 }
 
-// IsDeployed reports whether Deploy previously ran to completion, signalled by
-// the "deployed" annotation. The host annotation alone is set before the
-// remote containers are created (so Cleanup can find them) and must not count
-// as deployed, or a partial deploy would never be retried.
-func (p *Provisioner) IsDeployed(
-	_ context.Context,
+// DeployedAt reports whether Deploy previously ran to completion and, if so,
+// when. The deployed-at annotation doubles as the deployment marker: its
+// presence means deployment completed. The host annotation alone is set before
+// containers are created (so Cleanup can find them) and does not count — a
+// partial deploy is retried.
+func (p *Provisioner) DeployedAt(
 	exporter *jumpstarterdevv1alpha1.Exporter,
-) (bool, error) {
+) (at time.Time, deployed bool) {
 	if exporter.Annotations == nil {
-		return false, nil
+		return time.Time{}, false
 	}
-	return exporter.Annotations[AnnotationDeployed] == "true", nil
+	raw, ok := exporter.Annotations[AnnotationDeployedAt]
+	if !ok {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, true
+	}
+	return t, true
 }
 
-// Cleanup tears down the remote containers via SSH and removes the
-// host annotation. It requires the VirtualTargetClass to still exist so
-// cleanup uses the same effective host settings (SSH user, port) as Deploy.
-// If the VTC is deleted first, Cleanup returns an error and the
-// ExporterSet finalizer will not clear. A validating webhook should
-// block VTC deletion while ExporterSets reference it (TODO).
+// Cleanup tears down the remote containers via SSH.
+//
+// It requires the VirtualTargetClass to still exist so cleanup uses the same
+// effective host settings (SSH user, port) as Deploy. If the VTC is deleted
+// first, Cleanup returns an error and the ExporterSet finalizer will not
+// clear. A validating webhook should block VTC deletion while ExporterSets
+// reference it (TODO).
 func (p *Provisioner) Cleanup(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
@@ -220,8 +233,11 @@ func (p *Provisioner) Cleanup(
 			"VirtualTargetClass %s not found; delete ExporterSet %s before its class: %w",
 			es.Spec.VirtualTargetClassName, es.Name, err)
 	}
-	// Deploy records the credentials Secret alongside the host annotation, so a
-	// non-empty host annotation (checked above) implies a non-empty secretName.
+	if secretName == "" {
+		logger.Info("no SSH credentials Secret recorded on the exporter, "+
+			"skipping remote teardown", "exporter", exporter.Name)
+		return nil
+	}
 	classParams := vtc.Spec.Parameters
 
 	privateKey, err := p.readSSHKeyFromSecret(ctx, es.Namespace, secretName)
@@ -503,13 +519,11 @@ func (p *Provisioner) recordHostAssignment(
 		exporter.Annotations = make(map[string]string)
 	}
 	exporter.Annotations[AnnotationHost] = hostName
-	if credentialsSecret != "" {
-		exporter.Annotations[AnnotationCredentialsSecret] = credentialsSecret
-	}
+	exporter.Annotations[AnnotationCredentialsSecret] = credentialsSecret
 	return p.Client.Patch(ctx, exporter, patch)
 }
 
-// markDeployed records that remote deployment completed. IsDeployed gates on
+// markDeployed records that remote deployment completed. DeployedAt gates on
 // this annotation, so an incomplete deploy is retried. It patches for the same
 // conflict-avoidance reason as recordHostAssignment.
 func (p *Provisioner) markDeployed(
@@ -520,7 +534,7 @@ func (p *Provisioner) markDeployed(
 	if exporter.Annotations == nil {
 		exporter.Annotations = make(map[string]string)
 	}
-	exporter.Annotations[AnnotationDeployed] = "true"
+	exporter.Annotations[AnnotationDeployedAt] = time.Now().UTC().Format(time.RFC3339)
 	return p.Client.Patch(ctx, exporter, patch)
 }
 
@@ -634,23 +648,22 @@ func (p *Provisioner) readCredentialToken(
 }
 
 // mergeClassAndSetParameters overlays ExporterSet parameters on VirtualTargetClass
-// parameters (shallow top-level merge). Host config for qemu-ssh typically lives
-// on the ExporterSet.
+// parameters (deep merge: nested maps are merged recursively, scalars replace).
+// Host config for qemu-ssh typically lives on the ExporterSet, but connection
+// defaults such as ssh.user/ssh.port stay on the class.
 func mergeClassAndSetParameters(
 	classParams *apiextensionsv1.JSON,
 	setParams *apiextensionsv1.JSON,
 ) map[string]any {
-	merged := map[string]any{}
+	base := map[string]any{}
 	if classParams != nil && classParams.Raw != nil {
-		_ = json.Unmarshal(classParams.Raw, &merged)
+		_ = json.Unmarshal(classParams.Raw, &base)
 	}
+	override := map[string]any{}
 	if setParams != nil && setParams.Raw != nil {
-		override := map[string]any{}
-		if err := json.Unmarshal(setParams.Raw, &override); err == nil {
-			maps.Copy(merged, override)
-		}
+		_ = json.Unmarshal(setParams.Raw, &override)
 	}
-	return merged
+	return exporterset.DeepMerge(base, override)
 }
 
 // --- ExporterConfig types (mirrors exporterconfig.go in parent package) ---

@@ -30,11 +30,14 @@ const (
 	// name alongside the host assigned during Deploy.
 	AnnotationCredentialsSecret = "qemu-ssh.jumpstarter.dev/credentials-secret"
 
-	// AnnotationDeployed marks that remote deployment completed. It is set
-	// only after the containers are created, so IsDeployed gates on it rather
-	// than on AnnotationHost (which is recorded earlier, before any containers
-	// exist, so Cleanup can always tear them down).
-	AnnotationDeployed = "qemu-ssh.jumpstarter.dev/deployed"
+	// AnnotationDeployedAt records when deployment completed (RFC3339). Its
+	// presence is the deployment marker — DeployedAt returns deployed=true
+	// when the annotation exists. The host annotation alone is set before
+	// containers are created (so Cleanup can find them) and does not count.
+	// The exporterset reconciler measures the never-registered startup
+	// deadline from it, so a deploy that takes longer than the deadline to
+	// succeed is not recycled the moment it finishes.
+	AnnotationDeployedAt = "qemu-ssh.jumpstarter.dev/deployed-at"
 
 	// defaultSSHUser is used when no user is specified.
 	defaultSSHUser = "root"

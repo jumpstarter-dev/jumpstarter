@@ -115,6 +115,7 @@ spec:
 | `host.port` | Per-host SSH port override |
 | `runtime.kvm` | Pass `/dev/kvm` to the runtime container |
 | `runtime.devices` | Additional devices to pass through (list of paths) |
+| `runtime.host_network` | Run both containers on the host network instead of Podman's bridge (default `false`). Needed when the exporter must reach a service on the host's own `127.0.0.1`; only one instance per host can then use a given forwarded port |
 | `arch` | Default QEMU architecture |
 | `resources.cpu` | Default vCPU count |
 | `resources.memory` | Default memory (e.g., `4Gi`) |
@@ -168,22 +169,70 @@ auto-injected (SSH host-forwarding on port 2222).
 When the ExporterSet scales up:
 
 1. The controller creates an `Exporter` CR (cluster-side)
-2. Once credentials are ready, it connects to the remote host via SSH
-3. Writes the exporter configuration YAML to `/etc/jumpstarter/exporters/`
-4. Creates Podman quadlet `.container` files under `/etc/containers/systemd/`
+2. Once credentials are ready, it records the host assignment (and the
+   credentials Secret name) on the Exporter CR — before touching the remote
+   host, so cleanup can always find the instance
+3. Connects to the remote host via SSH
+4. Writes the exporter configuration YAML to `/etc/jumpstarter/exporters/`
+5. Creates Podman quadlet `.container` files under `/etc/containers/systemd/`
    for both the **runtime** (QEMU) and **exporter** containers
-5. Creates a shared Podman volume for inter-container communication
+6. Creates a shared Podman volume for inter-container communication
    (QEMU sockets)
-6. Reloads systemd and starts the containers
-7. Annotates the Exporter CR with the host assignment
+7. Reloads systemd and starts the containers
+8. Marks the Exporter CR deployed. Only then is the deployment considered
+   complete; a partially failed deployment is retried on the next reconcile.
+
+With `recycleStrategy: ExitAndReplace`, an instance whose containers start but
+which never registers is recycled once the startup deadline (10 minutes) has
+passed since its deployment completed, so an exporter that cannot reach the
+controller cannot hold a pool slot indefinitely. A deployment that fails
+outright — for example a quadlet that `systemctl start` rejects — never counts
+as deployed: it is retried on the next reconcile and keeps its slot until it
+succeeds.
 
 When scaling down or cleaning up:
 
-1. Stops and disables the systemd services
+1. Stops the systemd services, bounded by `TimeoutStopSec` so a QEMU process
+   that ignores `SIGTERM` cannot wedge the finalizer
 2. Removes the quadlet files and exporter config
-3. Removes the shared Podman volume
-4. Reloads systemd
+3. Reloads systemd
+4. Force-removes any leftover containers and the shared Podman volume
 5. Deletes the Exporter CR
+
+Cleanup resolves the SSH user and port by merging the VirtualTargetClass and
+ExporterSet parameters, so the class must still exist when the ExporterSet
+goes away: delete the ExporterSet before its VirtualTargetClass.
+
+It also reads the private key from the credentials Secret recorded on the
+Exporter when it was deployed, so keep that Secret as well. If the Secret is
+missing or SSH to the host fails, cleanup skips the remote teardown and lets
+the finalizer clear — but the remote containers and volume are orphaned on the
+host. Delete the class and the Secret only after the ExporterSet is gone.
+If remote resources were orphaned (missing Secret, unreachable host), remove
+them by hand on the host. The full teardown order matters — the quadlet files
+set `Restart=always`, so removing a container without stopping the service
+first will just restart it:
+
+```bash
+# 1. Stop the services (suppresses Restart=always)
+sudo systemctl stop <name>-exporter <name>-runtime
+
+# 2. Remove quadlet files and exporter config
+sudo rm -f /etc/containers/systemd/<name>-exporter.container
+sudo rm -f /etc/containers/systemd/<name>-runtime.container
+sudo rm -f /etc/jumpstarter/exporters/<name>.yaml
+
+# 3. Reload systemd so the generated units are gone
+sudo systemctl daemon-reload
+
+# 4. Force-remove any straggler containers
+sudo podman rm -f <name>-exporter <name>-runtime
+
+# 5. Remove the shared volume
+sudo podman volume rm -f jumpstarter-<name>-shared
+```
+
+Replace `<name>` with the exporter name (shown in the Exporter CR's metadata).
 
 ### Container layout on the remote host
 

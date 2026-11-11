@@ -334,6 +334,30 @@ func TestReconcile_deletionWithoutVirtualTargetClassAttemptsCleanup(t *testing.T
 	}
 }
 
+type mockDeployerProvisioner struct {
+	Provisioner
+	deployed   bool
+	deployedAt time.Time
+}
+
+func (p *mockDeployerProvisioner) Deploy(
+	context.Context,
+	*virtualtargetv1alpha1.ExporterSet,
+	*virtualtargetv1alpha1.VirtualTargetClass,
+	map[string]any,
+	*virtualtargetv1alpha1.ImageOverrides,
+	*jumpstarterdevv1alpha1.Exporter,
+	string,
+) error {
+	return nil
+}
+
+func (p *mockDeployerProvisioner) DeployedAt(
+	_ *jumpstarterdevv1alpha1.Exporter,
+) (time.Time, bool) {
+	return p.deployedAt, p.deployed
+}
+
 type failingCleanupProvisioner struct {
 	Provisioner
 	err   error
@@ -1126,7 +1150,7 @@ func TestDeepMerge_mapsRecursive(t *testing.T) {
 		},
 	}
 
-	result := deepMerge(base, override)
+	result := DeepMerge(base, override)
 
 	resources := result["resources"].(map[string]any)
 	if resources["cpu"] != "4" {
@@ -1151,7 +1175,7 @@ func TestDeepMerge_scalarReplace(t *testing.T) {
 	base := map[string]any{"machineType": "virt"}
 	override := map[string]any{"machineType": "q35"}
 
-	result := deepMerge(base, override)
+	result := DeepMerge(base, override)
 	if result["machineType"] != "q35" {
 		t.Errorf("machineType = %v, want q35", result["machineType"])
 	}
@@ -1161,7 +1185,7 @@ func TestDeepMerge_listReplace(t *testing.T) {
 	base := map[string]any{"ports": []any{22, 80}}
 	override := map[string]any{"ports": []any{443}}
 
-	result := deepMerge(base, override)
+	result := DeepMerge(base, override)
 	ports := result["ports"].([]any)
 	if len(ports) != 1 || ports[0] != 443 {
 		t.Errorf("ports = %v, want [443]", ports)
@@ -2379,7 +2403,7 @@ func TestIsExporterOffline_noCondition(t *testing.T) {
 	exp := &jumpstarterdevv1alpha1.Exporter{
 		Status: jumpstarterdevv1alpha1.ExporterStatus{},
 	}
-	if isExporterOffline(exp) {
+	if isExporterOffline(exp, time.Time{}) {
 		t.Fatal("expected false when Online condition doesn't exist (exporter never registered)")
 	}
 }
@@ -2395,15 +2419,17 @@ func TestIsExporterOffline_online(t *testing.T) {
 			},
 		},
 	}
-	if isExporterOffline(exp) {
+	if isExporterOffline(exp, time.Time{}) {
 		t.Fatal("expected false when exporter is online")
 	}
 }
 
 func TestIsExporterOffline_offline(t *testing.T) {
+	// Seen, then the heartbeat went stale (older than the offline threshold) and
+	// the controller flipped Online=False: this is genuinely offline.
 	exp := &jumpstarterdevv1alpha1.Exporter{
 		Status: jumpstarterdevv1alpha1.ExporterStatus{
-			LastSeen: metav1.Now(),
+			LastSeen: metav1.NewTime(time.Now().Add(-2 * time.Minute)),
 			Conditions: []metav1.Condition{
 				{
 					Type:   string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
@@ -2412,8 +2438,8 @@ func TestIsExporterOffline_offline(t *testing.T) {
 			},
 		},
 	}
-	if !isExporterOffline(exp) {
-		t.Fatal("expected true when exporter was seen and is offline")
+	if !isExporterOffline(exp, time.Time{}) {
+		t.Fatal("expected true when exporter was seen and its heartbeat is stale")
 	}
 }
 
@@ -2431,8 +2457,246 @@ func TestIsExporterOffline_neverSeen(t *testing.T) {
 			},
 		},
 	}
-	if isExporterOffline(exp) {
+	if isExporterOffline(exp, time.Time{}) {
 		t.Fatal("expected false when Online=False but LastSeen is zero (still starting)")
+	}
+}
+
+// A deployed exporter that never registers must not hold a pool slot forever
+// when the deploy is wedged (bad quadlet, controller unreachable). Past the
+// startup deadline it is treated as terminal so ExitAndReplace recycles it.
+func TestIsExporterOffline_neverSeenPastStartupDeadline(t *testing.T) {
+	neverSeen := func(age time.Duration) *jumpstarterdevv1alpha1.Exporter {
+		return &jumpstarterdevv1alpha1.Exporter{
+			ObjectMeta: metav1.ObjectMeta{
+				CreationTimestamp: metav1.NewTime(time.Now().Add(-age)),
+			},
+			Status: jumpstarterdevv1alpha1.ExporterStatus{
+				Conditions: []metav1.Condition{
+					{
+						Type:    string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+						Status:  metav1.ConditionFalse,
+						Reason:  "Seen",
+						Message: "Never seen",
+					},
+				},
+			},
+		}
+	}
+
+	if isExporterOffline(neverSeen(exporterStartupDeadline-time.Minute), time.Time{}) {
+		t.Fatal("expected false while a never-seen exporter is still inside the startup deadline")
+	}
+	if !isExporterOffline(neverSeen(exporterStartupDeadline+time.Minute), time.Time{}) {
+		t.Fatal("expected true once a never-seen exporter is past the startup deadline")
+	}
+}
+
+// The startup deadline runs from deployment completion, not CR creation: a
+// deploy that itself takes longer than the deadline must not be recycled the
+// moment it succeeds, before its first heartbeat.
+func TestIsExporterOffline_neverSeenDeadlineFromDeployment(t *testing.T) {
+	exp := &jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{
+			// Created well before the deadline, as a slow deploy would be.
+			CreationTimestamp: metav1.NewTime(time.Now().Add(-3 * exporterStartupDeadline)),
+		},
+	}
+	if isExporterOffline(exp, time.Now().Add(-time.Minute)) {
+		t.Fatal("expected false when deployment completed a minute ago, " +
+			"even though the CR is old")
+	}
+	if !isExporterOffline(exp, time.Now().Add(-(exporterStartupDeadline + time.Minute))) {
+		t.Fatal("expected true when deployment completed past the startup deadline")
+	}
+}
+
+// An exporter that reports Offline (graceful shutdown) gets a fresh LastSeen in
+// the same status patch that sets Online=False, because ReportStatus treats the
+// report itself as the last heartbeat. That is terminal immediately: waiting for
+// the heartbeat to age out would hold a dead exporter's slot in a capped pool
+// for up to a minute.
+func TestIsExporterOffline_explicitOfflineReportIsImmediate(t *testing.T) {
+	exp := &jumpstarterdevv1alpha1.Exporter{
+		Status: jumpstarterdevv1alpha1.ExporterStatus{
+			LastSeen:            metav1.Now(),
+			ExporterStatusValue: jumpstarterdevv1alpha1.ExporterStatusOffline,
+			StatusMessage:       "Exporter shutting down",
+			Conditions: []metav1.Condition{
+				{
+					Type:    string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+					Status:  metav1.ConditionFalse,
+					Reason:  "Offline",
+					Message: "Exporter shutting down",
+				},
+			},
+		},
+	}
+	if !isExporterOffline(exp, time.Time{}) {
+		t.Fatal("expected true when the exporter explicitly reported Offline, " +
+			"even with a fresh LastSeen")
+	}
+}
+
+// Race: the first heartbeat sets LastSeen to now, but the Online condition is
+// still the old "Never seen"/False until a second update flips it to True. The
+// exporter is healthy and connecting, not terminal, so it must not be recycled.
+func TestIsExporterOffline_justConnectedConditionLagging(t *testing.T) {
+	exp := &jumpstarterdevv1alpha1.Exporter{
+		Status: jumpstarterdevv1alpha1.ExporterStatus{
+			LastSeen: metav1.Now(),
+			Conditions: []metav1.Condition{
+				{
+					Type:    string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+					Status:  metav1.ConditionFalse,
+					Reason:  "Seen",
+					Message: "Never seen",
+				},
+			},
+		},
+	}
+	if isExporterOffline(exp, time.Time{}) {
+		t.Fatal("expected false when LastSeen is fresh but the Online condition " +
+			"has not caught up (first-heartbeat race)")
+	}
+}
+
+func TestTimeToStartupDeadline(t *testing.T) {
+	exp := func(created time.Time) *jumpstarterdevv1alpha1.Exporter {
+		return &jumpstarterdevv1alpha1.Exporter{
+			ObjectMeta: metav1.ObjectMeta{
+				CreationTimestamp: metav1.NewTime(created),
+			},
+		}
+	}
+
+	// Deployed 1 minute ago: ~9 minutes remain.
+	remaining := timeToStartupDeadline(exp(time.Now()), time.Now().Add(-time.Minute))
+	if remaining <= 0 || remaining > exporterStartupDeadline {
+		t.Errorf("remaining = %v, want (0, %v]", remaining, exporterStartupDeadline)
+	}
+
+	// Deployed past the deadline: non-positive.
+	remaining = timeToStartupDeadline(exp(time.Now()), time.Now().Add(-(exporterStartupDeadline + time.Minute)))
+	if remaining > 0 {
+		t.Errorf("remaining = %v, want <= 0 (past deadline)", remaining)
+	}
+
+	// No deployedSince, falls back to creation: created 1 minute ago.
+	remaining = timeToStartupDeadline(exp(time.Now().Add(-time.Minute)), time.Time{})
+	if remaining <= 0 || remaining > exporterStartupDeadline {
+		t.Errorf("remaining (creation fallback) = %v, want (0, %v]", remaining, exporterStartupDeadline)
+	}
+
+	// Both zero: returns 0 (cannot compute).
+	remaining = timeToStartupDeadline(exp(time.Time{}), time.Time{})
+	if remaining != 0 {
+		t.Errorf("remaining (both zero) = %v, want 0", remaining)
+	}
+}
+
+func TestCleanupTerminalExporters_requeueAfterStartupDeadline(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.RecycleStrategy = virtualtargetv1alpha1.RecycleStrategyExitAndReplace
+	})
+
+	deployedAt := time.Now().Add(-time.Minute)
+	exporter := jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "demo-set-a",
+			Namespace: nsDefault,
+		},
+	}
+
+	r, _ := newReconciler(t, es, makeVTC())
+	r.Provisioner = &mockDeployerProvisioner{
+		Provisioner: r.Provisioner,
+		deployed:    true,
+		deployedAt:  deployedAt,
+	}
+
+	deleted, requeueAfter, err := r.cleanupTerminalExporters(
+		context.Background(), es, []jumpstarterdevv1alpha1.Exporter{exporter}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted {
+		t.Fatal("should not delete an exporter still inside the startup deadline")
+	}
+	if requeueAfter <= 0 || requeueAfter > exporterStartupDeadline {
+		t.Errorf("requeueAfter = %v, want (0, %v]", requeueAfter, exporterStartupDeadline)
+	}
+}
+
+func TestCleanupTerminalExporters_noRequeueWhenAlreadyOnline(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.RecycleStrategy = virtualtargetv1alpha1.RecycleStrategyExitAndReplace
+	})
+
+	exporter := jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "demo-set-a",
+			Namespace: nsDefault,
+		},
+		Status: jumpstarterdevv1alpha1.ExporterStatus{
+			LastSeen: metav1.Now(),
+			Conditions: []metav1.Condition{
+				{
+					Type:   string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+					Status: metav1.ConditionTrue,
+				},
+			},
+		},
+	}
+
+	r, _ := newReconciler(t, es, makeVTC())
+	r.Provisioner = &mockDeployerProvisioner{
+		Provisioner: r.Provisioner,
+		deployed:    true,
+		deployedAt:  time.Now().Add(-time.Minute),
+	}
+
+	deleted, requeueAfter, err := r.cleanupTerminalExporters(
+		context.Background(), es, []jumpstarterdevv1alpha1.Exporter{exporter}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted {
+		t.Fatal("should not delete an online exporter")
+	}
+	if requeueAfter != 0 {
+		t.Errorf("requeueAfter = %v, want 0 (online exporters need no deadline requeue)", requeueAfter)
+	}
+}
+
+func TestReconcile_requeueAfterCarriedFromCleanup(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 1
+		es.Spec.MaxReplicas = 1
+		es.Spec.MinAvailableReplicas = 1
+		es.Spec.RecycleStrategy = virtualtargetv1alpha1.RecycleStrategyExitAndReplace
+	})
+
+	// Never-seen deployed exporter with credentials, so ensureExporterDeployments
+	// does NOT set waiting=true (which would mask the cleanup requeue with 5s).
+	exp := makeExporter("demo-set-a", false, false, true)
+	exp.Status.Credential = &corev1.LocalObjectReference{Name: "demo-set-a-exporter"}
+	exp.Status.Endpoint = testEndpoint
+
+	r, _ := newReconciler(t, es, makeVTC(), makeCACM(), exp)
+	r.Provisioner = &mockDeployerProvisioner{
+		Provisioner: r.Provisioner,
+		deployed:    true,
+		deployedAt:  time.Now().Add(-time.Minute),
+	}
+
+	result := reconcileOnce(t, r)
+
+	// The requeue should be ~9m (10m deadline - 1m elapsed), not 5s from
+	// waiting or 0 (dropped). Without the fix that merges cleanupResult into
+	// the final Reconcile result, RequeueAfter is 0.
+	if result.RequeueAfter < time.Minute || result.RequeueAfter > exporterStartupDeadline {
+		t.Errorf("Reconcile RequeueAfter = %v, want [1m, %v] from startup deadline", result.RequeueAfter, exporterStartupDeadline)
 	}
 }
 

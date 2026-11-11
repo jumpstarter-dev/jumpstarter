@@ -37,7 +37,7 @@ help:
 	@echo ""
 	@echo "End-to-end testing:"
 	@echo "  make e2e-setup             - Setup e2e test environment (one-time)"
-	@echo "  make e2e-run               - Run e2e suite (excludes lease-churn; includes ExporterSet QEMU)"
+	@echo "  make e2e-run               - Run e2e suite (excludes lease-churn and qemu-ssh)"
 	@echo "  make e2e                   - Same as e2e-run"
 	@echo "  make e2e-exporterset-qemu  - Run ExporterSet QEMU e2e only"
 	@echo "  make e2e-exporterset-qemu-ssh - Run ExporterSet QEMU-SSH e2e only"

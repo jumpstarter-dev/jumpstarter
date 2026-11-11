@@ -93,7 +93,10 @@ var _ = Describe("ExporterSet QEMU-SSH E2E Tests", Label("exporterset-qemu-ssh")
 		// webhook should block VTC deletion while ExporterSets reference it.
 		// It is therefore NOT deferred: if the ExporterSet delete above fails,
 		// deleting the VTC would wedge the stuck ExporterSet permanently.
-		out, err := Kubectl("delete", "--ignore-not-found", "--timeout=2m",
+		// Teardown stops each remote exporter serially and each stop is bounded
+		// by the quadlet's TimeoutStopSec=60, so allow time for more than one
+		// (a replacement may have been created after the last lease ended).
+		out, err := Kubectl("delete", "--ignore-not-found", "--timeout=5m",
 			"-n", ns, "exportersets.virtualtarget.jumpstarter.dev", "qemu-ssh-e2e")
 		Expect(err).NotTo(HaveOccurred(), "ExporterSet cleanup failed: %s", out)
 
@@ -149,10 +152,9 @@ var _ = Describe("ExporterSet QEMU-SSH E2E Tests", Label("exporterset-qemu-ssh")
 	})
 
 	// Runs before the power-cycle lease test so it starts from a never-leased
-	// exporter. A prior lease would leave an exporter that lingers as
-	// Online=True for up to the controller's ~1m offline timeout after
-	// exitOnLeaseEnd takes it down, and the settle below could mistake that
-	// dying exporter for a healthy target.
+	// exporter. After a lease with exitOnLeaseEnd the old exporter is shutting
+	// down while its replacement boots, and the lookups below expect exactly one
+	// Available exporter.
 	It("recycles a terminal exporter and refills the pool (ExitAndReplace)", func() {
 		// recycleStrategy ExitAndReplace + minAvailableReplicas 1: with
 		// exitOnLeaseEnd, releasing a lease makes the exporter exit and go

@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
@@ -49,43 +50,44 @@ func TestRenderPod_returnsNil(t *testing.T) {
 	}
 }
 
-func TestIsDeployed_noAnnotation(t *testing.T) {
+func TestDeployedAt_noAnnotation(t *testing.T) {
 	p := New("v1.0.0", nil)
 	exporter := &jumpstarterdevv1alpha1.Exporter{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-exp"},
 	}
-	deployed, err := p.IsDeployed(context.Background(), exporter)
-	if err != nil {
-		t.Fatal(err)
-	}
+	at, deployed := p.DeployedAt(exporter)
 	if deployed {
-		t.Error("IsDeployed should be false without annotation")
+		t.Error("deployed should be false without annotation")
+	}
+	if !at.IsZero() {
+		t.Errorf("at = %v, want zero", at)
 	}
 }
 
-func TestIsDeployed_withAnnotation(t *testing.T) {
+func TestDeployedAt_withTimestamp(t *testing.T) {
 	p := New("v1.0.0", nil)
+	when := time.Now().UTC().Truncate(time.Second)
 	exporter := &jumpstarterdevv1alpha1.Exporter{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-exp",
 			Annotations: map[string]string{
-				AnnotationHost:     "lab-host-1.example.com",
-				AnnotationDeployed: "true",
+				AnnotationHost:       "lab-host-1.example.com",
+				AnnotationDeployedAt: when.Format(time.RFC3339),
 			},
 		},
 	}
-	deployed, err := p.IsDeployed(context.Background(), exporter)
-	if err != nil {
-		t.Fatal(err)
-	}
+	at, deployed := p.DeployedAt(exporter)
 	if !deployed {
-		t.Error("IsDeployed should be true once deployment is marked complete")
+		t.Error("deployed should be true with deployed-at annotation")
+	}
+	if !at.Equal(when) {
+		t.Errorf("at = %v, want %v", at, when)
 	}
 }
 
 // A host assignment is recorded before containers are created, so it must not
 // by itself count as deployed — otherwise a partial deploy is never retried.
-func TestIsDeployed_hostRecordedButNotDeployed(t *testing.T) {
+func TestDeployedAt_hostRecordedButNotDeployed(t *testing.T) {
 	p := New("v1.0.0", nil)
 	exporter := &jumpstarterdevv1alpha1.Exporter{
 		ObjectMeta: metav1.ObjectMeta{
@@ -95,12 +97,28 @@ func TestIsDeployed_hostRecordedButNotDeployed(t *testing.T) {
 			},
 		},
 	}
-	deployed, err := p.IsDeployed(context.Background(), exporter)
-	if err != nil {
-		t.Fatal(err)
-	}
+	_, deployed := p.DeployedAt(exporter)
 	if deployed {
-		t.Error("IsDeployed should be false when only the host is recorded (deploy not completed)")
+		t.Error("deployed should be false when only the host is recorded (deploy not completed)")
+	}
+}
+
+func TestDeployedAt_malformedTimestamp(t *testing.T) {
+	p := New("v1.0.0", nil)
+	exporter := &jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-exp",
+			Annotations: map[string]string{
+				AnnotationDeployedAt: "not-a-time",
+			},
+		},
+	}
+	at, deployed := p.DeployedAt(exporter)
+	if !deployed {
+		t.Error("deployed should be true (annotation present, even if malformed)")
+	}
+	if !at.IsZero() {
+		t.Errorf("at = %v, want zero (malformed timestamp)", at)
 	}
 }
 
@@ -150,8 +168,8 @@ func TestRecordAndMarkDeployed_survivesConcurrentUpdate(t *testing.T) {
 	if final.Annotations[AnnotationCredentialsSecret] != "ssh-secret" {
 		t.Errorf("credentials annotation = %q, want ssh-secret", final.Annotations[AnnotationCredentialsSecret])
 	}
-	if final.Annotations[AnnotationDeployed] != "true" {
-		t.Errorf("deployed annotation = %q, want true", final.Annotations[AnnotationDeployed])
+	if final.Annotations[AnnotationDeployedAt] == "" {
+		t.Error("deployed-at annotation should be set")
 	}
 	if final.Labels["touched"] != "by-other-controller" {
 		t.Error("concurrent label change was clobbered by the patch")
@@ -381,5 +399,42 @@ func TestMergeClassAndSetParameters_hostFromExporterSet(t *testing.T) {
 	}
 	if merged["arch"] != "x86_64" {
 		t.Errorf("arch = %v, want x86_64", merged["arch"])
+	}
+}
+
+// When the VirtualTargetClass sets host.user/host.port and the ExporterSet
+// overrides only host.name, the merge must keep the class's user/port (deep
+// merge), or Cleanup would SSH with the wrong settings and orphan containers.
+func TestMergeClassAndSetParameters_hostSubfieldsFromClass(t *testing.T) {
+	classRaw, err := json.Marshal(map[string]any{
+		"host": map[string]any{
+			"user": "deploy",
+			"port": 2222,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	setRaw, err := json.Marshal(map[string]any{
+		"host": map[string]any{
+			"name": "lab-2.example.com",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	merged := mergeClassAndSetParameters(
+		&apiextensionsv1.JSON{Raw: classRaw},
+		&apiextensionsv1.JSON{Raw: setRaw},
+	)
+
+	host, err := ParseHost(merged)
+	if err != nil {
+		t.Fatalf("ParseHost: %v", err)
+	}
+	if host.Name != "lab-2.example.com" || host.User != "deploy" || host.Port != 2222 {
+		t.Errorf("host = %+v, want name=lab-2.example.com user=deploy port=2222 "+
+			"(class host.user/port must survive an ExporterSet host.name override)", host)
 	}
 }
