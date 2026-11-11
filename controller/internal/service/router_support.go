@@ -35,6 +35,9 @@ func Forward(a pb.RouterService_StreamServer, b pb.RouterService_StreamServer) e
 	errs := make(chan error, 2)
 	go func() { errs <- pipe(a, b) }()
 	go func() { errs <- pipe(b, a) }()
+	// Each pipe copies one direction and reports once. A nil means that
+	// direction half-closed cleanly, so keep relaying the other; when both
+	// are nil the stream is done.
 	for range 2 {
 		select {
 		case err := <-errs:
