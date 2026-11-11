@@ -186,7 +186,7 @@ class _FanOutStreamBase:
 
 
 class ExclusiveStream(_FanOutStreamBase):
-    """Read+write stream for the write token holder. Discards input while the source is absent."""
+    """Read+write stream for the write token holder. Discards input during source outages."""
 
     async def send(self, data: bytes) -> None:
         # Allow cancellation before inspecting mutable token/source state,
@@ -195,12 +195,20 @@ class ExclusiveStream(_FanOutStreamBase):
         if self._id != self._fanout._write_token_holder:
             raise WriteTokenRevokedError("write token revoked")
         source = self._fanout._source
-        if source is None:
-            if data and not self._fanout._input_discarded:
-                logger.warning("Discarding input until source reconnects")
-                self._fanout._input_discarded = True
+        if source is not None:
+            try:
+                await source.send(data)
+            except (BrokenResourceError, ClosedResourceError):
+                # The reader owns reconnection; never retry a possibly partial write.
+                pass
+            else:
+                return
+        # A late failure must not report an outage on the replacement or mute its next outage.
+        if self._fanout._source is not None and self._fanout._source is not source:
             return
-        await source.send(data)
+        if data and not self._fanout._input_discarded:
+            logger.warning("Discarding input until source reconnects")
+            self._fanout._input_discarded = True
 
     async def aclose(self) -> None:
         if not self._closed:

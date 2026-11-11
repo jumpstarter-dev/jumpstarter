@@ -1,9 +1,12 @@
+import asyncio
 import contextlib
+import errno
 import logging
 import time
 from collections.abc import AsyncGenerator
 from types import SimpleNamespace
 from typing import cast
+from unittest.mock import AsyncMock
 
 import anyio
 import pytest
@@ -11,10 +14,11 @@ from anyio import create_memory_object_stream
 from anyio.abc import ObjectStream
 from anyio.streams.memory import MemoryObjectSendStream
 from anyio.streams.stapled import StapledObjectStream
+from serial import PortNotOpenError, SerialException, SerialTimeoutException
 
 from . import driver as driver_module
 from .client import PySerialClient
-from .driver import PySerial, ThrottledStream
+from .driver import AsyncSerial, PySerial, ThrottledStream
 from jumpstarter.common.utils import serve
 from jumpstarter.streams.fanout import ExclusiveStream
 
@@ -23,6 +27,55 @@ def test_bare_pyserial():
     with serve(PySerial(url="loop://")) as client, client.stream() as stream:
         stream.send(b"hello")
         assert "hello".startswith(stream.receive().decode("utf-8"))
+
+
+@pytest.mark.parametrize(
+    "error_type", [SerialException, SerialTimeoutException, PortNotOpenError, ConnectionResetError, BrokenPipeError]
+)
+@pytest.mark.parametrize("cps", [None, 1000])
+def test_async_serial_normalizes_write_disconnect(error_type, cps):
+    writer = AsyncMock()
+    error = error_type()
+    writer.send.side_effect = error
+    stream = AsyncSerial(reader=AsyncMock(), writer=writer, cps=cps)
+
+    async def scenario():
+        with pytest.raises(anyio.BrokenResourceError) as exc_info:
+            await stream.send(b"input")
+        assert exc_info.value.__cause__ is error
+        writer.send.assert_awaited_once_with(b"i" if cps else b"input")
+
+    anyio.run(scenario)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        OSError(errno.ENOMEM, "writer registration failed"),
+        TimeoutError("write timed out"),
+        RuntimeError("unexpected failure"),
+        ValueError("invalid input"),
+        asyncio.CancelledError(),
+    ],
+)
+def test_async_serial_preserves_other_write_errors(error):
+    writer = AsyncMock()
+    writer.send.side_effect = error
+    stream = AsyncSerial(reader=AsyncMock(), writer=writer)
+
+    async def scenario():
+        with pytest.raises(type(error)) as exc_info:
+            await stream.send(b"input")
+        assert exc_info.value is error
+
+    anyio.run(scenario)
+
+
+def test_async_serial_forwards_successful_write():
+    writer = AsyncMock()
+    stream = AsyncSerial(reader=AsyncMock(), writer=writer)
+    anyio.run(stream.send, b"input")
+    writer.send.assert_awaited_once_with(b"input")
 
 
 
@@ -431,6 +484,64 @@ def test_console_stream_survives_device_power_cycle(type_while_gone, processed_i
             await _read_until(stream, b"[reconnected]")
             await stream.send(b"after")
             await _read_until(stream, b"after")
+
+    with serve(driver) as client:
+        client.portal.call(scenario, client)
+
+
+@pytest.mark.parametrize("error_type", [anyio.BrokenResourceError, anyio.ClosedResourceError])
+@pytest.mark.parametrize("always_on", [False, True])
+def test_write_failure_before_reader_disconnect_preserves_console(
+    monkeypatch, processed_input, caplog, error_type, always_on
+):
+    caplog.set_level(logging.WARNING, logger="jumpstarter.streams.fanout")
+    device = VanishingDevice()
+    driver = PySerial(url="loop://", always_on=always_on)
+    fanout = driver._get_fanout()
+
+    @contextlib.asynccontextmanager
+    async def factory():
+        async with device.open() as source:
+            original_send = source.send
+
+            async def send(data):
+                if data == b"racing input":
+                    assert fanout._source is source
+                    device.unplug()
+                    raise error_type("source disconnected during write")
+                await original_send(data)
+
+            monkeypatch.setattr(source, "send", send)
+            yield source
+
+    fanout._source_factory = factory
+
+    async def scenario(client):
+        with anyio.fail_after(5):
+            async with client.stream_async("connect") as stream:
+                rpc = stream.stream.context
+                holder = fanout._write_token_holder
+                await stream.send(b"before")
+                await _read_until(stream, b"before")
+
+                processed = processed_input(b"racing input")
+                await stream.send(b"racing input")
+                await processed.wait()
+                await _read_until(stream, b"[disconnected")
+                assert not rpc.done()
+                assert fanout._write_token_holder == holder
+                assert sum(
+                    record.getMessage() == "Discarding input until source reconnects"
+                    for record in caplog.records
+                ) == 1
+
+                device.present = True
+                output = await _read_until(stream, b"[reconnected]")
+                assert b"racing input" not in output
+                await stream.send(b"after")
+                assert await _read_until(stream, b"after") == b"after"
+                assert not rpc.done()
+                assert fanout._write_token_holder == holder
 
     with serve(driver) as client:
         client.portal.call(scenario, client)

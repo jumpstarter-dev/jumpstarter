@@ -529,16 +529,71 @@ class TestStreamFanOut:
             await fanout.close()
 
     @pytest.mark.anyio
+    @pytest.mark.parametrize("error_type", [BrokenResourceError, ClosedResourceError])
+    @pytest.mark.parametrize("source_replaced", [False, True])
+    async def test_failed_source_write_is_not_retried(self, monkeypatch, caplog, error_type, source_replaced):
+        caplog.set_level(logging.WARNING, logger="jumpstarter.streams.fanout")
+        source, device = create_memory_stream()
+        replacement, new_device = create_memory_stream()
+
+        @asynccontextmanager
+        async def factory():
+            async with source:
+                yield source
+
+        fanout = StreamFanOut(source_factory=factory, always_on=False)
+        original_send = source.send
+
+        async def partial_write(data):
+            await original_send(data[:3])
+            if source_replaced:
+                fanout._source = replacement
+            raise error_type("source disconnected during write")
+
+        send = AsyncMock(side_effect=partial_write)
+        monkeypatch.setattr(source, "send", send)
+        try:
+            with anyio.fail_after(2):
+                async with fanout.attach_exclusive() as stream:
+                    await stream.send(b"partially sent")
+                    assert await device.receive() == b"par"
+                    send.assert_awaited_once_with(b"partially sent")
+                    assert not device.receive_stream.statistics().current_buffer_used
+                    assert not new_device.receive_stream.statistics().current_buffer_used
+                    assert fanout._write_token_holder == stream._id
+
+                    if source_replaced:
+                        assert not caplog.records
+                        assert fanout._source is replacement
+                        target = new_device
+                    else:
+                        assert [record.getMessage() for record in caplog.records] == [
+                            "Discarding input until source reconnects"
+                        ]
+                        assert fanout._source is source
+                        monkeypatch.setattr(source, "send", original_send)
+                        target = device
+                    await stream.send(b"fresh input")
+                    assert await target.receive() == b"fresh input"
+                    if source_replaced:
+                        fanout._source = None
+                        await stream.send(b"next outage")
+                        assert [record.getMessage() for record in caplog.records] == [
+                            "Discarding input until source reconnects"
+                        ]
+        finally:
+            await fanout.close()
+
+    @pytest.mark.anyio
     @pytest.mark.parametrize(
         "error_type",
         [
             OSError,
             TimeoutError,
-            BrokenResourceError,
-            ClosedResourceError,
             RuntimeError,
             ValueError,
             asyncio.InvalidStateError,
+            asyncio.CancelledError,
         ],
     )
     @pytest.mark.parametrize("disconnect_during_write", [False, True])
