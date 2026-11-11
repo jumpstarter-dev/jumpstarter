@@ -93,6 +93,22 @@ class StatusMonitor:
         self._any_change_event.set()
         self._any_change_event = Event()
 
+    def _cache_response(self, response) -> ExporterStatus:
+        """Replace the cached status with a GetStatus response, all fields at once.
+
+        Callers read the fields together: jmp shell judges an OFFLINE exporter
+        by the status before it. Nothing is cached if the response cannot be parsed.
+        """
+        status = ExporterStatus.from_proto(response.status)
+        previous = (
+            ExporterStatus.from_proto(response.previous_status) if response.HasField("previous_status") else None
+        )
+        self._current_status = status
+        self._status_message = response.message or ""
+        self._status_version = response.status_version
+        self._previous_status = previous
+        return status
+
     @property
     def current_status(self) -> ExporterStatus | None:
         """Get the current cached status (non-blocking)."""
@@ -167,10 +183,7 @@ class StatusMonitor:
                 # Connection recovered!
                 logger.info("Connection recovered during verification poll")
                 self._connection_lost = False
-                new_status = ExporterStatus.from_proto(response.status)
-                self._current_status = new_status
-                self._status_message = response.message or ""
-                self._status_version = response.status_version
+                new_status = self._cache_response(response)
                 # Check if we're already at target
                 if new_status in targets:
                     return new_status
@@ -254,13 +267,9 @@ class StatusMonitor:
                     jumpstarter_pb2.GetStatusRequest(),
                     timeout=5.0
                 )
-                new_status = ExporterStatus.from_proto(response.status)
-                new_version = response.status_version
-                previous = (
-                    ExporterStatus.from_proto(response.previous_status)
-                    if response.HasField("previous_status")
-                    else None
-                )
+                old_status, old_version = self._current_status, self._status_version
+                new_status = self._cache_response(response)
+                new_version = self._status_version
 
                 # Reset connection_lost flag on successful poll
                 # (connection may have recovered from transient error)
@@ -271,17 +280,10 @@ class StatusMonitor:
                 unavailable_retries = 0
 
                 # Detect missed transitions
-                if self._status_version > 0 and new_version > self._status_version + 1:
-                    missed = new_version - self._status_version - 1
+                if old_version > 0 and new_version > old_version + 1:
+                    missed = new_version - old_version - 1
                     self._missed_transitions += missed
                     logger.warning(f"Missed {missed} status transition(s)")
-
-                # Update cached state
-                old_status = self._current_status
-                self._current_status = new_status
-                self._status_message = response.message or ""
-                self._status_version = new_version
-                self._previous_status = previous
 
                 # Fire events if status changed
                 if old_status != new_status:
