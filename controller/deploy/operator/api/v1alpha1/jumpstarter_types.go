@@ -779,7 +779,8 @@ type Endpoint struct {
 	// When optional, the address is used for certificate generation and DNS resolution.
 	// Supports templating with $(replica) for replica-specific addresses.
 	// Examples: "grpc.example.com", "grpc.example.com:9090", "192.168.1.1:8080", "[2001:db8::1]:8443", "router-$(replica).example.com"
-	// +kubebuilder:validation:Pattern=`^(\[[0-9a-fA-F:\.]+\]|[0-9]+(\.[0-9]+){3}|[a-z0-9$]([a-z0-9\-\.\$\(\)]*[a-z0-9\)])?)(:[0-9]+)?$`
+	// An explicit address port must be between 1 and 65535; omission and leading zeros are allowed.
+	// +kubebuilder:validation:Pattern=`^(\[[0-9a-fA-F:\.]+\]|[0-9]+(\.[0-9]+){3}|[a-z0-9$]([a-z0-9\-\.\$\(\)]*[a-z0-9\)])?)(:0*([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$`
 	Address string `json:"address,omitempty"`
 
 	// Route configuration for OpenShift clusters.

@@ -58,9 +58,11 @@ func (r *Reconciler) ReconcileTelemetryEndpoint(ctx context.Context, owner metav
 		} else if _, port, err := net.SplitHostPort(endpoint.Address); err == nil {
 			// The advertised endpoint is ensurePort(address, "443"): expose the
 			// same port here or clients would dial a closed port.
-			if p, err := strconv.Atoi(port); err == nil {
-				lbPort.Port = int32(p)
+			p, err := strconv.Atoi(port)
+			if err != nil || p < 1 || p > 65535 {
+				return fmt.Errorf("telemetry endpoint %q requires a numeric port between 1 and 65535", endpoint.Address)
 			}
+			lbPort.Port = int32(p)
 		} else {
 			lbPort.Port = 443
 		}

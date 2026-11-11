@@ -195,7 +195,29 @@ var _ = Describe("Telemetry endpoints", func() {
 	},
 		Entry("portless address defaults to 443", "telemetry.example.com", operatorv1alpha1.LoadBalancerConfig{Enabled: true}, int32(443), "telemetry.example.com:443"),
 		Entry("address port is honored", "telemetry.example.com:8443", operatorv1alpha1.LoadBalancerConfig{Enabled: true}, int32(8443), "telemetry.example.com:8443"),
+		Entry("minimum port", "telemetry.example.com:1", operatorv1alpha1.LoadBalancerConfig{Enabled: true}, int32(1), "telemetry.example.com:1"),
+		Entry("maximum port", "telemetry.example.com:65535", operatorv1alpha1.LoadBalancerConfig{Enabled: true}, int32(65535), "telemetry.example.com:65535"),
+		Entry("leading zeros", "telemetry.example.com:00443", operatorv1alpha1.LoadBalancerConfig{Enabled: true}, int32(443), "telemetry.example.com:00443"),
+		Entry("IPv6 without port", "[2001:db8::1]", operatorv1alpha1.LoadBalancerConfig{Enabled: true}, int32(443), "[2001:db8::1]:443"),
 		Entry("explicit port wins", "telemetry.example.com", operatorv1alpha1.LoadBalancerConfig{Enabled: true, Port: 444}, int32(444), "telemetry.example.com:443"),
+	)
+
+	DescribeTable("rejects invalid LoadBalancer address ports", func(port string) {
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{{
+			Address:      "telemetry.example.com:" + port,
+			LoadBalancer: &operatorv1alpha1.LoadBalancerConfig{Enabled: true},
+		}}
+		Expect(r.reconcileTelemetryServiceStage(ctx, js)).
+			To(MatchError(ContainSubstring("requires a numeric port between 1 and 65535")))
+		Expect(errors.IsNotFound(r.Get(ctx, client.ObjectKey{Name: serviceName + "-lb", Namespace: js.Namespace}, &corev1.Service{}))).To(BeTrue())
+	},
+		Entry("zero", "0"),
+		Entry("negative", "-1"),
+		Entry("above range", "65536"),
+		Entry("int32 wraparound", "4294967739"),
+		Entry("integer overflow", "999999999999999999999999"),
+		Entry("nonnumeric", "https"),
+		Entry("empty port", ""),
 	)
 
 	DescribeTable("rejects exposure the cluster does not provide", func(ep operatorv1alpha1.Endpoint, disable func(*endpoints.Reconciler), message string) {
