@@ -105,8 +105,8 @@ j serial console
 j serial pipe
 ```
 
-`j storage flash` writes every image in one esptool session and then resets
-the chip.
+`j storage flash` writes every image in one esptool session, prints progress
+for each, and then resets the chip.
 
 ### Python API
 
@@ -123,6 +123,10 @@ client.storage.flash("/path/to/firmware.bin", target="0x1000")
 # Flash an ESP-IDF build, or several images, in one esptool session
 client.storage.flash("/path/to/build")
 client.storage.flash({"0x2000": "bootloader.bin", "0x10000": "partition-table.bin", "0x20000": "app.bin"})
+
+# Follow progress while flashing
+for status in client.storage.flash_stream("/path/to/build"):
+    print(status.step_name, status.message, status.progress)
 
 # Enter download mode
 client.storage.enter_bootloader()
