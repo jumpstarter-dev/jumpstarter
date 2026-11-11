@@ -65,7 +65,8 @@ export:
 
 ### gPTP Grandmaster
 
-Force this host to act as the PTP grandmaster:
+Prefer this host as the PTP grandmaster. ``role: master`` sets ``masterOnly``
+in the generated ptp4l config so BMCA will not select a peer as master:
 
 ```yaml
 export:

@@ -128,6 +128,9 @@ def _generate_ptp4l_config(
     if role == "slave":
         lines.append("slaveOnly\t\t1")
     elif role == "master":
+        # masterOnly prevents BMCA from demoting this clock when a peer
+        # advertises a better priority1 (linuxptp counterpart of slaveOnly).
+        lines.append("masterOnly\t\t1")
         lines.append(f"priority1\t\t{priority1}")
         lines.append("priority2\t\t0")
     else:
@@ -597,15 +600,18 @@ class Gptp(Driver):
     @export
     @validate_call(validate_return=True)
     def is_synchronized(self) -> bool:
-        """Check whether PTP is synchronized (servo locked in SLAVE state).
+        """Check whether PTP is synchronized.
 
         Returns:
-            True if the port is in SLAVE state and servo is locked (s2).
+            True if this clock is MASTER (grandmaster / time source), or if
+            the port is SLAVE with the servo locked (s2).
 
         Raises:
             RuntimeError: If ptp4l is not started.
         """
         self._require_started()
+        if self._port_state == PortState.MASTER:
+            return True
         return (
             self._port_state == PortState.SLAVE
             and self._servo_state == ServoState.LOCKED
@@ -856,13 +862,15 @@ class MockGptp(Driver):
         """Check whether PTP is synchronized.
 
         Returns:
-            True if port is SLAVE and servo is s2.
+            True if the port is MASTER, or SLAVE with servo locked (s2).
 
         Raises:
             RuntimeError: If not started.
         """
         b = self._internal_backend
         b.require_started()
+        if b._port_state == "MASTER":
+            return True
         return b._port_state == "SLAVE" and b._servo_state == "s2"
 
     @export

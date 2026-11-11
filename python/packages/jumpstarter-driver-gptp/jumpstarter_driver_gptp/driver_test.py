@@ -123,6 +123,7 @@ class TestPtp4lConfigGeneration:
 
     def test_generate_master_config(self):
         config = _generate_ptp4l_config("eth0", 0, "gptp", "L2", "master")
+        assert "masterOnly\t\t1" in config
         assert "priority1\t\t128" in config
         assert "priority2\t\t0" in config
 
@@ -389,6 +390,8 @@ class TestMockGptpLifecycle:
             assert client.status().port_state == PortState.SLAVE
             client.set_priority1(0)
             assert client.status().port_state == PortState.MASTER
+            # MASTER counts as synchronized so wait_for_sync works as GM.
+            assert client.is_synchronized() is True
             client.stop()
 
     def test_mock_gptp_set_priority_boundary_values(self):

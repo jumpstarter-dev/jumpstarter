@@ -24,6 +24,10 @@ class GptpClient(DriverClient):
 
     Provides methods to manage PTP synchronization lifecycle, query status,
     monitor sync events, and configure clock priority for BMCA master election.
+
+    Exceptions raised by the exporter-side driver are transported over gRPC and
+    surface on the client as ``DriverError`` (and related client exceptions),
+    not as the original ``RuntimeError`` / ``NotImplementedError``.
     """
 
     def start(self) -> None:
@@ -32,7 +36,7 @@ class GptpClient(DriverClient):
         Spawns ptp4l (and optionally phc2sys) as managed subprocesses.
 
         Raises:
-            RuntimeError: If ptp4l is already running.
+            DriverError: If ptp4l is already running (or another driver error).
         """
         self.call("start")
 
@@ -42,7 +46,7 @@ class GptpClient(DriverClient):
         Terminates ptp4l and phc2sys processes and cleans up temp files.
 
         Raises:
-            RuntimeError: If ptp4l is not started.
+            DriverError: If ptp4l is not started (or another driver error).
         """
         self.call("stop")
 
@@ -54,7 +58,7 @@ class GptpClient(DriverClient):
             offset, delay, and servo state.
 
         Raises:
-            RuntimeError: If ptp4l is not started.
+            DriverError: If ptp4l is not started (or another driver error).
         """
         return GptpStatus.model_validate(self.call("status"))
 
@@ -65,7 +69,7 @@ class GptpClient(DriverClient):
             Offset measurement including path delay and frequency.
 
         Raises:
-            RuntimeError: If ptp4l is not started.
+            DriverError: If ptp4l is not started (or another driver error).
         """
         return GptpOffset.model_validate(self.call("get_offset"))
 
@@ -76,7 +80,7 @@ class GptpClient(DriverClient):
             Port statistics counters.
 
         Raises:
-            RuntimeError: If ptp4l is not started.
+            DriverError: If ptp4l is not started (or another driver error).
         """
         return GptpPortStats.model_validate(self.call("get_port_stats"))
 
@@ -87,8 +91,8 @@ class GptpClient(DriverClient):
             Clock identity as EUI-64 string.
 
         Raises:
-            RuntimeError: If ptp4l is not started.
-            NotImplementedError: If the real driver has no UDS integration.
+            DriverError: If ptp4l is not started, or if the real driver has no
+                UDS integration yet (``NotImplementedError`` on the exporter).
         """
         return self.call("get_clock_identity")
 
@@ -99,8 +103,8 @@ class GptpClient(DriverClient):
             Parent and grandmaster clock information.
 
         Raises:
-            RuntimeError: If ptp4l is not started.
-            NotImplementedError: If the real driver has no UDS integration.
+            DriverError: If ptp4l is not started, or if the real driver has no
+                UDS integration yet (``NotImplementedError`` on the exporter).
         """
         return GptpParentInfo.model_validate(self.call("get_parent_info"))
 
@@ -113,19 +117,21 @@ class GptpClient(DriverClient):
             priority: Priority1 value (0-255).
 
         Raises:
-            RuntimeError: If ptp4l is not started.
-            NotImplementedError: If the real driver has no UDS integration.
+            DriverError: If ptp4l is not started, or if the real driver has no
+                UDS integration yet (``NotImplementedError`` on the exporter).
         """
         self.call("set_priority1", priority)
 
     def is_synchronized(self) -> bool:
-        """Check whether PTP is synchronized (servo locked in SLAVE state).
+        """Check whether PTP is synchronized.
+
+        Returns True when this clock is MASTER, or SLAVE with servo locked.
 
         Returns:
             True if synchronized.
 
         Raises:
-            RuntimeError: If ptp4l is not started.
+            DriverError: If ptp4l is not started (or another driver error).
         """
         return self.call("is_synchronized")
 
@@ -137,8 +143,8 @@ class GptpClient(DriverClient):
     ) -> bool:
         """Block until PTP synchronization is achieved or timeout expires.
 
-        Only catches ``RuntimeError`` (driver not-yet-ready) during polling.
-        Transport or unexpected failures propagate immediately.
+        Only catches ``DriverError`` / ``RuntimeError`` (driver not-yet-ready)
+        during polling. Transport or unexpected failures propagate immediately.
 
         Args:
             timeout: Maximum time to wait in seconds.
