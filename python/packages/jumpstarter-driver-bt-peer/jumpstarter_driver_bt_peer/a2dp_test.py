@@ -1,7 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from bumble.avdtp import State
+from bumble.avdtp import ServiceCapabilities, State
 
 from .a2dp import (
     ADVERTISED,
@@ -9,6 +9,7 @@ from .a2dp import (
     A2dpSession,
     SbcConfig,
     Track,
+    _sbc_range,
     validate_sbc,
 )
 from .avrcp import TrackMetadata
@@ -263,16 +264,104 @@ async def test_suspend_only_stops_a_streaming_stream():
 # -- bitpool negotiation -------------------------------------------------
 
 
+def _offered_range(source) -> SbcConfig:
+    """The bitpool range the peer would actually put on the wire.
+
+    Read back out of the serialized capability rather than off the object,
+    because MediaCodecCapabilities caches those bytes at construction and
+    they are what SET_CONFIGURATION carries.
+    """
+    payload = ServiceCapabilities.serialize_capabilities(source.configuration)
+    parsed = ServiceCapabilities.parse_capabilities(payload)
+    config = _sbc_range(parsed)
+    assert config is not None
+    return config
+
+
 @pytest.mark.anyio
-async def test_prepare_clamps_the_offer_to_the_sink_the_peer_found():
+async def test_prepare_narrows_the_offer_to_the_sink_the_peer_found():
     """The sink rejects a range wider than its own, so the offer is narrowed."""
     session, protocol = _session(sink=sink_with_bitpool(2, 35))
 
     config = await session.prepare()
 
-    offered = protocol.source.capabilities[0].media_codec_information
-    assert (offered.minimum_bitpool_value, offered.maximum_bitpool_value) == (2, 35)
     assert config == SbcConfig(2, 35)
+    assert _offered_range(protocol.source) == SbcConfig(2, 35)
+
+
+@pytest.mark.anyio
+async def test_the_narrowed_offer_reaches_the_wire():
+    """MediaCodecCapabilities serializes once, in __init__.
+
+    Editing `media_codec_information` in place narrows what the driver
+    believes it offered while SET_CONFIGURATION still carries the original
+    bytes, so the offer has to be rebuilt instead.
+    """
+    session, protocol = _session(sink=sink_with_bitpool(2, 35))
+    before = ServiceCapabilities.serialize_capabilities(protocol.source.configuration)
+
+    await session.prepare()
+
+    after = ServiceCapabilities.serialize_capabilities(protocol.source.configuration)
+    assert after != before, "the narrowed offer never reached the wire"
+    assert after[-1] == 35
+
+
+@pytest.mark.anyio
+async def test_a_sink_with_a_wider_range_does_not_widen_the_offer():
+    """A bitpool may go to 250; the peer pins 53 and must not exceed it."""
+    session, protocol = _session(sink=sink_with_bitpool(2, 250))
+
+    config = await session.prepare()
+
+    assert config == SbcConfig(2, 53), "the sink's ceiling was taken instead of intersected"
+    assert _offered_range(protocol.source) == SbcConfig(2, 53)
+
+
+@pytest.mark.anyio
+async def test_a_sink_whose_range_does_not_overlap_is_rejected_before_configuring():
+    session, protocol = _session(sink=sink_with_bitpool(60, 100))
+
+    with pytest.raises(BtPeerError, match="does not overlap"):
+        await session.prepare()
+
+    protocol.create_stream.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_the_advertised_capabilities_are_not_narrowed():
+    """GET_CAPABILITIES answers what the peer can do, not this stream's offer.
+
+    bumble aliases `configuration` to the same list, so narrowing through it
+    would quietly rewrite the advertisement too.
+    """
+    session, protocol = _session(sink=sink_with_bitpool(2, 35))
+
+    await session.prepare()
+
+    assert _sbc_range(protocol.source.capabilities) == SbcConfig(2, 53)
+
+
+@pytest.mark.anyio
+async def test_prepare_intersects_a_range_the_dut_configured_too_wide():
+    """Nothing narrows the offer when the DUT drives the negotiation."""
+    session, protocol = _session()
+    protocol.source.stream = protocol.stream
+    protocol.stream.state = State.CONFIGURED
+    protocol.source.configuration = [sbc_capability(2, 250)]
+
+    assert await session.prepare() == SbcConfig(2, 53)
+
+
+@pytest.mark.anyio
+async def test_prepare_rejects_a_dut_range_that_does_not_overlap():
+    session, protocol = _session()
+    protocol.source.stream = protocol.stream
+    protocol.stream.state = State.CONFIGURED
+    protocol.source.configuration = [sbc_capability(60, 100)]
+
+    with pytest.raises(BtPeerError, match="does not overlap"):
+        await session.prepare()
 
 
 @pytest.mark.anyio
@@ -298,7 +387,14 @@ async def test_prepare_reads_the_range_the_dut_configured():
 
 @pytest.mark.anyio
 async def test_prepare_rejects_a_stream_configured_without_sbc():
+    """Only reachable when the DUT configured the stream.
+
+    On the peer's own path the offer is built here, so it always has SBC in
+    it; a configuration without is something the head unit chose.
+    """
     session, protocol = _session()
+    protocol.source.stream = protocol.stream
+    protocol.stream.state = State.CONFIGURED
     protocol.source.configuration = []
 
     with pytest.raises(BtPeerError, match="configured without an SBC codec"):

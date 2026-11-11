@@ -11,7 +11,7 @@ import pytest
 from bumble.a2dp import SbcMediaCodecInformation
 from bumble.avdtp import MediaCodecCapabilities, State
 
-from .a2dp import A2dpSession
+from .a2dp import A2dpSession, sbc_capabilities
 from .avrcp import PeerDelegate, Reporter
 from .driver import BtPeer
 
@@ -56,12 +56,15 @@ def fake_protocol(signalling_mtu: int = 1024, sink=None, stream_state=State.CONF
     signalling_mtu is deliberately distinct from any media channel MTU a test
     supplies, so a test fails if the wrong channel is read.
 
-    The source's `configuration` starts as its own capabilities, as bumble's
-    LocalSource does, so clamping the offer is visible through both.
+    The source carries real capability objects, aliased between
+    `capabilities` and `configuration` exactly as bumble's LocalSource does.
+    Mocks would hide that MediaCodecCapabilities serializes itself once in
+    __init__, which is the whole reason the offer is rebuilt rather than
+    edited.
     """
     source = MagicMock()
     source.stream = None
-    source.capabilities = [sbc_capability(2, 53)]
+    source.capabilities = [sbc_capabilities()]
     source.configuration = source.capabilities
 
     stream = AsyncMock()
