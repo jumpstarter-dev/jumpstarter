@@ -75,6 +75,15 @@ jumpstarter ⚡ local ➤ j bt_peer play jingle.wav --loop
 jumpstarter ⚡ local ➤ j bt_peer playback
 ```
 
+A file that is already `.sbc` is the exception: it is uploaded as-is, on the
+assumption that it was encoded deliberately. The peer rejects it with an
+explanation if it does not match the configuration negotiated with the DUT, so
+convert an incompatible one first:
+
+```console
+$ ffmpeg -i song.mp3 -ar 44100 -ac 2 -b:a 320k -f sbc song.sbc
+```
+
 The peer advertises an A2DP source and an AVRCP target, so the DUT treats it
 as a real media device and displays the track's title, artist, album and
 position. See the

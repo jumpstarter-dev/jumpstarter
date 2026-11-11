@@ -36,6 +36,11 @@ MAX_TRACK_BYTES = 256 * 1024 * 1024
 TRANSCODE_BASE_TIMEOUT = 60.0
 TRANSCODE_SECONDS_PER_MIB = 6.0
 
+# Budget for reading a file's tags. Fixed rather than scaled to the input,
+# because ffprobe only reads headers here. Metadata is best effort, so
+# overrunning this costs the DUT a title, not the track.
+PROBE_TIMEOUT = 20.0
+
 
 def ffmpeg_sbc_args(source: str, destination: str) -> list[str]:
     """ffmpeg arguments that transcode ``source`` into the pinned SBC format."""

@@ -12,6 +12,7 @@ from anyio import EndOfStream
 from anyio.abc import ObjectStream
 
 from .media import (
+    PROBE_TIMEOUT,
     TRANSCODE_BASE_TIMEOUT,
     TRANSCODE_SECONDS_PER_MIB,
     describe_sbc_format,
@@ -121,23 +122,33 @@ def _transcode_to_sbc(source: Path, destination: Path) -> None:
 def _probe_metadata(source: Path) -> dict[str, Any]:
     """Read title/artist/album/duration from the source file with ffprobe.
 
-    Best effort: an untagged file, or no ffprobe, just means the DUT shows the
-    file name. ffprobe ships with ffmpeg, which is already needed to transcode.
+    Best effort throughout: an untagged file, no ffprobe, or a probe that
+    does not finish all mean the same thing, that the DUT shows the file
+    name. None of them should stop the track playing. ffprobe ships with
+    ffmpeg, which is already needed to transcode.
     """
     ffprobe = shutil.which("ffprobe")
     if ffprobe is None:
         return {}
 
-    result = subprocess.run(
-        [
-            ffprobe, "-v", "error",
-            "-show_entries", "format=duration:format_tags=title,artist,album",
-            "-of", "json", str(source),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            [
+                ffprobe, "-v", "error",
+                "-show_entries", "format=duration:format_tags=title,artist,album",
+                "-of", "json", str(source),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            # A fixed, short limit rather than one scaled to the input:
+            # this reads headers, so it does not get slower with a longer
+            # recording. Without it a wedged ffprobe hangs `play` before it
+            # has even started transcoding.
+            timeout=PROBE_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return {}
     if result.returncode != 0:
         return {}
 
@@ -148,7 +159,10 @@ def _probe_metadata(source: Path) -> dict[str, Any]:
 
     tags = {key.lower(): value for key, value in (fmt.get("tags") or {}).items()}
     try:
-        duration_ms = int(float(fmt.get("duration", 0)) * 1000)
+        # Rounded, not truncated: ffprobe reports seconds as a decimal string,
+        # and 128.04 is not exactly representable, so int() would report a
+        # duration of 128039 ms.
+        duration_ms = round(float(fmt.get("duration", 0)) * 1000)
     except (TypeError, ValueError):
         duration_ms = 0
 
