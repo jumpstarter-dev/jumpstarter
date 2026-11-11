@@ -19,7 +19,7 @@ see [Production](production.md).
 From a Linux system, for example Fedora:
 
 ```console
-dnf install -y lorax
+sudo dnf install -y lorax
 export CENTOS_ISO=CentOS-Stream-10-latest-x86_64-boot.iso
 curl -o "${CENTOS_ISO}" -L "https://mirrors.centos.org/mirrorlist?path=/10-stream/BaseOS/x86_64/iso/${CENTOS_ISO}&redirect=1&protocol=https"
 curl -o kickstart.ks -L https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/refs/heads/main/controller/deploy/microshift-bootc/kickstart.ks
