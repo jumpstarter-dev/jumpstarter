@@ -95,6 +95,7 @@ func (r *JumpstarterReconciler) prepareNodePorts(ctx context.Context, js *operat
 	if err := r.List(ctx, services, client.InNamespace(js.Namespace)); err != nil {
 		return err
 	}
+	remove := make(map[string]*corev1.Service)
 	for i := range services.Items {
 		svc := &services.Items[i]
 		if !metav1.IsControlledBy(svc, js) || !strings.HasSuffix(svc.Name, "-np") {
@@ -112,7 +113,27 @@ func (r *JumpstarterReconciler) prepareNodePorts(ctx context.Context, js *operat
 		if keep && (port == 0 || (len(svc.Spec.Ports) == 1 && svc.Spec.Ports[0].NodePort == port)) {
 			continue
 		}
-		// ponytail: recreate changing Services; stable endpoint identities if uninterrupted updates are needed.
+		remove[svc.Name] = svc
+	}
+	requested := make(map[int32]string)
+	for name, port := range wanted {
+		if port != 0 {
+			requested[port] = name
+		}
+	}
+	// Validate retained allocations before deleting anything; changing Services
+	// release their ports below, so they must not prevent valid swaps.
+	for _, svc := range services.Items {
+		if _, deleting := remove[svc.Name]; deleting {
+			continue
+		}
+		for _, port := range svc.Spec.Ports {
+			if name, exists := requested[port.NodePort]; exists && name != svc.Name {
+				return fmt.Errorf("service %s requests NodePort %d allocated to retained service %s", name, port.NodePort, svc.Name)
+			}
+		}
+	}
+	for _, svc := range remove {
 		if err := r.Delete(ctx, svc, client.Preconditions{UID: &svc.UID}); client.IgnoreNotFound(err) != nil {
 			return fmt.Errorf("failed to release NodePort service %s: %w", svc.Name, err)
 		}

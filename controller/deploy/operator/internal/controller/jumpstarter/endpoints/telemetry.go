@@ -29,7 +29,6 @@ import (
 )
 
 // ReconcileTelemetryEndpoint exposes only the telemetry gRPC port, not HTTP metrics.
-// ponytail: duplicate dispatch isolates this feature; share it in the follow-up refactor.
 func (r *Reconciler) ReconcileTelemetryEndpoint(ctx context.Context, owner metav1.Object, endpoint *operatorv1alpha1.Endpoint,
 	servicePort corev1.ServicePort) error {
 	labels := map[string]string{

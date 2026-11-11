@@ -157,6 +157,51 @@ var _ = Describe("NodePort reconciliation", func() {
 		Expect(service("js-router-0-np").UID).To(Equal(router.UID))
 	})
 
+	DescribeTable("rejects retained allocations before changing any Services", func(kind string) {
+		js.Spec.Controller.GRPC.Endpoints = []operatorv1alpha1.Endpoint{nodePort(30050)}
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{nodePort(30070)}
+		retainedName := "login-np"
+		switch kind {
+		case "suspended":
+			js.Spec.Routers.GRPC.Endpoints = []operatorv1alpha1.Endpoint{nodePort(30060)}
+			retainedName = "js-router-0-np"
+		case "loadbalancer":
+			js.Spec.Controller.Login.Endpoints = []operatorv1alpha1.Endpoint{{
+				LoadBalancer: &operatorv1alpha1.LoadBalancerConfig{Enabled: true},
+			}}
+			retainedName = "login-lb"
+		default:
+			js.Spec.Controller.Login.Endpoints = []operatorv1alpha1.Endpoint{nodePort(0)}
+		}
+		Expect(reconcile()).To(Succeed())
+		retained := service(retainedName)
+		if kind == "suspended" {
+			js.Spec.Routers.Replicas = new(int32(0))
+			js.Spec.Routers.GRPC.Endpoints = nil
+		}
+		if kind == "unowned" {
+			retained.OwnerReferences = nil
+			Expect(k8sClient.Update(ctx, retained)).To(Succeed())
+			js.Spec.Controller.Login.Endpoints = nil
+		}
+		before := &corev1.ServiceList{}
+		Expect(k8sClient.List(ctx, before, client.InNamespace(js.Namespace))).To(Succeed())
+		js.Spec.Controller.GRPC.Endpoints[0] = nodePort(30051)
+		js.Spec.Telemetry.GRPC.Endpoints[0] = nodePort(retained.Spec.Ports[0].NodePort)
+		Expect(reconcile()).To(MatchError(ContainSubstring("retained service " + retainedName)))
+		for _, original := range before.Items {
+			current := service(original.Name)
+			Expect(current.UID).To(Equal(original.UID))
+			Expect(current.ResourceVersion).To(Equal(original.ResourceVersion))
+			Expect(current.Spec).To(Equal(original.Spec))
+		}
+	},
+		Entry("automatic NodePort", "automatic"),
+		Entry("suspended router", "suspended"),
+		Entry("LoadBalancer NodePort", "loadbalancer"),
+		Entry("unowned Service", "unowned"),
+	)
+
 	It("does not delete unowned Services when releasing obsolete allocations", func() {
 		js.Spec.Controller.GRPC.Endpoints = []operatorv1alpha1.Endpoint{nodePort(30050)}
 		js.Spec.Controller.Login.Endpoints = []operatorv1alpha1.Endpoint{nodePort(30051)}
