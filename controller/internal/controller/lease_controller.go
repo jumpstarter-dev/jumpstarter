@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"slices"
 	"strings"
 	"time"
@@ -387,16 +388,31 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 		// For now, we just select the best available exporter without considering other
 		// ongoing lease requests
 
-		selected := readyAvailableExporters[0]
+		eligible := eligibleExporters(readyAvailableExporters)
 
-		if selected.ExistingLease != nil {
+		// The spot check on the ordered list above can miss a ready spot
+		// exporter when the better ranked non-spot ones are not ready, so
+		// check the final eligible group too.
+		if eligible[0].Policy.SpotAccess {
+			lease.SetStatusUnsatisfiable("SpotAccess",
+				"The only ready exporters are under spot access (i.e. %s), but spot access is still not implemented",
+				eligible[0].Exporter.Name)
+			return nil
+		}
+
+		if eligible[0].ExistingLease != nil {
 			// TODO: Implement eviction of spot access leases
 			lease.SetStatusPending("NotAvailable",
 				"Exporter %s is already leased by another client under spot access, but spot access eviction still not implemented",
-				selected.Exporter.Name)
+				eligible[0].Exporter.Name)
 			result.RequeueAfter = pendingRequeueAfter(lease)
 			return nil
 		}
+
+		// Pick randomly among the equally ranked exporters so that boards in
+		// the same priority group share the load instead of always leasing
+		// the alphabetically first one.
+		selected := eligible[rand.IntN(len(eligible))]
 
 		lease.Status.Priority = selected.Policy.Priority
 		lease.Status.SpotAccess = selected.Policy.SpotAccess
@@ -662,6 +678,9 @@ func attachExistingLeases(exporters []ApprovedExporter, activeLeases []jumpstart
 // 2. Not accessible under spot access
 // 3. Highest priority
 // 4. Alphabetically by exporter name
+//
+// Exporters that tie on all of the above form the eligible group that the
+// lease is randomly drawn from, see eligibleExporters.
 
 func orderApprovedExporters(exporters []ApprovedExporter) []ApprovedExporter {
 	// Order by lease status, priority, spot access, and name
@@ -694,6 +713,36 @@ func orderApprovedExporters(exporters []ApprovedExporter) []ApprovedExporter {
 	slices.SortFunc(exporters, cmpFunc)
 
 	return exporters
+}
+
+// eligibleExporters returns the exporters a lease can be assigned to right
+// now: only the best ranked candidates (same lease availability, spot access
+// mode and policy priority), each exporter approved by multiple policies
+// counted once. The caller draws randomly from the returned group so boards
+// in the same priority group get an equal share of leases.
+//
+// candidates must be ordered by orderApprovedExporters, which makes the best
+// ranked group a prefix of the list.
+func eligibleExporters(candidates []ApprovedExporter) []ApprovedExporter {
+	if len(candidates) == 0 {
+		return nil
+	}
+	best := candidates[0]
+	eligible := make([]ApprovedExporter, 0, len(candidates))
+	for _, candidate := range candidates {
+		if (candidate.ExistingLease != nil) != (best.ExistingLease != nil) ||
+			candidate.Policy.SpotAccess != best.Policy.SpotAccess ||
+			candidate.Policy.Priority != best.Policy.Priority {
+			// everything after the best ranked group is strictly worse
+			break
+		}
+		if !slices.ContainsFunc(eligible, func(e ApprovedExporter) bool {
+			return e.Exporter.Name == candidate.Exporter.Name
+		}) {
+			eligible = append(eligible, candidate)
+		}
+	}
+	return eligible
 }
 
 // filterOutLeasedExporters filters out the exporters that are already leased
