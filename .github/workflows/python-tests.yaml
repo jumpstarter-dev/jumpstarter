@@ -232,7 +232,7 @@ jobs:
       - name: Verify plain-pip dependency resolution
         working-directory: python
         run: |
-          uv build --all --out-dir dist
+          make build
           uv venv --python "${{ matrix.python-version }}" --seed .pip-resolve
           # By path: dev versions are pre-releases, so a bare name would resolve to PyPI's release
           ./.pip-resolve/bin/python -m pip install --dry-run --find-links dist dist/jumpstarter_all-*.whl
