@@ -94,6 +94,7 @@ members = [
     "jumpstarter-driver-vnc",
     "jumpstarter-driver-xcp",
     "jumpstarter-driver-yepkit",
+    "jumpstarter-driver-zephyr",
     "jumpstarter-example-android-emulator",
     "jumpstarter-example-appium-android-emulator",
     "jumpstarter-example-appium-ios-simulator",
@@ -1864,6 +1865,7 @@ dependencies = [
     { name = "jumpstarter-driver-vnc" },
     { name = "jumpstarter-driver-xcp" },
     { name = "jumpstarter-driver-yepkit" },
+    { name = "jumpstarter-driver-zephyr" },
     { name = "jumpstarter-imagehash" },
     { name = "jumpstarter-kubernetes" },
     { name = "jumpstarter-mcp" },
@@ -1937,6 +1939,7 @@ requires-dist = [
     { name = "jumpstarter-driver-vnc", editable = "packages/jumpstarter-driver-vnc" },
     { name = "jumpstarter-driver-xcp", editable = "packages/jumpstarter-driver-xcp" },
     { name = "jumpstarter-driver-yepkit", editable = "packages/jumpstarter-driver-yepkit" },
+    { name = "jumpstarter-driver-zephyr", editable = "packages/jumpstarter-driver-zephyr" },
     { name = "jumpstarter-imagehash", editable = "packages/jumpstarter-imagehash" },
     { name = "jumpstarter-kubernetes", editable = "packages/jumpstarter-kubernetes" },
     { name = "jumpstarter-mcp", editable = "packages/jumpstarter-mcp" },
@@ -3992,6 +3995,38 @@ requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
     { name = "pyusb", specifier = ">=1.2.1" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.4" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-zephyr"
+source = { editable = "packages/jumpstarter-driver-zephyr" }
+dependencies = [
+    { name = "anyio" },
+    { name = "click" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-pyserial" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.10.0" },
+    { name = "click", specifier = ">=8.1.7.2" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
 ]
 
 [package.metadata.requires-dev]

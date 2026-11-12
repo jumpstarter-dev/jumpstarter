@@ -1,0 +1,19 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: zephyr-board
+export:
+  zephyr:
+    type: jumpstarter_driver_zephyr.driver.Zephyr
+    config:
+      flash_command: >-
+        openocd -f interface/cmsis-dap.cfg -f target/cc13x2_cc26x2.cfg
+        -c "program {hex} verify reset exit"
+      flash_timeout: 300
+    children:
+      console:
+        type: jumpstarter_driver_pyserial.driver.PySerial
+        config:
+          url: /dev/ttyACM0
+          baudrate: 115200

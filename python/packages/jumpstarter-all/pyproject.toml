@@ -71,6 +71,7 @@ dependencies = [
   "jumpstarter-driver-vnc",
   "jumpstarter-driver-xcp",
   "jumpstarter-driver-yepkit",
+  "jumpstarter-driver-zephyr",
   "jumpstarter-imagehash",
   "jumpstarter-kubernetes",
   "jumpstarter-mcp",
