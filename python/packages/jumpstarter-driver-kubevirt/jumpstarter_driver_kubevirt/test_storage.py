@@ -14,6 +14,7 @@ from uuid import uuid4
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
+from anyio import sleep
 from click.testing import CliRunner
 from lightkube.core.exceptions import ApiError
 from lightkube.models.meta_v1 import Status
@@ -436,6 +437,27 @@ def test_lost_commit_response_recovers_success_without_deleting_new_disks(cluste
     assert (DataVolume, name) in cluster.objects
     assert cluster.deleted == ["vm-root"]
     assert operation(cluster.vm)["phase"] == "complete"
+
+
+@pytest.mark.anyio
+async def test_a_failed_volume_cleanup_lets_the_others_finish(cluster, monkeypatch):
+    driver = storage(cluster)
+    op = await begin(driver, ["root", "data"])
+    disks = operation(cluster.vm)["disks"]
+    failing, other = disks["root"]["new"], disks["data"]["new"]
+    delete = cluster.delete
+
+    async def delete_all_but_one(kind, name, **kwargs):
+        if name == failing:
+            raise api_error(500)
+        await sleep(0.01)
+        return await delete(kind, name, **kwargs)
+
+    monkeypatch.setattr(cluster, "delete", delete_all_but_one)
+    with pytest.raises(ApiError):
+        await driver.recover_flash(op)
+    assert (DataVolume, other) not in cluster.objects
+    assert (DataVolume, failing) in cluster.objects
 
 
 @pytest.mark.anyio
