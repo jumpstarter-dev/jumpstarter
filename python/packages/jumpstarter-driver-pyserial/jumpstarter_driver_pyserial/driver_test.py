@@ -282,6 +282,157 @@ def test_disable_hupcl_applies_termios_flags(monkeypatch):
     assert calls["attrs"][2] & 0x4000 == 0
 
 
+def test_release_blocks_new_connect_until_acquire():
+    """release() should make subsequent connect() block; acquire() releases."""
+    import threading
+
+    with serve(PySerial(url="loop://")) as client:
+        client = cast(PySerialClient, client)
+        client.release()
+
+        opened = threading.Event()
+        completed = threading.Event()
+
+        def open_stream():
+            with client.stream() as _stream:
+                opened.set()
+            completed.set()
+
+        worker = threading.Thread(target=open_stream, daemon=True)
+        worker.start()
+        # While released, the stream call must block.
+        assert not opened.wait(0.5)
+
+        client.acquire()
+        # After acquire, the stream must open promptly.
+        assert opened.wait(5.0), "stream did not open after acquire()"
+        assert completed.wait(5.0)
+        worker.join(timeout=5.0)
+
+
+def _wait_reader_running(client: PySerialClient, running: bool, timeout: float = 5.0):
+    deadline = time.monotonic() + timeout
+    while client.call("console_status")["reader_running"] != running:
+        if time.monotonic() > deadline:
+            raise AssertionError(f"reader_running never became {running}")
+        time.sleep(0.05)
+
+
+def _receive_until(stream, needle: bytes, timeout: float = 5.0) -> bytes:
+    """Receive until needle shows up, skipping fan-out system messages."""
+    data = b""
+    deadline = time.monotonic() + timeout
+    while needle not in data:
+        if time.monotonic() > deadline:
+            raise AssertionError(f"{needle!r} not received, got {data!r}")
+        data += stream.receive()
+    return data
+
+
+def test_release_keeps_stream_attached_across_acquire():
+    """release() closes the port but keeps clients attached; after acquire()
+    the same stream carries data again (a pause, not EOF)."""
+    with serve(PySerial(url="loop://")) as client:
+        client = cast(PySerialClient, client)
+        with client.stream() as stream:
+            _wait_reader_running(client, True)
+
+            client.release()
+            _wait_reader_running(client, False)
+            # The source stays closed while released (reader parked).
+            time.sleep(0.3)
+            assert client.call("console_status")["reader_running"] is False
+            assert client.call("console_status")["total_clients"] == 1
+
+            client.acquire()
+            _wait_reader_running(client, True)
+
+            stream.send(b"x")
+            assert b"x" in _receive_until(stream, b"x")
+
+
+def test_released_context_manager_reacquires_on_exit():
+    """The released() context manager must re-acquire even on exceptions."""
+    with serve(PySerial(url="loop://")) as client:
+        client = cast(PySerialClient, client)
+        with client.stream() as stream:
+            _wait_reader_running(client, True)
+
+            with client.released():
+                _wait_reader_running(client, False)
+            # Acquire should have run — the port reopens and data flows.
+            _wait_reader_running(client, True)
+            stream.send(b"x")
+            _receive_until(stream, b"x")
+
+            try:
+                with client.released():
+                    _wait_reader_running(client, False)
+                    raise RuntimeError("boom")
+            except RuntimeError:
+                pass
+
+            # Still re-acquired despite the exception.
+            _wait_reader_running(client, True)
+            stream.send(b"y")
+            _receive_until(stream, b"y")
+
+
+def _fds_open_on(path: str) -> list[str]:
+    fds = []
+    for fd in os.listdir("/proc/self/fd"):
+        with contextlib.suppress(OSError):
+            if os.readlink(f"/proc/self/fd/{fd}") == path:
+                fds.append(fd)
+    return fds
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc/self/fd"), reason="needs /proc")
+def test_release_closes_tty_before_returning():
+    """release() must return only once the tty fd is closed: a flasher (e.g.
+    esptool) started right after it must not share the port with our reader."""
+    import pty
+
+    master, slave = pty.openpty()
+    path = os.ttyname(slave)
+    os.close(slave)  # the driver opens the slave by path; master keeps it alive
+
+    def wait_until(condition, timeout: float = 5.0):
+        deadline = time.monotonic() + timeout
+        while not condition():
+            assert time.monotonic() < deadline, "timed out"
+            time.sleep(0.01)
+
+    try:
+        # serve() runs the exporter in this process, so /proc/self/fd sees the
+        # driver's fd. A real tty, not loop://: the test is about its fd.
+        with serve(PySerial(url=path, check_present=False)) as client, client.stream():
+            client = cast(PySerialClient, client)
+            wait_until(lambda: _fds_open_on(path))
+
+            client.release()
+            assert _fds_open_on(path) == [], "tty still open after release() returned"
+            # Stays closed while released (the reader is parked).
+            time.sleep(0.5)
+            assert _fds_open_on(path) == []
+
+            client.acquire()
+            wait_until(lambda: _fds_open_on(path))
+    finally:
+        os.close(master)
+
+
+def test_acquire_without_release_is_noop():
+    """acquire() on an already-acquired port should not raise or block."""
+    with serve(PySerial(url="loop://")) as client:
+        client = cast(PySerialClient, client)
+        client.acquire()  # no-op
+        # Stream still works.
+        with client.stream() as stream:
+            stream.send(b"hi")
+            assert stream.receive().startswith(b"hi")
+
+
 def test_disable_hupcl_noop_when_disabled(monkeypatch):
     called = {"tcgetattr": False}
 

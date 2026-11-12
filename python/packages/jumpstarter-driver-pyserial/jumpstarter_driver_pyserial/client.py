@@ -60,6 +60,35 @@ class PySerialClient(DriverClient):
         with PexpectAdapter(client=self) as adapter:
             yield adapter
 
+    def release(self):
+        """Release the underlying tty so another exporter-side process
+        (typically a sibling flasher driver) can open it. Pairs with
+        :meth:`acquire`.
+
+        Attached console/pipe clients stay connected and see a pause;
+        input sent while released is discarded."""
+        self.call("release")
+
+    def acquire(self):
+        """Re-acquire the underlying tty previously released with
+        :meth:`release`."""
+        self.call("acquire")
+
+    @contextmanager
+    def released(self):
+        """Context manager that releases the tty on enter and re-acquires
+        it on exit — even if the body raises. Intended for runner code that
+        wraps a flash operation::
+
+            with client.console.released():
+                client.flasher.flash(artifact)
+        """
+        self.release()
+        try:
+            yield
+        finally:
+            self.acquire()
+
     async def _pipe_serial(
         self,
         output_file: str | None = None,
@@ -190,6 +219,19 @@ class PySerialClient(DriverClient):
                 console.run()
             except ConsoleStreamDrop:
                 raise click.ClickException("serial connection closed") from None
+
+        @base.command()
+        def release():
+            """Release the remote tty so another exporter-side process can
+            open it (e.g. a flasher driver). Pairs with `acquire`."""
+            self.release()
+            click.echo("Released.", err=True)
+
+        @base.command()
+        def acquire():
+            """Re-acquire the remote tty previously released."""
+            self.acquire()
+            click.echo("Acquired.", err=True)
 
         @base.command()
         @click.option(

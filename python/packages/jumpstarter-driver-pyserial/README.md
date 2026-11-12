@@ -258,6 +258,26 @@ Notes:
 
 Exit with Ctrl+C.
 
+### release / acquire
+
+Close the underlying tty so another process on the exporter (typically a
+flasher such as esptool) can open it, then reopen it. Attached clients (console, pipe)
+stay connected: they see a pause, and input sent meanwhile is discarded.
+
+```bash
+j serial release
+# ... flash the board with a tool that needs the tty ...
+j serial acquire
+```
+
+From Python, `released()` does the same around a block, and re-acquires the tty
+even if the block raises:
+
+```python
+with client.serial.released():
+    client.flasher.flash(image)
+```
+
 ## Serial console sharing and observe mode
 
 The serial console fans out to multiple clients so that several holders of a
