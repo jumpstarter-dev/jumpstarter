@@ -23,8 +23,8 @@ or controller-signed JWTs sent in the `authorization` header. This JEP makes
 **mutual TLS with SPIFFE-style X.509 identities** the default instead. The
 controller and routers verify a client certificate against one or more
 configured **trust domains**, map its SPIFFE ID to a Jumpstarter username with
-the same CEL mapping model the JWT authenticators already use, and authorize it
-exactly as today. Certificates come from pluggable **identity issuers**: any
+the same CEL mapping model the JWT authenticators already use (certificates
+the controller itself issued need no mapping), and authorize it as today. Certificates come from pluggable **identity issuers**: any
 platform that meets a small, vendor-neutral **integration contract** (issue
 X.509-SVIDs, publish a trust bundle, deliver credentials through a standard
 channel), or a new **built-in enrollment endpoint** where the controller acts
@@ -36,8 +36,9 @@ integrations** to prove the contract: Teleport as a fully worked commercial
 example, OpenZiti with SPIRE as a fully worked open-source example, and SPIRE
 alone as the vendor-neutral conformance target. Bearer tokens keep
 working throughout, and are phased out by default only for new installations.
-For someone trying Jumpstarter on a laptop or a local cluster, the commands do
-not change and the secure setup becomes the default one.
+For someone trying Jumpstarter on a laptop or a local cluster, the commands
+stay the same, apart from a one-time pairing step in direct mode, and the
+secure setup becomes the default one.
 
 ## Motivation
 
@@ -46,7 +47,7 @@ not change and the secure setup becomes the default one.
 Exporters run on small hosts in labs, on benches, and increasingly on untrusted
 networks. Today each one holds a long-lived controller-signed JWT (one year by
 default, `authentication.internal.tokenLifetime`). Token rotation exists
-(`RotateExporterCredential`, allowed in the second half of the token's life,
+(the `RotateToken` RPC, implemented by `RotateExporterCredential`, allowed in the second half of the token's life,
 with a lineage check so only the current or previous token can rotate), but the
 token is still a bearer credential: anyone who copies the exporter config file
 can impersonate the exporter from anywhere until the token expires.
@@ -255,9 +256,9 @@ leasePolicy:
   maxDuration: 8h               # new global ceiling; see "Credential lifetime and leases"
 ```
 
-`username` defaults to the full SPIFFE ID. `Client.spec.username` and
-`Exporter.spec.username` hold the mapped value, so the username comparison in
-`BasicAuthorizer` is unchanged. How the caller is resolved to an object *name*
+`username` defaults to the full SPIFFE ID. For identities from an external
+issuer, `Client.spec.username` and `Exporter.spec.username` hold the mapped
+value, so the username comparison in `BasicAuthorizer` is unchanged. How the caller is resolved to an object *name*
 does change; see [Identity mapping](#identity-mapping).
 
 The controller and the router both parse this ConfigMap strictly
@@ -321,7 +322,8 @@ advertising the EST URL and the enrollment trust domain.
 The flow:
 
 1. The caller generates a key pair locally. The private key never leaves the
-   caller and may live in a TPM or OS keystore.
+   caller. It is a file today; hardware-backed storage comes with the Rust
+   core (see [Credential sources](#credential-sources)).
 2. The caller asks `csrattrs`, the EST endpoint through which a server tells
    a client what to put in its CSR, for its SPIFFE ID. Every EST request
    carries the caller's kind, namespace, and name as HTTP headers, the same
@@ -342,7 +344,7 @@ The flow:
    signed by the caller's key, and cert-manager issuers and approver-policy
    both act on its contents.
 4. The controller creates a cert-manager `CertificateRequest` carrying the
-   caller's CSR against `enrollment.issuerRef`, with the configured duration
+   caller's CSR against the supplied or managed issuer, with the configured duration
    and client-auth usages, waits for issuance, and returns the chain.
 5. Renewal uses `simplereenroll`, authenticated by the certificate being
    renewed. The controller re-checks that the `Client`/`Exporter` still exists
@@ -380,13 +382,13 @@ operator-managed issuer no policy is needed; see
 [New users and small deployments](#new-users-and-small-deployments).
 cert-manager is already an optional
 operator integration (`spec.certManager`, used for serving certificates).
-Enrollment additionally needs approver-policy, which in turn requires
+A supplied issuer additionally needs approver-policy, which in turn requires
 cert-manager to run with its default approver disabled: left on, it approves
 every request and the policy has no effect. That is a cluster-wide
 cert-manager setting, so the operator checks for it and reports a condition
 rather than changing it. Issuers outside the `cert-manager.io` group must
-also be listed in approver-policy's `approveSignerNames`. Any cert-manager issuer works as the
-backend: a CA issuer holding an intermediate signed by a corporate root, Vault,
+also be listed in approver-policy's `approveSignerNames`. Any cert-manager
+issuer works as the backend: a CA issuer holding an intermediate signed by a corporate root, Vault,
 step-ca, AWS Private CA, and others.
 
 #### Client experience
@@ -408,7 +410,7 @@ credentials:
   type: enrollment            # token | oidc | enrollment | exec | spiffe | file
   enrollment:
     keyStore: file            # file today; os-keystore and tpm in future
-    renewBefore: 33%
+    renewBefore: 33%          # renew when this share of the lifetime is left
 ```
 
 `jmp login` on an enrollment-enabled controller runs the existing OIDC flow,
@@ -511,14 +513,16 @@ Most people meet Jumpstarter on one laptop and one board, or on a local
 cluster created with `jmp admin create cluster`. Nothing above may make that
 first hour harder. The rules this JEP holds itself to:
 
-- **No new commands and no new required flags** for either setup.
+- **No new commands.** The local cluster needs no new flag either. Direct mode
+  needs one, once: the pairing code on the first connection.
 - **No new concepts.** A new user never has to read the words SPIFFE, trust
   domain, CEL, or approver-policy. Those appear only when an administrator
   chooses an external issuer.
 - **Nothing to install.** The local cluster flow already installs
   cert-manager; nothing else is added to it.
 - **A working setup keeps working.** No credential a new user holds expires in
-  a way that needs a manual step, short of the object being deleted.
+  a way that needs a manual step, unless it has gone unused for longer than
+  the grace period or its object was deleted.
 - **Secure is the easy path.** Today the shortest documented command line is
   the insecure one in both setups. That is reversed.
 
@@ -543,7 +547,7 @@ What happens underneath does:
 | Config handed to another machine (`--out`) | Contains the one-year token | Contains a bootstrap credential; the first `jmp run` enrolls and keeps the key on that machine |
 | Server trust | The config already carries the CA from the `jumpstarter-service-ca-cert` ConfigMap, but the setup guide still tells users to pass `--insecure-tls` | Unchanged mechanism; the guide drops `--insecure-tls` |
 | Expiry | Token valid for a year, then `jmp admin rotate` by hand | Certificate renewed automatically in the background |
-| A copied config file | Full access for up to a year | No access |
+| A copied config file | Full access for up to a year | Nothing to use: no secret in it (`--save`), or a bootstrap credential that is void once the intended machine has enrolled (`--out`) |
 
 Three parts of the design exist to make this work.
 
@@ -570,7 +574,8 @@ bearer token never surprises a new user this way, so certificates must not
 either:
 
 - With the managed issuer, certificates default to 30 days and are renewed
-  once a third of that has passed. Deployments with an external identity
+  when two thirds of that is still left (`renewBefore: 67%`), so a machine
+  that is used at least every few weeks never gets close to expiry. Deployments with an external identity
   provider choose shorter lifetimes deliberately.
 - `enrollment.renewalGracePeriod` (default 90 days with the managed issuer,
   zero otherwise) lets `simplereenroll` accept a certificate that has expired,
@@ -606,10 +611,10 @@ $ jmp run --exporter-config example-direct.yaml --tls-grpc-listener 0.0.0.0:1909
 Listening on 0.0.0.0:19090
 To connect from another machine, run this once:
 
-    jmp shell --tls-grpc 192.168.1.20:19090 --pair K7QF-2MXD-9RTB
+    jmp shell --tls-grpc 192.168.1.20:19090 --pair K7QF-2MXD-9RTB-H4WN-6CPA
 
 # On the laptop, the first time
-$ jmp shell --tls-grpc 192.168.1.20:19090 --pair K7QF-2MXD-9RTB
+$ jmp shell --tls-grpc 192.168.1.20:19090 --pair K7QF-2MXD-9RTB-H4WN-6CPA
 Paired with example-direct
 
 # On the laptop, every time after that
@@ -618,18 +623,21 @@ $ jmp shell --tls-grpc 192.168.1.20:19090
 
 - On first start the exporter generates a key and a self-signed certificate
   and keeps them in its state directory. The user never sees them.
-- The pairing code is short-lived and single-use. It carries a one-time
-  secret and a fingerprint of the exporter's certificate, so the laptop
-  verifies the exporter on the very first connection instead of trusting
-  whatever answers.
+- The pairing code is short-lived and single-use, and is meant to be pasted,
+  not typed. It carries a one-time secret and a fingerprint of the exporter's
+  certificate, so the laptop verifies the exporter on the very first
+  connection instead of trusting whatever answers.
 - During pairing the laptop generates its own key and certificate and hands
   the certificate to the exporter, which records it as authorized. The laptop
   records the exporter's certificate against that address.
 - Every later connection is mutual TLS between the two recorded
   certificates. There is no passphrase to retype, nothing secret in shell
   history, and nothing useful to someone who copies the command line.
-- `jmp run ... --pair` prints a new code to add another laptop;
-  `--unpair <name>` removes one.
+- The exporter prints a code on start whenever nothing is paired yet.
+  `jmp run ... --pair` prints a new one to add another laptop. Each paired
+  laptop is recorded under its host name, or the name given with
+  `jmp shell --pair <code> --pair-name <name>`, and `jmp run ... --unpair
+  <name>` removes it.
 
 This is the SSH model (a host key the client remembers, an authorized key the
 server remembers) with a one-time code replacing the manual copying of keys.
@@ -654,8 +662,11 @@ Each step up is one change, and none of them invalidates the step before:
 
 ### Identity mapping
 
-Mappings are evaluated in order; the first entry whose `match` is true wins. A
-certificate that matches no mapping is rejected. CEL variables:
+Mappings apply to trust domains with an external issuer. They are evaluated in
+order; the first entry whose `match` is true wins, and a certificate that
+matches no mapping is rejected. Certificates from the enrollment trust domain
+are not mapped (see [Resolving the object](#resolving-the-object)). CEL
+variables:
 
 | Variable              | Type           | Example                                        |
 | --------------------- | -------------- | ---------------------------------------------- |
@@ -670,6 +681,8 @@ certificate that matches no mapping is rejected. CEL variables:
 because client provisioning auto-creates `Client` objects for authenticated
 users: without the restriction, an exporter identity could provision itself as
 a client.
+
+(resolving-the-object)=
 
 #### Resolving the object
 
@@ -764,7 +777,7 @@ session lifetime) can expire in the middle of a lease.
   credential's renewable horizon and, depending on configuration, warns, clamps
   the duration, or triggers re-authentication first. This is a usability layer;
   the controller does not trust client-reported expiry.
-- **Expiry events.** The client core emits a "credential expires in N minutes"
+- **Expiry events.** The client emits a "credential expires in N minutes"
   event so the CLI, Python API, and MCP server can prompt before the cliff, then
   re-dial automatically once credentials are renewed. Leases already live on the
   controller and survive client disconnects.
@@ -821,7 +834,9 @@ A platform that also carries traffic must:
 
 #### Integration tiers
 
-Platforms fall into three groups:
+Platforms that carry traffic fall into three groups. Platforms that only issue
+identities ("Identity only" in the table) or only carry traffic ("Transport
+only") combine with any of them:
 
 - **Identity and transport in one product.** The platform issues the
   certificate and carries the traffic.
@@ -973,6 +988,7 @@ authentication:
         - principals: [Client]
           match: 'spiffe.segments[0] == "jumpstarter" && spiffe.segments[1] == "users"'
           username: '"teleport:" + spiffe.segments[2]'
+          name: 'spiffe.segments[2]'
           groups: 'spiffe.segments.size() > 3 ? ["team:" + spiffe.segments[3]] : []'
         - principals: [Exporter]
           match: 'spiffe.segments[0] == "jumpstarter" && spiffe.segments[1] == "exporters"'
@@ -1053,7 +1069,17 @@ running must reach its own server:
 
 #### To verify: Teleport
 
-- Whether `workload_identity` SPIFFE ID templates accept user traits as shown.
+Checked against the Teleport documentation in November 2026: the
+`tsh workload-identity issue-x509` flags and its three output files, which
+match the `spiffe-dir` format; `user.name`, `user.bot_name`, and `user.traits`
+as attributes available to SPIFFE ID templates; the `workload-identity-api`
+and `application-tunnel` service types and the `selector.name` field; and
+`bound_keypair` as a join method. Still open:
+
+- The exact template syntax for reading one trait (`user.traits.team` as
+  written above, or an indexed form).
+- How the `bound_keypair` join options are spelled under `onboarding` in the
+  `tbot` configuration file.
 - Whether `disconnect_expired_cert` applies to TCP application sessions.
 - How VNet handles ports for single-port TCP applications, and whether
   multi-port applications are preferable for routers.
@@ -1213,7 +1239,7 @@ intercept mode:
 credentials:
   type: spiffe
   spiffe:
-    socket: unix:///run/spire/agent/public/api.sock
+    socket: unix:///run/spire/agent/public/api.sock   # the agent's socket_path
 ```
 
 Intercept mode needs `CAP_NET_ADMIN` and `/dev/net/tun`. Where that is not
@@ -1247,9 +1273,17 @@ a Jumpstarter certificate.
 
 #### To verify: OpenZiti
 
+Checked against the OpenZiti documentation in November 2026: the
+`ziti edge create ca` flags for matching a `spiffe://` URI SAN and the
+`--external-id` identity form, both as in OpenZiti's own SPIRE walkthrough;
+and that a renewed certificate carrying the same claims keeps authenticating.
+The CLI is being reorganised for OpenZiti 2.0, so the command spellings need
+re-checking against the release in use. Still open:
+
 - Whether `ziti-edge-tunnel` and Ziti Desktop Edge reload a rotated identity
-  certificate without dropping established connections. Option A depends on
-  this.
+  certificate without dropping established connections. The controller
+  accepting the renewed certificate is confirmed; the tunnelers picking it up
+  without a restart is not. Option A depends on this.
 - External JWT signer (OIDC) login support on each tunneler platform,
   particularly Linux.
 - Idle timeouts and edge router failover behavior for long-lived intercepted
@@ -1257,7 +1291,11 @@ a Jumpstarter certificate.
 - Whether OpenZiti's automatic enrollment for third-party CAs can create the
   identity from the SPIFFE ID on first connection, removing the per-exporter
   `create identity` step.
-- The SPIRE bundle publication mechanism and its ConfigMap key names.
+- The ConfigMap name and key for the SPIRE bundle. The `k8sbundle` notifier
+  takes both from its configuration; `spire-bundle` and `bundle.crt` above
+  are what the SPIRE Helm chart uses, not plugin defaults.
+- The SPIRE agent socket path, which is set by the agent's `socket_path` and
+  differs between the Helm chart and the quickstart manifests.
 
 ### Comparing the reference integrations
 
@@ -1279,7 +1317,7 @@ entries, the `spiffe`, `exec`, and `enrollment` credential sources, and
 `endpointOverrides` where a transport only offers local listeners. Every
 difference between them is configuration.
 
-### Other reference integrations
+### Other integrations
 
 These follow the same pattern and are documented in less detail. The
 remaining rows of the [integration table](#integration-tiers) (Boundary,
@@ -1327,10 +1365,13 @@ exporter config is read-only to the exporter.
 | --- | --- | --- |
 | Controller config | `authentication.x509`, `authentication.bearer`, `enrollment`, `grpc.tls.clientAuth`, `leasePolicy.maxDuration` | Additive; absent means today's behavior. Read by the controller and the routers |
 | Controller listener (`:8082`) | EST endpoints under `/.well-known/est/` | Additive |
-| Login service | `/v1/auth/config` gains `enrollment` and `trustDomains` fields | Additive |
-| Operator `Jumpstarter` CRD | Fields mirroring the controller config above; approver-policy and RBAC resources when enrollment is enabled | Additive |
-| `ClientConfig` / `ExporterConfig` | `credentials`, `tls.clientCertificate` (for `file`), `endpointOverrides` | Additive; `token` still accepted |
-| `jmp` CLI | `jmp login --ca-sha256`; `jmp admin create client` and `create exporter` enroll when the controller offers it; `jmp run --pair` / `--unpair` and `jmp shell --pair` for direct mode | Additive; existing flags keep working |
+| Login service | `/v1/auth/config` gains an `enrollment` block (EST URL and trust domain) | Additive |
+| Operator `Jumpstarter` CRD | Fields mirroring the controller config above; a managed identity CA when enrollment is enabled without `issuerRef`; approver-policy and RBAC resources when it is enabled with one | Additive |
+| `ClientConfig` / `ExporterConfig` | `credentials` (including the certificate and key paths of the `file` source), `endpointOverrides` | Additive; `token` still accepted |
+| Client and exporter state | Keys and certificates are kept in a state directory beside the config, never in it | New |
+| Credential Secret | A bootstrap credential for enrollment (form open, see Unresolved Questions) | Additive |
+| `RotateToken` | Returns `FAILED_PRECONDITION` to a caller that authenticated with a certificate | Callers with tokens unaffected |
+| `jmp` CLI | `jmp login --ca-sha256`; `jmp admin create client` and `create exporter` enroll when the controller offers it; `jmp run --pair` / `--unpair` and `jmp shell --pair` for direct mode; `jmp describe client` reports certificate state | Additive; existing flags keep working |
 | `Client` / `Exporter` / `Lease` CRDs | None required | n/a |
 | gRPC `.proto` | None required | n/a |
 | Router token | One token per side instead of one shared token; optional claim binding each to its holder's SPIFFE ID | Internal to controller and router |
@@ -1344,10 +1385,12 @@ exporter config is read-only to the exporter.
   failures explicitly.
 - **Key storage.** File-based keys are the baseline. TPM-backed keys are
   preferred where hardware exists; Raspberry Pis need a TPM add-on board.
-- **Rotation during hardware operations.** TLS authenticates at handshake time,
-  so established connections survive certificate rotation. Only new
-  connections use the new certificate. Rotation never interrupts an in-flight
-  flash or power operation.
+- **Rotation during hardware operations.** A connection keeps the certificate
+  it was opened with, and the controller checks it when each RPC starts.
+  Streams that are already open are not re-checked, so rotation never
+  interrupts an in-flight flash or power operation. Renewal happens well
+  before expiry and new calls move to a connection with the new certificate,
+  so a healthy client never starts an RPC with an expired one.
 - **Offline exporters.** An exporter that is offline longer than its
   certificate lifetime plus the renewal grace period cannot renew with
   `simplereenroll` and needs a fresh bootstrap credential. With an external identity
@@ -1437,7 +1480,8 @@ and do not work through TCP tunnels.
 **Alternatives considered:**
 
 1. **The controller as a registration authority** in front of a cert-manager
-   issuer, constrained by approver-policy.
+   issuer, constrained by approver-policy when the issuer is one that other
+   systems trust (see DD-9).
 2. **The controller as a CA** holding a signing key.
 3. **No built-in issuer** - Require SPIRE or another platform everywhere.
 
@@ -1615,11 +1659,11 @@ headers is not supported.
 flowchart TD
   A[Incoming RPC] --> B{Client certificate\npresented?}
   B -- yes --> C[X.509 authenticator:\nper-domain verify, map SPIFFE ID]
-  C -- invalid --> J3[Reject: UNAUTHENTICATED]
+  C -- invalid --> D
   B -- no --> D{authorization\nheader?}
   D -- yes --> E[Existing JWT authenticators\ninternal + OIDC]
   D -- no --> F[Unauthenticated]
-  C --> G{Bearer token\nalso present?}
+  C -- valid --> G{Bearer token\nalso present?}
   G -- no --> H[Authenticated user info]
   G -- yes --> I{Same username?}
   I -- yes --> H
@@ -1680,7 +1724,7 @@ The binding is to the SPIFFE ID, not to the certificate thumbprint
 on rotation: the exporter's token is minted when a client dials, but the only
 certificate the controller has seen from the exporter is the one on its
 `Listen` stream, which may have been open for the whole lease. With
-20-minute renewal an exporter will usually have rotated by then, and would
+short renewal intervals an exporter will usually have rotated by then, and would
 present a different certificate to the router. Binding to the identity
 survives rotation and still makes a leaked router token useless to anyone who
 cannot authenticate as that identity.
@@ -1725,7 +1769,7 @@ nothing in this JEP waits for it.
 | `token` | bearer token | controller rotation (`RotateToken`, clients and exporters) | Today's behavior |
 | `oidc` | bearer token | refresh token | Today's `jmp login` |
 | `enrollment` | certificate via EST | `simplereenroll` | Bootstraps with OIDC or a one-time token |
-| `exec` | certificate (or token) from a command | re-runs the command before expiry | Any issuer CLI (for example `tsh`, `step`, Vault) |
+| `exec` | certificate from a command | re-runs the command before expiry | Any issuer CLI (for example `tsh`, `step`, Vault) |
 | `spiffe` | X.509-SVID from the Workload API | streamed by the Workload API | Any Workload API agent (for example SPIRE agent, `tbot`) |
 | `file` | certificate and key from disk | re-reads on change | For externally managed files |
 
@@ -1759,6 +1803,47 @@ These rules keep Jumpstarter independent of any identity or access platform:
   integrations for other platforms run in an e2e matrix; a failing reference
   integration blocks a release only if it is marked as required.
 
+### Direct mode pairing
+
+Pairing has to work within what Python gRPC offers, since direct mode is
+served by the Python exporter:
+
+- A gRPC server in Python either requires and verifies a client certificate
+  or does not ask for one (`require_client_auth`). There is no mode that
+  accepts a certificate and leaves the decision to the application, so one
+  listener cannot serve paired clients over mutual TLS and also accept a
+  client that is not paired yet without a certificate.
+- The set of trusted client roots can be replaced while the server runs
+  (`grpc.dynamic_ssl_server_credentials`, consulted on every new connection).
+
+The listener therefore always requires a client certificate, and the pairing
+code is what makes the first connection possible:
+
+1. When it prints a code, the exporter derives a temporary CA key from the
+   code's one-time secret and adds that CA to its trusted roots for the
+   lifetime of the code.
+2. The laptop derives the same CA key from the code, generates its own
+   long-term key, and issues itself a certificate signed by the temporary CA.
+   It checks the exporter's certificate against the fingerprint in the code
+   before sending anything.
+3. Over that connection the laptop calls a pairing RPC that hands over its
+   long-term self-signed certificate. The exporter adds it to its trusted
+   roots and its authorized list, removes the temporary CA, and voids the
+   code.
+4. The laptop stores the exporter's certificate for that address. Later
+   connections present the long-term certificate and need no code.
+
+The client side reuses code that exists: `ssl_channel_credentials` already
+fetches a server's chain before building credentials. In pairing mode it
+compares that chain with the stored fingerprint and then uses it as the only
+trusted root, matching the certificate by fingerprint, not by host name, so
+the same exporter can be reached by IP address or by any name.
+
+The length of the code, the key derivation, and the lifetime of a code decide
+how hard it is to guess a code or forge a matching fingerprint while the code
+is valid. They are to be fixed, with a security review, before this part
+leaves Experimental (see Unresolved Questions).
+
 ### Implementation map
 
 Where each change lands in the code on `main`. Paths are under `controller/`
@@ -1776,10 +1861,12 @@ unless they start with `python/`.
 | EST endpoints | `internal/service/controller_service.go` (`Start`): requests that are not gRPC go to a gateway mux that has no routes registered today | New handlers |
 | Per-side, bound router tokens | `internal/service/controller_service.go` (`Dial`, `listenQueue`); `internal/service/router_service.go` (`authenticate`) | Second token, one claim, one check |
 | Router trust domains | `internal/config/config.go` (`LoadRouterConfiguration`), `cmd/router/main.go` | Read one more section |
-| Lease ceiling | `internal/service/client/v1/client_service.go` (`CreateLease`, `UpdateLease`), beside the `MaxTags` check | One check |
+| Lease ceiling | `internal/service/client/v1/client_service.go` (`CreateLease`, `UpdateLease`), beside the `MaxTags` check; `internal/service/controller_service.go` (`RequestLease`) | One check |
+| Advertising enrollment | `internal/service/login/service.go` (`AuthConfig`) | One block |
 | Client certificate on every connection | `python/packages/jumpstarter/jumpstarter/common/grpc.py` (`ssl_channel_credentials`) | Two arguments |
 | Metadata without a token | `python/packages/jumpstarter/jumpstarter/config/grpc.py` (`call_credentials`) | One variant |
 | `credentials` and `endpointOverrides` config | `python/packages/jumpstarter/jumpstarter/config/` (`client.py`, `exporter.py`, `tls.py`) | New fields |
+| Credential sources (`enrollment`, `exec`, `spiffe`, `file`), expiry events and lease preflight | New module under `python/packages/jumpstarter/jumpstarter/`; preflight in `client/lease.py` | New code |
 | Enrollment after login | `python/packages/jumpstarter-cli/jumpstarter_cli/login.py` | New step |
 | Enrollment when creating clients and exporters | `python/packages/jumpstarter-cli-admin/jumpstarter_cli_admin/create.py`; `python/packages/jumpstarter-kubernetes/jumpstarter_kubernetes/clients.py` and `exporters.py`, where the token is read from the Secret today | New step |
 | Enrollment in local clusters | `python/packages/jumpstarter-kubernetes/jumpstarter_kubernetes/cluster/operator.py` (the `Jumpstarter` resource it applies); operator certificate reconciliation | One block; a second managed CA |
@@ -1793,9 +1880,9 @@ types, or in the lease controller.
 
 | Failure | Behavior |
 | --- | --- |
-| Certificate expired, not yet valid, or not issued by its trust domain | The handshake succeeds; the authenticator returns `UNAUTHENTICATED` with a message naming the cause and the validity window; client triggers renewal |
+| Certificate expired, not yet valid, or not issued by its trust domain | The handshake succeeds. If the call also carries a bearer token that is allowed for its principal kind, the certificate is ignored and logged. Otherwise the authenticator returns `UNAUTHENTICATED` with a message naming the cause and the validity window, and the client triggers renewal |
 | No certificate under `clientAuth: Required` | TLS handshake fails; the caller sees a connection error, not a gRPC status |
-| SPIFFE ID matches no mapping | `UNAUTHENTICATED`, logged with the SPIFFE ID |
+| SPIFFE ID from an external trust domain matches no mapping | `UNAUTHENTICATED`, logged with the SPIFFE ID |
 | Mapping allowed, but no matching `Client`/`Exporter` | Unchanged: authorization denies, or provisioning creates a `Client` where enabled and allowed. Exporters are never provisioned |
 | Caller-supplied name or namespace differs from the mapped one | `INVALID_ARGUMENT`, as for OIDC name mismatches today |
 | `clientAuth: Required` with enrollment enabled | Controller refuses to start |
@@ -1807,13 +1894,13 @@ types, or in the lease controller.
 
 | Threat | Today | With this JEP |
 | --- | --- | --- |
-| Exporter config copied off a device | Full impersonation until token expiry | No credential in config; key may be non-exportable |
+| Exporter config copied off a device | Full impersonation until token expiry | No credential in config; the key is a separate file, or held by a platform agent or hardware |
 | Client token leaked (logs, shell history, CI) | Replayable from anywhere | Certificates require the private key; bound router tokens are useless to any other identity |
 | Offboarding or decommissioning | Find and revoke tokens | Issuer stops issuing; access ends within TTL; deleting the `Client`/`Exporter` still denies every new RPC |
-| Compromised controller | Can mint internal tokens | Same, plus enrollment limited by approver-policy to its trust domain, client auth, and capped TTL |
+| Compromised controller | Can mint internal tokens | Same. With a supplied issuer, approver-policy limits enrollment to its trust domain, client auth, and a capped TTL; a managed issuer signs nothing but Jumpstarter identities |
 | Issuer for domain A mints domain B identities | n/a | Per-domain chain verification |
-| First connection to a LAN controller | `tls.insecure` trust on first use | `--ca-sha256` pin, or bundle delivered by host management |
-| Downgrade to bearer during migration | n/a | `bearer.allowedPrincipals` and `clientAuth: Required` close it per deployment |
+| First connection to a LAN controller | `tls.insecure`: unverified on every connection | `--ca-sha256` pin, or bundle delivered by host management |
+| Downgrade to bearer during migration | n/a | `bearer.allowedPrincipals` closes it per principal kind; `clientAuth: Required` closes it entirely where enrollment is not used |
 
 There is no CRL or OCSP support. Revocation relies on short lifetimes, the
 issuer refusing to renew, and deletion of the `Client` or `Exporter` object.
@@ -1850,6 +1937,12 @@ lease or the connection, as they do today.
   bound token still accepted after the holder rotates its certificate.
 - `endpointOverrides` resolution with preserved TLS server name.
 - Credential sources: exec output parsing, file reload, renewal scheduling.
+- `leasePolicy.maxDuration` on create, extend, and the legacy request path;
+  client preflight against the credential's expiry.
+- `RotateToken` from a certificate-authenticated caller returns
+  `FAILED_PRECONDITION`.
+- An invalid certificate with a permitted bearer token authenticates as the
+  token; with a bearer token that is not permitted, it is rejected.
 
 ### Integration Tests
 
@@ -1915,7 +2008,7 @@ lease or the connection, as they do today.
 - [ ] `jmp login` against an enrollment-enabled controller stores a
       certificate, and renews it with `simplereenroll` before expiry.
 - [ ] A CSR whose names differ from the caller's computed SPIFFE ID is
-      rejected, and approver-policy denies a `CertificateRequest` outside the
+      rejected, and with a supplied issuer approver-policy denies a `CertificateRequest` outside the
       enrollment trust domain.
 - [ ] A certificate enrolled for an object stops working when that object is
       deleted and re-created under the same name.
@@ -1994,9 +2087,10 @@ lease or the connection, as they do today.
   `authentication.x509` is configured, and routers must be upgraded before
   that.
 - **Operator upgrade path.** cert-manager stays optional, as it is today for
-  serving certificates. The operator only creates approver-policy and
-  trust-manager resources when enrollment is enabled, and reports a condition
-  rather than failing when their CRDs are missing.
+  serving certificates. The operator creates approver-policy resources only
+  when enrollment uses a supplied issuer, and reports a condition rather than
+  failing when the CRDs are missing. trust-manager is never required; it is
+  one way to produce the bundle ConfigMaps.
 
 ## Consequences
 
@@ -2029,7 +2123,8 @@ lease or the connection, as they do today.
   terminate gRPC TLS at an ingress cannot use certificate authentication.
 - Two authentication paths have to be maintained and tested for as long as
   bearer tokens are supported.
-- Object resolution gains a third rule set alongside internal tokens and OIDC.
+- Object resolution gains a branch for certificates from external issuers,
+  alongside the rules for internal tokens and OIDC.
 
 ### Risks
 
@@ -2077,8 +2172,8 @@ lease or the connection, as they do today.
 - **CRL/OCSP revocation.** Operationally heavy for edge devices on intermittent
   networks; short lifetimes plus object deletion cover the requirements.
 - **A bespoke gRPC enrollment service.** Possible, but EST is an existing
-  standard with existing client implementations and fits the HTTP login
-  service.
+  standard with existing client implementations and fits the controller's
+  existing listener (DD-6).
 
 ## Prior Art
 
@@ -2094,7 +2189,9 @@ lease or the connection, as they do today.
 - **kubeadm:** CA public key pinning for first contact.
 - **Kubernetes client-go credential plugins:** the model for the `exec`
   credential source, including its interactive mode.
-- **EST (RFC 7030)** and **certificate-bound tokens (RFC 8705).**
+- **EST (RFC 7030)** and **certificate-bound tokens (RFC 8705).** The latter
+  is the model for binding router tokens; DD-8 binds to the identity instead
+  of the thumbprint it specifies.
 - **Teleport Machine & Workload Identity:** `tbot`, X.509-SVIDs, bound keypair
   and TPM joining, and the X.509 issuer override.
 - **OpenZiti:** third-party CAs whose certificates map to identities by an
@@ -2135,9 +2232,15 @@ platform.
    external identity provider be allowed a grace period for exporters only?
 3. **Bootstrap token lifecycle.** Should one-time enrollment tokens be a new
    field on `Exporter` status, a separate Secret, or reuse the existing exporter
-   credential Secret?
-4. **Key storage on clients.** File, OS keystore, or TPM by default for `jmp`
-   on workstations?
+   credential Secret? The option that fits the code best is a second key in
+   the existing credential Secret, which `jmp admin create` already reads,
+   holding a short-lived token from the same signer with an enrollment-only
+   audience. The gRPC authenticator only accepts the signer's normal
+   audience, so such a token is useless anywhere but the EST endpoint. Until
+   this is settled, the bootstrap credential is today's token.
+4. **Key storage on clients.** The Python client stores keys in files. Once
+   the Rust core can use an OS keystore or TPM, which should be the default
+   for `jmp` on workstations?
 5. **Contract publication.** Should the integration contract be versioned and
    published as a standalone document, so platforms and third parties can
    claim conformance? Where should `exec` presets live: in the Jumpstarter
@@ -2145,9 +2248,10 @@ platform.
 6. **Flight Control specifics to verify:** native FDO support, and whether
    Flight Control-issued device certificates could serve directly as an
    identity issuer.
-7. **Scope of direct mode pairing.** Pairing shares this JEP's goal but none
-   of its machinery. Should it stay here, or move to its own JEP so it can
-   ship independently?
+7. **Direct mode pairing.** Pairing shares this JEP's goal but none of its
+   machinery. Should it stay here, or move to its own JEP so it can ship
+   independently? Either way, the code format (length, key derivation,
+   lifetime) needs a security review before it is fixed.
 8. **Multiple controller replicas.** `Dial` reaches an exporter only through
    the replica holding its `Listen` stream. That is true today and this JEP
    relies on it for router token binding; if dials are ever routed across
@@ -2210,6 +2314,9 @@ These are not part of this JEP.
   implementation map was added
 - 2026-11-12: Added the new-user experience: operator-managed issuer for local
   clusters, renewal grace period, and pairing for direct mode
+- 2026-11-12: Checked the reference integration snippets against vendor
+  documentation, specified how pairing works within Python gRPC, and removed
+  inconsistencies left by earlier revisions
 
 ## References
 
@@ -2233,6 +2340,10 @@ These are not part of this JEP.
 - `python/packages/jumpstarter/jumpstarter/common/streams.py` (`connect_router_stream`)
 - `controller/internal/service/client/v1/client_service.go` (`CreateLease`, `UpdateLease`, `RotateToken`)
 - [py-spiffe](https://pypi.org/project/spiffe/)
+- [Teleport: Workload Identity attributes](https://goteleport.com/docs/reference/machine-workload-identity/workload-identity/attributes/)
+- [OpenZiti: third-party CAs](https://openziti.io/docs/learn/core-concepts/security/authentication/third-party-cas)
+- `python/packages/jumpstarter-cli/jumpstarter_cli/run.py` and `shell.py` (direct mode: `--tls-grpc-listener`, `--tls-grpc`, `--passphrase`)
+- `python/packages/jumpstarter-kubernetes/jumpstarter_kubernetes/cluster/operator.py` (what `jmp admin create cluster` installs)
 - [cert-manager: installing approver-policy](https://cert-manager.io/docs/policy/approval/approver-policy/installation/)
 - [#1319](https://github.com/jumpstarter-dev/jumpstarter/pull/1319) and [#1320](https://github.com/jumpstarter-dev/jumpstarter/pull/1320): binding each kind of token to its own identity
 - JEP-0017 ([#1253](https://github.com/jumpstarter-dev/jumpstarter/pull/1253)): Flight Control Host Management for jumpstarter-lab-config
