@@ -5,6 +5,15 @@ driver is contained in a separate package in the form of
 `jumpstarter-driver-{name}` and provides specific functionality for interacting
 with different hardware components and systems.
 
+## Common Configuration
+
+All drivers support these base configuration fields:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `log_level` | Logging level (`DEBUG`, `INFO`, `WARNING`, etc.). Inherited from the parent driver when unset. | parent's level, else `"INFO"` |
+| `description` | Custom description shown in CLI help | `None` |
+
 ## Types of Drivers
 
 Jumpstarter includes several types of drivers organized by their primary
