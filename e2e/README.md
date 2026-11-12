@@ -192,6 +192,27 @@ arch detected via `qemu-guest-arch.sh`; Alpine guest image ensured via
 
 ---
 
+## Lane: `exporterset-qemu-ssh` (`exporterset_qemu_ssh_test.go`)
+
+Prereq: `setup-qemu-ssh-e2e.sh` configures root SSH + rootful Podman on the CI
+runner (needs passwordless `sudo`), copies exporter/runtime images into rootful
+Podman's store from the container tool that built them, detects the
+Kind-reachable host IP (the host's primary address; `IP=` overrides), creates
+the SSH Secret, and renders `.e2e/exporterset-qemu-ssh-kind.yaml` from
+`manifests/exporterset-qemu-ssh-kind.yaml`. The cluster must enable
+`qemu-ssh.jumpstarter.dev`; the e2e deploy template
+`controller/hack/deploy_with_operator.sh` (used by `make e2e-setup`) does.
+OIDC client `test-client-exporterset-qemu-ssh`. AfterAll deletes CRs and runs
+`setup-qemu-ssh-e2e.sh --cleanup` for host-side quadlets/containers.
+
+| Test Name | Steps | Pass Check |
+|---|---|---|
+| brings an Exporter Online via SSH-deployed Podman containers | wait for ExporterSet-created Exporter, wait Online/Registered/Available; check `sudo podman ps` for e2e containers | exporter Available; exporter+runtime containers Up |
+| recycles a terminal exporter and refills the pool (ExitAndReplace) | record the Available exporter, lease+release so exitOnLeaseEnd makes it terminal, wait for recycle (runs before the power-cycle test so it starts from a never-leased exporter) | old exporter deleted; one replacement with a new UID comes Online; replacement's containers Up |
+| can lease, power on, and power off through the SSH-deployed exporter | `jmp shell` → `j qemu power on && sleep 5 && j qemu power off` | no error |
+
+---
+
 ## Lane: `auth-logging` (`auth_logging_test.go`)
 
 Prereq: self-contained — creates its own legacy client/exporter
@@ -274,7 +295,8 @@ venv/binary isn't found.
 - **Lanes = Ginkgo `Label(...)`** on each top-level `Describe`; selected via
   `GINKGO_LABEL_FILTER` / `--label-filter` (see `e2e/run-e2e.sh` header comment).
   CI's `e2e-tests` job runs `make e2e-run`, which defaults to
-  `--label-filter '!lease-churn'` (still includes `exporterset-qemu`).
+  `--label-filter '!lease-churn'` (still includes `exporterset-qemu` and
+  `exporterset-qemu-ssh`).
   `e2e-compat-old-controller`/`e2e-compat-old-client` jobs run
   only on merge-queue/dispatch via `compat/run.sh`. PRs run amd64 only;
   merge-queue and `workflow_dispatch` also run arm64.
@@ -290,4 +312,5 @@ venv/binary isn't found.
   parent Ordered suite already sequences it against other core lease specs.
 - Failure log dumping is lane-specific infrastructure (for example: core and
   exit-on-lease-end dump exporter + controller logs; exporterset-qemu dumps
-  exporterset/QEMU pod logs).
+  exporterset/QEMU pod logs; exporterset-qemu-ssh dumps qemu-ssh controller
+  and Podman container logs).

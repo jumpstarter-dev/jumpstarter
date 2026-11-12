@@ -21,12 +21,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"strings"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	sigsyaml "sigs.k8s.io/yaml"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -99,10 +102,12 @@ func (p *Provisioner) EnrichExporterExport(
 // Deploy sets up the exporter on a remote host via SSH:
 //  1. Read SSH key from credentialsSecretRef
 //  2. Select a host with free capacity
-//  3. Connect via SSH
-//  4. Write exporter config, quadlet files
-//  5. Create shared volume, reload systemd, start containers
-//  6. Annotate the Exporter CR with the host assignment
+//  3. Record the host assignment on the Exporter CR, before any remote
+//     containers exist, so Cleanup can always tear them down
+//  4. Connect via SSH
+//  5. Write exporter config, quadlet files
+//  6. Create shared volume, reload systemd, start containers
+//  7. Mark the Exporter CR deployed
 func (p *Provisioner) Deploy(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
@@ -129,6 +134,15 @@ func (p *Provisioner) Deploy(
 		"host", host.Name,
 	)
 
+	// Record the host assignment BEFORE creating any remote containers, so
+	// Cleanup can always find and tear them down even if the deploy below (or
+	// marking it complete) fails partway. readSSHKey above already required a
+	// credentials Secret, so CredentialsSecretRef is set here.
+	credSecret := vtc.Spec.CredentialsSecretRef.Name
+	if err := p.recordHostAssignment(ctx, exporter, host.Name, credSecret); err != nil {
+		return fmt.Errorf("record host assignment for %s: %w", exporter.Name, err)
+	}
+
 	conn, err := Connect(SSHConnectConfig{
 		Host:       host.Name,
 		Port:       host.Port,
@@ -144,15 +158,20 @@ func (p *Provisioner) Deploy(
 		return err
 	}
 
-	if err := p.annotateHost(ctx, exporter, host.Name); err != nil {
-		return fmt.Errorf("annotate exporter %s with host: %w", exporter.Name, err)
+	// Mark deployment complete. IsDeployed gates on this annotation (not the
+	// host assignment), so a failure here leaves the exporter retryable:
+	// deployInstance is idempotent and the host is already recorded.
+	if err := p.markDeployed(ctx, exporter); err != nil {
+		return fmt.Errorf("mark exporter %s deployed: %w", exporter.Name, err)
 	}
 
 	return nil
 }
 
-// IsDeployed checks whether the exporter has a host assignment
-// annotation (meaning Deploy was previously called successfully).
+// IsDeployed reports whether Deploy previously ran to completion, signalled by
+// the "deployed" annotation. The host annotation alone is set before the
+// remote containers are created (so Cleanup can find them) and must not count
+// as deployed, or a partial deploy would never be retried.
 func (p *Provisioner) IsDeployed(
 	_ context.Context,
 	exporter *jumpstarterdevv1alpha1.Exporter,
@@ -160,12 +179,16 @@ func (p *Provisioner) IsDeployed(
 	if exporter.Annotations == nil {
 		return false, nil
 	}
-	_, ok := exporter.Annotations[AnnotationHost]
-	return ok, nil
+	return exporter.Annotations[AnnotationDeployed] == "true", nil
 }
 
-// Cleanup tears down the remote containers via SSH and removes the
-// host annotation.
+// Cleanup tears down the remote containers via SSH.
+//
+// It requires the VirtualTargetClass to still exist so cleanup uses the same
+// effective host settings (SSH user, port) as Deploy. If the VTC is deleted
+// first, Cleanup returns an error and the ExporterSet finalizer will not
+// clear. A validating webhook should block VTC deletion while ExporterSets
+// reference it (TODO).
 func (p *Provisioner) Cleanup(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
@@ -174,8 +197,10 @@ func (p *Provisioner) Cleanup(
 	logger := log.FromContext(ctx)
 
 	hostName := ""
+	secretName := ""
 	if exporter.Annotations != nil {
 		hostName = exporter.Annotations[AnnotationHost]
+		secretName = exporter.Annotations[AnnotationCredentialsSecret]
 	}
 	if hostName == "" {
 		logger.V(1).Info("no host annotation on exporter, skipping cleanup",
@@ -189,19 +214,53 @@ func (p *Provisioner) Cleanup(
 	}
 	var vtc virtualtargetv1alpha1.VirtualTargetClass
 	if err := p.Client.Get(ctx, vtcKey, &vtc); err != nil {
-		return fmt.Errorf("get VirtualTargetClass for cleanup: %w", err)
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("get VirtualTargetClass for cleanup: %w", err)
+		}
+		return fmt.Errorf(
+			"VirtualTargetClass %s not found; delete ExporterSet %s before its class: %w",
+			es.Spec.VirtualTargetClassName, es.Name, err)
 	}
+	// Deploy records the credentials Secret alongside the host annotation, but
+	// an Exporter deployed by an older version (or annotated by hand) may carry
+	// only the host. Fall back to the class's credentialsSecretRef: an empty
+	// name would make the Get below fail with a non-NotFound error and wedge
+	// the ExporterSet finalizer permanently.
+	if secretName == "" && vtc.Spec.CredentialsSecretRef != nil {
+		secretName = vtc.Spec.CredentialsSecretRef.Name
+	}
+	if secretName == "" {
+		logger.Info("no SSH credentials Secret recorded and none on the class, "+
+			"skipping remote teardown", "exporter", exporter.Name)
+		return nil
+	}
+	classParams := vtc.Spec.Parameters
 
-	privateKey, err := p.readSSHKey(ctx, &vtc)
+	privateKey, err := p.readSSHKeyFromSecret(ctx, es.Namespace, secretName)
 	if err != nil {
+		// NotFound: credentials permanently gone — skip remote teardown so the
+		// ExporterSet finalizer is not wedged. Any other error (timeout, RBAC,
+		// conflict) must fail so Cleanup retries and does not orphan hosts.
+		if apierrors.IsNotFound(err) {
+			logger.Error(err, "SSH credentials secret missing, skipping remote teardown",
+				"exporter", exporter.Name, "secret", secretName)
+			return nil
+		}
 		return fmt.Errorf("read SSH key for cleanup: %w", err)
 	}
 
-	mergedParams := map[string]any{}
-	if vtc.Spec.Parameters != nil && vtc.Spec.Parameters.Raw != nil {
-		_ = sigsyaml.Unmarshal(vtc.Spec.Parameters.Raw, &mergedParams)
+	// Host (user/port) often lives on the ExporterSet, not the VTC — merge both
+	// the same way Deploy does via the reconciler.
+	mergedParams := mergeClassAndSetParameters(classParams, es.Spec.Parameters)
+	host, err := ParseHost(mergedParams)
+	if err != nil {
+		logger.V(1).Info("parse host for cleanup failed, using defaults",
+			"exporter", exporter.Name, "error", err)
+		host = HostConfig{
+			User: defaultSSHUser,
+			Port: defaultSSHPort,
+		}
 	}
-	host, _ := ParseHost(mergedParams)
 
 	conn, err := Connect(SSHConnectConfig{
 		Host:       hostName,
@@ -259,7 +318,7 @@ func (p *Provisioner) deployInstance(
 		logger.Info("exporter config written", "path", configPath, "diff", diff)
 	}
 
-	kvm, extraDevices := ParseRuntimeConfig(mergedParameters)
+	rtCfg := ParseRuntimeConfig(mergedParameters)
 	exporterImage, runtimeImage := p.resolveImages(images)
 
 	quadletCfg := QuadletConfig{
@@ -267,8 +326,9 @@ func (p *Provisioner) deployInstance(
 		Namespace:     es.Namespace,
 		ExporterImage: exporterImage,
 		RuntimeImage:  runtimeImage,
-		KVM:           kvm,
-		ExtraDevices:  extraDevices,
+		KVM:           rtCfg.KVM,
+		ExtraDevices:  rtCfg.ExtraDevices,
+		HostNetwork:   rtCfg.HostNetwork,
 	}
 
 	runtimeQuadlet, err := RuntimeContainerFile(quadletCfg)
@@ -359,13 +419,21 @@ func (p *Provisioner) teardownInstance(
 	runtimeSvc := RuntimeServiceName(name)
 	exporterSvc := ExporterServiceName(name)
 
-	// Quadlet-generated units cannot be "disabled"; use "stop" instead.
-	if _, err := conn.RunCommand(ctx,
-		fmt.Sprintf("systemctl stop %s %s 2>/dev/null || true",
-			exporterSvc, runtimeSvc)); err != nil {
+	// Stop the services first. An explicit `systemctl stop` suppresses the
+	// runtime unit's Restart=always, and TimeoutStopSec (set in the quadlet)
+	// bounds it so a SIGTERM-ignoring QEMU under TCG can't wedge the
+	// finalizer. The outer `timeout` caps the ssh command itself. We do NOT
+	// `podman rm -f` yet: removing a container while its unit still exists
+	// would race the restart policy and resurrect it.
+	if _, err := conn.RunCommand(ctx, fmt.Sprintf(
+		"timeout 150 systemctl stop %s %s 2>/dev/null || true",
+		exporterSvc, runtimeSvc,
+	)); err != nil {
 		logger.Error(err, "failed to stop services", "exporter", name)
 	}
 
+	// Remove the quadlet unit files and reload so the generated units are
+	// gone and cannot restart the containers.
 	for _, path := range []string{
 		filepath.Join(QuadletDir, ExporterContainerFileName(name)),
 		filepath.Join(QuadletDir, RuntimeContainerFileName(name)),
@@ -375,15 +443,21 @@ func (p *Provisioner) teardownInstance(
 			logger.Error(err, "failed to remove file", "path", path)
 		}
 	}
+	if _, err := conn.RunCommand(ctx, "systemctl daemon-reload"); err != nil {
+		logger.Error(err, "failed to reload systemd after cleanup")
+	}
+
+	// Units are gone now, so force-removing any stragglers is race-free.
+	if _, err := conn.RunCommand(ctx,
+		fmt.Sprintf("podman rm -f %s-exporter %s-runtime 2>/dev/null || true",
+			name, name)); err != nil {
+		logger.Error(err, "failed to remove containers", "exporter", name)
+	}
 
 	volumeName := PodmanVolumeName(name)
 	if _, err := conn.RunCommand(ctx,
-		fmt.Sprintf("podman volume rm %s 2>/dev/null || true", volumeName)); err != nil {
+		fmt.Sprintf("podman volume rm -f %s 2>/dev/null || true", volumeName)); err != nil {
 		logger.Error(err, "failed to remove volume", "volume", volumeName)
-	}
-
-	if _, err := conn.RunCommand(ctx, "systemctl daemon-reload"); err != nil {
-		logger.Error(err, "failed to reload systemd after cleanup")
 	}
 }
 
@@ -397,36 +471,67 @@ func (p *Provisioner) readSSHKey(
 		return nil, fmt.Errorf("VirtualTargetClass %s/%s has no credentialsSecretRef (required for SSH)",
 			vtc.Namespace, vtc.Name)
 	}
+	return p.readSSHKeyFromSecret(ctx, vtc.Namespace, vtc.Spec.CredentialsSecretRef.Name)
+}
 
+// readSSHKeyFromSecret loads the ssh-privatekey field from a Secret.
+func (p *Provisioner) readSSHKeyFromSecret(
+	ctx context.Context,
+	namespace, secretName string,
+) ([]byte, error) {
 	var secret corev1.Secret
 	if err := p.Client.Get(ctx, client.ObjectKey{
-		Name:      vtc.Spec.CredentialsSecretRef.Name,
-		Namespace: vtc.Namespace,
+		Name:      secretName,
+		Namespace: namespace,
 	}, &secret); err != nil {
-		return nil, fmt.Errorf("get SSH credentials Secret %q: %w",
-			vtc.Spec.CredentialsSecretRef.Name, err)
+		return nil, fmt.Errorf("get SSH credentials Secret %q: %w", secretName, err)
 	}
 
 	key, ok := secret.Data[sshPrivateKeyField]
 	if !ok {
 		return nil, fmt.Errorf("credentials Secret %q missing %q key",
-			vtc.Spec.CredentialsSecretRef.Name, sshPrivateKeyField)
+			secretName, sshPrivateKeyField)
 	}
 
 	return key, nil
 }
 
-// annotateHost sets the host assignment annotation on the Exporter CR.
-func (p *Provisioner) annotateHost(
+// recordHostAssignment persists the host (and credentials Secret) on the
+// Exporter CR before any remote containers are created, so Cleanup can always
+// locate and tear them down even if deployment later fails partway.
+//
+// It patches rather than updates: Deploy calls this and markDeployed around a
+// long-running deployInstance, during which another controller may update the
+// Exporter (status, LastSeen). A JSON merge patch touches only these
+// annotations, so it neither conflicts on a stale resourceVersion nor clobbers
+// concurrent changes.
+func (p *Provisioner) recordHostAssignment(
 	ctx context.Context,
 	exporter *jumpstarterdevv1alpha1.Exporter,
-	hostName string,
+	hostName, credentialsSecret string,
 ) error {
+	patch := client.MergeFrom(exporter.DeepCopy())
 	if exporter.Annotations == nil {
 		exporter.Annotations = make(map[string]string)
 	}
 	exporter.Annotations[AnnotationHost] = hostName
-	return p.Client.Update(ctx, exporter)
+	exporter.Annotations[AnnotationCredentialsSecret] = credentialsSecret
+	return p.Client.Patch(ctx, exporter, patch)
+}
+
+// markDeployed records that remote deployment completed. IsDeployed gates on
+// this annotation, so an incomplete deploy is retried. It patches for the same
+// conflict-avoidance reason as recordHostAssignment.
+func (p *Provisioner) markDeployed(
+	ctx context.Context,
+	exporter *jumpstarterdevv1alpha1.Exporter,
+) error {
+	patch := client.MergeFrom(exporter.DeepCopy())
+	if exporter.Annotations == nil {
+		exporter.Annotations = make(map[string]string)
+	}
+	exporter.Annotations[AnnotationDeployed] = "true"
+	return p.Client.Patch(ctx, exporter, patch)
 }
 
 // resolveImages returns the exporter and runtime images, applying
@@ -536,6 +641,44 @@ func (p *Provisioner) readCredentialToken(
 	}
 
 	return string(token), nil
+}
+
+// mergeClassAndSetParameters overlays ExporterSet parameters on VirtualTargetClass
+// parameters (shallow top-level merge). Host config for qemu-ssh typically lives
+// on the ExporterSet.
+func mergeClassAndSetParameters(
+	classParams *apiextensionsv1.JSON,
+	setParams *apiextensionsv1.JSON,
+) map[string]any {
+	base := map[string]any{}
+	if classParams != nil && classParams.Raw != nil {
+		_ = json.Unmarshal(classParams.Raw, &base)
+	}
+	override := map[string]any{}
+	if setParams != nil && setParams.Raw != nil {
+		_ = json.Unmarshal(setParams.Raw, &override)
+	}
+	return deepMergeParams(base, override)
+}
+
+// deepMergeParams recursively overlays override on base: nested maps merge,
+// scalars (and non-map values) replace. It mirrors the reconciler's deepMerge so
+// Cleanup resolves the identical host settings (user, port) that Deploy used — a
+// shallow merge would drop class-level host sub-fields when an ExporterSet
+// overrides only host.name, and Cleanup would then SSH with the wrong user/port.
+func deepMergeParams(base, override map[string]any) map[string]any {
+	result := make(map[string]any, len(base)+len(override))
+	maps.Copy(result, base)
+	for k, v := range override {
+		if baseMap, ok := result[k].(map[string]any); ok {
+			if overrideMap, ok := v.(map[string]any); ok {
+				result[k] = deepMergeParams(baseMap, overrideMap)
+				continue
+			}
+		}
+		result[k] = v
+	}
+	return result
 }
 
 // --- ExporterConfig types (mirrors exporterconfig.go in parent package) ---

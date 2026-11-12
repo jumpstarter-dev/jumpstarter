@@ -83,6 +83,12 @@ const (
 
 	defaultScaleDownCooldown = 5 * time.Minute
 
+	// exporterOfflineThreshold mirrors the Exporter controller: an exporter is
+	// considered offline only once its last heartbeat is older than this. Used
+	// to avoid recycling an exporter whose Online condition is briefly still
+	// "Never seen"/False right after its first (or a reconnecting) heartbeat.
+	exporterOfflineThreshold = time.Minute
+
 	// kindExporter is the Kind string used in OwnerReference lookups.
 	kindExporter = "Exporter"
 
@@ -987,11 +993,9 @@ func (r *ExporterSetReconciler) cleanupTerminalExporters(
 		terminal := false
 
 		if isOffCluster {
-			// Off-cluster: terminal means "deployed but went offline". The
-			// Online condition is set to True when the exporter registers
-			// heartbeats, then flipped to False when they stop. If the
-			// condition doesn't exist at all the exporter never registered
-			// so we leave it alone (still starting up).
+			// Off-cluster: terminal means "deployed, was seen, then went
+			// offline". Online=False with LastSeen zero ("Never seen") is
+			// the normal pre-registration state and must not recycle.
 			deployed, err := deployer.IsDeployed(ctx, exp)
 			if err != nil {
 				return deleted, fmt.Errorf("check deployment for %s: %w", exp.Name, err)
@@ -1028,16 +1032,43 @@ func (r *ExporterSetReconciler) cleanupTerminalExporters(
 	return deleted, nil
 }
 
-// isExporterOffline reports whether the exporter's Online condition has been
-// explicitly set to False. Returns false when the condition doesn't exist
-// (exporter never registered) to avoid cleaning up exporters that are still
-// starting.
+// isExporterOffline reports whether a deployed exporter has gone offline after
+// having been seen at least once. The Exporter reconciler sets Online=False
+// with "Never seen" as soon as the CR exists (LastSeen still zero); that must
+// not count as terminal or ExitAndReplace deletes off-cluster exporters before
+// they can register.
 func isExporterOffline(exp *jumpstarterdevv1alpha1.Exporter) bool {
+	// Never seen: the exporter has not registered yet, so it is still starting,
+	// not terminal.
+	if exp.Status.LastSeen.IsZero() {
+		return false
+	}
 	cond := meta.FindStatusCondition(
 		exp.Status.Conditions,
 		string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
 	)
-	return cond != nil && cond.Status == metav1.ConditionFalse
+	if cond == nil || cond.Status != metav1.ConditionFalse {
+		return false
+	}
+	// An exporter that reports Offline does so as it shuts down
+	// ("Exporter shutting down" right before Unregister). ReportStatus writes
+	// LastSeen, ExporterStatusValue and the Online condition in the same status
+	// patch, so the heartbeat is fresh even though the process is already gone.
+	// Recycling it is unambiguous: do not wait for the heartbeat to go stale, or
+	// a capped pool keeps a dead exporter's slot for up to a minute while leases
+	// wait for its replacement.
+	//
+	// The Status stream clears a stale Offline value to "" when it (re)connects,
+	// in the same patch as the LastSeen update, so a reconnecting exporter never
+	// shows fresh LastSeen together with Offline.
+	if exp.Status.ExporterStatusValue == jumpstarterdevv1alpha1.ExporterStatusOffline {
+		return true
+	}
+	// Otherwise Online=False is only meaningful once the heartbeat is stale: a
+	// recently (re)connected exporter can still carry the old "Never seen"/False
+	// condition until the Exporter controller catches up, and must not be
+	// recycled.
+	return time.Since(exp.Status.LastSeen.Time) > exporterOfflineThreshold
 }
 
 func allPodsTerminal(pods []corev1.Pod) bool {

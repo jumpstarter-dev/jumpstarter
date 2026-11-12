@@ -73,6 +73,11 @@ type QuadletConfig struct {
 	// ExtraDevices lists additional host devices to pass through to
 	// the runtime container (e.g. /dev/vhost-net).
 	ExtraDevices []string
+
+	// HostNetwork places the containers on the host network stack
+	// instead of Podman's default bridge. This is needed when the
+	// exporter must reach services on 127.0.0.1 (e.g. Kind in CI).
+	HostNetwork bool
 }
 
 // validateQuadletValue rejects values that contain newlines,
@@ -130,9 +135,11 @@ func RuntimeContainerFile(cfg QuadletConfig) (string, error) {
 	b.WriteString("[Container]\n")
 	fmt.Fprintf(&b, "ContainerName=%s-runtime\n", cfg.Name)
 	fmt.Fprintf(&b, "Image=%s\n", cfg.RuntimeImage)
-	// The runtime image defaults to USER 65532; jumpstarter-exec must
-	// bind /shared/launcher.sock on a root-owned volume. Match in-cluster
-	// QEMU, which runs the sidecar as uid 0.
+	// Run the container as uid 0 (the image defaults to USER 65532):
+	// jumpstarter-exec must bind /shared/launcher.sock on the root-owned
+	// volume, matching in-cluster QEMU (RunAsUser: 0). This is a [Container]
+	// User=, not [Service] User= — the latter only sets the unit's uid, not
+	// the container process.
 	b.WriteString("User=0\n")
 	fmt.Fprintf(&b, "Volume=%s:%s:z\n", volumeName, sharedMountPath)
 	fmt.Fprintf(&b,
@@ -146,11 +153,18 @@ func RuntimeContainerFile(cfg QuadletConfig) (string, error) {
 	for _, dev := range cfg.ExtraDevices {
 		fmt.Fprintf(&b, "AddDevice=%s\n", dev)
 	}
+	if cfg.HostNetwork {
+		b.WriteString("Network=host\n")
+	}
 
 	b.WriteString("\n")
 
 	b.WriteString("[Service]\n")
 	b.WriteString("Restart=always\n")
+	// Bound the stop so an explicit `systemctl stop` (which suppresses
+	// Restart=always) completes even when QEMU under TCG ignores SIGTERM:
+	// systemd SIGKILLs after this, so teardown never races with a restart.
+	b.WriteString("TimeoutStopSec=60\n")
 	b.WriteString("\n")
 
 	b.WriteString("[Install]\n")
@@ -184,10 +198,15 @@ func ExporterContainerFile(cfg QuadletConfig) (string, error) {
 	fmt.Fprintf(&b, "Volume=%s:%s:ro\n", ExporterConfigDir, ExporterConfigDir)
 	fmt.Fprintf(&b, "Environment=JUMPSTARTER_LAUNCHER_SOCKET=%s\n", launcherSocketPath)
 	fmt.Fprintf(&b, "Exec=jmp run --exporter-config %s\n", configFile)
+	if cfg.HostNetwork {
+		b.WriteString("Network=host\n")
+	}
 	b.WriteString("\n")
 
 	b.WriteString("[Service]\n")
 	b.WriteString("Restart=on-failure\n")
+	// Bound the stop so teardown cannot hang on a wedged container.
+	b.WriteString("TimeoutStopSec=60\n")
 	b.WriteString("\n")
 
 	b.WriteString("[Install]\n")
