@@ -128,7 +128,10 @@ class PySerialClient(DriverClient):
 
     async def _stdin_to_serial(self, stream) -> tuple[int, int]:
         """Read from stdin and write to serial. Returns (bytes_read, bytes_sent)."""
-        stdin = FileReadStream(sys.stdin.buffer)
+        # Read from the unbuffered raw stream when there is one: BufferedReader.read(n)
+        # blocks until n bytes or EOF, which stalls a live stdin (a terminal, a
+        # PTY such as twister's --device-serial-pty) until 1024 bytes pile up.
+        stdin = FileReadStream(getattr(sys.stdin.buffer, "raw", sys.stdin.buffer))
         bytes_read = 0
         bytes_sent = 0
         try:
