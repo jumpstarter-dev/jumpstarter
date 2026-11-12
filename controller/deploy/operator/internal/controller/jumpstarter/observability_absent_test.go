@@ -160,4 +160,53 @@ func TestServiceMonitorCRDAbsent(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("emits transition events for existing condition reasons", func(t *testing.T) {
+		transitionRecorder := record.NewFakeRecorder(16)
+		transitionReconciler := &JumpstarterReconciler{
+			Client: c, Scheme: scheme.Scheme, Recorder: transitionRecorder,
+		}
+
+		transitionJS := js.DeepCopy()
+		transitionJS.Status.Conditions = []metav1.Condition{{
+			Type:               operatorv1alpha1.ConditionTypeServiceMonitorReady,
+			Status:             metav1.ConditionFalse,
+			Reason:             "PreviouslyUnavailable",
+			Message:            "previous reason",
+			LastTransitionTime: metav1.Now(),
+			ObservedGeneration: transitionJS.Generation,
+		}}
+		if err := transitionReconciler.updateStatus(ctx, transitionJS); err != nil {
+			t.Fatalf("updateStatus for ServiceMonitor transition: %v", err)
+		}
+		if events := eventText(transitionRecorder); !strings.Contains(events, "ServiceMonitorCRDMissing") {
+			t.Fatalf("expected ServiceMonitorCRDMissing transition event, got %q", events)
+		}
+
+		logShipperJS := transitionJS.DeepCopy()
+		logShipperJS.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+		logShipperJS.Spec.Telemetry.Logging.Shipper.Type = shipperTypeVector
+		logShipperJS.Status.Conditions = []metav1.Condition{{
+			Type:               operatorv1alpha1.ConditionTypeLogShipperReady,
+			Status:             metav1.ConditionFalse,
+			Reason:             "Disabled",
+			Message:            "previous reason",
+			LastTransitionTime: metav1.Now(),
+			ObservedGeneration: logShipperJS.Generation,
+		}}
+		if err := c.Create(ctx, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      logShipperConfigMapName(logShipperJS),
+				Namespace: logShipperJS.Namespace,
+			},
+		}); err != nil {
+			t.Fatalf("create shipper ConfigMap: %v", err)
+		}
+		if err := transitionReconciler.updateStatus(ctx, logShipperJS); err != nil {
+			t.Fatalf("updateStatus for LogShipper transition: %v", err)
+		}
+		if events := eventText(transitionRecorder); !strings.Contains(events, "LogShipperConfigured") {
+			t.Fatalf("expected LogShipperConfigured transition event, got %q", events)
+		}
+	})
 }
