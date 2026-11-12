@@ -1,4 +1,5 @@
 import asyncio
+import errno
 import json
 import logging
 import os
@@ -199,11 +200,91 @@ async def test_live_vm_serial_failure_stays_visible(qemu_serial, error_type):
         with pytest.raises(error_type) as exc_info:
             await stream.receive()
         assert exc_info.value is error
+        power._process.wait.assert_not_called()
         await stream.send_eof()
     with pytest.raises(ClosedResourceError):
         await stream.send(b"closed")
     with pytest.raises(ClosedResourceError):
         await stream.receive()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("exits", [False, True])
+@pytest.mark.parametrize(
+    "error",
+    [
+        OSError(errno.EIO, "PTY hung up"), OSError("serial disconnected"),
+        BrokenResourceError(), ClosedResourceError(), EndOfStream(),
+    ],
+)
+async def test_serial_hangup_allows_guest_to_exit(qemu_serial, monkeypatch, exits, error):
+    _driver, power, _console, _ptys = qemu_serial
+    await power.on()
+    process = power._process
+    loop_thread = threading.get_ident()
+    idle = Event()
+    original_wait = power._serial_changed.wait
+
+    async def wait_for_notification():
+        idle.set()
+        await original_wait()
+
+    def wait(timeout):
+        assert timeout == 1
+        assert threading.get_ident() != loop_thread
+        if not exits:
+            raise TimeoutExpired("qemu", timeout)
+        process.poll.return_value = 0
+        return 0
+
+    @asynccontextmanager
+    async def factory():
+        yield SimpleNamespace(receive=AsyncMock(side_effect=error))
+
+    process.wait.side_effect = wait
+    monkeypatch.setattr(power._serial_changed, "wait", wait_for_notification)
+    async with _QemuSerialStream(power=power, source_factory=factory) as stream:
+        receiving = asyncio.create_task(stream.receive())
+        try:
+            with fail_after(2):
+                if exits:
+                    await idle.wait()
+                    assert not receiving.done()
+                    await stream.send(b"discard after guest shutdown")
+                else:
+                    with pytest.raises(type(error)) as exc_info:
+                        await receiving
+                    assert exc_info.value is error
+            process.wait.assert_called_once_with(1)
+            process.terminate.assert_not_called()
+            process.kill.assert_not_called()
+        finally:
+            receiving.cancel()
+            await asyncio.gather(receiving, return_exceptions=True)
+            process.wait.side_effect = None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "error",
+    [
+        PermissionError(errno.EACCES, "denied"), OSError(errno.ENOMEM, "out of memory"),
+        RuntimeError("unexpected failure"),
+    ],
+)
+async def test_unrelated_serial_read_failure_does_not_wait_for_exit(qemu_serial, error):
+    _driver, power, _console, _ptys = qemu_serial
+    await power.on()
+
+    @asynccontextmanager
+    async def factory():
+        yield SimpleNamespace(receive=AsyncMock(side_effect=error))
+
+    async with _QemuSerialStream(power=power, source_factory=factory) as stream:
+        with pytest.raises(type(error)) as exc_info:
+            await stream.receive()
+        assert exc_info.value is error
+        power._process.wait.assert_not_called()
 
 
 @pytest.mark.anyio

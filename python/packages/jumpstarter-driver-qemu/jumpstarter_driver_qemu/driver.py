@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import logging
 import os
@@ -528,6 +529,18 @@ class _QemuSerialStream(ObjectStream[bytes]):
         self._process = None
         await self._stack.aclose()
 
+    async def _wait_for_guest_exit(self, process: Popen[bytes] | None, error: Exception) -> None:
+        if (
+            process is not None
+            and self._current_process() is process
+            and (not isinstance(error, OSError) or error.errno in (None, errno.EIO))
+        ):
+            # A PTY hangup can precede process exit during guest-initiated shutdown.
+            try:
+                await to_thread.run_sync(process.wait, 1)
+            except TimeoutExpired:
+                pass
+
     async def receive(self) -> bytes:
         self.power._loop = asyncio.get_running_loop()
         while not self._closed:
@@ -558,8 +571,10 @@ class _QemuSerialStream(ObjectStream[bytes]):
                             return data
                     finally:
                         self.power._serial_read_scope = None
-            except (OSError, BrokenResourceError, ClosedResourceError, EndOfStream):
+            except (OSError, BrokenResourceError, ClosedResourceError, EndOfStream) as exc:
+                connected_process = self._process
                 await self._disconnect()
+                await self._wait_for_guest_exit(connected_process, exc)
                 if self._current_process() is process:
                     raise  # A live VM's unexpected serial failure must stay visible.
         raise ClosedResourceError
