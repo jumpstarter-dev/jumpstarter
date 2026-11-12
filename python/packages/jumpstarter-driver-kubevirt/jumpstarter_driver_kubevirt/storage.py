@@ -1,6 +1,5 @@
 """Stage CDI disks, then activate the whole set with one conditional VM update."""
 
-import asyncio  # noqa: TID251
 import logging
 import ssl
 import time
@@ -10,6 +9,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 import aiohttp
+from anyio import CancelScope, create_task_group, fail_after, sleep
 from lightkube.core.exceptions import ApiError
 from lightkube.models.meta_v1 import ObjectMeta, OwnerReference
 from lightkube.resources.core_v1 import PersistentVolumeClaim
@@ -77,7 +77,7 @@ _SHUTDOWN_MARGIN = 30
 def _failure(error):
     """Unwrap a TaskGroup failure so the RPC reports the disk error, not the group.
 
-    asyncio reports provisioning failures as "unhandled errors in a TaskGroup
+    The task group reports provisioning failures as "unhandled errors in a TaskGroup
     (1 sub-exception)", which hides the quota or storage-class message that caused them.
     """
     exceptions = getattr(error, "exceptions", None)
@@ -160,14 +160,15 @@ class Flash:
     async def _provision(self, state, vm):
         """Create every DataVolume and wait for its upload pod, all at once."""
         try:
-            async with asyncio.TaskGroup() as group:  # noqa: TID251
+            async with create_task_group() as group:
                 for target, disk in state["disks"].items():
-                    group.create_task(self._prepare(state["id"], target, disk, vm))
+                    group.start_soon(self._prepare, state["id"], target, disk, vm)
         except BaseException as error:  # noqa: BLE001 - cancellation must discard too
             # A failure, or this RPC being cancelled, must not leave an operation behind:
             # this lease's next flash would be rejected by it. The id is already written,
             # so finish discarding it even if the cancellation came from our own caller.
-            await asyncio.shield(self._discard(state["id"]))  # noqa: TID251
+            with CancelScope(shield=True):
+                await self._discard(state["id"])
             raise _failure(error) from None
 
     async def _discard(self, operation_id):
@@ -216,7 +217,7 @@ class Flash:
 
     async def _prepare(self, operation_id, target, disk, vm):
         """Provision the upload pod before the client opens a short-lived resource URL."""
-        async with asyncio.timeout(self.timeout):  # noqa: TID251
+        with fail_after(self.timeout):
             dv = DataVolume(
                 metadata=ObjectMeta(
                     name=disk["new"],
@@ -250,7 +251,7 @@ class Flash:
         stage's client has already opened one, so its wait has to stay short.
         """
         try:
-            async with asyncio.timeout(timeout):  # noqa: TID251
+            with fail_after(timeout):
                 await self._wait_volume(name, "UploadReady")
         except TimeoutError:
             dv = await self.vm.client.get(DataVolume, name=name, namespace=self.vm.namespace)
@@ -261,7 +262,7 @@ class Flash:
             ) from None
 
     async def stage(self, operation_id, target, resource):
-        async with asyncio.timeout(self.timeout):  # noqa: TID251
+        with fail_after(self.timeout):
             _, disk = await self._target(operation_id, target)
             # An upload pod that was evicted or restarted since provisioning needs a
             # moment to come back; the client has already opened its resource URL, so this
@@ -283,7 +284,7 @@ class Flash:
             await self._wait_volume(disk["new"], "Succeeded", restarts=restarts)
 
     async def _upload(self, stream, token):
-        # The caller bounds the upload with asyncio.timeout; aiohttp's own total timeout
+        # The caller bounds the upload with fail_after; aiohttp's own total timeout
         # only duplicates it, and defaults to 5 minutes, which is shorter than a flash.
         async with (
             aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None)) as session,
@@ -331,7 +332,7 @@ class Flash:
                         f"DataVolume {name} cannot be provisioned: {condition.get('reason')}: "
                         f"{condition.get('message')} ({status.get('phase')})"
                     )
-            await asyncio.sleep(self.poll_interval)
+            await sleep(self.poll_interval)
 
     async def commit(self, operation_id):
         _, state = await self.vm.transaction(operation_id, {"staging", "committed", "complete"})
@@ -360,9 +361,9 @@ class Flash:
             grace = vmi["spec"].get("terminationGracePeriodSeconds")
             if isinstance(grace, int):
                 wait = max(wait, grace + _SHUTDOWN_MARGIN)
-        async with asyncio.timeout(wait):  # noqa: TID251
+        with fail_after(wait):
             while await self._vmi() is not None:
-                await asyncio.sleep(self.poll_interval)
+                await sleep(self.poll_interval)
         await self.vm.update(lambda vm: self._swap(vm, operation_id, state))
 
     def _halt(self, vm, operation_id, state):
@@ -429,20 +430,32 @@ class Flash:
             raise RuntimeError(
                 "A running VMI still uses a superseded disk; cleanup resumes on the next flash or lease once it stops"
             )
-        async with asyncio.timeout(self.shutdown_timeout):  # noqa: TID251
+        with fail_after(self.shutdown_timeout):
             # Release every volume at once: each wait covers a claim held by a
             # terminating upload pod, so doing the volumes one at a time would
             # make the waits add up across disks.
-            errors = await asyncio.gather(  # noqa: TID251
-                *(self._delete_owned(name, vm.metadata.uid) for name in candidates - in_use),
-                return_exceptions=True,
-            )
-            for error in errors:
-                if isinstance(error, BaseException):
-                    raise error
+            await self._delete_all_owned(candidates - in_use, vm.metadata.uid)
         final = "complete" if committed else "aborted"
         await self.vm.update(lambda vm: (None, {**active(vm, state["id"], {"committed", "aborting"}), "phase": final}))
         return committed
+
+    async def _delete_all_owned(self, names, vm_uid):
+        """Delete every volume, letting the others finish when one fails, then raise the first failure."""
+        failures: dict[str, Exception] = {}
+
+        async def delete(name):
+            try:
+                await self._delete_owned(name, vm_uid)
+            except Exception as error:  # noqa: BLE001 - re-raised once every deletion has finished
+                failures[name] = error
+
+        names = list(names)
+        async with create_task_group() as group:
+            for name in names:
+                group.start_soon(delete, name)
+        for name in names:
+            if name in failures:
+                raise failures[name]
 
     async def _delete_owned(self, name, vm_uid):
         try:
@@ -473,4 +486,4 @@ class Flash:
                     if exc.status.code != 404:
                         raise
                     break
-                await asyncio.sleep(self.poll_interval)
+                await sleep(self.poll_interval)
