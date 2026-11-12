@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Self
 from uuid import UUID
 
 import grpc
-from anyio import ContextManagerMixin, Event, TypedAttributeLookupError, sleep
+from anyio import CancelScope, ContextManagerMixin, Event, TypedAttributeLookupError, sleep
 from anyio.from_thread import start_blocking_portal
 from jumpstarter_protocol import (
     jumpstarter_pb2,
@@ -41,6 +41,15 @@ _GRPC_SERVER_OPTIONS_TCP_KEEPALIVE: list[tuple[str, int]] = [
     ("grpc.keepalive_permit_without_calls", 1),
 ]
 
+
+
+@asynccontextmanager
+async def _cancelled_on_exit(context):
+    """Leave context with everything started inside it cancelled, so leaving cannot block on it."""
+    with CancelScope() as scope:
+        async with context:
+            yield
+            scope.cancel()
 
 @dataclass(kw_only=True)
 class Session(
@@ -141,7 +150,7 @@ class Session(
         """
         async with AsyncExitStack() as stack:
             for driver in self.mapping.values():
-                await stack.enter_async_context(driver.serving())
+                await stack.enter_async_context(_cancelled_on_exit(driver.serving()))
             yield
 
     @asynccontextmanager

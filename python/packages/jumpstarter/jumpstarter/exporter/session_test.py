@@ -126,6 +126,46 @@ def test_every_driver_serves_for_as_long_as_its_session_does():
     assert child.events == ["serving", "call", "stopped serving", "shutdown"]
 
 
+
+@dataclass(kw_only=True)
+class BackgroundWorkDriver(Driver):
+    """Starts work in serving() that never ends on its own, and leaves it to the session."""
+
+    events: list[str] = field(default_factory=list)
+    started: Event = field(default_factory=Event)
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @asynccontextmanager
+    async def serving(self):
+        async with super().serving(), create_task_group() as work:
+            work.start_soon(self._work)
+            yield
+
+    async def _work(self):
+        self.started.set()
+        try:
+            await sleep_forever()
+        finally:
+            self.events.append("work cancelled")
+
+    def shutdown(self):
+        self.events.append("shutdown")
+        super().shutdown()
+
+
+@pytest.mark.anyio
+async def test_the_session_cancels_the_work_a_driver_left_running_before_shutdown():
+    driver = BackgroundWorkDriver()
+
+    with fail_after(5), Session(root_device=driver) as session:
+        async with session.serve_unix_async():
+            await driver.started.wait()
+
+    assert driver.events == ["work cancelled", "shutdown"]
+
 def test_session_unbinds_exporter_log_context():
     """Session must clear the exporter correlation field on exit."""
     import structlog

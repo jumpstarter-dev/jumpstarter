@@ -183,7 +183,8 @@ class Driver(
         The session enters it for every driver, children included, before its
         gRPC server starts, and leaves it after the server stopped and before
         shutdown(). Background work started here, in a task group, is owned by
-        the session: leaving cancels it and waits for it to finish.
+        the session: leaving cancels it and waits for it to finish. Code after
+        the yield runs cancelled, so cleanup that awaits must shield itself.
         """
         yield
 
