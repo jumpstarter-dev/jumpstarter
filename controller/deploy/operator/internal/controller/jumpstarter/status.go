@@ -219,16 +219,25 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 // and reports which transition events should be emitted. Keeping it separate
 // from updateStatus keeps that function's complexity within the lint threshold.
 func (r *JumpstarterReconciler) reconcileObservabilityStatus(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (emitServiceMonitorCRDMissing, emitLogShipperConfigured bool) {
-	prevServiceMonitor := meta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypeServiceMonitorReady)
+	// Snapshot the previous reasons before setCondition mutates the conditions
+	// in place. Comparing through a pointer after setCondition would compare the
+	// new reason against itself and suppress the transition event.
+	prevServiceMonitorReason := ""
+	if previous := meta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypeServiceMonitorReady); previous != nil {
+		prevServiceMonitorReason = previous.Reason
+	}
 	smReady, smReason, smMessage := r.serviceMonitorCondition(ctx, js)
 	setCondition(js, operatorv1alpha1.ConditionTypeServiceMonitorReady, smReady, smReason, smMessage)
 
-	prevLogShipper := meta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypeLogShipperReady)
+	prevLogShipperReason := ""
+	if previous := meta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypeLogShipperReady); previous != nil {
+		prevLogShipperReason = previous.Reason
+	}
 	lsReady, lsReason, lsMessage := r.logShipperCondition(ctx, js)
 	setCondition(js, operatorv1alpha1.ConditionTypeLogShipperReady, lsReady, lsReason, lsMessage)
 
-	return smReason == "CRDNotFound" && (prevServiceMonitor == nil || prevServiceMonitor.Reason != "CRDNotFound"),
-		lsReason == "Created" && (prevLogShipper == nil || prevLogShipper.Reason != "Created")
+	return smReason == "CRDNotFound" && prevServiceMonitorReason != "CRDNotFound",
+		lsReason == "Created" && prevLogShipperReason != "Created"
 }
 
 // checkCertManagerCRDs checks if cert-manager CRDs are installed in the cluster
