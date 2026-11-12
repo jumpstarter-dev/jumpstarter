@@ -66,7 +66,8 @@ Users already have a corporate identity, and often an active session in an
 access or identity platform: an access proxy such as Teleport, a SPIFFE/SPIRE
 deployment, a service mesh, or a corporate PKI. Today they must still run
 `jmp login`, and
-CI pods must be given a token. There is no way to say "this caller already has a
+CI pods must be given a token or use a Kubernetes service account token, which
+is still a bearer credential. There is no way to say "this caller already has a
 verifiable workload identity; trust it."
 
 ### Identity is entangled with network reachability
@@ -215,7 +216,7 @@ authentication:
 
     # Built-in enrollment (LAN, tailnets, anywhere without an external issuer).
     # No mappings: identities in the enrollment trust domain are issued by the
-    # controller and resolved structurally (see "Identity mapping").
+    # controller and treated as internal credentials (see "Identity mapping").
     - trustDomain: jumpstarter.lab.example.com
       bundle:
         configMapRef:
@@ -301,6 +302,7 @@ advertising the EST URL and the enrollment trust domain.
 | Endpoint                                   | Authenticated by                                         | Result                    |
 | ------------------------------------------ | -------------------------------------------------------- | ------------------------- |
 | `/.well-known/est/cacerts`                 | none                                                      | trust bundle              |
+| `/.well-known/est/csrattrs`                | bearer token or current client certificate                | the caller's SPIFFE ID    |
 | `/.well-known/est/simpleenroll`            | bearer token (OIDC, internal, or one-time enrollment token) | first certificate      |
 | `/.well-known/est/simplereenroll`          | current client certificate (mTLS)                         | renewed certificate       |
 
@@ -308,17 +310,22 @@ The flow:
 
 1. The caller generates a key pair locally. The private key never leaves the
    caller and may live in a TPM or OS keystore.
-2. The caller builds a CSR whose only name is the URI SAN
-   `spiffe://<trust-domain>/jumpstarter/ns/<namespace>/clients/<name>` (or
-   `.../exporters/<name>`). The trust domain comes from `/v1/auth/config`; the
-   kind, namespace, and name are the ones the caller already sends as
-   `jumpstarter-kind`, `jumpstarter-namespace`, and `jumpstarter-name` metadata.
-   It sends the CSR authenticated as above, with the same three values as HTTP
-   headers.
-3. The controller authenticates and authorizes the caller exactly as it does
-   for a gRPC call, which resolves it to its `Client` or `Exporter` object, and
-   computes the SPIFFE ID for that object itself. **The CSR is rejected unless
-   it contains exactly that URI SAN and nothing else** (no DNS, IP, or email
+2. The caller asks `csrattrs`, the EST endpoint through which a server tells
+   a client what to put in its CSR, for its SPIFFE ID. Every EST request
+   carries the caller's kind, namespace, and name as HTTP headers, the same
+   `jumpstarter-kind`, `jumpstarter-namespace`, and `jumpstarter-name` values
+   it sends as gRPC metadata. The handler copies those headers and
+   `authorization` into the request context, so the existing `auth.Auth`
+   resolves the caller to its `Client` or `Exporter` object with no new
+   authorization code.
+3. The caller builds a CSR whose only name is that URI SAN and sends it to
+   `simpleenroll`. The controller resolves the caller again and computes the
+   SPIFFE ID for the object itself:
+   `spiffe://<trust-domain>/jumpstarter/<kind>/<namespace>/<name>/<uid>`,
+   which is the object's internal subject
+   (`exporter:<namespace>:<name>:<uid>`) written as a path. **The CSR is
+   rejected unless it contains exactly that URI SAN and nothing else** (no
+   DNS, IP, or email
    SANs, no other URIs). The controller cannot rewrite the request: a CSR is
    signed by the caller's key, and cert-manager issuers and approver-policy
    both act on its contents.
@@ -356,10 +363,13 @@ spec:
 
 The operator installs this policy and binds it to the controller's service
 account when enrollment is enabled. cert-manager is already an optional
-operator integration (`spec.certManager`, used for serving certificates);
-enrollment additionally needs approver-policy with cert-manager's default
-approver disabled, since the default approver would approve the controller's
-requests without consulting the policy. Any cert-manager issuer works as the
+operator integration (`spec.certManager`, used for serving certificates).
+Enrollment additionally needs approver-policy, which in turn requires
+cert-manager to run with its default approver disabled: left on, it approves
+every request and the policy has no effect. That is a cluster-wide
+cert-manager setting, so the operator checks for it and reports a condition
+rather than changing it. Issuers outside the `cert-manager.io` group must
+also be listed in approver-policy's `approveSignerNames`. Any cert-manager issuer works as the
 backend: a CA issuer holding an intermediate signed by a corporate root, Vault,
 step-ca, AWS Private CA, and others.
 
@@ -391,7 +401,7 @@ then immediately enrolls and stores the certificate instead of the bearer token:
 ```console
 $ jmp login https://jumpstarter.lab.example.com --ca-sha256 3f9a…c1
 Logged in as alice@example.com
-Enrolled certificate spiffe://jumpstarter.lab.example.com/jumpstarter/ns/lab-a/clients/alice (expires in 8h)
+Enrolled certificate spiffe://jumpstarter.lab.example.com/jumpstarter/client/lab-a/alice/6f1c… (expires in 8h)
 ```
 
 `--ca-sha256` pins the root of the returned trust bundle, following kubeadm's
@@ -517,34 +527,52 @@ therefore be forced onto an object named
 says `metadata.name: pi-07` would be refused with a name mismatch. In all
 cases the namespace is whatever the caller sends in `jumpstarter-namespace`.
 
-X.509 identities therefore get their own resolution rule:
+[#1319](https://github.com/jumpstarter-dev/jumpstarter/pull/1319) and
+[#1320](https://github.com/jumpstarter-dev/jumpstarter/pull/1320) establish
+the pattern this JEP builds on. The authenticator that verified a credential
+marks the user it returns with a Go type (`internalUser`, tested with
+`authentication.IsInternal`), and the two later stages branch on that type
+instead of on what the username looks like:
 
-- Each mapping has a `name` expression. It defaults to the last path segment
-  of the SPIFFE ID and must evaluate to a valid object name. A caller-supplied
-  `jumpstarter-name` must equal it.
+| Stage | Controller-signed token | External token |
+| --- | --- | --- |
+| `MetadataAttributesGetter` | Name taken from `jumpstarter-name` | Name derived from the username |
+| `BasicAuthorizer.identifies` | Username must equal the object's internal subject | Username must equal `spec.username` |
+| Provisioning | Never | A `Client`, when enabled |
+
+Certificates slot into this without a third rule set in the authorizer.
+
+**Certificates from the enrollment trust domain are internal credentials.**
+The controller requested them, and their path is the object's internal
+subject. The X.509 authenticator turns the path back into that subject, adds
+the internal prefix, and returns an `internalUser`. From there the existing
+internal-token rules apply unchanged: the caller names the object,
+`identifies` compares the subject including the UID, and nothing is
+provisioned. An object keeps working after it enrolls whether it was created
+with an OIDC `spec.username` or with an internal token, and a certificate
+issued to a deleted object does not authenticate as a re-created object of
+the same name.
+
+**Certificates from any other trust domain are external credentials**, with
+one addition. The X.509 authenticator returns its own marked type carrying
+the result of the mapping, and `MetadataAttributesGetter` gains one branch
+for it:
+
+- The object name is the mapping's `name` expression. It defaults to the last
+  path segment of the SPIFFE ID and must evaluate to a valid object name. A
+  caller-supplied `jumpstarter-name` must equal it.
 - A mapping may also set `namespace`. When it does, a caller-supplied
   `jumpstarter-namespace` must equal it; when it does not, the caller's value
   is used, as for OIDC today.
-- `BasicAuthorizer` then compares the mapped `username` with the object's
-  `spec.username`, as it does for OIDC users, and may provision a `Client`
-  (never an `Exporter`) when provisioning is enabled.
+- `jumpstarter-kind` must be one of the mapping's `principals`.
 
-Identities in the **enrollment trust domain** are not mapped at all. Their
-path, `/jumpstarter/ns/<namespace>/{clients,exporters}/<name>`, is written by
-the controller and names the object directly, so the controller resolves the
-object from the path and requires no `spec.username`. This is the certificate
-counterpart of a controller-signed token, which is matched against the
-object's internal subject rather than `spec.username`. It also means an object
-that was created with an OIDC `spec.username` or with an internal token keeps
-working unchanged after it enrolls. Unlike the internal subject, the path does
-not contain the object's UID; see Unresolved Questions.
+`BasicAuthorizer` needs no change for these: `identifies` already compares a
+non-internal username with `spec.username`, and provisioning already creates
+only `Client` objects and only for non-internal users.
 
-This fits the direction of
-[#1319](https://github.com/jumpstarter-dev/jumpstarter/pull/1319) and
-[#1320](https://github.com/jumpstarter-dev/jumpstarter/pull/1320), which bind
-each kind of credential to its own identity (internal tokens to the internal
-subject, external tokens to `spec.username`) and remove `Usernames()`.
-Certificates become a third kind with the two rules above.
+Until #1319 and #1320 merge, `main` still recognises internal users by the
+literal `internal:` username prefix and matches either kind of name through
+`Usernames()`. This JEP should be implemented on top of them.
 
 #### Groups
 
@@ -560,7 +588,10 @@ session lifetime) can expire in the middle of a lease.
 
 - **Global ceiling.** `leasePolicy.maxDuration` is added to the existing
   `leasePolicy` block (which today holds only `maxTags`) and caps every lease.
-  A request or extension beyond it is rejected with `INVALID_ARGUMENT`. This
+  A request or extension beyond it is rejected with `INVALID_ARGUMENT`. It is
+  plumbed the way `maxTags` is: loaded into `LoadedConfig`, passed to
+  `ClientService`, and checked in `CreateLease` and `UpdateLease` next to the
+  tag validation, and in the legacy `ControllerService.RequestLease`. This
   differs from the per-policy `maximumDuration` in `ExporterAccessPolicy`,
   which is evaluated during exporter selection: a lease that asks for longer
   simply does not match that policy. Operators should set the ceiling at or
@@ -1275,20 +1306,24 @@ Ingress, or Route. A gRPC service would work but offers nothing EST does not.
 
 **Alternatives considered:**
 
-1. **An explicit `name` (and optional `namespace`) in the mapping**, plus
-   structural resolution for the enrollment trust domain.
-2. **Reuse the OIDC rule** - Derive the object name from the mapped username.
-3. **Trust the caller's `jumpstarter-name` metadata**, as for internal tokens.
+1. **Reuse the two existing kinds of credential** - Enrollment certificates
+   are internal credentials whose path is the internal subject; certificates
+   from other domains are external credentials whose mapping supplies an
+   explicit `name` (and optional `namespace`).
+2. **Reuse the OIDC rule for everything** - Derive the object name from the
+   mapped username.
+3. **A third rule set in the authorizer** for certificates.
 
-**Decision:** An explicit mapping, plus structural resolution for the
-enrollment trust domain.
+**Decision:** Reuse the two existing kinds of credential.
 
 **Rationale:** The OIDC rule strips everything before the first `:` and
 sanitizes the rest, which turns a SPIFFE ID into an unusable name and rejects
-the name in the caller's config. Trusting caller metadata is only safe for
-internal tokens because their subject already names the object. Controller
-issued SPIFFE IDs name the object too, so they are resolved from their path;
-externally issued ones need the administrator to say which part is the name.
+the name in the caller's config; externally issued identities need the
+administrator to say which part is the name. Enrollment certificates are
+issued by the controller for an object it has already resolved, exactly like
+an internal token, so giving them the internal subject (UID included) reuses
+the rules from #1319 and #1320 as they are and leaves `BasicAuthorizer`
+untouched. A third rule set would duplicate both.
 
 ### DD-8: What router tokens are bound to
 
@@ -1448,6 +1483,12 @@ present a different certificate to the router. Binding to the identity
 survives rotation and still makes a leaked router token useless to anyone who
 cannot authenticate as that identity.
 
+The controller needs the exporter's SPIFFE ID when a client dials. It is
+already in the right place: `Dial` hands the token to the exporter through an
+in-memory queue owned by that exporter's `Listen` call, on the same replica,
+so the identity that opened the `Listen` stream is recorded on that queue
+entry and read when the token is minted.
+
 The router reads the same ConfigMap as the controller but today uses only its
 `grpc` section; it gains the `authentication.x509` trust domains (not the
 mappings, which it does not need). Per-side router tokens are also what the
@@ -1455,30 +1496,48 @@ proposed driver access rules need, so the two proposals share this change.
 
 ### Credential sources
 
-Credential sources are implemented in the Rust core (the `rust-core-rewrite`
-branch; not on `main` yet) and exposed through its bindings. Until the core
-lands, the Python client implements `token`, `oidc`, `file`, `exec`, and
-`enrollment`; `spiffe` may follow in Python if needed earlier.
+Credential sources are implemented in the Python client and exporter on
+`main`, which is what ships today. The work is contained:
+
+- Client, exporter, and router connections all build their TLS credentials in
+  one function, `ssl_channel_credentials(target, tls_config)`. A credential
+  source hands it a key and chain; nothing else in the connection code needs
+  to know which source is in use.
+- `call_credentials` always attaches a bearer token next to the
+  `jumpstarter-kind`, `jumpstarter-namespace`, and `jumpstarter-name`
+  metadata. It gains a variant that sends the metadata alone.
+- `cryptography`, already a dependency of the core package, covers key
+  generation and CSRs for `enrollment`.
+- `spiffe` needs a Workload API client. py-spiffe (the `spiffe` package on
+  PyPI) provides one, including a source that follows rotations; the
+  alternative is to call the Workload API directly, since it is a small gRPC
+  service over a Unix socket and `grpcio` is already in use.
+
+The Rust core on the `rust-core-rewrite` branch describes itself as a
+wire-compatible peer of the Go controller and router, with the Python and Go
+sources as the source of truth. It implements the same sources when it lands;
+nothing in this JEP waits for it.
 
 | Source | Obtains | Renews | Notes |
 | --- | --- | --- | --- |
-| `token` | bearer token | controller rotation (exporters), OIDC refresh (clients) | Today's behavior |
+| `token` | bearer token | controller rotation (`RotateToken`, clients and exporters) | Today's behavior |
 | `oidc` | bearer token | refresh token | Today's `jmp login` |
 | `enrollment` | certificate via EST | `simplereenroll` | Bootstraps with OIDC or a one-time token |
 | `exec` | certificate (or token) from a command | re-runs the command before expiry | Any issuer CLI (for example `tsh`, `step`, Vault) |
 | `spiffe` | X.509-SVID from the Workload API | streamed by the Workload API | Any Workload API agent (for example SPIRE agent, `tbot`) |
 | `file` | certificate and key from disk | re-reads on change | For externally managed files |
 
-Rotation semantics: the Rust core uses a dynamic client certificate resolver so
-new connections pick up rotated certificates with no channel rebuild. The
-Python client rebuilds its channel after rotation; existing streams continue.
-The exporter already builds its channel through a factory that is called again
-after a token rotation, which is the hook for this.
+Rotation semantics: Python gRPC fixes the client certificate when a channel is
+created, so the client rebuilds its channel after rotation; existing streams
+continue. The exporter already builds its channel through a factory that is
+called again after a token rotation, which is the hook for this. The Rust core
+can use a dynamic certificate resolver and skip the rebuild.
 
 Python gRPC takes the client key as PEM bytes
 (`grpc.ssl_channel_credentials(root_certificates, private_key,
 certificate_chain)`), so the Python implementation supports file-based keys
-only. Non-exportable keys (TPM, OS keystore) need the Rust core.
+only. Non-exportable keys (TPM, OS keystore) need the Rust core, or a platform
+agent that holds the key and serves the SVID over the Workload API.
 
 The same credentials are used for the controller and for routers: both the
 client and the exporter dial the router with the TLS configuration of their
@@ -1497,6 +1556,32 @@ These rules keep Jumpstarter independent of any identity or access platform:
 - The contract is tested against SPIRE in CI on every change. Reference
   integrations for other platforms run in an e2e matrix; a failing reference
   integration blocks a release only if it is marked as required.
+
+### Implementation map
+
+Where each change lands in the code on `main`. Paths are under `controller/`
+unless they start with `python/`.
+
+| Change | Where | Kind of change |
+| --- | --- | --- |
+| Config keys | `internal/config/types.go` (`Authentication`, `Grpc`, `LeasePolicy`, new `Enrollment`); operator `Jumpstarter` API and the code that renders the ConfigMap | New fields |
+| Request and read client certificates | `internal/service/controller_service.go` (`Start`: the `tls.Config` for `:8082`); `internal/service/tls_credentials.go` (`LoadTLSCredentials`, used by the router) | Two `tls.Config` fields, plus reload |
+| X.509 authenticator and the chain | New files in `internal/authentication/`, beside `bearer.go`; implements `ContextAuthenticator` | New code |
+| Marked user types | `internal/authentication/internal.go` (from #1319) | One more type |
+| Object resolution for external certificates | `internal/authorization/metadata.go` (`ContextAttributes`) | One branch |
+| Username check and provisioning | `internal/authorization/basic.go` | None |
+| Wiring | `cmd/main.go` and `internal/config/config.go` (`LoadConfiguration`), where the bearer authenticator is built today | Wrap in the chain |
+| EST endpoints | `internal/service/controller_service.go` (`Start`): requests that are not gRPC go to a gateway mux that has no routes registered today | New handlers |
+| Per-side, bound router tokens | `internal/service/controller_service.go` (`Dial`, `listenQueue`); `internal/service/router_service.go` (`authenticate`) | Second token, one claim, one check |
+| Router trust domains | `internal/config/config.go` (`LoadRouterConfiguration`), `cmd/router/main.go` | Read one more section |
+| Lease ceiling | `internal/service/client/v1/client_service.go` (`CreateLease`, `UpdateLease`), beside the `MaxTags` check | One check |
+| Client certificate on every connection | `python/packages/jumpstarter/jumpstarter/common/grpc.py` (`ssl_channel_credentials`) | Two arguments |
+| Metadata without a token | `python/packages/jumpstarter/jumpstarter/config/grpc.py` (`call_credentials`) | One variant |
+| `credentials` and `endpointOverrides` config | `python/packages/jumpstarter/jumpstarter/config/` (`client.py`, `exporter.py`, `tls.py`) | New fields |
+| Enrollment after login | `python/packages/jumpstarter-cli/jumpstarter_cli/login.py` | New step |
+
+Nothing changes in the `.proto` files, in the `Client`, `Exporter`, or `Lease`
+types, or in the lease controller.
 
 ### Failure modes
 
@@ -1541,8 +1626,11 @@ lease or the connection, as they do today.
 - CEL mapping: defaults, `principals` restriction, groups, first-match order.
 - Authenticator chain precedence and the ambiguous-identity rejection.
 - Object resolution: mapped `name` and `namespace`, mismatch with
-  caller-supplied metadata, structural resolution for the enrollment domain,
-  and that an X.509 username never takes the OIDC name-derivation path.
+  caller-supplied metadata, a `jumpstarter-kind` outside `principals`, and
+  that an X.509 username never takes the OIDC name-derivation path.
+- Enrollment identities: the path round-trips to the internal subject, the
+  user is internal, and a certificate for a deleted object is refused by a
+  re-created object of the same name.
 - Enrollment: CSRs with a wrong, missing, or extra name rejected, SPIFFE ID
   derived from the principal, `CertificateRequest` construction,
   re-enrollment for deleted principals.
@@ -1609,6 +1697,8 @@ lease or the connection, as they do today.
 - [ ] A CSR whose names differ from the caller's computed SPIFFE ID is
       rejected, and approver-policy denies a `CertificateRequest` outside the
       enrollment trust domain.
+- [ ] A certificate enrolled for an object stops working when that object is
+      deleted and re-created under the same name.
 - [ ] A router token issued to one side is rejected when presented by a
       different identity, and still accepted after its holder rotates its
       certificate.
@@ -1708,8 +1798,10 @@ lease or the connection, as they do today.
 
 ### Risks
 
-- The Rust core may not land on the expected schedule, leaving the Python
-  client with file-based keys only and no `spiffe` source.
+- The Python implementation is limited to file-based keys. Hardware-bound
+  keys depend on the Rust core or on a platform agent holding the key.
+- #1319 and #1320 are not merged. If they change shape, the object resolution
+  design has to follow.
 - Reference integrations depend on third-party behavior that is not yet
   verified (see the "To verify" lists).
 - Misconfigured mappings can match more identities than intended. The
@@ -1798,14 +1890,10 @@ platform.
 
 ## Unresolved Questions
 
-1. **SPIFFE path layout.** Is
-   `/jumpstarter/ns/<namespace>/{clients,exporters}/<name>` the right default for
-   built-in enrollment, and should the namespace be part of the identity? The
-   internal token subject also carries the object's UID, so a deleted and
-   re-created object does not accept old tokens. A path without the UID lets a
-   certificate issued to the old object act as the new one until it expires.
-   Options: add the UID to the path, or record the issuing object's UID in the
-   certificate and compare it.
+1. **SPIFFE path layout for external issuers.** Enrollment identities use the
+   internal subject as their path. Should Jumpstarter also recommend a layout
+   for external issuers (for example `/jumpstarter/exporters/<name>`), so
+   that a default mapping works without configuration?
 2. **Offline exporter recovery.** Should `simplereenroll` accept a recently
    expired certificate within a grace window, or must an exporter that missed
    renewal always receive a new bootstrap credential?
@@ -1821,8 +1909,10 @@ platform.
 6. **Flight Control specifics to verify:** native FDO support, and whether
    Flight Control-issued device certificates could serve directly as an
    identity issuer.
-7. **Router implementation target:** Go router on `main` or the Rust router on
-   `rust-core-rewrite`, depending on which is authoritative when this ships.
+7. **Multiple controller replicas.** `Dial` reaches an exporter only through
+   the replica holding its `Listen` stream. That is true today and this JEP
+   relies on it for router token binding; if dials are ever routed across
+   replicas, the exporter's identity has to travel with them.
 8. **Default `leasePolicy.maxDuration`:** unset (today's behavior) or a
    conservative default for new installations?
 9. **Relationship to host management proposals.** JEP-0017
@@ -1875,6 +1965,10 @@ These are not part of this JEP.
   specified, router tokens split per side and bound to the SPIFFE ID,
   certificate verification moved from the handshake to the authenticator, and
   the Design Decisions, Acceptance Criteria, and Consequences sections added
+- 2026-11-12: Aligned with the current implementation: enrollment identities
+  reuse the internal subject and the credential-kind pattern of #1319 and
+  #1320, credential sources target the Python client on `main`, and an
+  implementation map was added
 
 ## References
 
@@ -1894,6 +1988,11 @@ These are not part of this JEP.
 - `python/packages/jumpstarter/jumpstarter/config/client.py` (`ClientConfigV1Alpha1`)
 - `python/packages/jumpstarter/jumpstarter/config/exporter.py` (`_persist_rotated_token`)
 - `python/packages/jumpstarter/jumpstarter/common/grpc.py` (`ssl_channel_credentials`, insecure mode)
+- `python/packages/jumpstarter/jumpstarter/config/grpc.py` (`call_credentials`)
+- `python/packages/jumpstarter/jumpstarter/common/streams.py` (`connect_router_stream`)
+- `controller/internal/service/client/v1/client_service.go` (`CreateLease`, `UpdateLease`, `RotateToken`)
+- [py-spiffe](https://pypi.org/project/spiffe/)
+- [cert-manager: installing approver-policy](https://cert-manager.io/docs/policy/approval/approver-policy/installation/)
 - [#1319](https://github.com/jumpstarter-dev/jumpstarter/pull/1319) and [#1320](https://github.com/jumpstarter-dev/jumpstarter/pull/1320): binding each kind of token to its own identity
 - JEP-0017 ([#1253](https://github.com/jumpstarter-dev/jumpstarter/pull/1253)): Flight Control Host Management for jumpstarter-lab-config
 - Driver Access Rules for ExporterAccessPolicy (proposal in preparation; not yet published in this repository)
