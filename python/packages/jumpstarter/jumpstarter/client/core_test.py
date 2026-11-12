@@ -9,7 +9,7 @@ import pytest
 from grpc import StatusCode
 from grpc.aio import AioRpcError
 
-from jumpstarter.client.core import AsyncDriverClient, DriverError
+from jumpstarter.client.core import AsyncDriverClient, DriverError, DriverMethodNotImplemented
 from jumpstarter.common import ExporterStatus, Metadata
 from jumpstarter.common.exceptions import CONSOLE_IN_USE_MARKER
 
@@ -71,6 +71,37 @@ async def test_stream_async_translates_console_in_use_abort_before_headers() -> 
             pass
 
     assert CONSOLE_IN_USE_MARKER not in str(exc_info.value)
+
+
+async def test_stream_async_translates_method_not_found() -> None:
+    stub = MagicMock()
+    context = MagicMock()
+    context.initial_metadata = AsyncMock(
+        side_effect=create_mock_rpc_error(StatusCode.NOT_FOUND, "method observe not found on driver")
+    )
+    stub.Stream.return_value = context
+    client = AsyncDriverClient(stub=stub)
+
+    with pytest.raises(DriverMethodNotImplemented, match="observe not found"):
+        async with client.stream_async("observe"):
+            pass
+
+
+async def test_stream_async_translates_method_not_found_before_headers() -> None:
+    # Real grpc-aio behavior when the exporter aborts before sending headers:
+    # initial_metadata() resolves empty and the status sits on the finished call.
+    stub = MagicMock()
+    context = MagicMock()
+    context.initial_metadata = AsyncMock(return_value=())
+    context.done.return_value = True
+    context.code = AsyncMock(return_value=StatusCode.NOT_FOUND)
+    context.details = AsyncMock(return_value="method observe not found on driver")
+    stub.Stream.return_value = context
+    client = AsyncDriverClient(stub=stub)
+
+    with pytest.raises(DriverMethodNotImplemented, match="observe not found"):
+        async with client.stream_async("observe"):
+            pass
 
 
 def create_status_response(
