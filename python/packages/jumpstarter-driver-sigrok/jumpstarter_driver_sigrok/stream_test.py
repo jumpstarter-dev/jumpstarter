@@ -14,6 +14,14 @@ def _streaming(monkeypatch, code: str) -> Sigrok:
     return driver
 
 
+async def _read_pid(stream) -> int:
+    """Read the child's pid line, which the stream may deliver split across chunks."""
+    output = b""
+    while not output.endswith(b"\n"):
+        output += await stream.__anext__()
+    return int(output)
+
+
 async def _wait_until_gone(pid: int) -> None:
     with fail_after(10):
         while True:
@@ -40,7 +48,7 @@ async def test_closing_the_stream_early_stops_sigrok(monkeypatch):
     stream = driver.capture_stream(CaptureConfig())
 
     with fail_after(10):
-        pid = int(await stream.__anext__())
+        pid = await _read_pid(stream)
         await stream.aclose()
 
     await _wait_until_gone(pid)
@@ -52,11 +60,12 @@ async def test_cancelling_the_reader_stops_a_sigrok_that_ignores_sigterm(monkeyp
         "import os, signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
         "print(os.getpid(), flush=True); time.sleep(60)"
     )
-    driver = _streaming(monkeypatch, code)
-    output = b""
+    stream = _streaming(monkeypatch, code).capture_stream(CaptureConfig())
 
+    with fail_after(10):
+        pid = await _read_pid(stream)
     with move_on_after(0.5):
-        async for chunk in driver.capture_stream(CaptureConfig()):
-            output += chunk
+        async for _ in stream:
+            pass
 
-    await _wait_until_gone(int(output))
+    await _wait_until_gone(pid)
