@@ -1,4 +1,4 @@
-from asyncio import run
+from asyncio import run  # noqa: TID251
 from functools import wraps
 
 

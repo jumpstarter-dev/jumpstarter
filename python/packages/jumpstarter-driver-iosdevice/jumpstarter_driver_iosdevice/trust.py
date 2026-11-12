@@ -5,7 +5,7 @@ independently authenticates to the device and pins its paired certificate. These
 are two TLS connections; original device pairing credentials never leave here.
 """
 
-import asyncio
+import asyncio  # noqa: TID251
 import datetime
 import math
 import os

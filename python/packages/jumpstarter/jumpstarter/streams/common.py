@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: TID251
 import errno
 import logging
 from contextlib import asynccontextmanager

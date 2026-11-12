@@ -1,5 +1,5 @@
-import asyncio
-import asyncio.subprocess
+import asyncio  # noqa: TID251
+import asyncio.subprocess  # noqa: TID251
 import logging
 import socket
 from ipaddress import ip_address

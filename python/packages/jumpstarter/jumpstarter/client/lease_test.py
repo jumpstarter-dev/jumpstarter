@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: TID251
 import logging
 import sys
 from contextlib import asynccontextmanager
@@ -198,7 +198,7 @@ class TestLeaseAcquisitionSpinner:
             assert "[dim](" in call_args
             assert "[/dim]" in call_args
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_integration_with_async_context(self):
         """Test integration with async context manager."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
@@ -679,7 +679,7 @@ async def _dial_controller(dial):
     await server.start()
     try:
         async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel:
-            await asyncio.wait_for(channel.channel_ready(), timeout=2)
+            await asyncio.wait_for(channel.channel_ready(), timeout=2)  # noqa: TID251
             yield jumpstarter_pb2_grpc.ControllerServiceStub(channel)
     finally:
         await server.stop(grace=None)
@@ -905,7 +905,7 @@ class TestDialWithRetry:
             return response
 
         async with _dial_controller(dial) as lease.controller:
-            assert await asyncio.wait_for(lease._dial_with_retry(), timeout=2) == response
+            assert await asyncio.wait_for(lease._dial_with_retry(), timeout=2) == response  # noqa: TID251
 
         assert len(deadlines) == 1
         assert 30 < deadlines[0] < lease.dial_timeout
@@ -929,8 +929,8 @@ class TestDialWithRetry:
             return response
 
         async with _dial_controller(dial) as lease.controller:
-            assert await asyncio.wait_for(lease._dial_with_retry(), timeout=2) == response
-            await asyncio.wait_for(cancelled.wait(), timeout=1)
+            assert await asyncio.wait_for(lease._dial_with_retry(), timeout=2) == response  # noqa: TID251
+            await asyncio.wait_for(cancelled.wait(), timeout=1)  # noqa: TID251
 
         assert calls == 2
 
@@ -951,8 +951,8 @@ class TestDialWithRetry:
 
         async with _dial_controller(dial) as lease.controller:
             with pytest.raises(ExporterUnreachableError):
-                await asyncio.wait_for(lease._dial_with_retry(), timeout=1)
-            await asyncio.wait_for(cancelled.wait(), timeout=1)
+                await asyncio.wait_for(lease._dial_with_retry(), timeout=1)  # noqa: TID251
+            await asyncio.wait_for(cancelled.wait(), timeout=1)  # noqa: TID251
 
         assert calls == 1
 
@@ -973,16 +973,16 @@ class TestDialWithRetry:
                 cancelled.set()
 
         async with _dial_controller(dial) as lease.controller:
-            task = asyncio.create_task(lease._dial_with_retry())
+            task = asyncio.create_task(lease._dial_with_retry())  # noqa: TID251
             try:
-                await asyncio.wait_for(started.wait(), timeout=1)
+                await asyncio.wait_for(started.wait(), timeout=1)  # noqa: TID251
                 task.cancel()
                 with pytest.raises(asyncio.CancelledError):
                     await task
-                await asyncio.wait_for(cancelled.wait(), timeout=1)
+                await asyncio.wait_for(cancelled.wait(), timeout=1)  # noqa: TID251
             finally:
                 task.cancel()
-                await asyncio.gather(task, return_exceptions=True)
+                await asyncio.gather(task, return_exceptions=True)  # noqa: TID251
 
         assert calls == 1
 

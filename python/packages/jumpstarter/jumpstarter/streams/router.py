@@ -1,6 +1,6 @@
 import contextlib
 import logging
-from asyncio import InvalidStateError
+from asyncio import InvalidStateError  # noqa: TID251
 from dataclasses import dataclass, field
 from typing import Any
 

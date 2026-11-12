@@ -8,7 +8,7 @@ mocking the pysnmp internals as in driver_test.py.
 
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: TID251
 import socket
 import threading
 import time
@@ -25,6 +25,8 @@ from pysnmp.proto.api import v2c
 from jumpstarter_driver_snmp.driver import AuthProtocol, PrivProtocol, SNMPError, SNMPServer
 
 from jumpstarter.common.utils import serve
+
+pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture(autouse=True)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: TID251
 from collections.abc import Sequence
 
 CommandDelay = tuple[str, float]
@@ -19,7 +19,7 @@ async def _receive_until(
         remaining = deadline - loop.time()
         if remaining <= 0:
             raise TimeoutError(error_message)
-        chunk = await asyncio.wait_for(stream.receive(), timeout=remaining)
+        chunk = await asyncio.wait_for(stream.receive(), timeout=remaining)  # noqa: TID251
         data += chunk
     return data
 

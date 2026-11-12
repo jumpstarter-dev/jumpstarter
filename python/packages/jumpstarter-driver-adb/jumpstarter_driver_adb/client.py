@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: TID251
 import subprocess
 from collections.abc import Generator
 from concurrent.futures import CancelledError as FutureCancelledError

@@ -15,6 +15,7 @@ from jumpstarter_protocol import (
 )
 
 from .logging import LogFanOut, LogHandler
+from .rpcs_in_flight import RpcsInFlight
 from jumpstarter.common import ExporterStatus, LogSource, Metadata, TemporarySocket
 from jumpstarter.common.streams import ResourceStreamRequest, StreamRequestMetadata
 from jumpstarter.driver.context import session_env_var
@@ -57,6 +58,7 @@ class Session(
     _status_update_event: Event = field(init=False)
     _status_version: int = field(init=False, default=0)
     _previous_status: ExporterStatus | None = field(init=False, default=None)
+    _rpcs_in_flight: RpcsInFlight = field(init=False)
 
     @property
     def name(self) -> str:
@@ -112,13 +114,21 @@ class Session(
         self._log_fanout = LogFanOut(maxlen=256)
         self._logging_handler = LogHandler(self._log_fanout, LogSource.SYSTEM)
         self._status_update_event = Event()
+        self._rpcs_in_flight = RpcsInFlight()
 
         # Map all driver logs to DRIVER source
         self._logging_handler.add_child_handler("driver.", LogSource.DRIVER)
 
+    def _grpc_server(self, *, interceptors: list | None = None, options: list | None = None) -> grpc.aio.Server:
+        return grpc.aio.server(interceptors=[self._rpcs_in_flight, *(interceptors or [])], options=options)
+
+    async def _stop(self, server: grpc.aio.Server, grace: float | None) -> None:
+        await server.stop(grace=grace)
+        await self._rpcs_in_flight.finished()
+
     @asynccontextmanager
     async def serve_port_async(self, port):
-        server = grpc.aio.server()
+        server = self._grpc_server()
         server.add_insecure_port(port)
 
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
@@ -128,7 +138,7 @@ class Session(
         try:
             yield
         finally:
-            await server.stop(grace=None)
+            await self._stop(server, grace=None)
 
     @asynccontextmanager
     async def serve_multi_port_async(self, *ports):
@@ -143,7 +153,7 @@ class Session(
         Yields:
             None - caller manages socket paths externally
         """
-        server = grpc.aio.server()
+        server = self._grpc_server()
         for port in ports:
             server.add_insecure_port(port)
             logger.debug("Session server listening on %s", port)
@@ -159,7 +169,7 @@ class Session(
             logger.info("Stopping session server...")
             # Use a short grace period to allow pending RPCs to complete
             # This helps prevent SSL corruption from abrupt connection termination
-            await server.stop(grace=1.0)
+            await self._stop(server, grace=1.0)
             # Brief delay to ensure all connections are fully closed
             await sleep(0.1)
             logger.info("Session server stopped")
@@ -175,7 +185,7 @@ class Session(
             yield
         finally:
             logger.info("Stopping session server...")
-            await server.stop(grace=1.0)
+            await self._stop(server, grace=1.0)
             await sleep(0.1)
             logger.info("Session server stopped")
 
@@ -216,7 +226,7 @@ class Session(
         Yields:
             int - the bound port (useful when port=0 to let the OS choose)
         """
-        server = grpc.aio.server(
+        server = self._grpc_server(
             interceptors=interceptors,
             options=list(_GRPC_SERVER_OPTIONS_TCP_KEEPALIVE),
         )
@@ -250,7 +260,7 @@ class Session(
         Yields:
             None - server runs until context exit
         """
-        server = grpc.aio.server(
+        server = self._grpc_server(
             interceptors=interceptors,
             options=list(_GRPC_SERVER_OPTIONS_TCP_KEEPALIVE),
         )

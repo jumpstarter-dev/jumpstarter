@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: TID251
 import socket
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
@@ -193,7 +193,7 @@ class SNMPServer(Driver):
 
             # Run dispatcher with timeout
             try:
-                await asyncio.wait_for(
+                await asyncio.wait_for(  # noqa: TID251
                     self._run_snmp_dispatcher(snmp_engine, response_received),
                     self.timeout
                 )

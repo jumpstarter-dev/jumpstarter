@@ -1,6 +1,6 @@
 """VM identity and conditional updates shared by power and storage."""
 
-import asyncio
+import asyncio  # noqa: TID251
 import json
 from dataclasses import dataclass
 

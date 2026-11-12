@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
-import asyncio.subprocess
+import asyncio  # noqa: TID251
+import asyncio.subprocess  # noqa: TID251
 import logging
 import shutil
 
@@ -54,7 +54,7 @@ async def run_command(
             stderr=asyncio.subprocess.PIPE,
             env=full_env,
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)  # noqa: TID251
         logger.info("Command finished: j %s -> exit_code=%s", " ".join(command), proc.returncode)
         return {
             "exit_code": proc.returncode,

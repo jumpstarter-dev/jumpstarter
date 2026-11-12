@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: TID251
 import json
 import logging
 import os
@@ -149,8 +149,8 @@ class QemuFlasher(FlasherInterface, Driver):
 
         assert process.stdout is not None and process.stderr is not None
         tasks = [
-            asyncio.create_task(_read_pipe(process.stdout, "stdout", output_queue)),
-            asyncio.create_task(_read_pipe(process.stderr, "stderr", output_queue)),
+            asyncio.create_task(_read_pipe(process.stdout, "stdout", output_queue)),  # noqa: TID251
+            asyncio.create_task(_read_pipe(process.stderr, "stderr", output_queue)),  # noqa: TID251
         ]
 
         finished_streams = 0
@@ -166,7 +166,7 @@ class QemuFlasher(FlasherInterface, Driver):
 
                 remaining = self.parent.flash_timeout - elapsed
                 try:
-                    name, text = await asyncio.wait_for(output_queue.get(), timeout=min(remaining, 30))
+                    name, text = await asyncio.wait_for(output_queue.get(), timeout=min(remaining, 30))  # noqa: TID251
                 except TimeoutError:
                     continue
 
@@ -190,7 +190,7 @@ class QemuFlasher(FlasherInterface, Driver):
         finally:
             for task in tasks:
                 task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.gather(*tasks, return_exceptions=True)  # noqa: TID251
             if process.returncode is None:
                 process.kill()
                 await process.wait()

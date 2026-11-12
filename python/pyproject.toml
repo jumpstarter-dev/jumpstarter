@@ -157,7 +157,24 @@ line-length = 120
 
 [tool.ruff.lint]
 exclude = ["packages/jumpstarter-protocol"]
-extend-select = ["I", "C", "E", "F", "W", "B", "ERA"]
+extend-select = ["I", "C", "E", "F", "W", "B", "ERA", "TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# Existing direct asyncio usage is exempted line by line with `# noqa: TID251`, so the
+# member bans below still apply around it. Migrations delete those comments; never add new ones.
+"asyncio".msg = "Use anyio. The loop is asyncio, but first-party code goes through anyio."
+"asyncio.create_task".msg = "Spawn in a task group so the task has an owner."
+"asyncio.ensure_future".msg = "Spawn in a task group so the task has an owner."
+"asyncio.wait_for".msg = "Use anyio.fail_after / move_on_after."
+"asyncio.timeout".msg = "Use anyio.fail_after / move_on_after."
+"asyncio.timeout_at".msg = "Use anyio.fail_after / move_on_after."
+"asyncio.shield".msg = "Use anyio.CancelScope(shield=True)."
+"asyncio.gather".msg = "Use a task group."
+"asyncio.wait".msg = "Use a task group."
+"asyncio.as_completed".msg = "Use a task group."
+"asyncio.TaskGroup".msg = "Use anyio.create_task_group()."
+"asyncio.get_event_loop".msg = "Use asyncio.get_running_loop() or anyio.from_thread."
+"asyncio.run_coroutine_threadsafe".msg = "Use anyio.from_thread.run()."
 
 [tool.ruff.lint.isort]
 known-local-folder = ["packages", "examples", "jumpstarter"]

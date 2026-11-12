@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: TID251
 import logging
 from collections import deque
 from collections.abc import AsyncGenerator, Callable

@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: TID251
 import os
 import subprocess
 from dataclasses import dataclass, field

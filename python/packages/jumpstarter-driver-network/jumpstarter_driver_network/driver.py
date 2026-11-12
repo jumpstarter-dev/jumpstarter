@@ -1,7 +1,7 @@
 import ctypes
 import socket
 from abc import ABCMeta, abstractmethod
-from asyncio import get_running_loop
+from asyncio import get_running_loop  # noqa: TID251
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from os import getenv, getuid

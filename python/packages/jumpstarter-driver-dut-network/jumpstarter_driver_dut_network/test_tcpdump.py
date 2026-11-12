@@ -4,7 +4,7 @@ Tests config validation (enable_tcpdump gating), argument sanitization,
 and the streaming driver method using mocked subprocesses.
 """
 
-import asyncio
+import asyncio  # noqa: TID251
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
