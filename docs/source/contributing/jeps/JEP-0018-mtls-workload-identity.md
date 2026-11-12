@@ -321,9 +321,10 @@ advertising the EST URL and the enrollment trust domain.
 
 The flow:
 
-1. The caller generates a key pair locally. The private key never leaves the
-   caller. It is a file today; hardware-backed storage comes with the Rust
-   core (see [Credential sources](#credential-sources)).
+1. The caller generates a key pair in its key store. The private key never
+   leaves the caller, and where the machine has a TPM, Secure Enclave, or OS
+   keychain it never touches the disk in the clear (see
+   [Key storage](#key-storage)).
 2. The caller asks `csrattrs`, the EST endpoint through which a server tells
    a client what to put in its CSR, for its SPIFFE ID. Every EST request
    carries the caller's kind, namespace, and name as HTTP headers, the same
@@ -409,7 +410,7 @@ tls:
 credentials:
   type: enrollment            # token | oidc | enrollment | exec | spiffe | file
   enrollment:
-    keyStore: file            # file today; os-keystore and tpm in future
+    keyStore: auto            # best store the machine offers; see "Key storage"
     renewBefore: 33%          # renew when this share of the lifetime is left
 ```
 
@@ -520,6 +521,8 @@ first hour harder. The rules this JEP holds itself to:
   chooses an external issuer.
 - **Nothing to install.** The local cluster flow already installs
   cert-manager; nothing else is added to it.
+- **Nothing to choose.** Where the private key is kept is decided by what the
+  machine offers, not by the user.
 - **A working setup keeps working.** No credential a new user holds expires in
   a way that needs a manual step, unless it has gone unused for longer than
   the grace period or its object was deleted.
@@ -543,7 +546,7 @@ What happens underneath does:
 | | Today | With this JEP |
 | --- | --- | --- |
 | Cluster setup | Installs cert-manager and the operator; serving certificates come from an operator-managed self-signed CA | The same, plus enrollment enabled against a second operator-managed CA used only for identities. No approver-policy, trust-manager, OIDC provider, or login endpoint is needed |
-| `jmp admin create ... --save` | Reads the token from the credential Secret and writes it into the config | Uses that token once to enroll, stores the key and certificate beside the config, and writes a config with no secret in it |
+| `jmp admin create ... --save` | Reads the token from the credential Secret and writes it into the config | Uses that token once to enroll, creates the key in the machine's key store (Secure Enclave, TPM, or OS keychain where there is one), and writes a config with no secret in it |
 | Config handed to another machine (`--out`) | Contains the one-year token | Contains a bootstrap credential; the first `jmp run` enrolls and keeps the key on that machine |
 | Server trust | The config already carries the CA from the `jumpstarter-service-ca-cert` ConfigMap, but the setup guide still tells users to pass `--insecure-tls` | Unchanged mechanism; the guide drops `--insecure-tls` |
 | Expiry | Token valid for a year, then `jmp admin rotate` by hand | Certificate renewed automatically in the background |
@@ -1367,8 +1370,9 @@ exporter config is read-only to the exporter.
 | Controller listener (`:8082`) | EST endpoints under `/.well-known/est/` | Additive |
 | Login service | `/v1/auth/config` gains an `enrollment` block (EST URL and trust domain) | Additive |
 | Operator `Jumpstarter` CRD | Fields mirroring the controller config above; a managed identity CA when enrollment is enabled without `issuerRef`; approver-policy and RBAC resources when it is enabled with one | Additive |
-| `ClientConfig` / `ExporterConfig` | `credentials` (including the certificate and key paths of the `file` source), `endpointOverrides` | Additive; `token` still accepted |
-| Client and exporter state | Keys and certificates are kept in a state directory beside the config, never in it | New |
+| `ClientConfig` / `ExporterConfig` | `credentials` (including `keyStore`, and the certificate and key paths of the `file` source), `endpointOverrides` | Additive; `token` still accepted |
+| Client and exporter state | Keys are kept in a key store (TPM, Secure Enclave, OS keychain, or a file in a state directory), never in the config. Refresh tokens move to the same stores | New |
+| Python dependencies | `grpcio>=1.80` for the signing callback | Raises the floor from 1.66.1 |
 | Credential Secret | A bootstrap credential for enrollment (form open, see Unresolved Questions) | Additive |
 | `RotateToken` | Returns `FAILED_PRECONDITION` to a caller that authenticated with a certificate | Callers with tokens unaffected |
 | `jmp` CLI | `jmp login --ca-sha256`; `jmp admin create client` and `create exporter` enroll when the controller offers it; `jmp run --pair` / `--unpair` and `jmp shell --pair` for direct mode; `jmp describe client` reports certificate state | Additive; existing flags keep working |
@@ -1383,8 +1387,9 @@ exporter config is read-only to the exporter.
   certificates "not yet valid." Exporter hosts must have time synchronization
   before the exporter starts, and the exporter must report clock-related TLS
   failures explicitly.
-- **Key storage.** File-based keys are the baseline. TPM-backed keys are
-  preferred where hardware exists; Raspberry Pis need a TPM add-on board.
+- **Key storage.** An exporter uses a TPM when the host has one and the
+  process may use it, and a file otherwise; Raspberry Pis need a TPM add-on
+  board. See [Key storage](#key-storage).
 - **Rotation during hardware operations.** A connection keeps the certificate
   it was opened with, and the controller checks it when each RPC starts.
   Streams that are already open are not re-checked, so rotation never
@@ -1588,7 +1593,31 @@ protect, and copy between machines, for a setup with two parties. Pairing
 costs the user one pasted command, once, and after that the secure command
 line is the shortest one.
 
-### DD-11: Migration
+### DD-11: Where private keys are kept
+
+**Alternatives considered:**
+
+1. **A key store interface with hardware, OS, and file backends**, used
+   through gRPC's signing callback, defaulting to the best the machine has.
+2. **Key files only**, relying on file permissions and disk encryption.
+3. **OS keychain only** - Store the PEM key in the keychain and load it into
+   the process.
+4. **Wait for the Rust core** for anything beyond files.
+5. **Two keys** - A hardware identity key that only signs renewal requests,
+   and a short-lived software key for TLS.
+
+**Decision:** A key store interface with hardware, OS, and file backends.
+
+**Rationale:** Files leave the key readable by anyone holding the disk, which
+is the leak this JEP exists to close. Loading a key from the keychain
+protects it at rest but puts it in process memory where it can be copied. The
+signing callback removes the reason for both: the key is used where it lives.
+It also removes the reason to wait for the Rust core, and the reason for a
+two-key scheme, which would have added a second enrollment protocol only to
+work around a limit that no longer exists. Hardware is not available
+everywhere, so the OS and file levels remain, chosen automatically.
+
+### DD-12: Migration
 
 **Alternatives considered:**
 
@@ -1779,15 +1808,126 @@ continue. The exporter already builds its channel through a factory that is
 called again after a token rotation, which is the hook for this. The Rust core
 can use a dynamic certificate resolver and skip the rebuild.
 
-Python gRPC takes the client key as PEM bytes
-(`grpc.ssl_channel_credentials(root_certificates, private_key,
-certificate_chain)`), so the Python implementation supports file-based keys
-only. Non-exportable keys (TPM, OS keystore) need the Rust core, or a platform
-agent that holds the key and serves the SVID over the Workload API.
+The client never needs the key as bytes: it builds the channel with a signing
+callback, so the key can stay in a TPM, the Secure Enclave, or an OS keychain
+(see [Key storage](#key-storage)).
 
 The same credentials are used for the controller and for routers: both the
 client and the exporter dial the router with the TLS configuration of their
 controller connection.
+
+### Key storage
+
+A certificate is only as hard to steal as its private key. A key in a plain
+file can be read by anyone who gets at the disk: a lost laptop without disk
+encryption, a backup, a synced dotfiles folder, another account on a shared
+bench machine. The goal is that holding the device is not enough; an attacker
+must also be able to unlock the store the key lives in.
+
+#### What Python gRPC allows
+
+This was the open constraint in earlier revisions of this JEP, which assumed
+the Python client had to hand gRPC the key as PEM bytes and so could only use
+keys it could read. That is no longer true. Since grpcio 1.80, a channel can
+be built with a **signing callback** in place of the key
+(`grpc.experimental.ssl_channel_credentials_with_custom_signer`): gRPC passes
+the callback the bytes to sign during the handshake, and never sees the key.
+Checked against the version the project currently resolves (1.83), this
+completes a mutual TLS handshake on both the blocking and the `grpc.aio`
+channel, with the callback answering directly or from another thread.
+
+So a key that cannot be exported can be the TLS key itself, in the Python
+client that ships today. Two caveats: the API is marked experimental, to be
+folded into `grpc.ssl_channel_credentials`, and it requires raising the
+project's floor from `grpcio>=1.66.1` to `>=1.80`.
+
+#### One interface, three levels of protection
+
+Every private key Jumpstarter creates on a client or exporter is created
+inside a **key store** and used through three operations: generate, return
+the public key, sign. Nothing above the key store ever asks for the key
+itself. Keys are ECDSA P-256, the one algorithm every store below supports.
+
+| Level | Store | Where the key is | Survives |
+| --- | --- | --- | --- |
+| Hardware | `tpm` (Linux and Windows), `secure-enclave` (macOS), `pkcs11` (security keys, HSMs) | Generated in the device and never leaves it | Theft of the device or disk; malware running as the user cannot copy the key, only use it while it runs |
+| OS store | `keychain` (macOS login keychain), `windows` (CNG software key storage), `secret-service` (GNOME Keyring, KWallet) | Encrypted by the operating system, unlocked when the user logs in | Theft of a locked or powered-off device, disk copies, backups, other local users |
+| File | `file` | A `0600` file in the state directory | Other local users only; rely on disk encryption for the rest |
+
+```yaml
+credentials:
+  type: enrollment
+  enrollment:
+    keyStore: auto      # auto | tpm | secure-enclave | pkcs11 | keychain | windows | secret-service | file
+```
+
+`auto` is the default and picks the highest level that works on the machine
+without asking the user anything:
+
+| Platform | `auto` picks |
+| --- | --- |
+| macOS | `secure-enclave` when the signed helper is installed (see below), otherwise `keychain` |
+| Windows | `tpm` when the machine has one, otherwise `windows` |
+| Linux desktop | `tpm` when the user may use it, otherwise `secret-service` |
+| Linux headless (exporters, CI) | `tpm` when the process may use it, otherwise `file` |
+
+The rules that keep this predictable:
+
+- A new user never chooses. The getting-started commands produce an
+  OS-protected key on a laptop with no extra step.
+- A store is chosen when the key is created and never changed silently. If
+  the store later becomes unavailable, the client says so and offers to enroll
+  again; it does not fall back to a file.
+- `file` is never chosen on a machine that has something better, and when it
+  is chosen `jmp` says so once. `jmp describe client` shows which store holds
+  the key.
+- No store asks for a fingerprint or PIN on each use by default. A key is
+  used once per connection, and a prompt on every `jmp` command would push
+  people back to tokens. Presence checks are an opt-in.
+
+The same key stores hold the other secrets a client keeps today in its config
+file in plain text: the OIDC refresh token and, until it is used, the
+bootstrap credential. The OS stores take these as they are; on a machine with
+only hardware and file stores they stay in the file store.
+
+#### Per platform
+
+- **macOS.** The login keychain works from any process and is the baseline.
+  The Secure Enclave is harder: Apple only lets a program create
+  enclave-protected keys if it is signed with an application identifier and a
+  provisioning profile, which a Python interpreter installed with `pip` or
+  `uv` is not. Using it therefore needs a small signed helper that Jumpstarter
+  ships and that performs the three operations. Until that exists, macOS uses
+  the keychain.
+- **Windows.** CNG offers both a TPM-backed provider and a software provider
+  with the same API, reachable from Python without extra signing
+  requirements.
+- **Linux.** The TPM is reached through the TPM2 software stack or its PKCS#11
+  module and usually needs the user to be in a group. Desktop sessions have
+  the Secret Service. Headless machines have neither a login session nor,
+  often, a TPM: a Raspberry Pi needs an add-on board. For those, the file
+  store remains, and the exporter's state directory can be supplied as a
+  systemd encrypted credential, which ties the file to that machine.
+- **PKCS#11** covers security keys and HSMs on every platform, and is how the
+  hardware level is tested in CI, against a software token.
+
+#### What this does not do
+
+- It does not stop someone who can unlock the store. A stolen laptop that is
+  logged in and unlocked can use the key for as long as the certificate
+  renews. Deleting the `Client` ends that.
+- The controller cannot tell where a key lives, so it cannot require a
+  hardware key. That needs attestation at enrollment, listed under Future
+  Possibilities.
+- It does not cover keys that an external issuer hands over. A SPIFFE Workload
+  API agent returns the private key to the workload, and an `exec` command
+  writes it to the credential directory; both are held in memory or in that
+  private directory for their short lifetime. Protecting those is the
+  issuing platform's job (for example an agent that itself joined with a
+  TPM).
+- A direct mode exporter serves TLS with a key Python must load, so its own
+  key is in the OS or file store. The laptop's pairing key uses the signing
+  callback and can be in any store.
 
 ### Platform neutrality
 
@@ -1867,6 +2007,8 @@ unless they start with `python/`.
 | Metadata without a token | `python/packages/jumpstarter/jumpstarter/config/grpc.py` (`call_credentials`) | One variant |
 | `credentials` and `endpointOverrides` config | `python/packages/jumpstarter/jumpstarter/config/` (`client.py`, `exporter.py`, `tls.py`) | New fields |
 | Credential sources (`enrollment`, `exec`, `spiffe`, `file`), expiry events and lease preflight | New module under `python/packages/jumpstarter/jumpstarter/`; preflight in `client/lease.py` | New code |
+| Key stores and the signing callback | New module beside the credential sources; `common/grpc.py` builds the channel from a signer; `grpcio` floor in `python/packages/jumpstarter-protocol/pyproject.toml` | New code; one dependency bound |
+| Refresh token out of the config file | `python/packages/jumpstarter/jumpstarter/config/client.py` (`refresh_token`), `python/packages/jumpstarter-cli/jumpstarter_cli/login.py` | Moved to the key store |
 | Enrollment after login | `python/packages/jumpstarter-cli/jumpstarter_cli/login.py` | New step |
 | Enrollment when creating clients and exporters | `python/packages/jumpstarter-cli-admin/jumpstarter_cli_admin/create.py`; `python/packages/jumpstarter-kubernetes/jumpstarter_kubernetes/clients.py` and `exporters.py`, where the token is read from the Secret today | New step |
 | Enrollment in local clusters | `python/packages/jumpstarter-kubernetes/jumpstarter_kubernetes/cluster/operator.py` (the `Jumpstarter` resource it applies); operator certificate reconciliation | One block; a second managed CA |
@@ -1894,7 +2036,8 @@ types, or in the lease controller.
 
 | Threat | Today | With this JEP |
 | --- | --- | --- |
-| Exporter config copied off a device | Full impersonation until token expiry | No credential in config; the key is a separate file, or held by a platform agent or hardware |
+| Exporter config copied off a device | Full impersonation until token expiry | No credential in config; the key is in a TPM where the host has one, otherwise a separate file |
+| Laptop lost or disk copied, without the owner's login | Token, and OIDC refresh token, readable from the config file | Key in the Secure Enclave, TPM, or OS keychain; refresh token in the OS keychain |
 | Client token leaked (logs, shell history, CI) | Replayable from anywhere | Certificates require the private key; bound router tokens are useless to any other identity |
 | Offboarding or decommissioning | Find and revoke tokens | Issuer stops issuing; access ends within TTL; deleting the `Client`/`Exporter` still denies every new RPC |
 | Compromised controller | Can mint internal tokens | Same. With a supplied issuer, approver-policy limits enrollment to its trust domain, client auth, and a capped TTL; a managed issuer signs nothing but Jumpstarter identities |
@@ -1937,6 +2080,9 @@ lease or the connection, as they do today.
   bound token still accepted after the holder rotates its certificate.
 - `endpointOverrides` resolution with preserved TLS server name.
 - Credential sources: exec output parsing, file reload, renewal scheduling.
+- Key stores: the three operations against each backend, `auto` selection per
+  platform, and refusal to fall back to a file when a store disappears. The
+  hardware level runs against a software PKCS#11 token and a software TPM.
 - `leasePolicy.maxDuration` on create, extend, and the legacy request path;
   client preflight against the credential's expiry.
 - `RotateToken` from a certificate-authenticated caller returns
@@ -2005,6 +2151,11 @@ lease or the connection, as they do today.
 - [ ] In direct mode, one pairing command on the laptop is enough for every
       later `jmp shell --tls-grpc` to connect with mutual TLS and no other
       flag, and an unpaired machine is refused.
+- [ ] On macOS, Windows, and a Linux desktop, a client created with the
+      getting-started commands has no private key and no refresh token in
+      any plain file, and connects with mutual TLS.
+- [ ] With a TPM or PKCS#11 token, the private key cannot be exported, and
+      the client connects and renews with it.
 - [ ] `jmp login` against an enrollment-enabled controller stores a
       certificate, and renews it with `simplereenroll` before expiry.
 - [ ] A CSR whose names differ from the caller's computed SPIFFE ID is
@@ -2030,6 +2181,7 @@ lease or the connection, as they do today.
 
 - `authentication.x509`, `grpc.tls.clientAuth: Optional`, and the `file`,
   `exec`, and `spiffe` credential sources available behind configuration.
+- The key store interface, with the file and OS stores.
   Bearer tokens remain the default everywhere.
 - Integration contract published, with SPIRE conformance tests passing.
 - Feedback wanted: mapping ergonomics, the integration contract, the Teleport
@@ -2044,6 +2196,8 @@ lease or the connection, as they do today.
   offers it.
 - Direct mode pairing available, and the getting-started guides rewritten
   around the secure paths.
+- TPM and PKCS#11 key stores. The Secure Enclave follows when its signed
+  helper can be distributed.
 - Configs written for another machine carry a one-time bootstrap credential
   instead of the long-lived token.
 - Teleport (commercial) and OpenZiti + SPIRE (open source) reference
@@ -2112,9 +2266,12 @@ lease or the connection, as they do today.
 
 - More moving parts: trust bundles, an issuer, and, when chaining to a
   corporate root, approver-policy with the default approver disabled.
-- Clients and exporters keep a key and certificate in a state directory, a
-  second place beside the config file that users may need to know about when
-  moving a setup to another machine.
+- A client's key lives in a key store, not in its config file, so a setup
+  cannot be moved to another machine by copying a file. That is the point,
+  but it is a change: moving means enrolling again on the new machine.
+- Key stores differ by platform, which adds platform-specific code and a test
+  matrix, and the Secure Enclave needs a signed helper to be built and
+  distributed.
 - The renewal grace period trades some of the "access ends within the
   lifetime" property for convenience in the default profile.
 - Certificate expiry becomes an operational concern: clocks on SBCs, mid-lease
@@ -2128,8 +2285,9 @@ lease or the connection, as they do today.
 
 ### Risks
 
-- The Python implementation is limited to file-based keys. Hardware-bound
-  keys depend on the Rust core or on a platform agent holding the key.
+- Hardware and keychain keys depend on a gRPC Python API that is marked
+  experimental. If it changes, the client must follow; if it were removed,
+  those stores would have to wait for the Rust core.
 - #1319 and #1320 are not merged. If they change shape, the object resolution
   design has to follow.
 - Reference integrations depend on third-party behavior that is not yet
@@ -2238,9 +2396,10 @@ platform.
    audience. The gRPC authenticator only accepts the signer's normal
    audience, so such a token is useless anywhere but the EST endpoint. Until
    this is settled, the bootstrap credential is today's token.
-4. **Key storage on clients.** The Python client stores keys in files. Once
-   the Rust core can use an OS keystore or TPM, which should be the default
-   for `jmp` on workstations?
+4. **Key storage.** Is `auto` the right default order on each platform? Who
+   builds, signs, and distributes the macOS helper the Secure Enclave needs,
+   and is the login keychain acceptable until it exists? Should presence
+   checks (Touch ID, a TPM PIN) be offered at all?
 5. **Contract publication.** Should the integration contract be versioned and
    published as a standalone document, so platforms and third parties can
    claim conformance? Where should `exec` presets live: in the Jumpstarter
@@ -2282,7 +2441,8 @@ These are not part of this JEP.
   labels.
 - **Hardware-attested enrollment:** TPM attestation during enrollment, for
   example via ACME `device-attest-01`, so the controller can require
-  hardware-bound keys for exporters.
+  hardware-bound keys. Until then the key store is the client's choice and
+  the controller cannot verify it.
 - **End-to-end client-to-exporter mTLS** for deployments that do not need
   router-side driver access enforcement.
 - **Credential health as a lease condition:** exporters report degraded
@@ -2317,6 +2477,8 @@ These are not part of this JEP.
 - 2026-11-12: Checked the reference integration snippets against vendor
   documentation, specified how pairing works within Python gRPC, and removed
   inconsistencies left by earlier revisions
+- 2026-11-12: Added key storage: keys are used through a signing callback and
+  kept in a TPM, the Secure Enclave, or an OS keychain where available
 
 ## References
 
@@ -2340,6 +2502,8 @@ These are not part of this JEP.
 - `python/packages/jumpstarter/jumpstarter/common/streams.py` (`connect_router_stream`)
 - `controller/internal/service/client/v1/client_service.go` (`CreateLease`, `UpdateLease`, `RotateToken`)
 - [py-spiffe](https://pypi.org/project/spiffe/)
+- [grpcio 1.80.0 release notes](https://newreleases.io/project/pypi/grpcio/release/1.80.0) (TLS private key signer in Python)
+- [Apple Developer Forums: -34018 when using Secure Enclave](https://developer.apple.com/forums/thread/728150)
 - [Teleport: Workload Identity attributes](https://goteleport.com/docs/reference/machine-workload-identity/workload-identity/attributes/)
 - [OpenZiti: third-party CAs](https://openziti.io/docs/learn/core-concepts/security/authentication/third-party-cas)
 - `python/packages/jumpstarter-cli/jumpstarter_cli/run.py` and `shell.py` (direct mode: `--tls-grpc-listener`, `--tls-grpc`, `--passphrase`)
