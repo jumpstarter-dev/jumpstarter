@@ -17,8 +17,18 @@ from tempfile import TemporaryDirectory
 from typing import Literal
 
 import yaml
-from anyio import BrokenResourceError, ClosedResourceError, EndOfStream, fail_after, run_process, sleep
+from anyio import (
+    BrokenResourceError,
+    CancelScope,
+    ClosedResourceError,
+    EndOfStream,
+    fail_after,
+    run_process,
+    sleep,
+    to_thread,
+)
 from anyio.abc import ObjectStream
+from anyio.from_thread import run as run_from_thread
 from anyio.streams.file import FileReadStream, FileWriteStream
 from jumpstarter_driver_network.driver import TcpNetwork, UnixNetwork, VsockNetwork
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
@@ -211,9 +221,25 @@ class QemuPower(PowerInterface, Driver):
     parent: Qemu
     # Publish serial readiness only after startup, and withdraw it before stopping.
     _serial_process: Popen[bytes] | None = field(default=None, init=False, repr=False)
+    _serial_changed: asyncio.Event = field(default_factory=asyncio.Event, init=False, repr=False)
+    # The console's single fanout reader owns this scope, including physical open/read.
+    _serial_read_scope: CancelScope | None = field(default=None, init=False, repr=False)
+    _power_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
+    _startup_scope: CancelScope | None = field(default=None, init=False, repr=False)
+    _loop: asyncio.AbstractEventLoop | None = field(default=None, init=False, repr=False)
 
     @export
-    async def on(self) -> None:  # noqa: C901
+    async def on(self) -> None:
+        self._loop = asyncio.get_running_loop()
+        async with self._power_lock:
+            with CancelScope() as scope:
+                self._startup_scope = scope
+                try:
+                    await self._start()
+                finally:
+                    self._startup_scope = None
+
+    async def _start(self) -> None:  # noqa: C901
         if hasattr(self, "_process"):
             self.logger.warning("already powered on, ignoring request")
             return
@@ -416,25 +442,44 @@ class QemuPower(PowerInterface, Driver):
         await qmp.execute("system_reset")
         await qmp.disconnect()
         if getattr(self, "_process", None) is process and process.poll() is None:
-            self._serial_process = process
+            self._set_serial_process(process)
+
+    def _set_serial_process(self, process: Popen[bytes] | None) -> None:
+        self._serial_process = process
+        self._serial_changed.set()
+        if self._serial_read_scope is not None:
+            self._serial_read_scope.cancel()
 
     @export
-    def off(self) -> None:
-        self._power_off(warn_if_off=True)
+    async def off(self) -> None:
+        await self._off(warn_if_off=True)
 
-    def _power_off(self, *, warn_if_off: bool) -> None:
-        self._serial_process = None
+    async def _off(self, warn_if_off: bool) -> None:
+        self._loop = asyncio.get_running_loop()
+        async with self._power_lock:
+            process = self._prepare_power_off(warn_if_off=warn_if_off)
+            if process is not None:
+                await to_thread.run_sync(self._wait_for_exit, process)
+            self._cleanup_power_off()
+
+    def _prepare_power_off(self, *, warn_if_off: bool) -> Popen[bytes] | None:
+        self._set_serial_process(None)
         process = getattr(self, "_process", None)
         if process is None or process.poll() is not None:
             self.logger.log(logging.WARNING if warn_if_off else logging.DEBUG, "already powered off, ignoring request")
-        else:
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except TimeoutExpired:
-                process.kill()
+            return None
+        process.terminate()
+        return process
 
-        if process is not None:
+    @staticmethod
+    def _wait_for_exit(process: Popen[bytes]) -> None:
+        try:
+            process.wait(timeout=5)
+        except TimeoutExpired:
+            process.kill()
+
+    def _cleanup_power_off(self) -> None:
+        if hasattr(self, "_process"):
             del self._process
 
         if hasattr(self, "_cidata"):
@@ -446,7 +491,21 @@ class QemuPower(PowerInterface, Driver):
 
     def close(self):
         # Teardown may reach this shared driver through both QEMU and its console.
-        self._power_off(warn_if_off=False)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if self._loop is not None and self._loop.is_running() and loop is not self._loop:
+            # Exported console.close() reaches this child from an AnyIO worker.
+            run_from_thread(self._off, False)
+        else:
+            if self._startup_scope is not None:
+                self._startup_scope.cancel()
+            process = self._prepare_power_off(warn_if_off=False)
+            if process is not None:
+                self._wait_for_exit(process)
+            self._cleanup_power_off()
+        super().close()
 
 
 @dataclass(kw_only=True)
@@ -470,22 +529,35 @@ class _QemuSerialStream(ObjectStream[bytes]):
         await self._stack.aclose()
 
     async def receive(self) -> bytes:
+        self.power._loop = asyncio.get_running_loop()
         while not self._closed:
+            changed = self.power._serial_changed
+            changed.clear()
             process = self._current_process()
             if process is None:
                 await self._disconnect()
-                await sleep(0.1)
+                await changed.wait()
                 continue
             try:
                 if process is not self._process:
                     await self._disconnect()
-                    self._source = await self._stack.enter_async_context(self.source_factory())
-                    self._process = process
-                    # Power may have changed while the physical port was opening.
                     if self._current_process() is not process:
                         continue
-                assert self._source is not None
-                return await self._source.receive()
+                with CancelScope() as scope:
+                    self.power._serial_read_scope = scope
+                    try:
+                        if process is not self._process:
+                            self._source = await self._stack.enter_async_context(self.source_factory())
+                            self._process = process
+                            # Power may have changed while the physical port was opening.
+                            if self._current_process() is not process:
+                                continue
+                        assert self._source is not None
+                        data = await self._source.receive()
+                        if self._current_process() is process:
+                            return data
+                    finally:
+                        self.power._serial_read_scope = None
             except (OSError, BrokenResourceError, ClosedResourceError, EndOfStream):
                 await self._disconnect()
                 if self._current_process() is process:
@@ -510,6 +582,9 @@ class _QemuSerialStream(ObjectStream[bytes]):
 
     async def aclose(self) -> None:
         self._closed = True
+        self.power._serial_changed.set()
+        if self.power._serial_read_scope is not None:
+            self.power._serial_read_scope.cancel()
         await self._disconnect()
 
 
