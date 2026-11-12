@@ -36,6 +36,8 @@ integrations** to prove the contract: Teleport as a fully worked commercial
 example, OpenZiti with SPIRE as a fully worked open-source example, and SPIRE
 alone as the vendor-neutral conformance target. Bearer tokens keep
 working throughout, and are phased out by default only for new installations.
+For someone trying Jumpstarter on a laptop or a local cluster, the commands do
+not change and the secure setup becomes the default one.
 
 ## Motivation
 
@@ -89,6 +91,11 @@ chain is fetched again, unverified, for every new channel. It exists because
 there is no good way to distribute the CA. A design that distributes a trust
 bundle together with the identity removes the reason to enable it.
 
+New users meet this first. The distributed mode guide tells them to pass
+`--insecure-tls` when creating every client and exporter, and the direct mode
+guide starts the exporter with `--tls-grpc-insecure`, which disables TLS
+altogether. The paths people learn on are the least protected ones.
+
 ### Groups are not available for authorization
 
 Authorization today matches a single username against the object's internal
@@ -99,6 +106,10 @@ express.
 
 ### User Stories
 
+- **As a** newcomer trying Jumpstarter with one board and a laptop, or a local
+  cluster, **I want to** follow the getting-started guide without learning
+  about certificates or passing insecure flags, **so that** my first setup is
+  both easy and safe.
 - **As a** new team member with an existing session in my organization's
   access platform (for example Teleport), **I want to** run `jmp` and
   immediately get access appropriate to my team, **so that** onboarding needs
@@ -226,12 +237,13 @@ authentication:
 enrollment:
   enabled: true
   trustDomain: jumpstarter.lab.example.com
-  issuerRef:
+  issuerRef:                    # optional; omitted means an operator-managed CA
     group: cert-manager.io
     kind: ClusterIssuer
     name: jumpstarter-identity
   clientCertificateDuration: 8h
   exporterCertificateDuration: 24h
+  renewalGracePeriod: 0s        # see "New users and small deployments"
 
 grpc:
   keepalive: {}                 # unchanged
@@ -336,10 +348,11 @@ The flow:
    renewed. The controller re-checks that the `Client`/`Exporter` still exists
    before renewing.
 
-The controller is a registration authority, not a CA. cert-manager's
-**approver-policy** constrains what the controller's service account can
-request, so a compromised controller cannot mint serving certificates,
-identities outside its trust domain, or long-lived credentials:
+The controller is a registration authority, not a CA. When
+`enrollment.issuerRef` names an issuer the administrator supplies,
+cert-manager's **approver-policy** constrains what the controller's service
+account can request, so a compromised controller cannot mint serving
+certificates, identities outside its trust domain, or long-lived credentials:
 
 ```yaml
 apiVersion: policy.cert-manager.io/v1alpha1
@@ -362,7 +375,10 @@ spec:
 ```
 
 The operator installs this policy and binds it to the controller's service
-account when enrollment is enabled. cert-manager is already an optional
+account when enrollment is enabled with a supplied issuer. With the
+operator-managed issuer no policy is needed; see
+[New users and small deployments](#new-users-and-small-deployments).
+cert-manager is already an optional
 operator integration (`spec.certManager`, used for serving certificates).
 Enrollment additionally needs approver-policy, which in turn requires
 cert-manager to run with its default approver disabled: left on, it approves
@@ -488,6 +504,153 @@ or client might be sent to needs an override.
 
 The exporter config now contains no secrets. It is identical across a fleet
 except for the device name, and the exporter never writes to it.
+
+### New users and small deployments
+
+Most people meet Jumpstarter on one laptop and one board, or on a local
+cluster created with `jmp admin create cluster`. Nothing above may make that
+first hour harder. The rules this JEP holds itself to:
+
+- **No new commands and no new required flags** for either setup.
+- **No new concepts.** A new user never has to read the words SPIFFE, trust
+  domain, CEL, or approver-policy. Those appear only when an administrator
+  chooses an external issuer.
+- **Nothing to install.** The local cluster flow already installs
+  cert-manager; nothing else is added to it.
+- **A working setup keeps working.** No credential a new user holds expires in
+  a way that needs a manual step, short of the object being deleted.
+- **Secure is the easy path.** Today the shortest documented command line is
+  the insecure one in both setups. That is reversed.
+
+#### Local cluster
+
+What a new user types does not change:
+
+```console
+$ jmp admin create cluster
+$ jmp admin create exporter demo --label board=demo --save
+$ jmp run --exporter demo
+$ jmp admin create client me --save --unsafe
+$ jmp shell --client me --selector board=demo
+```
+
+What happens underneath does:
+
+| | Today | With this JEP |
+| --- | --- | --- |
+| Cluster setup | Installs cert-manager and the operator; serving certificates come from an operator-managed self-signed CA | The same, plus enrollment enabled against a second operator-managed CA used only for identities. No approver-policy, trust-manager, OIDC provider, or login endpoint is needed |
+| `jmp admin create ... --save` | Reads the token from the credential Secret and writes it into the config | Uses that token once to enroll, stores the key and certificate beside the config, and writes a config with no secret in it |
+| Config handed to another machine (`--out`) | Contains the one-year token | Contains a bootstrap credential; the first `jmp run` enrolls and keeps the key on that machine |
+| Server trust | The config already carries the CA from the `jumpstarter-service-ca-cert` ConfigMap, but the setup guide still tells users to pass `--insecure-tls` | Unchanged mechanism; the guide drops `--insecure-tls` |
+| Expiry | Token valid for a year, then `jmp admin rotate` by hand | Certificate renewed automatically in the background |
+| A copied config file | Full access for up to a year | No access |
+
+Three parts of the design exist to make this work.
+
+**A managed issuer.** `enrollment.issuerRef` is optional. When it is omitted,
+the operator creates a CA `Issuer` in the Jumpstarter namespace, exactly as it
+already does for serving certificates under `certManager.server.selfSigned`,
+and publishes its certificate as the enrollment trust bundle. approver-policy
+is not required in this mode. Its job is to stop a compromised controller
+from obtaining certificates it should not have from a CA that other things
+trust. A CA that exists only to sign Jumpstarter identities, in a namespace
+that already holds the token signing key and the router key, gives a
+compromised controller nothing it did not already have. approver-policy
+remains required when `issuerRef` points at an issuer the administrator
+supplies.
+
+**Enrollment without the login service.** EST is served on the controller's
+gRPC endpoint, which every config already contains, so a client or exporter
+can enroll knowing only what it knows today. A local cluster needs no OIDC
+provider and no login endpoint.
+
+**Staying enrolled.** Short certificates are the wrong default for a laptop
+that is closed over a weekend or an exporter that is unplugged for a month. A
+bearer token never surprises a new user this way, so certificates must not
+either:
+
+- With the managed issuer, certificates default to 30 days and are renewed
+  once a third of that has passed. Deployments with an external identity
+  provider choose shorter lifetimes deliberately.
+- `enrollment.renewalGracePeriod` (default 90 days with the managed issuer,
+  zero otherwise) lets `simplereenroll` accept a certificate that has expired,
+  provided the `Client` or `Exporter` it names still exists. The caller still
+  has to prove possession of the key, and deleting the object still ends
+  access at once, so the grace period extends convenience, not what a stolen
+  file can do.
+- Past the grace period, the fix is the command the user already knows:
+  `jmp admin create client me --save` again, or `jmp login` where there is an
+  identity provider. The error says so.
+
+`jmp describe client` already reports whether a client's token is still
+valid; it reports the certificate's state and next renewal in the same place.
+
+#### Direct mode
+
+Direct mode has no controller, no cluster, and no CA. Today it offers three
+choices, and the documented one is the first:
+
+- `--tls-grpc-insecure`: no encryption and no authentication.
+- `--passphrase`: a shared secret sent as request metadata on every call, in
+  the clear unless TLS is also configured.
+- `--tls-cert` and `--tls-key`: the user supplies a server certificate. The
+  client has no option to trust a private CA, so a self-signed certificate
+  cannot be verified.
+
+This JEP adds **pairing**, which needs no flags once done and no certificate
+handling from the user:
+
+```console
+# On the machine with the hardware
+$ jmp run --exporter-config example-direct.yaml --tls-grpc-listener 0.0.0.0:19090
+Listening on 0.0.0.0:19090
+To connect from another machine, run this once:
+
+    jmp shell --tls-grpc 192.168.1.20:19090 --pair K7QF-2MXD-9RTB
+
+# On the laptop, the first time
+$ jmp shell --tls-grpc 192.168.1.20:19090 --pair K7QF-2MXD-9RTB
+Paired with example-direct
+
+# On the laptop, every time after that
+$ jmp shell --tls-grpc 192.168.1.20:19090
+```
+
+- On first start the exporter generates a key and a self-signed certificate
+  and keeps them in its state directory. The user never sees them.
+- The pairing code is short-lived and single-use. It carries a one-time
+  secret and a fingerprint of the exporter's certificate, so the laptop
+  verifies the exporter on the very first connection instead of trusting
+  whatever answers.
+- During pairing the laptop generates its own key and certificate and hands
+  the certificate to the exporter, which records it as authorized. The laptop
+  records the exporter's certificate against that address.
+- Every later connection is mutual TLS between the two recorded
+  certificates. There is no passphrase to retype, nothing secret in shell
+  history, and nothing useful to someone who copies the command line.
+- `jmp run ... --pair` prints a new code to add another laptop;
+  `--unpair <name>` removes one.
+
+This is the SSH model (a host key the client remembers, an authorized key the
+server remembers) with a one-time code replacing the manual copying of keys.
+It uses pinned certificates and no CA, so SPIFFE IDs and trust domains play no
+part. `--tls-grpc-insecure`, `--passphrase`, `--tls-cert`, and `--tls-key`
+keep working as they do today; the direct mode guide leads with pairing.
+
+Local mode (`jmp shell --exporter`) uses a Unix socket on one machine and is
+unaffected.
+
+#### Growing out of the defaults
+
+Each step up is one change, and none of them invalidates the step before:
+
+1. **Local cluster with the managed issuer.** Nothing to configure.
+2. **Add an identity provider.** Configure `authentication.jwt` as today;
+   `jmp login` then enrolls users, and lifetimes can be shortened.
+3. **Chain to a corporate root.** Set `enrollment.issuerRef` and install
+   approver-policy.
+4. **Accept an external issuer.** Add an `authentication.x509` entry and its
+   mappings.
 
 ### Identity mapping
 
@@ -1167,7 +1330,7 @@ exporter config is read-only to the exporter.
 | Login service | `/v1/auth/config` gains `enrollment` and `trustDomains` fields | Additive |
 | Operator `Jumpstarter` CRD | Fields mirroring the controller config above; approver-policy and RBAC resources when enrollment is enabled | Additive |
 | `ClientConfig` / `ExporterConfig` | `credentials`, `tls.clientCertificate` (for `file`), `endpointOverrides` | Additive; `token` still accepted |
-| `jmp` CLI | `jmp login --ca-sha256`; `jmp admin create exporter --enrollment` (one-time token) | Additive |
+| `jmp` CLI | `jmp login --ca-sha256`; `jmp admin create client` and `create exporter` enroll when the controller offers it; `jmp run --pair` / `--unpair` and `jmp shell --pair` for direct mode | Additive; existing flags keep working |
 | `Client` / `Exporter` / `Lease` CRDs | None required | n/a |
 | gRPC `.proto` | None required | n/a |
 | Router token | One token per side instead of one shared token; optional claim binding each to its holder's SPIFFE ID | Internal to controller and router |
@@ -1186,8 +1349,8 @@ exporter config is read-only to the exporter.
   connections use the new certificate. Rotation never interrupts an in-flight
   flash or power operation.
 - **Offline exporters.** An exporter that is offline longer than its
-  certificate lifetime cannot renew with `simplereenroll` and needs a fresh
-  bootstrap credential (see Unresolved Questions). With an external identity
+  certificate lifetime plus the renewal grace period cannot renew with
+  `simplereenroll` and needs a fresh bootstrap credential. With an external identity
   agent, recovery follows that platform's re-attestation rules instead.
 - **Data path.** Through an access proxy, client-to-exporter traffic may cross
   the proxy twice. Bulk artifacts should be pulled by the exporter from a
@@ -1342,7 +1505,46 @@ its long-lived `Listen` stream, not the one it will present to the router.
 Either binding needs one token per side, since today both sides receive the
 same string.
 
-### DD-9: Migration
+### DD-9: Default issuer for built-in enrollment
+
+**Alternatives considered:**
+
+1. **An operator-managed CA when no issuer is given**, with approver-policy
+   required only for a supplied issuer.
+2. **Always require a supplied issuer and approver-policy.**
+3. **Leave enrollment off by default** and keep bearer tokens for local
+   clusters.
+
+**Decision:** An operator-managed CA when no issuer is given.
+
+**Rationale:** Requiring approver-policy means changing a cluster-wide
+cert-manager setting before the first exporter can connect, which no newcomer
+should face. The policy protects a CA that other systems trust; a CA that
+signs nothing but Jumpstarter identities needs no such protection. Leaving
+enrollment off would make certificates an advanced feature and keep new users
+on the credential this JEP is trying to retire.
+
+### DD-10: Authentication in direct mode
+
+**Alternatives considered:**
+
+1. **Pairing with pinned certificates** - A one-time code, then mutual TLS
+   between remembered certificates.
+2. **Keep the passphrase, add server pinning** - `--passphrase` plus a
+   fingerprint flag on the client.
+3. **A local CA** - `jmp` creates a CA and issues certificates to both sides.
+4. **Leave direct mode as it is.**
+
+**Decision:** Pairing with pinned certificates.
+
+**Rationale:** Direct mode is the first thing many users run and today its
+easy path has no encryption. A passphrase must be retyped or stored, ends up
+in shell history, and is a bearer secret. A local CA is a new thing to create,
+protect, and copy between machines, for a setup with two parties. Pairing
+costs the user one pasted command, once, and after that the secure command
+line is the shortest one.
+
+### DD-11: Migration
 
 **Alternatives considered:**
 
@@ -1579,6 +1781,10 @@ unless they start with `python/`.
 | Metadata without a token | `python/packages/jumpstarter/jumpstarter/config/grpc.py` (`call_credentials`) | One variant |
 | `credentials` and `endpointOverrides` config | `python/packages/jumpstarter/jumpstarter/config/` (`client.py`, `exporter.py`, `tls.py`) | New fields |
 | Enrollment after login | `python/packages/jumpstarter-cli/jumpstarter_cli/login.py` | New step |
+| Enrollment when creating clients and exporters | `python/packages/jumpstarter-cli-admin/jumpstarter_cli_admin/create.py`; `python/packages/jumpstarter-kubernetes/jumpstarter_kubernetes/clients.py` and `exporters.py`, where the token is read from the Secret today | New step |
+| Enrollment in local clusters | `python/packages/jumpstarter-kubernetes/jumpstarter_kubernetes/cluster/operator.py` (the `Jumpstarter` resource it applies); operator certificate reconciliation | One block; a second managed CA |
+| Direct mode pairing | `python/packages/jumpstarter-cli/jumpstarter_cli/run.py` and `shell.py`; `python/packages/jumpstarter/jumpstarter/exporter/auth.py`, beside the passphrase interceptor | New code |
+| Guides | `docs/source/getting-started/guides/setup/direct-mode.md` and `distributed-mode.md` | Rewritten around the secure path |
 
 Nothing changes in the `.proto` files, in the `Client`, `Exporter`, or `Lease`
 types, or in the lease controller.
@@ -1636,6 +1842,10 @@ lease or the connection, as they do today.
   re-enrollment for deleted principals.
 - Configuration validation: `clientAuth: Required` with enrollment enabled is
   rejected.
+- Renewal grace: an expired certificate renews inside the grace period, is
+  refused outside it, and is refused inside it once the object is deleted.
+- Direct mode pairing: code expiry and single use, fingerprint mismatch,
+  connection from an unpaired certificate, and `--unpair`.
 - Router tokens: one per side, SPIFFE ID binding, mismatch rejection, and a
   bound token still accepted after the holder rotates its certificate.
 - `endpointOverrides` resolution with preserved TLS server name.
@@ -1660,6 +1870,8 @@ lease or the connection, as they do today.
   required for Beta. Other platforms are best effort.
 - Old clients and exporters (bearer only) against a new controller with
   `clientAuth: Optional`.
+- **Getting-started flows:** the local cluster guide and the direct mode guide
+  run as written, with no insecure flag, as e2e jobs.
 
 ### Hardware-in-the-Loop Tests
 
@@ -1692,6 +1904,14 @@ lease or the connection, as they do today.
       written.
 - [ ] A client using the `exec` source leases an exporter without running
       `jmp login`.
+- [ ] On a cluster made with `jmp admin create cluster`, the five commands of
+      the local cluster guide lead to a working shell with no insecure flag,
+      no token in any config file, and no extra component installed.
+- [ ] A client left unused for longer than its certificate lifetime, but
+      within the grace period, works on its next use with no user action.
+- [ ] In direct mode, one pairing command on the laptop is enough for every
+      later `jmp shell --tls-grpc` to connect with mutual TLS and no other
+      flag, and an unpaired machine is refused.
 - [ ] `jmp login` against an enrollment-enabled controller stores a
       certificate, and renews it with `simplereenroll` before expiry.
 - [ ] A CSR whose names differ from the caller's computed SPIFFE ID is
@@ -1725,9 +1945,14 @@ lease or the connection, as they do today.
 ### Beta
 
 - Enrollment endpoint and `enrollment` credential source available.
-- New installations created by the operator enable enrollment, and `jmp login`
-  enrolls by default when the controller offers it.
-- `jmp admin create exporter` offers one-time enrollment tokens.
+- New installations created by the operator enable enrollment with the managed
+  issuer, `jmp admin create cluster` included, and `jmp login` and
+  `jmp admin create client|exporter` enroll by default when the controller
+  offers it.
+- Direct mode pairing available, and the getting-started guides rewritten
+  around the secure paths.
+- Configs written for another machine carry a one-time bootstrap credential
+  instead of the long-lived token.
 - Teleport (commercial) and OpenZiti + SPIRE (open source) reference
   integrations documented and passing e2e.
 
@@ -1756,6 +1981,9 @@ lease or the connection, as they do today.
 - **Existing exporter tokens bootstrap enrollment.** An exporter with a current
   internal token can call `simpleenroll` with it and switch to certificates
   without a new secret being delivered.
+- **Direct mode.** `--tls-grpc-insecure`, `--passphrase`, `--tls-cert`, and
+  `--tls-key` behave as today. Pairing is used only when neither side passes
+  one of them.
 - **Downgrade.** The controller and routers parse their configuration
   strictly, so a binary older than this JEP fails to start on a ConfigMap that
   contains `x509`, `bearer`, `enrollment`, `grpc.tls`, or
@@ -1783,11 +2011,18 @@ lease or the connection, as they do today.
 - Groups reach the controller, ready for policy work.
 - `tls.insecure` has no remaining use case once a bundle travels with the
   identity.
+- The getting-started paths become the secure ones, with the same commands
+  and fewer flags than today.
 
 ### Negative
 
-- More moving parts: trust bundles, an issuer, and (with enrollment)
-  cert-manager and approver-policy with the default approver disabled.
+- More moving parts: trust bundles, an issuer, and, when chaining to a
+  corporate root, approver-policy with the default approver disabled.
+- Clients and exporters keep a key and certificate in a state directory, a
+  second place beside the config file that users may need to know about when
+  moving a setup to another machine.
+- The renewal grace period trades some of the "access ends within the
+  lifetime" property for convenience in the default profile.
 - Certificate expiry becomes an operational concern: clocks on SBCs, mid-lease
   expiry for users, and offline exporters that miss renewal.
 - TLS must terminate in the controller and router pods. Deployments that
@@ -1894,9 +2129,10 @@ platform.
    internal subject as their path. Should Jumpstarter also recommend a layout
    for external issuers (for example `/jumpstarter/exporters/<name>`), so
    that a default mapping works without configuration?
-2. **Offline exporter recovery.** Should `simplereenroll` accept a recently
-   expired certificate within a grace window, or must an exporter that missed
-   renewal always receive a new bootstrap credential?
+2. **Lifetime and grace defaults.** The JEP proposes 30-day certificates and a
+   90-day renewal grace period with the managed issuer, and no grace
+   otherwise. Are these the right numbers, and should a deployment with an
+   external identity provider be allowed a grace period for exporters only?
 3. **Bootstrap token lifecycle.** Should one-time enrollment tokens be a new
    field on `Exporter` status, a separate Secret, or reuse the existing exporter
    credential Secret?
@@ -1909,18 +2145,21 @@ platform.
 6. **Flight Control specifics to verify:** native FDO support, and whether
    Flight Control-issued device certificates could serve directly as an
    identity issuer.
-7. **Multiple controller replicas.** `Dial` reaches an exporter only through
+7. **Scope of direct mode pairing.** Pairing shares this JEP's goal but none
+   of its machinery. Should it stay here, or move to its own JEP so it can
+   ship independently?
+8. **Multiple controller replicas.** `Dial` reaches an exporter only through
    the replica holding its `Listen` stream. That is true today and this JEP
    relies on it for router token binding; if dials are ever routed across
    replicas, the exporter's identity has to travel with them.
-8. **Default `leasePolicy.maxDuration`:** unset (today's behavior) or a
+9. **Default `leasePolicy.maxDuration`:** unset (today's behavior) or a
    conservative default for new installations?
-9. **Relationship to host management proposals.** JEP-0017
+10. **Relationship to host management proposals.** JEP-0017
    ([#1253](https://github.com/jumpstarter-dev/jumpstarter/pull/1253)) and
    [#1242](https://github.com/jumpstarter-dev/jumpstarter/issues/1242) cover
    Flight Control management of exporter hosts. Which of them owns delivery of
    the trust bundle and bootstrap credentials should be settled there.
-10. **Reference integration verification.** Items specific to each reference
+11. **Reference integration verification.** Items specific to each reference
    integration are tracked in that integration's section
    ([To verify: Teleport](#to-verify-teleport),
    [To verify: OpenZiti](#to-verify-openziti)) and do not block acceptance of
@@ -1969,6 +2208,8 @@ These are not part of this JEP.
   reuse the internal subject and the credential-kind pattern of #1319 and
   #1320, credential sources target the Python client on `main`, and an
   implementation map was added
+- 2026-11-12: Added the new-user experience: operator-managed issuer for local
+  clusters, renewal grace period, and pairing for direct mode
 
 ## References
 
