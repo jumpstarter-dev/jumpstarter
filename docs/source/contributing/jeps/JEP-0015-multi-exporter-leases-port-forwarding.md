@@ -654,17 +654,22 @@ every member; a template grants no access of its own (DD-12).
 
 ### Running existing multi-device suites
 
-A lease with ADB-capable members can be exported as a Mobly testbed:
+A lease with ADB-capable members can be exported as a Mobly testbed. The
+export runs inside `jmp shell`, and the suite runs in the same shell:
 
 ```console
-$ jmp get leases projection-9m2qd -o mobly > testbed.yml
-$ mobly_test.py -c testbed.yml --test_bed projection-9m2qd
+$ jmp shell --lease projection-9m2qd
+jumpstarter ⚡ projection-9m2qd ➤ jmp get leases projection-9m2qd -o mobly > testbed.yml
+jumpstarter ⚡ projection-9m2qd ➤ mobly_test.py -c testbed.yml --test_bed projection-9m2qd
 ```
 
-The exported `AndroidDevice` controllers use locally forwarded ADB endpoints
-and retain the member names as device labels. Existing tests and results
-pipelines can use these endpoints. The lifetime of the local ADB forwards
-remains an open question.
+The exported `AndroidDevice` controllers use local ADB endpoints and keep
+the member names as device labels, so existing tests and results pipelines
+can use them. The shell owns those endpoints: it opens one local ADB forward
+per member and keeps it open until the shell exits, and the export only
+writes their addresses. A testbed file therefore works only while its shell
+is running. Whether exported endpoints should outlive a shell is an open
+question (*Unresolved Questions*).
 
 ### How a forward comes up
 
@@ -865,15 +870,18 @@ is the exporter status enum.
 **`LeaseSpec`** gains three optional lists and a provenance reference:
 
 ```go
-// Member and forward names must each be unique before binding or token creation.
-// +kubebuilder:validation:XValidation:rule="!has(self.members) || self.members.all(m, self.members.filter(x, x.name == m.name).size() == 1)",message="member names must be unique"
-// +kubebuilder:validation:XValidation:rule="!has(self.forwards) || self.forwards.all(f, self.forwards.filter(x, x.name == f.name).size() == 1)",message="forward names must be unique"
+// Member and forward names are list-map keys, so the API server rejects
+// duplicates itself, with no CEL cost. Every list is bounded, which keeps
+// the remaining rules within the CEL cost budget.
 // +kubebuilder:validation:XValidation:rule="!has(self.constraints) || (has(self.members) && self.constraints.all(c, c.members.all(n, self.members.exists(m, m.name == n))))",message="constraints must reference declared members"
+// +kubebuilder:validation:XValidation:rule="!has(self.forwards) || (has(self.members) && self.forwards.all(f, f.endpoints.all(e, self.members.exists(m, m.name == e.member))))",message="forward endpoints must reference declared members"
 type LeaseSpec struct {
     // ... all existing fields unchanged ...
 
     // Members of a member-form lease. When empty, the lease binds a single
     // exporter using the top-level Selector/ExporterRef exactly as before.
+    // +listType=map
+    // +listMapKey=name
     // +kubebuilder:validation:MaxItems=8
     Members []LeaseMember `json:"members,omitempty"`
 
@@ -882,6 +890,9 @@ type LeaseSpec struct {
     Constraints []LeaseConstraint `json:"constraints,omitempty"`
 
     // Port forwards between members. Requires Members.
+    // +listType=map
+    // +listMapKey=name
+    // +kubebuilder:validation:MaxItems=16
     Forwards []LeaseForward `json:"forwards,omitempty"`
 
     // The template this lease was expanded from. Set by ClientService at
@@ -907,8 +918,9 @@ type LeaseTemplateReference struct {
 }
 
 // Exactly one non-empty selection source is required for every member.
-// +kubebuilder:validation:XValidation:rule="!self.excluded || self.optional",message="only an optional member can be excluded"
-// +kubebuilder:validation:XValidation:rule="((((has(self.selector.matchLabels) && size(self.selector.matchLabels) > 0) || (has(self.selector.matchExpressions) && size(self.selector.matchExpressions) > 0)) ? 1 : 0) + ((has(self.exporterRef) && has(self.exporterRef.name) && size(self.exporterRef.name) > 0) ? 1 : 0)) == 1",message="exactly one of selector or exporterRef.name is required"
+// Optional fields can be absent, so every rule guards them with has().
+// +kubebuilder:validation:XValidation:rule="!has(self.excluded) || !self.excluded || (has(self.optional) && self.optional)",message="only an optional member can be excluded"
+// +kubebuilder:validation:XValidation:rule="(((has(self.selector) && ((has(self.selector.matchLabels) && size(self.selector.matchLabels) > 0) || (has(self.selector.matchExpressions) && size(self.selector.matchExpressions) > 0))) ? 1 : 0) + ((has(self.exporterRef) && has(self.exporterRef.name) && size(self.exporterRef.name) > 0) ? 1 : 0)) == 1",message="exactly one of selector or exporterRef.name is required"
 type LeaseMember struct {
     // DNS-label syntax keeps names usable in the CLI and generated formats.
     // Python maps role names to LeaseMembers attributes, "-" becoming "_".
@@ -929,9 +941,11 @@ type LeaseForward struct {
     // Endpoints on distinct members, in any order. At bind time exactly one
     // must resolve to `provides` and every other one to `requires` (DD-13,
     // DD-23), or exactly two must resolve to `connects` (DD-27).
+    // Keyed by member, so two endpoints on one member are rejected.
+    // +listType=map
+    // +listMapKey=member
     // +kubebuilder:validation:MinItems=2
     // +kubebuilder:validation:MaxItems=8
-    // +kubebuilder:validation:XValidation:rule="self.all(e, self.filter(x, x.member == e.member).size() == 1)",message="forward endpoints must be on distinct members"
     Endpoints []ForwardEndpoint `json:"endpoints"`
 
     // Auto (default) | Router | Direct.
@@ -1022,11 +1036,17 @@ type LeaseTemplateSpec struct {
     Image        string   `json:"image,omitempty"`        // URL; never fetched
     Instructions string   `json:"instructions,omitempty"` // plain text
 
+    // Same list-map keys and bounds as LeaseSpec.
+    // +listType=map
+    // +listMapKey=name
     // +kubebuilder:validation:MinItems=1
     // +kubebuilder:validation:MaxItems=8
     Members     []LeaseMember     `json:"members"`
     // +kubebuilder:validation:MaxItems=4
     Constraints []LeaseConstraint `json:"constraints,omitempty"`
+    // +listType=map
+    // +listMapKey=name
+    // +kubebuilder:validation:MaxItems=16
     Forwards    []LeaseForward    `json:"forwards,omitempty"`
 
     Defaults LeaseTemplateDefaults `json:"defaults,omitempty"`
@@ -1044,12 +1064,16 @@ come and go.
 The existing CEL rules are extended, not replaced. The current top-level
 "one of selector or exporterRef is required" rule gains a `members` arm and
 mutual exclusion. Per-member CEL requires exactly one *non-empty* `selector`
-or `exporterRef.name`; both set and both unset are rejected. Additional rules
-enforce unique and immutable member names, unique forward names, forwards
-referencing declared members, constraints referencing declared members,
-immutability of `members`, `constraints`, `forwards`, and `templateRef`
-(mirroring `tags` and `context`), two to eight forward endpoints on distinct
-members, and `excluded` only on optional members. Duplicate forward names
+or `exporterRef.name`; both set and both unset are rejected. Member and
+forward names, and the members of a forward's endpoints, are list-map keys
+(`+listType=map`), so the API server rejects duplicates without a CEL rule.
+Additional rules enforce immutable member names, forwards and constraints
+referencing declared members, immutability of `members`, `constraints`,
+`forwards`, and `templateRef` (mirroring `tags` and `context`), two to eight
+forward endpoints, and `excluded` only on optional members. Every rule
+guards optional fields with `has()`, and every list it iterates is bounded
+(eight members, four constraints, sixteen forwards, eight endpoints), so the
+rules stay within the API server's CEL cost budget. Duplicate forward names
 are thus rejected before the controller creates status maps.
 
 **Protocol** — additions to existing messages, two client RPCs, and two
@@ -2704,10 +2728,12 @@ exists belongs to a bound exporter, not to a selector (DD-12). For each
 2. Every named port exists on its bound exporter, and each port
    resolves to one driver UUID because report registration enforces
    exporter-wide unique names.
-3. **Direction resolves.** Either at most one bound endpoint reports
-   `PROVIDES` and every other one reports `REQUIRES` (DD-13), or the
-   forward has exactly two endpoints and both report `CONNECTS`, an
-   undirected path (DD-27). Mixing `CONNECTS` with other directions fails.
+3. **Direction resolves.** The bound endpoints either include at most one
+   `PROVIDES` and otherwise only `REQUIRES` (DD-13), or report only
+   `CONNECTS` in a forward that lists exactly two endpoints, an undirected
+   path (DD-27). Mixing `CONNECTS` with other directions, or listing more
+   than two endpoints for a path, fails. A path with one end set aside
+   passes this step and is decided by the next one.
 4. **Enough endpoints are bound.** One providing endpoint and at least one
    requiring endpoint are bound, or both ends of a path. If not, and an endpoint was set aside in
    step 1, the forward is `Disabled` naming the omitted role; this is how a
@@ -2928,7 +2954,10 @@ captures can be attached to test results alongside forward metrics.
   member and forward names, forwards and constraints naming declared
   members, two to eight forward endpoints on distinct members, `excluded`
   only on optional members, and immutability of `members`,
-  `constraints`, `forwards`, and `templateRef`.
+  `constraints`, `forwards`, and `templateRef`. The rules accept members
+  that omit `optional`, `excluded`, or `selector`, and the generated CRDs
+  install on the oldest supported Kubernetes version without exceeding
+  the CEL cost budget.
 - **Binding:** a reconcile that cannot assign every required member writes
   no claims. Two members with the same selector bind distinct exporters. The
   DD-18 case (A qualifies for `x` and `y`, B only for `x`) binds. An optional
