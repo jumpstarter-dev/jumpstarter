@@ -1255,11 +1255,25 @@ service ClientService {
 }
 ```
 
-`CreateLease` accepts exactly one of the scalar fields (`selector` or
-`exporter_name`), `template`, or `members`. With `template` set, the
-controller expands the template as described in *Template expansion*;
-`members`, `constraints`, and `forwards` must then be empty. List and get
-requests follow the existing paging and `parent` conventions. There is no
+`CreateLease` checks the request form before it creates the lease, so a
+malformed request never reaches exporter selection. Unless the request uses
+exactly one of these forms, it returns `INVALID_ARGUMENT` naming the
+conflicting fields, and creates nothing:
+
+- **Scalar:** `selector`, `exporter_name`, or both, as today, with no
+  `members`, `constraints`, `forwards`, or `template`.
+- **Template:** `template`, optionally with `excluded_members` and
+  `member_selectors`, with no scalar field and no `members`, `constraints`,
+  or `forwards`. The controller then expands the template as described in
+  *Template expansion*.
+- **Members:** `members`, optionally with `constraints` and `forwards`, with
+  no scalar field and no `template`.
+
+So `constraints` or `forwards` without `members`, and a scalar field
+together with `members` or `template`, are rejected before any lease or
+claim exists. CEL at admission enforces the same mutual exclusion on the
+stored `Lease`, for requests that do not come through `ClientService`.
+List and get requests follow the existing paging and `parent` conventions. There is no
 create, update, or delete RPC for templates.
 
 ```protobuf
@@ -1499,7 +1513,8 @@ through the top-level selector or exporter reference. For a lease requested
 through `members`, even when the list contains exactly one entry, an old
 reader sees nil and treats the lease as unbound rather than selecting an
 arbitrary role. Populating the scalar with the first member would misroute
-consumers such as the JEP-0016 Host Orchestrator façade. Replacing it with a
+consumers such as the Host Orchestrator façade from the Cuttlefish
+orchestration draft (*References*). Replacing it with a
 list would require every consumer to migrate.
 
 `Lease.exporter` in `ClientService` and the legacy
@@ -2626,7 +2641,8 @@ for one as they free up, is a scheduling feature (*Future Possibilities*).
 Each exporter must own its network namespace and run one process per
 exporter identity.
 
-A virtual exporter can run in its own Pod, as proposed in JEP-0016. A
+A virtual exporter can run in its own Pod, as proposed in the Cuttlefish
+orchestration draft. A
 physical exporter can run on a dedicated edge device or in an isolated
 container. This allows `requires` ports to use fixed loopback addresses and
 keeps host-scoped simulator operations, such as netsim reset, within one
@@ -3026,7 +3042,7 @@ Provisioner ordering remains an unresolved question.
   once each. No private key or bearer secret crosses the network. The
   listener is separate from device ports. Network policies
   should allow the authenticated peer port while blocking peer access to
-  unauthenticated simulator ports. JEP-0016 is expected to supply this policy
+  unauthenticated simulator ports. The Cuttlefish orchestration draft is expected to supply this policy
   with exporter Pods.
 - **Identity CA:** the controller's identity CA can sign a certificate for
   any exporter in its trust domain, so its key needs the custody of the
@@ -3119,6 +3135,11 @@ captures can be attached to test results alongside forward metrics.
   `status.members` and leaves `status.exporterRef` nil.
 - **Aggregation:** priority is the minimum member priority, and duration is
   bounded by the minimum member `maximumDuration`.
+- **Request forms:** `CreateLease` rejects each mixed form with
+  `INVALID_ARGUMENT` and creates no lease. The mixed forms are a scalar
+  field with `members` or `template`, `template` with `members`,
+  `constraints`, or `forwards`, and `constraints` or `forwards` without
+  `members`.
 - **Template expansion:** every step of *Template expansion*, including
   `NOT_FOUND`, each `INVALID_ARGUMENT` case, narrowing, exclusion, defaults,
   and `templateRef` provenance. Editing a template leaves existing leases
@@ -3266,6 +3287,9 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
 
 - [ ] `LeaseTemplate` CRD, with `GetLeaseTemplate` and `ListLeaseTemplates`
       on `ClientService`
+- [ ] `CreateLease` accepts exactly one request form (scalar, template, or
+      members) and rejects mixed forms with `INVALID_ARGUMENT` before any
+      exporter is selected
 - [ ] `CreateLease` expands a template as in *Template expansion*; an edited
       or deleted template does not affect existing leases (DD-19)
 - [ ] Requests can narrow selectors, exclude optional roles, and set
@@ -3359,7 +3383,7 @@ for `status.exporterRef`.
 - **`status.exporterRef`**: unchanged for every lease that does not pass
   `members`. Every member-form lease, including an explicit one-member list,
   leaves it nil, which existing consumers already read as "not bound yet"
-  (DD-2), so the JEP-0016 façade, `jmp get leases`, `Dial` and JEP-0013
+  (DD-2), so the Cuttlefish orchestration façade, `jmp get leases`, `Dial` and JEP-0013
   telemetry keep working; they change only to *support* member-form leases.
 - **Driver report and drivers**: `ports` is a new optional repeated field, so
   an exporter built before this JEP reports none and is treated as
@@ -3704,8 +3728,10 @@ The following work builds on this JEP:
 - [JEP-0014: Virtual Scalable Exporters](JEP-0014-virtual-scalable-exporters.md)
   — "Composite leases — multiple exporters linked into one logical lease"
   (Future Possibilities)
-- JEP-0016: Cuttlefish Kubernetes-Native Orchestration (draft, not yet
-  submitted; number provisional) — DD-8, whose option 1 this JEP implements
+- Cuttlefish Kubernetes-Native Orchestration (draft, not yet submitted;
+  unnumbered, because JEP-0016 is now used by
+  [#1272](https://github.com/jumpstarter-dev/jumpstarter/pull/1272)) — its
+  DD-8, whose option 1 this JEP implements
 - Dynamic Exporter Labels (draft, not yet submitted; unnumbered, because
   JEP-0017 is now used by
   [#1253](https://github.com/jumpstarter-dev/jumpstarter/pull/1253)) — the
