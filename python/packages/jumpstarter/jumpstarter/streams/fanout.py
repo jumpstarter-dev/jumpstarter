@@ -15,6 +15,7 @@ from anyio import (
 )
 from anyio.abc import ObjectStream
 from anyio.from_thread import run_sync as run_sync_from_thread
+from anyio.lowlevel import checkpoint
 
 from jumpstarter.common.exceptions import CONSOLE_IN_USE_MARKER, JumpstarterException
 from jumpstarter.driver.decorators import export, exportstream
@@ -185,15 +186,29 @@ class _FanOutStreamBase:
 
 
 class ExclusiveStream(_FanOutStreamBase):
-    """Read+write stream for the write token holder."""
+    """Read+write stream for the write token holder. Discards input during source outages."""
 
     async def send(self, data: bytes) -> None:
+        # Allow cancellation before inspecting mutable token/source state,
+        # even when there is no physical IO to await during an outage.
+        await checkpoint()
         if self._id != self._fanout._write_token_holder:
             raise WriteTokenRevokedError("write token revoked")
         source = self._fanout._source
-        if source is None:
-            raise BrokenResourceError("source not connected")
-        await source.send(data)
+        if source is not None:
+            try:
+                await source.send(data)
+            except (BrokenResourceError, ClosedResourceError):
+                # The reader owns reconnection; never retry a possibly partial write.
+                pass
+            else:
+                return
+        # A late failure must not report an outage on the replacement or mute its next outage.
+        if self._fanout._source is not None and self._fanout._source is not source:
+            return
+        if data and not self._fanout._input_discarded:
+            logger.warning("Discarding input until source reconnects")
+            self._fanout._input_discarded = True
 
     async def aclose(self) -> None:
         if not self._closed:
@@ -239,6 +254,7 @@ class StreamFanOut:
         self._source_ready_timeout = source_ready_timeout
 
         self._source: ObjectStream[bytes] | None = None
+        self._input_discarded = False
         self._clients: dict[int, ClientBuffer] = {}
         self._write_token_holder: int | None = None
         self._scrollback: deque[bytes] = deque()
@@ -275,6 +291,7 @@ class StreamFanOut:
             try:
                 async with self._source_factory() as source:
                     self._source = source
+                    self._input_discarded = False
                     backoff = 0.1
                     if not first_connect:
                         self._broadcast_system(b"[reconnected]\r\n")
@@ -282,20 +299,23 @@ class StreamFanOut:
                     self._reader_running = True
                     self._source_ready.set()
 
-                    async for data in source:
-                        if self._shutdown:
-                            break
-                        self._scrollback_append(data)
-                        self._broadcast_data(data)
-                    else:
+                    try:
+                        async for data in source:
+                            if self._shutdown:
+                                break
+                            self._scrollback_append(data)
+                            self._broadcast_data(data)
+                    finally:
+                        # Stop new writes before the source's asynchronous
+                        # teardown can yield control with a failed port.
                         self._source = None
                         self._reader_running = False
-                        if self._shutdown:
-                            break
-                        logger.warning("Source ended cleanly, reconnecting in %.1fs", backoff)
-                        await anyio.sleep(backoff)
-                        backoff = min(backoff * 2, max_backoff)
-                        continue
+                    if self._shutdown:
+                        break
+                    logger.warning("Source ended cleanly, reconnecting in %.1fs", backoff)
+                    await anyio.sleep(backoff)
+                    backoff = min(backoff * 2, max_backoff)
+                    continue
             except (OSError, BrokenResourceError, ClosedResourceError) as e:
                 self._source = None
                 self._reader_running = False
