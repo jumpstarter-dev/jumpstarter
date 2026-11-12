@@ -151,13 +151,22 @@ class StreamingProcess:
         self.send_signal(signal.SIGTERM)
 
     async def stop(self) -> int:
-        """SIGTERM, then SIGKILL after the stop grace period; also completes while cancelled."""
+        """SIGTERM, then SIGKILL after the stop grace period; also completes while cancelled.
+
+        A group the process was still leading is killed even if the leader exits on the
+        SIGTERM, so members that ignore it do not outlive the stop.
+        """
         with CancelScope(shield=True):
+            group_was_running = self._new_process_group and self._process.returncode is None
             if self._stop_grace > 0:
                 self.terminate()
                 with move_on_after(self._stop_grace):
                     await self._process.wait()
-            self.send_signal(signal.SIGKILL)
+            if group_was_running:
+                with suppress(ProcessLookupError):
+                    os.killpg(self._process.pid, signal.SIGKILL)
+            else:
+                self.send_signal(signal.SIGKILL)
             returncode = await self._process.wait()
         return returncode
 

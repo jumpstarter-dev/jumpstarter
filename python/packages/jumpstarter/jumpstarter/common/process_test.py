@@ -1,6 +1,7 @@
 import os
 import signal
 import sys
+from contextlib import suppress
 
 import pytest
 from anyio import EndOfStream, create_task_group, fail_after, move_on_after, sleep
@@ -139,6 +140,31 @@ async def test_stopping_a_new_process_group_kills_grandchildren():
             grandchild = int((await process.receive_line()).data)
             await process.stop()
     await wait_until_gone(grandchild)
+
+
+SPAWN_GRANDCHILD_IGNORING_SIGTERM = (
+    "import subprocess, sys, time\n"
+    "grandchild = subprocess.Popen([sys.executable, '-c', 'import signal, time; "
+    "signal.signal(signal.SIGTERM, signal.SIG_IGN); print(flush=True); time.sleep(60)'], stdout=subprocess.PIPE)\n"
+    "grandchild.stdout.readline()\n"
+    "print(grandchild.pid, flush=True)\n"
+    "time.sleep(60)\n"
+)
+
+
+@pytest.mark.anyio
+async def test_stopping_a_new_process_group_kills_grandchildren_that_outlive_the_leader():
+    with fail_after(10):
+        async with open_streaming_process(
+            python(SPAWN_GRANDCHILD_IGNORING_SIGTERM), new_process_group=True, stop_grace=1
+        ) as process:
+            grandchild = int((await process.receive_line()).data)
+            await process.stop()
+    try:
+        await wait_until_gone(grandchild)
+    finally:
+        with suppress(ProcessLookupError):
+            os.kill(grandchild, signal.SIGKILL)
 
 
 @pytest.mark.anyio
