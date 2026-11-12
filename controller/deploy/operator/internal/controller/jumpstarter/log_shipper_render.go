@@ -315,6 +315,19 @@ func renderVector(js *operatorv1alpha1.Jumpstarter) string {
 	return fmt.Sprintf(vectorTemplate, js.Namespace, endpoint, path, endpoint, path)
 }
 
+// lokiReadmeInstruction returns the shipper-specific Loki URL instruction for
+// the generated ConfigMap README. Vector renders separate endpoint and path
+// fields, while Promtail and Alloy use a single {{LOKI_URL}} placeholder.
+func lokiReadmeInstruction(shipper string) string {
+	if shipper == shipperTypeVector {
+		return "Replace the http://loki.invalid:3100 endpoint and " +
+			"/loki/api/v1/push path with your Loki push endpoint, or set " +
+			"spec.telemetry.loki.url on the Jumpstarter CR and let the operator render them."
+	}
+	return "Replace the {{LOKI_URL}} placeholder with your Loki push endpoint, or set " +
+		"spec.telemetry.loki.url on the Jumpstarter CR and let the operator render it."
+}
+
 // renderShipperReadme documents how to use the generated configuration.
 func renderShipperReadme(js *operatorv1alpha1.Jumpstarter, shipper, key string) string {
 	readme := fmt.Sprintf(`# Jumpstarter log shipper configuration
@@ -335,8 +348,7 @@ pushed directly to Loki by the telemetry service and are not scraped here.
 
 1. Copy the %q key into your %s configuration and merge it with the
    existing scrape/pipeline definitions.
-2. Replace the {{LOKI_URL}} placeholder with your Loki push endpoint, or set
-   spec.telemetry.loki.url on the Jumpstarter CR and let the operator render it.
+2. %s
 3. Configure credentials in your shipper's own Secret. This ConfigMap never
    contains credentials, and the Jumpstarter controller and router never hold
    Loki credentials.
@@ -357,7 +369,7 @@ a separate sink without the exporter label. All supported shippers omit the
 label when it is absent.
 
 A cluster log shipper is required to see controller and router logs in Loki.
-`, js.Name, js.Namespace, key, shipper)
+`, js.Name, js.Namespace, key, shipper, lokiReadmeInstruction(shipper))
 
 	if shipper == shipperTypeAlloy {
 		readme += fmt.Sprintf(`
