@@ -88,7 +88,7 @@ hooks:
       j power on
       sleep 5
     timeout: 60
-    onFailure: endLease
+    onFailure: fail
   afterLease:
     script: |
       j power off
@@ -105,7 +105,10 @@ hooks:
 | `hooks.<hook>.exec`      | string  | *(auto)*     | Interpreter used to execute the script. Auto-detected from file extension when not set (`.py` uses the exporter's Python, `.sh` uses `/bin/sh`). Defaults to `/bin/sh` for inline scripts. |
 | `hooks.<hook>.script`    | string  | *(required)* | Inline script or path to a script file (auto-detected)                                                                                                                                     |
 | `hooks.<hook>.timeout`   | integer | `120`        | Maximum execution time in seconds                                                                                                                                                          |
-| `hooks.<hook>.onFailure` | string  | `"warn"`     | Action on failure: `"warn"`, `"endLease"`, or `"exit"`                                                                                                                                     |
+| `hooks.<hook>.onFailure` | string  | `"warn"`     | Action on failure: `"warn"`, `"fail"`, `"userError"`, `"adminNotification"`, `"endLease"`, or `"exit"` |
+| `hooks.<hook>.exitActions` | object | `{}`        | Map specific non-zero exit codes to actions (overrides `onFailure` for matched codes) |
+| `hooks.<hook>.retries`   | integer | `0`          | Number of retry attempts when the resolved action is `"fail"` (0 = no retry) |
+| `hooks.<hook>.retryDelay` | integer | `5`         | Seconds to wait between retry attempts |
 
 ### Script Modes
 
@@ -179,10 +182,13 @@ Because {term}`hook`s use a PTY, programs that detect terminal mode (such as
 
 ## Failure Handling
 
-The `onFailure` field controls what happens when a hook script exits with a
+The `onFailure` field controls the default action when a hook script exits with a
 non-zero exit code or exceeds its timeout. A {term}`hook` is considered failed when the
 shell process returns a non-zero exit code or when execution exceeds the
 configured `timeout`.
+
+The `exitActions` field can override `onFailure` for specific exit codes —
+see [Exit-Code-Based Actions](#exit-code-based-actions) below.
 
 ### `warn`
 
@@ -197,7 +203,44 @@ continues as if the {term}`hook` succeeded:
 This is useful for {term}`hook`s that perform best-effort actions where failure should
 not disrupt the workflow.
 
+### `fail`
+
+The {term}`lease` is blocked and the client is notified, but the {term}`exporter` stays
+alive and ready for the next {term}`lease`:
+
+- **`beforeLease`**: The exporter status transitions to
+  `BEFORE_LEASE_HOOK_FAILED`. The client discovers the failure through status
+  polling. The interactive shell is skipped.
+- **`afterLease`**: The exporter status transitions to
+  `AFTER_LEASE_HOOK_FAILED`. The {term}`exporter` remains available for new {term}`lease`s.
+
+When `retries` is greater than 0, the hook is re-executed up to that many
+additional times before reporting failure. Only the `fail` action is retried;
+other actions are applied immediately.
+
+This is the recommended mode for `beforeLease` validation {term}`hook`s where you want
+the client to know immediately that the {term}`device` is not ready while keeping
+the {term}`exporter` online.
+
+### `userError`
+
+Same blocking behavior as `fail`, but the status message indicates the failure
+is attributable to the user or client. This is useful when the hook detects
+that the client provided bad input or the {term}`device` was left in a bad state by a
+previous user. The `userError` action is never retried.
+
+### `adminNotification`
+
+Same blocking behavior as `fail`, but the failure is logged at `CRITICAL` level
+and the status message flags that admin attention is required. Use this when
+the hook detects a hardware or infrastructure problem that cannot be resolved
+by the user. The `adminNotification` action is never retried.
+
 ### `endLease`
+
+```{deprecated} 0.10
+Use `fail` instead. The `endLease` action will be removed in a future release.
+```
 
 The {term}`lease` is ended and the client is notified of the failure:
 
@@ -213,9 +256,6 @@ the client or controller expiry.
   `AFTER_LEASE_HOOK_FAILED`. Since the {term}`session` has already ended, this
   primarily serves as a signal to the client that cleanup did not complete
   successfully. The {term}`exporter` remains available for new {term}`lease`s.
-
-This is the recommended mode for `beforeLease` validation {term}`hook`s where you want
-the client to know immediately that the {term}`device` is not ready.
 
 ### `exit`
 
@@ -236,7 +276,7 @@ configure `RestartPreventExitStatus=1` to prevent automatic restarts after an
 ```{warning}
 The `exit` failure mode is a drastic action intended for critical failures
 where the {term}`device` may be in an unusable state. It takes the {term}`exporter` offline
-until manually restarted. Use `endLease` for most validation scenarios and
+until manually restarted. Use `fail` for most validation scenarios and
 reserve `exit` for critical failures.
 ```
 
@@ -246,6 +286,62 @@ When a {term}`hook` exceeds its `timeout`, the process is terminated with `SIGTE
 followed by `SIGKILL` if the process does not exit within a few seconds. The
 resulting failure is then handled according to the `onFailure` setting, exactly
 as if the script had exited with a non-zero exit code.
+
+### Exit-Code-Based Actions
+
+The `exitActions` field lets hook scripts communicate a desired action through
+their exit code. Each key is a non-zero exit code and the value is the action
+to take:
+
+```yaml
+hooks:
+  beforeLease:
+    script: /opt/hooks/validate.sh
+    timeout: 60
+    onFailure: fail
+    exitActions:
+      2: userError
+      3: adminNotification
+      10: warn
+```
+
+With this configuration, exit code 2 triggers a `userError` action, exit code 3
+triggers `adminNotification`, exit code 10 is treated as a warning, and any
+other non-zero exit code uses the default `onFailure: fail`.
+
+**Built-in defaults:** When `onFailure` is set to a new-style action (`fail`,
+`userError`, or `adminNotification`), the following exit-code defaults are
+active automatically unless overridden by `exitActions`:
+
+| Exit code | Default action        | Meaning                        |
+| --------- | --------------------- | ------------------------------ |
+| 1         | `fail`                | General error (retryable)      |
+| 2         | `userError`           | Client/user caused the problem |
+| 3         | `adminNotification`   | Admin intervention needed      |
+
+These built-in defaults are **not** active when `onFailure` is a legacy action
+(`warn`, `endLease`, `exit`) to preserve backward compatibility. Explicit
+`exitActions` entries always take priority over built-in defaults.
+
+### Retries
+
+The `retries` field controls how many additional attempts are made when the
+resolved action is `fail`. Other actions (`userError`, `adminNotification`,
+`warn`, `endLease`, `exit`) are applied immediately without retry.
+
+```yaml
+hooks:
+  beforeLease:
+    script: /opt/hooks/check_device.sh
+    timeout: 30
+    onFailure: fail
+    retries: 3
+    retryDelay: 10
+```
+
+This retries the hook up to 3 additional times (4 total attempts) with 10
+seconds between each attempt. If all attempts fail, the lease is blocked.
+If the lease ends during the retry loop, retries are aborted.
 
 ## Use Cases
 
@@ -270,7 +366,9 @@ hooks:
       echo "Device did not become reachable"
       exit 1
     timeout: 120
-    onFailure: endLease
+    onFailure: fail
+    retries: 2
+    retryDelay: 10
 ```
 
 Note that the `j ssh` command does not have a built-in connection timeout, so
@@ -307,7 +405,7 @@ hooks:
       j power cycle
       sleep 10
     timeout: 180
-    onFailure: endLease
+    onFailure: fail
 ```
 
 ### Using Bash
@@ -324,7 +422,7 @@ hooks:
       [[ -f /dev/ttyUSB0 ]] || { echo "Serial device missing"; exit 1; }
       j power on
     timeout: 60
-    onFailure: endLease
+    onFailure: fail
 ```
 
 ### Using Python
@@ -343,7 +441,7 @@ hooks:
   beforeLease:
     script: /opt/jumpstarter/hooks/prepare_device.py
     timeout: 60
-    onFailure: endLease
+    onFailure: fail
 ```
 
 `/opt/jumpstarter/hooks/prepare_device.py`:
@@ -376,7 +474,7 @@ hooks:
     exec: /bin/bash
     script: /opt/jumpstarter/hooks/prepare_device.sh
     timeout: 120
-    onFailure: endLease
+    onFailure: fail
 ```
 
 ## Best Practices
@@ -385,10 +483,13 @@ hooks:
   cleanup).
 - Set an appropriate `timeout` for each {term}`hook`. The default of 120 seconds may be
   too generous for simple scripts and too short for firmware flashing.
-- Use `onFailure: endLease` for `beforeLease` validation so clients get
-  immediate feedback when a {term}`device` is not ready.
+- Use `onFailure: fail` for `beforeLease` validation so clients get
+  immediate feedback when a {term}`device` is not ready while keeping the
+  {term}`exporter` online.
 - Use `onFailure: warn` for `afterLease` cleanup unless leaving the {term}`device` in a
   bad state poses a safety risk.
+- Use exit codes 2 and 3 in hook scripts to signal `userError` and
+  `adminNotification` respectively when `onFailure` is a new-style action.
 - Reserve `onFailure: exit` for critical failures that require manual
   intervention.
 - {term}`Hook` output is streamed to the client in real time. Include informative
