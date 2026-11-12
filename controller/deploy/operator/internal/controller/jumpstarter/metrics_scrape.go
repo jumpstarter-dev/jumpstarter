@@ -176,6 +176,15 @@ func (r *JumpstarterReconciler) reconcileMetricsServices(ctx context.Context, js
 	return nil
 }
 
+// serviceMonitorCRDState is the result of probing for the ServiceMonitor CRD
+// once during a reconcile. Passing it to status and requeue logic avoids
+// duplicate bounded Lists and keeps their decisions based on the same snapshot.
+type serviceMonitorCRDState struct {
+	checked   bool
+	available bool
+	err       error
+}
+
 // serviceMonitorCRDAvailable reports whether monitoring.coreos.com/v1 serves the
 // ServiceMonitor kind. It uses a bounded List, mirroring the cert-manager CRD
 // detection pattern, and treats meta.IsNoMatchError as "CRD absent".
@@ -370,13 +379,20 @@ func (r *JumpstarterReconciler) deleteObjectIfExists(ctx context.Context, key ty
 // the caller reports them through status conditions instead of aborting the
 // Jumpstarter reconcile.
 func (r *JumpstarterReconciler) reconcileObservability(ctx context.Context, js *operatorv1alpha1.Jumpstarter) error {
+	_, err := r.reconcileObservabilityWithState(ctx, js)
+	return err
+}
+
+func (r *JumpstarterReconciler) reconcileObservabilityWithState(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (serviceMonitorCRDState, error) {
 	var errs []error
+	var crdState serviceMonitorCRDState
 
 	if err := r.reconcileMetricsServices(ctx, js); err != nil {
 		errs = append(errs, fmt.Errorf("metrics services: %w", err))
 	}
 
 	crdAvailable, err := r.serviceMonitorCRDAvailable(ctx)
+	crdState = serviceMonitorCRDState{checked: true, available: crdAvailable, err: err}
 	if err != nil {
 		// A transient API/RBAC error must not be mistaken for an absent CRD:
 		// deleting the monitors here would cause churn and data loss.
@@ -390,19 +406,26 @@ func (r *JumpstarterReconciler) reconcileObservability(ctx context.Context, js *
 		errs = append(errs, fmt.Errorf("log shipper: %w", err))
 	}
 
-	return errors.Join(errs...)
+	return crdState, errors.Join(errs...)
 }
 
 // serviceMonitorCondition reports the ServiceMonitorReady condition state.
 func (r *JumpstarterReconciler) serviceMonitorCondition(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (bool, string, string) {
+	return r.serviceMonitorConditionWithState(ctx, js, serviceMonitorCRDState{})
+}
+
+func (r *JumpstarterReconciler) serviceMonitorConditionWithState(ctx context.Context, js *operatorv1alpha1.Jumpstarter, crdState serviceMonitorCRDState) (bool, string, string) {
 	if !serviceMonitorEnabled(js) {
 		return false, "Disabled", "Prometheus autodiscovery is disabled by spec.telemetry.metrics.serviceMonitor"
 	}
-	crdAvailable, err := r.serviceMonitorCRDAvailable(ctx)
-	if err != nil {
-		return false, "Failed", fmt.Sprintf("failed to detect ServiceMonitor CRD: %v", err)
+	if !crdState.checked {
+		available, err := r.serviceMonitorCRDAvailable(ctx)
+		crdState = serviceMonitorCRDState{checked: true, available: available, err: err}
 	}
-	if !crdAvailable {
+	if crdState.err != nil {
+		return false, "Failed", fmt.Sprintf("failed to detect ServiceMonitor CRD: %v", crdState.err)
+	}
+	if !crdState.available {
 		return false, "CRDNotFound", "monitoring.coreos.com/v1 ServiceMonitor CRD is not installed"
 	}
 	for _, monitor := range desiredServiceMonitors(js) {
