@@ -88,6 +88,44 @@ def test_session_closes_console_sources_before_driver_shutdown():
     assert driver.events == ["opened", "closed", "shutdown"]
 
 
+@dataclass(kw_only=True)
+class RecordingServingDriver(Driver):
+    events: list[str] = field(default_factory=list)
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @asynccontextmanager
+    async def serving(self):
+        self.events.append("serving")
+        try:
+            yield
+        finally:
+            self.events.append("stopped serving")
+
+    @export
+    def ping(self) -> str:
+        self.events.append("call")
+        return "pong"
+
+    def shutdown(self):
+        self.events.append("shutdown")
+        super().shutdown()
+
+
+def test_every_driver_serves_for_as_long_as_its_session_does():
+    child = RecordingServingDriver()
+    driver = RecordingServingDriver(children={"child": child})
+
+    with serve(driver) as client:
+        client.call("ping")
+        client.children["child"].call("ping")
+
+    assert driver.events == ["serving", "call", "stopped serving", "shutdown"]
+    assert child.events == ["serving", "call", "stopped serving", "shutdown"]
+
+
 def test_session_unbinds_exporter_log_context():
     """Session must clear the exporter correlation field on exit."""
     import structlog

@@ -633,6 +633,12 @@ class FanOutStreamMixin:
         raise NotImplementedError("subclass must implement _open_source()")
         yield  # pragma: no cover — makes this a generator for @asynccontextmanager
 
+    @asynccontextmanager
+    async def serving(self):
+        """Run the fan-out reader while the session serves this driver."""
+        async with super().serving(), self._get_fanout().running():  # ty: ignore[unresolved-attribute]
+            yield
+
     def _get_fanout_always_on(self) -> bool:
         """Return always_on setting. Subclasses with an instance field override this."""
         return self._fanout_always_on
