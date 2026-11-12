@@ -68,6 +68,40 @@ func TestAccessLoggerWritesJSONL(t *testing.T) {
 	}
 }
 
+func TestAccessLoggerRedactsSensitiveQueryParameters(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var output bytes.Buffer
+	engine := gin.New()
+	engine.Use(AccessLoggerWithWriter("controller", &output))
+	engine.GET("/login", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	engine.ServeHTTP(httptest.NewRecorder(),
+		httptest.NewRequest(http.MethodGet, "/login?token=super-secret&client=visible", nil))
+
+	line := strings.TrimSpace(output.String())
+	if line == "" {
+		t.Fatal("expected an access log line")
+	}
+	if strings.Contains(line, "super-secret") {
+		t.Fatalf("sensitive query value leaked into access log: %s", line)
+	}
+	var entry map[string]any
+	if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		t.Fatalf("access log is not valid JSON: %v\n%s", err, line)
+	}
+	if got := entry["http_path"]; got != "/login?client=visible&token=%5BREDACTED%5D" {
+		t.Fatalf("http_path = %v, want redacted query path", got)
+	}
+}
+
+func TestRedactedQueryHandlesMalformedInput(t *testing.T) {
+	if got := redactedQuery("token=secret;bad"); got != "[REDACTED]" {
+		t.Fatalf("redactedQuery() = %q, want [REDACTED]", got)
+	}
+}
+
 func TestLogFormatterEscapesError(t *testing.T) {
 	line := LogFormatter("controller")(gin.LogFormatterParams{
 		TimeStamp:    time.Now(),

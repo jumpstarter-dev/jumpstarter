@@ -22,12 +22,80 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-logr/logr"
 )
+
+// sensitiveQueryKeys contains query parameter names whose values must never be
+// written to access logs. Matching is case-insensitive; token, secret, and
+// password substrings are handled separately for vendor-specific names.
+var sensitiveQueryKeys = map[string]struct{}{
+	"access_token":  {},
+	"apikey":        {},
+	"api_key":       {},
+	"assertion":     {},
+	"authorization": {},
+	"client_secret": {},
+	"code":          {},
+	"credential":    {},
+	"id_token":      {},
+	"jwt":           {},
+	"passwd":        {},
+	"password":      {},
+	"refresh_token": {},
+	"secret":        {},
+	"sig":           {},
+	"signature":     {},
+	"token":         {},
+}
+
+// redactedQuery returns a query string with sensitive values replaced by
+// [REDACTED]. The original parameter names and non-sensitive values are kept.
+// If the query cannot be parsed, the whole query is redacted rather than
+// risking a credential leak.
+func redactedQuery(rawQuery string) string {
+	if rawQuery == "" {
+		return ""
+	}
+	values, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return "[REDACTED]"
+	}
+	for key := range values {
+		if isSensitiveQueryKey(key) {
+			for i := range values[key] {
+				values[key][i] = "[REDACTED]"
+			}
+		}
+	}
+	return values.Encode()
+}
+
+func isSensitiveQueryKey(key string) bool {
+	normalized := strings.ToLower(strings.TrimSuffix(key, "[]"))
+	if _, ok := sensitiveQueryKeys[normalized]; ok {
+		return true
+	}
+	return strings.Contains(normalized, "token") ||
+		strings.Contains(normalized, "secret") ||
+		strings.Contains(normalized, "password")
+}
+
+func requestPath(p gin.LogFormatterParams) string {
+	if p.Request == nil || p.Request.URL == nil {
+		return p.Path
+	}
+	path := p.Request.URL.Path
+	if query := redactedQuery(p.Request.URL.RawQuery); query != "" {
+		path += "?" + query
+	}
+	return path
+}
 
 // LogFormatter turns a Gin request into one JSONL record. High-cardinality
 // request fields stay in the body; only the Jumpstarter stream labels are
@@ -40,7 +108,7 @@ func LogFormatter(component string) gin.LogFormatter {
 			"component":       component,
 			"msg":             "http request",
 			"http_method":     p.Method,
-			"http_path":       p.Path,
+			"http_path":       requestPath(p),
 			"http_status":     p.StatusCode,
 			"http_latency_ms": p.Latency.Milliseconds(),
 			"http_body_size":  p.BodySize,
