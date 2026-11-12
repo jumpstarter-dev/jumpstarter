@@ -30,8 +30,9 @@ Lab administrators can publish these definitions as a namespaced
 client requests it by name. Client libraries request multi-member leases
 only through templates; ad-hoc members are a `jmp` CLI feature (DD-20).
 
-All lease member claims
-are committed in one status update, and the members share a lease lifetime.
+A lease binds every required member or none, the API server ensures that
+no two leases ever hold the same exporter (DD-28), and the members share a
+lease lifetime.
 
 Forwards reuse the existing port-forwarding primitives and router, with
 mutually authenticated, encrypted direct connections preferred within a
@@ -133,7 +134,7 @@ DD-10). A lease does not pair a virtual device with a physical radio
 
 ### Scope
 
-This JEP adds six concepts, one of them a new resource:
+This JEP adds seven concepts, two of them new resources:
 
 | Concept | Where | What it does |
 | --- | --- | --- |
@@ -142,6 +143,7 @@ This JEP adds six concepts, one of them a new resource:
 | **Ports** | Exporter config, reported in `DriverInstanceReport` | Named connection points a driver **provides** (a local service) or **requires** (a socket it dials). A third direction, **connects**, marks an undirected port: two of them form one bidirectional path (DD-27). Addresses never leave the exporter. |
 | **Forwards** | `Lease.spec.forwards[]` | Join a provided port on one member to a required port on one or more others. Each connection gets its own stream over the existing router, or a direct connection within a network zone. |
 | **Exclusion groups** | `Exporter.spec.exclusionGroup` | Set by an administrator on exporters that serve one DUT; at most one lease holds the group (DD-16). |
+| **Claims** | New `ExporterClaim` resource | One per held exporter or exclusion group, named after what it claims, so the API server allows only one holder (DD-28). Only the controller writes them. |
 | **Lease templates** | New `LeaseTemplate` resource | An admin-managed, namespaced definition of members, constraints, forwards, defaults, and documentation. A request by name expands it into a member-form lease (DD-19). |
 
 Member-form leases are requested in two ways: through a `LeaseTemplate`,
@@ -158,6 +160,8 @@ members appears in `jmp get leases` and uses the existing expiry and
 - Co-location by shared label value, chosen during binding (DD-22).
 - Exclusive access to a DUT that several exporters serve, through an
   admin-assigned exclusion group (DD-16).
+- Claims enforced by the API server, so no two leases ever hold one
+  exporter or exclusion group, including in small, busy pools (DD-28).
 - TCP byte forwards from one provided socket port to one or more required
   ports, and undirected paths between two `connects` ports, with direction
   checks and an optional protocol tag (DD-4 to DD-8, DD-23, DD-27).
@@ -1025,6 +1029,29 @@ records the groups a lease holds (DD-16):
     ExclusionGroups []string `json:"exclusionGroups,omitempty"`
 ```
 
+**`ExporterClaim`** is a new namespaced resource that only the controller
+writes (DD-28). Its name is derived from what it claims, so at most one
+can exist for each exporter and each exclusion group:
+
+```go
+// Name: "exporter-" or "group-" followed by the first 32 hex digits of the
+// SHA-256 of the exporter or group name. Carries a controller owner
+// reference to the holding lease.
+// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable"
+// +kubebuilder:validation:XValidation:rule="has(self.exporter) != has(self.exclusionGroup)",message="exactly one of exporter or exclusionGroup is required"
+type ExporterClaimSpec struct {
+    Exporter       string `json:"exporter,omitempty"`
+    ExclusionGroup string `json:"exclusionGroup,omitempty"`
+    // The lease that holds the claim.
+    LeaseRef ClaimLeaseReference `json:"leaseRef"`
+}
+
+type ClaimLeaseReference struct {
+    Name string    `json:"name"`
+    UID  types.UID `json:"uid"`
+}
+```
+
 **`LeaseTemplate`** is a new namespaced resource. Its `members`,
 `constraints`, and `forwards` reuse the lease types and the same CEL rules,
 so a template that validates expands into a lease that validates (DD-19):
@@ -1437,23 +1464,23 @@ protobuf, token validation, and pairing stay as they are (DD-5).
 **Rationale:** An exporter claim is stored on the lease. The current controller writes
 `lease.Status.ExporterRef` and checks other active leases through
 `ListActiveLeases` → `attachExistingLeases` → `filterOutLeasedExporters`.
-Writing all member claims in one `Status().Update` prevents a lease from
-persisting a partial acquisition.
+Writing all members in one `Status().Update`, after taking their claims
+(DD-28), prevents a lease from persisting a partial acquisition.
 
 Child leases would bind independently and require acquisition timeouts,
 release-and-retry behavior, and contention handling. Client-side coordination
 has the same partial-acquisition problem. Both approaches also need a way to
 select a member when dialing.
 
-This atomic write does **not** guarantee exclusivity across leases. Lease
-reconciles run one at a time, but each reads the active leases from the
-controller's cache, which can lag the status write of the lease reconciled
-just before. Two leases can then claim the same exporter. That race already
-exists, and nothing detects or repairs it today: once `status.exporterRef`
-is set the controller does not re-evaluate it, and the exporter's
+The status write alone does **not** make claims exclusive across leases.
+Lease reconciles run one at a time, but each reads the active leases from
+the controller's cache, which can lag the status write of the lease
+reconciled just before. On `main`, two leases can therefore claim the same
+exporter, and nothing detects or repairs it: once `status.exporterRef` is
+set the controller does not re-evaluate it, and the exporter's
 `status.leaseRef` follows whichever lease is listed last. Leases with more
-members create more opportunities to hit it. Whether this JEP must close it
-is an unresolved question.
+members would hit this more often. DD-28 closes it for scalar and
+member-form leases alike.
 
 ### DD-2: Keep `status.exporterRef` scalar; add `status.members[]` alongside
 
@@ -1961,9 +1988,9 @@ their `jumpstarter.dev/` labels at every registration, so option 4 would
 let a compromised exporter join another DUT's group and make that DUT
 unavailable whenever the compromised exporter is leased.
 
-Group checks reuse the existing claim data: bound exporters on active
-leases, plus the groups each lease recorded at binding. The existing
-cross-lease race applies to groups as it does to exporters (DD-1).
+A lease holds a claim on every group its exporters belong to, beside the
+claims on the exporters themselves, so the API server makes groups
+exclusive in the same way (DD-28).
 
 Exclusion groups are the opposite of shared infrastructure (DD-14). A group
 is several exporters for one DUT and one lease. A shared infrastructure
@@ -2499,6 +2526,99 @@ connection:
   names more than two `connects` ports, fails validation. The direct path,
   certificates, and router are used as for any other connection.
 
+### DD-28: Exclusive claims enforced by the API server
+
+**Alternatives considered:**
+
+1. **A claim object per exporter and per exclusion group.** Its name is
+   derived from what it claims, so the API server allows only one. A lease
+   creates its claims in sorted order before writing its status, and deletes
+   the ones it created if any create fails.
+2. **Remember the controller's own claims** in memory until its cache shows
+   them, as the Kubernetes ReplicaSet controller does with its
+   "expectations".
+3. **Read active leases from the API server**, bypassing the cache, before
+   each bind.
+4. **Lock through the `Exporter` object**, writing `status.leaseRef` with
+   optimistic concurrency.
+5. **Detect conflicts and recover**, by releasing the later lease or
+   replacing its conflicting member.
+
+**Decision:** Option 1, for scalar and member-form leases alike.
+
+**Rationale:** Two leases must never control one DUT, not even briefly. This
+matters most in a small, busy pool, where every exporter is contested.
+Today, two leases can claim the same exporter (DD-1). A guarantee cannot
+rest on the cache, on the reconciler running one worker, or on leader
+election handing over cleanly. It has to come from the API server: object
+names are unique within a namespace, and creating an object whose name
+exists fails atomically.
+
+Options 2 and 3 close the race only while exactly one controller process
+writes claims. Leader election aims for that but does not guarantee it: an
+old leader that stalls past its renew deadline can still write after a new
+leader has started. Option 3 also adds an uncached list to every bind.
+Option 4 turns a status field into a lock, but exporter status is also
+patched by the exporter's heartbeat and by the exporter controller. Claims
+would fail for unrelated writes, and merge patches skip the version check
+anyway. Option 5 lets the scenario happen and repairs it afterwards: two
+clients could power-cycle and flash one DUT before the repair, and recovery
+must choose between swapping hardware under a running test and failing it.
+
+How option 1 works:
+
+- **Keys.** A lease claims every exporter it binds and every exclusion group
+  those exporters belong to. Claiming the exporter as well as its group keeps
+  the exporter exclusive even if an administrator moves it to another group
+  mid-lease. A claim is named `exporter-` or `group-` followed by the first 32
+  hex digits of the SHA-256 of the name, which fits within the 253-character
+  limit for any exporter or group name. The claimed name itself is in the
+  spec. A change to an exporter's group applies to new leases only. An
+  administrator who adds a leased exporter to a group that another lease
+  holds makes the two leases share that DUT until one ends, so groups
+  should be changed only on exporters that are not leased.
+- **Acquire, then write.** After assignment (DD-18), the controller creates
+  the lease's claims in sorted name order. When all of them exist, it writes
+  `status.members`, or `status.exporterRef` for a scalar lease, in one
+  `Status().Update` as before. A lease's status is written only after it
+  holds every claim, so no reader of lease status can see two leases on one
+  exporter.
+- **Roll back on conflict.** If a create fails because another lease holds
+  the claim, the controller deletes the claims this lease created in that
+  reconcile, sets `Pending` with reason `NotAvailable` naming the held
+  exporter, and requeues. The next assignment sees the claim and picks around
+  it. A lease never holds part of a set beyond one reconcile.
+- **No livelock.** Every lease creates claims in the same global order, so
+  two leases that need overlapping exporters both try the lowest shared claim
+  first. One gets it and goes on. The other fails before it holds anything
+  the first one needs, so neither can block the other in a cycle.
+- **No rebinding.** A bound lease keeps its claims until it ends. Nothing
+  releases or re-selects the members of a bound lease, so conflicts cannot
+  set off a chain of rebinds. A member whose exporter goes away becomes
+  `Lost` and keeps its claim (DD-3).
+- **Release.** The reconcile that ends a lease deletes its claims after
+  writing `status.ended`. Claims also carry a controller owner reference to
+  their lease, so deleting the lease deletes them.
+- **Stale claims.** A claim can outlive its lease, for example if the
+  controller stops between ending the lease and deleting the claim. The next
+  lease that needs the claim reads its owner from the API server, bypassing
+  the cache. If that lease has ended or no longer exists, the claim is
+  deleted with a UID precondition, so a claim another lease has created
+  since is never removed, and the create is retried. `status.ended` never
+  reverts, so an ended lease cannot come back and use the claim.
+- **Restart between claims and status.** A lease that finds claims it
+  already owns, left by an attempt that stopped before writing status,
+  treats them as acquired.
+
+`Exporter.status.leaseRef` follows the claim rather than lease status, so
+an exporter points at its one holder (*Readers of `status.exporterRef`*).
+
+Claims guarantee exclusivity, not fairness. In a busy pool, a lease that
+needs four exporters at once can keep losing to leases that need one. Each
+attempt it loses releases what it took, so it holds nothing while it waits,
+but it may wait a long time. Ordering waiting leases, or reserving exporters
+for one as they free up, is a scheduling feature (*Future Possibilities*).
+
 ## Design Details
 
 ### Deployment assumptions
@@ -2557,8 +2677,8 @@ a valid lease unless the request's own fields are invalid.
 The existing `reconcileStatusExporterRef` generalizes to
 `reconcileStatusMembers`. Each member's candidates come from the existing
 pipeline, run once per member with its own selector or `exporterRef`. The
-controller then assigns all members distinct exporters together (DD-18) and
-commits the result in one write:
+controller then assigns all members distinct exporters together (DD-18),
+creates their claims (DD-28), and commits the result in one write:
 
 ```{mermaid}
 flowchart TD
@@ -2570,6 +2690,8 @@ flowchart TD
     complete{"Some combination assigns<br/>every required member?"}
     classify["Report the first filter stage at which the<br/>required members cannot all be assigned<br/>Name the competing roles; write no claims"]
     requeue["Requeue"]
+    claim{"Create claims in sorted order (DD-28)<br/>All created?"}
+    rollback["Delete the claims just created<br/>Pending: NotAvailable"]
     bind["Set status.members and member states<br/>Set priority to the minimum member priority"]
     commit["Commit one atomic Status().Update()"]
 
@@ -2577,7 +2699,9 @@ flowchart TD
     precheck -->|No| reject
     precheck -->|Yes| filter --> assign --> complete
     complete -->|No| classify --> requeue
-    complete -->|Yes| bind --> commit
+    complete -->|Yes| claim
+    claim -->|No| rollback --> requeue
+    claim -->|Yes| bind --> commit
 ```
 
 **Per-member checks.** The checks that look at one member alone run
@@ -2645,15 +2769,18 @@ through the groups recorded in that lease's `status.exclusionGroups`. Several
 members of one lease may bind exporters in the same group. The binding write
 records every group touched by the lease's bound exporters, so later
 membership edits cannot silently release a DUT mid-lease. Spot-access
-takeover follows the existing rules and applies to the whole group.
+eviction is not implemented on `main`. When it is, taking over a lease's
+exporters means deleting that lease's claims and creating new ones, for the
+whole group (DD-28).
 
 The scalar path uses the same selection code with a synthetic member and
 writes the result to `status.exporterRef` (DD-2).
 
-Assignment is per lease; it does not arbitrate between leases. The existing
-cross-lease race remains: a reconcile can read stale claims from the cache
-and commit a selection that conflicts with another lease. Nothing detects or
-repairs that conflict today (DD-1, *Unresolved Questions*).
+Assignment is per lease and reads claims from the cache, so it can pick an
+exporter that another lease has just claimed. Creating the claim catches
+that: the create fails, the lease deletes the claims it took in that
+reconcile and requeues, and the next assignment picks around the claim. No
+lease is bound until it holds every claim (DD-28).
 
 ### Lease state
 
@@ -2662,7 +2789,7 @@ flowchart TD
     pending["Pending<br/>No exporters held"]
     assignable{"Required members assignable?"}
     unsatisfiable["Unsatisfiable<br/>No exporters held"]
-    bound["All member claims committed<br/>in one status write"]
+    bound["All claims held, then members<br/>written in one status update"]
     forwards["Forwards validated and requested"]
     ready["Ready"]
     degraded["Degraded<br/>Members stay held"]
@@ -2706,7 +2833,7 @@ paths read it today. None changes for a scalar lease:
 | --- | --- | --- |
 | `ControllerService.Listen` | Admits only the exporter in `status.exporterRef`. Keeps one listener queue per lease name, and a new `Listen` replaces the previous one | Admits the exporter of any bound member. The queue is keyed by lease and exporter, so members do not displace each other |
 | `ControllerService.Dial` | Dials the exporter in `status.exporterRef`, or fails with "lease not active" | Dials the exporter bound to `member_name` (DD-2) |
-| `ExporterReconciler.reconcileStatusLeaseRef` | Sets `Exporter.status.leaseRef` from `status.exporterRef` | Also matches `status.members[]` |
+| `ExporterReconciler.reconcileStatusLeaseRef` | Sets `Exporter.status.leaseRef` from `status.exporterRef`, following whichever lease is listed last | Sets it from the exporter's claim, which names exactly one lease (DD-28) |
 | `assignedLease`, used by `Status` and `UpdateLeaseHooks` | Accepts the exporter's lease only if `status.exporterRef` names the exporter | Accepts a lease that binds the exporter as a member. Each member keeps its own lease-hook record |
 | Exporter-initiated release (`ReportStatus`, `ReleaseLease`) | The exporter in `status.exporterRef` may set `spec.release` | See *Unresolved Questions* |
 | `reconcileSharedWithPolicies` | Filters `spec.sharedWith` by policy on `status.exporterRef`, and grants the full set while it is nil | Filters by policy on every bound member (*Security*) |
@@ -2819,6 +2946,9 @@ service.
 | Direct dial fails or times out | In `Auto`, fall back to the router and record the reason; in `Direct`, fail |
 | A member's exporter disappears | Peer's stream resets; lease `Degraded` naming the role (DD-3) |
 | Client releases the lease | Forwards torn down first, then the lease ends normally |
+| Another lease holds a claim this lease needs | Claims created in this reconcile are deleted; `Pending`, `NotAvailable`; requeue (DD-28) |
+| A claim outlives its lease | Deleted by the next lease that needs it, after a live check of its owner, with a UID precondition (DD-28) |
+| The controller stops between creating claims and writing status | The next reconcile treats the claims the lease owns as acquired (DD-28) |
 | Requested template does not exist | `CreateLease` returns `NOT_FOUND`; no lease created |
 | Request excludes a required role, or narrows an unknown one | `CreateLease` returns `INVALID_ARGUMENT` naming the role (DD-21) |
 | Typed class disagrees with its template | Client raises `TypeError` before `CreateLease` (DD-17) |
@@ -2902,6 +3032,9 @@ Provisioner ordering remains an unresolved question.
   any exporter in its trust domain, so its key needs the custody of the
   router signing key. It is kept separate from both that key and the
   serving certificates, and certificates are short-lived (DD-25).
+- **Claims:** only the controller creates or deletes `ExporterClaim`
+  objects. Clients and exporters have no access to them, so neither can
+  take or release a claim, or block an exporter by creating one (DD-28).
 - **Membership:** `members`, `constraints`, `forwards`, and `templateRef`
   are immutable after creation.
 - **Templates:** only administrators create or change `LeaseTemplate`
@@ -2968,6 +3101,15 @@ captures can be attached to test results alongside forward metrics.
   without the label never satisfies a constraint, an omitted optional member
   is ignored, and `ConstraintUnsatisfiable` and `ConstraintLimit` are
   reported (DD-22).
+- **Claims:** two leases reconciled back to back against a stale cache
+  never both hold one exporter or group. A failed create deletes the
+  claims taken in that reconcile and writes no status. Two leases that
+  need the same exporters in opposite member order both finish without
+  livelock. A controller stopped between claims and status resumes with
+  the claims it owns. A stale claim is removed only after its owner is
+  confirmed ended or gone, and never when a newer claim has replaced it.
+  Moving an exporter to another group mid-lease does not release it
+  (DD-28).
 - **Exclusion groups:** a candidate whose group another active lease holds
   is skipped, one lease may bind several exporters of a group, and
   `status.exclusionGroups` survives a later edit of `spec.exclusionGroup`
@@ -3040,8 +3182,11 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
   an `EchoNetwork` provided port to a required port, established through the
   real router, with byte fidelity and reset behavior checked. Several
   concurrent connections on that forward each echo their own data.
-- Contention: more concurrent member-form leases than capacity. Every lease
-  is fully bound or holds nothing.
+- Contention: a small pool and more concurrent scalar and member-form
+  leases than it can serve, run for many rounds with the controller
+  restarted and its leader changed mid-run. At every point, every lease is
+  fully bound or holds nothing, and no exporter or group has two holders
+  (DD-28).
 - Expiry, release, and client disconnect leave no router streams, claimed
   exporters, or bound listeners.
 - Transport: `Auto` goes direct for two same-zone exporters only after
@@ -3095,8 +3240,12 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
 
 - [ ] `spec.members[]`, `spec.constraints[]`, and `status.members[]` on
       `Lease`, with the extended CEL validation and immutability
-- [ ] Binding is one `Status().Update`: a reconcile that cannot assign every
-      required member writes no claims
+- [ ] Binding is one `Status().Update`: a reconcile that cannot assign or
+      claim every required member writes no status and deletes any claims
+      it created
+- [ ] No two active leases hold one exporter or exclusion group, under
+      concurrent requests, a stale cache, a controller restart mid-bind,
+      and a leader change (DD-28)
 - [ ] Two members with identical selectors bind two distinct exporters, and
       a lease binds whenever any assignment exists (DD-18)
 - [ ] A `sameLabel` constraint binds members that share a value chosen at
@@ -3197,9 +3346,10 @@ for `status.exporterRef`.
 
 - **CRD**: `Lease` gains three optional spec lists (`members`,
   `constraints`, `forwards`), an optional `templateRef`, and three optional
-  status lists (`members`, `forwards`, `exclusionGroups`). A new
-  `LeaseTemplate` CRD is added, and the controller's role gains read access
-  to it. `ExporterStatus.Devices[]`
+  status lists (`members`, `forwards`, `exclusionGroups`). New
+  `LeaseTemplate` and `ExporterClaim` CRDs are added. The controller's role
+  gains read access to templates and create, read, and delete access to
+  claims. `ExporterStatus.Devices[]`
   gains an optional `ports` list, and `ExporterStatus` gains optional
   `peerEndpoint`, `networkZone`, and `identityExpiresAt`. No existing field
   changes type, meaning,
@@ -3230,9 +3380,16 @@ for `status.exporterRef`.
   unchanged.
 - **Operator upgrade**: a CRD schema addition, a standard bundle bump with no
   conversion webhook. Member-form leases must be removed before rollback;
-  scalar leases remain compatible.
+  scalar leases remain compatible. After an upgrade, the controller creates
+  claims for the leases that are already bound, oldest first, before it
+  binds any new lease. If the old race left two leases on one exporter, the
+  newer lease marks that member `Lost` (DD-3); this is the only case in
+  which a conflict is resolved after the fact.
+- **Scalar exclusivity**: scalar leases take claims too, so they gain the
+  same guarantee. On `main`, two scalar leases can briefly hold one exporter
+  (DD-28).
 - **Coexistence**: scalar- and member-form leases share one exporter pool,
-  one scheduler, and one selection implementation.
+  one scheduler, one selection implementation, and one set of claims.
 
 ## Consequences
 
@@ -3240,6 +3397,8 @@ for `status.exporterRef`.
 
 - One lease acquires all required members in one status write and gives them
   a shared lifetime.
+- No two leases ever hold one exporter or exclusion group, whatever the
+  cache or controller state, and a bound lease is never re-selected (DD-28).
 - Wiring knowledge lives in one admin-maintained template per lab. Tests
   name a template and its roles, so a test runs unchanged in every lab that
   publishes that template, and a rewired bench needs one template edit.
@@ -3274,6 +3433,8 @@ for `status.exporterRef`.
 - Bind-time port validation holds devices even when a forward is invalid.
   Omitted protocol tags allow compatibility errors to surface at runtime.
 - Individual members cannot be released early.
+- Binding writes one claim per bound exporter and group. A lost race costs
+  those creates and their deletes (DD-28).
 - Freeing an exporter for a later member can move an earlier member to a
   lower-ranked candidate, which can lower the lease's priority (the minimum
   member priority). Binding with lower priority is preferred to not binding
@@ -3310,9 +3471,10 @@ for `status.exporterRef`.
 - **Deployment isolation:** shared network namespaces can cause listener
   collisions and simulator resets across leases. Enforce the documented
   deployment assumptions and report bind failures clearly.
-- **Binding contention:** leases with more members have more opportunities
-  to hit the existing cross-lease race. `MaxItems=8` bounds member count,
-  but a conflicting pair of leases is not detected today (DD-1).
+- **Binding contention:** in a small, busy pool, a lease with many members
+  can wait behind leases that need fewer. Claims keep every lease exclusive
+  and every waiting lease empty-handed, but do not order waiting leases
+  (DD-28).
 - **Consumer compatibility:** readers may assume every bound lease has
   `status.exporterRef`. *Readers of `status.exporterRef`* lists the
   controller paths found so far; other consumers must be checked before
@@ -3331,7 +3493,7 @@ for `status.exporterRef`.
 
 ## Rejected Alternatives
 
-DD-1 through DD-27 record the API, transport, binding, and template
+DD-1 through DD-28 record the API, transport, binding, and template
 alternatives.
 Higher-level alternatives are:
 
@@ -3366,8 +3528,12 @@ Higher-level alternatives are:
 - **Bumble** supplies virtual hosts, controllers, and link relays. The existing
   `jumpstarter-driver-bt-peer` demonstrates the required-port model.
 - **Kubernetes gang scheduling** illustrates the coordination needed when
-  claims live on separate objects. Lease member claims instead live in one
-  status update, with the cross-lease race described in DD-1.
+  claims live on separate objects. Lease claims are separate objects too,
+  but one controller takes them in a fixed order and releases them on any
+  conflict, so a lease never holds part of its set (DD-28).
+- **Kubernetes controller expectations** let the ReplicaSet controller
+  account for its own writes before its cache shows them. DD-28 considers
+  this and chooses claims that the API server enforces instead.
 - **`kubectl port-forward`** provides a comparable byte-transport guarantee
   without checking application protocol compatibility.
 
@@ -3401,11 +3567,6 @@ To resolve during review:
   ([#942](https://github.com/jumpstarter-dev/jumpstarter/pull/942)) covers
   the whole lease (*Security*). Decide whether a template can set sharing
   defaults, and whether sharing should be limited to some members.
-- **Cross-lease conflicts:** two leases can claim one exporter or exclusion
-  group through the existing race, and nothing detects it (DD-1, DD-16).
-  Decide whether this JEP adds detection, and if so whether the losing
-  lease releases every member and returns to `Pending` or replaces only
-  the conflicting member.
 - **Exporter-initiated release and hooks:** an exporter can end its lease
   today, through `ReleaseLease` or a lifecycle hook whose failure action
   ends the lease. Decide whether one member doing so ends the whole lease
@@ -3492,7 +3653,9 @@ The following work builds on this JEP:
   could emit the class directly. Generated clients request the lease with
   `CreateLease` and `template`, and dial each role with
   `DialRequest.member_name`.
-- **Global scheduling:** resolve the existing cross-lease binding race.
+- **Fair scheduling:** order waiting leases by priority and age, and
+  reserve exporters for a waiting lease as they free up, so that leases
+  with many members are not starved in busy pools (DD-28).
 - **Network segments:** join the `connects` ports of more than two members
   into one L2 segment, for example VXLAN over UDP, so that multicast and
   broadcast protocols work across exporters with one address plan. The
