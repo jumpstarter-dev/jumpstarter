@@ -103,14 +103,19 @@ Merge the key into your existing shipper deployment. The snippet:
 
 - selects pods labeled `jumpstarter.dev/log-scrape="true"` in the CR namespace;
 - promotes `component`, `exporter`, and `namespace` to Loki stream labels;
+  Vector uses a separate sink so `exporter` is present only when the JSON line
+  contains it;
 - keeps `client`, `lease_id`, and lease `spec.context` keys inside the JSON body
   so they can be queried with `| json | lease_id="..."`;
 - forwards the original JSON line, so multi-line stack traces remain one record;
 - contains no credentials.
 
-If `spec.telemetry.loki.url` is unset, the snippet uses the `{{LOKI_URL}}`
-placeholder. Set a real URL before running the shipper validator or deploying
-the snippet. Credentials always come from the shipper's own Secret.
+If `spec.telemetry.loki.url` is unset, Promtail and Alloy use the
+`{{LOKI_URL}}` placeholder. Vector instead renders `http://loki.invalid:3100`
+as the sink endpoint and `/loki/api/v1/push` as its path so `vector validate`
+can run. Set a real URL, or set `spec.telemetry.loki.url` and let the operator
+render it, before running the validator or deploying the snippet. Credentials
+always come from the shipper's own Secret.
 
 `LogShipperReady=True` means the operator generated the ConfigMap. It does not
 mean a shipper is running or that Loki is reachable; those remain cluster
@@ -195,10 +200,15 @@ forwarded unchanged with that fallback. Only `component`, `exporter`, and
 promoted.
 
 The operator splits `spec.telemetry.loki.url` into the Vector sink `endpoint`
-and `/loki/api/v1/push` path. The rendering uses `compression: none` and the
-`text` codec, which produces an uncompressed JSON push containing the original
-JSON line. If your Loki ingress requires snappy/protobuf, change the compression
-and validate the resulting sink configuration with `vector validate`.
+and `/loki/api/v1/push` path. When the URL is unset, it renders
+`http://loki.invalid:3100` and `/loki/api/v1/push` as validation-only fallback
+values; replace both before deploying, or set `spec.telemetry.loki.url` and let
+the operator render them.
+
+The rendering uses `compression: none` and the `text` codec, which produces an
+uncompressed JSON push containing the original JSON line. If your Loki ingress
+requires snappy/protobuf, change the compression and validate the resulting
+sink configuration with `vector validate`.
 
 Vector's `kubernetes_logs` source requires the Helm chart's hostPath mount for
 `/var/log/pods` and read access to pods and namespaces. The Vector Helm chart
