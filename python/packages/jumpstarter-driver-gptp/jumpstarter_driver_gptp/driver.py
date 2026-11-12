@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import asyncio
-import asyncio.subprocess
+import asyncio  # noqa: TID251
+import asyncio.subprocess  # noqa: TID251
 import logging
 import os
 import re
@@ -252,7 +252,7 @@ class Gptp(Driver):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10.0)
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10.0)  # noqa: TID251
             output = stdout.decode("utf-8", errors="replace")
             return "hardware-transmit" in output and "hardware-receive" in output
         except (TimeoutError, FileNotFoundError, OSError):
@@ -329,7 +329,7 @@ class Gptp(Driver):
         if self._ptp4l_proc is not None:
             self._ptp4l_proc.terminate()
             try:
-                await asyncio.wait_for(self._ptp4l_proc.wait(), timeout=5.0)
+                await asyncio.wait_for(self._ptp4l_proc.wait(), timeout=5.0)  # noqa: TID251
             except TimeoutError:
                 self._ptp4l_proc.kill()
                 await self._ptp4l_proc.wait()
@@ -346,7 +346,7 @@ class Gptp(Driver):
         if self._phc2sys_proc is not None:
             self._phc2sys_proc.terminate()
             try:
-                await asyncio.wait_for(self._phc2sys_proc.wait(), timeout=5.0)
+                await asyncio.wait_for(self._phc2sys_proc.wait(), timeout=5.0)  # noqa: TID251
             except TimeoutError:
                 self._phc2sys_proc.kill()
                 await self._phc2sys_proc.wait()
@@ -421,7 +421,7 @@ class Gptp(Driver):
             self._priority1 = 128
             self._stats = {}
             ptp4l_proc = self._ptp4l_proc
-            self._reader_task = asyncio.create_task(self._read_ptp4l_output())
+            self._reader_task = asyncio.create_task(self._read_ptp4l_output())  # noqa: TID251
             self._reader_task.add_done_callback(self._on_reader_done)
 
             await asyncio.sleep(0.5)

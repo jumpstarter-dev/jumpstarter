@@ -9,7 +9,7 @@ Levels:
 
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: TID251
 import os
 import platform
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
@@ -789,7 +789,7 @@ class TestGptpWithMockedSubprocess:
 
     async def _wait_for_lines(self, lines_done: asyncio.Event, timeout: float = 2.0) -> None:
         """Wait for the mock reader to consume all prepared stdout lines."""
-        await asyncio.wait_for(lines_done.wait(), timeout=timeout)
+        await asyncio.wait_for(lines_done.wait(), timeout=timeout)  # noqa: TID251
 
     async def test_start_and_stop_lifecycle(self):
         mock_proc, lines_done = _make_mock_process(stdout_lines=[
@@ -994,14 +994,14 @@ class TestGptpWithMockedSubprocess:
         driver = Gptp(interface="eth0")
 
         # Successful completion: no error logged.
-        ok_task = asyncio.create_task(asyncio.sleep(0))
+        ok_task = asyncio.create_task(asyncio.sleep(0))  # noqa: TID251
         await ok_task
         with patch.object(driver.logger, "error") as mock_error:
             driver._on_reader_done(ok_task)
             mock_error.assert_not_called()
 
         # Cancelled task: no error logged.
-        cancelled_task = asyncio.create_task(asyncio.sleep(0))
+        cancelled_task = asyncio.create_task(asyncio.sleep(0))  # noqa: TID251
         cancelled_task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await cancelled_task
@@ -1013,7 +1013,7 @@ class TestGptpWithMockedSubprocess:
         async def _boom():
             raise RuntimeError("reader boom")
 
-        fail_task = asyncio.create_task(_boom())
+        fail_task = asyncio.create_task(_boom())  # noqa: TID251
         with pytest.raises(RuntimeError, match="reader boom"):
             await fail_task
         with patch.object(driver.logger, "error") as mock_error:

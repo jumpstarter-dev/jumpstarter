@@ -1,6 +1,6 @@
 """Stage CDI disks, then activate the whole set with one conditional VM update."""
 
-import asyncio
+import asyncio  # noqa: TID251
 import logging
 import ssl
 import time
@@ -160,14 +160,14 @@ class Flash:
     async def _provision(self, state, vm):
         """Create every DataVolume and wait for its upload pod, all at once."""
         try:
-            async with asyncio.TaskGroup() as group:
+            async with asyncio.TaskGroup() as group:  # noqa: TID251
                 for target, disk in state["disks"].items():
                     group.create_task(self._prepare(state["id"], target, disk, vm))
         except BaseException as error:  # noqa: BLE001 - cancellation must discard too
             # A failure, or this RPC being cancelled, must not leave an operation behind:
             # this lease's next flash would be rejected by it. The id is already written,
             # so finish discarding it even if the cancellation came from our own caller.
-            await asyncio.shield(self._discard(state["id"]))
+            await asyncio.shield(self._discard(state["id"]))  # noqa: TID251
             raise _failure(error) from None
 
     async def _discard(self, operation_id):
@@ -216,7 +216,7 @@ class Flash:
 
     async def _prepare(self, operation_id, target, disk, vm):
         """Provision the upload pod before the client opens a short-lived resource URL."""
-        async with asyncio.timeout(self.timeout):
+        async with asyncio.timeout(self.timeout):  # noqa: TID251
             dv = DataVolume(
                 metadata=ObjectMeta(
                     name=disk["new"],
@@ -250,7 +250,7 @@ class Flash:
         stage's client has already opened one, so its wait has to stay short.
         """
         try:
-            async with asyncio.timeout(timeout):
+            async with asyncio.timeout(timeout):  # noqa: TID251
                 await self._wait_volume(name, "UploadReady")
         except TimeoutError:
             dv = await self.vm.client.get(DataVolume, name=name, namespace=self.vm.namespace)
@@ -261,7 +261,7 @@ class Flash:
             ) from None
 
     async def stage(self, operation_id, target, resource):
-        async with asyncio.timeout(self.timeout):
+        async with asyncio.timeout(self.timeout):  # noqa: TID251
             _, disk = await self._target(operation_id, target)
             # An upload pod that was evicted or restarted since provisioning needs a
             # moment to come back; the client has already opened its resource URL, so this
@@ -360,7 +360,7 @@ class Flash:
             grace = vmi["spec"].get("terminationGracePeriodSeconds")
             if isinstance(grace, int):
                 wait = max(wait, grace + _SHUTDOWN_MARGIN)
-        async with asyncio.timeout(wait):
+        async with asyncio.timeout(wait):  # noqa: TID251
             while await self._vmi() is not None:
                 await asyncio.sleep(self.poll_interval)
         await self.vm.update(lambda vm: self._swap(vm, operation_id, state))
@@ -429,11 +429,11 @@ class Flash:
             raise RuntimeError(
                 "A running VMI still uses a superseded disk; cleanup resumes on the next flash or lease once it stops"
             )
-        async with asyncio.timeout(self.shutdown_timeout):
+        async with asyncio.timeout(self.shutdown_timeout):  # noqa: TID251
             # Release every volume at once: each wait covers a claim held by a
             # terminating upload pod, so doing the volumes one at a time would
             # make the waits add up across disks.
-            errors = await asyncio.gather(
+            errors = await asyncio.gather(  # noqa: TID251
                 *(self._delete_owned(name, vm.metadata.uid) for name in candidates - in_use),
                 return_exceptions=True,
             )
