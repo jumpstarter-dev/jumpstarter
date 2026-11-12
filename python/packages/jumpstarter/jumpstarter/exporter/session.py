@@ -1,5 +1,4 @@
 import logging
-from collections import deque
 from collections.abc import Generator
 from contextlib import asynccontextmanager, contextmanager, suppress
 from dataclasses import dataclass, field
@@ -15,9 +14,10 @@ from jumpstarter_protocol import (
     router_pb2_grpc,
 )
 
-from .logging import LogHandler
+from .logging import LogFanOut, LogHandler
 from jumpstarter.common import ExporterStatus, LogSource, Metadata, TemporarySocket
 from jumpstarter.common.streams import ResourceStreamRequest, StreamRequestMetadata
+from jumpstarter.driver.context import session_env_var
 from jumpstarter.logging import set_log_context, unbind_log_context
 from jumpstarter.metrics import get_registry
 from jumpstarter.streams.common import forward_stream
@@ -50,7 +50,7 @@ class Session(
     motd: str | None = None
     lease_context: "LeaseContext | None" = field(init=False, default=None)
 
-    _logging_queue: deque = field(init=False)
+    _log_fanout: LogFanOut = field(init=False)
     _logging_handler: LogHandler = field(init=False)
     _current_status: ExporterStatus = field(init=False, default=ExporterStatus.AVAILABLE)
     _status_message: str = field(init=False, default="")
@@ -108,8 +108,8 @@ class Session(
         self.motd = motd
         self.mapping = {u: i for (u, _, _, i) in self.root_device.enumerate()}
 
-        self._logging_queue = deque(maxlen=256)
-        self._logging_handler = LogHandler(self._logging_queue, LogSource.SYSTEM)
+        self._log_fanout = LogFanOut(maxlen=256)
+        self._logging_handler = LogHandler(self._log_fanout, LogSource.SYSTEM)
         self._status_update_event = Event()
 
         # Map all driver logs to DRIVER source
@@ -329,14 +329,26 @@ class Session(
             ],
         )
 
+    def _bind_session_env(self) -> None:
+        """Make the lease's session reachable from the driver call, see jumpstarter.driver.session_env().
+
+        grpc.aio runs each RPC in a task of its own, so the value goes away with the call.
+        """
+        if self.lease_context is not None and (self.lease_context.hook_socket_path or self.lease_context.socket_path):
+            session_env_var.set(self.lease_context.session_env())
+
     async def DriverCall(self, request, context):
+        """Serve a unary driver call, with the lease's session env bound for it."""
         logger.debug("DriverCall(uuid=%s, method=%s)", request.uuid, request.method)
         await self._check_status_for_driver_call(context)
+        self._bind_session_env()
         return await self[UUID(request.uuid)].DriverCall(request, context)
 
     async def StreamingDriverCall(self, request, context):
+        """Serve a streaming driver call, with the lease's session env bound for it."""
         logger.debug("StreamingDriverCall(uuid=%s, method=%s)", request.uuid, request.method)
         await self._check_status_for_driver_call(context)
+        self._bind_session_env()
         async for v in self[UUID(request.uuid)].StreamingDriverCall(request, context):
             yield v
 
@@ -369,12 +381,13 @@ class Session(
             await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(e))
 
     async def LogStream(self, request, context):
-        while not context.done():
-            try:
-                yield self._logging_queue.popleft()
-            except IndexError:
-                # Short polling interval for real-time log streaming
-                await sleep(0.05)
+        with self._log_fanout.subscribe() as queue:
+            while not context.done():
+                try:
+                    yield queue.popleft()
+                except IndexError:
+                    # Short polling interval for real-time log streaming
+                    await sleep(0.05)
 
     def update_status(self, status: int | ExporterStatus, message: str = ""):
         """Update the current exporter status for the session and signal status change.

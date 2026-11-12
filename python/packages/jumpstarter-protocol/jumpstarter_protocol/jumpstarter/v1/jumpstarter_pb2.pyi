@@ -1151,19 +1151,71 @@ class TelemetryEndpoint(google.protobuf.message.Message):
     ENDPOINT_FIELD_NUMBER: builtins.int
     CERTIFICATE_FIELD_NUMBER: builtins.int
     MIN_SEVERITY_FIELD_NUMBER: builtins.int
+    TOKEN_FIELD_NUMBER: builtins.int
+    TOKEN_EXPIRY_FIELD_NUMBER: builtins.int
     endpoint: builtins.str
     """gRPC address (host:port)."""
     certificate: builtins.str
     """Optional CA certificate PEM for TLS verification."""
     min_severity: builtins.str
     """Minimum log severity to forward (e.g. "info", "warning")."""
+    token: builtins.str
+    """Bearer token for TelemetryService calls, naming the caller's exporter or
+    client. It is valid only for telemetry and never outlives the credential
+    that requested it. Call GetServiceEndpoints again for a new one before
+    token_expiry.
+    """
+    @property
+    def token_expiry(self) -> google.protobuf.timestamp_pb2.Timestamp:
+        """When token expires."""
+
     def __init__(
         self,
         *,
         endpoint: builtins.str = ...,
         certificate: builtins.str = ...,
         min_severity: builtins.str = ...,
+        token: builtins.str = ...,
+        token_expiry: google.protobuf.timestamp_pb2.Timestamp | None = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["certificate", b"certificate", "endpoint", b"endpoint", "min_severity", b"min_severity"]) -> None: ...
+    def HasField(self, field_name: typing.Literal["token_expiry", b"token_expiry"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["certificate", b"certificate", "endpoint", b"endpoint", "min_severity", b"min_severity", "token", b"token", "token_expiry", b"token_expiry"]) -> None: ...
 
 Global___TelemetryEndpoint: typing_extensions.TypeAlias = TelemetryEndpoint
+
+@typing.final
+class RotateTokenRequest(google.protobuf.message.Message):
+    """Request to rotate the authentication token for an exporter."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    def __init__(
+        self,
+    ) -> None: ...
+
+Global___RotateTokenRequest: typing_extensions.TypeAlias = RotateTokenRequest
+
+@typing.final
+class RotateTokenResponse(google.protobuf.message.Message):
+    """Response containing the newly rotated token."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    TOKEN_FIELD_NUMBER: builtins.int
+    EXPIRY_FIELD_NUMBER: builtins.int
+    token: builtins.str
+    """The new authentication token."""
+    @property
+    def expiry(self) -> google.protobuf.timestamp_pb2.Timestamp:
+        """The expiration time of the new token."""
+
+    def __init__(
+        self,
+        *,
+        token: builtins.str = ...,
+        expiry: google.protobuf.timestamp_pb2.Timestamp | None = ...,
+    ) -> None: ...
+    def HasField(self, field_name: typing.Literal["expiry", b"expiry"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["expiry", b"expiry", "token", b"token"]) -> None: ...
+
+Global___RotateTokenResponse: typing_extensions.TypeAlias = RotateTokenResponse

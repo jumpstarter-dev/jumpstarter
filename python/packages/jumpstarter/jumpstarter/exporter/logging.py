@@ -1,8 +1,9 @@
 import logging
 from collections import deque
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from threading import RLock
+from threading import Lock, RLock
 
 from google.protobuf.timestamp_pb2 import Timestamp
 from jumpstarter_protocol import jumpstarter_pb2
@@ -14,8 +15,49 @@ _FIRST_CLASS_KEYS = frozenset(("driver_type", "operation"))
 _STDLIB_RECORD_ATTRS = frozenset(vars(logging.LogRecord("", 0, "", 0, "", (), None)).keys())
 
 
+class LogFanOut:
+    """Hands every log record to each open LogStream.
+
+    Each client sharing a lease opens its own LogStream, so readers taking turns
+    at one queue would each see only part of the logs. Records logged while no
+    stream is open wait in a backlog for the next stream, so a client that
+    connects after a hook started still sees its output.
+    """
+
+    def __init__(self, maxlen: int = 256):
+        self._maxlen = maxlen
+        # append() runs on whichever thread logged; subscribe() on the event loop
+        self._lock = Lock()
+        self._backlog: deque = deque(maxlen=maxlen)
+        self._subscribers: list[deque] = []
+
+    def append(self, record) -> None:
+        with self._lock:
+            if not self._subscribers:
+                self._backlog.append(record)
+            for queue in self._subscribers:
+                queue.append(record)
+
+    @contextmanager
+    def subscribe(self) -> Generator[deque]:
+        """Yield a queue that receives the backlog, then every new record."""
+        with self._lock:
+            queue = deque(self._backlog, maxlen=self._maxlen)
+            self._backlog.clear()
+            self._subscribers.append(queue)
+        try:
+            yield queue
+        finally:
+            with self._lock:
+                # By identity: deques holding the same records compare equal
+                self._subscribers = [q for q in self._subscribers if q is not queue]
+                if not self._subscribers:
+                    # The backlog is empty while any stream is open, so this keeps order
+                    self._backlog.extend(queue)
+
+
 class LogHandler(logging.Handler):
-    def __init__(self, queue: deque, source: LogSource = LogSource.UNSPECIFIED):
+    def __init__(self, queue: deque | LogFanOut, source: LogSource = LogSource.UNSPECIFIED):
         logging.Handler.__init__(self)
         self.queue = queue
         self.listener = None

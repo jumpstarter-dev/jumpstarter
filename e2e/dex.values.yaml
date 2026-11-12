@@ -42,6 +42,14 @@ config:
       hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
       username: "test-client-exporterset-qemu"
       userID: "d7fe7051-7790-7b8f-d75d-66e1b0b69820"
+    - email: "test-client-telemetry@example.com"
+      hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
+      username: "test-client-telemetry"
+      userID: "e80f8162-88a1-4c90-8e8f-77f2c1c7a931"
+    - email: "test-exporter-telemetry@example.com"
+      hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
+      username: "test-exporter-telemetry"
+      userID: "f9107273-99b2-4da1-9f90-88036d8d0a42"
   connectors:
     - name: kubernetes
       type: oidc

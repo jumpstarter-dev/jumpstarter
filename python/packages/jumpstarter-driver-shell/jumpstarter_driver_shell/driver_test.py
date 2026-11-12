@@ -1,8 +1,17 @@
 
+import sys
+from contextlib import ExitStack, asynccontextmanager, contextmanager
+
 import pytest
+from anyio import Event
+from anyio.from_thread import start_blocking_portal
 
 from .driver import Shell
+from jumpstarter.client import client_from_path
+from jumpstarter.common import ExporterStatus
 from jumpstarter.common.utils import serve
+from jumpstarter.exporter.lease_context import LeaseContext
+from jumpstarter.exporter.session import Session
 
 
 def _collect_streaming_output(client, method_name, env_vars=None, *args):
@@ -152,6 +161,17 @@ def test_cli_exit_codes():
         assert returncode == 42
 
 
+def test_cli_returns_the_method_return_code_as_an_int():
+    """j exits with what the CLI returns, which must be an int: driver results arrive as floats"""
+    shell = Shell(methods={"exit2": "exit 2", "timeout": {"command": "sleep 30", "timeout": 1}})
+
+    with serve(shell) as client:
+        cli = client.cli()
+        for method, expected in (("exit2", 2), ("timeout", 199)):
+            result = cli([method], standalone_mode=False)
+            assert type(result) is int and result == expected, f"{method}: {result!r}"
+
+
 def test_cli_custom_descriptions_unified_format():
     """Test that CLI methods use custom descriptions with unified format"""
     shell = Shell(
@@ -279,3 +299,73 @@ def test_mixed_format_methods():
         assert cli.commands['simple'].help == "Execute the simple shell method"
         assert cli.commands['detailed'].help == "A detailed command with description"
         assert cli.commands['default_cmd'].help == "Method using default command"
+
+
+@asynccontextmanager
+async def _serve_in_lease_async(root_device, portal, stack):
+    lease = LeaseContext(lease_name="test-lease", before_lease_hook=Event(), client_name="test-client")
+    with Session(root_device=root_device) as session:
+        session.lease_context = lease
+        session.update_status(ExporterStatus.LEASE_READY)
+        async with session.serve_unix_with_hook_socket_async() as (main_path, hook_path):
+            lease.socket_path = str(main_path)
+            lease.hook_socket_path = str(hook_path)
+            async with client_from_path(main_path, portal, stack, allow=[], unsafe=True) as client:
+                yield client, str(hook_path)
+
+
+@contextmanager
+def _serve_in_lease(root_device):
+    """Like serve(), from a session that belongs to a lease and has a dedicated hook socket"""
+    with (
+        start_blocking_portal() as portal,
+        ExitStack() as stack,
+        portal.wrap_async_context_manager(_serve_in_lease_async(root_device, portal, stack)) as served,
+    ):
+        yield served
+
+
+def test_method_reaches_the_session(tmp_path):
+    """A method can use jumpstarter.utils.env against the lease's session"""
+    callback = tmp_path / "callback.py"
+    callback.write_text(
+        "import os\n"
+        "from jumpstarter.utils.env import env\n"
+        "print(os.environ['JUMPSTARTER_HOST'])\n"
+        "with env() as client:\n"
+        "    print(sorted(client.call('get_methods')))\n"
+    )
+    shell = Shell(methods={"callback": {"command": f"{sys.executable} {callback}", "session": True}})
+
+    with _serve_in_lease(shell) as (client, hook_path):
+        stdout, stderr, returncode = _collect_streaming_output(client, "callback")
+
+    assert returncode == 0, stderr
+    assert stdout == f"{hook_path}\n['callback']\n"
+
+
+def test_no_session_env_without_session(monkeypatch):
+    monkeypatch.delenv("JUMPSTARTER_HOST", raising=False)
+    shell = Shell(methods={"host": 'echo "${JUMPSTARTER_HOST-unset}"'})
+
+    with _serve_in_lease(shell) as (client, _hook_path):
+        stdout, _stderr, returncode = _collect_streaming_output(client, "host")
+
+    assert stdout == "unset\n"
+    assert returncode == 0
+
+
+def test_client_cannot_override_the_session_env():
+    shell = Shell(methods={"host": {"command": "echo $JUMPSTARTER_HOST", "session": True}})
+
+    with _serve_in_lease(shell) as (client, hook_path):
+        stdout, _stderr, returncode = _collect_streaming_output(client, "host", {"JUMPSTARTER_HOST": "/elsewhere"})
+
+    assert stdout == f"{hook_path}\n"
+    assert returncode == 0
+
+
+@pytest.mark.parametrize("session", ["false", "true", 1])
+def test_session_must_be_a_boolean(session):
+    with pytest.raises(TypeError, match="method host: session must be true or false"):
+        Shell(methods={"host": {"command": "echo", "session": session}})

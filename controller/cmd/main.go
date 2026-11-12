@@ -289,6 +289,7 @@ func main() {
 		DeprecatedLabels: cfg.DeprecatedLabels,
 		Signer:           oidcSigner,
 		TelemetryConfig:  cfg.Telemetry,
+		Recorder:         mgr.GetEventRecorderFor("controller-service"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create service", "service", "Controller")
 		os.Exit(1)

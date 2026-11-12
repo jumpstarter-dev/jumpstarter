@@ -76,6 +76,11 @@ class ControllerServiceStub:
                 request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.UpdateLeaseHooksRequest.SerializeToString,
                 response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.LeaseHooks.FromString,
                 _registered_method=True)
+        self.RotateToken = channel.unary_unary(
+                '/jumpstarter.v1.ControllerService/RotateToken',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.RotateTokenRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.RotateTokenResponse.FromString,
+                _registered_method=True)
 
 
 class ControllerServiceServicer:
@@ -176,6 +181,13 @@ class ControllerServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def RotateToken(self, request, context):
+        """Rotate the authentication token for the exporter.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ControllerServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -238,6 +250,11 @@ def add_ControllerServiceServicer_to_server(servicer, server):
                     servicer.UpdateLeaseHooks,
                     request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.UpdateLeaseHooksRequest.FromString,
                     response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.LeaseHooks.SerializeToString,
+            ),
+            'RotateToken': grpc.unary_unary_rpc_method_handler(
+                    servicer.RotateToken,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.RotateTokenRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.RotateTokenResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -565,6 +582,33 @@ class ControllerService:
             '/jumpstarter.v1.ControllerService/UpdateLeaseHooks',
             jumpstarter_dot_v1_dot_jumpstarter__pb2.UpdateLeaseHooksRequest.SerializeToString,
             jumpstarter_dot_v1_dot_jumpstarter__pb2.LeaseHooks.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RotateToken(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jumpstarter.v1.ControllerService/RotateToken',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.RotateTokenRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.RotateTokenResponse.FromString,
             options,
             channel_credentials,
             insecure,

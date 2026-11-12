@@ -1,7 +1,9 @@
 import logging
+import multiprocessing.connection
 import os
 import signal
 import sys
+import threading
 import time
 
 import anyio
@@ -84,6 +86,7 @@ def _handle_child(  # noqa: C901
     tls_cert=None,
     tls_key=None,
     passphrase=None,
+    token_rotated_callback=None,
 ):
     """Handle child process with graceful shutdown."""
     async def serve_with_graceful_shutdown():  # noqa: C901
@@ -149,7 +152,7 @@ def _handle_child(  # noqa: C901
                 else:
                     # Create exporter and run it (controller mode)
                     exporter_exit_code = None
-                    async with config.create_exporter() as exporter:
+                    async with config.create_exporter(on_token_rotated=token_rotated_callback) as exporter:
                         try:
                             await exporter.serve()
                         except* Exception as excgroup:  # noqa: BLE001
@@ -224,6 +227,30 @@ def _handle_parent(pid):
         return 128 + child_exit_signal
 
 
+def _handle_parent_with_token_updates(pid, config, token_reader):
+    stop_reader, stop_writer = multiprocessing.Pipe(duplex=False)
+
+    def receive_tokens():
+        # Tokens already in the pipe are read before the stop signal ends the loop,
+        # which also covers a writer inherited by a grandchild that outlives the child.
+        while token_reader in multiprocessing.connection.wait([token_reader, stop_reader]):
+            try:
+                config.token = token_reader.recv()
+            except EOFError:
+                return
+
+    # Drain while the child runs so repeated rotations cannot fill the pipe.
+    receiver = threading.Thread(target=receive_tokens)
+    receiver.start()
+    try:
+        return _handle_parent(pid)
+    finally:
+        stop_writer.close()
+        receiver.join()
+        stop_reader.close()
+        token_reader.close()
+
+
 def _serve_with_exc_handling(
     config,
     parsed_bind=None,
@@ -238,10 +265,12 @@ def _serve_with_exc_handling(
     rapid_failure_count = 0
     while True:
         child_start_time = time.monotonic()
+        token_reader, token_writer = multiprocessing.Pipe(duplex=False)
         pid = os.fork()
 
         if pid > 0:
-            if (exit_code := _handle_parent(pid)) is not None:
+            token_writer.close()
+            if (exit_code := _handle_parent_with_token_updates(pid, config, token_reader)) is not None:
                 return exit_code
 
             if config.exit_on_lease_end:
@@ -278,6 +307,7 @@ def _serve_with_exc_handling(
                     )
                 rapid_failure_count = 0
         else:
+            token_reader.close()
             os.setsid() # Become group leader so all spawned subprocesses are reached by parent's signals
             _handle_child(
                 config,
@@ -286,6 +316,7 @@ def _serve_with_exc_handling(
                 tls_cert,
                 tls_key,
                 passphrase,
+                token_rotated_callback=token_writer.send,
             )
             sys.exit(1) # should never happen
 

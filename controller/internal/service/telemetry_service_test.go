@@ -19,6 +19,9 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -33,6 +36,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/config"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
@@ -41,8 +45,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"k8s.io/apiserver/pkg/authentication/authenticator"
-	"k8s.io/apiserver/pkg/authentication/user"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -57,16 +59,12 @@ func testSigner(t *testing.T) *oidc.Signer {
 	return signer
 }
 
-// authedCtx returns a context containing a valid bearer token for subject.
+// authedCtx returns a context containing a telemetry token for subject.
 func authedCtx(t *testing.T, signer *oidc.Signer, subject string) context.Context {
 	t.Helper()
-	token, err := signer.Token(subject)
-	if err != nil {
-		t.Fatalf("failed to issue test token: %v", err)
-	}
 	return metadata.NewIncomingContext(
 		context.Background(),
-		metadata.Pairs("authorization", "Bearer "+token),
+		metadata.Pairs("authorization", "Bearer "+mustToken(t, signer, subject)),
 	)
 }
 
@@ -126,7 +124,7 @@ func TestGetServiceEndpoints_DisabledConfig_ReturnsEmptyList(t *testing.T) {
 }
 
 func TestGetServiceEndpoints_WithEndpoint_ReturnsEndpoint(t *testing.T) {
-	svc, ctx := authSuccessServiceCtx(t, &config.Telemetry{
+	svc, _ := authSuccessServiceCtx(t, &config.Telemetry{
 		Enabled:     true,
 		Endpoint:    "telemetry.jumpstarter.svc:9093",
 		Certificate: "--- PEM ---",
@@ -134,8 +132,9 @@ func TestGetServiceEndpoints_WithEndpoint_ReturnsEndpoint(t *testing.T) {
 			Filter: config.TelemetryLoggingFilter{MinSeverity: "warning"},
 		},
 	})
+	svc.Signer = testSigner(t)
 
-	resp, err := svc.GetServiceEndpoints(ctx, &pb.GetServiceEndpointsRequest{})
+	resp, err := svc.GetServiceEndpoints(externalCredential(t, nil), &pb.GetServiceEndpointsRequest{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -156,12 +155,13 @@ func TestGetServiceEndpoints_WithEndpoint_ReturnsEndpoint(t *testing.T) {
 }
 
 func TestGetServiceEndpoints_DefaultsMinSeverityToInfo(t *testing.T) {
-	svc, ctx := authSuccessServiceCtx(t, &config.Telemetry{
+	svc, _ := authSuccessServiceCtx(t, &config.Telemetry{
 		Enabled:  true,
 		Endpoint: "telemetry:9093",
 	})
+	svc.Signer = testSigner(t)
 
-	resp, err := svc.GetServiceEndpoints(ctx, &pb.GetServiceEndpointsRequest{})
+	resp, err := svc.GetServiceEndpoints(externalCredential(t, nil), &pb.GetServiceEndpointsRequest{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -174,21 +174,88 @@ func TestGetServiceEndpoints_DefaultsMinSeverityToInfo(t *testing.T) {
 	}
 }
 
-func TestGetServiceEndpoints_AcceptsClientToken(t *testing.T) {
-	svc, ctx := authSuccessClientServiceCtx(t, &config.Telemetry{
-		Enabled:  true,
-		Endpoint: "telemetry.jumpstarter.svc:9093",
-	})
-
-	resp, err := svc.GetServiceEndpoints(ctx, &pb.GetServiceEndpointsRequest{})
+// externalCredential returns a context carrying a bearer token that the
+// controller did not sign, as an external OIDC issuer would issue it.
+func externalCredential(t *testing.T, expiresAt *jwt.NumericDate) context.Context {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		t.Fatalf("GetServiceEndpoints with client token: %v", err)
+		t.Fatal(err)
 	}
-	if len(resp.TelemetryEndpoints) != 1 {
-		t.Fatalf("expected 1 telemetry endpoint, got %d", len(resp.TelemetryEndpoints))
+	token, err := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.RegisteredClaims{
+		Issuer:    "https://dex.example.com",
+		Subject:   "dex-user",
+		Audience:  []string{"jumpstarter-cli"},
+		ExpiresAt: expiresAt,
+	}).SignedString(key)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if resp.TelemetryEndpoints[0].Endpoint != "telemetry.jumpstarter.svc:9093" {
-		t.Errorf("Endpoint = %q", resp.TelemetryEndpoints[0].Endpoint)
+	return metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+token))
+}
+
+// Telemetry cannot map an external credential to an Exporter or Client, so
+// the controller issues a token naming the identity it authenticated.
+func TestGetServiceEndpoints_TelemetryTokenNamesExternalCaller(t *testing.T) {
+	now := time.Now()
+	shortExpiry := jwt.NewNumericDate(now.Add(10 * time.Minute))
+	cfg := &config.Telemetry{Enabled: true, Endpoint: "telemetry:9093"}
+	tests := []struct {
+		name             string
+		service          func(*testing.T, *config.Telemetry) (*ControllerService, context.Context)
+		credentialExpiry *jwt.NumericDate
+		wantKind         string
+		wantName         string
+		// zero: the lifetime bound applies.
+		wantExpiry time.Time
+	}{
+		{"exporter credential expires first", authSuccessServiceCtx, shortExpiry, "exporter", "test-exporter", shortExpiry.Time},
+		{"client credential outlives the bound", authSuccessClientServiceCtx, jwt.NewNumericDate(now.Add(3 * time.Hour)), "client", "test-client", time.Time{}},
+		{"credential without expiry", authSuccessServiceCtx, nil, "exporter", "test-exporter", time.Time{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc, _ := tt.service(t, cfg)
+			svc.Signer = testSigner(t)
+
+			resp, err := svc.GetServiceEndpoints(externalCredential(t, tt.credentialExpiry), &pb.GetServiceEndpointsRequest{})
+			if err != nil {
+				t.Fatalf("GetServiceEndpoints: %v", err)
+			}
+			ep := resp.TelemetryEndpoints[0]
+			if ep.Token == "" {
+				t.Fatal("no telemetry token issued")
+			}
+			gotExpiry := ep.TokenExpiry.AsTime()
+			if tt.wantExpiry.IsZero() {
+				bound := time.Now().Add(telemetryTokenLifetime)
+				if gotExpiry.After(bound) || gotExpiry.Before(bound.Add(-5*time.Second)) {
+					t.Errorf("token_expiry = %v, want about %v", gotExpiry, bound)
+				}
+			} else if !gotExpiry.Equal(tt.wantExpiry) {
+				t.Errorf("token_expiry = %v, want the credential expiry %v", gotExpiry, tt.wantExpiry)
+			}
+			tokenExpiry, err := svc.Signer.TokenExpiry(ep.Token)
+			if err != nil || !tokenExpiry.Equal(gotExpiry) {
+				t.Errorf("token exp = %v (%v), want token_expiry %v", tokenExpiry, err, gotExpiry)
+			}
+
+			telemetry := &TelemetryService{Signer: testSigner(t)}
+			ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+ep.Token))
+			id, err := telemetry.authenticatePushLogs(ctx)
+			if err != nil {
+				t.Fatalf("PushLogs authentication: %v", err)
+			}
+			if id.kind != tt.wantKind || id.namespace != "default" || id.name != tt.wantName {
+				t.Errorf("PushLogs identity = %+v, want %s default/%s", id, tt.wantKind, tt.wantName)
+			}
+			if tt.wantKind == "exporter" {
+				exporter, err := telemetry.authenticateExporter(ctx)
+				if err != nil || exporter.key() != "default/"+tt.wantName {
+					t.Errorf("MetricsStream identity = %+v (%v), want default/%s", exporter, err, tt.wantName)
+				}
+			}
+		})
 	}
 }
 
@@ -204,6 +271,17 @@ func TestGetServiceEndpoints_EnabledNoEndpoint_FailedPrecondition(t *testing.T) 
 	}
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("expected codes.FailedPrecondition, got %v", status.Code(err))
+	}
+}
+
+// An empty response tells callers telemetry is disabled, so they stop renewing.
+func TestGetServiceEndpoints_TokenIssuanceFailure_ReturnsError(t *testing.T) {
+	svc, ctx := authSuccessServiceCtx(t, &config.Telemetry{Enabled: true, Endpoint: "telemetry:9093"})
+	svc.Signer = nil
+
+	resp, err := svc.GetServiceEndpoints(ctx, &pb.GetServiceEndpointsRequest{})
+	if status.Code(err) != codes.Internal {
+		t.Fatalf("expected codes.Internal, got %v (response %v)", err, resp)
 	}
 }
 
@@ -667,9 +745,10 @@ func TestTelemetryService_StartDrainsLokiAfterGRPCStops(t *testing.T) {
 	}
 }
 
+// mustToken returns a telemetry token for subject, as GetServiceEndpoints issues it.
 func mustToken(t *testing.T, signer *oidc.Signer, subject string) string {
 	t.Helper()
-	token, err := signer.Token(subject)
+	token, err := signer.WithAudience(oidc.TelemetryAudience).Token(subject)
 	if err != nil {
 		t.Fatalf("sign token: %v", err)
 	}
@@ -1346,18 +1425,6 @@ func TestGetServiceEndpoints_AuthFailure_LogsWithPeer(t *testing.T) {
 	}
 }
 
-type stubClientAuthn struct {
-	name string
-	ok   bool
-}
-
-func (s stubClientAuthn) AuthenticateContext(context.Context) (*authenticator.Response, bool, error) {
-	if !s.ok {
-		return nil, false, nil
-	}
-	return &authenticator.Response{User: &user.DefaultInfo{Name: s.name}}, true, nil
-}
-
 func TestTelemetryService_PushLogs_LokiDoesNotAlsoLogClientEntries(t *testing.T) {
 	var logBuf bytes.Buffer
 	testLogger := zap.New(zap.WriteTo(&logBuf))
@@ -1382,53 +1449,5 @@ func TestTelemetryService_PushLogs_LokiDoesNotAlsoLogClientEntries(t *testing.T)
 	queued := pusher.queued()
 	if len(queued) != 1 || queued[0].Message != "flash failed" {
 		t.Fatalf("queued = %#v, want the ingested entry", queued)
-	}
-}
-
-func TestTelemetryService_PushLogs_ExternalOIDCClient(t *testing.T) {
-	signer := testSigner(t)
-	svc := &TelemetryService{
-		BindAddr:    ":0",
-		Signer:      signer,
-		ClientAuthn: stubClientAuthn{name: "dex:alice", ok: true},
-	}
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
-		"authorization", "Bearer external-oidc-token",
-		"jumpstarter-kind", "Client",
-		"jumpstarter-namespace", "jumpstarter",
-		"jumpstarter-name", "alice",
-	))
-	resp, err := svc.PushLogs(ctx, &pb.PushLogsRequest{Entries: []*pb.LogEntry{{
-		Severity:  "info",
-		Message:   "from oidc",
-		Component: "cli",
-	}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.Accepted != 1 || resp.Dropped != 0 {
-		t.Fatalf("accepted=%d dropped=%d, want 1/0", resp.Accepted, resp.Dropped)
-	}
-}
-
-func TestTelemetryService_PushLogs_ExternalOIDCNameMismatch(t *testing.T) {
-	signer := testSigner(t)
-	svc := &TelemetryService{
-		BindAddr:    ":0",
-		Signer:      signer,
-		ClientAuthn: stubClientAuthn{name: "dex:alice", ok: true},
-	}
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
-		"authorization", "Bearer external-oidc-token",
-		"jumpstarter-kind", "Client",
-		"jumpstarter-namespace", "jumpstarter",
-		"jumpstarter-name", "bob",
-	))
-	_, err := svc.PushLogs(ctx, &pb.PushLogsRequest{Entries: []*pb.LogEntry{{
-		Severity: "info",
-		Message:  "from oidc",
-	}}})
-	if status.Code(err) != codes.InvalidArgument {
-		t.Fatalf("code = %s, want InvalidArgument: %v", status.Code(err), err)
 	}
 }

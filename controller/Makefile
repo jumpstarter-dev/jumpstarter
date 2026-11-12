@@ -31,11 +31,12 @@ endif
 
 GOARCH ?= $(shell go env GOARCH)
 
-# CONTAINER_TOOL defines the container tool to be used for building images.
-# Be aware that the target commands are only tested with Docker which is
-# scaffolded by default. However, you might want to replace it to use other
-# tools. (i.e. podman)
-CONTAINER_TOOL ?= podman
+# CONTAINER_TOOL builds the images: podman if it is installed, otherwise docker.
+# hack/deploy_with_operator.sh loads the images from the same tool.
+ifndef CONTAINER_TOOL
+CONTAINER_TOOL := $(if $(shell command -v podman 2>/dev/null),podman,docker)
+endif
+export CONTAINER_TOOL
 
 # Cluster type: kind (default) or k3s
 CLUSTER_TYPE ?= kind
@@ -76,9 +77,6 @@ manifests: controller-gen ## Generate WebhookConfiguration and CustomResourceDef
 	# breaks role_binding.yaml (which references manager-role).
 	$(CONTROLLER_GEN) 	crd webhook paths="./api/..." paths="./internal/..." \
 						output:crd:artifacts:config=deploy/operator/config/crd/bases/
-
-	# Regenerate operator install.yaml to include updated CRDs
-	$(MAKE) -C deploy/operator build-installer
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -214,12 +212,6 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 			--tag ${DOCKER_REPO}:latest \
 			-f Containerfile .
 	- $(CONTAINER_TOOL) buildx rm jumpstarter-controller-builder
-
-.PHONY: build-installer
-build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
-	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default > dist/install.yaml
 
 ##@ Deployment
 

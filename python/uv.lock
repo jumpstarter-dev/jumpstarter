@@ -41,6 +41,7 @@ members = [
     "jumpstarter-driver-bt-peer",
     "jumpstarter-driver-can",
     "jumpstarter-driver-composite",
+    "jumpstarter-driver-copilot",
     "jumpstarter-driver-corellium",
     "jumpstarter-driver-cuttlefish",
     "jumpstarter-driver-dds",
@@ -1837,6 +1838,7 @@ dependencies = [
     { name = "jumpstarter-driver-bt-peer" },
     { name = "jumpstarter-driver-can" },
     { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-copilot" },
     { name = "jumpstarter-driver-corellium" },
     { name = "jumpstarter-driver-cuttlefish" },
     { name = "jumpstarter-driver-dds" },
@@ -1909,6 +1911,7 @@ requires-dist = [
     { name = "jumpstarter-driver-bt-peer", editable = "packages/jumpstarter-driver-bt-peer" },
     { name = "jumpstarter-driver-can", editable = "packages/jumpstarter-driver-can" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-copilot", editable = "packages/jumpstarter-driver-copilot" },
     { name = "jumpstarter-driver-corellium", editable = "packages/jumpstarter-driver-corellium" },
     { name = "jumpstarter-driver-cuttlefish", editable = "packages/jumpstarter-driver-cuttlefish" },
     { name = "jumpstarter-driver-dds", editable = "packages/jumpstarter-driver-dds" },
@@ -2339,6 +2342,41 @@ dev = [
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-copilot"
+source = { editable = "packages/jumpstarter-driver-copilot" }
+dependencies = [
+    { name = "click" },
+    { name = "gpiod", version = "2.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and sys_platform == 'linux'" },
+    { name = "gpiod", version = "2.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14' and sys_platform == 'linux'" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-gpiod" },
+    { name = "jumpstarter-driver-power" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.1.7.2" },
+    { name = "gpiod", marker = "sys_platform == 'linux'", specifier = ">=2.2" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-gpiod", editable = "packages/jumpstarter-driver-gpiod" },
+    { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
 [[package]]

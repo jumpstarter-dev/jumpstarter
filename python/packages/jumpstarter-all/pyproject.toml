@@ -19,6 +19,7 @@ dependencies = [
   "jumpstarter-driver-bt-peer",
   "jumpstarter-driver-can",
   "jumpstarter-driver-composite",
+  "jumpstarter-driver-copilot",
   "jumpstarter-driver-doip",
   "jumpstarter-driver-corellium",
   "jumpstarter-driver-cuttlefish",

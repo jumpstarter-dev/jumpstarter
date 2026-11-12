@@ -20,6 +20,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -65,6 +66,7 @@ import (
 	k8suuid "k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -88,12 +90,15 @@ type ControllerService struct {
 	LeasePolicy      *config.LeasePolicy
 	HiddenLabels     *config.HiddenLabels
 	DeprecatedLabels *config.DeprecatedLabels
+	Recorder         record.EventRecorder
 	Signer           *oidc.Signer
 	TelemetryConfig  *config.Telemetry
-	listenQueues     sync.Map
-	leaseLocks       sync.Map
-	authOnce         sync.Once
-	auth             *auth.Auth
+	// StatusHeartbeatInterval defaults to 10 seconds.
+	StatusHeartbeatInterval time.Duration
+	listenQueues            sync.Map
+	leaseLocks              sync.Map
+	authOnce                sync.Once
+	auth                    *auth.Auth
 }
 
 type listenQueue struct {
@@ -255,11 +260,37 @@ func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstar
 	return s.getAuth().VerifyExporter(ctx)
 }
 
+// Record credentials only on fresh authentication, never on stream heartbeats.
+func (s *ControllerService) recordExporterCredential(ctx context.Context, exporter *jumpstarterdevv1alpha1.Exporter) error {
+	credential, err := authentication.BearerTokenFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	hash := controller.TokenHash(credential)
+	if exporter.Annotations[controller.AuthenticatedTokenHashAnnotation] == hash {
+		return nil
+	}
+	original := client.MergeFrom(exporter.DeepCopy())
+	if exporter.Annotations == nil {
+		exporter.Annotations = map[string]string{}
+	}
+	exporter.Annotations[controller.AuthenticatedTokenHashAnnotation] = hash
+	if err := s.Client.Patch(ctx, exporter, original); err != nil {
+		log.FromContext(ctx).Error(err, "unable to record exporter credential", "exporter", exporter.Name, "namespace", exporter.Namespace)
+		return status.Errorf(codes.Internal, "unable to record exporter credential: %s", err)
+	}
+	return nil
+}
+
 func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
 	logger := log.FromContext(ctx)
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := s.recordExporterCredential(ctx, exporter); err != nil {
 		return nil, err
 	}
 
@@ -330,10 +361,13 @@ func (s *ControllerService) GetServiceEndpoints(
 	req *pb.GetServiceEndpointsRequest,
 ) (*pb.GetServiceEndpointsResponse, error) {
 	// Require a valid exporter or client token — endpoint discovery is not public.
-	if _, err := s.authenticateExporter(ctx); err != nil {
-		if _, err2 := s.authenticateClient(ctx); err2 != nil {
-			return nil, err
-		}
+	var subject string
+	if exporter, err := s.authenticateExporter(ctx); err == nil {
+		subject = exporter.InternalSubject()
+	} else if jclient, err2 := s.authenticateClient(ctx); err2 == nil {
+		subject = jclient.InternalSubject()
+	} else {
+		return nil, err
 	}
 
 	resp := &pb.GetServiceEndpointsResponse{}
@@ -344,14 +378,121 @@ func (s *ControllerService) GetServiceEndpoints(
 		if s.TelemetryConfig.Endpoint == "" {
 			return nil, status.Error(codes.FailedPrecondition, "telemetry is enabled but no endpoint is configured; set telemetry.endpoint in the ConfigMap or GRPC_TELEMETRY_ENDPOINT on the controller pod")
 		}
+		// Telemetry accepts nothing else, so the endpoint is useless without a token.
+		// An error, not an empty response: callers stop renewing when told
+		// telemetry is disabled.
+		token, expiry, err := s.telemetryToken(ctx, subject)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "unable to issue telemetry token")
+			return nil, status.Error(codes.Internal, "unable to issue telemetry token")
+		}
 		resp.TelemetryEndpoints = append(resp.TelemetryEndpoints, &pb.TelemetryEndpoint{
 			Endpoint:    s.TelemetryConfig.Endpoint,
 			Certificate: s.TelemetryConfig.Certificate,
 			MinSeverity: cmp.Or(s.TelemetryConfig.Logging.Filter.MinSeverity, "info"),
+			Token:       token,
+			TokenExpiry: timestamppb.New(expiry),
 		})
 	}
 
 	return resp, nil
+}
+
+// telemetryTokenLifetime bounds a telemetry token. Callers renew it through
+// GetServiceEndpoints, which re-checks their credential.
+const telemetryTokenLifetime = time.Hour
+
+// telemetryToken signs a token for TelemetryService calls that names the
+// authenticated exporter or client by its internal subject. Telemetry has no
+// Kubernetes API access, so it cannot map an external OIDC user to an Exporter
+// or Client; the controller has already done that here. The token never
+// outlives the credential that requested it.
+func (s *ControllerService) telemetryToken(ctx context.Context, subject string) (string, time.Time, error) {
+	if s.Signer == nil {
+		return "", time.Time{}, errors.New("token signer not configured")
+	}
+	credential, err := authentication.BearerTokenFromContext(ctx)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	// JWT exp has whole-second precision; report the expiry the token carries.
+	expiry := time.Now().Add(telemetryTokenLifetime).Truncate(time.Second)
+	// The authenticator has verified the credential, so its exp can be read
+	// unverified. Credentials without exp only get the lifetime bound.
+	credentialExpiry, err := s.Signer.TokenExpiry(credential)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("read credential expiry: %w", err)
+	}
+	if !credentialExpiry.IsZero() && credentialExpiry.Before(expiry) {
+		expiry = credentialExpiry
+	}
+	token, err := s.Signer.WithAudience(oidc.TelemetryAudience).TokenWithExpiry(subject, expiry)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return token, expiry, nil
+}
+
+// RotateToken signs a new token for the authenticated exporter, updates the
+// corresponding Secret in Kubernetes, and returns the new token and its expiry.
+func (s *ControllerService) RotateToken(
+	ctx context.Context,
+	req *pb.RotateTokenRequest,
+) (*pb.RotateTokenResponse, error) {
+	exporter, err := s.authenticateExporter(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	logger := log.FromContext(ctx).WithValues(
+		"exporter", exporter.Name,
+		"namespace", exporter.Namespace,
+		"operation", "rotate_token",
+	)
+	resp, err := s.rotateExporterToken(ctx, exporter)
+	switch code := status.Code(err); code {
+	case codes.OK:
+		logger.Info("token rotated", "result", "success")
+	case codes.PermissionDenied, codes.Aborted:
+		logger.Info("token rotation rejected", "result", "rejected", "code", code.String(), "reason", status.Convert(err).Message())
+	default:
+		logger.Error(err, "token rotation failed", "result", "error", "code", code.String())
+	}
+	return resp, err
+}
+
+func (s *ControllerService) rotateExporterToken(
+	ctx context.Context,
+	exporter *jumpstarterdevv1alpha1.Exporter,
+) (*pb.RotateTokenResponse, error) {
+	if s.Signer == nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "token signer not configured")
+	}
+
+	credential, err := authentication.BearerTokenFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	subject, err := s.Signer.ParseSubject(credential)
+	if err != nil || subject != exporter.InternalSubject() {
+		return nil, status.Error(codes.PermissionDenied, "only internal exporter tokens can be rotated")
+	}
+
+	token, expiry, err := auth.RotateExporterCredential(ctx, s.Client, s.Signer, client.ObjectKey{
+		Namespace: exporter.Namespace,
+		Name:      exporter.CredentialSecretName(),
+	}, exporter.InternalSubject(), credential)
+	if err != nil {
+		if errors.Is(err, auth.ErrExporterTokenLineage) && s.Recorder != nil {
+			s.Recorder.Event(exporter, corev1.EventTypeWarning, "RotationDenied", "Token rotation denied: credential is outside the current or previous token lineage")
+		}
+		return nil, err
+	}
+
+	return &pb.RotateTokenResponse{
+		Token:  token,
+		Expiry: expiry,
+	}, nil
 }
 
 func (s *ControllerService) Unregister(
@@ -933,6 +1074,10 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 		return err
 	}
 
+	if err := s.recordExporterCredential(ctx, exporter); err != nil {
+		return err
+	}
+
 	logger = logger.WithValues("exporter", types.NamespacedName{
 		Namespace: exporter.Namespace,
 		Name:      exporter.Name,
@@ -949,7 +1094,7 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 
 	defer watcher.Stop()
 
-	ticker := time.NewTicker(time.Second * 10)
+	ticker := time.NewTicker(cmp.Or(s.StatusHeartbeatInterval, 10*time.Second))
 
 	defer ticker.Stop()
 

@@ -537,12 +537,13 @@ class ClientService:
             )
         return ExporterList.from_protobuf(exporters)
 
-    async def GetLease(self, *, name: str):
+    async def GetLease(self, *, name: str, timeout: float | None = None):
         with translate_grpc_exceptions():
             lease = await self.stub.GetLease(
                 client_pb2.GetLeaseRequest(
                     name=f"namespaces/{self.namespace}/leases/{name}",
-                )
+                ),
+                timeout=timeout,
             )
         return Lease.from_protobuf(lease)
 
@@ -673,12 +674,13 @@ class ClientService:
             lease = await self.stub.UpdateLease(req)
         return Lease.from_protobuf(lease)
 
-    async def DeleteLease(self, *, name: str):
+    async def DeleteLease(self, *, name: str, timeout: float | None = None):
         with translate_grpc_exceptions():
             await self.stub.DeleteLease(
                 client_pb2.DeleteLeaseRequest(
                     name=f"namespaces/{self.namespace}/leases/{name}",
-                )
+                ),
+                timeout=timeout,
             )
 
     async def RotateToken(self) -> str:
