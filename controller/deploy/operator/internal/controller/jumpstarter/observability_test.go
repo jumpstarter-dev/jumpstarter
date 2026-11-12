@@ -600,6 +600,7 @@ func TestAlloyConfigMapReadmeMentionsValidatedVersion(t *testing.T) {
 		"alloy validate",
 		"alloy fmt --test",
 		"single-replica Deployment",
+		"{{LOKI_URL}}",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Errorf("Alloy README missing %q", want)
@@ -624,10 +625,15 @@ func TestVectorConfigMapReadmeMentionsValidatedVersion(t *testing.T) {
 		"/var/log/pods",
 		`pod's "component" label`,
 		"unknown",
+		"http://loki.invalid:3100",
+		"/loki/api/v1/push",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Errorf("Vector README missing %q", want)
 		}
+	}
+	if strings.Contains(readme, "{{LOKI_URL}}") {
+		t.Error("Vector README must not tell users to replace the {{LOKI_URL}} placeholder")
 	}
 }
 
@@ -647,6 +653,7 @@ func TestPromtailConfigMapReadmeMentionsValidatedVersion(t *testing.T) {
 		"HOSTNAME",
 		"/var/log/pods",
 		"__path__",
+		"{{LOKI_URL}}",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Errorf("Promtail README missing %q", want)
