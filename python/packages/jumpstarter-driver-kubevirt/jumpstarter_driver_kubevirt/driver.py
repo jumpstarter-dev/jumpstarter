@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# reset() is synchronous, so it can only start the session-start reclaim as a loop task.
 import asyncio  # noqa: TID251
 import base64
 import logging
@@ -11,7 +12,7 @@ from typing import ClassVar
 from urllib.parse import urlparse
 
 import websockets
-from anyio import sleep
+from anyio import Lock, sleep
 from jumpstarter_driver_composite.driver import CompositeInterface
 from jumpstarter_driver_network.driver import NetworkInterface
 from jumpstarter_driver_network.streams.websocket import WebsocketClientStream
@@ -240,7 +241,7 @@ class KubevirtStorage(_KubevirtBase, Driver):
     provision_timeout: float = 300
     fatal_grace: float = 60
     poll_interval: float = 1
-    _lock: asyncio.Lock = field(init=False, default_factory=asyncio.Lock, repr=False)
+    _lock: Lock = field(init=False, default_factory=Lock, repr=False)
     _reclaim: asyncio.Task | None = field(init=False, default=None, repr=False)
     _flasher: Flash | None = field(init=False, default=None, repr=False)
 

@@ -1,9 +1,9 @@
 """VM identity and conditional updates shared by power and storage."""
 
-import asyncio  # noqa: TID251
 import json
 from dataclasses import dataclass
 
+from anyio import Lock, sleep
 from lightkube import AsyncClient
 from lightkube.core.exceptions import ApiError
 from lightkube.generic_resource import create_namespaced_resource
@@ -26,7 +26,7 @@ TERMINAL_PHASES = ("complete", "aborted")
 # One lock per VM, shared by every driver instance in this process. Power and the
 # disk activation take it so that neither can interleave with the other; a process
 # serving one VM from two exporter processes is unsupported.
-_locks: dict[tuple[str, str], asyncio.Lock] = {}
+_locks: dict[tuple[str, str], Lock] = {}
 
 
 def operation(vm):
@@ -51,8 +51,8 @@ class VMControl:
     retry_delay: float = 0.1
 
     @property
-    def lock(self) -> asyncio.Lock:
-        return _locks.setdefault((self.namespace, self.name), asyncio.Lock())
+    def lock(self) -> Lock:
+        return _locks.setdefault((self.namespace, self.name), Lock())
 
     async def get(self):
         vm = await self.client.get(VirtualMachine, name=self.name, namespace=self.namespace)
@@ -104,7 +104,7 @@ class VMControl:
             except ApiError as exc:
                 if exc.status.code != 409 or attempt == self.retries - 1:
                     raise
-                await asyncio.sleep(self.retry_delay)
+                await sleep(self.retry_delay)
 
     async def transaction(self, operation_id, phases):
         vm = await self.get()
