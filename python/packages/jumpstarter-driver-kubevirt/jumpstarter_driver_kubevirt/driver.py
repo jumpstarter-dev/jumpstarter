@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-# reset() is synchronous, so it can only start the session-start reclaim as a loop task.
-import asyncio  # noqa: TID251
 import base64
 import logging
 import ssl
@@ -12,7 +10,7 @@ from typing import ClassVar
 from urllib.parse import urlparse
 
 import websockets
-from anyio import Lock, sleep
+from anyio import Event, Lock, create_task_group, sleep
 from jumpstarter_driver_composite.driver import CompositeInterface
 from jumpstarter_driver_network.driver import NetworkInterface
 from jumpstarter_driver_network.streams.websocket import WebsocketClientStream
@@ -242,7 +240,7 @@ class KubevirtStorage(_KubevirtBase, Driver):
     fatal_grace: float = 60
     poll_interval: float = 1
     _lock: Lock = field(init=False, default_factory=Lock, repr=False)
-    _reclaim: asyncio.Task | None = field(init=False, default=None, repr=False)
+    _reclaimed: Event = field(init=False, default_factory=Event, repr=False)
     _flasher: Flash | None = field(init=False, default=None, repr=False)
 
     def __post_init__(self):
@@ -272,42 +270,31 @@ class KubevirtStorage(_KubevirtBase, Driver):
             )
         return self._flasher
 
-    def reset(self):
+    @asynccontextmanager
+    async def serving(self):
         """Reclaim a flash abandoned by an earlier lease, without blocking session start.
 
         A lease that ends mid-upload leaves its operation `staging` and its staged
-        volumes allocated. The task takes the same lock as the flash RPCs, so it
+        volumes allocated. The reclaim takes the same lock as the flash RPCs, so it
         cannot interleave with one; the next begin would also reclaim, but only
-        when a flash actually runs.
+        when a flash actually runs. A reclaim still running when the session ends
+        is cancelled, which leaves the operation `aborting` for the next session's
+        reclaim to finish.
         """
-        super().reset()
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            # Nothing to schedule on; begin_flash and recover_flash still reclaim.
-            return
-        if self._reclaim is not None and not self._reclaim.done():
-            return
-        self._reclaim = loop.create_task(self._reclaim_abandoned())
-        self._reclaim.add_done_callback(self._report_reclaim)
+        self._reclaimed = Event()
+        async with super().serving(), create_task_group() as reclaim:
+            reclaim.start_soon(self._reclaim_abandoned)
+            yield
+            reclaim.cancel_scope.cancel()
 
     async def _reclaim_abandoned(self):
-        async with self._lock:
-            return await self._flash().reclaim()
-
-    def _report_reclaim(self, task):
-        if not task.cancelled() and (error := task.exception()) is not None:
-            self.logger.warning("Failed to reclaim an abandoned flash", exc_info=error)
-
-    def shutdown(self):
-        """Cancel the session-start reclaim so it cannot outlive its session.
-
-        A reclaim cancelled here leaves the operation `aborting`, which the next
-        session's own reclaim finishes.
-        """
-        if self._reclaim is not None and not self._reclaim.done():
-            self._reclaim.cancel()
-        super().shutdown()
+        try:
+            async with self._lock:
+                await self._flash().reclaim()
+        except Exception:
+            self.logger.warning("Failed to reclaim an abandoned flash", exc_info=True)
+        finally:
+            self._reclaimed.set()
 
     @export
     async def begin_flash(self, operation_id: str, targets: list[str]) -> None:
