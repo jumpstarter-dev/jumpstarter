@@ -9,7 +9,7 @@
 | **Type**          | Standards Track                                                        |
 | **Created**       | 2026-11-11                                                             |
 | **Updated**       | 2026-11-12                                                             |
-| **Discussion**    | *TBD*                                                                  |
+| **Discussion**    | https://github.com/jumpstarter-dev/jumpstarter/pull/1336               |
 | **Requires**      |                                                                        |
 | **Supersedes**    |                                                                        |
 | **Superseded-By** |                                                                        |
