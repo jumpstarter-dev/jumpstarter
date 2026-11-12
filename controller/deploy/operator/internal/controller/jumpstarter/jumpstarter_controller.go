@@ -283,7 +283,7 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// failure must not abort the rest of the Jumpstarter reconcile (status,
 	// ConfigMaps, Secrets). The condition reports the failure and a short requeue
 	// retries it.
-	observabilityErr := r.reconcileObservability(ctx, &jumpstarter)
+	crdState, observabilityErr := r.reconcileObservabilityWithState(ctx, &jumpstarter)
 	if observabilityErr != nil {
 		log.Error(observabilityErr, "Failed to reconcile observability integration")
 	}
@@ -301,12 +301,12 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// Update status
-	if err := r.updateStatus(ctx, &jumpstarter); err != nil {
+	if err := r.updateStatusWithState(ctx, &jumpstarter, crdState); err != nil {
 		log.Error(err, "Failed to update status")
 		return ctrl.Result{}, err
 	}
 
-	requeueAfter := r.observabilityRequeueAfter(ctx, &jumpstarter, observabilityErr)
+	requeueAfter := r.observabilityRequeueAfterWithState(ctx, &jumpstarter, observabilityErr, crdState)
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
@@ -319,6 +319,15 @@ func (r *JumpstarterReconciler) observabilityRequeueAfter(
 	js *operatorv1alpha1.Jumpstarter,
 	observabilityErr error,
 ) time.Duration {
+	return r.observabilityRequeueAfterWithState(ctx, js, observabilityErr, serviceMonitorCRDState{})
+}
+
+func (r *JumpstarterReconciler) observabilityRequeueAfterWithState(
+	ctx context.Context,
+	js *operatorv1alpha1.Jumpstarter,
+	observabilityErr error,
+	crdState serviceMonitorCRDState,
+) time.Duration {
 	requeueAfter := 30 * time.Minute
 	if observabilityErr != nil {
 		requeueAfter = 2 * time.Minute
@@ -327,7 +336,11 @@ func (r *JumpstarterReconciler) observabilityRequeueAfter(
 		requeueAfter = telemetryCARequeueInterval
 	}
 	if serviceMonitorEnabled(js) && requeueAfter > 2*time.Minute {
-		if available, err := r.serviceMonitorCRDAvailable(ctx); err == nil && !available {
+		if !crdState.checked {
+			available, err := r.serviceMonitorCRDAvailable(ctx)
+			crdState = serviceMonitorCRDState{checked: true, available: available, err: err}
+		}
+		if crdState.err == nil && !crdState.available {
 			requeueAfter = 2 * time.Minute
 		}
 	}

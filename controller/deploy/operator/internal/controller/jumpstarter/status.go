@@ -32,8 +32,12 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// updateStatus updates the status conditions of the Jumpstarter resource
+// updateStatus updates the status conditions of the Jumpstarter resource.
 func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1alpha1.Jumpstarter) error {
+	return r.updateStatusWithState(ctx, js, serviceMonitorCRDState{})
+}
+
+func (r *JumpstarterReconciler) updateStatusWithState(ctx context.Context, js *operatorv1alpha1.Jumpstarter, crdState serviceMonitorCRDState) error {
 	log := logf.FromContext(ctx)
 
 	prevReady := meta.IsStatusConditionTrue(js.Status.Conditions, operatorv1alpha1.ConditionTypeReady)
@@ -170,7 +174,7 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 	// Informational observability conditions. These are deliberately excluded
 	// from allReady: the Prometheus Operator and any log shipper are optional, so
 	// their absence must not report Jumpstarter as degraded.
-	emitServiceMonitorCRDMissing, emitLogShipperConfigured := r.reconcileObservabilityStatus(ctx, js)
+	emitServiceMonitorCRDMissing, emitLogShipperConfigured := r.reconcileObservabilityStatus(ctx, js, crdState)
 
 	// Set overall Ready condition
 	readyMessage := "All components are ready"
@@ -218,7 +222,7 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 // reconcileObservabilityStatus sets the informational observability conditions
 // and reports which transition events should be emitted. Keeping it separate
 // from updateStatus keeps that function's complexity within the lint threshold.
-func (r *JumpstarterReconciler) reconcileObservabilityStatus(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (emitServiceMonitorCRDMissing, emitLogShipperConfigured bool) {
+func (r *JumpstarterReconciler) reconcileObservabilityStatus(ctx context.Context, js *operatorv1alpha1.Jumpstarter, crdState serviceMonitorCRDState) (emitServiceMonitorCRDMissing, emitLogShipperConfigured bool) {
 	// Snapshot the previous reasons before setCondition mutates the conditions
 	// in place. Comparing through a pointer after setCondition would compare the
 	// new reason against itself and suppress the transition event.
@@ -226,7 +230,7 @@ func (r *JumpstarterReconciler) reconcileObservabilityStatus(ctx context.Context
 	if previous := meta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypeServiceMonitorReady); previous != nil {
 		prevServiceMonitorReason = previous.Reason
 	}
-	smReady, smReason, smMessage := r.serviceMonitorCondition(ctx, js)
+	smReady, smReason, smMessage := r.serviceMonitorConditionWithState(ctx, js, crdState)
 	setCondition(js, operatorv1alpha1.ConditionTypeServiceMonitorReady, smReady, smReason, smMessage)
 
 	prevLogShipperReason := ""

@@ -172,6 +172,27 @@ func TestReconcileObservabilityDoesNotDeleteServiceMonitorsOnDetectionError(t *t
 	}
 }
 
+func TestServiceMonitorConditionUsesProvidedCRDState(t *testing.T) {
+	r := &JumpstarterReconciler{
+		Client: &serviceMonitorListErrorClient{
+			Client:  fake.NewClientBuilder().Build(),
+			listErr: errors.New("CRD probe must not run"),
+		},
+	}
+
+	ready, reason, _ := r.serviceMonitorConditionWithState(context.Background(), testJumpstarter(),
+		serviceMonitorCRDState{checked: true, available: false})
+	if ready || reason != "CRDNotFound" {
+		t.Fatalf("condition = %v/%q, want false/CRDNotFound", ready, reason)
+	}
+
+	ready, reason, _ = r.serviceMonitorConditionWithState(context.Background(), testJumpstarter(),
+		serviceMonitorCRDState{checked: true, err: errors.New("probe failed")})
+	if ready || reason != "Failed" {
+		t.Fatalf("condition = %v/%q, want false/Failed", ready, reason)
+	}
+}
+
 func TestDesiredMetricsServices(t *testing.T) {
 	js := testJumpstarter()
 	services := desiredMetricsServices(js)
