@@ -48,6 +48,7 @@ class Tftp(Driver):
     _shutdown_event: threading.Event = field(init=False, default_factory=threading.Event)
     _loop_ready: threading.Event = field(init=False, default_factory=threading.Event)
     _startup_error: BaseException | None = field(init=False, default=None)
+    _lock: threading.Lock = field(init=False, default_factory=threading.Lock, repr=False)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -123,6 +124,10 @@ class Tftp(Driver):
         Raises:
             TftpError: If the server fails to start or times out during initialization
         """
+        with self._lock:
+            self._start()
+
+    def _start(self):
         if self.server_thread is not None and self.server_thread.is_alive():
             self.logger.warning("TFTP server is already running")
             return
@@ -152,6 +157,10 @@ class Tftp(Driver):
         Initiates a graceful shutdown of the server and waits for all active transfers
         to complete. If the server is not running, a warning will be logged.
         """
+        with self._lock:
+            self._stop()
+
+    def _stop(self):
         if self.server_thread is None or not self.server_thread.is_alive():
             self.logger.warning("stop called - TFTP server is not running")
             return
