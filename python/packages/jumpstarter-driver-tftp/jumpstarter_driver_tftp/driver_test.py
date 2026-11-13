@@ -1,3 +1,4 @@
+import socket
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -128,4 +129,19 @@ def test_tftp_start_surfaces_startup_error(tmp_path):
     ), pytest.raises(TftpError, match="port already in use"):
         server.start()
 
+    server.close()
+
+
+@pytest.fixture
+def free_ipv4_udp_port(free_udp_port_factory):
+    return free_udp_port_factory(socket.AF_INET)
+
+
+def test_tftp_stop_releases_the_port(tmp_path, free_ipv4_udp_port):
+    server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=free_ipv4_udp_port)
+    server.start()
+    server.stop()
+
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.bind(("127.0.0.1", free_ipv4_udp_port))
     server.close()

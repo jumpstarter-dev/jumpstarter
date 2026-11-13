@@ -1,11 +1,14 @@
 import asyncio  # noqa: TID251
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import cast
 
 import pytest
+from anyio import Event, create_task_group, create_udp_socket, fail_after, sleep
 from opendal import AsyncOperator
 
-from jumpstarter_driver_tftp.server import Opcode, TftpServer
+from jumpstarter_driver_tftp.server import Opcode, TftpErrorCode, TftpServer
 
 
 @pytest.fixture
@@ -271,3 +274,198 @@ async def test_invalid_options_handling(tftp_server):
         transport.close()
         await server.shutdown()
         await server_task
+
+
+TIMEOUT = 0.3
+
+
+def rrq(filename: str, mode: str = "octet", **options: str) -> bytes:
+    packet = Opcode.RRQ.to_bytes(2, "big") + f"{filename}\0{mode}\0".encode()
+    for name, value in options.items():
+        packet += f"{name}\0{value}\0".encode()
+    return packet
+
+
+def ack(block: int) -> bytes:
+    return Opcode.ACK.to_bytes(2, "big") + block.to_bytes(2, "big")
+
+
+def opcode(packet: bytes) -> Opcode:
+    return Opcode(int.from_bytes(packet[:2], "big"))
+
+
+def second_field(packet: bytes) -> int:
+    """The block number of DATA and ACK packets, or the error code of ERROR packets."""
+    return int.from_bytes(packet[2:4], "big")
+
+
+def oack_options(packet: bytes) -> dict[str, str]:
+    parts = packet[2:].split(b"\0")[:-1]
+    return {parts[i].decode(): parts[i + 1].decode() for i in range(0, len(parts), 2)}
+
+
+def _server(root, host: str = "127.0.0.1", operator: object = None) -> TftpServer:
+    return TftpServer(
+        host=host,
+        port=0,
+        operator=cast(AsyncOperator, operator or AsyncOperator("fs", root=str(root))),
+        timeout=TIMEOUT,
+        retries=3,
+    )
+
+
+@asynccontextmanager
+async def _serving(server: TftpServer):
+    async with create_task_group() as tg:
+        tg.start_soon(server.start)
+        with fail_after(5):
+            while server.address is None:
+                await sleep(0.01)
+        try:
+            yield server.address[1]
+        finally:
+            await server.shutdown()
+
+
+@pytest.fixture
+async def tftp(tmp_path):
+    async with _serving(_server(tmp_path)) as port:
+        yield tmp_path, port
+
+
+@pytest.fixture
+async def client():
+    async with await create_udp_socket(local_host="127.0.0.1") as sock:
+        yield sock
+
+
+async def reply_to(client, port: int, packet: bytes) -> bytes:
+    await client.sendto(packet, "127.0.0.1", port)
+    with fail_after(5):
+        reply, _ = await client.receive()
+    return reply
+
+
+async def download(client, port: int, filename: str, host: str = "127.0.0.1", **options: str) -> bytes:
+    await client.sendto(rrq(filename, **options), host, port)
+    block_size = int(options.get("blksize", 512))
+    data = b""
+    with fail_after(5):
+        packet, transfer = await client.receive()
+        if options:
+            assert opcode(packet) == Opcode.OACK
+            await client.sendto(ack(0), *transfer)
+            packet, transfer = await client.receive()
+        while True:
+            assert opcode(packet) == Opcode.DATA, packet
+            data += packet[4:]
+            await client.sendto(ack(second_field(packet)), *transfer)
+            if len(packet) - 4 < block_size:
+                return data
+            packet, transfer = await client.receive()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("size", [0, 1, 511, 512, 1024, 1300])
+async def test_files_of_any_size_download_intact(tftp, client, size):
+    root, port = tftp
+    (root / "file.bin").write_bytes(bytes(i % 251 for i in range(size)))
+
+    assert await download(client, port, "file.bin") == (root / "file.bin").read_bytes()
+
+
+@pytest.mark.anyio
+async def test_blksize_and_timeout_are_acknowledged(tftp, client):
+    root, port = tftp
+    (root / "file.bin").write_bytes(b"x" * 3000)
+
+    await client.sendto(rrq("file.bin", blksize="1024", timeout="2"), "127.0.0.1", port)
+    with fail_after(5):
+        oack, transfer = await client.receive()
+        await client.sendto(ack(0), *transfer)
+        packet, _ = await client.receive()
+
+    assert oack_options(oack) == {"blksize": "1024", "timeout": "2"}
+    assert (opcode(packet), second_field(packet), len(packet) - 4) == (Opcode.DATA, 1, 1024)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("options", [{"blksize": "1024"}])
+async def test_a_single_requested_option_is_acknowledged(tftp, client, options):
+    root, port = tftp
+    (root / "file.bin").write_bytes(b"x" * 3000)
+
+    assert await download(client, port, "file.bin", **options) == b"x" * 3000
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("packet", "code"),
+    [
+        (rrq("boot"), TftpErrorCode.FILE_NOT_FOUND),
+        (rrq(".."), TftpErrorCode.ACCESS_VIOLATION),
+        (rrq("file.bin", mode="mail"), TftpErrorCode.ILLEGAL_OPERATION),
+        (Opcode.RRQ.to_bytes(2, "big") + b"file.bin", TftpErrorCode.NOT_DEFINED),
+        (Opcode.WRQ.to_bytes(2, "big") + b"file.bin\0octet\0", TftpErrorCode.ILLEGAL_OPERATION),
+        (b"\x00\x09\x00\x00", TftpErrorCode.ILLEGAL_OPERATION),
+        (b"\x00", TftpErrorCode.ILLEGAL_OPERATION),
+    ],
+)
+async def test_bad_requests_get_an_error(tftp, client, packet, code):
+    root, port = tftp
+    (root / "boot").mkdir()
+
+    reply = await reply_to(client, port, packet)
+
+    assert (opcode(reply), second_field(reply)) == (Opcode.ERROR, code)
+
+
+@pytest.mark.anyio
+async def test_a_silent_client_gets_the_block_again(tftp, client):
+    root, port = tftp
+    (root / "file.bin").write_bytes(b"data")
+
+    await client.sendto(rrq("file.bin"), "127.0.0.1", port)
+    with fail_after(5):
+        first, _ = await client.receive()
+        again, _ = await client.receive()
+
+    assert opcode(first) == Opcode.DATA
+    assert again == first
+
+
+class _StatsReturnTogether:
+    """Delegates to *operator*, holding every stat() result until *count* of them are ready."""
+
+    def __init__(self, operator: AsyncOperator, count: int):
+        self._operator = operator
+        self._count = count
+        self._ready = 0
+        self._all_ready = Event()
+
+    async def stat(self, path: str):
+        try:
+            return await self._operator.stat(path)
+        finally:
+            self._ready += 1
+            if self._ready >= self._count:
+                self._all_ready.set()
+            await self._all_ready.wait()
+
+    def __getattr__(self, name: str):
+        return getattr(self._operator, name)
+
+
+@pytest.mark.anyio
+async def test_refusals_due_at_the_same_time_all_arrive(tmp_path, client):
+    (tmp_path / "boot").mkdir()
+    requests = 4
+    operator = _StatsReturnTogether(AsyncOperator("fs", root=str(tmp_path)), requests)
+
+    async with _serving(_server(tmp_path, operator=operator)) as port:
+        for _ in range(requests):
+            await client.sendto(rrq("boot"), "127.0.0.1", port)
+        with fail_after(5):
+            replies = [(await client.receive())[0] for _ in range(requests)]
+
+    assert {(opcode(reply), second_field(reply)) for reply in replies} == {(Opcode.ERROR, TftpErrorCode.FILE_NOT_FOUND)}
