@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: TID251
 import logging
 from collections import deque
 from collections.abc import AsyncGenerator, Callable
@@ -15,6 +15,7 @@ from anyio import (
 )
 from anyio.abc import ObjectStream
 from anyio.from_thread import run_sync as run_sync_from_thread
+from anyio.lowlevel import checkpoint
 
 from jumpstarter.common.exceptions import CONSOLE_IN_USE_MARKER, JumpstarterException
 from jumpstarter.driver.decorators import export, exportstream
@@ -185,15 +186,29 @@ class _FanOutStreamBase:
 
 
 class ExclusiveStream(_FanOutStreamBase):
-    """Read+write stream for the write token holder."""
+    """Read+write stream for the write token holder. Discards input during source outages."""
 
     async def send(self, data: bytes) -> None:
+        # Allow cancellation before inspecting mutable token/source state,
+        # even when there is no physical IO to await during an outage.
+        await checkpoint()
         if self._id != self._fanout._write_token_holder:
             raise WriteTokenRevokedError("write token revoked")
         source = self._fanout._source
-        if source is None:
-            raise BrokenResourceError("source not connected")
-        await source.send(data)
+        if source is not None:
+            try:
+                await source.send(data)
+            except (BrokenResourceError, ClosedResourceError):
+                # The reader owns reconnection; never retry a possibly partial write.
+                pass
+            else:
+                return
+        # A late failure must not report an outage on the replacement or mute its next outage.
+        if self._fanout._source is not None and self._fanout._source is not source:
+            return
+        if data and not self._fanout._input_discarded:
+            logger.warning("Discarding input until source reconnects")
+            self._fanout._input_discarded = True
 
     async def aclose(self) -> None:
         if not self._closed:
@@ -231,12 +246,15 @@ class StreamFanOut:
         source_factory: Callable[[], AbstractAsyncContextManager[ObjectStream[bytes]]],
         scrollback_size: int = 65536,
         always_on: bool = True,
+        source_ready_timeout: float = _SOURCE_READY_TIMEOUT,
     ):
         self._source_factory = source_factory
         self._scrollback_max = scrollback_size
         self._always_on = always_on
+        self._source_ready_timeout = source_ready_timeout
 
         self._source: ObjectStream[bytes] | None = None
+        self._input_discarded = False
         self._clients: dict[int, ClientBuffer] = {}
         self._write_token_holder: int | None = None
         self._scrollback: deque[bytes] = deque()
@@ -273,6 +291,7 @@ class StreamFanOut:
             try:
                 async with self._source_factory() as source:
                     self._source = source
+                    self._input_discarded = False
                     backoff = 0.1
                     if not first_connect:
                         self._broadcast_system(b"[reconnected]\r\n")
@@ -280,20 +299,23 @@ class StreamFanOut:
                     self._reader_running = True
                     self._source_ready.set()
 
-                    async for data in source:
-                        if self._shutdown:
-                            break
-                        self._scrollback_append(data)
-                        self._broadcast_data(data)
-                    else:
+                    try:
+                        async for data in source:
+                            if self._shutdown:
+                                break
+                            self._scrollback_append(data)
+                            self._broadcast_data(data)
+                    finally:
+                        # Stop new writes before the source's asynchronous
+                        # teardown can yield control with a failed port.
                         self._source = None
                         self._reader_running = False
-                        if self._shutdown:
-                            break
-                        logger.warning("Source ended cleanly, reconnecting in %.1fs", backoff)
-                        await anyio.sleep(backoff)
-                        backoff = min(backoff * 2, max_backoff)
-                        continue
+                    if self._shutdown:
+                        break
+                    logger.warning("Source ended cleanly, reconnecting in %.1fs", backoff)
+                    await anyio.sleep(backoff)
+                    backoff = min(backoff * 2, max_backoff)
+                    continue
             except (OSError, BrokenResourceError, ClosedResourceError) as e:
                 self._source = None
                 self._reader_running = False
@@ -376,13 +398,17 @@ class StreamFanOut:
         # exclusively on the asyncio backend, so create_task() is safe here.
         self._reader_task = asyncio.get_running_loop().create_task(self._run_reader())
 
-    async def _wait_source_ready(self, timeout: float = _SOURCE_READY_TIMEOUT) -> None:
+    async def _wait_source_ready(self, timeout: float | None = None) -> None:
         """Wait for the reader loop to open the source. Call after releasing _lock.
 
         Bounded so a source_factory that hangs on open can't wedge an attach
-        call (and, for exclusive attach, the write token) forever. Raises
+        call (and, for exclusive attach, the write token) forever. Defaults to
+        the fan-out's source_ready_timeout, so a driver whose _open_source()
+        bounds its own wait can make attach fail on the same clock. Raises
         TimeoutError on expiry; the caller must detach the pending client.
         """
+        if timeout is None:
+            timeout = self._source_ready_timeout
         with anyio.move_on_after(timeout) as scope:
             await self._source_ready.wait()
         if scope.cancelled_caught:
@@ -561,6 +587,7 @@ class FanOutStreamMixin:
 
     _fanout_always_on: ClassVar[bool] = True
     _fanout_scrollback_size: ClassVar[int] = 65536
+    _fanout_source_ready_timeout: ClassVar[float] = _SOURCE_READY_TIMEOUT
     _fanout: StreamFanOut | None = field(default=None, init=False, repr=False)
 
     @asynccontextmanager
@@ -573,6 +600,10 @@ class FanOutStreamMixin:
         """Return always_on setting. Subclasses with an instance field override this."""
         return self._fanout_always_on
 
+    def _get_fanout_source_ready_timeout(self) -> float:
+        """How long attach waits for the first source open. Subclasses override."""
+        return self._fanout_source_ready_timeout
+
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()  # ty: ignore[unresolved-attribute]
@@ -580,6 +611,7 @@ class FanOutStreamMixin:
             source_factory=self._open_source,
             scrollback_size=self._fanout_scrollback_size,
             always_on=self._get_fanout_always_on(),
+            source_ready_timeout=self._get_fanout_source_ready_timeout(),
         )
 
     def _get_fanout(self) -> StreamFanOut:

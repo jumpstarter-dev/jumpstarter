@@ -11,7 +11,7 @@ from jumpstarter_kubernetes.exceptions import JumpstarterKubernetesError
 class TestGetLatestCompatibleControllerVersion:
     """Test controller version resolution from Quay.io API."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("aiohttp.ClientSession")
     async def test_requests_correct_url(self, mock_session_class):
         tags_response = {"tags": [{"name": "v0.5.0"}]}
@@ -40,7 +40,7 @@ class TestGetLatestCompatibleControllerVersion:
 
         assert captured_url == "https://quay.io/api/v1/repository/jumpstarter-dev/jumpstarter-operator/tag/"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("aiohttp.ClientSession")
     async def test_returns_compatible_version(self, mock_session_class):
         tags_response = {
@@ -66,7 +66,7 @@ class TestGetLatestCompatibleControllerVersion:
 
         assert result == "v0.5.2"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("aiohttp.ClientSession")
     async def test_falls_back_to_latest_when_no_compatible(self, mock_session_class):
         tags_response = {
@@ -90,7 +90,7 @@ class TestGetLatestCompatibleControllerVersion:
 
         assert result == "v0.7.0"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("aiohttp.ClientSession")
     async def test_returns_latest_when_no_client_version(self, mock_session_class):
         tags_response = {
@@ -114,7 +114,7 @@ class TestGetLatestCompatibleControllerVersion:
 
         assert result == "v0.6.0"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("aiohttp.ClientSession")
     async def test_skips_invalid_semver_tags(self, mock_session_class):
         tags_response = {
@@ -139,7 +139,7 @@ class TestGetLatestCompatibleControllerVersion:
 
         assert result == "v0.5.0"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("aiohttp.ClientSession")
     async def test_raises_on_unexpected_response_format(self, mock_session_class):
         mock_response = AsyncMock()
@@ -156,7 +156,7 @@ class TestGetLatestCompatibleControllerVersion:
         with pytest.raises(JumpstarterKubernetesError, match="Unexpected response"):
             await get_latest_compatible_controller_version("v0.5.0")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("aiohttp.ClientSession")
     async def test_raises_on_no_valid_versions(self, mock_session_class):
         tags_response = {"tags": [{"name": "latest"}]}
@@ -174,12 +174,12 @@ class TestGetLatestCompatibleControllerVersion:
         with pytest.raises(JumpstarterKubernetesError, match="No valid controller versions"):
             await get_latest_compatible_controller_version("v0.5.0")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_raises_on_invalid_client_version(self):
         with pytest.raises(JumpstarterKubernetesError, match="Invalid client version"):
             await get_latest_compatible_controller_version("not-a-version")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("aiohttp.ClientSession")
     async def test_raises_on_fetch_failure(self, mock_session_class):
         mock_session = AsyncMock()
@@ -191,7 +191,7 @@ class TestGetLatestCompatibleControllerVersion:
         with pytest.raises(JumpstarterKubernetesError, match="Failed to fetch controller versions"):
             await get_latest_compatible_controller_version("v0.5.0")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("aiohttp.ClientSession")
     async def test_skips_malformed_tag_entries(self, mock_session_class):
         tags_response = {

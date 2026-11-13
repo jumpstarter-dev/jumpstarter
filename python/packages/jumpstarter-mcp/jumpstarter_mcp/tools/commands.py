@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import asyncio.subprocess
 import logging
 import shutil
 
@@ -14,8 +12,13 @@ import click
 from jumpstarter_mcp.connections import ConnectionManager
 
 from jumpstarter.client.introspect import get_driver_methods, list_drivers, walk_click_tree
+from jumpstarter.common.process import open_streaming_process
 
 logger = logging.getLogger(__name__)
+
+# After a timed-out command is killed, read what it already wrote for at most this
+# long; a child it started may keep the pipes open indefinitely.
+_DRAIN_SECONDS = 1.0
 
 
 async def run_command(
@@ -45,38 +48,34 @@ async def run_command(
     full_env = {**os.environ, **env}
 
     logger.info("Running command: j %s (timeout=%ds)", " ".join(command), timeout_seconds)
+    output = {"stdout": bytearray(), "stderr": bytearray()}
     try:
-        proc = await asyncio.create_subprocess_exec(
-            j_path,
-            *command,
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=full_env,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
-        logger.info("Command finished: j %s -> exit_code=%s", " ".join(command), proc.returncode)
-        return {
-            "exit_code": proc.returncode,
-            "stdout": stdout.decode(errors="replace"),
-            "stderr": stderr.decode(errors="replace"),
-            "command": [j_path, *command],
-        }
-    except TimeoutError:
-        proc.kill()
-        stdout, stderr = await proc.communicate()
-        logger.warning("Command timed out after %ds: j %s", timeout_seconds, " ".join(command))
-        return {
-            "exit_code": proc.returncode,
-            "stdout": stdout.decode(errors="replace"),
-            "stderr": stderr.decode(errors="replace"),
-            "timed_out": True,
-            "timeout_seconds": timeout_seconds,
-            "command": [j_path, *command],
-        }
+        async with open_streaming_process([j_path, *command], env=full_env, stop_grace=0) as proc:
+            with anyio.move_on_after(timeout_seconds) as timeout:
+                async for chunk in proc:
+                    output[chunk.source] += chunk.data
+                exit_code = await proc.wait()
+            if timeout.cancelled_caught:
+                exit_code = await proc.stop()
+                with anyio.move_on_after(_DRAIN_SECONDS):
+                    async for chunk in proc:
+                        output[chunk.source] += chunk.data
     except Exception:
         logger.exception("Command failed unexpectedly: j %s", " ".join(command))
         raise
+
+    result = {
+        "exit_code": exit_code,
+        "stdout": output["stdout"].decode(errors="replace"),
+        "stderr": output["stderr"].decode(errors="replace"),
+        "command": [j_path, *command],
+    }
+    if timeout.cancelled_caught:
+        logger.warning("Command timed out after %ds: j %s", timeout_seconds, " ".join(command))
+        result |= {"timed_out": True, "timeout_seconds": timeout_seconds}
+    else:
+        logger.info("Command finished: j %s -> exit_code=%s", " ".join(command), exit_code)
+    return result
 
 
 async def get_env(

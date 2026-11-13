@@ -38,7 +38,7 @@ def _make_lease(name="lease-1", deprecated_labels=None):
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_exporters_includes_deprecated_labels():
     config = AsyncMock()
     config.list_exporters.return_value = ExporterList(
@@ -49,7 +49,7 @@ async def test_list_exporters_includes_deprecated_labels():
     assert result[0]["deprecated_labels"] == {"old-key": "Use new-key"}
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_exporters_omits_empty_deprecated_labels():
     config = AsyncMock()
     config.list_exporters.return_value = ExporterList(
@@ -60,7 +60,7 @@ async def test_list_exporters_omits_empty_deprecated_labels():
     assert "deprecated_labels" not in result[0]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_leases_includes_deprecated_labels():
     config = AsyncMock()
     config.list_leases.return_value = LeaseList(
@@ -71,7 +71,7 @@ async def test_list_leases_includes_deprecated_labels():
     assert result[0]["deprecated_labels"] == {"legacy-board": "Use board"}
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_leases_omits_empty_deprecated_labels():
     config = AsyncMock()
     config.list_leases.return_value = LeaseList(
@@ -82,7 +82,7 @@ async def test_list_leases_omits_empty_deprecated_labels():
     assert "deprecated_labels" not in result[0]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_create_lease_includes_deprecated_labels():
     lease = _make_lease(deprecated_labels={"old-pool": "Removed in v2.0"})
     config = AsyncMock()
@@ -91,7 +91,7 @@ async def test_create_lease_includes_deprecated_labels():
     assert result["deprecated_labels"] == {"old-pool": "Removed in v2.0"}
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_create_lease_omits_empty_deprecated_labels():
     lease = _make_lease()
     config = AsyncMock()

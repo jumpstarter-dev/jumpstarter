@@ -29,6 +29,7 @@ GRPC_VERSION: str
 class TelemetryServiceStub:
     """A service that reverse-scrapes exporter metrics and receives structured logs.
     Implemented by jumpstarter-telemetry; not part of the controller.
+    Callers authenticate with the TelemetryEndpoint.token from GetServiceEndpoints.
     """
 
     @_typing.overload
@@ -46,6 +47,7 @@ class TelemetryServiceStub:
 class TelemetryServiceAsyncStub(TelemetryServiceStub):
     """A service that reverse-scrapes exporter metrics and receives structured logs.
     Implemented by jumpstarter-telemetry; not part of the controller.
+    Callers authenticate with the TelemetryEndpoint.token from GetServiceEndpoints.
     """
 
     def __init__(self, channel: _aio.Channel) -> None: ...
@@ -59,6 +61,7 @@ class TelemetryServiceAsyncStub(TelemetryServiceStub):
 class TelemetryServiceServicer:
     """A service that reverse-scrapes exporter metrics and receives structured logs.
     Implemented by jumpstarter-telemetry; not part of the controller.
+    Callers authenticate with the TelemetryEndpoint.token from GetServiceEndpoints.
     """
 
     def MetricsStream(

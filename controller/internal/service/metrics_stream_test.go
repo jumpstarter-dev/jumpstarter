@@ -86,13 +86,9 @@ func startTestHub(t *testing.T, timeout time.Duration) (*TelemetryService, pb.Te
 
 func exporterStreamCtx(t *testing.T, svc *TelemetryService, subject string) context.Context {
 	t.Helper()
-	token, err := svc.Signer.Token(subject)
-	if err != nil {
-		t.Fatalf("Token: %v", err)
-	}
 	return metadata.NewOutgoingContext(
 		context.Background(),
-		metadata.Pairs("authorization", "Bearer "+token),
+		metadata.Pairs("authorization", "Bearer "+mustToken(t, svc.Signer, subject)),
 	)
 }
 

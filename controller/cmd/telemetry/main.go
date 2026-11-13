@@ -133,16 +133,10 @@ func main() {
 	signer, err := oidc.NewSignerFromSeed(
 		[]byte(os.Getenv("CONTROLLER_KEY")),
 		"https://localhost:8085",
-		"jumpstarter",
+		oidc.TelemetryAudience,
 	)
 	if err != nil {
 		logger.Error(err, "unable to create token verifier")
-		os.Exit(1)
-	}
-
-	clientAuthn, err := loadClientAuthenticator(ctx)
-	if err != nil {
-		logger.Error(err, "unable to load external client authenticator")
 		os.Exit(1)
 	}
 
@@ -153,7 +147,6 @@ func main() {
 		DriverTypeEnum:  splitCSV(driverTypeEnum),
 		ExemplarKeys:    splitCSV(exemplarKeys),
 		Signer:          signer,
-		ClientAuthn:     clientAuthn,
 		LokiConfig: service.LokiConfig{
 			URL:                lokiURL,
 			Username:           os.Getenv("LOKI_USERNAME"),

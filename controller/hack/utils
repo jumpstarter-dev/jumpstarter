@@ -79,18 +79,21 @@ load_image() {
   esac
 }
 
-# Return 0 if the image exists in the local container tool store.
-container_image_exists() {
-  local image=$1
-  local tool=${CONTAINER_TOOL:-}
-  if [ -z "${tool}" ]; then
-    if command -v podman >/dev/null 2>&1; then
-      tool=podman
-    else
-      tool=docker
-    fi
+# Print the container tool that built the images: CONTAINER_TOOL, which
+# controller/Makefile exports, otherwise podman if installed, else docker.
+container_tool() {
+  if [ -n "${CONTAINER_TOOL:-}" ]; then
+    echo "${CONTAINER_TOOL}"
+  elif command -v podman >/dev/null 2>&1; then
+    echo podman
+  else
+    echo docker
   fi
-  ${tool} image inspect "${image}" >/dev/null 2>&1
+}
+
+# Return 0 if the image exists in the container tool's local store.
+container_image_exists() {
+  "$(container_tool)" image inspect "$1" >/dev/null 2>&1
 }
 
 create_cluster() {
@@ -133,34 +136,40 @@ delete_cluster() {
   esac
 }
 
-# Load Docker/Podman image into kind cluster
-# Function to save images to kind, with workaround for github CI and other environment issues
-# In github CI, kind gets confused and tries to pull the image from docker instead
-# of podman, so if regular docker-image fails we need to:
-#   * save it to OCI image format
-#   * then load it into kind
+# Load an image into the kind cluster from the container tool that built it.
+# kind reads Docker's store itself; other tools' images are piped in as an archive.
+# Loading from the wrong store would load a stale image with the same tag.
 # Args:
 #   $1: image name (e.g., quay.io/jumpstarter-dev/jumpstarter-controller:latest)
 #   $2: kind cluster name (default: jumpstarter)
 kind_load_image() {
   local image=$1
   local cluster_name=${2:-jumpstarter}
+  local tool attempt
 
-  echo -e "${GREEN}Loading $1 in kind ...${NC}"
-
-  # First, try to load the image directly
-  if ${KIND} load docker-image "${image}" --name "${cluster_name}" 2>/dev/null; then
-    echo "Image ${image} loaded successfully."
-    return
-  fi
-
-  # Save to tar file
-  if podman save "${image}" | ${KIND} load image-archive /dev/stdin --name "${cluster_name}"; then
-    echo "Image loaded successfully."
-  else
-    echo "Error loading image ${image}."
+  tool=$(container_tool)
+  if ! container_image_exists "${image}"; then
+    echo -e "${RED}Image ${image} is not in the ${tool} image store.${NC}"
     exit 1
   fi
+  echo -e "${GREEN}Loading ${image} in kind from ${tool} ...${NC}"
+
+  # Retry once in case the failure is transient; kind prints its error either way.
+  for attempt in 1 2; do
+    if [ "${tool}" = docker ]; then
+      ${KIND} load docker-image "${image}" --name "${cluster_name}" && break
+    else
+      "${tool}" save "${image}" | ${KIND} load image-archive /dev/stdin --name "${cluster_name}" && break
+    fi
+    if [ "${attempt}" -eq 2 ]; then
+      echo -e "${RED}Error loading image ${image}.${NC}"
+      df -h / || true
+      exit 1
+    fi
+    echo -e "${YELLOW}Loading ${image} failed, retrying ...${NC}"
+    sleep 5
+  done
+  echo "Image ${image} loaded successfully."
 }
 
 # Install nginx ingress in kind cluster

@@ -13,6 +13,7 @@ jumpstarter-driver-ble = { workspace = true }
 jumpstarter-driver-bt-peer = { workspace = true }
 jumpstarter-driver-can = { workspace = true }
 jumpstarter-driver-composite = { workspace = true }
+jumpstarter-driver-copilot = { workspace = true }
 jumpstarter-driver-dds = { workspace = true }
 jumpstarter-driver-corellium = { workspace = true }
 jumpstarter-driver-cuttlefish = { workspace = true }
@@ -56,12 +57,15 @@ jumpstarter-driver-uds = { workspace = true }
 jumpstarter-driver-uds-can = { workspace = true }
 jumpstarter-driver-uds-doip = { workspace = true }
 jumpstarter-driver-iscsi = { workspace = true }
+jumpstarter-driver-iosdevice = { workspace = true }
+jumpstarter-driver-iossimulator = { workspace = true }
 jumpstarter-driver-mitmproxy = { workspace = true }
 jumpstarter-driver-ustreamer = { workspace = true }
 jumpstarter-driver-video = { workspace = true }
 jumpstarter-driver-yepkit = { workspace = true }
 jumpstarter-driver-vnc = { workspace = true }
 jumpstarter-driver-xcp = { workspace = true }
+jumpstarter-driver-gptp = { workspace = true }
 jumpstarter-imagehash = { workspace = true }
 jumpstarter-kubernetes = { workspace = true }
 jumpstarter-mcp = { workspace = true }
@@ -153,7 +157,24 @@ line-length = 120
 
 [tool.ruff.lint]
 exclude = ["packages/jumpstarter-protocol"]
-extend-select = ["I", "C", "E", "F", "W", "B", "ERA"]
+extend-select = ["I", "C", "E", "F", "W", "B", "ERA", "TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# Existing direct asyncio usage is exempted line by line with `# noqa: TID251`, so the
+# member bans below still apply around it. Migrations delete those comments; never add new ones.
+"asyncio".msg = "Use anyio. The loop is asyncio, but first-party code goes through anyio."
+"asyncio.create_task".msg = "Spawn in a task group so the task has an owner."
+"asyncio.ensure_future".msg = "Spawn in a task group so the task has an owner."
+"asyncio.wait_for".msg = "Use anyio.fail_after / move_on_after."
+"asyncio.timeout".msg = "Use anyio.fail_after / move_on_after."
+"asyncio.timeout_at".msg = "Use anyio.fail_after / move_on_after."
+"asyncio.shield".msg = "Use anyio.CancelScope(shield=True)."
+"asyncio.gather".msg = "Use a task group."
+"asyncio.wait".msg = "Use a task group."
+"asyncio.as_completed".msg = "Use a task group."
+"asyncio.TaskGroup".msg = "Use anyio.create_task_group()."
+"asyncio.get_event_loop".msg = "Use asyncio.get_running_loop() or anyio.from_thread."
+"asyncio.run_coroutine_threadsafe".msg = "Use anyio.from_thread.run()."
 
 [tool.ruff.lint.isort]
 known-local-folder = ["packages", "examples", "jumpstarter"]

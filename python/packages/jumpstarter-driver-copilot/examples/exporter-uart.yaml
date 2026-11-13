@@ -1,0 +1,42 @@
+# Scenario: capture a DUT boot log while controlling its native supply.
+# Requires jumpstarter-driver-pyserial in addition to jumpstarter-driver-copilot.
+# Read examples/README.md for capture-before-power-on and session cleanup.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: copilot-uart
+# For controller-managed operation, replace these connection settings.
+# Local use: jmp shell --exporter-config /path/to/this-file.yaml
+endpoint: "controller.example.com:8082"
+token: "<token>"
+export:
+  copilot:
+    type: jumpstarter_driver_copilot.driver.CoPilotGPIO
+    config:
+      # Serial printed by the udev path /dev/copilot/by-id/<serial>/gpiochip.
+      serial: YOUR_COPILOT_SERIAL
+      # Acquire only the native supply line; leave unused GPIOs available.
+      managed_lines: [0]
+      active_low: false
+      initial_active: false
+      hats: []
+  power:
+    type: jumpstarter_driver_copilot.driver.CoPilotPower
+    children:
+      # Share the owner's GPIO request; do not open GPIO0 a second time.
+      controller:
+        ref: copilot
+  serial:
+    type: jumpstarter_driver_pyserial.driver.PySerial
+    config:
+      # The SAME unit as copilot.serial above. Connect UART TX/RX/GND to the DUT.
+      # Select the UART voltage on the hardware and use the DUT's baud rate.
+      url: /dev/copilot/by-id/YOUR_COPILOT_SERIAL/tty
+      baudrate: 115200
+      # Fail early if the expected CoPilot tty is absent.
+      check_present: true
+      # Avoid HUPCL-triggered modem-line transitions when closing on POSIX.
+      disable_hupcl: true
+      # Open on client attach. Start logging BEFORE powering the DUT on.
+      always_on: false

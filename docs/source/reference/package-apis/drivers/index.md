@@ -5,6 +5,15 @@ driver is contained in a separate package in the form of
 `jumpstarter-driver-{name}` and provides specific functionality for interacting
 with different hardware components and systems.
 
+## Common Configuration
+
+All drivers support these base configuration fields:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `log_level` | Logging level (`DEBUG`, `INFO`, `WARNING`, etc.). Inherited from the parent driver when unset. | parent's level, else `"INFO"` |
+| `description` | Custom description shown in CLI help | `None` |
+
 ## Types of Drivers
 
 Jumpstarter includes several types of drivers organized by their primary
@@ -14,6 +23,7 @@ function:
 
 Drivers that control the power state and basic operation of devices:
 
+- {doc}`CoPilot <copilot>` (`jumpstarter-driver-copilot`) - BayLibre CoPilot GPIO, relay and supply control
 - {doc}`Power <power>` (`jumpstarter-driver-power`) - Power control for devices
 - {doc}`gpiod <gpiod>` (`jumpstarter-driver-gpiod`) - GPIO hardware control via libgpiod
 - {doc}`Yepkit <yepkit>` (`jumpstarter-driver-yepkit`) - Yepkit USB hub hardware control
@@ -28,6 +38,7 @@ Drivers that control the power state and basic operation of devices:
 Drivers that provide various communication interfaces:
 
 - {doc}`ADB <adb>` (`jumpstarter-driver-adb`) - Android Debug Bridge tunneling
+- {doc}`iOS Device <iosdevice>` (`jumpstarter-driver-iosdevice`) - Per-device iOS usbmux transport
 - {doc}`BLE <ble>` (`jumpstarter-driver-ble`) - Bluetooth Low Energy communication
 - {doc}`BT Peer <bt-peer>` (`jumpstarter-driver-bt-peer`) - Bluetooth peer device powered by bumble
 - {doc}`CAN <can>` (`jumpstarter-driver-can`) - Controller Area Network communication
@@ -69,6 +80,7 @@ Drivers for automotive diagnostic protocols:
 - {doc}`UDS over CAN <uds-can>` (`jumpstarter-driver-uds-can`) - UDS diagnostics over CAN/ISO-TP transport
 - {doc}`OBD-II <obd>` (`jumpstarter-driver-obd`) - OBD-II vehicle diagnostics via ELM327
 - {doc}`SOME/IP <someip>` (`jumpstarter-driver-someip`) - SOME/IP protocol operations via opensomeip
+- {doc}`gPTP <gptp>` (`jumpstarter-driver-gptp`) - IEEE 802.1AS / PTP time synchronization for automotive Ethernet (linuxptp)
 
 ### Flashing and Programming
 
@@ -87,6 +99,7 @@ Drivers for flashing firmware and programming devices:
 Drivers for virtual and emulated targets:
 
 - {doc}`Android Emulator <androidemulator>` (`jumpstarter-driver-androidemulator`) - Android emulator lifecycle management with ADB tunneling
+- {doc}`iOS Simulator <iossimulator>` (`jumpstarter-driver-iossimulator`) - iOS Simulator lifecycle and idb transport
 - {doc}`KubeVirt <kubevirt>` (`jumpstarter-driver-kubevirt`) - KubeVirt virtual machine provisioning on remote clusters
 - {doc}`QEMU <qemu>` (`jumpstarter-driver-qemu`) - QEMU virtual machine management
 - {doc}`Renode <renode>` (`jumpstarter-driver-renode`) - Renode embedded systems emulation
@@ -115,6 +128,7 @@ androidemulator.md
 ble.md
 bt-peer.md
 can.md
+copilot.md
 corellium.md
 cuttlefish.md
 dds.md
@@ -125,8 +139,11 @@ energenie.md
 esp32.md
 flashers.md
 gpiod.md
+gptp.md
 http.md
 http-power.md
+iosdevice.md
+iossimulator.md
 iscsi.md
 kubevirt.md
 mitmproxy.md

@@ -19,6 +19,10 @@ import (
 
 const defaultTokenLifetime = 365 * 24 * time.Hour
 
+// TelemetryAudience is the audience of tokens that the controller issues for
+// TelemetryService calls. The controller and router reject them.
+const TelemetryAudience = "https://jumpstarter.dev/telemetry"
+
 type Signer struct {
 	privatekey    *ecdsa.PrivateKey
 	issuer        string
@@ -43,6 +47,14 @@ func NewSignerFromSeed(seed []byte, issuer, audience string) (*Signer, error) {
 		return nil, err
 	}
 	return NewSigner(key, issuer, audience), nil
+}
+
+// WithAudience returns a signer with the same key and issuer that signs and
+// accepts only tokens for audience.
+func (k *Signer) WithAudience(audience string) *Signer {
+	signer := *k
+	signer.audience = audience
+	return &signer
 }
 
 func (k *Signer) Issuer() string {
@@ -160,11 +172,20 @@ func (k *Signer) Token(
 		lifetime = defaultTokenLifetime
 	}
 	now := time.Now()
+	return k.sign(subject, now, now.Add(lifetime))
+}
+
+// TokenWithExpiry signs a token for subject that expires at expiresAt.
+func (k *Signer) TokenWithExpiry(subject string, expiresAt time.Time) (string, error) {
+	return k.sign(subject, time.Now(), expiresAt)
+}
+
+func (k *Signer) sign(subject string, issuedAt, expiresAt time.Time) (string, error) {
 	return jwt.NewWithClaims(jwt.SigningMethodES256, jwt.RegisteredClaims{
 		Issuer:    k.issuer,
 		Subject:   subject,
 		Audience:  []string{k.audience},
-		IssuedAt:  jwt.NewNumericDate(now),
-		ExpiresAt: jwt.NewNumericDate(now.Add(lifetime)),
+		IssuedAt:  jwt.NewNumericDate(issuedAt),
+		ExpiresAt: jwt.NewNumericDate(expiresAt),
 	}).SignedString(k.privatekey)
 }

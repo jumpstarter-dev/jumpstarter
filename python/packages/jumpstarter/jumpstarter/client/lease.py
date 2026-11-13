@@ -41,6 +41,14 @@ logger = logging.getLogger(__name__)
 
 # Allow the controller's 30-second exporter readiness wait to finish.
 _DIAL_ATTEMPT_TIMEOUT = 35.0
+# Per call, so releasing a lease takes at most twice this.
+_RELEASE_RPC_TIMEOUT_SECONDS = 15.0
+
+
+def _deadline_exceeded(exc: BaseException) -> bool:
+    """Whether *exc* is a gRPC call that ran out of its deadline, as translated by translate_grpc_exceptions."""
+    cause = exc.__cause__
+    return isinstance(cause, AioRpcError) and cause.code() == grpc.StatusCode.DEADLINE_EXCEEDED
 
 
 @dataclass(kw_only=True)
@@ -117,7 +125,8 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     )  # Called when lease is ending
     lease_ended: bool = field(default=False, init=False)  # Set when lease expires naturally
     lease_transferred: bool = field(default=False, init=False)  # Set when lease is transferred to another client
-    lease_revoked: bool = field(default=False, init=False)  # Set when this (shared) client loses shared access
+    lease_revoked: bool = field(default=False, init=False)  # Set when this client loses access to the lease
+    owner: str | None = field(default=None, init=False)  # The lease's owner when it was acquired
 
     def __post_init__(self):
         self.controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel)
@@ -152,11 +161,18 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 logger.warning(warning)
         logger.info("Acquiring lease %s for selector %s for duration %s", self.name, self.selector, self.duration)
 
-    async def get(self):
+    async def get(self, *, timeout: float | None = None):
+        """Fetch the lease from the controller.
+
+        timeout is a gRPC deadline. Prefer it to an anyio timeout around the
+        call: a cancelled grpc.aio call can raise a CancelledError that anyio
+        does not recognize as its own, which cancels the caller's task group
+        instead of timing out.
+        """
         with translate_grpc_exceptions():
             svc = ClientService(channel=self.channel, namespace=self.namespace)
             assert self.name is not None  # pragma: no cover
-            return await svc.GetLease(name=self.name)
+            return await svc.GetLease(name=self.name, timeout=timeout)
 
     @retry(
         wait=wait_exponential_jitter(initial=1, max=120, jitter=1),
@@ -274,6 +290,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                             logger.debug("Lease %s acquired", self.name)
                             spinner.update_status(f"Lease {self.name} acquired successfully!", force=True)
                             self.exporter_name = result.exporter
+                            self.owner = result.client
                             await self._fetch_exporter_labels()
                             break
 
@@ -328,21 +345,20 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
             yield value
         finally:
             if self.release and self.name:
-                # Shield cleanup from cancellation to ensure it completes
+                # Shield cleanup from cancellation to ensure it completes. Each
+                # call is bounded by a gRPC deadline; see get() for why not fail_after.
                 with CancelScope(shield=True):
                     try:
-                        with fail_after(30):
-                            # skip the message if the lease is already expired
-                            lease = await self.get()
-                            if not lease.effective_end_time:
-                                logger.info("Releasing Lease %s", self.name)
-                            await self.svc.DeleteLease(
-                                name=self.name,
-                            )
-                    except TimeoutError:
-                        logger.warning("Timeout while deleting lease %s during cleanup", self.name)
-                    except Exception:  # noqa: BLE001
-                        logger.debug("Error during lease cleanup for %s (likely already expired)", self.name)
+                        # skip the message if the lease is already expired
+                        lease = await self.get(timeout=_RELEASE_RPC_TIMEOUT_SECONDS)
+                        if not lease.effective_end_time:
+                            logger.info("Releasing Lease %s", self.name)
+                        await self.svc.DeleteLease(name=self.name, timeout=_RELEASE_RPC_TIMEOUT_SECONDS)
+                    except Exception as e:  # noqa: BLE001
+                        if _deadline_exceeded(e):
+                            logger.warning("Timeout while deleting lease %s during cleanup", self.name)
+                        else:
+                            logger.debug("Error during lease cleanup for %s (likely already expired)", self.name)
 
     @contextmanager
     def __contextmanager__(self) -> Generator[Self]:

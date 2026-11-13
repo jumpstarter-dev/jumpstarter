@@ -1,11 +1,14 @@
 """Tests for jmp client telemetry: GetServiceEndpoints + PushLogs (JEP-0013 Phase 3)."""
 
 import logging
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import grpc
 import pytest
+from google.protobuf.timestamp_pb2 import Timestamp
+from jumpstarter_protocol import jumpstarter_pb2
 
 from jumpstarter.client.telemetry import attach_client_telemetry
 from jumpstarter.common.exceptions import CertificateDiscoveryError
@@ -13,11 +16,11 @@ from jumpstarter.common.exceptions import CertificateDiscoveryError
 pytestmark = pytest.mark.anyio
 
 
-def make_endpoint(endpoint="telemetry:19093", certificate="", min_severity="info"):
-    ep = MagicMock()
-    ep.endpoint = endpoint
-    ep.certificate = certificate
-    ep.min_severity = min_severity
+def make_endpoint(endpoint="telemetry:19093", certificate="", min_severity="info", token="telemetry-token"):
+    ep = jumpstarter_pb2.TelemetryEndpoint(
+        endpoint=endpoint, certificate=certificate, min_severity=min_severity, token=token
+    )
+    ep.token_expiry.CopyFrom(Timestamp(seconds=int(time.time()) + 3600))
     return ep
 
 
@@ -121,7 +124,8 @@ def _record(msg: str) -> logging.LogRecord:
     )
 
 
-async def test_attach_sends_token_current_at_flush():
+async def test_attach_sends_telemetry_token_current_at_flush():
+    """PushLogs carries the telemetry token, never the config's controller credential."""
     resp = MagicMock()
     resp.telemetry_endpoints = [make_endpoint()]
     controller = AsyncMock()
@@ -129,7 +133,7 @@ async def test_attach_sends_token_current_at_flush():
     push = AsyncMock()
     tel = MagicMock()
     tel.PushLogs = push
-    config = make_config(token="old-token", insecure=True)
+    config = make_config(token="controller-credential", insecure=True)
 
     with (
         patch("jumpstarter.client.telemetry.jumpstarter_pb2_grpc.ControllerServiceStub", return_value=controller),
@@ -148,10 +152,10 @@ async def test_attach_sends_token_current_at_flush():
     try:
         handler = session.handler
         assert handler is not None
-        handler.emit(_record("before refresh"))
+        handler.emit(_record("before renewal"))
         await handler._flush()
-        config.token = "new-token"
-        handler.emit(_record("after refresh"))
+        session.token.update(make_endpoint(token="renewed-token"))
+        handler.emit(_record("after renewal"))
         await handler._flush()
     finally:
         await session.aclose()
@@ -161,13 +165,8 @@ async def test_attach_sends_token_current_at_flush():
         ("jumpstarter-kind", "Client"),
         ("jumpstarter-namespace", "jumpstarter"),
     ]
-    assert push.await_args_list[0].kwargs["metadata"] == [
-        *identity,
-        ("authorization", "Bearer old-token"),
-    ]
-    assert push.await_args_list[1].kwargs["metadata"] == [
-        *identity,
-        ("authorization", "Bearer new-token"),
+    assert [call.kwargs["metadata"] for call in push.await_args_list] == [
+        [*identity, ("authorization", f"Bearer {token}")] for token in ["telemetry-token", "renewed-token"]
     ]
 
 

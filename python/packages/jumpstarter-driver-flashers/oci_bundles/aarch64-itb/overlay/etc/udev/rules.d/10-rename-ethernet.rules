@@ -1,0 +1,3 @@
+# rename non-standard interface names to eth0 to unify setup
+SUBSYSTEM=="net", ACTION=="add", KERNEL=="tsn0", NAME="eth0"
+SUBSYSTEM=="net", ACTION=="add", KERNEL=="end0", NAME="eth0"

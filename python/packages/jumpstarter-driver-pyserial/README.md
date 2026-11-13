@@ -60,6 +60,16 @@ Drivers that create their own console (qemu, renode, dutlink, corellium) wire
 their power driver into it automatically, so the hotkey works there without
 any configuration (qemu: except in sidecar mode).
 
+### Input during reconnection
+
+While the serial source is known to be disconnected, input is discarded rather
+than closing the console. A write interrupted by a recognized transport failure
+may be partially delivered and is never retried. The first discarded input
+during each outage logs a warning; input is not buffered or replayed.
+
+This also applies to pipe and pexpect writers, which can lose input without a
+send error.
+
 
 ### Config parameters
 
@@ -132,7 +142,7 @@ export:
 | chip           | Chip type for demuxer (`T234` for Orin, `T264` for Thor)                                        | str   | no       | `T264`                                                                    |
 | baudrate       | Baud rate for the serial connection                                                             | int   | no       | 115200                                                                    |
 | cps            | Characters per second throttling limit                                                          | float | no       | None                                                                      |
-| timeout        | Timeout in seconds waiting for demuxer to detect pts                                            | float | no       | 10.0                                                                      |
+| timeout        | Timeout in seconds waiting for demuxer to detect pts; also bounds the first client attach         | float | no       | 10.0                                                                      |
 | poll_interval  | Interval in seconds to poll for device reappearance after disconnect                            | float | no       | 1.0                                                                       |
 
 #### Device Auto-Detection

@@ -2,6 +2,7 @@ import os
 import pty
 import select
 import shutil
+import signal
 import tempfile
 import threading
 import time
@@ -746,6 +747,31 @@ def test_launch_shell_logs_exit_status(tmp_path, caplog):
         )
     assert exit_code == 42
     assert "exited with 42" in caplog.text
+
+
+def test_launch_shell_ends_a_shell_started_after_access_was_lost(tmp_path):
+    """A shell that starts after the session lost access to its lease is ended at once.
+
+    The shared-access monitor signals a running shell; one that starts after
+    the monitor acted would otherwise run with nothing left to end it.
+    """
+    lease = SimpleNamespace(
+        exporter_name="my-exporter",
+        name="lease-123",
+        exporter_labels={},
+        lease_ending_callback=None,
+        lease_revoked=True,
+    )
+    exit_code = launch_shell(
+        host=str(tmp_path / "test.sock"),
+        context="remote",
+        allow=["*"],
+        unsafe=False,
+        use_profiles=False,
+        command=("sleep", "10"),
+        lease=lease,
+    )
+    assert exit_code == 128 + signal.SIGHUP
 
 
 @pytest.mark.parametrize(("signal_name", "signum", "expected"), [("KILL", 9, 137), ("TERM", 15, 143)])
