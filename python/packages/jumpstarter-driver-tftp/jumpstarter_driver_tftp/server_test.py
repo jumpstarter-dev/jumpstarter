@@ -364,6 +364,7 @@ async def test_a_single_requested_option_is_acknowledged(tftp, client, options):
 @pytest.mark.parametrize(
     ("packet", "code"),
     [
+        (rrq("missing.txt"), TftpErrorCode.FILE_NOT_FOUND),
         (rrq("boot"), TftpErrorCode.FILE_NOT_FOUND),
         (rrq(".."), TftpErrorCode.ACCESS_VIOLATION),
         (rrq("file.bin", mode="mail"), TftpErrorCode.ILLEGAL_OPERATION),

@@ -15,6 +15,7 @@ from anyio import (
 )
 from anyio.abc import ConnectedUDPSocket, SocketAttribute, TaskGroup, TaskStatus, UDPSocket
 from opendal import AsyncOperator
+from opendal.exceptions import NotFound
 
 
 class Opcode(IntEnum):
@@ -259,7 +260,7 @@ class TftpServerProtocol:
 
         try:
             stat = await self.server.operator.stat(filename)
-        except FileNotFoundError:
+        except NotFound:
             self.logger.error(f"File not found: {filename}")
             self._send_error(addr, TftpErrorCode.FILE_NOT_FOUND, "File not found")
             return None
