@@ -507,3 +507,15 @@ async def test_a_client_error_ends_the_transfer(tftp, client):
     with move_on_after(TIMEOUT * 2) as quiet:
         await client.receive()
     assert quiet.cancelled_caught
+
+
+@pytest.mark.anyio
+async def test_ipv6_clients_are_served(tmp_path):
+    (tmp_path / "file.bin").write_bytes(b"x" * 1000)
+    try:
+        client = await create_udp_socket(local_host="::1")
+    except OSError:
+        pytest.skip("no IPv6 loopback")  # ty: ignore[too-many-positional-arguments]
+
+    async with client, _serving(_server(tmp_path, host="::1")) as port:
+        assert await download(client, port, "file.bin", host="::1") == b"x" * 1000

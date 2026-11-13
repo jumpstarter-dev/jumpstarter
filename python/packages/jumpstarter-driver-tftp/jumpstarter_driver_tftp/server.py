@@ -430,7 +430,7 @@ class TftpReadTransfer(TftpTransfer):
                 tg.cancel_scope.cancel()
 
     async def _initialize_transfer(self, tg: TaskGroup) -> bool:
-        self.sock = await create_connected_udp_socket(*self.client_addr, local_host="0.0.0.0")
+        self.sock = await create_connected_udp_socket(*self.client_addr, local_host=self.server.host)
         self.transport = DatagramSender(self.sock, self.logger)
         tg.start_soon(self.transport.run)
         self.protocol = TftpTransferProtocol(self)
