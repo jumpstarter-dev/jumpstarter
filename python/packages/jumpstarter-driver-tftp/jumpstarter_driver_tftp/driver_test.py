@@ -58,25 +58,23 @@ def test_tftp_root_directory_creation(tmp_path):
 
 
 def test_tftp_start_stop(tmp_path):
-    """Test that start/stop lifecycle works via asyncio.run() in the server thread."""
+    """Test that start/stop lifecycle works via anyio.run() in the server thread."""
     server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=0)
     server.start()
     try:
-        # _run_server_lifecycle ran: loop was captured and server was created
+        # _run_server_lifecycle ran: the server was created
         assert server.server is not None
-        assert server._loop is not None
     finally:
         server.stop()
     server.close()
 
 
-def test_tftp_start_stop_cleans_up_loop(tmp_path):
-    """Test that _loop is set to None after shutdown."""
+def test_tftp_start_stop_ends_the_server_thread(tmp_path):
+    """Test that the server thread is gone after shutdown."""
     server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=0)
     server.start()
     server.stop()
-    # After stop, the thread has exited and _loop should be cleaned up
-    assert server._loop is None
+    assert server.server_thread is None
     server.close()
 
 
@@ -94,11 +92,7 @@ def test_tftp_start_server_logs_error_on_failure(tmp_path):
 
 @pytest.mark.anyio
 async def test_tftp_run_server_lifecycle_creates_server_in_async_context(tmp_path):
-    """Test that _run_server_lifecycle creates TftpServer within asyncio.run().
-
-    This validates the replacement of the deprecated new_event_loop() +
-    set_event_loop() + run_until_complete() pattern with asyncio.run().
-    """
+    """Test that _run_server_lifecycle creates TftpServer within the event loop."""
     server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=0)
 
     # Patch _run_server so we don't actually start listening
@@ -109,8 +103,6 @@ async def test_tftp_run_server_lifecycle_creates_server_in_async_context(tmp_pat
     assert server.server is not None
     assert server.server.shutdown_event is not None
     assert server.server.ready_event is not None
-    # Loop ref is cleaned up in the finally block
-    assert server._loop is None
     server.close()
 
 

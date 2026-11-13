@@ -17,7 +17,7 @@ def server():
 
 @pytest.fixture
 def protocol(server):
-    proto = TftpServerProtocol(server)
+    proto = TftpServerProtocol(server, MagicMock(), MagicMock())
     proto.transport = MagicMock()
     return proto
 

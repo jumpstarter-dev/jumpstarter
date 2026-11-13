@@ -1,8 +1,18 @@
-import asyncio  # noqa: TID251
 import logging
+import math
 import pathlib
 from enum import IntEnum
+from typing import Any
 
+from anyio import (
+    Event,
+    create_connected_udp_socket,
+    create_memory_object_stream,
+    create_task_group,
+    create_udp_socket,
+    fail_after,
+)
+from anyio.abc import ConnectedUDPSocket, SocketAttribute, TaskGroup, UDPSocket
 from opendal import AsyncOperator
 
 
@@ -24,6 +34,32 @@ class TftpErrorCode(IntEnum):
     UNKNOWN_TID = 5
     FILE_EXISTS = 6
     NO_SUCH_USER = 7
+
+
+class DatagramSender:
+    """Sends datagrams for synchronous callers, as asyncio's transport.sendto did.
+
+    anyio sockets take one send at a time, so sends queue here and run() sends
+    them in order; a send that fails is logged, as a datagram that got lost.
+    """
+
+    def __init__(self, sock: UDPSocket | ConnectedUDPSocket, logger: logging.Logger):
+        self._sock: Any = sock
+        self._logger = logger
+        self._queue, self._pending = create_memory_object_stream[tuple[bytes, Any]](math.inf)
+
+    def sendto(self, data: bytes, addr: tuple[str, int] | None = None) -> None:
+        self._queue.send_nowait((data, addr))
+
+    async def run(self) -> None:
+        async for data, addr in self._pending:
+            try:
+                if addr is None:
+                    await self._sock.send(data)
+                else:
+                    await self._sock.sendto(data, *addr)
+            except Exception:
+                self._logger.exception(f"Failed to send a datagram to {addr or 'the client'}")
 
 
 class TftpServer:
@@ -48,8 +84,8 @@ class TftpServer:
         self.timeout = timeout
         self.retries = retries
         self.active_transfers: set[TftpTransfer] = set()
-        self.shutdown_event = asyncio.Event()
-        self.transport: asyncio.DatagramTransport | None = None
+        self.shutdown_event = Event()
+        self.sock: UDPSocket | None = None
         self.protocol: TftpServerProtocol | None = None
 
         if logger is not None:
@@ -57,46 +93,30 @@ class TftpServer:
         else:
             self.logger = logging.getLogger(self.__class__.__name__)
 
-        self.ready_event = asyncio.Event()
+        self.ready_event = Event()
 
     @property
     def address(self) -> tuple[str, int] | None:
         """Get the server's bound address and port."""
-        if self.transport:
-            return self.transport.get_extra_info("socket").getsockname()
+        if self.sock:
+            return self.sock.extra(SocketAttribute.raw_socket).getsockname()
         return None
 
     async def start(self):
         self.logger.info(f"Starting TFTP server on {self.host}:{self.port}")
-        loop = asyncio.get_running_loop()
-
-        self.ready_event.set()
-        self.transport, self.protocol = await loop.create_datagram_endpoint(
-            lambda: TftpServerProtocol(self), local_addr=(self.host, self.port)
-        )
-
-        try:
-            await self.shutdown_event.wait()
-        except asyncio.CancelledError:
-            pass
-        finally:
-            self.logger.info("TFTP server shutting down")
-            await self._cleanup()
-
-    async def _cleanup(self):
-        self.logger.info("Cleaning up TFTP server resources")
-
-        # Cancel all active transfers
-        cleanup_tasks = [transfer.cleanup() for transfer in self.active_transfers.copy()]
-        if cleanup_tasks:
-            await asyncio.gather(*cleanup_tasks, return_exceptions=True)  # noqa: TID251
-
-        # Close the main transport
-        if self.transport:
-            self.transport.close()
-            self.transport = None
-
-        self.logger.info("TFTP server cleanup completed")
+        async with await create_udp_socket(local_host=self.host, local_port=self.port) as sock:
+            self.sock = sock
+            try:
+                async with create_task_group() as tg:
+                    self.protocol = TftpServerProtocol(self, sock, tg)
+                    tg.start_soon(self.protocol.receive)
+                    self.ready_event.set()
+                    await self.shutdown_event.wait()
+                    self.logger.info("TFTP server shutting down")
+                    tg.cancel_scope.cancel()
+            finally:
+                self.sock = None
+                self.logger.info("TFTP server cleanup completed")
 
     async def shutdown(self):
         self.logger.info("Shutdown signal received for TFTP server")
@@ -111,22 +131,22 @@ class TftpServer:
         self.logger.debug(f"Unregistered transfer: {transfer}")
 
 
-class TftpServerProtocol(asyncio.DatagramProtocol):
+class TftpServerProtocol:
     """
     Protocol for handling incoming TFTP requests.
     """
 
-    def __init__(self, server: TftpServer):
+    def __init__(self, server: TftpServer, sock: UDPSocket, tg: TaskGroup):
         self.server = server
-        self.transport: asyncio.DatagramTransport | None = None
+        self.sock = sock
+        self.tg = tg
         self.logger = server.logger.getChild(self.__class__.__name__)
+        self.transport = DatagramSender(sock, self.logger)
+        tg.start_soon(self.transport.run)
 
-    def connection_made(self, transport: asyncio.DatagramTransport):
-        self.transport = transport
-        self.logger.debug("Server protocol connection established")
-
-    def connection_lost(self, exc: Exception | None):
-        self.logger.info("TFTP server protocol connection lost")
+    async def receive(self):
+        async for data, addr in self.sock:
+            self.datagram_received(data, addr)
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]):
         self.logger.debug(f"Received datagram from {addr}")
@@ -149,7 +169,7 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
         self.logger.debug(f"Received opcode {opcode.name} from {addr}")
 
         if opcode == Opcode.RRQ:
-            asyncio.create_task(self._handle_read_request(data, addr))  # noqa: TID251
+            self.tg.start_soon(self._handle_read_request, data, addr)
         else:
             self.logger.warning(f"Unsupported opcode {opcode} from {addr}")
             self._send_error(addr, TftpErrorCode.ILLEGAL_OPERATION, "Unsupported operation")
@@ -315,7 +335,7 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
             negotiated_options=negotiated_options,
         )
         self.server.register_transfer(transfer)
-        asyncio.create_task(transfer.start())  # noqa: TID251
+        self.tg.start_soon(transfer.start)
 
 
 
@@ -339,9 +359,9 @@ class TftpTransfer:
         self.block_size = block_size
         self.timeout = timeout
         self.retries = retries
-        self.transport: asyncio.DatagramTransport | None = None
+        self.sock: ConnectedUDPSocket | None = None
+        self.transport: DatagramSender | None = None
         self.protocol: TftpTransferProtocol | None = None
-        self.cleanup_task: asyncio.Task | None = None
         self.logger = server.logger.getChild(self.__class__.__name__)
 
     async def start(self):
@@ -351,8 +371,9 @@ class TftpTransfer:
     async def cleanup(self):
         """Clean up transfer resources."""
         self.logger.info(f"Cleaning up transfer for {self.client_addr}")
-        if self.transport:
-            self.transport.close()
+        if self.sock:
+            await self.sock.aclose()
+            self.sock = None
             self.transport = None
         self.server.unregister_transfer(self)
 
@@ -377,7 +398,7 @@ class TftpReadTransfer(TftpTransfer):
             retries=retries,
         )
         self.block_num = 0
-        self.ack_received = asyncio.Event()
+        self.ack_received = Event()
         self.last_ack = 0
         self.oack_confirmed = False
         self.negotiated_options = negotiated_options
@@ -386,27 +407,29 @@ class TftpReadTransfer(TftpTransfer):
     async def start(self):
         self.logger.info(f"Starting read transfer of '{self.filepath}' to {self.client_addr}")
 
-        if not await self._initialize_transfer():
-            return
+        async with create_task_group() as tg:
+            try:
+                if not await self._initialize_transfer(tg):
+                    return
 
-        try:
-            # if no options were negotiated, we can start sending data immediately
-            if not self.negotiated_options:
-                self.oack_confirmed = True
+                # if no options were negotiated, we can start sending data immediately
+                if not self.negotiated_options:
+                    self.oack_confirmed = True
 
-            await self._perform_transfer()
-        except Exception as e:  # noqa: BLE001
-            self.logger.error(f"Error during read transfer: {e}")
-        finally:
-            await self.cleanup()
+                await self._perform_transfer()
+            except Exception as e:  # noqa: BLE001
+                self.logger.error(f"Error during read transfer: {e}")
+            finally:
+                await self.cleanup()
+                tg.cancel_scope.cancel()
 
-    async def _initialize_transfer(self) -> bool:
-        loop = asyncio.get_running_loop()
-
-        self.transport, self.protocol = await loop.create_datagram_endpoint(
-            lambda: TftpTransferProtocol(self), local_addr=("0.0.0.0", 0), remote_addr=self.client_addr
-        )
-        local_addr = self.transport.get_extra_info("sockname")
+    async def _initialize_transfer(self, tg: TaskGroup) -> bool:
+        self.sock = await create_connected_udp_socket(*self.client_addr, local_host="0.0.0.0")
+        self.transport = DatagramSender(self.sock, self.logger)
+        tg.start_soon(self.transport.run)
+        self.protocol = TftpTransferProtocol(self)
+        tg.start_soon(self.protocol.receive, self.sock)
+        local_addr = self.sock.extra(SocketAttribute.local_address)
         self.logger.debug(f"Transfer bound to local {local_addr}")
 
         # Only send OACK if we have non-default options to negotiate
@@ -507,8 +530,9 @@ class TftpReadTransfer(TftpTransfer):
                 self.logger.debug(
                     f"Sent {'OACK' if is_oack else 'DATA'} block {expected_block}, waiting for ACK (Attempt {attempt})"
                 )
-                self.ack_received.clear()
-                await asyncio.wait_for(self.ack_received.wait(), timeout=self.timeout)  # noqa: TID251
+                self.ack_received = Event()
+                with fail_after(self.timeout):
+                    await self.ack_received.wait()
 
                 if self.last_ack == expected_block:
                     self.logger.debug(f"ACK received for block {expected_block}")
@@ -542,7 +566,7 @@ class TftpReadTransfer(TftpTransfer):
             self.logger.warning(f"Out of sequence ACK: expected {self.block_num}, got {block_num}")
 
 
-class TftpTransferProtocol(asyncio.DatagramProtocol):
+class TftpTransferProtocol:
     """
     Protocol for handling ACKs during a TFTP transfer.
     """
@@ -551,10 +575,9 @@ class TftpTransferProtocol(asyncio.DatagramProtocol):
         self.transfer = transfer
         self.logger = transfer.logger.getChild(self.__class__.__name__)
 
-    def connection_made(self, transport: asyncio.DatagramTransport):
-        self.transfer.transport = transport
-        local_addr = transport.get_extra_info("sockname")
-        self.logger.debug(f"Transfer protocol connection established on {local_addr} for {self.transfer.client_addr}")
+    async def receive(self, sock: ConnectedUDPSocket):
+        async for data in sock:
+            self.datagram_received(data, self.transfer.client_addr)
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]):
         self.logger.debug(f"Received datagram from {addr}")
@@ -580,12 +603,6 @@ class TftpTransferProtocol(asyncio.DatagramProtocol):
         else:
             self.logger.warning(f"Unexpected opcode {opcode} from {addr}")
             self._send_error(addr, TftpErrorCode.ILLEGAL_OPERATION, "Unexpected opcode")
-
-    def error_received(self, exc):
-        self.logger.error(f"Error received: {exc}")
-
-    def connection_lost(self, exc):
-        self.logger.debug(f"Connection closed for transfer to {self.transfer.client_addr}")
 
     def _send_error(self, addr: tuple[str, int], error_code: TftpErrorCode, message: str):
         error_packet = (
