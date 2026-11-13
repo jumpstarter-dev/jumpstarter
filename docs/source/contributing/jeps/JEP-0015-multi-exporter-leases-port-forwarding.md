@@ -1548,7 +1548,7 @@ back to the router after a bounded timeout. `Router` forces the router path
 for testing, and `Direct` fails if a direct connection cannot be established.
 Both paths authenticate against the lease. This JEP delivers the router
 path; the direct path is enabled once exporters can authenticate each
-other, which DD-25 leaves to JEP-0018. Until then `Auto` uses the router.
+other, which DD-25 leaves to a later JEP. Until then `Auto` uses the router.
 
 Direct connections also avoid ingress-related stream failures where the
 router route passes through an ingress. In the single-node prototype, a
@@ -2308,25 +2308,27 @@ current authentication, and so does the router path for forwards.
 **Decision:** Option 3. This JEP delivers forwards over the router path. The
 direct path stays in the design as a transport (DD-4), with its fields and
 instructions reserved, and is enabled once exporters have a mutual identity.
-That identity is the subject of JEP-0018 (mTLS workload identity).
+Defining that identity is left to a separate JEP on mTLS for the whole
+system.
 
 **Rationale:** The direct path is the first connection where neither end is
 the controller, so it needs a mutual identity, and that identity should be
 the one the rest of the system uses, not one built only for forwards. An
 earlier revision of this JEP took option 1 and specified certificates, an
-issuing RPC, and a verification procedure. JEP-0018 then proposed exporter
-identities for every connection, with a different issuer and identity
-format, and review of the two together showed that one exporter would end
-up with two identities issued two ways. It also showed open problems that
+issuing RPC, and a verification procedure. Identities for every connection
+are a larger design than forwards need, with choices of issuer and
+identity format that this JEP should not make on its own: an exporter that
+got one identity here and another there would have two, issued two ways.
+Review also showed open problems that
 belong with the identity design and not with forwards: who issues, how
 exporters obtain the trust anchors for their peers, and how a Python
 exporter verifies the peer it dialed. Settling those here would either
-duplicate JEP-0018 or constrain it.
+duplicate that design or constrain it.
 
 Option 2 keeps a bearer secret on the path and still needs a server
 certificate per exporter, so it does not avoid the problem.
 
-Whatever JEP-0018 defines, the direct path needs these properties, and the
+Whatever that JEP defines, the direct path needs these properties, and the
 rest of this JEP is written against them:
 
 - **Mutual.** Each exporter proves its identity to the other. A connection
@@ -3498,8 +3500,8 @@ To resolve during review:
 To resolve during implementation:
 
 - The direct-dial timeout before router fallback.
-- **How exporters authenticate each other on the direct path.** Left to
-  JEP-0018 (DD-25). The questions it has to answer for this JEP: who issues
+- **How exporters authenticate each other on the direct path.** Left to a
+  later JEP (DD-25). The questions it has to answer for this one: who issues
   an exporter's identity and in what form; how an exporter obtains the trust
   anchors for a peer, including one from another issuer; how the dialing
   side verifies the peer it reached when that peer has only an IP address
@@ -3593,10 +3595,10 @@ The following work builds on this JEP:
   namespaces are supported later.
 - **Multi-exporter policy and quota:** add limits across members and support individual
   member release if needed.
-- **The direct path (JEP-0018):** enable direct forwards once exporters have
-  a mutual identity. JEP-0018 proposes mTLS identities for every
-  connection, issued by the controller's enrollment service or by external
-  systems such as SPIRE or Teleport Workload Identity. DD-25 lists what the
+- **The direct path (separate JEP):** enable direct forwards once exporters
+  have a mutual identity. A JEP on mTLS for every connection would define
+  one, whether issued by the controller or by external systems such as
+  SPIRE or Teleport Workload Identity. DD-25 lists what the
   direct path needs from it, and keeps identities opaque to peers so that
   the direct path does not depend on how they are issued. For exporter
   Pods, Kubernetes 1.37 Pod Certificates are one way such an identity could
@@ -3659,9 +3661,6 @@ The following work builds on this JEP:
   KEP-3257)
 - [Test Multi-Device Interactions with the Android Emulator](https://android-developers.googleblog.com/2026/04/Test-Multi-Device-Interactions-with-the-Android-Emulator.html)
 - [LAVA MultiNode](https://docs.lavasoftware.org/lava/multinode.html)
-- JEP-0018, mTLS Workload Identity
-  ([PR #1337](https://github.com/jumpstarter-dev/jumpstarter/pull/1337)) —
-  exporter and client identities, which the direct path waits for (DD-25)
 
 ---
 
