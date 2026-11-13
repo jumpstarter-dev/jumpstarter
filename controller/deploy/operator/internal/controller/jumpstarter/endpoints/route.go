@@ -85,7 +85,7 @@ func (r *Reconciler) createRouteForEndpoint(ctx context.Context, owner metav1.Ob
 	}
 
 	// Extract hostname from address
-	hostname := extractHostname(endpoint.Address)
+	hostname := ExtractHostname(endpoint.Address)
 	if hostname == "" {
 		log.Info("Skipping route creation: no hostname in endpoint address",
 			"address", endpoint.Address)
@@ -162,7 +162,7 @@ func (r *Reconciler) createRouteForLoginEndpoint(ctx context.Context, owner meta
 	}
 
 	// Extract hostname from address
-	hostname := extractHostname(endpoint.Address)
+	hostname := ExtractHostname(endpoint.Address)
 	if hostname == "" {
 		log.Info("Skipping login route creation: no hostname in endpoint address",
 			"address", endpoint.Address)

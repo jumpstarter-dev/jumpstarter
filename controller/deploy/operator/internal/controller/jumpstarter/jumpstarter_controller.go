@@ -266,13 +266,13 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile Services (controller, router, login endpoints, and telemetry ClusterIP)
+	// Reconcile controller, router, and login networking
 	if err := r.reconcileServices(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile Services")
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile Telemetry ClusterIP Service (part of the networking stage)
+	// Reconcile telemetry's internal scrape Service and gRPC endpoint exposure
 	if err := r.reconcileTelemetryServiceStage(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile Telemetry service")
 		return ctrl.Result{}, err
@@ -454,6 +454,9 @@ func (r *JumpstarterReconciler) reconcileRouterDeployment(ctx context.Context, j
 // reconcileServices reconciles all services
 func (r *JumpstarterReconciler) reconcileServices(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
+	if err := r.prepareNodePorts(ctx, jumpstarter); err != nil {
+		return err
+	}
 
 	// Reconcile controller services
 	for _, endpoint := range jumpstarter.Spec.Controller.GRPC.Endpoints {
@@ -1306,9 +1309,13 @@ func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *op
 	if jumpstarter.Spec.Telemetry != nil && jumpstarter.Spec.Telemetry.Enabled {
 		t := jumpstarter.Spec.Telemetry
 		if telemetryReplicas(t) > 0 {
+			endpoint := telemetryEndpointFor(jumpstarter)
+			if endpoint == "" {
+				return config.Config{}, fmt.Errorf("telemetry requires spec.telemetry.grpc.endpoints; automatic exposure requires a baseDomain and a Route or Ingress API")
+			}
 			telemetryCfg := &config.Telemetry{
 				Enabled:  true,
-				Endpoint: telemetryEndpointFor(jumpstarter.Namespace),
+				Endpoint: endpoint,
 			}
 			if t.Logging.Filter.MinSeverity != "" {
 				telemetryCfg.Logging.Filter.MinSeverity = t.Logging.Filter.MinSeverity
@@ -1502,9 +1509,11 @@ func ensurePort(address, defaultPort string) string {
 		return address
 	}
 
-	// No port found, need to add one
-	// net.JoinHostPort handles IPv6 addresses correctly (adds brackets if needed)
-	return net.JoinHostPort(address, defaultPort)
+	// No port found, need to add one.
+	// net.JoinHostPort brackets IPv6 literals, so strip any brackets the address
+	// already carries to avoid producing "[[2001:db8::1]]:443".
+	host := strings.TrimSuffix(strings.TrimPrefix(address, "["), "]")
+	return net.JoinHostPort(host, defaultPort)
 }
 
 // routerServiceNamePrefix is the prefix of every service name

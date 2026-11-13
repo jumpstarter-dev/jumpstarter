@@ -16,15 +16,18 @@ Built by `make e2e-setup` (`e2e/setup-e2e.sh`): kind cluster, dex OIDC provider 
 TLS CA, controller/operator deployed via `make -C controller deploy` with
 telemetry enabled (`OPERATOR_ENABLE_TELEMETRY=true`, which requires the locally
 built telemetry image), telemetry reachable from the host as
-`jumpstarter-telemetry.jumpstarter-lab.svc:9093` (NodePort 30015 from
-`e2e/manifests/telemetry-nodeport.yaml`, mapped to host port 9093 by
-`controller/hack/kind_cluster.yaml`, plus an `/etc/hosts` entry; a kind
+`telemetry.<baseDomain>:9093` (NodePort 30015 created by the operator from
+`spec.telemetry.grpc.endpoints`, mapped to host port 9093 by
+`controller/hack/kind_cluster.yaml`, with the same baseDomain DNS/hosts setup as
+the other gRPC endpoints; a kind
 cluster created before that mapping existed must be recreated with
 `make -C controller clean`), namespace
 `jumpstarter-lab`, service accounts `test-client-sa`/`test-exporter-sa`,
 `/etc/jumpstarter/exporters` dir, endpoint/login-endpoint env written to
 `.e2e-setup-complete`, QEMU guest image prefetched. Tests run via `make e2e-run`
 → `e2e/run-e2e.sh` (`go run ginkgo`) with `JUMPSTARTER_GRPC_INSECURE=1`.
+
+No `.svc` host alias is needed for telemetry.
 
 ---
 
@@ -214,7 +217,9 @@ Prereq: self-contained — creates its own dex OIDC client/exporter
 driver overlay `exporter.yaml`, runs the exporter in loop mode, and takes one
 lease for both specs with `jmp shell --client test-client-telemetry --selector
 example.com/board=telemetry j power on`. Needs the
-global telemetry setup. Telemetry runs without Loki, so it writes PushLogs entries
+global telemetry setup. Setup checks the operator advertises `telemetry.<baseDomain>`
+and a CA certificate, so both callers use verified TLS rather than a `.svc` host alias.
+Telemetry runs without Loki, so it writes PushLogs entries
 to its stdout. **Not run in compat suites**: older controllers issue no
 telemetry token.
 

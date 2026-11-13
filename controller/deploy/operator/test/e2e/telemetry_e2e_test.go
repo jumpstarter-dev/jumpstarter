@@ -63,16 +63,22 @@ func telemetryCertName(jumpstarterName string) string {
 	return jumpstarterName + telemetryE2ECertSuffix
 }
 
-func telemetryYAMLBlock() string {
+func telemetryYAMLBlock(baseDomain string, nodePort int) string {
 	return fmt.Sprintf(`  telemetry:
     enabled: true
     image: %s
     imagePullPolicy: IfNotPresent
+    grpc:
+      endpoints:
+        - address: telemetry.%s:%d
+          nodeport:
+            enabled: true
+            port: %d
     resources:
       requests:
         cpu: 50m
         memory: 128Mi
-`, telemetryImage())
+`, telemetryImage(), baseDomain, nodePort, nodePort)
 }
 
 var _ = Describe("Telemetry lifecycle", Ordered, func() {
@@ -131,7 +137,8 @@ spec:
           nodeport:
             enabled: true
             port: 30081
-%s`, jumpstarterName, telemetryTestNamespace, baseDomain, image, baseDomain, image, baseDomain, telemetryYAMLBlock())
+%s`, jumpstarterName, telemetryTestNamespace, baseDomain, image, baseDomain, image, baseDomain,
+			telemetryYAMLBlock(baseDomain, 30082))
 
 		Expect(applyYAML(jumpstarterYAML)).To(Succeed())
 
@@ -156,6 +163,14 @@ spec:
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(svc.Spec.Ports[0].Port).To(Equal(int32(telemetryE2EPort)))
 			g.Expect(svc.Spec.Selector).To(HaveKeyWithValue("app", "jumpstarter-telemetry"))
+
+			nodePort := &corev1.Service{}
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: telemetryE2EServiceName + "-grpc-0-np", Namespace: telemetryTestNamespace,
+			}, nodePort)).To(Succeed())
+			g.Expect(nodePort.Spec.Type).To(Equal(corev1.ServiceTypeNodePort))
+			g.Expect(nodePort.Spec.Ports).To(HaveLen(1), "only gRPC should be exposed")
+			g.Expect(nodePort.Spec.Ports[0].NodePort).To(Equal(int32(30082)))
 		}, 2*time.Minute).Should(Succeed())
 
 		Eventually(func(g Gomega) {
@@ -179,7 +194,7 @@ spec:
 			g.Expect(cm.Data["config"]).To(ContainSubstring("telemetry:"))
 			g.Expect(cm.Data["config"]).To(ContainSubstring("enabled: true"))
 			g.Expect(cm.Data["config"]).To(ContainSubstring(
-				fmt.Sprintf("%s.%s.svc:%d", telemetryE2EServiceName, telemetryTestNamespace, telemetryE2EPort)))
+				fmt.Sprintf("telemetry.%s:30082", baseDomain)))
 		}, 2*time.Minute).Should(Succeed())
 	})
 
@@ -205,6 +220,10 @@ spec:
 				Name:      telemetryDeploymentName(jumpstarterName),
 				Namespace: telemetryTestNamespace,
 			}, dep)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name: telemetryE2EServiceName + "-grpc-0-np", Namespace: telemetryTestNamespace,
+			}, &corev1.Service{})
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 		}, 2*time.Minute).Should(Succeed())
 
@@ -289,7 +308,8 @@ spec:
           nodeport:
             enabled: true
             port: 30083
-%s`, jumpstarterName, telemetryTLSTestNamespace, baseDomain, image, baseDomain, image, baseDomain, telemetryYAMLBlock())
+%s`, jumpstarterName, telemetryTLSTestNamespace, baseDomain, image, baseDomain, image, baseDomain,
+			telemetryYAMLBlock(baseDomain, 30084))
 
 		Expect(applyYAML(jumpstarterYAML)).To(Succeed())
 	})
@@ -304,6 +324,7 @@ spec:
 			}, cert)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(cert.Spec.IsCA).To(BeFalse())
+			g.Expect(cert.Spec.DNSNames).To(ContainElement("telemetry." + baseDomain))
 		}, 2*time.Minute).Should(Succeed())
 
 		Eventually(func(g Gomega) {
