@@ -1,9 +1,9 @@
-import asyncio  # noqa: TID251
 import os
 import threading
 from dataclasses import dataclass, field
 from typing import Optional
 
+import anyio
 from jumpstarter_driver_opendal.driver import Opendal
 
 from jumpstarter_driver_tftp.server import TftpServer
@@ -47,7 +47,6 @@ class Tftp(Driver):
     server_thread: threading.Thread | None = field(init=False, default=None)
     _shutdown_event: threading.Event = field(init=False, default_factory=threading.Event)
     _loop_ready: threading.Event = field(init=False, default_factory=threading.Event)
-    _loop: asyncio.AbstractEventLoop | None = field(init=False, default=None)
     _startup_error: BaseException | None = field(init=False, default=None)
 
     def __post_init__(self):
@@ -72,22 +71,15 @@ class Tftp(Driver):
 
     def _start_server(self):
         try:
-            asyncio.run(self._run_server_lifecycle())
+            anyio.run(self._run_server_lifecycle)
         except Exception as e:  # noqa: BLE001
             self.logger.error(f"Error running TFTP server: {e}")
         finally:
             self.logger.info("TFTP server thread completed")
 
     async def _run_server_lifecycle(self):
-        """Set up and run the TFTP server within a proper async context.
-
-        Uses asyncio.run() instead of the deprecated new_event_loop() +
-        set_event_loop() + run_until_complete() pattern, which emits
-        DeprecationWarning on Python 3.12/3.13 and breaks on 3.14
-        (get_event_loop() raises RuntimeError when no loop is running).
-        """
+        """Set up and run the TFTP server within the event loop of the server thread."""
         try:
-            self._loop = asyncio.get_running_loop()
             self.server = TftpServer(
                 host=self.host,
                 port=self.port,
@@ -101,23 +93,17 @@ class Tftp(Driver):
             # Always unblock start() so it can check _startup_error
             # instead of waiting for the full timeout.
             self._loop_ready.set()
-        try:
-            await self._run_server()
-        finally:
-            self._loop = None
+        await self._run_server()
 
     async def _run_server(self):
-        try:
-            assert self.server is not None
-            server_task = asyncio.create_task(self.server.start())  # noqa: TID251
-            await asyncio.gather(server_task, self._wait_for_shutdown())  # noqa: TID251
-        except asyncio.CancelledError:
-            self.logger.info("Server task cancelled")
-            raise
+        assert self.server is not None
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(self.server.start)
+            tg.start_soon(self._wait_for_shutdown)
 
     async def _wait_for_shutdown(self):
         while not self._shutdown_event.is_set():
-            await asyncio.sleep(0.1)
+            await anyio.sleep(0.1)
         self.logger.info("Shutdown event detected")
         if self.server is not None:
             await self.server.shutdown()
