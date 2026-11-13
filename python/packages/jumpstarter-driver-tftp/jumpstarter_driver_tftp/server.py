@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: TID251
 import logging
 import pathlib
 from enum import IntEnum
@@ -89,7 +89,7 @@ class TftpServer:
         # Cancel all active transfers
         cleanup_tasks = [transfer.cleanup() for transfer in self.active_transfers.copy()]
         if cleanup_tasks:
-            await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+            await asyncio.gather(*cleanup_tasks, return_exceptions=True)  # noqa: TID251
 
         # Close the main transport
         if self.transport:
@@ -149,7 +149,7 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
         self.logger.debug(f"Received opcode {opcode.name} from {addr}")
 
         if opcode == Opcode.RRQ:
-            asyncio.create_task(self._handle_read_request(data, addr))
+            asyncio.create_task(self._handle_read_request(data, addr))  # noqa: TID251
         else:
             self.logger.warning(f"Unsupported opcode {opcode} from {addr}")
             self._send_error(addr, TftpErrorCode.ILLEGAL_OPERATION, "Unsupported operation")
@@ -315,7 +315,7 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
             negotiated_options=negotiated_options,
         )
         self.server.register_transfer(transfer)
-        asyncio.create_task(transfer.start())
+        asyncio.create_task(transfer.start())  # noqa: TID251
 
 
 
@@ -508,7 +508,7 @@ class TftpReadTransfer(TftpTransfer):
                     f"Sent {'OACK' if is_oack else 'DATA'} block {expected_block}, waiting for ACK (Attempt {attempt})"
                 )
                 self.ack_received.clear()
-                await asyncio.wait_for(self.ack_received.wait(), timeout=self.timeout)
+                await asyncio.wait_for(self.ack_received.wait(), timeout=self.timeout)  # noqa: TID251
 
                 if self.last_ack == expected_block:
                     self.logger.debug(f"ACK received for block {expected_block}")

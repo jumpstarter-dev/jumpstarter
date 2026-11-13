@@ -1,6 +1,6 @@
 """Behavioral tests with real Jumpstarter streams and a stateful Kubernetes API."""
 
-import asyncio
+import asyncio  # noqa: TID251
 import gzip
 import json
 import logging
@@ -370,7 +370,7 @@ def test_a_missing_image_is_rejected_before_begin(cluster, tmp_path):
     assert operation(cluster.vm) is None
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_commit_requires_every_disk_to_finish(cluster):
     driver = storage(cluster)
     op = await begin(driver, ["root", "data"])
@@ -381,12 +381,12 @@ async def test_commit_requires_every_disk_to_finish(cluster):
     assert not cluster.activations
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_power_stays_available_while_a_disk_is_uploading(cluster):
     driver = storage(cluster)
     cluster.complete_uploads = False
     op = await begin(driver, ["root"])
-    task = asyncio.create_task(stage(driver, op, "root"))
+    task = asyncio.create_task(stage(driver, op, "root"))  # noqa: TID251
     while not cluster.uploads:
         await asyncio.sleep(0)
     assert not task.done()
@@ -400,7 +400,7 @@ async def test_power_stays_available_while_a_disk_is_uploading(cluster):
     assert disk_names(volumes(cluster.vm))["root"] == name
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_cancelled_upload_recovers_after_exporter_restart(cluster, monkeypatch):
     entered = asyncio.Event()
 
@@ -411,7 +411,7 @@ async def test_cancelled_upload_recovers_after_exporter_restart(cluster, monkeyp
     monkeypatch.setattr(Flash, "_upload", blocked_upload)
     driver = storage(cluster)
     op = await begin(driver, ["root"])
-    task = asyncio.create_task(stage(driver, op, "root"))
+    task = asyncio.create_task(stage(driver, op, "root"))  # noqa: TID251
     await entered.wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -419,7 +419,7 @@ async def test_cancelled_upload_recovers_after_exporter_restart(cluster, monkeyp
     # An exporter restart builds a fresh driver whose session start reclaims the upload.
     fresh = storage(cluster)
     fresh.reset()
-    assert await asyncio.wait_for(fresh._reclaim, 2) is False
+    assert await asyncio.wait_for(fresh._reclaim, 2) is False  # noqa: TID251
     assert disk_names(volumes(cluster.vm))["root"] == "vm-root"
     assert operation(cluster.vm)["phase"] == "aborted"
     await power(cluster).on()
@@ -438,7 +438,7 @@ def test_lost_commit_response_recovers_success_without_deleting_new_disks(cluste
     assert operation(cluster.vm)["phase"] == "complete"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_cleanup_failure_is_retryable_without_rolling_back_or_blocking_power(cluster):
     driver = storage(cluster)
     op = await begin(driver, ["root"])
@@ -451,25 +451,25 @@ async def test_cleanup_failure_is_retryable_without_rolling_back_or_blocking_pow
     cluster.fail_delete = False
     fresh = storage(cluster)
     fresh.reset()
-    assert await asyncio.wait_for(fresh._reclaim, 2) is True
+    assert await asyncio.wait_for(fresh._reclaim, 2) is True  # noqa: TID251
     assert disk_names(volumes(cluster.vm))["root"] == active
     assert (DataVolume, active) in cluster.objects
     assert operation(cluster.vm)["phase"] == "complete"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_reclaim_fences_a_commit_waiting_for_shutdown(cluster):
     driver = storage(cluster, shutdown_timeout=2)
     cluster.vmi = {"metadata": {"name": "vm"}, "spec": {"volumes": deepcopy(volumes(cluster.vm))}}
     cluster.stop_after = 10000
     op = await begin(driver, ["root"])
     await stage(driver, op, "root")
-    task = asyncio.create_task(driver.commit_flash(op))
+    task = asyncio.create_task(driver.commit_flash(op))  # noqa: TID251
     while cluster.vm["spec"]["runStrategy"] != "Halted":
         await asyncio.sleep(0)
     fresh = storage(cluster)
     fresh.reset()
-    await asyncio.wait_for(fresh._reclaim, 2)
+    await asyncio.wait_for(fresh._reclaim, 2)  # noqa: TID251
     cluster.stop_after = 0
     with pytest.raises(RuntimeError, match="no longer active"):
         await task
@@ -477,7 +477,7 @@ async def test_reclaim_fences_a_commit_waiting_for_shutdown(cluster):
     assert disk_names(volumes(cluster.vm))["root"] == "vm-root"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_shutdown_timeout_preserves_disk_references(cluster):
     driver = storage(cluster, shutdown_timeout=0.01)
     cluster.vmi = {"metadata": {"name": "vm"}, "spec": {"volumes": deepcopy(volumes(cluster.vm))}}
@@ -488,12 +488,12 @@ async def test_shutdown_timeout_preserves_disk_references(cluster):
         await driver.commit_flash(op)
     fresh = storage(cluster)
     fresh.reset()
-    await asyncio.wait_for(fresh._reclaim, 2)
+    await asyncio.wait_for(fresh._reclaim, 2)  # noqa: TID251
     assert not cluster.activations
     assert disk_names(volumes(cluster.vm))["root"] == "vm-root"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_commit_waits_out_the_guests_termination_grace_period(cluster):
     driver = storage(cluster, shutdown_timeout=0.05, poll_interval=0.01)
     cluster.vmi = {
@@ -510,7 +510,7 @@ async def test_commit_waits_out_the_guests_termination_grace_period(cluster):
     assert cluster.activations
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_power_on_waits_for_the_activation_swap(cluster):
     driver = storage(cluster, shutdown_timeout=2)
     cluster.vmi = {"metadata": {"name": "vm"}, "spec": {"volumes": deepcopy(volumes(cluster.vm))}}
@@ -518,10 +518,10 @@ async def test_power_on_waits_for_the_activation_swap(cluster):
     op = await begin(driver, ["root"])
     new = operation(cluster.vm)["disks"]["root"]["new"]
     await stage(driver, op, "root")
-    committing = asyncio.create_task(driver.commit_flash(op))
+    committing = asyncio.create_task(driver.commit_flash(op))  # noqa: TID251
     while cluster.vm["spec"]["runStrategy"] != "Halted":
         await asyncio.sleep(0)
-    powering = asyncio.create_task(power(cluster).on())
+    powering = asyncio.create_task(power(cluster).on())  # noqa: TID251
     # Power waits behind the activation instead of booting the disks it replaces.
     for _ in range(20):
         await asyncio.sleep(0.001)
@@ -534,7 +534,7 @@ async def test_power_on_waits_for_the_activation_swap(cluster):
     assert disk_names(volumes(cluster.vm))["root"] == new
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_activation_retries_when_a_status_write_lands_before_the_swap(cluster):
     driver = storage(cluster)
     op = await begin(driver, ["root"])
@@ -548,7 +548,7 @@ async def test_activation_retries_when_a_status_write_lands_before_the_swap(clus
     assert cluster.deleted == ["vm-root"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_recovery_retries_a_conflicting_completion_patch(cluster):
     driver = storage(cluster)
     op = await begin(driver, ["root"])
@@ -559,12 +559,12 @@ async def test_recovery_retries_a_conflicting_completion_patch(cluster):
     cluster.race_patch = cluster.patch_count + 1
     fresh = storage(cluster)
     fresh.reset()
-    assert await asyncio.wait_for(fresh._reclaim, 2) is True
+    assert await asyncio.wait_for(fresh._reclaim, 2) is True  # noqa: TID251
     assert operation(cluster.vm)["phase"] == "complete"
     assert cluster.deleted == ["vm-root"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_named_disks_preserve_unselected_templates_and_external_volumes(cluster):
     vm = cluster.objects[VirtualMachine, "vm"]
     vm["spec"]["dataVolumeTemplates"] = [
@@ -581,7 +581,7 @@ async def test_named_disks_preserve_unselected_templates_and_external_volumes(cl
 
 
 @pytest.mark.parametrize("targets", [["missing"], ["root", "root"], []])
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_invalid_targets_do_not_modify_cluster(cluster, targets):
     before = deepcopy(cluster.objects)
     with pytest.raises(ValueError):
@@ -589,7 +589,7 @@ async def test_invalid_targets_do_not_modify_cluster(cluster, targets):
     assert cluster.objects == before
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_delayed_binding_fails_before_allocating_or_stopping(cluster):
     cluster.objects[StorageClass, "fast"]["volumeBindingMode"] = "WaitForFirstConsumer"
     before = deepcopy(cluster.objects)
@@ -598,7 +598,7 @@ async def test_delayed_binding_fails_before_allocating_or_stopping(cluster):
     assert cluster.objects == before
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_storage_defaults_use_the_existing_pvcs_resolved_class_and_mode(cluster):
     driver = storage(cluster, disks={"root": {"size": "2Gi"}})
     await begin(driver, ["root"])
@@ -614,7 +614,7 @@ async def test_storage_defaults_use_the_existing_pvcs_resolved_class_and_mode(cl
 @pytest.mark.parametrize(
     "url", ["", "http://upload.test", "https://user:password@upload.test", "https://upload.test?token=x"]
 )
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_upload_configuration_validated_before_cluster_changes(cluster, url):
     before = deepcopy(cluster.objects)
     with pytest.raises(ValueError, match="HTTPS"):
@@ -622,7 +622,7 @@ async def test_upload_configuration_validated_before_cluster_changes(cluster, ur
     assert cluster.objects == before
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_upload_streams_bytes_and_bearer_token_to_cdi_async_endpoint():
     received = []
 
@@ -650,7 +650,7 @@ def test_compressed_local_image_uses_generic_resource_decoding(cluster, tmp_path
     assert cluster.uploads[disk_names(volumes(cluster.vm))["root"]] == payload
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_remote_url_flashes_through_exporter_resource_stream(cluster):
     payload = b"remote disk image" * 2000
 
@@ -669,7 +669,7 @@ async def test_remote_url_flashes_through_exporter_resource_stream(cluster):
     assert cluster.uploads[disk_names(volumes(cluster.vm))["root"]] == payload
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_presigned_urls_are_created_after_slow_volume_preparation(cluster, monkeypatch):
     elapsed = 0
     create = cluster.create
@@ -712,7 +712,7 @@ async def test_presigned_urls_are_created_after_slow_volume_preparation(cluster,
     assert all(data == b"signed image" for data in cluster.uploads.values())
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_patch_with_a_stale_resource_version_is_refused(cluster):
     control = VMControl(cluster, "ns", "vm")
     stale = await control.get()
@@ -725,7 +725,7 @@ async def test_patch_with_a_stale_resource_version_is_refused(cluster):
     assert cluster.vm["spec"]["runStrategy"] == "Always"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_begin_retries_when_the_vm_changes_while_disk_specs_are_resolved(cluster):
     driver = storage(cluster)
     cluster.race_patch = cluster.patch_count + 1
@@ -734,7 +734,7 @@ async def test_begin_retries_when_the_vm_changes_while_disk_specs_are_resolved(c
     assert operation(cluster.vm)["phase"] == "staging"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_a_second_begin_preempts_an_unfinished_flash(cluster):
     driver = storage(cluster)
     op = await begin(driver, ["root"])
@@ -749,7 +749,7 @@ async def test_a_second_begin_preempts_an_unfinished_flash(cluster):
         await stage(driver, op, "root")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_a_cancelled_upload_is_reclaimed_by_the_next_flash(cluster, monkeypatch):
     entered, blocked = asyncio.Event(), True
     upload = Flash._upload
@@ -764,7 +764,7 @@ async def test_a_cancelled_upload_is_reclaimed_by_the_next_flash(cluster, monkey
     driver = storage(cluster)
     op = await begin(driver, ["root"])
     abandoned = operation(cluster.vm)["disks"]["root"]["new"]
-    task = asyncio.create_task(stage(driver, op, "root"))
+    task = asyncio.create_task(stage(driver, op, "root"))  # noqa: TID251
     await entered.wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -781,7 +781,7 @@ async def test_a_cancelled_upload_is_reclaimed_by_the_next_flash(cluster, monkey
     assert (DataVolume, abandoned) not in cluster.objects
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_preemption_waits_for_the_preempted_flashes_claim(cluster, monkeypatch):
     driver = storage(cluster, shutdown_timeout=2)
     await begin(driver, ["root"])
@@ -802,7 +802,7 @@ async def test_preemption_waits_for_the_preempted_flashes_claim(cluster, monkeyp
     assert abandoned in cluster.deleted
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_a_racing_cleanup_of_the_same_volume_is_tolerated(cluster, monkeypatch):
     await begin(storage(cluster), ["root"])
     name = operation(cluster.vm)["disks"]["root"]["new"]
@@ -815,7 +815,7 @@ async def test_a_racing_cleanup_of_the_same_volume_is_tolerated(cluster, monkeyp
 
     monkeypatch.setattr(cluster, "delete", yielding_delete)
     flasher = storage(cluster)._flash()
-    results = await asyncio.gather(
+    results = await asyncio.gather(  # noqa: TID251
         flasher._delete_owned(name, "vm-uid"),
         flasher._delete_owned(name, "vm-uid"),
         return_exceptions=True,
@@ -824,7 +824,7 @@ async def test_a_racing_cleanup_of_the_same_volume_is_tolerated(cluster, monkeyp
     assert name in cluster.deleted
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_cleanup_releases_the_staged_volumes_together(cluster, monkeypatch):
     driver = storage(cluster, shutdown_timeout=5)
     await begin(driver, ["root", "data"])
@@ -879,7 +879,7 @@ def test_a_preempted_flash_has_no_leftovers_to_warn_about(cluster, caplog, monke
     assert operation(cluster.vm)["phase"] == "staging"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_begin_reclaims_a_flash_abandoned_by_an_earlier_lease(cluster):
     driver = storage(cluster)
     op = await begin(driver, ["root"])
@@ -893,7 +893,7 @@ async def test_begin_reclaims_a_flash_abandoned_by_an_earlier_lease(cluster):
     assert (DataVolume, abandoned) not in cluster.objects
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_begin_finishes_an_abort_an_earlier_flash_started(cluster):
     driver = storage(cluster)
     op = await begin(driver, ["root"])
@@ -907,7 +907,7 @@ async def test_begin_finishes_an_abort_an_earlier_flash_started(cluster):
     assert abandoned in cluster.deleted
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_shutdown_cancels_a_reclaim_still_running(cluster, monkeypatch):
     await begin(storage(cluster), ["root"])
     entered = asyncio.Event()
@@ -925,7 +925,7 @@ async def test_shutdown_cancels_a_reclaim_still_running(cluster, monkeypatch):
         await fresh._reclaim
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_session_start_reclaims_a_flash_left_by_an_earlier_lease(cluster):
     driver = storage(cluster)
     op = await begin(driver, ["root"])
@@ -933,13 +933,13 @@ async def test_session_start_reclaims_a_flash_left_by_an_earlier_lease(cluster):
     abandoned = operation(cluster.vm)["disks"]["root"]["new"]
     fresh = storage(cluster)
     fresh.reset()
-    await asyncio.wait_for(fresh._reclaim, 2)
+    await asyncio.wait_for(fresh._reclaim, 2)  # noqa: TID251
     assert operation(cluster.vm)["phase"] == "aborted"
     assert abandoned in cluster.deleted
     assert (DataVolume, abandoned) not in cluster.objects
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_cleanup_does_not_forget_a_disk_still_used_by_a_vmi(cluster):
     driver = storage(cluster)
     old_volumes = deepcopy(volumes(cluster.vm))
@@ -959,7 +959,7 @@ async def test_cleanup_does_not_forget_a_disk_still_used_by_a_vmi(cluster):
     assert cluster.deleted == ["vm-root"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_recover_aborts_after_the_vm_disk_references_were_edited(cluster):
     await begin(storage(cluster), ["root"])
     new = operation(cluster.vm)["disks"]["root"]["new"]
@@ -970,7 +970,7 @@ async def test_recover_aborts_after_the_vm_disk_references_were_edited(cluster):
     # must not wedge it: both recovery and the next flash have to keep working.
     fresh = storage(cluster)
     fresh.reset()
-    assert await asyncio.wait_for(fresh._reclaim, 2) is False
+    assert await asyncio.wait_for(fresh._reclaim, 2) is False  # noqa: TID251
     assert operation(cluster.vm)["phase"] == "aborted"
     assert (DataVolume, new) in cluster.objects
     assert disk_names(volumes(cluster.vm))["root"] == new
@@ -978,7 +978,7 @@ async def test_recover_aborts_after_the_vm_disk_references_were_edited(cluster):
     assert operation(cluster.vm)["id"] == following
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_reclaim_does_not_touch_an_operation_that_replaced_the_one_it_read(cluster):
     await begin(storage(cluster), ["root"])
     stale = cluster.vm
@@ -992,7 +992,7 @@ async def test_reclaim_does_not_touch_an_operation_that_replaced_the_one_it_read
     assert operation(cluster.vm)["phase"] == "staging"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_processing_timeout_can_be_recovered(cluster):
     cluster.complete_uploads = False
     driver = storage(cluster, flash_timeout=0.02)
@@ -1005,7 +1005,7 @@ async def test_processing_timeout_can_be_recovered(cluster):
 
 
 @pytest.mark.parametrize("status", [302, 401, 500])
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_upload_rejects_errors_and_does_not_follow_redirects(status):
     followed = []
 
@@ -1028,7 +1028,7 @@ async def test_upload_rejects_errors_and_does_not_follow_redirects(status):
     assert not followed
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_interrupted_begin_does_not_lock_out_the_lease(cluster, monkeypatch):
     entered, release = asyncio.Event(), asyncio.Event()
     original = Flash._wait_volume
@@ -1041,7 +1041,7 @@ async def test_interrupted_begin_does_not_lock_out_the_lease(cluster, monkeypatc
 
     monkeypatch.setattr(Flash, "_wait_volume", slow)
     driver = storage(cluster)
-    task = asyncio.create_task(begin(driver, ["root"]))
+    task = asyncio.create_task(begin(driver, ["root"]))  # noqa: TID251
     await entered.wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -1068,7 +1068,7 @@ def test_provisioning_failure_reaches_the_client_readably(cluster, tmp_path, mon
         client.flash(image)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_begin_fails_fast_when_an_upload_pod_never_starts(cluster, monkeypatch):
     driver = storage(cluster, provision_timeout=0.05, poll_interval=0.01)
     create = cluster.create
@@ -1094,7 +1094,7 @@ async def test_begin_fails_fast_when_an_upload_pod_never_starts(cluster, monkeyp
     await begin(driver, ["root"])
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_begin_fails_fast_when_cdi_reports_a_volume_that_will_never_bind(cluster, monkeypatch):
     driver = storage(cluster, provision_timeout=2, poll_interval=0.01, fatal_grace=0.05)
     create = cluster.create
@@ -1123,7 +1123,7 @@ async def test_begin_fails_fast_when_cdi_reports_a_volume_that_will_never_bind(c
     assert asyncio.get_running_loop().time() - started < 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_a_quota_condition_that_clears_is_waited_out(cluster, monkeypatch):
     driver = storage(cluster, poll_interval=0.01, fatal_grace=0.5)
     create = cluster.create
@@ -1158,7 +1158,7 @@ async def test_a_quota_condition_that_clears_is_waited_out(cluster, monkeypatch)
     assert operation(cluster.vm)["phase"] == "staging"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_stage_waits_for_an_upload_pod_that_restarted(cluster):
     driver = storage(cluster, poll_interval=0.01)
     op = await begin(driver, ["root"])
@@ -1170,13 +1170,13 @@ async def test_stage_waits_for_an_upload_pod_that_restarted(cluster):
         await asyncio.sleep(0.05)
         cluster.objects[DataVolume, name]["status"] = {"phase": "UploadReady", "restartCount": 1}
 
-    restarting = asyncio.create_task(restart())
+    restarting = asyncio.create_task(restart())  # noqa: TID251
     await stage(driver, op, "root")
     await restarting
     assert cluster.uploads[name] == b"image"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_recover_ignores_an_operation_that_was_never_written(cluster):
     driver = storage(cluster)
     assert await driver.recover_flash("never-written") is False

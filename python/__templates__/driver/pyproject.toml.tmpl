@@ -22,11 +22,10 @@ Homepage = "https://jumpstarter.dev"
 source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
 
 [tool.pytest.ini_options]
-addopts = "--cov --cov-report=html --cov-report=xml"
+addopts = "--cov --cov-report=html --cov-report=xml --strict-markers --strict-config"
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_${DRIVER_NAME}"]
-asyncio_mode = "auto"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
@@ -38,5 +37,5 @@ name = "pin_jumpstarter"
 [dependency-groups]
 dev = [
     "pytest-cov>=6.0.0",
-    "pytest>=8.3.3",
+    "pytest>=8.4",
 ]

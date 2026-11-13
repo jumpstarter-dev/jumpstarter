@@ -65,7 +65,7 @@ class TestKubevirtPower:
 
         assert KubevirtPower.client() == "jumpstarter_driver_kubevirt.client.KubevirtPowerClient"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_on(self):
         power = self._make_power()
         mock_client = AsyncMock()
@@ -80,7 +80,7 @@ class TestKubevirtPower:
         assert call_kwargs["namespace"] == "test-ns"
         assert call_kwargs["obj"] == {"spec": {"runStrategy": "Always"}}
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_off_halt(self):
         power = self._make_power()
         mock_client = AsyncMock()
@@ -94,7 +94,7 @@ class TestKubevirtPower:
         assert call_kwargs["obj"] == {"spec": {"runStrategy": "Halted"}}
         mock_client.delete.assert_not_called()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_off_destroy(self):
         power = self._make_power()
         mock_client = AsyncMock()
@@ -109,7 +109,7 @@ class TestKubevirtPower:
         # Halting first would only add a window in which the VM is stopped but not gone.
         mock_client.patch.assert_not_called()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_read_running(self):
         power = self._make_power()
         mock_client = AsyncMock()
@@ -134,7 +134,7 @@ class TestKubevirtPower:
         assert readings[0].voltage == 5.0
         assert readings[0].current == 1.0
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_read_stopped(self):
         power = self._make_power()
         mock_client = AsyncMock()
@@ -159,7 +159,7 @@ class TestKubevirtPower:
         assert readings[0].voltage == 0.0
         assert readings[0].current == 0.0
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_read_exception(self):
         power = self._make_power()
         mock_client = AsyncMock()
@@ -274,7 +274,7 @@ class TestKubevirtConsole:
         with pytest.raises(ValueError, match="vm_name not set"):
             console._resolve_vm_name()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_connect_success(self):
         from jumpstarter_driver_kubevirt.driver import KubevirtConsole
 
@@ -301,7 +301,7 @@ class TestKubevirtConsole:
             async with console.connect() as stream:
                 assert stream is mock_stream
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_connect_retry_on_not_running(self):
         from websockets.exceptions import InvalidStatus
 
@@ -333,7 +333,7 @@ class TestKubevirtConsole:
             patch("jumpstarter_driver_kubevirt.driver._build_console_ws_url") as mock_build_url,
             patch("jumpstarter_driver_kubevirt.driver.websockets") as mock_ws,
             patch("jumpstarter_driver_kubevirt.driver.WebsocketClientStream") as mock_wss,
-            patch("jumpstarter_driver_kubevirt.driver.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch("jumpstarter_driver_kubevirt.driver.sleep", new_callable=AsyncMock) as mock_sleep,
         ):
             mock_build_url.return_value = ("wss://example.com/console", {}, None)
             mock_ws.connect = make_connect_cm

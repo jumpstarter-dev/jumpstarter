@@ -1,7 +1,9 @@
 """Tests for session GetReport with descriptions and methods_description"""
 
 import logging
+import threading
 from contextlib import ExitStack, asynccontextmanager
+from dataclasses import dataclass, field
 
 import grpc
 import pytest
@@ -15,6 +17,7 @@ from anyio import (
     move_on_after,
     sleep,
     sleep_forever,
+    to_thread,
 )
 from anyio.from_thread import BlockingPortal
 from google.protobuf import empty_pb2
@@ -131,7 +134,7 @@ def test_get_report_includes_descriptions():
         )
 
         # Call GetReport
-        import asyncio
+        import asyncio  # noqa: TID251
         response = asyncio.run(session.GetReport(empty_pb2.Empty(), None))
 
         # Build a map of uuid -> report for easy lookup
@@ -212,7 +215,7 @@ def test_empty_description_not_included():
             root_device=driver,
         )
 
-        import asyncio
+        import asyncio  # noqa: TID251
         response = asyncio.run(session.GetReport(empty_pb2.Empty(), None))
 
         # Empty string should not be included in the report
@@ -225,7 +228,7 @@ def test_empty_description_not_included():
 
 def test_get_report_includes_motd():
     """Test that GetReport includes the motd when set on the session"""
-    import asyncio
+    import asyncio  # noqa: TID251
 
     driver = SimpleDriver()
 
@@ -373,7 +376,7 @@ def test_methods_description_included_in_getreport():
             root_device=driver,
         )
 
-        import asyncio
+        import asyncio  # noqa: TID251
         response = asyncio.run(session.GetReport(empty_pb2.Empty(), None))
 
         # Find the driver's report
@@ -892,6 +895,71 @@ async def test_driver_calls_gated_on_exporter_status(status, allowed):
                         with pytest.raises(ExporterNotReady, match=f"status: {status.name}"):
                             async for _ in client.streamingcall_async("count"):
                                 pass
+
+
+@dataclass(kw_only=True)
+class SlowToCancelDriver(Driver):
+    """Driver whose calls clean up for longer than the server stop that cancels them takes."""
+
+    entered: threading.Event = field(default_factory=threading.Event)
+    finished: threading.Event = field(default_factory=threading.Event)
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @asynccontextmanager
+    async def _slow_to_cancel(self):
+        self.entered.set()
+        try:
+            yield
+        finally:
+            with CancelScope(shield=True):
+                await sleep(0.2)
+            self.finished.set()
+
+    @export
+    async def slow(self) -> None:
+        async with self._slow_to_cancel():
+            await sleep_forever()
+
+    @export
+    async def slow_stream(self):
+        async with self._slow_to_cancel():
+            yield 1
+            await sleep_forever()
+
+
+async def _drain(responses):
+    async for _ in responses:
+        pass
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda client: client.call_async("slow"),
+        lambda client: _drain(client.streamingcall_async("slow_stream")),
+    ],
+    ids=["unary", "streaming"],
+)
+async def test_serving_ends_only_after_the_driver_calls_it_was_running(call):
+    driver = SlowToCancelDriver()
+    with Session(uuid=driver.uuid, labels=driver.labels, root_device=driver) as session:
+        session.update_status(ExporterStatus.LEASE_READY)
+        async with BlockingPortal() as portal:
+            with ExitStack() as stack:
+                async with (
+                    session.serve_unix_async() as path,
+                    client_from_path(path, portal, stack, allow=[], unsafe=True) as client,
+                    create_task_group() as calls,
+                ):
+                    calls.start_soon(call, client)
+                    await to_thread.run_sync(driver.entered.wait)
+                    calls.cancel_scope.cancel()
+
+                assert driver.finished.is_set()
 
 
 class SessionEnvDriver(Driver):

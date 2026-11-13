@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 import errno
 import json
 import logging
 import os
 import platform
 import shutil
+import threading
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
@@ -23,7 +23,11 @@ from anyio import (
     CancelScope,
     ClosedResourceError,
     EndOfStream,
+    Event,
+    Lock,
+    current_time,
     fail_after,
+    move_on_after,
     run_process,
     sleep,
     to_thread,
@@ -39,6 +43,7 @@ from qemu.qmp import QMPClient
 from qemu.qmp.protocol import ConnectError, Runstate
 
 from jumpstarter.common.fls import get_fls_binary
+from jumpstarter.common.process import open_streaming_process
 from jumpstarter.driver import Driver, FlasherInterface, export
 from jumpstarter.streams.encoding import AutoDecompressIterator
 
@@ -56,15 +61,6 @@ def _vsock_available(socket_path: str = "/dev/vhost-vsock") -> bool:
 class QmpLogFilter(logging.Filter):
     def filter(self, record):
         return False
-
-
-async def _read_pipe(stream: asyncio.StreamReader, name: str, queue: asyncio.Queue):
-    while True:
-        line = await stream.readline()
-        if not line:
-            break
-        await queue.put((name, line.decode("utf-8", errors="replace")))
-    await queue.put((name, None))
 
 
 @dataclass(kw_only=True)
@@ -151,62 +147,27 @@ class QemuFlasher(FlasherInterface, Driver):
         self, cmd: list[str], env: dict[str, str] | None
     ) -> AsyncGenerator[tuple[str, str, int | None], None]:
         """Run a subprocess and yield (stdout, stderr, returncode) tuples as output arrives."""
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-        )
-
-        output_queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
-
-        assert process.stdout is not None and process.stderr is not None
-        tasks = [
-            asyncio.create_task(_read_pipe(process.stdout, "stdout", output_queue)),
-            asyncio.create_task(_read_pipe(process.stderr, "stderr", output_queue)),
-        ]
-
-        finished_streams = 0
-        start_time = asyncio.get_running_loop().time()
-
-        try:
-            while finished_streams < 2:
-                elapsed = asyncio.get_running_loop().time() - start_time
-                if elapsed >= self.parent.flash_timeout:
-                    process.kill()
-                    await process.wait()
+        deadline = current_time() + self.parent.flash_timeout
+        async with open_streaming_process(cmd, env=env, stop_grace=0) as process:
+            while True:
+                with move_on_after(deadline - current_time()) as timeout:
+                    try:
+                        line = await process.receive_line()
+                    except EndOfStream:
+                        break
+                if timeout.cancelled_caught:
+                    await process.stop()
                     raise RuntimeError(f"fls flash timed out after {self.parent.flash_timeout}s")
+                text = line.data.decode("utf-8", errors="replace")
+                yield (text, "", None) if line.source == "stdout" else ("", text, None)
+            returncode = await process.wait()
 
-                remaining = self.parent.flash_timeout - elapsed
-                try:
-                    name, text = await asyncio.wait_for(output_queue.get(), timeout=min(remaining, 30))
-                except TimeoutError:
-                    continue
+        if returncode != 0:
+            self.logger.error(f"fls failed - return code: {returncode}")
+            raise RuntimeError(f"fls flash failed (return code {returncode})")
 
-                if text is None:
-                    finished_streams += 1
-                    continue
-
-                stdout_chunk = text if name == "stdout" else ""
-                stderr_chunk = text if name == "stderr" else ""
-                yield stdout_chunk, stderr_chunk, None
-
-            await process.wait()
-            returncode = process.returncode
-
-            if returncode != 0:
-                self.logger.error(f"fls failed - return code: {returncode}")
-                raise RuntimeError(f"fls flash failed (return code {returncode})")
-
-            self.logger.info("OCI flash completed successfully")
-            yield "", "", returncode
-        finally:
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-            if process.returncode is None:
-                process.kill()
-                await process.wait()
+        self.logger.info("OCI flash completed successfully")
+        yield "", "", returncode
 
     @export
     async def dump(self, target, partition: str | None = None):
@@ -222,16 +183,16 @@ class QemuPower(PowerInterface, Driver):
     parent: Qemu
     # Publish serial readiness only after startup, and withdraw it before stopping.
     _serial_process: Popen[bytes] | None = field(default=None, init=False, repr=False)
-    _serial_changed: asyncio.Event = field(default_factory=asyncio.Event, init=False, repr=False)
+    _serial_changed: Event = field(default_factory=Event, init=False, repr=False)
     # The console's single fanout reader owns this scope, including physical open/read.
     _serial_read_scope: CancelScope | None = field(default=None, init=False, repr=False)
-    _power_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
+    _power_lock: Lock = field(default_factory=Lock, init=False, repr=False)
     _startup_scope: CancelScope | None = field(default=None, init=False, repr=False)
-    _loop: asyncio.AbstractEventLoop | None = field(default=None, init=False, repr=False)
+    _loop_thread: threading.Thread | None = field(default=None, init=False, repr=False)
 
     @export
     async def on(self) -> None:
-        self._loop = asyncio.get_running_loop()
+        self._loop_thread = threading.current_thread()
         async with self._power_lock:
             with CancelScope() as scope:
                 self._startup_scope = scope
@@ -352,6 +313,7 @@ class QemuPower(PowerInterface, Driver):
                 self.parent._wrap_command(["qemu-img", "info", "--output=json", str(root)]),
                 stdout=PIPE,
                 stderr=PIPE,
+                check=False,
             )
             try:
                 proc.check_returncode()
@@ -391,6 +353,7 @@ class QemuPower(PowerInterface, Driver):
                         self.parent._wrap_command(["qemu-img", "resize", str(root), str(requested)]),
                         stdout=PIPE,
                         stderr=PIPE,
+                        check=False,
                     )
                     if proc.returncode != 0:
                         raise RuntimeError(f"Failed to resize disk: {proc.stderr.decode()}")
@@ -443,11 +406,12 @@ class QemuPower(PowerInterface, Driver):
         await qmp.execute("system_reset")
         await qmp.disconnect()
         if getattr(self, "_process", None) is process and process.poll() is None:
-            self._set_serial_process(process)
+            self._serial_process = process
+            self._notify_serial_change()
 
-    def _set_serial_process(self, process: Popen[bytes] | None) -> None:
-        self._serial_process = process
+    def _notify_serial_change(self) -> None:
         self._serial_changed.set()
+        self._serial_changed = Event()
         if self._serial_read_scope is not None:
             self._serial_read_scope.cancel()
 
@@ -456,7 +420,7 @@ class QemuPower(PowerInterface, Driver):
         await self._off(warn_if_off=True)
 
     async def _off(self, warn_if_off: bool) -> None:
-        self._loop = asyncio.get_running_loop()
+        self._loop_thread = threading.current_thread()
         async with self._power_lock:
             process = self._prepare_power_off(warn_if_off=warn_if_off)
             if process is not None:
@@ -464,7 +428,8 @@ class QemuPower(PowerInterface, Driver):
             self._cleanup_power_off()
 
     def _prepare_power_off(self, *, warn_if_off: bool) -> Popen[bytes] | None:
-        self._set_serial_process(None)
+        self._serial_process = None
+        self._notify_serial_change()
         process = getattr(self, "_process", None)
         if process is None or process.poll() is not None:
             self.logger.log(logging.WARNING if warn_if_off else logging.DEBUG, "already powered off, ignoring request")
@@ -492,11 +457,11 @@ class QemuPower(PowerInterface, Driver):
 
     def close(self):
         # Teardown may reach this shared driver through both QEMU and its console.
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-        if self._loop is not None and self._loop.is_running() and loop is not self._loop:
+        if (
+            self._loop_thread is not None
+            and self._loop_thread.is_alive()
+            and threading.current_thread() is not self._loop_thread
+        ):
             # Exported console.close() reaches this child from an AnyIO worker.
             run_from_thread(self._off, False)
         else:
@@ -542,10 +507,9 @@ class _QemuSerialStream(ObjectStream[bytes]):
                 pass
 
     async def receive(self) -> bytes:
-        self.power._loop = asyncio.get_running_loop()
+        self.power._loop_thread = threading.current_thread()
         while not self._closed:
             changed = self.power._serial_changed
-            changed.clear()
             process = self._current_process()
             if process is None:
                 await self._disconnect()
@@ -597,9 +561,7 @@ class _QemuSerialStream(ObjectStream[bytes]):
 
     async def aclose(self) -> None:
         self._closed = True
-        self.power._serial_changed.set()
-        if self.power._serial_read_scope is not None:
-            self.power._serial_read_scope.cancel()
+        self.power._notify_serial_change()
         await self._disconnect()
 
 

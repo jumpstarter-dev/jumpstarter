@@ -22,7 +22,7 @@ The addon hot-reloads config when the file changes on disk.
 
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: TID251
 import hashlib
 import importlib
 import importlib.util
