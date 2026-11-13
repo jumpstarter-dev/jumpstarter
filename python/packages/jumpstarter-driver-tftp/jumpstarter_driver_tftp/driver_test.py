@@ -1,9 +1,12 @@
 import socket
 from unittest.mock import AsyncMock, patch
 
+import anyio
 import pytest
 
+from jumpstarter_driver_tftp import server as server_module
 from jumpstarter_driver_tftp.driver import Tftp, TftpError
+from jumpstarter_driver_tftp.server import Opcode
 
 from jumpstarter.common.utils import serve
 
@@ -136,4 +139,47 @@ def test_tftp_stop_releases_the_port(tmp_path, free_ipv4_udp_port):
 
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.bind(("127.0.0.1", free_ipv4_udp_port))
+    server.close()
+
+
+def _download(port: int, filename: str) -> bytes:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.settimeout(5)
+        sock.sendto(Opcode.RRQ.to_bytes(2, "big") + f"{filename}\0octet\0".encode(), ("127.0.0.1", port))
+        data = b""
+        while True:
+            packet, transfer = sock.recvfrom(65536)
+            assert int.from_bytes(packet[:2], "big") == Opcode.DATA
+            data += packet[4:]
+            sock.sendto(Opcode.ACK.to_bytes(2, "big") + packet[2:4], transfer)
+            if len(packet) - 4 < 512:
+                return data
+
+
+def test_tftp_start_returns_once_the_server_listens(tmp_path, free_ipv4_udp_port, monkeypatch):
+    create_listener = server_module.create_udp_socket
+
+    async def slow_to_bind(**kwargs):
+        await anyio.sleep(0.2)
+        return await create_listener(**kwargs)
+
+    monkeypatch.setattr(server_module, "create_udp_socket", slow_to_bind)
+    (tmp_path / "hello.txt").write_bytes(b"hello over tftp")
+    server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=free_ipv4_udp_port)
+
+    server.start()
+    try:
+        assert _download(free_ipv4_udp_port, "hello.txt") == b"hello over tftp"
+    finally:
+        server.stop()
+    server.close()
+
+
+def test_tftp_start_raises_when_the_port_is_taken(tmp_path, free_ipv4_udp_port):
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as taken:
+        taken.bind(("127.0.0.1", free_ipv4_udp_port))
+        server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=free_ipv4_udp_port)
+
+        with pytest.raises(TftpError, match="Failed to start TFTP server: .*Address already in use"):
+            server.start()
     server.close()
