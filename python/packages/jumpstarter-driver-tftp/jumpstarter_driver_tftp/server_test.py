@@ -457,3 +457,23 @@ async def test_a_refusal_that_fails_to_send_leaves_the_server_up(tmp_path, clien
         reply = await reply_to(client, port, rrq("boot"))
 
     assert (opcode(reply), second_field(reply)) == (Opcode.ERROR, TftpErrorCode.FILE_NOT_FOUND)
+
+
+@pytest.mark.anyio
+async def test_a_duplicate_ack_is_not_answered_with_a_retransmission(tftp, client):
+    root, port = tftp
+    (root / "file.bin").write_bytes(b"x" * 1000)
+
+    await client.sendto(rrq("file.bin", timeout="2"), "127.0.0.1", port)
+    with fail_after(5):
+        _, transfer = await client.receive()
+        await client.sendto(ack(0), *transfer)
+        await client.receive()
+        await client.sendto(ack(1), *transfer)
+        packet, _ = await client.receive()
+    assert second_field(packet) == 2
+
+    await client.sendto(ack(1), *transfer)
+    with move_on_after(0.5) as quiet:
+        await client.receive()
+    assert quiet.cancelled_caught

@@ -559,9 +559,8 @@ class TftpReadTransfer(TftpTransfer):
             self.last_ack = block_num
             self.ack_received.set()
         elif block_num == self.block_num - 1:
-            self.logger.warning(f"Duplicate ACK for block {block_num} received, resending block {self.block_num}")
-            assert self.transport is not None and self.current_packet is not None  # pragma: no cover
-            self.transport.sendto(self.current_packet)
+            # Retransmitting here would duplicate every following block (RFC 1123, 4.2.3.1).
+            self.logger.debug(f"Ignoring duplicate ACK for block {block_num}")
         else:
             self.logger.warning(f"Out of sequence ACK: expected {self.block_num}, got {block_num}")
 
