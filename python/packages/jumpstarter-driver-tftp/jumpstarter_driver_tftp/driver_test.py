@@ -1,6 +1,8 @@
+import logging
 import socket
 import threading
-from unittest.mock import AsyncMock, patch
+import time
+from unittest.mock import patch
 
 import anyio
 import pytest
@@ -64,61 +66,18 @@ def test_tftp_root_directory_creation(tmp_path):
 
 
 def test_tftp_start_stop(tmp_path):
-    """Test that start/stop lifecycle works via anyio.run() in the server thread."""
+    """Test that the start/stop lifecycle works."""
     server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=0)
     server.start()
     try:
-        # _run_server_lifecycle ran: the server was created
         assert server.server is not None
     finally:
         server.stop()
     server.close()
 
 
-def test_tftp_start_stop_ends_the_server_thread(tmp_path):
-    """Test that the server thread is gone after shutdown."""
-    server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=0)
-    server.start()
-    server.stop()
-    assert server.server_thread is None
-    server.close()
-
-
-def test_tftp_start_server_logs_error_on_failure(tmp_path):
-    """Test the error handling path in _start_server."""
-    server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=0)
-
-    with patch.object(server, "_run_server_lifecycle", new_callable=AsyncMock, side_effect=RuntimeError("boom")):
-        # _start_server runs in the calling thread here (not via start())
-        server._start_server()
-
-    # Should not raise, error is logged
-    server.close()
-
-
-@pytest.mark.anyio
-async def test_tftp_run_server_lifecycle_creates_server_in_async_context(tmp_path):
-    """Test that _run_server_lifecycle creates TftpServer within the event loop."""
-    server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=0)
-
-    # Patch _run_server so we don't actually start listening
-    with patch.object(server, "_run_server", new_callable=AsyncMock):
-        await server._run_server_lifecycle()
-
-    # Server was created in async context
-    assert server.server is not None
-    assert server.server.shutdown_event is not None
-    assert server.server.ready_event is not None
-    server.close()
-
-
 def test_tftp_start_surfaces_startup_error(tmp_path):
-    """Test that start() surfaces the real error instead of a generic timeout.
-
-    If TftpServer construction fails inside _run_server_lifecycle, the
-    _startup_error field is set and _loop_ready is signalled via finally,
-    so start() returns promptly and raises the actual cause.
-    """
+    """Test that start() raises the real cause when the server cannot be built."""
     server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=0)
 
     with patch(
@@ -264,3 +223,52 @@ def test_a_start_overlapping_a_stop_starts_once_the_stop_finished(tmp_path, free
     finally:
         server.stop()
     server.close()
+
+
+def test_a_server_that_fails_after_starting_is_logged(tmp_path, free_ipv4_udp_port, monkeypatch, caplog):
+    caplog.set_level(logging.ERROR, logger="driver")
+
+    class FailsAfterStarting(TftpServer):
+        async def start(self, *, task_status=TASK_STATUS_IGNORED):
+            task_status.started()
+            raise RuntimeError("receive loop broke")
+
+    monkeypatch.setattr(driver_module, "TftpServer", FailsAfterStarting)
+    server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=free_ipv4_udp_port)
+    server.start()
+    server.stop()
+    server.close()
+
+    assert "Error running TFTP server: receive loop broke" in caplog.text
+
+
+def test_start_after_the_server_failed_starts_a_fresh_one(tmp_path, free_ipv4_udp_port, monkeypatch, caplog):
+    caplog.set_level(logging.ERROR, logger="driver")
+    failed = []
+
+    class FailsOnce(TftpServer):
+        async def start(self, *, task_status=TASK_STATUS_IGNORED):
+            if failed:
+                await super().start(task_status=task_status)
+                return
+            failed.append(self)
+            task_status.started()
+            raise RuntimeError("receive loop broke")
+
+    monkeypatch.setattr(driver_module, "TftpServer", FailsOnce)
+    (tmp_path / "hello.txt").write_bytes(b"hello after a failure")
+    server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=free_ipv4_udp_port)
+    threads = threading.active_count()
+    server.start()
+    deadline = time.monotonic() + 5
+    while "receive loop broke" not in caplog.text and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    server.start()
+    try:
+        assert _download(free_ipv4_udp_port, "hello.txt") == b"hello after a failure"
+    finally:
+        server.stop()
+    server.close()
+
+    assert threading.active_count() == threads
