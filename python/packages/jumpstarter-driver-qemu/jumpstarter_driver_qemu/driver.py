@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import errno
 import json
 import logging
 import os
 import platform
 import shutil
-from collections.abc import AsyncGenerator
+import threading
+from collections.abc import AsyncGenerator, Callable
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
@@ -15,7 +18,22 @@ from tempfile import TemporaryDirectory
 from typing import Literal
 
 import yaml
-from anyio import EndOfStream, current_time, fail_after, move_on_after, run_process, sleep
+from anyio import (
+    BrokenResourceError,
+    CancelScope,
+    ClosedResourceError,
+    EndOfStream,
+    Event,
+    Lock,
+    current_time,
+    fail_after,
+    move_on_after,
+    run_process,
+    sleep,
+    to_thread,
+)
+from anyio.abc import ObjectStream
+from anyio.from_thread import run as run_from_thread
 from anyio.streams.file import FileReadStream, FileWriteStream
 from jumpstarter_driver_network.driver import TcpNetwork, UnixNetwork, VsockNetwork
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
@@ -163,9 +181,27 @@ class QemuFlasher(FlasherInterface, Driver):
 @dataclass(kw_only=True)
 class QemuPower(PowerInterface, Driver):
     parent: Qemu
+    # Publish serial readiness only after startup, and withdraw it before stopping.
+    _serial_process: Popen[bytes] | None = field(default=None, init=False, repr=False)
+    _serial_changed: Event = field(default_factory=Event, init=False, repr=False)
+    # The console's single fanout reader owns this scope, including physical open/read.
+    _serial_read_scope: CancelScope | None = field(default=None, init=False, repr=False)
+    _power_lock: Lock = field(default_factory=Lock, init=False, repr=False)
+    _startup_scope: CancelScope | None = field(default=None, init=False, repr=False)
+    _loop_thread: threading.Thread | None = field(default=None, init=False, repr=False)
 
     @export
-    async def on(self) -> None:  # noqa: C901
+    async def on(self) -> None:
+        self._loop_thread = threading.current_thread()
+        async with self._power_lock:
+            with CancelScope() as scope:
+                self._startup_scope = scope
+                try:
+                    await self._start()
+                finally:
+                    self._startup_scope = None
+
+    async def _start(self) -> None:  # noqa: C901
         if hasattr(self, "_process"):
             self.logger.warning("already powered on, ignoring request")
             return
@@ -345,7 +381,8 @@ class QemuPower(PowerInterface, Driver):
                 f"{blk_device},drive=cidata",
             ]
 
-        self._process = Popen(self.parent._wrap_command(cmdline), stdin=PIPE)  # noqa: ASYNC220
+        process = Popen(self.parent._wrap_command(cmdline), stdin=PIPE)  # noqa: ASYNC220
+        self._process = process
 
         qmp = QMPClient(self.parent.hostname)
 
@@ -368,18 +405,48 @@ class QemuPower(PowerInterface, Driver):
 
         await qmp.execute("system_reset")
         await qmp.disconnect()
+        if getattr(self, "_process", None) is process and process.poll() is None:
+            self._serial_process = process
+            self._notify_serial_change()
+
+    def _notify_serial_change(self) -> None:
+        self._serial_changed.set()
+        self._serial_changed = Event()
+        if self._serial_read_scope is not None:
+            self._serial_read_scope.cancel()
 
     @export
-    def off(self) -> None:
+    async def off(self) -> None:
+        await self._off(warn_if_off=True)
+
+    async def _off(self, warn_if_off: bool) -> None:
+        self._loop_thread = threading.current_thread()
+        async with self._power_lock:
+            process = self._prepare_power_off(warn_if_off=warn_if_off)
+            if process is not None:
+                await to_thread.run_sync(self._wait_for_exit, process)
+            self._cleanup_power_off()
+
+    def _prepare_power_off(self, *, warn_if_off: bool) -> Popen[bytes] | None:
+        self._serial_process = None
+        self._notify_serial_change()
+        process = getattr(self, "_process", None)
+        if process is None or process.poll() is not None:
+            self.logger.log(logging.WARNING if warn_if_off else logging.DEBUG, "already powered off, ignoring request")
+            return None
+        process.terminate()
+        return process
+
+    @staticmethod
+    def _wait_for_exit(process: Popen[bytes]) -> None:
+        try:
+            process.wait(timeout=5)
+        except TimeoutExpired:
+            process.kill()
+
+    def _cleanup_power_off(self) -> None:
         if hasattr(self, "_process"):
-            self._process.terminate()
-            try:
-                self._process.wait(timeout=5)
-            except TimeoutExpired:
-                self._process.kill()
             del self._process
-        else:
-            self.logger.warning("already powered off, ignoring request")
 
         if hasattr(self, "_cidata"):
             del self._cidata
@@ -389,7 +456,123 @@ class QemuPower(PowerInterface, Driver):
         raise NotImplementedError
 
     def close(self):
-        self.off()
+        # Teardown may reach this shared driver through both QEMU and its console.
+        if (
+            self._loop_thread is not None
+            and self._loop_thread.is_alive()
+            and threading.current_thread() is not self._loop_thread
+        ):
+            # Exported console.close() reaches this child from an AnyIO worker.
+            run_from_thread(self._off, False)
+        else:
+            if self._startup_scope is not None:
+                self._startup_scope.cancel()
+            process = self._prepare_power_off(warn_if_off=False)
+            if process is not None:
+                self._wait_for_exit(process)
+            self._cleanup_power_off()
+        super().close()
+
+
+@dataclass(kw_only=True)
+class _QemuSerialStream(ObjectStream[bytes]):
+    """Keep a logical serial line open while QEMU's physical PTY comes and goes."""
+
+    power: QemuPower
+    source_factory: Callable[[], AbstractAsyncContextManager[ObjectStream[bytes]]]
+    _stack: AsyncExitStack = field(default_factory=AsyncExitStack, init=False)
+    _source: ObjectStream[bytes] | None = field(default=None, init=False)
+    _process: Popen[bytes] | None = field(default=None, init=False)
+    _closed: bool = field(default=False, init=False)
+
+    def _current_process(self) -> Popen[bytes] | None:
+        process = self.power._serial_process
+        return process if process is not None and process.poll() is None else None
+
+    async def _disconnect(self) -> None:
+        self._source = None
+        self._process = None
+        await self._stack.aclose()
+
+    async def _wait_for_guest_exit(self, process: Popen[bytes] | None, error: Exception) -> None:
+        if (
+            process is not None
+            and self._current_process() is process
+            and (not isinstance(error, OSError) or error.errno in (None, errno.EIO))
+        ):
+            # A PTY hangup can precede process exit during guest-initiated shutdown.
+            try:
+                await to_thread.run_sync(process.wait, 1)
+            except TimeoutExpired:
+                pass
+
+    async def receive(self) -> bytes:
+        self.power._loop_thread = threading.current_thread()
+        while not self._closed:
+            changed = self.power._serial_changed
+            process = self._current_process()
+            if process is None:
+                await self._disconnect()
+                await changed.wait()
+                continue
+            try:
+                if process is not self._process:
+                    await self._disconnect()
+                    if self._current_process() is not process:
+                        continue
+                with CancelScope() as scope:
+                    self.power._serial_read_scope = scope
+                    try:
+                        if process is not self._process:
+                            self._source = await self._stack.enter_async_context(self.source_factory())
+                            self._process = process
+                            # Power may have changed while the physical port was opening.
+                            if self._current_process() is not process:
+                                continue
+                        assert self._source is not None
+                        data = await self._source.receive()
+                        if self._current_process() is process:
+                            return data
+                    finally:
+                        self.power._serial_read_scope = None
+            except (OSError, BrokenResourceError, ClosedResourceError, EndOfStream) as exc:
+                connected_process = self._process
+                await self._disconnect()
+                await self._wait_for_guest_exit(connected_process, exc)
+                if self._current_process() is process:
+                    raise  # A live VM's unexpected serial failure must stay visible.
+        raise ClosedResourceError
+
+    async def send(self, item: bytes) -> None:
+        if self._closed:
+            raise ClosedResourceError
+        source = self._source
+        process = self._process
+        if source is None or process is None or self._current_process() is not process:
+            return  # An unpowered serial line silently discards input; never replay it.
+        try:
+            await source.send(item)
+        except (OSError, BrokenResourceError, ClosedResourceError, EndOfStream):
+            if self._current_process() is process:
+                raise
+
+    async def send_eof(self) -> None:
+        pass  # A serial line has no half-close.
+
+    async def aclose(self) -> None:
+        self._closed = True
+        self.power._notify_serial_change()
+        await self._disconnect()
+
+
+@dataclass(kw_only=True)
+class QemuConsole(PySerial):
+    power: QemuPower
+
+    @asynccontextmanager
+    async def _open_source(self):
+        async with _QemuSerialStream(power=self.power, source_factory=super()._open_source) as stream:
+            yield stream
 
 
 class Hostfwd(BaseModel):
@@ -451,15 +634,16 @@ class Qemu(Driver):
         self.hostfwd = {k: Hostfwd.model_validate(v) for k, v in self.hostfwd.items()}
         self.default_partitions = {k: Path(v) for k, v in self.default_partitions.items()}
 
-        self.children["power"] = QemuPower(parent=self)
+        power = QemuPower(parent=self)
+        self.children["power"] = power
         self.children["flasher"] = QemuFlasher(parent=self)
 
         if self.launcher_socket:
             self.children["console"] = UnixNetwork(path=self._serial_socket)
         else:
             # The power child enables the console's Ctrl-] x3 power-cycle hotkey.
-            self.children["console"] = PySerial(
-                url=self._pty, check_present=False, children={"power": self.children["power"]}
+            self.children["console"] = QemuConsole(
+                power=power, url=self._pty, check_present=False, children={"power": power}
             )
 
         self.children["vnc"] = UnixNetwork(path=self._vnc)
