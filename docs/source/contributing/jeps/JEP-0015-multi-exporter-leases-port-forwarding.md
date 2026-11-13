@@ -8,7 +8,7 @@
 | **Status**        | Discussion                                               |
 | **Type**          | Standards Track                                          |
 | **Created**       | 2026-09-01                                               |
-| **Updated**       | 2026-11-12                                               |
+| **Updated**       | 2026-11-13                                               |
 | **Discussion**    | [PR #1069](https://github.com/jumpstarter-dev/jumpstarter/pull/1069), [issue #47](https://github.com/jumpstarter-dev/jumpstarter/issues/47) |
 | **Requires**      | JEP-0014                                                 |
 | **Supersedes**    |                                                          |
@@ -698,9 +698,10 @@ today (DD-5):
 5. The `provides` side calls `RouterService.Stream` with that token as soon
    as the connect instruction arrives. For a direct-eligible pair, it also
    accepts a direct arrival on its peer listener, and the `requires` side
-   first dials that listener. Both sides authenticate with their exporter
-   identity certificates (mTLS), and the `requires` side names the
-   connection by its stream ID (DD-25). Otherwise, or if that attempt
+   first dials that listener. Both sides authenticate each other, and the
+   `requires` side names the connection by its stream ID. How they
+   authenticate is not defined by this JEP, and no pair is direct-eligible
+   until it is (DD-25). Otherwise, or if that attempt
    fails in `Auto` mode, the `requires` side calls `RouterService.Stream`
    with the token, and the router pairs the two as it pairs a client and
    an exporter (DD-4).
@@ -810,9 +811,9 @@ as CAN, to the head unit.
 
 ### API / Protocol Changes
 
-The API adds fields to existing types, one resource, and four RPCs:
+The API adds fields to existing types, one resource, and three RPCs:
 `GetLeaseTemplate` and `ListLeaseTemplates` on `ClientService`, and
-`DialPeer` and `SignExporterCertificate` on `ControllerService`. Existing
+`DialPeer` on `ControllerService`. Existing
 fields retain their meanings.
 
 **Driver report** — ports are optional, and an exporter that reports none
@@ -1001,15 +1002,14 @@ type LeaseForwardStatus struct {
 
 `ExporterStatus.Devices[]` gains the reported ports so the controller can
 validate forwards against bound exporters. `ExporterStatus` itself gains
-three optional fields used only to decide direct eligibility:
+two optional fields used only to decide direct eligibility. They are
+reserved for the direct path and have no effect until it is enabled
+(DD-25):
 
 ```go
     // Address peers in the same zone can dial for a direct forward, if this
     // exporter runs a peer listener. Never a device port (see Security).
     PeerEndpoint string `json:"peerEndpoint,omitempty"`
-    // Expiry of the exporter's current identity certificate (DD-25), as
-    // the exporter reports it, whichever issuer signed it.
-    IdentityExpiresAt *metav1.Time `json:"identityExpiresAt,omitempty"`
     // Opaque reachability domain. Two exporters are candidates for a direct
     // forward only if both report the same value.
     NetworkZone  string `json:"networkZone,omitempty"`
@@ -1113,7 +1113,7 @@ leases and templates are added. The older lease RPCs on
 `jumpstarter.v1.ControllerService` (`RequestLease`, `GetLease`,
 `ListLeases`) stay scalar-only: `GetLeaseResponse.exporter_uuid` is unset
 for a member-form lease, as it is for an unbound one. `Dial`, `Listen`, and
-the new `DialPeer` and `SignExporterCertificate` stay on `ControllerService`.
+the new `DialPeer` stay on `ControllerService`.
 
 ```protobuf
 // jumpstarter/v1 — shared with exporters
@@ -1300,7 +1300,7 @@ message ListenResponse {
 message ForwardPeer {
   string member_name = 1;
   string port_name = 2;
-  string identity = 3;  // Identity URI of the peer's exporter (DD-25).
+  string identity = 3;  // Opaque identity of the peer's exporter. Reserved (DD-25).
 }
 
 message ForwardSetup {
@@ -1315,7 +1315,7 @@ message ForwardSetup {
   string local_driver_uuid = 7; // Resolved from the exporter-wide unique port.
   string local_port_name = 8;
   LeaseForwardMode mode = 9;
-  bool direct_eligible = 10;    // Use the exporter identity certificate (DD-25).
+  bool direct_eligible = 10;    // Always false until the direct path is enabled (DD-25).
   bool initiator = 11;          // CONNECTS only: this end opens the path (DD-27).
 }
 
@@ -1331,7 +1331,7 @@ message ForwardConnect {
   string forward_name = 2;
   string connection_id = 3;     // The stream ID; also names a direct arrival.
   string peer_member_name = 4;  // The requiring member opening the connection.
-  string peer_identity = 5;     // Identity its certificate must carry (DD-25).
+  string peer_identity = 5;     // Identity the dialer must prove. Reserved (DD-25).
   string router_endpoint = 6;   // Empty in Direct mode.
   string router_token = 7;      // The token DialPeer returned.
 }
@@ -1339,8 +1339,6 @@ message ForwardConnect {
 service ControllerService {
   // ... existing RPCs unchanged ...
   rpc DialPeer(DialPeerRequest) returns (DialPeerResponse);
-  rpc SignExporterCertificate(SignExporterCertificateRequest)
-      returns (SignExporterCertificateResponse);
 }
 
 // Called by the REQUIRES side for each connection its listener accepts.
@@ -1354,24 +1352,8 @@ message DialPeerResponse {
   string router_endpoint = 1;         // Empty in Direct mode.
   string router_token = 2;            // `sub` is the new stream ID, as in Dial.
   string connection_id = 3;           // That stream ID.
-  optional string peer_endpoint = 4;  // Set when a direct dial is tried first.
-  optional string peer_identity = 5;  // Identity the listener must present.
-}
-
-// An exporter sends a CSR for a key it generated; the key never leaves it.
-// Authenticated with the exporter's existing credential (DD-25).
-message SignExporterCertificateRequest {
-  bytes certificate_signing_request = 1;  // PKCS#10, DER.
-}
-
-// Field encodings follow the SPIFFE Workload API's X509SVID message.
-message SignExporterCertificateResponse {
-  string spiffe_id = 1;          // The identity the certificate carries.
-  bytes certificate_chain = 2;   // DER certificates, leaf first; MAY include intermediates.
-  // DER CA certificates, concatenated, keyed by trust domain SPIFFE ID
-  // ("spiffe://<trust-domain>"). This JEP fills one entry, its own.
-  map<string, bytes> trust_bundles = 3;
-  google.protobuf.Timestamp expiry = 4;
+  optional string peer_endpoint = 4;  // Set when a direct dial is tried first. Reserved (DD-25).
+  optional string peer_identity = 5;  // Identity the listener must prove. Reserved (DD-25).
 }
 ```
 
@@ -1385,13 +1367,11 @@ stream, `DialPeer`
 fails with `UNAVAILABLE` and the `requires` side closes the local
 connection.
 
-Direct connections carry no bearer secret. Each exporter holds an identity
-certificate for a key it generated, signed through
-`SignExporterCertificate` (DD-25). The peer listener and the dialer both
-present it. The providing exporter accepts a direct arrival only if the
-connection ID names a pending `ForwardConnect` and the dialer's certificate
-carries that instruction's `peer_identity`, and it accepts each connection
-ID once.
+Direct connections carry no bearer secret. The peer listener and the dialer
+authenticate each other with exporter identities that this JEP does not
+define (DD-25). The providing exporter accepts a direct arrival only if the
+connection ID names a pending `ForwardConnect` and the dialer has proved
+that instruction's `peer_identity`, and it accepts each connection ID once.
 
 The peer listener is a gRPC server that implements `RouterService.Stream`
 and nothing else. It serves only the one pair it was announced. The dialer
@@ -1566,7 +1546,9 @@ client's network and lifetime and is not offered as a mode.
 In `Auto` mode, same-zone pairs attempt a direct connection first, then fall
 back to the router after a bounded timeout. `Router` forces the router path
 for testing, and `Direct` fails if a direct connection cannot be established.
-Both paths authenticate against the lease.
+Both paths authenticate against the lease. This JEP delivers the router
+path; the direct path is enabled once exporters can authenticate each
+other, which DD-25 leaves to JEP-0018. Until then `Auto` uses the router.
 
 Direct connections also avoid ingress-related stream failures where the
 router route passes through an ingress. In the single-node prototype, a
@@ -2306,133 +2288,65 @@ arbitrary member, which is the misrouting DD-2 avoids. Leaving the
 single-exporter variables unset makes those scripts fail with a clear
 message instead.
 
-### DD-25: Exporter identity certificates for the direct path
+### DD-25: Direct-path authentication is left to a later JEP
 
 This decision covers one kind of connection only: the direct peer-to-peer
-connections between exporters, in Pods or on hosts, that carry a lease's
-forwards. These forwards are the inter-exporter bench networking that a
-`LeaseTemplate` declares, or that the CLI declares for an ad-hoc lease
-(DD-20). Connections between clients, exporters, the controller, and the
-router keep their current authentication.
+connections between exporters that carry a lease's forwards. Connections
+between clients, exporters, the controller, and the router keep their
+current authentication, and so does the router path for forwards.
 
 **Alternatives considered:**
 
-1. **An identity certificate per exporter, from a CSR.** Each exporter
-   generates its own key and sends a certificate signing request to the
-   controller, which signs a short-lived certificate naming that `Exporter`.
-   Direct connections authenticate with these certificates over mTLS, and
-   the lease decides which connections are allowed.
-2. **Per-forward certificates issued by the controller.** For each forward,
-   the controller generates a key pair, signs a certificate, and returns both
-   to each endpoint, which also sends a bearer token inside the channel.
-3. **Kubernetes Pod certificates only.** Exporter Pods mount an identity
-   certificate that the kubelet requests from a Jumpstarter signer.
-4. **TLS plus a bearer token.** The peer listener has a server certificate,
+1. **Specify exporter identity certificates here.** Give each exporter a
+   certificate, define how it is issued, and define how peers verify it.
+2. **TLS plus a bearer token.** The peer listener has a server certificate,
    and the dialer proves itself with a controller-issued token.
+3. **Leave direct-path authentication open.** State what it must provide,
+   keep the direct path out of what this JEP delivers, and let the JEP that
+   defines exporter identity for the whole system define it.
 
-**Decision:** Option 1, used only for direct connections that carry a
-lease's forwards. The certificate is the exporter's identity, not a forward
-credential, so a later JEP on mTLS for the controller, router, and clients
-can reuse it. Pod certificates (option 3) are a way to deliver the same
-identity, not a different one.
+**Decision:** Option 3. This JEP delivers forwards over the router path. The
+direct path stays in the design as a transport (DD-4), with its fields and
+instructions reserved, and is enabled once exporters have a mutual identity.
+That identity is the subject of JEP-0018 (mTLS workload identity).
 
-**Rationale:** Jumpstarter authenticates exporters and clients with bearer
-JWTs today, and the controller and router serve TLS without checking client
-certificates. A bearer token protects nothing once it leaks, while a
-certificate proves possession of a key that never leaves its holder. The
-direct path is the first connection where neither end is the controller, so
-it is where a mutual identity is needed first. It should be the identity
-that the rest of the system can adopt, rather than one built only for
-forwards.
+**Rationale:** The direct path is the first connection where neither end is
+the controller, so it needs a mutual identity, and that identity should be
+the one the rest of the system uses, not one built only for forwards. An
+earlier revision of this JEP took option 1 and specified certificates, an
+issuing RPC, and a verification procedure. JEP-0018 then proposed exporter
+identities for every connection, with a different issuer and identity
+format, and review of the two together showed that one exporter would end
+up with two identities issued two ways. It also showed open problems that
+belong with the identity design and not with forwards: who issues, how
+exporters obtain the trust anchors for their peers, and how a Python
+exporter verifies the peer it dialed. Settling those here would either
+duplicate JEP-0018 or constrain it.
 
-Option 2 sends private keys over the network and ties each certificate to
-one forward, so nothing else can reuse it. Option 4 keeps a bearer secret on
-the path and still needs a server certificate per exporter. Option 3 alone
-leaves out physical and non-Kubernetes exporters. Option 1 works wherever an
-exporter can reach the controller, because the exporter's existing
-credential authenticates the CSR.
+Option 2 keeps a bearer secret on the path and still needs a server
+certificate per exporter, so it does not avoid the problem.
 
-Authentication and authorization stay separate. The certificate says which
-exporter is on the other end; it grants nothing. The providing side admits
-a direct connection only if the controller announced it in
-`ForwardConnect`, over the providing exporter's own authenticated `Listen`
-stream, and the dialer's certificate carries the identity named there. The
-connection ID is not a secret: it only says which announced connection this
-is. Since no bearer secret is left on the path, intercepting the connection
-ID gains nothing.
+Whatever JEP-0018 defines, the direct path needs these properties, and the
+rest of this JEP is written against them:
 
-The certificates are SPIFFE X.509-SVIDs. This JEP does not adopt SPIFFE
-infrastructure such as the Workload API, SPIRE, or federation. It avoids
-anything that would stop a later JEP from adopting it, or from accepting
-identities issued by SPIFFE-compatible systems such as SPIRE or Teleport
-Workload Identity. The design points:
-
-- **Identity format.** The identity is a SPIFFE ID. For a certificate the
-  controller signs, it is
-  `spiffe://<trust-domain>/ns/<namespace>/exporter/<name>`. Kubernetes
-  namespace and object names use only characters that SPIFFE allows in a
-  path segment, and stay well under its 2,048-byte limit. The trust domain
-  is controller configuration, never a built-in constant, and must be a
-  valid SPIFFE trust domain name (lowercase `[a-z0-9.-_]`). The controller
-  sets the identity from the authenticated `Exporter` and ignores any
-  identity requested in the CSR. A client identity could later use
-  `.../client/<name>` in the same form.
-- **Identities are opaque to peers.** A peer compares the whole SPIFFE ID
-  in the certificate with the one the controller named in `ForwardSetup`
-  or `ForwardConnect`, and never derives a namespace or `Exporter` from the
-  path. Only the controller maps exporters to identities. SPIRE and
-  Teleport let operators choose ID paths, so a later JEP can map an
-  `Exporter` to an ID issued elsewhere without changing the direct path.
-- **Certificate profile.** Controller-signed certificates follow the
-  X.509-SVID specification. The SPIFFE ID is the only URI SAN and is not
-  repeated in the subject or in a DNS SAN. The leaf has `cA` false, and a
-  critical key usage with `digitalSignature` and without `keyCertSign` or
-  `cRLSign`. Its extended key usage has both `serverAuth` and
-  `clientAuth`, because an exporter both serves and dials. The identity CA
-  is a SPIFFE signing certificate: `cA` true, `keyCertSign`, and if it
-  carries a SPIFFE ID, one with no path. Chains may include
-  intermediates, so the CA can later be signed by an upstream authority.
-  No key type is required beyond what TLS 1.3 supports.
-- **Validation.** A peer validates as the X.509-SVID specification
-  requires: it rejects a certificate with more than one URI SAN, chooses
-  the trust bundle by the trust domain of the presented ID, runs RFC 5280
-  path validation against that bundle only, and checks the leaf
-  constraints. It verifies the URI SAN, not a DNS name, so `PeerEndpoint`
-  can be a Pod IP.
-- **Bundles per trust domain.** Trust bundles are keyed by trust domain,
-  encoded as the SPIFFE Workload API encodes them. This JEP uses one trust
-  domain, but adding federated bundles later is another map entry, not a
-  new field.
-- **Issuer.** The controller signs with an identity CA that is separate from
-  its serving certificates and from `ROUTER_KEY`. The operator mounts the
-  CA, which it can generate or take from cert-manager, as it mounts serving
-  certificates today. A trust bundle can list several CAs, so the CA can be
-  rotated without a gap.
-- **Replaceable source.** The direct path depends only on the exporter
-  holding a valid SVID, its key, and the bundles, and the exporter reloads
-  all three without restarting. Direct eligibility uses the expiry that
-  the exporter reports, not a record of what the controller signed. A
-  later JEP can therefore add other sources, such as the SPIFFE Workload
-  API that SPIRE agents and Teleport's `tbot` serve, or files those agents
-  write, without changing peers or the controller's role.
-- **Lifetime and renewal.** Certificates are short-lived and renewed before
-  they expire, in the same way the exporter renews its token today
-  (`RotateToken`). The controller does not sign for a deleted exporter, and
-  short lifetimes stand in for revocation lists.
-- **Delivery.** In Kubernetes, the controller can also act as the signer for
-  Pod certificates, so an exporter Pod mounts a certificate with the same
-  identity and trust bundle without calling `SignExporterCertificate`.
-- **One stream protocol.** The peer listener serves `RouterService.Stream`,
-  authenticated by the certificate instead of a JWT. If the router later
-  accepts the same certificates, both transports share one protocol and
-  one authentication.
-- **Scope.** This JEP uses the certificate only for the direct peer-to-peer
-  connections between exporters, in Pods or on hosts, that carry the
-  forwards a `LeaseTemplate` or an ad-hoc CLI lease declares. A peer
-  listener accepts nothing else. Using it for exporter-to-controller and
-  exporter-to-router connections, and adding client certificates, are left
-  to a separate JEP (*Future Possibilities*), as are other certificate
-  sources and federation with other trust domains.
+- **Mutual.** Each exporter proves its identity to the other. A connection
+  that authenticates only one side is rejected.
+- **No bearer secret on the path.** Intercepting a direct connection, or the
+  connection ID it carries, gains nothing.
+- **Authentication and authorization stay separate.** An identity says which
+  exporter is on the other end and grants nothing. The providing side
+  admits a direct connection only if the controller announced it in
+  `ForwardConnect`, over the providing exporter's own authenticated `Listen`
+  stream, and the dialer is the exporter named there. Each connection ID is
+  admitted once.
+- **Identities are opaque to peers.** A peer compares the identity the other
+  side proved with the one the controller named, and never derives a
+  namespace or `Exporter` from it. Only the controller maps exporters to
+  identities.
+- **Works without a routable name.** A peer may be reachable only by a Pod
+  IP.
+- **Renewable without a restart.** Losing or renewing an identity changes
+  direct eligibility and nothing else; the router path is unaffected.
 
 ### DD-26: Forwards carry TCP streams; datagram and segment ports are reported
 
@@ -2477,8 +2391,8 @@ service discovery endpoint today, `jmp get exporters --with ports` shows it,
 and a later JEP enables datagram forwards or segments by relaxing
 validation, without a schema change. The pieces already fit. `connects`
 ports describe segments (DD-6), the `endpoints` list takes more than two
-members (DD-13), and DD-25 certificates work for a datagram transport such
-as QUIC or DTLS as well as for TLS over TCP.
+members (DD-13), and the requirements in DD-25 do not depend on the
+transport being TCP.
 
 SOME/IP methods and events over TCP can be forwarded today, when their
 endpoints are configured rather than discovered.
@@ -2538,8 +2452,8 @@ connection:
 - **Same checks.** Both ports must be `socket` with transport `stream`, and
   any declared protocols must agree. A `connects` port can appear in only
   one forward, and a forward that mixes `connects` with directed ports, or
-  names more than two `connects` ports, fails validation. The direct path,
-  certificates, and router are used as for any other connection.
+  names more than two `connects` ports, fails validation. The direct path
+  and router are used as for any other connection.
 
 ### DD-28: Exclusive claims enforced by the API server
 
@@ -2907,20 +2821,20 @@ The `requires` side makes the direct attempt first, with a short, bounded
 timeout, and opens its router stream only if that attempt fails. The
 `provides` side opens its router stream when the connect instruction
 arrives and also accepts a direct arrival. It splices whichever completes
-and closes the other. Direct connections use mTLS with exporter identity
-certificates (DD-25): each side checks that the other's certificate chains
-to the trust bundle and carries the identity the controller named. The
-requiring side sends the connection ID only after the handshake, and the
+and closes the other. Direct connections are mutually authenticated
+(DD-25): each side checks that the other is the exporter the controller
+named. The requiring side sends the connection ID only after that, and the
 `provides` side accepts each one once. A plaintext or
 server-authentication-only connection is rejected. `Direct`
-fails without fallback; `Router` skips the direct attempt. Status records
+fails without fallback; `Router` skips the direct attempt. Until the direct
+path is enabled, `Auto` behaves as `Router` and a lease that asks for
+`Direct` fails validation. Status records
 the transport of the most recent connection and the reason for any
 fallback.
 
 **Direct eligibility.** Both members must report the same non-empty
-`NetworkZone`, both must hold an unexpired identity certificate
-(`IdentityExpiresAt`), and the `provides` side must report a
-`PeerEndpoint`. The zone
+`NetworkZone`, both must hold a valid exporter identity once one is defined
+(DD-25), and the `provides` side must report a `PeerEndpoint`. The zone
 is an opaque value supplied by deployment configuration, such as one value
 per cluster network. The controller does not infer reachability from IP
 addresses. An unreachable peer falls back to the router in `Auto` mode.
@@ -3034,20 +2948,15 @@ Provisioner ordering remains an unresolved question.
   own registration labels, so it cannot block unrelated exporters (DD-16).
 - **Direct authentication and confidentiality:** the optional peer listener
   carries only the forwards of member-form leases, the inter-exporter bench
-  networking a `LeaseTemplate` declares. It is disabled by default and
-  requires mTLS with exporter identity
-  certificates (DD-25). Each side verifies that the other's certificate
-  chains to the trust bundle and names the exporter the controller
+  networking a `LeaseTemplate` declares. It is not enabled by this JEP. When
+  it is, it requires mutual authentication between exporter identities
+  (DD-25): each side verifies that the other is the exporter the controller
   announced, and the providing side admits only announced connection IDs,
   once each. No private key or bearer secret crosses the network. The
   listener is separate from device ports. Network policies
   should allow the authenticated peer port while blocking peer access to
   unauthenticated simulator ports. The Cuttlefish orchestration draft is expected to supply this policy
   with exporter Pods.
-- **Identity CA:** the controller's identity CA can sign a certificate for
-  any exporter in its trust domain, so its key needs the custody of the
-  router signing key. It is kept separate from both that key and the
-  serving certificates, and certificates are short-lived (DD-25).
 - **Claims:** only the controller creates or deletes `ExporterClaim`
   objects. Clients and exporters have no access to them, so neither can
   take or release a claim, or block an exporter by creating one (DD-28).
@@ -3165,23 +3074,16 @@ captures can be attached to test results alongside forward metrics.
   separately. The call fails with `UNAVAILABLE` when the providing
   exporter is not listening. Existing
   router tests pass unmodified.
-- **Identity certificates:** `SignExporterCertificate` sets the identity
-  from the authenticated exporter whatever the CSR requests, and rejects a
-  deleted exporter. Issued certificates and the identity CA pass X.509-SVID
-  validation with an independent SPIFFE library. Renewal before expiry
-  works without an exporter restart, and an expired reported
-  `IdentityExpiresAt` makes the exporter ineligible for direct forwards
-  (DD-25).
+- **Direct path not enabled:** `direct_eligible` is never set, `Auto` uses
+  the router, and a lease that asks for `Direct` fails validation (DD-25).
 - **Undirected paths:** two `connects` ports join for each combination of
   local modes (dial–dial, dial–listen, listen–listen). Only the initiator
   calls `DialPeer`, a path carries one connection at a time, and it
   reopens after a cut (DD-27).
-- **Peer listener:** rejects a dialer without a certificate, with one from
-  another trust bundle, with more than one URI SAN, with a different
-  exporter's identity, with an unannounced connection ID, or with a
-  connection ID already used. A certificate whose SPIFFE ID uses a path
-  other than the controller's default is accepted when the controller
-  names that ID, which shows that peers treat IDs as opaque.
+- **Peer listener:** tested with the JEP that enables the direct path. The
+  cases it must cover are a dialer that does not authenticate, one that
+  proves a different exporter's identity, an unannounced connection ID, and
+  a connection ID already used (DD-25).
 - **Fan-out:** a forward with three endpoints serves both required ports,
   an omitted requiring endpoint is skipped, and a `requires` port named by
   two forwards fails validation (DD-23).
@@ -3330,12 +3232,9 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
       or across several (DD-23)
 - [ ] Two `connects` ports form one bidirectional path, whatever their
       local modes (DD-27)
-- [ ] Exporters obtain identity certificates for their own keys through
-      `SignExporterCertificate`, with the identity set by the controller;
-      the certificates are valid X.509-SVIDs (DD-25)
-- [ ] The direct path uses mTLS with exporter identity certificates, admits
-      only announced connections from the announced exporter, falls back
-      in `Auto` mode, and records the transport used
+- [ ] Every forward uses the router path, `Auto` included, and status
+      records the transport used; a lease that asks for `Direct` fails
+      validation until the direct path is enabled (DD-25)
 - [ ] `bt-peer` participates as a `requires` endpoint through exporter
       configuration alone
 - [ ] After a peer-stream cut, the endpoint closes the affected local TCP
@@ -3375,7 +3274,7 @@ for `status.exporterRef`.
   gains read access to templates and create, read, and delete access to
   claims. `ExporterStatus.Devices[]`
   gains an optional `ports` list, and `ExporterStatus` gains optional
-  `peerEndpoint`, `networkZone`, and `identityExpiresAt`. No existing field
+  `peerEndpoint` and `networkZone`. No existing field
   changes type, meaning,
   or default. `Exporter` gains one optional spec field, `exclusionGroup`;
   exporters without it behave as today. `ExporterAccessPolicy`, `ExporterSet`, and `VirtualTargetClass` are
@@ -3391,9 +3290,8 @@ for `status.exporterRef`.
   Ports are declared in exporter configuration; `bt-peer` needs no Python
   changes to use a forwarded HCI endpoint.
 - **Protocol**: new fields on existing messages, two `ClientService` RPCs,
-  and two `ControllerService` RPCs. `RouterService` is untouched, and so
-  is the existing token authentication: an exporter that never requests an
-  identity certificate uses the router path only. Unknown fields are ignored by proto3, so
+  and one `ControllerService` RPC. `RouterService` is untouched, and so
+  is the existing token authentication, which every forward uses. Unknown fields are ignored by proto3, so
   an N-1 client talks to an N controller unchanged. An N client sending
   `members` or `template` to an N-1 controller sends no `selector` or
   `exporter_name`, which the existing `CreateLease` validation already
@@ -3463,10 +3361,9 @@ for `status.exporterRef`.
   lower-ranked candidate, which can lower the lease's priority (the minimum
   member priority). Binding with lower priority is preferred to not binding
   (DD-18).
-- Forwarding adds local listeners and, optionally, an authenticated peer
-  listener to exporters.
-- The controller becomes a certificate issuer, with a CA key to protect
-  and rotate (DD-25).
+- Forwarding adds local listeners to exporters.
+- Every forward goes through the router until the direct path is enabled, so
+  forwards carry the router's latency and load (DD-4, DD-25).
 - Every forwarded connection costs one controller round trip, and new
   connections need the controller to be reachable (DD-5).
 - Timing-sensitive protocols and Wi-Fi simulation require further testing
@@ -3505,10 +3402,9 @@ for `status.exporterRef`.
   release.
 - **Upstream interfaces:** netsim and vhost-user integration may change.
   Pin runtime images and track upstream compatibility.
-- **Identity CA compromise:** a leaked identity CA key lets an attacker
-  pose as any exporter on the direct path. Separate custody, short
-  certificate lifetimes, and a multi-CA trust bundle for rotation limit
-  the damage (DD-25).
+- **Direct path depends on another JEP:** topologies that need the direct
+  path's latency, such as the Phase 4 Wi-Fi frame bridge, wait for exporter
+  identity to be defined (DD-25).
 - **Capacity:** per-member policy and the eight-member limit bound access;
   there is no quota across a lease's members.
 - **Template sprawl:** labs may publish many near-identical templates for
@@ -3602,8 +3498,14 @@ To resolve during review:
 To resolve during implementation:
 
 - The direct-dial timeout before router fallback.
-- Identity certificate lifetime and renewal point, and whether the
-  operator generates the identity CA or takes it from cert-manager.
+- **How exporters authenticate each other on the direct path.** Left to
+  JEP-0018 (DD-25). The questions it has to answer for this JEP: who issues
+  an exporter's identity and in what form; how an exporter obtains the trust
+  anchors for a peer, including one from another issuer; how the dialing
+  side verifies the peer it reached when that peer has only an IP address
+  (Python gRPC verifies a server by host name and offers no hook to verify
+  by identity instead); and whether the router then binds its tokens to
+  those identities, which would change the router that DD-5 leaves alone.
 - How exporters report forward endpoint state to the controller: listener
   bound, bind failure, live connections, and transport in use.
 - How deployments supply and validate `NetworkZone`; the proposed default
@@ -3691,31 +3593,18 @@ The following work builds on this JEP:
   namespaces are supported later.
 - **Multi-exporter policy and quota:** add limits across members and support individual
   member release if needed.
-- **Pod certificate delivery:** Kubernetes 1.37 graduates Pod Certificates
-  and ClusterTrustBundles to Stable. With the controller as the signer,
-  exporter Pods can mount a kubelet-managed key, the DD-25 identity
-  certificate, and the trust bundle, renewed automatically, without
-  calling `SignExporterCertificate`. This needs live certificate reload in
-  the exporter; exporters outside Kubernetes keep the CSR path.
-- **mTLS for every connection (separate JEP):** authenticate
-  exporter-to-controller and
-  exporter-to-router connections with the DD-25 identity certificate
-  instead of bearer tokens, and issue client identity certificates in the
-  same form, so the router can verify both ends of a stream. Lease, forward,
-  and access-policy authorization would still apply. The JEP-0013
-  telemetry service, which already plans to verify identities through
-  mTLS, could use the same certificates. The bearer credential would remain
-  only to enroll a new exporter or client.
-- **SPIFFE infrastructure:** accept identities from the SPIFFE Workload
-  API (SPIRE, Teleport's `tbot`) as well as from the controller, map
-  `Exporter` resources to IDs those systems issue, and federate trust
-  bundles with other trust domains through SPIFFE bundle endpoints. DD-25
-  keeps IDs opaque to peers and bundles keyed by trust domain, so this
-  needs no change to the direct path.
+- **The direct path (JEP-0018):** enable direct forwards once exporters have
+  a mutual identity. JEP-0018 proposes mTLS identities for every
+  connection, issued by the controller's enrollment service or by external
+  systems such as SPIRE or Teleport Workload Identity. DD-25 lists what the
+  direct path needs from it, and keeps identities opaque to peers so that
+  the direct path does not depend on how they are issued. For exporter
+  Pods, Kubernetes 1.37 Pod Certificates are one way such an identity could
+  be delivered.
 - **Datagram forwards:** carry UDP between `datagram` ports, and frames
   between `frame` ports, over a datagram transport without TCP head-of-line
   blocking. One example is QUIC with its unreliable datagram extension
-  (RFC 9221) on the direct path, authenticated with DD-25 certificates.
+  (RFC 9221) on the direct path.
   The Phase 4 Wi-Fi frame bridge needs the same transport (DD-26).
 - **Vehicle-bus simulation:** integrate a restbus simulator as a provided
   socket alongside existing CAN, DoIP, SOME/IP, UDS, XCP, and OBD drivers.
@@ -3770,15 +3659,9 @@ The following work builds on this JEP:
   KEP-3257)
 - [Test Multi-Device Interactions with the Android Emulator](https://android-developers.googleblog.com/2026/04/Test-Multi-Device-Interactions-with-the-Android-Emulator.html)
 - [LAVA MultiNode](https://docs.lavasoftware.org/lava/multinode.html)
-- SPIFFE specifications: [SPIFFE ID](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE-ID.md),
-  [X.509-SVID](https://github.com/spiffe/spiffe/blob/main/standards/X509-SVID.md),
-  [Trust Domain and Bundle](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Trust_Domain_and_Bundle.md),
-  [Workload Endpoint](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Workload_Endpoint.md),
-  and the [Workload API protobuf](https://github.com/spiffe/go-spiffe/blob/main/proto/spiffe/workload/workload.proto)
-  — the identity format, certificate profile, and bundle encoding DD-25
-  follows
-- [Teleport Workload Identity](https://goteleport.com/docs/machine-workload-identity/workload-identity/introduction/)
-  — a SPIFFE-compatible issuer with operator-chosen IDs (DD-25)
+- JEP-0018, mTLS Workload Identity
+  ([PR #1337](https://github.com/jumpstarter-dev/jumpstarter/pull/1337)) —
+  exporter and client identities, which the direct path waits for (DD-25)
 
 ---
 
