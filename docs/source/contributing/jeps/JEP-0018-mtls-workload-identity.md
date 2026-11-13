@@ -8,7 +8,7 @@
 | **Status**        | Draft                                                                  |
 | **Type**          | Standards Track                                                        |
 | **Created**       | 2026-11-11                                                             |
-| **Updated**       | 2026-11-12                                                             |
+| **Updated**       | 2026-11-13                                                             |
 | **Discussion**    | https://github.com/jumpstarter-dev/jumpstarter/pull/1337               |
 | **Requires**      |                                                                        |
 | **Supersedes**    |                                                                        |
@@ -1711,13 +1711,22 @@ existing `ContextAuthenticator` interface, so `ControllerService` and
 `ClientService` pick it up through `auth.Auth` without changes at the call
 sites.
 
-Three places read the bearer token directly and need attention:
+Several places read the bearer token directly, past the authenticator, and
+fail today for a caller that has only a certificate:
 
-- `RotateToken` and the telemetry token path call `BearerTokenFromContext`
-  themselves. A certificate-only exporter has no token to rotate, so its
-  credential source must not call `RotateToken`, and the controller should
-  answer `FAILED_PRECONDITION` rather than "missing authorization header" if
-  it does.
+- `Register` calls `recordExporterCredential`, which hashes the bearer token
+  onto the `Exporter` and returns an error when there is none. A
+  certificate-only exporter cannot register until this records the
+  certificate instead, or is skipped for certificate callers.
+- `GetServiceEndpoints` calls `telemetryToken`, which reads the bearer token
+  to cap the telemetry token's lifetime and fails without one. With
+  telemetry enabled, a certificate-only client or exporter gets an error
+  from endpoint discovery. The cap has to come from the certificate's
+  `notAfter`.
+- `RotateToken` reads the token to rotate it. A certificate-only exporter has
+  no token to rotate, so its credential source must not call `RotateToken`,
+  and the controller should answer `FAILED_PRECONDITION` rather than
+  "missing authorization header" if it does.
 - The router has its own `authenticate` function for router tokens and does
   not use `ContextAuthenticator`; see the next section.
 - The legacy `authentication` ConfigMap key, kept for backward compatibility,
@@ -2004,6 +2013,130 @@ how hard it is to guess a code or forge a matching fingerprint while the code
 is valid. They are to be fixed, with a security review, before this part
 leaves Experimental (see Unresolved Questions).
 
+### Interface coverage
+
+Every connection Jumpstarter makes, what protects it today, and where this
+JEP stands on it. "Blocker" means the design as written cannot be implemented
+or does not work until the item is resolved; each is expanded below.
+
+| Connection | Today | With this JEP | Status |
+| --- | --- | --- | --- |
+| Client to controller (`ClientService`, `ControllerService`) | Server TLS, bearer token | Mutual TLS | Covered |
+| Exporter to controller | Server TLS, bearer token | Mutual TLS | **Blocker B1, B2**: `Register` and endpoint discovery require a bearer token |
+| Client or exporter to router | Server TLS, shared router token | Mutual TLS, per-side token bound to the SPIFFE ID | Covered; router must load trust domains |
+| Client to exporter session, inside the router stream | No authentication of its own; the router sees the bytes | Unchanged; only the holder of a bound token can join | Covered as far as this JEP goes; end-to-end protection is future work |
+| Client or exporter to telemetry | Server TLS, controller-minted telemetry token | Unchanged | Depends on B2 |
+| Login service (`/v1/auth/config`) | Edge TLS, no authentication | Unchanged | Covered |
+| Enrollment (EST on `:8082`) | n/a | Bearer token or current certificate | New; see B8 |
+| Direct mode, client to exporter | None, a passphrase, or a user-supplied server certificate | Pairing, pinned certificates | New; code format needs review |
+| Exporter to exporter, direct (JEP-0015 peer listener) | n/a | Mutual TLS between exporter identities | **Blocker B3 to B6** |
+| Exporter to exporter, through the router (JEP-0015 `DialPeer`) | n/a | Mutual TLS to the router, bound tokens | **Blocker B7** |
+| Virtual exporter Pods (`ExporterSet`) to controller | Token written into a config Secret by the reconciler | Enroll at start from that Secret | Gap B9 |
+| `jmp admin` to the Kubernetes API | kubeconfig | Unchanged | Not in scope |
+| Local mode and hooks (Unix socket) | Local only | Unchanged | Not in scope |
+
+#### Blockers in the code on `main`
+
+- **B1. `Register` needs a bearer token.** See
+  [Authentication chain](#authentication-chain). Small change, but nothing
+  works for a certificate-only exporter until it is made.
+- **B2. Telemetry token issuance needs a bearer token.** Same section. It
+  affects clients too, and it fails closed: the caller gets an error from
+  `GetServiceEndpoints`, not a response without telemetry.
+
+Both are contained fixes. They are listed as blockers because they would
+only be found when the first certificate-only exporter is started.
+
+#### Blockers shared with JEP-0015
+
+JEP-0015 (multi-exporter leases) adds the first connections in which neither
+end is the controller: exporters dialing each other to carry a lease's
+forwards. Its DD-25 gives exporters SPIFFE certificates for that path and
+says a later JEP on mTLS should reuse them. This is that JEP, and the two
+do not yet fit together.
+
+- **B3. Two ways to issue the same identity.** JEP-0015 has the controller
+  hold an identity CA and sign through a new `SignExporterCertificate` RPC,
+  with IDs of the form `spiffe://<td>/ns/<namespace>/exporter/<name>`. This
+  JEP has the controller request certificates from cert-manager through EST,
+  rejects a controller-held CA (DD-5) and a gRPC enrollment service (DD-6),
+  and uses `spiffe://<td>/jumpstarter/<kind>/<namespace>/<name>/<uid>`. An
+  exporter must have one identity, issued one way. JEP-0015 treats peer IDs
+  as opaque, so either format works for it; what must be settled is which
+  JEP owns issuance. Proposed: this one, with JEP-0015 dropping
+  `SignExporterCertificate` and depending on this JEP for the direct path,
+  while its router path keeps working with bearer tokens.
+- **B4. Python cannot verify a server by SPIFFE ID.** JEP-0015 has the dialing
+  exporter check the URI SAN and not a DNS name, so that a peer can be
+  reached by Pod IP. Python gRPC always checks the server certificate
+  against a host name and offers no hook to replace that check. Tested
+  against the gRPC the project resolves: a dial to a server whose
+  certificate has only a URI SAN fails whatever name override is used, and
+  succeeds once the certificate also carries a DNS name that the dialer
+  supplies as its override. An exporter certificate that is used to serve
+  therefore needs a DNS SAN that stands for its identity (for example a name
+  derived from the SPIFFE ID under the trust domain), and the dialer sets
+  that name. This changes three things in this JEP: the enrollment rule that
+  a CSR holds "exactly that URI SAN and nothing else", the approver-policy
+  example, and requirement I1 of the integration contract for issuers whose
+  exporters take part in direct forwards. The serving side has no such
+  problem: it sees the dialer's SPIFFE ID.
+- **B5. Exporters have no identity trust bundle.** To verify a peer, an
+  exporter needs the CA bundle of the peer's trust domain. In this JEP only
+  the controller and routers hold those; clients and exporters receive the
+  bundle for *serving* certificates. JEP-0015 returns bundles from its
+  signing RPC. A replacement channel is needed: EST `cacerts` for the
+  enrollment domain, and the controller's setup message for a forward for
+  any other domain.
+- **B6. Exporter certificates must be usable for serving, with a loadable
+  key.** The peer listener needs the `serverAuth` usage, which this JEP's
+  policy restricts to `clientAuth`. A Python gRPC server also takes its key
+  as bytes, with no signing callback on the server side, so an exporter
+  that serves peers (or direct mode clients) cannot keep its key in a TPM
+  until the Rust core serves the connection. On a Python listener the
+  certificate is checked against one pool of roots, so the per-domain
+  verification of [Server-side TLS](#server-side-tls) is not available
+  there; the direct path should be limited to peers in one trust domain
+  until it is.
+- **B7. Router tokens.** JEP-0015's DD-5 relies on one token handed to both
+  exporters and on the router staying unchanged. This JEP issues one token
+  per side and has the router check the binding. `DialPeer` can mint two
+  bound tokens exactly as `Dial` does, but JEP-0015's "no router change"
+  no longer holds once exporters use certificates.
+
+#### Other gaps
+
+- **B8. EST is used beyond what stock clients do.** `csrattrs` is defined to
+  return attribute types, not a concrete SAN value for the caller, and the
+  bootstrap token is a Jumpstarter credential. The Jumpstarter client is the
+  only client that will enroll. "An existing standard with existing clients"
+  is therefore a weaker argument for EST than DD-6 makes it, though the
+  endpoint shapes and encodings are still worth reusing.
+- **B9. Virtual exporters.** The `ExporterSet` reconciler writes the
+  exporter's token into the config Secret mounted into each Pod. Those Pods
+  have no state to keep a key in. They can enroll at start with that token
+  and hold the key in memory, which works but makes the Secret the real
+  credential; a Pod-bound identity (as JEP-0015 sketches with Pod
+  certificates) would be better and is not designed here.
+- **B10. One controller replica per exporter pair.** `Dial` reaches an
+  exporter only through the replica holding its `Listen` stream, and token
+  binding reads the exporter's identity from that stream. `DialPeer`
+  involves two exporters whose `Listen` streams may be on different
+  replicas. This is JEP-0015's to solve, but the binding must be solved
+  with it.
+- **B11. Marked users.** #1319 states that the internal-token authenticator
+  is the only place that creates an internal user. Treating enrollment
+  certificates as internal needs that rule widened, with its authors'
+  agreement.
+- **B12. Ingress in re-encrypt mode.** The setup guide suggests re-encrypt
+  with a user-supplied certificate as the alternative to `--insecure-tls`.
+  An ingress that terminates TLS drops the client certificate, so those
+  deployments stay on bearer tokens until they move to passthrough.
+- **B13. Certificate request objects.** Every enrollment and renewal creates a
+  cert-manager `CertificateRequest`. Nothing removes them, so the controller
+  must, and CI jobs that enroll a fresh client per run should use a
+  workload identity instead.
+
 ### Implementation map
 
 Where each change lands in the code on `main`. Paths are under `controller/`
@@ -2018,6 +2151,8 @@ unless they start with `python/`.
 | Object resolution for external certificates | `internal/authorization/metadata.go` (`ContextAttributes`) | One branch |
 | Username check and provisioning | `internal/authorization/basic.go` | None |
 | Wiring | `cmd/main.go` and `internal/config/config.go` (`LoadConfiguration`), where the bearer authenticator is built today | Wrap in the chain |
+| Callers without a bearer token | `internal/service/controller_service.go` (`recordExporterCredential` in `Register`, `telemetryToken` in `GetServiceEndpoints`, `rotateExporterToken`) | Three fixes |
+| Virtual exporters | `internal/exporterset/exporterconfig.go`, which writes the token into the Pod's config Secret | Enroll at Pod start |
 | EST endpoints | `internal/service/controller_service.go` (`Start`): requests that are not gRPC go to a gateway mux that has no routes registered today | New handlers |
 | Per-side, bound router tokens | `internal/service/controller_service.go` (`Dial`, `listenQueue`); `internal/service/router_service.go` (`authenticate`) | Second token, one claim, one check |
 | Router trust domains | `internal/config/config.go` (`LoadRouterConfiguration`), `cmd/router/main.go` | Read one more section |
@@ -2111,6 +2246,9 @@ lease or the connection, as they do today.
   `FAILED_PRECONDITION`.
 - An invalid certificate with a permitted bearer token authenticates as the
   token; with a bearer token that is not permitted, it is rejected.
+- A certificate-only exporter registers, and a certificate-only client and
+  exporter receive a telemetry token whose lifetime is capped by the
+  certificate.
 
 ### Integration Tests
 
@@ -2313,6 +2451,9 @@ lease or the connection, as they do today.
   connections.
 - #1319 and #1320 are not merged. If they change shape, the object resolution
   design has to follow.
+- JEP-0015 defines exporter certificates of its own. If both proposals are
+  implemented as written, exporters end up with two identities and two
+  issuers.
 - Reference integrations depend on third-party behavior that is not yet
   verified (see the "To verify" lists).
 - Misconfigured mappings can match more identities than intended. The
@@ -2432,22 +2573,26 @@ platform.
 6. **Flight Control specifics to verify:** native FDO support, and whether
    Flight Control-issued device certificates could serve directly as an
    identity issuer.
-7. **Direct mode pairing.** Pairing shares this JEP's goal but none of its
+7. **JEP-0015.** Which JEP issues exporter identities, and in which SPIFFE ID
+   format? Should this JEP require JEP-0015's direct path to wait for it, and
+   should exporter certificates carry a DNS name for their identity so that
+   Python can verify a peer (see [Interface coverage](#interface-coverage))?
+8. **Direct mode pairing.** Pairing shares this JEP's goal but none of its
    machinery. Should it stay here, or move to its own JEP so it can ship
    independently? Either way, the code format (length, key derivation,
    lifetime) needs a security review before it is fixed.
-8. **Multiple controller replicas.** `Dial` reaches an exporter only through
+9. **Multiple controller replicas.** `Dial` reaches an exporter only through
    the replica holding its `Listen` stream. That is true today and this JEP
    relies on it for router token binding; if dials are ever routed across
    replicas, the exporter's identity has to travel with them.
-9. **Default `leasePolicy.maxDuration`:** unset (today's behavior) or a
+10. **Default `leasePolicy.maxDuration`:** unset (today's behavior) or a
    conservative default for new installations?
-10. **Relationship to host management proposals.** JEP-0017
+11. **Relationship to host management proposals.** JEP-0017
    ([#1253](https://github.com/jumpstarter-dev/jumpstarter/pull/1253)) and
    [#1242](https://github.com/jumpstarter-dev/jumpstarter/issues/1242) cover
    Flight Control management of exporter hosts. Which of them owns delivery of
    the trust bundle and bootstrap credentials should be settled there.
-11. **Reference integration verification.** Items specific to each reference
+12. **Reference integration verification.** Items specific to each reference
    integration are tracked in that integration's section
    ([To verify: Teleport](#to-verify-teleport),
    [To verify: OpenZiti](#to-verify-openziti)) and do not block acceptance of
@@ -2505,6 +2650,8 @@ These are not part of this JEP.
 - 2026-11-12: Added key storage: a key store interface with file and OS
   keychain stores in the Python client, and hardware stores (TPM, Secure
   Enclave, PKCS#11) deferred to the Rust core
+- 2026-11-13: Added interface coverage and known blockers, including the
+  overlap with JEP-0015's exporter certificates
 
 ## References
 
@@ -2535,6 +2682,8 @@ These are not part of this JEP.
 - `python/packages/jumpstarter-cli/jumpstarter_cli/run.py` and `shell.py` (direct mode: `--tls-grpc-listener`, `--tls-grpc`, `--passphrase`)
 - `python/packages/jumpstarter-kubernetes/jumpstarter_kubernetes/cluster/operator.py` (what `jmp admin create cluster` installs)
 - [cert-manager: installing approver-policy](https://cert-manager.io/docs/policy/approval/approver-policy/installation/)
+- JEP-0015 ([#1069](https://github.com/jumpstarter-dev/jumpstarter/pull/1069)): Multi-Exporter Leases and Inter-Exporter Port Forwarding (DD-4, DD-5, DD-25)
+- `controller/internal/exporterset/exporterconfig.go` (virtual exporter credentials)
 - [#1319](https://github.com/jumpstarter-dev/jumpstarter/pull/1319) and [#1320](https://github.com/jumpstarter-dev/jumpstarter/pull/1320): binding each kind of token to its own identity
 - JEP-0017 ([#1253](https://github.com/jumpstarter-dev/jumpstarter/pull/1253)): Flight Control Host Management for jumpstarter-lab-config
 - Driver Access Rules for ExporterAccessPolicy (proposal in preparation; not yet published in this repository)
