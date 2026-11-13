@@ -274,7 +274,7 @@ class TftpServerProtocol:
 
         return filename
 
-    def _negotiate_block_size(self, requested_blksize: str | None) -> int:
+    def _negotiate_block_size(self, requested_blksize: str | None) -> int | None:
         if requested_blksize is None:
             return self.server.block_size
 
@@ -286,14 +286,14 @@ class TftpServerProtocol:
                 self.logger.warning(
                     f"Requested block size {blksize} out of range (512-65464), using default: {self.server.block_size}"
                 )
-                return self.server.block_size
+                return None
         except ValueError:
             self.logger.warning(
                 f"Invalid block size value '{requested_blksize}', using default: {self.server.block_size}"
             )
-            return self.server.block_size
+            return None
 
-    def _negotiate_timeout(self, requested_timeout: str | None) -> float:
+    def _negotiate_timeout(self, requested_timeout: str | None) -> float | None:
         if requested_timeout is None:
             return self.server.timeout
 
@@ -305,10 +305,10 @@ class TftpServerProtocol:
                 self.logger.warning(
                     f"Timeout value {timeout} out of range (1-255), using default: {self.server.timeout}"
                 )
-                return self.server.timeout
+                return None
         except ValueError:
             self.logger.warning(f"Invalid timeout value '{requested_timeout}', using default: {self.server.timeout}")
-            return self.server.timeout
+            return None
 
     def _negotiate_options(self, options: dict) -> tuple[dict, int, float]:
         negotiated = {}
@@ -316,14 +316,15 @@ class TftpServerProtocol:
         timeout = self.server.timeout
 
         if "blksize" in options:
-            requested = options["blksize"]
-            blksize = self._negotiate_block_size(requested)
-            negotiated["blksize"] = blksize
+            accepted_blksize = self._negotiate_block_size(options["blksize"])
+            if accepted_blksize is not None:
+                blksize = negotiated["blksize"] = accepted_blksize
 
         if "timeout" in options:
-            requested = options["timeout"]
-            timeout = self._negotiate_timeout(requested)
-            negotiated["timeout"] = int(timeout)
+            accepted_timeout = self._negotiate_timeout(options["timeout"])
+            if accepted_timeout is not None:
+                timeout = accepted_timeout
+                negotiated["timeout"] = int(timeout)
 
         return negotiated, blksize, timeout
 
