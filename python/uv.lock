@@ -2545,6 +2545,7 @@ source = { editable = "packages/jumpstarter-driver-flashers" }
 dependencies = [
     { name = "anyio" },
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-http" },
     { name = "jumpstarter-driver-opendal" },
     { name = "jumpstarter-driver-power" },
@@ -2565,6 +2566,7 @@ dev = [
 requires-dist = [
     { name = "anyio", specifier = ">=4.10.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-http", editable = "packages/jumpstarter-driver-http" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },

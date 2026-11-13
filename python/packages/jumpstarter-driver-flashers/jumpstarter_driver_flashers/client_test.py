@@ -5,7 +5,8 @@ from pathlib import PosixPath
 import click
 import pytest
 
-from .client import BaseFlasherClient, FlashNonRetryableError, FlashRetryableError
+from .client import DEFAULT_FLS_VERSION, BaseFlasherClient, FlashNonRetryableError, FlashRetryableError
+from jumpstarter.client.core import DriverError, DriverMethodNotImplemented
 from jumpstarter.common.exceptions import ArgumentError
 
 
@@ -638,3 +639,83 @@ def test_resolve_flash_parameters():
         client._resolve_flash_parameters(None, None, None)
     with pytest.raises(click.UsageError):
         client._resolve_flash_parameters(None, ("rootfs_no_colon",), None)
+
+
+_NOT_IMPLEMENTED = object()
+
+
+def _github(version):
+    return f"https://github.com/jumpstarter-dev/fls/releases/download/{version}/fls-aarch64-linux-musl"
+
+
+def _fls_client(exporter_version=None, serve_error=None):
+    """Client whose exporter reports exporter_version and can (or cannot) serve its own fls."""
+    client = MockFlasherClient()
+    calls, downloads = [], []
+
+    class Http:
+        def get_url(self):
+            return "http://exporter:8080"
+
+    def call(method, *args):
+        calls.append(method)
+        if method == "get_fls_version":
+            if exporter_version is _NOT_IMPLEMENTED:
+                raise DriverMethodNotImplemented("get_fls_version")
+            return exporter_version
+        if method == "setup_fls_binary":
+            if serve_error is not None:
+                raise serve_error
+            return None
+        raise AssertionError(f"unexpected call {method}")
+
+    client.http = Http()  # ty: ignore[unresolved-attribute]
+    client.call = call  # ty: ignore[invalid-assignment]
+    client._download_fls_binary = lambda console, prompt, url, msg: downloads.append(url)  # ty: ignore[invalid-assignment]
+    return client, calls, downloads
+
+
+@pytest.mark.parametrize(
+    "fls_version, fls_binary_url, exporter_version, serve_error, expected_url, expected_calls",
+    [
+        # caller overrides always win, whatever the exporter is configured with
+        (None, "http://mirror/fls", "0.9.9", None, "http://mirror/fls", []),
+        ("0.2.0", None, "0.9.9", None, _github("0.2.0"), []),
+        ("0.2.0", "http://mirror/fls", "0.9.9", None, "http://mirror/fls", []),
+        # no caller choice: the exporter decides
+        (None, None, None, None, "http://exporter:8080/fls", ["get_fls_version", "setup_fls_binary"]),
+        (None, None, "0.4.0", None, _github("0.4.0"), ["get_fls_version"]),
+        # exporter has no binary, or predates get_fls_version: previous default from GitHub
+        (None, None, None, DriverError("fls binary not found"), _github(DEFAULT_FLS_VERSION),
+         ["get_fls_version", "setup_fls_binary"]),
+        (None, None, _NOT_IMPLEMENTED, None, _github(DEFAULT_FLS_VERSION), ["get_fls_version"]),
+        # "" requires the exporter's binary
+        ("", None, "0.9.9", None, "http://exporter:8080/fls", ["setup_fls_binary"]),
+    ],
+)
+def test_install_fls_precedence(fls_version, fls_binary_url, exporter_version, serve_error, expected_url,
+                                expected_calls):
+    client, calls, downloads = _fls_client(exporter_version, serve_error)
+    client._install_fls(None, "#", fls_version, fls_binary_url)
+    assert downloads == [expected_url]
+    assert calls == expected_calls
+
+
+def test_install_fls_empty_version_has_no_fallback():
+    client, _, downloads = _fls_client(serve_error=DriverError("fls binary not found"))
+    with pytest.raises(FlashNonRetryableError, match="fls binary not found"):
+        client._install_fls(None, "#", "", None)
+    assert downloads == []
+
+
+def test_flash_cli_fls_version_defaults_to_exporter_choice():
+    client = MockFlasherClient()
+    captured = {}
+    client.flash = lambda *args, **kwargs: captured.update(kwargs)  # ty: ignore[invalid-assignment]
+    client.call = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
+
+    from click.testing import CliRunner
+
+    result = CliRunner().invoke(client.cli(), ["flash", "http://example.com/image.raw"])
+    assert result.exit_code == 0, result.output
+    assert captured["fls_version"] is None

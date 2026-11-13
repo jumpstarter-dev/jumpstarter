@@ -56,12 +56,12 @@ class Tftp(Driver):
 
         os.makedirs(self.root_dir, exist_ok=True)
 
-        self.children["storage"] = Opendal(
+        self.storage: Opendal = Opendal(
             scheme="fs",
             kwargs={"root": self.root_dir},
             remove_created_on_close=self.remove_created_on_close
         )
-        self.storage = self.children["storage"]
+        self.children["storage"] = self.storage
 
         if self.host == "":
             self.host = get_ip_address(logger=self.logger)

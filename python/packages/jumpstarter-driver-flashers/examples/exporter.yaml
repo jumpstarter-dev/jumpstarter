@@ -20,9 +20,9 @@ export:
         ref: "serial"
       power:
         ref: "power"
-      # tftp and http driver are automatically created when not specified, cannot be specified via ref
+      # tftp and http drivers are automatically created when not specified, and can also be a ref
       # tftp:
-      #   type: "jumpstarter_driver_tftp.driver.TftpServer"
+      #   type: "jumpstarter_driver_tftp.driver.Tftp"
       # http
   serial:
     type: "jumpstarter_driver_pyserial.driver.PySerial"

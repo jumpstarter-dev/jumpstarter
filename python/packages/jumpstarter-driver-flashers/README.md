@@ -74,6 +74,7 @@ HTTP servers are used to serve images to the DUT bootloader and busybox shell.
 | manifest       | The manifest to use from the bundle. Every bundle can have multiple manifests, this is the name of the manifest to use  | str  | no       | manifest.yaml |
 | default_target | The default target to flash to if none specified | str  | no       |                              |
 | exporter_ip        | IP address the DUT uses to reach the exporter tftp/http servers. Passed as `advertised_host` to the auto-created tftp/http children, overriding the detected server IP | str | no | (detected from the tftp/http server) |
+| fls_version    | fls version the DUT downloads from GitHub releases. When unset, the DUT fetches the fls binary shipped in the exporter image from the exporter's HTTP server. Clients can still override with `--fls-version` or `--fls-binary-url` | str | no | (serve the exporter's fls binary) |
 
 ### oci-bundles
 
@@ -202,8 +203,11 @@ Options:
                                  (default: 3)
   --method [fls|shell]           Method to use for flash operation (default:
                                  fls)
-  --fls-version TEXT             Download an specific fls version from the
-                                 github releases
+  --fls-version TEXT             Download a specific fls version from the
+                                 GitHub releases. Default: the exporter's
+                                 fls_version setting, else the fls binary
+                                 shipped in the exporter image. An empty
+                                 string requires the exporter's binary
   --fls-binary-url TEXT          Custom URL to download FLS binary from
                                  (overrides --fls-version)
   --power-off / --no-power-off   Power off device after flashing (default)
