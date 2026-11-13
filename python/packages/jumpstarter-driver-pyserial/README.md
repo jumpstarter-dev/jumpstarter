@@ -60,6 +60,16 @@ Drivers that create their own console (qemu, renode, dutlink, corellium) wire
 their power driver into it automatically, so the hotkey works there without
 any configuration (qemu: except in sidecar mode).
 
+### Input during reconnection
+
+While the serial source is known to be disconnected, input is discarded rather
+than closing the console. A write interrupted by a recognized transport failure
+may be partially delivered and is never retried. The first discarded input
+during each outage logs a warning; input is not buffered or replayed.
+
+This also applies to pipe and pexpect writers, which can lose input without a
+send error.
+
 
 ### Config parameters
 

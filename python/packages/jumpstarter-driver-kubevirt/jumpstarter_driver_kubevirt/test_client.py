@@ -10,7 +10,6 @@ from jumpstarter_driver_kubevirt.client import (
     KubevirtClient,
     KubevirtConsoleClient,
     KubevirtPowerClient,
-    KubevirtStorageClient,
 )
 
 
@@ -36,7 +35,7 @@ class TestKubevirtConsoleClient:
         assert hasattr(KubevirtConsoleClient, "cli")
         assert callable(KubevirtConsoleClient.cli)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_stream_to_stdout_reads_until_eos(self):
         stream = AsyncMock()
         stream.receive = AsyncMock(side_effect=[b"hello", b"world", EndOfStream()])
@@ -51,7 +50,7 @@ class TestKubevirtConsoleClient:
             mock_stdout.buffer.write.assert_any_call(b"hello")
             mock_stdout.buffer.write.assert_any_call(b"world")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_stdin_to_stream_ctrl_b_exit(self):
         stream = AsyncMock()
 
@@ -67,7 +66,7 @@ class TestKubevirtConsoleClient:
 
             mock_set_blocking.assert_called()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_stdin_to_stream_normal_data(self):
         stream = AsyncMock()
         counter = [0]
@@ -88,7 +87,7 @@ class TestKubevirtConsoleClient:
 
             assert stream.send.call_count >= 1
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_stdin_to_stream_empty_data_exits(self):
         stream = AsyncMock()
 
@@ -117,25 +116,6 @@ class TestKubevirtConsoleClient:
             assert result is group
             cmd_names = list(result.commands.keys())
             assert "pipe" in cmd_names
-
-
-class TestKubevirtStorageClient:
-    def test_is_composite_client_subclass(self):
-        from jumpstarter_driver_composite.client import CompositeClient
-
-        assert issubclass(KubevirtStorageClient, CompositeClient)
-
-    def test_has_flash_method(self):
-        assert hasattr(KubevirtStorageClient, "flash")
-        assert callable(KubevirtStorageClient.flash)
-
-    def test_flash_calls_call(self):
-        client = object.__new__(KubevirtStorageClient)
-        client.call = MagicMock()
-        client.stack = MagicMock()
-
-        client.flash("http://example.com/image.qcow2")
-        client.call.assert_called_once_with("flash", "http://example.com/image.qcow2")
 
 
 class TestKubevirtClient:

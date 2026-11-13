@@ -5,6 +5,15 @@ driver is contained in a separate package in the form of
 `jumpstarter-driver-{name}` and provides specific functionality for interacting
 with different hardware components and systems.
 
+## Common Configuration
+
+All drivers support these base configuration fields:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `log_level` | Logging level (`DEBUG`, `INFO`, `WARNING`, etc.). Inherited from the parent driver when unset. | parent's level, else `"INFO"` |
+| `description` | Custom description shown in CLI help | `None` |
+
 ## Types of Drivers
 
 Jumpstarter includes several types of drivers organized by their primary
@@ -71,6 +80,7 @@ Drivers for automotive diagnostic protocols:
 - {doc}`UDS over CAN <uds-can>` (`jumpstarter-driver-uds-can`) - UDS diagnostics over CAN/ISO-TP transport
 - {doc}`OBD-II <obd>` (`jumpstarter-driver-obd`) - OBD-II vehicle diagnostics via ELM327
 - {doc}`SOME/IP <someip>` (`jumpstarter-driver-someip`) - SOME/IP protocol operations via opensomeip
+- {doc}`gPTP <gptp>` (`jumpstarter-driver-gptp`) - IEEE 802.1AS / PTP time synchronization for automotive Ethernet (linuxptp)
 
 ### Flashing and Programming
 
@@ -131,6 +141,7 @@ energenie.md
 esp32.md
 flashers.md
 gpiod.md
+gptp.md
 http.md
 http-power.md
 iosdevice.md

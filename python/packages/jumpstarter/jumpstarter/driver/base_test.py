@@ -1,3 +1,7 @@
+import logging
+from uuid import UUID
+
+import pytest
 import yarl
 
 from .base import Driver
@@ -121,3 +125,57 @@ def test_driver_package_import_does_not_cycle():
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    "level, expected", [(None, logging.INFO), ("DEBUG", logging.DEBUG), ("WARNING", logging.WARNING)]
+)
+def test_propagate_log_level_recurses_into_children(level, expected, caplog):
+    class _TestDriver(Driver):
+        @classmethod
+        def client(cls) -> str:
+            return "test.client"
+
+    grandchild = _TestDriver(uuid=UUID(int=3))
+    child = _TestDriver(uuid=UUID(int=2), children={"grandchild": grandchild})
+    parent = _TestDriver(uuid=UUID(int=1), log_level=level, children={"child": child})
+
+    try:
+        parent.propagate_log_level()
+
+        for driver in (parent, child, grandchild):
+            assert driver.logger.level == expected
+        with caplog.at_level(logging.DEBUG):
+            grandchild.logger.debug("debug message")
+            grandchild.logger.info("info message")
+            grandchild.logger.warning("warning message")
+        assert [(record.name, record.levelno) for record in caplog.records] == [
+            ("driver._TestDriver", severity)
+            for severity in (logging.DEBUG, logging.INFO, logging.WARNING)
+            if severity >= expected
+        ]
+    finally:
+        parent.close()
+
+    for driver in (parent, child, grandchild):
+        assert driver._logger_filter not in driver.logger.filters
+
+
+def test_propagate_log_level_child_explicit_overrides_parent():
+    class _TestDriver(Driver):
+        @classmethod
+        def client(cls) -> str:
+            return "test.client"
+
+    grandchild = _TestDriver(uuid=UUID(int=3))
+    child = _TestDriver(uuid=UUID(int=2), log_level="WARNING", children={"grandchild": grandchild})
+    parent = _TestDriver(uuid=UUID(int=1), log_level="DEBUG", children={"child": child})
+
+    try:
+        parent.propagate_log_level()
+
+        assert parent.logger.level == logging.DEBUG
+        assert child.logger.level == logging.WARNING
+        assert grandchild.logger.level == logging.WARNING
+    finally:
+        parent.close()

@@ -4,13 +4,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from anyio import (
+    BrokenResourceError,
     create_memory_object_stream,
     sleep,
 )
 from anyio._backends._asyncio import StreamReaderWrapper, StreamWriterWrapper
 from anyio.abc import ObjectSendStream, ObjectStream
 from anyio.streams.stapled import StapledObjectStream
-from serial import serial_for_url
+from serial import SerialException, serial_for_url
 from serial_asyncio import open_serial_connection
 
 from jumpstarter.driver import Driver, export
@@ -78,7 +79,10 @@ class AsyncSerial(ObjectStream):
             self.writer = ThrottledStream(stream=self.writer, cps=self.cps)  # ty: ignore[invalid-argument-type]
 
     async def send(self, item: bytes):
-        await self.writer.send(item)
+        try:
+            await self.writer.send(item)
+        except (SerialException, ConnectionError) as exc:
+            raise BrokenResourceError from exc
 
     async def receive(self):
         return await self.reader.receive()

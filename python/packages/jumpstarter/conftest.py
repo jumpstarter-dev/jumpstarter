@@ -1,3 +1,5 @@
+import gc
+from asyncio import Task  # noqa: TID251
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from ipaddress import IPv4Address
@@ -12,6 +14,7 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from grpc._cython.cygrpc import CallbackFailureHandler, CallbackWrapper
 from jumpstarter_protocol import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
@@ -75,6 +78,90 @@ class MockController(jumpstarter_pb2_grpc.ControllerServiceServicer):
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+def pytest_collection_finish():
+    _keep_objects_created_before_the_tests_out_of_gc_scans()
+
+
+def _keep_objects_created_before_the_tests_out_of_gc_scans():
+    gc.collect()
+    gc.freeze()
+
+
+def _unfinished_grpc_operations() -> list[CallbackWrapper]:
+    return [obj for obj in gc.get_objects() if isinstance(obj, CallbackWrapper) and _unfinished(obj)]
+
+
+def _unfinished(operation: CallbackWrapper) -> bool:
+    return _may_still_complete(_waiter(operation))
+
+
+def _waiter(operation: CallbackWrapper):
+    (waiter,) = (referent for referent in gc.get_referents(operation) if callable(getattr(referent, "done", None)))
+    return waiter
+
+
+def _may_still_complete(future) -> bool:
+    """A cancelled waiter does not stop gRPC from completing the operation. A future still pending
+    after its loop closed never had a waiter, since closing the loop cancels every task: a server
+    that never started leaves one for a shutdown that gRPC never runs."""
+    if future.cancelled():
+        return True
+    return not future.done() and not future.get_loop().is_closed()
+
+
+@pytest.fixture
+def unfinished_grpc_operations():
+    return _unfinished_grpc_operations
+
+
+# gRPC never releases an operation whose result went to a closed event loop, so
+# remember what was reported instead of failing every test that follows.
+_reported_grpc_operations: set[CallbackWrapper] = set()
+
+
+def _new_unfinished_grpc_operations() -> set[CallbackWrapper]:
+    return set(_unfinished_grpc_operations()) - _reported_grpc_operations
+
+
+@pytest.fixture(autouse=True)
+def _no_unfinished_grpc_operations():
+    yield
+    unfinished = _new_unfinished_grpc_operations()
+    if unfinished:
+        gc.collect()
+        unfinished = _new_unfinished_grpc_operations()
+    _reported_grpc_operations.update(unfinished)
+    assert not unfinished, (
+        f"the test left {len(unfinished)} gRPC operation(s) unfinished; their results would reach "
+        "its closed event loop during a later test:\n" + "\n".join(f"- {_describe(op)}" for op in unfinished)
+    )
+
+
+def _describe(operation: CallbackWrapper) -> str:
+    return f"{_kind(operation)}, {_waiter_state(operation)}"
+
+
+def _kind(operation: CallbackWrapper) -> str:
+    (failure_handler,) = (
+        referent for referent in gc.get_referents(operation) if isinstance(referent, CallbackFailureHandler)
+    )
+    details = gc.get_referents(failure_handler)
+    batches = [detail for detail in details if isinstance(detail, tuple)]
+    if batches:
+        return f"batch of {', '.join(type(op).__name__ for op in batches[0])}"
+    (failure,) = (detail for detail in details if isinstance(detail, type))
+    return f"operation failing with {failure.__name__}"
+
+
+def _waiter_state(operation: CallbackWrapper) -> str:
+    waiter = _waiter(operation)
+    if waiter.cancelled():
+        return "waiter cancelled"
+    callers = [getattr(callback, "__self__", None) for callback, _ in waiter._callbacks or ()]
+    waiting_tasks = [caller for caller in callers if isinstance(caller, Task)]
+    return "waiter pending" + "".join(f" in {task.get_coro().__qualname__}" for task in waiting_tasks)
 
 
 key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())

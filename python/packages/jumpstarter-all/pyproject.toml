@@ -48,6 +48,7 @@ dependencies = [
   "jumpstarter-driver-qemu",
   "jumpstarter-driver-renode",
   "jumpstarter-driver-gpiod",
+  "jumpstarter-driver-gptp",
   "jumpstarter-driver-ridesx",
   "jumpstarter-driver-sdwire",
   "jumpstarter-driver-shell",

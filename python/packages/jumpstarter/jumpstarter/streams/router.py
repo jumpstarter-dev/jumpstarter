@@ -1,6 +1,8 @@
 import contextlib
 import logging
-from asyncio import InvalidStateError
+
+# grpc.aio signals a write or read on a finished call with asyncio's InvalidStateError.
+from asyncio import InvalidStateError  # noqa: TID251
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -40,13 +42,13 @@ class RouterStream(ObjectStream[bytes]):
     async def send(self, item: bytes) -> None:
         try:
             await self.context.write(self.cls(payload=item))
-        except grpc.aio.AioRpcError as e:
+        except (grpc.aio.AioRpcError, InvalidStateError) as e:
             raise BrokenResourceError from e
 
     async def receive(self) -> bytes:
         try:
             frame = await self.context.read()
-        except grpc.aio.AioRpcError as e:
+        except (grpc.aio.AioRpcError, InvalidStateError) as e:
             raise BrokenResourceError from e
 
         # Reference: https://grpc.github.io/grpc/python/grpc_asyncio.html#grpc.aio.StreamStreamCall.read

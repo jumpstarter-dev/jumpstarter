@@ -12,7 +12,7 @@ delivery, cumulative acknowledgements, a fixed window without scaling and a
 timer that resends unacknowledged data.
 """
 
-import asyncio
+import asyncio  # noqa: TID251
 import errno
 import fcntl
 import ipaddress
@@ -320,7 +320,7 @@ class Stack:
         self._loop = asyncio.get_running_loop()
         self._reader = threading.Thread(target=self._read_frames, name=f"bpf-{self.interface}", daemon=True)
         self._reader.start()
-        self._timer = asyncio.create_task(self._timers())
+        self._timer = asyncio.create_task(self._timers())  # noqa: TID251
         return self
 
     async def __aexit__(self, *exc) -> None:
