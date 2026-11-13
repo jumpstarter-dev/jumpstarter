@@ -435,10 +435,7 @@ class TftpReadTransfer(TftpTransfer):
         local_addr = self.sock.extra(SocketAttribute.local_address)
         self.logger.debug(f"Transfer bound to local {local_addr}")
 
-        # Only send OACK if we have non-default options to negotiate
-        if self.negotiated_options and (
-            self.negotiated_options["blksize"] != 512 or self.negotiated_options["timeout"] != self.server.timeout
-        ):
+        if self.negotiated_options:
             oack_packet = self._create_oack_packet()
             if not await self._send_with_retries(oack_packet, is_oack=True):
                 self.logger.error("Failed to get acknowledgment for OACK")

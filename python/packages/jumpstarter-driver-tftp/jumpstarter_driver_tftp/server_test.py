@@ -352,7 +352,7 @@ async def test_blksize_and_timeout_are_acknowledged(tftp, client):
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("options", [{"blksize": "1024"}])
+@pytest.mark.parametrize("options", [{"blksize": "1024"}, {"blksize": "512"}, {"timeout": "2"}])
 async def test_a_single_requested_option_is_acknowledged(tftp, client, options):
     root, port = tftp
     (root / "file.bin").write_bytes(b"x" * 3000)
