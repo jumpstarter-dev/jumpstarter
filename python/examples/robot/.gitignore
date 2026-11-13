@@ -1,0 +1,15 @@
+# Robot Framework run output (robot -d results, RobotCode's output-dir)
+results/
+output.xml
+log.html
+report.html
+*.pabot*/
+.pabotsuitenames
+.robotcode_cache/
+# Sample apps fetched by mobile/scripts/fetch-sample-apps.sh
+mobile/apps/*
+!mobile/apps/.gitkeep
+# The editor settings here are part of the example (the repository ignores .vscode/)
+!.vscode/
+# Device tree JSON: generate does not write it, and it is not committed
+*.tree.json

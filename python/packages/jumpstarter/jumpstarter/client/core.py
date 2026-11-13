@@ -411,8 +411,9 @@ class AsyncDriverClient(Metadata):
             args=[encode_value(arg) for arg in args],
         )
 
+        call = self.stub.StreamingDriverCall(request)
         try:
-            async for response in self.stub.StreamingDriverCall(request):
+            async for response in call:
                 yield decode_value(response.result)
         except AioRpcError as e:
             match e.code():
@@ -426,6 +427,11 @@ class AsyncDriverClient(Metadata):
                     raise DriverError(e.details() or "") from None
                 case _:
                     raise DriverError(e.details() or "") from e
+        finally:
+            # Leaving the generator early (a caller that stops reading) must
+            # cancel the RPC, or the driver keeps streaming until the session
+            # ends. Cancelling a finished call does nothing.
+            call.cancel()
 
     @asynccontextmanager
     async def stream_async(self, method):

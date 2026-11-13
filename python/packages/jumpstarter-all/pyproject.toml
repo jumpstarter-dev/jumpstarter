@@ -75,6 +75,7 @@ dependencies = [
   "jumpstarter-kubernetes",
   "jumpstarter-mcp",
   "jumpstarter-protocol",
+  "jumpstarter-robot",
   "jumpstarter-testing",
 ]
 
