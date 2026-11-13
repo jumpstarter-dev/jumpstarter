@@ -25,7 +25,7 @@ def test_readiness_probe_ignores_proxy_settings(fake_appium, monkeypatch):
     for name in ("http_proxy", "HTTP_PROXY"):
         monkeypatch.setenv(name, "http://127.0.0.1:9")
     executable, record = fake_appium
-    with local_appium(str(executable), env={"FAKE_APPIUM_RECORD": str(record)}, timeout=10) as url:
+    with local_appium(str(executable), env={"FAKE_APPIUM_RECORD": str(record)}) as url:
         assert url.startswith("http://127.0.0.1:")
 
 

@@ -10,6 +10,7 @@ FAKE_APPIUM = textwrap.dedent(
     """
     import json, os, sys
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from socketserver import TCPServer
 
     args = sys.argv[1:]
     assert args[0] == "server", args
@@ -59,7 +60,14 @@ FAKE_APPIUM = textwrap.dedent(
             else:
                 self.reply(200, {"value": {"method": "POST", "path": self.path, "body": body}})
 
-    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
+    class Server(ThreadingHTTPServer):
+        def server_bind(self):
+            # HTTPServer resolves its own name with socket.getfqdn() before it
+            # listens, which can take seconds on macOS runners; skip it.
+            TCPServer.server_bind(self)
+            self.server_name, self.server_port = self.server_address[:2]
+
+    Server(("127.0.0.1", port), Handler).serve_forever()
     """
 )
 
