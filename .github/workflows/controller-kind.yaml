@@ -49,3 +49,15 @@ jobs:
       - name: Run operator e2e test
         working-directory: controller
         run: make test-operator-e2e-ci -j4 --output-sync=target
+
+      - name: Run Kubernetes shipper deployment test
+        working-directory: controller/deploy/operator
+        env:
+          SHIPPER_K8S_E2E: "1"
+        run: go test ./internal/controller/jumpstarter -run TestKubernetesShipperDeployment -v -timeout 15m
+
+      - name: Run Prometheus target-health test
+        working-directory: controller/deploy/operator
+        env:
+          PROMETHEUS_K8S_E2E: "1"
+        run: go test ./test/e2e -run TestE2E -ginkgo.focus "Prometheus target health" -count=1 -timeout 15m -v

@@ -182,10 +182,13 @@ docker-build: ## Build docker image with the manager.
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
 		-t ${IMG} ../../ -f ../../Containerfile.operator
 
+# Host go builds inherit the caller's umask; chmod keeps the staged binary
+# executable for the prebuilt image build.
 .PHONY: docker-build-ci
 docker-build-ci: ## CI-optimized: host-compiled binary, no multi-stage build.
 	rm -rf bin/ci-stage && mkdir -p bin/ci-stage
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/manager cmd/main.go
+	chmod 0755 bin/ci-stage/manager
 	$(CONTAINER_TOOL) build --build-arg BIN=manager -t $(IMG) -f ../../Containerfile.prebuilt bin/ci-stage
 
 .PHONY: docker-push

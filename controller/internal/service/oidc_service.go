@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"net"
 
-	"github.com/gin-gonic/gin"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/ginlog"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -17,7 +17,7 @@ type OIDCService struct {
 }
 
 func (s *OIDCService) Start(ctx context.Context) error {
-	r := gin.Default()
+	r := ginlog.NewEngine("controller", ctrl.Log.WithName("oidc"))
 
 	s.Signer.Register(r)
 

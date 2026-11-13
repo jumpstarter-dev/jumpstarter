@@ -1,0 +1,71 @@
+// Jumpstarter log shipper configuration for Grafana Alloy.
+// Merge into your Alloy configuration. If the Loki URL below is a
+// placeholder, replace it with your push endpoint (or set
+// spec.telemetry.loki.url on the Jumpstarter CR).
+//
+// This assumes the Alloy Helm chart DaemonSet, where HOSTNAME is the
+// Kubernetes node name. For a single-replica Deployment, remove the
+// selectors.field line or enable Alloy clustering.
+discovery.kubernetes "jumpstarter_pods" {
+	role = "pod"
+
+	namespaces {
+		names = ["lab"]
+	}
+
+	selectors {
+		role  = "pod"
+		label = "jumpstarter.dev/log-scrape=true"
+		field = "spec.nodeName=" + coalesce(sys.env("HOSTNAME"), constants.hostname)
+	}
+}
+
+discovery.relabel "jumpstarter_pods" {
+	targets = discovery.kubernetes.jumpstarter_pods.targets
+
+	rule {
+		source_labels = ["__meta_kubernetes_pod_label_jumpstarter_dev_log_scrape"]
+		regex         = "true"
+		action        = "keep"
+	}
+
+	rule {
+		source_labels = ["__meta_kubernetes_namespace"]
+		target_label  = "namespace"
+	}
+}
+
+loki.source.kubernetes "jumpstarter" {
+	targets    = discovery.relabel.jumpstarter_pods.output
+	forward_to = [loki.process.jumpstarter.receiver]
+}
+
+loki.process "jumpstarter" {
+	stage.json {
+		expressions = {
+			component = "component",
+			exporter  = "exporter",
+		}
+	}
+
+	stage.labels {
+		values = {
+			component = "",
+			exporter  = "",
+		}
+	}
+
+	// Enforce the JEP-0013 stream-label set and remove the default "job"
+	// label added by loki.source.kubernetes.
+	stage.label_keep {
+		values = ["component", "exporter", "namespace"]
+	}
+
+	forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+	endpoint {
+		url = "{{LOKI_URL}}"
+	}
+}

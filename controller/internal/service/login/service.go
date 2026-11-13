@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/ginlog"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -114,8 +115,7 @@ func (s *Service) SetOIDCConfig(oidc []OIDCConfig) {
 // Start implements manager.Runnable and starts the HTTP server
 func (s *Service) Start(ctx context.Context) error {
 	gin.SetMode(gin.ReleaseMode)
-	r := gin.New()
-	r.Use(gin.Recovery())
+	r := ginlog.NewEngine("controller", ctrl.Log.WithName("login"))
 
 	// Parse and set HTML templates
 	r.SetHTMLTemplate(template.Must(template.ParseFS(fs, "templates/*")))

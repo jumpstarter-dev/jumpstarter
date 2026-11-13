@@ -278,6 +278,16 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	// Reconcile observability integration: metrics Services, ServiceMonitors and
+	// the optional log shipper ConfigMap. These are optional integrations, so a
+	// failure must not abort the rest of the Jumpstarter reconcile (status,
+	// ConfigMaps, Secrets). The condition reports the failure and a short requeue
+	// retries it.
+	crdState, observabilityErr := r.reconcileObservabilityWithState(ctx, &jumpstarter)
+	if observabilityErr != nil {
+		log.Error(observabilityErr, "Failed to reconcile observability integration")
+	}
+
 	// Reconcile ConfigMaps (after deployments and services)
 	if err := r.reconcileConfigMaps(ctx, &jumpstarter, desiredConfigMap); err != nil {
 		log.Error(err, "Failed to reconcile ConfigMaps")
@@ -291,18 +301,50 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// Update status
-	if err := r.updateStatus(ctx, &jumpstarter); err != nil {
+	if err := r.updateStatusWithState(ctx, &jumpstarter, crdState); err != nil {
 		log.Error(err, "Failed to update status")
 		return ctrl.Result{}, err
 	}
 
-	// Requeue periodically to pick up changes. Use a shorter interval while the
-	// telemetry CA secret is not yet ready so the controller ConfigMap converges quickly.
+	requeueAfter := r.observabilityRequeueAfterWithState(ctx, &jumpstarter, observabilityErr, crdState)
+	return ctrl.Result{RequeueAfter: requeueAfter}, nil
+}
+
+// observabilityRequeueAfter keeps the normal periodic reconciliation interval
+// but shortens it while observability needs attention. A missing ServiceMonitor
+// CRD uses a two-minute poll so a later-installed CRD converges within five
+// minutes without a hot loop.
+func (r *JumpstarterReconciler) observabilityRequeueAfter(
+	ctx context.Context,
+	js *operatorv1alpha1.Jumpstarter,
+	observabilityErr error,
+) time.Duration {
+	return r.observabilityRequeueAfterWithState(ctx, js, observabilityErr, serviceMonitorCRDState{})
+}
+
+func (r *JumpstarterReconciler) observabilityRequeueAfterWithState(
+	ctx context.Context,
+	js *operatorv1alpha1.Jumpstarter,
+	observabilityErr error,
+	crdState serviceMonitorCRDState,
+) time.Duration {
 	requeueAfter := 30 * time.Minute
-	if r.telemetryCANeedsRequeue(ctx, &jumpstarter) {
+	if observabilityErr != nil {
+		requeueAfter = 2 * time.Minute
+	}
+	if r.telemetryCANeedsRequeue(ctx, js) {
 		requeueAfter = telemetryCARequeueInterval
 	}
-	return ctrl.Result{RequeueAfter: requeueAfter}, nil
+	if serviceMonitorEnabled(js) && requeueAfter > 2*time.Minute {
+		if !crdState.checked {
+			available, err := r.serviceMonitorCRDAvailable(ctx)
+			crdState = serviceMonitorCRDState{checked: true, available: available, err: err}
+		}
+		if crdState.err == nil && !crdState.available {
+			requeueAfter = 2 * time.Minute
+		}
+	}
+	return requeueAfter
 }
 
 // emitEventf emits a Kubernetes event on the Jumpstarter object.
@@ -774,6 +816,12 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 		"controller": jumpstarter.Name,
 	}
 
+	// Discovery labels for cluster log shippers. Applied to the pod template only:
+	// Deployment.spec.selector is immutable and must keep its existing key set.
+	podLabels := maps.Clone(labels)
+	podLabels[logScrapeLabel] = "true"
+	podLabels[logFormatLabel] = "json"
+
 	// Build GRPC endpoint from first controller endpoint
 	// Default to port 443 for TLS gRPC endpoints
 	grpcEndpoint := ""
@@ -915,7 +963,7 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
+					Labels:      podLabels,
 					Annotations: r.buildControllerPodAnnotations(jumpstarter, configMapHash, tlsSecretHash),
 				},
 				Spec: corev1.PodSpec{
@@ -1048,6 +1096,12 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 		"router-index": fmt.Sprintf("%d", replicaIndex),
 	}
 
+	// Discovery labels for cluster log shippers. Applied to the pod template only:
+	// Deployment.spec.selector is immutable and must keep its existing key set.
+	podLabels := maps.Clone(labels)
+	podLabels[logScrapeLabel] = "true"
+	podLabels[logFormatLabel] = "json"
+
 	// Build router endpoint for this specific replica
 	routerEndpoint := r.buildRouterEndpointForReplica(jumpstarter, replicaIndex)
 
@@ -1131,7 +1185,7 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
+					Labels:      podLabels,
 					Annotations: r.buildRouterPodAnnotations(jumpstarter, tlsSecretHash),
 				},
 				Spec: corev1.PodSpec{
@@ -1777,6 +1831,11 @@ func (r *JumpstarterReconciler) cleanupExcessRouterServices(ctx context.Context,
 	for i := range serviceList.Items {
 		service := &serviceList.Items[i]
 		if !strings.HasPrefix(service.Name, prefix) || !metav1.IsControlledBy(service, jumpstarter) {
+			continue
+		}
+		// Metrics Services share the "<name>-router-" prefix but belong to the
+		// observability stage, not the endpoint reconciler. Do not prune them.
+		if service.Labels[metricsServiceLabel] == "true" {
 			continue
 		}
 		if _, ok := wanted[service.Name]; ok {

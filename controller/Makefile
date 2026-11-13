@@ -148,6 +148,8 @@ docker-build: ## Build docker image with the manager.
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
 		-t ${IMG} -f Containerfile .
 
+# Host go builds inherit the caller's umask; every CI target below chmods its
+# staged binaries so the prebuilt image can execute them.
 .PHONY: docker-build-ci
 docker-build-ci: ## Build docker images from pre-compiled host binaries (fast CI path).
 	rm -rf bin/ci-stage && mkdir -p bin/ci-stage/controller bin/ci-stage/esc bin/ci-stage/telemetry
@@ -155,6 +157,7 @@ docker-build-ci: ## Build docker images from pre-compiled host binaries (fast CI
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/controller/router ./cmd/router
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/controller/telemetry ./cmd/telemetry
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/esc/exporter-set-controller cmd/exporter-set-controller/main.go
+	chmod 0755 bin/ci-stage/controller/manager bin/ci-stage/controller/router bin/ci-stage/controller/telemetry bin/ci-stage/esc/exporter-set-controller
 	$(CONTAINER_TOOL) build --build-arg BIN=manager -t $(IMG) -f Containerfile.prebuilt bin/ci-stage/controller
 	$(CONTAINER_TOOL) build --build-arg BIN=exporter-set-controller -t $(EXPORTER_SET_CONTROLLER_IMG) -f Containerfile.prebuilt bin/ci-stage/esc
 	$(MAKE) docker-build-telemetry-ci
@@ -163,12 +166,14 @@ docker-build-ci: ## Build docker images from pre-compiled host binaries (fast CI
 docker-build-telemetry-ci: ## CI-optimized: host-compiled telemetry binary, no multi-stage build.
 	rm -rf bin/ci-stage/telemetry && mkdir -p bin/ci-stage/telemetry
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/telemetry/telemetry ./cmd/telemetry
+	chmod 0755 bin/ci-stage/telemetry/telemetry
 	$(CONTAINER_TOOL) build -t $(TELEMETRY_IMG) -f Containerfile.telemetry.prebuilt bin/ci-stage/telemetry
 
 .PHONY: docker-build-exporter-set-controller-ci
 docker-build-exporter-set-controller-ci: ## CI-optimized: host-compiled ESC binary, no multi-stage build.
 	rm -rf bin/ci-stage/esc && mkdir -p bin/ci-stage/esc
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/esc/exporter-set-controller cmd/exporter-set-controller/main.go
+	chmod 0755 bin/ci-stage/esc/exporter-set-controller
 	$(CONTAINER_TOOL) build --build-arg BIN=exporter-set-controller -t $(EXPORTER_SET_CONTROLLER_IMG) -f Containerfile.prebuilt bin/ci-stage/esc
 
 .PHONY: docker-build-exporter-set-controller
