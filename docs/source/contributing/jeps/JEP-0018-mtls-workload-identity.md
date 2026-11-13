@@ -2027,11 +2027,11 @@ or does not work until the item is resolved; each is expanded below.
 | Client to exporter session, inside the router stream | No authentication of its own; the router sees the bytes | Unchanged; only the holder of a bound token can join | Covered as far as this JEP goes; end-to-end protection is future work |
 | Client or exporter to telemetry | Server TLS, controller-minted telemetry token | Unchanged | Depends on B2 |
 | Login service (`/v1/auth/config`) | Edge TLS, no authentication | Unchanged | Covered |
-| Enrollment (EST on `:8082`) | n/a | Bearer token or current certificate | New; see B8 |
+| Enrollment (EST on `:8082`) | n/a | Bearer token or current certificate | New; see B7 |
 | Direct mode, client to exporter | None, a passphrase, or a user-supplied server certificate | Pairing, pinned certificates | New; code format needs review |
-| Exporter to exporter, direct (JEP-0015 peer listener) | n/a | Mutual TLS between exporter identities | **Blocker B3 to B6** |
-| Exporter to exporter, through the router (JEP-0015 `DialPeer`) | n/a | Mutual TLS to the router, bound tokens | **Blocker B7** |
-| Virtual exporter Pods (`ExporterSet`) to controller | Token written into a config Secret by the reconciler | Enroll at start from that Secret | Gap B9 |
+| Exporter to exporter, direct (JEP-0015 peer listener) | n/a | Not designed yet; JEP-0015 leaves it to this JEP | **Open: B3 to B5** |
+| Exporter to exporter, through the router (JEP-0015 `DialPeer`) | n/a | Mutual TLS to the router, bound tokens | Open: B6 |
+| Virtual exporter Pods (`ExporterSet`) to controller | Token written into a config Secret by the reconciler | Enroll at start from that Secret | Gap B8 |
 | `jmp admin` to the Kubernetes API | kubeconfig | Unchanged | Not in scope |
 | Local mode and hooks (Unix socket) | Local only | Unchanged | Not in scope |
 
@@ -2047,92 +2047,83 @@ or does not work until the item is resolved; each is expanded below.
 Both are contained fixes. They are listed as blockers because they would
 only be found when the first certificate-only exporter is started.
 
-#### Blockers shared with JEP-0015
+#### Open for JEP-0015's direct path
 
 JEP-0015 (multi-exporter leases) adds the first connections in which neither
 end is the controller: exporters dialing each other to carry a lease's
-forwards. Its DD-25 gives exporters SPIFFE certificates for that path and
-says a later JEP on mTLS should reuse them. This is that JEP, and the two
-do not yet fit together.
+forwards. It delivers those forwards over the router and leaves the
+authentication of its direct exporter-to-exporter path to this JEP (its
+DD-25), so there is one exporter identity, issued one way. Its router path
+works with whatever credential an exporter has.
 
-- **B3. Two ways to issue the same identity.** JEP-0015 has the controller
-  hold an identity CA and sign through a new `SignExporterCertificate` RPC,
-  with IDs of the form `spiffe://<td>/ns/<namespace>/exporter/<name>`. This
-  JEP has the controller request certificates from cert-manager through EST,
-  rejects a controller-held CA (DD-5) and a gRPC enrollment service (DD-6),
-  and uses `spiffe://<td>/jumpstarter/<kind>/<namespace>/<name>/<uid>`. An
-  exporter must have one identity, issued one way. JEP-0015 treats peer IDs
-  as opaque, so either format works for it; what must be settled is which
-  JEP owns issuance. Proposed: this one, with JEP-0015 dropping
-  `SignExporterCertificate` and depending on this JEP for the direct path,
-  while its router path keeps working with bearer tokens.
-- **B4. Python cannot verify a server by SPIFFE ID.** JEP-0015 has the dialing
-  exporter check the URI SAN and not a DNS name, so that a peer can be
-  reached by Pod IP. Python gRPC always checks the server certificate
-  against a host name and offers no hook to replace that check. Tested
-  against the gRPC the project resolves: a dial to a server whose
-  certificate has only a URI SAN fails whatever name override is used, and
-  succeeds once the certificate also carries a DNS name that the dialer
-  supplies as its override. An exporter certificate that is used to serve
-  therefore needs a DNS SAN that stands for its identity (for example a name
-  derived from the SPIFFE ID under the trust domain), and the dialer sets
-  that name. This changes three things in this JEP: the enrollment rule that
-  a CSR holds "exactly that URI SAN and nothing else", the approver-policy
-  example, and requirement I1 of the integration contract for issuers whose
-  exporters take part in direct forwards. The serving side has no such
+The direct path is not designed here yet. These are the questions this JEP
+has to answer before it can be enabled, with what is already known:
+
+- **B3. Verifying a peer from Python.** JEP-0015 needs the dialing exporter
+  to verify a peer that may only have a Pod IP. Python gRPC always checks
+  the server certificate against a host name and offers no hook to replace
+  that check. Tested against the gRPC the project resolves: a dial to a
+  server whose certificate has only a URI SAN fails whatever name override
+  is used, and succeeds once the certificate also carries a DNS name that
+  the dialer supplies as its override. An exporter certificate that is used
+  to serve would therefore need a DNS name that stands for its identity,
+  which this JEP's enrollment rule ("exactly that URI SAN and nothing
+  else"), its approver-policy example, and requirement I1 of the
+  integration contract do not allow today. The serving side has no such
   problem: it sees the dialer's SPIFFE ID.
-- **B5. Exporters have no identity trust bundle.** To verify a peer, an
-  exporter needs the CA bundle of the peer's trust domain. In this JEP only
-  the controller and routers hold those; clients and exporters receive the
-  bundle for *serving* certificates. JEP-0015 returns bundles from its
-  signing RPC. A replacement channel is needed: EST `cacerts` for the
-  enrollment domain, and the controller's setup message for a forward for
-  any other domain.
-- **B6. Exporter certificates must be usable for serving, with a loadable
-  key.** The peer listener needs the `serverAuth` usage, which this JEP's
-  policy restricts to `clientAuth`. A Python gRPC server also takes its key
-  as bytes, with no signing callback on the server side, so an exporter
-  that serves peers (or direct mode clients) cannot keep its key in a TPM
-  until the Rust core serves the connection. On a Python listener the
-  certificate is checked against one pool of roots, so the per-domain
-  verification of [Server-side TLS](#server-side-tls) is not available
-  there; the direct path should be limited to peers in one trust domain
-  until it is.
-- **B7. Router tokens.** JEP-0015's DD-5 relies on one token handed to both
-  exporters and on the router staying unchanged. This JEP issues one token
-  per side and has the router check the binding. `DialPeer` can mint two
-  bound tokens exactly as `Dial` does, but JEP-0015's "no router change"
-  no longer holds once exporters use certificates.
+- **B4. Trust anchors on exporters.** To verify a peer, an exporter needs the
+  CA bundle of the peer's trust domain. In this JEP only the controller and
+  routers hold those; clients and exporters receive the bundle for
+  *serving* certificates. Candidates: EST `cacerts` for the enrollment
+  domain, and the controller's forward setup message for any other.
+- **B5. Serving with an exporter certificate.** A peer listener needs the
+  `serverAuth` usage, which this JEP's policy restricts to `clientAuth`. A
+  Python gRPC server also takes its key as bytes, with no signing callback
+  on the server side, so an exporter that serves peers (or direct mode
+  clients) cannot keep its key in a TPM until the Rust core serves the
+  connection. On a Python listener the certificate is checked against one
+  pool of roots, so the per-domain verification of
+  [Server-side TLS](#server-side-tls) is not available there; the direct
+  path may have to be limited to peers in one trust domain at first.
+- **B6. Router tokens for forwards.** JEP-0015 hands one token to both
+  exporters and leaves the router unchanged. Once this JEP binds router
+  tokens to identities, its `DialPeer` has to mint one bound token per
+  side, as `Dial` does.
+
+JEP-0015's DD-25 lists the properties the direct path needs: mutual
+authentication, no bearer secret on the path, identities that are opaque to
+peers, and renewal without a restart. This JEP's identities meet the last
+three as designed; the first depends on B3 to B5.
 
 #### Other gaps
 
-- **B8. EST is used beyond what stock clients do.** `csrattrs` is defined to
+- **B7. EST is used beyond what stock clients do.** `csrattrs` is defined to
   return attribute types, not a concrete SAN value for the caller, and the
   bootstrap token is a Jumpstarter credential. The Jumpstarter client is the
   only client that will enroll. "An existing standard with existing clients"
   is therefore a weaker argument for EST than DD-6 makes it, though the
   endpoint shapes and encodings are still worth reusing.
-- **B9. Virtual exporters.** The `ExporterSet` reconciler writes the
+- **B8. Virtual exporters.** The `ExporterSet` reconciler writes the
   exporter's token into the config Secret mounted into each Pod. Those Pods
   have no state to keep a key in. They can enroll at start with that token
   and hold the key in memory, which works but makes the Secret the real
   credential; a Pod-bound identity (as JEP-0015 sketches with Pod
   certificates) would be better and is not designed here.
-- **B10. One controller replica per exporter pair.** `Dial` reaches an
+- **B9. One controller replica per exporter pair.** `Dial` reaches an
   exporter only through the replica holding its `Listen` stream, and token
   binding reads the exporter's identity from that stream. `DialPeer`
   involves two exporters whose `Listen` streams may be on different
   replicas. This is JEP-0015's to solve, but the binding must be solved
   with it.
-- **B11. Marked users.** #1319 states that the internal-token authenticator
+- **B10. Marked users.** #1319 states that the internal-token authenticator
   is the only place that creates an internal user. Treating enrollment
   certificates as internal needs that rule widened, with its authors'
   agreement.
-- **B12. Ingress in re-encrypt mode.** The setup guide suggests re-encrypt
+- **B11. Ingress in re-encrypt mode.** The setup guide suggests re-encrypt
   with a user-supplied certificate as the alternative to `--insecure-tls`.
   An ingress that terminates TLS drops the client certificate, so those
   deployments stay on bearer tokens until they move to passthrough.
-- **B13. Certificate request objects.** Every enrollment and renewal creates a
+- **B12. Certificate request objects.** Every enrollment and renewal creates a
   cert-manager `CertificateRequest`. Nothing removes them, so the controller
   must, and CI jobs that enroll a fresh client per run should use a
   workload identity instead.
@@ -2451,9 +2442,8 @@ lease or the connection, as they do today.
   connections.
 - #1319 and #1320 are not merged. If they change shape, the object resolution
   design has to follow.
-- JEP-0015 defines exporter certificates of its own. If both proposals are
-  implemented as written, exporters end up with two identities and two
-  issuers.
+- JEP-0015's direct path waits for this JEP to define how exporters
+  authenticate each other, which is not designed yet.
 - Reference integrations depend on third-party behavior that is not yet
   verified (see the "To verify" lists).
 - Misconfigured mappings can match more identities than intended. The
@@ -2573,10 +2563,13 @@ platform.
 6. **Flight Control specifics to verify:** native FDO support, and whether
    Flight Control-issued device certificates could serve directly as an
    identity issuer.
-7. **JEP-0015.** Which JEP issues exporter identities, and in which SPIFFE ID
-   format? Should this JEP require JEP-0015's direct path to wait for it, and
-   should exporter certificates carry a DNS name for their identity so that
-   Python can verify a peer (see [Interface coverage](#interface-coverage))?
+7. **JEP-0015's direct path.** JEP-0015 leaves the authentication of direct
+   exporter-to-exporter forwards to this JEP. Should it be designed here
+   before acceptance, or added in a follow-up once the rest is implemented?
+   The known questions are B3 to B6 under
+   [Interface coverage](#interface-coverage): a DNS name for the exporter's
+   identity so that Python can verify a peer, trust anchors on exporters,
+   serving usage, and bound tokens for forwards.
 8. **Direct mode pairing.** Pairing shares this JEP's goal but none of its
    machinery. Should it stay here, or move to its own JEP so it can ship
    independently? Either way, the code format (length, key derivation,
@@ -2650,8 +2643,9 @@ These are not part of this JEP.
 - 2026-11-12: Added key storage: a key store interface with file and OS
   keychain stores in the Python client, and hardware stores (TPM, Secure
   Enclave, PKCS#11) deferred to the Rust core
-- 2026-11-13: Added interface coverage and known blockers, including the
-  overlap with JEP-0015's exporter certificates
+- 2026-11-13: Added interface coverage and known blockers. JEP-0015 now
+  leaves direct exporter-to-exporter authentication to this JEP; the open
+  questions for it are recorded
 
 ## References
 
