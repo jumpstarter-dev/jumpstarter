@@ -17,6 +17,10 @@ env:
   REGISTRY: quay.io
   QUAY_ORG: quay.io/jumpstarter-dev
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   build-and-push-image:
     if: github.event_name != 'pull_request' || contains(toJSON(github.event.pull_request.labels.*.name), 'build-pr-images')
