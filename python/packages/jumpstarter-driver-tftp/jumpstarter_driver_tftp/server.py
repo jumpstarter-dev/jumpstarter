@@ -194,9 +194,9 @@ class TftpServerProtocol:
             negotiated_options, blksize, timeout = self._negotiate_options(options)
             self.logger.info(f"Negotiated options: {negotiated_options}")
             await self._start_transfer(resolved_path, addr, blksize, timeout, negotiated_options)
-        except Exception as e:  # pragma: no cover  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             self.logger.error(f"Error handling RRQ from {addr}: {e}")
-            self._send_error(addr, TftpErrorCode.NOT_DEFINED, str(e))
+            self._send_error(addr, TftpErrorCode.NOT_DEFINED, "Server error")
 
     def _send_oack(self, addr: tuple[str, int], options: dict):
         """Send Option Acknowledgment (OACK) packet."""

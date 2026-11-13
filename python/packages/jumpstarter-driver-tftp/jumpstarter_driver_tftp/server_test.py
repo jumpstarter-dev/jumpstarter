@@ -1,3 +1,4 @@
+import logging
 import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,6 +16,7 @@ from anyio import (
     sleep,
 )
 from opendal import AsyncOperator
+from opendal.exceptions import PermissionDenied
 
 from jumpstarter_driver_tftp import server as server_module
 from jumpstarter_driver_tftp.server import Opcode, TftpErrorCode, TftpServer
@@ -539,3 +541,20 @@ async def test_a_request_without_acceptable_options_starts_with_data(tftp, clien
     reply = await reply_to(client, port, rrq("file.bin", blksize="invalid", tsize="0"))
 
     assert (opcode(reply), second_field(reply), len(reply) - 4) == (Opcode.DATA, 1, 512)
+
+
+class _DeniedOperator:
+    async def stat(self, path: str):
+        raise PermissionDenied(f"no search permission on the directory of {path}")
+
+
+@pytest.mark.anyio
+async def test_a_storage_failure_gets_an_error_without_its_details(tmp_path, client, caplog):
+    caplog.set_level(logging.ERROR, logger="TftpServer")
+
+    async with _serving(_server(tmp_path, operator=_DeniedOperator())) as port:
+        reply = await reply_to(client, port, rrq("file.bin"))
+
+    assert (opcode(reply), second_field(reply)) == (Opcode.ERROR, TftpErrorCode.NOT_DEFINED)
+    assert b"search permission" not in reply
+    assert "no search permission on the directory of file.bin" in caplog.text
