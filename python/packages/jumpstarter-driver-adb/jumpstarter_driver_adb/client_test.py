@@ -278,6 +278,7 @@ def _cli_device_client():
     client.info = lambda: {"transport": "usb", "selector": "usb:1-4.2", "present": "yes"}
     client.logger = MagicMock()
     client.portal = _Portal(KeyboardInterrupt())
+    client.children = {}
     return client
 
 

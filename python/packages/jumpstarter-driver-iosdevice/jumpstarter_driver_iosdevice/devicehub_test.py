@@ -122,7 +122,7 @@ async def test_prepare_creates_and_keeps_a_stand_in_identity(tmp_path):
     bridge = DeviceHubBridge(FakeBroker(), udid=UDID, state=state)
     info = await bridge.prepare(49152)
     assert info["name"] == "Test iPhone" and info["model"] == "iPhone17,1"
-    assert info["paired_hosts"] == 0
+    assert info["paired_hosts"] == 0 and info["udids"] == [UDID]
     assert state.stat().st_mode & 0o777 == 0o600
     identity = bridge.identity
     assert identity is not None and info["identifier"] == identity.identifier
@@ -157,8 +157,8 @@ async def test_stand_in_under_another_udid_has_its_own_identity(tmp_path):
     bridge = DeviceHubBridge(FakeBroker(), udid=UDID, state=state, presented_udid="STAND-IN")
     info = await bridge.prepare(49152)
     assert info["identifier"] != original
-    assert bridge.identity is not None and bridge.identity.udid == "STAND-IN"
-    assert bridge.identity.ecid not in (0, GENERAL["UniqueChipID"])
+    assert info["udids"] == ["STAND-IN", UDID]
+    assert bridge.identity is not None and bridge.identity.ecid not in (0, GENERAL["UniqueChipID"])
 
 
 @pytest.mark.anyio

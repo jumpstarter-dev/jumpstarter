@@ -26,6 +26,7 @@ from jumpstarter_driver_iosdevice.interface import IosDeviceInterface
 from jumpstarter_driver_power.common import PowerReading
 from jumpstarter_driver_power.driver import VirtualPowerInterface
 
+from .appium import IosSimulatorAppium, validate_appium
 from .http_service import HttpServiceProvider, SimulatorHttpContext, create_http_service, validate_http_service
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.driver import Driver, export, exportstream
@@ -134,6 +135,7 @@ class IosSimulator(CompositeInterface, Driver):
     companion_timeout: float = 30.0
     shutdown_timeout: float = 30.0
     http_service: dict | None = None
+    appium: dict | None = None
 
     def __post_init__(self):
         super().__post_init__()
@@ -149,10 +151,13 @@ class IosSimulator(CompositeInterface, Driver):
         self._http_service: HttpServiceProvider | None = None
         self.children["ios"] = IosSimulatorDevice(parent=self)
         self.children["power"] = IosSimulatorPower(parent=self)
+        if self.appium is not None:
+            self.children["appium"] = IosSimulatorAppium(parent=self, **self.appium)
 
     def _validate_config(self):
         self._validate_target_config()
         validate_http_service(self.http_service)
+        validate_appium(self.appium)
         for name in ("device_name", "state_dir", "xcrun", "idb_companion"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip() or "\x00" in value:
@@ -166,8 +171,8 @@ class IosSimulator(CompositeInterface, Driver):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
                 raise ConfigurationError(f"{name} must be positive and finite")
-        if "ios" in self.children or "power" in self.children:
-            raise ConfigurationError("ios and power children are reserved by IosSimulator")
+        if {"ios", "power", "appium"} & set(self.children):
+            raise ConfigurationError("ios, power and appium children are reserved by IosSimulator")
 
     def _validate_target_config(self):
         for name in ("device_type", "runtime", "golden_device_set", "golden_udid"):
@@ -416,7 +421,18 @@ class IosSimulator(CompositeInterface, Driver):
                     self.logger.warning("Could not clean up failed simulator startup: %s", cleanup)
                 raise
 
+    def _stop_appium(self, destroy: bool) -> None:
+        appium = self.children.get("appium")
+        if not isinstance(appium, IosSimulatorAppium):
+            return
+        if destroy:
+            appium.release()
+        else:
+            appium.stop_server()
+
     def _off(self, destroy: bool = False) -> None:
+        # Before the simulator stops, and before taking the lock Appium's startup checks need.
+        self._stop_appium(destroy)
         with self._lock:
             if self._http_service is not None:
                 self._http_service.close()
@@ -473,6 +489,22 @@ class IosSimulator(CompositeInterface, Driver):
             except (OSError, RuntimeError, ConfigurationError) as exc:
                 result["reason"] = str(exc)
             return result
+
+    def _lease_directory(self) -> Path:
+        # Lock-free: Appium calls this while holding its own lock.
+        directory = self._lease_dir
+        if directory is None:
+            raise RuntimeError("The simulator is not running; power it on first")
+        return directory
+
+    def _appium_target(self) -> tuple[str, str, str]:
+        """The udid, iOS version and private device set that Appium sessions are pinned to."""
+        with self._lock:
+            info = self._info()
+            if not info["present"]:
+                raise RuntimeError(info["reason"] or "The simulator is not running; power it on first")
+            assert self._udid is not None  # a present simulator has a resolved udid
+            return self._udid, info["os_version"], str(self._owned_set())
 
     def _connect_path(self) -> str:
         with self._lock:

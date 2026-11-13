@@ -2,12 +2,16 @@ import subprocess
 from collections.abc import Generator
 from concurrent.futures import CancelledError as FutureCancelledError
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
 import anyio
 import click
 from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 
 from jumpstarter.client import DriverClient
+
+if TYPE_CHECKING:
+    from jumpstarter_driver_appium.client import AppiumClient
 
 #: Seconds to allow the **local** ``adb connect`` when attaching.
 #:
@@ -197,6 +201,14 @@ class AdbDeviceClient(DriverClient):
     and ``serve`` just holds the address open so you can drive adb yourself.
     """
 
+    @property
+    def appium(self) -> "AppiumClient":
+        """The device's Appium, when the exporter configures one; see the shared Appium client."""
+        child = self.children.get("appium")
+        if child is None:
+            raise AttributeError("Appium is not configured for this device on the exporter")
+        return child  # ty: ignore[invalid-return-type]
+
     def info(self) -> dict:
         """Describe the device: transport, selector, and whether it is present."""
         return self.call("info")
@@ -282,6 +294,9 @@ class AdbDeviceClient(DriverClient):
             Jumpstarter does not wrap the adb CLI. Use `connect` to add this device to
             your own ADB server, then run your own `adb -s <address> ...`.
             """
+
+        if "appium" in self.children:
+            adb.add_command(self.appium.cli(), "appium")
 
         @adb.command()
         def info():

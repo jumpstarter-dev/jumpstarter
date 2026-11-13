@@ -10,10 +10,11 @@ import sys
 import tempfile
 from collections.abc import Generator, Sequence
 from concurrent.futures import CancelledError
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
+from typing import TYPE_CHECKING
 from xml.parsers.expat import ExpatError
 
 import anyio
@@ -22,6 +23,10 @@ from anyio import to_thread
 from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 
 from jumpstarter.client import DriverClient
+
+if TYPE_CHECKING:
+    from jumpstarter_driver_appium.client import AppiumClient
+    from jumpstarter_driver_appium.common import AppiumTarget
 
 CONNECT_TIMEOUT = 60.0
 DISCONNECT_TIMEOUT = 30.0
@@ -170,7 +175,8 @@ class _IosGroup(click.Group):
     """Keep arguments after `--` opaque to Click and to subcommand dispatch."""
 
     def parse_args(self, ctx, args):
-        if "--" in args:
+        # `appium` parses its own `-- COMMAND`.
+        if "--" in args and args[0] != "appium":
             separator = args.index("--")
             command = args[separator + 1 :]
             args = args[:separator]
@@ -206,6 +212,14 @@ def _usbflux_registered(usbfluxctl: str, target: str) -> bool:
 
 
 class IosDeviceClient(DriverClient):
+    @property
+    def appium(self) -> "AppiumClient":
+        """The device's Appium, when the exporter configures one; see the shared Appium client."""
+        child = self.children.get("appium")
+        if child is None:
+            raise AttributeError("Appium is not configured for this device on the exporter")
+        return child  # ty: ignore[invalid-return-type]
+
     def info(self) -> dict:
         info = self.call("info")
         # Generic RPC values carry every number as a float; ports are integers.
@@ -327,7 +341,7 @@ class IosDeviceClient(DriverClient):
         if sys.platform != "darwin":
             raise RuntimeError(
                 f"Device Hub is only supported on macOS clients with Xcode 27 or later; this client runs on "
-                f"{platform.system() or sys.platform}. Use `j ios serve` to reach the device from here."
+                f"{platform.system() or sys.platform}. Use `j ios serve` or Appium to reach the device from here."
             )
 
     @staticmethod
@@ -370,6 +384,63 @@ class IosDeviceClient(DriverClient):
                 raise
 
     @contextmanager
+    def devicehub_appium(
+        self,
+        xctestrun: str | os.PathLike,
+        *,
+        appium: str = "appium",
+        pair: bool = False,
+        timeout: float = 180.0,
+    ) -> Generator["AppiumTarget", None, None]:
+        """Show the device in Device Hub, run WebDriverAgent over its tunnel and Appium on this Mac.
+
+        ``xctestrun`` is the ``.xctestrun`` file of a WebDriverAgent build signed
+        for the device; Jumpstarter does not build or sign it. Xcode installs and
+        starts it through the lease, so tests can be watched and debugged in
+        Device Hub while they run. ``appium`` is your installed Appium launcher,
+        with its XCUITest driver. Yields the same target as ``appium.serve()``
+        on other devices, and sessions accept the same capabilities, with
+        tokens from the target's own ``upload_app()``: a gateway in front of
+        Appium installs applications with devicectl (see the
+        ``devicehub_appium`` module). Its
+        ``wda_url`` is WebDriverAgent itself. Appium and
+        WebDriverAgent stop, and the device becomes unavailable in Device Hub,
+        when the context closes. Pairing works as for ``devicehub()``.
+        """
+        self._require_macos()
+        path = Path(xctestrun)
+        if path.suffix != ".xctestrun" or not path.is_file():
+            raise ValueError(f"{path} is not an .xctestrun file; build WebDriverAgent with build-for-testing")
+        from jumpstarter_driver_appium.common import AppiumTarget
+        from jumpstarter_driver_appium.local import find_appium, local_appium
+
+        from .devicehub_appium import DEVICECTL_ENVIRONMENT, Applications, Devicectl, DeviceHubPolicy, gateway
+        from .devicehub_mac import shown, webdriveragent
+
+        find_appium(appium)  # Before pairing and starting WebDriverAgent.
+        self._ensure_devicehub_link()
+
+        @asynccontextmanager
+        async def session():
+            async with (
+                shown(self, code=self._devicehub_code, force_pair=pair, notify=click.echo) as info,
+                webdriveragent(path, udids=info["udids"], timeout=timeout, notify=click.echo) as agent,
+            ):
+                yield agent
+
+        applications = Applications()
+        with (
+            self.portal.wrap_async_context_manager(session()) as agent,
+            local_appium(appium, env={**os.environ, **DEVICECTL_ENVIRONMENT}) as url,
+        ):
+            capabilities = agent.capabilities()
+            policy = DeviceHubPolicy(capabilities, applications, Devicectl(agent.udid))
+            with self.portal.wrap_async_context_manager(gateway(url, policy)) as endpoint:
+                yield AppiumTarget(
+                    url=endpoint, default_capabilities=capabilities, wda_url=agent.url, uploader=applications.add
+                )
+
+    @contextmanager
     def forward(self, port: int, *, local_port: int | None = None) -> Generator[str, None, None]:
         """Forward an exporter-configured device port, binding only loopback.
 
@@ -406,7 +477,7 @@ class IosDeviceClient(DriverClient):
         def ios(ctx, protocol):
             """One iOS device. Run your own tool with: ios [--protocol NAME] -- COMMAND."""
             command = ctx.meta.get("ios_command")
-            if command is not None and ctx.invoked_subcommand != "https":
+            if command is not None and ctx.invoked_subcommand not in ("https", "devicehub"):
                 if ctx.invoked_subcommand is not None:
                     raise click.UsageError("Use ios -- COMMAND without a subcommand", ctx)
                 with _cli_errors():
@@ -492,10 +563,51 @@ class IosDeviceClient(DriverClient):
         # Hidden off macOS, but still answers with an explanation instead of "No such command".
         @ios.command(hidden=sys.platform != "darwin")
         @click.option("--pair", "force_pair", is_flag=True, help="Pair this Mac with the device again")
-        def devicehub(force_pair):
-            """Show the device in Xcode's Device Hub on this Mac until Ctrl+C."""
+        @click.option(
+            "--wda",
+            "xctestrun",
+            type=click.Path(exists=True, dir_okay=False, path_type=Path),
+            help="Also run WebDriverAgent from this signed .xctestrun build, and Appium on this Mac",
+        )
+        @click.option("--appium", "appium", default="appium", show_default=True, help="Your local Appium launcher")
+        @click.pass_context
+        def devicehub(ctx, force_pair, xctestrun, appium):
+            """Show the device in Xcode's Device Hub on this Mac until Ctrl+C.
+
+            With --wda, also print an Appium endpoint for it, or run: ios devicehub --wda FILE -- COMMAND.
+            """
+            command = ctx.parent.meta.get("ios_command")
+            if command is not None and xctestrun is None:
+                raise click.UsageError("devicehub runs a command only with --wda", ctx)
             with _cli_errors():
-                self.devicehub(pair=force_pair)
+                if xctestrun is None:
+                    self.devicehub(pair=force_pair)
+                    return
+                with self.devicehub_appium(xctestrun, appium=appium, pair=force_pair) as target:
+                    if command is None:
+                        click.echo(
+                            json.dumps(
+                                {"url": target.url, "wda_url": target.wda_url, "capabilities": target.capabilities()}
+                            )
+                        )
+                        click.echo("Press Ctrl+C to stop Appium and WebDriverAgent and make the device unavailable.")
+                        _wait_for_interrupt(self)
+                        return
+                    result = self.portal.call(
+                        partial(
+                            anyio.run_process,
+                            command,
+                            env=target.environment(),
+                            stdin=None,
+                            stdout=None,
+                            stderr=None,
+                            check=False,
+                        )
+                    )
+            ctx.exit(result.returncode if result.returncode >= 0 else 128 - result.returncode)
+
+        if "appium" in self.children:
+            ios.add_command(self.appium.cli(), "appium")
 
         @ios.command()
         @click.argument("ports", nargs=-1, type=click.IntRange(1, 65535), required=True)

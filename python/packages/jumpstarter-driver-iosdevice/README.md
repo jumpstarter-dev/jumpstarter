@@ -20,6 +20,7 @@ under their respective licenses; Jumpstarter does not bundle or download them.
 | [go-ios](https://github.com/danielpaulus/go-ios) | Device management and automation |
 | [libimobiledevice](https://github.com/libimobiledevice/libimobiledevice) | Device utilities and libraries |
 | [usbfluxd](https://github.com/corellium/usbfluxd) | Access a remote usbmux endpoint from local tools |
+| [Appium](https://appium.io/docs/en/latest/) | UI automation; the exporter can run it for the lease |
 
 The exporter needs a running usbmux daemon and a device running iOS 17.4 or
 later. Pair the device on the exporter before leasing it. Developer services
@@ -39,7 +40,9 @@ Do this once per device, on the exporter host, with the device unlocked:
    tap **Enable** in the prompt, then confirm with the passcode. If the toggle is
    not shown, connect the device to Xcode or a developer tool once so iOS offers
    it.
-3. Verify from the exporter host with libimobiledevice: `idevice_id -l` lists
+3. For UI automation with Appium, enable **Settings > Developer > Enable UI
+   Automation**.
+4. Verify from the exporter host with libimobiledevice: `idevice_id -l` lists
    the UDID and `idevicepair validate` confirms the pairing.
 
 Keep the device unlocked while tools install or launch test runners; iOS may
@@ -85,6 +88,7 @@ that connection uses plain TCP.
 | `devicehub` | Let macOS clients show the device in Xcode's Device Hub | bool | no | `false` |
 | `devicehub_state` | File that keeps the Device Hub identity and paired Macs | str | no | — |
 | `devicehub_udid` | UDID the device presents in Device Hub | str | no | the device's UDID |
+| `appium` | Run Appium on the exporter for this device; see [Appium](#appium) | dict | no | — |
 
 `http_port` and `devicehub` require exporter trust mode. `http_port` must not
 also appear in `forward_ports`. The operator starts the HTTP service. Lockdown port 62078
@@ -102,6 +106,7 @@ j ios connect
 j ios forward 9100
 j ios https
 j ios devicehub    # macOS clients only
+j ios devicehub --wda WebDriverAgentRunner.xctestrun
 ```
 
 `serve` prints a loopback address and `USBMUXD_SOCKET_ADDRESS` for your tool.
@@ -152,6 +157,85 @@ restarts; without it, every Mac pairs again after a restart. Set
 `devicehub_udid` only when the same Mac can also see the device directly, as on
 a test bench, so that Device Hub keeps the two apart.
 
+### Appium through Device Hub
+
+Device Hub also gives Xcode on the Mac the device's developer services, so
+WebDriverAgent (WDA) can run over the same connection: tests run on the device
+while you watch them, and can pause to inspect it, in Device Hub. Appium then
+runs on the Mac rather than the exporter; the
+{doc}`UI automation guide <../../../getting-started/guides/ui-automation>`
+compares the two.
+
+Build WDA once, signed with a provisioning profile that includes the device;
+Jumpstarter does not build or sign it. From the
+[WebDriverAgent](https://github.com/appium/appium-ios/tree/main/packages/webdriveragent) checkout that your
+Appium XCUITest driver uses:
+
+```shell
+xcodebuild build-for-testing -project WebDriverAgent.xcodeproj \
+  -scheme WebDriverAgentRunner -destination generic/platform=iOS \
+  -derivedDataPath wda DEVELOPMENT_TEAM=<team> \
+  PRODUCT_BUNDLE_IDENTIFIER=<your.prefix>.WebDriverAgentRunner
+```
+
+Turn on **Settings > Developer > Enable UI Automation** on the device. Then,
+inside a lease, pass the `.xctestrun` file the build wrote under
+`wda/Build/Products`:
+
+```shell
+j ios devicehub --wda wda/Build/Products/WebDriverAgentRunner_iphoneos27.1-arm64.xctestrun
+```
+
+The command shows the device in Device Hub, has Xcode install and start WDA
+through the lease, starts your installed Appium on this Mac, and prints the
+Appium URL, WDA's address and the capabilities to use. `--appium PATH` selects
+the Appium launcher, and `-- COMMAND` runs a command with the endpoint in its
+environment instead. Appium and WDA stop when the command stops. From Python,
+`devicehub_appium()` does the same for the length of a `with` block and yields
+the same target as `ios.appium.serve()`, so tests do not change between the two:
+
+```python
+from appium import webdriver
+from appium.options.ios import XCUITestOptions
+
+from jumpstarter.common.utils import env
+
+with env() as root, root.ios.devicehub_appium("wda/Build/Products/WebDriverAgentRunner.xctestrun") as target:
+    options = XCUITestOptions().load_capabilities(target.capabilities())
+    options.set_capability("appium:bundleId", "com.apple.Preferences")
+    # or an application of your own: options.set_capability("appium:app", target.upload_app("build/MyApp.ipa"))
+    driver = webdriver.Remote(target.url, options=options, client_config=target.client_config())
+    try:
+        print(driver.page_source)
+    finally:
+        driver.quit()
+```
+
+Appium runs on the Mac here because only the Mac reaches WDA, at the device's
+address inside the Device Hub connection rather than over Wi-Fi. Install
+Appium and its XCUITest driver on the Mac; Jumpstarter does not bundle them.
+
+Sessions behave as on the exporter's Appium. Appium installs apps, reads logs
+and resets devices through usbmux, which this connection does not provide, so
+the target's URL is a gateway in front of it that applies the exporter's rules
+and fills the gap:
+
+- `appium:app`, `appium:otherApps` and `mobile: installApp` take tokens from
+  `target.upload_app()` (an `.ipa`, a zipped `.app` or an `.app` bundle built
+  for devices). The gateway installs them with `xcrun devicectl`, removing an
+  installed copy first unless you ask for `appium:noReset`, as Appium does,
+  and starts `appium:app` by its bundle identifier. Tokens from
+  `ios.appium.upload_app()` belong to the exporter's Appium and do not work
+  here.
+- `appium:bundleId` works: Appium checks for installed apps through devicectl.
+- `mobile: removeApp` uninstalls with devicectl, and `mobile: killApp` stops
+  the app as `mobile: terminateApp` does.
+- `appium:fullReset`, `appium:usePreinstalledWDA` and `appium:mjpegServerPort`
+  are ignored, as on the simulator, where the target fixes them;
+  `appium:resetLocationService` and `appium:customSSLCert` are rejected.
+- Web views, MJPEG screen streaming, `mobile: listApps` and the device's logs
+  also need usbmux and are not available.
+
 ### HTTPS services
 
 `https(port=0)` returns an endpoint with `url`, `ca_file` and provider-defined
@@ -183,6 +267,77 @@ All listeners bind `127.0.0.1`. Closing a context removes its listener and
 public CA files; keep the context open for the tool's entire lifetime. Exporter
 services and identities are revoked at lease teardown, reset or device detach.
 Externally started device services remain owned by their launcher.
+
+### Appium
+
+With an `appium` block, the exporter runs [Appium](https://appium.io/docs/en/latest/)
+for the lease, and clients open sessions through the shared
+{doc}`Appium client <appium>`, the same interface every UI-automation target
+provides. The
+{doc}`UI automation guide <../../../getting-started/guides/ui-automation>`
+explains why Jumpstarter uses Appium and how to set it up.
+The exporter needs Appium and its
+[XCUITest driver](https://github.com/appium/appium-xcuitest-driver), usually
+pinned in the exporter's container image; clients do not need Appium.
+Jumpstarter does not build, sign, install or bundle
+[WebDriverAgent (WDA)](https://github.com/appium/appium-ios/tree/main/packages/webdriveragent).
+
+Appium reaches the device through the exporter's own usbmux daemon (the
+`usbmux_socket`, or `usbmux_host` for network transport) and every session is
+pinned to the device's udid and iOS version. Choose how WDA starts:
+
+- **Attach to a running WDA** with `wda_port`, usually 8100. Start WDA with
+  your device tools; Appium reaches it through a loopback forward on the
+  exporter.
+
+  ```yaml
+  appium:
+    executable: /opt/appium/node_modules/.bin/appium
+    home: /opt/appium/home
+    wda_port: 8100
+  ```
+
+- **Let Appium launch an installed WDA** by fixing the capabilities. On iOS 17
+  and later Appium launches it through a RemoteXPC tunnel, which the exporter
+  host must allow; see the XCUITest driver's documentation.
+
+  ```yaml
+  appium:
+    capabilities:
+      appium:usePreinstalledWDA: true
+      appium:updatedWDABundleId: dev.example.WebDriverAgentRunner
+  ```
+
+`capabilities`, `env`, `executable`, `home`, `startup_timeout` and
+`max_upload_bytes` are described in {doc}`appium`. Then, inside a lease:
+
+```python
+from appium import webdriver
+from appium.options.ios import XCUITestOptions
+
+from jumpstarter.common.utils import env
+
+with env() as root, root.ios.appium.serve() as target:
+    options = XCUITestOptions().load_capabilities(target.capabilities())
+    options.bundle_id = "com.apple.Preferences"
+    driver = webdriver.Remote(target.url, options=options, client_config=target.client_config())
+    try:
+        print(driver.page_source)
+    finally:
+        driver.quit()
+```
+
+`j ios appium` prints the endpoint, `j ios appium -- COMMAND` runs a command
+with it in the environment, and `j ios appium upload APP.ipa` uploads an app
+for `appium:app`. Appium sees every device on the exporter's usbmux daemon but
+sessions only reach the leased one; give each device its own exporter or
+usbmux endpoint when tenants must not see each other's devices.
+
+To run Appium on the client instead, configure `http_port` for an
+operator-started WDA and use [HTTPS services](#https-services) for its URL
+together with `j ios serve` for usbmux. On a Mac,
+[Appium through Device Hub](#appium-through-device-hub) starts a WDA build you
+provide.
 
 ## Security and limits
 
@@ -242,7 +397,7 @@ Client:
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_iosdevice.client.IosDeviceClient()
-    :members: info, serve, connect, forward, https, run
+    :members: info, serve, connect, forward, https, run, devicehub, devicehub_appium, appium
 ```
 
 HTTPS endpoint:

@@ -14,6 +14,7 @@ dependencies = [
   "jumpstarter-cli-driver",
   "jumpstarter-driver-adb",
   "jumpstarter-driver-androidemulator",
+  "jumpstarter-driver-appium",
   "jumpstarter-driver-ble",
   "jumpstarter-driver-bt-peer",
   "jumpstarter-driver-can",
