@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: TID251 - stop_server() cancels connections from any thread
 import json
 import os
 import shutil

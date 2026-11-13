@@ -1,12 +1,13 @@
-import asyncio
 import http.client
 import json
+import math
 import socket
 import sys
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 from urllib.parse import urlsplit
 
+import anyio
 import pytest
 from click.testing import CliRunner
 from jumpstarter_driver_appium.testing import write_fake_appium
@@ -24,13 +25,13 @@ class EchoPort:
     """A device TCP port that answers every chunk with ``wda:`` + the chunk."""
 
     def __init__(self):
-        self.queue: asyncio.Queue[bytes] = asyncio.Queue()
+        self._send, self._receive = anyio.create_memory_object_stream[bytes](math.inf)
 
     async def send(self, data: bytes) -> None:
-        await self.queue.put(b"wda:" + data)
+        await self._send.send(b"wda:" + data)
 
     async def receive(self, max_bytes: int = 65536) -> bytes:
-        return await self.queue.get()
+        return await self._receive.receive()
 
 
 @pytest.fixture

@@ -1,4 +1,3 @@
-import asyncio
 import json
 import os
 import ssl
@@ -48,9 +47,13 @@ def _integers(value: Any) -> Any:
 
 
 def _is_cancelled(exc: BaseException) -> bool:
-    # Waits run in a worker thread, where get_cancelled_exc_class() cannot see the backend.
-    return isinstance(exc, (asyncio.CancelledError, CancelledError)) or (
-        type(exc).__name__ == "Cancelled" and type(exc).__module__.startswith("trio")
+    # Waits run in a worker thread, where get_cancelled_exc_class() cannot see the
+    # backend, so identify each backend's cancellation exception by name.
+    name, module = type(exc).__name__, type(exc).__module__
+    return (
+        isinstance(exc, CancelledError)
+        or (name == "CancelledError" and module.startswith("asyncio"))
+        or (name == "Cancelled" and module.startswith("trio"))
     )
 
 

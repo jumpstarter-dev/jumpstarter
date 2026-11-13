@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
 import threading
-from contextlib import suppress
+from contextlib import ExitStack, suppress
 from dataclasses import dataclass, field
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
-from anyio import from_thread
+from anyio import create_task_group, create_tcp_listener, from_thread
+from anyio.abc import SocketAttribute, SocketListener, SocketStream
 from jumpstarter_driver_appium.driver import AppiumDriver, validate_appium_config
 
 from jumpstarter.common.exceptions import ConfigurationError
@@ -38,47 +39,49 @@ class _WdaForward:
 
     def __init__(self, device: IosDevice, udid: str, port: int):
         self.device, self.udid, self.port = device, udid, port
-        self.loop = asyncio.new_event_loop()
-        self.thread = threading.Thread(target=self.loop.run_forever, name="appium-wda-forward", daemon=True)
-        self.thread.start()
-        self.server = asyncio.run_coroutine_threadsafe(
-            asyncio.start_server(self._handle, "127.0.0.1", 0), self.loop
-        ).result(timeout=10)
-        self.local_port = self.server.sockets[0].getsockname()[1]
-
-    async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self._stack = ExitStack()
         try:
-            async with self.device._daemon().connect_device(self.udid, self.port) as upstream:
+            portal = self._stack.enter_context(from_thread.start_blocking_portal())
+            listener = portal.call(partial(create_tcp_listener, local_host="127.0.0.1", local_port=0))
+            self.local_port = listener.extra(SocketAttribute.local_port)
+            serving = portal.start_task_soon(self._serve, listener)
+            self._stack.callback(serving.cancel)
+        except BaseException:
+            self._stack.close()
+            raise
 
-                async def to_device():
-                    while data := await reader.read(CHUNK_SIZE):
-                        await upstream.send(data)
+    async def _serve(self, listener: SocketListener) -> None:
+        async with listener:
+            await listener.serve(self._handle)
 
-                async def from_device():
-                    with suppress(Exception):
-                        while True:
-                            writer.write(await upstream.receive(CHUNK_SIZE))
-                            await writer.drain()
+    async def _handle(self, client: SocketStream) -> None:
+        async with client:
+            try:
+                async with (
+                    self.device._daemon().connect_device(self.udid, self.port) as upstream,
+                    create_task_group() as tg,
+                ):
 
-                tasks = [asyncio.ensure_future(to_device()), asyncio.ensure_future(from_device())]
-                await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-                for task in tasks:
-                    task.cancel()
-        except Exception as exc:  # noqa: BLE001 - one failed connection must not stop the forward
-            self.device.logger.warning("WebDriverAgent forward failed: %s", exc)
-        finally:
-            writer.close()
+                    async def to_device():
+                        with suppress(Exception):
+                            async for data in client:
+                                await upstream.send(data)
+                        tg.cancel_scope.cancel()
+
+                    async def from_device():
+                        with suppress(Exception):
+                            while True:
+                                await client.send(await upstream.receive(CHUNK_SIZE))
+                        tg.cancel_scope.cancel()
+
+                    tg.start_soon(to_device)
+                    tg.start_soon(from_device)
+            except Exception as exc:  # noqa: BLE001 - one failed connection must not stop the forward
+                self.device.logger.warning("WebDriverAgent forward failed: %s", exc)
 
     def close(self) -> None:
-        async def stop():
-            self.server.close()
-            await self.server.wait_closed()
-
         with suppress(Exception):
-            asyncio.run_coroutine_threadsafe(stop(), self.loop).result(timeout=10)
-        self.loop.call_soon_threadsafe(self.loop.stop)
-        self.thread.join(timeout=10)
-        self.loop.close()
+            self._stack.close()
 
 
 @dataclass(kw_only=True)
