@@ -4,6 +4,13 @@ on:
   workflow_dispatch:
   pull_request:
   merge_group:
+  # A push to main only runs the build jobs, to save their caches where pull
+  # requests and the merge queue can restore them: a cache saved by a pull
+  # request or a merge-queue run is visible to that ref alone. The tests have
+  # already passed in the merge queue on this exact tree.
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -83,9 +90,36 @@ jobs:
           go-version-file: .go-version
           cache-dependency-path: "**/go.sum"
 
-      - name: Cache controller image
+      # e2e-tests restores the kind, kustomize and grpcurl it builds from
+      # source, but only saves them in its own run's scope. Build them here on
+      # pushes to main, where every pull request can restore them. Saved before
+      # the image build, which leaves its own binaries in controller/bin.
+      - name: Read tool versions from Makefile
+        if: github.event_name == 'push'
+        uses: ./.github/actions/read-tool-versions
+
+      - name: Restore controller tools
+        if: github.event_name == 'push'
+        id: tools-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: controller/bin
+          key: controller-tools-${{ matrix.arch }}-kind${{ env.KIND_VERSION }}-kustomize${{ env.KUSTOMIZE_VERSION }}-grpcurl${{ env.GRPCURL_VERSION }}
+
+      - name: Build controller tools
+        if: github.event_name == 'push' && steps.tools-cache.outputs.cache-hit != 'true'
+        run: make -C controller kind kustomize grpcurl
+
+      - name: Save controller tools
+        if: github.event_name == 'push' && steps.tools-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: controller/bin
+          key: ${{ steps.tools-cache.outputs.cache-primary-key }}
+
+      - name: Restore controller image
         id: cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/controller-image.tar
           # The tar also holds the telemetry image; the prefix changed when it was added.
@@ -98,7 +132,17 @@ jobs:
           docker save quay.io/jumpstarter-dev/jumpstarter-controller:latest \
             quay.io/jumpstarter-dev/jumpstarter-telemetry:latest -o /tmp/controller-image.tar
 
+      # Not from the merge queue: its refs are used once, so nothing could
+      # restore the cache, and it would only evict caches other runs need.
+      - name: Save controller image
+        if: steps.cache.outputs.cache-hit != 'true' && github.event_name != 'merge_group'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: /tmp/controller-image.tar
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
       - name: Upload controller image
+        if: github.event_name != 'push'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: controller-image-${{ matrix.arch }}
@@ -125,9 +169,9 @@ jobs:
           go-version-file: .go-version
           cache-dependency-path: "**/go.sum"
 
-      - name: Cache operator artifacts
+      - name: Restore operator artifacts
         id: cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             /tmp/operator-image.tar
@@ -141,7 +185,17 @@ jobs:
           docker save quay.io/jumpstarter-dev/jumpstarter-operator:latest -o /tmp/operator-image.tar
           cp controller/deploy/operator/dist/install.yaml /tmp/operator-install.yaml
 
+      - name: Save operator artifacts
+        if: steps.cache.outputs.cache-hit != 'true' && github.event_name != 'merge_group'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            /tmp/operator-image.tar
+            /tmp/operator-install.yaml
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
       - name: Upload operator artifacts
+        if: github.event_name != 'push'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: operator-image-${{ matrix.arch }}
@@ -170,9 +224,9 @@ jobs:
           go-version-file: .go-version
           cache-dependency-path: "**/go.sum"
 
-      - name: Cache exporterset-controller image
+      - name: Restore exporterset-controller image
         id: cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/exporterset-controller-image.tar
           key: exporterset-controller-image-${{ matrix.arch }}-${{ hashFiles('.go-version', 'controller/Makefile', 'controller/Containerfile.exporter-set-controller', 'controller/Containerfile.prebuilt', 'controller/go.mod', 'controller/go.sum', 'controller/cmd/exporter-set-controller/**', 'controller/api/**', 'controller/internal/**') }}
@@ -183,7 +237,15 @@ jobs:
           make -C controller docker-build-exporter-set-controller-ci
           docker save quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest -o /tmp/exporterset-controller-image.tar
 
+      - name: Save exporterset-controller image
+        if: steps.cache.outputs.cache-hit != 'true' && github.event_name != 'merge_group'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: /tmp/exporterset-controller-image.tar
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
       - name: Upload exporterset-controller image
+        if: github.event_name != 'push'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: exporterset-controller-image-${{ matrix.arch }}
@@ -204,9 +266,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Cache exporter image
+      - name: Restore exporter image
         id: cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/exporter-image.tar
           # Bust when exporter image inputs change: Containerfile, Python sources,
@@ -219,7 +281,15 @@ jobs:
           make -C controller docker-build-exporter
           docker save quay.io/jumpstarter-dev/jumpstarter:latest -o /tmp/exporter-image.tar
 
+      - name: Save exporter image
+        if: steps.cache.outputs.cache-hit != 'true' && github.event_name != 'merge_group'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: /tmp/exporter-image.tar
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
       - name: Upload exporter image
+        if: github.event_name != 'push'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: exporter-image-${{ matrix.arch }}
@@ -240,9 +310,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Cache qemu-runtime image
+      - name: Restore qemu-runtime image
         id: cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/qemu-runtime-image.tar
           # Bust when QEMU runtime inputs change.
@@ -254,7 +324,15 @@ jobs:
           make -C controller docker-build-qemu-runtime
           docker save quay.io/jumpstarter-dev/virtual/qemu-runtime:latest -o /tmp/qemu-runtime-image.tar
 
+      - name: Save qemu-runtime image
+        if: steps.cache.outputs.cache-hit != 'true' && github.event_name != 'merge_group'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: /tmp/qemu-runtime-image.tar
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
       - name: Upload qemu-runtime image
+        if: github.event_name != 'push'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: qemu-runtime-image-${{ matrix.arch }}
@@ -280,9 +358,9 @@ jobs:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
 
-      - name: Cache python wheels
+      - name: Restore python wheels
         id: cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: python/dist
           key: python-wheels-${{ hashFiles('python/**/*.py', 'python/**/pyproject.toml', 'python/uv.lock') }}
@@ -292,7 +370,15 @@ jobs:
         working-directory: python
         run: make build
 
+      - name: Save python wheels
+        if: steps.cache.outputs.cache-hit != 'true' && github.event_name != 'merge_group'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: python/dist
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
       - name: Upload python wheels
+        if: github.event_name != 'push'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: python-wheels
@@ -305,6 +391,7 @@ jobs:
 
   e2e-tests:
     needs: [changes, build-controller-image, build-operator-image, build-exporterset-controller-image, build-exporter-image, build-qemu-runtime-image, build-python-wheels]
+    if: github.event_name != 'push'
     strategy:
       matrix:
         include: ${{ fromJson(needs.changes.outputs.e2e-matrix) }}
@@ -383,6 +470,7 @@ jobs:
     # Skip on PRs — compat tests run in merge queue and workflow_dispatch.
     if: >-
       github.event_name != 'pull_request'
+      && github.event_name != 'push'
       && (needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-26.04
     timeout-minutes: 60
@@ -436,6 +524,7 @@ jobs:
     # Skip on PRs — compat tests run in merge queue and workflow_dispatch.
     if: >-
       github.event_name != 'pull_request'
+      && github.event_name != 'push'
       && (needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-26.04
     timeout-minutes: 60
@@ -496,7 +585,8 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     needs: [changes, e2e-tests, e2e-compat-old-controller, e2e-compat-old-client]
-    if: ${{ always() }}
+    # A push to main runs no tests, so there is nothing to gate.
+    if: ${{ always() && github.event_name != 'push' }}
     steps:
       - run: exit 1
         # Fail on failures or cancellations. Also fail if e2e-tests was skipped

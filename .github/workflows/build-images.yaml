@@ -198,8 +198,13 @@ jobs:
           tags: ${{ github.event_name == 'pull_request' && steps.meta.outputs.tags || steps.set-tags.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # One scope per image: in the shared default scope each image's
+          # export replaced the previous one's index, so builds mostly found
+          # another image's layers. Export only from branches: merge-queue and
+          # tag refs are used once, so their caches were never restored and
+          # only evicted ones that would be.
+          cache-from: type=gha,scope=${{ matrix.image_name }}
+          cache-to: ${{ (github.event_name != 'merge_group' && !startsWith(github.ref, 'refs/tags/')) && format('type=gha,mode=max,scope={0}', matrix.image_name) || '' }}
           build-args: |
             GIT_VERSION=${{ env.PEP440_VERSION }}
             GIT_COMMIT=${{ steps.build-args.outputs.git_commit }}

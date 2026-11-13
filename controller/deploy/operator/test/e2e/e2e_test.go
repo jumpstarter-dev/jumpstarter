@@ -403,7 +403,10 @@ spec:
         - address: login.%s
           nodeport:
             enabled: true
-            port: 30070 # send this to a higher nodeport to avoid collision with growing routers
+            # Above the routers, which take consecutive ports from 30011 as
+            # they scale, and unused by any other context: CI does not wait
+            # for a context's namespace (and its Services) to be deleted.
+            port: 30090
   routers:
     image: %s
     imagePullPolicy: IfNotPresent
