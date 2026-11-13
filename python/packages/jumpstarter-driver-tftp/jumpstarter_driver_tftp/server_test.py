@@ -519,3 +519,23 @@ async def test_ipv6_clients_are_served(tmp_path):
 
     async with client, _serving(_server(tmp_path, host="::1")) as port:
         assert await download(client, port, "file.bin", host="::1") == b"x" * 1000
+
+
+@pytest.mark.anyio
+async def test_only_acceptable_options_are_acknowledged(tftp, client):
+    root, port = tftp
+    (root / "file.bin").write_bytes(b"x" * 3000)
+
+    reply = await reply_to(client, port, rrq("file.bin", blksize="1024", timeout="999999"))
+
+    assert oack_options(reply) == {"blksize": "1024"}
+
+
+@pytest.mark.anyio
+async def test_a_request_without_acceptable_options_starts_with_data(tftp, client):
+    root, port = tftp
+    (root / "file.bin").write_bytes(b"x" * 3000)
+
+    reply = await reply_to(client, port, rrq("file.bin", blksize="invalid", tsize="0"))
+
+    assert (opcode(reply), second_field(reply), len(reply) - 4) == (Opcode.DATA, 1, 512)
