@@ -173,6 +173,8 @@ class TftpServerProtocol:
 
         if opcode == Opcode.RRQ:
             self.tg.start_soon(self._handle_read_request, data, addr)
+        elif opcode == Opcode.ERROR:
+            self.logger.debug(f"Ignoring ERROR from {addr}")
         else:
             self.logger.warning(f"Unsupported opcode {opcode} from {addr}")
             self._send_error(addr, TftpErrorCode.ILLEGAL_OPERATION, "Unsupported operation")
@@ -405,6 +407,7 @@ class TftpReadTransfer(TftpTransfer):
         self.last_ack = 0
         self.oack_confirmed = False
         self.negotiated_options = negotiated_options
+        self.ended_by_client = False
         self.current_packet: bytes | None = None
 
     async def start(self):
@@ -525,6 +528,8 @@ class TftpReadTransfer(TftpTransfer):
         expected_block = 0 if is_oack else self.block_num
 
         for attempt in range(1, self.retries + 1):
+            if self.ended_by_client:
+                return False
             try:
                 self._send_packet(packet)
                 self.logger.debug(
@@ -534,6 +539,8 @@ class TftpReadTransfer(TftpTransfer):
                 with fail_after(self.timeout):
                     await self.ack_received.wait()
 
+                if self.ended_by_client:
+                    return False
                 if self.last_ack == expected_block:
                     self.logger.debug(f"ACK received for block {expected_block}")
                     return True
@@ -544,6 +551,11 @@ class TftpReadTransfer(TftpTransfer):
                 self.logger.warning(f"Timeout waiting for ACK of block {expected_block} (Attempt {attempt})")
 
         return False
+
+    def handle_error(self, message: str):
+        self.logger.warning(f"{self.client_addr} ended the transfer: {message}")
+        self.ended_by_client = True
+        self.ack_received.set()
 
     def handle_ack(self, block_num: int):
         self.logger.debug(f"Received ACK for block {block_num} from {self.client_addr}")
@@ -599,6 +611,8 @@ class TftpTransferProtocol:
             block_num = int.from_bytes(data[2:4], "big")
             self.logger.debug(f"Received ACK for block {block_num} from {addr}")
             self.transfer.handle_ack(block_num)
+        elif opcode == Opcode.ERROR:
+            self.transfer.handle_error(data[4:].split(b"\x00", 1)[0].decode(errors="replace"))
         else:
             self.logger.warning(f"Unexpected opcode {opcode} from {addr}")
             self._send_error(addr, TftpErrorCode.ILLEGAL_OPERATION, "Unexpected opcode")
