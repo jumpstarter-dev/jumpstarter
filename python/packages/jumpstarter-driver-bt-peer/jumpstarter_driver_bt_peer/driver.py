@@ -1,35 +1,38 @@
+"""The exported driver: device lifecycle, connections, and playback commands.
+
+The Bluetooth detail lives next door. `a2dp` owns the stream and the SBC
+wire format, `avrcp` owns what the DUT displays, and `player` owns what the
+peer is playing. This module wires those together and exposes them.
+"""
+
 import contextlib
 import json
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, assert_never
 
 import anyio
-from bumble.a2dp import (
-    A2DP_SBC_CODEC_TYPE,
-    SbcMediaCodecInformation,
-    make_audio_source_service_sdp_records,
-)
-from bumble.avdtp import (
-    AVDTP_AUDIO_MEDIA_TYPE,
-    Listener,
-    MediaCodecCapabilities,
-    MediaPacketPump,
-)
+from bumble.a2dp import make_audio_source_service_sdp_records
+from bumble.avdtp import Listener
+from bumble.avrcp import TargetServiceSdpRecord
 from bumble.core import BT_BR_EDR_TRANSPORT, ClassOfDevice, DeviceClass
 from bumble.device import Connection, Device, DeviceConfiguration
 from bumble.hci import HCI_PERIPHERAL_ROLE
 from bumble.host import Host
+from bumble.l2cap import ClassicChannel
 from bumble.pairing import PairingConfig, PairingDelegate
-from bumble.rtp import MediaPacket
 from bumble.transport import open_transport
+from bumble.utils import AsyncRunner
 
+from .a2dp import ADVERTISED, A2dpSession, Track, validate_sbc
+from .avrcp import PeerDelegate, PeerProtocol, Reporter, parse_metadata
+from .errors import BtPeerError
+from .media import MAX_TRACK_BYTES
+from .player import Idle, Loaded, Paused, Player, Playing
 from jumpstarter.driver import Driver, export
 
-
-class BtPeerError(Exception):
-    pass
+__all__ = ["AutoAcceptDelegate", "BtPeer", "BtPeerError"]
 
 
 class AutoAcceptDelegate(PairingDelegate):
@@ -65,12 +68,30 @@ class BtPeer(Driver):
     """
 
     transport: str = "tcp-client:127.0.0.1:7300"
+    # Whether PLAY/PAUSE/STOP from the DUT control playback. Off by default so
+    # a DUT cannot silence a track the caller explicitly started.
+    follow_transport_keys: bool = False
 
     _device: Device | None = field(default=None, init=False, repr=False)
     _transport: Any = field(default=None, init=False, repr=False)
     _avdtp_listener: Listener | None = field(default=None, init=False, repr=False)
     _events: deque = field(default_factory=lambda: deque(maxlen=1000), init=False, repr=False)
     _connections: dict[int, Connection] = field(default_factory=dict, init=False, repr=False)
+    _session: A2dpSession | None = field(default=None, init=False, repr=False)
+    _avrcp: PeerProtocol | None = field(default=None, init=False, repr=False)
+    _avrcp_delegate: PeerDelegate | None = field(default=None, init=False, repr=False)
+    _reporter: Reporter | None = field(default=None, init=False, repr=False)
+    # Built in __post_init__ rather than by a default_factory, because it
+    # closes over this instance's callbacks.
+    _player: Player = field(init=False, repr=False)
+
+    def __post_init__(self):
+        super().__post_init__()
+        self._player = Player(
+            get_session=lambda: self._session,
+            get_reporter=lambda: self._reporter,
+            emit=self._emit,
+        )
 
     @classmethod
     def client(cls) -> str:
@@ -106,47 +127,82 @@ class BtPeer(Driver):
         connection.on("disconnection", on_disconnect)
 
     def _on_avdtp_connection(self, protocol) -> None:
-        S = SbcMediaCodecInformation
-        sbc_capabilities = MediaCodecCapabilities(
-            media_type=AVDTP_AUDIO_MEDIA_TYPE,
-            media_codec_type=A2DP_SBC_CODEC_TYPE,
-            media_codec_information=S(
-                sampling_frequency=S.SamplingFrequency.SF_48000 | S.SamplingFrequency.SF_44100,
-                channel_mode=S.ChannelMode.JOINT_STEREO | S.ChannelMode.STEREO,
-                block_length=S.BlockLength.BL_16 | S.BlockLength.BL_12 | S.BlockLength.BL_8,
-                subbands=S.Subbands.S_8,
-                allocation_method=S.AllocationMethod.LOUDNESS,
-                minimum_bitpool_value=2,
-                maximum_bitpool_value=53,
-            ),
+        self._session = A2dpSession(
+            protocol,
+            get_track=lambda: self._player.track,
+            on_exhausted=self._player.on_track_exhausted,
+            emit=self._emit,
         )
-
-        async def silence():
-            """Yield timestamped RTP packets so MediaPacketPump can stream."""
-            sequence_number = 0
-            timestamp_seconds = 0.0
-            while True:
-                packet = MediaPacket(
-                    2,
-                    0,
-                    0,
-                    0,
-                    sequence_number,
-                    int(timestamp_seconds * 8000),
-                    0,
-                    [],
-                    96,
-                    b"\x00",
-                )
-                packet.timestamp_seconds = timestamp_seconds
-                yield packet
-                sequence_number = (sequence_number + 1) & 0xFFFF
-                timestamp_seconds += 0.02
-                await anyio.sleep(0.02)
-
-        pump = MediaPacketPump(silence())
-        protocol.add_source(sbc_capabilities, pump)
         self._emit("avdtp_connected", {})
+
+        channel = getattr(protocol, "l2cap_channel", None)
+        if channel is not None:
+            # Without this the session outlives its channel, and the next
+            # play() operates on a protocol that is no longer connected.
+            channel.on(ClassicChannel.EVENT_CLOSE, self._on_avdtp_close)
+
+        # play() may have been called in the window between the DUT's ACL
+        # connection and its AVDTP channel, in which case it had no session
+        # to start a stream on and gave up. Pick the queued track up now,
+        # otherwise it sits there silently until something calls play again.
+        # A paused track stays paused: resuming it here would restart audio
+        # the caller deliberately stopped.
+        if isinstance(self._player.state, Playing):
+            AsyncRunner.spawn(self._resume_queued_track())
+
+    def _on_avdtp_close(self) -> None:
+        self._session = None
+        self._emit("avdtp_disconnected", {})
+
+    async def _resume_queued_track(self) -> None:
+        """Start a track that was queued before the DUT's AVDTP channel existed."""
+        before = self._player.state
+        if not isinstance(before, Playing):
+            return
+        session = self._session
+        if session is None:
+            return
+
+        try:
+            # The track was validated before any sink was known, against the
+            # advertised ceiling. Now that a stream is configured, re-check it
+            # rather than streaming audio the sink cannot decode.
+            config = await session.prepare()
+            await validate_sbc(before.track.data, config)
+            # Re-affirming the state it is already in starts the stream under
+            # the same lock as any other change.
+            state = await self._player.transition(before, before)
+        except Exception as exc:  # noqa: BLE001
+            if self._player.state is before:
+                self._emit("stream_resume_failed", {"error": str(exc)})
+            return
+
+        if state is None:
+            # stop_playback() or another play() landed while endpoint
+            # discovery was in flight. The stream is left started, sending
+            # filler, but this track is no longer the one to announce.
+            self._emit("stream_resume_discarded", {"reason": "playback changed while starting"})
+            return
+        self._emit("stream_resumed", state)
+
+    def _on_avrcp_key(self, key, pressed: bool) -> None:
+        """Handle transport keys pressed on the head unit.
+
+        Acting on these is opt-in. A DUT may send PAUSE as soon as it
+        connects -- Android does when it cannot resolve an addressed player --
+        which would otherwise silence a track the caller just asked to play.
+        The key is always recorded as an event so it stays observable.
+        """
+        name = getattr(key, "name", str(key))
+        self._emit("avrcp_key", {"key": name, "pressed": pressed, "honored": self.follow_transport_keys})
+        if not pressed or not self.follow_transport_keys:
+            return
+        if name == "PAUSE":
+            AsyncRunner.spawn(self.pause())
+        elif name == "STOP":
+            AsyncRunner.spawn(self.stop_playback())
+        elif name == "PLAY":
+            AsyncRunner.spawn(self.resume())
 
     @export
     async def start_peer(self, config_json: str = "{}") -> str:
@@ -209,15 +265,29 @@ class BtPeer(Driver):
                 delegate=AutoAcceptDelegate(),
             )
 
-            service_record_handle = 0x00010001
+            # A2DP source plus AVRCP target, the pair a phone advertises. The
+            # DUT needs the AVRCP record (UUID 110C) to treat this as a real
+            # media device; with the A2DP record alone it leaves its sink
+            # inactive and discards the audio.
+            audio_source_handle = 0x00010001
+            avrcp_target_handle = 0x00010002
             self._device.sdp_service_records = {
-                service_record_handle: make_audio_source_service_sdp_records(
-                    service_record_handle
-                )
+                audio_source_handle: make_audio_source_service_sdp_records(audio_source_handle),
+                avrcp_target_handle: TargetServiceSdpRecord(
+                    avrcp_target_handle
+                ).to_service_attributes(),
             }
 
             self._avdtp_listener = Listener.for_device(self._device)
             self._avdtp_listener.on("connection", self._on_avdtp_connection)
+
+            self._avrcp_delegate = PeerDelegate(
+                on_key=self._on_avrcp_key,
+                now_playing=self._player.now_playing,
+            )
+            self._avrcp = PeerProtocol(self._avrcp_delegate)
+            self._avrcp.listen(self._device)
+            self._reporter = Reporter(self._avrcp_delegate, self._avrcp, self.logger)
 
             self._device.on("connection", self._on_connection)
 
@@ -232,6 +302,9 @@ class BtPeer(Driver):
                     await self._device.power_off()
                 self._device = None
             self._avdtp_listener = None
+            self._avrcp = None
+            self._avrcp_delegate = None
+            self._reporter = None
             if self._transport is not None:
                 await self._transport.close()
                 self._transport = None
@@ -253,6 +326,11 @@ class BtPeer(Driver):
         transport = self._transport
         self._device = None
         self._transport = None
+        self._player.reset()
+        self._session = None
+        self._avrcp = None
+        self._avrcp_delegate = None
+        self._reporter = None
         self._connections.clear()
         self._events.clear()
 
@@ -289,13 +367,7 @@ class BtPeer(Driver):
 
         if self._connections:
             conn = next(iter(self._connections.values()))
-            return json.dumps({
-                "handle": conn.handle,
-                "address": str(conn.peer_address),
-                "transport": "BR/EDR" if conn.transport == BT_BR_EDR_TRANSPORT else "LE",
-                "role": "peripheral" if conn.role == HCI_PERIPHERAL_ROLE else "central",
-                "encrypted": conn.is_encrypted,
-            })
+            return json.dumps(_describe_connection(conn))
 
         event = anyio.Event()
         result_holder: list[Connection] = []
@@ -313,14 +385,7 @@ class BtPeer(Driver):
         finally:
             self._device.remove_listener("connection", on_connect)
 
-        conn = result_holder[0]
-        return json.dumps({
-            "handle": conn.handle,
-            "address": str(conn.peer_address),
-            "transport": "BR/EDR" if conn.transport == BT_BR_EDR_TRANSPORT else "LE",
-            "role": "peripheral" if conn.role == HCI_PERIPHERAL_ROLE else "central",
-            "encrypted": conn.is_encrypted,
-        })
+        return json.dumps(_describe_connection(result_holder[0]))
 
     @export
     async def wait_disconnection(self, timeout: int = 30) -> str:
@@ -378,17 +443,13 @@ class BtPeer(Driver):
         await conn.authenticate()
         await conn.encrypt()
 
-        self._emit("paired", {
+        result = {
             "handle": handle,
             "address": str(conn.peer_address),
             "encrypted": conn.is_encrypted,
-        })
-
-        return json.dumps({
-            "handle": handle,
-            "address": str(conn.peer_address),
-            "encrypted": conn.is_encrypted,
-        })
+        }
+        self._emit("paired", result)
+        return json.dumps(result)
 
     @export
     async def connect_to(self, address: str, timeout: int = 30) -> str:
@@ -414,13 +475,7 @@ class BtPeer(Driver):
         except TimeoutError:
             raise BtPeerError(f"connect to {address} timed out after {timeout}s") from None
 
-        return json.dumps({
-            "handle": connection.handle,
-            "address": str(connection.peer_address),
-            "transport": "BR/EDR" if connection.transport == BT_BR_EDR_TRANSPORT else "LE",
-            "role": "central",
-            "encrypted": connection.is_encrypted,
-        })
+        return json.dumps({**_describe_connection(connection), "role": "central"})
 
     @export
     def get_events(self, since: str = "0") -> str:
@@ -442,12 +497,136 @@ class BtPeer(Driver):
     @export
     def get_connections(self) -> str:
         """Return currently active connections as JSON array."""
-        conns = []
-        for conn in self._connections.values():
-            conns.append({
+        return json.dumps([
+            {
                 "handle": conn.handle,
                 "address": str(conn.peer_address),
                 "transport": "BR/EDR" if conn.transport == BT_BR_EDR_TRANSPORT else "LE",
                 "encrypted": conn.is_encrypted,
-            })
-        return json.dumps(conns)
+            }
+            for conn in self._connections.values()
+        ])
+
+    async def _receive_upload(self, src: str) -> bytes:
+        """Read a client resource into memory, bounded by MAX_TRACK_BYTES."""
+        data = bytearray()
+        async with self.resource(src) as res:
+            async for chunk in res:
+                data.extend(chunk)
+                if len(data) > MAX_TRACK_BYTES:
+                    raise BtPeerError(
+                        f"track is larger than the {MAX_TRACK_BYTES // (1024 * 1024)} MiB limit"
+                    )
+        if not data:
+            raise BtPeerError("uploaded track is empty")
+        return bytes(data)
+
+    @export
+    async def play(
+        self, src: str, name: str = "track", loop: bool = False, metadata_json: str = "{}"
+    ) -> str:
+        """Stream an uploaded SBC file to the DUT over A2DP.
+
+        src is a client resource handle. The audio must already be encoded in
+        the single SBC configuration the peer advertises; the client's play
+        command transcodes with ffmpeg to match.
+
+        metadata_json carries what the DUT should display for the track:
+        title, artist, album and duration_ms. The client fills it in from the
+        source file's tags.
+
+        Replaces any track already playing. Returns JSON describing the track.
+        """
+        if self._device is None:
+            raise BtPeerError("peer not running — call start_peer first")
+
+        data = await self._receive_upload(src)
+        metadata = parse_metadata(metadata_json, default_title=name)
+
+        session = self._session
+        # Configure before validating, so the upload is checked against the
+        # bitpool that was actually agreed rather than the wider range the
+        # peer advertises. Configuring leaves a running stream alone.
+        config = await session.prepare() if session is not None else ADVERTISED
+        # Validate before touching the state. Doing it later would silence
+        # whatever is playing even when the new upload turns out to be
+        # unusable.
+        frame = await validate_sbc(data, config)
+
+        target = Playing(Track(name=name, data=data, loop=bool(loop)), metadata)
+        # Read the state as late as possible: the upload above can take a
+        # while, and anything that happened during it is not a conflict.
+        before = self._player.state
+        stream_state = await self._player.transition(before, target)
+        if stream_state is None:
+            raise BtPeerError("playback changed while the track was being prepared")
+
+        info = {
+            "name": name,
+            "bytes": len(data),
+            "loop": bool(loop),
+            "bitpool": frame.bitpool,
+            **metadata.as_dict(),
+            **stream_state,
+        }
+        self._emit("track_started", info)
+        return json.dumps(info)
+
+    @export
+    async def pause(self) -> str:
+        """Suspend the stream, keeping the track and its position."""
+        match self._player.state:
+            case Idle():
+                return json.dumps({"status": "not_playing"})
+            case Paused(track=track):
+                return json.dumps({"status": "paused", "name": track.name})
+            case Playing(track=track, metadata=metadata) as state:
+                result = await self._player.transition(state, Paused(track, metadata))
+                if result is None:
+                    return json.dumps({"status": "not_playing"})
+                self._emit("track_paused", {"name": track.name, **result})
+                return json.dumps({"status": "paused", "name": track.name})
+            case _:  # pragma: no cover
+                assert_never(self._player.state)
+
+    @export
+    async def resume(self) -> str:
+        """Restart a stream suspended by pause()."""
+        state = self._player.state
+        if not isinstance(state, Loaded):
+            return json.dumps({"status": "not_playing"})
+
+        result = await self._player.transition(state, Playing(state.track, state.metadata))
+        if result is None:
+            return json.dumps({"status": "not_playing"})
+        self._emit("track_resumed", {"name": state.track.name, **result})
+        return json.dumps({"status": "resumed", "name": state.track.name, **result})
+
+    @export
+    async def stop_playback(self) -> str:
+        """Stop the current track and suspend the stream."""
+        state = self._player.state
+        if not isinstance(state, Loaded):
+            return json.dumps({"status": "not_playing"})
+
+        name = state.track.name
+        result = await self._player.transition(state, Idle())
+        if result is None:
+            return json.dumps({"status": "not_playing"})
+        self._emit("track_stopped", {"name": name, **result})
+        return json.dumps({"status": "stopped", "name": name})
+
+    @export
+    def playback_status(self) -> str:
+        """Return what the peer is currently streaming."""
+        return json.dumps(self._player.describe())
+
+
+def _describe_connection(conn: Connection) -> dict[str, Any]:
+    return {
+        "handle": conn.handle,
+        "address": str(conn.peer_address),
+        "transport": "BR/EDR" if conn.transport == BT_BR_EDR_TRANSPORT else "LE",
+        "role": "peripheral" if conn.role == HCI_PERIPHERAL_ROLE else "central",
+        "encrypted": conn.is_encrypted,
+    }
