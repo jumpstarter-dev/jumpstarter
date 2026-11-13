@@ -1,12 +1,15 @@
 import socket
+import threading
 from unittest.mock import AsyncMock, patch
 
 import anyio
 import pytest
+from anyio import TASK_STATUS_IGNORED, CancelScope, to_thread
 
+from jumpstarter_driver_tftp import driver as driver_module
 from jumpstarter_driver_tftp import server as server_module
 from jumpstarter_driver_tftp.driver import Tftp, TftpError
-from jumpstarter_driver_tftp.server import Opcode
+from jumpstarter_driver_tftp.server import Opcode, TftpServer
 
 from jumpstarter.common.utils import serve
 
@@ -182,4 +185,82 @@ def test_tftp_start_raises_when_the_port_is_taken(tmp_path, free_ipv4_udp_port):
 
         with pytest.raises(TftpError, match="Failed to start TFTP server: .*Address already in use"):
             server.start()
+    server.close()
+
+
+class _Call(threading.Thread):
+    """Runs *call* in a thread of its own, keeping what it raised."""
+
+    def __init__(self, call):
+        super().__init__(daemon=True)
+        self._call = call
+        self.error: Exception | None = None
+
+    def run(self):
+        try:
+            self._call()
+        except Exception as e:  # noqa: BLE001 - the test inspects whatever the thread raised
+            self.error = e
+
+
+@pytest.fixture
+def held_stop(monkeypatch):
+    """Make the driver's server hold its stop, after closing its socket, until released."""
+    stopping, release = threading.Event(), threading.Event()
+
+    class HeldStop(TftpServer):
+        async def start(self, *, task_status=TASK_STATUS_IGNORED):
+            try:
+                await super().start(task_status=task_status)
+            finally:
+                stopping.set()
+                with CancelScope(shield=True):
+                    await to_thread.run_sync(release.wait)
+
+    monkeypatch.setattr(driver_module, "TftpServer", HeldStop)
+    yield stopping, release
+    release.set()
+
+
+def _returns_while(release: threading.Event, held: _Call, overlapping: _Call) -> bool:
+    """Whether *overlapping* returns while *held* is still stopping the server; neither may raise."""
+    overlapping.start()
+    overlapping.join(0.2)
+    returned = not overlapping.is_alive()
+    release.set()
+    held.join(5)
+    overlapping.join(5)
+    assert not held.is_alive() and not overlapping.is_alive()
+    assert held.error is None and overlapping.error is None
+    return returned
+
+
+def test_a_stop_overlapping_another_returns_once_the_server_stopped(tmp_path, free_ipv4_udp_port, held_stop):
+    stopping, release = held_stop
+    server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=free_ipv4_udp_port)
+    server.start()
+    first = _Call(server.stop)
+    first.start()
+    assert stopping.wait(5)
+
+    assert not _returns_while(release, first, _Call(server.stop))
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.bind(("127.0.0.1", free_ipv4_udp_port))
+    server.close()
+
+
+def test_a_start_overlapping_a_stop_starts_once_the_stop_finished(tmp_path, free_ipv4_udp_port, held_stop):
+    stopping, release = held_stop
+    (tmp_path / "hello.txt").write_bytes(b"hello again")
+    server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=free_ipv4_udp_port)
+    server.start()
+    stopper = _Call(server.stop)
+    stopper.start()
+    assert stopping.wait(5)
+
+    try:
+        assert not _returns_while(release, stopper, _Call(server.start))
+        assert _download(free_ipv4_udp_port, "hello.txt") == b"hello again"
+    finally:
+        server.stop()
     server.close()
