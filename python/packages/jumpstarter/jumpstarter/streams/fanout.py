@@ -350,13 +350,19 @@ class StreamFanOut:
 
     @asynccontextmanager
     async def _open_source(self) -> AsyncGenerator[ObjectStream[bytes], None]:
-        """Open the source and close it even while the reader is being cancelled."""
-        stack = AsyncExitStack()
-        source = await stack.enter_async_context(self._source_factory())
-        try:
-            yield source
-        finally:
-            with anyio.CancelScope(shield=True), anyio.move_on_after(_SOURCE_CLOSE_TIMEOUT):
+        """Open the source and close it even while the reader is being cancelled.
+
+        The teardown scope encloses the source, so a source that holds a cancel
+        scope across its yield still exits its scopes in the order it entered them.
+        """
+        with anyio.CancelScope() as teardown:
+            stack = AsyncExitStack()
+            source = await stack.enter_async_context(self._source_factory())
+            try:
+                yield source
+            finally:
+                teardown.shield = True
+                teardown.deadline = anyio.current_time() + _SOURCE_CLOSE_TIMEOUT
                 await stack.aclose()
 
     def _broadcast_data(self, data: bytes) -> None:

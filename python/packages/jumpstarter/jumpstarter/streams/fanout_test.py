@@ -1014,6 +1014,41 @@ class TestRunning:
         await attachment.__aexit__(None, None, None)
 
     @pytest.mark.anyio
+    async def test_a_source_holding_a_cancel_scope_closes_when_running_ends(self):
+        closed = anyio.Event()
+
+        @asynccontextmanager
+        async def source_in_a_cancel_scope():
+            with anyio.CancelScope():
+                async with _idle_source() as stream:
+                    yield stream
+            closed.set()
+
+        fanout = StreamFanOut(source_factory=source_in_a_cancel_scope)
+        async with fanout.running(), fanout.attach_observer():
+            pass
+
+        assert closed.is_set()
+
+    @pytest.mark.anyio
+    async def test_a_source_holding_a_cancel_scope_closes_when_it_ends(self, running):
+        closed = anyio.Event()
+
+        @asynccontextmanager
+        async def ending_source_in_a_cancel_scope():
+            with anyio.CancelScope():
+                tx, rx = create_memory_object_stream[bytes](32)
+                tx.close()
+                sink, _ = create_memory_object_stream[bytes](32)
+                yield StapledObjectStream(sink, rx)
+            closed.set()
+
+        fanout = await running(StreamFanOut(source_factory=ending_source_in_a_cancel_scope))
+        async with fanout.attach_observer():
+            with anyio.fail_after(1):
+                await closed.wait()
+
+    @pytest.mark.anyio
     async def test_a_detach_in_a_cancelled_scope_still_releases_the_client(self, running):
         fanout = await running(StreamFanOut(source_factory=_idle_source))
 
