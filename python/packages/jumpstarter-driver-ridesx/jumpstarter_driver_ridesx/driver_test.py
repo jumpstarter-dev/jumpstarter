@@ -494,7 +494,7 @@ async def test_power_cycle(ridesx_power_driver):
     with (
         patch.object(ridesx_power_driver, "off", new_callable=AsyncMock) as mock_off,
         patch.object(ridesx_power_driver, "on", new_callable=AsyncMock) as mock_on,
-        patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        patch("jumpstarter_driver_ridesx.driver.sleep", new_callable=AsyncMock) as mock_sleep,
     ):
         await ridesx_power_driver.cycle(delay=0.1)
 

@@ -8,8 +8,7 @@ import tty
 from uuid import uuid4
 
 import click
-from anyio import EndOfStream, create_task_group, wait_readable
-from anyio._backends._asyncio import BrokenResourceError
+from anyio import BrokenResourceError, EndOfStream, create_task_group, wait_readable
 from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_network.client import NetworkClient
 from jumpstarter_driver_opendal.adapter import OpendalAdapter
