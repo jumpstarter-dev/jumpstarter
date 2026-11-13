@@ -78,7 +78,7 @@ class Tftp(Driver):
             self.logger.info("TFTP server thread completed")
 
     async def _run_server_lifecycle(self):
-        """Set up and run the TFTP server within the event loop of the server thread."""
+        """Run the TFTP server in the event loop of the server thread, unblocking start() once it listens."""
         try:
             self.server = TftpServer(
                 host=self.host,
@@ -86,6 +86,7 @@ class Tftp(Driver):
                 operator=self.children["storage"]._operator,  # ty: ignore[unresolved-attribute]
                 logger=self.logger,
             )
+            await self._run_server()
         except Exception as e:
             self._startup_error = e
             raise
@@ -93,12 +94,16 @@ class Tftp(Driver):
             # Always unblock start() so it can check _startup_error
             # instead of waiting for the full timeout.
             self._loop_ready.set()
-        await self._run_server()
 
     async def _run_server(self):
         assert self.server is not None
         async with anyio.create_task_group() as tg:
-            tg.start_soon(self.server.start)
+            try:
+                await tg.start(self.server.start)
+            except OSError as e:
+                self._startup_error = e
+                return
+            self._loop_ready.set()
             tg.start_soon(self._wait_for_shutdown)
 
     async def _wait_for_shutdown(self):

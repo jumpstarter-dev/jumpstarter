@@ -5,6 +5,7 @@ from enum import IntEnum
 from typing import Any
 
 from anyio import (
+    TASK_STATUS_IGNORED,
     Event,
     create_connected_udp_socket,
     create_memory_object_stream,
@@ -12,7 +13,7 @@ from anyio import (
     create_udp_socket,
     fail_after,
 )
-from anyio.abc import ConnectedUDPSocket, SocketAttribute, TaskGroup, UDPSocket
+from anyio.abc import ConnectedUDPSocket, SocketAttribute, TaskGroup, TaskStatus, UDPSocket
 from opendal import AsyncOperator
 
 
@@ -102,7 +103,7 @@ class TftpServer:
             return self.sock.extra(SocketAttribute.raw_socket).getsockname()
         return None
 
-    async def start(self):
+    async def start(self, *, task_status: TaskStatus[None] = TASK_STATUS_IGNORED):
         self.logger.info(f"Starting TFTP server on {self.host}:{self.port}")
         async with await create_udp_socket(local_host=self.host, local_port=self.port) as sock:
             self.sock = sock
@@ -111,6 +112,7 @@ class TftpServer:
                     self.protocol = TftpServerProtocol(self, sock, tg)
                     tg.start_soon(self.protocol.receive)
                     self.ready_event.set()
+                    task_status.started()
                     await self.shutdown_event.wait()
                     self.logger.info("TFTP server shutting down")
                     tg.cancel_scope.cancel()
