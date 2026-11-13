@@ -252,6 +252,10 @@ def ack(block: int) -> bytes:
     return Opcode.ACK.to_bytes(2, "big") + block.to_bytes(2, "big")
 
 
+def error(code: TftpErrorCode, message: str) -> bytes:
+    return Opcode.ERROR.to_bytes(2, "big") + code.to_bytes(2, "big") + message.encode() + b"\0"
+
+
 def opcode(packet: bytes) -> Opcode:
     return Opcode(int.from_bytes(packet[:2], "big"))
 
@@ -475,5 +479,31 @@ async def test_a_duplicate_ack_is_not_answered_with_a_retransmission(tftp, clien
 
     await client.sendto(ack(1), *transfer)
     with move_on_after(0.5) as quiet:
+        await client.receive()
+    assert quiet.cancelled_caught
+
+
+@pytest.mark.anyio
+async def test_an_error_sent_to_the_server_is_not_answered(tftp, client):
+    _, port = tftp
+
+    await client.sendto(error(TftpErrorCode.NOT_DEFINED, "hello"), "127.0.0.1", port)
+
+    with move_on_after(TIMEOUT) as quiet:
+        await client.receive()
+    assert quiet.cancelled_caught
+
+
+@pytest.mark.anyio
+async def test_a_client_error_ends_the_transfer(tftp, client):
+    root, port = tftp
+    (root / "file.bin").write_bytes(b"data")
+
+    await client.sendto(rrq("file.bin"), "127.0.0.1", port)
+    with fail_after(5):
+        _, transfer = await client.receive()
+    await client.sendto(error(TftpErrorCode.NOT_DEFINED, "user abort"), *transfer)
+
+    with move_on_after(TIMEOUT * 2) as quiet:
         await client.receive()
     assert quiet.cancelled_caught
