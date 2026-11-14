@@ -20,6 +20,8 @@ import (
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/runtime"
 	apiserverinstall "k8s.io/apiserver/pkg/apis/apiserver/install"
+	apiserverv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
+	"k8s.io/apiserver/pkg/authentication/authenticator"
 )
 
 func internalBearerAuthenticator(t *testing.T, signer *oidc.Signer, certificateAuthority string) *authentication.BearerTokenAuthenticator {
@@ -132,5 +134,76 @@ func TestInternalTokenAuthenticationBeforeDiscovery(t *testing.T) {
 	ok, err = authenticateBearer(auth, signedToken(t, key, signer.Issuer(), signer.Audience(), now.Add(-time.Minute)))
 	if ok || status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("expired token before discovery: ok=%v err=%v, want Unauthenticated", ok, err)
+	}
+}
+
+func oidcIssuer(t *testing.T, audience string) (*oidc.Signer, string) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	server := httptest.NewTLSServer(engine)
+	t.Cleanup(server.Close)
+	signer := oidc.NewSigner(generateKey(t), server.URL, audience)
+	signer.Register(engine)
+	return signer, string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}))
+}
+
+// Only tokens the controller signed are internal, whatever the username says.
+// The external issuer here is misconfigured to map its users into the internal
+// prefix.
+func TestInternalTokensAreMarkedByIssuer(t *testing.T) {
+	signer, signerCA := oidcIssuer(t, "jumpstarter")
+	external, externalCA := oidcIssuer(t, "jumpstarter-cli")
+	internalPrefix := "internal:"
+	scheme := runtime.NewScheme()
+	apiserverinstall.Install(scheme)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	authn, _, err := LoadAuthenticationConfiguration(ctx, scheme, Authentication{
+		Internal: Internal{Prefix: "jmp:"},
+		JWT: []apiserverv1beta1.JWTAuthenticator{{
+			Issuer: apiserverv1beta1.Issuer{
+				URL:                  external.Issuer(),
+				CertificateAuthority: externalCA,
+				Audiences:            []string{external.Audience()},
+			},
+			ClaimMappings: apiserverv1beta1.ClaimMappings{
+				Username: apiserverv1beta1.PrefixedClaimOrExpression{Claim: "sub", Prefix: &internalPrefix},
+			},
+		}},
+	}, signer, signerCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := authentication.NewBearerTokenAuthenticator(authn)
+
+	authenticate := func(s *oidc.Signer) *authenticator.Response {
+		t.Helper()
+		token, err := s.Token("exporter:default:test:uid")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+token))
+		// Discovery runs in the background after the authenticator is created.
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			resp, ok, err := auth.AuthenticateContext(ctx)
+			if ok && err == nil {
+				return resp
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("authenticator did not initialize: %v", err)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	internal := authenticate(signer).User
+	if internal.GetName() != "jmp:exporter:default:test:uid" || !authentication.IsInternal(internal) {
+		t.Errorf("controller token: got %q internal=%v, want the configured prefix and internal", internal.GetName(), authentication.IsInternal(internal))
+	}
+	forged := authenticate(external).User
+	if forged.GetName() != "internal:exporter:default:test:uid" || authentication.IsInternal(forged) {
+		t.Errorf("external token: got %q internal=%v, want the mapped name and not internal", forged.GetName(), authentication.IsInternal(forged))
 	}
 }
