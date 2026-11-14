@@ -317,9 +317,19 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             f"Unknown exception encountered during flash operation, treating as retryable: "
             f"{type(exception).__name__}: {exception}"
         )
-        wrapped_exception = FlashRetryableError(f"Unknown error occurred: {type(exception).__name__}: {exception}")
+        # An ExceptionGroup's own message says nothing about what failed, so report its leaf errors
+        wrapped_exception = FlashRetryableError(
+            "Unknown error occurred: " + "; ".join(f"{type(e).__name__}: {e}" for e in self._leaf_exceptions(exception))
+        )
         wrapped_exception.__cause__ = exception
         return wrapped_exception
+
+    @classmethod
+    def _leaf_exceptions(cls, exception: BaseException) -> list[BaseException]:
+        """Flatten (nested) ExceptionGroups into their leaf exceptions."""
+        if isinstance(exception, BaseExceptionGroup):
+            return [leaf for sub in exception.exceptions for leaf in cls._leaf_exceptions(sub)]
+        return [exception]
 
     def _find_exception_in_chain(self, exception: Exception, target_type: type) -> Exception | None:
         """Find an exception of a specific type in an exception chain.
