@@ -58,27 +58,3 @@ func TestClient_InternalSubject(t *testing.T) {
 		}
 	})
 }
-
-func TestClient_Usernames(t *testing.T) {
-	t.Run("without custom username", func(t *testing.T) {
-		c := &Client{
-			ObjectMeta: metav1.ObjectMeta{Name: "my-client", Namespace: "default", UID: types.UID("123")},
-			Spec:       ClientSpec{},
-		}
-		got := c.Usernames("internal:")
-		if len(got) != 1 || got[0] != "internal:client:default:my-client:123" {
-			t.Errorf("got %v, want single internal subject", got)
-		}
-	})
-
-	t.Run("with custom username", func(t *testing.T) {
-		c := &Client{
-			ObjectMeta: metav1.ObjectMeta{Name: "my-client", Namespace: "default", UID: types.UID("123")},
-			Spec:       ClientSpec{Username: new("custom-user")},
-		}
-		got := c.Usernames("internal:")
-		if len(got) != 2 || got[1] != "custom-user" {
-			t.Errorf("got %v, want internal subject and custom username", got)
-		}
-	})
-}

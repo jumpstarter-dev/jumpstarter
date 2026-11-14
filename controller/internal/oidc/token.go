@@ -38,6 +38,15 @@ func k8sToGRPCCode(err error) codes.Code {
 	}
 }
 
+// errorCode keeps the code of a gRPC status error and maps a Kubernetes API
+// error, such as the lookup of a deleted object, to its gRPC equivalent.
+func errorCode(err error) codes.Code {
+	if st, ok := status.FromError(err); ok {
+		return st.Code()
+	}
+	return k8sToGRPCCode(err)
+}
+
 func VerifyOIDCToken(
 	ctx context.Context,
 	auth authentication.ContextAuthenticator,
@@ -77,7 +86,7 @@ func VerifyClientObjectToken(
 
 	decision, _, err := authn.Authorize(ctx, attrs)
 	if err != nil {
-		return nil, status.Errorf(status.Code(err), "client %s/%s: %v", clientNamespace, clientName, err)
+		return nil, status.Errorf(errorCode(err), "client %s/%s: %v", clientNamespace, clientName, err)
 	}
 
 	if decision != authorizer.DecisionAllow {
@@ -116,7 +125,7 @@ func VerifyExporterObjectToken(
 
 	decision, _, err := authn.Authorize(ctx, attrs)
 	if err != nil {
-		return nil, status.Errorf(status.Code(err), "exporter %s/%s: %v", exporterNamespace, exporterName, err)
+		return nil, status.Errorf(errorCode(err), "exporter %s/%s: %v", exporterNamespace, exporterName, err)
 	}
 
 	if decision != authorizer.DecisionAllow {

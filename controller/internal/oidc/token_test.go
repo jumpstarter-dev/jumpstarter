@@ -9,6 +9,7 @@ import (
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authentication/user"
@@ -419,5 +420,71 @@ func TestVerifyClientObjectToken_AuthorizeErrorPreservesGRPCCode(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "ns") {
 		t.Errorf("error should contain namespace, got: %s", err.Error())
+	}
+}
+
+// The authorizer looks the object up before deciding. When it has been deleted,
+// callers must see NotFound, not Unknown, so a revoked token fails for good.
+func TestVerifyClientObjectToken_AuthorizeNotFoundMapsToNotFound(t *testing.T) {
+	authn := &stubAuthenticator{
+		resp: &authenticator.Response{
+			User: &user.DefaultInfo{Name: "test-user"},
+		},
+		ok: true,
+	}
+	attrs := &stubAttributesGetter{
+		attrs: authorizer.AttributesRecord{
+			User:      &user.DefaultInfo{Name: "test-user"},
+			Namespace: "ns",
+			Resource:  "Client",
+			Name:      "cli",
+		},
+	}
+	authz := &stubAuthorizer{
+		err: apierrors.NewNotFound(jumpstarterdevv1alpha1.GroupVersion.WithResource("clients").GroupResource(), "cli"),
+	}
+
+	scheme := runtime.NewScheme()
+	_ = jumpstarterdevv1alpha1.AddToScheme(scheme)
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	_, err := VerifyClientObjectToken(context.Background(), authn, authz, attrs, fakeClient)
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("expected NotFound, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "ns/cli") {
+		t.Errorf("error should contain the client identity, got: %s", err.Error())
+	}
+}
+
+func TestVerifyExporterObjectToken_AuthorizeNotFoundMapsToNotFound(t *testing.T) {
+	authn := &stubAuthenticator{
+		resp: &authenticator.Response{
+			User: &user.DefaultInfo{Name: "test-user"},
+		},
+		ok: true,
+	}
+	attrs := &stubAttributesGetter{
+		attrs: authorizer.AttributesRecord{
+			User:      &user.DefaultInfo{Name: "test-user"},
+			Namespace: "ns",
+			Resource:  "Exporter",
+			Name:      "exp",
+		},
+	}
+	authz := &stubAuthorizer{
+		err: apierrors.NewNotFound(jumpstarterdevv1alpha1.GroupVersion.WithResource("exporters").GroupResource(), "exp"),
+	}
+
+	scheme := runtime.NewScheme()
+	_ = jumpstarterdevv1alpha1.AddToScheme(scheme)
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	_, err := VerifyExporterObjectToken(context.Background(), authn, authz, attrs, fakeClient)
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("expected NotFound, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "ns/exp") {
+		t.Errorf("error should contain the exporter identity, got: %s", err.Error())
 	}
 }
