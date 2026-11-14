@@ -176,6 +176,18 @@ class Driver(
         for child in self.children.values():
             child.reset()
 
+    @asynccontextmanager
+    async def serving(self):
+        """Open for as long as the session serves this driver.
+
+        The session enters it for every driver, children included, before its
+        gRPC server starts, and leaves it after the server stopped and before
+        shutdown(). Background work started here, in a task group, is owned by
+        the session: leaving cancels it and waits for it to finish. Code after
+        the yield runs cancelled, so cleanup that awaits must shield itself.
+        """
+        yield
+
     @classmethod
     @abstractmethod
     def client(cls) -> str:

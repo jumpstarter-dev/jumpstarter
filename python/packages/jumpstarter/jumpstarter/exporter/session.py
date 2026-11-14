@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Self
 from uuid import UUID
 
 import grpc
-from anyio import ContextManagerMixin, Event, TypedAttributeLookupError, sleep
+from anyio import CancelScope, ContextManagerMixin, Event, TypedAttributeLookupError, sleep
 from anyio.from_thread import start_blocking_portal
 from jumpstarter_protocol import (
     jumpstarter_pb2,
@@ -24,7 +24,6 @@ from jumpstarter.metrics import get_registry
 from jumpstarter.streams.common import forward_stream
 from jumpstarter.streams.fanout import (
     ExclusiveSessionActive,
-    FanOutStreamMixin,
     ReadOnlyStreamError,
     WriteTokenRevokedError,
 )
@@ -42,6 +41,15 @@ _GRPC_SERVER_OPTIONS_TCP_KEEPALIVE: list[tuple[str, int]] = [
     ("grpc.keepalive_permit_without_calls", 1),
 ]
 
+
+
+@asynccontextmanager
+async def _cancelled_on_exit(context):
+    """Leave context with everything started inside it cancelled, so leaving cannot block on it."""
+    with CancelScope() as scope:
+        async with context:
+            yield
+            scope.cancel()
 
 @dataclass(kw_only=True)
 class Session(
@@ -132,17 +140,17 @@ class Session(
         await self._rpcs_in_flight.finished()
 
     @asynccontextmanager
-    async def _fanouts_running(self):
-        """Run the console fan-out readers of this session's drivers while it serves.
+    async def _drivers_serving(self):
+        """Keep every driver's serving() context open while the session serves.
 
-        They start before and stop after the gRPC server, so no client can attach
-        to a stopped fan-out, and every console source is closed before the
-        session's driver shutdown runs.
+        They are entered before and left after the gRPC server, so no client
+        reaches a driver whose background work (a console fan-out reader, for
+        example) has stopped, and that work has ended before the session's
+        driver shutdown runs.
         """
         async with AsyncExitStack() as stack:
             for driver in self.mapping.values():
-                if isinstance(driver, FanOutStreamMixin):
-                    await stack.enter_async_context(driver._get_fanout().running())
+                await stack.enter_async_context(_cancelled_on_exit(driver.serving()))
             yield
 
     @asynccontextmanager
@@ -153,7 +161,7 @@ class Session(
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
-        async with self._fanouts_running():
+        async with self._drivers_serving():
             await server.start()
             try:
                 yield
@@ -181,7 +189,7 @@ class Session(
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
-        async with self._fanouts_running():
+        async with self._drivers_serving():
             await server.start()
             logger.info("Session server started on %d ports", len(ports))
             try:
@@ -201,7 +209,7 @@ class Session(
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
-        async with self._fanouts_running():
+        async with self._drivers_serving():
             await server.start()
             try:
                 yield
