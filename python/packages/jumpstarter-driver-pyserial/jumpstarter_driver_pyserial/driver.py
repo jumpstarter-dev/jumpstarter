@@ -8,7 +8,9 @@ from anyio import (
     create_memory_object_stream,
     sleep,
 )
-from anyio._backends._asyncio import StreamReaderWrapper, StreamWriterWrapper
+
+# pyserial-asyncio returns asyncio streams, and anyio adapts those only in its private backend.
+from anyio._backends._asyncio import StreamReaderWrapper, StreamWriterWrapper  # noqa: TID251
 from anyio.abc import ObjectSendStream, ObjectStream
 from anyio.streams.stapled import StapledObjectStream
 from serial import SerialException, serial_for_url
