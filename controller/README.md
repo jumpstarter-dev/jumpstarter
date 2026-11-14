@@ -11,12 +11,13 @@ policies.
 ## Development
 
 ```sh
-make docker-push IMG=<some-registry>/jumpstarter-controller:tag
-make install
-make deploy IMG=<some-registry>/jumpstarter-controller:tag
+# build the images, create a kind cluster and deploy through the operator
+make deploy
+# or on k3s
+make deploy CLUSTER_TYPE=k3s
 
-make undeploy
-make uninstall
+# delete the cluster
+make clean
 ```
 
 For production deployment, see the
