@@ -46,7 +46,8 @@ def _wait_attached(client, thread, timeout=5):
     """Wait until the console holds the write token, or its thread has already died.
 
     Console.run() puts the tty in raw mode before it attaches, so once attached
-    keypresses are no longer discarded or line-buffered.
+    the tty no longer discards or line-buffers keypresses. Until the console's
+    own stream is up, it acts on hotkeys and drops other input.
     """
     deadline = time.monotonic() + timeout
     while thread.is_alive() and time.monotonic() < deadline:
@@ -228,6 +229,20 @@ def test_stream_closed_by_exporter_ends_console_without_keypress():
 
     assert exited, "console kept running after the exporter closed its stream"
     assert isinstance(result.get("exc"), ConsoleStreamDrop)
+
+
+def test_ctrl_b_exits_while_the_port_is_missing(tmp_path):
+    with serve(PySerial(url=str(tmp_path / "ttyMISSING"), check_present=False)) as client:
+        master_fd, t, result = _start_console(client)
+        try:
+            os.write(master_fd, b"\x02\x02\x02")
+            t.join(timeout=5)
+            exited = not t.is_alive()
+        finally:
+            os.close(master_fd)
+
+    assert exited, "console ignored Ctrl-B x3 while the exporter waited for the port"
+    assert "exc" not in result
 
 
 def test_hotkey_detector_three_presses():
