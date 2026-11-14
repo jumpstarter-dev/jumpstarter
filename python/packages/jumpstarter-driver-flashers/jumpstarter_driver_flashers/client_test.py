@@ -364,6 +364,20 @@ def test_categorize_exception_wraps_unknown_exceptions():
     assert result.__cause__ is error
 
 
+def test_categorize_exception_unknown_exception_group_reports_leaf_errors():
+    """An unknown ExceptionGroup must surface its leaf errors, not just the group message"""
+    client = MockFlasherClient()
+
+    inner = ExceptionGroup("unhandled errors in a TaskGroup", [RuntimeError("Failed to get U-Boot prompt")])
+    outer = ExceptionGroup("unhandled errors in a TaskGroup", [inner, ValueError("bad value")])
+    result = client._categorize_exception(outer)
+
+    assert isinstance(result, FlashRetryableError)
+    assert "RuntimeError: Failed to get U-Boot prompt" in str(result)
+    assert "ValueError: bad value" in str(result)
+    assert result.__cause__ is outer
+
+
 def test_categorize_exception_cancelled_error_is_non_retryable():
     """Test that CancelledError is treated as non-retryable"""
     client = MockFlasherClient()
