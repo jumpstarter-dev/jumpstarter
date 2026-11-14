@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 import termios
 import tty
@@ -6,8 +7,8 @@ from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
 from typing import NoReturn
 
-from anyio import BrokenResourceError, ClosedResourceError, EndOfStream, create_task_group, to_thread
-from anyio.streams.file import FileReadStream, FileWriteStream
+from anyio import BrokenResourceError, ClosedResourceError, EndOfStream, create_task_group, to_thread, wait_readable
+from anyio.streams.file import FileWriteStream
 from jumpstarter_driver_power.client import PowerClient
 
 from jumpstarter.client import DriverClient
@@ -118,16 +119,19 @@ class Console:
             logger.warning("power cycle failed", exc_info=True)
 
     async def __read_stdin(self, stream=None):
-        stdin = FileReadStream(sys.stdin.buffer)
+        fd = sys.stdin.fileno()
         actions: dict[bytes, Callable[[], Awaitable[None]]] = {EXIT_KEY: _exit_console}
         if self.power_control is not None:
             actions[POWER_KEY] = self._power_cycle
         hotkeys = HotkeyDetector(actions)
         send_warned = False
         while True:
-            data = await stdin.receive(max_bytes=1)
+            # Wait on the event loop, where cancellation interrupts it; a read in a
+            # worker thread would keep the console open until the next keypress.
+            await wait_readable(fd)
+            data = os.read(fd, 1)
             if not data:
-                continue
+                raise EndOfStream
             action = hotkeys.feed(data)
             if action is not None:
                 await action()

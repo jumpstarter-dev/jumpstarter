@@ -215,6 +215,21 @@ def test_receive_failure_raises_stream_drop():
     assert isinstance(result["exc"], ConsoleStreamDrop), f"expected ConsoleStreamDrop, got {type(result['exc'])}"
 
 
+def test_stream_closed_by_exporter_ends_console_without_keypress():
+    with serve(PySerial(url="loop://")) as client:
+        master_fd, t, result = _start_console(client)
+        try:
+            time.sleep(0.1)  # the console is now waiting for a keypress
+            client.call("close")
+            t.join(timeout=5)
+            exited = not t.is_alive()
+        finally:
+            os.close(master_fd)
+
+    assert exited, "console kept running after the exporter closed its stream"
+    assert isinstance(result.get("exc"), ConsoleStreamDrop)
+
+
 def test_hotkey_detector_three_presses():
     """Three consecutive presses of a registered key return its action."""
     exit_action = AsyncMock()
