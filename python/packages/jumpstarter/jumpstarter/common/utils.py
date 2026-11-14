@@ -1,5 +1,6 @@
 import logging
 import os
+import shlex
 import signal
 import sys
 from contextlib import ExitStack, asynccontextmanager, contextmanager
@@ -208,8 +209,8 @@ def _zsh_ps1(context: str, bolt: str, arrow: str, no_color: bool) -> str:
 _ZSH_ZSHENV = "unsetopt GLOBALRCS\n"
 
 _ZSH_ZSHRC = """\
+setopt EXTENDED_HISTORY
 bindkey '^R' history-incremental-search-backward
-unset ZDOTDIR
 """
 
 
@@ -217,10 +218,13 @@ unset ZDOTDIR
 def _zsh_isolated_config(env: dict[str, str]):
     """Run zsh without the user's rc files but with working history."""
     env.setdefault("HISTSIZE", "50000")
-    env.setdefault("SAVEHIST", "10000")
+    # shortcut: zsh has no unlimited SAVEHIST; revisit if billion-entry histories become realistic.
+    env.setdefault("SAVEHIST", "2147483647")
+    original = env.get("ZDOTDIR")
+    restore = f"export ZDOTDIR={shlex.quote(original)}\n" if original is not None else "unset ZDOTDIR\n"
     with TemporaryDirectory(prefix="jmp-zsh-") as zdotdir:
         (Path(zdotdir) / ".zshenv").write_text(_ZSH_ZSHENV)
-        (Path(zdotdir) / ".zshrc").write_text(_ZSH_ZSHRC)
+        (Path(zdotdir) / ".zshrc").write_text(_ZSH_ZSHRC + restore)
         env["ZDOTDIR"] = zdotdir
         yield
 
@@ -277,7 +281,8 @@ def launch_shell(
         if not use_profiles:
             cmd.extend(["--norc", "--noprofile"])
             env.setdefault("HISTSIZE", "50000")
-            env.setdefault("HISTFILESIZE", "50000")
+            env.setdefault("HISTFILESIZE", "-1")
+            env["BASHOPTS"] = f"{env['BASHOPTS']}:histappend" if env.get("BASHOPTS") else "histappend"
         return _run_process(cmd, env, lease)
 
     elif shell_name == "fish":

@@ -3,6 +3,7 @@ import pty
 import select
 import shutil
 import signal
+import subprocess
 import tempfile
 import threading
 import time
@@ -13,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from .utils import _build_common_env, _lease_env_vars, launch_shell
+from .utils import _build_common_env, _lease_env_vars, _zsh_isolated_config, launch_shell
 from jumpstarter.config.client import ClientConfigV1Alpha1Drivers
 from jumpstarter.utils.env import ExporterMetadata, _resolve_drivers_config
 
@@ -245,18 +246,23 @@ def test_launch_shell_bash_prompt_is_plain_when_no_color(tmp_path, monkeypatch):
     assert "➤" in ps1
 
 
-def test_launch_shell_bash_isolated_history_env(tmp_path, monkeypatch):
+@pytest.mark.parametrize("bashopts", ["", "checkwinsize", "histappend:checkwinsize"])
+def test_launch_shell_bash_isolated_history_env(tmp_path, monkeypatch, bashopts):
+    monkeypatch.setenv("BASHOPTS", bashopts)
     for var in ("HISTSIZE", "HISTFILESIZE"):
         monkeypatch.delenv(var, raising=False)
     exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fake.bash")
     assert exit_code == 0
     env = call[1].get("env", {})
     assert env["HISTSIZE"] == "50000"
-    assert env["HISTFILESIZE"] == "50000"
+    assert env["HISTFILESIZE"] == "-1"
+    assert "histappend" in env["BASHOPTS"].split(":")
+    assert set(bashopts.split(":")) - {""} <= set(env["BASHOPTS"].split(":"))
 
 
 def test_launch_shell_bash_with_profiles_keeps_user_env(tmp_path, monkeypatch):
     monkeypatch.setenv("SHELL", str(tmp_path / "fake.bash"))
+    monkeypatch.setenv("BASHOPTS", "checkwinsize")
     for var in ("HISTSIZE", "HISTFILESIZE"):
         monkeypatch.delenv(var, raising=False)
     with patch("jumpstarter.common.utils.Popen") as mock_popen:
@@ -272,6 +278,7 @@ def test_launch_shell_bash_with_profiles_keeps_user_env(tmp_path, monkeypatch):
     env = mock_popen.call_args[1].get("env", {})
     assert "HISTSIZE" not in env
     assert "HISTFILESIZE" not in env
+    assert env["BASHOPTS"] == "checkwinsize"
 
 
 def test_launch_shell_fish_prompt_is_plain_when_no_color(tmp_path, monkeypatch):
@@ -319,9 +326,52 @@ def test_launch_shell_zsh_isolated_config(tmp_path, monkeypatch):
     env = call[1].get("env", {})
     assert env["ZDOTDIR"] == created[0]
     assert env["HISTSIZE"] == "50000"
-    assert env["SAVEHIST"] == "10000"
+    assert env["SAVEHIST"] == "2147483647"
     assert "history-incremental-search-backward" in (Path(created[0]) / ".zshrc").read_text()
     assert "unsetopt GLOBALRCS" in (Path(created[0]) / ".zshenv").read_text()
+
+
+@pytest.mark.skipif(shutil.which("zsh") is None, reason="zsh not available")
+@pytest.mark.parametrize("original", [None, "", "/config with spaces/it's $(touch UNEXPECTED)"])
+def test_zsh_isolated_config_restores_zdotdir(tmp_path, original):
+    zsh = shutil.which("zsh")
+    assert zsh is not None
+    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "HISTFILE": ""}
+    if original is not None:
+        env["ZDOTDIR"] = original
+    with _zsh_isolated_config(env):
+        result = subprocess.run(
+            [
+                zsh,
+                "-fc",
+                'source "$1"; printenv ZDOTDIR',
+                "zsh",
+                str(Path(env["ZDOTDIR"]) / ".zshrc"),
+            ],
+            env=env,
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    assert result.returncode == (1 if original is None else 0)
+    assert result.stdout == ("" if original is None else original + "\n")
+    assert not (tmp_path / "UNEXPECTED").exists()
+
+
+@pytest.mark.parametrize(
+    "shell,values",
+    [
+        ("fake.bash", {"HISTSIZE": "42", "HISTFILESIZE": "0"}),
+        ("zsh", {"HISTSIZE": "42", "SAVEHIST": "0"}),
+    ],
+)
+def test_launch_shell_preserves_exported_history_settings(tmp_path, monkeypatch, shell, values):
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+    _, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, shell)
+    for key, value in values.items():
+        assert call.kwargs["env"][key] == value
 
 
 def test_launch_shell_zsh_with_profiles_keeps_user_config(tmp_path, monkeypatch):
@@ -364,13 +414,17 @@ def _pty_send(fd, data, timeout=1.5):
 
 
 @pytest.mark.skipif(shutil.which("zsh") is None, reason="zsh not available")
-def test_launch_shell_zsh_history_and_reverse_search(tmp_path, monkeypatch):
+@pytest.mark.parametrize("run_command", [False, True])
+def test_launch_shell_zsh_history_and_reverse_search(tmp_path, monkeypatch, run_command):
     """Isolated zsh recalls history at the first prompt and binds ^R."""
     import jumpstarter.common.utils as utils_module
 
     home = tmp_path / "home"
     home.mkdir()
-    (home / ".zsh_history").write_text("echo PREVIOUS_SESSION_COMMAND\n")
+    (home / ".zsh_history").write_text(
+        "".join(f": 1700000000:0;echo line{i:05d}\n" for i in range(1, 20000))
+        + ": 1700000000:0;echo PREVIOUS_SESSION_COMMAND\n"
+    )
     (home / ".zshrc").write_text("touch $HOME/RC_WAS_SOURCED\n")
 
     monkeypatch.setenv("SHELL", shutil.which("zsh"))
@@ -422,13 +476,18 @@ def test_launch_shell_zsh_history_and_reverse_search(tmp_path, monkeypatch):
         assert b"i-search:" in out, f"Ctrl-R did not start a search: {out!r}"
 
         _pty_send(master_fd, b"\x15")
-        _pty_send(master_fd, b"echo SESSION_WRITTEN\n")
+        if run_command:
+            _pty_send(master_fd, b"echo SESSION_WRITTEN\n")
         _pty_send(master_fd, b"exit\n")
         thread.join(timeout=10)
         assert not thread.is_alive(), "shell did not exit"
         assert result["rc"] == 0
 
-        assert "SESSION_WRITTEN" in (home / ".zsh_history").read_text()
+        content = (home / ".zsh_history").read_text()
+        assert ("SESSION_WRITTEN" in content) == run_command
+        assert "echo line00001" in content
+        assert content.count("\n") >= 20000
+        assert all(line.startswith(": ") for line in content.splitlines()), "shared history lost its timestamps"
         assert not (home / "RC_WAS_SOURCED").exists()
     finally:
         proc = spawned.get("proc")
@@ -442,21 +501,24 @@ def test_launch_shell_zsh_history_and_reverse_search(tmp_path, monkeypatch):
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
-def test_launch_shell_bash_does_not_truncate_history(tmp_path, monkeypatch):
+@pytest.mark.parametrize("small_history", [False, True])
+def test_launch_shell_bash_does_not_truncate_history(tmp_path, monkeypatch, small_history):
     """Isolated bash keeps long history files intact on exit."""
     import jumpstarter.common.utils as utils_module
 
     home = tmp_path / "home"
     home.mkdir()
     histfile = home / ".bash_history"
-    histfile.write_text("".join(f"echo line{i:04d}\n" for i in range(1, 1001)))
+    histfile.write_text("".join(f"echo line{i:05d}\n" for i in range(1, 60001)))
 
     monkeypatch.setenv("SHELL", shutil.which("bash"))
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("TERM", "xterm-256color")
     monkeypatch.setenv("NO_COLOR", "1")
-    for var in ("HISTFILE", "HISTSIZE", "HISTFILESIZE"):
+    for var in ("HISTFILE", "HISTSIZE", "HISTFILESIZE", "BASHOPTS", "HISTCONTROL", "HISTIGNORE"):
         monkeypatch.delenv(var, raising=False)
+    if small_history:
+        monkeypatch.setenv("HISTSIZE", "3")
 
     master_fd, slave_fd = pty.openpty()
     slave = os.fdopen(slave_fd, "w+b", buffering=0)
@@ -492,7 +554,9 @@ def test_launch_shell_bash_does_not_truncate_history(tmp_path, monkeypatch):
         prompt = _pty_read(master_fd)
         assert b"pytest" in prompt, f"jmp prompt not shown: {prompt!r}"
 
-        _pty_send(master_fd, b"echo SESSION_WRITTEN\n")
+        with histfile.open("a") as file:
+            file.write("echo CONCURRENT_ENTRY\n")
+        _pty_send(master_fd, b"echo SESSION_WRITTEN\n" * 5)
         _pty_send(master_fd, b"exit\n")
         thread.join(timeout=10)
         assert not thread.is_alive(), "shell did not exit"
@@ -500,8 +564,9 @@ def test_launch_shell_bash_does_not_truncate_history(tmp_path, monkeypatch):
 
         content = histfile.read_text()
         assert "SESSION_WRITTEN" in content
-        assert "echo line0001" in content, "history file was truncated"
-        assert content.count("\n") >= 1000, "history file was truncated"
+        assert "CONCURRENT_ENTRY" in content
+        assert "echo line00001" in content, "history file was truncated"
+        assert content.count("\n") >= 60000, "history file was truncated"
     finally:
         proc = spawned.get("proc")
         if proc is not None and proc.poll() is None:
