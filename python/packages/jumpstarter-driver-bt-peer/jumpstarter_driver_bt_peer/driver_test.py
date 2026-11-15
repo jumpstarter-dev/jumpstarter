@@ -1,6 +1,8 @@
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import anyio
+import anyio.lowlevel
 import pytest
 from bumble.avdtp import State
 from bumble.avrcp import PlayStatus
@@ -10,6 +12,7 @@ from .a2dp import Track
 from .avrcp import PeerDelegate, TrackMetadata
 from .conftest import (
     avrcp_mock,
+    connect_avdtp,
     delegate_of,
     fake_protocol,
     make_device,
@@ -18,7 +21,9 @@ from .conftest import (
     patch_resource,
     patched_stack,
     peer_with_session,
+    running_of,
     running_peer,
+    session_of,
     settle,
     sink_with_bitpool,
 )
@@ -100,8 +105,7 @@ async def test_stop_peer_cleans_up_when_power_off_fails():
         with pytest.raises(BtPeerError, match="failed to stop peer"):
             await peer.stop_peer()
 
-    assert peer._device is None
-    assert peer._transport is None
+    assert peer._running is None
     transport.close.assert_awaited_once()
 
 
@@ -152,8 +156,7 @@ async def test_start_peer_exception_cleanup():
     ):
         await peer.start_peer()
 
-    assert peer._device is None
-    assert peer._transport is None
+    assert peer._running is None
     transport.close.assert_awaited_once()
 
 
@@ -167,11 +170,60 @@ async def test_start_peer_exception_cleanup_after_device_init():
     with patched_stack(device=device, transport=transport), pytest.raises(RuntimeError, match="power on failed"):
         await peer.start_peer()
 
-    assert peer._device is None
-    assert peer._transport is None
-    assert peer._reporter is None, "a half-built peer must not keep an AVRCP target"
+    assert peer._running is None, "a half-built peer must not be kept"
     device.power_off.assert_awaited_once()
     transport.close.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_concurrent_start_peer_builds_one_device():
+    """start_peer awaits the transport before the peer counts as running."""
+    peer = BtPeer()
+    opened: list[MagicMock] = []
+
+    async def open_slowly(_spec):
+        await anyio.lowlevel.checkpoint()
+        transport = make_transport()
+        opened.append(transport)
+        return transport
+
+    results: list[BaseException | str] = []
+
+    async def start():
+        try:
+            results.append(await peer.start_peer())
+        except BtPeerError as exc:
+            results.append(exc)
+
+    with (
+        patched_stack(),
+        patch("jumpstarter_driver_bt_peer.driver.open_transport", new=open_slowly),
+    ):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(start)
+            tg.start_soon(start)
+
+    assert len(opened) == 1, "the second start opened a transport of its own"
+    assert sum(isinstance(r, BtPeerError) and "already running" in str(r) for r in results) == 1
+
+
+@pytest.mark.anyio
+async def test_a_stopped_peers_connection_events_do_not_reach_the_next():
+    """Handlers are bound to the Running they were registered on."""
+    device = make_device()
+    peer = BtPeer()
+    with patched_stack(device=device):
+        await peer.start_peer()
+        on_connection = next(
+            call.args[1] for call in device.on.call_args_list if call.args[0] == "connection"
+        )
+        await peer.stop_peer()
+        await peer.start_peer()
+
+        on_connection(_connection(handle=9))
+
+        assert json.loads(peer.get_connections()) == []
+        await peer.stop_peer()
 
 
 @pytest.mark.anyio
@@ -256,10 +308,10 @@ def _connection(handle=1, address="11:22:33:44:55:66", role=1, encrypted=False):
 
 @pytest.mark.anyio
 async def test_on_connection_tracking():
-    peer = BtPeer()
-    peer._on_connection(_connection(handle=42))
+    peer = running_peer()
+    peer._on_connection(running_of(peer), _connection(handle=42))
 
-    assert 42 in peer._connections
+    assert 42 in running_of(peer).connections
     conns = json.loads(peer.get_connections())
     assert len(conns) == 1
     assert conns[0]["handle"] == 42
@@ -268,14 +320,14 @@ async def test_on_connection_tracking():
 
 @pytest.mark.anyio
 async def test_on_connection_disconnect():
-    peer = BtPeer()
+    peer = running_peer()
     conn = _connection(handle=7, role=0, encrypted=True)
-    peer._on_connection(conn)
-    assert 7 in peer._connections
+    peer._on_connection(running_of(peer), conn)
+    assert 7 in running_of(peer).connections
 
     conn.on.call_args[0][1](0x13)
 
-    assert 7 not in peer._connections
+    assert 7 not in running_of(peer).connections
 
 
 @pytest.mark.anyio
@@ -299,7 +351,7 @@ async def test_wait_connection_returns_an_existing_connection():
     peer = BtPeer()
     with patched_stack():
         await peer.start_peer()
-        peer._on_connection(_connection(handle=3))
+        peer._on_connection(running_of(peer), _connection(handle=3))
         assert json.loads(await peer.wait_connection())["handle"] == 3
         await peer.stop_peer()
 
@@ -321,10 +373,9 @@ async def test_wait_disconnection_no_connections():
 
 @pytest.mark.anyio
 async def test_wait_disconnection_removes_handlers():
-    peer = BtPeer()
+    peer = running_peer()
     conn = _connection()
-    peer._connections[1] = conn
-    peer._device = MagicMock()
+    running_of(peer).connections[1] = conn
 
     with pytest.raises(BtPeerError, match="no disconnection within"):
         await peer.wait_disconnection(timeout=0)
@@ -356,10 +407,10 @@ async def test_pair_success():
     conn = _connection(encrypted=True)
     conn.authenticate = AsyncMock()
     conn.encrypt = AsyncMock()
-    peer._on_connection(conn)
 
     with patched_stack():
         await peer.start_peer()
+        peer._on_connection(running_of(peer), conn)
         result = json.loads(await peer.pair(1))
         assert result == {"handle": 1, "address": "11:22:33:44:55:66", "encrypted": True}
         conn.authenticate.assert_awaited_once()
@@ -401,12 +452,12 @@ async def test_emit_events():
 
 @pytest.mark.anyio
 async def test_on_avdtp_connection_creates_a_session():
-    peer = BtPeer()
+    peer = running_peer()
     protocol = fake_protocol()
 
-    peer._on_avdtp_connection(protocol)
+    connect_avdtp(peer, protocol)
 
-    assert peer._session is not None
+    assert session_of(peer) is not None
     protocol.add_source.assert_called_once()
     assert any(e["type"] == "avdtp_connected" for e in peer._events)
 
@@ -414,34 +465,34 @@ async def test_on_avdtp_connection_creates_a_session():
 @pytest.mark.anyio
 async def test_avdtp_close_drops_the_session():
     """A session outliving its channel leaves play() on a dead protocol."""
-    peer = BtPeer()
+    peer = running_peer()
     protocol = fake_protocol()
 
-    peer._on_avdtp_connection(protocol)
-    assert peer._session is not None
+    connect_avdtp(peer, protocol)
+    assert session_of(peer) is not None
 
     event, handler = protocol.l2cap_channel.on.call_args.args
     assert event == ClassicChannel.EVENT_CLOSE
     handler()
 
-    assert peer._session is None
+    assert session_of(peer) is None
     assert any(e["type"] == "avdtp_disconnected" for e in peer._events)
 
 
 @pytest.mark.anyio
 async def test_a_late_close_does_not_drop_the_session_that_replaced_it():
     """The DUT can reconnect before the old channel's CLOSE is delivered."""
-    peer = BtPeer()
+    peer = running_peer()
     old, new = fake_protocol(), fake_protocol()
 
-    peer._on_avdtp_connection(old)
+    connect_avdtp(peer, old)
     _event, old_close = old.l2cap_channel.on.call_args.args
-    peer._on_avdtp_connection(new)
-    live = peer._session
+    connect_avdtp(peer, new)
+    live = session_of(peer)
 
     old_close()
 
-    assert peer._session is live
+    assert session_of(peer) is live
     assert live is not None and live.protocol is new
 
 
@@ -673,14 +724,12 @@ async def test_stop_peer_clears_playback():
     peer = running_peer()
     with patch_resource(make_sbc_file(10)):
         await peer.play("handle")
-    peer._device = AsyncMock()
-    peer._transport = make_transport()
-    peer._session = MagicMock()
+    running_of(peer).session = MagicMock()
 
     await peer.stop_peer()
 
     assert peer._player.state == Idle()
-    assert peer._session is None
+    assert peer._running is None
 
 
 # -- pause, resume, stop -------------------------------------------------
@@ -692,7 +741,9 @@ async def test_pause_keeps_position_and_resume_continues():
     with patch_resource(make_sbc_file(200)):
         await peer.play("handle", name="song.mp3")
 
-    source = peer._session._media_source()
+    session = session_of(peer)
+    assert session is not None
+    source = session._media_source()
     for _ in range(10):
         await source.__anext__()
     position = peer._player.state.track.position
@@ -762,11 +813,11 @@ async def test_paused_is_reported_and_survives_reconnect():
     assert peer._player.loaded is not None
 
     # The DUT drops and reconnects; the track stays paused.
-    session = peer._session
+    session = session_of(peer)
     assert session is not None
-    peer._on_avdtp_close(session)
+    peer._on_avdtp_close(running_of(peer), session)
     reconnected = fake_protocol()
-    peer._on_avdtp_connection(reconnected)
+    connect_avdtp(peer, reconnected)
     await settle()
 
     reconnected.stream.start.assert_not_awaited()
@@ -885,7 +936,7 @@ async def test_track_queued_before_avdtp_starts_when_it_connects():
         assert json.loads(await peer.play("handle", name="song.mp3"))["streaming"] is False
 
     protocol = fake_protocol()
-    peer._on_avdtp_connection(protocol)
+    connect_avdtp(peer, protocol)
     await settle(50, until=lambda: protocol.stream.start.await_count > 0)
 
     protocol.stream.start.assert_awaited_once()
@@ -895,10 +946,10 @@ async def test_track_queued_before_avdtp_starts_when_it_connects():
 
 @pytest.mark.anyio
 async def test_avdtp_connection_without_a_queued_track_starts_nothing():
-    peer = BtPeer()
+    peer = running_peer()
     protocol = fake_protocol()
 
-    peer._on_avdtp_connection(protocol)
+    connect_avdtp(peer, protocol)
     await settle(10)
 
     protocol.discover_remote_endpoints.assert_not_awaited()
@@ -911,7 +962,9 @@ async def test_resume_failure_is_reported_not_raised():
     peer._player.state = Playing(Track(name="t", data=make_sbc_file(10)), TrackMetadata())
     protocol.find_remote_sink_by_codec = MagicMock(return_value=None)
 
-    await peer._resume_queued_track()
+    session = session_of(peer)
+    assert session is not None
+    await peer._resume_queued_track(session)
 
     failed = [e for e in peer._events if e["type"] == "stream_resume_failed"]
     assert failed and "no free SBC audio sink" in failed[0]["error"]
@@ -928,7 +981,9 @@ async def test_resume_discards_a_track_stopped_while_starting():
 
     protocol.discover_remote_endpoints = AsyncMock(side_effect=stop_midway)
 
-    await peer._resume_queued_track()
+    session = session_of(peer)
+    assert session is not None
+    await peer._resume_queued_track(session)
 
     assert any(e["type"] == "stream_resume_discarded" for e in peer._events)
     assert not any(e["type"] == "stream_resumed" for e in peer._events)
@@ -946,7 +1001,7 @@ async def test_a_queued_track_is_rechecked_against_the_discovered_sink():
 
     # The DUT turns out to accept only 35.
     protocol = fake_protocol(sink=sink_with_bitpool(2, 35))
-    peer._on_avdtp_connection(protocol)
+    connect_avdtp(peer, protocol)
     await settle(50)
 
     protocol.stream.start.assert_not_awaited()
@@ -966,7 +1021,9 @@ async def test_a_queued_track_that_fails_to_start_stays_queued():
     peer._player.state = queued
     protocol.stream.start = AsyncMock(side_effect=RuntimeError("channel gone"))
 
-    await peer._resume_queued_track()
+    session = session_of(peer)
+    assert session is not None
+    await peer._resume_queued_track(session)
 
     assert peer._player.state is queued
     failed = [e for e in peer._events if e["type"] == "stream_resume_failed"]
@@ -980,7 +1037,7 @@ async def test_a_queued_track_the_sink_accepts_still_starts():
         await peer.play("handle", name="fine.sbc")
 
     protocol = fake_protocol(sink=sink_with_bitpool(2, 53))
-    peer._on_avdtp_connection(protocol)
+    connect_avdtp(peer, protocol)
     await settle(50, until=lambda: protocol.stream.start.await_count > 0)
 
     protocol.stream.start.assert_awaited_once()
@@ -994,7 +1051,7 @@ async def test_a_paused_track_is_not_resumed_on_connect():
     await peer.pause()
 
     protocol = fake_protocol()
-    peer._on_avdtp_connection(protocol)
+    connect_avdtp(peer, protocol)
     await settle(30)
 
     protocol.stream.start.assert_not_awaited()
@@ -1004,7 +1061,7 @@ async def test_a_paused_track_is_not_resumed_on_connect():
 def test_the_delegate_follows_the_player_without_being_told():
     """Metadata is read from the player, so it cannot describe a stale track."""
     peer = running_peer()
-    assert isinstance(peer._avrcp_delegate, PeerDelegate)
+    assert isinstance(delegate_of(peer), PeerDelegate)
 
     peer._player.state = Playing(Track(name="t", data=make_sbc_file(1)), TrackMetadata(title="Now"))
 

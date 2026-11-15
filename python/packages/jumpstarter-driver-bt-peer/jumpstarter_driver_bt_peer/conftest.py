@@ -13,7 +13,7 @@ from bumble.avdtp import MediaCodecCapabilities, State
 
 from .a2dp import A2dpSession, sbc_capabilities
 from .avrcp import PeerDelegate, Reporter
-from .driver import BtPeer
+from .driver import BtPeer, Running
 
 
 @pytest.fixture
@@ -127,23 +127,42 @@ def patched_stack(device=None, transport=None):
 def running_peer(**kwargs) -> BtPeer:
     """A peer past start_peer, with an AVRCP target but no AVDTP connection."""
     peer = BtPeer(**kwargs)
-    peer._device = MagicMock()
-    peer._avrcp_delegate = PeerDelegate(now_playing=peer._player.now_playing)
-    peer._avrcp = MagicMock()
-    peer._reporter = Reporter(peer._avrcp_delegate, peer._avrcp, peer.logger)
+    delegate = PeerDelegate(on_key=peer._on_avrcp_key, now_playing=peer._player.now_playing)
+    avrcp = MagicMock()
+    peer._running = Running(
+        device=make_device(),
+        transport=make_transport(),
+        avdtp_listener=MagicMock(),
+        avrcp=avrcp,
+        delegate=delegate,
+        reporter=Reporter(delegate, avrcp, peer.logger),
+    )
     return peer
 
 
+def running_of(peer) -> Running:
+    running = peer._running
+    assert running is not None, "the peer is not running"
+    return running
+
+
+def session_of(peer) -> A2dpSession | None:
+    """The peer's AVDTP session, if the DUT's channel is up."""
+    return running_of(peer).session
+
+
+def connect_avdtp(peer, protocol) -> None:
+    """What the AVDTP listener does when the DUT opens its channel."""
+    peer._on_avdtp_connection(running_of(peer), protocol)
+
+
 def delegate_of(peer) -> PeerDelegate:
-    """The peer's AVRCP delegate, narrowed from the Optional field."""
-    delegate = peer._avrcp_delegate
-    assert delegate is not None, "the peer has no AVRCP target"
-    return delegate
+    return running_of(peer).delegate
 
 
 def avrcp_mock(peer) -> MagicMock:
     """The stand-in AVRCP protocol `running_peer` installed."""
-    protocol = peer._avrcp
+    protocol = running_of(peer).avrcp
     assert isinstance(protocol, MagicMock)
     return protocol
 
@@ -152,7 +171,7 @@ def peer_with_session(**kwargs):
     """A running peer with an AVDTP session already established."""
     peer = running_peer()
     protocol = fake_protocol(**kwargs)
-    peer._on_avdtp_connection(protocol)
+    connect_avdtp(peer, protocol)
     return peer, protocol
 
 

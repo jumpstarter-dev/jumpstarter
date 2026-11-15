@@ -58,6 +58,29 @@ class AutoAcceptDelegate(PairingDelegate):
         return 0
 
 
+@dataclass(eq=False)
+class Running:
+    """Everything that exists only between start_peer and stop_peer.
+
+    One object rather than a field each, so the peer is either running with
+    all of it or stopped with none of it: there is no half-started
+    combination for a command to trip over, and stopping drops it in one
+    assignment. Handlers registered on the device are bound to the Running
+    they were registered for, so what they record lands in it rather than in
+    whatever the driver holds by the time they fire.
+    """
+
+    device: Device
+    transport: Any
+    avdtp_listener: Listener
+    avrcp: PeerProtocol
+    delegate: PeerDelegate
+    reporter: Reporter
+    connections: dict[int, Connection] = field(default_factory=dict)
+    # Comes and goes with the DUT's AVDTP channel while the peer runs.
+    session: A2dpSession | None = None
+
+
 @dataclass(kw_only=True)
 class BtPeer(Driver):
     """Bluetooth peer device powered by bumble.
@@ -72,15 +95,11 @@ class BtPeer(Driver):
     # a DUT cannot silence a track the caller explicitly started.
     follow_transport_keys: bool = False
 
-    _device: Device | None = field(default=None, init=False, repr=False)
-    _transport: Any = field(default=None, init=False, repr=False)
-    _avdtp_listener: Listener | None = field(default=None, init=False, repr=False)
+    _running: Running | None = field(default=None, init=False, repr=False)
+    # Serializes start_peer and stop_peer, which both await before they have
+    # finished changing `_running`.
+    _lifecycle: anyio.Lock = field(default_factory=anyio.Lock, init=False, repr=False)
     _events: deque = field(default_factory=lambda: deque(maxlen=1000), init=False, repr=False)
-    _connections: dict[int, Connection] = field(default_factory=dict, init=False, repr=False)
-    _session: A2dpSession | None = field(default=None, init=False, repr=False)
-    _avrcp: PeerProtocol | None = field(default=None, init=False, repr=False)
-    _avrcp_delegate: PeerDelegate | None = field(default=None, init=False, repr=False)
-    _reporter: Reporter | None = field(default=None, init=False, repr=False)
     # Built in __post_init__ rather than by a default_factory, because it
     # closes over this instance's callbacks.
     _player: Player = field(init=False, repr=False)
@@ -88,14 +107,19 @@ class BtPeer(Driver):
     def __post_init__(self):
         super().__post_init__()
         self._player = Player(
-            get_session=lambda: self._session,
-            get_reporter=lambda: self._reporter,
+            get_session=lambda: self._running.session if self._running else None,
+            get_reporter=lambda: self._running.reporter if self._running else None,
             emit=self._emit,
         )
 
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_bt_peer.client.BtPeerClient"
+
+    def _require_running(self) -> Running:
+        if self._running is None:
+            raise BtPeerError("peer not running — call start_peer first")
+        return self._running
 
     def _emit(self, event_type: str, data: dict | None = None) -> None:
         entry = {
@@ -106,8 +130,8 @@ class BtPeer(Driver):
         self._events.append(entry)
         self.logger.info("event: %s %s", event_type, json.dumps(data or {}))
 
-    def _on_connection(self, connection: Connection) -> None:
-        self._connections[connection.handle] = connection
+    def _on_connection(self, running: Running, connection: Connection) -> None:
+        running.connections[connection.handle] = connection
         self._emit("connection", {
             "handle": connection.handle,
             "address": str(connection.peer_address),
@@ -117,7 +141,7 @@ class BtPeer(Driver):
         })
 
         def on_disconnect(reason):
-            self._connections.pop(connection.handle, None)
+            running.connections.pop(connection.handle, None)
             self._emit("disconnection", {
                 "handle": connection.handle,
                 "address": str(connection.peer_address),
@@ -126,21 +150,21 @@ class BtPeer(Driver):
 
         connection.on("disconnection", on_disconnect)
 
-    def _on_avdtp_connection(self, protocol) -> None:
+    def _on_avdtp_connection(self, running: Running, protocol) -> None:
         session = A2dpSession(
             protocol,
             get_track=lambda: self._player.track,
             on_exhausted=self._player.on_track_exhausted,
             emit=self._emit,
         )
-        self._session = session
+        running.session = session
         self._emit("avdtp_connected", {})
 
         channel = getattr(protocol, "l2cap_channel", None)
         if channel is not None:
             # Without this the session outlives its channel, and the next
             # play() operates on a protocol that is no longer connected.
-            channel.on(ClassicChannel.EVENT_CLOSE, lambda: self._on_avdtp_close(session))
+            channel.on(ClassicChannel.EVENT_CLOSE, lambda: self._on_avdtp_close(running, session))
 
         # play() may have been called in the window between the DUT's ACL
         # connection and its AVDTP channel, in which case it had no session
@@ -149,23 +173,20 @@ class BtPeer(Driver):
         # A paused track stays paused: resuming it here would restart audio
         # the caller deliberately stopped.
         if isinstance(self._player.state, Playing):
-            AsyncRunner.spawn(self._resume_queued_track())
+            AsyncRunner.spawn(self._resume_queued_track(session))
 
-    def _on_avdtp_close(self, session: A2dpSession) -> None:
+    def _on_avdtp_close(self, running: Running, session: A2dpSession) -> None:
         # Bound to the session it was registered for: a DUT that reconnects
         # before the old channel's CLOSE is delivered must not lose the new
         # session to the old channel's late event.
-        if self._session is session:
-            self._session = None
+        if running.session is session:
+            running.session = None
         self._emit("avdtp_disconnected", {})
 
-    async def _resume_queued_track(self) -> None:
+    async def _resume_queued_track(self, session: A2dpSession) -> None:
         """Start a track that was queued before the DUT's AVDTP channel existed."""
         before = self._player.state
         if not isinstance(before, Playing):
-            return
-        session = self._session
-        if session is None:
             return
 
         try:
@@ -231,138 +252,131 @@ class BtPeer(Driver):
 
         Returns JSON with assigned address.
         """
-        if self._device is not None:
-            raise BtPeerError("peer already running — call stop_peer first")
+        async with self._lifecycle:
+            if self._running is not None:
+                raise BtPeerError("peer already running — call stop_peer first")
 
-        try:
-            config = json.loads(config_json) if config_json else {}
-        except json.JSONDecodeError as exc:
-            raise BtPeerError(f"invalid config JSON: {exc.msg}") from exc
-        if not isinstance(config, dict):
-            raise BtPeerError(
-                f"config must be a JSON object, got {type(config).__name__}"
-            )
+            try:
+                config = json.loads(config_json) if config_json else {}
+            except json.JSONDecodeError as exc:
+                raise BtPeerError(f"invalid config JSON: {exc.msg}") from exc
+            if not isinstance(config, dict):
+                raise BtPeerError(
+                    f"config must be a JSON object, got {type(config).__name__}"
+                )
 
-        name = config.get("name", "Bumble-Phone")
-        classic_enabled = config.get("classic_enabled", True)
-        cod = config.get("class_of_device", None)
+            name = config.get("name", "Bumble-Phone")
+            self.logger.info("opening HCI transport: %s", self.transport)
+            transport = await open_transport(self.transport)
+            device = None
+            try:
+                device, running = self._build(transport, config, name)
+                await device.power_on()
+                if config.get("classic_enabled", True):
+                    await device.set_discoverable(True)
+                    await device.set_connectable(True)
+            except Exception:
+                if device is not None:
+                    with contextlib.suppress(Exception):
+                        await device.power_off()
+                await transport.close()
+                raise
 
-        self.logger.info("opening HCI transport: %s", self.transport)
+            # Published only once it is whole, so nothing sees a peer that is
+            # half started, and a failed start leaves nothing to undo.
+            self._running = running
 
-        self._transport = await open_transport(self.transport)
-
-        try:
-            device_config = DeviceConfiguration()
-            device_config.name = name
-            device_config.classic_enabled = classic_enabled
-
-            if cod is not None:
-                device_config.class_of_device = cod
-            else:
-                device_config.class_of_device = int(ClassOfDevice(
-                    ClassOfDevice.MajorServiceClasses.AUDIO | ClassOfDevice.MajorServiceClasses.TELEPHONY,
-                    ClassOfDevice.MajorDeviceClass.PHONE,
-                    DeviceClass.PHONE_SMARTPHONE_MINOR_DEVICE_CLASS,
-                ))
-
-            device_config.classic_sc_enabled = True
-            device_config.classic_ssp_enabled = True
-
-            host = Host(
-                controller_source=self._transport.source,
-                controller_sink=self._transport.sink,
-            )
-            self._device = Device(config=device_config, host=host)
-
-            self._device.pairing_config_factory = lambda connection: PairingConfig(
-                sc=True,
-                mitm=False,
-                bonding=True,
-                delegate=AutoAcceptDelegate(),
-            )
-
-            # A2DP source plus AVRCP target, the pair a phone advertises. The
-            # DUT needs the AVRCP record (UUID 110C) to treat this as a real
-            # media device; with the A2DP record alone it leaves its sink
-            # inactive and discards the audio.
-            audio_source_handle = 0x00010001
-            avrcp_target_handle = 0x00010002
-            self._device.sdp_service_records = {
-                audio_source_handle: make_audio_source_service_sdp_records(audio_source_handle),
-                avrcp_target_handle: TargetServiceSdpRecord(
-                    avrcp_target_handle
-                ).to_service_attributes(),
-            }
-
-            self._avdtp_listener = Listener.for_device(self._device)
-            self._avdtp_listener.on("connection", self._on_avdtp_connection)
-
-            self._avrcp_delegate = PeerDelegate(
-                on_key=self._on_avrcp_key,
-                now_playing=self._player.now_playing,
-            )
-            self._avrcp = PeerProtocol(self._avrcp_delegate)
-            self._avrcp.listen(self._device)
-            self._reporter = Reporter(self._avrcp_delegate, self._avrcp, self.logger)
-
-            self._device.on("connection", self._on_connection)
-
-            await self._device.power_on()
-
-            if classic_enabled:
-                await self._device.set_discoverable(True)
-                await self._device.set_connectable(True)
-        except Exception:
-            if self._device is not None:
-                with contextlib.suppress(Exception):
-                    await self._device.power_off()
-                self._device = None
-            self._avdtp_listener = None
-            self._avrcp = None
-            self._avrcp_delegate = None
-            self._reporter = None
-            if self._transport is not None:
-                await self._transport.close()
-                self._transport = None
-            raise
-
-        address = str(self._device.public_address)
+        address = str(device.public_address)
         self._emit("peer_started", {"address": address, "name": name})
 
         return json.dumps({"address": address, "name": name})
 
+    def _build(self, transport, config: dict, name: str) -> tuple[Device, Running]:
+        """Assemble the device and the profiles it serves, without starting it."""
+        classic_enabled = config.get("classic_enabled", True)
+        cod = config.get("class_of_device", None)
+
+        device_config = DeviceConfiguration()
+        device_config.name = name
+        device_config.classic_enabled = classic_enabled
+
+        if cod is not None:
+            device_config.class_of_device = cod
+        else:
+            device_config.class_of_device = int(ClassOfDevice(
+                ClassOfDevice.MajorServiceClasses.AUDIO | ClassOfDevice.MajorServiceClasses.TELEPHONY,
+                ClassOfDevice.MajorDeviceClass.PHONE,
+                DeviceClass.PHONE_SMARTPHONE_MINOR_DEVICE_CLASS,
+            ))
+
+        device_config.classic_sc_enabled = True
+        device_config.classic_ssp_enabled = True
+
+        host = Host(
+            controller_source=transport.source,
+            controller_sink=transport.sink,
+        )
+        device = Device(config=device_config, host=host)
+
+        device.pairing_config_factory = lambda connection: PairingConfig(
+            sc=True,
+            mitm=False,
+            bonding=True,
+            delegate=AutoAcceptDelegate(),
+        )
+
+        # A2DP source plus AVRCP target, the pair a phone advertises. The
+        # DUT needs the AVRCP record (UUID 110C) to treat this as a real
+        # media device; with the A2DP record alone it leaves its sink
+        # inactive and discards the audio.
+        audio_source_handle = 0x00010001
+        avrcp_target_handle = 0x00010002
+        device.sdp_service_records = {
+            audio_source_handle: make_audio_source_service_sdp_records(audio_source_handle),
+            avrcp_target_handle: TargetServiceSdpRecord(
+                avrcp_target_handle
+            ).to_service_attributes(),
+        }
+
+        listener = Listener.for_device(device)
+        delegate = PeerDelegate(on_key=self._on_avrcp_key, now_playing=self._player.now_playing)
+        avrcp = PeerProtocol(delegate)
+        avrcp.listen(device)
+        running = Running(
+            device=device,
+            transport=transport,
+            avdtp_listener=listener,
+            avrcp=avrcp,
+            delegate=delegate,
+            reporter=Reporter(delegate, avrcp, self.logger),
+        )
+        listener.on("connection", lambda protocol: self._on_avdtp_connection(running, protocol))
+        device.on("connection", lambda connection: self._on_connection(running, connection))
+        return device, running
+
     @export
     async def stop_peer(self) -> str:
         """Stop the Bluetooth peer device and clean up."""
-        if self._device is None and self._transport is None:
-            return json.dumps({"status": "not_running"})
+        async with self._lifecycle:
+            running = self._running
+            if running is None:
+                return json.dumps({"status": "not_running"})
 
-        self._avdtp_listener = None
-        device = self._device
-        transport = self._transport
-        self._device = None
-        self._transport = None
-        self._player.reset()
-        self._session = None
-        self._avrcp = None
-        self._avrcp_delegate = None
-        self._reporter = None
-        self._connections.clear()
-        self._events.clear()
+            self._running = None
+            self._player.reset()
+            self._events.clear()
 
-        first_error: Exception | None = None
-        try:
-            if device is not None:
-                await device.power_off()
-        except Exception as exc:  # noqa: BLE001
-            first_error = exc
-        finally:
+            first_error: Exception | None = None
             try:
-                if transport is not None:
-                    await transport.close()
-            except Exception as exc:  # pragma: no cover  # noqa: BLE001
-                if first_error is None:
-                    first_error = exc
+                await running.device.power_off()
+            except Exception as exc:  # noqa: BLE001
+                first_error = exc
+            finally:
+                try:
+                    await running.transport.close()
+                except Exception as exc:  # pragma: no cover  # noqa: BLE001
+                    if first_error is None:
+                        first_error = exc
 
         self._emit("peer_stopped", {})
 
@@ -378,11 +392,10 @@ class BtPeer(Driver):
         Returns JSON with connection details (handle, address, transport, role, encrypted).
         Raises on timeout.
         """
-        if self._device is None:
-            raise BtPeerError("peer not running — call start_peer first")
+        running = self._require_running()
 
-        if self._connections:
-            conn = next(iter(self._connections.values()))
+        if running.connections:
+            conn = next(iter(running.connections.values()))
             return json.dumps(_describe_connection(conn))
 
         event = anyio.Event()
@@ -392,14 +405,14 @@ class BtPeer(Driver):
             result_holder.append(connection)
             event.set()
 
-        self._device.on("connection", on_connect)
+        running.device.on("connection", on_connect)
         try:
             with anyio.fail_after(timeout):
                 await event.wait()
         except TimeoutError:
             raise BtPeerError(f"no connection within {timeout}s") from None
         finally:
-            self._device.remove_listener("connection", on_connect)
+            running.device.remove_listener("connection", on_connect)
 
         return json.dumps(_describe_connection(result_holder[0]))
 
@@ -410,16 +423,15 @@ class BtPeer(Driver):
         Returns JSON with disconnection details (handle, address, reason).
         Raises on timeout if no disconnection occurs.
         """
-        if self._device is None:
-            raise BtPeerError("peer not running")
-        if not self._connections:
+        running = self._require_running()
+        if not running.connections:
             return json.dumps({"status": "no_connections"})
 
         event = anyio.Event()
         result_holder: list[dict] = []
         registered: list[tuple[Connection, Any]] = []
 
-        for conn in list(self._connections.values()):
+        for conn in list(running.connections.values()):
             def on_disconnect(reason, c=conn):
                 result_holder.append({
                     "handle": c.handle,
@@ -448,11 +460,10 @@ class BtPeer(Driver):
 
         AutoAcceptDelegate handles numeric comparison automatically.
         """
-        if self._device is None:
-            raise BtPeerError("peer not running")
+        running = self._require_running()
 
         handle = int(handle)
-        conn = self._connections.get(handle)
+        conn = running.connections.get(handle)
         if conn is None:
             raise BtPeerError(f"no connection with handle {handle}")
 
@@ -473,8 +484,7 @@ class BtPeer(Driver):
 
         Returns JSON with connection details.
         """
-        if self._device is None:
-            raise BtPeerError("peer not running - call start_peer first")
+        running = self._require_running()
 
         from bumble.hci import Address as HciAddress
 
@@ -485,7 +495,7 @@ class BtPeer(Driver):
         self.logger.info("connecting to %s", target)
         try:
             with anyio.fail_after(timeout):
-                connection = await self._device.connect(
+                connection = await running.device.connect(
                     target, transport=BT_BR_EDR_TRANSPORT
                 )
         except TimeoutError:
@@ -506,13 +516,14 @@ class BtPeer(Driver):
     @export
     def get_address(self) -> str:
         """Return the peer's assigned Bluetooth address."""
-        if self._device is None:
-            raise BtPeerError("peer not running")
-        return str(self._device.public_address)
+        return str(self._require_running().device.public_address)
 
     @export
     def get_connections(self) -> str:
         """Return currently active connections as JSON array."""
+        # Not an error when stopped, unlike the other commands: a stopped
+        # peer has no connections, which is an answer.
+        connections = self._running.connections if self._running else {}
         return json.dumps([
             {
                 "handle": conn.handle,
@@ -520,7 +531,7 @@ class BtPeer(Driver):
                 "transport": "BR/EDR" if conn.transport == BT_BR_EDR_TRANSPORT else "LE",
                 "encrypted": conn.is_encrypted,
             }
-            for conn in self._connections.values()
+            for conn in connections.values()
         ])
 
     async def _receive_upload(self, src: str) -> bytes:
@@ -553,8 +564,7 @@ class BtPeer(Driver):
 
         Replaces any track already playing. Returns JSON describing the track.
         """
-        if self._device is None:
-            raise BtPeerError("peer not running — call start_peer first")
+        running = self._require_running()
 
         data = await self._receive_upload(src)
         metadata = parse_metadata(metadata_json, default_title=name)
@@ -562,7 +572,7 @@ class BtPeer(Driver):
         # all should not send SET_CONFIGURATION to the DUT.
         track = Track(name=name, data=data, loop=bool(loop))
 
-        session = self._session
+        session = running.session
         # Configure before checking, so the upload is checked against the
         # bitpool that was actually agreed rather than the wider range the
         # peer advertises. Configuring leaves a running stream alone.

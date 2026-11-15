@@ -15,7 +15,16 @@ from .a2dp import (
     parse_sbc,
 )
 from .avrcp import TrackMetadata
-from .conftest import fake_protocol, make_sbc_file, sbc_capability, session_for, sink_with_bitpool
+from .conftest import (
+    connect_avdtp,
+    fake_protocol,
+    make_sbc_file,
+    running_peer,
+    sbc_capability,
+    session_for,
+    session_of,
+    sink_with_bitpool,
+)
 from .driver import BtPeer, BtPeerError
 from .player import Playing
 
@@ -213,10 +222,10 @@ async def test_rtp_mtu_comes_from_the_media_channel_not_signalling():
     The media transport channel is a separate L2CAP channel created when the
     stream opens, and only its MTU may size a packet.
     """
-    peer = BtPeer()
+    peer = running_peer()
     protocol = fake_protocol(signalling_mtu=1024)
-    peer._on_avdtp_connection(protocol)
-    session = peer._session
+    connect_avdtp(peer, protocol)
+    session = session_of(peer)
     assert session is not None
 
     pump = protocol.add_source.call_args.args[1]
@@ -229,10 +238,10 @@ async def test_rtp_mtu_comes_from_the_media_channel_not_signalling():
 @pytest.mark.anyio
 @pytest.mark.parametrize("bad_mtu", [None, "672", 4, MagicMock()])
 async def test_implausible_media_mtu_falls_back(bad_mtu):
-    peer = BtPeer()
+    peer = running_peer()
     protocol = fake_protocol()
-    peer._on_avdtp_connection(protocol)
-    session = peer._session
+    connect_avdtp(peer, protocol)
+    session = session_of(peer)
     assert session is not None
 
     pump = protocol.add_source.call_args.args[1]
