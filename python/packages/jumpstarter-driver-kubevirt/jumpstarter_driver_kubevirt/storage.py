@@ -441,21 +441,19 @@ class Flash:
 
     async def _delete_all_owned(self, names, vm_uid):
         """Delete every volume, letting the others finish when one fails, then raise the first failure."""
-        failures: dict[str, Exception] = {}
+        failures: list[Exception] = []
 
         async def delete(name):
             try:
                 await self._delete_owned(name, vm_uid)
             except Exception as error:  # noqa: BLE001 - re-raised once every deletion has finished
-                failures[name] = error
+                failures.append(error)
 
-        names = list(names)
         async with create_task_group() as group:
             for name in names:
                 group.start_soon(delete, name)
-        for name in names:
-            if name in failures:
-                raise failures[name]
+        if failures:
+            raise failures[0]
 
     async def _delete_owned(self, name, vm_uid):
         try:
