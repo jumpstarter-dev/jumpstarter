@@ -5,14 +5,16 @@ wire format, `avrcp` owns what the DUT displays, and `player` owns what the
 peer is playing. This module wires those together and exposes them.
 """
 
-import contextlib
 import json
 import time
 from collections import deque
+from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, assert_never
 
 import anyio
+from anyio.abc import TaskGroup
 from bumble.a2dp import make_audio_source_service_sdp_records
 from bumble.avdtp import Listener
 from bumble.avrcp import TargetServiceSdpRecord
@@ -23,7 +25,6 @@ from bumble.host import Host
 from bumble.l2cap import ClassicChannel
 from bumble.pairing import PairingConfig, PairingDelegate
 from bumble.transport import open_transport
-from bumble.utils import AsyncRunner
 
 from .a2dp import ADVERTISED, A2dpSession, Track
 from .avrcp import PeerDelegate, PeerProtocol, Reporter, parse_metadata
@@ -33,6 +34,15 @@ from .player import Idle, Loaded, Paused, Player, Playing
 from jumpstarter.driver import Driver, export
 
 __all__ = ["AutoAcceptDelegate", "BtPeer", "BtPeerError"]
+
+# How long each step of shutting the peer down may take: powering the
+# controller off, then closing its transport. bumble sends HCI commands with
+# no timeout of its own, so a wedged adapter would otherwise hold whoever is
+# stopping the peer, the end of the session included, forever.
+STOP_STEP_TIMEOUT = 5.0
+# How long the end of the session waits for the peer to stop. Powering down
+# bounds itself; this also covers waiting for a start or stop in flight.
+SESSION_STOP_TIMEOUT = 3 * STOP_STEP_TIMEOUT
 
 
 class AutoAcceptDelegate(PairingDelegate):
@@ -99,6 +109,8 @@ class BtPeer(Driver):
     # Serializes start_peer and stop_peer, which both await before they have
     # finished changing `_running`.
     _lifecycle: anyio.Lock = field(default_factory=anyio.Lock, init=False, repr=False)
+    # Opened by serving(), so the work device events start has an owner.
+    _tasks: TaskGroup = field(init=False, repr=False)
     _events: deque = field(default_factory=lambda: deque(maxlen=1000), init=False, repr=False)
     # Built in __post_init__ rather than by a default_factory, because it
     # closes over this instance's callbacks.
@@ -115,6 +127,45 @@ class BtPeer(Driver):
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_bt_peer.client.BtPeerClient"
+
+    @asynccontextmanager
+    async def serving(self):
+        """Own the work device events start, and stop the peer as the session ends.
+
+        A lease can end without anyone calling stop_peer. The next session
+        builds a driver of its own, so a peer left running here would keep the
+        adapter powered and its transport open with nothing left to close them,
+        and the next lease's start_peer would find the adapter taken.
+        """
+        async with super().serving():
+            try:
+                async with anyio.create_task_group() as tasks:
+                    self._tasks = tasks
+                    yield
+            finally:
+                # This runs cancelled, so it must be shielded to run at all.
+                # The deadline sits on the shield itself: one outside it would
+                # be shielded out along with the session's cancellation.
+                with anyio.move_on_after(SESSION_STOP_TIMEOUT, shield=True) as stopping:
+                    await self.stop_peer()
+                if stopping.cancelled_caught:
+                    self.logger.warning("The peer did not stop within %ss of the session ending", SESSION_STOP_TIMEOUT)
+
+    def _spawn(self, what: str, work: Callable[..., Awaitable[object]], *args: object) -> None:
+        """Run the work a device event asked for, owned by the session.
+
+        Nobody awaits a device event, so a failure is logged here. Raised into
+        the task group, it would end serving(), and with it every other
+        event's work and the peer itself.
+        """
+
+        async def run() -> None:
+            try:
+                await work(*args)
+            except Exception:
+                self.logger.exception("%s failed", what)
+
+        self._tasks.start_soon(run)
 
     def _require_running(self) -> Running:
         if self._running is None:
@@ -173,7 +224,7 @@ class BtPeer(Driver):
         # A paused track stays paused: resuming it here would restart audio
         # the caller deliberately stopped.
         if isinstance(self._player.state, Playing):
-            AsyncRunner.spawn(self._resume_queued_track(session))
+            self._spawn("Starting the queued track", self._resume_queued_track, session)
 
     def _on_avdtp_close(self, running: Running, session: A2dpSession) -> None:
         # Bound to the session it was registered for: a DUT that reconnects
@@ -235,11 +286,11 @@ class BtPeer(Driver):
         if not pressed or not self.follow_transport_keys:
             return
         if name == "PAUSE":
-            AsyncRunner.spawn(self.pause())
+            self._spawn("The DUT's PAUSE", self.pause)
         elif name == "STOP":
-            AsyncRunner.spawn(self.stop_playback())
+            self._spawn("The DUT's STOP", self.stop_playback)
         elif name == "PLAY":
-            AsyncRunner.spawn(self.resume())
+            self._spawn("The DUT's PLAY", self.resume)
 
     @export
     async def start_peer(self, config_json: str = "{}") -> str:
@@ -275,11 +326,12 @@ class BtPeer(Driver):
                 if config.get("classic_enabled", True):
                     await device.set_discoverable(True)
                     await device.set_connectable(True)
-            except Exception:
-                if device is not None:
-                    with contextlib.suppress(Exception):
-                        await device.power_off()
-                await transport.close()
+            except BaseException:
+                # Cancellation included: a client that gives up on start_peer
+                # must not leave the adapter held by a peer nobody can stop.
+                # The error that ended the start is the one the caller needs.
+                if (error := await self._power_down(device, transport)) is not None:
+                    self.logger.warning("Cleaning up after a failed start failed: %s", error)
                 raise
 
             # Published only once it is whole, so nothing sees a peer that is
@@ -365,25 +417,37 @@ class BtPeer(Driver):
             self._running = None
             self._player.reset()
             self._events.clear()
-
-            first_error: Exception | None = None
-            try:
-                await running.device.power_off()
-            except Exception as exc:  # noqa: BLE001
-                first_error = exc
-            finally:
-                try:
-                    await running.transport.close()
-                except Exception as exc:  # pragma: no cover  # noqa: BLE001
-                    if first_error is None:
-                        first_error = exc
+            error = await self._power_down(running.device, running.transport)
 
         self._emit("peer_stopped", {})
 
-        if first_error is not None:
-            raise BtPeerError(f"failed to stop peer: {first_error}") from first_error
+        if error is not None:
+            raise BtPeerError(f"failed to stop peer: {error!r}") from error
 
         return json.dumps({"status": "stopped"})
+
+    async def _power_down(self, device: Device | None, transport) -> Exception | None:
+        """Power the device off and close its transport, returning the first failure.
+
+        Shielded, because it runs on the way out of a cancelled start and at the
+        end of the session, where skipping it strands the adapter. Each step is
+        bounded, and the transport is closed even when powering off failed or
+        timed out: closing it is what lets go of the adapter.
+        """
+        first_error: Exception | None = None
+        with anyio.CancelScope(shield=True):
+            if device is not None:  # None when the start failed building it
+                try:
+                    with anyio.fail_after(STOP_STEP_TIMEOUT):
+                        await device.power_off()
+                except Exception as exc:  # noqa: BLE001 - returned once the transport is closed
+                    first_error = exc
+            try:
+                with anyio.fail_after(STOP_STEP_TIMEOUT):
+                    await transport.close()
+            except Exception as exc:  # noqa: BLE001
+                first_error = first_error or exc
+        return first_error
 
     @export
     async def wait_connection(self, timeout: int = 30) -> str:

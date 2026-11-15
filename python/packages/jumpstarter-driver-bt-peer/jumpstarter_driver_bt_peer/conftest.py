@@ -7,6 +7,7 @@ stands on a hand-built AVDTP protocol rather than a live stack.
 import contextlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import anyio
 import pytest
 from bumble.a2dp import SbcMediaCodecInformation
 from bumble.avdtp import MediaCodecCapabilities, State
@@ -138,6 +139,21 @@ def running_peer(**kwargs) -> BtPeer:
         reporter=Reporter(delegate, avrcp, peer.logger),
     )
     return peer
+
+
+@contextlib.asynccontextmanager
+async def serving(peer: BtPeer):
+    """Hold the driver's serving() open the way the session does.
+
+    The session cancels everything inside serving() before leaving it, so the
+    driver's teardown runs cancelled here too.
+    """
+    with anyio.CancelScope() as session:
+        async with peer.serving():
+            try:
+                yield
+            finally:
+                session.cancel()
 
 
 def running_of(peer) -> Running:
