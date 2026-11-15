@@ -76,6 +76,26 @@ def test_return_codes(client):
     assert returncode == 1
 
 
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        # Still running when its timeout expires: stopped, and reported as timed out
+        ("exec >/dev/null 2>&1; sleep 10", 199),
+        # Exits before its timeout: its own status comes back
+        ("exec >/dev/null 2>&1; sleep 0.5; exit 3", 3),
+    ],
+    ids=["outlives-timeout", "exits-in-time"],
+)
+def test_timeout_applies_after_the_script_closes_its_output(command, expected):
+    """Closing stdout and stderr neither ends the call nor lifts its timeout"""
+    shell = Shell(methods={"quiet": {"command": command, "timeout": 2}})
+
+    with serve(shell) as client:
+        _stdout, stderr, returncode = _collect_streaming_output(client, "quiet")
+
+    assert returncode == expected, stderr
+
+
 def test_stderr(client):
     stdout, stderr, returncode = _collect_streaming_output(client, "stderr", {}, "error")
     assert stdout == ""

@@ -4,7 +4,7 @@ import subprocess
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
-from anyio import EndOfStream, current_time, move_on_after
+from anyio import EndOfStream, current_time, fail_after, move_on_after
 
 from jumpstarter.common.process import OutputChunk, StreamingProcess, open_streaming_process
 from jumpstarter.driver import Driver, export, session_env
@@ -201,6 +201,10 @@ class Shell(Driver):
                 try:
                     return await process.receive()
                 except EndOfStream:
-                    return None
+                    break
             if process.returncode is not None:
                 return None
+        # Both pipes have ended, but a script can close them and keep running
+        with fail_after(deadline - current_time()):
+            await process.wait()
+        return None
