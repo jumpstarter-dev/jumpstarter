@@ -14,8 +14,8 @@ from .player import Idle, Paused, Player, Playing
 
 def _player(session=None):
     """A player over a stub session, reporting to a real delegate."""
-    delegate = PeerDelegate()
-    reporter = Reporter(delegate, None, logging.getLogger("test"))
+    delegate = PeerDelegate(on_key=lambda key, pressed: None, now_playing=lambda: (TrackMetadata(), 0))
+    reporter = Reporter(delegate, MagicMock(), logging.getLogger("test"))
     events: list[tuple[str, dict]] = []
     player = Player(
         get_session=lambda: session,

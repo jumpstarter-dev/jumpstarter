@@ -69,10 +69,6 @@ class TrackMetadata:
         }
 
 
-def _nothing_playing() -> tuple[TrackMetadata, int]:
-    return TrackMetadata(), 0
-
-
 class PeerDelegate(BumbleAvrcpDelegate):
     """Reports the peer's transport state to the DUT's AVRCP controller.
 
@@ -87,8 +83,8 @@ class PeerDelegate(BumbleAvrcpDelegate):
 
     def __init__(
         self,
-        on_key: Callable[[object, bool], None] | None = None,
-        now_playing: Callable[[], tuple[TrackMetadata, int]] | None = None,
+        on_key: Callable[[object, bool], None],
+        now_playing: Callable[[], tuple[TrackMetadata, int]],
     ):
         super().__init__(
             supported_events=[
@@ -97,11 +93,10 @@ class PeerDelegate(BumbleAvrcpDelegate):
             ]
         )
         self._on_key = on_key
-        self._now_playing = now_playing or _nothing_playing
+        self._now_playing = now_playing
 
     async def on_key_event(self, key, pressed: bool, data: bytes) -> None:
-        if self._on_key is not None:
-            self._on_key(key, pressed)
+        self._on_key(key, pressed)
 
     async def get_media_attributes(self, attribute_ids) -> list[MediaAttribute]:
         metadata, _position = self._now_playing()
@@ -172,7 +167,7 @@ class Reporter:
     state the driver believes it is in.
     """
 
-    def __init__(self, delegate: PeerDelegate, protocol: BumbleAvrcpProtocol | None, logger):
+    def __init__(self, delegate: PeerDelegate, protocol: BumbleAvrcpProtocol, logger):
         self._delegate = delegate
         self._protocol = protocol
         self._logger = logger
@@ -181,8 +176,6 @@ class Reporter:
         # The delegate answers GET_PLAY_STATUS from this, so it is set even
         # when there is no controller registered for notifications.
         self._delegate.playback_status = status
-        if self._protocol is None:
-            return
         if track_changed:
             self._notify("track change", self._protocol.notify_track_changed, 0)
         self._notify("playback status", self._protocol.notify_playback_status_changed, status)

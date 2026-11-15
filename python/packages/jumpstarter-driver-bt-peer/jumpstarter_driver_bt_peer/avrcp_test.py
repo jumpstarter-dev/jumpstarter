@@ -83,11 +83,19 @@ def test_parse_metadata_rejects_malformed_json():
 # -- the delegate --------------------------------------------------------
 
 
+def _delegate(on_key=None, now_playing=None) -> PeerDelegate:
+    """A delegate whose driver callbacks are stubs unless a test cares."""
+    return PeerDelegate(
+        on_key=on_key or (lambda key, pressed: None),
+        now_playing=now_playing or (lambda: (TrackMetadata(), 0)),
+    )
+
+
 @pytest.mark.anyio
 async def test_delegate_reads_metadata_from_the_player():
     """The delegate holds no state of its own, so it cannot go stale."""
     now_playing = MagicMock(return_value=(TrackMetadata(title="First"), 0))
-    delegate = PeerDelegate(now_playing=now_playing)
+    delegate = _delegate(now_playing=now_playing)
 
     attributes = await delegate.get_media_attributes([MediaAttributeId.TITLE])
     assert attributes[0].attribute_value == "First"
@@ -100,7 +108,7 @@ async def test_delegate_reads_metadata_from_the_player():
 @pytest.mark.anyio
 async def test_play_status_is_unavailable_without_a_duration():
     """A file with no duration must not claim a length of zero."""
-    delegate = PeerDelegate()
+    delegate = _delegate()
     length, position = await delegate.get_song_length_and_position()
 
     assert length == GetPlayStatusResponse.UNAVAILABLE
@@ -109,7 +117,7 @@ async def test_play_status_is_unavailable_without_a_duration():
 
 @pytest.mark.anyio
 async def test_play_status_reports_length_and_position():
-    delegate = PeerDelegate(now_playing=lambda: (TrackMetadata(duration_ms=128040), 4000))
+    delegate = _delegate(now_playing=lambda: (TrackMetadata(duration_ms=128040), 4000))
 
     assert await delegate.get_song_length_and_position() == (128040, 4000)
 
@@ -117,7 +125,7 @@ async def test_play_status_reports_length_and_position():
 @pytest.mark.anyio
 async def test_key_events_reach_the_driver():
     seen = []
-    delegate = PeerDelegate(on_key=lambda key, pressed: seen.append((key, pressed)))
+    delegate = _delegate(on_key=lambda key, pressed: seen.append((key, pressed)))
 
     await delegate.on_key_event("PLAY", True, b"")
 
@@ -131,7 +139,7 @@ async def test_key_events_reach_the_driver():
 async def test_get_element_attributes_is_dispatched():
     """bumble rejects this PDU by default; the subclass has to answer it."""
     protocol = PeerProtocol.__new__(PeerProtocol)
-    protocol.delegate = PeerDelegate(now_playing=lambda: (TrackMetadata(title="Fun Fun Music"), 0))
+    protocol.delegate = _delegate(now_playing=lambda: (TrackMetadata(title="Fun Fun Music"), 0))
     protocol.receive_command_state = MagicMock(transaction_label=7)
     command = GetElementAttributesCommand(identifier=0, attribute_ids=[MediaAttributeId.TITLE])
 
@@ -164,8 +172,8 @@ async def test_other_pdus_still_reach_the_base_class():
 
 
 def _reporter(protocol=None):
-    delegate = PeerDelegate()
-    return Reporter(delegate, protocol, logging.getLogger("test")), delegate
+    delegate = _delegate()
+    return Reporter(delegate, protocol or MagicMock(), logging.getLogger("test")), delegate
 
 
 def test_reporter_sets_the_status_the_delegate_answers_with():
