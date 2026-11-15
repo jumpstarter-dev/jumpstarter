@@ -254,7 +254,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     if isinstance(categorized_error, FlashNonRetryableError):
                         # Non-retryable error, fail immediately
                         self.logger.error(f"Flash operation failed with non-retryable error: {categorized_error}")
-                        raise FlashError(f"Flash operation failed: {categorized_error}") from e
+                        raise FlashError("Flash operation failed") from e
                     else:
                         # Retryable error
                         if attempt < retries:
@@ -267,9 +267,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                             continue
                         else:
                             self.logger.error(f"Flash operation failed after {retries + 1} attempts")
-                            raise FlashError(
-                                f"Flash operation failed after {retries + 1} attempts. Last error: {categorized_error}"
-                            ) from e
+                            raise FlashError(f"Flash operation failed after {retries + 1} attempts") from e
 
         total_time = time.time() - start_time
         # total time in minutes:seconds

@@ -8,6 +8,20 @@ import sys
 CONSOLE_IN_USE_MARKER = "[jumpstarter:console-in-use]"
 
 
+def _describe_cause(cause: BaseException) -> str:
+    """Text for a cause: a group as its leaf errors, an empty message as the type's name."""
+    if isinstance(cause, BaseExceptionGroup):
+        # a group's own message ("... (2 sub-exceptions)") names none of the failures
+        return "; ".join(_describe_group_member(exc) for exc in cause.exceptions)
+    return str(cause) or type(cause).__name__
+
+
+def _describe_group_member(exc: BaseException) -> str:
+    if isinstance(exc, BaseExceptionGroup):
+        return _describe_cause(exc)
+    return f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+
+
 class JumpstarterException(Exception):
     """Base class for jumpstarter-specific errors.
 
@@ -27,7 +41,7 @@ class JumpstarterException(Exception):
 
     def __str__(self):
         if self.__cause__:
-            return f"{self.message} (Caused by: {self.__cause__})"
+            return f"{self.message} (Caused by: {_describe_cause(self.__cause__)})"
         return f"{self.message}"
 
 

@@ -5,7 +5,7 @@ from pathlib import PosixPath
 import click
 import pytest
 
-from .client import BaseFlasherClient, FlashNonRetryableError, FlashRetryableError
+from .client import BaseFlasherClient, FlashError, FlashNonRetryableError, FlashRetryableError
 from jumpstarter.common.exceptions import ArgumentError
 
 
@@ -362,6 +362,60 @@ def test_categorize_exception_wraps_unknown_exceptions():
     assert "Something went wrong" in str(result)
     # Verify the cause chain is preserved
     assert result.__cause__ is error
+
+
+class _IdleService:
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+
+@pytest.mark.parametrize(
+    "error, expected",
+    [
+        (
+            RuntimeError("Failed to get U-Boot prompt"),
+            "Flash operation failed after 1 attempts (Caused by: Failed to get U-Boot prompt)",
+        ),
+        (
+            FlashNonRetryableError("Could not find dd process ID"),
+            "Flash operation failed (Caused by: Could not find dd process ID)",
+        ),
+        (CancelledError(), "Flash operation failed (Caused by: CancelledError)"),
+        (
+            ExceptionGroup(
+                "unhandled errors in a TaskGroup",
+                [
+                    RuntimeError("Failed to get U-Boot prompt"),
+                    ExceptionGroup("unhandled errors in a TaskGroup", [ValueError("handler failed")]),
+                ],
+            ),
+            (
+                "Flash operation failed after 1 attempts"
+                " (Caused by: RuntimeError: Failed to get U-Boot prompt; ValueError: handler failed)"
+            ),
+        ),
+    ],
+)
+def test_flash_error_reports_the_failure_once(error, expected):
+    """FlashError names the underlying failure once, and chains it as __cause__"""
+    client = MockFlasherClient()
+    client.http = _IdleService()  # ty: ignore[unresolved-attribute]
+    client.tftp = _IdleService()  # ty: ignore[unresolved-attribute]
+    client.call = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
+
+    def fail(*args, **kwargs):
+        raise error
+
+    client._perform_flash_operation = fail  # ty: ignore[invalid-assignment]
+
+    with pytest.raises(FlashError) as excinfo:
+        client.flash("https://example.com/image.raw.xz", retries=0)
+
+    assert str(excinfo.value) == expected
+    assert excinfo.value.__cause__ is error
 
 
 def test_categorize_exception_cancelled_error_is_non_retryable():
