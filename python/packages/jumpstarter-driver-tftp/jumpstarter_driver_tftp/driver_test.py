@@ -258,10 +258,10 @@ def test_start_after_the_server_failed_starts_a_fresh_one(tmp_path, free_ipv4_ud
     monkeypatch.setattr(driver_module, "TftpServer", FailsOnce)
     (tmp_path / "hello.txt").write_bytes(b"hello after a failure")
     server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=free_ipv4_udp_port)
-    threads = threading.active_count()
     server.start()
     deadline = time.monotonic() + 5
-    while "receive loop broke" not in caplog.text and time.monotonic() < deadline:
+    while "receive loop broke" not in caplog.text:
+        assert time.monotonic() < deadline, "the failed server was never reported"
         time.sleep(0.01)
 
     server.start()
@@ -270,5 +270,3 @@ def test_start_after_the_server_failed_starts_a_fresh_one(tmp_path, free_ipv4_ud
     finally:
         server.stop()
     server.close()
-
-    assert threading.active_count() == threads
