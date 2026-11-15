@@ -1064,11 +1064,16 @@ async def test_interrupted_begin_does_not_lock_out_the_lease(cluster, monkeypatc
     driver = storage(cluster)
     task = asyncio.create_task(begin(driver, ["root"]))  # noqa: TID251
     await entered.wait()
+    staged = operation(cluster.vm)["disks"]["root"]["new"]
+    # gRPC cancels a call the same way: Task.cancel() on the handler task.
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+    # The cancelled call discarded its own operation before returning; the next
+    # flash's own reclaim must not be what cleans it up.
+    assert operation(cluster.vm)["phase"] == "aborted"
+    assert (DataVolume, staged) not in cluster.objects
     release.set()
-    # The cancelled call discarded its own operation, so this lease can flash again.
     await begin(driver, ["root"])
     assert operation(cluster.vm)["phase"] == "staging"
 
