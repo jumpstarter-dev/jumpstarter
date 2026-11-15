@@ -6,7 +6,16 @@ from typing import TYPE_CHECKING, Self
 from uuid import UUID
 
 import grpc
-from anyio import ContextManagerMixin, Event, TypedAttributeLookupError, sleep
+from anyio import (
+    TASK_STATUS_IGNORED,
+    ContextManagerMixin,
+    Event,
+    TypedAttributeLookupError,
+    create_task_group,
+    sleep,
+    sleep_forever,
+)
+from anyio.abc import TaskStatus
 from anyio.from_thread import start_blocking_portal
 from jumpstarter_protocol import (
     jumpstarter_pb2,
@@ -24,7 +33,6 @@ from jumpstarter.metrics import get_registry
 from jumpstarter.streams.common import forward_stream
 from jumpstarter.streams.fanout import (
     ExclusiveSessionActive,
-    FanOutStreamMixin,
     ReadOnlyStreamError,
     WriteTokenRevokedError,
 )
@@ -41,6 +49,22 @@ _GRPC_SERVER_OPTIONS_TCP_KEEPALIVE: list[tuple[str, int]] = [
     ("grpc.http2.min_ping_interval_without_data_ms", 10000),
     ("grpc.keepalive_permit_without_calls", 1),
 ]
+
+
+async def _serve_driver(driver: "Driver", *, task_status: TaskStatus[None] = TASK_STATUS_IGNORED) -> None:
+    """Hold the driver's serving() open until cancelled, and log its background work failing.
+
+    Entering serving() stays outside the try, so a driver that cannot start
+    serving fails the session's start instead of being logged.
+    """
+    serving = AsyncExitStack()
+    await serving.enter_async_context(driver.serving())
+    task_status.started()
+    try:
+        async with serving:
+            await sleep_forever()
+    except Exception:
+        driver.logger.exception("Background work failed; the session goes on serving without it")
 
 
 @dataclass(kw_only=True)
@@ -132,18 +156,30 @@ class Session(
         await self._rpcs_in_flight.finished()
 
     @asynccontextmanager
-    async def _fanouts_running(self):
-        """Run the console fan-out readers of this session's drivers while it serves.
+    async def _drivers_serving(self):
+        """Keep every driver's serving() context open while the session serves.
 
-        They start before and stop after the gRPC server, so no client can attach
-        to a stopped fan-out, and every console source is closed before the
-        session's driver shutdown runs.
+        They are entered before and left after the gRPC server, so no client
+        reaches a driver whose background work (a console fan-out reader, for
+        example) has stopped, and that work has ended before the session's
+        driver shutdown runs. Each driver serves in a task of its own, so work
+        that fails ends only that driver's serving(), and every exit, an error
+        included, leaves them all cancelled.
         """
-        async with AsyncExitStack() as stack:
-            for driver in self.mapping.values():
-                if isinstance(driver, FanOutStreamMixin):
-                    await stack.enter_async_context(driver._get_fanout().running())
-            yield
+        failure = None
+        async with create_task_group() as drivers:
+            try:
+                for driver in self.mapping.values():
+                    await drivers.start(_serve_driver, driver)
+                yield
+            except Exception as error:  # noqa: BLE001 - re-raised below, once the drivers stopped
+                # Raised into the task group instead, the session's own error would reach
+                # its caller wrapped in an ExceptionGroup.
+                failure = error
+            finally:
+                drivers.cancel_scope.cancel()
+        if failure is not None:
+            raise failure
 
     @asynccontextmanager
     async def serve_port_async(self, port):
@@ -153,7 +189,7 @@ class Session(
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
-        async with self._fanouts_running():
+        async with self._drivers_serving():
             await server.start()
             try:
                 yield
@@ -181,7 +217,7 @@ class Session(
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
-        async with self._fanouts_running():
+        async with self._drivers_serving():
             await server.start()
             logger.info("Session server started on %d ports", len(ports))
             try:
@@ -201,7 +237,7 @@ class Session(
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
-        async with self._fanouts_running():
+        async with self._drivers_serving():
             await server.start()
             try:
                 yield

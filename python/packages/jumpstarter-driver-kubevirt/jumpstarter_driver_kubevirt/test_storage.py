@@ -14,6 +14,7 @@ from uuid import uuid4
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
+from anyio import Event, fail_after, sleep, sleep_forever
 from click.testing import CliRunner
 from lightkube.core.exceptions import ApiError
 from lightkube.models.meta_v1 import Status
@@ -24,6 +25,7 @@ from .driver import KubevirtPower, KubevirtStorage
 from .storage import Disk, Flash, disk_names, volumes
 from .vm import (
     FLASH_ANNOTATION,
+    TERMINAL_PHASES,
     DataVolume,
     UploadTokenRequest,
     VirtualMachine,
@@ -33,6 +35,7 @@ from .vm import (
 )
 from jumpstarter.client.core import DriverError
 from jumpstarter.common.utils import serve
+from jumpstarter.exporter.session import Session
 from jumpstarter.streams.encoding import Compression
 
 
@@ -256,6 +259,15 @@ def storage(cluster, **kwargs):
     return driver
 
 
+async def reclaim_at_session_start(cluster):
+    """Serve a fresh driver, as an exporter restart does, until its session-start reclaim finished the operation."""
+    with Session(root_device=storage(cluster)) as session:
+        async with session.serve_unix_async():
+            with fail_after(2):
+                while operation(cluster.vm)["phase"] not in TERMINAL_PHASES:
+                    await sleep(0.001)
+
+
 def power(cluster):
     driver = KubevirtPower(namespace="ns", vm_name="vm")
     driver._client = cluster
@@ -417,9 +429,7 @@ async def test_cancelled_upload_recovers_after_exporter_restart(cluster, monkeyp
     with pytest.raises(asyncio.CancelledError):
         await task
     # An exporter restart builds a fresh driver whose session start reclaims the upload.
-    fresh = storage(cluster)
-    fresh.reset()
-    assert await asyncio.wait_for(fresh._reclaim, 2) is False  # noqa: TID251
+    await reclaim_at_session_start(cluster)
     assert disk_names(volumes(cluster.vm))["root"] == "vm-root"
     assert operation(cluster.vm)["phase"] == "aborted"
     await power(cluster).on()
@@ -439,6 +449,27 @@ def test_lost_commit_response_recovers_success_without_deleting_new_disks(cluste
 
 
 @pytest.mark.anyio
+async def test_a_failed_volume_cleanup_lets_the_others_finish(cluster, monkeypatch):
+    driver = storage(cluster)
+    op = await begin(driver, ["root", "data"])
+    disks = operation(cluster.vm)["disks"]
+    failing, other = disks["root"]["new"], disks["data"]["new"]
+    delete = cluster.delete
+
+    async def delete_all_but_one(kind, name, **kwargs):
+        if name == failing:
+            raise api_error(500)
+        await sleep(0.01)
+        return await delete(kind, name, **kwargs)
+
+    monkeypatch.setattr(cluster, "delete", delete_all_but_one)
+    with pytest.raises(ApiError):
+        await driver.recover_flash(op)
+    assert (DataVolume, other) not in cluster.objects
+    assert (DataVolume, failing) in cluster.objects
+
+
+@pytest.mark.anyio
 async def test_cleanup_failure_is_retryable_without_rolling_back_or_blocking_power(cluster):
     driver = storage(cluster)
     op = await begin(driver, ["root"])
@@ -449,9 +480,7 @@ async def test_cleanup_failure_is_retryable_without_rolling_back_or_blocking_pow
     active = disk_names(volumes(cluster.vm))["root"]
     await power(cluster).on()
     cluster.fail_delete = False
-    fresh = storage(cluster)
-    fresh.reset()
-    assert await asyncio.wait_for(fresh._reclaim, 2) is True  # noqa: TID251
+    await reclaim_at_session_start(cluster)
     assert disk_names(volumes(cluster.vm))["root"] == active
     assert (DataVolume, active) in cluster.objects
     assert operation(cluster.vm)["phase"] == "complete"
@@ -467,9 +496,7 @@ async def test_reclaim_fences_a_commit_waiting_for_shutdown(cluster):
     task = asyncio.create_task(driver.commit_flash(op))  # noqa: TID251
     while cluster.vm["spec"]["runStrategy"] != "Halted":
         await asyncio.sleep(0)
-    fresh = storage(cluster)
-    fresh.reset()
-    await asyncio.wait_for(fresh._reclaim, 2)  # noqa: TID251
+    await reclaim_at_session_start(cluster)
     cluster.stop_after = 0
     with pytest.raises(RuntimeError, match="no longer active"):
         await task
@@ -486,9 +513,7 @@ async def test_shutdown_timeout_preserves_disk_references(cluster):
     await stage(driver, op, "root")
     with pytest.raises(TimeoutError):
         await driver.commit_flash(op)
-    fresh = storage(cluster)
-    fresh.reset()
-    await asyncio.wait_for(fresh._reclaim, 2)  # noqa: TID251
+    await reclaim_at_session_start(cluster)
     assert not cluster.activations
     assert disk_names(volumes(cluster.vm))["root"] == "vm-root"
 
@@ -557,9 +582,7 @@ async def test_recovery_retries_a_conflicting_completion_patch(cluster):
     await driver.commit_flash(op)
     cluster.fail_delete = False
     cluster.race_patch = cluster.patch_count + 1
-    fresh = storage(cluster)
-    fresh.reset()
-    assert await asyncio.wait_for(fresh._reclaim, 2) is True  # noqa: TID251
+    await reclaim_at_session_start(cluster)
     assert operation(cluster.vm)["phase"] == "complete"
     assert cluster.deleted == ["vm-root"]
 
@@ -908,21 +931,23 @@ async def test_begin_finishes_an_abort_an_earlier_flash_started(cluster):
 
 
 @pytest.mark.anyio
-async def test_shutdown_cancels_a_reclaim_still_running(cluster, monkeypatch):
+async def test_leaving_the_session_cancels_a_reclaim_and_waits_for_it(cluster, monkeypatch):
     await begin(storage(cluster), ["root"])
-    entered = asyncio.Event()
+    entered = Event()
+    ended = []
 
     async def stuck_recover(self, operation_id):
         entered.set()
-        await asyncio.Event().wait()
+        try:
+            await sleep_forever()
+        finally:
+            ended.append(operation_id)
 
     monkeypatch.setattr(Flash, "recover", stuck_recover)
-    fresh = storage(cluster)
-    fresh.reset()
-    await entered.wait()
-    fresh.shutdown()
-    with pytest.raises(asyncio.CancelledError):
-        await fresh._reclaim
+    with fail_after(2), Session(root_device=storage(cluster)) as session:
+        async with session.serve_unix_async():
+            await entered.wait()
+    assert ended == [operation(cluster.vm)["id"]]
 
 
 @pytest.mark.anyio
@@ -931,9 +956,7 @@ async def test_session_start_reclaims_a_flash_left_by_an_earlier_lease(cluster):
     op = await begin(driver, ["root"])
     await stage(driver, op, "root")
     abandoned = operation(cluster.vm)["disks"]["root"]["new"]
-    fresh = storage(cluster)
-    fresh.reset()
-    await asyncio.wait_for(fresh._reclaim, 2)  # noqa: TID251
+    await reclaim_at_session_start(cluster)
     assert operation(cluster.vm)["phase"] == "aborted"
     assert abandoned in cluster.deleted
     assert (DataVolume, abandoned) not in cluster.objects
@@ -968,9 +991,7 @@ async def test_recover_aborts_after_the_vm_disk_references_were_edited(cluster):
             volume["dataVolume"]["name"] = new
     # Recovery deletes only staged volumes the VM does not reference, so an edited VM
     # must not wedge it: both recovery and the next flash have to keep working.
-    fresh = storage(cluster)
-    fresh.reset()
-    assert await asyncio.wait_for(fresh._reclaim, 2) is False  # noqa: TID251
+    await reclaim_at_session_start(cluster)
     assert operation(cluster.vm)["phase"] == "aborted"
     assert (DataVolume, new) in cluster.objects
     assert disk_names(volumes(cluster.vm))["root"] == new
@@ -1043,11 +1064,16 @@ async def test_interrupted_begin_does_not_lock_out_the_lease(cluster, monkeypatc
     driver = storage(cluster)
     task = asyncio.create_task(begin(driver, ["root"]))  # noqa: TID251
     await entered.wait()
+    staged = operation(cluster.vm)["disks"]["root"]["new"]
+    # gRPC cancels a call the same way: Task.cancel() on the handler task.
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+    # The cancelled call discarded its own operation before returning; the next
+    # flash's own reclaim must not be what cleans it up.
+    assert operation(cluster.vm)["phase"] == "aborted"
+    assert (DataVolume, staged) not in cluster.objects
     release.set()
-    # The cancelled call discarded its own operation, so this lease can flash again.
     await begin(driver, ["root"])
     assert operation(cluster.vm)["phase"] == "staging"
 

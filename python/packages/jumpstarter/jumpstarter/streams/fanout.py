@@ -627,11 +627,27 @@ class FanOutStreamMixin:
     _fanout_source_ready_timeout: ClassVar[float] = _SOURCE_READY_TIMEOUT
     _fanout: StreamFanOut | None = field(default=None, init=False, repr=False)
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        # Imported here: driver/base.py loads this module, through the exporter
+        # package, before Driver is defined.
+        from jumpstarter.driver.base import Driver
+
+        if Driver in cls.__mro__ and cls.__mro__.index(Driver) < cls.__mro__.index(FanOutStreamMixin):
+            # Driver.serving() ends the super() chain, so the fan-out reader would never start.
+            raise TypeError(f"{cls.__name__} must list FanOutStreamMixin before Driver")
+
     @asynccontextmanager
     async def _open_source(self):  # type: ignore[override]
         """Override: open the physical resource and yield a bidirectional stream."""
         raise NotImplementedError("subclass must implement _open_source()")
         yield  # pragma: no cover — makes this a generator for @asynccontextmanager
+
+    @asynccontextmanager
+    async def serving(self):
+        """Run the fan-out reader while the session serves this driver."""
+        async with super().serving(), self._get_fanout().running():  # ty: ignore[unresolved-attribute]
+            yield
 
     def _get_fanout_always_on(self) -> bool:
         """Return always_on setting. Subclasses with an instance field override this."""
