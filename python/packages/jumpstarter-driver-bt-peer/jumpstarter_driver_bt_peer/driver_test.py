@@ -952,6 +952,25 @@ async def test_a_queued_track_is_rechecked_against_the_discovered_sink():
     protocol.stream.start.assert_not_awaited()
     failed = [e for e in peer._events if e["type"] == "stream_resume_failed"]
     assert failed and "sink accepts 2-35" in failed[0]["error"]
+    # Dropped, not left Playing: a START from the DUT would pump it.
+    assert peer._player.state == Idle()
+    assert peer._player.track is None
+    assert json.loads(peer.playback_status())["playing"] is False
+
+
+@pytest.mark.anyio
+async def test_a_queued_track_that_fails_to_start_stays_queued():
+    """A stream that will not start says nothing about the track itself."""
+    peer, protocol = peer_with_session()
+    queued = Playing(Track(name="t", data=make_sbc_file(10)), TrackMetadata())
+    peer._player.state = queued
+    protocol.stream.start = AsyncMock(side_effect=RuntimeError("channel gone"))
+
+    await peer._resume_queued_track()
+
+    assert peer._player.state is queued
+    failed = [e for e in peer._events if e["type"] == "stream_resume_failed"]
+    assert failed and "channel gone" in failed[0]["error"]
 
 
 @pytest.mark.anyio

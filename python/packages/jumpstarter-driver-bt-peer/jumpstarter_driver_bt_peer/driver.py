@@ -174,18 +174,29 @@ class BtPeer(Driver):
             # rather than streaming audio the sink cannot decode.
             config = await session.prepare()
             await validate_sbc(before.track.data, config)
+        except Exception as exc:  # noqa: BLE001
+            # The same outcome play() gives for a track the sink cannot take.
+            # Leaving it Playing would hand rejected audio to the pump the
+            # moment the DUT sends START itself. If playback has moved on
+            # meanwhile, the track is no longer ours to drop.
+            if await self._player.transition(before, Idle()) is not None:
+                self._emit("stream_resume_failed", {"error": str(exc)})
+            return
+
+        try:
             # Re-affirming the state it is already in starts the stream under
             # the same lock as any other change.
             state = await self._player.transition(before, before)
         except Exception as exc:  # noqa: BLE001
-            if self._player.state is before:
-                self._emit("stream_resume_failed", {"error": str(exc)})
+            # The track is fine; the stream would not start. It stays queued
+            # for the next START or play().
+            self._emit("stream_resume_failed", {"error": str(exc)})
             return
 
         if state is None:
             # stop_playback() or another play() landed while endpoint
-            # discovery was in flight. The stream is left started, sending
-            # filler, but this track is no longer the one to announce.
+            # discovery was in flight, so this track is no longer the one to
+            # start or announce.
             self._emit("stream_resume_discarded", {"reason": "playback changed while starting"})
             return
         self._emit("stream_resumed", state)
