@@ -8,6 +8,7 @@ knows how to turn a `Track` into RTP packets and how to get a stream running.
 from dataclasses import dataclass
 from typing import Any
 
+import anyio
 from bumble.a2dp import (
     A2DP_SBC_CODEC_TYPE,
     SbcFrame,
@@ -224,6 +225,9 @@ class A2dpSession:
         self._get_track = get_track
         self._on_exhausted = on_exhausted
         self._emit = emit
+        # play() configures the stream outside the player's lock, and so can
+        # the queued resume that runs when the channel arrives.
+        self._setup = anyio.Lock()
         self.source = protocol.add_source(sbc_capabilities(), StartPump(self))
 
     @property
@@ -303,21 +307,25 @@ class A2dpSession:
         A stream left IDLE by a close cannot be started again, so it needs
         recreating exactly as if there had never been one. A stream in any
         other state was configured by one side or the other and is reused.
-        """
-        stream = self.source.stream
-        if stream is not None and stream.state != State.IDLE:
-            return stream
 
-        await self.protocol.discover_remote_endpoints()
-        sink = self.protocol.find_remote_sink_by_codec(AVDTP_AUDIO_MEDIA_TYPE, A2DP_SBC_CODEC_TYPE)
-        if sink is None:
-            raise BtPeerError(
-                "the DUT exposes no free SBC audio sink endpoint; "
-                "is Bluetooth media enabled on the head unit?"
-            )
-        # Before create_stream, which is what sends SET_CONFIGURATION.
-        self._offer_to_sink(sink)
-        return await self.protocol.create_stream(self.source, sink)
+        Serialized: two callers that both found no stream would both
+        configure one, and the second finds the sink already in use.
+        """
+        async with self._setup:
+            stream = self.source.stream
+            if stream is not None and stream.state != State.IDLE:
+                return stream
+
+            await self.protocol.discover_remote_endpoints()
+            sink = self.protocol.find_remote_sink_by_codec(AVDTP_AUDIO_MEDIA_TYPE, A2DP_SBC_CODEC_TYPE)
+            if sink is None:
+                raise BtPeerError(
+                    "the DUT exposes no free SBC audio sink endpoint; "
+                    "is Bluetooth media enabled on the head unit?"
+                )
+            # Before create_stream, which is what sends SET_CONFIGURATION.
+            self._offer_to_sink(sink)
+            return await self.protocol.create_stream(self.source, sink)
 
     async def prepare(self) -> SbcConfig:
         """Configure the stream if needed, and report the bitpool agreed.

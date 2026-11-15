@@ -1,5 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
+import anyio
+import anyio.lowlevel
 import pytest
 from bumble.avdtp import ServiceCapabilities, State
 
@@ -399,3 +401,31 @@ async def test_prepare_rejects_a_stream_configured_without_sbc():
 
     with pytest.raises(BtPeerError, match="configured without an SBC codec"):
         await session.prepare()
+
+
+@pytest.mark.anyio
+async def test_concurrent_prepares_configure_the_stream_once():
+    """play() and the queued resume can both reach prepare() at once.
+
+    Both would find no stream, both would configure one, and the second
+    create_stream would find the sink already in use.
+    """
+
+    session, protocol = _session()
+
+    async def create_stream(source, sink):
+        # What bumble's Stream constructor does to the local endpoint.
+        protocol.source.stream = protocol.stream
+        return protocol.stream
+
+    async def slow_discovery():
+        await anyio.lowlevel.checkpoint()
+
+    protocol.create_stream = AsyncMock(side_effect=create_stream)
+    protocol.discover_remote_endpoints = AsyncMock(side_effect=slow_discovery)
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(session.prepare)
+        tg.start_soon(session.prepare)
+
+    protocol.create_stream.assert_awaited_once()
