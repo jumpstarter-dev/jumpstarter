@@ -384,6 +384,19 @@ class _IdleService:
             "Flash operation failed (Caused by: Could not find dd process ID)",
         ),
         (CancelledError(), "Flash operation failed (Caused by: CancelledError)"),
+        (
+            ExceptionGroup(
+                "unhandled errors in a TaskGroup",
+                [
+                    RuntimeError("Failed to get U-Boot prompt"),
+                    ExceptionGroup("unhandled errors in a TaskGroup", [ValueError("handler failed")]),
+                ],
+            ),
+            (
+                "Flash operation failed after 1 attempts"
+                " (Caused by: RuntimeError: Failed to get U-Boot prompt; ValueError: handler failed)"
+            ),
+        ),
     ],
 )
 def test_flash_error_reports_the_failure_once(error, expected):
