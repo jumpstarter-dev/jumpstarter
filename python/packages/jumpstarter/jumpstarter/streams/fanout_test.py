@@ -1252,6 +1252,14 @@ class TestFanOutStreamMixin:
             async with driver._open_source():
                 pass
 
+    def test_a_driver_listing_the_mixin_after_driver_is_rejected(self):
+        from jumpstarter.driver import Driver
+
+        with pytest.raises(TypeError, match="must list FanOutStreamMixin before Driver"):
+
+            class Misordered(Driver, FanOutStreamMixin):
+                pass
+
     @pytest.mark.anyio
     async def test_mixin_connect_via_method(self, running):
         from dataclasses import dataclass
