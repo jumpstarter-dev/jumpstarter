@@ -11,10 +11,14 @@ from typing import Any
 import anyio
 from bumble.a2dp import (
     A2DP_SBC_CODEC_TYPE,
+    SBC_DUAL_CHANNEL_MODE,
+    SBC_JOINT_STEREO_CHANNEL_MODE,
+    SBC_MAX_FRAMES_IN_RTP_PAYLOAD,
+    SBC_MONO_CHANNEL_MODE,
+    SBC_SAMPLING_FREQUENCIES,
+    SBC_SYNC_WORD,
     SbcFrame,
     SbcMediaCodecInformation,
-    SbcPacketSource,
-    SbcParser,
 )
 from bumble.avdtp import (
     AVDTP_AUDIO_MEDIA_TYPE,
@@ -45,6 +49,9 @@ DEFAULT_RTP_MTU = 672
 # The L2CAP minimum; anything smaller cannot hold an RTP header plus a frame.
 MIN_RTP_MTU = 48
 
+# The fixed RTP header, ahead of the one-byte SBC media payload header.
+RTP_HEADER_SIZE = 12
+
 
 @dataclass(frozen=True)
 class SbcConfig:
@@ -68,7 +75,7 @@ class SbcConfig:
         An intersection, not a replacement. The spec allows a bitpool up to
         250 and the peer pins 53, so a sink's range may be *wider* as well as
         narrower; taking the sink's outright would let the peer offer, and
-        `validate_sbc` then accept, audio the peer never advertised it could
+        `Track.check` then accept, audio the peer never advertised it could
         send.
         """
         narrowed = SbcConfig(
@@ -105,55 +112,115 @@ def _is_sbc(capability) -> bool:
     )
 
 
-class ByteReader:
-    """An async ``read(n)`` over an in-memory buffer, as bumble's parsers expect."""
+def parse_sbc(data: bytes) -> tuple[SbcFrame, ...]:
+    """Split an upload into SBC frames, rejecting anything that is not.
 
-    def __init__(self, data: bytes):
-        self.data = data
-        self.position = 0
+    Parsed here rather than with bumble's SbcParser, which stops quietly at
+    the first bad sync word and pads nothing out when the last frame is
+    short: a file with garbage after its first minute, or one cut off
+    mid-frame, would be accepted and then sent as noise or not at all.
+    """
+    frames: list[SbcFrame] = []
+    offset = 0
+    while offset < len(data):
+        header = data[offset : offset + 4]
+        if len(header) < 4 or header[0] != SBC_SYNC_WORD:
+            if not frames:
+                raise BtPeerError(
+                    "uploaded file is not SBC audio (no valid frame header found); "
+                    f"expected {describe_sbc_format()}"
+                )
+            raise BtPeerError(f"SBC frame {len(frames)} at byte {offset} has no valid frame header")
 
-    async def read(self, byte_count: int) -> bytes:
-        chunk = self.data[self.position : self.position + byte_count]
-        self.position += len(chunk)
-        return chunk
+        blocks = 4 * (1 + ((header[1] >> 4) & 3))
+        channel_mode = (header[1] >> 2) & 3
+        channels = 1 if channel_mode == SBC_MONO_CHANNEL_MODE else 2
+        subbands = 8 if header[1] & 1 else 4
+        bitpool = header[2]
+        length = 4 + (4 * subbands * channels) // 8
+        if channel_mode in (SBC_MONO_CHANNEL_MODE, SBC_DUAL_CHANNEL_MODE):
+            length += (blocks * channels * bitpool) // 8
+        else:
+            joint = 1 if channel_mode == SBC_JOINT_STEREO_CHANNEL_MODE else 0
+            length += (joint * subbands + blocks * bitpool) // 8
+
+        if offset + length > len(data):
+            raise BtPeerError(
+                f"SBC frame {len(frames)} at byte {offset} is truncated: "
+                f"{len(data) - offset} of {length} bytes"
+            )
+        frames.append(
+            SbcFrame(
+                SBC_SAMPLING_FREQUENCIES[(header[1] >> 6) & 3],
+                blocks,
+                channel_mode,
+                (header[1] >> 1) & 1,
+                subbands,
+                bitpool,
+                data[offset : offset + length],
+            )
+        )
+        offset += length
+    if not frames:
+        raise BtPeerError("uploaded track is empty")
+    return tuple(frames)
 
 
 class Track:
-    """An uploaded SBC file being streamed to the DUT.
+    """An uploaded SBC file, and how far into it the stream has got.
 
-    The whole file is held in memory so that looping can rewind without
-    re-uploading, and so the packet source never blocks the event loop on disk.
-
-    The track does not own an MTU: that belongs to the media transport
-    channel, which may not exist yet when a track is queued.
+    The frames are parsed once, at upload, and held in memory so that looping
+    can rewind without re-uploading and the packet source never blocks on
+    disk. How far the stream has got is one index into them. It is not a
+    cached packet generator: that would fix the MTU of whichever media
+    channel first read it, and a track outlives its channel when it is
+    queued, paused or carried across a reconnect.
     """
 
     def __init__(self, name: str, data: bytes, loop: bool = False):
         self.name = name
-        self.data = data
         self.loop = loop
-        self.last_timestamp = 0.0
-        self._reader = ByteReader(data)
-        self._packets = None
+        self.frames = parse_sbc(data)
+        self.size = len(data)
+        self._next = 0
+        self._consumed = 0
 
     @property
     def position(self) -> int:
-        return self._reader.position
+        """Bytes of the file already handed to the stream."""
+        return self._consumed
 
-    def packets(self, mtu: int):
-        """The packet generator, built on first use so it can size to the MTU.
+    def check(self, config: SbcConfig) -> None:
+        """Reject a track the sink was never offered; see `check_sbc_frame`."""
+        for index, frame in enumerate(self.frames):
+            check_sbc_frame(frame, config=config, index=index)
 
-        SbcPacketSource.packets is a property that builds a fresh generator on
-        every access, so it has to be held rather than re-read each time.
+    def next_payload(self, mtu: int) -> tuple[bytes, float] | None:
+        """The next RTP payload for a channel of `mtu`, and the audio time it holds.
+
+        As many whole frames as fit, up to the 15 the SBC payload header can
+        count, and always at least one. None once every frame has been sent;
+        the last payload goes out however few frames it holds.
         """
-        if self._packets is None:
-            self._packets = SbcPacketSource(self._reader.read, mtu).packets
-        return self._packets
+        if self._next == len(self.frames):
+            return None
+        budget = mtu - RTP_HEADER_SIZE - 1
+        taken: list[SbcFrame] = []
+        size = 0
+        while self._next < len(self.frames) and len(taken) < SBC_MAX_FRAMES_IN_RTP_PAYLOAD:
+            frame = self.frames[self._next]
+            if taken and size + len(frame.payload) > budget:
+                break
+            taken.append(frame)
+            size += len(frame.payload)
+            self._next += 1
+        self._consumed += size
+        payload = bytes([len(taken)]) + b"".join(frame.payload for frame in taken)
+        return payload, sum(frame.duration for frame in taken)
 
     def rewind(self) -> None:
-        self._reader = ByteReader(self.data)
-        self.last_timestamp = 0.0
-        self._packets = None
+        self._next = 0
+        self._consumed = 0
 
 
 def sbc_capabilities(config: SbcConfig = ADVERTISED) -> MediaCodecCapabilities:
@@ -257,10 +324,10 @@ class A2dpSession:
         otherwise, so a track can be swapped without renegotiating.
         MediaPacketPump paces itself against packet.timestamp_seconds relative
         to the first packet it sees, so timestamps have to keep rising for the
-        life of the stream. Each track's own timestamps restart at zero, so
-        per-track deltas are accumulated into a stream-wide clock rather than
-        passed through; otherwise the pump would see time jump backwards on a
-        track change and flush the whole file at wire speed.
+        life of the stream. One stream-wide clock advances by the audio each
+        packet carries, across filler, track changes and loops; were it to
+        restart with a track, the pump would see time jump backwards and
+        flush the whole file at wire speed.
         """
         sequence_number = 0
         timestamp_seconds = 0.0
@@ -280,24 +347,17 @@ class A2dpSession:
                 timestamp_seconds += SILENCE_PACKET_DURATION
                 continue
 
-            try:
-                packet = await anext(track.packets(self.mtu))
-            except StopAsyncIteration:
+            chunk = track.next_payload(self.mtu)
+            if chunk is None:
                 # Rewinds for a loop, or drops the track so the next pass
                 # falls through to filler.
                 self._on_exhausted(track)
                 continue
 
-            delta = packet.timestamp_seconds - track.last_timestamp
-            track.last_timestamp = packet.timestamp_seconds
-            if delta > 0:
-                timestamp_seconds += delta
-
-            packet.sequence_number = sequence_number
-            packet.timestamp_seconds = timestamp_seconds
-            packet.timestamp = int(1000 * timestamp_seconds)
+            payload, duration = chunk
+            yield self._make_packet(sequence_number, timestamp_seconds, payload)
             sequence_number = (sequence_number + 1) & 0xFFFF
-            yield packet
+            timestamp_seconds += duration
 
     # -- stream lifecycle ------------------------------------------------
 
@@ -415,31 +475,6 @@ class A2dpSession:
             "offered_minimum": offer.min_bitpool,
             "offered_maximum": offer.max_bitpool,
         })
-
-
-async def validate_sbc(data: bytes, config: SbcConfig = ADVERTISED) -> SbcFrame:
-    """Check every frame of an upload, returning the first.
-
-    Every frame is checked, not just the first. SbcPacketSource concatenates
-    later frames without looking at their parameters, so a file whose first
-    frame matches and whose later frames do not would be transmitted under a
-    configuration the sink never agreed to. Parsing is header-only, so the
-    walk costs little even for a long track.
-    """
-    first: SbcFrame | None = None
-    index = 0
-    async for frame in SbcParser(ByteReader(data).read).frames:
-        check_sbc_frame(frame, config=config, index=index)
-        if first is None:
-            first = frame
-        index += 1
-
-    if first is None:
-        raise BtPeerError(
-            "uploaded file is not SBC audio (no valid frame header found); "
-            f"expected {describe_sbc_format()}"
-        )
-    return first
 
 
 def check_sbc_frame(frame: SbcFrame, config: SbcConfig = ADVERTISED, index: int = 0) -> None:

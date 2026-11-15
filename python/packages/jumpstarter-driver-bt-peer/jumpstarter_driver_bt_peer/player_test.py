@@ -187,7 +187,7 @@ async def test_a_looping_track_rewinds_instead_of_finishing():
     track = _track(loop=True)
     playing = Playing(track, TrackMetadata())
     await player.transition(player.state, playing)
-    await track._reader.read(40)
+    track.next_payload(672)
 
     player.on_track_exhausted(track)
 
@@ -243,7 +243,7 @@ async def test_describe_reports_the_track_and_the_stream():
         "streaming": True,
         "name": "song.mp3",
         "loop": True,
-        "bytes": len(track.data),
+        "bytes": track.size,
         "position": 0,
         "title": "T",
         "artist": "A",
@@ -262,7 +262,8 @@ async def test_position_tracks_bytes_consumed():
 
     assert player.position_ms() == 0
 
-    await track._reader.read(len(track.data) // 4)
+    while track.position < track.size // 4:
+        track.next_payload(672)
 
     assert 2000 < player.position_ms() < 3000, player.position_ms()
     assert player.now_playing() == (TrackMetadata(duration_ms=10000), player.position_ms())

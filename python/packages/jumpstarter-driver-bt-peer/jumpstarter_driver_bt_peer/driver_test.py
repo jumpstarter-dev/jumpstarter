@@ -1006,6 +1006,6 @@ def test_the_delegate_follows_the_player_without_being_told():
     peer = running_peer()
     assert isinstance(peer._avrcp_delegate, PeerDelegate)
 
-    peer._player.state = Playing(Track(name="t", data=b"x"), TrackMetadata(title="Now"))
+    peer._player.state = Playing(Track(name="t", data=make_sbc_file(1)), TrackMetadata(title="Now"))
 
     assert peer._player.now_playing()[0].title == "Now"

@@ -12,33 +12,53 @@ from .a2dp import (
     SbcConfig,
     Track,
     _sbc_range,
-    validate_sbc,
+    parse_sbc,
 )
 from .avrcp import TrackMetadata
 from .conftest import fake_protocol, make_sbc_file, sbc_capability, session_for, sink_with_bitpool
 from .driver import BtPeer, BtPeerError
 from .player import Playing
 
-# -- SBC validation ------------------------------------------------------
+# -- SBC parsing and checking -------------------------------------------
+
+# make_sbc_file's frame size at its defaults: 4 header + 8 scale factors +
+# 16 blocks * bitpool 52 / 8.
+FRAME = 116
 
 
-@pytest.mark.anyio
-async def test_validate_sbc_parses_pinned_format():
-    frame = await validate_sbc(make_sbc_file(4))
+def _check(data: bytes, config: SbcConfig = ADVERTISED) -> None:
+    Track(name="t", data=data).check(config)
+
+
+def test_parse_sbc_reads_the_pinned_format():
+    frames = parse_sbc(make_sbc_file(4))
+    assert len(frames) == 4
+    frame = frames[0]
     assert frame.sampling_frequency == 44100
     assert frame.channel_mode == 2
     assert frame.block_count == 16
     assert frame.subband_count == 8
     assert frame.allocation_method == 0
+    assert len(frame.payload) == FRAME
 
 
-@pytest.mark.anyio
-async def test_validate_sbc_rejects_non_sbc():
+def test_parse_sbc_rejects_non_sbc():
     with pytest.raises(BtPeerError, match="not SBC audio"):
-        await validate_sbc(b"ID3\x04 this is not audio")
+        parse_sbc(b"ID3\x04 this is not audio")
 
 
-@pytest.mark.anyio
+def test_parse_sbc_rejects_garbage_after_valid_frames():
+    """bumble's parser stops at the first bad sync word and keeps the rest."""
+    with pytest.raises(BtPeerError, match="frame 3 at byte 348 has no valid frame header"):
+        parse_sbc(make_sbc_file(3) + b"ID3 trailing junk" + make_sbc_file(3))
+
+
+def test_parse_sbc_rejects_a_truncated_last_frame():
+    """bumble's parser would hand on the short frame as if it were whole."""
+    with pytest.raises(BtPeerError, match="frame 2 at byte 232 is truncated: 16 of 116"):
+        parse_sbc(make_sbc_file(3)[:-100])
+
+
 @pytest.mark.parametrize(
     ("kwargs", "expected"),
     [
@@ -47,55 +67,98 @@ async def test_validate_sbc_rejects_non_sbc():
         ({"bitpool": 90}, "bitpool 90"),
     ],
 )
-async def test_validate_sbc_rejects_mismatches(kwargs, expected):
+def test_check_rejects_mismatches(kwargs, expected):
     with pytest.raises(BtPeerError, match=expected):
-        await validate_sbc(make_sbc_file(4, **kwargs))
+        _check(make_sbc_file(4, **kwargs))
 
 
-@pytest.mark.anyio
-async def test_validate_sbc_checks_every_frame_not_just_the_first():
-    """SbcPacketSource concatenates later frames without re-checking them."""
+def test_check_covers_every_frame_not_just_the_first():
+    """Frames are concatenated into packets without being looked at again."""
     good = make_sbc_file(4)
     mixed = good + make_sbc_file(1, sf_index=3) + good
 
     with pytest.raises(BtPeerError, match="48000 Hz") as excinfo:
-        await validate_sbc(mixed)
+        _check(mixed)
 
     assert "frame 4" in str(excinfo.value), excinfo.value
 
 
-@pytest.mark.anyio
-async def test_validate_sbc_honours_the_negotiated_bitpool_ceiling():
+def test_check_honours_the_negotiated_bitpool_ceiling():
     """A sink may accept less than the advertised maximum."""
     data = make_sbc_file(4, bitpool=52)
 
-    await validate_sbc(data, ADVERTISED)
+    _check(data, ADVERTISED)
 
     with pytest.raises(BtPeerError, match="sink accepts 2-35"):
-        await validate_sbc(data, SbcConfig(2, 35))
+        _check(data, SbcConfig(2, 35))
 
 
 # -- tracks --------------------------------------------------------------
 
 
-@pytest.mark.anyio
-async def test_track_rewind_resets_data_and_generator():
+def _next(track: Track, mtu: int) -> tuple[bytes, float]:
+    chunk = track.next_payload(mtu)
+    assert chunk is not None, "the track ran out"
+    return chunk
+
+
+def _drain(track: Track, mtu: int) -> list[bytes]:
+    payloads = []
+    while (chunk := track.next_payload(mtu)) is not None:
+        payloads.append(chunk[0])
+    return payloads
+
+
+def test_payloads_fill_the_mtu_with_whole_frames():
     track = Track(name="t", data=make_sbc_file(10))
-    first = track.packets(672)
-    await track._reader.read(50)
-    assert track.position == 50
+    # Room for 5 frames after the RTP and SBC payload headers.
+    payload, duration = _next(track, 12 + 1 + 5 * FRAME)
+
+    assert payload[0] == 5
+    assert len(payload) == 1 + 5 * FRAME
+    assert duration == pytest.approx(5 * 128 / 44100)
+    assert track.position == 5 * FRAME
+
+
+def test_the_last_payload_is_sent_however_short():
+    """bumble's SbcPacketSource never flushes the frames left at the end."""
+    track = Track(name="t", data=make_sbc_file(7))
+
+    payloads = _drain(track, 12 + 1 + 5 * FRAME)
+
+    assert [p[0] for p in payloads] == [5, 2]
+    assert track.position == track.size
+
+
+def test_a_payload_holds_at_most_fifteen_frames():
+    """The SBC payload header counts frames in four bits."""
+    track = Track(name="t", data=make_sbc_file(20))
+    assert [p[0] for p in _drain(track, 4096)] == [15, 5]
+
+
+def test_each_payload_is_sized_to_the_mtu_it_is_asked_for():
+    """A track outlives its media channel, so the MTU is not fixed at first use."""
+    track = Track(name="t", data=make_sbc_file(10))
+
+    first, _ = _next(track, 12 + 1 + 5 * FRAME)
+    second, _ = _next(track, 12 + 1 + 2 * FRAME)
+
+    assert (first[0], second[0]) == (5, 2)
+
+
+def test_a_frame_larger_than_the_mtu_still_goes_out_alone():
+    track = Track(name="t", data=make_sbc_file(2))
+    assert [p[0] for p in _drain(track, 48)] == [1, 1]
+
+
+def test_rewind_starts_the_track_over():
+    track = Track(name="t", data=make_sbc_file(10))
+    _drain(track, 672)
 
     track.rewind()
 
     assert track.position == 0
-    assert track.last_timestamp == 0.0
-    assert track.packets(672) is not first, "rewind must build a fresh generator"
-
-
-def test_track_packet_generator_is_held_not_rebuilt():
-    """SbcPacketSource.packets is a property that yields a new generator."""
-    track = Track(name="t", data=make_sbc_file(10))
-    assert track.packets(672) is track.packets(672)
+    assert sum(p[0] for p in _drain(track, 672)) == 10
 
 
 # -- the packet source ---------------------------------------------------

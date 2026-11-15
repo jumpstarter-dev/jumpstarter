@@ -25,7 +25,7 @@ from bumble.pairing import PairingConfig, PairingDelegate
 from bumble.transport import open_transport
 from bumble.utils import AsyncRunner
 
-from .a2dp import ADVERTISED, A2dpSession, Track, validate_sbc
+from .a2dp import ADVERTISED, A2dpSession, Track
 from .avrcp import PeerDelegate, PeerProtocol, Reporter, parse_metadata
 from .errors import BtPeerError
 from .media import MAX_TRACK_BYTES
@@ -173,7 +173,7 @@ class BtPeer(Driver):
             # advertised ceiling. Now that a stream is configured, re-check it
             # rather than streaming audio the sink cannot decode.
             config = await session.prepare()
-            await validate_sbc(before.track.data, config)
+            before.track.check(config)
         except Exception as exc:  # noqa: BLE001
             # The same outcome play() gives for a track the sink cannot take.
             # Leaving it Playing would hand rejected audio to the pump the
@@ -558,18 +558,21 @@ class BtPeer(Driver):
 
         data = await self._receive_upload(src)
         metadata = parse_metadata(metadata_json, default_title=name)
+        # Parsed before anything is configured: an upload that is not SBC at
+        # all should not send SET_CONFIGURATION to the DUT.
+        track = Track(name=name, data=data, loop=bool(loop))
 
         session = self._session
-        # Configure before validating, so the upload is checked against the
+        # Configure before checking, so the upload is checked against the
         # bitpool that was actually agreed rather than the wider range the
         # peer advertises. Configuring leaves a running stream alone.
         config = await session.prepare() if session is not None else ADVERTISED
-        # Validate before touching the state. Doing it later would silence
+        # Check before touching the state. Doing it later would silence
         # whatever is playing even when the new upload turns out to be
         # unusable.
-        frame = await validate_sbc(data, config)
+        track.check(config)
 
-        target = Playing(Track(name=name, data=data, loop=bool(loop)), metadata)
+        target = Playing(track, metadata)
         # Read the state as late as possible: the upload above can take a
         # while, and anything that happened during it is not a conflict.
         before = self._player.state
@@ -581,7 +584,7 @@ class BtPeer(Driver):
             "name": name,
             "bytes": len(data),
             "loop": bool(loop),
-            "bitpool": frame.bitpool,
+            "bitpool": track.frames[0].bitpool,
             **metadata.as_dict(),
             **stream_state,
         }

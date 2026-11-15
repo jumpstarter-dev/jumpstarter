@@ -105,9 +105,9 @@ class Player:
         with elapsed time.
         """
         loaded = self.loaded
-        if loaded is None or not loaded.track.data or not loaded.metadata.duration_ms:
+        if loaded is None or not loaded.metadata.duration_ms:
             return 0
-        return int(loaded.metadata.duration_ms * loaded.track.position / len(loaded.track.data))
+        return int(loaded.metadata.duration_ms * loaded.track.position / loaded.track.size)
 
     def now_playing(self) -> tuple[TrackMetadata, int]:
         """Metadata and position together, for the AVRCP delegate."""
@@ -136,7 +136,7 @@ class Player:
         return {
             "name": loaded.track.name,
             "loop": loaded.track.loop,
-            "bytes": len(loaded.track.data),
+            "bytes": loaded.track.size,
             "position": loaded.track.position,
             **loaded.metadata.as_dict(),
             "position_ms": self.position_ms(),
