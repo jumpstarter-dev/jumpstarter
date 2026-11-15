@@ -10,7 +10,7 @@ from typing import ClassVar
 from urllib.parse import urlparse
 
 import websockets
-from anyio import Event, Lock, create_task_group, sleep
+from anyio import Lock, create_task_group, sleep
 from jumpstarter_driver_composite.driver import CompositeInterface
 from jumpstarter_driver_network.driver import NetworkInterface
 from jumpstarter_driver_network.streams.websocket import WebsocketClientStream
@@ -240,7 +240,6 @@ class KubevirtStorage(_KubevirtBase, Driver):
     fatal_grace: float = 60
     poll_interval: float = 1
     _lock: Lock = field(init=False, default_factory=Lock, repr=False)
-    _reclaimed: Event = field(init=False, default_factory=Event, repr=False)
     _flasher: Flash | None = field(init=False, default=None, repr=False)
 
     def __post_init__(self):
@@ -281,20 +280,13 @@ class KubevirtStorage(_KubevirtBase, Driver):
         is cancelled, which leaves the operation `aborting` for the next session's
         reclaim to finish.
         """
-        self._reclaimed = Event()
         async with super().serving(), create_task_group() as reclaim:
             reclaim.start_soon(self._reclaim_abandoned)
             yield
-            reclaim.cancel_scope.cancel()
 
     async def _reclaim_abandoned(self):
-        try:
-            async with self._lock:
-                await self._flash().reclaim()
-        except Exception:
-            self.logger.warning("Failed to reclaim an abandoned flash", exc_info=True)
-        finally:
-            self._reclaimed.set()
+        async with self._lock:
+            await self._flash().reclaim()
 
     @export
     async def begin_flash(self, operation_id: str, targets: list[str]) -> None:
