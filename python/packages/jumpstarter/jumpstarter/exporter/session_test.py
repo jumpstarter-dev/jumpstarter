@@ -2,6 +2,7 @@
 
 import logging
 import threading
+import time
 from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 
@@ -126,7 +127,6 @@ def test_every_driver_serves_for_as_long_as_its_session_does():
     assert child.events == ["serving", "call", "stopped serving", "shutdown"]
 
 
-
 @dataclass(kw_only=True)
 class BackgroundWorkDriver(Driver):
     """Starts work in serving() that never ends on its own, and leaves it to the session."""
@@ -165,6 +165,89 @@ async def test_the_session_cancels_the_work_a_driver_left_running_before_shutdow
             await driver.started.wait()
 
     assert driver.events == ["work cancelled", "shutdown"]
+
+
+@pytest.mark.anyio
+async def test_the_callers_own_error_leaves_the_session_as_raised():
+    driver = BackgroundWorkDriver()
+
+    with fail_after(5), pytest.raises(ValueError, match="the caller failed"), Session(root_device=driver) as session:
+        async with session.serve_unix_async():
+            await driver.started.wait()
+            raise ValueError("the caller failed")
+
+    assert driver.events == ["work cancelled", "shutdown"]
+
+
+@dataclass(kw_only=True)
+class UnshieldedCleanupDriver(Driver):
+    """Awaits after the yield in serving() without a shield, as cleanup that forgot one does."""
+
+    events: list[str] = field(default_factory=list)
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @asynccontextmanager
+    async def serving(self):
+        try:
+            yield
+        finally:
+            try:
+                await sleep_forever()
+            finally:
+                self.events.append("cleanup cancelled")
+
+
+@pytest.mark.anyio
+async def test_leaving_on_an_error_still_runs_every_drivers_exit_cancelled():
+    driver = UnshieldedCleanupDriver()
+
+    with fail_after(5), pytest.raises(ValueError), Session(root_device=driver) as session:
+        async with session.serve_unix_async():
+            raise ValueError("the caller failed")
+
+    assert driver.events == ["cleanup cancelled"]
+
+
+@dataclass(kw_only=True)
+class FailingWorkDriver(Driver):
+    """Starts work in serving() that fails, and leaves its error to the session."""
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @asynccontextmanager
+    async def serving(self):
+        async with super().serving(), create_task_group() as work:
+            work.start_soon(self._work)
+            yield
+
+    async def _work(self):
+        raise RuntimeError("the work broke")
+
+    @export
+    def ping(self) -> str:
+        return "pong"
+
+
+def test_work_that_fails_is_logged_and_the_session_goes_on_serving(caplog):
+    caplog.set_level(logging.ERROR)
+    child = RecordingServingDriver()
+    driver = FailingWorkDriver(children={"child": child})
+
+    with serve(driver) as client:
+        deadline = time.monotonic() + 5
+        while "the work broke" not in caplog.text:
+            assert time.monotonic() < deadline, "the failed work was never logged"
+            time.sleep(0.01)
+        assert client.call("ping") == "pong"
+        assert client.children["child"].call("ping") == "pong"
+
+    assert child.events == ["serving", "call", "stopped serving", "shutdown"]
+
 
 def test_session_unbinds_exporter_log_context():
     """Session must clear the exporter correlation field on exit."""

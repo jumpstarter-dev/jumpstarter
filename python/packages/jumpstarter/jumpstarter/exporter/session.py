@@ -6,7 +6,16 @@ from typing import TYPE_CHECKING, Self
 from uuid import UUID
 
 import grpc
-from anyio import CancelScope, ContextManagerMixin, Event, TypedAttributeLookupError, sleep
+from anyio import (
+    TASK_STATUS_IGNORED,
+    ContextManagerMixin,
+    Event,
+    TypedAttributeLookupError,
+    create_task_group,
+    sleep,
+    sleep_forever,
+)
+from anyio.abc import TaskStatus
 from anyio.from_thread import start_blocking_portal
 from jumpstarter_protocol import (
     jumpstarter_pb2,
@@ -42,14 +51,21 @@ _GRPC_SERVER_OPTIONS_TCP_KEEPALIVE: list[tuple[str, int]] = [
 ]
 
 
+async def _serve_driver(driver: "Driver", *, task_status: TaskStatus[None] = TASK_STATUS_IGNORED) -> None:
+    """Hold the driver's serving() open until cancelled, and log its background work failing.
 
-@asynccontextmanager
-async def _cancelled_on_exit(context):
-    """Leave context with everything started inside it cancelled, so leaving cannot block on it."""
-    with CancelScope() as scope:
-        async with context:
-            yield
-            scope.cancel()
+    Entering serving() stays outside the try, so a driver that cannot start
+    serving fails the session's start instead of being logged.
+    """
+    serving = AsyncExitStack()
+    await serving.enter_async_context(driver.serving())
+    task_status.started()
+    try:
+        async with serving:
+            await sleep_forever()
+    except Exception:
+        driver.logger.exception("Background work failed; the session goes on serving without it")
+
 
 @dataclass(kw_only=True)
 class Session(
@@ -146,12 +162,24 @@ class Session(
         They are entered before and left after the gRPC server, so no client
         reaches a driver whose background work (a console fan-out reader, for
         example) has stopped, and that work has ended before the session's
-        driver shutdown runs.
+        driver shutdown runs. Each driver serves in a task of its own, so work
+        that fails ends only that driver's serving(), and every exit, an error
+        included, leaves them all cancelled.
         """
-        async with AsyncExitStack() as stack:
-            for driver in self.mapping.values():
-                await stack.enter_async_context(_cancelled_on_exit(driver.serving()))
-            yield
+        failure = None
+        async with create_task_group() as drivers:
+            try:
+                for driver in self.mapping.values():
+                    await drivers.start(_serve_driver, driver)
+                yield
+            except Exception as error:  # noqa: BLE001 - re-raised below, once the drivers stopped
+                # Raised into the task group instead, the session's own error would reach
+                # its caller wrapped in an ExceptionGroup.
+                failure = error
+            finally:
+                drivers.cancel_scope.cancel()
+        if failure is not None:
+            raise failure
 
     @asynccontextmanager
     async def serve_port_async(self, port):

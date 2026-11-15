@@ -185,6 +185,8 @@ class Driver(
         shutdown(). Background work started here, in a task group, is owned by
         the session: leaving cancels it and waits for it to finish. Code after
         the yield runs cancelled, so cleanup that awaits must shield itself.
+        Work that fails ends this context early: the session logs the error and
+        goes on serving the driver's RPCs and every other driver.
         """
         yield
 
