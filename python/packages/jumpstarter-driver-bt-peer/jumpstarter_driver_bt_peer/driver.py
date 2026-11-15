@@ -127,19 +127,20 @@ class BtPeer(Driver):
         connection.on("disconnection", on_disconnect)
 
     def _on_avdtp_connection(self, protocol) -> None:
-        self._session = A2dpSession(
+        session = A2dpSession(
             protocol,
             get_track=lambda: self._player.track,
             on_exhausted=self._player.on_track_exhausted,
             emit=self._emit,
         )
+        self._session = session
         self._emit("avdtp_connected", {})
 
         channel = getattr(protocol, "l2cap_channel", None)
         if channel is not None:
             # Without this the session outlives its channel, and the next
             # play() operates on a protocol that is no longer connected.
-            channel.on(ClassicChannel.EVENT_CLOSE, self._on_avdtp_close)
+            channel.on(ClassicChannel.EVENT_CLOSE, lambda: self._on_avdtp_close(session))
 
         # play() may have been called in the window between the DUT's ACL
         # connection and its AVDTP channel, in which case it had no session
@@ -150,8 +151,12 @@ class BtPeer(Driver):
         if isinstance(self._player.state, Playing):
             AsyncRunner.spawn(self._resume_queued_track())
 
-    def _on_avdtp_close(self) -> None:
-        self._session = None
+    def _on_avdtp_close(self, session: A2dpSession) -> None:
+        # Bound to the session it was registered for: a DUT that reconnects
+        # before the old channel's CLOSE is delivered must not lose the new
+        # session to the old channel's late event.
+        if self._session is session:
+            self._session = None
         self._emit("avdtp_disconnected", {})
 
     async def _resume_queued_track(self) -> None:

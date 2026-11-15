@@ -428,6 +428,23 @@ async def test_avdtp_close_drops_the_session():
     assert any(e["type"] == "avdtp_disconnected" for e in peer._events)
 
 
+@pytest.mark.anyio
+async def test_a_late_close_does_not_drop_the_session_that_replaced_it():
+    """The DUT can reconnect before the old channel's CLOSE is delivered."""
+    peer = BtPeer()
+    old, new = fake_protocol(), fake_protocol()
+
+    peer._on_avdtp_connection(old)
+    _event, old_close = old.l2cap_channel.on.call_args.args
+    peer._on_avdtp_connection(new)
+    live = peer._session
+
+    old_close()
+
+    assert peer._session is live
+    assert live is not None and live.protocol is new
+
+
 # -- play ----------------------------------------------------------------
 
 
@@ -745,7 +762,9 @@ async def test_paused_is_reported_and_survives_reconnect():
     assert peer._player.loaded is not None
 
     # The DUT drops and reconnects; the track stays paused.
-    peer._on_avdtp_close()
+    session = peer._session
+    assert session is not None
+    peer._on_avdtp_close(session)
     reconnected = fake_protocol()
     peer._on_avdtp_connection(reconnected)
     await settle()
