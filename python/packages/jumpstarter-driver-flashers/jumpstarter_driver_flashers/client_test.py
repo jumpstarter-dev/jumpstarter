@@ -5,7 +5,7 @@ from pathlib import PosixPath
 import click
 import pytest
 
-from .client import BaseFlasherClient, FlashNonRetryableError, FlashRetryableError
+from .client import BaseFlasherClient, FlashError, FlashNonRetryableError, FlashRetryableError
 from jumpstarter.common.exceptions import ArgumentError
 
 
@@ -364,18 +364,45 @@ def test_categorize_exception_wraps_unknown_exceptions():
     assert result.__cause__ is error
 
 
-def test_categorize_exception_unknown_exception_group_reports_leaf_errors():
-    """An unknown ExceptionGroup must surface its leaf errors, not just the group message"""
+class _IdleService:
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+
+@pytest.mark.parametrize(
+    "error, expected",
+    [
+        (
+            RuntimeError("Failed to get U-Boot prompt"),
+            "Flash operation failed after 1 attempts (Caused by: Failed to get U-Boot prompt)",
+        ),
+        (
+            FlashNonRetryableError("Could not find dd process ID"),
+            "Flash operation failed (Caused by: Could not find dd process ID)",
+        ),
+        (CancelledError(), "Flash operation failed (Caused by: CancelledError)"),
+    ],
+)
+def test_flash_error_reports_the_failure_once(error, expected):
+    """FlashError names the underlying failure once, and chains it as __cause__"""
     client = MockFlasherClient()
+    client.http = _IdleService()  # ty: ignore[unresolved-attribute]
+    client.tftp = _IdleService()  # ty: ignore[unresolved-attribute]
+    client.call = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
 
-    inner = ExceptionGroup("unhandled errors in a TaskGroup", [RuntimeError("Failed to get U-Boot prompt")])
-    outer = ExceptionGroup("unhandled errors in a TaskGroup", [inner, ValueError("bad value")])
-    result = client._categorize_exception(outer)
+    def fail(*args, **kwargs):
+        raise error
 
-    assert isinstance(result, FlashRetryableError)
-    assert "RuntimeError: Failed to get U-Boot prompt" in str(result)
-    assert "ValueError: bad value" in str(result)
-    assert result.__cause__ is outer
+    client._perform_flash_operation = fail  # ty: ignore[invalid-assignment]
+
+    with pytest.raises(FlashError) as excinfo:
+        client.flash("https://example.com/image.raw.xz", retries=0)
+
+    assert str(excinfo.value) == expected
+    assert excinfo.value.__cause__ is error
 
 
 def test_categorize_exception_cancelled_error_is_non_retryable():

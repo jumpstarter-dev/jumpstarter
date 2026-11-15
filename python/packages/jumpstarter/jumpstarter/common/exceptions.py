@@ -27,7 +27,9 @@ class JumpstarterException(Exception):
 
     def __str__(self):
         if self.__cause__:
-            return f"{self.message} (Caused by: {self.__cause__})"
+            # name a cause with an empty message, such as CancelledError(), by its type
+            cause = str(self.__cause__) or type(self.__cause__).__name__
+            return f"{self.message} (Caused by: {cause})"
         return f"{self.message}"
 
 
