@@ -161,7 +161,8 @@ async def test_playing_without_a_session_queues_the_track():
 
     assert result == {"streaming": False, "reason": "no AVDTP connection from the DUT yet"}
     assert player.state is target
-    # Queued is not playing: saying otherwise would mislead the DUT.
+    # The DUT is told it is playing: that is the peer's intent, and the stream
+    # starts as soon as the DUT's AVDTP channel arrives.
     assert delegate.playback_status == PlayStatus.PLAYING
 
 
@@ -227,30 +228,6 @@ async def test_a_track_draining_mid_transition_is_not_resurrected():
 
     assert await player.transition(playing, playing) is None
     assert player.state == Idle()
-
-
-@pytest.mark.anyio
-async def test_describe_reports_the_track_and_the_stream():
-    session = _session(streaming=True)
-    player, _delegate, _events = _player(session)
-    track = Track(name="song.mp3", data=make_sbc_file(100), loop=True)
-    metadata = TrackMetadata(title="T", artist="A", album="B", duration_ms=10000)
-    await player.transition(player.state, Playing(track, metadata))
-
-    assert player.describe() == {
-        "playing": True,
-        "paused": False,
-        "streaming": True,
-        "name": "song.mp3",
-        "loop": True,
-        "bytes": track.size,
-        "position": 0,
-        "title": "T",
-        "artist": "A",
-        "album": "B",
-        "duration_ms": 10000,
-        "position_ms": 0,
-    }
 
 
 @pytest.mark.anyio

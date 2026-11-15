@@ -173,10 +173,10 @@ def test_rewind_starts_the_track_over():
 # -- the packet source ---------------------------------------------------
 
 
-def _play(peer, data: bytes, loop: bool = False) -> Track:
-    """Install a playing track without going through the AVDTP stream."""
+async def _play(peer, data: bytes, loop: bool = False) -> Track:
+    """Queue a track on a peer with no AVDTP session, so no stream is driven."""
     track = Track(name="song.sbc", data=data, loop=loop)
-    peer._player.state = Playing(track, TrackMetadata())
+    await peer._player.transition(peer._player.state, Playing(track, TrackMetadata()))
     return track
 
 
@@ -190,7 +190,7 @@ async def test_media_source_timestamps_never_go_backwards():
     for _ in range(3):
         timestamps.append((await source.__anext__()).timestamp_seconds)
 
-    _play(peer, make_sbc_file(200))
+    await _play(peer, make_sbc_file(200))
     while peer._player.track is not None:
         timestamps.append((await source.__anext__()).timestamp_seconds)
 
@@ -206,7 +206,7 @@ async def test_media_source_timestamps_never_go_backwards():
 async def test_media_source_loops_without_rewinding_timestamps():
     peer = BtPeer()
     source = session_for(peer)._media_source()
-    _play(peer, make_sbc_file(30), loop=True)
+    await _play(peer, make_sbc_file(30), loop=True)
 
     timestamps = [(await source.__anext__()).timestamp_seconds for _ in range(120)]
 

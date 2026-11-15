@@ -7,7 +7,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from .client import _probe_metadata, _transcode_to_sbc, transcode_timeout_for
+from .conftest import make_sbc_file, patched_stack
+from .driver import BtPeer
 from .media import PROBE_TIMEOUT, TRANSCODE_BASE_TIMEOUT
+from jumpstarter.common.utils import serve
 
 
 def _completed(stdout: str = "", returncode: int = 0):
@@ -135,3 +138,41 @@ def test_transcode_surfaces_ffmpeg_stderr(tmp_path):
         pytest.raises(click.ClickException, match="Invalid data found"),
     ):
         _transcode_to_sbc(source, tmp_path / "song.sbc")
+
+
+# -- through the exporter ------------------------------------------------
+
+
+def test_play_uploads_the_file_through_the_exporter(tmp_path):
+    """The client half and the driver half of play() meet only here.
+
+    Every driver test patches the upload out, so the resource stream, the
+    arguments client.play passes and the JSON it parses back are proved by
+    this test alone.
+    """
+    song = tmp_path / "song.sbc"
+    song.write_bytes(make_sbc_file(40))
+
+    with (
+        patched_stack(),
+        # No ffprobe: the track gets its name and the caller's overrides only.
+        patch("jumpstarter_driver_bt_peer.client.shutil.which", return_value=None),
+        serve(BtPeer()) as client,
+    ):
+        client.start_peer()
+
+        result = client.play(song, loop=True, artist="gr0za")
+
+        assert result == {
+            **result,
+            "name": "song.sbc",
+            "bytes": len(song.read_bytes()),
+            "loop": True,
+            "title": "song.sbc",
+            "artist": "gr0za",
+            "streaming": False,
+        }
+        status = client.playback_status()
+        assert (status["playing"], status["name"], status["artist"]) == (True, "song.sbc", "gr0za")
+
+        client.stop_peer()
