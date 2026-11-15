@@ -1,12 +1,18 @@
-"""The peer's playback state, and the single place that changes it.
+"""The peer's playback state, and the place that changes it.
 
 What the peer is doing is one value, not a track plus a pair of flags, so
 there is no combination to get wrong: a paused track cannot be reported as
 playing, and a track cannot linger after a failed start.
 
-`Player.transition` is the only writer. It drives the AVDTP stream and tells
-the DUT the result in the same step, under one lock, so the status the head
-unit shows and the status `playback_status` reports cannot drift apart.
+The state is what the peer *intends*, not what the AVDTP stream is doing.
+The two are separate on purpose. The DUT may suspend the stream and start
+it again on its own -- a head unit switching sources, or losing audio
+focus -- and when it does, a Playing track should carry on from where it
+was. So the state stays Playing under a suspended stream, and the stream's
+own state is reported beside it as `streaming`. Every change the peer makes
+itself goes through `Player.transition`, which drives the stream and tells
+the DUT the result under one lock, so the status the head unit is told and
+the status `playback_status` reports always agree.
 """
 
 from dataclasses import dataclass
@@ -66,7 +72,11 @@ def play_status_of(state: Playback) -> PlayStatus:
 
 
 class Player:
-    """Owns the playback state and every change to it.
+    """Owns the playback state.
+
+    `transition` is the writer for every change a caller asks for. Two
+    others exist and are kept narrow: `on_track_exhausted`, which runs inside
+    the packet pump and cannot take the lock, and `reset`, for teardown.
 
     `get_session` and `get_reporter` are read late rather than captured,
     because both come and go: the session with the DUT's AVDTP channel, the
@@ -117,7 +127,12 @@ class Player:
         return (loaded.metadata, self.position_ms())
 
     def describe(self) -> dict[str, Any]:
-        """What the peer is currently streaming, for playback_status."""
+        """What the peer intends to play, and whether the stream is carrying it.
+
+        `playing` with `streaming` false is a real state rather than a
+        disagreement: the DUT suspended the stream, or a track swap could not
+        restart it. The next START, from either side, resumes the track.
+        """
         session = self._get_session()
         streaming = session is not None and session.is_streaming
         match self.state:

@@ -732,6 +732,27 @@ async def test_stop_peer_clears_playback():
     assert peer._running is None
 
 
+@pytest.mark.anyio
+async def test_a_track_the_dut_suspends_carries_on_when_the_dut_starts_it():
+    """The state is the peer's intent; the DUT may stop and start under it."""
+    peer, protocol = peer_with_session()
+    with patch_resource(make_sbc_file(40)):
+        await peer.play("handle", name="song.sbc")
+    session = session_of(peer)
+    assert session is not None
+
+    # A SUSPEND from the DUT: bumble stops the pump and leaves the stream OPEN.
+    protocol.source.stream = protocol.stream
+    protocol.stream.state = State.OPEN
+    status = json.loads(peer.playback_status())
+    assert (status["playing"], status["streaming"]) == (True, False)
+
+    # Its START rebuilds the packet source, which picks the same track up.
+    packet = await anext(session.packets(672))
+    assert packet.payload[0] > 0, "the restarted stream sent filler, not the track"
+    assert peer._player.track is not None and peer._player.track.position > 0
+
+
 # -- pause, resume, stop -------------------------------------------------
 
 
