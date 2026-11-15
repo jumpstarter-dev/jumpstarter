@@ -692,3 +692,37 @@ def test_resolve_flash_parameters():
         client._resolve_flash_parameters(None, None, None)
     with pytest.raises(click.UsageError):
         client._resolve_flash_parameters(None, ("rootfs_no_colon",), None)
+
+
+@pytest.mark.parametrize(("kwargs", "expected"), [({}, 100), ({"uboot_prompt_retries": 300}, 300)])
+def test_flash_passes_uboot_prompt_retries_to_reboot_to_console(kwargs, expected):
+    """A board slower than the default 10 s window to reach U-Boot can get a longer one (#1230)."""
+    from contextlib import contextmanager
+
+    client = MockFlasherClient()
+
+    class DummyService:
+        storage = object()
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+    asked = []
+
+    class FakeUboot:
+        @contextmanager
+        def reboot_to_console(self, *, debug=False, retries=100):
+            asked.append(retries)
+            raise RuntimeError("Failed to get U-Boot prompt")
+            yield
+
+    client.children = {"http": DummyService(), "tftp": DummyService(), "uboot": FakeUboot()}  # ty: ignore[invalid-assignment]
+    client.call = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
+
+    with pytest.raises(FlashError):
+        client.flash("https://example.com/image.raw.xz", method="fls", fls_version="", retries=0, **kwargs)
+
+    assert asked == [expected]

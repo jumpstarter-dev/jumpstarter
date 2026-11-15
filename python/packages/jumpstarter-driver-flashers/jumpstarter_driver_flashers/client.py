@@ -93,6 +93,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         super().__post_init__()
         self._manifest = None
         self._console_debug = False
+        self._uboot_prompt_retries = 100
         self._redaction_values: set[str] = set()
 
     def set_console_debug(self, debug: bool):
@@ -142,8 +143,13 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         oci_username: str | None = None,
         oci_password: str | None = None,
         power_off: bool = True,
+        uboot_prompt_retries: int = 100,
     ):
-        """Flash image to DUT"""
+        """Flash image to DUT
+
+        uboot_prompt_retries is how many times to look for the U-Boot prompt after each power cycle, 0.1 s each:
+        the default 100 gives a board 10 s to reach U-Boot.
+        """
         if bearer_token:
             bearer_token = self._validate_bearer_token(bearer_token)
 
@@ -185,6 +191,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     path = path_with_query(parsed)
                 else:
                     path, operator, operator_scheme = operator_for_path(path)
+
+        # read by _busybox, which every flash attempt goes through
+        self._uboot_prompt_retries = uboot_prompt_retries
 
         # start counting time for the flash operation
         start_time = time.time()
@@ -1191,7 +1200,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         """
 
         # make sure that the device is booted into the uboot console
-        with self.uboot.reboot_to_console(debug=self._console_debug):
+        with self.uboot.reboot_to_console(debug=self._console_debug, retries=self._uboot_prompt_retries):
             # run dhcp discovery and gather details useful for later
             try:
                 self._dhcp_details = self.uboot.setup_dhcp()
@@ -1542,6 +1551,12 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             help="Custom URL to download FLS binary from (overrides --fls-version)",
         )
         @click.option(
+            "--uboot-prompt-retries",
+            type=click.IntRange(min=1),
+            default=100,
+            help="Attempts to catch the U-Boot prompt after each power cycle, 0.1 s each (default: 100, a 10 s window)",
+        )
+        @click.option(
             "--power-off/--no-power-off",
             "power_off",
             default=True,
@@ -1565,6 +1580,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             method,
             fls_version,
             fls_binary_url,
+            uboot_prompt_retries,
             power_off,
         ):
             """Flash image(s) to DUT
@@ -1627,6 +1643,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     fls_version=fls_version,
                     fls_binary_url=fls_binary_url,
                     power_off=power_off if is_last else True,
+                    uboot_prompt_retries=uboot_prompt_retries,
                 )
 
         @base.command()

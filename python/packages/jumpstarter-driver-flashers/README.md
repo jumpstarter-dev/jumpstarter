@@ -206,6 +206,10 @@ Options:
                                  github releases
   --fls-binary-url TEXT          Custom URL to download FLS binary from
                                  (overrides --fls-version)
+  --uboot-prompt-retries INTEGER RANGE
+                                 Attempts to catch the U-Boot prompt after
+                                 each power cycle, 0.1 s each (default: 100,
+                                 a 10 s window)  [x>=1]
   --power-off / --no-power-off   Power off device after flashing (default)
   --console-debug                Enable console debug mode
   --help                         Show this message and exit.
