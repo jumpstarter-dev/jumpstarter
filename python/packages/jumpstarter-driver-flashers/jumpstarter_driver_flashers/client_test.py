@@ -15,6 +15,7 @@ class MockFlasherClient(BaseFlasherClient):
     def __init__(self):
         self._manifest = None
         self._console_debug = False
+        self._uboot_prompt_retries = 100
         self._redaction_values = set()
         self.children = {}
         self.methods_description = {}
@@ -694,9 +695,8 @@ def test_resolve_flash_parameters():
         client._resolve_flash_parameters(None, ("rootfs_no_colon",), None)
 
 
-@pytest.mark.parametrize(("kwargs", "expected"), [({}, 100), ({"uboot_prompt_retries": 300}, 300)])
-def test_flash_passes_uboot_prompt_retries_to_reboot_to_console(kwargs, expected):
-    """A board slower than the default 10 s window to reach U-Boot can get a longer one (#1230)."""
+def _client_with_failing_uboot(asked):
+    """A client whose U-Boot never shows a prompt; records the retries each attempt asked for."""
     from contextlib import contextmanager
 
     client = MockFlasherClient()
@@ -710,8 +710,6 @@ def test_flash_passes_uboot_prompt_retries_to_reboot_to_console(kwargs, expected
         def stop(self):
             pass
 
-    asked = []
-
     class FakeUboot:
         @contextmanager
         def reboot_to_console(self, *, debug=False, retries=100):
@@ -721,8 +719,28 @@ def test_flash_passes_uboot_prompt_retries_to_reboot_to_console(kwargs, expected
 
     client.children = {"http": DummyService(), "tftp": DummyService(), "uboot": FakeUboot()}  # ty: ignore[invalid-assignment]
     client.call = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
+    return client
+
+
+@pytest.mark.parametrize(("kwargs", "expected"), [({}, 100), ({"uboot_prompt_retries": 300}, 300)])
+def test_flash_passes_uboot_prompt_retries_to_reboot_to_console(kwargs, expected):
+    """A board slower than the default 10 s window to reach U-Boot can get a longer one (#1230)."""
+    asked = []
+    client = _client_with_failing_uboot(asked)
 
     with pytest.raises(FlashError):
         client.flash("https://example.com/image.raw.xz", method="fls", fls_version="", retries=0, **kwargs)
 
     assert asked == [expected]
+
+
+def test_uboot_prompt_retries_apply_only_to_that_flash_call():
+    asked = []
+    client = _client_with_failing_uboot(asked)
+
+    with pytest.raises(FlashError):
+        client.flash("https://example.com/image.raw.xz", fls_version="", retries=0, uboot_prompt_retries=300)
+    with pytest.raises(RuntimeError, match="U-Boot prompt"), client._busybox():
+        pass
+
+    assert asked == [300, 100]

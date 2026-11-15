@@ -192,9 +192,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 else:
                     path, operator, operator_scheme = operator_for_path(path)
 
-        # read by _busybox, which every flash attempt goes through
-        self._uboot_prompt_retries = uboot_prompt_retries
-
         # start counting time for the flash operation
         start_time = time.time()
 
@@ -228,7 +225,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         if should_download_to_httpd and not error_queue.empty():
             raise error_queue.get()
 
-        with self._services_up():
+        with self._services_up(), self._uboot_prompt_retries_for(uboot_prompt_retries):
             if should_download_to_httpd:
                 image_url = self.http.get_url() + "/" + self._filename(path)
 
@@ -282,6 +279,15 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         # total time in minutes:seconds
         minutes, seconds = divmod(total_time, 60)
         self.logger.info(f"Flashing completed in {int(minutes)}m {int(seconds):02d}s")
+
+    @contextmanager
+    def _uboot_prompt_retries_for(self, retries: int):
+        """Have _busybox use retries for the U-Boot prompt until the block exits."""
+        previous, self._uboot_prompt_retries = self._uboot_prompt_retries, retries
+        try:
+            yield
+        finally:
+            self._uboot_prompt_retries = previous
 
     def _categorize_exception(self, exception: Exception) -> FlashRetryableError | FlashNonRetryableError:
         """Categorize an exception as retryable or non-retryable.
