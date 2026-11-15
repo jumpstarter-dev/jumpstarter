@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/uuid"
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	cpb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/client/v1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/service/auth"
@@ -661,10 +662,15 @@ func (s *ClientService) RotateToken(ctx context.Context, req *cpb.RotateTokenReq
 		return nil, err
 	}
 
+	credential, err := authentication.BearerTokenFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	token, expiry, err := auth.RotateCredential(ctx, s.Client, s.Signer, kclient.ObjectKey{
 		Namespace: namespace,
 		Name:      jclient.CredentialSecretName(),
-	}, jclient.InternalSubject())
+	}, jclient.InternalSubject(), credential)
 	if err != nil {
 		return nil, err
 	}

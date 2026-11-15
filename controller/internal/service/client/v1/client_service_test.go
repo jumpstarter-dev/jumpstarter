@@ -8,10 +8,13 @@ import (
 	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/controller"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	cpb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/client/v1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/service/auth"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/service/utils"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -429,6 +432,7 @@ func TestCreateLeaseRejectsNilRequest(t *testing.T) {
 func testScheme() *runtime.Scheme {
 	s := runtime.NewScheme()
 	_ = jumpstarterdevv1alpha1.AddToScheme(s)
+	_ = corev1.AddToScheme(s)
 	return s
 }
 
@@ -899,4 +903,64 @@ func TestDeleteLease_AttributionLogging(t *testing.T) {
 			t.Errorf("idempotent must not emit newly_marked, got:\n%s", logged)
 		}
 	})
+}
+
+func TestRotateTokenRequiresInternalClientToken(t *testing.T) {
+	const ns = "default"
+	owner := &jumpstarterdevv1alpha1.Client{
+		ObjectMeta: metav1.ObjectMeta{Name: "owner", Namespace: ns, UID: "uid"},
+	}
+	controllerSigner, err := oidc.NewSignerFromSeed([]byte("controller"), "https://controller.example.com", "jumpstarter")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idpSigner, err := oidc.NewSignerFromSeed([]byte("idp"), "https://idp.example.com", "jumpstarter")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name    string
+		signer  *oidc.Signer
+		subject string
+		want    codes.Code
+	}{
+		{name: "the client's internal token", signer: controllerSigner, subject: owner.InternalSubject(), want: codes.OK},
+		{name: "an OIDC token for the same client", signer: idpSigner, subject: "alice", want: codes.PermissionDenied},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			credential, err := tc.signer.Token(tc.subject)
+			if err != nil {
+				t.Fatal(err)
+			}
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: owner.CredentialSecretName(), Namespace: ns},
+				Data:       map[string][]byte{controller.TokenKey: []byte("stored-token")},
+			}
+			fc := testFakeClient(owner.DeepCopy(), secret)
+			svc := authedClientService(owner.Name, ns, fc)
+			svc.Signer = controllerSigner
+			ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+credential))
+
+			resp, err := svc.RotateToken(ctx, &cpb.RotateTokenRequest{Parent: "namespaces/" + ns})
+			if status.Code(err) != tc.want {
+				t.Fatalf("code = %v, want %v: %v", status.Code(err), tc.want, err)
+			}
+			var stored corev1.Secret
+			if err := fc.Get(context.Background(), kclient.ObjectKeyFromObject(secret), &stored); err != nil {
+				t.Fatal(err)
+			}
+			if tc.want != codes.OK {
+				if string(stored.Data[controller.TokenKey]) != "stored-token" {
+					t.Fatal("refused rotation replaced the stored token")
+				}
+				return
+			}
+			if subject, err := controllerSigner.ParseSubject(resp.Token); err != nil || subject != owner.InternalSubject() {
+				t.Fatalf("rotated token subject = %q, err = %v", subject, err)
+			}
+			if string(stored.Data[controller.TokenKey]) != resp.Token {
+				t.Fatal("rotated token was not stored")
+			}
+		})
+	}
 }
