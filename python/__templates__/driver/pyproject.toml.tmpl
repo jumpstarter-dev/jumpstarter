@@ -25,7 +25,7 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 addopts = "--cov --cov-report=html --cov-report=xml --strict-markers --strict-config"
 log_cli = true
 log_cli_level = "INFO"
-testpaths = ["jumpstarter_driver_${DRIVER_NAME}"]
+testpaths = ["jumpstarter_driver_${DRIVER_MODULE_NAME}"]
 
 [build-system]
 requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]

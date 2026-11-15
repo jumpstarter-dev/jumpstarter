@@ -14,11 +14,12 @@ import jumpstarter
 # A fresh interpreter is necessary: changing the environment after gRPC has
 # initialized does not reconfigure its native fork handlers.
 _RPC_SCRIPT = """
-import asyncio
 import json
 import os
 import sys
 import traceback
+
+import anyio
 
 if sys.argv[1] == "grpc-first":
     import grpc
@@ -51,7 +52,7 @@ if sys.argv[2] == "fork":
         pid = os.fork()
         if pid == 0:
             try:
-                asyncio.run(echo_once(f"child-{restart}".encode()))
+                anyio.run(echo_once, f"child-{restart}".encode())
             except BaseException:
                 traceback.print_exc()
                 os._exit(1)
@@ -59,7 +60,7 @@ if sys.argv[2] == "fork":
         _, status = os.waitpid(pid, 0)
         assert os.waitstatus_to_exitcode(status) == 0, status
 else:
-    asyncio.run(echo_once(b"configured grpc"))
+    anyio.run(echo_once, b"configured grpc")
 
 print(json.dumps({"fork_support": os.environ.get("GRPC_ENABLE_FORK_SUPPORT"), "rpc": "passed"}))
 """
