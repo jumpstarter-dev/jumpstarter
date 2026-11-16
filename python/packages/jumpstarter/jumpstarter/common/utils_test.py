@@ -441,26 +441,49 @@ def test_launch_shell_zsh_with_profiles_keeps_user_config(tmp_path, monkeypatch)
     assert "ZDOTDIR" not in mock_popen.call_args[1].get("env", {})
 
 
-def _pty_read(fd, timeout=3.0):
+def _pty_read(fd, expected, timeout=3.0):
     out = b""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        ready, _, _ = select.select([fd], [], [], 0.1)
-        if ready:
-            try:
-                chunk = os.read(fd, 4096)
-            except OSError:
-                break
-            if not chunk:
-                break
-            out += chunk
-            deadline = max(deadline, time.time() + 0.5)
+    deadline = time.monotonic() + timeout
+    while expected not in out:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or not select.select([fd], [], [], remaining)[0]:
+            break
+        try:
+            chunk = os.read(fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        out += chunk
+    assert expected in out, f"Expected {expected!r}, received {out!r}"
     return out
 
 
-def _pty_send(fd, data, timeout=1.5):
+def _pty_send(fd, data, expected, timeout=3.0):
     os.write(fd, data)
-    return _pty_read(fd, timeout)
+    return _pty_read(fd, expected, timeout)
+
+
+def test_pty_read_returns_without_another_wait():
+    reader, writer = os.pipe()
+    try:
+        os.write(writer, b"i-search:")
+        with patch.object(select, "select", side_effect=[([reader], [], [])]) as wait:
+            assert _pty_read(reader, b"i-search:") == b"i-search:"
+        wait.assert_called_once()
+    finally:
+        os.close(reader)
+        os.close(writer)
+
+
+def test_pty_read_fails_when_expected_output_is_missing():
+    reader, writer = os.pipe()
+    try:
+        with pytest.raises(AssertionError, match="i-search:"):
+            _pty_read(reader, b"i-search:", timeout=0)
+    finally:
+        os.close(reader)
+        os.close(writer)
 
 
 @pytest.mark.skipif(shutil.which("zsh") is None, reason="zsh not available")
@@ -481,6 +504,7 @@ def test_launch_shell_zsh_history_and_reverse_search(tmp_path, monkeypatch, run_
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("TERM", "xterm-256color")
     monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.setenv("NO_ICONS", "1")
     for var in ("HISTFILE", "HISTSIZE", "SAVEHIST", "ZDOTDIR"):
         monkeypatch.delenv(var, raising=False)
 
@@ -515,24 +539,21 @@ def test_launch_shell_zsh_history_and_reverse_search(tmp_path, monkeypatch, run_
 
     try:
         thread.start()
-        prompt = _pty_read(master_fd)
-        assert b"pytest" in prompt, f"jmp prompt not shown: {prompt!r}"
+        prompt = b"pytest > "
+        _pty_read(master_fd, prompt)
 
-        out = _pty_send(master_fd, b"\x1b[A")
-        assert b"PREVIOUS_SESSION_COMMAND" in out, f"Up-arrow did not recall history: {out!r}"
+        _pty_send(master_fd, b"\x1b[A", b"PREVIOUS_SESSION_COMMAND")
 
-        _pty_send(master_fd, b"\x15")
-        out = _pty_send(master_fd, b"\x12")
-        assert b"i-search:" in out, f"Ctrl-R did not start a search: {out!r}"
+        _pty_send(master_fd, b"\x15\x12", b"i-search:")
 
-        _pty_send(master_fd, b"\x15")
+        _pty_send(master_fd, b"\x07\n", prompt)
         if run_command:
-            _pty_send(master_fd, b"bash --norc --noprofile\n")
-            _pty_send(master_fd, b"echo BASH_SESSION_WRITTEN\n")
-            _pty_send(master_fd, b"exit\n")
+            _pty_send(master_fd, b"bash --norc --noprofile\n", prompt)
+            _pty_send(master_fd, b"echo BASH_SESSION_WRITTEN\n", prompt)
+            _pty_send(master_fd, b"exit\n", prompt)
             assert "BASH_SESSION_WRITTEN" in (home / ".bash_history").read_text()
-            _pty_send(master_fd, b"echo SESSION_WRITTEN\n")
-        _pty_send(master_fd, b"exit\n")
+            _pty_send(master_fd, b"echo SESSION_WRITTEN\n", prompt)
+        os.write(master_fd, b"exit\n")
         thread.join(timeout=10)
         assert not thread.is_alive(), "shell did not exit"
         assert result["rc"] == 0
@@ -571,6 +592,7 @@ def test_launch_shell_bash_does_not_truncate_history(tmp_path, monkeypatch, smal
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("TERM", "xterm-256color")
     monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.setenv("NO_ICONS", "1")
     for var in ("HISTFILE", "HISTSIZE", "HISTFILESIZE", "BASHOPTS", "HISTCONTROL", "HISTIGNORE"):
         monkeypatch.delenv(var, raising=False)
     if small_history:
@@ -607,15 +629,16 @@ def test_launch_shell_bash_does_not_truncate_history(tmp_path, monkeypatch, smal
 
     try:
         thread.start()
-        prompt = _pty_read(master_fd)
-        assert b"pytest" in prompt, f"jmp prompt not shown: {prompt!r}"
+        prompt = b"pytest > "
+        _pty_read(master_fd, prompt)
 
-        _pty_send(master_fd, b'bash "$HOME/child.sh"\n')
+        _pty_send(master_fd, b'bash "$HOME/child.sh"\n', prompt)
         assert (home / "child-ok").exists(), "jmp's interactive options leaked into a child script"
         with histfile.open("a") as file:
             file.write("echo CONCURRENT_ENTRY\n")
-        _pty_send(master_fd, b"echo SESSION_WRITTEN\n" * 5)
-        _pty_send(master_fd, b"exit\n")
+        for _ in range(5):
+            _pty_send(master_fd, b"echo SESSION_WRITTEN\n", prompt)
+        os.write(master_fd, b"exit\n")
         thread.join(timeout=10)
         assert not thread.is_alive(), "shell did not exit"
         assert result["rc"] == 0
