@@ -209,12 +209,16 @@ class BtPeer(Driver):
 
         # play() may have been called in the window between the DUT's ACL
         # connection and its AVDTP channel, in which case it had no session
-        # to start a stream on and gave up. Pick the queued track up now,
-        # otherwise it sits there silently until something calls play again.
-        # A paused track stays paused: resuming it here would restart audio
-        # the caller deliberately stopped.
-        if isinstance(running.player.state, Playing):
-            self._spawn("Starting the queued track", self._resume_queued_track, running.player)
+        # to start a stream on and queued the track. Pick it up now, otherwise
+        # it sits there silently until something calls play again. Or play()
+        # may be changing playback right now, against a session read before
+        # this one existed; what it ends up with is not known until it
+        # finishes, so the resume waits for it and decides then. A paused
+        # track stays paused: resuming it here would restart audio the caller
+        # deliberately stopped.
+        player = running.player
+        if isinstance(player.state, Playing) or player.changing:
+            self._spawn("Starting the queued track", self._resume_queued_track, player)
 
     def _on_avdtp_close(self, running: Running, session: A2dpSession) -> None:
         # Bound to the session it was registered for: a DUT that reconnects
@@ -233,6 +237,7 @@ class BtPeer(Driver):
         DUT that reconnects meanwhile is handled by the same call: there is no
         verdict from an older session to apply to the newer one.
         """
+        await player.settled()
         before = player.state
         if not isinstance(before, Playing):
             return

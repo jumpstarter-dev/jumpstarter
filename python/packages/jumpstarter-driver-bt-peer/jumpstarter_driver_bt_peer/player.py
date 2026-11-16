@@ -130,6 +130,11 @@ class Player:
             return (TrackMetadata(), 0)
         return (loaded.metadata, self.position_ms())
 
+    @property
+    def changing(self) -> bool:
+        """Whether a transition is in flight, so the state it is heading for is not known yet."""
+        return self._lock.locked()
+
     def describe(self) -> dict[str, Any]:
         """What the peer intends to play, and whether the stream is carrying it.
 
@@ -162,6 +167,11 @@ class Player:
         }
 
     # -- writing ---------------------------------------------------------
+
+    async def settled(self) -> None:
+        """Wait for a transition in flight, if any, to finish."""
+        async with self._lock:
+            pass
 
     async def transition(self, expected: Playback, target: Playback) -> dict[str, Any] | None:
         """Move to `target`, unless the state changed since the caller read it.

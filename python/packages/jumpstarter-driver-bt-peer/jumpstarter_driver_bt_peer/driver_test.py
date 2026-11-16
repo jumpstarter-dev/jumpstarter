@@ -1117,18 +1117,45 @@ async def test_a_track_starts_on_the_session_that_checked_it():
 
     first.discover_remote_endpoints = AsyncMock(side_effect=discover_slowly)
     narrower = fake_protocol(sink=sink_with_bitpool(2, 35))
-    with patch_resource(make_sbc_file(40, bitpool=52)):
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(peer.play, "handle")
-            await settle(until=lambda: first.discover_remote_endpoints.await_count > 0)
-            connect_avdtp(peer, narrower)
-            configured.set()
+    async with serving(peer):
+        with patch_resource(make_sbc_file(40, bitpool=52)):
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(peer.play, "handle")
+                await settle(until=lambda: first.discover_remote_endpoints.await_count > 0)
+                connect_avdtp(peer, narrower)
+                configured.set()
+        await settle(until=lambda: any(e["type"] == "stream_resume_failed" for e in peer._events))
 
-    # Checked against the first session's 2-53 and started there. The session
-    # that replaced it accepts only 35 and was never handed the track.
-    first.stream.start.assert_awaited_once()
-    narrower.stream.start.assert_not_awaited()
+        # Checked against the first session's 2-53 and started there. The
+        # session that replaced it accepts only 35: it checks the track for
+        # itself once play() is done, rejects it, and never streams it.
+        first.stream.start.assert_awaited_once()
+        narrower.stream.start.assert_not_awaited()
+        assert player_of(peer).state == Idle()
 
+
+@pytest.mark.anyio
+async def test_a_dut_that_connects_while_play_is_starting_another_session_gets_the_track():
+    """Connected mid-transition, the new session sees no queued track yet; it must not be left idle."""
+    peer, first = peer_with_session()
+    configured = anyio.Event()
+
+    async def discover_slowly():
+        await configured.wait()
+
+    first.discover_remote_endpoints = AsyncMock(side_effect=discover_slowly)
+    second = fake_protocol()
+    async with serving(peer):
+        with patch_resource(make_sbc_file(10)):
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(peer.play, "handle")
+                await settle(until=lambda: first.discover_remote_endpoints.await_count > 0)
+                connect_avdtp(peer, second)
+                configured.set()
+        await settle(until=lambda: second.stream.start.await_count > 0)
+
+        second.stream.start.assert_awaited_once()
+        assert isinstance(player_of(peer).state, Playing)
 
 @pytest.mark.anyio
 async def test_a_replaced_sessions_failure_does_not_stop_its_replacement():
