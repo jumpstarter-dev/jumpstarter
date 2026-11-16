@@ -198,7 +198,12 @@ class QemuPower(PowerInterface, Driver):
     @export
     async def on(self) -> None:
         async with self._power_lock:
-            await self._start()
+            try:
+                await self._start()
+            except BaseException:
+                with CancelScope(shield=True):
+                    await self._stop(warn_if_off=False)
+                raise
 
     async def _start(self) -> None:  # noqa: C901
         process = getattr(self, "_process", None)
@@ -422,20 +427,22 @@ class QemuPower(PowerInterface, Driver):
 
     async def _off(self, warn_if_off: bool) -> None:
         async with self._power_lock:
-            self._serial_process = None
-            self._notify_serial_change()
-            process = getattr(self, "_process", None)
-            if process is None or process.poll() is not None:
-                self.logger.log(
-                    logging.WARNING if warn_if_off else logging.DEBUG, "already powered off, ignoring request"
-                )
-            else:
-                process.terminate()
-                try:
-                    await to_thread.run_sync(process.wait, 5)
-                except TimeoutExpired:
-                    process.kill()
-            self._cleanup_power_off()
+            await self._stop(warn_if_off=warn_if_off)
+
+    async def _stop(self, *, warn_if_off: bool) -> None:
+        # Both callers hold _power_lock, including rollback of incomplete startup.
+        self._serial_process = None
+        self._notify_serial_change()
+        process = getattr(self, "_process", None)
+        if process is None or process.poll() is not None:
+            self.logger.log(logging.WARNING if warn_if_off else logging.DEBUG, "already powered off, ignoring request")
+        else:
+            process.terminate()
+            try:
+                await to_thread.run_sync(process.wait, 5)
+            except TimeoutExpired:
+                process.kill()
+        self._cleanup_power_off()
 
     def _cleanup_power_off(self) -> None:
         if hasattr(self, "_process"):
