@@ -209,6 +209,7 @@ def _zsh_ps1(context: str, bolt: str, arrow: str, no_color: bool) -> str:
 _ZSH_ZSHENV = "unsetopt GLOBALRCS\n"
 
 _ZSH_ZSHRC = """\
+HISTFILE=${HISTFILE-"$HOME/.zsh_history"}
 setopt EXTENDED_HISTORY
 bindkey '^R' history-incremental-search-backward
 """
@@ -285,7 +286,6 @@ def launch_shell(
             cmd.extend(["--norc", "--noprofile", "-O", "histappend"])
             env.setdefault("HISTSIZE", "50000")
             env.setdefault("HISTFILESIZE", "-1")
-            env["BASHOPTS"] = f"{env['BASHOPTS']}:histappend" if env.get("BASHOPTS") else "histappend"
         return _run_process(cmd, env, lease)
 
     elif shell_name == "fish":
@@ -294,11 +294,10 @@ def launch_shell(
 
     elif shell_name == "zsh":
         env = common_env | {"PS1": _zsh_ps1(context, bolt, arrow, opts.no_color)}
-        if "HISTFILE" not in env:
-            env["HISTFILE"] = os.path.join(os.path.expanduser("~"), ".zsh_history")
-
         cmd = [shell, "-o", "inc_append_history", "-o", "share_history"]
         if use_profiles:
+            if "HISTFILE" not in env:
+                env["HISTFILE"] = os.path.join(os.path.expanduser("~"), ".zsh_history")
             return _run_process(cmd, env, lease)
         with _zsh_isolated_config(env):
             return _run_process(cmd, env, lease)

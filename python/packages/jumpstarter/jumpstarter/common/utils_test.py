@@ -246,9 +246,12 @@ def test_launch_shell_bash_prompt_is_plain_when_no_color(tmp_path, monkeypatch):
     assert "➤" in ps1
 
 
-@pytest.mark.parametrize("bashopts", ["", "checkwinsize", "histappend:checkwinsize"])
+@pytest.mark.parametrize("bashopts", [None, "", "checkwinsize", "histappend:checkwinsize"])
 def test_launch_shell_bash_isolated_history_env(tmp_path, monkeypatch, bashopts):
-    monkeypatch.setenv("BASHOPTS", bashopts)
+    if bashopts is None:
+        monkeypatch.delenv("BASHOPTS", raising=False)
+    else:
+        monkeypatch.setenv("BASHOPTS", bashopts)
     for var in ("HISTSIZE", "HISTFILESIZE"):
         monkeypatch.delenv(var, raising=False)
     exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fake.bash")
@@ -257,8 +260,7 @@ def test_launch_shell_bash_isolated_history_env(tmp_path, monkeypatch, bashopts)
     env = call[1].get("env", {})
     assert env["HISTSIZE"] == "50000"
     assert env["HISTFILESIZE"] == "-1"
-    assert "histappend" in env["BASHOPTS"].split(":")
-    assert set(bashopts.split(":")) - {""} <= set(env["BASHOPTS"].split(":"))
+    assert env.get("BASHOPTS") == bashopts
 
 
 def test_launch_shell_bash_with_profiles_keeps_user_env(tmp_path, monkeypatch):
@@ -319,7 +321,7 @@ def test_launch_shell_zsh_isolated_config(tmp_path, monkeypatch):
         return _dir()
 
     monkeypatch.setattr("jumpstarter.common.utils.TemporaryDirectory", fake_temporary_directory)
-    for var in ("ZDOTDIR", "HISTSIZE", "SAVEHIST"):
+    for var in ("ZDOTDIR", "HISTSIZE", "SAVEHIST", "HISTFILE"):
         monkeypatch.delenv(var, raising=False)
     exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "zsh")
     assert exit_code == 0
@@ -328,7 +330,9 @@ def test_launch_shell_zsh_isolated_config(tmp_path, monkeypatch):
     assert env["ZDOTDIR"] == created[0]
     assert "HISTSIZE" not in env
     assert "SAVEHIST" not in env
+    assert "HISTFILE" not in env
     zshrc = (Path(created[0]) / ".zshrc").read_text()
+    assert 'HISTFILE=${HISTFILE-"$HOME/.zsh_history"}' in zshrc
     assert "HISTSIZE=50000\n" in zshrc
     assert "SAVEHIST=2147483647\n" in zshrc
     assert "history-incremental-search-backward" in zshrc
@@ -372,9 +376,9 @@ def test_zsh_history_defaults_do_not_leak_to_nested_shells(tmp_path, exported):
     (tmp_path / ".zshrc").write_text(
         "(( HISTSIZE < 50000 )) && HISTSIZE=50000\n(( SAVEHIST < 10000 )) && SAVEHIST=10000\n"
     )
-    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "HISTFILE": ""}
+    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path)}
     if exported:
-        env.update(HISTSIZE="75000", SAVEHIST="250000")
+        env.update(HISTSIZE="75000", SAVEHIST="250000", HISTFILE=str(tmp_path / "custom history"))
     with _zsh_isolated_config(env):
         result = subprocess.run(
             [
@@ -383,7 +387,7 @@ def test_zsh_history_defaults_do_not_leak_to_nested_shells(tmp_path, exported):
                 (
                     'print -r -- "$HISTSIZE:$SAVEHIST"; '
                     "zsh -ic 'print -r -- \"$HISTSIZE:$SAVEHIST\"'; "
-                    "printenv HISTSIZE SAVEHIST"
+                    "printenv HISTSIZE SAVEHIST HISTFILE"
                 ),
             ],
             env=env,
@@ -393,7 +397,13 @@ def test_zsh_history_defaults_do_not_leak_to_nested_shells(tmp_path, exported):
         )
     if exported:
         assert result.returncode == 0
-        assert result.stdout.splitlines() == ["75000:250000", "75000:250000", "75000", "250000"]
+        assert result.stdout.splitlines() == [
+            "75000:250000",
+            "75000:250000",
+            "75000",
+            "250000",
+            str(tmp_path / "custom history"),
+        ]
     else:
         assert result.returncode == 1
         assert result.stdout.splitlines() == ["50000:2147483647", "50000:10000"]
@@ -403,7 +413,7 @@ def test_zsh_history_defaults_do_not_leak_to_nested_shells(tmp_path, exported):
     "shell,values",
     [
         ("fake.bash", {"HISTSIZE": "42", "HISTFILESIZE": "0"}),
-        ("zsh", {"HISTSIZE": "42", "SAVEHIST": "0"}),
+        ("zsh", {"HISTSIZE": "42", "SAVEHIST": "0", "HISTFILE": ""}),
     ],
 )
 def test_launch_shell_preserves_exported_history_settings(tmp_path, monkeypatch, shell, values):
@@ -517,6 +527,10 @@ def test_launch_shell_zsh_history_and_reverse_search(tmp_path, monkeypatch, run_
 
         _pty_send(master_fd, b"\x15")
         if run_command:
+            _pty_send(master_fd, b"bash --norc --noprofile\n")
+            _pty_send(master_fd, b"echo BASH_SESSION_WRITTEN\n")
+            _pty_send(master_fd, b"exit\n")
+            assert "BASH_SESSION_WRITTEN" in (home / ".bash_history").read_text()
             _pty_send(master_fd, b"echo SESSION_WRITTEN\n")
         _pty_send(master_fd, b"exit\n")
         thread.join(timeout=10)
@@ -525,6 +539,7 @@ def test_launch_shell_zsh_history_and_reverse_search(tmp_path, monkeypatch, run_
 
         content = (home / ".zsh_history").read_text()
         assert ("SESSION_WRITTEN" in content) == run_command
+        assert "BASH_SESSION_WRITTEN" not in content
         assert "echo line00001" in content
         assert content.count("\n") >= 20000
         assert all(line.startswith(": ") for line in content.splitlines()), "shared history lost its timestamps"
@@ -550,6 +565,7 @@ def test_launch_shell_bash_does_not_truncate_history(tmp_path, monkeypatch, smal
     home.mkdir()
     histfile = home / ".bash_history"
     histfile.write_text("".join(f"echo line{i:05d}\n" for i in range(1, 60001)))
+    (home / "child.sh").write_text("alias probe='printf ALIAS_EXPANDED'\nprobe() { : > \"$HOME/child-ok\"; }\nprobe\n")
 
     monkeypatch.setenv("SHELL", shutil.which("bash"))
     monkeypatch.setenv("HOME", str(home))
@@ -594,6 +610,8 @@ def test_launch_shell_bash_does_not_truncate_history(tmp_path, monkeypatch, smal
         prompt = _pty_read(master_fd)
         assert b"pytest" in prompt, f"jmp prompt not shown: {prompt!r}"
 
+        _pty_send(master_fd, b'bash "$HOME/child.sh"\n')
+        assert (home / "child-ok").exists(), "jmp's interactive options leaked into a child script"
         with histfile.open("a") as file:
             file.write("echo CONCURRENT_ENTRY\n")
         _pty_send(master_fd, b"echo SESSION_WRITTEN\n" * 5)

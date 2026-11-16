@@ -90,7 +90,7 @@ jobs:
           version: ${{ steps.uv.outputs.version }}
           python-version: ${{ matrix.python-version }}
 
-      - name: Install Qemu (Linux)
+      - name: Install Qemu and zsh (Linux)
         if: runner.os == 'Linux'
         run: |
           echo <<EOF | sudo tee /etc/udev/rules.d/99-kvm.rules
@@ -106,7 +106,7 @@ jobs:
           sudo chmod 0666 /dev/kvm /dev/vhost-vsock /dev/vhost-net
 
           sudo apt-get update
-          sudo apt-get install -y qemu-system-arm qemu-system-x86 rpm2cpio cpio
+          sudo apt-get install -y qemu-system-arm qemu-system-x86 rpm2cpio cpio zsh
 
       - name: Install libgpiod-dev (Linux)
         if: runner.os == 'Linux'
