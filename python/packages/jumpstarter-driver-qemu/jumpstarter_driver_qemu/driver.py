@@ -6,7 +6,6 @@ import logging
 import os
 import platform
 import shutil
-import threading
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
@@ -33,7 +32,6 @@ from anyio import (
     to_thread,
 )
 from anyio.abc import ObjectStream
-from anyio.from_thread import run as run_from_thread
 from anyio.streams.file import FileReadStream, FileWriteStream
 from jumpstarter_driver_network.driver import TcpNetwork, UnixNetwork, VsockNetwork
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
@@ -187,24 +185,27 @@ class QemuPower(PowerInterface, Driver):
     # The console's single fanout reader owns this scope, including physical open/read.
     _serial_read_scope: CancelScope | None = field(default=None, init=False, repr=False)
     _power_lock: Lock = field(default_factory=Lock, init=False, repr=False)
-    _startup_scope: CancelScope | None = field(default=None, init=False, repr=False)
-    _loop_thread: threading.Thread | None = field(default=None, init=False, repr=False)
+
+    @asynccontextmanager
+    async def serving(self):
+        async with super().serving():
+            try:
+                yield
+            finally:
+                with CancelScope(shield=True):
+                    await self._off(warn_if_off=False)
 
     @export
     async def on(self) -> None:
-        self._loop_thread = threading.current_thread()
         async with self._power_lock:
-            with CancelScope() as scope:
-                self._startup_scope = scope
-                try:
-                    await self._start()
-                finally:
-                    self._startup_scope = None
+            await self._start()
 
     async def _start(self) -> None:  # noqa: C901
-        if hasattr(self, "_process"):
+        process = getattr(self, "_process", None)
+        if process is not None and process.poll() is None:
             self.logger.warning("already powered on, ignoring request")
             return
+        self._cleanup_power_off()
 
         # The mmio transport exists to boot AIB aboot images via u-boot, whose
         # DTB (e.g. qemu-tcg.dtb) hardcodes a 4G memory layout. A smaller -m
@@ -420,29 +421,21 @@ class QemuPower(PowerInterface, Driver):
         await self._off(warn_if_off=True)
 
     async def _off(self, warn_if_off: bool) -> None:
-        self._loop_thread = threading.current_thread()
         async with self._power_lock:
-            process = self._prepare_power_off(warn_if_off=warn_if_off)
-            if process is not None:
-                await to_thread.run_sync(self._wait_for_exit, process)
+            self._serial_process = None
+            self._notify_serial_change()
+            process = getattr(self, "_process", None)
+            if process is None or process.poll() is not None:
+                self.logger.log(
+                    logging.WARNING if warn_if_off else logging.DEBUG, "already powered off, ignoring request"
+                )
+            else:
+                process.terminate()
+                try:
+                    await to_thread.run_sync(process.wait, 5)
+                except TimeoutExpired:
+                    process.kill()
             self._cleanup_power_off()
-
-    def _prepare_power_off(self, *, warn_if_off: bool) -> Popen[bytes] | None:
-        self._serial_process = None
-        self._notify_serial_change()
-        process = getattr(self, "_process", None)
-        if process is None or process.poll() is not None:
-            self.logger.log(logging.WARNING if warn_if_off else logging.DEBUG, "already powered off, ignoring request")
-            return None
-        process.terminate()
-        return process
-
-    @staticmethod
-    def _wait_for_exit(process: Popen[bytes]) -> None:
-        try:
-            process.wait(timeout=5)
-        except TimeoutExpired:
-            process.kill()
 
     def _cleanup_power_off(self) -> None:
         if hasattr(self, "_process"):
@@ -454,24 +447,6 @@ class QemuPower(PowerInterface, Driver):
     @export
     async def read(self) -> AsyncGenerator[PowerReading, None]:
         raise NotImplementedError
-
-    def close(self):
-        # Teardown may reach this shared driver through both QEMU and its console.
-        if (
-            self._loop_thread is not None
-            and self._loop_thread.is_alive()
-            and threading.current_thread() is not self._loop_thread
-        ):
-            # Exported console.close() reaches this child from an AnyIO worker.
-            run_from_thread(self._off, False)
-        else:
-            if self._startup_scope is not None:
-                self._startup_scope.cancel()
-            process = self._prepare_power_off(warn_if_off=False)
-            if process is not None:
-                self._wait_for_exit(process)
-            self._cleanup_power_off()
-        super().close()
 
 
 @dataclass(kw_only=True)
@@ -507,7 +482,6 @@ class _QemuSerialStream(ObjectStream[bytes]):
                 pass
 
     async def receive(self) -> bytes:
-        self.power._loop_thread = threading.current_thread()
         while not self._closed:
             changed = self.power._serial_changed
             process = self._current_process()
