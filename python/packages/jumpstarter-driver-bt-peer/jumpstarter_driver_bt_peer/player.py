@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Any, assert_never
 
 import anyio
+from anyio import to_thread
 from bumble.avrcp import PlayStatus
 
 from .a2dp import ADVERTISED, A2dpSession, Track
@@ -206,20 +207,20 @@ class Player:
             case (_, Playing(track=track)) if session is None:
                 # Queued until the DUT's channel arrives, so the advertised
                 # range is all there is to check against yet.
-                track.check(ADVERTISED)
+                await _check(track, ADVERTISED)
                 return dict(NO_SESSION)
             case (Playing(track=old), Playing(track=new)) if old is not new:
                 assert session is not None
                 # Checked before the suspend, so a track this sink cannot take
                 # leaves the one already playing alone.
-                new.check(await session.prepare())
+                await _check(new, await session.prepare())
                 # A track swap: suspend so the new track restarts the stream
                 # cleanly rather than splicing into one already in flight.
                 await session.suspend()
                 return await session.start()
             case (_, Playing(track=track)):
                 assert session is not None
-                track.check(await session.prepare())
+                await _check(track, await session.prepare())
                 return await session.start()
             case (_, Paused() | Idle()):
                 return {"suspended": session is not None and await session.suspend()}
@@ -249,6 +250,15 @@ class Player:
 
     def _report(self, state: Playback, track_changed: bool) -> None:
         self._reporter.report(play_status_of(state), track_changed=track_changed)
+
+
+async def _check(track: Track, config) -> None:
+    """Check every frame of `track` in a worker thread.
+
+    A long track has hundreds of thousands of frames, and the exporter's
+    other drivers share this event loop.
+    """
+    await to_thread.run_sync(track.check, config)
 
 
 def _track_of(state: Playback) -> Track | None:

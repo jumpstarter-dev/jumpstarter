@@ -236,10 +236,18 @@ def patch_resource(payload: bytes):
 
 
 async def settle(times: int = 30, until=None) -> None:
-    """Let spawned tasks run; `_on_avdtp_connection` resumes a track on one."""
+    """Let spawned tasks run; `_on_avdtp_connection` resumes a track on one.
+
+    With `until`, wait for it instead, failing after a deadline. A track is
+    checked in a worker thread, which takes time rather than turns of the
+    loop, so counting turns is only good for showing that nothing happens.
+    """
     import anyio.lowlevel
 
-    for _ in range(times):
-        if until is not None and until():
-            return
-        await anyio.lowlevel.checkpoint()
+    if until is None:
+        for _ in range(times):
+            await anyio.lowlevel.checkpoint()
+        return
+    with anyio.fail_after(5):
+        while not until():
+            await anyio.sleep(0.001)

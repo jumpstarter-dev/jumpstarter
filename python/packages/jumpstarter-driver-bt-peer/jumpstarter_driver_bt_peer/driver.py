@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any, assert_never
 
 import anyio
+from anyio import to_thread
 from anyio.abc import TaskGroup
 from bumble.a2dp import make_audio_source_service_sdp_records
 from bumble.avdtp import Listener
@@ -627,8 +628,10 @@ class BtPeer(Driver):
         data = await self._receive_upload(src)
         metadata = parse_metadata(metadata_json, default_title=name)
         # Parsed before anything is configured: an upload that is not SBC at
-        # all should not send SET_CONFIGURATION to the DUT.
-        track = Track(name=name, data=data, loop=bool(loop))
+        # all should not send SET_CONFIGURATION to the DUT. In a worker thread,
+        # because a long track takes seconds to parse and the exporter's other
+        # drivers share this event loop.
+        track = await to_thread.run_sync(Track, name, data, bool(loop))
 
         # The transition checks the track against the bitpool the sink agreed
         # before it touches the state, so an unusable upload leaves whatever

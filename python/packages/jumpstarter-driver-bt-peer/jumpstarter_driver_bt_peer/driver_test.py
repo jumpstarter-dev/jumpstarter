@@ -1,6 +1,7 @@
 import contextlib
 import json
 import logging
+import threading
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -11,6 +12,7 @@ from bumble.avdtp import State
 from bumble.avrcp import PlayStatus
 from bumble.l2cap import ClassicChannel
 
+from .a2dp import Track, parse_sbc
 from .conftest import (
     FakeResource,
     avrcp_mock,
@@ -630,6 +632,50 @@ async def test_play_rejects_mismatched_sbc():
     assert player_of(peer).state == Idle()
 
 
+def _needs_the_loop_meanwhile(work):
+    """Wrap `work` so it can only finish if the event loop keeps running while it does.
+
+    Returns the wrapper and a coroutine that answers it from the loop. Run on
+    the loop's own thread, the wrapper blocks the loop it is waiting on and
+    fails after its timeout.
+    """
+    started, answered = threading.Event(), threading.Event()
+
+    def wrapper(*args):
+        started.set()
+        assert answered.wait(timeout=2), "the event loop was blocked while this ran"
+        return work(*args)
+
+    async def answer():
+        while not started.is_set():
+            await anyio.sleep(0.001)
+        answered.set()
+
+    return wrapper, answer
+
+
+@pytest.mark.anyio
+async def test_an_upload_is_parsed_off_the_event_loop():
+    peer = running_peer()
+    parse, answer = _needs_the_loop_meanwhile(parse_sbc)
+
+    with patch("jumpstarter_driver_bt_peer.a2dp.parse_sbc", parse), patch_resource(make_sbc_file(10)):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(answer)
+            await peer.play("handle")
+
+
+@pytest.mark.anyio
+async def test_a_track_is_checked_off_the_event_loop():
+    peer = running_peer()
+    check, answer = _needs_the_loop_meanwhile(Track.check)
+
+    with patch.object(Track, "check", check), patch_resource(make_sbc_file(10)):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(answer)
+            await peer.play("handle")
+
+
 @pytest.mark.anyio
 async def test_play_sets_track_and_reports_status():
     peer, protocol = peer_with_session()
@@ -942,7 +988,7 @@ async def test_avrcp_transport_keys_suspend_and_restart_the_stream():
         protocol.stream.start.reset_mock()
 
         peer._on_avrcp_key(_key("PAUSE"), pressed=True)
-        await settle(20)
+        await settle(until=lambda: protocol.stream.stop.await_count > 0)
 
         protocol.stream.stop.assert_awaited_once()
         assert delegate_of(peer).playback_status == PlayStatus.PAUSED
@@ -950,7 +996,7 @@ async def test_avrcp_transport_keys_suspend_and_restart_the_stream():
 
         protocol.stream.state = State.OPEN
         peer._on_avrcp_key(_key("PLAY"), pressed=True)
-        await settle(20)
+        await settle(until=lambda: protocol.stream.start.await_count > 0)
 
         protocol.stream.start.assert_awaited_once()
         assert delegate_of(peer).playback_status == PlayStatus.PLAYING
@@ -965,7 +1011,7 @@ async def test_a_stop_key_clears_the_track():
             await peer.play("handle", name="song.sbc")
 
         peer._on_avrcp_key(_key("STOP"), pressed=True)
-        await settle(20, until=lambda: player_of(peer).state == Idle())
+        await settle(until=lambda: player_of(peer).state == Idle())
 
         assert player_of(peer).state == Idle()
 
@@ -1001,7 +1047,7 @@ async def test_track_queued_before_avdtp_starts_when_it_connects():
 
         protocol = fake_protocol()
         connect_avdtp(peer, protocol)
-        await settle(50, until=lambda: protocol.stream.start.await_count > 0)
+        await settle(until=lambda: protocol.stream.start.await_count > 0)
 
         protocol.stream.start.assert_awaited_once()
         assert any(e["type"] == "stream_resumed" for e in peer._events)
@@ -1152,7 +1198,7 @@ async def test_a_queued_track_is_rechecked_against_the_discovered_sink():
         # The DUT turns out to accept only 35.
         protocol = fake_protocol(sink=sink_with_bitpool(2, 35))
         connect_avdtp(peer, protocol)
-        await settle(50)
+        await settle(until=lambda: any(e["type"] == "stream_resume_failed" for e in peer._events))
 
         protocol.stream.start.assert_not_awaited()
         failed = [e for e in peer._events if e["type"] == "stream_resume_failed"]
@@ -1175,7 +1221,7 @@ async def test_a_queued_track_that_fails_to_start_stays_queued():
         protocol = fake_protocol()
         protocol.stream.start = AsyncMock(side_effect=RuntimeError("channel gone"))
         connect_avdtp(peer, protocol)
-        await settle(50, until=lambda: any(e["type"] == "stream_resume_failed" for e in peer._events))
+        await settle(until=lambda: any(e["type"] == "stream_resume_failed" for e in peer._events))
 
         assert player_of(peer).state is queued
         failed = [e for e in peer._events if e["type"] == "stream_resume_failed"]
