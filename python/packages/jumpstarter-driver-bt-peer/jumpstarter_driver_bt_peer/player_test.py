@@ -6,9 +6,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from bumble.avrcp import PlayStatus
 
-from .a2dp import Track
+from .a2dp import ADVERTISED, SbcConfig, Track
 from .avrcp import PeerDelegate, Reporter, TrackMetadata
 from .conftest import make_sbc_file
+from .errors import TrackRejected
 from .player import Idle, Paused, Player, Playing
 
 
@@ -19,7 +20,7 @@ def _player(session=None):
     events: list[tuple[str, dict]] = []
     player = Player(
         get_session=lambda: session,
-        get_reporter=lambda: reporter,
+        reporter=reporter,
         emit=lambda event_type, data=None: events.append((event_type, data or {})),
     )
     return player, delegate, events
@@ -28,6 +29,7 @@ def _player(session=None):
 def _session(streaming: bool = False):
     session = MagicMock()
     session.is_streaming = streaming
+    session.prepare = AsyncMock(return_value=ADVERTISED)
     session.start = AsyncMock(return_value={"streaming": True, "reason": "started by the peer"})
     session.suspend = AsyncMock(return_value=True)
     return session
@@ -247,12 +249,40 @@ async def test_position_tracks_bytes_consumed():
 
 
 @pytest.mark.anyio
-async def test_reset_drops_the_state_without_touching_the_stream():
+async def test_a_track_the_sink_cannot_take_is_rejected_before_the_stream_starts():
+    """Checked against the session that would play it, under the same lock."""
     session = _session()
+    session.prepare = AsyncMock(return_value=SbcConfig(2, 35))
     player, _delegate, _events = _player(session)
-    await player.transition(player.state, Playing(_track(), TrackMetadata()))
 
-    player.reset()
+    with pytest.raises(TrackRejected, match="sink accepts 2-35"):
+        await player.transition(player.state, Playing(_track(), TrackMetadata()))
 
     assert player.state == Idle()
+    session.start.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_a_rejected_swap_leaves_the_playing_track_streaming():
+    session = _session()
+    player, _delegate, _events = _player(session)
+    first = Playing(_track("first.sbc"), TrackMetadata())
+    await player.transition(player.state, first)
+    session.prepare = AsyncMock(return_value=SbcConfig(2, 35))
+
+    with pytest.raises(TrackRejected):
+        await player.transition(first, Playing(_track("second.sbc"), TrackMetadata()))
+
+    assert player.state is first
     session.suspend.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_a_queued_track_is_checked_against_the_advertised_range():
+    player, _delegate, _events = _player(session=None)
+    too_loud = Track(name="loud.sbc", data=make_sbc_file(10, bitpool=60))
+
+    with pytest.raises(TrackRejected, match="bitpool 60"):
+        await player.transition(player.state, Playing(too_loud, TrackMetadata()))
+
+    assert player.state == Idle()

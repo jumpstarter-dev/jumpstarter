@@ -28,7 +28,7 @@ from bumble.avdtp import (
 )
 from bumble.rtp import MediaPacket
 
-from .errors import BtPeerError
+from .errors import BtPeerError, TrackRejected
 from .media import (
     SBC_ALLOCATION_METHOD,
     SBC_BLOCK_COUNT,
@@ -499,7 +499,7 @@ def check_sbc_frame(frame: SbcFrame, config: SbcConfig = ADVERTISED, index: int 
 
     if mismatches:
         where = "SBC file" if index == 0 else f"SBC frame {index}"
-        raise BtPeerError(
+        raise TrackRejected(
             f"{where} does not match the advertised stream configuration "
             f"({describe_sbc_format()}): got {', '.join(mismatches)}"
         )

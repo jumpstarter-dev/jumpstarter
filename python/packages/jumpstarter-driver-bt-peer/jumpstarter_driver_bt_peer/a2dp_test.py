@@ -19,13 +19,14 @@ from .conftest import (
     connect_avdtp,
     fake_protocol,
     make_sbc_file,
+    player_of,
     running_peer,
     sbc_capability,
     session_for,
     session_of,
     sink_with_bitpool,
 )
-from .driver import BtPeer, BtPeerError
+from .driver import BtPeerError
 from .player import Playing
 
 # -- SBC parsing and checking -------------------------------------------
@@ -176,14 +177,15 @@ def test_rewind_starts_the_track_over():
 async def _play(peer, data: bytes, loop: bool = False) -> Track:
     """Queue a track on a peer with no AVDTP session, so no stream is driven."""
     track = Track(name="song.sbc", data=data, loop=loop)
-    await peer._player.transition(peer._player.state, Playing(track, TrackMetadata()))
+    player = player_of(peer)
+    await player.transition(player.state, Playing(track, TrackMetadata()))
     return track
 
 
 @pytest.mark.anyio
 async def test_media_source_timestamps_never_go_backwards():
     """MediaPacketPump paces off timestamps, so a track swap must not rewind them."""
-    peer = BtPeer()
+    peer = running_peer()
     source = session_for(peer)._media_source()
     timestamps = []
 
@@ -191,7 +193,7 @@ async def test_media_source_timestamps_never_go_backwards():
         timestamps.append((await source.__anext__()).timestamp_seconds)
 
     await _play(peer, make_sbc_file(200))
-    while peer._player.track is not None:
+    while player_of(peer).track is not None:
         timestamps.append((await source.__anext__()).timestamp_seconds)
 
     # And back to silence once the track drains.
@@ -204,14 +206,14 @@ async def test_media_source_timestamps_never_go_backwards():
 
 @pytest.mark.anyio
 async def test_media_source_loops_without_rewinding_timestamps():
-    peer = BtPeer()
+    peer = running_peer()
     source = session_for(peer)._media_source()
     await _play(peer, make_sbc_file(30), loop=True)
 
     timestamps = [(await source.__anext__()).timestamp_seconds for _ in range(120)]
 
     assert timestamps == sorted(timestamps)
-    assert peer._player.track is not None, "loop mode should keep the track active"
+    assert player_of(peer).track is not None, "loop mode should keep the track active"
     assert any(e["type"] == "track_looped" for e in peer._events)
 
 

@@ -26,9 +26,9 @@ from bumble.l2cap import ClassicChannel
 from bumble.pairing import PairingConfig, PairingDelegate
 from bumble.transport import open_transport
 
-from .a2dp import ADVERTISED, A2dpSession, Track
+from .a2dp import A2dpSession, Track
 from .avrcp import PeerDelegate, PeerProtocol, Reporter, parse_metadata
-from .errors import BtPeerError
+from .errors import BtPeerError, TrackRejected
 from .media import MAX_TRACK_BYTES
 from .player import Idle, Loaded, Paused, Player, Playing
 from jumpstarter.driver import Driver, export
@@ -85,7 +85,7 @@ class Running:
     avdtp_listener: Listener
     avrcp: PeerProtocol
     delegate: PeerDelegate
-    reporter: Reporter
+    player: Player
     connections: dict[int, Connection] = field(default_factory=dict)
     # Comes and goes with the DUT's AVDTP channel while the peer runs.
     session: A2dpSession | None = None
@@ -112,17 +112,6 @@ class BtPeer(Driver):
     # Opened by serving(), so the work device events start has an owner.
     _tasks: TaskGroup = field(init=False, repr=False)
     _events: deque = field(default_factory=lambda: deque(maxlen=1000), init=False, repr=False)
-    # Built in __post_init__ rather than by a default_factory, because it
-    # closes over this instance's callbacks.
-    _player: Player = field(init=False, repr=False)
-
-    def __post_init__(self):
-        super().__post_init__()
-        self._player = Player(
-            get_session=lambda: self._running.session if self._running else None,
-            get_reporter=lambda: self._running.reporter if self._running else None,
-            emit=self._emit,
-        )
 
     @classmethod
     def client(cls) -> str:
@@ -204,8 +193,8 @@ class BtPeer(Driver):
     def _on_avdtp_connection(self, running: Running, protocol) -> None:
         session = A2dpSession(
             protocol,
-            get_track=lambda: self._player.track,
-            on_exhausted=self._player.on_track_exhausted,
+            get_track=lambda: running.player.track,
+            on_exhausted=running.player.on_track_exhausted,
             emit=self._emit,
         )
         running.session = session
@@ -223,8 +212,8 @@ class BtPeer(Driver):
         # otherwise it sits there silently until something calls play again.
         # A paused track stays paused: resuming it here would restart audio
         # the caller deliberately stopped.
-        if isinstance(self._player.state, Playing):
-            self._spawn("Starting the queued track", self._resume_queued_track, session)
+        if isinstance(running.player.state, Playing):
+            self._spawn("Starting the queued track", self._resume_queued_track, running.player)
 
     def _on_avdtp_close(self, running: Running, session: A2dpSession) -> None:
         # Bound to the session it was registered for: a DUT that reconnects
@@ -234,31 +223,29 @@ class BtPeer(Driver):
             running.session = None
         self._emit("avdtp_disconnected", {})
 
-    async def _resume_queued_track(self, session: A2dpSession) -> None:
-        """Start a track that was queued before the DUT's AVDTP channel existed."""
-        before = self._player.state
+    async def _resume_queued_track(self, player: Player) -> None:
+        """Start a track that was queued before the DUT's AVDTP channel existed.
+
+        Re-affirming the state it is already in configures the stream, checks
+        the track against what the sink agreed, and starts it, all under the
+        player's lock and against whichever session is current by then. A
+        DUT that reconnects meanwhile is handled by the same call: there is no
+        verdict from an older session to apply to the newer one.
+        """
+        before = player.state
         if not isinstance(before, Playing):
             return
 
         try:
-            # The track was validated before any sink was known, against the
-            # advertised ceiling. Now that a stream is configured, re-check it
-            # rather than streaming audio the sink cannot decode.
-            config = await session.prepare()
-            before.track.check(config)
-        except Exception as exc:  # noqa: BLE001
-            # The same outcome play() gives for a track the sink cannot take.
-            # Leaving it Playing would hand rejected audio to the pump the
-            # moment the DUT sends START itself. If playback has moved on
+            state = await player.transition(before, before)
+        except TrackRejected as exc:
+            # Queued against the advertised range, the sink turned out
+            # narrower. Leaving it Playing would hand rejected audio to the pump
+            # the moment the DUT sends START itself. If playback has moved on
             # meanwhile, the track is no longer ours to drop.
-            if await self._player.transition(before, Idle()) is not None:
+            if await player.transition(before, Idle()) is not None:
                 self._emit("stream_resume_failed", {"error": str(exc)})
             return
-
-        try:
-            # Re-affirming the state it is already in starts the stream under
-            # the same lock as any other change.
-            state = await self._player.transition(before, before)
         except Exception as exc:  # noqa: BLE001
             # The track is fine; the stream would not start. It stays queued
             # for the next START or play().
@@ -266,9 +253,9 @@ class BtPeer(Driver):
             return
 
         if state is None:
-            # stop_playback() or another play() landed while endpoint
-            # discovery was in flight, so this track is no longer the one to
-            # start or announce.
+            # Playback changed before this got the lock, or the track ran out
+            # while the stream was starting: it is no longer the one to start
+            # or announce.
             self._emit("stream_resume_discarded", {"reason": "playback changed while starting"})
             return
         self._emit("stream_resumed", state)
@@ -391,7 +378,7 @@ class BtPeer(Driver):
         }
 
         listener = Listener.for_device(device)
-        delegate = PeerDelegate(on_key=self._on_avrcp_key, now_playing=self._player.now_playing)
+        delegate = PeerDelegate(on_key=self._on_avrcp_key, now_playing=lambda: running.player.now_playing())
         avrcp = PeerProtocol(delegate)
         avrcp.listen(device)
         running = Running(
@@ -400,7 +387,11 @@ class BtPeer(Driver):
             avdtp_listener=listener,
             avrcp=avrcp,
             delegate=delegate,
-            reporter=Reporter(delegate, avrcp, self.logger),
+            player=Player(
+                get_session=lambda: running.session,
+                reporter=Reporter(delegate, avrcp, self.logger),
+                emit=self._emit,
+            ),
         )
         listener.on("connection", lambda protocol: self._on_avdtp_connection(running, protocol))
         device.on("connection", lambda connection: self._on_connection(running, connection))
@@ -415,7 +406,10 @@ class BtPeer(Driver):
                 return json.dumps({"status": "not_running"})
 
             self._running = None
-            self._player.reset()
+            # A command still in flight drives this run's player, which nothing
+            # reads any more. Without a session it cannot reach the stream of
+            # a device that is about to power off.
+            running.session = None
             self._events.clear()
             error = await self._power_down(running.device, running.transport)
 
@@ -636,21 +630,17 @@ class BtPeer(Driver):
         # all should not send SET_CONFIGURATION to the DUT.
         track = Track(name=name, data=data, loop=bool(loop))
 
-        session = running.session
-        # Configure before checking, so the upload is checked against the
-        # bitpool that was actually agreed rather than the wider range the
-        # peer advertises. Configuring leaves a running stream alone.
-        config = await session.prepare() if session is not None else ADVERTISED
-        # Check before touching the state. Doing it later would silence
-        # whatever is playing even when the new upload turns out to be
-        # unusable.
-        track.check(config)
-
-        target = Playing(track, metadata)
-        # Read the state as late as possible: the upload above can take a
-        # while, and anything that happened during it is not a conflict.
-        before = self._player.state
-        stream_state = await self._player.transition(before, target)
+        # The transition checks the track against the bitpool the sink agreed
+        # before it touches the state, so an unusable upload leaves whatever
+        # is playing alone. The state is read as late as possible: the upload
+        # above can take a while, and anything that happened during it is not
+        # a conflict.
+        player = running.player
+        stream_state = await player.transition(player.state, Playing(track, metadata))
+        if self._running is not running:
+            # stop_peer ran meanwhile. The track went to the stopped run's
+            # player, which nothing will play.
+            raise BtPeerError("the peer was stopped while the track was being prepared")
         if stream_state is None:
             raise BtPeerError("playback changed while the track was being prepared")
 
@@ -668,28 +658,30 @@ class BtPeer(Driver):
     @export
     async def pause(self) -> str:
         """Suspend the stream, keeping the track and its position."""
-        match self._player.state:
+        player = self._require_running().player
+        match player.state:
             case Idle():
                 return json.dumps({"status": "not_playing"})
             case Paused(track=track):
                 return json.dumps({"status": "paused", "name": track.name})
             case Playing(track=track, metadata=metadata) as state:
-                result = await self._player.transition(state, Paused(track, metadata))
+                result = await player.transition(state, Paused(track, metadata))
                 if result is None:
                     return json.dumps({"status": "not_playing"})
                 self._emit("track_paused", {"name": track.name, **result})
                 return json.dumps({"status": "paused", "name": track.name})
             case _:  # pragma: no cover
-                assert_never(self._player.state)
+                assert_never(player.state)
 
     @export
     async def resume(self) -> str:
         """Restart a stream suspended by pause()."""
-        state = self._player.state
+        player = self._require_running().player
+        state = player.state
         if not isinstance(state, Loaded):
             return json.dumps({"status": "not_playing"})
 
-        result = await self._player.transition(state, Playing(state.track, state.metadata))
+        result = await player.transition(state, Playing(state.track, state.metadata))
         if result is None:
             return json.dumps({"status": "not_playing"})
         self._emit("track_resumed", {"name": state.track.name, **result})
@@ -698,12 +690,13 @@ class BtPeer(Driver):
     @export
     async def stop_playback(self) -> str:
         """Stop the current track and suspend the stream."""
-        state = self._player.state
+        player = self._require_running().player
+        state = player.state
         if not isinstance(state, Loaded):
             return json.dumps({"status": "not_playing"})
 
         name = state.track.name
-        result = await self._player.transition(state, Idle())
+        result = await player.transition(state, Idle())
         if result is None:
             return json.dumps({"status": "not_playing"})
         self._emit("track_stopped", {"name": name, **result})
@@ -712,7 +705,12 @@ class BtPeer(Driver):
     @export
     def playback_status(self) -> str:
         """Return what the peer is currently streaming."""
-        return json.dumps(self._player.describe())
+        # Not an error when stopped, like get_connections: a stopped peer
+        # plays nothing, which is an answer.
+        running = self._running
+        if running is None:
+            return json.dumps({"playing": False, "paused": False, "streaming": False})
+        return json.dumps(running.player.describe())
 
 
 def _describe_connection(conn: Connection) -> dict[str, Any]:

@@ -13,6 +13,10 @@ own state is reported beside it as `streaming`. Every change the peer makes
 itself goes through `Player.transition`, which drives the stream and tells
 the DUT the result under one lock, so the status the head unit is told and
 the status `playback_status` reports always agree.
+
+A player belongs to one run of the peer, from start_peer to stop_peer, and
+is dropped with it, so a command still in flight when the peer stops cannot
+leave a track behind for the next run.
 """
 
 from dataclasses import dataclass
@@ -21,8 +25,8 @@ from typing import Any, assert_never
 import anyio
 from bumble.avrcp import PlayStatus
 
-from .a2dp import A2dpSession, Track
-from .avrcp import TrackMetadata
+from .a2dp import ADVERTISED, A2dpSession, Track
+from .avrcp import Reporter, TrackMetadata
 
 
 @dataclass(frozen=True)
@@ -72,21 +76,20 @@ def play_status_of(state: Playback) -> PlayStatus:
 
 
 class Player:
-    """Owns the playback state.
+    """Owns the playback state of one run of the peer.
 
-    `transition` is the writer for every change a caller asks for. Two
-    others exist and are kept narrow: `on_track_exhausted`, which runs inside
-    the packet pump and cannot take the lock, and `reset`, for teardown.
+    `transition` is the writer for every change a caller asks for. One other
+    exists and is kept narrow: `on_track_exhausted`, which runs inside the
+    packet pump and cannot take the lock.
 
-    `get_session` and `get_reporter` are read late rather than captured,
-    because both come and go: the session with the DUT's AVDTP channel, the
-    reporter with start_peer.
+    `get_session` is read late rather than captured, because the session
+    comes and goes with the DUT's AVDTP channel.
     """
 
-    def __init__(self, get_session, get_reporter, emit):
+    def __init__(self, get_session, reporter: Reporter, emit):
         self.state: Playback = Idle()
         self._get_session = get_session
-        self._get_reporter = get_reporter
+        self._reporter = reporter
         self._emit = emit
         self._lock = anyio.Lock()
 
@@ -168,7 +171,11 @@ class Player:
         when it was stale.
 
         Raises if driving the stream fails, leaving the state untouched -- a
-        play that could not start must not leave a track installed.
+        play that could not start must not leave a track installed. That
+        includes `TrackRejected`: a track is checked against the session it is
+        about to start on, read once under the lock, so the session that
+        accepts a track is the one that plays it, even when the DUT reconnects
+        while the stream is being configured.
         """
         async with self._lock:
             if self.state is not expected:
@@ -196,16 +203,23 @@ class Player:
     async def _drive(self, session: A2dpSession | None, target: Playback) -> dict[str, Any]:
         """Bring the AVDTP stream in line with `target`."""
         match (self.state, target):
-            case (_, Playing()) if session is None:
+            case (_, Playing(track=track)) if session is None:
+                # Queued until the DUT's channel arrives, so the advertised
+                # range is all there is to check against yet.
+                track.check(ADVERTISED)
                 return dict(NO_SESSION)
             case (Playing(track=old), Playing(track=new)) if old is not new:
+                assert session is not None
+                # Checked before the suspend, so a track this sink cannot take
+                # leaves the one already playing alone.
+                new.check(await session.prepare())
                 # A track swap: suspend so the new track restarts the stream
                 # cleanly rather than splicing into one already in flight.
-                assert session is not None
                 await session.suspend()
                 return await session.start()
-            case (_, Playing()):
+            case (_, Playing(track=track)):
                 assert session is not None
+                track.check(await session.prepare())
                 return await session.start()
             case (_, Paused() | Idle()):
                 return {"suspended": session is not None and await session.suspend()}
@@ -233,18 +247,8 @@ class Player:
             self._report(self.state, track_changed=False)
         self._emit("track_finished", {"name": track.name})
 
-    def reset(self) -> None:
-        """Drop the state without touching the stream, for teardown.
-
-        stop_peer is tearing the device down, so there is no AVDTP stream
-        left to suspend and no controller left to tell.
-        """
-        self.state = Idle()
-
     def _report(self, state: Playback, track_changed: bool) -> None:
-        reporter = self._get_reporter()
-        if reporter is not None:
-            reporter.report(play_status_of(state), track_changed=track_changed)
+        self._reporter.report(play_status_of(state), track_changed=track_changed)
 
 
 def _track_of(state: Playback) -> Track | None:

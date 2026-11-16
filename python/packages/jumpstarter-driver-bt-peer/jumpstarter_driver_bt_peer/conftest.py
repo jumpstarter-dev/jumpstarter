@@ -15,6 +15,7 @@ from bumble.avdtp import MediaCodecCapabilities, State
 from .a2dp import A2dpSession, sbc_capabilities
 from .avrcp import PeerDelegate, Reporter
 from .driver import BtPeer, Running
+from .player import Player
 
 
 @pytest.fixture
@@ -128,16 +129,21 @@ def patched_stack(device=None, transport=None):
 def running_peer(**kwargs) -> BtPeer:
     """A peer past start_peer, with an AVRCP target but no AVDTP connection."""
     peer = BtPeer(**kwargs)
-    delegate = PeerDelegate(on_key=peer._on_avrcp_key, now_playing=peer._player.now_playing)
+    delegate = PeerDelegate(on_key=peer._on_avrcp_key, now_playing=lambda: running.player.now_playing())
     avrcp = MagicMock()
-    peer._running = Running(
+    running = Running(
         device=make_device(),
         transport=make_transport(),
         avdtp_listener=MagicMock(),
         avrcp=avrcp,
         delegate=delegate,
-        reporter=Reporter(delegate, avrcp, peer.logger),
+        player=Player(
+            get_session=lambda: running.session,
+            reporter=Reporter(delegate, avrcp, peer.logger),
+            emit=peer._emit,
+        ),
     )
+    peer._running = running
     return peer
 
 
@@ -160,6 +166,10 @@ def running_of(peer) -> Running:
     running = peer._running
     assert running is not None, "the peer is not running"
     return running
+
+
+def player_of(peer) -> Player:
+    return running_of(peer).player
 
 
 def session_of(peer) -> A2dpSession | None:
@@ -195,8 +205,8 @@ def session_for(peer) -> A2dpSession:
     """A session bound to `peer`, without needing a real AVDTP protocol."""
     return A2dpSession(
         fake_protocol(),
-        get_track=lambda: peer._player.track,
-        on_exhausted=peer._player.on_track_exhausted,
+        get_track=lambda: player_of(peer).track,
+        on_exhausted=player_of(peer).on_track_exhausted,
         emit=peer._emit,
     )
 
