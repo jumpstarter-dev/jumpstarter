@@ -3,12 +3,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from bumble.avrcp import (
+    EventId,
     GetElementAttributesCommand,
     GetElementAttributesResponse,
     GetPlayStatusResponse,
     MediaAttributeId,
     PduId,
     PlayStatus,
+    RegisterNotificationCommand,
+    TrackChangedEvent,
 )
 from bumble.avrcp import Protocol as BumbleAvrcpProtocol
 
@@ -207,3 +210,29 @@ def test_a_failed_notification_is_not_fatal():
     reporter.report(PlayStatus.PLAYING, track_changed=True)
 
     assert delegate.playback_status == PlayStatus.PLAYING
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("status", "uid"),
+    [(PlayStatus.PLAYING, 0), (PlayStatus.PAUSED, 0), (PlayStatus.STOPPED, TrackChangedEvent.NO_TRACK)],
+)
+async def test_a_track_changed_registration_is_answered_with_the_selected_track(status, uid):
+    """A controller registers again after every notification, so this is the answer it keeps getting."""
+    reporter, delegate = _reporter()
+    reporter.report(status, track_changed=True)
+    protocol = PeerProtocol.__new__(PeerProtocol)
+    protocol.delegate = delegate
+    command = RegisterNotificationCommand(event_id=EventId.TRACK_CHANGED, playback_interval=0)
+
+    with (
+        patch.object(PeerProtocol, "send_avrcp_response") as send,
+        patch.object(PeerProtocol, "_delegate_command") as delegate_command,
+        patch.object(PeerProtocol, "_register_notification_listener"),
+    ):
+        protocol._on_register_notification_command(7, command)
+        # Await the coroutine the dispatcher would have spawned.
+        await delegate_command.call_args.args[2]
+
+    _label, _code, response = send.call_args.args
+    assert response.event.uid == uid

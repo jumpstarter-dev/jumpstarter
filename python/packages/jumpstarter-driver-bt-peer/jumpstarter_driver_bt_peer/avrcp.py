@@ -22,6 +22,7 @@ from bumble.avrcp import (
     MediaAttributeId,
     PduId,
     PlayStatus,
+    TrackChangedEvent,
 )
 from bumble.avrcp import Delegate as BumbleAvrcpDelegate
 from bumble.avrcp import Protocol as BumbleAvrcpProtocol
@@ -160,6 +161,11 @@ class PeerProtocol(BumbleAvrcpProtocol):
         self._delegate_command(transaction_label, command, get_play_status())
 
 
+# The UID of the selected track, for a player without media browsing: 0 while
+# a track is selected, TrackChangedEvent.NO_TRACK when none is.
+SELECTED_TRACK_UID = 0
+
+
 class Reporter:
     """Pushes the player's state out to the DUT's AVRCP controller.
 
@@ -176,8 +182,16 @@ class Reporter:
         # The delegate answers GET_PLAY_STATUS from this, so it is set even
         # when there is no controller registered for notifications.
         self._delegate.playback_status = status
+        # And every TRACK_CHANGED registration from this. Notifications are
+        # one-shot, so a controller registers again after each one; left at
+        # bumble's NO_TRACK it would hear after every change that nothing is
+        # selected. The peer stops by unloading the track, so STOPPED is the
+        # one status with nothing selected.
+        self._delegate.current_track_uid = (
+            TrackChangedEvent.NO_TRACK if status == PlayStatus.STOPPED else SELECTED_TRACK_UID
+        )
         if track_changed:
-            self._notify("track change", self._protocol.notify_track_changed, 0)
+            self._notify("track change", self._protocol.notify_track_changed, SELECTED_TRACK_UID)
         self._notify("playback status", self._protocol.notify_playback_status_changed, status)
 
     def _notify(self, what: str, notify, argument) -> None:
