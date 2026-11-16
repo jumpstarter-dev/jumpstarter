@@ -12,7 +12,7 @@ from bumble.avdtp import State
 from bumble.avrcp import PlayStatus
 from bumble.l2cap import ClassicChannel
 
-from .a2dp import Track, parse_sbc
+from .a2dp import SbcConfig, parse_sbc, sbc_capabilities
 from .conftest import (
     FakeResource,
     avrcp_mock,
@@ -666,17 +666,6 @@ async def test_an_upload_is_parsed_off_the_event_loop():
 
 
 @pytest.mark.anyio
-async def test_a_track_is_checked_off_the_event_loop():
-    peer = running_peer()
-    check, answer = _needs_the_loop_meanwhile(Track.check)
-
-    with patch.object(Track, "check", check), patch_resource(make_sbc_file(10)):
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(answer)
-            await peer.play("handle")
-
-
-@pytest.mark.anyio
 async def test_play_sets_track_and_reports_status():
     peer, protocol = peer_with_session()
     with patch_resource(make_sbc_file(100)):
@@ -1132,6 +1121,29 @@ async def test_a_track_starts_on_the_session_that_checked_it():
         first.stream.start.assert_awaited_once()
         narrower.stream.start.assert_not_awaited()
         assert player_of(peer).state == Idle()
+
+
+@pytest.mark.anyio
+async def test_a_dut_that_starts_the_stream_itself_is_sent_nothing_it_did_not_agree_to():
+    """A head unit may configure and start the stream before the peer resumes the queued track."""
+    peer = running_peer()
+    async with serving(peer):
+        with patch_resource(make_sbc_file(10, bitpool=52)):
+            await peer.play("handle", name="loud.sbc")  # queued, checked against the advertised 2-53
+        protocol = fake_protocol()
+        protocol.source.configuration = [sbc_capabilities(SbcConfig(2, 35))]  # the DUT's own SET_CONFIGURATION
+        connect_avdtp(peer, protocol)
+        session = session_of(peer)
+        assert session is not None
+
+        # The DUT's START, before the peer's resume has run.
+        packet = await anext(session.packets(672))
+
+        assert packet.payload == b"\x00", "the stream carried the track its sink did not agree to"
+        assert player_of(peer).state == Idle()
+        assert delegate_of(peer).playback_status == PlayStatus.STOPPED
+        assert any(e["type"] == "track_rejected" for e in peer._events)
+        protocol.stream.start.assert_not_awaited()
 
 
 @pytest.mark.anyio

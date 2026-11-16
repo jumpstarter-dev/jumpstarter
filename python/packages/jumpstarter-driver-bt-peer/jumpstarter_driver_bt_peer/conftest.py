@@ -207,6 +207,7 @@ def session_for(peer) -> A2dpSession:
         fake_protocol(),
         get_track=lambda: player_of(peer).track,
         on_exhausted=player_of(peer).on_track_exhausted,
+        on_rejected=player_of(peer).on_track_rejected,
         emit=peer._emit,
     )
 

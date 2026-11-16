@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import anyio
 import anyio.lowlevel
@@ -13,6 +13,7 @@ from .a2dp import (
     Track,
     _sbc_range,
     parse_sbc,
+    sbc_capabilities,
 )
 from .avrcp import TrackMetadata
 from .conftest import (
@@ -91,6 +92,27 @@ def test_check_covers_every_frame_not_just_the_first():
         _check(mixed)
 
     assert "frame 4" in str(excinfo.value), excinfo.value
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        (make_sbc_file(2) + make_sbc_file(1, bitpool=60) + make_sbc_file(1, sf_index=3), "frame 2 .*bitpool 60"),
+        (make_sbc_file(2) + make_sbc_file(1, sf_index=3) + make_sbc_file(1, bitpool=60), "frame 2 .*48000 Hz"),
+    ],
+    ids=["bitpool first", "format first"],
+)
+def test_check_reports_the_first_frame_that_fails_whatever_fails_it(data, expected):
+    with pytest.raises(BtPeerError, match=expected):
+        _check(data)
+
+
+def test_checking_a_track_that_passes_looks_at_no_frame():
+    """It runs at every start, inside the packet source, so it must not grow with the track."""
+    track = Track(name="t", data=make_sbc_file(200))
+
+    with patch("jumpstarter_driver_bt_peer.a2dp.check_sbc_frame", side_effect=AssertionError("looked at a frame")):
+        track.check(ADVERTISED)
 
 
 def test_check_honours_the_negotiated_bitpool_ceiling():
@@ -260,7 +282,13 @@ async def test_implausible_media_mtu_falls_back(bad_mtu):
 def _session(**kwargs) -> tuple[A2dpSession, MagicMock]:
     protocol = fake_protocol(**kwargs)
     return (
-        A2dpSession(protocol, get_track=lambda: None, on_exhausted=lambda _t: None, emit=lambda *_a: None),
+        A2dpSession(
+            protocol,
+            get_track=lambda: None,
+            on_exhausted=lambda _t: None,
+            on_rejected=lambda _t, _e: None,
+            emit=lambda *_a: None,
+        ),
         protocol,
     )
 
@@ -503,3 +531,29 @@ async def test_concurrent_prepares_configure_the_stream_once():
         tg.start_soon(session.prepare)
 
     protocol.create_stream.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_a_stream_never_sends_a_track_it_was_not_configured_for():
+    """A START from the DUT resumes the playing track on whatever the DUT configured."""
+    protocol = fake_protocol()
+    protocol.source.configuration = [sbc_capabilities(SbcConfig(2, 35))]
+    playing = [Track(name="loud.sbc", data=make_sbc_file(10, bitpool=52))]
+    rejected: list[str] = []
+
+    def reject(track, error):
+        rejected.append(str(error))
+        playing.clear()  # what the player does: drop it
+
+    session = A2dpSession(
+        protocol,
+        get_track=lambda: playing[0] if playing else None,
+        on_exhausted=lambda _t: None,
+        on_rejected=reject,
+        emit=lambda *_a: None,
+    )
+
+    packet = await anext(session.packets(672))
+
+    assert packet.payload == b"\x00", "the stream carried audio its sink did not agree to"
+    assert len(rejected) == 1 and "sink accepts 2-35" in rejected[0]

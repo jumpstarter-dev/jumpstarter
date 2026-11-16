@@ -182,6 +182,15 @@ class Track:
         self.loop = loop
         self.frames = parse_sbc(data)
         self.size = len(data)
+        # What check() needs, gathered once while the upload is parsed, so
+        # that checking is constant time: it runs on the event loop, inside
+        # the packet source, at every start.
+        self._first_misformatted = next(
+            (index for index, frame in enumerate(self.frames) if _format_mismatches(frame)), None
+        )
+        self._first_with_bitpool: dict[int, int] = {}
+        for index, frame in enumerate(self.frames):
+            self._first_with_bitpool.setdefault(frame.bitpool, index)
         self._next = 0
         self._consumed = 0
 
@@ -191,9 +200,21 @@ class Track:
         return self._consumed
 
     def check(self, config: SbcConfig) -> None:
-        """Reject a track the sink was never offered; see `check_sbc_frame`."""
-        for index, frame in enumerate(self.frames):
-            check_sbc_frame(frame, config=config, index=index)
+        """Reject a track the sink was never offered; see `check_sbc_frame`.
+
+        Reports the first frame that fails, as checking every frame in turn
+        would, without looking at the frames that pass.
+        """
+        failing = [
+            index
+            for bitpool, index in self._first_with_bitpool.items()
+            if not config.min_bitpool <= bitpool <= config.max_bitpool
+        ]
+        if self._first_misformatted is not None:
+            failing.append(self._first_misformatted)
+        if failing:
+            index = min(failing)
+            check_sbc_frame(self.frames[index], config=config, index=index)
 
     def next_payload(self, mtu: int) -> tuple[bytes, float] | None:
         """The next RTP payload for a channel of `mtu`, and the audio time it holds.
@@ -286,11 +307,12 @@ class A2dpSession:
     set before any connection exists, and it should survive a reconnect.
     """
 
-    def __init__(self, protocol, get_track, on_exhausted, emit):
+    def __init__(self, protocol, get_track, on_exhausted, on_rejected, emit):
         self.protocol = protocol
         self.mtu = DEFAULT_RTP_MTU
         self._get_track = get_track
         self._on_exhausted = on_exhausted
+        self._on_rejected = on_rejected
         self._emit = emit
         # play() configures the stream outside the player's lock, and so can
         # the queued resume that runs when the channel arrives.
@@ -331,9 +353,23 @@ class A2dpSession:
         """
         sequence_number = 0
         timestamp_seconds = 0.0
+        checked: Track | None = None
 
         while True:
             track = self._get_track()
+
+            if track is not None and track is not checked:
+                # The peer checks a track before every start it makes, but a
+                # START from the DUT resumes whatever is playing, on a stream
+                # the DUT may have configured narrower than the session the
+                # track was checked against. So nothing reaches the wire
+                # without being checked against this stream.
+                try:
+                    track.check(self._agreed_config())
+                    checked = track
+                except BtPeerError as exc:
+                    self._on_rejected(track, exc)
+                    track = None
 
             if track is None:
                 # No sleep here: the pump already waits until each packet's
@@ -404,16 +440,19 @@ class A2dpSession:
         pinned one.
         """
         await self._open_stream()
-        configured = _sbc_range(self.source.configuration)
-        if configured is None:
-            raise BtPeerError("the AVDTP stream was configured without an SBC codec")
-
-        config = ADVERTISED.narrowed_to(configured)
+        config = self._agreed_config()
         self._emit("stream_configured", {
             "minimum_bitpool": config.min_bitpool,
             "maximum_bitpool": config.max_bitpool,
         })
         return config
+
+    def _agreed_config(self) -> SbcConfig:
+        """The bitpool range in force on the configured stream, whoever configured it."""
+        configured = _sbc_range(self.source.configuration)
+        if configured is None:
+            raise BtPeerError("the AVDTP stream was configured without an SBC codec")
+        return ADVERTISED.narrowed_to(configured)
 
     async def start(self) -> dict[str, Any]:
         """Put the stream into STREAMING, initiating it if necessary.
@@ -483,6 +522,20 @@ def check_sbc_frame(frame: SbcFrame, config: SbcConfig = ADVERTISED, index: int 
     config is the negotiated bitpool range once a stream exists, which may be
     narrower than the advertised one.
     """
+    mismatches = _format_mismatches(frame)
+    if not config.min_bitpool <= frame.bitpool <= config.max_bitpool:
+        mismatches.append(f"bitpool {frame.bitpool} (sink accepts {config.describe()})")
+
+    if mismatches:
+        where = "SBC file" if index == 0 else f"SBC frame {index}"
+        raise TrackRejected(
+            f"{where} does not match the advertised stream configuration "
+            f"({describe_sbc_format()}): got {', '.join(mismatches)}"
+        )
+
+
+def _format_mismatches(frame: SbcFrame) -> list[str]:
+    """How `frame` differs from the one SBC format the peer advertises, bitpool aside."""
     mismatches = []
     if frame.sampling_frequency != SBC_SAMPLING_FREQUENCY:
         mismatches.append(f"sampling frequency {frame.sampling_frequency} Hz")
@@ -494,12 +547,4 @@ def check_sbc_frame(frame: SbcFrame, config: SbcConfig = ADVERTISED, index: int 
         mismatches.append(f"{frame.subband_count} subbands")
     if frame.allocation_method != SBC_ALLOCATION_METHOD:
         mismatches.append(f"allocation method {frame.allocation_method} (expected loudness)")
-    if not config.min_bitpool <= frame.bitpool <= config.max_bitpool:
-        mismatches.append(f"bitpool {frame.bitpool} (sink accepts {config.describe()})")
-
-    if mismatches:
-        where = "SBC file" if index == 0 else f"SBC frame {index}"
-        raise TrackRejected(
-            f"{where} does not match the advertised stream configuration "
-            f"({describe_sbc_format()}): got {', '.join(mismatches)}"
-        )
+    return mismatches

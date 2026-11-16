@@ -23,7 +23,6 @@ from dataclasses import dataclass
 from typing import Any, assert_never
 
 import anyio
-from anyio import to_thread
 from bumble.avrcp import PlayStatus
 
 from .a2dp import ADVERTISED, A2dpSession, Track
@@ -79,9 +78,10 @@ def play_status_of(state: Playback) -> PlayStatus:
 class Player:
     """Owns the playback state of one run of the peer.
 
-    `transition` is the writer for every change a caller asks for. One other
-    exists and is kept narrow: `on_track_exhausted`, which runs inside the
-    packet pump and cannot take the lock.
+    `transition` is the writer for every change a caller asks for. Two
+    others exist and are kept narrow: `on_track_exhausted` and
+    `on_track_rejected`, which run inside the packet source and cannot take
+    the lock.
 
     `get_session` is read late rather than captured, because the session
     comes and goes with the DUT's AVDTP channel.
@@ -184,9 +184,11 @@ class Player:
         Raises if driving the stream fails, leaving the state untouched -- a
         play that could not start must not leave a track installed. That
         includes `TrackRejected`: a track is checked against the session it is
-        about to start on, read once under the lock, so the session that
-        accepts a track is the one that plays it, even when the DUT reconnects
-        while the stream is being configured.
+        about to start on, read once under the lock, so the session the peer
+        starts a track on is one that accepted it, even when the DUT
+        reconnects while the stream is being configured. A START from the DUT
+        does not come through here; the packet source checks the track
+        against that stream before sending any of it.
         """
         async with self._lock:
             if self.state is not expected:
@@ -217,20 +219,20 @@ class Player:
             case (_, Playing(track=track)) if session is None:
                 # Queued until the DUT's channel arrives, so the advertised
                 # range is all there is to check against yet.
-                await _check(track, ADVERTISED)
+                track.check(ADVERTISED)
                 return dict(NO_SESSION)
             case (Playing(track=old), Playing(track=new)) if old is not new:
                 assert session is not None
                 # Checked before the suspend, so a track this sink cannot take
                 # leaves the one already playing alone.
-                await _check(new, await session.prepare())
+                new.check(await session.prepare())
                 # A track swap: suspend so the new track restarts the stream
                 # cleanly rather than splicing into one already in flight.
                 await session.suspend()
                 return await session.start()
             case (_, Playing(track=track)):
                 assert session is not None
-                await _check(track, await session.prepare())
+                track.check(await session.prepare())
                 return await session.start()
             case (_, Paused() | Idle()):
                 return {"suspended": session is not None and await session.suspend()}
@@ -258,17 +260,22 @@ class Player:
             self._report(self.state, track_changed=False)
         self._emit("track_finished", {"name": track.name})
 
+    def on_track_rejected(self, track: Track, error: Exception) -> None:
+        """The stream cannot carry `track`; called from inside the packet source.
+
+        Lock-free like `on_track_exhausted`, for the same reason. Reached when
+        the DUT starts a stream it configured narrower than the session the
+        track was checked against. The track is dropped, as a queued one the
+        sink rejects is, and the stream carries filler instead.
+        """
+        state = self.state
+        if isinstance(state, Playing) and state.track is track:
+            self.state = Idle()
+            self._report(self.state, track_changed=False)
+        self._emit("track_rejected", {"name": track.name, "error": str(error)})
+
     def _report(self, state: Playback, track_changed: bool) -> None:
         self._reporter.report(play_status_of(state), track_changed=track_changed)
-
-
-async def _check(track: Track, config) -> None:
-    """Check every frame of `track` in a worker thread.
-
-    A long track has hundreds of thousands of frames, and the exporter's
-    other drivers share this event loop.
-    """
-    await to_thread.run_sync(track.check, config)
 
 
 def _track_of(state: Playback) -> Track | None:

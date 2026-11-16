@@ -196,6 +196,7 @@ class BtPeer(Driver):
             protocol,
             get_track=lambda: running.player.track,
             on_exhausted=running.player.on_track_exhausted,
+            on_rejected=running.player.on_track_rejected,
             emit=self._emit,
         )
         running.session = session
