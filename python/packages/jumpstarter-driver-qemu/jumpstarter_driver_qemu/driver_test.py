@@ -662,6 +662,64 @@ def test_client_stream_survives_offline_input_and_power_cycles(qemu_serial, shut
     assert "Source disconnected" not in caplog.text
 
 
+@pytest.mark.parametrize("outcome", ["cancel", "error"])
+def test_incomplete_startup_can_be_retried_on_the_same_console(qemu_serial, monkeypatch, outcome):
+    driver, _power, console, ptys = qemu_serial
+    starting = Event()
+    attempts = 0
+    qmp = MagicMock()
+    qmp.runstate = Runstate.RUNNING
+
+    async def execute(command):
+        if command == "query-chardev":
+            return [{"label": "serial0", "filename": f"pty:{os.ttyname(ptys[-1][1])}"}]
+        return {}
+
+    async def disconnect():
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            starting.set()
+            if outcome == "error":
+                raise RuntimeError("startup failed")
+            await Event().wait()
+
+    qmp.execute = AsyncMock(side_effect=execute)
+    qmp.disconnect = AsyncMock(side_effect=disconnect)
+    monkeypatch.setattr("jumpstarter_driver_qemu.driver.QMPClient", lambda _name: qmp)
+
+    async def wait_for_startup():
+        with fail_after(2):
+            await starting.wait()
+
+    with (
+        serve(driver) as client,
+        client.portal.wrap_async_context_manager(client.console.stream_async("connect")) as writer,
+        client.portal.wrap_async_context_manager(client.console.stream_async("observe")) as observer,
+    ):
+        startup = client.portal.start_task_soon(client.power.call_async, "on")
+        client.portal.call(wait_for_startup)
+        if outcome == "cancel":
+            startup.cancel()
+        else:
+            with pytest.raises(DriverError, match="startup failed"):
+                startup.result(timeout=2)
+
+        async def recover():
+            with fail_after(5):
+                await client.power.call_async("on")
+                await wait_serial_open(console)
+                master = ptys[-1][0]
+                os.write(master, b"recovered\n")
+                assert await writer.receive() == b"recovered\n"
+                assert await observer.receive() == b"recovered\n"
+                await writer.send(b"working input")
+                assert await read_pty(master) == b"working input"
+
+        client.portal.call(recover)
+        assert attempts == 2
+
+
 def test_console_close_kicks_clients_without_stopping_vm(qemu_serial):
     driver, _power, console, ptys = qemu_serial
     with serve(driver) as client:
