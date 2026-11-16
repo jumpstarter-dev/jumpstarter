@@ -217,14 +217,17 @@ bindkey '^R' history-incremental-search-backward
 @contextmanager
 def _zsh_isolated_config(env: dict[str, str]):
     """Run zsh without the user's rc files but with working history."""
-    env.setdefault("HISTSIZE", "50000")
+    zshrc = _ZSH_ZSHRC
+    if "HISTSIZE" not in env:
+        zshrc += "HISTSIZE=50000\n"
     # shortcut: zsh has no unlimited SAVEHIST; revisit if billion-entry histories become realistic.
-    env.setdefault("SAVEHIST", "2147483647")
+    if "SAVEHIST" not in env:
+        zshrc += "SAVEHIST=2147483647\n"
     original = env.get("ZDOTDIR")
     restore = f"export ZDOTDIR={shlex.quote(original)}\n" if original is not None else "unset ZDOTDIR\n"
     with TemporaryDirectory(prefix="jmp-zsh-") as zdotdir:
         (Path(zdotdir) / ".zshenv").write_text(_ZSH_ZSHENV)
-        (Path(zdotdir) / ".zshrc").write_text(_ZSH_ZSHRC + restore)
+        (Path(zdotdir) / ".zshrc").write_text(zshrc + restore)
         env["ZDOTDIR"] = zdotdir
         yield
 

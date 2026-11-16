@@ -326,9 +326,12 @@ def test_launch_shell_zsh_isolated_config(tmp_path, monkeypatch):
     assert "--no-rcs" not in call[0][0]
     env = call[1].get("env", {})
     assert env["ZDOTDIR"] == created[0]
-    assert env["HISTSIZE"] == "50000"
-    assert env["SAVEHIST"] == "2147483647"
-    assert "history-incremental-search-backward" in (Path(created[0]) / ".zshrc").read_text()
+    assert "HISTSIZE" not in env
+    assert "SAVEHIST" not in env
+    zshrc = (Path(created[0]) / ".zshrc").read_text()
+    assert "HISTSIZE=50000\n" in zshrc
+    assert "SAVEHIST=2147483647\n" in zshrc
+    assert "history-incremental-search-backward" in zshrc
     assert "unsetopt GLOBALRCS" in (Path(created[0]) / ".zshenv").read_text()
 
 
@@ -358,6 +361,42 @@ def test_zsh_isolated_config_restores_zdotdir(tmp_path, original):
     assert result.returncode == (1 if original is None else 0)
     assert result.stdout == ("" if original is None else original + "\n")
     assert not (tmp_path / "UNEXPECTED").exists()
+
+
+@pytest.mark.skipif(shutil.which("zsh") is None, reason="zsh not available")
+@pytest.mark.parametrize("exported", [False, True])
+def test_zsh_history_defaults_do_not_leak_to_nested_shells(tmp_path, exported):
+    zsh = shutil.which("zsh")
+    assert zsh is not None
+    (tmp_path / ".zshenv").write_text("unsetopt GLOBALRCS\n")
+    (tmp_path / ".zshrc").write_text(
+        "(( HISTSIZE < 50000 )) && HISTSIZE=50000\n(( SAVEHIST < 10000 )) && SAVEHIST=10000\n"
+    )
+    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "HISTFILE": ""}
+    if exported:
+        env.update(HISTSIZE="75000", SAVEHIST="250000")
+    with _zsh_isolated_config(env):
+        result = subprocess.run(
+            [
+                zsh,
+                "-ic",
+                (
+                    'print -r -- "$HISTSIZE:$SAVEHIST"; '
+                    "zsh -ic 'print -r -- \"$HISTSIZE:$SAVEHIST\"'; "
+                    "printenv HISTSIZE SAVEHIST"
+                ),
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    if exported:
+        assert result.returncode == 0
+        assert result.stdout.splitlines() == ["75000:250000", "75000:250000", "75000", "250000"]
+    else:
+        assert result.returncode == 1
+        assert result.stdout.splitlines() == ["50000:2147483647", "50000:10000"]
 
 
 @pytest.mark.parametrize(
