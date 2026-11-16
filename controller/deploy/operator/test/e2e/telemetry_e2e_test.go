@@ -189,15 +189,13 @@ spec:
 	})
 
 	It("should remove telemetry resources when telemetry is disabled", func() {
-		js := &operatorv1alpha1.Jumpstarter{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{
+		updateJumpstarter(types.NamespacedName{
 			Name:      jumpstarterName,
 			Namespace: telemetryTestNamespace,
-		}, js)).To(Succeed())
-
-		Expect(js.Spec.Telemetry).NotTo(BeNil())
-		js.Spec.Telemetry.Enabled = false
-		Expect(k8sClient.Update(ctx, js)).To(Succeed())
+		}, func(js *operatorv1alpha1.Jumpstarter) {
+			Expect(js.Spec.Telemetry).NotTo(BeNil())
+			js.Spec.Telemetry.Enabled = false
+		})
 
 		Eventually(func(g Gomega) {
 			dep := &appsv1.Deployment{}
@@ -353,15 +351,13 @@ spec:
 	})
 
 	It("should delete the telemetry Certificate when telemetry is disabled", func() {
-		js := &operatorv1alpha1.Jumpstarter{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{
+		updateJumpstarter(types.NamespacedName{
 			Name:      jumpstarterName,
 			Namespace: telemetryTLSTestNamespace,
-		}, js)).To(Succeed())
-
-		Expect(js.Spec.Telemetry).NotTo(BeNil())
-		js.Spec.Telemetry.Enabled = false
-		Expect(k8sClient.Update(ctx, js)).To(Succeed())
+		}, func(js *operatorv1alpha1.Jumpstarter) {
+			Expect(js.Spec.Telemetry).NotTo(BeNil())
+			js.Spec.Telemetry.Enabled = false
+		})
 
 		certName := telemetryCertName(jumpstarterName)
 		Eventually(func(g Gomega) {
