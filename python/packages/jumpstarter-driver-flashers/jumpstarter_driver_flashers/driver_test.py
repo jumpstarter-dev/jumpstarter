@@ -2,11 +2,13 @@ import os
 import tempfile
 
 import pytest
+from jumpstarter_driver_composite.driver import Composite, Proxy
 from jumpstarter_driver_power.driver import MockPower
 from jumpstarter_driver_pyserial.driver import PySerial
+from jumpstarter_driver_tftp.driver import Tftp
 
 from .driver import BaseFlasher
-from jumpstarter.client.core import DriverInvalidArgument
+from jumpstarter.client.core import DriverError, DriverInvalidArgument
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.common.utils import serve
 
@@ -79,8 +81,8 @@ def test_drivers_flashers_exporter_ip_override(temp_dirs):
             "power": MockPower(),
         },
     )
-    assert default.tftp.advertised_host is None  # ty: ignore[unresolved-attribute]
-    assert default.http.advertised_host is None  # ty: ignore[unresolved-attribute]
+    assert default.tftp.advertised_host is None
+    assert default.http.advertised_host is None
 
 
 def test_drivers_flashers_setup_flasher_bundle(complete_flasher):
@@ -172,3 +174,130 @@ def test_drivers_flashers_get_bootcmd_invalid_variant(complete_flasher):
     """Test that get_bootcmd raises DriverInvalidArgument for invalid DTB variant"""
     with serve(complete_flasher) as client, pytest.raises(DriverInvalidArgument):
         client.call("use_dtb_variant", "noexists")
+
+
+def test_drivers_flashers_rejects_wrong_http_child(temp_dirs):
+    cache, http, tftp = temp_dirs
+    with pytest.raises(ConfigurationError, match="'http' child"):
+        BaseFlasher(
+            cache_dir=cache, http_dir=http, tftp_dir=tftp,
+            children={"serial": PySerial(url="loop://"), "power": MockPower(), "http": MockPower()},
+        )
+
+
+def test_drivers_flashers_get_default_target(temp_dirs):
+    cache, http, tftp = temp_dirs
+    flasher = BaseFlasher(
+        flasher_bundle="quay.io/jumpstarter-dev/jumpstarter-flasher-test:new",
+        cache_dir=cache,
+        http_dir=http,
+        tftp_dir=tftp,
+        default_target="emmc",
+        children={
+            "serial": PySerial(url="loop://"),
+            "power": MockPower(),
+        },
+    )
+    with serve(flasher) as client:
+        assert client.call("get_default_target") == "emmc"
+
+
+def test_drivers_flashers_get_cacert_not_configured(temp_dirs):
+    cache, http, tftp = temp_dirs
+    flasher = BaseFlasher(
+        cache_dir=cache,
+        http_dir=http,
+        tftp_dir=tftp,
+        children={
+            "serial": PySerial(url="loop://"),
+            "power": MockPower(),
+        },
+    )
+    with serve(flasher) as client:
+        assert client.call("get_cacert") is None
+
+
+def test_drivers_flashers_get_cacert_configured(temp_dirs, tmp_path):
+    cache, http, tftp = temp_dirs
+    cacert_path = tmp_path / "ca.crt"
+    cacert_path.write_text("-----BEGIN CERTIFICATE-----\n")
+    flasher = BaseFlasher(
+        cache_dir=cache,
+        http_dir=http,
+        tftp_dir=tftp,
+        cacert=str(cacert_path),
+        children={
+            "serial": PySerial(url="loop://"),
+            "power": MockPower(),
+        },
+    )
+    with serve(flasher) as client:
+        assert client.call("get_cacert") == "-----BEGIN CERTIFICATE-----\n"
+
+
+def test_drivers_flashers_setup_fls_binary(complete_flasher, tmp_path, monkeypatch):
+    """The exporter's fls binary is copied into the http root for the DUT to fetch"""
+    fls = tmp_path / "fls-aarch64"
+    fls.write_bytes(b"\x7fELF fake fls")
+    monkeypatch.setattr("jumpstarter_driver_flashers.driver.FLS_BINARY_PATHS", (fls,))
+
+    with serve(complete_flasher) as client:
+        client.call("setup_fls_binary")
+        assert client.http.storage.read_bytes("fls") == b"\x7fELF fake fls"
+
+
+def test_drivers_flashers_setup_fls_binary_missing(complete_flasher, tmp_path, monkeypatch):
+    monkeypatch.setattr("jumpstarter_driver_flashers.driver.FLS_BINARY_PATHS", (tmp_path / "nope",))
+
+    with serve(complete_flasher) as client, pytest.raises(DriverError, match="fls binary not found"):
+        client.call("setup_fls_binary")
+
+
+def test_drivers_flashers_get_fls_version(temp_dirs):
+    cache, http, tftp = temp_dirs
+    default = BaseFlasher(cache_dir=cache, http_dir=http, tftp_dir=tftp,
+                          children={"serial": PySerial(url="loop://"), "power": MockPower()})
+    with serve(default) as client:
+        assert client.call("get_fls_version") is None
+
+    pinned = BaseFlasher(cache_dir=cache, http_dir=http, tftp_dir=tftp, fls_version="0.4.0",
+                         children={"serial": PySerial(url="loop://"), "power": MockPower()})
+    with serve(pinned) as client:
+        assert client.call("get_fls_version") == "0.4.0"
+
+
+def test_drivers_flashers_rejects_wrong_tftp_child(temp_dirs):
+    cache, http, tftp = temp_dirs
+    with pytest.raises(ConfigurationError, match="'tftp' child"):
+        BaseFlasher(
+            cache_dir=cache,
+            http_dir=http,
+            tftp_dir=tftp,
+            children={"serial": PySerial(url="loop://"), "power": MockPower(), "tftp": MockPower()},
+        )
+
+
+def test_drivers_flashers_follows_ref_children(temp_dirs):
+    cache, http, tftp = temp_dirs
+    shared_tftp = Tftp(root_dir=tftp)
+    flasher = BaseFlasher(
+        cache_dir=cache,
+        http_dir=http,
+        tftp_dir=tftp,
+        children={"serial": PySerial(url="loop://"), "power": MockPower(), "tftp": Proxy(ref="shared_tftp")},
+    )
+    Composite(children={"shared_tftp": shared_tftp, "storage": flasher}).enumerate()
+    assert flasher.tftp is shared_tftp
+
+
+def test_drivers_flashers_rejects_wrong_ref_child(temp_dirs):
+    cache, http, tftp = temp_dirs
+    flasher = BaseFlasher(
+        cache_dir=cache,
+        http_dir=http,
+        tftp_dir=tftp,
+        children={"serial": PySerial(url="loop://"), "power": MockPower(), "tftp": Proxy(ref="other")},
+    )
+    Composite(children={"other": MockPower(), "storage": flasher}).enumerate()
+    with pytest.raises(ConfigurationError, match="'tftp' child of BaseFlasher must be a Tftp driver, got MockPower"):
+        _ = flasher.tftp
