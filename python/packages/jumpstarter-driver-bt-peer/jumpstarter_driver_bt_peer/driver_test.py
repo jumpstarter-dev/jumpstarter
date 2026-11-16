@@ -587,6 +587,26 @@ async def test_avdtp_close_drops_the_session():
 
 
 @pytest.mark.anyio
+async def test_a_replaced_session_still_streaming_carries_filler_not_the_track():
+    """Until its CLOSE arrives, the channel the DUT replaced can still be pulling packets."""
+    peer, old = peer_with_session()
+    old.source.configuration = [sbc_capabilities(SbcConfig(2, 35))]
+    replaced = session_of(peer)
+    assert replaced is not None
+    still_streaming = replaced.packets(672)
+    current = fake_protocol()
+    connect_avdtp(peer, current)
+    with patch_resource(make_sbc_file(10, bitpool=52)):
+        await peer.play("handle")
+
+    packet = await anext(still_streaming)
+
+    assert packet.payload == b"\x00", "the replaced stream took packets of the track from the current one"
+    assert isinstance(player_of(peer).state, Playing), "the replaced stream's sink judged the track"
+    current.stream.start.assert_awaited_once()
+
+
+@pytest.mark.anyio
 async def test_a_late_close_does_not_drop_the_session_that_replaced_it():
     """The DUT can reconnect before the old channel's CLOSE is delivered."""
     peer = running_peer()

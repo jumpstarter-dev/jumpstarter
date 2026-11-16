@@ -194,7 +194,11 @@ class BtPeer(Driver):
     def _on_avdtp_connection(self, running: Running, protocol) -> None:
         session = A2dpSession(
             protocol,
-            get_track=lambda: running.player.track,
+            # Only the run's current session carries the track. One it
+            # replaced can still be streaming until its CLOSE arrives; pulling
+            # from the same track, the two streams would each get every other
+            # packet, and the old sink's verdict on it would stop the new one.
+            get_track=lambda: running.player.track if running.session is session else None,
             on_exhausted=running.player.on_track_exhausted,
             on_rejected=running.player.on_track_rejected,
             emit=self._emit,
