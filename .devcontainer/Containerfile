@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/base:2.2.3-bookworm@sha256:9a5942e64b35c5497c591b9bf177f4a3002d43440bf0a5e1a14fc34667b1a5c1
+FROM mcr.microsoft.com/devcontainers/base:2.2.6-bookworm@sha256:85a349062e4ccc4755304f1264183e604391697608765e72765340b7cb7e2438
 
 ENV PYTHONUNBUFFERED=True
 ENV UV_LINK_MODE=copy
