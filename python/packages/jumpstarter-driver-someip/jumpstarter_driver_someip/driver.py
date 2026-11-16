@@ -109,6 +109,9 @@ class SomeIp(Driver):
     _offered_instances: SkipValidation[list] = field(init=False, repr=False, default_factory=list)
     # Field payloads to replay across that rebuild. event_id -> payload.
     _field_values: SkipValidation[dict] = field(init=False, repr=False, default_factory=dict)
+    # Set when a running server was stopped for replacement and the
+    # replacement has not finished replaying offers, methods, events, and fields.
+    _replay_pending: bool = field(init=False, repr=False, default=False)
 
     @classmethod
     def client(cls) -> str:
@@ -377,6 +380,9 @@ class SomeIp(Driver):
         self._server_service_ids = set()
         if server is None:
             return
+        # The pointer is gone, but offers and registrations are still tracked.
+        # A later start must replay them even if this stop's replacement fails.
+        self._replay_pending = True
         try:
             server.stop()
         except Exception:
@@ -386,16 +392,18 @@ class SomeIp(Driver):
         """Return the running server and whether this call rebuilt it.
 
         A rebuild happens when a service id appears that was not on the demux
-        the current server was constructed with. Offers, method handlers,
-        events, and field values are restored onto the new server. The bool
-        is true only in that case, so the caller does not offer a second time.
+        the current server was constructed with, and when an earlier
+        replacement stopped the old server without finishing startup. Offers,
+        method handlers, events, and field values are restored onto the new
+        server. The bool is true only in that case, so the caller does not
+        offer a second time.
         """
         needed = set(self._rpc_service_ids)
         if self._osip_server is not None and needed <= self._server_service_ids:
             return self._osip_server, False
 
-        restore = self._osip_server is not None
-        if restore:
+        restore = self._osip_server is not None or self._replay_pending
+        if self._osip_server is not None:
             self._stop_server_unlocked()
 
         config = self._build_server_config()
@@ -422,6 +430,7 @@ class SomeIp(Driver):
 
         self._osip_server = server
         self._server_service_ids = {svc.service_id for svc in config.services}
+        self._replay_pending = False
         return server, restore
 
     def _ensure_server(self) -> OsipServer:
@@ -517,19 +526,25 @@ class SomeIp(Driver):
     @validate_call(validate_return=True)
     def list_offered_services(self) -> list[SomeIpOfferedService]:
         """Return the set of services this server currently offers."""
-        if self._osip_server is None:
-            return []
-        result: list[SomeIpOfferedService] = []
-        for svc in self._osip_server.offered_services:
-            result.append(
-                SomeIpOfferedService(
-                    service_id=svc.service_id,
-                    instance_id=svc.instance_id,
-                    major_version=svc.major_version,
-                    minor_version=svc.minor_version,
-                )
+        with self._server_lock:
+            server = self._osip_server
+            if server is None:
+                return []
+            # Copy under the lock. A rebuild can clear _osip_server between
+            # the check and a later read of offered_services.
+            snapshot = [
+                (svc.service_id, svc.instance_id, svc.major_version, svc.minor_version)
+                for svc in server.offered_services
+            ]
+        return [
+            SomeIpOfferedService(
+                service_id=service_id,
+                instance_id=instance_id,
+                major_version=major_version,
+                minor_version=minor_version,
             )
-        return result
+            for service_id, instance_id, major_version, minor_version in snapshot
+        ]
 
     @export
     @validate_call(validate_return=True)
@@ -587,7 +602,12 @@ class SomeIp(Driver):
         verbs but is currently unused: opensomeip addresses events by
         ``event_id`` only (one server endpoint per driver instance).
         """
-        self._ensure_server().publish_event(event_id, bytes.fromhex(payload.data))
+        event_payload = bytes.fromhex(payload.data)
+        with self._server_lock:
+            # Hold the lock across lookup and publish. A rebuild can stop the
+            # server _ensure_server() would otherwise return.
+            server, _restored = self._ensure_server_unlocked()
+            server.publish_event(event_id, event_payload)
 
     @export
     @validate_call(validate_return=True)
@@ -613,8 +633,8 @@ class SomeIp(Driver):
         methods, and registered events must be reconfigured after a restart.
         """
         with self._server_lock:
-            if self._osip_server is None:
-                return
+            # A failed rebuild leaves _osip_server as None while offers and
+            # registrations are still tracked. Drop those too.
             self._stop_server_unlocked()
             self._method_responses.clear()
             self._registered_methods.clear()
@@ -622,3 +642,4 @@ class SomeIp(Driver):
             self._rpc_service_ids.clear()
             self._offered_instances.clear()
             self._field_values.clear()
+            self._replay_pending = False
