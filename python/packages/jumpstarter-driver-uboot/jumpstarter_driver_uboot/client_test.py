@@ -104,6 +104,6 @@ class UbootConsoleWithoutPromptTimeout(Driver):
         return "jumpstarter_driver_uboot.client.UbootConsoleClient"
 
 
-def test_prompt_timeout_is_10s_on_exporters_without_the_setting() -> None:
+def test_prompt_timeout_is_15s_on_exporters_without_the_setting() -> None:
     with serve(UbootConsoleWithoutPromptTimeout()) as client:
-        assert client.prompt_timeout == 10
+        assert client.prompt_timeout == 15

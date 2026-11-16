@@ -63,7 +63,7 @@ The power driver is used to control power cycling of the DUT, and the serial
 interface is used to communicate with the DUT bootloader via serial. TFTP and
 HTTP servers are used to serve images to the DUT bootloader and busybox shell.
 
-The auto-created `uboot` child waits up to 10 seconds for the U-Boot prompt
+The auto-created `uboot` child waits up to 15 seconds for the U-Boot prompt
 after each power cycle. For a board that takes longer to reach U-Boot, or one
 with a different prompt, configure the child explicitly with its own
 `prompt_timeout` or `prompt`:
