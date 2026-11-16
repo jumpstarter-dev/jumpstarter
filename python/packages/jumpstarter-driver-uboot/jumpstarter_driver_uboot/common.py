@@ -4,7 +4,7 @@ ESC = "\x1b"
 
 # How long reboot_to_console waits for the prompt after a power cycle when the
 # exporter does not configure prompt_timeout
-DEFAULT_PROMPT_TIMEOUT = 10.0
+DEFAULT_PROMPT_TIMEOUT = 15.0
 
 
 class DhcpInfo(BaseModel):
