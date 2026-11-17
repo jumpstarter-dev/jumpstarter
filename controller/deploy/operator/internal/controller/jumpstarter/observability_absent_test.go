@@ -91,7 +91,7 @@ func TestServiceMonitorCRDAbsent(t *testing.T) {
 		t.Fatal("expected ServiceMonitor CRD to be absent")
 	}
 
-	if err := r.reconcileObservability(ctx, js); err != nil {
+	if _, err := r.reconcileObservability(ctx, js); err != nil {
 		t.Fatalf("reconcileObservability must succeed without the CRD: %v", err)
 	}
 
@@ -118,14 +118,15 @@ func TestServiceMonitorCRDAbsent(t *testing.T) {
 
 		elapsed := time.Duration(0)
 		for i := range requeueCycles {
-			if err := r.reconcileObservability(ctx, js); err != nil {
+			serviceMonitor, err := r.reconcileObservability(ctx, js)
+			if err != nil {
 				t.Fatalf("reconcile %d must succeed without the CRD: %v", i+1, err)
 			}
-			if err := r.updateStatus(ctx, js); err != nil {
+			if err := r.updateStatus(ctx, js, serviceMonitor); err != nil {
 				t.Fatalf("status update %d must succeed: %v", i+1, err)
 			}
 
-			requeueAfter := r.observabilityRequeueAfter(ctx, js, nil)
+			requeueAfter := r.observabilityRequeueAfter(ctx, js, nil, serviceMonitor)
 			if requeueAfter != wantRequeue {
 				t.Fatalf("requeue %d = %s, want %s", i+1, requeueAfter, wantRequeue)
 			}
@@ -176,7 +177,11 @@ func TestServiceMonitorCRDAbsent(t *testing.T) {
 			LastTransitionTime: metav1.Now(),
 			ObservedGeneration: transitionJS.Generation,
 		}}
-		if err := transitionReconciler.updateStatus(ctx, transitionJS); err != nil {
+		serviceMonitor, err := transitionReconciler.reconcileObservability(ctx, transitionJS)
+		if err != nil {
+			t.Fatalf("reconcileObservability for ServiceMonitor transition: %v", err)
+		}
+		if err := transitionReconciler.updateStatus(ctx, transitionJS, serviceMonitor); err != nil {
 			t.Fatalf("updateStatus for ServiceMonitor transition: %v", err)
 		}
 		if events := eventText(transitionRecorder); !strings.Contains(events, "ServiceMonitorCRDMissing") {

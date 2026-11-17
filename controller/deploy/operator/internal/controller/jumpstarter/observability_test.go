@@ -110,7 +110,7 @@ func TestReconcileObservabilityDoesNotDeleteServiceMonitorsOnDetectionError(t *t
 	}
 	r := &JumpstarterReconciler{Client: wrapped, Scheme: s}
 
-	err := r.reconcileObservability(context.Background(), testJumpstarter())
+	_, err := r.reconcileObservability(context.Background(), testJumpstarter())
 	if err == nil {
 		t.Fatal("reconcileObservability should report the CRD detection error for retry")
 	}
@@ -163,27 +163,6 @@ func TestReconcileMetricsServicesRejectsForeignService(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "refusing to update metrics service") {
 		t.Fatalf("unexpected ownership error: %v", err)
-	}
-}
-
-func TestServiceMonitorConditionUsesProvidedCRDState(t *testing.T) {
-	r := &JumpstarterReconciler{
-		Client: &serviceMonitorListErrorClient{
-			Client:  fake.NewClientBuilder().Build(),
-			listErr: errors.New("CRD probe must not run"),
-		},
-	}
-
-	ready, reason, _ := r.serviceMonitorConditionWithState(context.Background(), testJumpstarter(),
-		serviceMonitorCRDState{checked: true, available: false})
-	if ready || reason != "CRDNotFound" {
-		t.Fatalf("condition = %v/%q, want false/CRDNotFound", ready, reason)
-	}
-
-	ready, reason, _ = r.serviceMonitorConditionWithState(context.Background(), testJumpstarter(),
-		serviceMonitorCRDState{checked: true, err: errors.New("probe failed")})
-	if ready || reason != "Failed" {
-		t.Fatalf("condition = %v/%q, want false/Failed", ready, reason)
 	}
 }
 

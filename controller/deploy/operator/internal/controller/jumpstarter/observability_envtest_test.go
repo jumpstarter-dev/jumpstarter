@@ -64,7 +64,8 @@ var _ = Describe("Observability reconciliation", func() {
 	})
 
 	It("creates metrics Services and ServiceMonitors, and is idempotent", func() {
-		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
+		_, err := r.reconcileObservability(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
 
 		for _, name := range []string{"jumpstarter-metrics-controller", "jumpstarter-metrics-router"} {
 			svc := &corev1.Service{}
@@ -77,11 +78,12 @@ var _ = Describe("Observability reconciliation", func() {
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "jumpstarter-metrics-controller", Namespace: namespace.Name}, sm)).To(Succeed())
 		resourceVersion := sm.GetResourceVersion()
 
-		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
+		serviceMonitor, err := r.reconcileObservability(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "jumpstarter-metrics-controller", Namespace: namespace.Name}, sm)).To(Succeed())
 		Expect(sm.GetResourceVersion()).To(Equal(resourceVersion), "steady-state reconcile must not write")
 
-		ready, reason, _ := r.serviceMonitorCondition(ctx, js)
+		ready, reason, _ := serviceMonitor.condition()
 		Expect(ready).To(BeTrue())
 		Expect(reason).To(Equal("Created"))
 	})
@@ -89,7 +91,8 @@ var _ = Describe("Observability reconciliation", func() {
 	It("prunes stale ServiceMonitors without deleting foreign monitors", func() {
 		js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{Enabled: true}
 		Expect(k8sClient.Update(ctx, js)).To(Succeed())
-		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
+		_, err := r.reconcileObservability(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
 
 		for _, name := range []string{
 			"jumpstarter-metrics-controller",
@@ -117,11 +120,12 @@ var _ = Describe("Observability reconciliation", func() {
 
 		js.Spec.Telemetry.Enabled = false
 		Expect(k8sClient.Update(ctx, js)).To(Succeed())
-		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
+		serviceMonitor, err := r.reconcileObservability(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
 
 		telemetry := &unstructured.Unstructured{}
 		telemetry.SetGroupVersionKind(serviceMonitorGVK)
-		err := k8sClient.Get(ctx, types.NamespacedName{
+		err = k8sClient.Get(ctx, types.NamespacedName{
 			Name: "jumpstarter-metrics-telemetry", Namespace: namespace.Name,
 		}, telemetry)
 		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "telemetry ServiceMonitor should be pruned: %v", err)
@@ -137,14 +141,15 @@ var _ = Describe("Observability reconciliation", func() {
 				"expected ServiceMonitor %s to remain", name)
 		}
 
-		ready, reason, message := r.serviceMonitorCondition(ctx, js)
+		ready, reason, message := serviceMonitor.condition()
 		Expect(ready).To(BeTrue())
 		Expect(reason).To(Equal("Created"))
 		Expect(message).To(ContainSubstring("2 workloads"))
 
 		js.Spec.Telemetry.Metrics.ServiceMonitor = new(false)
 		Expect(k8sClient.Update(ctx, js)).To(Succeed())
-		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
+		serviceMonitor, err = r.reconcileObservability(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
 
 		for _, name := range []string{
 			"jumpstarter-metrics-controller",
@@ -163,13 +168,14 @@ var _ = Describe("Observability reconciliation", func() {
 			Name: "foreign-monitor", Namespace: namespace.Name,
 		}, sm)).To(Succeed(), "foreign ServiceMonitor should remain")
 
-		ready, reason, _ = r.serviceMonitorCondition(ctx, js)
+		ready, reason, _ = serviceMonitor.condition()
 		Expect(ready).To(BeFalse())
 		Expect(reason).To(Equal("Disabled"))
 	})
 
 	It("keeps the router metrics Service during router service cleanup", func() {
-		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
+		_, err := r.reconcileObservability(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
 
 		// The endpoint reconciler prunes services matching the "<name>-router-"
 		// prefix; the metrics Service uses that prefix and must survive.
