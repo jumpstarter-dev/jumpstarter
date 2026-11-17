@@ -68,12 +68,15 @@ func TestLauncherLogFollower(t *testing.T) {
 		_ = cmd.Process.Signal(os.Interrupt)
 		done := make(chan error, 1)
 		go func() { done <- cmd.Wait() }()
+		var err error
 		select {
-		case <-done:
+		case err = <-done:
 		case <-time.After(time.Second):
 			_ = cmd.Process.Kill()
-			<-done
+			err = <-done
 		}
+		// Only the exit matters here; the status depends on how the shell handled the signal.
+		t.Logf("launcher log follower exited: %v", err)
 	})
 
 	waitFor := func(text string) {
