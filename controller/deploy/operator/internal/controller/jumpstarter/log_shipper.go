@@ -91,7 +91,7 @@ func (r *JumpstarterReconciler) reconcileLogShipper(ctx context.Context, js *ope
 
 	desired := buildLogShipperConfigMap(js)
 	if desired == nil {
-		return r.deleteObjectIfExists(ctx, types.NamespacedName{
+		return r.deleteObjectIfExists(ctx, js, types.NamespacedName{
 			Name: logShipperConfigMapName(js), Namespace: js.Namespace,
 		}, &corev1.ConfigMap{})
 	}

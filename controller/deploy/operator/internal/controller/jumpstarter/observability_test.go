@@ -32,6 +32,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
@@ -169,6 +170,30 @@ func TestReconcileObservabilityDoesNotDeleteServiceMonitorsOnDetectionError(t *t
 	}
 	if wrapped.deletedServiceMonitor {
 		t.Fatal("ServiceMonitors must not be deleted when CRD detection fails")
+	}
+}
+
+func TestDeleteObjectIfExistsRejectsForeignObject(t *testing.T) {
+	s := runtime.NewScheme()
+	if err := corev1.AddToScheme(s); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+	foreign := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "jumpstarter-controller-metrics", Namespace: "lab"},
+	}
+	c := fake.NewClientBuilder().WithScheme(s).WithObjects(foreign).Build()
+	r := &JumpstarterReconciler{Client: c, Scheme: s}
+
+	err := r.deleteObjectIfExists(context.Background(), testJumpstarter(),
+		types.NamespacedName{Name: foreign.Name, Namespace: foreign.Namespace}, &corev1.Service{})
+	if err == nil {
+		t.Fatal("expected an ownership error for a foreign Service")
+	}
+	if !strings.Contains(err.Error(), "not controlled") {
+		t.Fatalf("unexpected ownership error: %v", err)
+	}
+	if err := c.Get(context.Background(), types.NamespacedName{Name: foreign.Name, Namespace: foreign.Namespace}, &corev1.Service{}); err != nil {
+		t.Fatalf("foreign Service must remain: %v", err)
 	}
 }
 
