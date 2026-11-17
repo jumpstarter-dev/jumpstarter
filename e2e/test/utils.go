@@ -245,19 +245,12 @@ func MustJmp(args ...string) string {
 // nothing. Cleanup must treat this as success.
 const noLeasesFoundMessage = "no leases found matching the criteria"
 
-// IsNoLeasesFound reports whether jmp output indicates that no leases matched.
-func IsNoLeasesFound(output string) bool {
-	output = strings.TrimSpace(output)
-	return output == noLeasesFoundMessage ||
-		output == "Error: "+noLeasesFoundMessage
-}
-
 // MustJmpAllowingNoLeases runs a jmp command and treats an empty lease result as
 // success. Use it for lease cleanup registered with DeferCleanup: a spec that
 // already released everything it created must not fail during teardown.
 func MustJmpAllowingNoLeases(args ...string) {
 	out, err := Jmp(args...)
-	if err == nil || IsNoLeasesFound(out) {
+	if err == nil || strings.TrimPrefix(strings.TrimSpace(out), "Error: ") == noLeasesFoundMessage {
 		return
 	}
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "jmp %v failed: %s", args, out)
