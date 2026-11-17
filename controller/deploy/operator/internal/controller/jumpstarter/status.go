@@ -171,10 +171,9 @@ func (r *JumpstarterReconciler) updateStatusWithState(ctx context.Context, js *o
 		}
 	}
 
-	// Informational observability conditions. These are deliberately excluded
-	// from allReady: the Prometheus Operator and any log shipper are optional, so
-	// their absence must not report Jumpstarter as degraded.
-	emitServiceMonitorCRDMissing, emitLogShipperConfigured := r.reconcileObservabilityStatus(ctx, js, crdState)
+	// The Prometheus Operator integration is informational and deliberately
+	// excluded from allReady: its absence must not report Jumpstarter as degraded.
+	emitServiceMonitorCRDMissing := r.reconcileObservabilityStatus(ctx, js, crdState)
 
 	// Set overall Ready condition
 	readyMessage := "All components are ready"
@@ -210,10 +209,6 @@ func (r *JumpstarterReconciler) updateStatusWithState(ctx context.Context, js *o
 		r.emitEventf(js, corev1.EventTypeWarning, "ServiceMonitorCRDMissing",
 			"monitoring.coreos.com/v1 ServiceMonitor CRD is not installed; Prometheus autodiscovery is inactive")
 	}
-	if emitLogShipperConfigured {
-		r.emitEventf(js, corev1.EventTypeNormal, "LogShipperConfigured",
-			"Log shipper configuration generated: name=%s namespace=%s", js.Name, js.Namespace)
-	}
 
 	log.V(1).Info("Status updated", "ready", allReady)
 	return nil
@@ -222,10 +217,10 @@ func (r *JumpstarterReconciler) updateStatusWithState(ctx context.Context, js *o
 // reconcileObservabilityStatus sets the informational observability conditions
 // and reports which transition events should be emitted. Keeping it separate
 // from updateStatus keeps that function's complexity within the lint threshold.
-func (r *JumpstarterReconciler) reconcileObservabilityStatus(ctx context.Context, js *operatorv1alpha1.Jumpstarter, crdState serviceMonitorCRDState) (emitServiceMonitorCRDMissing, emitLogShipperConfigured bool) {
-	// Snapshot the previous reasons before setCondition mutates the conditions
-	// in place. Comparing through a pointer after setCondition would compare the
-	// new reason against itself and suppress the transition event.
+func (r *JumpstarterReconciler) reconcileObservabilityStatus(ctx context.Context, js *operatorv1alpha1.Jumpstarter, crdState serviceMonitorCRDState) bool {
+	// Snapshot the previous reason before setCondition mutates the condition in
+	// place. Comparing through a pointer after setCondition would compare the new
+	// reason against itself and suppress the transition event.
 	prevServiceMonitorReason := ""
 	if previous := meta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypeServiceMonitorReady); previous != nil {
 		prevServiceMonitorReason = previous.Reason
@@ -233,15 +228,7 @@ func (r *JumpstarterReconciler) reconcileObservabilityStatus(ctx context.Context
 	smReady, smReason, smMessage := r.serviceMonitorConditionWithState(ctx, js, crdState)
 	setCondition(js, operatorv1alpha1.ConditionTypeServiceMonitorReady, smReady, smReason, smMessage)
 
-	prevLogShipperReason := ""
-	if previous := meta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypeLogShipperReady); previous != nil {
-		prevLogShipperReason = previous.Reason
-	}
-	lsReady, lsReason, lsMessage := r.logShipperCondition(ctx, js)
-	setCondition(js, operatorv1alpha1.ConditionTypeLogShipperReady, lsReady, lsReason, lsMessage)
-
-	return smReason == "CRDNotFound" && prevServiceMonitorReason != "CRDNotFound",
-		lsReason == "Created" && prevLogShipperReason != "Created"
+	return smReason == "CRDNotFound" && prevServiceMonitorReason != "CRDNotFound"
 }
 
 // checkCertManagerCRDs checks if cert-manager CRDs are installed in the cluster

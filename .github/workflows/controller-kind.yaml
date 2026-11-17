@@ -54,12 +54,6 @@ jobs:
         working-directory: controller
         run: make test-operator-e2e-ci -j4 --output-sync=target
 
-      - name: Run Kubernetes shipper deployment test
-        working-directory: controller/deploy/operator
-        env:
-          SHIPPER_K8S_E2E: "1"
-        run: go test ./internal/controller/jumpstarter -run TestKubernetesShipperDeployment -v -timeout 15m
-
       - name: Run Prometheus target-health test
         working-directory: controller/deploy/operator
         env:

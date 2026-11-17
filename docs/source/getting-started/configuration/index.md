@@ -8,7 +8,7 @@ This section explains how to configure Jumpstarter for your environment.
   prioritized from different sources (environment variables, command line,
   system and user config files)
 - [Authentication](authentication.md): Setting up OIDC and managing tokens
-- [Observability](observability.md): Prometheus autodiscovery and log shipper
+- [Observability](observability.md): Prometheus autodiscovery and cluster log-shipper integration
   integration for Controller and Router
 
 For a list of supported configuration options including an explanation please

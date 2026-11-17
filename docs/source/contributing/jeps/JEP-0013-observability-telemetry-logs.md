@@ -1449,14 +1449,15 @@ and should only be used in development or testing environments.
 The following items landed with the Phase 5 implementation. They are
 implementation details and additive extensions; they do not change the
 Phase 5 acceptance criteria, and they do not extend the operator's role
-beyond publishing a credential-free shipper configuration (**DD-4**).
+beyond labeling workloads and publishing Prometheus autodiscovery resources
+(**DD-4**).
 
-- `spec.telemetry.logging.shipper.type` (`none`, `promtail`, `alloy`,
-  `vector`; default `none`) is an implementation extension field. For any
-  value other than `none`, the operator publishes a credential-free
-  `<cr>-log-shipper` ConfigMap containing one shipper configuration key
-  plus a `README.md`. It does not deploy or manage the shipper; running
-  Promtail, Grafana Alloy, or Vector remains an operator responsibility.
+- Controller and Router pods carry `jumpstarter.dev/log-scrape="true"` and
+  `jumpstarter.dev/log-format="json"` labels, and emit JSON logs to stdout.
+  The operator does not generate a shipper ConfigMap, deploy a shipper, or
+  own shipper credentials. Alloy, Vector, and Promtail examples, discovery
+  requirements, and validation commands live in the observability
+  documentation.
 - `spec.telemetry.metrics.serviceMonitorLabels` is an additive
   implementation field that adds labels to generated `ServiceMonitor`
   resources so they match a Prometheus `serviceMonitorSelector` (for
@@ -1466,9 +1467,6 @@ beyond publishing a credential-free shipper configuration (**DD-4**).
   from the JSON body. This preserves the observable stream-label contract
   (`component`, `exporter`, `namespace`) even when a JSON line does not
   contain `namespace`.
-- `LogShipperReady=True` reports that the generated `<cr>-log-shipper`
-  ConfigMap exists and is up to date. It does not mean a shipper is
-  running or delivering logs.
 - Telemetry HA metrics use the existing `ServiceMonitor` path. Prometheus
   Operator creates one target per ready Service endpoint with `pod` and
   `instance` labels; with three Telemetry replicas this produced three
@@ -1736,21 +1734,18 @@ all subsequent phases have E2E coverage from the start.
 - JEP-0011 updated based on feedback: 2026-04-29
 - Phase 5 (in-cluster log scraping and Prometheus autodiscovery) implemented on
   the `jep-0013-phase5-incluster-log-scraping` branch: 2026-10-27
-- Grafana Alloy log-shipper rendering validated with `alloy validate` and
+- Grafana Alloy example configuration validated with `alloy validate` and
   `alloy fmt --test` against Grafana Alloy commit
   `43c40e25565d1fc0062b06c282c130c577559597`: 2026-10-28
-- Grafana Alloy pin moved to release `v1.21.3` (revision `f2108cd`): 2026-11-02
-- Vector support promoted to official Phase 5 support and validated against
+- Grafana Alloy example pin moved to release `v1.21.3` (revision `f2108cd`): 2026-11-02
+- Vector example promoted to official Phase 5 support and validated against
   Vector release `v0.61.0`: 2026-11-02
-- Live shipper delivery tests now push through the generated Alloy and Vector
-  configurations into a real single-binary Loki `v3.7.9`: 2026-11-02
-- Added a gated Kind test that deploys Alloy and Vector DaemonSets, a log-source
-  Pod, and in-cluster Loki, then queries delivery through the Kubernetes service
-  proxy: 2026-11-02
-- Promoted Promtail compatibility support to official Phase 5 support using the
-  final published Linux binary, Promtail `v3.6.0`; added CRI parsing, node
-  filtering, exact-label handling, real-Loki delivery, and Kind DaemonSet
-  coverage: 2026-11-02
+- Promtail example documented using the final published Linux binary, Promtail
+  `v3.6.0`, including CRI parsing and node filtering: 2026-11-02
+- Removed operator-owned shipper ConfigMap/API and `LogShipperReady`; the
+  operator now publishes only pod discovery labels and JSON stdout, while
+  shipper examples and validation guidance live in the observability docs:
+  2026-11-17
 - Added Prometheus Operator `v0.94.2` target-health validation: E2E assertions
   against the real `/api/v1/targets` endpoint for Controller and Router,
   confirming autodiscovery without manual scrape configuration: 2026-11-04

@@ -39,16 +39,13 @@ var observabilityServiceMonitorGVK = schema.GroupVersionKind{
 var _ = Describe("Observability integration", Ordered, func() {
 	const crName = "jumpstarter"
 
-	It("creates metrics Services, a shipper ConfigMap, and ServiceMonitors when available", func() {
+	It("creates metrics Services and ServiceMonitors when available", func() {
 		namespace := CreateTestNamespace()
 		DeferCleanup(func() { DeleteTestNamespace(namespace) })
 
-		By("creating a Jumpstarter CR with the vector shipper enabled")
 		js := &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: namespace},
 		}
-		js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
-		js.Spec.Telemetry.Logging.Shipper.Type = "vector"
 		Expect(k8sClient.Create(ctx, js)).To(Succeed())
 
 		By("waiting for the controller and router metrics Services")
@@ -61,20 +58,6 @@ var _ = Describe("Observability integration", Ordered, func() {
 				g.Expect(svc.Spec.Ports).NotTo(BeEmpty())
 			}, 2*time.Minute, 2*time.Second).Should(Succeed())
 		}
-
-		By("waiting for the shipper ConfigMap")
-		Eventually(func(g Gomega) {
-			cm := &corev1.ConfigMap{}
-			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
-				Name: crName + "-log-shipper", Namespace: namespace,
-			}, cm)).To(Succeed())
-			g.Expect(cm.Data).To(HaveKey("vector.yaml"))
-			g.Expect(cm.Data).To(HaveKey("README.md"))
-		}, 2*time.Minute, 2*time.Second).Should(Succeed())
-
-		waitForCondition(namespace, crName,
-			operatorv1alpha1.ConditionTypeLogShipperReady,
-			metav1.ConditionTrue, 2*time.Minute)
 
 		if utils.IsPrometheusCRDsInstalled() {
 			By("waiting for the controller and router ServiceMonitors")
@@ -102,25 +85,23 @@ var _ = Describe("Observability integration", Ordered, func() {
 		js := &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: namespace},
 		}
-		js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
-		js.Spec.Telemetry.Logging.Shipper.Type = "vector"
 		Expect(k8sClient.Create(ctx, js)).To(Succeed())
 
 		Eventually(func(g Gomega) {
-			cm := &corev1.ConfigMap{}
+			svc := &corev1.Service{}
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
-				Name: crName + "-log-shipper", Namespace: namespace,
-			}, cm)).To(Succeed())
+				Name: crName + "-controller-metrics", Namespace: namespace,
+			}, svc)).To(Succeed())
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
 		Expect(k8sClient.Delete(ctx, js)).To(Succeed())
 
 		Eventually(func(g Gomega) {
-			cm := &corev1.ConfigMap{}
+			svc := &corev1.Service{}
 			err := k8sClient.Get(ctx, types.NamespacedName{
-				Name: crName + "-log-shipper", Namespace: namespace,
-			}, cm)
-			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "shipper ConfigMap should be garbage-collected: %v", err)
+				Name: crName + "-controller-metrics", Namespace: namespace,
+			}, svc)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "metrics Service should be garbage-collected: %v", err)
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
 		if utils.IsPrometheusCRDsInstalled() {

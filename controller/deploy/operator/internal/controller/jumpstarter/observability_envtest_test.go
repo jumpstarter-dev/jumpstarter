@@ -181,28 +181,4 @@ var _ = Describe("Observability reconciliation", func() {
 		}, svc)).To(Succeed())
 	})
 
-	It("manages the shipper ConfigMap lifecycle", func() {
-		js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
-		js.Spec.Telemetry.Logging.Shipper.Type = shipperTypePromtail
-		Expect(k8sClient.Update(ctx, js)).To(Succeed())
-		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
-
-		cm := &corev1.ConfigMap{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "jumpstarter-log-shipper", Namespace: namespace.Name}, cm)).To(Succeed())
-		Expect(cm.Data).To(HaveKey("promtail.yaml"))
-		Expect(cm.Data).To(HaveKey("README.md"))
-
-		js.Spec.Telemetry.Logging.Shipper.Type = shipperTypeVector
-		Expect(k8sClient.Update(ctx, js)).To(Succeed())
-		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "jumpstarter-log-shipper", Namespace: namespace.Name}, cm)).To(Succeed())
-		Expect(cm.Data).To(HaveKey("vector.yaml"))
-		Expect(cm.Data).NotTo(HaveKey("promtail.yaml"))
-
-		js.Spec.Telemetry.Logging.Shipper.Type = shipperTypeNone
-		Expect(k8sClient.Update(ctx, js)).To(Succeed())
-		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
-		err := k8sClient.Get(ctx, types.NamespacedName{Name: "jumpstarter-log-shipper", Namespace: namespace.Name}, cm)
-		Expect(apierrors.IsNotFound(err)).To(BeTrue())
-	})
 })
