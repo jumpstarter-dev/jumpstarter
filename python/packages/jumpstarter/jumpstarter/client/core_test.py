@@ -1,17 +1,23 @@
 """Tests for AsyncDriverClient async status methods."""
 
-from dataclasses import dataclass
+from contextlib import ExitStack, asynccontextmanager
+from dataclasses import dataclass, field
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import anyio
 import pytest
+from anyio.from_thread import BlockingPortal
 from grpc import StatusCode
 from grpc.aio import AioRpcError
 
+from jumpstarter.client.client import client_from_path
 from jumpstarter.client.core import AsyncDriverClient, ConsoleInUse, DriverError
 from jumpstarter.common import ExporterStatus, Metadata
 from jumpstarter.common.exceptions import CONSOLE_IN_USE_MARKER
+from jumpstarter.driver import Driver, exportstream
+from jumpstarter.exporter.auth import PassphraseInterceptor
+from jumpstarter.exporter.session import Session
 
 pytestmark = pytest.mark.anyio
 
@@ -77,6 +83,56 @@ async def test_stream_async_translates_console_in_use_abort_before_headers() -> 
     assert isinstance(exc_info.value, DriverError)
 
     assert CONSOLE_IN_USE_MARKER not in str(exc_info.value)
+
+
+@dataclass(kw_only=True)
+class SlowToAttachDriver(Driver):
+    """Driver whose stream waits before replying and records when the stream ends."""
+
+    waiting: anyio.Event = field(default_factory=anyio.Event)
+    left: anyio.Event = field(default_factory=anyio.Event)
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @exportstream
+    @asynccontextmanager
+    async def connect(self):
+        self.waiting.set()
+        try:
+            await anyio.sleep_forever()
+            yield  # pragma: no cover
+        finally:
+            self.left.set()
+
+
+@pytest.mark.parametrize("passphrase", [None, "secret"], ids=["plain", "intercepted"])
+async def test_stream_async_left_before_the_exporter_replies_ends_the_exporters_side(passphrase) -> None:
+    driver = SlowToAttachDriver()
+    interceptors = [PassphraseInterceptor(passphrase)] if passphrase else None
+    with Session(root_device=driver) as session:
+        async with (
+            BlockingPortal() as portal,
+            session.serve_tcp_async("127.0.0.1", 0, interceptors=interceptors) as port,
+        ):
+            with ExitStack() as stack:
+                async with client_from_path(
+                    f"127.0.0.1:{port}", portal, stack, allow=[], unsafe=True, insecure=True, passphrase=passphrase
+                ) as client:
+                    with anyio.fail_after(5):
+                        async with anyio.create_task_group() as tg:
+
+                            async def leave_while_waiting():
+                                async with client.stream_async("connect"):
+                                    pass  # pragma: no cover
+
+                            tg.start_soon(leave_while_waiting)
+                            await driver.waiting.wait()
+                            tg.cancel_scope.cancel()
+
+                    with anyio.fail_after(5):
+                        await driver.left.wait()
 
 
 def create_status_response(
