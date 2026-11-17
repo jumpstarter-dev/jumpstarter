@@ -157,6 +157,9 @@ func (r *JumpstarterReconciler) reconcileMetricsServices(ctx context.Context, js
 		if err != nil {
 			return err
 		}
+		if err := ensureControlledBy(js, existing); err != nil {
+			return fmt.Errorf("refusing to update metrics service: %w", err)
+		}
 		if equality.Semantic.DeepEqual(existing.Labels, desired.Labels) &&
 			equality.Semantic.DeepEqual(existing.Spec.Selector, desired.Spec.Selector) &&
 			equality.Semantic.DeepEqual(existing.Spec.Ports, desired.Spec.Ports) {
@@ -304,6 +307,9 @@ func (r *JumpstarterReconciler) reconcileServiceMonitors(ctx context.Context, js
 		}
 		if err != nil {
 			return err
+		}
+		if err := ensureControlledBy(js, existing); err != nil {
+			return fmt.Errorf("refusing to update ServiceMonitor %s: %w", desiredMonitor.GetName(), err)
 		}
 		if equality.Semantic.DeepEqual(existing.Object["spec"], desiredMonitor.Object["spec"]) &&
 			equality.Semantic.DeepEqual(existing.GetLabels(), desiredMonitor.GetLabels()) {
