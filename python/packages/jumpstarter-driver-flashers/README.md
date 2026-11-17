@@ -49,7 +49,7 @@ export:
       port: "1"
 ```
 
-flasher drivers require four children drivers:
+flasher drivers require five children drivers:
 
 | Child Driver | Description                                                                       | Auto-created |
 | ------------ | --------------------------------------------------------------------------------- | ------------ |
@@ -57,10 +57,36 @@ flasher drivers require four children drivers:
 | power        | To power on and off the DUT                                                       | No           |
 | tftp         | To serve binaries via TFTP                                                        | Yes          |
 | http         | To serve the images via HTTP                                                      | Yes          |
+| uboot        | To power cycle the DUT into the U-Boot prompt                                     | Yes          |
 
 The power driver is used to control power cycling of the DUT, and the serial
 interface is used to communicate with the DUT bootloader via serial. TFTP and
 HTTP servers are used to serve images to the DUT bootloader and busybox shell.
+
+The auto-created `uboot` child waits up to 15 seconds for the U-Boot prompt
+after each power cycle. For a board that takes longer to reach U-Boot, or one
+with a different prompt, configure the child explicitly with its own
+`prompt_timeout` or `prompt`:
+
+```yaml
+export:
+  storage:
+    type: "jumpstarter_driver_flashers.driver.TIJ784S4Flasher"
+    children:
+      serial:
+        ref: "serial"
+      power:
+        ref: "power"
+      uboot:
+        type: "jumpstarter_driver_uboot.driver.UbootConsole"
+        config:
+          prompt_timeout: 30
+        children:
+          serial:
+            ref: "serial"
+          power:
+            ref: "power"
+```
 
 ### Config parameters
 
