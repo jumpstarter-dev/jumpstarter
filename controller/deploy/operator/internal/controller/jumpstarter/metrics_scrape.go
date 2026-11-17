@@ -179,6 +179,27 @@ func (r *JumpstarterReconciler) reconcileMetricsServices(ctx context.Context, js
 	return nil
 }
 
+type serviceMonitorPhase int
+
+const (
+	serviceMonitorDisabled serviceMonitorPhase = iota
+	serviceMonitorWaitingForCRD
+	serviceMonitorProbeFailed
+	serviceMonitorApplyFailed
+	serviceMonitorActive
+)
+
+type serviceMonitorResult struct {
+	phase   serviceMonitorPhase
+	reason  string
+	message string
+	err     error
+}
+
+func (r serviceMonitorResult) condition() (bool, string, string) {
+	return r.phase == serviceMonitorActive, r.reason, r.message
+}
+
 // serviceMonitorCRDState is the result of probing for the ServiceMonitor CRD
 // once during a reconcile. Passing it to status and requeue logic avoids
 // duplicate bounded Lists and keeps their decisions based on the same snapshot.
@@ -186,6 +207,7 @@ type serviceMonitorCRDState struct {
 	checked   bool
 	available bool
 	err       error
+	result    *serviceMonitorResult
 }
 
 // serviceMonitorCRDAvailable reports whether monitoring.coreos.com/v1 serves the
@@ -399,15 +421,53 @@ func (r *JumpstarterReconciler) reconcileObservabilityWithState(ctx context.Cont
 		errs = append(errs, fmt.Errorf("metrics services: %w", err))
 	}
 
-	crdAvailable, err := r.serviceMonitorCRDAvailable(ctx)
-	crdState = serviceMonitorCRDState{checked: true, available: crdAvailable, err: err}
-	if err != nil {
+	crdAvailable, crdErr := r.serviceMonitorCRDAvailable(ctx)
+	crdState = serviceMonitorCRDState{checked: true, available: crdAvailable, err: crdErr}
+	switch {
+	case !serviceMonitorEnabled(js):
+		crdState.result = &serviceMonitorResult{
+			phase:   serviceMonitorDisabled,
+			reason:  "Disabled",
+			message: "Prometheus autodiscovery is disabled by spec.telemetry.metrics.serviceMonitor",
+		}
+		if crdErr == nil && crdAvailable {
+			if err := r.reconcileServiceMonitors(ctx, js, true); err != nil {
+				errs = append(errs, fmt.Errorf("service monitors: %w", err))
+			}
+		}
+	case crdErr != nil:
 		// A transient API/RBAC error must not be mistaken for an absent CRD:
 		// deleting the monitors here would cause churn and data loss.
-		logf.FromContext(ctx).Error(err, "Failed to detect ServiceMonitor CRD; leaving ServiceMonitors unchanged")
-		errs = append(errs, fmt.Errorf("service monitor CRD detection: %w", err))
-	} else if err := r.reconcileServiceMonitors(ctx, js, crdAvailable); err != nil {
-		errs = append(errs, fmt.Errorf("service monitors: %w", err))
+		logf.FromContext(ctx).Error(crdErr, "Failed to detect ServiceMonitor CRD; leaving ServiceMonitors unchanged")
+		crdState.result = &serviceMonitorResult{
+			phase:   serviceMonitorProbeFailed,
+			reason:  "Failed",
+			message: fmt.Sprintf("failed to detect ServiceMonitor CRD: %v", crdErr),
+			err:     crdErr,
+		}
+		errs = append(errs, fmt.Errorf("service monitor CRD detection: %w", crdErr))
+	case !crdAvailable:
+		crdState.result = &serviceMonitorResult{
+			phase:   serviceMonitorWaitingForCRD,
+			reason:  "CRDNotFound",
+			message: "monitoring.coreos.com/v1 ServiceMonitor CRD is not installed",
+		}
+	case true:
+		if err := r.reconcileServiceMonitors(ctx, js, true); err != nil {
+			crdState.result = &serviceMonitorResult{
+				phase:   serviceMonitorApplyFailed,
+				reason:  "Failed",
+				message: fmt.Sprintf("failed to reconcile ServiceMonitors: %v", err),
+				err:     err,
+			}
+			errs = append(errs, fmt.Errorf("service monitors: %w", err))
+		} else {
+			crdState.result = &serviceMonitorResult{
+				phase:   serviceMonitorActive,
+				reason:  "Created",
+				message: fmt.Sprintf("ServiceMonitors are configured for %d workloads", len(desiredServiceMonitors(js))),
+			}
+		}
 	}
 
 	return crdState, errors.Join(errs...)
@@ -419,6 +479,9 @@ func (r *JumpstarterReconciler) serviceMonitorCondition(ctx context.Context, js 
 }
 
 func (r *JumpstarterReconciler) serviceMonitorConditionWithState(ctx context.Context, js *operatorv1alpha1.Jumpstarter, crdState serviceMonitorCRDState) (bool, string, string) {
+	if crdState.result != nil {
+		return crdState.result.condition()
+	}
 	if !serviceMonitorEnabled(js) {
 		return false, "Disabled", "Prometheus autodiscovery is disabled by spec.telemetry.metrics.serviceMonitor"
 	}
