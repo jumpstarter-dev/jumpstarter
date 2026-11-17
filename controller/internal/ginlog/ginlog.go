@@ -18,7 +18,6 @@ limitations under the License.
 package ginlog
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -86,75 +85,37 @@ func isSensitiveQueryKey(key string) bool {
 		strings.Contains(normalized, "password")
 }
 
-func requestPath(p gin.LogFormatterParams) string {
-	if p.Request == nil || p.Request.URL == nil {
-		return redactPathQuery(p.Path)
-	}
-	path := p.Request.URL.Path
-	if query := redactedQuery(p.Request.URL.RawQuery); query != "" {
+func requestPath(u *url.URL) string {
+	path := u.Path
+	if query := redactedQuery(u.RawQuery); query != "" {
 		path += "?" + query
 	}
 	return path
 }
 
-func redactPathQuery(path string) string {
-	queryStart := strings.IndexByte(path, '?')
-	if queryStart < 0 {
-		return path
+// AccessLog writes one structured access record per request through the
+// controller's logr logger. Request fields stay in the log body; the cluster
+// shipper promotes the component/exporter/namespace stream labels.
+func AccessLog(logger logr.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		c.Next()
+
+		keysAndValues := []any{
+			"http_method", c.Request.Method,
+			"http_path", requestPath(c.Request.URL),
+			"http_status", c.Writer.Status(),
+			"http_latency_ms", time.Since(start).Milliseconds(),
+			"http_body_size", c.Writer.Size(),
+			"client_ip", c.ClientIP(),
+			"http_user_agent", c.Request.UserAgent(),
+		}
+		if lastErr := c.Errors.Last(); lastErr != nil {
+			logger.Error(lastErr.Err, "http request", keysAndValues...)
+			return
+		}
+		logger.Info("http request", keysAndValues...)
 	}
-	query := redactedQuery(path[queryStart+1:])
-	if query == "" {
-		return path[:queryStart]
-	}
-	return path[:queryStart] + "?" + query
-}
-
-// LogFormatter turns a Gin request into one JSONL record. High-cardinality
-// request fields stay in the body; only the Jumpstarter stream labels are
-// promoted by the log shipper.
-func LogFormatter(component string) gin.LogFormatter {
-	return func(p gin.LogFormatterParams) string {
-		entry := map[string]any{
-			"ts":              p.TimeStamp.UTC().Format(time.RFC3339Nano),
-			"level":           "info",
-			"component":       component,
-			"msg":             "http request",
-			"http_method":     p.Method,
-			"http_path":       requestPath(p),
-			"http_status":     p.StatusCode,
-			"http_latency_ms": p.Latency.Milliseconds(),
-			"http_body_size":  p.BodySize,
-			"client_ip":       p.ClientIP,
-		}
-		if p.ErrorMessage != "" {
-			entry["level"] = "error"
-			entry["error"] = p.ErrorMessage
-		}
-		if p.Request != nil {
-			entry["http_user_agent"] = p.Request.UserAgent()
-		}
-
-		encoded, err := json.Marshal(entry)
-		if err != nil {
-			return fmt.Sprintf("{\"component\":%q,\"level\":\"error\",\"msg\":\"failed to encode gin log\",\"error\":%q}\n",
-				component, err.Error())
-		}
-		return string(encoded) + "\n"
-	}
-}
-
-// AccessLogger writes one JSON object per Gin request.
-func AccessLogger(component string) gin.HandlerFunc {
-	return AccessLoggerWithWriter(component, gin.DefaultWriter)
-}
-
-// AccessLoggerWithWriter is AccessLogger with an explicit output writer,
-// primarily for tests.
-func AccessLoggerWithWriter(component string, output io.Writer) gin.HandlerFunc {
-	return gin.LoggerWithConfig(gin.LoggerConfig{
-		Formatter: LogFormatter(component),
-		Output:    output,
-	})
 }
 
 // Recovery logs panics through the structured logger instead of Gin's default
@@ -171,6 +132,7 @@ func Recovery(logger logr.Logger) gin.HandlerFunc {
 // Callers should set Gin to release mode before starting runtime engines.
 func NewEngine(component string, logger logr.Logger) *gin.Engine {
 	engine := gin.New()
-	engine.Use(AccessLogger(component), Recovery(logger))
+	logger = logger.WithValues("component", component)
+	engine.Use(AccessLog(logger), Recovery(logger))
 	return engine
 }
