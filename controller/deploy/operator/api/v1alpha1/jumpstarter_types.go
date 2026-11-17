@@ -54,11 +54,6 @@ const (
 	// Informational only: it does not affect the aggregate Ready condition.
 	ConditionTypeServiceMonitorReady = "ServiceMonitorReady"
 
-	// ConditionTypeLogShipperReady indicates whether the log shipper ConfigMap is
-	// present. Reasons: Created, Disabled, Failed.
-	// Informational only: it does not affect the aggregate Ready condition.
-	ConditionTypeLogShipperReady = "LogShipperReady"
-
 	// ConditionTypeReady indicates whether the overall Jumpstarter system is ready
 	ConditionTypeReady = "Ready"
 )
@@ -442,20 +437,6 @@ type TelemetryMetricsConfig struct {
 type TelemetryLoggingConfig struct {
 	// Filter controls which log entries are forwarded to the telemetry service.
 	Filter TelemetryLoggingFilterConfig `json:"filter,omitempty"`
-
-	// Shipper configures the log shipper integration for Controller and Router
-	// pod logs. When type is "none" (the default) no configuration is generated.
-	Shipper TelemetryLogShipperConfig `json:"shipper,omitempty"`
-}
-
-// TelemetryLogShipperConfig selects which cluster log shipper configuration the
-// operator generates for Controller and Router pod logs.
-type TelemetryLogShipperConfig struct {
-	// Shipper type. "none" generates nothing; "promtail", "alloy" and "vector"
-	// publish a credential-free configuration in the <name>-log-shipper ConfigMap.
-	// +kubebuilder:default="none"
-	// +kubebuilder:validation:Enum=none;promtail;alloy;vector
-	Type string `json:"type,omitempty"`
 }
 
 // TelemetryLoggingFilterConfig controls which log entries are forwarded to the telemetry service.

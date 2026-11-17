@@ -382,11 +382,10 @@ func (r *JumpstarterReconciler) deleteObjectIfExists(ctx context.Context, js *op
 	return nil
 }
 
-// reconcileObservability reconciles metrics Services, ServiceMonitors and the
-// log shipper ConfigMap. It never blocks lease operations: each optional
-// integration is attempted independently, failures are collected for retry, and
-// the caller reports them through status conditions instead of aborting the
-// Jumpstarter reconcile.
+// reconcileObservability reconciles metrics Services and ServiceMonitors. It
+// never blocks lease operations: each optional integration is attempted
+// independently, failures are collected for retry, and the caller reports them
+// through status conditions instead of aborting the Jumpstarter reconcile.
 func (r *JumpstarterReconciler) reconcileObservability(ctx context.Context, js *operatorv1alpha1.Jumpstarter) error {
 	_, err := r.reconcileObservabilityWithState(ctx, js)
 	return err
@@ -409,10 +408,6 @@ func (r *JumpstarterReconciler) reconcileObservabilityWithState(ctx context.Cont
 		errs = append(errs, fmt.Errorf("service monitor CRD detection: %w", err))
 	} else if err := r.reconcileServiceMonitors(ctx, js, crdAvailable); err != nil {
 		errs = append(errs, fmt.Errorf("service monitors: %w", err))
-	}
-
-	if err := r.reconcileLogShipper(ctx, js); err != nil {
-		errs = append(errs, fmt.Errorf("log shipper: %w", err))
 	}
 
 	return crdState, errors.Join(errs...)

@@ -183,30 +183,5 @@ func TestServiceMonitorCRDAbsent(t *testing.T) {
 			t.Fatalf("expected ServiceMonitorCRDMissing transition event, got %q", events)
 		}
 
-		logShipperJS := transitionJS.DeepCopy()
-		logShipperJS.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
-		logShipperJS.Spec.Telemetry.Logging.Shipper.Type = shipperTypeVector
-		logShipperJS.Status.Conditions = []metav1.Condition{{
-			Type:               operatorv1alpha1.ConditionTypeLogShipperReady,
-			Status:             metav1.ConditionFalse,
-			Reason:             "Disabled",
-			Message:            "previous reason",
-			LastTransitionTime: metav1.Now(),
-			ObservedGeneration: logShipperJS.Generation,
-		}}
-		if err := c.Create(ctx, &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      logShipperConfigMapName(logShipperJS),
-				Namespace: logShipperJS.Namespace,
-			},
-		}); err != nil {
-			t.Fatalf("create shipper ConfigMap: %v", err)
-		}
-		if err := transitionReconciler.updateStatus(ctx, logShipperJS); err != nil {
-			t.Fatalf("updateStatus for LogShipper transition: %v", err)
-		}
-		if events := eventText(transitionRecorder); !strings.Contains(events, "LogShipperConfigured") {
-			t.Fatalf("expected LogShipperConfigured transition event, got %q", events)
-		}
 	})
 }

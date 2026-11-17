@@ -4,17 +4,19 @@ Jumpstarter exposes metrics and structured logs that can be consumed by the
 standard Kubernetes observability stack. This page explains how to enable the
 integration, what the operator creates, and how to validate it.
 
-Two optional capabilities are configured under `spec.telemetry`:
+Prometheus autodiscovery is configured under `spec.telemetry`:
 
 | Capability | Field | Default | Requires |
 | --- | --- | --- | --- |
 | Prometheus autodiscovery | `metrics.serviceMonitor` | `true` | Prometheus Operator CRDs |
-| Log shipper configuration | `logging.shipper.type` | `none` | A cluster log shipper |
 
 > **A cluster log shipper is required to see Controller and Router logs in
 > Loki.** Jumpstarter does not run one and does not push Controller/Router logs
-> to Loki directly. The optional Telemetry service is the only Jumpstarter
-> component that pushes to Loki, and it handles exporter/client log ingestion.
+> to Loki directly. Controller and Router pods emit structured JSON to stdout
+> and carry discovery labels; the examples below show how to configure a
+> cluster shipper independently. The optional Telemetry service is the only
+> Jumpstarter component that pushes to Loki, and it handles exporter/client log
+> ingestion.
 
 ## Prometheus autodiscovery
 
@@ -66,71 +68,47 @@ later, the objects appear within five minutes without changing the CR.
 Disable autodiscovery with `serviceMonitor: false`; the Services and
 ServiceMonitors are removed.
 
-## Log shipper configuration
+## Cluster log shipper integration
 
 Controller and Router write JSON lines to stdout and never hold Loki
 credentials. This includes klog output and Gin request/recovery logs, which are
 routed through the same structured logger with the `component` field. The
-shipper fallback still handles any unexpected third-party text. To ship their
-logs, select a shipper type:
+destination shipper must handle any unexpected third-party text.
 
-```yaml
-spec:
-  telemetry:
-    logging:
-      shipper:
-        type: vector     # none | promtail | alloy | vector
-    loki:
-      url: "https://loki-gateway.monitoring.svc:3100/loki/api/v1/push"
+Jumpstarter does not generate a shipper ConfigMap or deploy a shipper. Configure
+the shipper through your existing Alloy, Vector, Promtail, or equivalent
+deployment. The examples below show the required pod discovery and stream-label
+behavior; adapt them to the chart or manifest you already operate.
+
+The Controller/Router pods carry:
+
+```text
+jumpstarter.dev/log-scrape="true"
+jumpstarter.dev/log-format="json"
 ```
 
-The operator publishes `<name>-log-shipper`, a ConfigMap containing exactly one
-shipper configuration key plus a `README.md`:
+The shipper configuration should:
 
-| Type | Key |
-| --- | --- |
-| `promtail` | `promtail.yaml` |
-| `alloy` | `alloy.alloy` |
-| `vector` | `vector.yaml` |
-| `none` | no ConfigMap |
-
-Grafana Alloy, Vector, and Promtail are the supported Phase 5 shippers. Promtail
-is pinned to release `v3.6.0`, the last release with a published Linux binary;
-it is deprecated upstream in favor of Alloy, so new deployments should prefer
-Alloy or Vector.
-
-Merge the key into your existing shipper deployment. The snippet:
-
-- selects pods labeled `jumpstarter.dev/log-scrape="true"` in the CR namespace;
-- promotes `component`, `exporter`, and `namespace` to Loki stream labels;
+- select pods labeled `jumpstarter.dev/log-scrape="true"` in the CR namespace;
+- promote `component`, `exporter`, and `namespace` to Loki stream labels;
   Vector uses a separate sink so `exporter` is present only when the JSON line
   contains it;
-- keeps `client`, `lease_id`, and lease `spec.context` keys inside the JSON body
+- keep `client`, `lease_id`, and lease `spec.context` keys inside the JSON body
   so they can be queried with `| json | lease_id="..."`;
-- forwards the original JSON line, so multi-line stack traces remain one record;
-- contains no credentials.
+- forward the original JSON line, so multi-line stack traces remain one record;
+- obtain Loki credentials from the shipper's own Secret.
 
-If `spec.telemetry.loki.url` is unset, Promtail and Alloy use the
-`{{LOKI_URL}}` placeholder. Vector instead renders `http://loki.invalid:3100`
-as the sink endpoint and `/loki/api/v1/push` as its path so `vector validate`
-can run. Set a real URL, or set `spec.telemetry.loki.url` and let the operator
-render it, before running the validator or deploying the snippet. Credentials
-always come from the shipper's own Secret.
-
-`LogShipperReady=True` means the operator generated the ConfigMap. It does not
-mean a shipper is running or that Loki is reachable; those remain cluster
-administrator responsibilities.
-
-Changing the type replaces the ConfigMap data in one reconciliation. Setting
-`type: none` removes the ConfigMap; the pod labels remain, so no pod restart is
-caused by disabling log shipping.
+Grafana Alloy, Vector, and Promtail are the supported examples. Promtail is
+pinned to release `v3.6.0`, the last release with a published Linux binary; it
+is deprecated upstream in favor of Alloy, so new deployments should prefer
+Alloy or Vector.
 
 ### Grafana Alloy
 
-The generated `alloy.alloy` rendering is validated against Grafana Alloy
-release `v1.21.3` (revision `f2108cd`, 2026-10-28).
+The example Alloy configuration is validated against Grafana Alloy release
+`v1.21.3` (revision `f2108cd`, 2026-10-28).
 
-The rendering:
+The example:
 
 - filters Kubernetes discovery to pods labeled
   `jumpstarter.dev/log-scrape="true"`;
@@ -168,14 +146,15 @@ loki.write "default" {
 ```
 
 The `remote.kubernetes.secret` alternative is also valid, but requires the extra
-Secret RBAC. Credentials never belong in the generated ConfigMap.
+Secret RBAC. Configure credentials in the shipper's own Secret or through your
+existing secret-injection mechanism.
 
 ### Vector
 
-The generated `vector.yaml` rendering is validated against Vector release
+The example Vector configuration is validated against Vector release
 `v0.61.0` with `vector validate`.
 
-The rendering:
+The example:
 
 - selects pods labeled `jumpstarter.dev/log-scrape="true"` in the CR namespace;
 - uses the `kubernetes_logs` source, which is DaemonSet-oriented and reads
@@ -199,13 +178,11 @@ forwarded unchanged with that fallback. Only `component`, `exporter`, and
 `namespace` are stream labels; no high-cardinality pod or container labels are
 promoted.
 
-The operator splits `spec.telemetry.loki.url` into the Vector sink `endpoint`
-and `/loki/api/v1/push` path. When the URL is unset, it renders
-`http://loki.invalid:3100` and `/loki/api/v1/push` as validation-only fallback
-values; replace both before deploying, or set `spec.telemetry.loki.url` and let
-the operator render them.
+Split the Loki push URL into the Vector sink `endpoint` and
+`/loki/api/v1/push` path. Do not pass the complete push URL as `endpoint`:
+Vector appends `path`, which would duplicate `/loki/api/v1/push`.
 
-The rendering uses `compression: none` and the `text` codec, which produces an
+The example uses `compression: none` and the `text` codec, which produces an
 uncompressed JSON push containing the original JSON line. If your Loki ingress
 requires snappy/protobuf, change the compression and validate the resulting
 sink configuration with `vector validate`.
@@ -213,8 +190,7 @@ sink configuration with `vector validate`.
 Vector's `kubernetes_logs` source requires the Helm chart's hostPath mount for
 `/var/log/pods` and read access to pods and namespaces. The Vector Helm chart
 provides the expected RBAC. Configure Loki authentication in the sink's `auth`
-block using values from the shipper's own Secret; never put credentials in the
-generated ConfigMap:
+block using values from the shipper's own Secret:
 
 ```yaml
 sinks:
@@ -235,10 +211,10 @@ reads node-local pod log files.
 
 ### Promtail
 
-The generated `promtail.yaml` rendering is validated with
+The example Promtail configuration is validated with
 `promtail -check-syntax` against Promtail release `v3.6.0`.
 
-The rendering:
+The example:
 
 - selects pods labeled `jumpstarter.dev/log-scrape="true"` in the CR namespace;
 - resolves the pod log path with `__path__ =
@@ -253,75 +229,51 @@ The rendering:
 Promtail automatically restricts `kubernetes_sd_configs` pod discovery using
 the `HOSTNAME` environment variable as a `spec.nodeName` selector. Set
 `HOSTNAME` from the pod's `spec.nodeName` and run Promtail with
-`-config.expand-env`; the generated relabel rule uses `${HOSTNAME}` as a second
+`-config.expand-env`; the example relabel rule uses `${HOSTNAME}` as a second
 safety check. The Helm chart DaemonSet must mount `/var/log/pods` read-only and
 `/run/promtail` for positions, and grant `get`, `list`, and `watch` on pods,
 namespaces, and nodes.
 
 Configure Loki authentication in the Promtail `clients` entry from the
-shipper's own Secret; never put credentials in the generated ConfigMap.
+shipper's own Secret.
 
 ## Validate
 
 ```sh
 kubectl -n jumpstarter-lab get svc -l jumpstarter.dev/metrics=true
 kubectl -n jumpstarter-lab get servicemonitors.monitoring.coreos.com
-kubectl -n jumpstarter-lab get configmap jumpstarter-log-shipper -o yaml
 ```
 
-Validate the generated shipper configuration with the shipper's own tool:
+Validate your shipper configuration with the shipper's own tool. The examples
+above are intended to be adapted into the shipper's existing configuration:
 
 ```sh
-kubectl -n jumpstarter-lab get configmap jumpstarter-log-shipper \
-  -o jsonpath='{.data.promtail\.yaml}' > /tmp/promtail.yaml
 HOSTNAME=test-node promtail \
-  -config.file=/tmp/promtail.yaml \
+  -config.file=/etc/promtail/config.yml \
   -config.expand-env \
   -check-syntax
+
+alloy validate /etc/alloy/config.alloy
+alloy fmt --test /etc/alloy/config.alloy
+
+vector validate --no-environment /etc/vector/vector.yaml
 ```
 
-For Alloy use both `alloy validate` and `alloy fmt --test`; for Vector use
-`vector validate`. `alloy validate` checks components, required properties, and
-unknown properties; `alloy fmt --test` checks formatting only.
+`alloy validate` checks components, required properties, and unknown
+properties; `alloy fmt --test` checks formatting only.
 
-```sh
-kubectl -n jumpstarter-lab get configmap jumpstarter-log-shipper \
-  -o jsonpath='{.data.alloy\.alloy}' > /tmp/alloy.alloy
-alloy validate /tmp/alloy.alloy
-alloy fmt --test /tmp/alloy.alloy
-```
-
-For Vector:
-
-```sh
-kubectl -n jumpstarter-lab get configmap jumpstarter-log-shipper \
-  -o jsonpath='{.data.vector\.yaml}' > /tmp/vector.yaml
-vector validate --no-environment /tmp/vector.yaml
-```
-
-The operator's live-delivery tests run the generated Alloy, Vector, and
-Promtail configurations against a real single-binary Loki `v3.7.9`. The tests
-push known JSON lines through the production shipper blocks and query Loki's
-HTTP API for the exact stream labels and body fields. CI installs the pinned
-Loki binary and sets `LOKI_BIN`; local runs skip the live-Loki tests when it is
-absent.
-
-The gated Kubernetes deployment test, enabled with `SHIPPER_K8S_E2E=1`, deploys
-real Alloy, Vector, and Promtail DaemonSets with the generated ConfigMaps, a
-labeled log-source Pod, and an in-cluster Loki. It queries Loki through the
-Kubernetes service proxy and is intended for Kind or a disposable cluster; the
-`controller-kind` CI workflow runs it after the operator e2e suite. It is not
-part of the default unit-test suite.
+The snippets in this page are documentation fixtures. The operator no longer
+generates a shipper ConfigMap, and the cluster administrator owns shipper
+deployment, credentials, and validation.
 
 ## Conditions
 
 | Condition | True reason | False reasons |
 | --- | --- | --- |
 | `ServiceMonitorReady` | `Created` | `Disabled`, `CRDNotFound`, `Failed` |
-| `LogShipperReady` | `Created` | `Disabled`, `Failed` |
 
-Both are informational and do not affect the aggregate `Ready` condition: a
-cluster without the Prometheus Operator or a log shipper is a supported
+`ServiceMonitorReady` is informational and does not affect the aggregate
+`Ready` condition: a cluster without the Prometheus Operator is a supported
 configuration.
 
 ## Notes
@@ -333,5 +285,5 @@ configuration.
   pipelines. Vector also falls back to the pod's `component` label, then
   `"unknown"`, when a line has no usable JSON `component`.
 - The feature does not deploy, operate, or manage Prometheus, Loki, or any
-  shipper; it only labels workloads and publishes integration configuration,
-  and does not manage shipper credentials.
+  shipper; it only labels workloads and documents integration requirements, and
+  does not manage shipper credentials.

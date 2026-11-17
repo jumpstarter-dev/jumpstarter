@@ -278,11 +278,10 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile observability integration: metrics Services, ServiceMonitors and
-	// the optional log shipper ConfigMap. These are optional integrations, so a
-	// failure must not abort the rest of the Jumpstarter reconcile (status,
-	// ConfigMaps, Secrets). The condition reports the failure and a short requeue
-	// retries it.
+	// Reconcile observability integration: metrics Services and ServiceMonitors.
+	// These are optional integrations, so a failure must not abort the rest of the
+	// Jumpstarter reconcile (status, ConfigMaps, Secrets). The condition reports
+	// the failure and a short requeue retries it.
 	crdState, observabilityErr := r.reconcileObservabilityWithState(ctx, &jumpstarter)
 	if observabilityErr != nil {
 		log.Error(observabilityErr, "Failed to reconcile observability integration")
