@@ -96,6 +96,27 @@ func TestAccessLoggerRedactsSensitiveQueryParameters(t *testing.T) {
 	}
 }
 
+func TestLogFormatterRedactsFallbackPathQuery(t *testing.T) {
+	line := LogFormatter("controller")(gin.LogFormatterParams{
+		TimeStamp:  time.Now(),
+		StatusCode: http.StatusOK,
+		Latency:    time.Millisecond,
+		ClientIP:   "127.0.0.1",
+		Method:     http.MethodGet,
+		Path:       "/login?token=super-secret&client=visible",
+	})
+	if strings.Contains(line, "super-secret") {
+		t.Fatalf("fallback path leaked a sensitive query value: %s", line)
+	}
+	var entry map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(line)), &entry); err != nil {
+		t.Fatalf("formatter output is not valid JSON: %v\n%s", err, line)
+	}
+	if got := entry["http_path"]; got != "/login?client=visible&token=%5BREDACTED%5D" {
+		t.Fatalf("http_path = %v, want redacted fallback path", got)
+	}
+}
+
 func TestRedactedQueryHandlesMalformedInput(t *testing.T) {
 	if got := redactedQuery("token=secret;bad"); got != "[REDACTED]" {
 		t.Fatalf("redactedQuery() = %q, want [REDACTED]", got)
