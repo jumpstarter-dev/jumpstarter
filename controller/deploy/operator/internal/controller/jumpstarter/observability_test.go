@@ -197,6 +197,26 @@ func TestDeleteObjectIfExistsRejectsForeignObject(t *testing.T) {
 	}
 }
 
+func TestReconcileMetricsServicesRejectsForeignService(t *testing.T) {
+	s := runtime.NewScheme()
+	if err := corev1.AddToScheme(s); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+	foreign := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "jumpstarter-controller-metrics", Namespace: "lab"},
+	}
+	c := fake.NewClientBuilder().WithScheme(s).WithObjects(foreign).Build()
+	r := &JumpstarterReconciler{Client: c, Scheme: s}
+
+	err := r.reconcileMetricsServices(context.Background(), testJumpstarter())
+	if err == nil {
+		t.Fatal("expected an ownership error for a foreign metrics Service")
+	}
+	if !strings.Contains(err.Error(), "refusing to update metrics service") {
+		t.Fatalf("unexpected ownership error: %v", err)
+	}
+}
+
 func TestServiceMonitorConditionUsesProvidedCRDState(t *testing.T) {
 	r := &JumpstarterReconciler{
 		Client: &serviceMonitorListErrorClient{

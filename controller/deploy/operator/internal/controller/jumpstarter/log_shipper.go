@@ -111,6 +111,9 @@ func (r *JumpstarterReconciler) reconcileLogShipper(ctx context.Context, js *ope
 	if err != nil {
 		return err
 	}
+	if err := ensureControlledBy(js, existing); err != nil {
+		return fmt.Errorf("refusing to update log shipper ConfigMap: %w", err)
+	}
 	if !configMapNeedsUpdate(existing, desired) {
 		return nil
 	}
