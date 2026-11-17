@@ -197,25 +197,17 @@ const (
 	serviceMonitorReasonFailed      = "Failed"
 )
 
+// serviceMonitorResult is the single source of truth for the ServiceMonitor
+// condition and requeue decision in a reconcile. The accompanying error return
+// carries any retryable failure; the result only describes what was observed.
 type serviceMonitorResult struct {
 	phase   serviceMonitorPhase
 	reason  string
 	message string
-	err     error
 }
 
 func (r serviceMonitorResult) condition() (bool, string, string) {
 	return r.phase == serviceMonitorActive, r.reason, r.message
-}
-
-// serviceMonitorCRDState is the result of probing for the ServiceMonitor CRD
-// once during a reconcile. Passing it to status and requeue logic avoids
-// duplicate bounded Lists and keeps their decisions based on the same snapshot.
-type serviceMonitorCRDState struct {
-	checked   bool
-	available bool
-	err       error
-	result    *serviceMonitorResult
 }
 
 // serviceMonitorCRDAvailable reports whether monitoring.coreos.com/v1 serves the
@@ -303,16 +295,11 @@ func toInterfaceMap(in map[string]string) map[string]any {
 }
 
 // reconcileServiceMonitors creates, updates, or removes ServiceMonitors.
-// Removal happens when the feature is disabled, a workload is no longer
-// desired (for example telemetry is disabled), or the CRD is not installed.
-func (r *JumpstarterReconciler) reconcileServiceMonitors(ctx context.Context, js *operatorv1alpha1.Jumpstarter, crdAvailable bool) error {
+// Removal happens when the feature is disabled or a workload is no longer
+// desired (for example telemetry is disabled). Callers only invoke it once the
+// optional CRD is known to be served.
+func (r *JumpstarterReconciler) reconcileServiceMonitors(ctx context.Context, js *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
-
-	if !crdAvailable {
-		// The ServiceMonitor API is not served. Its custom resources are
-		// removed with the CRD, so there is nothing left to prune.
-		return nil
-	}
 
 	var desired []*unstructured.Unstructured
 	if serviceMonitorEnabled(js) {
@@ -371,6 +358,9 @@ func (r *JumpstarterReconciler) pruneServiceMonitors(ctx context.Context, js *op
 		Group: serviceMonitorGroup, Version: serviceMonitorVersion, Kind: serviceMonitorKind + "List",
 	})
 	if err := r.List(ctx, monitors, client.InNamespace(js.Namespace)); err != nil {
+		if apimeta.IsNoMatchError(err) {
+			return nil
+		}
 		return fmt.Errorf("list servicemonitors: %w", err)
 	}
 
@@ -416,99 +406,57 @@ func (r *JumpstarterReconciler) deleteObjectIfExists(ctx context.Context, js *op
 // never blocks lease operations: each optional integration is attempted
 // independently, failures are collected for retry, and the caller reports them
 // through status conditions instead of aborting the Jumpstarter reconcile.
-func (r *JumpstarterReconciler) reconcileObservability(ctx context.Context, js *operatorv1alpha1.Jumpstarter) error {
-	_, err := r.reconcileObservabilityWithState(ctx, js)
-	return err
-}
-
-func (r *JumpstarterReconciler) reconcileObservabilityWithState(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (serviceMonitorCRDState, error) {
+func (r *JumpstarterReconciler) reconcileObservability(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (serviceMonitorResult, error) {
 	var errs []error
-	var crdState serviceMonitorCRDState
 
 	if err := r.reconcileMetricsServices(ctx, js); err != nil {
 		errs = append(errs, fmt.Errorf("metrics services: %w", err))
 	}
 
-	crdAvailable, crdErr := r.serviceMonitorCRDAvailable(ctx)
-	crdState = serviceMonitorCRDState{checked: true, available: crdAvailable, err: crdErr}
-	switch {
-	case !serviceMonitorEnabled(js):
-		crdState.result = &serviceMonitorResult{
+	if !serviceMonitorEnabled(js) {
+		// Prune any monitors left by a previous configuration without probing
+		// for the optional CRD. A missing CRD has no monitors to prune.
+		if err := r.reconcileServiceMonitors(ctx, js); err != nil {
+			errs = append(errs, fmt.Errorf("service monitors: %w", err))
+		}
+		return serviceMonitorResult{
 			phase:   serviceMonitorDisabled,
 			reason:  serviceMonitorReasonDisabled,
 			message: "Prometheus autodiscovery is disabled by spec.telemetry.metrics.serviceMonitor",
-		}
-		if crdErr == nil && crdAvailable {
-			if err := r.reconcileServiceMonitors(ctx, js, true); err != nil {
-				errs = append(errs, fmt.Errorf("service monitors: %w", err))
-			}
-		}
-	case crdErr != nil:
+		}, errors.Join(errs...)
+	}
+
+	crdAvailable, crdErr := r.serviceMonitorCRDAvailable(ctx)
+	if crdErr != nil {
 		// A transient API/RBAC error must not be mistaken for an absent CRD:
 		// deleting the monitors here would cause churn and data loss.
 		logf.FromContext(ctx).Error(crdErr, "Failed to detect ServiceMonitor CRD; leaving ServiceMonitors unchanged")
-		crdState.result = &serviceMonitorResult{
+		errs = append(errs, fmt.Errorf("service monitor CRD detection: %w", crdErr))
+		return serviceMonitorResult{
 			phase:   serviceMonitorProbeFailed,
 			reason:  serviceMonitorReasonFailed,
 			message: fmt.Sprintf("failed to detect ServiceMonitor CRD: %v", crdErr),
-			err:     crdErr,
-		}
-		errs = append(errs, fmt.Errorf("service monitor CRD detection: %w", crdErr))
-	case !crdAvailable:
-		crdState.result = &serviceMonitorResult{
+		}, errors.Join(errs...)
+	}
+	if !crdAvailable {
+		return serviceMonitorResult{
 			phase:   serviceMonitorWaitingForCRD,
 			reason:  serviceMonitorReasonCRDNotFound,
 			message: "monitoring.coreos.com/v1 ServiceMonitor CRD is not installed",
-		}
-	case true:
-		if err := r.reconcileServiceMonitors(ctx, js, true); err != nil {
-			crdState.result = &serviceMonitorResult{
-				phase:   serviceMonitorApplyFailed,
-				reason:  serviceMonitorReasonFailed,
-				message: fmt.Sprintf("failed to reconcile ServiceMonitors: %v", err),
-				err:     err,
-			}
-			errs = append(errs, fmt.Errorf("service monitors: %w", err))
-		} else {
-			crdState.result = &serviceMonitorResult{
-				phase:   serviceMonitorActive,
-				reason:  serviceMonitorReasonCreated,
-				message: fmt.Sprintf("ServiceMonitors are configured for %d workloads", len(desiredServiceMonitors(js))),
-			}
-		}
+		}, errors.Join(errs...)
 	}
 
-	return crdState, errors.Join(errs...)
-}
-
-// serviceMonitorCondition reports the ServiceMonitorReady condition state.
-func (r *JumpstarterReconciler) serviceMonitorCondition(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (bool, string, string) {
-	return r.serviceMonitorConditionWithState(ctx, js, serviceMonitorCRDState{})
-}
-
-func (r *JumpstarterReconciler) serviceMonitorConditionWithState(ctx context.Context, js *operatorv1alpha1.Jumpstarter, crdState serviceMonitorCRDState) (bool, string, string) {
-	if crdState.result != nil {
-		return crdState.result.condition()
+	if err := r.reconcileServiceMonitors(ctx, js); err != nil {
+		errs = append(errs, fmt.Errorf("service monitors: %w", err))
+		return serviceMonitorResult{
+			phase:   serviceMonitorApplyFailed,
+			reason:  serviceMonitorReasonFailed,
+			message: fmt.Sprintf("failed to reconcile ServiceMonitors: %v", err),
+		}, errors.Join(errs...)
 	}
-	if !serviceMonitorEnabled(js) {
-		return false, serviceMonitorReasonDisabled, "Prometheus autodiscovery is disabled by spec.telemetry.metrics.serviceMonitor"
-	}
-	if !crdState.checked {
-		available, err := r.serviceMonitorCRDAvailable(ctx)
-		crdState = serviceMonitorCRDState{checked: true, available: available, err: err}
-	}
-	if crdState.err != nil {
-		return false, serviceMonitorReasonFailed, fmt.Sprintf("failed to detect ServiceMonitor CRD: %v", crdState.err)
-	}
-	if !crdState.available {
-		return false, serviceMonitorReasonCRDNotFound, "monitoring.coreos.com/v1 ServiceMonitor CRD is not installed"
-	}
-	for _, monitor := range desiredServiceMonitors(js) {
-		existing := &unstructured.Unstructured{}
-		existing.SetGroupVersionKind(monitor.GroupVersionKind())
-		if err := r.Get(ctx, types.NamespacedName{Name: monitor.GetName(), Namespace: monitor.GetNamespace()}, existing); err != nil {
-			return false, serviceMonitorReasonFailed, fmt.Sprintf("ServiceMonitor %s is not available: %v", monitor.GetName(), err)
-		}
-	}
-	return true, serviceMonitorReasonCreated, fmt.Sprintf("ServiceMonitors are configured for %d workloads", len(desiredServiceMonitors(js)))
+	return serviceMonitorResult{
+		phase:   serviceMonitorActive,
+		reason:  serviceMonitorReasonCreated,
+		message: fmt.Sprintf("ServiceMonitors are configured for %d workloads", len(desiredServiceMonitors(js))),
+	}, errors.Join(errs...)
 }

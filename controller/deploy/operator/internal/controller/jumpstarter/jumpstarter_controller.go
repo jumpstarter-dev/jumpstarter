@@ -284,7 +284,7 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// These are optional integrations, so a failure must not abort the rest of the
 	// Jumpstarter reconcile (status, ConfigMaps, Secrets). The condition reports
 	// the failure and a short requeue retries it.
-	crdState, observabilityErr := r.reconcileObservabilityWithState(ctx, &jumpstarter)
+	serviceMonitor, observabilityErr := r.reconcileObservability(ctx, &jumpstarter)
 	if observabilityErr != nil {
 		log.Error(observabilityErr, "Failed to reconcile observability integration")
 	}
@@ -304,7 +304,7 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Update status before returning an observability error. This preserves the
 	// condition information while letting controller-runtime apply backoff and
 	// record the reconcile error metric.
-	if err := r.updateStatusWithState(ctx, &jumpstarter, crdState); err != nil {
+	if err := r.updateStatus(ctx, &jumpstarter, serviceMonitor); err != nil {
 		log.Error(err, "Failed to update status")
 		return ctrl.Result{}, err
 	}
@@ -312,7 +312,7 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, fmt.Errorf("observability: %w", observabilityErr)
 	}
 
-	requeueAfter := r.observabilityRequeueAfterWithState(ctx, &jumpstarter, nil, crdState)
+	requeueAfter := r.observabilityRequeueAfter(ctx, &jumpstarter, nil, serviceMonitor)
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
@@ -324,15 +324,7 @@ func (r *JumpstarterReconciler) observabilityRequeueAfter(
 	ctx context.Context,
 	js *operatorv1alpha1.Jumpstarter,
 	observabilityErr error,
-) time.Duration {
-	return r.observabilityRequeueAfterWithState(ctx, js, observabilityErr, serviceMonitorCRDState{})
-}
-
-func (r *JumpstarterReconciler) observabilityRequeueAfterWithState(
-	ctx context.Context,
-	js *operatorv1alpha1.Jumpstarter,
-	observabilityErr error,
-	crdState serviceMonitorCRDState,
+	serviceMonitor serviceMonitorResult,
 ) time.Duration {
 	requeueAfter := 30 * time.Minute
 	if observabilityErr != nil {
@@ -341,19 +333,9 @@ func (r *JumpstarterReconciler) observabilityRequeueAfterWithState(
 	if r.telemetryCANeedsRequeue(ctx, js) {
 		requeueAfter = telemetryCARequeueInterval
 	}
-	if crdState.result != nil && requeueAfter > 2*time.Minute {
-		switch crdState.result.phase {
+	if requeueAfter > 2*time.Minute {
+		switch serviceMonitor.phase {
 		case serviceMonitorWaitingForCRD, serviceMonitorProbeFailed, serviceMonitorApplyFailed:
-			requeueAfter = 2 * time.Minute
-		}
-		return requeueAfter
-	}
-	if serviceMonitorEnabled(js) && requeueAfter > 2*time.Minute {
-		if !crdState.checked {
-			available, err := r.serviceMonitorCRDAvailable(ctx)
-			crdState = serviceMonitorCRDState{checked: true, available: available, err: err}
-		}
-		if crdState.err == nil && !crdState.available {
 			requeueAfter = 2 * time.Minute
 		}
 	}

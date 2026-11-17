@@ -33,11 +33,7 @@ import (
 )
 
 // updateStatus updates the status conditions of the Jumpstarter resource.
-func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1alpha1.Jumpstarter) error {
-	return r.updateStatusWithState(ctx, js, serviceMonitorCRDState{})
-}
-
-func (r *JumpstarterReconciler) updateStatusWithState(ctx context.Context, js *operatorv1alpha1.Jumpstarter, crdState serviceMonitorCRDState) error {
+func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1alpha1.Jumpstarter, serviceMonitor serviceMonitorResult) error {
 	log := logf.FromContext(ctx)
 
 	prevReady := meta.IsStatusConditionTrue(js.Status.Conditions, operatorv1alpha1.ConditionTypeReady)
@@ -173,7 +169,7 @@ func (r *JumpstarterReconciler) updateStatusWithState(ctx context.Context, js *o
 
 	// The Prometheus Operator integration is informational and deliberately
 	// excluded from allReady: its absence must not report Jumpstarter as degraded.
-	emitServiceMonitorCRDMissing := r.reconcileObservabilityStatus(ctx, js, crdState)
+	emitServiceMonitorCRDMissing := reconcileObservabilityStatus(js, serviceMonitor)
 
 	// Set overall Ready condition
 	readyMessage := "All components are ready"
@@ -217,8 +213,8 @@ func (r *JumpstarterReconciler) updateStatusWithState(ctx context.Context, js *o
 // reconcileObservabilityStatus sets the informational observability conditions
 // and reports which transition events should be emitted. Keeping it separate
 // from updateStatus keeps that function's complexity within the lint threshold.
-func (r *JumpstarterReconciler) reconcileObservabilityStatus(ctx context.Context, js *operatorv1alpha1.Jumpstarter, crdState serviceMonitorCRDState) bool {
-	smReady, smReason, smMessage := r.serviceMonitorConditionWithState(ctx, js, crdState)
+func reconcileObservabilityStatus(js *operatorv1alpha1.Jumpstarter, serviceMonitor serviceMonitorResult) bool {
+	smReady, smReason, smMessage := serviceMonitor.condition()
 	reasonChanged := setConditionAndReportReasonChange(
 		js,
 		operatorv1alpha1.ConditionTypeServiceMonitorReady,
