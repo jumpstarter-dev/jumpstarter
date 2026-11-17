@@ -134,7 +134,7 @@ func (r *JumpstarterReconciler) reconcileMetricsServices(ctx context.Context, js
 
 	if !serviceMonitorEnabled(js) {
 		for _, name := range []string{metricsServiceName(js, "controller"), metricsServiceName(js, "router")} {
-			if err := r.deleteObjectIfExists(ctx, types.NamespacedName{Name: name, Namespace: js.Namespace}, &corev1.Service{}); err != nil {
+			if err := r.deleteObjectIfExists(ctx, js, types.NamespacedName{Name: name, Namespace: js.Namespace}, &corev1.Service{}); err != nil {
 				return err
 			}
 		}
@@ -360,12 +360,15 @@ func (r *JumpstarterReconciler) pruneServiceMonitors(ctx context.Context, js *op
 }
 
 // deleteObjectIfExists deletes an object and ignores NotFound.
-func (r *JumpstarterReconciler) deleteObjectIfExists(ctx context.Context, key types.NamespacedName, obj client.Object) error {
+func (r *JumpstarterReconciler) deleteObjectIfExists(ctx context.Context, js *operatorv1alpha1.Jumpstarter, key types.NamespacedName, obj client.Object) error {
 	if err := r.Get(ctx, key, obj); err != nil {
 		if apierrors.IsNotFound(err) || apimeta.IsNoMatchError(err) {
 			return nil
 		}
 		return err
+	}
+	if err := ensureControlledBy(js, obj); err != nil {
+		return fmt.Errorf("refusing to delete %w", err)
 	}
 	if err := r.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) && !apimeta.IsNoMatchError(err) {
 		return err
