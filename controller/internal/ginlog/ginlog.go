@@ -88,13 +88,25 @@ func isSensitiveQueryKey(key string) bool {
 
 func requestPath(p gin.LogFormatterParams) string {
 	if p.Request == nil || p.Request.URL == nil {
-		return p.Path
+		return redactPathQuery(p.Path)
 	}
 	path := p.Request.URL.Path
 	if query := redactedQuery(p.Request.URL.RawQuery); query != "" {
 		path += "?" + query
 	}
 	return path
+}
+
+func redactPathQuery(path string) string {
+	queryStart := strings.IndexByte(path, '?')
+	if queryStart < 0 {
+		return path
+	}
+	query := redactedQuery(path[queryStart+1:])
+	if query == "" {
+		return path[:queryStart]
+	}
+	return path[:queryStart] + "?" + query
 }
 
 // LogFormatter turns a Gin request into one JSONL record. High-cardinality
