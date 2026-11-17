@@ -36,7 +36,6 @@ import (
 
 	gwruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 
-	"github.com/go-logr/logr"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
@@ -100,23 +99,6 @@ type ControllerService struct {
 	leaseLocks              sync.Map
 	authOnce                sync.Once
 	auth                    *auth.Auth
-}
-
-// withExporter adds the exporter CRD name to a logger. The value is always a
-// string: controller log consumers (including the JEP-0013 log shipper) treat
-// "exporter" as a low-cardinality Loki stream label. Older code passed a
-// NamespacedName here, which JSON-encoded as an object and broke that contract.
-func withExporter(logger logr.Logger, exporter any) logr.Logger {
-	var name string
-	switch v := exporter.(type) {
-	case string:
-		name = v
-	case types.NamespacedName:
-		name = v.Name
-	default:
-		name = fmt.Sprint(v)
-	}
-	return logger.WithValues("exporter", name)
 }
 
 type listenQueue struct {
@@ -312,7 +294,7 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 		return nil, err
 	}
 
-	logger = withExporter(logger, exporter.Name)
+	logger = logger.WithValues("exporter", exporter.Name)
 
 	logger.Info("Registering exporter")
 
@@ -524,7 +506,7 @@ func (s *ControllerService) Unregister(
 		return nil, err
 	}
 
-	logger = withExporter(logger, exporter.Name)
+	logger = logger.WithValues("exporter", exporter.Name)
 
 	original := client.MergeFrom(exporter.DeepCopy())
 	exporter.Status.Devices = nil
@@ -552,7 +534,7 @@ func (s *ControllerService) ReportStatus(
 		return nil, err
 	}
 
-	logger = withExporter(logger, exporter.Name)
+	logger = logger.WithValues("exporter", exporter.Name)
 
 	// Convert proto enum to CRD string value
 	exporterStatus := protoStatusToString(req.Status)
@@ -664,7 +646,7 @@ func (s *ControllerService) UpdateLeaseHooks(
 		return nil, err
 	}
 
-	logger = withExporter(logger, exporter.Name).WithValues("lease", req.GetLeaseName())
+	logger = logger.WithValues("exporter", exporter.Name).WithValues("lease", req.GetLeaseName())
 
 	// Validation reads the record, so patch with an optimistic lock and re-read
 	// on conflict rather than overwrite a concurrent change.
@@ -994,7 +976,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		return err
 	}
 
-	logger = withExporter(logger, exporter.Name)
+	logger = logger.WithValues("exporter", exporter.Name)
 
 	leaseName := req.GetLeaseName()
 	if leaseName == "" {
@@ -1081,7 +1063,7 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 		return err
 	}
 
-	logger = withExporter(logger, exporter.Name)
+	logger = logger.WithValues("exporter", exporter.Name)
 
 	watcher, err := s.Client.Watch(ctx, &jumpstarterdevv1alpha1.ExporterList{}, &client.ListOptions{
 		FieldSelector: fields.OneTermEqualSelector("metadata.name", exporter.Name),
