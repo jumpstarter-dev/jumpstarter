@@ -19,21 +19,29 @@ package ginlog
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-logr/logr"
+	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
-func TestAccessLoggerWritesJSONL(t *testing.T) {
+func testLogger(output *bytes.Buffer) logr.Logger {
+	return ctrlzap.New(
+		ctrlzap.UseDevMode(false),
+		ctrlzap.WriteTo(output),
+	).WithValues("component", "controller")
+}
+
+func TestAccessLogWritesStructuredRecord(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	var output bytes.Buffer
 	engine := gin.New()
-	engine.Use(AccessLoggerWithWriter("controller", &output))
+	engine.Use(AccessLog(testLogger(&output)))
 	engine.GET("/example", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
 	})
@@ -68,11 +76,11 @@ func TestAccessLoggerWritesJSONL(t *testing.T) {
 	}
 }
 
-func TestAccessLoggerRedactsSensitiveQueryParameters(t *testing.T) {
+func TestAccessLogRedactsSensitiveQueryParameters(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	var output bytes.Buffer
 	engine := gin.New()
-	engine.Use(AccessLoggerWithWriter("controller", &output))
+	engine.Use(AccessLog(testLogger(&output)))
 	engine.GET("/login", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
 	})
@@ -96,52 +104,33 @@ func TestAccessLoggerRedactsSensitiveQueryParameters(t *testing.T) {
 	}
 }
 
-func TestLogFormatterRedactsFallbackPathQuery(t *testing.T) {
-	line := LogFormatter("controller")(gin.LogFormatterParams{
-		TimeStamp:  time.Now(),
-		StatusCode: http.StatusOK,
-		Latency:    time.Millisecond,
-		ClientIP:   "127.0.0.1",
-		Method:     http.MethodGet,
-		Path:       "/login?token=super-secret&client=visible",
+func TestAccessLogLogsRequestErrors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var output bytes.Buffer
+	engine := gin.New()
+	engine.Use(AccessLog(testLogger(&output)))
+	engine.GET("/error", func(c *gin.Context) {
+		_ = c.Error(errors.New("line1\nline2"))
+		c.Status(http.StatusInternalServerError)
 	})
-	if strings.Contains(line, "super-secret") {
-		t.Fatalf("fallback path leaked a sensitive query value: %s", line)
-	}
-	var entry map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(line)), &entry); err != nil {
-		t.Fatalf("formatter output is not valid JSON: %v\n%s", err, line)
-	}
-	if got := entry["http_path"]; got != "/login?client=visible&token=%5BREDACTED%5D" {
-		t.Fatalf("http_path = %v, want redacted fallback path", got)
-	}
-}
 
-func TestRedactedQueryHandlesMalformedInput(t *testing.T) {
-	if got := redactedQuery("token=secret;bad"); got != "[REDACTED]" {
-		t.Fatalf("redactedQuery() = %q, want [REDACTED]", got)
-	}
-}
+	engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/error", nil))
 
-func TestLogFormatterEscapesError(t *testing.T) {
-	line := LogFormatter("controller")(gin.LogFormatterParams{
-		TimeStamp:    time.Now(),
-		StatusCode:   http.StatusInternalServerError,
-		Latency:      time.Millisecond,
-		ClientIP:     "127.0.0.1",
-		Method:       http.MethodPost,
-		Path:         "/error",
-		ErrorMessage: "line1\nline2",
-	})
 	var entry map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(line)), &entry); err != nil {
-		t.Fatalf("formatter output is not valid JSON: %v\n%s", err, line)
+	if err := json.Unmarshal([]byte(strings.TrimSpace(output.String())), &entry); err != nil {
+		t.Fatalf("formatter output is not valid JSON: %v\n%s", err, output.String())
 	}
 	if got := entry["level"]; got != "error" {
 		t.Fatalf("level = %v, want error", got)
 	}
 	if got := entry["error"]; got != "line1\nline2" {
 		t.Fatalf("error = %v, want escaped multi-line value", got)
+	}
+}
+
+func TestRedactedQueryHandlesMalformedInput(t *testing.T) {
+	if got := redactedQuery("token=secret;bad"); got != "[REDACTED]" {
+		t.Fatalf("redactedQuery() = %q, want [REDACTED]", got)
 	}
 }
 
