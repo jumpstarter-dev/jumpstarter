@@ -162,6 +162,10 @@ docker-build-ci: ## Build docker images from pre-compiled host binaries (fast CI
 	$(CONTAINER_TOOL) build --build-arg BIN=exporter-set-controller -t $(EXPORTER_SET_CONTROLLER_IMG) -f Containerfile.prebuilt bin/ci-stage/esc
 	$(MAKE) docker-build-telemetry-ci
 
+.PHONY: test-prebuilt-nested-bin
+test-prebuilt-nested-bin: ## Verify the prebuilt image handles nested BIN paths.
+	./hack/test-prebuilt-nested-bin.sh
+
 .PHONY: docker-build-telemetry-ci
 docker-build-telemetry-ci: ## CI-optimized: host-compiled telemetry binary, no multi-stage build.
 	rm -rf bin/ci-stage/telemetry && mkdir -p bin/ci-stage/telemetry
