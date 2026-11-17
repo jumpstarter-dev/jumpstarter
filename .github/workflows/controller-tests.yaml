@@ -28,6 +28,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-controller-bin-
 
+      - name: Check prebuilt Containerfile nested BIN
+        working-directory: controller
+        run: make test-prebuilt-nested-bin
+
       - name: Run controller tests
         working-directory: controller
         run: make test
