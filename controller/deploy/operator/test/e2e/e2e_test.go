@@ -510,7 +510,7 @@ provisioning:
 		})
 
 		It("should serve live controller and router metrics", func() {
-			expectServiceMetrics(dynamicTestNamespace, "jumpstarter-controller-metrics", "8080", func(g Gomega, body string) {
+			expectServiceMetrics(dynamicTestNamespace, "jumpstarter-metrics-controller", "8080", func(g Gomega, body string) {
 				families := parsePrometheusFamilies(g, body)
 				g.Expect(families).To(HaveKey("jumpstarter_lease_acquisitions_total"))
 				g.Expect(families).To(HaveKey("go_goroutines"))
@@ -519,7 +519,7 @@ provisioning:
 				expectMetricLabelValue(g, families["jumpstarter_lease_acquisitions_total"], "result", "failure")
 			})
 
-			expectServiceMetrics(dynamicTestNamespace, "jumpstarter-router-metrics", "8080", func(g Gomega, body string) {
+			expectServiceMetrics(dynamicTestNamespace, "jumpstarter-metrics-router", "8080", func(g Gomega, body string) {
 				families := parsePrometheusFamilies(g, body)
 				g.Expect(families).To(HaveKey("go_goroutines"))
 				g.Expect(families).To(HaveKey("process_start_time_seconds"))

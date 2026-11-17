@@ -96,13 +96,13 @@ func TestServiceMonitorCRDAbsent(t *testing.T) {
 	}
 
 	svc := &corev1.Service{}
-	if err := c.Get(ctx, types.NamespacedName{Name: "jumpstarter-controller-metrics", Namespace: ns.Name}, svc); err != nil {
+	if err := c.Get(ctx, types.NamespacedName{Name: "jumpstarter-metrics-controller", Namespace: ns.Name}, svc); err != nil {
 		t.Fatalf("metrics Service should still be created: %v", err)
 	}
 
 	sm := &unstructured.Unstructured{}
 	sm.SetGroupVersionKind(serviceMonitorGVK)
-	err = c.Get(ctx, types.NamespacedName{Name: "jumpstarter-controller-metrics", Namespace: ns.Name}, sm)
+	err = c.Get(ctx, types.NamespacedName{Name: "jumpstarter-metrics-controller", Namespace: ns.Name}, sm)
 	if err == nil {
 		t.Fatal("expected no ServiceMonitor to exist")
 	}

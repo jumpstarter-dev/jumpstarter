@@ -22,8 +22,8 @@ Prometheus autodiscovery is configured under `spec.telemetry`:
 
 When `metrics.serviceMonitor` is `true` (the default) the operator:
 
-- creates metrics-only Services `<name>-controller-metrics` and
-  `<name>-router-metrics`;
+- creates metrics-only Services `<name>-metrics-controller` and
+  `<name>-metrics-router`;
 - reuses the existing telemetry Service when the telemetry service is enabled;
 - creates one `ServiceMonitor` per running workload **if** the
   `monitoring.coreos.com/v1` CRD is installed.

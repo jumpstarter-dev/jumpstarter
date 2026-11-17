@@ -66,7 +66,7 @@ var _ = Describe("Observability reconciliation", func() {
 	It("creates metrics Services and ServiceMonitors, and is idempotent", func() {
 		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
 
-		for _, name := range []string{"jumpstarter-controller-metrics", "jumpstarter-router-metrics"} {
+		for _, name := range []string{"jumpstarter-metrics-controller", "jumpstarter-metrics-router"} {
 			svc := &corev1.Service{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace.Name}, svc)).To(Succeed(),
 				"expected metrics service %s", name)
@@ -74,11 +74,11 @@ var _ = Describe("Observability reconciliation", func() {
 
 		sm := &unstructured.Unstructured{}
 		sm.SetGroupVersionKind(serviceMonitorGVK)
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "jumpstarter-controller-metrics", Namespace: namespace.Name}, sm)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "jumpstarter-metrics-controller", Namespace: namespace.Name}, sm)).To(Succeed())
 		resourceVersion := sm.GetResourceVersion()
 
 		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "jumpstarter-controller-metrics", Namespace: namespace.Name}, sm)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "jumpstarter-metrics-controller", Namespace: namespace.Name}, sm)).To(Succeed())
 		Expect(sm.GetResourceVersion()).To(Equal(resourceVersion), "steady-state reconcile must not write")
 
 		ready, reason, _ := r.serviceMonitorCondition(ctx, js)
@@ -92,9 +92,9 @@ var _ = Describe("Observability reconciliation", func() {
 		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
 
 		for _, name := range []string{
-			"jumpstarter-controller-metrics",
-			"jumpstarter-router-metrics",
-			"jumpstarter-telemetry-metrics",
+			"jumpstarter-metrics-controller",
+			"jumpstarter-metrics-router",
+			"jumpstarter-metrics-telemetry",
 		} {
 			sm := &unstructured.Unstructured{}
 			sm.SetGroupVersionKind(serviceMonitorGVK)
@@ -122,13 +122,13 @@ var _ = Describe("Observability reconciliation", func() {
 		telemetry := &unstructured.Unstructured{}
 		telemetry.SetGroupVersionKind(serviceMonitorGVK)
 		err := k8sClient.Get(ctx, types.NamespacedName{
-			Name: "jumpstarter-telemetry-metrics", Namespace: namespace.Name,
+			Name: "jumpstarter-metrics-telemetry", Namespace: namespace.Name,
 		}, telemetry)
 		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "telemetry ServiceMonitor should be pruned: %v", err)
 
 		for _, name := range []string{
-			"jumpstarter-controller-metrics",
-			"jumpstarter-router-metrics",
+			"jumpstarter-metrics-controller",
+			"jumpstarter-metrics-router",
 			"foreign-monitor",
 		} {
 			sm := &unstructured.Unstructured{}
@@ -147,9 +147,9 @@ var _ = Describe("Observability reconciliation", func() {
 		Expect(r.reconcileObservability(ctx, js)).To(Succeed())
 
 		for _, name := range []string{
-			"jumpstarter-controller-metrics",
-			"jumpstarter-router-metrics",
-			"jumpstarter-telemetry-metrics",
+			"jumpstarter-metrics-controller",
+			"jumpstarter-metrics-router",
+			"jumpstarter-metrics-telemetry",
 		} {
 			sm := &unstructured.Unstructured{}
 			sm.SetGroupVersionKind(serviceMonitorGVK)
@@ -177,7 +177,7 @@ var _ = Describe("Observability reconciliation", func() {
 
 		svc := &corev1.Service{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{
-			Name: "jumpstarter-router-metrics", Namespace: namespace.Name,
+			Name: "jumpstarter-metrics-router", Namespace: namespace.Name,
 		}, svc)).To(Succeed())
 	})
 

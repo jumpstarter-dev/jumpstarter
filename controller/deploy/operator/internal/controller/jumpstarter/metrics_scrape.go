@@ -67,7 +67,7 @@ func serviceMonitorEnabled(js *operatorv1alpha1.Jumpstarter) bool {
 
 // metricsServiceName returns the metrics Service name for a component.
 func metricsServiceName(js *operatorv1alpha1.Jumpstarter, component string) string {
-	return fmt.Sprintf("%s-%s-metrics", js.Name, component)
+	return fmt.Sprintf("%s-metrics-%s", js.Name, component)
 }
 
 // metricsServiceLabels returns the labels shared by metrics Services and their
@@ -188,6 +188,13 @@ const (
 	serviceMonitorProbeFailed
 	serviceMonitorApplyFailed
 	serviceMonitorActive
+)
+
+const (
+	serviceMonitorReasonCreated     = "Created"
+	serviceMonitorReasonDisabled    = "Disabled"
+	serviceMonitorReasonCRDNotFound = "CRDNotFound"
+	serviceMonitorReasonFailed      = "Failed"
 )
 
 type serviceMonitorResult struct {
@@ -428,7 +435,7 @@ func (r *JumpstarterReconciler) reconcileObservabilityWithState(ctx context.Cont
 	case !serviceMonitorEnabled(js):
 		crdState.result = &serviceMonitorResult{
 			phase:   serviceMonitorDisabled,
-			reason:  "Disabled",
+			reason:  serviceMonitorReasonDisabled,
 			message: "Prometheus autodiscovery is disabled by spec.telemetry.metrics.serviceMonitor",
 		}
 		if crdErr == nil && crdAvailable {
@@ -442,7 +449,7 @@ func (r *JumpstarterReconciler) reconcileObservabilityWithState(ctx context.Cont
 		logf.FromContext(ctx).Error(crdErr, "Failed to detect ServiceMonitor CRD; leaving ServiceMonitors unchanged")
 		crdState.result = &serviceMonitorResult{
 			phase:   serviceMonitorProbeFailed,
-			reason:  "Failed",
+			reason:  serviceMonitorReasonFailed,
 			message: fmt.Sprintf("failed to detect ServiceMonitor CRD: %v", crdErr),
 			err:     crdErr,
 		}
@@ -450,14 +457,14 @@ func (r *JumpstarterReconciler) reconcileObservabilityWithState(ctx context.Cont
 	case !crdAvailable:
 		crdState.result = &serviceMonitorResult{
 			phase:   serviceMonitorWaitingForCRD,
-			reason:  "CRDNotFound",
+			reason:  serviceMonitorReasonCRDNotFound,
 			message: "monitoring.coreos.com/v1 ServiceMonitor CRD is not installed",
 		}
 	case true:
 		if err := r.reconcileServiceMonitors(ctx, js, true); err != nil {
 			crdState.result = &serviceMonitorResult{
 				phase:   serviceMonitorApplyFailed,
-				reason:  "Failed",
+				reason:  serviceMonitorReasonFailed,
 				message: fmt.Sprintf("failed to reconcile ServiceMonitors: %v", err),
 				err:     err,
 			}
@@ -465,7 +472,7 @@ func (r *JumpstarterReconciler) reconcileObservabilityWithState(ctx context.Cont
 		} else {
 			crdState.result = &serviceMonitorResult{
 				phase:   serviceMonitorActive,
-				reason:  "Created",
+				reason:  serviceMonitorReasonCreated,
 				message: fmt.Sprintf("ServiceMonitors are configured for %d workloads", len(desiredServiceMonitors(js))),
 			}
 		}
@@ -484,24 +491,24 @@ func (r *JumpstarterReconciler) serviceMonitorConditionWithState(ctx context.Con
 		return crdState.result.condition()
 	}
 	if !serviceMonitorEnabled(js) {
-		return false, "Disabled", "Prometheus autodiscovery is disabled by spec.telemetry.metrics.serviceMonitor"
+		return false, serviceMonitorReasonDisabled, "Prometheus autodiscovery is disabled by spec.telemetry.metrics.serviceMonitor"
 	}
 	if !crdState.checked {
 		available, err := r.serviceMonitorCRDAvailable(ctx)
 		crdState = serviceMonitorCRDState{checked: true, available: available, err: err}
 	}
 	if crdState.err != nil {
-		return false, "Failed", fmt.Sprintf("failed to detect ServiceMonitor CRD: %v", crdState.err)
+		return false, serviceMonitorReasonFailed, fmt.Sprintf("failed to detect ServiceMonitor CRD: %v", crdState.err)
 	}
 	if !crdState.available {
-		return false, "CRDNotFound", "monitoring.coreos.com/v1 ServiceMonitor CRD is not installed"
+		return false, serviceMonitorReasonCRDNotFound, "monitoring.coreos.com/v1 ServiceMonitor CRD is not installed"
 	}
 	for _, monitor := range desiredServiceMonitors(js) {
 		existing := &unstructured.Unstructured{}
 		existing.SetGroupVersionKind(monitor.GroupVersionKind())
 		if err := r.Get(ctx, types.NamespacedName{Name: monitor.GetName(), Namespace: monitor.GetNamespace()}, existing); err != nil {
-			return false, "Failed", fmt.Sprintf("ServiceMonitor %s is not available: %v", monitor.GetName(), err)
+			return false, serviceMonitorReasonFailed, fmt.Sprintf("ServiceMonitor %s is not available: %v", monitor.GetName(), err)
 		}
 	}
-	return true, "Created", fmt.Sprintf("ServiceMonitors are configured for %d workloads", len(desiredServiceMonitors(js)))
+	return true, serviceMonitorReasonCreated, fmt.Sprintf("ServiceMonitors are configured for %d workloads", len(desiredServiceMonitors(js)))
 }

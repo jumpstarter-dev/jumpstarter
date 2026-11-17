@@ -49,7 +49,7 @@ var _ = Describe("Observability integration", Ordered, func() {
 		Expect(k8sClient.Create(ctx, js)).To(Succeed())
 
 		By("waiting for the controller and router metrics Services")
-		for _, name := range []string{crName + "-controller-metrics", crName + "-router-metrics"} {
+		for _, name := range []string{crName + "-metrics-controller", crName + "-metrics-router"} {
 			Eventually(func(g Gomega) {
 				svc := &corev1.Service{}
 				g.Expect(k8sClient.Get(ctx, types.NamespacedName{
@@ -61,7 +61,7 @@ var _ = Describe("Observability integration", Ordered, func() {
 
 		if utils.IsPrometheusCRDsInstalled() {
 			By("waiting for the controller and router ServiceMonitors")
-			for _, name := range []string{crName + "-controller-metrics", crName + "-router-metrics"} {
+			for _, name := range []string{crName + "-metrics-controller", crName + "-metrics-router"} {
 				Eventually(func(g Gomega) {
 					sm := &unstructured.Unstructured{}
 					sm.SetGroupVersionKind(observabilityServiceMonitorGVK)
@@ -90,7 +90,7 @@ var _ = Describe("Observability integration", Ordered, func() {
 		Eventually(func(g Gomega) {
 			svc := &corev1.Service{}
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
-				Name: crName + "-controller-metrics", Namespace: namespace,
+				Name: crName + "-metrics-controller", Namespace: namespace,
 			}, svc)).To(Succeed())
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
@@ -99,7 +99,7 @@ var _ = Describe("Observability integration", Ordered, func() {
 		Eventually(func(g Gomega) {
 			svc := &corev1.Service{}
 			err := k8sClient.Get(ctx, types.NamespacedName{
-				Name: crName + "-controller-metrics", Namespace: namespace,
+				Name: crName + "-metrics-controller", Namespace: namespace,
 			}, svc)
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "metrics Service should be garbage-collected: %v", err)
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
@@ -109,7 +109,7 @@ var _ = Describe("Observability integration", Ordered, func() {
 				sm := &unstructured.Unstructured{}
 				sm.SetGroupVersionKind(observabilityServiceMonitorGVK)
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name: crName + "-controller-metrics", Namespace: namespace,
+					Name: crName + "-metrics-controller", Namespace: namespace,
 				}, sm)
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "ServiceMonitor should be garbage-collected: %v", err)
 			}, 2*time.Minute, 2*time.Second).Should(Succeed())
