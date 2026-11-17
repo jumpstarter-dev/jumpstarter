@@ -37,6 +37,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -109,6 +110,7 @@ type JumpstarterReconciler struct {
 
 // Monitoring resources
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
 
 // cert-manager resources (for TLS certificate management)
 // +kubebuilder:rbac:groups=cert-manager.io,resources=issuers,verbs=get;list;watch;create;update;patch;delete
@@ -2087,6 +2089,28 @@ func (r *JumpstarterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return requests
 	}
 
+	// mapServiceMonitorCRDToJumpstarters enqueues all Jumpstarter CRs when the
+	// optional ServiceMonitor CRD is installed or updated. This complements the
+	// bounded fallback requeue while the CRD is absent.
+	mapServiceMonitorCRDToJumpstarters := func(ctx context.Context, obj client.Object) []ctrl.Request {
+		crd, ok := obj.(*apiextensionsv1.CustomResourceDefinition)
+		if !ok || crd.Name != serviceMonitorCRDName {
+			return nil
+		}
+
+		var jumpstarterList operatorv1alpha1.JumpstarterList
+		if err := mgr.GetClient().List(ctx, &jumpstarterList); err != nil {
+			logf.FromContext(ctx).Error(err, "Failed to list Jumpstarters for ServiceMonitor CRD change")
+			return nil
+		}
+
+		requests := make([]ctrl.Request, len(jumpstarterList.Items))
+		for i, js := range jumpstarterList.Items {
+			requests[i] = ctrl.Request{NamespacedName: client.ObjectKeyFromObject(&js)}
+		}
+		return requests
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&operatorv1alpha1.Jumpstarter{}).
 		Named("jumpstarter").
@@ -2098,6 +2122,7 @@ func (r *JumpstarterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// Note: Secrets and ServiceAccounts are intentionally NOT owned to prevent deletion.
 		// We watch Secrets referenced as JWT CA certificates and TLS certs so that
 		// rotations trigger reconciliation and rolling restarts via hash annotations.
+		Watches(&apiextensionsv1.CustomResourceDefinition{}, handler.EnqueueRequestsFromMapFunc(mapServiceMonitorCRDToJumpstarters)).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(mapSecretToJumpstarters)).
 		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(mapConfigMapToJumpstarters)).
 		Complete(r)

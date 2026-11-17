@@ -53,6 +53,7 @@ const (
 	serviceMonitorGroup   = "monitoring.coreos.com"
 	serviceMonitorVersion = "v1"
 	serviceMonitorKind    = "ServiceMonitor"
+	serviceMonitorCRDName = "servicemonitors.monitoring.coreos.com"
 )
 
 // serviceMonitorEnabled reports whether Prometheus autodiscovery is enabled.
