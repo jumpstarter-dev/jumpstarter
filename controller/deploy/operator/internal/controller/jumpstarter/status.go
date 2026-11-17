@@ -218,17 +218,28 @@ func (r *JumpstarterReconciler) updateStatusWithState(ctx context.Context, js *o
 // and reports which transition events should be emitted. Keeping it separate
 // from updateStatus keeps that function's complexity within the lint threshold.
 func (r *JumpstarterReconciler) reconcileObservabilityStatus(ctx context.Context, js *operatorv1alpha1.Jumpstarter, crdState serviceMonitorCRDState) bool {
-	// Snapshot the previous reason before setCondition mutates the condition in
-	// place. Comparing through a pointer after setCondition would compare the new
-	// reason against itself and suppress the transition event.
-	prevServiceMonitorReason := ""
-	if previous := meta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypeServiceMonitorReady); previous != nil {
-		prevServiceMonitorReason = previous.Reason
-	}
 	smReady, smReason, smMessage := r.serviceMonitorConditionWithState(ctx, js, crdState)
-	setCondition(js, operatorv1alpha1.ConditionTypeServiceMonitorReady, smReady, smReason, smMessage)
+	reasonChanged := setConditionAndReportReasonChange(
+		js,
+		operatorv1alpha1.ConditionTypeServiceMonitorReady,
+		smReady,
+		smReason,
+		smMessage,
+	)
 
-	return smReason == "CRDNotFound" && prevServiceMonitorReason != "CRDNotFound"
+	return smReason == serviceMonitorReasonCRDNotFound && reasonChanged
+}
+
+// setConditionAndReportReasonChange updates a condition and reports whether its
+// reason changed. It snapshots the previous reason by value because
+// meta.SetStatusCondition mutates existing conditions in place.
+func setConditionAndReportReasonChange(js *operatorv1alpha1.Jumpstarter, conditionType string, ready bool, reason, message string) bool {
+	prevReason := ""
+	if previous := meta.FindStatusCondition(js.Status.Conditions, conditionType); previous != nil {
+		prevReason = previous.Reason
+	}
+	setCondition(js, conditionType, ready, reason, message)
+	return reason != prevReason
 }
 
 // checkCertManagerCRDs checks if cert-manager CRDs are installed in the cluster

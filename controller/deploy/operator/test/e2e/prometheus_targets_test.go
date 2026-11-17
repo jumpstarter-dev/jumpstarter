@@ -117,7 +117,7 @@ var _ = Describe("Prometheus target health", Ordered, func() {
 		Expect(k8sClient.Create(ctx, js)).To(Succeed())
 
 		By("waiting for controller and router metrics Services")
-		for _, name := range []string{"jumpstarter-controller-metrics", "jumpstarter-router-metrics"} {
+		for _, name := range []string{"jumpstarter-metrics-controller", "jumpstarter-metrics-router"} {
 			Eventually(func(g Gomega) {
 				svc := &corev1.Service{}
 				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: testNamespace}, svc)).To(Succeed())
@@ -156,10 +156,10 @@ var _ = Describe("Prometheus target health", Ordered, func() {
 			Expect(target.LastScrape).NotTo(BeZero())
 			Expect(time.Since(target.LastScrape)).To(BeNumerically("<=", prometheusScrapeFreshness))
 			Expect(target.ScrapeURL).To(ContainSubstring("/metrics"))
-			if strings.Contains(target.ScrapePool, "controller-metrics") {
+			if strings.Contains(target.ScrapePool, "metrics-controller") {
 				seen["controller"] = true
 			}
-			if strings.Contains(target.ScrapePool, "router-metrics") {
+			if strings.Contains(target.ScrapePool, "metrics-router") {
 				seen["router"] = true
 			}
 		}
@@ -367,8 +367,8 @@ func activeJumpstarterTargets(result prometheusTargetsResponse, namespace string
 		if target.Labels["namespace"] != namespace {
 			continue
 		}
-		if strings.Contains(target.ScrapePool, "controller-metrics") ||
-			strings.Contains(target.ScrapePool, "router-metrics") {
+		if strings.Contains(target.ScrapePool, "metrics-controller") ||
+			strings.Contains(target.ScrapePool, "metrics-router") {
 			targets = append(targets, target)
 		}
 	}

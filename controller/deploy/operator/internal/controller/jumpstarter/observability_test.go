@@ -128,7 +128,7 @@ func TestDeleteObjectIfExistsRejectsForeignObject(t *testing.T) {
 		t.Fatalf("add core scheme: %v", err)
 	}
 	foreign := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "jumpstarter-controller-metrics", Namespace: "lab"},
+		ObjectMeta: metav1.ObjectMeta{Name: "jumpstarter-metrics-controller", Namespace: "lab"},
 	}
 	c := fake.NewClientBuilder().WithScheme(s).WithObjects(foreign).Build()
 	r := &JumpstarterReconciler{Client: c, Scheme: s}
@@ -152,7 +152,7 @@ func TestReconcileMetricsServicesRejectsForeignService(t *testing.T) {
 		t.Fatalf("add core scheme: %v", err)
 	}
 	foreign := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "jumpstarter-controller-metrics", Namespace: "lab"},
+		ObjectMeta: metav1.ObjectMeta{Name: "jumpstarter-metrics-controller", Namespace: "lab"},
 	}
 	c := fake.NewClientBuilder().WithScheme(s).WithObjects(foreign).Build()
 	r := &JumpstarterReconciler{Client: c, Scheme: s}
@@ -195,8 +195,8 @@ func TestDesiredMetricsServices(t *testing.T) {
 	}
 
 	want := map[string]map[string]string{
-		"jumpstarter-controller-metrics": {"component": "controller", "controller": js.Name},
-		"jumpstarter-router-metrics":     {"component": "router", "router": js.Name},
+		"jumpstarter-metrics-controller": {"component": "controller", "controller": js.Name},
+		"jumpstarter-metrics-router":     {"component": "router", "router": js.Name},
 	}
 	for _, svc := range services {
 		selector, ok := want[svc.Name]
