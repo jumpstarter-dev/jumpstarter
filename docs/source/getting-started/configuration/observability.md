@@ -9,6 +9,7 @@ Prometheus autodiscovery is configured under `spec.telemetry`:
 | Capability | Field | Default | Requires |
 | --- | --- | --- | --- |
 | Prometheus autodiscovery | `metrics.serviceMonitor` | `true` | Prometheus Operator CRDs |
+| Starter alert rules | `metrics.prometheusRules` | `false` | Prometheus Operator CRDs |
 
 > **A cluster log shipper is required to see Controller and Router logs in
 > Loki.** Jumpstarter does not run one and does not push Controller/Router logs
@@ -72,6 +73,44 @@ reached, the failed reconcile is retried with exponential backoff.
 
 Disable autodiscovery with `serviceMonitor: false`; the Services and
 ServiceMonitors are removed.
+
+## Starter alert rules
+
+Set `metrics.prometheusRules` to `true` to have the operator create one
+`PrometheusRule` named `<name>-starter-alerts` when the
+`monitoring.coreos.com/v1` PrometheusRule CRD is installed. The rules are
+opt-in because thresholds depend on the environment.
+
+```yaml
+spec:
+  telemetry:
+    metrics:
+      prometheusRules: true
+      ruleLabels:
+        release: kube-prometheus-stack
+```
+
+The starter set implements the JEP alert table:
+
+| Alert | Scope | Starter threshold |
+| --- | --- | --- |
+| `JumpstarterOperationFailureRate` | Operations | Failure rate above 20% over 15 minutes per exporter and operation |
+| `JumpstarterOperationDurationHigh` | Operations | p95 duration above 60 seconds per operation |
+| `JumpstarterOperationErrors` | Operations | Any increase in errors, grouped by `error_type` |
+| `JumpstarterExporterIdle` | Operations | No active session for 30 minutes |
+| `JumpstarterLeaseAcquisitionFailureRate` | Operations | Failure rate above 10% over 15 minutes |
+| `JumpstarterTelemetryDropped` | Telemetry | Any dropped log entry over 5 minutes |
+| `JumpstarterScrapeTimeouts` | Telemetry | More than three timeouts per exporter over 15 minutes |
+
+Telemetry-pipeline alerts use `critical`; operation and lease alerts use
+`warning`. Edit the generated `PrometheusRule` to tune thresholds, or set
+`prometheusRules: false` to remove the owned rule.
+
+`ruleLabels` are added to the `PrometheusRule` metadata so the object matches
+your Prometheus `ruleSelector`. The stable label
+`jumpstarter.dev/prometheus-rules: "true"` is always set and cannot be
+overridden. If the CRD is absent, reconciliation succeeds, no rule is created,
+and `PrometheusRulesReady` reports `CRDNotFound`.
 
 ## Cluster log shipper integration
 
@@ -278,9 +317,10 @@ deployment, credentials, and validation.
 | Condition | True reason | False reasons |
 | --- | --- | --- |
 | `ServiceMonitorReady` | `Created` | `Disabled`, `CRDNotFound`, `Failed` |
+| `PrometheusRulesReady` | `Created` | `Disabled`, `CRDNotFound`, `Failed` |
 
-`ServiceMonitorReady` is informational and does not affect the aggregate
-`Ready` condition: a cluster without the Prometheus Operator is a supported
+Both conditions are informational and do not affect the aggregate `Ready`
+condition: a cluster without the Prometheus Operator is a supported
 configuration.
 
 ## Notes

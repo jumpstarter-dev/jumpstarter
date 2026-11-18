@@ -71,6 +71,10 @@ fi
 require 'log-scrape discovery label' 'jumpstarter.dev/log-scrape="true"'
 require 'log-format discovery label' 'jumpstarter.dev/log-format="json"'
 
+# Phase 6 starter alert rules contract.
+require 'PrometheusRulesReady condition' 'PrometheusRulesReady'
+require 'starter alert rules field' 'prometheusRules'
+
 # The operator no longer owns shipper configuration: neither the API, the
 # condition, nor the generated ConfigMap may reappear in the configuration docs.
 forbid 'logging.shipper API field' 'logging.shipper'
