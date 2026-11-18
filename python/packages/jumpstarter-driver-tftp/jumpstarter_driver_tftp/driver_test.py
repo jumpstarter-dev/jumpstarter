@@ -1,4 +1,6 @@
+import errno
 import logging
+import re
 import socket
 import threading
 import time
@@ -76,14 +78,22 @@ def test_tftp_start_stop(tmp_path):
     server.close()
 
 
-def test_tftp_start_surfaces_startup_error(tmp_path):
-    """Test that start() raises the real cause when the server cannot be built."""
+@pytest.mark.parametrize(
+    "target, error",
+    [
+        ("TftpServer", RuntimeError("cannot build the server")),
+        # an OSError before the server tries to listen is not a bind failure
+        ("start_blocking_portal", OSError(errno.EMFILE, "Too many open files")),
+    ],
+)
+def test_tftp_start_surfaces_startup_error(tmp_path, target, error):
+    """Test that start() raises the real cause when the server cannot be set up."""
     server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=0)
 
     with patch(
-        "jumpstarter_driver_tftp.driver.TftpServer",
-        side_effect=RuntimeError("cannot build the server"),
-    ), pytest.raises(TftpError, match="cannot build the server"):
+        f"jumpstarter_driver_tftp.driver.{target}",
+        side_effect=error,
+    ), pytest.raises(TftpError, match=re.escape(str(error))):
         server.start()
 
     server.close()
@@ -145,8 +155,10 @@ def test_tftp_start_leaves_a_taken_port_to_its_holder(tmp_path, free_ipv4_udp_po
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as taken:
         taken.bind(("127.0.0.1", free_ipv4_udp_port))
         server.start()
-    assert f"TFTP server not started, cannot listen on 127.0.0.1:{free_ipv4_udp_port}: " in caplog.text
-    assert "Address already in use" in caplog.text
+    [record] = [r for r in caplog.records if "cannot listen on" in r.getMessage()]
+    assert record.levelno == logging.WARNING
+    assert record.getMessage().startswith(f"TFTP server not started, cannot listen on 127.0.0.1:{free_ipv4_udp_port}: ")
+    assert "Address already in use" in record.getMessage()
 
     # nothing is left half started: once the port is free, start() serves on it
     server.start()

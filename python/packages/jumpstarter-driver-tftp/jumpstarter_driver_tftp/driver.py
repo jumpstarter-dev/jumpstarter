@@ -101,12 +101,13 @@ class Tftp(Driver):
                     logger=self.logger,
                 )
                 portal = stack.enter_context(start_blocking_portal())
-                serving, _ = portal.start_task(server.start)
-            except OSError as e:
-                # Not an error on purpose so a bind failure was only logged and flashing went on,
-                # served by whatever held the port (often a system tftpd on the same root directory).
-                self.logger.warning(f"TFTP server not started, cannot listen on {self.host}:{self.port}: {e}")
-                return
+                try:
+                    serving, _ = portal.start_task(server.start)
+                except OSError as e:
+                    # Not an error on purpose so a bind failure was only logged and flashing went on,
+                    # served by whatever held the port (often a system tftpd on the same root directory).
+                    self.logger.warning(f"TFTP server not started, cannot listen on {self.host}:{self.port}: {e}")
+                    return
             except Exception as e:
                 raise TftpError(f"Failed to start TFTP server: {e}") from e
             serving.add_done_callback(self._report_failure)
