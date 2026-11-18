@@ -90,6 +90,9 @@ jobs:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
 
+      - name: Verify the observability documentation contract
+        run: make docs-check-observability
+
       - name: Verify generated gRPC docs are up to date
         run: make docs-check-grpc
 
