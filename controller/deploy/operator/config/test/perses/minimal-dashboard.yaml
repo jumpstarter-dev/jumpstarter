@@ -1,0 +1,95 @@
+apiVersion: perses.dev/v1alpha2
+kind: PersesDashboard
+metadata:
+  name: jumpstarter-overview-minimal
+  namespace: jumpstarter-lab
+spec:
+  instanceSelector:
+    matchLabels:
+      app.kubernetes.io/instance: perses-sample
+  config:
+    display:
+      name: Jumpstarter Overview
+      description: Minimal RQ2 fixture for datasource references.
+    duration: 1h
+    refreshInterval: 30s
+    variables:
+      - kind: ListVariable
+        spec:
+          name: exporter
+          allowMultiple: true
+          allowAllValue: true
+          plugin:
+            kind: PrometheusLabelValuesVariable
+            spec:
+              datasource:
+                kind: PrometheusDatasource
+                name: prometheus
+              labelName: exporter
+      - kind: TextVariable
+        spec:
+          name: lease_id
+          value: ""
+    panels:
+      operationFailureRate:
+        kind: Panel
+        spec:
+          display:
+            name: Operation failure rate
+          plugin:
+            kind: TimeSeriesChart
+            spec: {}
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    datasource:
+                      kind: PrometheusDatasource
+                      name: prometheus
+                    query: |
+                      sum by (exporter) (
+                        rate(jumpstarter_operations_total{result="failure"}[5m])
+                      )
+                      /
+                      sum by (exporter) (
+                        rate(jumpstarter_operations_total[5m])
+                      )
+      leaseLogs:
+        kind: Panel
+        spec:
+          display:
+            name: Lease logs
+          plugin:
+            kind: LogsTable
+            spec: {}
+          queries:
+            - kind: LogQuery
+              spec:
+                plugin:
+                  kind: LokiLogQuery
+                  spec:
+                    datasource:
+                      kind: LokiDatasource
+                      name: loki
+                    query: |
+                      {component="exporter"} | json | lease_id="$lease_id"
+    layouts:
+      - kind: Grid
+        spec:
+          display:
+            title: Jumpstarter
+          items:
+            - x: 0
+              y: 0
+              width: 6
+              height: 4
+              content:
+                $ref: "#/spec/panels/operationFailureRate"
+            - x: 6
+              y: 0
+              width: 6
+              height: 4
+              content:
+                $ref: "#/spec/panels/leaseLogs"
