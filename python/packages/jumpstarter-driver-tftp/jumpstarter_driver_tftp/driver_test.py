@@ -82,8 +82,8 @@ def test_tftp_start_surfaces_startup_error(tmp_path):
 
     with patch(
         "jumpstarter_driver_tftp.driver.TftpServer",
-        side_effect=RuntimeError("port already in use"),
-    ), pytest.raises(TftpError, match="port already in use"):
+        side_effect=RuntimeError("cannot build the server"),
+    ), pytest.raises(TftpError, match="cannot build the server"):
         server.start()
 
     server.close()
@@ -137,13 +137,23 @@ def test_tftp_start_returns_once_the_server_listens(tmp_path, free_ipv4_udp_port
     server.close()
 
 
-def test_tftp_start_raises_when_the_port_is_taken(tmp_path, free_ipv4_udp_port):
+def test_tftp_start_leaves_a_taken_port_to_its_holder(tmp_path, free_ipv4_udp_port, caplog):
+    caplog.set_level(logging.WARNING, logger="driver")
+    (tmp_path / "hello.txt").write_bytes(b"hello over tftp")
+    server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=free_ipv4_udp_port)
+
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as taken:
         taken.bind(("127.0.0.1", free_ipv4_udp_port))
-        server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=free_ipv4_udp_port)
+        server.start()
+    assert f"TFTP server not started, cannot listen on 127.0.0.1:{free_ipv4_udp_port}: " in caplog.text
+    assert "Address already in use" in caplog.text
 
-        with pytest.raises(TftpError, match="Failed to start TFTP server: .*Address already in use"):
-            server.start()
+    # nothing is left half started: once the port is free, start() serves on it
+    server.start()
+    try:
+        assert _download(free_ipv4_udp_port, "hello.txt") == b"hello over tftp"
+    finally:
+        server.stop()
     server.close()
 
 
