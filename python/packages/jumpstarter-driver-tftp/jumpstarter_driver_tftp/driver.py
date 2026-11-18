@@ -106,7 +106,10 @@ class Tftp(Driver):
                 except OSError as e:
                     # Not an error on purpose so a bind failure was only logged and flashing went on,
                     # served by whatever held the port (often a system tftpd on the same root directory).
-                    self.logger.warning(f"TFTP server not started, cannot listen on {self.host}:{self.port}: {e}")
+                    self.logger.warning(
+                        f"TFTP server not started, cannot listen on {self.host}:{self.port}: {e}. "
+                        f"This should work as long as this is an existing TFTP server pointing to {self.root_dir}"
+                    )
                     return
             except Exception as e:
                 raise TftpError(f"Failed to start TFTP server: {e}") from e

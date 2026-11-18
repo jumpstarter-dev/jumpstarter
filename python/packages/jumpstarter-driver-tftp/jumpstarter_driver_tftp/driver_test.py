@@ -147,20 +147,33 @@ def test_tftp_start_returns_once_the_server_listens(tmp_path, free_ipv4_udp_port
     server.close()
 
 
-def test_tftp_start_leaves_a_taken_port_to_its_holder(tmp_path, free_ipv4_udp_port, caplog):
+def test_tftp_start_with_system_server_does_not_raise(tmp_path, free_ipv4_udp_port, caplog):
+    """A supported behavior of the TFTP server is allowing an existing system TFTP server on the same
+    port. The server should not raise any exception but simply print a warning.
+    """
     caplog.set_level(logging.WARNING, logger="driver")
-    (tmp_path / "hello.txt").write_bytes(b"hello over tftp")
     server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=free_ipv4_udp_port)
 
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as taken:
         taken.bind(("127.0.0.1", free_ipv4_udp_port))
         server.start()
+
     [record] = [r for r in caplog.records if "cannot listen on" in r.getMessage()]
     assert record.levelno == logging.WARNING
     assert record.getMessage().startswith(f"TFTP server not started, cannot listen on 127.0.0.1:{free_ipv4_udp_port}: ")
-    assert "Address already in use" in record.getMessage()
+    assert f"[Errno {errno.EADDRINUSE}]" in record.getMessage()
+    assert record.getMessage().endswith(f"pointing to {tmp_path}")
+    server.close()
 
-    # nothing is left half started: once the port is free, start() serves on it
+
+def test_tftp_starts_and_serves_once_the_port_is_free(tmp_path, free_ipv4_udp_port):
+    (tmp_path / "hello.txt").write_bytes(b"hello over tftp")
+    server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=free_ipv4_udp_port)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as taken:
+        taken.bind(("127.0.0.1", free_ipv4_udp_port))
+        server.start()
+
+    # the system server is gone: nothing was left half started, so start() serves on the port
     server.start()
     try:
         assert _download(free_ipv4_udp_port, "hello.txt") == b"hello over tftp"
