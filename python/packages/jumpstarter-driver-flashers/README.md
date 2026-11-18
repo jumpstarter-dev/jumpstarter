@@ -93,7 +93,7 @@ export:
 | Parameter      | Description                                | Type | Required | Default                      |
 | -------------- | ------------------------------------------ | ---- | -------- | ---------------------------- |
 | flasher_bundle | The OCI bundle to use for the flasher      | str  | yes      |                              |
-| cache_dir      | The directory to cache the images          | str  | no       | /var/lib/jumpstarter/flasher |
+| cache_dir      | The directory to cache the bundles. A cached bundle is reused across sessions until its tag moves to another manifest digest; older versions are removed by a later session once no other session uses the bundle | str  | no       | /var/lib/jumpstarter/flasher |
 | tftp_dir       | The directory to serve the images via TFTP | str  | no       | /var/lib/tftpboot            |
 | http_dir       | The directory to serve the images via HTTP | str  | no       | /var/www/html                |
 | variant        | The variant of the DUT DTB to flash to     | str  | no       | (the default defined in the manifest) |
