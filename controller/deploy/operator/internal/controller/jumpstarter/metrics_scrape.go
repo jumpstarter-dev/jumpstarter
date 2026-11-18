@@ -296,8 +296,9 @@ func toInterfaceMap(in map[string]string) map[string]any {
 
 // reconcileServiceMonitors creates, updates, or removes ServiceMonitors.
 // Removal happens when the feature is disabled or a workload is no longer
-// desired (for example telemetry is disabled). Callers only invoke it once the
-// optional CRD is known to be served.
+// desired (for example telemetry is disabled). The enabled path calls it only
+// after the CRD probe succeeds; the disabled path calls it without probing, and
+// pruning tolerates an absent API.
 func (r *JumpstarterReconciler) reconcileServiceMonitors(ctx context.Context, js *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
 

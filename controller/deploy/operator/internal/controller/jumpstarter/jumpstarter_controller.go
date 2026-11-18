@@ -312,24 +312,20 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, fmt.Errorf("observability: %w", observabilityErr)
 	}
 
-	requeueAfter := r.observabilityRequeueAfter(ctx, &jumpstarter, nil, serviceMonitor)
+	requeueAfter := r.observabilityRequeueAfter(ctx, &jumpstarter, serviceMonitor)
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
 // observabilityRequeueAfter keeps the normal periodic reconciliation interval
 // but shortens it while observability needs attention. A missing ServiceMonitor
-// CRD uses a two-minute poll so a later-installed CRD converges within five
-// minutes without a hot loop.
+// CRD or a failed probe/apply uses a two-minute retry; a later-installed CRD is
+// also picked up immediately by the CRD watch.
 func (r *JumpstarterReconciler) observabilityRequeueAfter(
 	ctx context.Context,
 	js *operatorv1alpha1.Jumpstarter,
-	observabilityErr error,
 	serviceMonitor serviceMonitorResult,
 ) time.Duration {
 	requeueAfter := 30 * time.Minute
-	if observabilityErr != nil {
-		requeueAfter = 2 * time.Minute
-	}
 	if r.telemetryCANeedsRequeue(ctx, js) {
 		requeueAfter = telemetryCARequeueInterval
 	}
