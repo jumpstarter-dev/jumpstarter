@@ -519,26 +519,19 @@ provisioning:
 
 		It("should clamp controller replicas > 1 to 1 with a warning event", func() {
 			By("updating Jumpstarter controller replicas to 3")
-			jumpstarter := &operatorv1alpha1.Jumpstarter{}
-			err := k8sClient.Get(ctx, types.NamespacedName{
+			updateJumpstarter(types.NamespacedName{
 				Name:      "jumpstarter",
 				Namespace: dynamicTestNamespace,
-			}, jumpstarter)
-			Expect(err).NotTo(HaveOccurred())
-
-			jumpstarter.Spec.Controller.Replicas = new(int32(3))
-			Expect(k8sClient.Update(ctx, jumpstarter)).To(Succeed())
+			}, func(jumpstarter *operatorv1alpha1.Jumpstarter) {
+				jumpstarter.Spec.Controller.Replicas = new(int32(3))
+			})
 			DeferCleanup(func() {
-				restore := &operatorv1alpha1.Jumpstarter{}
-				getErr := k8sClient.Get(ctx, types.NamespacedName{
+				updateJumpstarter(types.NamespacedName{
 					Name:      "jumpstarter",
 					Namespace: dynamicTestNamespace,
-				}, restore)
-				if getErr != nil {
-					return
-				}
-				restore.Spec.Controller.Replicas = new(int32(1))
-				_ = k8sClient.Update(ctx, restore)
+				}, func(restore *operatorv1alpha1.Jumpstarter) {
+					restore.Spec.Controller.Replicas = new(int32(1))
+				})
 			})
 
 			By("verifying the controller deployment still has 1 replica (clamped)")
@@ -575,29 +568,22 @@ provisioning:
 
 		It("should emit controller update events when controller spec changes", func() {
 			By("adding a pod annotation to trigger a controller deployment update")
-			jumpstarter := &operatorv1alpha1.Jumpstarter{}
-			err := k8sClient.Get(ctx, types.NamespacedName{
+			updateJumpstarter(types.NamespacedName{
 				Name:      "jumpstarter",
 				Namespace: dynamicTestNamespace,
-			}, jumpstarter)
-			Expect(err).NotTo(HaveOccurred())
-
-			if jumpstarter.Spec.Controller.PodAnnotations == nil {
-				jumpstarter.Spec.Controller.PodAnnotations = map[string]string{}
-			}
-			jumpstarter.Spec.Controller.PodAnnotations["e2e-test/trigger"] = "deployment-update"
-			Expect(k8sClient.Update(ctx, jumpstarter)).To(Succeed())
+			}, func(jumpstarter *operatorv1alpha1.Jumpstarter) {
+				if jumpstarter.Spec.Controller.PodAnnotations == nil {
+					jumpstarter.Spec.Controller.PodAnnotations = map[string]string{}
+				}
+				jumpstarter.Spec.Controller.PodAnnotations["e2e-test/trigger"] = "deployment-update"
+			})
 			DeferCleanup(func() {
-				restore := &operatorv1alpha1.Jumpstarter{}
-				getErr := k8sClient.Get(ctx, types.NamespacedName{
+				updateJumpstarter(types.NamespacedName{
 					Name:      "jumpstarter",
 					Namespace: dynamicTestNamespace,
-				}, restore)
-				if getErr != nil {
-					return
-				}
-				delete(restore.Spec.Controller.PodAnnotations, "e2e-test/trigger")
-				_ = k8sClient.Update(ctx, restore)
+				}, func(restore *operatorv1alpha1.Jumpstarter) {
+					delete(restore.Spec.Controller.PodAnnotations, "e2e-test/trigger")
+				})
 			})
 
 			By("verifying the controller deployment reflects the new pod annotation")
@@ -729,16 +715,12 @@ provisioning:
 		It("should create new routers if the number of replicas is increased", func() {
 			By("updating the Jumpstarter custom resource to increase the number of replicas")
 			// Update the jumpstarter object using the k8s client
-			jumpstarter := &operatorv1alpha1.Jumpstarter{}
-			err := k8sClient.Get(ctx, types.NamespacedName{
+			jumpstarter := updateJumpstarter(types.NamespacedName{
 				Name:      "jumpstarter",
 				Namespace: dynamicTestNamespace,
-			}, jumpstarter)
-			Expect(err).NotTo(HaveOccurred())
-
-			jumpstarter.Spec.Routers.Replicas = new(int32(3))
-			err = k8sClient.Update(ctx, jumpstarter)
-			Expect(err).NotTo(HaveOccurred())
+			}, func(jumpstarter *operatorv1alpha1.Jumpstarter) {
+				jumpstarter.Spec.Routers.Replicas = new(int32(3))
+			})
 
 			By("verifying the new routers deployments were created")
 			allRoutersDeploymentsCreated := func(g Gomega) bool {
@@ -786,16 +768,12 @@ provisioning:
 
 		It("should scale down the routers if the number of replicas is decreased", func() {
 			By("updating the Jumpstarter custom resource to decrease the number of replicas")
-			jumpstarter := &operatorv1alpha1.Jumpstarter{}
-			err := k8sClient.Get(ctx, types.NamespacedName{
+			updateJumpstarter(types.NamespacedName{
 				Name:      "jumpstarter",
 				Namespace: dynamicTestNamespace,
-			}, jumpstarter)
-			Expect(err).NotTo(HaveOccurred())
-
-			jumpstarter.Spec.Routers.Replicas = new(int32(1))
-			err = k8sClient.Update(ctx, jumpstarter)
-			Expect(err).NotTo(HaveOccurred())
+			}, func(jumpstarter *operatorv1alpha1.Jumpstarter) {
+				jumpstarter.Spec.Routers.Replicas = new(int32(1))
+			})
 
 			By("verifying the router deployments were scaled down")
 			routerDeploymentsCount := func(g Gomega) int {
@@ -822,25 +800,20 @@ provisioning:
 
 		It("should suspend the controller deployment when replicas is set to 0", func() {
 			By("setting controller.replicas=0")
-			jumpstarter := &operatorv1alpha1.Jumpstarter{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{
+			updateJumpstarter(types.NamespacedName{
 				Name:      "jumpstarter",
 				Namespace: dynamicTestNamespace,
-			}, jumpstarter)).To(Succeed())
-
-			jumpstarter.Spec.Controller.Replicas = new(int32(0))
-			Expect(k8sClient.Update(ctx, jumpstarter)).To(Succeed())
+			}, func(jumpstarter *operatorv1alpha1.Jumpstarter) {
+				jumpstarter.Spec.Controller.Replicas = new(int32(0))
+			})
 
 			DeferCleanup(func() {
-				restore := &operatorv1alpha1.Jumpstarter{}
-				if getErr := k8sClient.Get(ctx, types.NamespacedName{
+				updateJumpstarter(types.NamespacedName{
 					Name:      "jumpstarter",
 					Namespace: dynamicTestNamespace,
-				}, restore); getErr != nil {
-					return
-				}
-				restore.Spec.Controller.Replicas = new(int32(1))
-				_ = k8sClient.Update(ctx, restore)
+				}, func(restore *operatorv1alpha1.Jumpstarter) {
+					restore.Spec.Controller.Replicas = new(int32(1))
+				})
 			})
 
 			By("verifying the controller Deployment still exists with 0 desired pods")
@@ -870,25 +843,20 @@ provisioning:
 
 		It("should suspend router deployments when replicas is set to 0 and preserve Services", func() {
 			By("setting routers.replicas=0")
-			jumpstarter := &operatorv1alpha1.Jumpstarter{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{
+			updateJumpstarter(types.NamespacedName{
 				Name:      "jumpstarter",
 				Namespace: dynamicTestNamespace,
-			}, jumpstarter)).To(Succeed())
-
-			jumpstarter.Spec.Routers.Replicas = new(int32(0))
-			Expect(k8sClient.Update(ctx, jumpstarter)).To(Succeed())
+			}, func(jumpstarter *operatorv1alpha1.Jumpstarter) {
+				jumpstarter.Spec.Routers.Replicas = new(int32(0))
+			})
 
 			DeferCleanup(func() {
-				restore := &operatorv1alpha1.Jumpstarter{}
-				if getErr := k8sClient.Get(ctx, types.NamespacedName{
+				updateJumpstarter(types.NamespacedName{
 					Name:      "jumpstarter",
 					Namespace: dynamicTestNamespace,
-				}, restore); getErr != nil {
-					return
-				}
-				restore.Spec.Routers.Replicas = new(int32(1))
-				_ = k8sClient.Update(ctx, restore)
+				}, func(restore *operatorv1alpha1.Jumpstarter) {
+					restore.Spec.Routers.Replicas = new(int32(1))
+				})
 			})
 
 			By("verifying all router Deployments are scaled to 0 pods")
@@ -929,33 +897,29 @@ provisioning:
 
 		It("should setup ingress for the controller and router for ingress mode", func() {
 			By("updating the Jumpstarter custom resource to enable ingress mode")
-			jumpstarter := &operatorv1alpha1.Jumpstarter{}
-			err := k8sClient.Get(ctx, types.NamespacedName{
+			updateJumpstarter(types.NamespacedName{
 				Name:      "jumpstarter",
 				Namespace: dynamicTestNamespace,
-			}, jumpstarter)
-			Expect(err).NotTo(HaveOccurred())
-
-			jumpstarter.Spec.Controller.GRPC.Endpoints = []operatorv1alpha1.Endpoint{
-				{
-					Address: "grpc.jumpstarter.127.0.0.1.nip.io:5443",
-					Ingress: &operatorv1alpha1.IngressConfig{
-						Enabled: true,
-						Class:   "nginx",
+			}, func(jumpstarter *operatorv1alpha1.Jumpstarter) {
+				jumpstarter.Spec.Controller.GRPC.Endpoints = []operatorv1alpha1.Endpoint{
+					{
+						Address: "grpc.jumpstarter.127.0.0.1.nip.io:5443",
+						Ingress: &operatorv1alpha1.IngressConfig{
+							Enabled: true,
+							Class:   "nginx",
+						},
 					},
-				},
-			}
-			jumpstarter.Spec.Routers.GRPC.Endpoints = []operatorv1alpha1.Endpoint{
-				{
-					Address: "router.jumpstarter.127.0.0.1.nip.io:5443",
-					Ingress: &operatorv1alpha1.IngressConfig{
-						Enabled: true,
-						Class:   "nginx",
+				}
+				jumpstarter.Spec.Routers.GRPC.Endpoints = []operatorv1alpha1.Endpoint{
+					{
+						Address: "router.jumpstarter.127.0.0.1.nip.io:5443",
+						Ingress: &operatorv1alpha1.IngressConfig{
+							Enabled: true,
+							Class:   "nginx",
+						},
 					},
-				},
-			}
-			err = k8sClient.Update(ctx, jumpstarter)
-			Expect(err).NotTo(HaveOccurred())
+				}
+			})
 
 			By("verifying the ingress for the controller was created")
 			verifyIngressForController := func(g Gomega) bool {
@@ -1011,16 +975,12 @@ provisioning:
 
 		It("should update provisioning config when autoProvisioning is enabled", func() {
 			By("updating the Jumpstarter CR to enable auto provisioning")
-			jumpstarter := &operatorv1alpha1.Jumpstarter{}
-			err := k8sClient.Get(ctx, types.NamespacedName{
+			updateJumpstarter(types.NamespacedName{
 				Name:      "jumpstarter",
 				Namespace: dynamicTestNamespace,
-			}, jumpstarter)
-			Expect(err).NotTo(HaveOccurred())
-
-			jumpstarter.Spec.Authentication.AutoProvisioning.Enabled = true
-			err = k8sClient.Update(ctx, jumpstarter)
-			Expect(err).NotTo(HaveOccurred())
+			}, func(jumpstarter *operatorv1alpha1.Jumpstarter) {
+				jumpstarter.Spec.Authentication.AutoProvisioning.Enabled = true
+			})
 
 			By("verifying the ConfigMap contains provisioning.enabled: true")
 			Eventually(func(g Gomega) {
@@ -1209,16 +1169,12 @@ spec:
 			Expect(err).NotTo(HaveOccurred(), "Failed to create new TLS secret")
 
 			// Update the Jumpstarter CR
-			jumpstarter := &operatorv1alpha1.Jumpstarter{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			updateJumpstarter(types.NamespacedName{
 				Name:      jumpstarterName,
 				Namespace: loginTLSTestNamespace,
-			}, jumpstarter)
-			Expect(err).NotTo(HaveOccurred())
-
-			jumpstarter.Spec.Controller.Login.TLS.SecretName = newSecretName
-			err = k8sClient.Update(ctx, jumpstarter)
-			Expect(err).NotTo(HaveOccurred())
+			}, func(jumpstarter *operatorv1alpha1.Jumpstarter) {
+				jumpstarter.Spec.Controller.Login.TLS.SecretName = newSecretName
+			})
 
 			By("verifying the login ingress TLS secret was updated")
 			Eventually(func(g Gomega) {
@@ -1858,16 +1814,12 @@ spec:
 			}, 1*time.Minute, 2*time.Second).Should(Succeed())
 
 			By("disabling cert-manager")
-			jumpstarter := &operatorv1alpha1.Jumpstarter{}
-			err := k8sClient.Get(ctx, types.NamespacedName{
+			updateJumpstarter(types.NamespacedName{
 				Name:      jumpstarterName,
 				Namespace: certManagerTestNamespace,
-			}, jumpstarter)
-			Expect(err).NotTo(HaveOccurred())
-
-			jumpstarter.Spec.CertManager.Enabled = false
-			err = k8sClient.Update(ctx, jumpstarter)
-			Expect(err).NotTo(HaveOccurred())
+			}, func(jumpstarter *operatorv1alpha1.Jumpstarter) {
+				jumpstarter.Spec.CertManager.Enabled = false
+			})
 
 			By("waiting for and verifying deployments are reconciled WITHOUT TLS configuration")
 			Eventually(func(g Gomega) {
@@ -1877,7 +1829,7 @@ spec:
 
 			By("verifying Certificate and Issuer resources still exist (not deleted)")
 			cert := &certmanagerv1.Certificate{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      controllerCertName,
 				Namespace: certManagerTestNamespace,
 			}, cert)
@@ -1899,15 +1851,12 @@ spec:
 			}
 
 			By("re-enabling cert-manager")
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			updateJumpstarter(types.NamespacedName{
 				Name:      jumpstarterName,
 				Namespace: certManagerTestNamespace,
-			}, jumpstarter)
-			Expect(err).NotTo(HaveOccurred())
-
-			jumpstarter.Spec.CertManager.Enabled = true
-			err = k8sClient.Update(ctx, jumpstarter)
-			Expect(err).NotTo(HaveOccurred())
+			}, func(jumpstarter *operatorv1alpha1.Jumpstarter) {
+				jumpstarter.Spec.CertManager.Enabled = true
+			})
 
 			By("verifying deployments are reconciled WITH TLS configuration again")
 			Eventually(func(g Gomega) {
