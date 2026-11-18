@@ -123,19 +123,21 @@ sum by (exporter, operation) (rate(jumpstarter_operations_total[15m])) > 0.2`,
 					),
 					alertRule(
 						"JumpstarterOperationErrors",
-						`sum by (error_type) (increase(jumpstarter_operation_errors_total[15m])) > 0`,
+						`sum by (exporter, error_type) (increase(jumpstarter_operation_errors_total[5m])) > 0`,
 						"15m",
 						"warning",
-						"Jumpstarter operation errors are rising",
-						"Exporter operations are reporting {{ $labels.error_type }} errors.",
+						"Jumpstarter operation errors are recurring",
+						"Exporter {{ $labels.exporter }} is reporting recurring {{ $labels.error_type }} errors.",
 					),
 					alertRule(
 						"JumpstarterExporterIdle",
-						`max by (exporter) (jumpstarter_active_sessions) == 0`,
+						`max by (exporter) (jumpstarter_active_sessions) == 0
+and
+max by (exporter) (increase(jumpstarter_operations_total[1h])) > 0`,
 						"30m",
 						"warning",
-						"Jumpstarter exporter has no active sessions",
-						"Exporter {{ $labels.exporter }} has had no active session for 30 minutes; check the exporter or its scheduling.",
+						"Jumpstarter exporter has no active sessions after recent activity",
+						"Exporter {{ $labels.exporter }} had operations in the last hour but no active session for 30 minutes; check the exporter or its scheduling.",
 					),
 					alertRule(
 						"JumpstarterLeaseAcquisitionFailureRate",

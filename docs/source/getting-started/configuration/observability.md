@@ -96,8 +96,8 @@ The starter set implements the JEP alert table:
 | --- | --- | --- |
 | `JumpstarterOperationFailureRate` | Operations | Failure rate above 20% over 15 minutes per exporter and operation |
 | `JumpstarterOperationDurationHigh` | Operations | p95 duration above 60 seconds per operation |
-| `JumpstarterOperationErrors` | Operations | Any increase in errors, grouped by `error_type` |
-| `JumpstarterExporterIdle` | Operations | No active session for 30 minutes |
+| `JumpstarterOperationErrors` | Operations | Recurring errors (5-minute window held for 15 minutes), grouped by exporter and `error_type` |
+| `JumpstarterExporterIdle` | Operations | No active session for 30 minutes after operations in the last hour |
 | `JumpstarterLeaseAcquisitionFailureRate` | Operations | Failure rate above 10% over 15 minutes |
 | `JumpstarterTelemetryDropped` | Telemetry | Any dropped log entry over 5 minutes |
 | `JumpstarterScrapeTimeouts` | Telemetry | More than three timeouts per exporter over 15 minutes |

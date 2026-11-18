@@ -20,9 +20,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/yaml"
 )
@@ -134,6 +136,57 @@ func TestDesiredPrometheusRules(t *testing.T) {
 	if alerts != 7 {
 		t.Errorf("alerts = %d, want 7", alerts)
 	}
+
+	assertAlertRule(t, rules, "JumpstarterOperationErrors", "warning", "15m",
+		"increase(jumpstarter_operation_errors_total[5m])")
+	assertAlertRule(t, rules, "JumpstarterOperationErrors", "warning", "15m",
+		"by (exporter, error_type)")
+	assertAlertRule(t, rules, "JumpstarterExporterIdle", "warning", "30m",
+		"increase(jumpstarter_operations_total[1h])")
+}
+
+// assertAlertRule finds an alert by name and asserts its severity, duration, and
+// expression fragment.
+func assertAlertRule(t *testing.T, rules *unstructured.Unstructured, name, severity, forDuration, exprFragment string) {
+	t.Helper()
+
+	spec, ok := rules.Object["spec"].(map[string]any)
+	if !ok {
+		t.Fatalf("spec is %T, want map[string]any", rules.Object["spec"])
+	}
+	groups, ok := spec["groups"].([]any)
+	if !ok {
+		t.Fatalf("groups is %T, want []any", spec["groups"])
+	}
+	for _, groupValue := range groups {
+		group, ok := groupValue.(map[string]any)
+		if !ok {
+			continue
+		}
+		ruleList, ok := group["rules"].([]any)
+		if !ok {
+			continue
+		}
+		for _, ruleValue := range ruleList {
+			rule, ok := ruleValue.(map[string]any)
+			if !ok || rule["alert"] != name {
+				continue
+			}
+			if rule["for"] != forDuration {
+				t.Errorf("%s for = %v, want %s", name, rule["for"], forDuration)
+			}
+			labels, ok := rule["labels"].(map[string]any)
+			if !ok || labels["severity"] != severity {
+				t.Errorf("%s severity = %v, want %s", name, labels["severity"], severity)
+			}
+			expr, ok := rule["expr"].(string)
+			if !ok || !strings.Contains(expr, exprFragment) {
+				t.Errorf("%s expression = %q, want fragment %q", name, expr, exprFragment)
+			}
+			return
+		}
+	}
+	t.Fatalf("alert %q not found", name)
 }
 
 func TestPrometheusRulesValidate(t *testing.T) {
