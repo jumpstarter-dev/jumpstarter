@@ -387,7 +387,7 @@ def test_zsh_history_defaults_do_not_leak_to_nested_shells(tmp_path, exported):
                 (
                     'print -r -- "$HISTSIZE:$SAVEHIST"; '
                     "zsh -ic 'print -r -- \"$HISTSIZE:$SAVEHIST\"'; "
-                    "printenv HISTSIZE SAVEHIST HISTFILE"
+                    "printenv HISTSIZE; printenv SAVEHIST; printenv HISTFILE"
                 ),
             ],
             env=env,
@@ -462,6 +462,21 @@ def _pty_read(fd, expected, timeout=3.0):
 def _pty_send(fd, data, expected, timeout=3.0):
     os.write(fd, data)
     return _pty_read(fd, expected, timeout)
+
+
+def _pty_wait_for_exit(fd, thread, timeout=10):
+    deadline = time.monotonic() + timeout
+    while thread.is_alive():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        if select.select([fd], [], [], min(0.05, remaining))[0]:
+            try:
+                if not os.read(fd, 65536):
+                    break
+            except OSError:
+                break
+    thread.join(timeout=max(0, deadline - time.monotonic()))
 
 
 def test_pty_read_returns_without_another_wait():
@@ -554,7 +569,7 @@ def test_launch_shell_zsh_history_and_reverse_search(tmp_path, monkeypatch, run_
             assert "BASH_SESSION_WRITTEN" in (home / ".bash_history").read_text()
             _pty_send(master_fd, b"echo SESSION_WRITTEN\n", prompt)
         os.write(master_fd, b"exit\n")
-        thread.join(timeout=10)
+        _pty_wait_for_exit(master_fd, thread)
         assert not thread.is_alive(), "shell did not exit"
         assert result["rc"] == 0
 
@@ -569,9 +584,8 @@ def test_launch_shell_zsh_history_and_reverse_search(tmp_path, monkeypatch, run_
         proc = spawned.get("proc")
         if proc is not None and proc.poll() is None:
             proc.kill()
-            proc.wait()
         if thread.is_alive():
-            thread.join(timeout=5)
+            _pty_wait_for_exit(master_fd, thread, timeout=5)
         slave.close()
         os.close(master_fd)
 
@@ -639,7 +653,7 @@ def test_launch_shell_bash_does_not_truncate_history(tmp_path, monkeypatch, smal
         for _ in range(5):
             _pty_send(master_fd, b"echo SESSION_WRITTEN\n", prompt)
         os.write(master_fd, b"exit\n")
-        thread.join(timeout=10)
+        _pty_wait_for_exit(master_fd, thread)
         assert not thread.is_alive(), "shell did not exit"
         assert result["rc"] == 0
 
@@ -652,9 +666,8 @@ def test_launch_shell_bash_does_not_truncate_history(tmp_path, monkeypatch, smal
         proc = spawned.get("proc")
         if proc is not None and proc.poll() is None:
             proc.kill()
-            proc.wait()
         if thread.is_alive():
-            thread.join(timeout=5)
+            _pty_wait_for_exit(master_fd, thread, timeout=5)
         slave.close()
         os.close(master_fd)
 
