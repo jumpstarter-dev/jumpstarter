@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -15,6 +16,10 @@ from jumpstarter.driver import Driver, export
 # Where the exporter image installs the aarch64 fls build served to the DUT
 # (see python/Containerfile), in order of preference.
 FLS_BINARY_PATHS = (Path("/usr/local/bin/fls-aarch64"), Path("/usr/local/bin/fls"))
+
+# Written into a cached bundle directory after a complete pull: the OCI manifest
+# the files came from, which lists the digest of every one of them.
+PULLED_MANIFEST = ".oci-manifest.json"
 
 
 @dataclass(kw_only=True)
@@ -81,7 +86,7 @@ class BaseFlasher(Driver):
                 }
             )
 
-        # bundles that have already been downloaded in the current session
+        # bundles already checked against the registry in the current session
         self._downloaded = {}
 
     @classmethod
@@ -192,27 +197,34 @@ class BaseFlasher(Driver):
     def _download_to_cache(self) -> str:
         """Download the bundle to the cache
 
-        This function downloads the bundle contents to the cache directory,
-        if it was already downloaded during this session we don't download it again.
+        The cache outlives the session: the bundle is pulled again only when the
+        registry serves a different manifest for it than the one last pulled,
+        e.g. after its tag moved. Within a session the registry is asked once.
         """
         if self._downloaded.get(self.flasher_bundle):
             self.logger.debug(f"Bundled already downloaded: {self.flasher_bundle}")
             return self._downloaded[self.flasher_bundle]
 
         oras_client = Registry()
-        self.logger.info(f"Downloading bundle: {self.flasher_bundle}")
 
         # make a filesystem valid name for the cache directory
         bundle_subdir = self.flasher_bundle.replace(":", "_").replace("/", "_")
         bundle_dir = Path(self.cache_dir) / bundle_subdir
 
-        # ensure the bundle dir exists
-        bundle_dir.mkdir(parents=True, exist_ok=True)
-        oras_client.pull(self.flasher_bundle, outdir=str(bundle_dir))
+        manifest = json.dumps(oras_client.get_manifest(self.flasher_bundle), sort_keys=True)
+        pulled_manifest = bundle_dir / PULLED_MANIFEST
+        if pulled_manifest.exists() and pulled_manifest.read_text() == manifest:
+            self.logger.info(f"Bundle {self.flasher_bundle} unchanged, using cached copy in {bundle_dir}")
+        else:
+            self.logger.info(f"Downloading bundle: {self.flasher_bundle}")
+            bundle_dir.mkdir(parents=True, exist_ok=True)
+            # a pull that fails halfway must not leave the old manifest vouching for the files
+            pulled_manifest.unlink(missing_ok=True)
+            oras_client.pull(self.flasher_bundle, outdir=str(bundle_dir))
+            pulled_manifest.write_text(manifest)
+            self.logger.info(f"Bundle downloaded to {bundle_dir}")
 
-        self.logger.info(f"Bundle downloaded to {bundle_dir}")
-
-        # mark this bundle as downloaded for the current object lifetime
+        # mark this bundle as checked for the current object lifetime
         self._downloaded[self.flasher_bundle] = str(bundle_dir)
         return str(bundle_dir)
 

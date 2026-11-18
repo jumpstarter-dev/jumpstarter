@@ -6,6 +6,7 @@ from jumpstarter_driver_composite.driver import Composite, Proxy
 from jumpstarter_driver_power.driver import MockPower
 from jumpstarter_driver_pyserial.driver import PySerial
 from jumpstarter_driver_tftp.driver import Tftp
+from oras.provider import Registry
 
 from .driver import BaseFlasher
 from jumpstarter.client.core import DriverError, DriverInvalidArgument
@@ -94,6 +95,50 @@ def test_drivers_flashers_setup_flasher_bundle(complete_flasher):
         assert client.tftp.storage.read_bytes(kernel) == b"\x00" * 1024
         assert client.tftp.storage.read_bytes(initram) == b"\x00" * 1024 * 2
         assert client.tftp.storage.read_bytes(dtb) == b"\x00" * 1024 * 3
+
+
+def test_drivers_flashers_bundle_cache_outlives_session(tmp_path, monkeypatch):
+    """A new session reuses the cached bundle until the registry serves a different manifest for it"""
+    downloads = []
+    download_blob = Registry.download_blob
+
+    def counting_download_blob(self, container, digest, outfile):
+        downloads.append(digest)
+        return download_blob(self, container, digest, outfile)
+
+    monkeypatch.setattr(Registry, "download_blob", counting_download_blob)
+
+    def session():
+        flasher = BaseFlasher(
+            flasher_bundle="quay.io/jumpstarter-dev/jumpstarter-flasher-test:new",
+            cache_dir=str(tmp_path / "cache"),
+            http_dir=str(tmp_path / "http"),
+            tftp_dir=str(tmp_path / "tftp"),
+            children={"serial": PySerial(url="loop://"), "power": MockPower()},
+        )
+        with serve(flasher) as client:
+            client.call("setup_flasher_bundle")
+            assert client.tftp.storage.read_bytes(client.call("get_kernel_filename")) == b"\x00" * 1024
+
+    session()
+    pulled = len(downloads)
+    assert pulled > 0
+
+    session()
+    assert len(downloads) == pulled
+
+    # the tag moves to a different manifest
+    get_manifest = Registry.get_manifest
+    monkeypatch.setattr(
+        Registry,
+        "get_manifest",
+        lambda self, container, *args, **kwargs: {
+            **get_manifest(self, container, *args, **kwargs),
+            "annotations": {"moved": "true"},
+        },
+    )
+    session()
+    assert len(downloads) == 2 * pulled
 
 
 def test_drivers_flashers_manifest(complete_flasher):
