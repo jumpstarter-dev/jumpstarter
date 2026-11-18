@@ -126,7 +126,7 @@ func TestServiceMonitorCRDAbsent(t *testing.T) {
 				t.Fatalf("status update %d must succeed: %v", i+1, err)
 			}
 
-			requeueAfter := r.observabilityRequeueAfter(ctx, js, nil, serviceMonitor)
+			requeueAfter := r.observabilityRequeueAfter(ctx, js, serviceMonitor)
 			if requeueAfter != wantRequeue {
 				t.Fatalf("requeue %d = %s, want %s", i+1, requeueAfter, wantRequeue)
 			}
