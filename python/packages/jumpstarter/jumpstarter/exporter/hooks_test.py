@@ -362,7 +362,7 @@ class TestHookExecutor:
             assert "timed out" in result.lower()
             # Verify WARNING log was created
             warning_calls = [str(call) for call in mock_logger.warning.call_args_list]
-            assert any("on_failure=warn, continuing" in call for call in warning_calls)
+            assert any("action=warning, continuing" in call for call in warning_calls)
 
     async def test_failed_hook_with_warn_returns_warning(self, lease_scope) -> None:
         """Test that hook with exit 1 and on_failure='warn' returns a warning string."""
@@ -1216,7 +1216,10 @@ class TestHookExecutor:
 class TestHookExecutorPRRegressions:
     """Regression tests for issues reported during PR review of hooks feature."""
 
-    @pytest.mark.parametrize("on_failure", ["warn", "endLease", "exit"])
+    @pytest.mark.parametrize(
+        "on_failure",
+        ["warn", "warning", "endLease", "exit", "fail", "userError", "adminNotification"],
+    )
     @pytest.mark.parametrize("outcome", ["success", "failure", "unexpected", "cancelled", "no_hook", "not_ready"])
     async def test_after_hook_releases_only_on_configured_endlease_failure(
         self, lease_scope, on_failure, outcome,
@@ -1234,7 +1237,7 @@ class TestHookExecutorPRRegressions:
         error = None
         warning = None
         if outcome == "failure":
-            if on_failure == "warn":
+            if on_failure in ("warn", "warning"):
                 warning = "hook failed"
             else:
                 error = HookExecutionError("hook failed", on_failure, "after_lease")
@@ -1791,6 +1794,89 @@ class TestBeforeLeaseHookLeaseEndedGuard:
             "skip_after_lease_hook must be set when beforeLease hook is skipped (warn)"
         )
 
+    async def test_run_before_lease_hook_fail_action_stays_alive(self, lease_scope) -> None:
+        """Test that beforeLease hook with on_failure='fail' blocks lease and stays alive."""
+        hook_config = HookConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure="fail"),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        await executor.run_before_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+        )
+
+        assert lease_scope.skip_after_lease_hook is True
+        assert lease_scope.before_lease_hook.is_set()
+        mock_shutdown.assert_not_called()
+
+        failed_statuses = [s for s, _ in status_calls if s == ExporterStatus.BEFORE_LEASE_HOOK_FAILED]
+        assert len(failed_statuses) > 0
+        offline_statuses = [s for s, _ in status_calls if s == ExporterStatus.OFFLINE]
+        assert len(offline_statuses) == 0
+
+    async def test_run_before_lease_hook_user_error_action(self, lease_scope) -> None:
+        """Test that exit code 2 triggers 'userError' via built-in defaults."""
+        hook_config = HookConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(script="exit 2", timeout=10, onFailure="fail"),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        await executor.run_before_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+        )
+
+        assert lease_scope.skip_after_lease_hook is True
+        mock_shutdown.assert_not_called()
+
+        failed_msgs = [m for s, m in status_calls if s == ExporterStatus.BEFORE_LEASE_HOOK_FAILED]
+        assert len(failed_msgs) > 0
+        assert any("user error" in m for m in failed_msgs)
+
+    async def test_run_before_lease_hook_admin_notification_action(self, lease_scope) -> None:
+        """Test that exit code 3 triggers 'adminNotification' via built-in defaults."""
+        hook_config = HookConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1(script="exit 3", timeout=10, onFailure="fail"),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        await executor.run_before_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+        )
+
+        assert lease_scope.skip_after_lease_hook is True
+        mock_shutdown.assert_not_called()
+
+        failed_msgs = [m for s, m in status_calls if s == ExporterStatus.BEFORE_LEASE_HOOK_FAILED]
+        assert len(failed_msgs) > 0
+        assert any("admin action required" in m for m in failed_msgs)
+
     async def test_wait_for_lease_ready_times_out_when_session_never_populated(self) -> None:
         """When is_ready() never becomes True and lease_ended is never set,
         _wait_for_lease_ready must time out, report BEFORE_LEASE_HOOK_FAILED,
@@ -1874,3 +1960,666 @@ class TestBeforeLeaseHookLeaseEndedGuard:
         assert lease_scope.before_lease_hook.is_set(), (
             "before_lease_hook event must be set to unblock downstream waiters"
         )
+
+
+class TestResolveAction:
+    """Tests for exit-code-based action resolution."""
+
+    def test_default_action_when_no_exit_actions(self) -> None:
+        config = HookInstanceConfigV1Alpha1(script="echo", onFailure="fail")
+        # exit 1 with onFailure=fail → built-in default maps 1 → "fail"
+        assert HookExecutor._resolve_action(1, config) == "fail"
+
+    def test_exit_actions_override_default(self) -> None:
+        config = HookInstanceConfigV1Alpha1.model_validate({
+            "script": "echo",
+            "onFailure": "fail",
+            "exitActions": {5: "userError", 10: "adminNotification"},
+        })
+        assert HookExecutor._resolve_action(5, config) == "userError"
+        assert HookExecutor._resolve_action(10, config) == "adminNotification"
+        # exit 1 with onFailure=fail → built-in default "fail"
+        assert HookExecutor._resolve_action(1, config) == "fail"
+
+    def test_none_returncode_uses_default(self) -> None:
+        config = HookInstanceConfigV1Alpha1.model_validate({
+            "script": "echo",
+            "onFailure": "exit",
+            "exitActions": {1: "warning"},
+        })
+        assert HookExecutor._resolve_action(None, config) == "exit"
+
+    def test_exit_code_zero_uses_default_not_mapped(self) -> None:
+        """Exit code 0 should never be looked up (it means success),
+        but if someone maps it, _resolve_action returns it. The caller
+        never calls _resolve_action for exit code 0."""
+        config = HookInstanceConfigV1Alpha1.model_validate({
+            "script": "echo",
+            "onFailure": "fail",
+            "exitActions": {0: "warning"},
+        })
+        # Defensive: if called with 0, it matches the explicit map
+        assert HookExecutor._resolve_action(0, config) == "warning"
+
+    def test_builtin_defaults_active_for_new_style_on_failure(self) -> None:
+        """Built-in exit-code defaults (1=fail, 2=userError, 3=adminNotification)
+        are active when onFailure is a new-style action."""
+        config = HookInstanceConfigV1Alpha1(script="echo", onFailure="fail")
+        assert HookExecutor._resolve_action(1, config) == "fail"
+        assert HookExecutor._resolve_action(2, config) == "userError"
+        assert HookExecutor._resolve_action(3, config) == "adminNotification"
+        # Unmapped code falls back to onFailure
+        assert HookExecutor._resolve_action(99, config) == "fail"
+
+    def test_builtin_defaults_inactive_for_legacy_on_failure(self) -> None:
+        """Built-in defaults must NOT override legacy onFailure values
+        to preserve backward compatibility."""
+        for legacy in ("warn", "endLease", "exit"):
+            config = HookInstanceConfigV1Alpha1(script="echo", onFailure=legacy)
+            # All exit codes should use the legacy onFailure, not the built-in map
+            assert HookExecutor._resolve_action(1, config) == legacy
+            assert HookExecutor._resolve_action(2, config) == legacy
+            assert HookExecutor._resolve_action(3, config) == legacy
+
+    def test_explicit_exit_actions_override_builtin_defaults(self) -> None:
+        """Explicit exitActions always take priority over built-in defaults."""
+        config = HookInstanceConfigV1Alpha1.model_validate({
+            "script": "echo",
+            "onFailure": "fail",
+            "exitActions": {1: "exit", 2: "warning"},
+        })
+        assert HookExecutor._resolve_action(1, config) == "exit"       # explicit overrides default
+        assert HookExecutor._resolve_action(2, config) == "warning"    # explicit overrides default
+        assert HookExecutor._resolve_action(3, config) == "adminNotification"  # built-in default
+
+
+class TestExitCodeBasedActions:
+    """Tests for hooks that resolve actions from exit codes."""
+
+    async def test_exit_code_maps_to_warning(self, lease_scope) -> None:
+        """Exit code 3 mapped to 'warning' should continue to LEASE_READY."""
+        hook_config = HookConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1.model_validate({
+                "script": "exit 3",
+                "timeout": 10,
+                "onFailure": "fail",
+                "exitActions": {3: "warning"},
+            }),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        await executor.run_before_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+        )
+
+        # Should proceed to LEASE_READY with a warning
+        ready_calls = [s for s, _ in status_calls if s == ExporterStatus.LEASE_READY]
+        assert len(ready_calls) == 1
+        mock_shutdown.assert_not_called()
+
+    async def test_exit_code_maps_to_user_error(self, lease_scope) -> None:
+        """Exit code 5 mapped to 'userError' should block lease with user error message."""
+        hook_config = HookConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1.model_validate({
+                "script": "exit 5",
+                "timeout": 10,
+                "onFailure": "fail",
+                "exitActions": {5: "userError"},
+            }),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        await executor.run_before_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+        )
+
+        failed_msgs = [m for s, m in status_calls if s == ExporterStatus.BEFORE_LEASE_HOOK_FAILED]
+        assert len(failed_msgs) > 0
+        assert any("user error" in m for m in failed_msgs)
+        mock_shutdown.assert_not_called()
+
+    async def test_exit_code_maps_to_exit(self, lease_scope) -> None:
+        """Exit code 42 mapped to 'exit' should shut down the exporter."""
+        hook_config = HookConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1.model_validate({
+                "script": "exit 42",
+                "timeout": 10,
+                "onFailure": "fail",
+                "exitActions": {42: "exit"},
+            }),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        mock_report_status = AsyncMock()
+        mock_shutdown = MagicMock()
+
+        await executor.run_before_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+        )
+
+        mock_shutdown.assert_called_once_with(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
+
+    async def test_unmapped_exit_code_uses_default(self, lease_scope) -> None:
+        """An exit code not in exitActions falls back to onFailure default."""
+        hook_config = HookConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1.model_validate({
+                "script": "exit 99",
+                "timeout": 10,
+                "onFailure": "fail",
+                "exitActions": {5: "userError"},
+            }),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        await executor.run_before_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+        )
+
+        # Default is 'fail' — should block lease, stay alive
+        failed_msgs = [m for s, m in status_calls if s == ExporterStatus.BEFORE_LEASE_HOOK_FAILED]
+        assert len(failed_msgs) > 0
+        mock_shutdown.assert_not_called()
+
+
+class TestHookRetries:
+    """Tests for the retry logic when action is 'fail'."""
+
+    async def test_retry_succeeds_on_second_attempt(self, lease_scope) -> None:
+        """Hook fails once then succeeds — should reach LEASE_READY."""
+        call_count = 0
+
+        async def mock_execute(self, hook_config, ls, log_source):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise HookExecutionError("transient failure", "fail", "before_lease")
+
+        hook_config = HookConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1.model_validate({
+                "script": "echo check",
+                "timeout": 10,
+                "onFailure": "fail",
+                "retries": 2,
+                "retryDelay": 0,
+            }),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        with patch.object(HookExecutor, "_execute_hook", mock_execute):
+            await executor.run_before_lease_hook(
+                lease_scope,
+                mock_report_status,
+                mock_shutdown,
+            )
+
+        assert call_count == 2
+        ready_calls = [s for s, _ in status_calls if s == ExporterStatus.LEASE_READY]
+        assert len(ready_calls) == 1
+        mock_shutdown.assert_not_called()
+
+    async def test_retry_exhausted_reports_failure(self, lease_scope) -> None:
+        """All retries fail — should report BEFORE_LEASE_HOOK_FAILED with attempt count."""
+        async def always_fail(self, hook_config, ls, log_source):
+            raise HookExecutionError("persistent failure", "fail", "before_lease")
+
+        hook_config = HookConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1.model_validate({
+                "script": "exit 1",
+                "timeout": 10,
+                "onFailure": "fail",
+                "retries": 2,
+                "retryDelay": 0,
+            }),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        with patch.object(HookExecutor, "_execute_hook", always_fail):
+            await executor.run_before_lease_hook(
+                lease_scope,
+                mock_report_status,
+                mock_shutdown,
+            )
+
+        failed_msgs = [m for s, m in status_calls if s == ExporterStatus.BEFORE_LEASE_HOOK_FAILED]
+        assert len(failed_msgs) > 0
+        assert any("after 3 attempts" in m for m in failed_msgs)
+        mock_shutdown.assert_not_called()
+
+    async def test_non_fail_action_not_retried(self, lease_scope) -> None:
+        """A 'userError' action should NOT be retried even with retries > 0."""
+        call_count = 0
+
+        async def user_error(self, hook_config, ls, log_source):
+            nonlocal call_count
+            call_count += 1
+            raise HookExecutionError("bad input", "userError", "before_lease")
+
+        hook_config = HookConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1.model_validate({
+                "script": "exit 1",
+                "timeout": 10,
+                "onFailure": "userError",
+                "retries": 5,
+                "retryDelay": 0,
+            }),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        mock_report_status = AsyncMock()
+        mock_shutdown = MagicMock()
+
+        with patch.object(HookExecutor, "_execute_hook", user_error):
+            await executor.run_before_lease_hook(
+                lease_scope,
+                mock_report_status,
+                mock_shutdown,
+            )
+
+        assert call_count == 1  # executed only once, not retried
+
+    async def test_retry_aborts_when_lease_ends(self, lease_scope) -> None:
+        """Retry loop should abort if lease_ended is set during retry delay."""
+        call_count = 0
+
+        async def fail_and_end_lease(self, hook_config, ls, log_source):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Simulate lease ending during the first attempt
+                ls.lease_ended.set()
+            raise HookExecutionError("failure", "fail", "before_lease")
+
+        hook_config = HookConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1.model_validate({
+                "script": "exit 1",
+                "timeout": 10,
+                "onFailure": "fail",
+                "retries": 5,
+                "retryDelay": 0,
+            }),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        with patch.object(HookExecutor, "_execute_hook", fail_and_end_lease):
+            await executor.run_before_lease_hook(
+                lease_scope,
+                mock_report_status,
+                mock_shutdown,
+            )
+
+        # Should have aborted after 1 attempt because lease ended
+        assert call_count == 1
+        assert lease_scope.skip_after_lease_hook is True
+
+    async def test_exit_code_changes_action_mid_retry(self, lease_scope) -> None:
+        """First attempt returns 'fail' (retried), second returns 'userError' (not retried)."""
+        call_count = 0
+
+        async def changing_action(self, hook_config, ls, log_source):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise HookExecutionError("transient", "fail", "before_lease")
+            raise HookExecutionError("user issue", "userError", "before_lease")
+
+        hook_config = HookConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1.model_validate({
+                "script": "exit 1",
+                "timeout": 10,
+                "onFailure": "fail",
+                "retries": 5,
+                "retryDelay": 0,
+            }),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        with patch.object(HookExecutor, "_execute_hook", changing_action):
+            await executor.run_before_lease_hook(
+                lease_scope,
+                mock_report_status,
+                mock_shutdown,
+            )
+
+        # 2 calls: first retried (fail), second not retried (userError)
+        assert call_count == 2
+        failed_msgs = [m for s, m in status_calls if s == ExporterStatus.BEFORE_LEASE_HOOK_FAILED]
+        assert any("user error" in m for m in failed_msgs)
+
+    @pytest.mark.parametrize("on_failure", ["fail", "userError", "adminNotification"])
+    async def test_after_hook_new_actions_dont_shutdown(self, lease_scope, on_failure) -> None:
+        """afterLease hook with fail/userError/adminNotification should NOT shut down."""
+        hook_config = HookConfigV1Alpha1(
+            afterLease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, onFailure=on_failure),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+        mock_release = AsyncMock()
+
+        await executor.run_after_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+            mock_release,
+        )
+
+        mock_shutdown.assert_not_called()
+        mock_release.assert_not_called()
+
+        failed_statuses = [s for s, _ in status_calls if s == ExporterStatus.AFTER_LEASE_HOOK_FAILED]
+        assert len(failed_statuses) > 0
+
+
+class TestHookExecutionErrorMethods:
+    """Tests for the new HookExecutionError helper methods."""
+
+    def test_should_retry(self) -> None:
+        e = HookExecutionError("msg", "fail", "before_lease")
+        assert e.should_retry() is True
+        assert e.should_shutdown_exporter() is False
+        assert e.should_end_lease() is False
+
+    def test_is_user_error(self) -> None:
+        e = HookExecutionError("msg", "userError", "before_lease")
+        assert e.is_user_error() is True
+        assert e.should_retry() is False
+
+    def test_is_admin_notification(self) -> None:
+        e = HookExecutionError("msg", "adminNotification", "before_lease")
+        assert e.is_admin_notification() is True
+        assert e.should_retry() is False
+
+    def test_exit_does_not_retry(self) -> None:
+        e = HookExecutionError("msg", "exit", "before_lease")
+        assert e.should_shutdown_exporter() is True
+        assert e.should_retry() is False
+
+
+class TestWarningAliasBeforeLease:
+    """The 'warning' alias should behave identically to 'warn' in run_before_lease_hook."""
+
+    async def test_warning_alias_reaches_lease_ready(self, lease_scope) -> None:
+        """beforeLease hook with onFailure='warning' that fails should still reach LEASE_READY."""
+        async def mock_execute(self, hook_config, ls, log_source):
+            return "something went wrong"
+
+        hook_config = HookConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1.model_validate({
+                "script": "echo check",
+                "timeout": 10,
+                "onFailure": "warning",
+            }),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        with patch.object(HookExecutor, "_execute_hook", mock_execute):
+            await executor.run_before_lease_hook(
+                lease_scope,
+                mock_report_status,
+                mock_shutdown,
+            )
+
+        ready_calls = [(s, m) for s, m in status_calls if s == ExporterStatus.LEASE_READY]
+        assert len(ready_calls) == 1
+        assert HOOK_WARNING_PREFIX in ready_calls[0][1]
+        mock_shutdown.assert_not_called()
+
+
+class TestTimeoutWithRetries:
+    """Timeout failures should be retried when onFailure is 'fail' and retries > 0."""
+
+    async def test_timeout_triggers_retry(self, lease_scope) -> None:
+        """A timeout (returncode=None) with onFailure=fail should be retried."""
+        call_count = 0
+
+        async def timeout_then_succeed(self, hook_config, ls, log_source):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise HookExecutionError("Hook timed out after 10 seconds", "fail", "before_lease")
+
+        hook_config = HookConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1.model_validate({
+                "script": "sleep 999",
+                "timeout": 10,
+                "onFailure": "fail",
+                "retries": 2,
+                "retryDelay": 0,
+            }),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        with patch.object(HookExecutor, "_execute_hook", timeout_then_succeed):
+            await executor.run_before_lease_hook(
+                lease_scope,
+                mock_report_status,
+                mock_shutdown,
+            )
+
+        assert call_count == 2
+        ready_calls = [s for s, _ in status_calls if s == ExporterStatus.LEASE_READY]
+        assert len(ready_calls) == 1
+        mock_shutdown.assert_not_called()
+
+    async def test_timeout_exhausts_retries(self, lease_scope) -> None:
+        """A timeout that persists should exhaust retries and report failure."""
+        async def always_timeout(self, hook_config, ls, log_source):
+            raise HookExecutionError("Hook timed out", "fail", "before_lease")
+
+        hook_config = HookConfigV1Alpha1(
+            beforeLease=HookInstanceConfigV1Alpha1.model_validate({
+                "script": "sleep 999",
+                "timeout": 10,
+                "onFailure": "fail",
+                "retries": 1,
+                "retryDelay": 0,
+            }),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        with patch.object(HookExecutor, "_execute_hook", always_timeout):
+            await executor.run_before_lease_hook(
+                lease_scope,
+                mock_report_status,
+                mock_shutdown,
+            )
+
+        failed_msgs = [m for s, m in status_calls if s == ExporterStatus.BEFORE_LEASE_HOOK_FAILED]
+        assert len(failed_msgs) > 0
+        assert any("after 2 attempts" in m for m in failed_msgs)
+        mock_shutdown.assert_not_called()
+
+
+class TestAfterLeaseRetries:
+    """Retry logic for run_after_lease_hook (mirrors beforeLease retry tests)."""
+
+    async def test_retry_succeeds_on_second_attempt(self, lease_scope) -> None:
+        """afterLease hook fails once then succeeds — should reach AVAILABLE."""
+        call_count = 0
+
+        async def mock_execute(self, hook_config, ls, log_source):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise HookExecutionError("transient failure", "fail", "after_lease")
+
+        hook_config = HookConfigV1Alpha1(
+            afterLease=HookInstanceConfigV1Alpha1.model_validate({
+                "script": "echo cleanup",
+                "timeout": 10,
+                "onFailure": "fail",
+                "retries": 2,
+                "retryDelay": 0,
+            }),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        with patch.object(HookExecutor, "_execute_hook", mock_execute):
+            await executor.run_after_lease_hook(
+                lease_scope,
+                mock_report_status,
+                mock_shutdown,
+            )
+
+        assert call_count == 2
+        available_calls = [s for s, _ in status_calls if s == ExporterStatus.AVAILABLE]
+        assert len(available_calls) == 1
+        mock_shutdown.assert_not_called()
+
+    async def test_retry_exhausted_reports_failure(self, lease_scope) -> None:
+        """All afterLease retries fail — should report AFTER_LEASE_HOOK_FAILED with attempt count."""
+        async def always_fail(self, hook_config, ls, log_source):
+            raise HookExecutionError("persistent failure", "fail", "after_lease")
+
+        hook_config = HookConfigV1Alpha1(
+            afterLease=HookInstanceConfigV1Alpha1.model_validate({
+                "script": "exit 1",
+                "timeout": 10,
+                "onFailure": "fail",
+                "retries": 2,
+                "retryDelay": 0,
+            }),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        with patch.object(HookExecutor, "_execute_hook", always_fail):
+            await executor.run_after_lease_hook(
+                lease_scope,
+                mock_report_status,
+                mock_shutdown,
+            )
+
+        failed_msgs = [m for s, m in status_calls if s == ExporterStatus.AFTER_LEASE_HOOK_FAILED]
+        assert len(failed_msgs) > 0
+        assert any("after 3 attempts" in m for m in failed_msgs)
+        mock_shutdown.assert_not_called()
+
+    async def test_non_fail_action_not_retried(self, lease_scope) -> None:
+        """An 'adminNotification' action in afterLease should NOT be retried."""
+        call_count = 0
+
+        async def admin_notify(self, hook_config, ls, log_source):
+            nonlocal call_count
+            call_count += 1
+            raise HookExecutionError("hw failure", "adminNotification", "after_lease")
+
+        hook_config = HookConfigV1Alpha1(
+            afterLease=HookInstanceConfigV1Alpha1.model_validate({
+                "script": "exit 3",
+                "timeout": 10,
+                "onFailure": "adminNotification",
+                "retries": 5,
+                "retryDelay": 0,
+            }),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        mock_report_status = AsyncMock()
+        mock_shutdown = MagicMock()
+
+        with patch.object(HookExecutor, "_execute_hook", admin_notify):
+            await executor.run_after_lease_hook(
+                lease_scope,
+                mock_report_status,
+                mock_shutdown,
+            )
+
+        assert call_count == 1
+        mock_shutdown.assert_not_called()
