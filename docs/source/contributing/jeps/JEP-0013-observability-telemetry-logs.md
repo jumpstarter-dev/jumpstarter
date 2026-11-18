@@ -40,7 +40,7 @@ and compatibility rules.
 | 2     | Metrics endpoints                  | `/metrics` scrape endpoints on Controller and Router; exporter-local `prometheus_client` counters/histograms/gauges with `driver_type`; Prometheus exemplars for high-cardinality context. |
 | 3     | Telemetry service                  | Optional `jumpstarter-telemetry` Deployment managed by the operator; reverse-scrape of exporter metrics via `MetricsStream`; Loki push for edge-originated logs and events. |
 | 4     | Exporter drivers telemetry         | Provides a clean architecture to let drivers generate their own telemetry data. |
-| 5     | In-cluster log scraping            | Operator configures log shipper integration (Promtail, Grafana Alloy, Vector) for Controller/Router pod logs; `ServiceMonitor` CRDs for Prometheus autodiscovery. |
+| 5     | In-cluster log scraping            | Operator labels Controller/Router pods for log collection and emits structured JSON to stdout; documented Promtail, Grafana Alloy, and Vector examples deliver those logs; `ServiceMonitor` CRDs for Prometheus autodiscovery. |
 | 6     | Dashboards + alerting              | Perses CRD dashboards; starter alert rules; documentation and operator integration. |
 
 Each phase is independently useful and builds on the previous ones.
@@ -1757,7 +1757,7 @@ all subsequent phases have E2E coverage from the start.
   forwarded unchanged: 2026-11-04
 - Routed Controller/Router klog output and Gin request/recovery logs through
   the structured JSON logger, including release mode and structured recovery;
-  the shipper fallback remains for unexpected third-party text: 2026-11-04
+  non-JSON third-party text is forwarded unchanged by the shipper: 2026-11-04
 - Operator E2E result on this branch: 64 passed, 0 failed, 1 skipped, with the
   gated shipper delivery and Prometheus target-health tests passing
   separately. The monorepo CLI E2E suite was not rerun: 2026-11-04
