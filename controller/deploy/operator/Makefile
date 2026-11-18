@@ -143,6 +143,10 @@ vet: ## Run go vet against code.
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
+.PHONY: test-phase6-rules
+test-phase6-rules: ## Validate the generated starter PrometheusRule with promtool (skips if promtool is absent).
+	go test ./internal/controller/jumpstarter -run TestPrometheusRulesValidate -count=1 -v
+
 
 .PHONY: test-e2e
 test-e2e: manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.

@@ -2447,6 +2447,22 @@ spec:
                           type: string
                         maxItems: 16
                         type: array
+                      prometheusRules:
+                        default: false
+                        description: |-
+                          PrometheusRules controls creation of starter PrometheusRule resources.
+                          Requires the monitoring.coreos.com/v1 PrometheusRule CRD; when the CRD is
+                          absent the rules are skipped and PrometheusRulesReady reports CRDNotFound.
+                        type: boolean
+                      ruleLabels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Additional labels to add to generated PrometheusRules. Use this to match
+                          the Prometheus Operator's ruleSelector (for example,
+                          release: kube-prometheus-stack).
+                        maxProperties: 16
+                        type: object
                       scrapeTimeout:
                         default: 7s
                         description: |-

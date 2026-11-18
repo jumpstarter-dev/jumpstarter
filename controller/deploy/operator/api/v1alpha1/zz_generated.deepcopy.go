@@ -1042,6 +1042,18 @@ func (in *TelemetryMetricsConfig) DeepCopyInto(out *TelemetryMetricsConfig) {
 			(*out)[key] = val
 		}
 	}
+	if in.PrometheusRules != nil {
+		in, out := &in.PrometheusRules, &out.PrometheusRules
+		*out = new(bool)
+		**out = **in
+	}
+	if in.RuleLabels != nil {
+		in, out := &in.RuleLabels, &out.RuleLabels
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	if in.ExemplarKeys != nil {
 		in, out := &in.ExemplarKeys, &out.ExemplarKeys
 		*out = make([]string, len(*in))

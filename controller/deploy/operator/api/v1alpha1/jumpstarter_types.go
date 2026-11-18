@@ -54,6 +54,11 @@ const (
 	// Informational only: it does not affect the aggregate Ready condition.
 	ConditionTypeServiceMonitorReady = "ServiceMonitorReady"
 
+	// ConditionTypePrometheusRulesReady indicates whether starter PrometheusRule
+	// resources are created. Reasons: Created, Disabled, CRDNotFound, Failed.
+	// Informational only: it does not affect the aggregate Ready condition.
+	ConditionTypePrometheusRulesReady = "PrometheusRulesReady"
+
 	// ConditionTypeReady indicates whether the overall Jumpstarter system is ready
 	ConditionTypeReady = "Ready"
 )
@@ -407,6 +412,18 @@ type TelemetryMetricsConfig struct {
 	// release: kube-prometheus-stack).
 	// +kubebuilder:validation:MaxProperties=16
 	ServiceMonitorLabels map[string]string `json:"serviceMonitorLabels,omitempty"`
+
+	// PrometheusRules controls creation of starter PrometheusRule resources.
+	// Requires the monitoring.coreos.com/v1 PrometheusRule CRD; when the CRD is
+	// absent the rules are skipped and PrometheusRulesReady reports CRDNotFound.
+	// +kubebuilder:default=false
+	PrometheusRules *bool `json:"prometheusRules,omitempty"`
+
+	// Additional labels to add to generated PrometheusRules. Use this to match
+	// the Prometheus Operator's ruleSelector (for example,
+	// release: kube-prometheus-stack).
+	// +kubebuilder:validation:MaxProperties=16
+	RuleLabels map[string]string `json:"ruleLabels,omitempty"`
 
 	// Allowlist of keys to include in Prometheus exemplars. Unlisted keys are omitted.
 	// At most 16 keys. Each key is at most 32 characters, the same limit as

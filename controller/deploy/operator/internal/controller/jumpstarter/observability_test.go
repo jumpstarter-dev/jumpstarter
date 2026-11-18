@@ -118,7 +118,7 @@ func TestReconcileObservabilityDoesNotDeleteServiceMonitorsOnDetectionError(t *t
 	if !strings.Contains(err.Error(), "service monitor CRD detection") {
 		t.Fatalf("unexpected reconcileObservability error: %v", err)
 	}
-	ready, reason, message := result.condition()
+	ready, reason, message := result.serviceMonitor.condition()
 	if ready || reason != serviceMonitorReasonFailed || message == "" {
 		t.Fatalf("condition = %v/%q/%q, want false/%s with a message", ready, reason, message, serviceMonitorReasonFailed)
 	}
@@ -170,7 +170,7 @@ func TestReconcileObservabilityReportsApplyFailureInCondition(t *testing.T) {
 	if !strings.Contains(err.Error(), "injected ServiceMonitor create failure") {
 		t.Fatalf("unexpected reconcileObservability error: %v", err)
 	}
-	ready, reason, message := result.condition()
+	ready, reason, message := result.serviceMonitor.condition()
 	if ready || reason != serviceMonitorReasonFailed || message == "" {
 		t.Fatalf("condition = %v/%q/%q, want false/%s with a message", ready, reason, message, serviceMonitorReasonFailed)
 	}
