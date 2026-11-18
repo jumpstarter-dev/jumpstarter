@@ -110,15 +110,123 @@ func TestReconcileObservabilityDoesNotDeleteServiceMonitorsOnDetectionError(t *t
 	}
 	r := &JumpstarterReconciler{Client: wrapped, Scheme: s}
 
-	_, err := r.reconcileObservability(context.Background(), testJumpstarter())
+	result, err := r.reconcileObservability(context.Background(), testJumpstarter())
 	if err == nil {
 		t.Fatal("reconcileObservability should report the CRD detection error for retry")
 	}
 	if !strings.Contains(err.Error(), "service monitor CRD detection") {
 		t.Fatalf("unexpected reconcileObservability error: %v", err)
 	}
+	if result.phase != serviceMonitorProbeFailed {
+		t.Fatalf("phase = %v, want serviceMonitorProbeFailed", result.phase)
+	}
+	ready, reason, message := result.condition()
+	if ready || reason != serviceMonitorReasonFailed || message == "" {
+		t.Fatalf("condition = %v/%q/%q, want false/%s with a message", ready, reason, message, serviceMonitorReasonFailed)
+	}
 	if wrapped.deletedServiceMonitor {
 		t.Fatal("ServiceMonitors must not be deleted when CRD detection fails")
+	}
+}
+
+// serviceMonitorApplyErrorClient simulates an API failure while creating a
+// ServiceMonitor, after the CRD probe has already succeeded.
+type serviceMonitorApplyErrorClient struct {
+	client.Client
+}
+
+func (c *serviceMonitorApplyErrorClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if _, ok := list.(*unstructured.UnstructuredList); ok {
+		// Pretend the optional CRD is served so reconciliation reaches the
+		// apply step.
+		return nil
+	}
+	return c.Client.List(ctx, list, opts...)
+}
+
+func (c *serviceMonitorApplyErrorClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+	if monitor, ok := obj.(*unstructured.Unstructured); ok && monitor.GetKind() == serviceMonitorKind {
+		return errors.New("injected ServiceMonitor create failure")
+	}
+	return c.Client.Create(ctx, obj, opts...)
+}
+
+func TestReconcileObservabilityReportsApplyFailureInCondition(t *testing.T) {
+	s := runtime.NewScheme()
+	if err := corev1.AddToScheme(s); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+	if err := operatorv1alpha1.AddToScheme(s); err != nil {
+		t.Fatalf("add operator scheme: %v", err)
+	}
+
+	wrapped := &serviceMonitorApplyErrorClient{
+		Client: fake.NewClientBuilder().WithScheme(s).Build(),
+	}
+	r := &JumpstarterReconciler{Client: wrapped, Scheme: s}
+
+	result, err := r.reconcileObservability(context.Background(), testJumpstarter())
+	if err == nil {
+		t.Fatal("reconcileObservability should report the ServiceMonitor apply error for retry")
+	}
+	if !strings.Contains(err.Error(), "injected ServiceMonitor create failure") {
+		t.Fatalf("unexpected reconcileObservability error: %v", err)
+	}
+	if result.phase != serviceMonitorApplyFailed {
+		t.Fatalf("phase = %v, want serviceMonitorApplyFailed", result.phase)
+	}
+	ready, reason, message := result.condition()
+	if ready || reason != serviceMonitorReasonFailed || message == "" {
+		t.Fatalf("condition = %v/%q/%q, want false/%s with a message", ready, reason, message, serviceMonitorReasonFailed)
+	}
+}
+
+func TestServiceMonitorResultCondition(t *testing.T) {
+	tests := []struct {
+		name       string
+		result     serviceMonitorResult
+		wantReady  bool
+		wantReason string
+	}{
+		{
+			name:       "active is ready",
+			result:     serviceMonitorResult{phase: serviceMonitorActive, reason: serviceMonitorReasonCreated},
+			wantReady:  true,
+			wantReason: serviceMonitorReasonCreated,
+		},
+		{
+			name:       "disabled is not ready",
+			result:     serviceMonitorResult{phase: serviceMonitorDisabled, reason: serviceMonitorReasonDisabled},
+			wantReady:  false,
+			wantReason: serviceMonitorReasonDisabled,
+		},
+		{
+			name:       "waiting for CRD is not ready",
+			result:     serviceMonitorResult{phase: serviceMonitorWaitingForCRD, reason: serviceMonitorReasonCRDNotFound},
+			wantReady:  false,
+			wantReason: serviceMonitorReasonCRDNotFound,
+		},
+		{
+			name:       "probe failure is not ready",
+			result:     serviceMonitorResult{phase: serviceMonitorProbeFailed, reason: serviceMonitorReasonFailed},
+			wantReady:  false,
+			wantReason: serviceMonitorReasonFailed,
+		},
+		{
+			name:       "apply failure is not ready",
+			result:     serviceMonitorResult{phase: serviceMonitorApplyFailed, reason: serviceMonitorReasonFailed},
+			wantReady:  false,
+			wantReason: serviceMonitorReasonFailed,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ready, reason, _ := tc.result.condition()
+			if ready != tc.wantReady || reason != tc.wantReason {
+				t.Fatalf("condition() = %v/%q, want %v/%q", ready, reason, tc.wantReady, tc.wantReason)
+			}
+		})
 	}
 }
 
