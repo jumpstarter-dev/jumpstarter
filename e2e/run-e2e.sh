@@ -9,9 +9,12 @@
 #   --label-filter "hooks"                - run hooks tests only
 #   --label-filter "direct-listener"      - run direct-listener tests only
 #   --label-filter "exporterset-qemu"     - ExporterSet QEMU only (needs qemu images)
+#   --label-filter "exporterset-qemu-ssh" - ExporterSet QEMU-SSH only (needs SSH+Podman on host)
 #   --label-filter "!exporterset-qemu"   - skip ExporterSet QEMU
 #   --label-filter "!operator-only"       - skip operator-specific tests
-#   --label-filter "!lease-churn"         - skip assigned-lease cycle spec (default for make e2e-run / CI)
+#   --label-filter "!lease-churn"         - skip assigned-lease cycle spec
+#   Default for make e2e-run / CI: "!lease-churn && !exporterset-qemu-ssh"
+#   (qemu-ssh needs host-level SSH + rootful Podman setup; run it via make e2e-exporterset-qemu-ssh)
 #
 # Override with GINKGO_LABEL_FILTER for focused local runs.
 
@@ -67,7 +70,7 @@ run_tests() {
     export JUMPSTARTER_GRPC_INSECURE=1
 
     log_info "Running ginkgo e2e tests..."
-    run_ginkgo "$SCRIPT_DIR/test" "${GINKGO_LABEL_FILTER:-!lease-churn}"
+    run_ginkgo "$SCRIPT_DIR/test" "${GINKGO_LABEL_FILTER:-!lease-churn && !exporterset-qemu-ssh}"
 }
 
 # Full setup and run (for CI or first-time use)

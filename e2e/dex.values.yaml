@@ -50,6 +50,10 @@ config:
       hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
       username: "test-exporter-telemetry"
       userID: "f9107273-99b2-4da1-9f90-88036d8d0a42"
+    - email: "test-client-exporterset-qemu-ssh@example.com"
+      hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
+      username: "test-client-exporterset-qemu-ssh"
+      userID: "a191c017-e5b4-4087-94c9-77320342e30d"
   connectors:
     - name: kubernetes
       type: oidc
