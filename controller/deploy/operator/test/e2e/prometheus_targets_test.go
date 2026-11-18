@@ -17,6 +17,9 @@ limitations under the License.
 package e2e
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -44,6 +47,10 @@ const (
 		"releases/download/v0.94.2/bundle.yaml"
 	prometheusCRDsURL = "https://github.com/prometheus-operator/prometheus-operator/" +
 		"releases/download/v0.94.2/stripped-down-crds.yaml"
+	// Checksums pin the v0.94.2 release assets so the test never applies an
+	// unverified manifest from the network.
+	prometheusOperatorSHA256 = "045754c91469cccb27d7832168a5b5f0448188bcb3513f74a13c76c9079d654b"
+	prometheusCRDsSHA256     = "e02e48c760e86aa1b5888205d1670c7baa42abe86211f8408b7fb18651203ede"
 	prometheusServiceAccount = "prometheus-jumpstarter-e2e"
 	prometheusCRName         = "jumpstarter-e2e"
 
@@ -193,15 +200,10 @@ func ensurePrometheusOperator() {
 		crdsURL = prometheusCRDsURL
 	}
 	if exec.Command("kubectl", "get", "crd", "prometheuses.monitoring.coreos.com").Run() != nil {
-		cmd := exec.Command( //nolint:gosec // test-controlled URL
-			"kubectl", "apply", "--server-side", "--force-conflicts", "-f", crdsURL,
-		)
-		out, err := cmd.CombinedOutput()
-		Expect(err).NotTo(HaveOccurred(), string(out))
+		kubectlApplyStdin(fetchManifest(crdsURL, prometheusCRDsURL, prometheusCRDsSHA256))
 	}
 
-	raw, err := exec.Command("curl", "-fsSL", url).Output() //nolint:gosec // test-controlled URL
-	Expect(err).NotTo(HaveOccurred())
+	raw := fetchManifest(url, prometheusOperatorURL, prometheusOperatorSHA256)
 	docs := strings.Split(string(raw), "\n---\n")
 	var operatorDocs []string
 	for _, doc := range docs {
@@ -232,6 +234,29 @@ func ensurePrometheusOperator() {
 			Name: "prometheus-operator", Namespace: "default",
 		}, deployment)).To(Succeed())
 	}, 2*time.Minute, 2*time.Second).Should(Succeed())
+}
+
+// fetchManifest downloads a manifest and verifies its checksum when the
+// built-in URL is used. An environment-supplied URL is a local override and is
+// not pinned.
+func fetchManifest(url, defaultURL, wantSum string) []byte {
+	raw, err := exec.Command("curl", "-fsSL", url).Output() //nolint:gosec // test-controlled URL
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	if url == defaultURL {
+		sum := sha256.Sum256(raw)
+		ExpectWithOffset(1, hex.EncodeToString(sum[:])).To(Equal(wantSum),
+			"sha256 mismatch for %s", url)
+	}
+	return raw
+}
+
+// kubectlApplyStdin applies an in-memory manifest so kubectl does not re-fetch
+// a download that was already verified.
+func kubectlApplyStdin(raw []byte) {
+	cmd := exec.Command("kubectl", "apply", "--server-side", "--force-conflicts", "-f", "-")
+	cmd.Stdin = bytes.NewReader(raw)
+	out, err := cmd.CombinedOutput()
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), string(out))
 }
 
 func createPrometheusRBAC() {
