@@ -1,4 +1,6 @@
+import errno
 import logging
+import re
 import socket
 import threading
 import time
@@ -76,14 +78,22 @@ def test_tftp_start_stop(tmp_path):
     server.close()
 
 
-def test_tftp_start_surfaces_startup_error(tmp_path):
-    """Test that start() raises the real cause when the server cannot be built."""
+@pytest.mark.parametrize(
+    "target, error",
+    [
+        ("TftpServer", RuntimeError("cannot build the server")),
+        # an OSError before the server tries to listen is not a bind failure
+        ("start_blocking_portal", OSError(errno.EMFILE, "Too many open files")),
+    ],
+)
+def test_tftp_start_surfaces_startup_error(tmp_path, target, error):
+    """Test that start() raises the real cause when the server cannot be set up."""
     server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=0)
 
     with patch(
-        "jumpstarter_driver_tftp.driver.TftpServer",
-        side_effect=RuntimeError("port already in use"),
-    ), pytest.raises(TftpError, match="port already in use"):
+        f"jumpstarter_driver_tftp.driver.{target}",
+        side_effect=error,
+    ), pytest.raises(TftpError, match=re.escape(str(error))):
         server.start()
 
     server.close()
@@ -137,13 +147,38 @@ def test_tftp_start_returns_once_the_server_listens(tmp_path, free_ipv4_udp_port
     server.close()
 
 
-def test_tftp_start_raises_when_the_port_is_taken(tmp_path, free_ipv4_udp_port):
+def test_tftp_start_with_system_server_does_not_raise(tmp_path, free_ipv4_udp_port, caplog):
+    """A supported behavior of the TFTP server is allowing an existing system TFTP server on the same
+    port. The server should not raise any exception but simply print a warning.
+    """
+    caplog.set_level(logging.WARNING, logger="driver")
+    server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=free_ipv4_udp_port)
+
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as taken:
         taken.bind(("127.0.0.1", free_ipv4_udp_port))
-        server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=free_ipv4_udp_port)
+        server.start()
 
-        with pytest.raises(TftpError, match="Failed to start TFTP server: .*Address already in use"):
-            server.start()
+    [record] = [r for r in caplog.records if "cannot listen on" in r.getMessage()]
+    assert record.levelno == logging.WARNING
+    assert record.getMessage().startswith(f"TFTP server not started, cannot listen on 127.0.0.1:{free_ipv4_udp_port}: ")
+    assert f"[Errno {errno.EADDRINUSE}]" in record.getMessage()
+    assert record.getMessage().endswith(f"pointing to {tmp_path}")
+    server.close()
+
+
+def test_tftp_starts_and_serves_once_the_port_is_free(tmp_path, free_ipv4_udp_port):
+    (tmp_path / "hello.txt").write_bytes(b"hello over tftp")
+    server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=free_ipv4_udp_port)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as taken:
+        taken.bind(("127.0.0.1", free_ipv4_udp_port))
+        server.start()
+
+    # the system server is gone: nothing was left half started, so start() serves on the port
+    server.start()
+    try:
+        assert _download(free_ipv4_udp_port, "hello.txt") == b"hello over tftp"
+    finally:
+        server.stop()
     server.close()
 
 

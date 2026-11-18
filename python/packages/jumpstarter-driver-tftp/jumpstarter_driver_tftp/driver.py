@@ -76,9 +76,11 @@ class Tftp(Driver):
 
         The server will start listening for incoming TFTP requests on the configured
         host and port. If the server is already running, a warning will be logged.
+        If it cannot listen on them, for example because the port is already in use,
+        a warning is logged and the server is not started.
 
         Raises:
-            TftpError: If the server cannot listen on the configured host and port
+            TftpError: If the server cannot be set up
         """
         with self._lock:
             self._start()
@@ -99,7 +101,16 @@ class Tftp(Driver):
                     logger=self.logger,
                 )
                 portal = stack.enter_context(start_blocking_portal())
-                serving, _ = portal.start_task(server.start)
+                try:
+                    serving, _ = portal.start_task(server.start)
+                except OSError as e:
+                    # Not an error on purpose so a bind failure was only logged and flashing went on,
+                    # served by whatever held the port (often a system tftpd on the same root directory).
+                    self.logger.warning(
+                        f"TFTP server not started, cannot listen on {self.host}:{self.port}: {e}. "
+                        f"This should work as long as this is an existing TFTP server pointing to {self.root_dir}"
+                    )
+                    return
             except Exception as e:
                 raise TftpError(f"Failed to start TFTP server: {e}") from e
             serving.add_done_callback(self._report_failure)
