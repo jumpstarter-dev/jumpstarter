@@ -16,6 +16,7 @@ from click.testing import CliRunner
 from .client import _stdin_supplies_data
 from .console import ConsoleStreamDrop
 from .driver import PySerial
+from jumpstarter.client.core import DriverMethodNotImplemented
 from jumpstarter.common.utils import serve
 
 
@@ -334,6 +335,7 @@ async def test_pipe_serial_selects_stream_mode(pyserial_client, observe, input_e
         return (0, 0)
 
     with (
+        patch.object(pyserial_client, "call_async", new_callable=AsyncMock),
         patch.object(pyserial_client, "stream_async", side_effect=stream_async),
         patch.object(
             pyserial_client, "_serial_to_output", new_callable=AsyncMock, side_effect=serial_to_output
@@ -345,6 +347,65 @@ async def test_pipe_serial_selects_stream_mode(pyserial_client, observe, input_e
     assert methods == [expected_method]
     output.assert_awaited_once()
     assert stdin.await_count == int(input_enabled)
+
+
+@pytest.mark.anyio
+async def test_pipe_serial_falls_back_to_connect_without_observe(pyserial_client):
+    """A read-only pipe falls back to connect on exporters without observe."""
+    methods = []
+
+    @asynccontextmanager
+    async def stream_async(*, method):
+        methods.append(method)
+        yield object()
+
+    async def call_async(method, *args):
+        if method == "console_status":
+            raise DriverMethodNotImplemented("method console_status not found on driver")
+        raise AssertionError(f"unexpected call: {method}")
+
+    with (
+        patch.object(pyserial_client, "call_async", side_effect=call_async),
+        patch.object(pyserial_client, "stream_async", side_effect=stream_async),
+        patch.object(pyserial_client, "_serial_to_output", new_callable=AsyncMock) as output,
+    ):
+        await pyserial_client._pipe_serial(input_enabled=False, observe=False)
+
+    assert methods == ["connect"]
+    output.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_pipe_serial_observe_unavailable_raises(pyserial_client):
+    """An explicit observe request does not silently fall back to the write token."""
+
+    async def call_async(method, *args):
+        if method == "console_status":
+            raise DriverMethodNotImplemented("method console_status not found on driver")
+        raise AssertionError(f"unexpected call: {method}")
+
+    with (
+        patch.object(pyserial_client, "call_async", side_effect=call_async),
+        patch.object(pyserial_client, "stream_async"),
+        pytest.raises(DriverMethodNotImplemented, match="observe mode is not available"),
+    ):
+        await pyserial_client._pipe_serial(input_enabled=False, observe=True)
+
+
+@pytest.mark.anyio
+async def test_pipe_serial_no_fallback_for_missing_connect(pyserial_client):
+    """The fallback only applies to observe; a missing connect still fails."""
+
+    @asynccontextmanager
+    async def stream_async(*, method):
+        raise DriverMethodNotImplemented("method connect not found on driver")
+        yield object()
+
+    with (
+        patch.object(pyserial_client, "stream_async", side_effect=stream_async),
+        pytest.raises(DriverMethodNotImplemented),
+    ):
+        await pyserial_client._pipe_serial(input_enabled=True, observe=False)
 
 
 @pytest.mark.parametrize("held", [False, True])
