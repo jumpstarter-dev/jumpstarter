@@ -69,6 +69,17 @@ jobs:
       - name: Run operator tests
         run: make -C controller/deploy/operator test
 
+      - name: Install Phase 6 validation tools
+        run: |
+          controller/hack/install-promtool.sh
+          controller/hack/install-percli.sh
+
+      - name: Validate Phase 6 rule and dashboard assets
+        working-directory: controller/deploy/operator
+        run: |
+          make test-phase6-rules
+          make test-phase6-dashboards
+
       - name: Check generated code and manifests are up to date
         run: |
           git add --intent-to-add .

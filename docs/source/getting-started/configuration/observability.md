@@ -2,7 +2,9 @@
 
 Jumpstarter exposes metrics and structured logs that can be consumed by the
 standard Kubernetes observability stack. This page explains how to enable the
-integration, what the operator creates, and how to validate it.
+integration, what the operator creates, and how to validate it. For Perses
+dashboards and datasource prerequisites, see
+[Dashboards and Alerting](dashboards-alerting.md).
 
 Prometheus autodiscovery is configured under `spec.telemetry`:
 
