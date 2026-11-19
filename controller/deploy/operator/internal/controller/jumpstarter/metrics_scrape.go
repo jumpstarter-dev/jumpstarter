@@ -18,9 +18,11 @@ package jumpstarter
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"maps"
+	"strings"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -65,9 +67,28 @@ func serviceMonitorEnabled(js *operatorv1alpha1.Jumpstarter) bool {
 	return *js.Spec.Telemetry.Metrics.ServiceMonitor
 }
 
-// metricsServiceName returns the metrics Service name for a component.
+// maxKubernetesNameLength is the DNS-1123 label limit shared by Service and
+// ServiceMonitor names.
+const maxKubernetesNameLength = 63
+
+// metricsServiceName returns the metrics Service name for a component. The
+// ServiceMonitor uses the same name, so creation and cleanup always agree.
+//
+// Short names are unchanged. Longer names keep a stable prefix plus a short
+// hash of the full name: a Jumpstarter name may be up to 253 characters as a
+// DNS subdomain, which would otherwise produce a 64+ character Service that
+// Kubernetes rejects. Dots are replaced because Service names must be
+// RFC 1035 labels.
 func metricsServiceName(js *operatorv1alpha1.Jumpstarter, component string) string {
-	return fmt.Sprintf("%s-metrics-%s", js.Name, component)
+	name := fmt.Sprintf("%s-metrics-%s", strings.ReplaceAll(js.Name, ".", "-"), component)
+	if len(name) <= maxKubernetesNameLength {
+		return name
+	}
+
+	sum := sha256.Sum256([]byte(name))
+	suffix := fmt.Sprintf("-%x", sum[:4])
+	prefix := strings.TrimRight(name[:maxKubernetesNameLength-len(suffix)], "-")
+	return prefix + suffix
 }
 
 // metricsServiceLabels returns the labels shared by metrics Services and their
@@ -134,12 +155,15 @@ func (r *JumpstarterReconciler) reconcileMetricsServices(ctx context.Context, js
 	log := logf.FromContext(ctx)
 
 	if !serviceMonitorEnabled(js) {
+		var errs []error
 		for _, name := range []string{metricsServiceName(js, "controller"), metricsServiceName(js, "router")} {
 			if err := r.deleteObjectIfExists(ctx, js, types.NamespacedName{Name: name, Namespace: js.Namespace}, &corev1.Service{}); err != nil {
-				return err
+				// A foreign Service blocks its own deletion, not the other
+				// component's cleanup; retry the failure on the next reconcile.
+				errs = append(errs, err)
 			}
 		}
-		return nil
+		return errors.Join(errs...)
 	}
 
 	for _, desired := range desiredMetricsServices(js) {
@@ -219,7 +243,10 @@ func (r *JumpstarterReconciler) serviceMonitorCRDAvailable(ctx context.Context) 
 		Group: serviceMonitorGroup, Version: serviceMonitorVersion, Kind: serviceMonitorKind + "List",
 	})
 	if err := r.List(ctx, list, client.Limit(1)); err != nil {
-		if apimeta.IsNoMatchError(err) {
+		// A cached REST mapping can outlive a removed CRD: the list then hits
+		// the old endpoint and returns 404 instead of NoMatch. Treat both as
+		// absent; keep authorization and transport errors.
+		if apimeta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
 			return false, nil
 		}
 		return false, err
@@ -299,52 +326,78 @@ func toInterfaceMap(in map[string]string) map[string]any {
 // desired (for example telemetry is disabled). The enabled path calls it only
 // after the CRD probe succeeds; the disabled path calls it without probing, and
 // pruning tolerates an absent API.
+//
+// Each monitor is applied independently and pruning always runs, so one
+// conflict (for example a foreign monitor occupying a desired name) cannot
+// block the other monitor or leave a stale one behind. The collected errors are
+// returned for retry.
 func (r *JumpstarterReconciler) reconcileServiceMonitors(ctx context.Context, js *operatorv1alpha1.Jumpstarter) error {
-	log := logf.FromContext(ctx)
-
 	var desired []*unstructured.Unstructured
 	if serviceMonitorEnabled(js) {
 		desired = desiredServiceMonitors(js)
 	}
 
+	// Build the full desired-name set first so pruning is correct even when an
+	// apply fails below.
 	desiredNames := make(map[string]struct{}, len(desired))
 	for _, desiredMonitor := range desired {
 		desiredNames[desiredMonitor.GetName()] = struct{}{}
-		existing := &unstructured.Unstructured{}
-		existing.SetGroupVersionKind(desiredMonitor.GroupVersionKind())
-		err := r.Get(ctx, types.NamespacedName{Name: desiredMonitor.GetName(), Namespace: desiredMonitor.GetNamespace()}, existing)
-		if apierrors.IsNotFound(err) {
-			if err := controllerutil.SetControllerReference(js, desiredMonitor, r.Scheme); err != nil {
-				return err
-			}
-			if err := r.Create(ctx, desiredMonitor); err != nil {
-				return fmt.Errorf("create servicemonitor %s: %w", desiredMonitor.GetName(), err)
-			}
-			log.Info("Created ServiceMonitor", "name", desiredMonitor.GetName())
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		if err := ensureControlledBy(js, existing); err != nil {
-			return fmt.Errorf("refusing to update ServiceMonitor %s: %w", desiredMonitor.GetName(), err)
-		}
-		if equality.Semantic.DeepEqual(existing.Object["spec"], desiredMonitor.Object["spec"]) &&
-			equality.Semantic.DeepEqual(existing.GetLabels(), desiredMonitor.GetLabels()) {
-			continue
-		}
-		existing.Object["spec"] = desiredMonitor.Object["spec"]
-		existing.SetLabels(desiredMonitor.GetLabels())
-		if err := controllerutil.SetControllerReference(js, existing, r.Scheme); err != nil {
-			return err
-		}
-		if err := r.Update(ctx, existing); err != nil {
-			return fmt.Errorf("update servicemonitor %s: %w", desiredMonitor.GetName(), err)
-		}
-		log.Info("Updated ServiceMonitor", "name", desiredMonitor.GetName())
 	}
 
-	return r.pruneServiceMonitors(ctx, js, desiredNames)
+	var errs []error
+	for _, desiredMonitor := range desired {
+		if err := r.applyServiceMonitor(ctx, js, desiredMonitor); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if err := r.pruneServiceMonitors(ctx, js, desiredNames); err != nil {
+		errs = append(errs, err)
+	}
+
+	return errors.Join(errs...)
+}
+
+// applyServiceMonitor creates or updates one ServiceMonitor. Per-monitor
+// failures are returned to the caller so the remaining monitors still
+// reconcile.
+func (r *JumpstarterReconciler) applyServiceMonitor(ctx context.Context, js *operatorv1alpha1.Jumpstarter, desired *unstructured.Unstructured) error {
+	log := logf.FromContext(ctx)
+
+	existing := &unstructured.Unstructured{}
+	existing.SetGroupVersionKind(desired.GroupVersionKind())
+	err := r.Get(ctx, types.NamespacedName{Name: desired.GetName(), Namespace: desired.GetNamespace()}, existing)
+	switch {
+	case apierrors.IsNotFound(err):
+		if err := controllerutil.SetControllerReference(js, desired, r.Scheme); err != nil {
+			return err
+		}
+		if err := r.Create(ctx, desired); err != nil {
+			return fmt.Errorf("create servicemonitor %s: %w", desired.GetName(), err)
+		}
+		log.Info("Created ServiceMonitor", "name", desired.GetName())
+		return nil
+	case err != nil:
+		return fmt.Errorf("get servicemonitor %s: %w", desired.GetName(), err)
+	}
+
+	if err := ensureControlledBy(js, existing); err != nil {
+		return fmt.Errorf("refusing to update ServiceMonitor %s: %w", desired.GetName(), err)
+	}
+	if equality.Semantic.DeepEqual(existing.Object["spec"], desired.Object["spec"]) &&
+		equality.Semantic.DeepEqual(existing.GetLabels(), desired.GetLabels()) {
+		return nil
+	}
+	existing.Object["spec"] = desired.Object["spec"]
+	existing.SetLabels(desired.GetLabels())
+	if err := controllerutil.SetControllerReference(js, existing, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.Update(ctx, existing); err != nil {
+		return fmt.Errorf("update servicemonitor %s: %w", desired.GetName(), err)
+	}
+	log.Info("Updated ServiceMonitor", "name", desired.GetName())
+	return nil
 }
 
 // pruneServiceMonitors deletes ServiceMonitors owned by this Jumpstarter CR
@@ -359,7 +412,7 @@ func (r *JumpstarterReconciler) pruneServiceMonitors(ctx context.Context, js *op
 		Group: serviceMonitorGroup, Version: serviceMonitorVersion, Kind: serviceMonitorKind + "List",
 	})
 	if err := r.List(ctx, monitors, client.InNamespace(js.Namespace)); err != nil {
-		if apimeta.IsNoMatchError(err) {
+		if apimeta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
 			return nil
 		}
 		return fmt.Errorf("list servicemonitors: %w", err)
@@ -377,13 +430,25 @@ func (r *JumpstarterReconciler) pruneServiceMonitors(ctx context.Context, js *op
 		monitor.SetGroupVersionKind(schema.GroupVersionKind{
 			Group: serviceMonitorGroup, Version: serviceMonitorVersion, Kind: serviceMonitorKind,
 		})
-		if err := r.Delete(ctx, monitor); err != nil && !apierrors.IsNotFound(err) && !apimeta.IsNoMatchError(err) {
+		// Delete only the object that passed the ownership check: a
+		// replacement must not be removed under the same name.
+		if err := r.Delete(ctx, monitor, deletePreconditions(monitor)); err != nil &&
+			!apierrors.IsNotFound(err) && !apimeta.IsNoMatchError(err) && !apierrors.IsConflict(err) {
 			return fmt.Errorf("delete stale servicemonitor %s: %w", monitor.GetName(), err)
 		}
 		log.Info("Deleted stale ServiceMonitor", "name", monitor.GetName())
 	}
 
 	return nil
+}
+
+// deletePreconditions pins a delete to the object that was fetched and
+// ownership-checked. A conflict means the object changed; the next reconcile
+// re-reads it and checks ownership again.
+func deletePreconditions(obj client.Object) client.Preconditions {
+	uid := obj.GetUID()
+	resourceVersion := obj.GetResourceVersion()
+	return client.Preconditions{UID: &uid, ResourceVersion: &resourceVersion}
 }
 
 // deleteObjectIfExists deletes an object and ignores NotFound.
@@ -397,7 +462,8 @@ func (r *JumpstarterReconciler) deleteObjectIfExists(ctx context.Context, js *op
 	if err := ensureControlledBy(js, obj); err != nil {
 		return fmt.Errorf("refusing to delete %w", err)
 	}
-	if err := r.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) && !apimeta.IsNoMatchError(err) {
+	if err := r.Delete(ctx, obj, deletePreconditions(obj)); err != nil &&
+		!apierrors.IsNotFound(err) && !apimeta.IsNoMatchError(err) && !apierrors.IsConflict(err) {
 		return err
 	}
 	return nil
@@ -410,8 +476,9 @@ func (r *JumpstarterReconciler) deleteObjectIfExists(ctx context.Context, js *op
 func (r *JumpstarterReconciler) reconcileObservability(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (serviceMonitorResult, error) {
 	var errs []error
 
-	if err := r.reconcileMetricsServices(ctx, js); err != nil {
-		errs = append(errs, fmt.Errorf("metrics services: %w", err))
+	metricsErr := r.reconcileMetricsServices(ctx, js)
+	if metricsErr != nil {
+		errs = append(errs, fmt.Errorf("metrics services: %w", metricsErr))
 	}
 
 	if !serviceMonitorEnabled(js) {
@@ -447,14 +514,29 @@ func (r *JumpstarterReconciler) reconcileObservability(ctx context.Context, js *
 		}, errors.Join(errs...)
 	}
 
-	if err := r.reconcileServiceMonitors(ctx, js); err != nil {
-		errs = append(errs, fmt.Errorf("service monitors: %w", err))
+	monitorErr := r.reconcileServiceMonitors(ctx, js)
+	if monitorErr != nil {
+		errs = append(errs, fmt.Errorf("service monitors: %w", monitorErr))
+	}
+
+	// Readiness describes the whole autodiscovery path. ServiceMonitors can be
+	// created while the Services they select were not reconciled, so a Service
+	// failure must not report Created.
+	switch {
+	case monitorErr != nil:
 		return serviceMonitorResult{
 			phase:   serviceMonitorApplyFailed,
 			reason:  serviceMonitorReasonFailed,
-			message: fmt.Sprintf("failed to reconcile ServiceMonitors: %v", err),
+			message: fmt.Sprintf("failed to reconcile ServiceMonitors: %v", monitorErr),
+		}, errors.Join(errs...)
+	case metricsErr != nil:
+		return serviceMonitorResult{
+			phase:   serviceMonitorApplyFailed,
+			reason:  serviceMonitorReasonFailed,
+			message: fmt.Sprintf("failed to reconcile metrics Services: %v", metricsErr),
 		}, errors.Join(errs...)
 	}
+
 	return serviceMonitorResult{
 		phase:   serviceMonitorActive,
 		reason:  serviceMonitorReasonCreated,
