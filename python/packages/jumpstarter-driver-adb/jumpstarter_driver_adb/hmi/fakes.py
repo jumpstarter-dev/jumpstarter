@@ -1,4 +1,4 @@
-"""A fake device, a fake ``adb`` and a fake ``scrcpy-server``: the screen's own code runs against a real socket, with no
+"""A fake device, a fake ``adb`` and a fake ``scrcpy-server``: the HMI's own code runs against a real socket, with no
 device, no adb and no network.
 
 Not collected as tests; the tests of this package import what they need::
@@ -8,14 +8,19 @@ Not collected as tests; the tests of this package import what they need::
         ...
 
 :class:`FakeScrcpyServer` listens like the device's abstract socket behind ``adb forward`` (the dummy byte, the device
-name, the codec, a session packet, then pictures; control messages are read and kept), so the session connects to it as
-it would to a device. :class:`FakeAdb` stands in for :class:`~jumpstarter_driver_adb.hmi.adb.Adb`: it remembers the
-files "on the device", hands out a new server for each ``forward``, and records every call.
+name, the codec id, a session packet, then pictures; control messages are read and kept), so the session connects to it
+as it would to a device. It makes the codec it was started for (``video_codec=h264`` or ``h265`` on the command line
+that :class:`FakeAdb` is given): synthetic H.264 pictures, or the real HEVC test pattern of the HMI package, with the
+parameter sets in the config packet and none in the key pictures, as scrcpy sends them. :class:`FakeAdb` stands in for
+:class:`~jumpstarter_driver_adb.hmi.adb.Adb`: it remembers the files "on the device", hands out a new server for each
+``forward``, and records every call.
 """
 
 from __future__ import annotations
 
 import hashlib
+import logging
+import re
 import socket
 import struct
 import threading
@@ -24,18 +29,25 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from jumpstarter_driver_hmi.hub.codecs import HEVC_AUD, HEVC_PPS, HEVC_SPS, HEVC_VPS, has_idr, iter_nals, nal_begin
+from jumpstarter_driver_hmi.hub.codecs import parameter_sets as parameter_sets_of
 from jumpstarter_driver_hmi.testing import make_sps
+from jumpstarter_driver_hmi.testing.pattern import pattern_units
 
 from .driver import AdbDeviceHmi
 
 _START = b"\x00\x00\x00\x01"
 #: The PPS that goes with :func:`~jumpstarter_driver_hmi.testing.make_sps` (baseline profile, CAVLC).
 PPS = b"\x68\xce\x3c\x80"
-#: A key slice and a delta slice with some payload: the screen only reads their headers.
+#: A key slice and a delta slice with some payload: the HMI only reads their headers.
 IDR = _START + bytes([0x65, 0x88, 0x84, 0x00, 0x2F, 0xFF]) + b"\x11" * 200
 DELTA = _START + bytes([0x41, 0x9A, 0x10, 0x30]) + b"\x22" * 40
-#: The codec string of the fake's pictures (a baseline-profile SPS, level 3.1).
+#: The codec string of the fake's H.264 pictures (a baseline-profile SPS, level 3.1).
 CODEC = "avc1.42C01F"
+#: The codec string of the fake's HEVC pictures: the test pattern's own SPS (main profile, level 2.0).
+HEVC_CODEC = "hev1.1.6.L60.90"
+#: The codec id the video stream starts with, by the server's name for the codec (``VideoCodec`` of the server).
+CODEC_IDS = {"h264": 0x68323634, "h265": 0x68323635, "av1": 0x00617631}
 #: Bytes of each control message by type (type byte included); the others are told by their own length field.
 _CONTROL_SIZES = {0: 14, 2: 32, 4: 2, 5: 1, 6: 1, 7: 1, 8: 2, 10: 2, 11: 1, 17: 1}
 
@@ -43,6 +55,21 @@ _CONTROL_SIZES = {0: 14, 2: 32, 4: 2, 5: 1, 6: 1, 7: 1, 8: 2, 10: 2, 11: 1, 17: 
 def parameter_sets(width: int, height: int) -> bytes:
     """An SPS and a PPS (with start codes) for a picture of this size."""
     return _START + make_sps(width, height) + _START + PPS
+
+
+def hevc_stream() -> tuple[bytes, tuple[tuple[bytes, bool], ...]]:
+    """The HEVC test pattern as scrcpy sends it: the parameter sets (VPS, SPS, PPS) for the config packet, and the
+    pictures as ``(unit, key)`` with nothing but their slices (an encoder's output has no delimiters, and the key
+    pictures none of the parameter sets: the session puts them in front)."""
+    units = pattern_units("hevc")
+    sets = {HEVC_AUD, HEVC_VPS, HEVC_SPS, HEVC_PPS}
+    pictures = []
+    for unit in units:
+        spans = [(kind, nal_begin(unit, start)) for kind, start, _ in iter_nals(unit, "hevc")]
+        ends = [begin for _, begin in spans[1:]] + [len(unit)]
+        bare = b"".join(unit[begin:end] for (kind, begin), end in zip(spans, ends, strict=True) if kind not in sets)
+        pictures.append((bare, has_idr(unit, "hevc")))
+    return parameter_sets_of(units[0], "hevc"), tuple(pictures)
 
 
 def session_packet(width: int, height: int) -> bytes:
@@ -60,11 +87,25 @@ class FakeScrcpyServer:
     """The device's side of the two sockets: video first (dummy byte, name, codec, packets), then control."""
 
     def __init__(
-        self, width: int = 540, height: int = 1200, fps: float = 30.0, frames: int = 10_000, expect_control: bool = True
+        self,
+        width: int = 540,
+        height: int = 1200,
+        fps: float = 30.0,
+        frames: int = 10_000,
+        expect_control: bool = True,
+        codec: str | None = None,
     ) -> None:
-        """Listen on a port of its own; ``frames`` pictures are made (then the screen is "still")."""
+        """Listen on a port of its own; ``frames`` pictures are made (then the display is "still").
+
+        ``codec`` is what the server makes, by its own names (``h264``, ``h265``, ``av1``): ``None`` is the one it is
+        started for (the ``video_codec`` of the command line, H.264 without one), and another is a server that did not
+        do as it was asked.
+        """
         self.width, self.height, self.fps, self.max_frames = width, height, fps, frames
         self.expect_control = expect_control
+        self.codec = codec
+        #: The ``video_codec`` of the command line this server was started with (set by :class:`FakeAdb`).
+        self.asked = "h264"
         self.listener = socket.socket()
         self.listener.bind(("127.0.0.1", 0))
         self.listener.listen(4)
@@ -99,6 +140,11 @@ class FakeScrcpyServer:
             self.width, self.height = width, height
             self._announce()
 
+    @property
+    def making(self) -> str:
+        """The codec the server makes, by its own name."""
+        return self.codec or self.asked
+
     def stop_reading_control(self) -> None:
         """Stop reading the control socket (what is sent after this piles up until adb's buffers are full)."""
         self.reading_control.clear()
@@ -115,6 +161,10 @@ class FakeScrcpyServer:
     def key_events(self) -> list[tuple[int, int, int]]:
         """The key messages received, as ``(action, keycode, repeat)``."""
         return [(m[1], *struct.unpack_from(">ii", m, 2)) for m in list(self.control_messages) if m[0] == 0]
+
+    def key_messages(self) -> list[tuple[int, int, int, int]]:
+        """The key messages received, as ``(action, keycode, repeat, meta state)``."""
+        return [(m[1], *struct.unpack_from(">iii", m, 2)) for m in list(self.control_messages) if m[0] == 0]
 
     def messages_of(self, kind: int) -> list[bytes]:
         """The control messages of one type, as received."""
@@ -134,7 +184,7 @@ class FakeScrcpyServer:
                 self.connections += 1
                 self._control = control
             video.sendall(b"Fake Phone".ljust(64, b"\x00"))
-            video.sendall(struct.pack(">I", 0x68323634))
+            video.sendall(struct.pack(">I", CODEC_IDS[self.making]))
             if control is not None:
                 threading.Thread(target=self._read_control, args=(control,), daemon=True).start()
             threading.Thread(target=self._stream, args=(video,), daemon=True).start()
@@ -147,23 +197,41 @@ class FakeScrcpyServer:
         if video is None:
             return
         video.sendall(session_packet(self.width, self.height))
-        video.sendall(media_packet(0, parameter_sets(self.width, self.height), config=True))
+        if self.making == "h265":
+            video.sendall(media_packet(0, hevc_stream()[0], config=True))
+        else:
+            video.sendall(media_packet(0, parameter_sets(self.width, self.height), config=True))
         self._want_idr = True
 
+    def _picture(self, index: int, cursor: int) -> tuple[bytes, bool, int]:
+        """``(the picture, whether it is a key picture, the cursor after it)`` (lock held). H.264: a synthetic IDR every
+        30 pictures and when one is wanted. HEVC: the test pattern's pictures in order, from its first (a key picture)
+        when one is wanted."""
+        if self.making == "h265":
+            pictures = hevc_stream()[1]
+            cursor = 0 if self._want_idr else cursor
+            self._want_idr = False
+            unit, key = pictures[cursor % len(pictures)]
+            return unit, key, cursor + 1
+        key = index % 30 == 0 or self._want_idr
+        self._want_idr = False
+        return (IDR if key else DELTA), key, cursor
+
     def _stream(self, video: socket.socket) -> None:
-        with self._lock:
-            self._announce()
+        try:
+            with self._lock:
+                self._announce()
+        except OSError:  # the session ended before the first picture
+            return
         index = 0
+        cursor = 0
         start = time.monotonic()
         while not self.stopped.is_set() and index < self.max_frames:
             pts = int(index * 1_000_000 / self.fps)
             with self._lock:
                 try:
-                    if index % 30 == 0 or self._want_idr:
-                        self._want_idr = False
-                        video.sendall(media_packet(pts, IDR, key=True))
-                    else:
-                        video.sendall(media_packet(pts, DELTA))
+                    picture, key, cursor = self._picture(index, cursor)
+                    video.sendall(media_packet(pts, picture, key=key))
                 except OSError:
                     return
             index += 1
@@ -265,7 +333,7 @@ class FakeProcess:
 
 
 class FakeAdb:
-    """The methods of :class:`~jumpstarter_driver_adb.hmi.adb.Adb` that the screen uses, against a
+    """The methods of :class:`~jumpstarter_driver_adb.hmi.adb.Adb` that the HMI uses, against a
     :class:`FakeScrcpyServer`. Every call is recorded in :attr:`calls`."""
 
     def __init__(self, make_server: Callable[[], Any] = FakeScrcpyServer) -> None:
@@ -361,10 +429,14 @@ class FakeAdb:
         self.calls.append(("forward_remove", port))
 
     def spawn(self, serial: str, command: str) -> FakeProcess:
-        """Start the server's process."""
+        """Start the server's process (the server that was forwarded to is told which codec it is started for)."""
         self._enter("spawn")
         self.calls.append(("spawn", command))
         self.process = FakeProcess()
+        server = self.servers[-1] if self.servers else None
+        if isinstance(server, FakeScrcpyServer):
+            asked = re.search(r"(?:^| )video_codec=(\S+)", command)
+            server.asked = asked.group(1) if asked else "h264"
         return self.process
 
     def shell(self, serial: str, command: str, *, timeout: float | None = None) -> str:
@@ -402,7 +474,7 @@ class FakeAdb:
 
 
 class FakeDevice:
-    """The parts of an ``AdbDevice`` that its screen uses: how it is named, its adb and its serial now."""
+    """The parts of an ``AdbDevice`` that its HMI uses: how it is named, its adb and its serial now."""
 
     def __init__(self, serial: str = "FAKE123") -> None:
         """A device that is present."""
@@ -436,7 +508,7 @@ def build_hmi(
     """An :class:`~jumpstarter_driver_adb.hmi.driver.AdbDeviceHmi` on a :class:`FakeDevice`, whose adb is a
     :class:`FakeAdb` (its servers are made by ``adb_server``) and whose scrcpy-server is a small file in ``tmp_path``.
 
-    ``config`` is the screen's options (``idle_stop_s`` is 0 unless given); the driver's ``device`` and the fake adb are
+    ``config`` is the HMI's options (``idle_stop_s`` is 0 unless given); the driver's ``device`` and the fake adb are
     attributes of the result (``driver.device``, ``driver._adb``).
     """
     jar = tmp_path / "scrcpy-server"
@@ -448,3 +520,19 @@ def build_hmi(
     fake = FakeAdb(adb_server)
     driver._adb = fake  # ty: ignore[invalid-assignment]
     return driver, fake
+
+
+def invoke(group: Any, args: list[str]) -> Any:
+    """Run a click command on a ``CliRunner`` with logging off while it runs.
+
+    A package's live logging (``log_cli``) suspends and resumes pytest's output capture around every record, and
+    resuming it replaces the ``sys.stdout`` the runner swapped in: a record logged by the driver while a command runs
+    would send the command's output to pytest instead of to the runner.
+    """
+    from click.testing import CliRunner
+
+    logging.disable(logging.INFO)
+    try:
+        return CliRunner().invoke(group, args)
+    finally:
+        logging.disable(logging.NOTSET)

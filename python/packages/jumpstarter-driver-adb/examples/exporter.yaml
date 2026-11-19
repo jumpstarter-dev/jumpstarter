@@ -17,3 +17,11 @@ export:
     config:
       host: "127.0.0.1"
       port: 15037
+
+  # An Android phone on a USB port, with its picture and input served as an HMI through scrcpy's server
+  # (needs jumpstarter-driver-adb[hmi] and the pinned scrcpy-server on the exporter: see the README).
+  phone:
+    type: jumpstarter_driver_adb.driver.AdbDevice
+    config:
+      usb_port: "1-4.2"
+      hmi: {}               # H.264 by default; `hmi: {codec: hevc}` asks the device for HEVC

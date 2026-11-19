@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 python-api = ["adbutils>=2.8.7"]
+hmi = ["jumpstarter-driver-hmi"]
 
 [project.entry-points."jumpstarter.drivers"]
 AdbServer = "jumpstarter_driver_adb.driver:AdbServer"
@@ -44,6 +45,7 @@ name = "pin_jumpstarter"
 
 [dependency-groups]
 dev = [
+    "jumpstarter-driver-hmi",
     "pytest-cov>=6.0.0",
     "pytest>=8.4",
 ]

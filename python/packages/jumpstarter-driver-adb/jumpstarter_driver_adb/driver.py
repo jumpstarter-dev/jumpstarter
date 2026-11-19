@@ -563,6 +563,10 @@ class AdbDevice(Driver):
     adopt_existing_server: bool = True
     #: Run Appium with UiAutomator2 on the exporter for this device; see the Appium driver.
     appium: dict | None = None
+    #: Stream this device's picture and take touch, keyboard, keys and text for it, through scrcpy's server on the
+    #: exporter; the options of the HMI go here (``hmi: {}`` for the defaults). Needs
+    #: ``jumpstarter-driver-adb[hmi]``; see ``jumpstarter_driver_adb.hmi``.
+    hmi: dict | None = None
 
     _lock: threading.Lock = field(init=False, repr=False)
     _server: _SharedServer | None = field(default=None, init=False, repr=False)
@@ -596,6 +600,30 @@ class AdbDevice(Driver):
             if "appium" in self.children:
                 raise ConfigurationError("child appium conflicts with the appium option")
             self.children["appium"] = AdbDeviceAppium(device=self, **self.appium)
+        if self.hmi is not None:
+            if "hmi" in self.children:
+                raise ConfigurationError("child hmi conflicts with the hmi option")
+            self.children["hmi"] = self._build_hmi()
+
+    def _build_hmi(self) -> Driver:
+        """The HMI of this device, from the ``hmi`` option.
+
+        The HMI package is imported only here, so a device without the option never needs it; without the ``hmi``
+        extra installed the configuration is refused with what to install.
+        """
+        if not isinstance(self.hmi, dict):
+            raise ConfigurationError("hmi must be a mapping of the HMI's options (hmi: {} for the defaults)")
+        try:
+            from .hmi.driver import AdbDeviceHmi, validate_hmi_config
+        except ModuleNotFoundError as e:
+            if (e.name or "").partition(".")[0] != "jumpstarter_driver_hmi":
+                raise  # something else is missing or wrong in the HMI module: not the extra
+            raise ConfigurationError(
+                "the hmi option needs the jumpstarter-driver-hmi package: "
+                "pip install jumpstarter-driver-adb[hmi]"
+            ) from e
+        validate_hmi_config(self.hmi)
+        return AdbDeviceHmi(device=self, **self.hmi)
 
     def _validate_config(self) -> None:
         """Reject a config whose fields do not match its transport."""
@@ -1022,9 +1050,10 @@ class AdbDevice(Driver):
         was already in the shared ADB server belongs to whoever made it, and removing it
         would break them — silently, since adb reports nothing.
         """
-        appium = self.children.get("appium")
-        if appium is not None:
-            appium.close()  # Before the ADB server it uses can go away.
+        for name in ("hmi", "appium"):
+            child = self.children.get(name)
+            if child is not None:
+                child.close()  # Before the ADB server it uses can go away.
         with self._lock:
             forward_port, forward_serial, owns_forward = self._forward_port, self._forward_serial, self._owns_forward
             connected, owns_connection = self._connected, self._owns_connection
@@ -1072,6 +1101,34 @@ class AdbDevice(Driver):
         with self._lock:
             self._ensure_server()
         return _adb_env(self.server_port)
+
+    def current_serial(self) -> str:
+        """The serial to give ``adb -s`` for this device right now, and only if the shared ADB server lists it as ready.
+
+        For a parent or child driver that runs adb itself (Appium's udid, the HMI's scrcpy server). Takes a reference
+        to the shared server first, as every adb user here must, and resolves the serial afresh on every call: a power
+        cycle can change a USB device's. For ``transport: tcp`` it is the ``host:port`` the server has the device
+        connected as (connecting it if it is not).
+
+        Raises:
+            RuntimeError: If the device is not present, or not ready (``offline``, ``unauthorized``...); the message
+                says what to look at.
+        """
+        self.adb_env()
+        if self.transport == TRANSPORT_TCP:
+            host, port = self._resolve_endpoint()
+            return f"{host}:{port}"
+        info = self.info()
+        if info.get("present") != "yes":
+            raise RuntimeError(info.get("reason") or "The Android device is not present")
+        serial = info["serial"]
+        # A configured serial is reported present without asking adb, so check that the
+        # server sees it: a user of the serial must not keep a session on a device that has left.
+        states = {visible: state for visible, state, _ in self._visible_devices()}
+        if states.get(serial) != "device":
+            state = states.get(serial)
+            raise RuntimeError(f"The Android device {serial} is {state or 'not connected'}")
+        return serial
 
     def ensure_reachable(self) -> str:
         """Make the device reachable now and return the ``host:port`` adb can address it by.

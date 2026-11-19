@@ -2090,9 +2090,13 @@ dependencies = [
 python-api = [
     { name = "adbutils" },
 ]
+hmi = [
+    { name = "jumpstarter-driver-hmi" },
+]
 
 [package.dev-dependencies]
 dev = [
+    { name = "jumpstarter-driver-hmi" },
     { name = "pytest" },
     { name = "pytest-cov" },
 ]
@@ -2104,11 +2108,13 @@ requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-hmi", marker = "extra == 'hmi'", editable = "packages/jumpstarter-driver-hmi" },
 ]
-provides-extras = ["python-api"]
+provides-extras = ["python-api", "hmi"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "jumpstarter-driver-hmi", editable = "packages/jumpstarter-driver-hmi" },
     { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
