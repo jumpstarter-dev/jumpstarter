@@ -11,3 +11,7 @@ export:
     config:
       usb_port: "1-4.2"
       http_port: 8100
+      # The device as an HMI through scrios (the `hmi` extra): its screen as H.264 (or HEVC with `codec: hevc`),
+      # with touch, keyboard keys, buttons and typing.
+      # scrios is found on PATH; name it with `executable: /path/to/scrios` otherwise. `control: false` is view-only.
+      hmi: {}
