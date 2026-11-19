@@ -1,6 +1,7 @@
 import gc
 import ssl
 from asyncio import Task  # noqa: TID251
+from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -24,6 +25,8 @@ from jumpstarter_protocol import (
     router_pb2_grpc,
 )
 
+from jumpstarter.metrics._testing import reset_registry_for_tests
+from jumpstarter.metrics.registry import MetricsRegistry
 from jumpstarter.streams.common import forward_stream
 from jumpstarter.streams.router import RouterStream
 
@@ -260,3 +263,17 @@ async def mock_controller(tmp_path, monkeypatch):
 
 
 pytest_plugins = ["pytester"]
+
+
+@pytest.fixture()
+def fresh_registry() -> Iterator[MetricsRegistry]:
+    """Give a test an empty process registry, and restore one afterwards.
+
+    Not autouse: the exporter and metrics suites manage the singleton
+    themselves, and a package-wide reset would change their assumptions.
+    """
+    registry = reset_registry_for_tests()
+    try:
+        yield registry
+    finally:
+        reset_registry_for_tests()

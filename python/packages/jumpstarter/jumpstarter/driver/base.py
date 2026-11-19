@@ -18,6 +18,7 @@ from uuid import UUID, uuid4
 
 import aiohttp
 import grpc.aio
+import structlog
 import yarl
 from anyio import BrokenResourceError, to_thread
 from grpc import StatusCode
@@ -39,8 +40,10 @@ from jumpstarter.common.streams import (
     DriverStreamRequest,
     ResourceStreamRequest,
 )
+from jumpstarter.common.telemetry_event import bounded_structured_fields
 from jumpstarter.config.env import JMP_DISABLE_COMPRESSION
 from jumpstarter.exporter.logging import get_logger
+from jumpstarter.metrics.driver import DriverMetrics, current_driver_type_override
 from jumpstarter.metrics.registry import (
     ErrorType,
     OperationResult,
@@ -75,6 +78,21 @@ SUPPORTED_CONTENT_ENCODINGS = (
     }
 )
 
+_EVENT_LEVELS = {
+    "debug": logging.DEBUG,
+    "info": logging.INFO,
+    "warning": logging.WARNING,
+    "error": logging.ERROR,
+}
+
+
+def _exporter_default(driver: Driver) -> str:
+    """Exporter name fallback for partially constructed drivers (tests, tools)."""
+    try:
+        return driver.name
+    except AttributeError:
+        return "unknown"
+
 
 class _DriverLoggerNameFilter(logging.Filter):
     def __init__(self, display_name: str):
@@ -104,6 +122,9 @@ class Driver(
     driver_type: ClassVar[str] = "other"
     """Driver category for observability (e.g. power, storage, network, serial, console, video, composite)."""
 
+    metrics_namespace: ClassVar[str | None] = None
+    """Metric namespace override; defaults to the driver package slug."""
+
     children: dict[str, Driver] = field(default_factory=dict)
 
     resources: dict[UUID, Any] = field(default_factory=dict, init=False)
@@ -130,6 +151,77 @@ class Driver(
         self._logger_filter = _DriverLoggerNameFilter(display_name)
         self.logger.addFilter(self._logger_filter)
         self.logger.setLevel(self.log_level if self.log_level is not None else "INFO")
+
+    def _resolve_driver_type(self) -> str:
+        """Driver category for this observation.
+
+        A ``DriverMetrics.driver_type(...)`` block wins over the class
+        ``ClassVar``. One resolver feeds driver metrics, events, and the generic
+        operation metrics so a block never reports two categories.
+        """
+        return current_driver_type_override() or type(self).driver_type
+
+    @property
+    def metrics(self) -> DriverMetrics:
+        """Telemetry handle for this driver (see the driver-author guide)."""
+        module = type(self).__module__
+        package = module.split(".")[0]
+        override = type(self).metrics_namespace
+        if override:
+            namespace = override
+        elif package.startswith("jumpstarter_driver_"):
+            namespace = package[len("jumpstarter_driver_") :]
+        elif package == "jumpstarter":
+            namespace = "jumpstarter"
+        else:
+            namespace = package
+
+        return DriverMetrics(
+            namespace=namespace,
+            driver_type=self._resolve_driver_type,
+            logger=self.logger,
+            exporter_default=_exporter_default(self),
+            package=package,
+            source=f"{module}:{type(self).__qualname__}",
+        )
+
+    def emit_event(
+        self,
+        message: str,
+        *,
+        operation: str | None = None,
+        result: str | None = None,
+        fields: dict[str, Any] | None = None,
+        severity: str = "info",
+    ) -> None:
+        """Record one structured operational event (JEP-0013 DD-2).
+
+        The record carries ``driver_type`` (resolver), ``operation``,
+        ``result``, the current ``lease_id``/``client``, and bounded
+        ``structured_fields``. Telemetry failures never change the operation's
+        outcome.
+        """
+        try:
+            bounded, dropped = bounded_structured_fields(fields)
+            extra: dict[str, Any] = {"driver_type": self._resolve_driver_type()}
+            if operation is not None:
+                extra["operation"] = operation
+            if result is not None:
+                extra["result"] = result
+            context = structlog.contextvars.get_contextvars()
+            for key in ("lease_id", "client"):
+                if context.get(key):
+                    extra[key] = str(context[key])
+            extra.update(bounded)
+            if dropped and len(bounded) < 16:
+                extra["fields_dropped"] = dropped
+            level = _EVENT_LEVELS.get(str(severity).lower(), logging.INFO)
+            self.logger.log(level, message, extra=extra)
+        except Exception:  # noqa: BLE001 - telemetry must never raise
+            try:
+                self.logger.warning("Failed to record driver event")
+            except Exception:  # noqa: BLE001, S110 - last-resort guard
+                pass
 
     def propagate_log_level(self, inherited: str = "INFO") -> None:
         """Set this driver's log level and recurse into all children.
@@ -216,7 +308,7 @@ class Driver(
                 exporter=exporter_from_log_context(default=self.name if hasattr(self, "name") else "unknown"),
                 operation=operation,
                 result=result,
-                driver_type=self.driver_type,
+                driver_type=self._resolve_driver_type(),
                 duration_seconds=duration_seconds,
                 exemplars=exemplars_from_log_context(),
                 error_type=error_type,
@@ -226,7 +318,7 @@ class Driver(
                 "Failed to record operation metrics",
                 extra={
                     "operation": operation,
-                    "driver_type": self.driver_type,
+                    "driver_type": self._resolve_driver_type(),
                     "result": result,
                     "error_type": error_type,
                 },
@@ -252,7 +344,7 @@ class Driver(
                     "Operation failed",
                     extra={
                         "operation": op,
-                        "driver_type": self.driver_type,
+                        "driver_type": self._resolve_driver_type(),
                         "result": "failure",
                         "error_type": error_type,
                     },
@@ -269,7 +361,7 @@ class Driver(
             "Operation failed",
             extra={
                 "operation": op,
-                "driver_type": self.driver_type,
+                "driver_type": self._resolve_driver_type(),
                 "result": "failure",
                 "error_type": "internal_error",
             },
@@ -284,7 +376,7 @@ class Driver(
         started = time.perf_counter()
         self.logger.info(
             "Operation started",
-            extra={"operation": op, "driver_type": self.driver_type},
+            extra={"operation": op, "driver_type": self._resolve_driver_type()},
         )
         try:
             method = await self.__lookup_drivercall(request.method, context, MARKER_DRIVERCALL)
@@ -309,7 +401,7 @@ class Driver(
             )
             self.logger.info(
                 "Operation completed",
-                extra={"operation": op, "driver_type": self.driver_type, "result": "success"},
+                extra={"operation": op, "driver_type": self._resolve_driver_type(), "result": "success"},
             )
             return response
         except grpc.aio.AbortError:
@@ -327,7 +419,7 @@ class Driver(
         started = time.perf_counter()
         self.logger.info(
             "Operation started",
-            extra={"operation": op, "driver_type": self.driver_type},
+            extra={"operation": op, "driver_type": self._resolve_driver_type()},
         )
         try:
             method = await self.__lookup_drivercall(request.method, context, MARKER_STREAMING_DRIVERCALL)
@@ -353,7 +445,7 @@ class Driver(
             )
             self.logger.info(
                 "Operation completed",
-                extra={"operation": op, "driver_type": self.driver_type, "result": "success"},
+                extra={"operation": op, "driver_type": self._resolve_driver_type(), "result": "success"},
             )
         except grpc.aio.AbortError:
             # Propagate context.abort() from lookup/handlers without recording

@@ -11,6 +11,7 @@ from typing import Any
 from jumpstarter_protocol import telemetry_pb2
 from prometheus_client import CollectorRegistry
 
+from .definitions import family_name
 from .registry import MetricsRegistry
 
 _TYPE_MAP = {
@@ -24,25 +25,6 @@ _TYPE_MAP = {
     "untyped": telemetry_pb2.METRICS_TYPE_UNTYPED,
     "unknown": telemetry_pb2.METRICS_TYPE_UNTYPED,
 }
-
-
-def _family_name(metric: Any) -> str:
-    """Prometheus family name, including ``_total`` for counters.
-
-    ``prometheus_client`` OpenMetrics ``collect()`` strips ``_total`` from the
-    family name. The hub OpenMetrics encoder treats a counter without that
-    suffix as ``unknown``, and text-path snapshots already use the ``_total``
-    name, so mixed exporters would otherwise fail to merge.
-
-    ``Info`` collectors use type ``info`` and a family name without ``_info``;
-    OpenMetrics appends that suffix, so the sidecar does the same.
-    """
-    name = metric.name
-    if metric.type == "counter" and not name.endswith("_total"):
-        return f"{name}_total"
-    if metric.type == "info" and not name.endswith("_info"):
-        return f"{name}_info"
-    return name
 
 
 def _set_unix_timestamp(dest: Any, ts: float) -> None:
@@ -96,7 +78,7 @@ def families_from_collector(registry: CollectorRegistry) -> list[telemetry_pb2.M
     out: list[telemetry_pb2.MetricsFamily] = []
     for metric in registry.collect():
         fam = telemetry_pb2.MetricsFamily(
-            name=_family_name(metric),
+            name=family_name(metric),
             help=metric.documentation or "",
             type=_TYPE_MAP.get(metric.type, telemetry_pb2.METRICS_TYPE_UNSPECIFIED),
         )

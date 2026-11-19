@@ -7,6 +7,12 @@ from .registry import MetricsRegistry
 
 
 def reset_registry_for_tests() -> MetricsRegistry:
-    """Replace the process-wide registry (tests only)."""
-    _registry._REGISTRY = MetricsRegistry()
-    return _registry._REGISTRY
+    """Replace the process-wide registry (tests only).
+
+    A fresh registry starts with no driver instruments, so any handle a test
+    created before the reset resolves the new registry on its next use instead
+    of writing to the dead one.
+    """
+    registry = MetricsRegistry()
+    _registry._REGISTRY = registry
+    return registry

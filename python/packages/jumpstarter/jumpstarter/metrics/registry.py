@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from collections.abc import Callable
+from typing import Any, Literal
 
 import structlog
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
 from prometheus_client.openmetrics.exposition import generate_latest as generate_latest_openmetrics
+
+from .definitions import MetricConflictError, MetricDefinition, conflict_message
 
 DEFAULT_EXEMPLAR_KEYS = ("client", "lease_id")
 
@@ -81,10 +84,104 @@ class MetricsRegistry:
             ["exporter"],
             registry=self._registry,
         )
+        # Driver instruments are registered lazily as drivers declare them.
+        # Definitions and instruments are keyed by full family name so a
+        # repeated declaration returns the same instrument and a conflicting
+        # one raises.
+        self._driver_definitions: dict[str, MetricDefinition] = {}
+        self._driver_instruments: dict[str, Any] = {}
+        self._driver_label_warnings: set[tuple[str, str]] = set()
 
     @property
     def collector_registry(self) -> CollectorRegistry:
         return self._registry
+
+    def register_driver_metric(
+        self,
+        definition: MetricDefinition,
+        factory: Callable[[], Any],
+    ) -> Any:
+        """Register (once) and return the prometheus instrument for a family.
+
+        An identical re-declaration returns the existing instrument; any
+        difference in type, help, labels, or buckets raises
+        ``MetricConflictError``.
+        """
+        existing = self._driver_definitions.get(definition.name)
+        if existing is not None:
+            if existing.identity() != definition.identity():
+                raise MetricConflictError(conflict_message(definition, existing))
+            return self._driver_instruments[definition.name]
+
+        instrument = factory()
+        self._driver_definitions[definition.name] = definition
+        self._driver_instruments[definition.name] = instrument
+        return instrument
+
+    def driver_instrument(
+        self,
+        definition: MetricDefinition,
+        factory: Callable[[], Any],
+    ) -> Any:
+        """Return the registered instrument, creating it on first use.
+
+        The record path calls this instead of ``register_driver_metric``: an
+        existing instrument is one dictionary lookup, and a handle that outlived
+        a registry reset re-registers into the current registry.
+        """
+        existing = self._driver_instruments.get(definition.name)
+        if existing is not None:
+            return existing
+        return self.register_driver_metric(definition, factory)
+
+    def driver_catalog(self) -> list[MetricDefinition]:
+        """Registered driver families, sorted for a deterministic catalog."""
+        return sorted(self._driver_definitions.values(), key=lambda d: (d.package, d.name))
+
+    def core_catalog(self) -> list[MetricDefinition]:
+        """Definitions for the built-in exporter families.
+
+        Uses the instruments' own name/documentation/label metadata so the
+        catalog cannot drift from what ``collect()`` exposes. ``_name`` is
+        prometheus_client's internal (counters have ``_total`` stripped there).
+        """
+        specs = (
+            (self._operations, "counter"),
+            (self._duration, "histogram"),
+            (self._errors, "counter"),
+            (self._stream_bytes, "counter"),
+            (self._active_sessions, "gauge"),
+        )
+        definitions = []
+        for instrument, metric_type in specs:
+            base = instrument._name.removesuffix("_total")
+            definitions.append(
+                MetricDefinition(
+                    name=f"{base}_total" if metric_type == "counter" else base,
+                    short_name=base,
+                    namespace="core",
+                    type=metric_type,
+                    help=instrument._documentation,
+                    labels=tuple(instrument._labelnames),
+                    package="jumpstarter",
+                    source="jumpstarter.metrics.registry",
+                )
+            )
+        return definitions
+
+    def reset_driver_instruments(self) -> None:
+        """Drop every driver instrument, definition, and warning marker."""
+        self._driver_definitions.clear()
+        self._driver_instruments.clear()
+        self._driver_label_warnings.clear()
+
+    def first_invalid_label_warning(self, metric_name: str, label: str) -> bool:
+        """True the first time an invalid value is seen for a metric/label."""
+        key = (metric_name, label)
+        if key in self._driver_label_warnings:
+            return False
+        self._driver_label_warnings.add(key)
+        return True
 
     def record_operation(
         self,
