@@ -12,8 +12,8 @@ are installed separately.
 $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-iosdevice
 ```
 
-To stream the screen (see [Screen (scrios)](#hmi-scrios)) install the
-`hmi` extra, which adds the {doc}`HMI interface <hmi>`:
+To see the device and control it through an HMI (see [HMI (scrios)](#hmi-scrios))
+install the `hmi` extra, which adds the {doc}`HMI interface <hmi>`:
 
 ```{code-block} console
 :substitutions:
@@ -29,7 +29,7 @@ under their respective licenses; Jumpstarter does not bundle or download them.
 | [libimobiledevice](https://github.com/libimobiledevice/libimobiledevice) | Device utilities and libraries |
 | [usbfluxd](https://github.com/corellium/usbfluxd) | Access a remote usbmux endpoint from local tools |
 | [Appium](https://appium.io/docs/en/latest/) | UI automation; the exporter can run it for the lease |
-| [scrios](https://github.com/kirkbrauer/scrios) | The device's screen as H.264, with touch, buttons and typing; the exporter can run it for the lease |
+| [scrios](https://github.com/kirkbrauer/scrios) | The device's screen as H.264 or HEVC, with touch, keyboard keys, buttons and typing; the exporter can run it for the lease |
 
 The exporter needs a running usbmux daemon and a device running iOS 17.4 or
 later. Pair the device on the exporter before leasing it. Developer services
@@ -98,7 +98,7 @@ that connection uses plain TCP.
 | `devicehub_state` | File that keeps the Device Hub identity and paired Macs | str | no | — |
 | `devicehub_udid` | UDID the device presents in Device Hub | str | no | the device's UDID |
 | `appium` | Run Appium on the exporter for this device; see [Appium](#appium) | dict | no | — |
-| `hmi` | Stream the device's screen with scrios on the exporter; see [Screen (scrios)](#hmi-scrios) | dict | no | — |
+| `hmi` | Serve the device as an HMI with scrios on the exporter; see [HMI (scrios)](#hmi-scrios) | dict | no | — |
 
 `http_port` and `devicehub` require exporter trust mode. `http_port` must not
 also appear in `forward_ports`. The operator starts the HTTP service. Lockdown port 62078
@@ -349,14 +349,15 @@ together with `j ios serve` for usbmux. On a Mac,
 [Appium through Device Hub](#appium-through-device-hub) starts a WDA build you
 provide.
 
-### Screen (scrios)
+### HMI (scrios)
 
-With a `hmi` block the exporter streams the device's screen as H.264 and
-takes touch, the device's buttons and typed text, through the
-{doc}`HMI interface <hmi>`: one stream for any number of viewers, a
-recording, and the same client and web view (`j ios hmi view`) as every other
-screen. It needs the `hmi` extra (`pip install jumpstarter-driver-iosdevice[hmi]`);
-a device without the option never loads it.
+With a `hmi` block the exporter serves the device as an HMI, through the
+{doc}`HMI interface <hmi>`: its screen as H.264 (or HEVC) and the input the
+device takes back, which here is touch, keyboard keys, the device's buttons and
+typed text. One stream serves any number of viewers; there is a recording, and
+the same client and web view (`j ios hmi view`) as every other HMI. It needs
+the `hmi` extra (`pip install jumpstarter-driver-iosdevice[hmi]`); a device
+without the option never loads it.
 
 ```yaml
 export:
@@ -364,18 +365,18 @@ export:
     type: jumpstarter_driver_iosdevice.driver.IosDevice
     config:
       usb_port: "1-4.2"
-      hmi: {}                  # or: {executable: /opt/scrios/scrios, control: false}
+      hmi: {}                  # or: {executable: /opt/scrios/scrios, codec: hevc, control: false}
 ```
 
 The picture comes from [scrios](https://github.com/kirkbrauer/scrios), a
 separate program (Apache-2.0) that reads the device's CoreDevice display
 service through the exporter's own usbmux daemon, with the pairing the exporter
 already holds, and writes H.264 and events on its standard output. The driver
-runs it as `scrios stream --format framed --udid UDID --video-codec h264`,
-adding `--usbmuxd` (the device driver's own address), `--no-control` for a
-view-only screen, and what the options below ask for. Nothing of scrios reaches
-the client: touch, buttons and text from any viewer are turned into scrios's
-commands on the exporter.
+runs it as `scrios stream --format framed --udid UDID --video-codec h264`
+(`h265` for HEVC), adding `--usbmuxd` (the device driver's own address),
+`--no-control` for a view-only HMI, and what the options below ask for. Nothing
+of scrios reaches the client: touch, keys, buttons and text from any viewer are
+turned into scrios's commands on the exporter.
 
 **Where the binary comes from.** Install a release of scrios on the exporter:
 `scrios-x86_64-linux-musl` or `scrios-aarch64-linux-musl` from
@@ -415,34 +416,66 @@ and `stop_deadline_s`):
 | `start_timeout_s` | How long scrios has to say what the picture is (it connects through the device's tunnel) | float | `30.0` |
 | `stall_s` | Silence, with a viewer attached, after which scrios is asked for a key picture, and after as long again restarted (once) | float | `8.0` |
 
-`max_size`, `bit_rate` and `max_fps` of the common options do nothing here:
-scrios streams the display at its own size, rate and bit rate, so the quality is
-not adjustable (`set_quality` says so) and the stream is limited only by the
-network between the client and the exporter. A clean stop of scrios can take up
+`codec` of the common options is `h264` (the default) or `hevc`; `mjpeg` is a
+`ConfigurationError`, and so are `max_size`, `bit_rate` and `max_fps`: scrios
+streams the display at its own size, rate and bit rate, so the quality is not
+adjustable (`set_quality` says so) and the stream is limited only by the network
+between the client and the exporter. A clean stop of scrios can take up
 to about 8 seconds; the defaults end it sooner, and an operator who prefers it
 to finish can raise `stop_grace_s` and `stop_deadline_s`.
 
-**Input.** Touch is one finger (id 0), at pixels of the picture the viewer is
-shown (upright, after the rotation the codec line reports); scrios maps it onto
-the digitizer. The default buttons, as the `hmi_info()` of the screen lists
-them: `HOME`, `APP_SWITCH` (the Home button pressed twice, which opens the App
-Switcher), `LOCK` (also `POWER`), `VOLUME_UP`, `VOLUME_DOWN`, `MUTE` and
-`ASSIST` (Siri); `short` and `long` presses only, since scrios holds a button
-for its hold time itself. There is no back button on an iPhone. Text is typed by
-scrios through a US layout: letters, digits, the printable ASCII punctuation,
-space, newline and tab; anything else (accented letters, emoji, `\r`) is skipped
-and logged. Typing and touch are answered with an error line until scrios says
-that the device's touch and keyboard services are ready.
+**Codecs.** The HMI declares `h264` and `hevc` in `hmi_info()`. H.264 is the
+default; choose HEVC with `codec: hevc`, or per lease with `start(codec="hevc")`
+(the stream restarts with it). The codec line names what scrios's `config`
+event says (`avc1.*`, `hev1.*` or `hvc1.*`), and a scrios that streams the other
+codec than the one asked for, or any other codec, is a start error that says
+so. HEVC needs a viewer that can decode it.
 
-**Limits.** H.264 only and one finger, as for every screen. Control of the
+**Input.** The HMI declares exactly what scrios supports, and the exporter
+passes nothing else on:
+
+- *Touch*: one finger (id 0), at pixels of the picture the viewer is shown
+  (upright, after the rotation the codec line reports); scrios maps it onto
+  the digitizer. No mouse, pen or wheel.
+- *Keyboard keys*: the keys of a full-size keyboard, by their
+  `KeyboardEvent.code`: letters, digits, the punctuation keys, `Enter`,
+  `Escape`, `Backspace`, `Tab`, `Space`, `CapsLock`, `F1` to `F12`, `Insert`,
+  `Home`, `PageUp`, `Delete`, `End`, `PageDown`, the four arrows, the numeric
+  keypad and the eight modifiers (`ShiftLeft`, `ControlRight`, `MetaLeft`, ...).
+  `hmi_info()["input"]["keyboard"]["codes"]` lists them. Each goes to scrios as
+  `kb down USAGE` and `kb up USAGE` with the key's USB HID usage (`KeyA` is
+  `04`, `Enter` is `28`), so it is the physical key that is pressed and the
+  phone's keyboard layout decides which character it makes. A key stays down
+  until it is let go; the exporter lets go of the keys a client leaves down when
+  its input stream ends, and scrios itself does 30 seconds after the last
+  keyboard command and when it stops.
+- *Typed text*: typed by scrios through a US layout (`layout: us`): letters,
+  digits, the printable ASCII punctuation, space, newline and tab; anything else
+  (accented letters, emoji, `\r`) is skipped and logged.
+- *Buttons*: as the `hmi_info()` of the HMI lists them: `HOME`, `APP_SWITCH`
+  (the Home button pressed twice, which opens the App Switcher), `VOLUME_UP`,
+  `VOLUME_DOWN`, `MUTE` and `ASSIST` (Siri); `short` and `long` presses only,
+  since scrios holds a button for its hold time itself. `LOCK` and `POWER` (the
+  same button) are **opt-in**: pressing it can lock the user out of a device
+  whose only way in is its screen, so the HMI accepts it only when `hard_keys`
+  lists it (`hard_keys: [HOME, APP_SWITCH, LOCK]`). There is no back button on
+  an iPhone.
+
+Touch and buttons are answered with an error line (with scrios's reason) until
+scrios says that the device's touch and key services are ready, and keys and
+text until it also says that its keyboard works. A key that is already down when
+the keyboard stops working can still be let go.
+
+**Limits.** H.264 and HEVC only (no MJPEG), one finger, no mouse, pen, wheel or
+clipboard. Control of the
 device needs the display service's touch and key services; when they cannot be
 connected scrios runs without them and `status()["device"]["hid"]` says why.
 The status also has scrios's own facts: its version, process and uptime, the
-statistics it reports, what it last said and how it last ended, and the last
-lines of its log. The driver's reading of scrios's output, its input queue and
-the way it stops are bounded: a scrios that stops reading its standard input, or
-that ignores `stop` and SIGTERM, cannot hold up the stream, the exporter or the
-end of a lease.
+codec, the statistics it reports, what it last said and how it last ended, and
+the last lines of its log. The driver's reading of scrios's output, its input
+queue and the way it stops are bounded: a scrios that stops reading its standard
+input, or that ignores `stop` and SIGTERM, cannot hold up the stream, the
+exporter or the end of a lease.
 
 ## Security and limits
 
@@ -502,10 +535,10 @@ Client:
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_iosdevice.client.IosDeviceClient()
-    :members: info, serve, connect, forward, https, run, devicehub, devicehub_appium, appium, screen
+    :members: info, serve, connect, forward, https, run, devicehub, devicehub_appium, appium, hmi
 ```
 
-Screen (needs the `hmi` extra):
+HMI (needs the `hmi` extra):
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_iosdevice.hmi.IosDeviceHmi()

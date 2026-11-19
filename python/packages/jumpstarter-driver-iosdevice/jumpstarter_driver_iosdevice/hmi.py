@@ -1,4 +1,5 @@
-"""The screen of an iPhone or iPad as H.264 with touch, buttons and typing: the HMI interface, through ``scrios``.
+"""An iPhone or iPad as an HMI, through ``scrios``: its screen as H.264 or HEVC, with touch, a keyboard, buttons and
+typing.
 
 `scrios <https://github.com/kirkbrauer/scrios>`_ is a separate program (Apache-2.0, a static binary for Linux) that
 streams an iOS device's screen through the CoreDevice display service and sends it touch, buttons and keyboard input.
@@ -6,6 +7,19 @@ This driver does not speak that protocol: it runs ``scrios stream --format frame
 connects through the exporter's own usbmux daemon with the pairing the exporter already holds, reads its framed output
 (:mod:`jumpstarter_driver_iosdevice.scrios_framed`) and hands the pictures to the shared hub of
 :mod:`jumpstarter_driver_hmi`, which serves them to any number of viewers. Nothing of scrios reaches the client.
+
+The HMI interface is a general one; this backend declares the subset of it that scrios genuinely supports, and the
+exporter never sends it anything else:
+
+* **codecs**: H.264 (the default) and HEVC, chosen with the ``codec`` option or ``start(codec=...)`` and passed to
+  scrios as ``--video-codec``; the codec line names what scrios's ``config`` says. Not MJPEG.
+* **pointer**: touch, one finger (scrios takes finger 0 only), at pixels of the shown picture.
+* **keyboard**: the keys of :mod:`jumpstarter_driver_iosdevice.hid_usages` by their ``KeyboardEvent.code``, sent as
+  ``kb down``/``kb up`` with the key's USB HID usage, and text, typed by scrios through a US layout. Both are refused,
+  with scrios's reason, until its ``hid`` event says the keyboard works.
+* **hard keys**: the buttons of the phone (Home, App Switcher, volume, mute, Siri; lock and power only when the
+  exporter lists them).
+* no clipboard, no mouse, no pen, no wheel, no adjustable quality.
 
 ::
 
@@ -48,14 +62,26 @@ from typing import TYPE_CHECKING, Any
 
 import anyio
 from anyio import from_thread
-from jumpstarter_driver_hmi.common import MAX_TEXT_CHARS, Capabilities, CodecLine, HardKey, InputError, canonical_key
+from jumpstarter_driver_hmi.common import (
+    DEFAULT_CODEC,
+    MAX_TEXT_CHARS,
+    Capabilities,
+    CodecLine,
+    HardKey,
+    InputError,
+    KeyboardCaps,
+    PointerCaps,
+    canonical_key,
+)
 from jumpstarter_driver_hmi.driver import HmiDriver
+from jumpstarter_driver_hmi.hub.codecs import is_reference
 from jumpstarter_driver_hmi.hub.quality import Rung
 from jumpstarter_driver_hmi.proc import COALESCE_KEYFRAME, Backoff, CommandWriter, ManagedProcess
 from jumpstarter_driver_hmi.proc.process import DEFAULT_TERM_S
 from jumpstarter_driver_hmi.proc.writer import DEFAULT_DEPTH
-from jumpstarter_driver_hmi.source import HubSink, InputSink, HmiSource
+from jumpstarter_driver_hmi.source import HmiSource, HubSink, InputSink
 
+from .hid_usages import CODES, USAGES, usage_argument
 from .scrios_framed import (
     PROTOCOL,
     Config,
@@ -80,13 +106,18 @@ VERSION_TIMEOUT_S = 10.0
 #: How long a start waits, once the picture is known, for scrios to say whether touch and keys are ready.
 HID_WAIT_S = 2.0
 #: What a start says when ``stop`` overtook it.
-STOPPED_WHILE_STARTING = "the screen stream was stopped while it started"
+STOPPED_WHILE_STARTING = "the HMI stream was stopped while it started"
 #: How long a start that failed gives scrios to leave (the driver stops the source again, with its own deadline).
 START_FAIL_STOP_S = 4.0
 #: The longest ``kb type`` command scrios takes, in characters; a longer text goes as several commands, in order.
 TYPE_CHUNK_CHARS = 4096
 #: The most pasted text one input line may carry (the HMI interface's own limit).
 MAX_TYPED_CHARS = MAX_TEXT_CHARS
+#: The codecs scrios streams, by the interface's names (the first is the default), and what scrios's ``--video-codec``
+#: calls each.
+VIDEO_CODECS = {"h264": "h264", "hevc": "h265"}
+#: The layout scrios types text in (``kb type`` goes through a US keyboard).
+LAYOUT = "us"
 
 #: scrios's buttons by the canonical key names of the HMI interface. ``POWER`` is the lock button under its other
 #: name.
@@ -103,13 +134,14 @@ BUTTONS = {
 #: The buttons whose press is not a choice: ``key <name>`` with no ``short`` or ``long`` (it is the Home button pressed
 #: twice, which opens the App Switcher).
 PRESSLESS_BUTTONS = frozenset({"app-switcher"})
-#: Every key the screen accepts, canonical.
-KEYS = tuple(BUTTONS)
+#: The hard keys the HMI accepts, canonical, and the keys it can send but does not offer unless the exporter lists them
+#: in ``hard_keys``: the lock and power buttons can lock the user out of a device whose only way in is its screen.
+OPTIONAL_KEYS = ("LOCK", "POWER")
+KEYS = tuple(key for key in BUTTONS if key not in OPTIONAL_KEYS)
 #: The buttons a UI draws by default, in order (the exporter may replace them with ``hard_keys:``).
 DEFAULT_HARD_KEYS = (
     HardKey("HOME", "Home"),
     HardKey("APP_SWITCH", "App Switcher", ("short",)),
-    HardKey("LOCK", "Lock"),
     HardKey("VOLUME_UP", "Volume Up"),
     HardKey("VOLUME_DOWN", "Volume Down"),
     HardKey("MUTE", "Mute"),
@@ -122,6 +154,8 @@ INPUT_COUNTERS = (
     "touch_refused",
     "keys_sent",
     "keys_refused",
+    "keyboard_sent",
+    "keyboard_refused",
     "chars_typed",
     "text_refused",
 )
@@ -189,23 +223,31 @@ def scrios_version(program: str) -> str:
     return _version(program, status.st_mtime_ns, status.st_size)
 
 
+#: How often ``--version`` is asked again when the program was killed by a signal before it could answer: the exporter
+#: is a busy process with a gRPC server, and a fork in it can leave the child to die of a stray SIGPIPE.
+VERSION_ATTEMPTS = 3
+
+
 @functools.lru_cache(maxsize=32)
 def _version(program: str, mtime_ns: int, size: int) -> str:
     del mtime_ns, size  # they only make the cache notice a new file
-    try:
-        done = subprocess.run(  # the configured program, a fixed argument, no shell
-            [program, "--version"],
-            capture_output=True,
-            stdin=subprocess.DEVNULL,
-            timeout=VERSION_TIMEOUT_S,
-            check=False,
-            text=True,
-            errors="replace",
-        )
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"`{program} --version` did not answer within {VERSION_TIMEOUT_S:g} s") from None
-    except OSError as e:
-        raise RuntimeError(f"scrios {program!r} could not be run: {e}") from e
+    for attempt in range(VERSION_ATTEMPTS):
+        try:
+            done = subprocess.run(  # the configured program, a fixed argument, no shell
+                [program, "--version"],
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                timeout=VERSION_TIMEOUT_S,
+                check=False,
+                text=True,
+                errors="replace",
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"`{program} --version` did not answer within {VERSION_TIMEOUT_S:g} s") from None
+        except OSError as e:
+            raise RuntimeError(f"scrios {program!r} could not be run: {e}") from e
+        if done.returncode >= 0 or attempt == VERSION_ATTEMPTS - 1:  # not killed by a signal: that is its answer
+            break
     said = done.stdout.strip().splitlines()[0][:200] if done.stdout.strip() else ""
     words = said.split()
     if done.returncode != 0 or not words or words[0].lower() != "scrios":
@@ -233,11 +275,13 @@ def _device_info(device: IosDevice) -> dict:
 class _Run:
     """One launch of scrios: its process, its writer and what it has said so far."""
 
-    def __init__(self, sink: HubSink, argv: list[str], program: str) -> None:
+    def __init__(self, sink: HubSink, argv: list[str], program: str, codec: str = DEFAULT_CODEC) -> None:
         self.sink = sink
         self.argv = argv
         self.program = program
-        self.stream = ScriosStream()
+        #: the codec this run was asked for (``h264`` or ``hevc``): a ``config`` that names another is fatal
+        self.codec = codec
+        self.stream = ScriosStream(expect=codec)
         self.proc: ManagedProcess
         self.writer: CommandWriter
         #: a usable ``config`` has come, or the run is over
@@ -266,6 +310,8 @@ class _Run:
         self.stopped_event = False
         self.hid_ready: bool | None = None
         self.hid_keyboard: bool | None = None
+        #: what scrios said when it reported the keyboard unavailable
+        self.hid_keyboard_reason: str | None = None
         self.hid_mapping: str | None = None
         self.started_at = time.monotonic()
 
@@ -275,8 +321,6 @@ class IosDeviceHmiSource(HmiSource):
 
     Everything here runs on worker threads. The input sink only enqueues, and stopping is bounded.
     """
-
-    codec = "h264"
 
     def __init__(
         self,
@@ -330,26 +374,38 @@ class IosDeviceHmiSource(HmiSource):
     # -- what it is -------------------------------------------------------------------------------------------------
 
     def capabilities(self) -> Capabilities:
-        """H.264, one contact, scrios's buttons and typing (not adjustable; a key picture is a cheap request)."""
+        """What scrios supports and nothing else: H.264 and HEVC; touch with one finger; the keyboard keys of
+        :mod:`~jumpstarter_driver_iosdevice.hid_usages` and typed text (US layout); the phone's buttons. Not adjustable
+        in quality, and a key picture is a cheap request.
+        """
+        codecs = tuple(VIDEO_CODECS)
         if not self._control:
-            return Capabilities(max_fingers=0, keyframe_cost="cheap", rotation=True)
+            return Capabilities(codecs=codecs, keyframe_cost="cheap", rotation=True)
         return Capabilities(
-            max_fingers=1,
+            codecs=codecs,
+            pointer=PointerCaps.touch(1),
+            keyboard=KeyboardCaps(codes=CODES, text=True, layout=LAYOUT),
             keys=KEYS,
+            optional_keys=OPTIONAL_KEYS,
             hard_keys=DEFAULT_HARD_KEYS,
-            text=True,
             quality=None,
             keyframe_cost="cheap",
             rotation=True,
         )
 
-    def command(self, program: str, udid: str) -> list[str]:
+    def command(self, program: str, udid: str, codec: str = DEFAULT_CODEC) -> list[str]:
         """The command line: scrios's documented options and nothing else.
 
         ``stream`` is mandatory (a bare ``scrios`` opens a window in a build that has a viewer); framed output makes it
-        wait for nothing, and the end of its stdin is a stop.
+        wait for nothing, and the end of its stdin is a stop. ``codec`` (``h264`` or ``hevc``) is passed as scrios's
+        ``--video-codec`` (``h264`` or ``h265``).
+
+        Raises:
+            RuntimeError: If scrios does not stream ``codec``.
         """
-        argv = [program, "stream", "--format", "framed", "--udid", udid, "--video-codec", "h264"]
+        if codec not in VIDEO_CODECS:
+            raise RuntimeError(_refused_codec(codec))
+        argv = [program, "stream", "--format", "framed", "--udid", udid, "--video-codec", VIDEO_CODECS[codec]]
         if not self._control:
             argv.append("--no-control")
         if (address := self._usbmuxd()) is not None:
@@ -392,20 +448,26 @@ class IosDeviceHmiSource(HmiSource):
             self._backoff.reset()
             self._last_error = self._last_error_at = None
 
-    def start(self, sink: HubSink, rung: Rung | None, timeout_s: float) -> None:
+    def start(self, sink: HubSink, rung: Rung | None, timeout_s: float, *, codec: str = DEFAULT_CODEC) -> None:
         """Run scrios and return once it has said what the picture is (and, with control, whether touch is ready).
 
+        ``codec`` is ``h264`` or ``hevc``; the codec line is what scrios's ``config`` says, and a ``config`` that names
+        the other codec ends the start.
+
         Raises:
-            RuntimeError: If scrios is missing, is not scrios or speaks another protocol, cannot find the device, ends
-                or says nothing within ``timeout_s``, or is backing off after failures.
+            RuntimeError: If ``codec`` is not one scrios streams, scrios is missing, is not scrios or speaks another
+                protocol, cannot find the device, ends or says nothing within ``timeout_s``, or is backing off after
+                failures.
         """
+        if codec not in VIDEO_CODECS:
+            raise RuntimeError(f"the HMI stream could not start: {_refused_codec(codec)}")
         deadline = time.monotonic() + timeout_s
         with self._lock:
             epoch = self._epoch
         program = self._program()
         self._check_backoff()
-        argv = self.command(program, self._udid())
-        run = _Run(sink, argv, program)
+        argv = self.command(program, self._udid(), codec)
+        run = _Run(sink, argv, program, codec)
         run.proc = ManagedProcess(
             argv,
             name="scrios",
@@ -470,7 +532,7 @@ class IosDeviceHmiSource(HmiSource):
         with self._lock:
             if self._run is run:
                 self._run = None
-        raise RuntimeError(f"the screen stream could not start: {reason}")
+        raise RuntimeError(f"the HMI stream could not start: {reason}")
 
     # -- reading what scrios says --------------------------------------------------------------------------------------
 
@@ -504,7 +566,8 @@ class IosDeviceHmiSource(HmiSource):
         self._stall_restarted = False
         if unit.key and not unit.params:
             run.keys_without_params += 1  # the hub puts the sets it has seen in front of it
-        run.sink.media(unit.pts_us, unit.payload, idr=unit.key)
+        # scrios says which units are key pictures; whether one may be predicted from is read in the codec it is in
+        run.sink.media(unit.pts_us, unit.payload, idr=unit.key, reference=is_reference(unit.payload, run.codec))
 
     def _config(self, run: _Run, config: Config) -> None:
         line = replace(config.line, input="stream" if self._control else None)
@@ -560,6 +623,7 @@ class IosDeviceHmiSource(HmiSource):
             self._log.warning("scrios touch input: %s", _text(warning, 300))
         if isinstance(keyboard := data.get("keyboard"), bool):
             run.hid_keyboard = keyboard
+            run.hid_keyboard_reason = None if keyboard else message
         if isinstance(mapping := data.get("mapping"), str):
             run.hid_mapping = _text(mapping, 64)
         ready = data.get("ready")
@@ -681,7 +745,7 @@ class IosDeviceHmiSource(HmiSource):
     # -- what the driver asks of a running source ----------------------------------------------------------------------
 
     def input_sink(self) -> InputSink | None:
-        """Touch, buttons and typing (``None`` when scrios runs with ``--no-control``)."""
+        """Touch, the keyboard, buttons and typing (``None`` when scrios runs with ``--no-control``)."""
         return self._input
 
     def request_keyframe(self) -> bool:
@@ -744,6 +808,7 @@ class IosDeviceHmiSource(HmiSource):
                 "pid": run.proc.pid if run is not None and alive else None,
                 "uptime_s": round(time.monotonic() - run.started_at, 1) if run is not None and alive else 0,
                 "stats": dict(run.stats) if run is not None and run.stats is not None else None,
+                "codec": run.codec if run is not None else None,
                 "picture": dict(run.labels) if run is not None else {},
                 "point_scale": run.line.point_scale if run is not None and run.line is not None else None,
                 "hid": {
@@ -765,6 +830,15 @@ class IosDeviceHmiSource(HmiSource):
         with self._lock:
             self._counters[name] += amount
 
+    def current_run(self) -> _Run | None:
+        """The run there is, if any (it may be ending)."""
+        return self._run
+
+    def last_hid_error(self) -> str | None:
+        """What scrios last said about its touch and key services not working (``None``: nothing)."""
+        with self._lock:
+            return self._last_hid_error
+
     def input_run(self) -> _Run:
         """The run that input goes to.
 
@@ -773,8 +847,13 @@ class IosDeviceHmiSource(HmiSource):
         """
         run = self._run
         if run is None or run.stop_wanted or run.exited.is_set() or not run.proc.alive:
-            raise InputError("the screen stream is not running")
+            raise InputError("the HMI stream is not running")
         return run
+
+
+def _refused_codec(codec: str) -> str:
+    """Why scrios cannot stream ``codec``."""
+    return f"scrios streams {' or '.join(VIDEO_CODECS)}, not {codec}"
 
 
 def _text(value: object, limit: int) -> str | None:
@@ -788,22 +867,34 @@ def _text(value: object, limit: int) -> str | None:
 
 
 class _Input(InputSink):
-    """Touch, buttons and typing into scrios's stdin. Every method only enqueues (the writer thread does the write), and
-    one that cannot take an event raises ``InputError``.
+    """Touch, keyboard keys, buttons and typing into scrios's stdin. Every method only enqueues (the writer thread does
+    the write), and one that cannot take an event raises ``InputError``.
 
     Events arrive from one thread at a time, in order. One contact is tracked here as well: a ``move`` or an ``up`` of a
     finger that is not down is nothing (a late event after a restart), and a ``down`` of one that is down is a ``move``.
+    So are the keys that are down, per run of scrios: the ``down`` of a key that is down is a repeat and is dropped (the
+    device repeats by itself), the ``up`` of one that is not down is nothing, and :meth:`release` lets go of the ones
+    that are still down. A run that has ended took its keys with it (scrios releases every key when it stops).
     """
 
     def __init__(self, source: IosDeviceHmiSource) -> None:
         self._source = source
         self._down_in: _Run | None = None
         self._gesture = 0
+        self._keys_lock = threading.Lock()
+        self._keys_run: _Run | None = None
+        self._keys: set[str] = set()
 
-    def _ready(self, run: _Run, what: str = "touch input") -> None:
+    def _ready(self, run: _Run, what: str = "touch input is", *, keyboard: bool = False) -> None:
+        """Refuse (with scrios's reason) while its touch and key services, or with ``keyboard`` its virtual keyboard,
+        are known not to work. ``what`` is the subject with its verb: ``touch input is``, ``typing is``.
+        """
         if run.hid_ready is False:
-            reason = self._source._last_hid_error or "its touch and key services are not ready"
-            raise InputError(f"{what} is not available: {reason}")
+            reason = self._source.last_hid_error() or "its touch and key services are not ready"
+            raise InputError(f"{what} not available: {reason}")
+        if keyboard and run.hid_keyboard is False:
+            reason = run.hid_keyboard_reason
+            raise InputError(f"the device's keyboard is not ready{f': {reason}' if reason else ''}")
 
     def touch(self, kind: str, x: int, y: int, size: tuple[int, int]) -> None:
         """``touch <kind> <x> <y> 0``: the position is in pixels of the shown picture, which is what scrios takes (it
@@ -832,13 +923,63 @@ class _Input(InputSink):
         source.count("touch_sent")
         self._down_in = None if kind == "up" else run
 
+    def keyboard(self, code: str, down: bool) -> None:
+        """``kb down <usage>`` or ``kb up <usage>``: the key's USB HID usage in hex. Refused (with scrios's reason)
+        until its ``hid`` event says the keyboard works; a key that is down is let go whatever scrios says now.
+        """
+        source = self._source
+        try:
+            if code not in USAGES:
+                raise InputError(f"this HMI does not take the key {code}")
+            run = source.input_run()
+            with self._keys_lock:
+                held = self._held(run)
+                if down == (code in held):
+                    return  # a repeat of a key that is down, or the end of one that is not
+                if down:
+                    self._ready(run, "the keyboard is", keyboard=True)
+                run.writer.send(f"kb {'down' if down else 'up'} {usage_argument(code)}\n".encode())
+                if down:
+                    held.add(code)
+                else:
+                    held.discard(code)
+        except InputError:
+            source.count("keyboard_refused")
+            raise
+        source.count("keyboard_sent")
+
+    def _held(self, run: _Run) -> set[str]:
+        """The keys down on ``run`` (a new run has none: the one before it let them go). Under ``_keys_lock``."""
+        if self._keys_run is not run:
+            self._keys_run, self._keys = run, set()
+        return self._keys
+
+    def release(self) -> None:
+        """Let go of the keys that are still down (``kb up`` for each, by usage). Never raises: a key that could not be
+        let go stays down here, for the next call, and scrios releases it by itself 30 seconds after the last keyboard
+        command, and when it stops.
+        """
+        run = self._source.current_run()
+        with self._keys_lock:
+            if run is None or self._keys_run is not run or run.stop_wanted or run.exited.is_set():
+                self._keys_run, self._keys = None, set()  # the run is over: scrios let go of them with it
+                return
+            for code in sorted(self._keys, key=USAGES.__getitem__):
+                try:
+                    run.writer.send(f"kb up {usage_argument(code)}\n".encode())
+                except InputError:
+                    self._source.count("keyboard_refused")
+                    return
+                self._keys.discard(code)
+                self._source.count("keyboard_sent")
+
     def key(self, key: str, press: str) -> None:
         """``key <button> [short|long]``: a press and a release, after the button's hold time."""
         source = self._source
         try:
             name = BUTTONS.get(canonical_key(key))
             if name is None:
-                raise InputError(f"this screen has no key {key}")
+                raise InputError(f"this HMI has no key {key}")
             if press not in ("short", "long"):
                 raise InputError(f"{key} is pressed short or long (scrios holds it itself), not {press}")
             run = source.input_run()
@@ -872,9 +1013,7 @@ class _Input(InputSink):
             except UnicodeEncodeError:
                 raise InputError("the text is not valid Unicode") from None
             run = source.input_run()
-            self._ready(run, "typing is")
-            if run.hid_keyboard is False:
-                raise InputError("the device's keyboard is not ready")
+            self._ready(run, "typing is", keyboard=True)
             if run.writer.stats()["queued"] + len(payloads) > DEFAULT_DEPTH:
                 raise InputError("the device is busy: its input queue is full")  # all of the text or none of it
             for payload in payloads:
@@ -890,11 +1029,12 @@ class _Input(InputSink):
 
 @dataclass(kw_only=True)
 class IosDeviceHmi(HmiDriver):
-    """The screen of the iOS device as H.264, through scrios. See the module documentation.
+    """The iOS device as an HMI, through scrios. See the module documentation.
 
-    Besides its own options this takes the common ones of every screen (``control``, ``hard_keys``, ``idle_stop_s``,
-    ``stop_deadline_s``, ...). ``max_size``, ``bit_rate`` and ``max_fps`` have no effect: scrios streams the display at
-    its own size, rate and bit rate.
+    Besides its own options this takes the common ones of every HMI (``control``, ``codec``, ``hard_keys``,
+    ``idle_stop_s``, ``stop_deadline_s``, ...). ``codec`` is ``h264`` (the default) or ``hevc``; ``mjpeg`` is refused.
+    ``max_size``, ``bit_rate`` and ``max_fps`` are refused too: scrios streams the display at its own size, rate and bit
+    rate. ``LOCK`` and ``POWER`` are accepted only when ``hard_keys`` lists them.
     """
 
     device: IosDevice | None = field(default=None, repr=False)
@@ -951,7 +1091,7 @@ class IosDeviceHmi(HmiDriver):
         if self.udid is not None and not re.fullmatch(r"[A-Za-z0-9-]+", self.udid):
             raise ConfigurationError("udid must be a device identifier")
         if self.device is None and self.udid is None:
-            raise ConfigurationError("a screen without a device driver needs a udid")
+            raise ConfigurationError("an HMI without a device driver needs a udid")
         if self.display_id is not None and (
             isinstance(self.display_id, bool) or not isinstance(self.display_id, int) or self.display_id < 0
         ):
@@ -978,9 +1118,12 @@ class IosDeviceHmi(HmiDriver):
         if self.restart_backoff_max_s < self.restart_backoff_s:
             raise ConfigurationError("restart_backoff_max_s must not be less than restart_backoff_s")
         if self.max_size is not None or self.bit_rate is not None or self.max_fps is not None:
-            self.logger.warning(
-                "scrios streams at the display's own size, rate and bit rate: max_size, bit_rate and max_fps do nothing"
+            raise ConfigurationError(
+                "scrios streams at the display's own size, rate and bit rate: "
+                "max_size, bit_rate and max_fps are not options here"
             )
+        if self.codec is not None and self.codec not in VIDEO_CODECS:
+            raise ConfigurationError(f"codec: {_refused_codec(self.codec)}")
 
     def _validate_extra_args(self) -> None:
         if not isinstance(self.extra_args, list) or not all(isinstance(a, str) and a for a in self.extra_args):
@@ -1001,7 +1144,7 @@ class IosDeviceHmi(HmiDriver):
         if self.udid:
             return self.udid
         device = self.device
-        assert device is not None  # a screen without a device driver has a udid (checked at construction)
+        assert device is not None  # an HMI without a device driver has a udid (checked at construction)
         if device.udid:
             return device.udid
         info = _device_info(device)
@@ -1056,7 +1199,7 @@ def _seconds(value: object, *, positive: bool = False) -> bool:
     )
 
 
-#: The options a ``hmi:`` mapping of the device driver may carry: the fields of the screen, but the ones the driver
+#: The options a ``hmi:`` mapping of the device driver may carry: the fields of the HMI, but the ones the driver
 #: owns.
 HMI_OPTIONS = frozenset(f.name for f in fields(IosDeviceHmi) if f.init) - _RESERVED_FIELDS
 
@@ -1068,7 +1211,7 @@ def build_hmi(device: IosDevice, options: dict[str, Any]) -> IosDeviceHmi:
         ConfigurationError: If ``options`` is not a mapping of known options, or one of them is wrong.
     """
     if not isinstance(options, dict):
-        raise ConfigurationError("screen must be a mapping of options (an empty one enables the screen)")
+        raise ConfigurationError("hmi must be a mapping of options (an empty one enables the HMI)")
     unknown = sorted(set(options) - HMI_OPTIONS, key=str)
     if unknown:
         raise ConfigurationError(

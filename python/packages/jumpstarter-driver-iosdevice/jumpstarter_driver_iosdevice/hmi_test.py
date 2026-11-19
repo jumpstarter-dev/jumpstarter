@@ -1,33 +1,38 @@
-"""The scrios hmi: its configuration, the command line it builds, the ``hmi:`` option of the device driver and
-the helpers that look at the binary. Nothing here needs a device; what runs a process is in ``hmi_process_test``.
+"""The scrios HMI: its configuration, what it declares, the command line it builds, the ``hmi:`` option of the device
+driver and the helpers that look at the binary. Nothing here needs a device; what runs a process is in
+``hmi_process_test``.
 """
 
 import os
 import subprocess
 import sys
 import threading
+from unittest.mock import MagicMock
 
 import anyio
 import pytest
 from anyio import to_thread
 from jumpstarter_driver_hmi.client import HmiClient
-from jumpstarter_driver_hmi.common import canonical_key
+from jumpstarter_driver_hmi.common import KEY_CODE, canonical_key
 
 from . import hmi as hmi_module
 from .client import IosDeviceClient
 from .driver import IosDevice
 from .fake_scrios_testing import write_fake_scrios
+from .hid_usages import CODES, MAX_USAGE, USAGES, usage_argument
 from .hmi import (
     BUTTONS,
     DEFAULT_HARD_KEYS,
+    HMI_OPTIONS,
     KEYS,
     RELEASES_URL,
-    HMI_OPTIONS,
+    VIDEO_CODECS,
     IosDeviceHmi,
     IosDeviceHmiSource,
     find_scrios,
     scrios_version,
 )
+from .scrios_framed import CODEC_FAMILIES
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.common.utils import serve
 
@@ -44,10 +49,10 @@ def make(**config) -> IosDeviceHmi:
     return IosDeviceHmi(device=IosDevice(udid=UDID, usbmux_socket=SOCKET), **config)
 
 
-def command(driver: IosDeviceHmi, program: str = "/opt/scrios", udid: str = UDID) -> list[str]:
+def command(driver: IosDeviceHmi, program: str = "/opt/scrios", udid: str = UDID, **options) -> list[str]:
     source = driver._the_source()
     assert isinstance(source, IosDeviceHmiSource)
-    return source.command(program, udid)
+    return source.command(program, udid, **options)
 
 
 # -- configuration -----------------------------------------------------------------------------------------------------
@@ -98,6 +103,10 @@ def command(driver: IosDeviceHmi, program: str = "/opt/scrios", udid: str = UDID
         {"idle_stop_s": -1},
         {"start_timeout_s": 0},
         {"hard_keys": "HOME"},
+        {"codec": "mjpeg"},
+        {"codec": "h265"},
+        {"codec": "vp9"},
+        {"codec": 264},
     ],
 )
 def test_a_wrong_option_is_a_configuration_error(config):
@@ -113,7 +122,7 @@ def test_a_hmi_without_a_device_needs_a_udid():
 
 def test_the_defaults_are_the_documented_ones():
     hmi = make()
-    assert hmi.executable == "scrios" and hmi.extra_args == []
+    assert hmi.executable == "scrios" and hmi.extra_args == [] and hmi.codec is None
     assert hmi.usbmuxd is None and hmi.udid is None and hmi.display_id is None and hmi.visible_size is None
     assert hmi.control is True and hmi.hid_space is None
     assert (hmi.stop_grace_s, hmi.restart_backoff_s, hmi.restart_backoff_max_s) == (2.0, 1.0, 30.0)
@@ -134,21 +143,31 @@ def test_building_the_driver_runs_and_looks_up_nothing(monkeypatch):
     assert hmi.status()["state"] == "stopped"
 
 
-def test_the_ceilings_that_scrios_cannot_honor_are_said_not_silently_taken(caplog):
-    with caplog.at_level("WARNING"):
-        make(max_size=1000)
-    assert "do nothing" in caplog.text
+@pytest.mark.parametrize("option", [{"max_size": 1000}, {"bit_rate": 4_000_000}, {"max_fps": 30}])
+def test_the_ceilings_that_scrios_cannot_honor_are_refused_not_silently_taken(option):
+    with pytest.raises(ConfigurationError, match="not options here"):
+        make(**option)
 
 
 def test_what_the_hmi_says_about_itself():
     info = make().hmi_info()
-    assert info["codecs"] == ["h264"]
-    assert info["input"]["touch"] is True and info["input"]["max_fingers"] == 1 and info["input"]["text"] is True
+    assert info["interface"] == "hmi"
+    assert info["codecs"] == ["h264", "hevc"] and info["codec"] == "h264"
+    assert info["recording"] is True
+    assert info["input"]["pointer"] == {
+        "kinds": ["touch"],
+        "absolute": True,
+        "relative": False,
+        "buttons": False,
+        "wheel": False,
+        "max_contacts": 1,
+    }
+    assert info["input"]["keyboard"] == {"codes": list(CODES), "text": True, "layout": "us"}
+    assert info["input"]["clipboard"] is False
     assert info["input"]["keys"] == list(KEYS)
     assert [k["key"] for k in info["input"]["hard_keys"]] == [
         "HOME",
         "APP_SWITCH",
-        "LOCK",
         "VOLUME_UP",
         "VOLUME_DOWN",
         "MUTE",
@@ -158,6 +177,37 @@ def test_what_the_hmi_says_about_itself():
     assert make()._the_source().capabilities().keyframe_cost == "cheap"
     with pytest.raises(ValueError, match="cannot be adjusted"):
         make().set_quality("low")
+
+
+def test_the_hmi_declares_the_subset_of_the_interface_that_scrios_supports_and_nothing_more():
+    caps = make()._the_source().capabilities()
+    assert caps.codecs == ("h264", "hevc")  # H.264 is the default; MJPEG is not offered
+    assert caps.pointer.kinds == ("touch",) and caps.pointer.max_contacts == 1
+    assert not (caps.pointer.relative or caps.pointer.buttons or caps.pointer.wheel)
+    assert caps.keyboard.codes == CODES and caps.keyboard.text is True and caps.keyboard.layout == "us"
+    assert caps.clipboard is False and caps.quality is None and caps.rotation is True
+
+
+def test_the_codecs_are_the_ones_scrios_streams_under_the_names_of_its_option():
+    assert tuple(VIDEO_CODECS) == CODEC_FAMILIES == ("h264", "hevc")
+    assert VIDEO_CODECS == {"h264": "h264", "hevc": "h265"}  # scrios's --video-codec says h265, not hevc
+
+
+def test_a_codec_the_hmi_does_not_make_is_refused_when_it_is_asked_for_too():
+    hmi = make()
+    source = hmi._the_source()
+    assert isinstance(source, IosDeviceHmiSource)
+    with pytest.raises(RuntimeError, match="scrios streams h264 or hevc, not mjpeg"):
+        source.command("/opt/scrios", UDID, "mjpeg")
+    with pytest.raises(RuntimeError, match="could not start: scrios streams h264 or hevc, not mjpeg"):
+        source.start(MagicMock(), None, 1.0, codec="mjpeg")
+    with pytest.raises(ValueError, match="produces h264, hevc, not 'mjpeg'"):
+        hmi.start(codec="mjpeg")
+
+
+def test_the_codec_option_chooses_the_stream_and_hmi_info_says_so():
+    assert make(codec="hevc").hmi_info()["codec"] == "hevc"
+    assert make(codec="h264").hmi_info()["codec"] == "h264"
 
 
 def test_every_key_it_accepts_is_a_canonical_name_and_every_hard_key_one_of_them():
@@ -178,18 +228,154 @@ def test_every_key_it_accepts_is_a_canonical_name_and_every_hard_key_one_of_them
 
 
 def test_the_exporter_can_replace_the_hard_keys():
-    info = make(hard_keys=["home", {"key": "lock", "label": "Sleep", "presses": ["short"]}]).hmi_info()
+    info = make(hard_keys=["home", {"key": "volume-up", "label": "Louder", "presses": ["short"]}]).hmi_info()
     assert info["input"]["hard_keys"] == [
         {"key": "HOME", "label": "Home", "presses": ["short", "long"]},
-        {"key": "LOCK", "label": "Sleep", "presses": ["short"]},
+        {"key": "VOLUME_UP", "label": "Louder", "presses": ["short"]},
     ]
+
+
+def test_lock_and_power_are_not_offered_by_default():
+    """Pressing them can lock the user out of a device whose only way in is its hmi: they are opt-in."""
+    hmi = make()
+    keys = hmi.hmi_info()["input"]["keys"]
+    assert "LOCK" not in keys and "POWER" not in keys
+    assert not {"LOCK", "POWER"} & {k["key"] for k in hmi.hmi_info()["input"]["hard_keys"]}
+    assert not {"LOCK", "POWER"} & {k.key for k in DEFAULT_HARD_KEYS}
+    assert set(hmi._the_source().capabilities().optional_keys) == {"LOCK", "POWER"}
+
+
+def test_an_exporter_can_add_lock_or_power_by_listing_it():
+    info = make(hard_keys=["HOME", {"key": "lock", "label": "Sleep", "presses": ["short"]}]).hmi_info()
+    assert [k["key"] for k in info["input"]["hard_keys"]] == ["HOME", "LOCK"]
+    assert "LOCK" in info["input"]["keys"] and "POWER" not in info["input"]["keys"]  # only what was listed
 
 
 def test_a_view_only_hmi_takes_no_input():
     hmi = make(control=False)
     info = hmi.hmi_info()
-    assert info["input"] == {"touch": False, "max_fingers": 0, "text": False, "keys": [], "hard_keys": []}
+    assert info["codecs"] == ["h264", "hevc"]  # the picture is the same
+    assert info["input"] == {
+        "pointer": {
+            "kinds": [],
+            "absolute": False,
+            "relative": False,
+            "buttons": False,
+            "wheel": False,
+            "max_contacts": 0,
+        },
+        "keyboard": {"codes": [], "text": False, "layout": None},
+        "keys": [],
+        "hard_keys": [],
+        "rotaries": [],
+        "clipboard": False,
+    }
     assert hmi._the_source().input_sink() is None
+    assert hmi._the_source().capabilities().has_input is False
+
+
+# -- the keyboard keys -------------------------------------------------------------------------------------------------
+
+
+def test_the_declared_keyboard_codes_are_exactly_the_keys_of_the_usage_table():
+    assert make().hmi_info()["input"]["keyboard"]["codes"] == list(USAGES) == list(CODES)
+    # modifiers, letters, digits, the rest of the main block, F1 to F12, editing and arrows, the numeric keypad
+    assert len(CODES) == len(set(CODES)) == 8 + 26 + 10 + 17 + 12 + 10 + 17
+
+
+def test_every_code_is_a_keyboard_event_code_and_every_usage_one_scrios_takes_and_none_twice():
+    assert all(KEY_CODE.fullmatch(code) for code in USAGES)
+    usages = list(USAGES.values())
+    assert len(set(usages)) == len(usages)  # one key, one usage
+    assert usages == sorted(usages)  # in the order of the usage table
+    assert all(0x04 <= u <= MAX_USAGE for u in usages)  # 0x01 to 0x03 are errors, not keys
+
+
+@pytest.mark.parametrize(
+    ("code", "usage"),
+    [
+        ("KeyA", 0x04),
+        ("KeyM", 0x10),
+        ("KeyZ", 0x1D),
+        ("Digit1", 0x1E),
+        ("Digit9", 0x26),
+        ("Digit0", 0x27),
+        ("Enter", 0x28),
+        ("Escape", 0x29),
+        ("Backspace", 0x2A),
+        ("Tab", 0x2B),
+        ("Space", 0x2C),
+        ("Minus", 0x2D),
+        ("Equal", 0x2E),
+        ("BracketLeft", 0x2F),
+        ("BracketRight", 0x30),
+        ("Backslash", 0x31),
+        ("Semicolon", 0x33),
+        ("Quote", 0x34),
+        ("Backquote", 0x35),
+        ("Comma", 0x36),
+        ("Period", 0x37),
+        ("Slash", 0x38),
+        ("CapsLock", 0x39),
+        ("F1", 0x3A),
+        ("F12", 0x45),
+        ("Insert", 0x49),
+        ("Home", 0x4A),
+        ("PageUp", 0x4B),
+        ("Delete", 0x4C),
+        ("End", 0x4D),
+        ("PageDown", 0x4E),
+        ("ArrowRight", 0x4F),
+        ("ArrowLeft", 0x50),
+        ("ArrowDown", 0x51),
+        ("ArrowUp", 0x52),
+        ("NumLock", 0x53),
+        ("NumpadDivide", 0x54),
+        ("NumpadMultiply", 0x55),
+        ("NumpadSubtract", 0x56),
+        ("NumpadAdd", 0x57),
+        ("NumpadEnter", 0x58),
+        ("Numpad1", 0x59),
+        ("Numpad9", 0x61),
+        ("Numpad0", 0x62),
+        ("NumpadDecimal", 0x63),
+        ("ControlLeft", 0xE0),
+        ("ShiftLeft", 0xE1),
+        ("AltLeft", 0xE2),
+        ("MetaLeft", 0xE3),
+        ("ControlRight", 0xE4),
+        ("ShiftRight", 0xE5),
+        ("AltRight", 0xE6),
+        ("MetaRight", 0xE7),
+    ],
+)
+def test_a_key_has_the_usage_the_ui_events_specification_gives_it(code, usage):
+    assert USAGES[code] == usage
+
+
+def test_the_whole_table_is_the_ranges_it_is_made_of():
+    assert [USAGES[f"Key{c}"] for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"] == list(range(0x04, 0x1E))
+    assert [USAGES[f"Digit{n}"] for n in (1, 2, 3, 4, 5, 6, 7, 8, 9, 0)] == list(range(0x1E, 0x28))
+    assert [USAGES[f"F{n}"] for n in range(1, 13)] == list(range(0x3A, 0x46))
+    assert [USAGES[f"Numpad{n}"] for n in (1, 2, 3, 4, 5, 6, 7, 8, 9, 0)] == list(range(0x59, 0x63))
+    assert sorted(set(USAGES.values()) & set(range(0x53, 0x64))) == list(range(0x53, 0x64))  # the keypad, whole
+
+
+@pytest.mark.parametrize("code", ["PrintScreen", "ScrollLock", "Pause", "ContextMenu", "IntlBackslash", "F13", "Lang1"])
+def test_keys_that_only_some_keyboards_have_are_not_declared(code):
+    assert code not in USAGES
+
+
+def test_a_usage_is_written_as_scrios_writes_it_two_lower_case_hex_digits():
+    assert [usage_argument(c) for c in ("KeyA", "Enter", "Backspace", "ShiftLeft", "MetaRight")] == [
+        "04",
+        "28",
+        "2a",
+        "e1",
+        "e7",
+    ]
+    with pytest.raises(KeyError):
+        usage_argument("PrintScreen")
 
 
 # -- the command line --------------------------------------------------------------------------------------------------
@@ -210,6 +396,12 @@ def test_the_command_line_is_the_documented_one_and_nothing_else():
     ]
 
 
+def test_hevc_is_asked_for_with_the_value_scrios_calls_it_h265():
+    assert command(make(), codec="hevc")[5:8] == [UDID, "--video-codec", "h265"]
+    assert "hevc" not in command(make(), codec="hevc")  # scrios's parser has no such value
+    assert command(make(), codec="h264")[6:8] == ["--video-codec", "h264"]
+
+
 def test_without_control_scrios_is_run_with_no_control():
     argv = command(make(control=False))
     assert argv[:8] == ["/opt/scrios", "stream", "--format", "framed", "--udid", UDID, "--video-codec", "h264"]
@@ -218,12 +410,12 @@ def test_without_control_scrios_is_run_with_no_control():
 
 
 def test_the_parents_usbmux_address_is_used_whatever_its_kind():
-    network = IosDevice(transport="network", udid=UDID, usbmux_host="usbmux.lab", usbmux_port=27016)
-    assert command(IosDeviceHmi(device=network))[-2:] == ["--usbmuxd", "usbmux.lab:27016"]
+    network = IosDevice(transport="network", udid=UDID, usbmux_host="usbmux.example", usbmux_port=27016)
+    assert command(IosDeviceHmi(device=network))[-2:] == ["--usbmuxd", "usbmux.example:27016"]
     assert command(make())[-2:] == ["--usbmuxd", f"UNIX:{SOCKET}"]
 
 
-def test_the_screens_own_udid_and_usbmux_address_win():
+def test_the_hmis_own_udid_and_usbmux_address_win():
     argv = command(make(udid="OTHER-1", usbmuxd="127.0.0.1:27015"), udid="OTHER-1")
     assert argv[argv.index("--udid") + 1] == "OTHER-1"
     assert argv[argv.index("--usbmuxd") + 1] == "127.0.0.1:27015"
@@ -309,8 +501,8 @@ def test_the_option_must_be_a_mapping_of_known_options_with_good_values(hmi):
 
 
 def test_an_unknown_option_is_named_with_the_known_ones():
-    with pytest.raises(ConfigurationError, match=r"unknown hmi options: sidecar_path \(known: .*executable"):
-        IosDevice(udid=UDID, hmi={"sidecar_path": "x"})
+    with pytest.raises(ConfigurationError, match=r"unknown hmi options: not_an_option \(known: .*executable"):
+        IosDevice(udid=UDID, hmi={"not_an_option": "x"})
 
 
 def test_the_options_are_the_fields_of_the_hmi_without_the_ones_the_driver_owns():
@@ -321,7 +513,7 @@ def test_the_options_are_the_fields_of_the_hmi_without_the_ones_the_driver_owns(
         HMI_OPTIONS
     )
     assert not HMI_OPTIONS & {"device", "uuid", "labels", "children"}
-    assert not HMI_OPTIONS & {"sidecar_path", "max_bitrate", "touch", "codec", "queue_depth"}  # the old display's
+    assert not HMI_OPTIONS & {"max_bitrate", "queue_depth"}  # scrios sets its own bit rate; the hub owns the queues
     IosDevice(udid=UDID, hmi=dict.fromkeys(("executable",), "scrios"))
 
 
@@ -344,12 +536,10 @@ def test_a_device_without_the_option_closes_as_before(monkeypatch):
 
 
 def test_without_the_hmi_package_the_option_says_what_to_install(monkeypatch):
-    for name in [
-        m for m in sys.modules if m == "jumpstarter_driver_hmi" or m.startswith("jumpstarter_driver_hmi.")
-    ]:
+    for name in [m for m in sys.modules if m == "jumpstarter_driver_hmi" or m.startswith("jumpstarter_driver_hmi.")]:
         monkeypatch.setitem(sys.modules, name, None)  # as if the package were not installed
     monkeypatch.delitem(sys.modules, "jumpstarter_driver_iosdevice.hmi")
-    with pytest.raises(ConfigurationError, match=r"pip install jumpstarter-driver-iosdevice\[screen\]"):
+    with pytest.raises(ConfigurationError, match=r"pip install jumpstarter-driver-iosdevice\[hmi\]"):
         IosDevice(udid=UDID, hmi={})
     assert "hmi" not in IosDevice(udid=UDID).children  # no option, no import, no complaint
 
@@ -443,6 +633,37 @@ def test_a_scrios_whose_version_fails_is_refused_and_asked_again_next_time(tmp_p
     assert scrios_version(str(path)) == "0.0.0-fake"  # a failure is not remembered
 
 
+def test_a_version_probe_that_was_killed_by_a_signal_is_asked_again(tmp_path, monkeypatch):
+    path = write_fake_scrios(tmp_path)
+    real_run = hmi_module.subprocess.run
+    outcomes = []
+
+    def run(*args, **kwargs):
+        done = real_run(*args, **kwargs)
+        if not outcomes:  # the first child dies of a stray SIGPIPE before it can answer
+            done = hmi_module.subprocess.CompletedProcess(done.args, -13, "", "stray output")
+        outcomes.append(done.returncode)
+        return done
+
+    monkeypatch.setattr(hmi_module.subprocess, "run", run)
+    assert scrios_version(str(path)) == "0.0.0-fake"
+    assert outcomes == [-13, 0]
+
+
+def test_a_version_probe_that_is_always_killed_is_refused_after_a_few_tries(tmp_path, monkeypatch):
+    path = write_fake_scrios(tmp_path)
+    tries = []
+
+    def run(command, **kwargs):
+        tries.append(command)
+        return hmi_module.subprocess.CompletedProcess(command, -9, "", "")
+
+    monkeypatch.setattr(hmi_module.subprocess, "run", run)
+    with pytest.raises(RuntimeError, match=r"does not look like scrios.*exit status -9"):
+        scrios_version(str(path))
+    assert len(tries) == hmi_module.VERSION_ATTEMPTS
+
+
 def test_a_scrios_that_does_not_answer_in_time_is_refused(tmp_path, monkeypatch):
     path = write_fake_scrios(tmp_path)
     monkeypatch.setenv("FAKE_SCRIOS_VERSION_DELAY", "5")
@@ -464,7 +685,7 @@ def test_a_file_that_cannot_be_run_is_refused(tmp_path):
 # -- which device ------------------------------------------------------------------------------------------------------
 
 
-def test_the_udid_is_the_screens_then_the_devices_then_what_its_usb_port_holds_now(monkeypatch):
+def test_the_udid_is_the_hmis_then_the_devices_then_what_its_usb_port_holds_now(monkeypatch):
     assert make(udid="MINE-1")._resolve_udid() == "MINE-1"
     assert make()._resolve_udid() == UDID
 
