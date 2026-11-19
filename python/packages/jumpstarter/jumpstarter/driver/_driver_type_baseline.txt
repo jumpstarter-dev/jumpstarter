@@ -1,0 +1,32 @@
+# Driver packages that do not declare a driver_type yet (JEP-0013 Phase 4).
+#
+# The workspace check (python/scripts/check-driver-telemetry.py) fails when a
+# package is missing from this list, when a listed package starts declaring a
+# driver_type (remove the line in that change), or when a declared value is
+# outside the documented set.
+#
+# This list may only shrink. Assigning a category is part of that driver's
+# change; the tracked follow-up owns the backlog.
+bt-peer
+dds
+dutlink
+energenie
+esp32
+gptp
+http-power
+iossimulator
+nanokvm-usb
+netsim
+noyito-relay
+pi-pico
+sdwire
+sigrok
+stlink-msd
+tasmota
+uds
+uds-can
+uds-doip
+ustreamer
+vnc
+yepkit
+zephyr
