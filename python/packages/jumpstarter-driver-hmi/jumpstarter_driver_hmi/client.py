@@ -1,32 +1,38 @@
-"""Client of every hmi: blocking helpers for the stream, the input and the calls, and the ``j <hmi> ...``
-commands.
+"""Client of every HMI: blocking helpers for the stream, the input and the calls, and the ``j <hmi> ...`` commands.
 
 ::
 
-    with client.hmi.video() as video:
+    with client.video() as video:
         print(video.header)               # {"codec": "avc1.64001F", "width": 540, "height": 1200, "fps": 30, ...}
         for frame in video:               # blocks for the next picture; ends when the stream does
             if isinstance(frame, str):    # JSON text: the codec line changed (the first one is video.header)
                 continue
             timestamp_us = int.from_bytes(frame[:8], "big")
-            access_unit = frame[8:]       # Annex-B, starts with SPS/PPS + IDR for the first picture
+            access_unit = frame[8:]       # one picture: Annex-B (H.264, HEVC) or a JPEG (MJPEG)
 
-    with client.hmi.input() as hmi:
-        hmi.tap(270, 600)
-        hmi.key("HOME")
+    with client.input() as hmi:
+        hmi.tap(270, 600)                 # a touch HMI: a finger; a mouse HMI: a click of the primary button
+        hmi.click(270, 600, "secondary")  # a mouse
+        hmi.scroll(0, 120)                # a mouse's wheel
+        hmi.press("KeyA", modifiers=("ShiftLeft",))   # a keyboard key, by its W3C KeyboardEvent.code
+        hmi.key("HOME")                   # a hard key, by name
+        hmi.rotate("volume", -2)          # a rotary knob, two detents counter-clockwise
+        hmi.push("volume")                # the knob's push button
         hmi.text("hello")
 
 The frames are what a relay passes to a WebSocket, one to one: ``str`` is a text frame (the JSON codec line), ``bytes``
-is a binary frame
-(an 8-byte big-endian microsecond timestamp and one Annex-B access unit). What a Jumpstarter stream carries underneath
-(length-prefixed
-frames, because a byte stream has no message boundaries) is :mod:`jumpstarter_driver_hmi.common`'s concern.
+is a binary frame (an 8-byte big-endian microsecond timestamp and one access unit). What a Jumpstarter stream carries
+underneath (length-prefixed frames, because a byte stream has no message boundaries) is
+:mod:`jumpstarter_driver_hmi.common`'s concern.
 
-The class carries ``HMI_STREAM_VERSION``, and every HMI driver's client is a :class:`HmiClient`: a UI server
-finds a screen in a
-driver tree with ``isinstance``. The client is blocking and runs its calls on the Jumpstarter portal's event loop, so
-use it from threads,
-not from a coroutine of your own loop.
+The helpers of the input stream check what they are asked against what the HMI declares in ``hmi_info()["input"]`` and
+raise :class:`InputNotDeclaredError`, sending nothing, when it does not take it (a ``scroll`` on a touch screen, a key
+that is not on the keyboard, a rotary it does not have); :meth:`InputStream.send`, the raw ``touch``, ``pointer`` and
+``keyboard`` methods and ``key`` send whatever they are given and leave the answer to the exporter.
+
+The class carries ``HMI_STREAM_VERSION``, and every HMI driver's client is a :class:`HmiClient`: a UI server finds an
+HMI in a driver tree with ``isinstance``. The client is blocking and runs its calls on the Jumpstarter portal's event
+loop, so use it from threads, not from a coroutine of your own loop.
 """
 
 from __future__ import annotations
@@ -37,7 +43,7 @@ import math
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Generator, Iterator
+from collections.abc import Callable, Generator, Iterator, Sequence
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,7 +53,20 @@ import click
 import grpc
 from anyio import BrokenResourceError, ClosedResourceError, EndOfStream
 
-from .common import KIND_CONFIG, KIND_MEDIA, FrameParser, LineBuffer, LineTooLongError
+from .common import (
+    BUTTON_AUXILIARY,
+    BUTTON_BACK,
+    BUTTON_FORWARD,
+    BUTTON_PRIMARY,
+    BUTTON_SECONDARY,
+    CODECS,
+    KIND_CONFIG,
+    KIND_MEDIA,
+    MAX_ROTARY_DELTA,
+    FrameParser,
+    LineBuffer,
+    LineTooLongError,
+)
 from jumpstarter.client import DriverClient
 from jumpstarter.client.decorators import driver_click_group
 
@@ -328,11 +347,11 @@ class VideoStream(_Receiving):
         try:
             if not self._fill(header_timeout):
                 raise HmiStreamClosedError.of(
-                    "the screen stream ended before it said what it carries", self.end_error
+                    "the HMI stream ended before it said what it carries", self.end_error
                 ) from self.end_error
             kind, body = self._pending[0]
             if kind != KIND_CONFIG:
-                raise HmiStreamClosedError("the screen stream did not start with its codec line", reason=ERROR)
+                raise HmiStreamClosedError("the HMI stream did not start with its codec line", reason=ERROR)
             self.header = json.loads(body.decode())
         except BaseException:
             self.close()  # whatever went wrong (a timeout too), nothing is left running
@@ -381,7 +400,7 @@ class VideoStream(_Receiving):
 
         The first one is always the codec line. Raises ``TimeoutError`` when nothing arrives within ``timeout`` seconds
         (a still
-        screen is not silent for long: the encoder repeats the last picture).
+        picture is not silent for long: the encoder repeats the last one).
         """
         while True:
             if not self._fill(timeout):
@@ -417,28 +436,82 @@ class VideoStream(_Receiving):
         self._raw.send(b'{"resync": true}\n')
 
 
+#: The mouse buttons by name (and the names a browser and a desktop use): their bits of ``PointerEvent.buttons``.
+BUTTONS = {
+    "primary": BUTTON_PRIMARY,
+    "left": BUTTON_PRIMARY,
+    "secondary": BUTTON_SECONDARY,
+    "right": BUTTON_SECONDARY,
+    "auxiliary": BUTTON_AUXILIARY,
+    "middle": BUTTON_AUXILIARY,
+    "back": BUTTON_BACK,
+    "forward": BUTTON_FORWARD,
+}
+
+
+class InputNotDeclaredError(ValueError):
+    """A call needs input the HMI does not declare in ``hmi_info()["input"]``: nothing was sent."""
+
+
+def declares_input(info: dict) -> bool:
+    """Whether ``hmi_info()`` declares any input at all: a pointer, a keyboard (keys or text), a hard key or a rotary. A
+    view-only HMI declares none.
+    """
+    declared = info.get("input") or {}
+    pointer, keyboard = declared.get("pointer") or {}, declared.get("keyboard") or {}
+    return bool(
+        pointer.get("kinds")
+        or keyboard.get("codes")
+        or keyboard.get("text")
+        or declared.get("keys")
+        or declared.get("rotaries")
+    )
+
+
 class InputStream(_Receiving):
-    """The ``input`` stream: touch, key and text events. Obtained from :meth:`HmiClient.input`.
+    """The ``input`` stream: pointer, keyboard, key, rotary and text events. Obtained from :meth:`HmiClient.input`.
 
     The exporter answers a line it could not take with ``{"error": "..."}``: :meth:`read_error` (blocking) and
-    :meth:`poll_errors`
-    give them, or pass ``on_error`` to :meth:`HmiClient.input`. Use one of the three, not several: they read the same
-    stream.
+    :meth:`poll_errors` give them, or pass ``on_error`` to :meth:`HmiClient.input`. Use one of the three, not several:
+    they read the same stream.
+
+    **Raw events** (``send``, ``touch``, ``pointer``, ``keyboard``) and ``key`` (a hard key by name) go out as they are
+    given, and the exporter answers one the HMI does not take. **Helpers** (``tap``, ``swipe``, ``long_press``,
+    ``click``, ``double_click``, ``move``, ``move_by``, ``drag``, ``scroll``, ``key_down``, ``key_up``, ``press``,
+    ``rotate``, ``push``, ``text``) are made of them and check, before sending anything, that the HMI declares what
+    they need: :class:`InputNotDeclaredError` otherwise. A stream made without ``hmi_info`` input (``input_info``
+    ``None``) checks nothing.
     """
 
-    def __init__(self, raw: Any) -> None:
-        """Wrap the raw blocking stream."""
+    def __init__(
+        self,
+        raw: Any,
+        input_info: dict | None = None,
+        size: tuple[int, int] | Callable[[], tuple[int, int] | None] | None = None,
+    ) -> None:
+        """Wrap the raw blocking stream. ``input_info`` is ``hmi_info()["input"]``; ``size`` is the shown picture's
+        ``(width, height)``, or a function that finds it when it is needed (a ``scroll`` with no point): the picture
+        may not be there yet when the stream is opened.
+        """
         self._raw = raw
         self._lines = LineBuffer()
         self._errors: deque[str] = deque()
         self._eof = False
+        self._input = input_info
+        self._size = size
         #: Every error the exporter has answered with, in order.
         self.errors: list[str] = []
         self.end_reason: str | None = None
         self.end_error: BaseException | None = None
+        #: Where the pointer was last put by this stream (``None`` until it has been): where a ``scroll`` without a
+        #: position turns the wheel.
+        self.position: tuple[float, float] | None = None
+
+    # -- raw events ----------------------------------------------------------------------------------------------------
 
     def send(self, event: dict) -> None:
-        """One raw event object: ``{"touch": {...}}``, ``{"key": {...}}`` or ``{"text": "..."}``.
+        """One raw event object: ``{"pointer": {...}}``, ``{"touch": {...}}``, ``{"keyboard": {...}}``, ``{"key":
+        {...}}``, ``{"rotary": {...}}`` or ``{"text": "..."}``.
 
         Raises:
             HmiStreamClosedError: If the stream has ended.
@@ -452,37 +525,390 @@ class InputStream(_Receiving):
         """A touch event: ``kind`` is ``down``, ``move`` or ``up``; ``x``, ``y`` are pixels of the shown picture.
 
         ``size`` is that picture's ``(width, height)`` (the codec line's, turned by its rotation): give it when the
-        picture can change
-        under the viewer, and a touch aimed before a rotation is refused instead of landing somewhere else.
+        picture can change under the viewer, and a touch aimed before a rotation is refused instead of landing
+        somewhere else.
         """
         event: dict = {"type": kind, "x": x, "y": y, "id": id}
         if size is not None:
             event["w"], event["h"] = size
+        self.position = (x, y)
         self.send({"touch": event})
 
-    def tap(self, x: float, y: float, hold: float = 0.05, size: tuple[float, float] | None = None) -> None:
-        """Down and up at one point."""
-        self.touch("down", x, y, size=size)
-        time.sleep(hold)
-        self.touch("up", x, y, size=size)
+    def pointer(
+        self,
+        type: str,
+        x: float | None = None,
+        y: float | None = None,
+        *,
+        kind: str = "touch",
+        id: int = 0,
+        buttons: int | None = None,
+        dx: float = 0.0,
+        dy: float = 0.0,
+        size: tuple[float, float] | None = None,
+    ) -> None:
+        """A pointer event, as the wire has it: ``type`` is ``down``, ``move``, ``up`` or ``wheel``, ``kind`` is
+        ``touch``, ``mouse`` or ``pen``, ``buttons`` is the state of the buttons after the event
+        (``PointerEvent.buttons``; left out: the primary button for a ``down``, what is held for a ``move``), ``dx`` and
+        ``dy`` are the wheel's deltas, or the relative motion of a ``move`` that has no ``x`` and ``y``.
+        """
+        event: dict = {"type": type, "kind": kind, "id": id}
+        if x is not None and y is not None:
+            event["x"], event["y"] = x, y
+            self.position = (x, y)
+        if buttons is not None:
+            event["buttons"] = buttons
+        if dx:
+            event["dx"] = dx
+        if dy:
+            event["dy"] = dy
+        if size is not None:
+            event["w"], event["h"] = size
+        self.send({"pointer": event})
 
-    def swipe(self, x1: float, y1: float, x2: float, y2: float, seconds: float = 0.3, steps: int = 12) -> None:
-        """Drag from one point to another."""
-        self.touch("down", x1, y1)
+    def keyboard(self, code: str, down: bool) -> None:
+        """A key going down or up, by its W3C ``KeyboardEvent.code`` (``KeyA``, ``Digit1``, ``ArrowLeft``...)."""
+        self.send({"keyboard": {"code": code, "type": "down" if down else "up"}})
+
+    # -- what the HMI declares -----------------------------------------------------------------------------------------
+
+    def _pointer_kind(self, *wanted: str, need: str = "a pointer") -> str:
+        """The first of the pointer ``wanted`` kinds the HMI declares (the first of them when nothing is known).
+
+        Raises:
+            InputNotDeclaredError: If the HMI declares none of them.
+        """
+        if self._input is None:
+            return wanted[0]
+        kinds = self._input["pointer"]["kinds"]
+        for kind in wanted:
+            if kind in kinds:
+                return kind
+        if not kinds:
+            raise InputNotDeclaredError(f"this HMI declares no pointer, so there is nothing to {need}")
+        raise InputNotDeclaredError(
+            f"this HMI's pointer is {' and '.join(kinds)}, not {' or '.join(wanted)}: it cannot {need}"
+        )
+
+    def _pointer_has(self, feature: str, what: str) -> None:
+        if self._input is not None and not self._input["pointer"][feature]:
+            raise InputNotDeclaredError(f"this HMI's pointer takes no {what}")
+
+    @staticmethod
+    def _button(button: str | int) -> int:
+        if isinstance(button, int) and not isinstance(button, bool) and 0 < button <= 63:
+            return button
+        bit = BUTTONS.get(button.lower()) if isinstance(button, str) else None
+        if bit is None:
+            raise ValueError(
+                f"a button is one of {', '.join(BUTTONS)} (or the bits of PointerEvent.buttons): {button!r}"
+            )
+        return bit
+
+    def _checked_button(self, button: str | int) -> int:
+        bit = self._button(button)
+        if bit != BUTTON_PRIMARY:
+            self._pointer_has("buttons", "button but the primary one")
+        return bit
+
+    # -- the pointer ---------------------------------------------------------------------------------------------------
+
+    def _down(self, kind: str, x: float, y: float, bit: int, size: tuple[float, float] | None) -> None:
+        if kind == "touch":
+            self.touch("down", x, y, size=size)
+        else:
+            self.pointer("down", x, y, kind=kind, buttons=bit, size=size)
+
+    def _move(self, kind: str, x: float, y: float, bit: int, size: tuple[float, float] | None) -> None:
+        if kind == "touch":
+            self.touch("move", x, y, size=size)
+        else:
+            self.pointer("move", x, y, kind=kind, buttons=bit, size=size)
+
+    def _up(self, kind: str, x: float, y: float, size: tuple[float, float] | None) -> None:
+        if kind == "touch":
+            self.touch("up", x, y, size=size)
+        else:
+            self.pointer("up", x, y, kind=kind, buttons=0, size=size)
+
+    def _drag(
+        self,
+        kind: str,
+        start: tuple[float, float],
+        end: tuple[float, float],
+        bit: int,
+        seconds: float,
+        steps: int,
+        size: tuple[float, float] | None,
+    ) -> None:
+        (x1, y1), (x2, y2) = start, end
+        self._down(kind, x1, y1, bit, size)
         for i in range(1, steps + 1):
             time.sleep(seconds / steps)
-            self.touch("move", x1 + (x2 - x1) * i / steps, y1 + (y2 - y1) * i / steps)
-        self.touch("up", x2, y2)
+            self._move(kind, x1 + (x2 - x1) * i / steps, y1 + (y2 - y1) * i / steps, bit, size)
+        self._up(kind, x2, y2, size)
+
+    def tap(self, x: float, y: float, hold: float = 0.05, size: tuple[float, float] | None = None) -> None:
+        """Down and up at one point: a finger on a touch HMI, a click of the primary button on a mouse HMI (a pen's tip
+        on a pen's).
+
+        Raises:
+            InputNotDeclaredError: If the HMI declares no pointer.
+        """
+        kind = self._pointer_kind("touch", "mouse", "pen", need="tap")
+        self._down(kind, x, y, BUTTON_PRIMARY, size)
+        time.sleep(hold)
+        self._up(kind, x, y, size)
+
+    def long_press(self, x: float, y: float, seconds: float = 1.0, size: tuple[float, float] | None = None) -> None:
+        """Hold down at one point for ``seconds`` (as :meth:`tap`, with the finger or button kept down)."""
+        self.tap(x, y, hold=seconds, size=size)
+
+    def swipe(
+        self,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        seconds: float = 0.3,
+        steps: int = 12,
+        size: tuple[float, float] | None = None,
+    ) -> None:
+        """Drag from one point to another: a finger on a touch HMI, the primary button on a mouse HMI.
+
+        Raises:
+            InputNotDeclaredError: If the HMI declares no pointer.
+        """
+        kind = self._pointer_kind("touch", "mouse", "pen", need="swipe")
+        self._drag(kind, (x1, y1), (x2, y2), BUTTON_PRIMARY, seconds, steps, size)
+
+    def click(
+        self,
+        x: float,
+        y: float,
+        button: str | int = "primary",
+        hold: float = 0.05,
+        size: tuple[float, float] | None = None,
+    ) -> None:
+        """Press and release a mouse button at one point. ``button`` is ``primary`` (``left``), ``secondary``
+        (``right``), ``auxiliary`` (``middle``), ``back`` or ``forward``.
+
+        Raises:
+            InputNotDeclaredError: If the HMI declares no mouse, or no buttons beyond the primary one.
+        """
+        kind = self._pointer_kind("mouse", need="click (use tap on a touch screen)")
+        bit = self._checked_button(button)
+        self._down(kind, x, y, bit, size)
+        time.sleep(hold)
+        self._up(kind, x, y, size)
+
+    def double_click(
+        self,
+        x: float,
+        y: float,
+        button: str | int = "primary",
+        interval: float = 0.08,
+        size: tuple[float, float] | None = None,
+    ) -> None:
+        """Two clicks, ``interval`` seconds apart (the same as :meth:`click`)."""
+        self.click(x, y, button, hold=0.03, size=size)
+        time.sleep(interval)
+        self.click(x, y, button, hold=0.03, size=size)
+
+    def move(self, x: float, y: float, size: tuple[float, float] | None = None) -> None:
+        """Put the mouse at a point with no button down: a hover.
+
+        Raises:
+            InputNotDeclaredError: If the HMI declares no mouse (or pen), or it takes only relative motion.
+        """
+        kind = self._pointer_kind("mouse", "pen", need="hover (a touch screen has no hover)")
+        self._pointer_has("absolute", "position (only relative motion: use move_by)")
+        self.pointer("move", x, y, kind=kind, size=size)
+
+    def move_by(self, dx: float, dy: float) -> None:
+        """Move the mouse by ``dx``, ``dy`` pixels from where it is, with no position said (relative motion).
+
+        Raises:
+            InputNotDeclaredError: If the HMI declares no mouse, or no relative motion.
+        """
+        kind = self._pointer_kind("mouse", need="move by a distance")
+        self._pointer_has("relative", "relative motion")
+        self.pointer("move", kind=kind, dx=dx, dy=dy)
+
+    def drag(
+        self,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        button: str | int = "primary",
+        seconds: float = 0.3,
+        steps: int = 12,
+        size: tuple[float, float] | None = None,
+    ) -> None:
+        """Press a mouse button at one point, move to another with it held, and let go (use :meth:`swipe` on a touch
+        screen).
+
+        Raises:
+            InputNotDeclaredError: If the HMI declares no mouse (or pen), or no buttons beyond the primary one.
+        """
+        kind = self._pointer_kind("mouse", "pen", need="drag with a button (use swipe on a touch screen)")
+        self._drag(kind, (x1, y1), (x2, y2), self._checked_button(button), seconds, steps, size)
+
+    def scroll(
+        self,
+        dx: float,
+        dy: float,
+        x: float | None = None,
+        y: float | None = None,
+        size: tuple[float, float] | None = None,
+    ) -> None:
+        """Turn the wheel by ``dx``, ``dy`` pixels at a point, with the sign of ``WheelEvent.deltaX`` and ``deltaY``
+        (positive ``dy`` scrolls down). The point is where the pointer last was, or the center of the picture.
+
+        Raises:
+            InputNotDeclaredError: If the HMI declares no pointer with a wheel.
+            ValueError: If there is no point to scroll at.
+        """
+        kind = self._pointer_kind("mouse", "pen", "touch", need="scroll")
+        self._pointer_has("wheel", "wheel")
+        if x is None or y is None:
+            if self.position is not None:
+                x, y = self.position
+            elif (shown := self._shown_size()) is not None:
+                x, y = shown[0] / 2, shown[1] / 2
+            else:
+                raise ValueError("scroll needs x and y: the picture's size is not known yet and no pointer was put")
+        self.pointer("wheel", x, y, kind=kind, dx=dx, dy=dy, size=size)
+
+    def _shown_size(self) -> tuple[int, int] | None:
+        """The shown picture's size, if it is known."""
+        size = self._size
+        return size if size is None or isinstance(size, tuple) else size()
+
+    # -- the keyboard, hard keys and text ------------------------------------------------------------------------------
+
+    def _code(self, code: str) -> str:
+        if self._input is not None:
+            keyboard = self._input["keyboard"]
+            codes = keyboard["codes"]
+            if not codes:
+                raise InputNotDeclaredError(
+                    "this HMI takes no key codes" + (" (it types text: use text)" if keyboard["text"] else "")
+                )
+            if codes != "all" and code not in codes:
+                raise InputNotDeclaredError(f"this HMI does not take the key {code}")
+        return code
+
+    def key_down(self, code: str) -> None:
+        """Press a keyboard key and keep it down, by its W3C ``KeyboardEvent.code`` (``KeyA``, ``ShiftLeft``...).
+
+        Raises:
+            InputNotDeclaredError: If the HMI does not take the key.
+        """
+        self.keyboard(self._code(code), True)
+
+    def key_up(self, code: str) -> None:
+        """Let go of a keyboard key (the exporter drops it if the key was not down).
+
+        Raises:
+            InputNotDeclaredError: If the HMI does not take the key.
+        """
+        self.keyboard(self._code(code), False)
+
+    def press(self, code: str, modifiers: Sequence[str] = (), hold: float = 0.02) -> None:
+        """Press and release a keyboard key, with ``modifiers`` (``("ShiftLeft",)``, ``("ControlLeft", "AltLeft")``...)
+        held while it is: they go down in order, then the key, and up in the reverse order. Nothing is sent if the HMI
+        does not take every one of the keys.
+
+        Raises:
+            InputNotDeclaredError: If the HMI does not take one of the keys.
+        """
+        keys = [self._code(modifier) for modifier in modifiers]
+        key = self._code(code)
+        for modifier in keys:
+            self.keyboard(modifier, True)
+        self.keyboard(key, True)
+        time.sleep(hold)
+        self.keyboard(key, False)
+        for modifier in reversed(keys):
+            self.keyboard(modifier, False)
 
     def key(self, key: str, press: str = "short") -> None:
-        """A key (``HOME``, ``BACK``, ``APP_SWITCH``, ``POWER``...): ``press`` is ``short``, ``long``, ``down`` or
-        ``up``.
+        """A hard key by name (``HOME``, ``BACK``, ``APP_SWITCH``, ``VOLUME_UP``...; ``hmi_info()`` lists them):
+        ``press`` is ``short``, ``long``, ``down`` or ``up``.
+
+        It is sent as it is: a key the HMI does not have is answered by the exporter with an error line (see
+        :meth:`read_error`, :meth:`poll_errors`).
         """
         self.send({"key": {"key": key, "press": press}})
 
+    def _rotary(self, rotary_id: str) -> dict:
+        """What the HMI declares of the rotary ``rotary_id`` (``{"id", "label", "push"}``).
+
+        Raises:
+            InputNotDeclaredError: If the HMI has no such rotary.
+        """
+        if self._input is None:
+            return {"id": rotary_id, "push": None}  # nothing is known: the exporter is the one to say
+        rotaries = self._input.get("rotaries") or []
+        for rotary in rotaries:
+            if rotary["id"] == rotary_id:
+                return rotary
+        if not rotaries:
+            raise InputNotDeclaredError("this HMI declares no rotary")
+        raise InputNotDeclaredError(
+            f"this HMI has no rotary {rotary_id} (it has {', '.join(rotary['id'] for rotary in rotaries)})"
+        )
+
+    def rotate(self, rotary_id: str, delta: int) -> None:
+        """Turn a rotary knob by ``delta`` detents, positive clockwise (``hmi_info()`` lists the rotaries). A turn of
+        more than ``MAX_ROTARY_DELTA`` detents is sent as several lines.
+
+        Raises:
+            InputNotDeclaredError: If the HMI has no such rotary.
+            ValueError: If ``delta`` is not a whole number of detents other than 0.
+        """
+        self._rotary(rotary_id)
+        if (
+            isinstance(delta, bool)
+            or not isinstance(delta, int | float)
+            or not math.isfinite(delta)
+            or delta != int(delta)
+            or delta == 0
+        ):
+            raise ValueError(f"a rotary turns by a whole number of detents, not 0: {delta!r}")
+        remaining, sign = abs(int(delta)), 1 if delta > 0 else -1
+        while remaining:
+            step = min(remaining, MAX_ROTARY_DELTA)
+            self.send({"rotary": {"id": rotary_id, "delta": sign * step}})
+            remaining -= step
+
+    def push(self, rotary_id: str, press: str = "short") -> None:
+        """Push a rotary knob: its push button is the hard key the HMI names for it, pressed as ``press`` says
+        (``short``, ``long``, ``down`` or ``up``, as far as the key takes them).
+
+        Raises:
+            InputNotDeclaredError: If the HMI has no such rotary, or it has no push button.
+        """
+        if self._input is None:
+            raise InputNotDeclaredError("the push button of a rotary is named by hmi_info(): this stream has none")
+        key = self._rotary(rotary_id)["push"]
+        if key is None:
+            raise InputNotDeclaredError(f"the rotary {rotary_id} has no push button")
+        self.key(key, press)
+
     def text(self, text: str) -> None:
-        """Type text into the focused field."""
+        """Type text into the focused field, in the layout the HMI declares.
+
+        Raises:
+            InputNotDeclaredError: If the HMI does not type text.
+        """
+        if self._input is not None and not self._input["keyboard"]["text"]:
+            raise InputNotDeclaredError("this HMI does not take text")
         self.send({"text": text})
+
+    # -- what the exporter answers -------------------------------------------------------------------------------------
 
     def read_error(self, timeout: float | None = None) -> str | None:
         """The next error the exporter answered with, or None when the stream has ended. Raises ``TimeoutError`` after
@@ -535,9 +961,8 @@ class InputStream(_Receiving):
 class HmiClient(DriverClient):
     """A hmi: the client of every driver that implements the HMI interface."""
 
-    #: Marks the class as a screen of the HMI interface (``video()``, ``input()``): a UI server that finds it
-    #: anywhere in a lease's driver
-    #: tree can relay it, whatever the child is called.
+    #: Marks the class as an HMI of the HMI interface (``video()``, ``input()``): a UI server that finds it anywhere in
+    #: a lease's driver tree can relay it, whatever the child is called.
     HMI_STREAM_VERSION: ClassVar[int] = 1
 
     def start(
@@ -546,9 +971,17 @@ class HmiClient(DriverClient):
         max_size: int | None = None,
         bit_rate: int | None = None,
         max_fps: int | None = None,
+        codec: str | None = None,
     ) -> dict:
-        """Start the stream if it is not running (joining ``video`` or ``input`` does it too); returns the status."""
-        return _integers(self.call("start", quality, max_size, bit_rate, max_fps))
+        """Start the stream if it is not running (joining ``video`` or ``input`` does it too); returns the status.
+
+        ``codec`` (``h264``, ``hevc`` or ``mjpeg``: ``hmi_info()["codecs"]`` lists what the HMI produces) chooses the
+        stream's codec for this lease: a running stream is restarted in it, and its viewers are sent the new codec line.
+
+        Raises:
+            ValueError: If the HMI does not produce ``codec``, or its quality cannot be adjusted.
+        """
+        return _integers(self.call("start", quality, max_size, bit_rate, max_fps, codec))
 
     def stop(self) -> dict:
         """Stop the stream, end every viewer's, and have the exporter let go of the device; returns the status."""
@@ -565,27 +998,37 @@ class HmiClient(DriverClient):
         stream.
 
         Raises:
-            ValueError: If the screen's quality cannot be adjusted.
+            ValueError: If the HMI's quality cannot be adjusted.
         """
         return _integers(self.call("set_quality", level))
 
     def hmi_info(self) -> dict:
-        """What the screen is and which input it takes."""
+        """What the HMI is and what it takes: the ``codecs`` it produces and the ``codec`` in use, whether it is
+        ``recording``-capable, the picture's size, and ``input``: its ``pointer``, ``keyboard``, ``keys``, ``hard_keys``
+        and ``clipboard``, all of them empty for a view-only HMI.
+        """
         return _integers(self.call("hmi_info"))
 
     def start_recording(self, audio: bool = False, mic_audio: bool = False, max_seconds: float | None = None) -> dict:
         """Record the stream to an MP4 on the exporter (``audio`` is accepted and ignored: there is none); returns the
-        status.
+        status. H.264 and HEVC are recorded; a stream that goes on in another codec ends the recording
+        (``reason`` ``codec_changed``).
+
+        Raises:
+            DriverError: If the stream is MJPEG (``hmi_info()["recording"]`` is false), which is not recorded.
         """
         return _integers(self.call("start_recording", audio, mic_audio, max_seconds))
 
     def recording_status(self) -> dict:
-        """What the recording is doing: ``{"active", "seconds", "frames", "bytes", "reason"}``."""
+        """What the recording is doing: ``{"active", "seconds", "frames", "bytes", "reason", "error"}``. ``reason`` is
+        ``None`` while it runs, then ``stop``, ``max_seconds``, ``max_bytes``, ``stream_ended``, ``codec_changed`` (the
+        stream went on in another codec) or ``error``.
+        """
         return _integers(self.call("recording_status"))
 
     def stop_recording(self) -> dict:
         """End the recording and fetch it: ``{"data": <the MP4's bytes>, "name", "size", "delivered", "seconds",
-        "frames", ...}``.
+        "frames", "width", "height", "reason", ...}`` (``reason`` as in :meth:`recording_status`).
         """
         info = _integers(self.call("stop_recording"))
         chunks = []
@@ -616,27 +1059,32 @@ class HmiClient(DriverClient):
             except (TimeoutError, KeyboardInterrupt):
                 raise
             except Exception as e:
-                raise HmiStreamClosedError.of("the screen stream could not be opened", e) from e
+                raise HmiStreamClosedError.of("the HMI stream could not be opened", e) from e
             yield video
 
     @contextmanager
     def input(self, on_error: Callable[[str], None] | None = None) -> Generator[InputStream]:
-        """Open the input stream: touch, key and text events to the device.
+        """Open the input stream: pointer, keyboard, key and text events to the device.
 
         ``on_error`` is called (on a thread of its own) with the message of every event the exporter could not take, as
         they come,
         so that a relay can pass them on to its UI.
 
         Raises:
-            HmiStreamClosedError: If the stream could not be opened, or the screen takes no input from here
-            (``reason`` as for
-                :meth:`video`).
+            HmiStreamClosedError: If the stream could not be opened, or the HMI takes no input from here (it declares
+                none: a view-only HMI; ``reason`` as for :meth:`video`).
         """
-        if not self.hmi_info().get("input", {}).get("touch", True):
-            raise HmiStreamClosedError("this screen takes no input from here", reason=ERROR)
+        info = self.hmi_info()
+        if not declares_input(info):
+            raise HmiStreamClosedError("this HMI takes no input from here", reason=ERROR)
+
+        def shown() -> tuple[int, int] | None:
+            now = self.hmi_info()
+            return (now["width"], now["height"]) if now.get("width") and now.get("height") else None
+
         with ExitStack() as stack:
             try:
-                stream = InputStream(stack.enter_context(self.stream("input")))
+                stream = InputStream(stack.enter_context(self.stream("input")), info["input"], shown)
             except Exception as e:
                 raise HmiStreamClosedError.of("the input stream could not be opened", e) from e
             listener = None
@@ -658,12 +1106,12 @@ class HmiClient(DriverClient):
     def record(
         self, path: str | Path, seconds: float, *, on_progress: Callable[[int, int], None] | None = None
     ) -> dict:
-        """Write ``seconds`` of the stream to ``path`` as a raw Annex-B ``.h264`` file; returns what was written.
+        """Write ``seconds`` of the stream to ``path`` as a raw elementary stream; returns what was written.
 
-        Starts at the first key picture (SPS/PPS included), so the file plays from its first picture. Raw H.264 has no
-        timing:
-        ``ffmpeg -framerate <fps> -i file.h264 -c copy file.mp4`` makes an MP4 of it (the ``fps`` of the result is
-        nominal).
+        H.264 and HEVC are written as Annex-B (``.h264``, ``.h265``) starting at the first key picture (parameter sets
+        included), so the file plays from its first picture; MJPEG as the JPEGs one after the other (``.mjpeg``). Raw
+        video has no timing: ``ffmpeg -framerate <fps> -i file.h264 -c copy file.mp4`` makes an MP4 of it (the ``fps``
+        of the result is nominal). The name is the caller's: the ``codec`` of the result says what was written.
         """
         path = Path(path)
         frames = size = 0
@@ -702,12 +1150,26 @@ class HmiClient(DriverClient):
         }
 
     def cli(self):  # noqa: C901 (one command group: each command is a few lines)
-        """The command group of the screen (``j <hmi> ...``)."""
+        """The command group of the HMI (``j <hmi> ...``)."""
         client = self
+
+        def inputs(action: Callable[[InputStream], None]) -> None:
+            """Open the input stream, run ``action`` on it and report what the exporter answered with."""
+            try:
+                with client.input() as hmi_input:
+                    action(hmi_input)
+                    for error in hmi_input.poll_errors(0.5):
+                        raise click.ClickException(error)
+            except (InputNotDeclaredError, HmiStreamClosedError, ValueError) as e:
+                raise click.ClickException(str(e)) from None
+
+        codec_option = click.option(
+            "--codec", type=click.Choice(CODECS), default=None, help="the stream's codec for this lease (see `info`)"
+        )
 
         @driver_click_group(self)
         def hmi():
-            """The device's screen and input, streamed by the exporter."""
+            """The device's HMI: its picture, and the pointer, keyboard, keys and knobs it takes, from the exporter."""
 
         @hmi.command("status")
         def status_command():
@@ -715,19 +1177,22 @@ class HmiClient(DriverClient):
             click.echo(json.dumps(client.status(), indent=2))
 
         @hmi.command("info")
-        def info_command():
-            """What the screen is and which input it takes (keys, hard keys, text, quality)."""
-            click.echo(json.dumps(client.hmi_info(), indent=2))
+        @click.option("--json", "as_json", is_flag=True, help="the raw hmi_info() as JSON")
+        def info_command(as_json):
+            """What the HMI is and takes: its codecs, pointer, keyboard, hard keys, rotaries and quality."""
+            info = client.hmi_info()
+            click.echo(json.dumps(info, indent=2) if as_json else describe(info))
 
         @hmi.command("start")
         @click.option("--quality", default=None, help="auto, minimal, low, medium or high (or 0-3)")
         @click.option("--max-size", type=int, default=None, help="longest side of the picture, pixels")
         @click.option("--bit-rate", type=int, default=None, help="video bit rate, bit/s")
         @click.option("--max-fps", type=int, default=None)
-        def start_command(quality, max_size, bit_rate, max_fps):
-            """Start the stream now (joining it does that too)."""
+        @codec_option
+        def start_command(quality, max_size, bit_rate, max_fps, codec):
+            """Start the stream now (joining it does that too), in a codec of choice."""
             try:
-                click.echo(json.dumps(client.start(quality, max_size, bit_rate, max_fps), indent=2))
+                click.echo(json.dumps(client.start(quality, max_size, bit_rate, max_fps, codec), indent=2))
             except ValueError as e:
                 raise click.ClickException(str(e)) from None
 
@@ -750,7 +1215,12 @@ class HmiClient(DriverClient):
         @click.option("-o", "--output", "output", required=True, type=click.Path(dir_okay=False, path_type=Path))
         @click.option("--seconds", type=click.FloatRange(min=0.5), default=5.0, show_default=True)
         def recording_command(output, seconds):
-            """Record the stream on the exporter to an MP4 (muxed there, no transcode) and fetch it."""
+            """Record the stream on the exporter to an MP4 (muxed there, no transcode) and fetch it (H.264 and HEVC)."""
+            info = client.hmi_info()
+            if not info["recording"]:
+                raise click.ClickException(
+                    f"a {info['codec']} stream is not recorded: start it as h264 or hevc (`start --codec`) first"
+                )
             client.start_recording(max_seconds=seconds + 60)
             time.sleep(seconds)
             result = client.stop_recording()
@@ -764,7 +1234,7 @@ class HmiClient(DriverClient):
         @click.option("-o", "--output", "output", required=True, type=click.Path(dir_okay=False, path_type=Path))
         @click.option("--seconds", type=click.FloatRange(min=0.1), default=5.0, show_default=True)
         def record_command(output, seconds):
-            """Record the stream to a raw .h264 file (Annex-B), starting at a key picture."""
+            """Record the stream to a raw file (Annex-B for h264 and hevc, JPEGs for mjpeg), from a key picture."""
             result = client.record(output, seconds)
             if not result["frames"]:
                 raise click.ClickException("the stream gave no pictures")
@@ -777,41 +1247,149 @@ class HmiClient(DriverClient):
         @click.argument("key")
         @click.option("--press", type=click.Choice(["short", "long", "down", "up"]), default="short")
         def key_command(key, press):
-            """Press a key of the hmi: HOME, BACK, APP_SWITCH, POWER, VOLUME_UP, ... (see `info` for what it has)."""
-            with client.input() as hmi_input:
-                hmi_input.key(key, press)
-                for error in hmi_input.poll_errors(0.5):
-                    raise click.ClickException(error)
+            """Press a hard key of the HMI: HOME, BACK, APP_SWITCH, VOLUME_UP, ... (see `info` for what it has)."""
+            inputs(lambda hmi_input: hmi_input.key(key, press))
+
+        @hmi.command("turn", context_settings={"ignore_unknown_options": True})  # a negative DELTA is not an option
+        @click.argument("rotary_id", metavar="ID")
+        @click.argument("delta", type=int)
+        def turn_command(rotary_id, delta):
+            """Turn the rotary knob ID by DELTA detents (positive is clockwise; see `info` for the rotaries)."""
+            inputs(lambda hmi_input: hmi_input.rotate(rotary_id, delta))
+
+        @hmi.command("push")
+        @click.argument("rotary_id", metavar="ID")
+        @click.option("--press", type=click.Choice(["short", "long", "down", "up"]), default="short")
+        def push_command(rotary_id, press):
+            """Push the rotary knob ID (its push button is a hard key; see `info` for the rotaries)."""
+            inputs(lambda hmi_input: hmi_input.push(rotary_id, press))
+
+        @hmi.command("press")
+        @click.argument("code")
+        @click.option(
+            "--modifier", "modifiers", multiple=True, help="a key held meanwhile, e.g. ShiftLeft (repeatable)"
+        )
+        def press_command(code, modifiers):
+            """Press a keyboard key by its W3C code (KeyA, Digit1, Enter, ArrowLeft, ...), with modifiers held."""
+            inputs(lambda hmi_input: hmi_input.press(code, modifiers=modifiers))
 
         @hmi.command("text")
         @click.argument("text")
         def text_command(text):
             """Type text into the focused field."""
-            with client.input() as hmi_input:
-                hmi_input.text(text)
-                for error in hmi_input.poll_errors(0.5):
-                    raise click.ClickException(error)
+            inputs(lambda hmi_input: hmi_input.text(text))
 
         @hmi.command("tap")
         @click.argument("x", type=float)
         @click.argument("y", type=float)
         def tap_command(x, y):
-            """Tap at a pixel of the picture."""
-            with client.input() as hmi_input:
-                hmi_input.tap(x, y)
-                for error in hmi_input.poll_errors(0.5):
-                    raise click.ClickException(error)
+            """Tap at a pixel of the picture (a click of the primary button on an HMI with a mouse)."""
+            inputs(lambda hmi_input: hmi_input.tap(x, y))
+
+        @hmi.command("swipe")
+        @click.argument("x1", type=float)
+        @click.argument("y1", type=float)
+        @click.argument("x2", type=float)
+        @click.argument("y2", type=float)
+        @click.option("--seconds", type=click.FloatRange(min=0.0), default=0.3, show_default=True)
+        def swipe_command(x1, y1, x2, y2, seconds):
+            """Drag from one pixel of the picture to another."""
+            inputs(lambda hmi_input: hmi_input.swipe(x1, y1, x2, y2, seconds=seconds))
+
+        @hmi.command("click")
+        @click.argument("x", type=float)
+        @click.argument("y", type=float)
+        @click.option("--button", type=click.Choice(list(BUTTONS)), default="primary", show_default=True)
+        @click.option("--double", is_flag=True, help="click twice")
+        def click_command(x, y, button, double):
+            """Click a mouse button at a pixel of the picture."""
+            if double:
+                inputs(lambda hmi_input: hmi_input.double_click(x, y, button))
+            else:
+                inputs(lambda hmi_input: hmi_input.click(x, y, button))
+
+        @hmi.command(
+            "scroll", context_settings={"ignore_unknown_options": True}
+        )  # a negative DX or DY is not an option
+        @click.argument("dx", type=float)
+        @click.argument("dy", type=float)
+        @click.option("--at", nargs=2, type=float, default=None, help="X Y: where to turn the wheel (default: center)")
+        def scroll_command(dx, dy, at):
+            """Turn the mouse wheel by DX, DY pixels (positive DY scrolls down)."""
+            x, y = at if at is not None else (None, None)
+            inputs(lambda hmi_input: hmi_input.scroll(dx, dy, x, y))
 
         @hmi.command("view")
         @click.option("--port", type=click.IntRange(0, 65535), default=0, show_default=True, help="0: any free port")
         @click.option("--no-open", is_flag=True, help="do not open the browser")
-        def view_command(port, no_open):
-            """Watch and control the screen in a browser page served from this machine (127.0.0.1 only).
+        @codec_option
+        def view_command(port, no_open, codec):
+            """Watch and control the HMI in a browser page served from this machine (127.0.0.1 only).
 
-            The address it prints carries a random token the page needs for its stream and its input.
+            The address it prints carries a random token the page needs for its stream and its input. ``--codec``
+            starts the stream in that codec first.
             """
             from .web import serve_view
 
+            if codec is not None:
+                try:
+                    client.start(codec=codec)
+                except ValueError as e:
+                    raise click.ClickException(str(e)) from None
             serve_view(client, port=port, open_browser=not no_open)
 
         return hmi
+
+
+def describe(info: dict) -> str:
+    """``hmi_info()`` as a person reads it: the codecs, the picture, and what the HMI takes (and what it does not)."""
+    lines = []
+    codecs = ", ".join(c if c != info["codec"] else f"{c} (in use)" for c in info["codecs"])
+    size = f"{info['width']}x{info['height']}" if info.get("width") else "not started"
+    lines.append(f"picture: {size}, rotation {info.get('rotation', 0)}")
+    lines.append(f"codecs: {codecs}; {'recorded to MP4' if info['recording'] else 'not recorded'}")
+    declared = info["input"]
+    pointer, keyboard = declared["pointer"], declared["keyboard"]
+    if pointer["kinds"]:
+        how = [name for name in ("absolute", "relative") if pointer[name]]
+        extras = [name for name in ("buttons", "wheel") if pointer[name]]
+        contacts = f"{pointer['max_contacts']} contact{'s' if pointer['max_contacts'] != 1 else ''}"
+        lines.append(f"pointer: {', '.join(pointer['kinds'])}; {' and '.join(how)}; {contacts}")
+        lines.append(f"  with {', '.join(extras) if extras else 'no buttons or wheel'}")
+    else:
+        lines.append("pointer: none")
+    if keyboard["codes"] or keyboard["text"]:
+        codes = "every key" if keyboard["codes"] == "all" else ", ".join(keyboard["codes"]) or "no key codes"
+        lines.append(
+            f"keyboard: {codes}; {'types text' if keyboard['text'] else 'no text'} ({keyboard['layout']} layout)"
+        )
+    else:
+        lines.append("keyboard: none")
+    if declared["hard_keys"]:
+        lines.append("hard keys: " + ", ".join(f"{k['key']} ({'/'.join(k['presses'])})" for k in declared["hard_keys"]))
+    else:
+        lines.append("hard keys: none")
+    rotaries = declared.get("rotaries") or []
+    pushes = {rotary["push"] for rotary in rotaries if rotary["push"]}
+    other = [key for key in declared["keys"] if key not in {k["key"] for k in declared["hard_keys"]} | pushes]
+    if other:
+        lines.append("  also takes: " + ", ".join(other))
+    if rotaries:
+        lines.append(
+            "rotaries: "
+            + ", ".join(
+                f"{rotary['id']} ({rotary['label']}" + (f", push {rotary['push']})" if rotary["push"] else ")")
+                for rotary in rotaries
+            )
+        )
+    else:
+        lines.append("rotaries: none")
+    lines.append(f"clipboard: {'yes' if declared['clipboard'] else 'no'}")
+    quality = info["quality"]
+    lines.append(
+        "quality: "
+        + (f"{', '.join(quality['levels'])}{', auto' if quality['auto'] else ''}" if quality["adjustable"] else "fixed")
+    )
+    if not declares_input(info):
+        lines.append("input: none (a view-only HMI)")
+    return "\n".join(lines)
