@@ -1,0 +1,46 @@
+[project]
+name = "jumpstarter-driver-hmi"
+dynamic = ["version", "urls"]
+description = "A generic HMI interface for Jumpstarter: a remote display with declared input (pointer, keyboard, hard keys)"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    { name = "Kirk Brauer", email = "kirkebrauer@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp>=3.10.5",
+    "anyio>=4.10.0",
+    "click>=8.1.7.2",
+    "jumpstarter",
+]
+
+[project.entry-points."jumpstarter.drivers"]
+MockHmi = "jumpstarter_driver_hmi.driver:MockHmi"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../../'}
+
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-report=html --cov-report=xml --strict-markers --strict-config"
+log_cli = true
+log_cli_level = "INFO"
+testpaths = ["jumpstarter_driver_hmi"]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=6.0.0",
+    "pytest>=8.4",
+]

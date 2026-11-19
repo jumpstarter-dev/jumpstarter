@@ -29,6 +29,7 @@ dependencies = [
   "jumpstarter-driver-energenie",
   "jumpstarter-driver-esp32",
   "jumpstarter-driver-flashers",
+  "jumpstarter-driver-hmi",
   "jumpstarter-driver-http",
   "jumpstarter-driver-http-power",
   "jumpstarter-driver-iscsi",
