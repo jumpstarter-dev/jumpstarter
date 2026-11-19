@@ -79,8 +79,10 @@ destination shipper must handle any unexpected third-party text.
 
 Jumpstarter does not generate a shipper ConfigMap or deploy a shipper. Configure
 the shipper through your existing Alloy, Vector, Promtail, or equivalent
-deployment. The examples below show the required pod discovery and stream-label
-behavior; adapt them to the chart or manifest you already operate.
+deployment. The code examples below show only parts of each configuration, such
+as the Loki destination. The required pod discovery and stream-label rules are
+stated in each shipper's section; adapt the examples to the chart or manifest
+you already operate.
 
 The Controller/Router pods carry:
 

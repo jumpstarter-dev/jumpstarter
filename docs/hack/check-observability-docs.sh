@@ -45,10 +45,17 @@ forbid() {
   local description=$1
   local pattern=$2
   local matches
+  local rc
 
-  if matches=$(grep -rnF --include='*.md' -- "$pattern" "$config_docs"); then
+  # grep exits 1 for "no match" and 2+ for a scan failure (unreadable file,
+  # bad pattern). Treating 2 as "no match" would let the contract pass without
+  # scanning every page.
+  matches=$(grep -rnF --include='*.md' -- "$pattern" "$config_docs") && rc=0 || rc=$?
+  if [ "$rc" -eq 0 ]; then
     fail "obsolete $description still documented:"
     printf '%s\n' "$matches" >&2
+  elif [ "$rc" -ne 1 ]; then
+    fail "failed to scan configuration docs for $description (grep exit $rc)"
   fi
 }
 
@@ -91,7 +98,9 @@ forbid 'logging.shipper API field' 'logging.shipper'
 forbid 'shipper type API field' 'shipper.type'
 forbid 'LogShipperReady condition' 'LogShipperReady'
 forbid 'generated shipper ConfigMap name' 'jumpstarter-log-shipper'
-forbid 'generated ConfigMap key extraction' '{.data.'
+# No separate `{.data.` check: that literal also appears in unrelated JSONPath
+# examples (for example a Secret inspection), and the ConfigMap-name check above
+# already rejects references to the removed shipper ConfigMap.
 
 if [ "$status" -ne 0 ]; then
   exit 1
