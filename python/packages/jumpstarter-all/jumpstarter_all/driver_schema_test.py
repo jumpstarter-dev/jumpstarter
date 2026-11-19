@@ -29,7 +29,7 @@ def installed_drivers():
     for entry_point in sorted(entry_points(group="jumpstarter.drivers"), key=lambda ep: ep.name):
         try:
             cls = entry_point.load()
-        except Exception:
+        except Exception:  # noqa: BLE001, S112
             # Optional dependencies are environment-specific; load failures are
             # reported per entry and covered by the schema_test fixtures.
             continue
@@ -80,21 +80,49 @@ def test_runtime_fields_do_not_break_schema(schemas):
         for field in fields:
             try:
                 TypeAdapter(hints.get(field.name, field.type)).json_schema()
-            except Exception:
+            except Exception:  # noqa: BLE001
                 break  # this driver is allowed to report a schema error
         else:
             error = schemas[entry_point.name]["error"]
             assert error is None, f"{entry_point.name}: {error}"
 
 
-def test_no_unreferenced_base_definitions(schemas):
+def referenced_definitions(schema):
+    """Names of the $defs reachable from the entry's properties."""
+    seen: set[str] = set()
+
+    def walk(node):
+        if isinstance(node, dict):
+            ref = node.get("$ref")
+            if isinstance(ref, str) and ref.startswith("#/$defs/"):
+                name = ref.removeprefix("#/$defs/")
+                if name not in seen:
+                    seen.add(name)
+                    walk(schema["defs"].get(name))
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(schema["properties"])
+    return seen
+
+
+def test_no_unreferenced_definitions(schemas):
+    """Definitions exist only to resolve refs; the base Driver must not leak in.
+
+    A driver that takes another driver as a constructor field (for example
+    AndroidEmulatorPower.parent) legitimately references Driver, so check
+    reachability rather than the name.
+    """
     for name, schema in schemas.items():
-        assert "Driver" not in schema["defs"], name
+        assert set(schema["defs"]) == referenced_definitions(schema), name
 
 
 def test_qemu_keeps_types_and_definitions(schemas):
     if "Qemu" not in schemas:
-        pytest.skip("qemu driver not installed")  # ty: ignore[call-non-callable]
+        pytest.skip("qemu driver not installed")  # ty: ignore[too-many-positional-arguments]
     qemu = schemas["Qemu"]
     assert qemu["error"] is None
     assert qemu["properties"]["hostfwd"]["additionalProperties"]["$ref"] == "#/$defs/Hostfwd"
@@ -104,7 +132,7 @@ def test_qemu_keeps_types_and_definitions(schemas):
 @pytest.mark.parametrize("name", ["DigitalInput", "DigitalOutput", "PowerSwitch"])
 def test_gpio_drivers_exclude_runtime_fields(schemas, name):
     if name not in schemas:
-        pytest.skip(f"{name} not installed")  # ty: ignore[call-non-callable]
+        pytest.skip(f"{name} not installed")  # ty: ignore[too-many-positional-arguments]
     schema = schemas[name]
     assert schema["error"] is None
     assert "_chip" not in schema["properties"]

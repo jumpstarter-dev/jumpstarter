@@ -110,7 +110,7 @@ def _client_class_path(cls: type) -> str | None:
         return None
     try:
         value = client()
-    except Exception:
+    except Exception:  # noqa: BLE001 - arbitrary driver code; no client path is not fatal
         return None
     return value if isinstance(value, str) else None
 
@@ -121,7 +121,7 @@ def _resolve_annotation(cls: type, annotation: Any) -> Any:
         return annotation
     try:
         return eval(annotation, vars(sys.modules[cls.__module__]), {cls.__name__: cls})
-    except Exception:
+    except Exception:  # noqa: BLE001 - evaluates arbitrary annotations; keep the string
         return annotation
 
 
@@ -129,7 +129,7 @@ def _config_fields(cls: type, base_fields: set[str]) -> list[tuple[dataclasses.F
     """Constructor fields that belong to the driver's own config, with resolved types."""
     try:
         hints = typing.get_type_hints(cls, include_extras=True)
-    except Exception:
+    except Exception:  # noqa: BLE001 - fall back to resolving annotations one by one
         hints = {}
     return [
         (field, hints.get(field.name) or _resolve_annotation(cls, field.type))
@@ -139,7 +139,7 @@ def _config_fields(cls: type, base_fields: set[str]) -> list[tuple[dataclasses.F
 
 
 def _config_model(cls: type, fields: list[tuple[dataclasses.Field, Any]]):
-    kwargs = {}
+    kwargs: dict[str, Any] = {}
     for field, annotation in fields:
         if field.default is not dataclasses.MISSING:
             kwargs[field.name] = (annotation, field.default)
@@ -159,7 +159,7 @@ def _per_field_schema(fields: list[tuple[dataclasses.Field, Any]]):
         try:
             schema = TypeAdapter(annotation).json_schema(ref_template="#/$defs/{model}")
             defs.update(schema.pop("$defs", {}))
-        except Exception:
+        except Exception:  # noqa: BLE001 - degrade only the field pydantic cannot model
             name = annotation if isinstance(annotation, str) else getattr(annotation, "__name__", None)
             schema = {"title": field.name} | ({"description": f"type: {name}"} if name else {})
         properties[field.name] = schema
@@ -178,7 +178,7 @@ def _schema_for_entry_point(entry_point, base_fields: set[str]) -> DriverSchema:
     )
     try:
         cls = entry_point.load()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - reported per entry
         # One uninstallable driver must not sink the whole listing.
         entry.error = f"{type(e).__name__}: {e}"
         return entry
@@ -198,7 +198,7 @@ def _schema_for_entry_point(entry_point, base_fields: set[str]) -> DriverSchema:
         # Recursive models can put the root object in $defs as well.
         if schema.get("$ref", "").startswith("#/$defs/"):
             schema = entry.defs[schema["$ref"].removeprefix("#/$defs/")]
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - reported per entry
         # Unmodelable constructor fields must not sink the rest of the schema.
         entry.error = f"{type(e).__name__}: {e}"
         entry.properties, entry.required, entry.defs = _per_field_schema(fields)

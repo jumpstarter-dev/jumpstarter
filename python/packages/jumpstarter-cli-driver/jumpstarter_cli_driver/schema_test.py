@@ -53,7 +53,7 @@ class RecursiveDriver(Driver):
 
     host: str
     port: int
-    peer: "RecursiveDriver | None" = None
+    peer: RecursiveDriver | None = None
 
     @classmethod
     def client(cls):
