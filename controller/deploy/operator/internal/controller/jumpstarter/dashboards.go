@@ -20,8 +20,11 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"slices"
+	"strings"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
@@ -39,6 +42,15 @@ const (
 	persesVersion          = "v1alpha2"
 	persesDashboardKind    = "PersesDashboard"
 	persesDashboardCRDName = "persesdashboards.perses.dev"
+
+	// persesOperatorMinimumVersion is the oldest perses-operator release that
+	// serves perses.dev/v1alpha2 PersesDashboard. Releases up to v0.2.0 serve
+	// v1alpha1 only, with the dashboard spec directly under spec and no
+	// instanceSelector. Such clusters are reported as unsupported rather than
+	// written with a second, incompatible shape: the CRD declares no conversion
+	// webhook and upstream reconciles v1alpha2 only, so a v1alpha1 object would
+	// not become a usable dashboard on any release.
+	persesOperatorMinimumVersion = "v0.3.0"
 
 	// dashboardLabel marks the generated dashboard for discovery.
 	dashboardLabel = "jumpstarter.dev/dashboards"
@@ -103,19 +115,65 @@ func lokiDatasourceName(js *operatorv1alpha1.Jumpstarter) string {
 }
 
 // persesDashboardCRDAvailable reports whether perses.dev/v1alpha2 serves the
-// PersesDashboard kind.
-func (r *JumpstarterReconciler) persesDashboardCRDAvailable(ctx context.Context) (bool, error) {
+// PersesDashboard kind. When it does not, servedVersions lists the versions the
+// installed persesdashboards.perses.dev CRD serves, so callers can tell an
+// absent CRD from an older perses-operator release that serves v1alpha1 only.
+func (r *JumpstarterReconciler) persesDashboardCRDAvailable(ctx context.Context) (bool, []string, error) {
 	list := &unstructured.UnstructuredList{}
 	list.SetGroupVersionKind(schema.GroupVersionKind{
 		Group: persesGroup, Version: persesVersion, Kind: persesDashboardKind + "List",
 	})
 	if err := r.List(ctx, list, client.Limit(1)); err != nil {
 		if apimeta.IsNoMatchError(err) {
-			return false, nil
+			served, versionErr := r.servedPersesDashboardVersions(ctx)
+			if versionErr != nil {
+				return false, nil, versionErr
+			}
+			return false, served, nil
 		}
-		return false, err
+		return false, nil, err
 	}
-	return true, nil
+	return true, nil, nil
+}
+
+// servedPersesDashboardVersions returns the served versions recorded in the
+// installed persesdashboards.perses.dev CRD, sorted, or nil when the CRD is
+// absent.
+func (r *JumpstarterReconciler) servedPersesDashboardVersions(ctx context.Context) ([]string, error) {
+	crd := &apiextensionsv1.CustomResourceDefinition{}
+	err := r.Get(ctx, types.NamespacedName{Name: persesDashboardCRDName}, crd)
+	if apierrors.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get %s: %w", persesDashboardCRDName, err)
+	}
+
+	served := make([]string, 0, len(crd.Spec.Versions))
+	for _, version := range crd.Spec.Versions {
+		if version.Served {
+			served = append(served, version.Name)
+		}
+	}
+	slices.Sort(served)
+	return served, nil
+}
+
+// dashboardCRDUnavailableMessage explains why the PersesDashboard API cannot be
+// used. A legacy perses-operator that serves v1alpha1 only is named explicitly
+// so the fix (upgrade the operator) is obvious from the condition message.
+func dashboardCRDUnavailableMessage(servedVersions []string) string {
+	generic := fmt.Sprintf(
+		"perses.dev/%s PersesDashboard CRD is not installed; install perses-operator %s or newer",
+		persesVersion, persesOperatorMinimumVersion)
+
+	if len(servedVersions) == 0 || slices.Contains(servedVersions, persesVersion) {
+		return generic
+	}
+
+	return fmt.Sprintf(
+		"persesdashboards.perses.dev serves only %s; perses-operator %s or newer (perses.dev/%s) is required",
+		strings.Join(servedVersions, ", "), persesOperatorMinimumVersion, persesVersion)
 }
 
 // desiredPersesDashboard returns the overview dashboard for a Jumpstarter CR.
@@ -335,7 +393,7 @@ func (r *JumpstarterReconciler) reconcilePersesDashboards(ctx context.Context, j
 		}, nil
 	}
 
-	available, err := r.persesDashboardCRDAvailable(ctx)
+	available, servedVersions, err := r.persesDashboardCRDAvailable(ctx)
 	if err != nil {
 		logf.FromContext(ctx).Error(err, "Failed to detect PersesDashboard CRD; leaving dashboards unchanged")
 		return integrationResult{
@@ -346,7 +404,7 @@ func (r *JumpstarterReconciler) reconcilePersesDashboards(ctx context.Context, j
 	if !available {
 		return integrationResult{
 			reason:  serviceMonitorReasonCRDNotFound,
-			message: "perses.dev/v1alpha2 PersesDashboard CRD is not installed",
+			message: dashboardCRDUnavailableMessage(servedVersions),
 		}, nil
 	}
 

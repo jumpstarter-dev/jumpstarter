@@ -168,9 +168,32 @@ kubectl -n jumpstarter-lab get persesdashboards.perses.dev \
 
 ## Versions and compatibility
 
-- Perses Operator **v0.6** with `perses.dev/v1alpha2` is the tested API.
-  `v1alpha2` is marked unstable upstream; the operator isolates the resource
-  shape behind its builder and CRD probe.
+Perses Operator **v0.6** with `perses.dev/v1alpha2` is the supported and tested
+API. `v1alpha2` is marked unstable upstream; the operator isolates the resource
+shape behind its builder and CRD probe.
+
+| perses-operator | `PersesDashboard` versions | Jumpstarter |
+| --- | --- | --- |
+| `v0.3.0` … `v0.6.x` | `v1alpha2` (storage) and `v1alpha1` (deprecated) | Supported; `v0.6` is tested |
+| `v0.2.0` and older | `v1alpha1` only | Unsupported; see below |
+
+`v1alpha1` is not written by Jumpstarter. The CRD defines no conversion webhook,
+so a `v1alpha1` object is never transformed into `v1alpha2`, and the upstream
+operator reconciles `v1alpha2` only. On a legacy install the dashboard is not
+created; `DashboardsReady` reports:
+
+```text
+False  CRDNotFound  persesdashboards.perses.dev serves only v1alpha1;
+                    perses-operator v0.3.0 or newer (perses.dev/v1alpha2) is required
+```
+
+An absent CRD reports `perses.dev/v1alpha2 PersesDashboard CRD is not installed;
+install perses-operator v0.3.0 or newer` instead. Upgrading perses-operator is
+enough: the CRD watch re-reconciles and the dashboard appears without editing the
+Jumpstarter CR.
+
+Other notes:
+
 - The operator test suite uses Perses **0.53.1** (the operator sample image);
   the Perses documentation currently tracks **v0.55**.
 - Perses does not render Prometheus exemplars yet. Use the `lease_id` LogQL

@@ -18,10 +18,14 @@ package jumpstarter
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -276,5 +280,137 @@ func TestReconcilePersesDashboardsDisabled(t *testing.T) {
 	}
 	if result.phase != integrationDisabled || result.reason != serviceMonitorReasonDisabled {
 		t.Fatalf("result = %v/%q, want %v/%s", result.phase, result.reason, integrationDisabled, serviceMonitorReasonDisabled)
+	}
+}
+
+func TestDashboardCRDUnavailableMessage(t *testing.T) {
+	tests := []struct {
+		name   string
+		served []string
+		want   []string
+		absent []string
+	}{
+		{
+			name:   "crd absent",
+			served: nil,
+			want:   []string{"not installed", "v0.3.0", "perses.dev/v1alpha2"},
+		},
+		{
+			name:   "legacy v1alpha1 only",
+			served: []string{"v1alpha1"},
+			want:   []string{"serves only v1alpha1", "v0.3.0", "perses.dev/v1alpha2"},
+			absent: []string{"not installed"},
+		},
+		{
+			name:   "v1alpha2 served but undiscoverable",
+			served: []string{"v1alpha1", "v1alpha2"},
+			want:   []string{"not installed", "v0.3.0"},
+			absent: []string{"serves only"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			message := dashboardCRDUnavailableMessage(tt.served)
+			for _, want := range tt.want {
+				if !strings.Contains(message, want) {
+					t.Errorf("message %q must contain %q", message, want)
+				}
+			}
+			for _, absent := range tt.absent {
+				if strings.Contains(message, absent) {
+					t.Errorf("message %q must not contain %q", message, absent)
+				}
+			}
+		})
+	}
+}
+
+// noMatchListClient returns a NoMatch error for unstructured lists, emulating a
+// cluster whose RESTMapper does not serve perses.dev/v1alpha2.
+type noMatchListClient struct {
+	client.Client
+}
+
+func (c *noMatchListClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if _, ok := list.(*unstructured.UnstructuredList); ok {
+		return &apimeta.NoKindMatchError{
+			GroupKind: schema.GroupKind{Group: persesGroup, Kind: persesDashboardKind + "List"},
+		}
+	}
+	return c.Client.List(ctx, list, opts...)
+}
+
+func TestServedPersesDashboardVersions(t *testing.T) {
+	newCRD := func(versions ...apiextensionsv1.CustomResourceDefinitionVersion) *apiextensionsv1.CustomResourceDefinition {
+		return &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{Name: persesDashboardCRDName},
+			Spec:       apiextensionsv1.CustomResourceDefinitionSpec{Versions: versions},
+		}
+	}
+	served := func(name string, isServed bool) apiextensionsv1.CustomResourceDefinitionVersion {
+		return apiextensionsv1.CustomResourceDefinitionVersion{Name: name, Served: isServed}
+	}
+
+	tests := []struct {
+		name   string
+		crd    *apiextensionsv1.CustomResourceDefinition
+		want   []string
+		absent bool
+	}{
+		{name: "crd absent", want: nil, absent: true},
+		{
+			name: "legacy v1alpha1 only",
+			crd:  newCRD(served("v1alpha1", true)),
+			want: []string{"v1alpha1"},
+		},
+		{
+			name: "v1alpha1 deprecated but served",
+			crd:  newCRD(served("v1alpha2", true), served("v1alpha1", true)),
+			want: []string{"v1alpha1", "v1alpha2"},
+		},
+		{
+			name: "unserved versions are ignored",
+			crd:  newCRD(served("v1alpha1", false), served("v1alpha2", true)),
+			want: []string{"v1alpha2"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := runtime.NewScheme()
+			if err := apiextensionsv1.AddToScheme(s); err != nil {
+				t.Fatalf("add scheme: %v", err)
+			}
+			builder := fake.NewClientBuilder().WithScheme(s)
+			if tt.crd != nil {
+				builder = builder.WithObjects(tt.crd)
+			}
+			fakeClient := builder.Build()
+			r := &JumpstarterReconciler{Client: fakeClient, Scheme: s}
+
+			got, err := r.servedPersesDashboardVersions(context.Background())
+			if err != nil {
+				t.Fatalf("servedPersesDashboardVersions() error = %v", err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("servedPersesDashboardVersions() = %v, want %v", got, tt.want)
+			}
+
+			probe := &JumpstarterReconciler{
+				Client: &noMatchListClient{Client: fakeClient},
+				Scheme: s,
+			}
+			available, versions, err := probe.persesDashboardCRDAvailable(context.Background())
+			if err != nil {
+				t.Fatalf("persesDashboardCRDAvailable() error = %v", err)
+			}
+			if available {
+				t.Fatal("persesDashboardCRDAvailable() = true, want false")
+			}
+			if !slices.Equal(versions, tt.want) {
+				t.Fatalf("persesDashboardCRDAvailable() versions = %v, want %v", versions, tt.want)
+			}
+		})
 	}
 }

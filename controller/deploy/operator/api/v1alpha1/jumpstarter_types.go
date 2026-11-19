@@ -61,6 +61,8 @@ const (
 
 	// ConditionTypeDashboardsReady indicates whether Perses dashboard resources
 	// are created. Reasons: Created, Disabled, NotConfigured, CRDNotFound, Failed.
+	// CRDNotFound also covers an installed persesdashboards.perses.dev that does
+	// not serve perses.dev/v1alpha2 (perses-operator older than v0.3.0).
 	// Informational only: it does not affect the aggregate Ready condition.
 	ConditionTypeDashboardsReady = "DashboardsReady"
 
