@@ -1,0 +1,166 @@
+{
+  "generated_by": "python/scripts/check-driver-telemetry.py",
+  "driver_type_allowlist": [
+    "appium",
+    "automotive",
+    "bluetooth",
+    "composite",
+    "console",
+    "debug",
+    "gpio",
+    "iosdevice",
+    "network",
+    "power",
+    "serial",
+    "shell",
+    "storage",
+    "testing",
+    "video"
+  ],
+  "metrics": [
+    {
+      "name": "jumpstarter_active_sessions",
+      "short_name": "jumpstarter_active_sessions",
+      "namespace": "core",
+      "type": "gauge",
+      "help": "Currently active lease sessions.",
+      "labels": [
+        "exporter"
+      ],
+      "buckets": null,
+      "package": "jumpstarter",
+      "source": "jumpstarter.metrics.registry"
+    },
+    {
+      "name": "jumpstarter_operation_duration_seconds",
+      "short_name": "jumpstarter_operation_duration_seconds",
+      "namespace": "core",
+      "type": "histogram",
+      "help": "Duration of each operation.",
+      "labels": [
+        "exporter",
+        "operation",
+        "result",
+        "driver_type"
+      ],
+      "buckets": null,
+      "package": "jumpstarter",
+      "source": "jumpstarter.metrics.registry"
+    },
+    {
+      "name": "jumpstarter_operation_errors_total",
+      "short_name": "jumpstarter_operation_errors",
+      "namespace": "core",
+      "type": "counter",
+      "help": "Errors by class (timeout, device, ...).",
+      "labels": [
+        "exporter",
+        "operation",
+        "driver_type",
+        "error_type"
+      ],
+      "buckets": null,
+      "package": "jumpstarter",
+      "source": "jumpstarter.metrics.registry"
+    },
+    {
+      "name": "jumpstarter_operations_total",
+      "short_name": "jumpstarter_operations",
+      "namespace": "core",
+      "type": "counter",
+      "help": "Total operations performed.",
+      "labels": [
+        "exporter",
+        "operation",
+        "result",
+        "driver_type"
+      ],
+      "buckets": null,
+      "package": "jumpstarter",
+      "source": "jumpstarter.metrics.registry"
+    },
+    {
+      "name": "jumpstarter_stream_bytes_total",
+      "short_name": "jumpstarter_stream_bytes",
+      "namespace": "core",
+      "type": "counter",
+      "help": "Bytes transferred (tx/rx) on streams.",
+      "labels": [
+        "exporter",
+        "driver_type",
+        "direction"
+      ],
+      "buckets": null,
+      "package": "jumpstarter",
+      "source": "jumpstarter.metrics.registry"
+    },
+    {
+      "name": "jumpstarter_driver_power_transition_seconds",
+      "short_name": "transition_seconds",
+      "namespace": "power",
+      "type": "histogram",
+      "help": "Time spent in a power transition",
+      "labels": [
+        "state"
+      ],
+      "buckets": [
+        0.01,
+        0.05,
+        0.1,
+        0.5,
+        1.0,
+        5.0
+      ],
+      "package": "jumpstarter-driver-power",
+      "source": "jumpstarter-driver-power:transition_seconds"
+    },
+    {
+      "name": "jumpstarter_driver_power_transitions_total",
+      "short_name": "transitions",
+      "namespace": "power",
+      "type": "counter",
+      "help": "Power transitions performed by the driver",
+      "labels": [
+        "state",
+        "result"
+      ],
+      "buckets": null,
+      "package": "jumpstarter-driver-power",
+      "source": "jumpstarter-driver-power:transitions"
+    },
+    {
+      "name": "jumpstarter_driver_sdwire_operation_seconds",
+      "short_name": "operation_seconds",
+      "namespace": "sdwire",
+      "type": "histogram",
+      "help": "Time spent switching the storage mux",
+      "labels": [
+        "operation"
+      ],
+      "buckets": [
+        0.01,
+        0.05,
+        0.1,
+        0.5,
+        1.0,
+        5.0
+      ],
+      "package": "jumpstarter-driver-sdwire",
+      "source": "jumpstarter-driver-sdwire:operation_seconds"
+    },
+    {
+      "name": "jumpstarter_driver_sdwire_operations_total",
+      "short_name": "operations",
+      "namespace": "sdwire",
+      "type": "counter",
+      "help": "SD Wire storage mux operations",
+      "labels": [
+        "operation",
+        "result"
+      ],
+      "buckets": null,
+      "package": "jumpstarter-driver-sdwire",
+      "source": "jumpstarter-driver-sdwire:operations"
+    }
+  ]
+}
