@@ -87,7 +87,7 @@ def test_hmi_info_before_the_stream_has_a_picture(hmi):
     info = hmi.hmi_info()
     assert info["width"] is None
     assert info["input"]["touch"] is True
-    assert info["input"]["keys"] == ["HOME", "BACK", "APP_SWITCH", "POWER", "VOLUME_UP", "VOLUME_DOWN"]
+    assert info["input"]["keys"] == ["HOME", "BACK", "APP_SWITCH", "VOLUME_UP", "VOLUME_DOWN"]
 
 
 def test_hmi_info_after_the_stream_started_has_the_shown_size(hmi):
@@ -109,14 +109,58 @@ def test_a_view_only_hmi_has_no_input():
 
 
 def test_the_hard_keys_can_be_overridden_by_the_exporter():
-    driver = MockHmi(hard_keys=["home", {"key": "power", "label": "Sleep", "presses": ["short"]}])
+    driver = MockHmi(hard_keys=["home", {"key": "volume-up", "label": "Louder", "presses": ["short"]}])
     try:
         with serve(driver) as client:
             hard = client.hmi_info()["input"]["hard_keys"]
             assert hard == [
                 {"key": "HOME", "label": "Home", "presses": ["short", "long"]},
-                {"key": "POWER", "label": "Sleep", "presses": ["short"]},
+                {"key": "VOLUME_UP", "label": "Louder", "presses": ["short"]},
             ]
+    finally:
+        driver.close()
+
+
+def test_power_and_lock_are_not_offered_by_default():
+    """Pressing them can lock the user out of a device whose only way in is its hmi: they are opt-in."""
+    driver = MockHmi()
+    try:
+        with serve(driver) as client:
+            keys = client.hmi_info()["input"]["keys"]
+            assert "POWER" not in keys and "LOCK" not in keys
+            assert not {"POWER", "LOCK"} & {k["key"] for k in client.hmi_info()["input"]["hard_keys"]}
+            with client.video() as video, client.input() as stream:
+                media(video)
+                stream.key("power")
+                stream.key("lock")
+                errors: list[str] = []
+                wait_for(lambda: errors.extend(stream.poll_errors(0.3)) or len(errors) >= 2, what="two error lines")
+            assert not [e for e in source(driver).sink_input.snapshot() if e[0] == "key"]
+    finally:
+        driver.close()
+
+
+def test_an_exporter_can_add_a_power_or_lock_key_by_listing_it():
+    driver = MockHmi(hard_keys=["HOME", "LOCK"])
+    try:
+        with serve(driver) as client:
+            info = client.hmi_info()["input"]
+            assert "LOCK" in info["keys"] and "POWER" not in info["keys"]
+            assert [k["key"] for k in info["hard_keys"]] == ["HOME", "LOCK"]
+            with client.video() as video, client.input() as stream:
+                media(video)
+                stream.key("lock")
+                stream.key("power")  # only what is listed
+                wait_for(lambda: ("key", "LOCK", "short") in source(driver).sink_input.snapshot(), what="the lock key")
+                assert len(stream.poll_errors(5.0)) == 1
+    finally:
+        driver.close()
+
+
+def test_a_listed_key_the_source_cannot_send_is_still_refused():
+    driver = MockHmi(hard_keys=["HOME", "TELEPORT"])
+    try:
+        assert "TELEPORT" not in driver._caps().keys
     finally:
         driver.close()
 
@@ -124,7 +168,7 @@ def test_the_hard_keys_can_be_overridden_by_the_exporter():
 def test_the_hard_keys_default_to_the_sources():
     driver = MockHmi()
     try:
-        assert [k.key for k in driver._caps().hard_keys] == ["HOME", "BACK", "APP_SWITCH", "POWER"]
+        assert [k.key for k in driver._caps().hard_keys] == ["HOME", "BACK", "APP_SWITCH", "VOLUME_UP"]
         assert HardKey("HOME", "Home") in driver._caps().hard_keys
     finally:
         driver.close()

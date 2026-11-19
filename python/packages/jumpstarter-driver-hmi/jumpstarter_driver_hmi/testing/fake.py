@@ -149,7 +149,8 @@ class FakeSource(HmiSource):
         control: bool = True,
         quality: bool = True,
         keyframe_cost: str = "cheap",
-        keys: tuple[str, ...] = ("HOME", "BACK", "APP_SWITCH", "POWER", "VOLUME_UP", "VOLUME_DOWN"),
+        keys: tuple[str, ...] = ("HOME", "BACK", "APP_SWITCH", "VOLUME_UP", "VOLUME_DOWN"),
+        optional_keys: tuple[str, ...] = ("POWER", "LOCK"),
         text: bool = True,
         frame_bytes: int = 600,
         key_bytes: int = 4000,
@@ -160,6 +161,7 @@ class FakeSource(HmiSource):
         self._quality = quality
         self._keyframe_cost = keyframe_cost
         self._keys = tuple(keys)
+        self._optional_keys = tuple(optional_keys)
         self._text = text
         self._frame_bytes, self._key_bytes = frame_bytes, key_bytes
         self.sink_input = FakeInputSink()
@@ -190,6 +192,7 @@ class FakeSource(HmiSource):
         return Capabilities(
             max_fingers=1 if self._control else 0,
             keys=self._keys if self._control else (),
+            optional_keys=self._optional_keys if self._control else (),
             hard_keys=tuple(HardKey(k, k.replace("_", " ").title()) for k in self._keys[:4]) if self._control else (),
             text=self._text and self._control,
             quality=QualityCaps() if self._quality else None,

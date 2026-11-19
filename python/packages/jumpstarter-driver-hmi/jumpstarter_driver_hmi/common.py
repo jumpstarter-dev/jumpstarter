@@ -1,36 +1,85 @@
 """The HMI interface's wire format and vocabulary: pure code, no Jumpstarter, no I/O.
 
-**The video stream** (what ``video()`` carries). A Jumpstarter byte stream has no message boundaries and an Annex-B
-access unit has no
-length, so the exporter frames what it sends::
+An **HMI** (human-machine interface) here is a remote display with declared input: a picture, and whatever the device
+takes back: a pointer (touch, mouse, pen), a keyboard, hard keys, rotary knobs and typed text. It covers mobile devices
+and embedded touch screens, and later remote desktops (VNC) and KVM devices. The word means the device's interface, not
+an HMI application that runs on it.
+
+**The video stream** (what ``video()`` carries). A Jumpstarter byte stream has no message boundaries and an access unit
+has no length, so the exporter frames what it sends::
 
     frame  = u32 big-endian N  +  u8 kind  +  body[N - 1]
     kind 0 = config: body is one JSON line (UTF-8, ends with a newline), the codec line
-    kind 1 = media:  body is an 8-byte big-endian timestamp in microseconds + ONE H.264 Annex-B access unit
+    kind 1 = media:  body is an 8-byte big-endian timestamp in microseconds + ONE access unit
     kind 2-15        reserved: a reader skips a kind it does not know
 
 Without the 5-byte transport header, a ``kind 0`` body is the codec line and a ``kind 1`` body is the "8-byte timestamp
-+ access unit"
-that a relay can pass to a WebSocket as a text and a binary frame, one to one. The first frame is always a config frame;
-a SPS/PPS + IDR
-access unit follows it; the line is sent again whenever anything in it changes.
++ access unit" that a relay can pass to a WebSocket as a text and a binary frame, one to one. The first frame is always
+a config frame, and a key picture follows it; the line is sent again whenever anything in it changes.
 
-**The input stream** (what ``input()`` takes): one JSON object per line, in the order sent::
+The **codec line** names the codec in use, as a WebCodecs codec string, and the picture::
 
-    {"touch": {"type": "down" | "move" | "up" | "cancel", "x": 540, "y": 1200, "id": 0, "w": 1206, "h": 2622}}
+    {"codec": "avc1.64001F", "width": 1080, "height": 2400, "fps": 30, "format": "annexb", "timestamp": "us", "v": 1}
+
+``codec`` is ``avc1.*`` (H.264, the default), ``hev1.*`` or ``hvc1.*`` (HEVC) or ``mjpeg`` (Motion JPEG). H.264 and HEVC
+units are Annex-B access units with their parameter sets (SPS/PPS, plus VPS for HEVC) in front of every key picture
+(``format`` is ``annexb``). An ``mjpeg`` unit is one complete JPEG picture, and every picture is a key picture
+(``format`` is ``jpeg``). Optional fields: ``coded_width``, ``coded_height``, ``rotation``, ``point_scale``, ``input``
+and ``viewer``. A stream has **one** codec at a time (the hub fans out one encode); it changes with a restart, which
+sends a new codec line.
+
+**The input stream** (what ``input()`` takes): one JSON object per line, in the order sent. Errors come back as
+``{"error": "..."}`` lines that the exporter never waits on::
+
+    {"pointer": {"type": "down", "kind": "mouse", "x": 540, "y": 1200, "id": 0, "buttons": 1, "w": 1206, "h": 2622}}
+    {"pointer": {"type": "wheel", "kind": "mouse", "x": 540, "y": 1200, "dx": 0, "dy": 120, "w": 1206, "h": 2622}}
+    {"touch": {"type": "down", "x": 540, "y": 1200, "id": 0, "w": 1206, "h": 2622}}
+    {"keyboard": {"code": "KeyA", "type": "down"}}
     {"key": {"key": "HOME", "press": "short" | "long" | "down" | "up"}}
+    {"rotary": {"id": "volume", "delta": -2}}
     {"text": "hello"}
 
-Coordinates are pixels of the **shown** picture (the codec line's size, turned by its ``rotation``). One contact is
-tracked: ``id`` is
-always 0 and any other id is ignored. ``w`` and ``h`` name the picture the touch was aimed at; a touch aimed at another
-size is refused.
-"""
+*pointer*. ``type`` is ``down``, ``move``, ``up``, ``cancel`` (read as ``up``) or ``wheel``; ``kind`` is ``touch``,
+``mouse`` or ``pen``. ``x`` and ``y`` are **pixels of the shown picture** (the codec line's size turned by its
+``rotation``) and ``w`` and ``h`` (optional, both or neither) name the picture the event was aimed at: one aimed at
+another size is refused. ``id`` tells the client's contacts apart (a whole number such as ``PointerEvent.pointerId``,
+default 0); the device is told small numbers, 0 to ``max_contacts`` - 1, in the order the contacts come down.
+``buttons`` is the bitmask of ``PointerEvent.buttons`` (1 primary, 2 secondary, 4 auxiliary, 8 back, 16 forward, 32
+eraser): the state **after** the event, as in a browser (``down`` when the first button goes down, ``move`` when others
+change, ``up`` when the last is let go); when it is left out a ``down`` has the primary button and a ``move`` keeps the
+buttons that are down. A ``move`` with no contact down is a hover, taken from a mouse or a pen, unless it says a
+declared button is down: a browser reports a button that goes down while another is held as a ``move``, and that is a
+press. ``dx`` and ``dy`` are pixels: the wheel deltas of a ``wheel`` (the sign of ``WheelEvent.deltaX`` and ``deltaY``:
+positive is right and down; the wire has ``deltaMode`` pixels only, so a client that has line or page deltas converts
+them to pixels first), and the relative motion of a ``move`` that has no ``x`` and ``y`` (only for a device that
+declares ``relative``). ``{"touch": ...}`` is shorthand for a pointer of kind ``touch``. Contacts beyond
+``max_contacts``, kinds and buttons the device does not declare are ignored, not errors; a ``wheel`` or a relative
+motion for a device without one is refused. A contact still down when the stream ends is lifted.
+
+*keyboard*. ``code`` is a W3C ``KeyboardEvent.code`` (``KeyA``, ``Digit1``, ``ArrowLeft``, ``ShiftLeft``: the physical
+key, whatever the layout) and ``type`` is ``down`` or ``up``. Modifiers are keys like any other (``ShiftLeft`` down,
+then ``KeyA`` down). A ``down`` of a key that is already down is a repeat and is dropped: the device repeats by itself.
+Keys still down when the stream ends are released. Only the codes the device declares are taken.
+
+*key*. A named hard key (``HOME``, ``BACK``, ``APP_SWITCH``, ``VOLUME_UP``...): ``press`` is ``short``, ``long``,
+``down`` or ``up``. The names a device takes are the ones it lists, each with the presses it declares (``short`` and
+``long`` unless it says); power and lock are only taken when the exporter lists them.
+
+*rotary*. A rotary knob or encoder the device declares in ``rotaries``: ``id`` names it and ``delta`` is the number of
+detents it is turned, positive clockwise (a whole number, not 0, at most 100 either way: a fast spin is several lines).
+Pushing it is a hard key that the device lists, named by the rotary's ``push`` (``{"key": {"key": "VOLUME_PUSH"}}``).
+
+*text*. Characters to type, in the layout the device declares (``us`` by default); a device that can only type text
+takes this and no ``keyboard`` events.
+
+What a device takes is declared in ``hmi_info()["input"]`` (see :class:`Capabilities`): a UI shows only what is there,
+and a device that declares nothing is a valid, view-only HMI."""
 
 from __future__ import annotations
 
 import json
 import math
+import re
 import struct
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -85,7 +134,7 @@ class FrameParser:
         while len(self._buf) >= _HEADER.size:
             length, kind = _HEADER.unpack_from(self._buf)
             if length < 1 or length > MAX_FRAME_BYTES:
-                raise ValueError(f"screen stream frame of {length} bytes: the stream is out of step")
+                raise ValueError(f"HMI stream frame of {length} bytes: the stream is out of step")
             end = 4 + length
             if len(self._buf) < end:
                 break
@@ -148,6 +197,29 @@ class LineTooLongError(ValueError):
 # -- the codec line ----------------------------------------------------------------------------------------------------
 
 
+#: The codecs the interface knows, by the names a source declares and an exporter configures: ``h264`` (the default),
+#: ``hevc`` and ``mjpeg``. Browser and hardware support is narrower for HEVC and MJPEG, so they are always explicit.
+CODECS = ("h264", "hevc", "mjpeg")
+DEFAULT_CODEC = "h264"
+
+
+def codec_family(codec: str) -> str:
+    """The family (``h264``, ``hevc`` or ``mjpeg``) of a codec line's WebCodecs string (``avc1.64001F``,
+    ``hev1.1.6.L93.B0``, ``mjpeg``).
+
+    Raises:
+        ValueError: If the interface does not know the codec.
+    """
+    lowered = codec.lower() if isinstance(codec, str) else ""
+    if lowered.startswith(("avc1.", "avc3.")):
+        return "h264"
+    if lowered.startswith(("hev1.", "hvc1.")):
+        return "hevc"
+    if lowered == "mjpeg":
+        return "mjpeg"
+    raise ValueError(f"the codec is not one the interface knows (avc1.*, hev1.*, hvc1.* or mjpeg): {codec!r}")
+
+
 @dataclass(frozen=True)
 class CodecLine:
     """What a viewer needs to decode and show the stream: the codec string, the picture's visible (and coded) size and
@@ -168,7 +240,7 @@ class CodecLine:
     rotation: int | None = None
     #: Pixels of the picture to a point of the device's screen.
     point_scale: int | float | None = None
-    #: Where touch goes: ``stream`` (this driver's ``input()``) or another word the source says; ``None`` leaves the
+    #: Where input goes: ``stream`` (this driver's ``input()``) or another word the source says; ``None`` leaves the
     #: field out.
     input: str | None = None
 
@@ -181,6 +253,7 @@ class CodecLine:
             or not self.codec.isprintable()
         ):
             raise ValueError(f"the codec must be a codec string: {self.codec!r}")
+        codec_family(self.codec)
         for name in ("width", "height"):
             _whole(name, getattr(self, name), 1, 16384)
         for name in ("coded_width", "coded_height"):
@@ -198,11 +271,21 @@ class CodecLine:
             raise ValueError(f"point_scale must be a number above 0 and at most 64: {self.point_scale!r}")
 
     @property
+    def family(self) -> str:
+        """``h264``, ``hevc`` or ``mjpeg``."""
+        return codec_family(self.codec)
+
+    @property
+    def format(self) -> str:
+        """How the units are written: ``annexb`` (H.264 and HEVC access units) or ``jpeg`` (one JPEG each)."""
+        return "jpeg" if self.family == "mjpeg" else "annexb"
+
+    @property
     def shown_size(self) -> tuple[int, int]:
         """``(width, height)`` of the picture a viewer shows: the visible size turned by ``rotation`` (90 and 270 swap
         the two).
 
-        It is the picture a touch is aimed at.
+        It is the picture a pointer is aimed at.
         """
         if self.rotation in (90, 270):
             return self.height, self.width
@@ -236,7 +319,7 @@ class CodecLine:
             line["point_scale"] = self.point_scale
         if self.input is not None:
             line["input"] = self.input
-        line.update({"format": "annexb", "timestamp": "us", "v": WIRE_VERSION})
+        line.update({"format": self.format, "timestamp": "us", "v": WIRE_VERSION})
         if viewer is not None:
             line["viewer"] = viewer
         return (json.dumps(line, separators=(",", ":")) + "\n").encode()
@@ -292,7 +375,8 @@ KEY_ALIASES = {
     "SIRI": "ASSIST",
 }
 PRESSES = ("short", "long", "down", "up")
-TOUCH_TYPES = ("down", "move", "up", "cancel")
+#: What a hard key takes when nothing else is said about it.
+DEFAULT_PRESSES = ("short", "long")
 
 
 def canonical_key(name: object) -> str:
@@ -314,7 +398,7 @@ class HardKey:
 
     key: str
     label: str
-    presses: tuple[str, ...] = ("short", "long")
+    presses: tuple[str, ...] = DEFAULT_PRESSES
 
     def info(self) -> dict[str, Any]:
         """The ``hmi_info()`` form."""
@@ -333,7 +417,7 @@ class HardKey:
             return cls(key, key.replace("_", " ").title())
         if isinstance(value, dict) and "key" in value and set(value) <= {"key", "label", "presses"}:
             key = canonical_key(value["key"])
-            presses = value.get("presses", ["short", "long"])
+            presses = value.get("presses", list(DEFAULT_PRESSES))
             if not isinstance(presses, list | tuple) or not presses or any(p not in PRESSES for p in presses):
                 raise ValueError(f"hard key presses must be a list of {', '.join(PRESSES)}: {presses!r}")
             label = value.get("label", key.replace("_", " ").title())
@@ -353,61 +437,234 @@ class QualityCaps:
     auto: bool = True
 
 
-@dataclass(frozen=True)
-class Capabilities:
-    """What a HMI source is and takes: the interface's honest answer to ``hmi_info()``.
+#: The kinds of pointer, and the types of pointer event.
+POINTER_KINDS = ("touch", "mouse", "pen")
+POINTER_TYPES = ("down", "move", "up", "cancel", "wheel")
+#: ``PointerEvent.buttons``: the bits.
+BUTTON_PRIMARY = 1
+BUTTON_SECONDARY = 2
+BUTTON_AUXILIARY = 4
+BUTTON_BACK = 8
+BUTTON_FORWARD = 16
+BUTTON_ERASER = 32
+BUTTON_MASK = 63
+#: A ``KeyboardEvent.code`` as a W3C names it: ``KeyA``, ``Digit1``, ``ArrowLeft``, ``F13``, ``Lang1``.
+KEY_CODE = re.compile(r"[A-Za-z][A-Za-z0-9]{0,31}")
+#: What ``KeyboardCaps.codes`` says for a device that takes every key.
+ALL_CODES = "all"
 
-    ``keyframe_cost`` says what a key-picture request costs the source: ``cheap`` (the hub may ask at once, for another
-    viewer),
-    ``restart`` (it restarts the capture for every viewer: the hub relies on the periodic key picture) or ``none`` (it
-    cannot be asked).
+
+@dataclass(frozen=True)
+class PointerCaps:
+    """The pointer a source takes: ``kinds`` of pointer (none: no pointer), whether it is told where in the picture
+    (``absolute``) and/or by how far it moved (``relative``), whether it takes ``buttons`` beyond the primary one and
+    a ``wheel``, and how many ``max_contacts`` (fingers) it follows at once.
     """
 
-    codecs: tuple[str, ...] = ("h264",)
-    #: Input from here: ``max_fingers`` is 0 for a view-only source, 1 otherwise (v1).
-    max_fingers: int = 1
-    #: Every key name the source accepts (the common vocabulary and its own), canonical.
+    kinds: tuple[str, ...] = ()
+    absolute: bool = True
+    relative: bool = False
+    buttons: bool = False
+    wheel: bool = False
+    max_contacts: int = 0
+
+    def __post_init__(self) -> None:
+        """Refuse what the interface does not have."""
+        if any(kind not in POINTER_KINDS for kind in self.kinds):
+            raise ValueError(f"a pointer kind is one of {', '.join(POINTER_KINDS)}: {self.kinds!r}")
+        contacts = self.max_contacts
+        if isinstance(contacts, bool) or not isinstance(contacts, int) or not 0 <= contacts <= 32:
+            raise ValueError("max_contacts is a whole number from 0 to 32")
+        if self.kinds and self.max_contacts < 1:
+            raise ValueError("a pointer that takes a kind follows at least one contact")
+        if self.kinds and not (self.absolute or self.relative):
+            raise ValueError("a pointer is absolute, relative or both")
+
+    @classmethod
+    def touch(cls, max_contacts: int = 1) -> PointerCaps:
+        """A touch screen: absolute, ``max_contacts`` fingers, no buttons and no wheel."""
+        return cls(kinds=("touch",), max_contacts=max_contacts)
+
+    @classmethod
+    def mouse(cls, *, buttons: bool = True, wheel: bool = True, relative: bool = False) -> PointerCaps:
+        """A mouse: absolute (and relative if asked), one contact, with buttons and a wheel unless said otherwise."""
+        return cls(kinds=("mouse",), buttons=buttons, wheel=wheel, relative=relative, max_contacts=1)
+
+    @property
+    def present(self) -> bool:
+        """Whether there is a pointer at all."""
+        return bool(self.kinds)
+
+    def info(self) -> dict[str, Any]:
+        """The ``hmi_info()`` form."""
+        return {
+            "kinds": list(self.kinds),
+            "absolute": self.absolute and self.present,
+            "relative": self.relative and self.present,
+            "buttons": self.buttons and self.present,
+            "wheel": self.wheel and self.present,
+            "max_contacts": self.max_contacts if self.present else 0,
+        }
+
+
+@dataclass(frozen=True)
+class KeyboardCaps:
+    """The keyboard a source takes: the key ``codes`` (W3C ``KeyboardEvent.code`` names, or ``"all"``; none: no key
+    events), whether it types ``text`` and in which ``layout`` (``us`` unless it says; a device that can only type text
+    types it in this layout).
+    """
+
+    codes: tuple[str, ...] | str = ()
+    text: bool = False
+    layout: str | None = None
+
+    def __post_init__(self) -> None:
+        """Refuse what the interface does not have."""
+        if self.codes != ALL_CODES and (
+            isinstance(self.codes, str) or any(not isinstance(c, str) or not KEY_CODE.fullmatch(c) for c in self.codes)
+        ):
+            raise ValueError(f'codes is "all" or a list of KeyboardEvent.code names: {self.codes!r}')
+
+    @property
+    def present(self) -> bool:
+        """Whether there is a keyboard at all."""
+        return self.text or bool(self.codes)
+
+    def allows(self, code: str) -> bool:
+        """Whether the device takes this key."""
+        if self.codes == ALL_CODES:
+            return bool(KEY_CODE.fullmatch(code))
+        return code in self.codes
+
+    def info(self) -> dict[str, Any]:
+        """The ``hmi_info()`` form."""
+        return {
+            "codes": ALL_CODES if self.codes == ALL_CODES else list(self.codes),
+            "text": self.text,
+            "layout": (self.layout or "us") if self.present else None,
+        }
+
+
+#: A rotary's id, as it is named on the wire: ``volume``, ``tune-knob``.
+ROTARY_ID = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,31}")
+#: Most detents one ``rotary`` line may turn (a fast spin is several lines).
+MAX_ROTARY_DELTA = 100
+
+
+@dataclass(frozen=True)
+class RotaryCaps:
+    """A rotary knob or encoder the device has: turned by detents (positive is clockwise) and, if it has a push
+    button, pushed with the hard key ``push`` (a name in the HMI's ``keys``, such as ``VOLUME_PUSH``).
+    """
+
+    id: str
+    label: str = ""
+    push: str | None = None
+
+    def __post_init__(self) -> None:
+        """Refuse what the interface does not have."""
+        if not isinstance(self.id, str) or not ROTARY_ID.fullmatch(self.id) or not isinstance(self.label, str):
+            raise ValueError(f"a rotary has a short id (letters, digits, - and _) and a text label: {self.id!r}")
+        if self.push is not None:
+            object.__setattr__(self, "push", canonical_key(self.push))
+
+    @classmethod
+    def parse(cls, value: object) -> RotaryCaps:
+        """A rotary from an exporter's config: its id, or a mapping with ``id`` (and optionally ``label`` and ``push``).
+
+        Raises:
+            ValueError: If it is neither.
+        """
+        if isinstance(value, str):
+            return cls(value)
+        if isinstance(value, dict) and "id" in value and set(value) <= {"id", "label", "push"}:
+            return cls(value["id"], value.get("label", ""), value.get("push"))
+        raise ValueError(f"a rotary is an id or a mapping with id, label and push: {value!r}")
+
+    def info(self) -> dict[str, Any]:
+        """The ``hmi_info()`` form."""
+        label = self.label or self.id.replace("-", " ").replace("_", " ").title()
+        return {"id": self.id, "label": label, "push": self.push}
+
+
+@dataclass(frozen=True)
+class Capabilities:
+    """What a HMI source is and takes: the interface's honest answer to ``hmi_info()``. A source that declares no input
+    is a valid, view-only HMI.
+
+    ``keyframe_cost`` says what a key-picture request costs the source: ``cheap`` (the hub may ask at once, for another
+    viewer), ``restart`` (it restarts the capture for every viewer: the hub relies on the periodic key picture) or
+    ``none`` (it cannot be asked).
+    """
+
+    #: The codecs the source can produce (``h264``, ``hevc``, ``mjpeg``), the first being its default.
+    codecs: tuple[str, ...] = (DEFAULT_CODEC,)
+    pointer: PointerCaps = field(default_factory=PointerCaps)
+    keyboard: KeyboardCaps = field(default_factory=KeyboardCaps)
+    #: Every named (hard) key the source accepts (the common vocabulary and its own), canonical.
     keys: tuple[str, ...] = ()
+    #: Keys the source can send but does not offer by default (a power or lock button: pressing one can lock the user
+    #: out of a device whose only way in is its screen). They are accepted only when the exporter lists them in
+    #: ``hard_keys``.
+    optional_keys: tuple[str, ...] = ()
     #: The buttons a UI draws, in order.
     hard_keys: tuple[HardKey, ...] = ()
-    text: bool = False
+    #: The rotary knobs the device has (none for most).
+    rotaries: tuple[RotaryCaps, ...] = ()
+    #: Whether the clipboard can be set and read through the HMI.
+    clipboard: bool = False
     quality: QualityCaps | None = None
     keyframe_cost: str = "none"
     #: Whether the source reports a rotation in its codec line.
     rotation: bool = False
-    #: Whether the source says its picture's size is its own screen's (so ``native_size`` is meaningful).
     extras: dict[str, Any] = field(default_factory=dict, hash=False, compare=False)
 
     def __post_init__(self) -> None:
         """Refuse what the interface does not have."""
-        if self.max_fingers not in (0, 1):
-            raise ValueError("max_fingers is 0 or 1 in version 1 of the interface")
+        codecs = self.codecs
+        if not codecs or any(codec not in CODECS for codec in codecs) or len(set(codecs)) != len(codecs):
+            raise ValueError(f"codecs is a list of {', '.join(CODECS)}, the default first: {self.codecs!r}")
         if self.keyframe_cost not in ("cheap", "restart", "none"):
             raise ValueError("keyframe_cost is cheap, restart or none")
+        if len({r.id for r in self.rotaries}) != len(self.rotaries):
+            raise ValueError("a rotary id is used once")
+        for rotary in self.rotaries:
+            if rotary.push is not None and rotary.push not in {canonical_key(k) for k in self.keys}:
+                raise ValueError(f"the push button of rotary {rotary.id!r} is a key the HMI takes: {rotary.push!r}")
 
-    def info(self, *, width: int | None, height: int | None, rotation: int = 0) -> dict[str, Any]:
-        """``hmi_info()``: what a UI shows."""
+    @property
+    def has_input(self) -> bool:
+        """Whether anything can be sent to the device: a pointer, a keyboard, text, a hard key or a rotary."""
+        return self.pointer.present or self.keyboard.present or bool(self.keys) or bool(self.rotaries)
+
+    def info(
+        self, *, width: int | None, height: int | None, rotation: int = 0, codec: str | None = None
+    ) -> dict[str, Any]:
+        """``hmi_info()``: what a UI shows. ``codec`` is the one in use or chosen."""
         quality = self.quality
+        selected = codec or self.codecs[0]
         return {
             "interface": "hmi",
             "v": WIRE_VERSION,
             "codecs": list(self.codecs),
+            "codec": selected,
             "width": width,
             "height": height,
             "rotation": rotation,
             "input": {
-                "touch": self.max_fingers > 0,
-                "max_fingers": self.max_fingers,
-                "text": self.text and self.max_fingers > 0,
-                "keys": list(self.keys) if self.max_fingers > 0 else [],
-                "hard_keys": [k.info() for k in self.hard_keys] if self.max_fingers > 0 else [],
+                "pointer": self.pointer.info(),
+                "keyboard": self.keyboard.info(),
+                "keys": list(self.keys) if self.has_input else [],
+                "hard_keys": [k.info() for k in self.hard_keys] if self.has_input else [],
+                "rotaries": [r.info() for r in self.rotaries],
+                "clipboard": self.clipboard,
             },
             "quality": {
                 "adjustable": quality is not None,
                 "auto": bool(quality and quality.auto),
                 "levels": list(quality.levels) if quality else [],
             },
-            "recording": True,
+            "recording": selected != "mjpeg",
             "screenshot": False,
             **self.extras,
         }
@@ -421,19 +678,35 @@ class InputError(ValueError):
 
 
 @dataclass(frozen=True)
-class TouchEvent:
-    """One touch: ``kind`` is ``down``, ``move`` or ``up`` (``cancel`` is read as ``up``)."""
+class PointerEvent:
+    """One pointer event. ``type`` is ``down``, ``move``, ``up`` or ``wheel`` (``cancel`` is read as ``up``); ``x`` and
+    ``y`` are pixels of the shown picture (``None``: a relative ``move``); ``buttons`` is ``PointerEvent.buttons``
+    (``None``: not said); ``dx`` and ``dy`` are the wheel deltas or the relative motion, in pixels.
+    """
 
-    kind: str
-    x: float
-    y: float
+    type: str
+    kind: str = "touch"
+    x: float | None = None
+    y: float | None = None
+    id: int = 0
+    buttons: int | None = None
+    dx: float = 0.0
+    dy: float = 0.0
     #: The size of the picture it was aimed at, when the sender said.
     aimed: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True)
+class KeyboardEvent:
+    """One key going down or up, by its W3C ``KeyboardEvent.code``."""
+
+    code: str
+    down: bool
+
+
+@dataclass(frozen=True)
 class KeyEvent:
-    """One key press by its canonical name."""
+    """One named hard key press by its canonical name."""
 
     key: str
     press: str = "short"
@@ -446,9 +719,15 @@ class TextEvent:
     text: str
 
 
-#: What an ignored event (a second contact) parses to.
-IGNORED = None
-InputEvent = TouchEvent | KeyEvent | TextEvent
+@dataclass(frozen=True)
+class RotaryEvent:
+    """A rotary turned by ``delta`` detents (positive is clockwise)."""
+
+    id: str
+    delta: int
+
+
+InputEvent = PointerEvent | KeyboardEvent | KeyEvent | TextEvent | RotaryEvent
 
 
 def finite(value: object) -> bool:
@@ -466,26 +745,36 @@ def error_line(message: str) -> bytes:
     return (json.dumps({"error": message}) + "\n").encode()
 
 
-def parse_input(line: bytes | str) -> InputEvent | None:
-    """One input line as an event; ``None`` for one that is to be ignored (a contact that is not finger 0).
+def parse_input(line: bytes | str) -> InputEvent:
+    """One input line as an event.
 
     Raises:
-        InputError: If the line is not valid JSON, not one of the three events, or malformed.
+        InputError: If the line is not valid JSON, not one of the events, or malformed.
     """
     try:
         event = json.loads(line)
     except ValueError:
         raise InputError("an input line is one JSON object") from None
     if not isinstance(event, dict) or len(event) != 1:
-        raise InputError("an input line is one JSON object with touch, key or text")
+        raise InputError("an input line is one JSON object with pointer, keyboard, key, rotary or text")
     kind, body = next(iter(event.items()))
     if kind == "text":
         return _text(body)
-    if kind == "touch" and isinstance(body, dict):
-        return _touch(body)
-    if kind == "key" and isinstance(body, dict):
-        return _key(body)
-    raise InputError('send {"touch": {...}}, {"key": {...}} or {"text": "..."}')
+    if isinstance(body, dict):
+        if kind == "pointer":
+            return _pointer(body, None)
+        if kind == "touch":  # shorthand for a pointer of kind touch
+            return _pointer(body, "touch")
+        if kind == "keyboard":
+            return _keyboard(body)
+        if kind == "key":
+            return _key(body)
+        if kind == "rotary":
+            return _rotary(body)
+    raise InputError(
+        'send {"pointer": {...}}, {"touch": {...}}, {"keyboard": {...}}, {"key": {...}}, {"rotary": {...}} or '
+        '{"text": "..."}'
+    )
 
 
 def _text(text: object) -> TextEvent:
@@ -496,32 +785,60 @@ def _text(text: object) -> TextEvent:
     return TextEvent(text)
 
 
-def _touch(body: dict[str, Any]) -> TouchEvent | None:
+def _pointer(body: dict[str, Any], default_kind: str | None) -> PointerEvent:
+    name = "touch" if default_kind else "pointer"
     kind = body.get("type")
-    if kind not in TOUCH_TYPES:
-        raise InputError('touch.type must be "down", "move", "up" or "cancel"')
+    if kind not in POINTER_TYPES:
+        raise InputError(f'{name}.type must be one of {", ".join(POINTER_TYPES)}')
+    pointer_kind = body.get("kind", default_kind)
+    if pointer_kind not in POINTER_KINDS:
+        raise InputError(f'{name}.kind must be one of {", ".join(POINTER_KINDS)}')
+    contact = body.get("id", 0)
+    if isinstance(contact, bool) or not isinstance(contact, int) or not 0 <= contact < 2**31:
+        raise InputError(f"{name}.id must be a whole number")
     x, y = body.get("x"), body.get("y")
-    if not finite(x) or not finite(y):
-        raise InputError("touch.x and touch.y must be numbers")
-    finger = body.get("id", 0)
-    if isinstance(finger, bool) or not isinstance(finger, int):
-        raise InputError("touch.id must be a whole number")
-    if finger != 0:
-        return IGNORED  # one contact in version 1: another finger is ignored, not an error
+    dx, dy = body.get("dx", 0), body.get("dy", 0)
+    if not finite(dx) or not finite(dy):
+        raise InputError(f"{name}.dx and {name}.dy must be numbers")
+    relative = kind == "move" and x is None and y is None and (dx or dy)
+    if not relative and (not finite(x) or not finite(y)):
+        raise InputError(f"{name}.x and {name}.y must be numbers")
+    buttons = body.get("buttons")
+    if buttons is not None and (
+        isinstance(buttons, bool) or not isinstance(buttons, int) or not 0 <= buttons <= BUTTON_MASK
+    ):
+        raise InputError(f"{name}.buttons must be a whole number from 0 to {BUTTON_MASK}")
     aimed_w, aimed_h = body.get("w"), body.get("h")
     aimed = None
     if aimed_w is not None or aimed_h is not None:
         if not finite(aimed_w) or not finite(aimed_h):
-            raise InputError("touch.w and touch.h must be numbers")
+            raise InputError(f"{name}.w and {name}.h must be numbers")
         aimed = (int(cast(float, aimed_w)), int(cast(float, aimed_h)))
-    return TouchEvent("up" if kind == "cancel" else kind, float(cast(float, x)), float(cast(float, y)), aimed)
+    return PointerEvent(
+        "up" if kind == "cancel" else kind,
+        pointer_kind,
+        None if relative else float(cast(float, x)),
+        None if relative else float(cast(float, y)),
+        contact,
+        buttons,
+        float(cast(float, dx)),
+        float(cast(float, dy)),
+        aimed,
+    )
 
 
-def _key(body: dict[str, Any]) -> KeyEvent | TextEvent:
-    if body.get("text") is not None:  # the older form, accepted for one release
-        return _text(body["text"])
+def _keyboard(body: dict[str, Any]) -> KeyboardEvent:
+    code = body.get("code")
+    if not isinstance(code, str) or not KEY_CODE.fullmatch(code):
+        raise InputError("keyboard.code must be a KeyboardEvent.code name (KeyA, Digit1, ArrowLeft...)")
+    if body.get("type") not in ("down", "up"):
+        raise InputError('keyboard.type must be "down" or "up"')
+    return KeyboardEvent(code, body["type"] == "down")
+
+
+def _key(body: dict[str, Any]) -> KeyEvent:
     if "code" in body:
-        raise InputError("a browser key event is not part of the interface: send text or a named key")
+        raise InputError('a KeyboardEvent.code is sent as {"keyboard": {"code": ..., "type": "down" | "up"}}')
     press = body.get("press", "short")
     if press not in PRESSES:
         raise InputError("key.press must be short, long, down or up")
@@ -529,3 +846,12 @@ def _key(body: dict[str, Any]) -> KeyEvent | TextEvent:
         return KeyEvent(canonical_key(body.get("key")), press)
     except ValueError as e:
         raise InputError(str(e)) from None
+
+
+def _rotary(body: dict[str, Any]) -> RotaryEvent:
+    rotary_id, delta = body.get("id"), body.get("delta")
+    if not isinstance(rotary_id, str) or not ROTARY_ID.fullmatch(rotary_id):
+        raise InputError("rotary.id must be the name of a rotary")
+    if isinstance(delta, bool) or not isinstance(delta, int) or delta == 0 or abs(delta) > MAX_ROTARY_DELTA:
+        raise InputError(f"rotary.delta must be a whole number of detents, not 0, at most {MAX_ROTARY_DELTA} each way")
+    return RotaryEvent(rotary_id, delta)

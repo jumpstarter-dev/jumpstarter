@@ -384,10 +384,13 @@ class HmiDriver(HmiInterface, Driver):
             return replace(caps, max_fingers=0, keys=(), hard_keys=(), text=False)
         if self._hard_keys is not None:
             known = {canonical_key(k) for k in caps.keys}
-            unknown = [k.key for k in self._hard_keys if k.key not in known]
+            optional = {canonical_key(k) for k in caps.optional_keys}
+            # a key the source can send but does not offer by default is accepted once the exporter lists it
+            enabled = tuple(dict.fromkeys(k.key for k in self._hard_keys if k.key in optional and k.key not in known))
+            unknown = [k.key for k in self._hard_keys if k.key not in known and k.key not in enabled]
             if unknown:
                 self.logger.warning("hard_keys names keys the screen does not accept: %s", ", ".join(unknown))
-            caps = replace(caps, hard_keys=self._hard_keys)
+            caps = replace(caps, keys=(*caps.keys, *enabled), hard_keys=self._hard_keys)
         return caps
 
     def _new_hub(self) -> Hub:
