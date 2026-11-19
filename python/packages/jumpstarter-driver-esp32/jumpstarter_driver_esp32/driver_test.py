@@ -1,10 +1,29 @@
+import bz2
+import functools
+import gzip
+import http.server
+import json
+import lzma
+import sys
+import threading
+from contextlib import contextmanager
 from unittest.mock import MagicMock, PropertyMock
 
+import click
 import pytest
+from jumpstarter_driver_opendal.client import FlasherClient
 from jumpstarter_driver_pyserial.driver import PySerial
 
 from .driver import Esp32Flasher, _parse_region
+from jumpstarter.client.core import DriverInvalidArgument
+from jumpstarter.common.exceptions import ArgumentError
 from jumpstarter.common.utils import serve
+from jumpstarter.streams.encoding import Compression
+
+if sys.version_info >= (3, 14):
+    from compression import zstd
+else:  # pragma: no cover
+    from backports import zstd
 
 
 class _MockEsp:
@@ -34,9 +53,24 @@ class _MockEsp:
         pass
 
 
-def _make_driver(**config):
+def _make_driver(driver_class=None, **config):
     serial = PySerial(url="loop://", check_present=False)
-    return Esp32Flasher(children={"serial": serial}, **config)
+    return (driver_class or Esp32Flasher)(children={"serial": serial}, **config)
+
+
+def _images(tmp_path, images: dict[str, bytes]) -> dict[str, object]:
+    """Write each image to a file and map its address to that file."""
+    mapping = {}
+    for address, data in images.items():
+        path = tmp_path / f"{address}.bin"
+        path.write_bytes(data)
+        mapping[address] = path
+    return mapping
+
+
+def _written(mock_esptool) -> list[tuple[int, bytes]]:
+    """Every (address, data) handed to esptool's write_flash, in order."""
+    return [entry for call in mock_esptool["write_flash"].call_args_list for entry in call.args[1]]
 
 
 @pytest.fixture()
@@ -94,6 +128,166 @@ def test_flash_baudrate(mock_esptool, tmp_path, flash_baudrate, bauds):
         client.flash(firmware)
 
     assert mock_esptool["esp"].bauds == bauds
+
+
+def test_flash_images_in_one_session(mock_esptool, tmp_path):
+    images = {"0x1000": b"boot" * 10, "0x8000": b"table", "0x10000": b"app" * 100}
+
+    with serve(_make_driver()) as client:
+        client.flash(_images(tmp_path, images))
+
+    assert mock_esptool["detect_chip"].call_count == 1
+    assert _written(mock_esptool) == [(int(address, 0), data) for address, data in images.items()]
+
+
+def test_flash_esp_idf_build(mock_esptool, tmp_path):
+    (tmp_path / "bootloader").mkdir()
+    (tmp_path / "bootloader" / "bootloader.bin").write_bytes(b"boot")
+    (tmp_path / "app.bin").write_bytes(b"app")
+    (tmp_path / "flasher_args.json").write_text(
+        json.dumps({"flash_files": {"0x2000": "bootloader/bootloader.bin", "0x20000": "app.bin"}})
+    )
+
+    with serve(_make_driver()) as client:
+        client.flash(tmp_path)
+
+    assert _written(mock_esptool) == [(0x2000, b"boot"), (0x20000, b"app")]
+
+
+@pytest.mark.parametrize(
+    ("flasher_args", "reason"),
+    [(None, "No such file"), ("{not json", "Expecting property name"), ("{}", "'flash_files'")],
+)
+def test_flash_esp_idf_build_without_flash_files(mock_esptool, tmp_path, flasher_args, reason):
+    if flasher_args is not None:
+        (tmp_path / "flasher_args.json").write_text(flasher_args)
+
+    with serve(_make_driver()) as client, pytest.raises(ArgumentError, match=f"flasher_args.json: .*{reason}"):
+        client.flash(tmp_path)
+
+    assert not mock_esptool["detect_chip"].called
+
+
+@contextmanager
+def _http_server(directory):
+    """Serve ``directory`` over HTTP, yielding its base URL."""
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=directory)
+    with http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler) as server:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            yield f"http://127.0.0.1:{server.server_port}"
+        finally:
+            server.shutdown()
+
+
+def test_flash_url(mock_esptool, tmp_path):
+    """The exporter downloads a URL in the same session as the uploaded files around it."""
+    images = _images(tmp_path, {"0x1000": b"boot", "0x10000": b"app", "0x200000": b"data"})
+
+    with _http_server(tmp_path) as base, serve(_make_driver()) as client:
+        client.flash({**images, "0x10000": f"{base}/0x10000.bin?token=x"})
+
+    assert _written(mock_esptool) == [(0x1000, b"boot"), (0x10000, b"app"), (0x200000, b"data")]
+
+
+_COMPRESSORS = {
+    Compression.GZIP: gzip.compress,
+    Compression.XZ: lzma.compress,
+    Compression.BZ2: bz2.compress,
+    Compression.ZSTD: zstd.compress,
+}
+
+
+@pytest.mark.parametrize("compression", list(Compression))
+def test_flash_compressed(mock_esptool, tmp_path, compression):
+    """Every image is decompressed on its own, uploaded or downloaded."""
+    images = {"0x1000": b"boot" * 100, "0x10000": b"app" * 1000, "0x200000": b"data" * 10}
+    compressed = _images(tmp_path, {address: _COMPRESSORS[compression](data) for address, data in images.items()})
+
+    with _http_server(tmp_path) as base, serve(_make_driver()) as client:
+        client.flash({**compressed, "0x10000": f"{base}/0x10000.bin"}, compression=compression)
+
+    assert _written(mock_esptool) == [(int(address, 0), data) for address, data in images.items()]
+
+
+@pytest.mark.parametrize(("first_size", "refused"), [(0x1000, False), (0x1001, True)])
+def test_flash_refuses_images_sharing_a_sector(mock_esptool, tmp_path, first_size, refused):
+    images = _images(tmp_path, {"0x1000": b"a" * first_size, "0x2000": b"b"})
+
+    with serve(_make_driver()) as client:
+        if refused:
+            with pytest.raises(BaseExceptionGroup) as excinfo:
+                client.flash(images)
+            assert excinfo.group_contains(
+                DriverInvalidArgument, match=r"^0x2000.bin @ 0x2000 overlaps 0x1000.bin @ 0x1000$"
+            )
+        else:
+            client.flash(images)
+
+    assert mock_esptool["detect_chip"].called is not refused
+
+
+def test_flash_refuses_an_empty_image(mock_esptool, tmp_path):
+    with serve(_make_driver()) as client, pytest.raises(BaseExceptionGroup) as excinfo:
+        client.flash(_images(tmp_path, {"0x1000": b"boot", "0x8000": b""}))
+
+    assert excinfo.group_contains(DriverInvalidArgument, match=r"^0x8000.bin @ 0x8000 is empty$")
+    assert not mock_esptool["detect_chip"].called
+
+
+def test_flash_on_exporter_without_flash_images(mock_esptool, tmp_path):
+    """An exporter from before flash_images (jumpstarter 0.9) still gets every image."""
+
+    class OldEsp32Flasher(Esp32Flasher):
+        flash_images = None  # not exported, as in 0.9
+
+    with serve(_make_driver(OldEsp32Flasher)) as client:
+        client.flash(_images(tmp_path, {"0x1000": b"boot", "0x8000": b"table"}))
+
+    assert _written(mock_esptool) == [(0x1000, b"boot"), (0x8000, b"table")]
+
+
+def test_flash_from_client_without_flash_images(mock_esptool, tmp_path):
+    """A client from before flash_images (jumpstarter 0.9) still flashes, through the unary call."""
+    firmware = tmp_path / "firmware.bin"
+    firmware.write_bytes(b"app")
+
+    with serve(_make_driver()) as client:
+        FlasherClient.flash(client, firmware, target="0x10000")
+
+    assert _written(mock_esptool) == [(0x10000, b"app")]
+
+
+def test_cli_flash_targets(mock_esptool, tmp_path, monkeypatch):
+    # Collect what the command prints. Reading stdout back is racy here:
+    # log_cli swaps sys.stdout whenever the exporter thread logs.
+    printed = []
+    monkeypatch.setattr(click, "echo", lambda message=None, **kwargs: printed.append(message))
+    images = _images(tmp_path, {"0x1000": b"boot", "0x8000": b"table"})
+    args = ["flash"] + [arg for address, path in images.items() for arg in ("-t", f"{address}:{path}")]
+
+    with serve(_make_driver()) as client:
+        client.cli().main(args, standalone_mode=False)
+
+    assert _written(mock_esptool) == [(0x1000, b"boot"), (0x8000, b"table")]
+    assert printed == [
+        "Connected to ESP32-D0WD-V3 (revision v3.1)",
+        "[1/2] 0x1000.bin @ 0x1000: written",
+        "[2/2] 0x8000.bin @ 0x8000: written",
+        "Flashed 2 image(s)",
+    ]
+
+
+def test_cli_flash_repeated_target(mock_esptool, tmp_path):
+    first, second = tmp_path / "a.bin", tmp_path / "b.bin"
+    first.write_bytes(b"a")
+    second.write_bytes(b"b")
+    args = ["flash", "-t", f"0x1000:{first}", "-t", f"0x1000:{second}"]
+
+    with serve(_make_driver()) as client, pytest.raises(click.UsageError, match="0x1000 is given more than once"):
+        client.cli().main(args, standalone_mode=False)
+
+    mock_esptool["write_flash"].assert_not_called()
 
 
 def test_dump(mock_esptool, tmp_path):
