@@ -1,3 +1,4 @@
+import time
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator, Generator
 
@@ -47,7 +48,27 @@ class VirtualPowerInterface(metaclass=ABCMeta):
 
 
 
-class MockPower(PowerInterface, Driver):
+
+class _PowerTelemetry:
+    """Shared telemetry for the reference power drivers (JEP-0013 Phase 4)."""
+
+    def _record_transition(self, state: str, result: str, started: float) -> None:
+        metrics = self.metrics
+        metrics.counter(
+            "transitions",
+            "Power transitions performed by the driver",
+            labels=("state", "result"),
+        ).labels(state=state, result=result).inc()
+        metrics.histogram(
+            "transition_seconds",
+            "Time spent in a power transition",
+            labels=("state",),
+            buckets=(0.01, 0.05, 0.1, 0.5, 1.0, 5.0),
+        ).labels(state=state).observe(time.perf_counter() - started)
+        self.emit_event(f"power {state}", operation=state, result=result)
+
+
+class MockPower(PowerInterface, _PowerTelemetry, Driver):
     """
     MockPower is a mock driver implementing the PowerInterface
 
@@ -65,15 +86,23 @@ class MockPower(PowerInterface, Driver):
 
     _state: str = "off"
 
+    async def _transition(self, state: str) -> None:
+        started = time.perf_counter()
+        try:
+            self.logger.info("power %s", state)
+            self._state = state
+        except Exception:
+            self._record_transition(state, "failure", started)
+            raise
+        self._record_transition(state, "success", started)
+
     @export
     async def on(self) -> None:
-        self.logger.info("power on")
-        self._state = "on"
+        await self._transition("on")
 
     @export
     async def off(self) -> None:
-        self.logger.info("power off")
-        self._state = "off"
+        await self._transition("off")
 
     @export
     async def status(self) -> str:
@@ -85,7 +114,7 @@ class MockPower(PowerInterface, Driver):
         yield PowerReading(voltage=5.0, current=2.0)
 
 
-class SyncMockPower(PowerInterface, Driver):
+class SyncMockPower(PowerInterface, _PowerTelemetry, Driver):
     """
     SyncMockPower is a mock driver implementing the PowerInterface
 
@@ -103,15 +132,23 @@ class SyncMockPower(PowerInterface, Driver):
 
     _state: str = "off"
 
+    def _transition(self, state: str) -> None:
+        started = time.perf_counter()
+        try:
+            self.logger.info("power %s", state)
+            self._state = state
+        except Exception:
+            self._record_transition(state, "failure", started)
+            raise
+        self._record_transition(state, "success", started)
+
     @export
     def on(self) -> None:
-        self.logger.info("power on")
-        self._state = "on"
+        self._transition("on")
 
     @export
     def off(self) -> None:
-        self.logger.info("power off")
-        self._state = "off"
+        self._transition("off")
 
     @export
     def status(self) -> str:
