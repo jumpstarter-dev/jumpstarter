@@ -205,10 +205,11 @@ func (r *JumpstarterReconciler) reconcileMetricsServices(ctx context.Context, js
 }
 
 const (
-	serviceMonitorReasonCreated     = "Created"
-	serviceMonitorReasonDisabled    = "Disabled"
-	serviceMonitorReasonCRDNotFound = "CRDNotFound"
-	serviceMonitorReasonFailed      = "Failed"
+	serviceMonitorReasonCreated       = "Created"
+	serviceMonitorReasonDisabled      = "Disabled"
+	serviceMonitorReasonCRDNotFound   = "CRDNotFound"
+	serviceMonitorReasonNotConfigured = "NotConfigured"
+	serviceMonitorReasonFailed        = "Failed"
 )
 
 // integrationResult is what one optional integration's condition reports in a
@@ -233,6 +234,7 @@ func (r integrationResult) condition() (bool, string, string) {
 type observabilityResult struct {
 	serviceMonitor  integrationResult
 	prometheusRules integrationResult
+	dashboards      integrationResult
 }
 
 // serviceMonitorCRDAvailable reports whether monitoring.coreos.com/v1 serves the
@@ -512,6 +514,12 @@ func (r *JumpstarterReconciler) reconcileObservability(ctx context.Context, js *
 		errs = append(errs, err)
 	}
 	result.prometheusRules = prometheusRules
+
+	dashboards, err := r.reconcilePersesDashboards(ctx, js)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	result.dashboards = dashboards
 
 	return result, errors.Join(errs...)
 }

@@ -168,6 +168,10 @@ func TestServiceMonitorCRDAbsent(t *testing.T) {
 		assertPrometheusRulesCRDAbsent(t, ctx, c, r, js)
 	})
 
+	t.Run("Dashboards CRD absent reports CRDNotFound", func(t *testing.T) {
+		assertDashboardsCRDAbsent(t, ctx, c, r, js)
+	})
+
 	t.Run("emits transition events for existing condition reasons", func(t *testing.T) {
 		transitionRecorder := record.NewFakeRecorder(16)
 		transitionReconciler := &JumpstarterReconciler{
@@ -225,5 +229,39 @@ func assertPrometheusRulesCRDAbsent(t *testing.T, ctx context.Context, c client.
 	}
 	if condition.Status != metav1.ConditionFalse || condition.Reason != "CRDNotFound" {
 		t.Fatalf("PrometheusRulesReady = %s/%s, want False/CRDNotFound", condition.Status, condition.Reason)
+	}
+}
+
+// assertDashboardsCRDAbsent verifies the DashboardsReady condition when the
+// optional PersesDashboard CRD is not installed.
+func assertDashboardsCRDAbsent(t *testing.T, ctx context.Context, c client.Client, r *JumpstarterReconciler, js *operatorv1alpha1.Jumpstarter) {
+	t.Helper()
+
+	if err := c.Get(ctx, types.NamespacedName{Name: js.Name, Namespace: js.Namespace}, js); err != nil {
+		t.Fatalf("re-read jumpstarter: %v", err)
+	}
+	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+	js.Spec.Telemetry.Metrics.Dashboards = new(true)
+	js.Spec.Telemetry.Metrics.PersesInstanceSelector = map[string]string{
+		"app.kubernetes.io/instance": "perses-sample",
+	}
+	if err := c.Update(ctx, js); err != nil {
+		t.Fatalf("update jumpstarter: %v", err)
+	}
+
+	observability, err := r.reconcileObservability(ctx, js)
+	if err != nil {
+		t.Fatalf("reconcileObservability must succeed without the PersesDashboard CRD: %v", err)
+	}
+	if err := r.updateStatus(ctx, js, observability); err != nil {
+		t.Fatalf("updateStatus: %v", err)
+	}
+
+	condition := apimeta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypeDashboardsReady)
+	if condition == nil {
+		t.Fatal("DashboardsReady condition missing")
+	}
+	if condition.Status != metav1.ConditionFalse || condition.Reason != "CRDNotFound" {
+		t.Fatalf("DashboardsReady = %s/%s, want False/CRDNotFound", condition.Status, condition.Reason)
 	}
 }

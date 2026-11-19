@@ -111,6 +111,7 @@ type JumpstarterReconciler struct {
 // Monitoring resources
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=perses.dev,resources=persesdashboards,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
 
 // cert-manager resources (for TLS certificate management)
@@ -2061,8 +2062,9 @@ func (r *JumpstarterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// the optional observability CRDs is installed or updated. This complements
 	// the bounded fallback requeue while a CRD is absent.
 	observabilityCRDNames := map[string]struct{}{
-		serviceMonitorCRDName: {},
-		prometheusRuleCRDName: {},
+		serviceMonitorCRDName:  {},
+		prometheusRuleCRDName:  {},
+		persesDashboardCRDName: {},
 	}
 	mapObservabilityCRDToJumpstarters := func(ctx context.Context, obj client.Object) []ctrl.Request {
 		if _, watched := observabilityCRDNames[obj.GetName()]; !watched {

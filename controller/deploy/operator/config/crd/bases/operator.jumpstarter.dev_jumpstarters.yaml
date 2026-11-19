@@ -2416,6 +2416,19 @@ spec:
                     description: Metrics configures reverse-scrape fan-out and Prometheus
                       exposition.
                     properties:
+                      dashboardLabels:
+                        additionalProperties:
+                          type: string
+                        description: Additional labels to add to generated PersesDashboards.
+                        maxProperties: 16
+                        type: object
+                      dashboards:
+                        default: false
+                        description: |-
+                          Dashboards controls creation of Perses dashboard resources. Requires the
+                          perses.dev/v1alpha2 PersesDashboard CRD and PersesInstanceSelector; when the
+                          CRD is absent dashboards are skipped and DashboardsReady reports CRDNotFound.
+                        type: boolean
                       driverTypeEnum:
                         default:
                         - power
@@ -2447,6 +2460,27 @@ spec:
                           type: string
                         maxItems: 16
                         type: array
+                      lokiDatasource:
+                        default: loki
+                        description: LokiDatasource names the Perses datasource used
+                          by generated Loki panels.
+                        minLength: 1
+                        type: string
+                      persesInstanceSelector:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          PersesInstanceSelector selects the Perses instance(s) that sync generated
+                          dashboards. Required when Dashboards is true.
+                        maxProperties: 16
+                        type: object
+                      prometheusDatasource:
+                        default: prometheus
+                        description: |-
+                          PrometheusDatasource names the Perses datasource used by generated
+                          dashboards and variables.
+                        minLength: 1
+                        type: string
                       prometheusRules:
                         default: false
                         description: |-

@@ -147,6 +147,10 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 test-phase6-rules: ## Validate the generated starter PrometheusRule with promtool (skips if promtool is absent).
 	go test ./internal/controller/jumpstarter -run TestPrometheusRulesValidate -count=1 -v
 
+.PHONY: test-phase6-dashboards
+test-phase6-dashboards: ## Validate the generated Perses dashboard with percli (requires PERCLI and PERCLI_PLUGINS).
+	go test ./internal/controller/jumpstarter -run TestPersesDashboardValidate -count=1 -v
+
 
 .PHONY: test-e2e
 test-e2e: manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.

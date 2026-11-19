@@ -59,6 +59,11 @@ const (
 	// Informational only: it does not affect the aggregate Ready condition.
 	ConditionTypePrometheusRulesReady = "PrometheusRulesReady"
 
+	// ConditionTypeDashboardsReady indicates whether Perses dashboard resources
+	// are created. Reasons: Created, Disabled, NotConfigured, CRDNotFound, Failed.
+	// Informational only: it does not affect the aggregate Ready condition.
+	ConditionTypeDashboardsReady = "DashboardsReady"
+
 	// ConditionTypeReady indicates whether the overall Jumpstarter system is ready
 	ConditionTypeReady = "Ready"
 )
@@ -424,6 +429,32 @@ type TelemetryMetricsConfig struct {
 	// release: kube-prometheus-stack).
 	// +kubebuilder:validation:MaxProperties=16
 	RuleLabels map[string]string `json:"ruleLabels,omitempty"`
+
+	// Dashboards controls creation of Perses dashboard resources. Requires the
+	// perses.dev/v1alpha2 PersesDashboard CRD and PersesInstanceSelector; when the
+	// CRD is absent dashboards are skipped and DashboardsReady reports CRDNotFound.
+	// +kubebuilder:default=false
+	Dashboards *bool `json:"dashboards,omitempty"`
+
+	// Additional labels to add to generated PersesDashboards.
+	// +kubebuilder:validation:MaxProperties=16
+	DashboardLabels map[string]string `json:"dashboardLabels,omitempty"`
+
+	// PersesInstanceSelector selects the Perses instance(s) that sync generated
+	// dashboards. Required when Dashboards is true.
+	// +kubebuilder:validation:MaxProperties=16
+	PersesInstanceSelector map[string]string `json:"persesInstanceSelector,omitempty"`
+
+	// PrometheusDatasource names the Perses datasource used by generated
+	// dashboards and variables.
+	// +kubebuilder:default="prometheus"
+	// +kubebuilder:validation:MinLength=1
+	PrometheusDatasource string `json:"prometheusDatasource,omitempty"`
+
+	// LokiDatasource names the Perses datasource used by generated Loki panels.
+	// +kubebuilder:default="loki"
+	// +kubebuilder:validation:MinLength=1
+	LokiDatasource string `json:"lokiDatasource,omitempty"`
 
 	// Allowlist of keys to include in Prometheus exemplars. Unlisted keys are omitted.
 	// At most 16 keys. Each key is at most 32 characters, the same limit as
