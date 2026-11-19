@@ -115,12 +115,14 @@ def _client_class_path(cls: type) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _resolve_annotation(cls: type, annotation: Any) -> Any:
+def _resolve_annotation(cls: type, name: str, annotation: Any) -> Any:
     """Resolve a single string annotation, so one bad field cannot poison the rest."""
     if not isinstance(annotation, str):
         return annotation
+    # An inherited field's names live in the module of the class declaring it.
+    owner = next((base for base in cls.__mro__ if name in vars(base).get("__annotations__", {})), cls)
     try:
-        return eval(annotation, vars(sys.modules[cls.__module__]), {cls.__name__: cls})
+        return eval(annotation, vars(sys.modules[owner.__module__]), {owner.__name__: owner})
     except Exception:  # noqa: BLE001 - evaluates arbitrary annotations; keep the string
         return annotation
 
@@ -132,7 +134,7 @@ def _config_fields(cls: type, base_fields: set[str]) -> list[tuple[dataclasses.F
     except Exception:  # noqa: BLE001 - fall back to resolving annotations one by one
         hints = {}
     return [
-        (field, hints.get(field.name) or _resolve_annotation(cls, field.type))
+        (field, hints.get(field.name) or _resolve_annotation(cls, field.name, field.type))
         for field in dataclasses.fields(typing.cast(Any, cls))
         if field.name not in base_fields and field.init
     ]
@@ -155,17 +157,19 @@ def _per_field_schema(fields: list[tuple[dataclasses.Field, Any]]):
     properties: dict[str, Any] = {}
     required: list[str] = []
     defs: dict[str, Any] = {}
+    errors: list[str] = []
     for field, annotation in fields:
         try:
             schema = TypeAdapter(annotation).json_schema(ref_template="#/$defs/{model}")
             defs.update(schema.pop("$defs", {}))
-        except Exception:  # noqa: BLE001 - degrade only the field pydantic cannot model
+        except Exception as e:  # noqa: BLE001 - degrade only the field pydantic cannot model
+            errors.append(f"{type(e).__name__}: {e}")
             name = annotation if isinstance(annotation, str) else getattr(annotation, "__name__", None)
             schema = {"title": field.name} | ({"description": f"type: {name}"} if name else {})
         properties[field.name] = schema
         if field.default is dataclasses.MISSING and field.default_factory is dataclasses.MISSING:
             required.append(field.name)
-    return properties, required, defs
+    return properties, required, defs, errors
 
 
 def _schema_for_entry_point(entry_point, base_fields: set[str]) -> DriverSchema:
@@ -202,7 +206,7 @@ def _schema_for_entry_point(entry_point, base_fields: set[str]) -> DriverSchema:
     except Exception as e:  # noqa: BLE001 - reported per entry
         # Unmodelable constructor fields must not sink the rest of the schema.
         entry.error = f"{type(e).__name__}: {e}"
-        entry.properties, entry.required, entry.defs = _per_field_schema(fields)
+        entry.properties, entry.required, entry.defs, _ = _per_field_schema(fields)
         return entry
     entry.properties = schema.get("properties", {})
     entry.required = schema.get("required", [])
@@ -210,10 +214,12 @@ def _schema_for_entry_point(entry_point, base_fields: set[str]) -> DriverSchema:
     # those constructor fields cannot go through the model; add them one by one.
     private = [(field, annotation) for field, annotation in fields if field.name.startswith("_")]
     if private:
-        properties, required, defs = _per_field_schema(private)
+        properties, required, defs, errors = _per_field_schema(private)
         entry.properties |= properties
         entry.required += required
         entry.defs |= defs
+        # A degraded field must not be reported as a complete schema.
+        entry.error = "\n".join(errors) or None
     return entry
 
 

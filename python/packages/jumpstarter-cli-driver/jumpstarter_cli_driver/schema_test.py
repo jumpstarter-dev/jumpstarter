@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass, field
 from enum import Enum
 from tempfile import TemporaryDirectory
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
@@ -85,6 +86,18 @@ class UnderscoreDriver(Driver):
         return "example.client.ConfigClient"
 
 
+@dataclass(kw_only=True)
+class OpaqueUnderscoreDriver(Driver):
+    """A leading-underscore constructor field pydantic cannot model."""
+
+    host: str
+    _handle: TemporaryDirectory
+
+    @classmethod
+    def client(cls):
+        return "example.client.OpaqueClient"
+
+
 def entry_point(name="Config", cls=ConfigDriver):
     """An entry point whose load can be observed or made to fail."""
     return SimpleNamespace(
@@ -153,6 +166,46 @@ def test_leading_underscore_constructor_fields_are_kept(installed):
     assert "Mode" in schema["defs"]
     assert set(schema["properties"]) == {"host", "_token", "_endpoint"}
     assert set(schema["required"]) == {"host", "_token"}
+
+
+def test_unmodelable_underscore_field_is_reported(installed):
+    entry, _ = installed
+    entry.load.return_value = OpaqueUnderscoreDriver
+    schema = schema_json()[0]["drivers"][0]
+    assert "TemporaryDirectory" in schema["error"]
+    assert schema["properties"]["host"]["type"] == "string"
+    assert "type" not in schema["properties"]["_handle"]
+    assert set(schema["required"]) == {"host", "_handle"}
+
+
+def test_inherited_annotation_resolves_in_declaring_module(installed):
+    """With hints unresolvable as a whole, each field uses its own class's module."""
+    base_module = ModuleType("example_base")
+    base_module.__dict__["Port"] = int
+    sub_module = ModuleType("example_sub")
+    sub_module.__dict__["Port"] = str
+    with patch.dict(sys.modules, {"example_base": base_module, "example_sub": sub_module}):
+        base = dataclass(kw_only=True)(
+            type("Base", (Driver,), {"__module__": "example_base", "__annotations__": {"port": "Port"}})
+        )
+        sub = dataclass(kw_only=True)(
+            type(
+                "Sub",
+                (base,),
+                {
+                    "__module__": "example_sub",
+                    "__annotations__": {"label": "Port", "state": "Missing"},
+                    "state": field(default=None, init=False),
+                    "client": classmethod(lambda cls: "example.client.ConfigClient"),
+                },
+            )
+        )
+        entry, _ = installed
+        entry.load.return_value = sub
+        schema = schema_json()[0]["drivers"][0]
+    assert schema["error"] is None
+    assert schema["properties"]["port"]["type"] == "integer"
+    assert schema["properties"]["label"]["type"] == "string"
 
 
 def test_unmodelable_field_degrades_only_itself(installed):
