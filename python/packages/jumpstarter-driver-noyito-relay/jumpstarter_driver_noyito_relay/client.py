@@ -1,18 +1,11 @@
-import click
 from jumpstarter_driver_power.client import PowerClient
 
 
 class NoyitoPowerClient(PowerClient):
-    def status(self) -> str:
-        """Query the configured relay channel state."""
-        return self.call("status")
+    """Client for the NOYITO relay drivers.
 
-    def cli(self):
-        base = super().cli()
-
-        @base.command()
-        def status():
-            """Query relay channel state"""
-            click.echo(self.status())
-
-        return base
+    Adds nothing to ``PowerClient``, which has ``status`` built in. It is kept, and the
+    drivers still name it, so clients on older releases keep loading their own
+    ``NoyitoPowerClient`` (which had ``status`` before ``PowerClient`` did). It can go
+    once those clients are no longer in use.
+    """

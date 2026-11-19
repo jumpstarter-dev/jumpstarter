@@ -155,11 +155,13 @@ class TestDnsmasqStart:
         mock_proc = MagicMock()
         mock_proc.poll.return_value = 1
         mock_proc.stderr.read.return_value = b"bind failed"
-        with patch(f"{_DNSMASQ_MODULE}.subprocess.Popen", return_value=mock_proc), \
-             patch(f"{_DNSMASQ_MODULE}.time.sleep"), \
-             patch(f"{_DNSMASQ_MODULE}.time.monotonic", side_effect=[0.0, 3.0]):
-            with pytest.raises(RuntimeError, match="dnsmasq failed to start"):
-                dnsmasq.start(tmp_path)
+        with (
+            patch(f"{_DNSMASQ_MODULE}.subprocess.Popen", return_value=mock_proc),
+            patch(f"{_DNSMASQ_MODULE}.time.sleep"),
+            patch(f"{_DNSMASQ_MODULE}.time.monotonic", side_effect=[0.0, 3.0]),
+            pytest.raises(RuntimeError, match="dnsmasq failed to start"),
+        ):
+            dnsmasq.start(tmp_path)
 
 
     def test_raises_when_pidfile_not_created(self, tmp_path: Path):

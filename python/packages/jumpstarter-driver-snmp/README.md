@@ -44,7 +44,14 @@ export:
 | auth_key      | Authentication key when auth_protocol is not "NONE" | str   | no       | null                              |
 | priv_protocol | Privacy protocol ("NONE", "DES", "AES")             | str   | no       | "NONE"                            |
 | priv_key      | Privacy key when priv_protocol is not "NONE"        | str   | no       | null                              |
+| on_value      | Integer written to the control OID for power on     | int   | no       | 1                                 |
+| off_value     | Integer written to the control OID for power off    | int   | no       | 0                                 |
 | timeout       | SNMP timeout in seconds                             | float | no       | 5.0                               |
+
+Most PDUs use the default `1`/`0` for on/off. Some vendors use different
+command enums -- e.g. APC PowerNet outlet control uses `1`=on/`2`=off, where
+the default off value (`0`) is ignored by the PDU; set `off_value: 2` for
+those.
 
 ## API Reference
 

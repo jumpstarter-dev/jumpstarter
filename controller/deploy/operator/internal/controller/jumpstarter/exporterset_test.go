@@ -17,12 +17,16 @@ limitations under the License.
 package jumpstarter
 
 import (
+	"os"
+	"slices"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
+	"sigs.k8s.io/yaml"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
 )
@@ -120,22 +124,50 @@ var _ = Describe("exporterSetPolicyRules", func() {
 		Expect(groups).To(HaveKey("coordination.k8s.io"))
 	})
 
-	It("should grant read-only access on exportersets (no create/update/delete)", func() {
+	It("should reconcile runtime network isolation policies", func() {
+		for _, rule := range rules {
+			if containsString(rule.APIGroups, "networking.k8s.io") && containsString(rule.Resources, "networkpolicies") {
+				Expect(rule.Verbs).To(ContainElements("get", "list", "watch", "create", "update", "patch"))
+				return
+			}
+		}
+		Fail("no rule found for runtime network policies")
+	})
+
+	It("should only delegate privileges held by the operator", func() {
+		data, err := os.ReadFile("../../../config/rbac/role.yaml")
+		Expect(err).NotTo(HaveOccurred())
+
+		managerRole := rbacv1.ClusterRole{}
+		Expect(yaml.Unmarshal(data, &managerRole)).To(Succeed())
+
+		for _, delegated := range rules {
+			for _, group := range delegated.APIGroups {
+				for _, resource := range delegated.Resources {
+					for _, verb := range delegated.Verbs {
+						Expect(policyRulesAllow(managerRole.Rules, group, resource, verb)).To(
+							BeTrue(), "operator cannot delegate %s on %s/%s", verb, group, resource,
+						)
+					}
+				}
+			}
+		}
+	})
+
+	It("should grant read+update+patch access on exportersets (no create/delete)", func() {
 		for _, rule := range rules {
 			if containsString(rule.APIGroups, "virtualtarget.jumpstarter.dev") &&
 				containsString(rule.Resources, "exportersets") &&
 				!containsString(rule.Resources, "exportersets/status") &&
 				!containsString(rule.Resources, "exportersets/scale") &&
 				!containsString(rule.Resources, "exportersets/finalizers") {
-				Expect(rule.Verbs).To(ContainElements("get", "list", "watch"))
+				Expect(rule.Verbs).To(ContainElements("get", "list", "watch", "update", "patch"))
 				Expect(rule.Verbs).NotTo(ContainElement("create"))
-				Expect(rule.Verbs).NotTo(ContainElement("update"))
-				Expect(rule.Verbs).NotTo(ContainElement("patch"))
 				Expect(rule.Verbs).NotTo(ContainElement("delete"))
 				return
 			}
 		}
-		Fail("no rule found granting read-only access on exportersets")
+		Fail("no rule found granting read+update+patch access on exportersets")
 	})
 
 	It("should grant status/scale/finalizer access on exportersets", func() {
@@ -190,6 +222,21 @@ var _ = Describe("exporterSetPolicyRules", func() {
 			}
 		}
 		Fail("no rule found granting full CRUD on exporters")
+	})
+
+	It("should grant update on exporters/finalizers", func() {
+		// The config Secret and the exporter Pod are both owned by their Exporter
+		// via SetControllerReference, which sets blockOwnerDeletion; the API server
+		// refuses that ownerReference unless the writer may update the owner's
+		// finalizers. Without this rule the controller creates neither object.
+		for _, rule := range rules {
+			if containsString(rule.APIGroups, "jumpstarter.dev") &&
+				containsString(rule.Resources, "exporters/finalizers") {
+				Expect(rule.Verbs).To(ContainElement("update"))
+				return
+			}
+		}
+		Fail("no rule found granting update on exporters/finalizers")
 	})
 
 	It("should grant read-only access on jumpstarter leases", func() {
@@ -249,6 +296,17 @@ var _ = Describe("exporterSetPolicyRules", func() {
 	})
 })
 
+func policyRulesAllow(rules []rbacv1.PolicyRule, group, resource, verb string) bool {
+	for _, rule := range rules {
+		if (slices.Contains(rule.APIGroups, group) || slices.Contains(rule.APIGroups, "*")) &&
+			(slices.Contains(rule.Resources, resource) || slices.Contains(rule.Resources, "*")) &&
+			(slices.Contains(rule.Verbs, verb) || slices.Contains(rule.Verbs, "*")) {
+			return true
+		}
+	}
+	return false
+}
+
 var _ = Describe("hasEnabledProvisioners", func() {
 	It("should return false for empty list", func() {
 		Expect(hasEnabledProvisioners(nil)).To(BeFalse())
@@ -264,25 +322,96 @@ var _ = Describe("hasEnabledProvisioners", func() {
 
 	It("should return true when Enabled is explicitly true", func() {
 		provs := []operatorv1alpha1.ProvisionerConfig{
-			{Name: "qemu.jumpstarter.dev", Enabled: ptr.To(true)},
+			{Name: "qemu.jumpstarter.dev", Enabled: new(true)},
 		}
 		Expect(hasEnabledProvisioners(provs)).To(BeTrue())
 	})
 
 	It("should return false when all provisioners are disabled", func() {
 		provs := []operatorv1alpha1.ProvisionerConfig{
-			{Name: "qemu.jumpstarter.dev", Enabled: ptr.To(false)},
-			{Name: "corellium.jumpstarter.dev", Enabled: ptr.To(false)},
+			{Name: "qemu.jumpstarter.dev", Enabled: new(false)},
+			{Name: "corellium.jumpstarter.dev", Enabled: new(false)},
 		}
 		Expect(hasEnabledProvisioners(provs)).To(BeFalse())
 	})
 
 	It("should return true when at least one provisioner is enabled among disabled ones", func() {
 		provs := []operatorv1alpha1.ProvisionerConfig{
-			{Name: "qemu.jumpstarter.dev", Enabled: ptr.To(false)},
-			{Name: "corellium.jumpstarter.dev", Enabled: ptr.To(true)},
+			{Name: "qemu.jumpstarter.dev", Enabled: new(false)},
+			{Name: "corellium.jumpstarter.dev", Enabled: new(true)},
 		}
 		Expect(hasEnabledProvisioners(provs)).To(BeTrue())
+	})
+
+	It("should return false when all provisioners have replicas=0 (suspended)", func() {
+		provs := []operatorv1alpha1.ProvisionerConfig{
+			{Name: "qemu.jumpstarter.dev", Replicas: new(int32(0))},
+			{Name: "corellium.jumpstarter.dev", Replicas: new(int32(0))},
+		}
+		Expect(hasEnabledProvisioners(provs)).To(BeFalse())
+	})
+
+	It("should return true when at least one provisioner has replicas>0 among suspended ones", func() {
+		provs := []operatorv1alpha1.ProvisionerConfig{
+			{Name: "qemu.jumpstarter.dev", Replicas: new(int32(0))},
+			{Name: "corellium.jumpstarter.dev", Replicas: new(int32(1))},
+		}
+		Expect(hasEnabledProvisioners(provs)).To(BeTrue())
+	})
+
+	It("should return false when provisioner is enabled but replicas=0", func() {
+		provs := []operatorv1alpha1.ProvisionerConfig{
+			{Name: "qemu.jumpstarter.dev", Enabled: new(true), Replicas: new(int32(0))},
+		}
+		Expect(hasEnabledProvisioners(provs)).To(BeFalse())
+	})
+
+	It("should return false when all provisioners are disabled or suspended", func() {
+		provs := []operatorv1alpha1.ProvisionerConfig{
+			{Name: "qemu.jumpstarter.dev", Enabled: new(false)},
+			{Name: "corellium.jumpstarter.dev", Replicas: new(int32(0))},
+		}
+		Expect(hasEnabledProvisioners(provs)).To(BeFalse())
+	})
+})
+
+var _ = Describe("exporterSetControllersIdleState", func() {
+	It("returns Disabled for an empty provisioner list", func() {
+		reason, msg := exporterSetControllersIdleState(nil)
+		Expect(reason).To(Equal("Disabled"))
+		Expect(msg).To(ContainSubstring("No ExporterSet provisioners"))
+
+		reason, msg = exporterSetControllersIdleState([]operatorv1alpha1.ProvisionerConfig{})
+		Expect(reason).To(Equal("Disabled"))
+		Expect(msg).To(ContainSubstring("No ExporterSet provisioners"))
+	})
+
+	It("returns Disabled when all provisioners are disabled", func() {
+		provs := []operatorv1alpha1.ProvisionerConfig{
+			{Name: "qemu.jumpstarter.dev", Enabled: new(false)},
+		}
+		reason, msg := exporterSetControllersIdleState(provs)
+		Expect(reason).To(Equal("Disabled"))
+		Expect(msg).To(ContainSubstring("disabled"))
+	})
+
+	It("returns Suspended when all provisioners have replicas=0", func() {
+		provs := []operatorv1alpha1.ProvisionerConfig{
+			{Name: "qemu.jumpstarter.dev", Replicas: new(int32(0))},
+		}
+		reason, msg := exporterSetControllersIdleState(provs)
+		Expect(reason).To(Equal("Suspended"))
+		Expect(msg).To(ContainSubstring("suspended"))
+	})
+
+	It("returns NotRunning for a mix of disabled and suspended provisioners", func() {
+		provs := []operatorv1alpha1.ProvisionerConfig{
+			{Name: "qemu.jumpstarter.dev", Enabled: new(false)},
+			{Name: "corellium.jumpstarter.dev", Replicas: new(int32(0))},
+		}
+		reason, msg := exporterSetControllersIdleState(provs)
+		Expect(reason).To(Equal("NotRunning"))
+		Expect(msg).To(ContainSubstring("suspended or disabled"))
 	})
 })
 
@@ -491,7 +620,7 @@ var _ = Describe("createExporterSetDeployment", func() {
 	It("should use per-provisioner replicas override", func() {
 		dep := r.createExporterSetDeployment(js, operatorv1alpha1.ProvisionerConfig{
 			Name:     "qemu.jumpstarter.dev",
-			Replicas: ptr.To(int32(3)),
+			Replicas: new(int32(3)),
 		})
 
 		Expect(*dep.Spec.Replicas).To(Equal(int32(3)))
@@ -620,10 +749,5 @@ var _ = Describe("createExporterSetDeployment", func() {
 })
 
 func containsString(slice []string, s string) bool {
-	for _, v := range slice {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, s)
 }

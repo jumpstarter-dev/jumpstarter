@@ -27,6 +27,22 @@ uv build
 pip install dist/jumpstarter_driver_mitmproxy-*.whl
 ```
 
+### Installing mitmproxy
+
+The driver launches `mitmdump`/`mitmweb` as external programs rather than
+importing mitmproxy, so mitmproxy is **not** pulled in as a Python dependency.
+
+- **Exporter hosts** need mitmproxy installed separately
+  (`uv tool install mitmproxy` or `pipx install mitmproxy`). **Test clients**
+  don't — they only talk to the driver's client API.
+- **Services (for example under systemd)** often don't have `~/.local/bin` on
+  `PATH`. In that case install mitmproxy system-wide, for example with
+  `UV_TOOL_BIN_DIR=/usr/local/bin uv tool install mitmproxy`.
+- **Custom addons that import extra packages** now need those packages in
+  mitmproxy's own environment, for example
+  `uv tool install mitmproxy --with pillow`. Previously they could use anything
+  installed in jumpstarter's environment.
+
 ## Configuration
 
 ### Exporter Configuration

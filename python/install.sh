@@ -127,18 +127,18 @@ get_latest_version() {
     echo "${latest_version}"
 }
 
-# Function to check if Python 3.11+ is available
+# Function to check if Python 3.12+ is available
 check_python() {
     if command -v python3 >/dev/null 2>&1; then
         local version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
         local major=$(echo ${version} | cut -d. -f1)
         local minor=$(echo ${version} | cut -d. -f2)
 
-        if [ "${major}" -eq 3 ] && [ "${minor}" -ge 11 ]; then
+        if [ "${major}" -eq 3 ] && [ "${minor}" -ge 12 ]; then
             print_success "Found Python ${version}"
             return 0
         else
-            print_error "Python 3.11+ required, found ${version}"
+            print_error "Python 3.12+ required, found ${version}"
             return 1
         fi
     else
@@ -203,7 +203,13 @@ install_jumpstarter() {
     # Activate virtual environment and install
     source "${VENV_DIR}/bin/activate"
 
-    # We don't upgrade pip here, because it might break the installation
+    # Older pip resolvers can reject this dependency tree even when a solution exists.
+    print_info "Updating pip in the virtual environment..."
+    if ! python3 -m pip install --upgrade pip; then
+        print_error "Failed to update pip in ${VENV_DIR}"
+        exit 1
+    fi
+
     # Install jumpstarter-all with specific version and index URL
     print_info "Installing jumpstarter-all==${version}..."
     if ! python3 -m pip install --extra-index-url "${index_url}" "jumpstarter-all==${version}"; then

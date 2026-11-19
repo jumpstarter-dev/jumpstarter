@@ -41,7 +41,7 @@ class JumpstarterVersion(BaseModel):
 
 
 def version_obj():
-    return JumpstarterVersion(git_version=importlib.metadata.version("jumpstarter"), python_version=sys.version)
+    return JumpstarterVersion(gitVersion=importlib.metadata.version("jumpstarter"), pythonVersion=sys.version)
 
 
 @click.command()

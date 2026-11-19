@@ -5,6 +5,8 @@ from pysnmp.entity import config as snmp_config
 
 from jumpstarter_driver_snmp.driver import AuthProtocol, PrivProtocol, SNMPServer
 
+pytestmark = pytest.mark.anyio
+
 
 class MockMibObject:
     def getInstIdFromIndices(self, *args):
@@ -55,7 +57,7 @@ def setup_mock_snmp_engine():
         },
     ],
 )
-def test_snmp_auth_configurations(auth_config):
+async def test_snmp_auth_configurations(auth_config):
     """Test different SNMP authentication configurations"""
     with (
         patch("pysnmp.entity.config.add_v3_user") as mock_add_user,
@@ -103,15 +105,12 @@ def test_snmp_auth_configurations(auth_config):
 
 @patch("pysnmp.entity.config.add_v3_user")
 @patch("pysnmp.entity.engine.SnmpEngine")
-def test_power_on_command(mock_engine, mock_add_user):
+async def test_power_on_command(mock_engine, mock_add_user):
     """Test power on command execution"""
     mock_engine.return_value = setup_mock_snmp_engine()
 
     with (
         patch("pysnmp.entity.rfc3413.cmdgen.SetCommandGenerator.send_varbinds") as mock_send,
-        patch("asyncio.get_running_loop", side_effect=RuntimeError),
-        patch("asyncio.new_event_loop"),
-        patch("asyncio.set_event_loop"),
         patch("pysnmp.entity.config.add_target_parameters"),
         patch("pysnmp.entity.config.add_target_address"),
         patch("pysnmp.entity.config.add_transport"),
@@ -124,22 +123,19 @@ def test_power_on_command(mock_engine, mock_add_user):
 
         mock_send.side_effect = side_effect
 
-        result = server.on()
+        result = await server.on()
         assert "Power ON command sent successfully" in result
         mock_send.assert_called_once()
 
 
 @patch("pysnmp.entity.config.add_v3_user")
 @patch("pysnmp.entity.engine.SnmpEngine")
-def test_power_off_command(mock_engine, mock_add_user):
+async def test_power_off_command(mock_engine, mock_add_user):
     """Test power off command execution"""
     mock_engine.return_value = setup_mock_snmp_engine()
 
     with (
         patch("pysnmp.entity.rfc3413.cmdgen.SetCommandGenerator.send_varbinds") as mock_send,
-        patch("asyncio.get_running_loop", side_effect=RuntimeError),
-        patch("asyncio.new_event_loop"),
-        patch("asyncio.set_event_loop"),
         patch("pysnmp.entity.config.add_target_parameters"),
         patch("pysnmp.entity.config.add_target_address"),
         patch("pysnmp.entity.config.add_transport"),
@@ -152,6 +148,66 @@ def test_power_off_command(mock_engine, mock_add_user):
 
         mock_send.side_effect = side_effect
 
-        result = server.off()
+        result = await server.off()
         assert "Power OFF command sent successfully" in result
         mock_send.assert_called_once()
+
+
+@patch("pysnmp.entity.config.add_v3_user")
+@patch("pysnmp.entity.engine.SnmpEngine")
+async def test_power_writes_default_values(mock_engine, mock_add_user):
+    """Default on/off values (1/0) preserve the existing behavior"""
+    mock_engine.return_value = setup_mock_snmp_engine()
+
+    with (
+        patch("pysnmp.entity.rfc3413.cmdgen.SetCommandGenerator.send_varbinds") as mock_send,
+        patch("pysnmp.entity.config.add_target_parameters"),
+        patch("pysnmp.entity.config.add_target_address"),
+        patch("pysnmp.entity.config.add_transport"),
+    ):
+        server = SNMPServer(host="localhost", user="testuser", plug=1)
+
+        written = {}
+
+        def side_effect(*args):
+            written["value"] = int(args[-2][0][1])
+            callback = args[-1]
+            callback(None, None, None, None, None, [], None)
+
+        mock_send.side_effect = side_effect
+
+        await server.on()
+        assert written["value"] == 1
+
+        await server.off()
+        assert written["value"] == 0
+
+
+@patch("pysnmp.entity.config.add_v3_user")
+@patch("pysnmp.entity.engine.SnmpEngine")
+async def test_power_writes_configured_values(mock_engine, mock_add_user):
+    """Configured on/off values are written (APC PowerNet: 1=on/2=off)"""
+    mock_engine.return_value = setup_mock_snmp_engine()
+
+    with (
+        patch("pysnmp.entity.rfc3413.cmdgen.SetCommandGenerator.send_varbinds") as mock_send,
+        patch("pysnmp.entity.config.add_target_parameters"),
+        patch("pysnmp.entity.config.add_target_address"),
+        patch("pysnmp.entity.config.add_transport"),
+    ):
+        server = SNMPServer(host="localhost", user="testuser", plug=1, on_value=1, off_value=2)
+
+        written = {}
+
+        def side_effect(*args):
+            written["value"] = int(args[-2][0][1])
+            callback = args[-1]
+            callback(None, None, None, None, None, [], None)
+
+        mock_send.side_effect = side_effect
+
+        await server.off()
+        assert written["value"] == 2
+
+        await server.on()
+        assert written["value"] == 1

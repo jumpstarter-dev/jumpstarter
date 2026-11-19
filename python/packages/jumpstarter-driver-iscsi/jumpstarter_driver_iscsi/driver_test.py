@@ -2,6 +2,7 @@
 
 import os
 import sys
+from uuid import uuid4
 
 import pytest
 
@@ -98,6 +99,7 @@ class TestAllowlistValidation:
     def test_relative_path_in_allowlist_rejected(self, tmp_root):
         """Non-absolute paths in block_device_allowlist raise ConfigurationError."""
         driver = object.__new__(ISCSI)
+        driver.uuid = uuid4()
         driver.root_dir = tmp_root
         driver.block_device_allowlist = ["dev/sda"]
         driver.remove_created_on_close = False
@@ -117,6 +119,7 @@ class TestAllowlistValidation:
         os.symlink(real_dev, link_path)
 
         driver = object.__new__(ISCSI)
+        driver.uuid = uuid4()
         driver.root_dir = tmp_root
         driver.block_device_allowlist = [link_path]
         driver.remove_created_on_close = False

@@ -123,16 +123,20 @@ class OpendalFile:
     @validate_call(validate_return=True)
     def write_bytes(self, data: bytes) -> None:
         buf = BytesIO(data)
-        with self.client.portal.wrap_async_context_manager(BytesIOStream(buf=buf)) as stream:
-            with self.client.portal.wrap_async_context_manager(self.client.resource_async(stream)) as handle:
-                self.__write(handle)
+        with (
+            self.client.portal.wrap_async_context_manager(BytesIOStream(buf=buf)) as stream,
+            self.client.portal.wrap_async_context_manager(self.client.resource_async(stream)) as handle,
+        ):
+            self.__write(handle)
 
     @validate_call(validate_return=True)
     def read_bytes(self) -> bytes:
         buf = BytesIO()
-        with self.client.portal.wrap_async_context_manager(BytesIOStream(buf=buf)) as stream:
-            with self.client.portal.wrap_async_context_manager(self.client.resource_async(stream)) as handle:
-                self.__read(handle)
+        with (
+            self.client.portal.wrap_async_context_manager(BytesIOStream(buf=buf)) as stream,
+            self.client.portal.wrap_async_context_manager(self.client.resource_async(stream)) as handle,
+        ):
+            self.__read(handle)
         return buf.getvalue()
 
     @validate_call(validate_return=True)
@@ -441,7 +445,6 @@ class OpendalClient(DriverClient):
         @driver_click_group(self)
         def base():
             """Opendal Storage"""
-            pass
 
         @base.command
         @arg_path
@@ -574,10 +577,9 @@ class FlasherClientInterface(metaclass=ABCMeta):
         ...
 
     def cli(self):
-        @driver_click_group(self)
+        @driver_click_group(self)  # ty: ignore[invalid-argument-type]
         def base():
             """Generic flasher interface"""
-            pass
 
         @base.command()
         @click.argument("file", nargs=-1, required=False)
@@ -642,7 +644,7 @@ class FlasherClient(FlasherClientInterface, DriverClient):
 
             storage_hash = storage.hash(filename)
             return storage_hash != src_hash
-        except Exception:
+        except Exception:  # pragma: no cover  # noqa: BLE001
             return True
 
     def _flash_single(
@@ -683,8 +685,8 @@ class FlasherClient(FlasherClientInterface, DriverClient):
 
             for part, img in path.items():
                 op_val = oper_map.get(part) if isinstance(operator, dict) else operator
-                results[part] = self._flash_single(
-                    img, target=part, operator=cast(Operator | None, op_val), compression=compression
+                results[str(part)] = self._flash_single(
+                    img, target=str(part), operator=op_val, compression=compression
                 )
 
             return results
@@ -752,7 +754,6 @@ class StorageMuxClient(DriverClient):
             @driver_click_group(self)
             def base():
                 """Storage operations"""
-                pass
 
         @base.command()
         def host():
@@ -778,7 +779,7 @@ class StorageMuxClient(DriverClient):
 
 
 class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
-    def flash(
+    def flash(  # ty: ignore[invalid-method-override]
         self,
         path: PathBuf,
         *,
@@ -786,7 +787,11 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
         operator: Operator | None = None,
         compression: Compression | None = None,
     ):
-        """Flash image to DUT"""
+        """Flash image to DUT
+
+        gzip, xz, bz2 and zstd compressed images are detected from their
+        file signature and decompressed transparently on the exporter.
+        """
         if target is not None:
             raise ArgumentError(f"target is not supported for StorageMuxFlasherClient, {target} provided")
 
@@ -829,6 +834,6 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
             finally:
                 self.call("dut")
 
-    def cli(self):
+    def cli(self, base=None):
         top_cli = FlasherClient.cli(self)
         return StorageMuxClient.cli(self, top_cli)

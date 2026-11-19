@@ -11,7 +11,7 @@ from jumpstarter_kubernetes.exceptions import EndpointConfigurationError
 class TestGetIpGeneric:
     """Test generic IP address retrieval."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.endpoints.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_minikube_ip")
     async def test_get_ip_generic_minikube_success(self, mock_get_minikube_ip, mock_minikube_installed):
@@ -23,7 +23,7 @@ class TestGetIpGeneric:
         assert result == "192.168.49.2"
         mock_get_minikube_ip.assert_called_once_with("test-cluster", "minikube")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.endpoints.minikube_installed")
     async def test_get_ip_generic_minikube_not_installed(self, mock_minikube_installed):
         from jumpstarter_kubernetes.exceptions import ToolNotInstalledError
@@ -33,7 +33,7 @@ class TestGetIpGeneric:
         with pytest.raises(ToolNotInstalledError, match="minikube is not installed"):
             await get_ip_generic("minikube", "minikube", "test-cluster")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.endpoints.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_minikube_ip")
     async def test_get_ip_generic_minikube_ip_error(self, mock_get_minikube_ip, mock_minikube_installed):
@@ -44,7 +44,7 @@ class TestGetIpGeneric:
         with pytest.raises(EndpointConfigurationError, match="Could not determine Minikube IP address"):
             await get_ip_generic("minikube", "minikube", "test-cluster")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_ip_address")
     async def test_get_ip_generic_kind_success(self, mock_get_ip_address):
         mock_get_ip_address.return_value = "10.0.0.100"
@@ -53,7 +53,7 @@ class TestGetIpGeneric:
 
         assert result == "10.0.0.100"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_ip_address")
     async def test_get_ip_generic_kind_zero_ip(self, mock_get_ip_address):
 
@@ -62,7 +62,7 @@ class TestGetIpGeneric:
         with pytest.raises(EndpointConfigurationError, match="Could not determine IP address"):
             await get_ip_generic("kind", "minikube", "test-cluster")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_ip_address")
     async def test_get_ip_generic_none_cluster_type(self, mock_get_ip_address):
         mock_get_ip_address.return_value = "192.168.1.100"
@@ -71,7 +71,7 @@ class TestGetIpGeneric:
 
         assert result == "192.168.1.100"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_ip_address")
     async def test_get_ip_generic_other_cluster_type(self, mock_get_ip_address):
         mock_get_ip_address.return_value = "172.16.0.50"
@@ -84,7 +84,7 @@ class TestGetIpGeneric:
 class TestConfigureEndpoints:
     """Test endpoint configuration."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_ip_generic")
     async def test_configure_endpoints_all_provided(self, mock_get_ip_generic):
         # When all parameters are provided, get_ip_generic should not be called
@@ -105,7 +105,7 @@ class TestConfigureEndpoints:
         assert router_endpoint == "router.test.example.com:9001"
         mock_get_ip_generic.assert_not_called()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_ip_generic")
     async def test_configure_endpoints_no_ip_provided(self, mock_get_ip_generic):
         mock_get_ip_generic.return_value = "192.168.49.2"
@@ -127,7 +127,7 @@ class TestConfigureEndpoints:
         assert router_endpoint == "router.test.example.com:9001"
         mock_get_ip_generic.assert_called_once_with("minikube", "minikube", "test-cluster")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_ip_generic")
     async def test_configure_endpoints_no_basedomain_provided(self, mock_get_ip_generic):
         mock_get_ip_generic.return_value = "10.0.0.100"
@@ -148,7 +148,7 @@ class TestConfigureEndpoints:
         assert grpc_endpoint == "grpc.test.example.com:9000"
         assert router_endpoint == "router.test.example.com:9001"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_ip_generic")
     async def test_configure_endpoints_no_grpc_endpoint_provided(self, mock_get_ip_generic):
         mock_get_ip_generic.return_value = "10.0.0.100"
@@ -169,7 +169,7 @@ class TestConfigureEndpoints:
         assert grpc_endpoint == "grpc.jumpstarter.10.0.0.100.nip.io:8082"
         assert router_endpoint == "router.test.example.com:9001"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_ip_generic")
     async def test_configure_endpoints_no_router_endpoint_provided(self, mock_get_ip_generic):
         mock_get_ip_generic.return_value = "10.0.0.100"
@@ -190,7 +190,7 @@ class TestConfigureEndpoints:
         assert grpc_endpoint == "grpc.jumpstarter.10.0.0.100.nip.io:8082"
         assert router_endpoint == "router.jumpstarter.10.0.0.100.nip.io:8083"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_ip_generic")
     async def test_configure_endpoints_all_defaults(self, mock_get_ip_generic):
         mock_get_ip_generic.return_value = "192.168.1.50"
@@ -212,7 +212,7 @@ class TestConfigureEndpoints:
         assert router_endpoint == "router.jumpstarter.192.168.1.50.nip.io:8083"
         mock_get_ip_generic.assert_called_once_with("minikube", "minikube", "my-cluster")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_ip_generic")
     async def test_configure_endpoints_custom_basedomain_with_defaults(self, mock_get_ip_generic):
         mock_get_ip_generic.return_value = "172.16.0.1"
@@ -233,7 +233,7 @@ class TestConfigureEndpoints:
         assert grpc_endpoint == "grpc.custom.domain.io:8082"
         assert router_endpoint == "router.custom.domain.io:8083"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_ip_generic")
     async def test_configure_endpoints_ip_provided_no_auto_detection(self, mock_get_ip_generic):
         result = await configure_endpoints(
@@ -253,7 +253,7 @@ class TestConfigureEndpoints:
         assert router_endpoint == "router.jumpstarter.192.168.100.50.nip.io:8083"
         mock_get_ip_generic.assert_not_called()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_ip_generic")
     async def test_configure_endpoints_ip_detection_error_propagates(self, mock_get_ip_generic):
         mock_get_ip_generic.side_effect = EndpointConfigurationError("IP detection failed")

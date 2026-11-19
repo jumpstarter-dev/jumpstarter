@@ -8,7 +8,6 @@ def self():
     """
     Manage the jumpstarter executables
     """
-    pass
 
 
 self.add_command(self_update)

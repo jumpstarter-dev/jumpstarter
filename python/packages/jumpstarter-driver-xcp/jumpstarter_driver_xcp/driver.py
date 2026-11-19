@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 from dataclasses import field
+from typing import Any
 
 from pydantic import ConfigDict, validate_call
 from pydantic.dataclasses import dataclass
@@ -133,7 +134,7 @@ class Xcp(Driver):
     can_id_slave: int | None = None
     config_file: str | None = None
 
-    _master: object = field(init=False, repr=False, default=None)
+    _master: Any = field(init=False, repr=False, default=None)
 
     @classmethod
     def client(cls) -> str:

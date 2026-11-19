@@ -6,7 +6,7 @@ import socket
 from contextlib import suppress
 from dataclasses import dataclass, field
 from tempfile import NamedTemporaryFile
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from jumpstarter_driver_opendal.driver import Opendal
 from pydantic import validate_call
@@ -18,13 +18,11 @@ from jumpstarter.driver import Driver, export
 class ISCSIError(Exception):
     """Base exception for iSCSI server errors"""
 
-    pass
 
 
 class ConfigurationError(ISCSIError):
     """Error in iSCSI configuration"""
 
-    pass
 
 
 
@@ -48,14 +46,14 @@ class ISCSI(Driver):
     host: str = field(default="")
     port: int = 3260
     remove_created_on_close: bool = False  # Keep disk images persistent by default
-    block_device_allowlist: List[str] = field(default_factory=list)
+    block_device_allowlist: list[str] = field(default_factory=list)
 
-    _rtsroot: Optional[RTSRoot] = field(init=False, default=None)
-    _target: Optional[Target] = field(init=False, default=None)
-    _tpg: Optional[TPG] = field(init=False, default=None)
-    _storage_objects: Dict[str, Any] = field(init=False, default_factory=dict)
-    _portals: List[NetworkPortal] = field(init=False, default_factory=list)
-    _luns: Dict[str, LUN] = field(init=False, default_factory=dict)
+    _rtsroot: RTSRoot | None = field(init=False, default=None)
+    _target: Target | None = field(init=False, default=None)
+    _tpg: TPG | None = field(init=False, default=None)
+    _storage_objects: dict[str, Any] = field(init=False, default_factory=dict)
+    _portals: list[NetworkPortal] = field(init=False, default_factory=list)
+    _luns: dict[str, LUN] = field(init=False, default_factory=dict)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -87,7 +85,7 @@ class ISCSI(Driver):
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                 s.connect(("8.8.8.8", 80))
                 return s.getsockname()[0]
-        except Exception:
+        except Exception:  # noqa: BLE001
             self.logger.warning("Could not determine default IP address, falling back to 0.0.0.0")
             return "0.0.0.0"
 
@@ -112,43 +110,46 @@ class ISCSI(Driver):
 
     def _setup_target(self):
         """Setup the iSCSI target"""
+        assert self._rtsroot is not None
         target_exists = False
         try:
-            targets_list = list(self._rtsroot.targets)  # type: ignore[attr-defined]
+            targets_list = list(self._rtsroot.targets)
             for target in targets_list:
                 if target.wwn == self._iqn:
                     self._target = target
                     target_exists = True
                     self.logger.info(f"Using existing target: {self._iqn}")
                     if target.tpgs:
-                        self._tpg = list(target.tpgs)[0]
+                        self._tpg = next(iter(target.tpgs))
                     else:
                         self._tpg = TPG(self._target, 1)
                     break
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.warning(f"Error checking for existing target: {e}")
 
         if not target_exists:
             self.logger.info(f"Creating new target: {self._iqn}")
-            fabric_modules = {m.name: m for m in list(self._rtsroot.fabric_modules)}  # type: ignore[attr-defined]
+            fabric_modules = {m.name: m for m in list(self._rtsroot.fabric_modules)}
             iscsi_fabric = fabric_modules.get("iscsi")
             if not iscsi_fabric:
                 raise ISCSIError("Could not find iSCSI fabric module")
             self._target = Target(iscsi_fabric, self._iqn)
             self._tpg = TPG(self._target, 1)
 
-        self._tpg.enable = True  # type: ignore[attr-defined]
+        assert self._tpg is not None
+        self._tpg.enable = True
 
     def _setup_network_portal(self):
         """Setup the network portal for the target"""
+        assert self._tpg is not None
         portal_exists = False
         try:
-            portals = list(self._tpg.network_portals)  # type: ignore[attr-defined]
+            portals = list(self._tpg.network_portals)
             for portal in portals:
                 if portal.ip_address == self.host and portal.port == self.port:
                     portal_exists = True
                     break
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.warning(f"Error checking for existing portal: {e}")
 
         if not portal_exists:
@@ -157,17 +158,19 @@ class ISCSI(Driver):
 
     def _configure_tpg_attributes(self):
         """Configure TPG attributes"""
-        self._tpg.set_attribute("authentication", "0")  # type: ignore[attr-defined]
-        self._tpg.set_attribute("generate_node_acls", "1")  # type: ignore[attr-defined]
-        self._tpg.set_attribute("demo_mode_write_protect", "0")  # type: ignore[attr-defined]
+        assert self._tpg is not None
+        self._tpg.set_attribute("authentication", "0")
+        self._tpg.set_attribute("generate_node_acls", "1")
+        self._tpg.set_attribute("demo_mode_write_protect", "0")
 
     def _clear_tpg_luns(self):
         """Clear all LUNs from the current TPG"""
+        assert self._tpg is not None
         try:
-            for lun in list(self._tpg.luns):  # type: ignore[attr-defined]
+            for lun in list(self._tpg.luns):
                 try:
                     storage_obj = getattr(lun, "storage_object", None)
-                except Exception:
+                except Exception:  # noqa: BLE001
                     storage_obj = None
 
                 try:
@@ -176,23 +179,22 @@ class ISCSI(Driver):
                     if storage_obj is not None:
                         with suppress(Exception):
                             storage_obj.delete()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.warning(f"Failed clearing existing LUNs from TPG: {e}")
 
     def _cleanup_orphan_storage_objects(self):
         """Clean up orphan storage objects under root_dir"""
         try:
             root_abs = os.path.abspath(self.root_dir)
-            for so in list(self._rtsroot.storage_objects):  # type: ignore[attr-defined]
-                try:
+            assert self._rtsroot is not None
+            for so in list(self._rtsroot.storage_objects):
+                with suppress(Exception):
                     if isinstance(so, FileIOStorageObject):
                         udev_path = os.path.abspath(getattr(so, "udev_path", ""))
                         if udev_path.startswith(root_abs + os.sep) or udev_path == root_abs:
                             with suppress(Exception):
                                 so.delete()
-                except Exception:
-                    continue
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.debug(f"No orphan storage object cleanup performed: {e}")
 
     @export
@@ -485,7 +487,7 @@ class ISCSI(Driver):
 
     @export
     @validate_call
-    def list_luns(self) -> List[Dict[str, Any]]:
+    def list_luns(self) -> list[dict[str, Any]]:
         """List all configured LUNs
 
         Returns:
@@ -508,6 +510,6 @@ class ISCSI(Driver):
         """Clean up resources when the driver is closed"""
         try:
             self.stop()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.error(f"Error during cleanup: {e}")
         super().close()

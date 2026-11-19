@@ -2,24 +2,17 @@
 
 from __future__ import annotations
 
-import asyncio
-import asyncio.subprocess
 import logging
+import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import click
 import pytest
 
 from jumpstarter_mcp.connections import Connection, ConnectionManager
-from jumpstarter_mcp.introspect import (
-    _get_public_method_names,
-    get_driver_methods,
-    list_drivers,
-    walk_click_tree,
-)
 from jumpstarter_mcp.server import (
     TOKEN_REFRESH_THRESHOLD_SECONDS,
     _ensure_fresh_token,
@@ -34,7 +27,7 @@ from jumpstarter_mcp.tools.leases import _lease_status
 
 
 class FakePowerClient:
-    children: dict = {}
+    children: ClassVar[dict] = {}
 
     def on(self) -> None:
         """Power on the device."""
@@ -56,7 +49,7 @@ class FakePowerClient:
 
 
 class FakeSerialClient:
-    children: dict = {}
+    children: ClassVar[dict] = {}
 
     def open(self):
         """Open serial port."""
@@ -95,7 +88,7 @@ def _make_connection(
         socket_path=socket_path,
         allow=[],
         unsafe=True,
-        created_at=datetime.now(),
+        created_at=datetime.now(tz=UTC),
         client=client or FakeCompositeClient(),
     )
 
@@ -112,135 +105,20 @@ class FakeLease:
 
 
 # ---------------------------------------------------------------------------
-# walk_click_tree
+# Introspection re-exports
 # ---------------------------------------------------------------------------
 
 
-class TestWalkClickTree:
-    def test_simple_command(self):
-        @click.command("hello")
-        @click.option("--name", help="Your name")
-        def hello(name):
-            """Say hello."""
+class TestIntrospectReexports:
+    def test_reexports_core_implementation(self):
+        import jumpstarter_mcp.introspect as shim
 
-        result = walk_click_tree(hello)
-        assert result["name"] == "hello"
-        assert result["help"] == "Say hello."
-        assert len(result["params"]) == 1
-        assert result["params"][0]["name"] == "name"
-        assert result["params"][0]["help"] == "Your name"
-        assert "subcommands" not in result
+        import jumpstarter.client.introspect as core
 
-    def test_group_with_subcommands(self):
-        @click.group("root")
-        def root():
-            """Root group."""
-
-        @root.command("sub1")
-        def sub1():
-            """First sub."""
-
-        @root.command("sub2")
-        @click.option("--count", type=int, default=5)
-        def sub2(count):
-            """Second sub."""
-
-        result = walk_click_tree(root)
-        assert result["name"] == "root"
-        assert "subcommands" in result
-        assert "sub1" in result["subcommands"]
-        assert "sub2" in result["subcommands"]
-        assert result["subcommands"]["sub2"]["params"][0]["name"] == "count"
-        assert result["subcommands"]["sub2"]["params"][0]["default"] == 5
-
-    def test_hidden_params_excluded(self):
-        @click.command("cmd")
-        @click.option("--visible", help="shown")
-        @click.option("--secret", hidden=True)
-        def cmd(visible, secret):
-            pass
-
-        result = walk_click_tree(cmd)
-        names = [p["name"] for p in result["params"]]
-        assert "visible" in names
-        assert "secret" not in names
-
-
-# Introspection tests
-# ---------------------------------------------------------------------------
-
-
-class TestGetPublicMethodNames:
-    def test_filters_private_and_base_methods(self):
-        names = _get_public_method_names(FakePowerClient())
-        assert "on" in names
-        assert "off" in names
-        assert "cycle" in names
-        assert "_private" not in names
-        assert "call" not in names
-        assert "check_exporter_status" not in names
-
-
-class TestListDrivers:
-    def test_flat_tree(self):
-        client = FakeCompositeClient()
-        result = list_drivers(client)
-        paths = [d["path"] for d in result]
-        assert "client" in paths
-        assert "client.power" in paths
-        assert "client.serial" in paths
-
-    def test_driver_path_field(self):
-        client = FakeCompositeClient()
-        result = list_drivers(client)
-        root = next(d for d in result if d["path"] == "client")
-        assert root["driver_path"] == []
-        power = next(d for d in result if d["path"] == "client.power")
-        assert power["driver_path"] == ["power"]
-
-    def test_methods_populated(self):
-        client = FakeCompositeClient()
-        result = list_drivers(client)
-        power = next(d for d in result if d["path"] == "client.power")
-        assert "on" in power["methods"]
-        assert "off" in power["methods"]
-
-
-class TestGetDriverMethods:
-    def test_returns_method_details(self):
-        client = FakeCompositeClient()
-        result = get_driver_methods(client, ["power"])
-        assert result["driver_path"] == ["power"]
-        method_names = [m["name"] for m in result["methods"]]
-        assert "on" in method_names
-        assert "off" in method_names
-        assert "cycle" in method_names
-
-    def test_call_example_uses_dot_notation(self):
-        client = FakeCompositeClient()
-        result = get_driver_methods(client, ["power"])
-        cycle = next(m for m in result["methods"] if m["name"] == "cycle")
-        assert "client.power.cycle(" in cycle["call_example"]
-        assert 'children["power"]' not in cycle["call_example"]
-
-    def test_invalid_path_raises(self):
-        client = FakeCompositeClient()
-        with pytest.raises(KeyError, match="nonexistent"):
-            get_driver_methods(client, ["nonexistent"])
-
-    def test_docstrings_captured(self):
-        client = FakeCompositeClient()
-        result = get_driver_methods(client, ["power"])
-        on_method = next(m for m in result["methods"] if m["name"] == "on")
-        assert on_method["docstring"] == "Power on the device."
-
-    def test_parameters_captured(self):
-        client = FakeCompositeClient()
-        result = get_driver_methods(client, ["power"])
-        cycle = next(m for m in result["methods"] if m["name"] == "cycle")
-        assert len(cycle["parameters"]) == 1
-        assert cycle["parameters"][0]["name"] == "wait"
-        assert cycle["parameters"][0]["default"] == "2"
+        assert shim.walk_click_tree is core.walk_click_tree
+        assert shim.list_drivers is core.list_drivers
+        assert shim.get_driver_methods is core.get_driver_methods
+        assert shim._get_public_method_names is core._get_public_method_names
 
 
 # ---------------------------------------------------------------------------
@@ -323,57 +201,47 @@ class TestRunCommand:
         manager._connections[conn.id] = conn
         return manager, conn.id
 
-    @pytest.mark.asyncio
-    async def test_successful_command(self, manager_with_conn):
+    @pytest.fixture()
+    def fake_j(self, tmp_path):
+        def make(script: str) -> str:
+            path = tmp_path / "j"
+            path.write_text(f"#!{sys.executable}\nimport os, sys, time\n{script}\n")
+            path.chmod(0o755)
+            return str(path)
+
+        return make
+
+    @pytest.mark.anyio
+    async def test_successful_command(self, manager_with_conn, fake_j):
         from jumpstarter_mcp.tools.commands import run_command
 
         manager, conn_id = manager_with_conn
+        j = fake_j("print(' '.join(sys.argv[1:]))")
 
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"hello\n", b""))
-        mock_proc.returncode = 0
-
-        with (
-            patch("shutil.which", return_value="/usr/bin/j"),
-            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
-        ):
+        with patch("shutil.which", return_value=j):
             result = await run_command(manager, conn_id, ["power", "on"])
 
         assert result["exit_code"] == 0
-        assert result["stdout"] == "hello\n"
+        assert result["stdout"] == "power on\n"
+        assert result["command"] == [j, "power", "on"]
         assert "timed_out" not in result
 
-    @pytest.mark.asyncio
-    async def test_timeout_captures_output(self, manager_with_conn):
+    @pytest.mark.anyio
+    async def test_timeout_keeps_the_output_printed_before_it(self, manager_with_conn, fake_j):
         from jumpstarter_mcp.tools.commands import run_command
 
         manager, conn_id = manager_with_conn
+        j = fake_j("print('partial', flush=True); sys.stderr.write('err'); sys.stderr.flush(); time.sleep(60)")
 
-        call_count = 0
-
-        async def fake_communicate():
-            nonlocal call_count
-            call_count += 1  # ty: ignore[unresolved-reference]
-            if call_count == 1:
-                await asyncio.sleep(999)
-            return (b"partial", b"err")
-
-        mock_proc = AsyncMock()
-        mock_proc.communicate = fake_communicate
-        mock_proc.kill = lambda: None
-        mock_proc.returncode = -9
-
-        with (
-            patch("shutil.which", return_value="/usr/bin/j"),
-            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
-        ):
+        with patch("shutil.which", return_value=j):
             result = await run_command(manager, conn_id, ["serial", "pipe"], timeout_seconds=1)
 
         assert result["timed_out"] is True
         assert result["timeout_seconds"] == 1
-        assert result["stdout"] == "partial"
+        assert result["stdout"] == "partial\n"
+        assert result["stderr"] == "err"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_j_not_found(self, manager_with_conn):
         from jumpstarter_mcp.tools.commands import run_command
 
@@ -385,25 +253,30 @@ class TestRunCommand:
         assert "error" in result
         assert "not found" in result["error"]
 
-    @pytest.mark.asyncio
-    async def test_subprocess_stdin_is_devnull(self, manager_with_conn):
+    @pytest.mark.anyio
+    async def test_subprocess_stdin_is_empty(self, manager_with_conn, fake_j):
         """Subprocess must not inherit MCP's stdin (would consume JSON-RPC input)."""
         from jumpstarter_mcp.tools.commands import run_command
 
         manager, conn_id = manager_with_conn
+        j = fake_j("print(repr(sys.stdin.read()))")
 
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"ok\n", b""))
-        mock_proc.returncode = 0
+        with patch("shutil.which", return_value=j):
+            result = await run_command(manager, conn_id, ["power", "on"], timeout_seconds=5)
 
-        with (
-            patch("shutil.which", return_value="/usr/bin/j"),
-            patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec,
-        ):
-            await run_command(manager, conn_id, ["power", "on"])
+        assert result["stdout"] == "''\n"
 
-        _, kwargs = mock_exec.call_args
-        assert kwargs["stdin"] == asyncio.subprocess.DEVNULL
+    @pytest.mark.anyio
+    async def test_command_reaches_the_connection_socket(self, manager_with_conn, fake_j):
+        from jumpstarter_mcp.tools.commands import run_command
+
+        manager, conn_id = manager_with_conn
+        j = fake_j("print(os.environ['JUMPSTARTER_HOST'])")
+
+        with patch("shutil.which", return_value=j):
+            result = await run_command(manager, conn_id, ["power", "on"])
+
+        assert result["stdout"] == manager.get_connection(conn_id).socket_path + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -437,14 +310,14 @@ def _make_jwt_payload(exp: int | None = None, iss: str = "https://sso.example.co
 
 
 class TestEnsureFreshToken:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_no_token_returns_config_unchanged(self):
         config = MagicMock()
         config.token = None
         result = await _ensure_fresh_token(config)
         assert result is config
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_valid_token_skips_refresh(self):
         future_exp = int(time.time()) + 3600
         config = MagicMock()
@@ -457,7 +330,7 @@ class TestEnsureFreshToken:
         assert result is config
         mock_cls.save.assert_not_called()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_expired_token_no_refresh_token_skips(self):
         past_exp = int(time.time()) - 60
         config = MagicMock()
@@ -467,7 +340,7 @@ class TestEnsureFreshToken:
         result = await _ensure_fresh_token(config)
         assert result is config
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_expired_token_refreshes_successfully(self):
         past_exp = int(time.time()) - 60
         config = MagicMock()
@@ -492,7 +365,7 @@ class TestEnsureFreshToken:
         assert result.refresh_token == new_refresh
         mock_cls.save.assert_called_once_with(config)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_expired_token_refresh_updates_only_access_when_no_new_refresh(self):
         past_exp = int(time.time()) - 60
         config = MagicMock()
@@ -513,7 +386,7 @@ class TestEnsureFreshToken:
         assert result.token == "new-access"
         assert result.refresh_token == "old-refresh"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_expired_token_refresh_failure_returns_config_unchanged(self):
         past_exp = int(time.time()) - 60
         original_token = _make_jwt_payload(exp=past_exp)
@@ -533,7 +406,7 @@ class TestEnsureFreshToken:
         assert result is config
         mock_cls.save.assert_not_called()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_near_expiry_triggers_refresh(self):
         near_exp = int(time.time()) + TOKEN_REFRESH_THRESHOLD_SECONDS - 1
         config = MagicMock()
@@ -551,7 +424,7 @@ class TestEnsureFreshToken:
 
         assert result.token == "refreshed"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_token_without_exp_claim_skips_refresh(self):
         config = MagicMock()
         config.token = _make_jwt_payload(exp=None)
@@ -579,9 +452,7 @@ class TestSetupLogging:
                 _setup_logging()
 
             new_file_handlers = [
-                h
-                for h in root.handlers
-                if isinstance(h, logging.FileHandler) and h not in handlers_before
+                h for h in root.handlers if isinstance(h, logging.FileHandler) and h not in handlers_before
             ]
             assert len(new_file_handlers) == 1
             assert "mcp-server.log" in new_file_handlers[0].baseFilename
@@ -655,7 +526,7 @@ class TestStdoutIsolation:
 
             # Apply the same redirect pattern as run_server():
             sys.stdout.flush()
-            mcp_fd = os.dup(sys.stdout.fileno())   # save "real stdout" (pipe)
+            mcp_fd = os.dup(sys.stdout.fileno())  # save "real stdout" (pipe)
             os.dup2(sys.stderr.fileno(), sys.stdout.fileno())  # fd 1 -> stderr
             sys.stdout = sys.stderr
 
@@ -685,3 +556,48 @@ class TestStdoutIsolation:
             os.close(r_err)
             sys.stdout = saved_sys_stdout
             sys.stderr = saved_sys_stderr
+
+
+# ---------------------------------------------------------------------------
+# jmp_list_events
+# ---------------------------------------------------------------------------
+
+
+class TestListEvents:
+    @pytest.mark.anyio
+    async def test_empty_queue_returns_empty_list(self):
+        import json
+
+        from jumpstarter_mcp.tools.commands import list_events
+
+        _, manager = create_server()
+        result = json.loads(await list_events(manager))
+        assert result == []
+
+    @pytest.mark.anyio
+    async def test_events_are_drained(self):
+        import json
+
+        from jumpstarter_mcp.tools.commands import list_events
+
+        _, manager = create_server()
+        manager._append_event("warning", "lease expiring", "conn-1")
+        result = json.loads(await list_events(manager))
+        assert len(result) == 1
+        assert result[0]["level"] == "warning"
+        assert result[0]["message"] == "lease expiring"
+        assert json.loads(await list_events(manager)) == []
+
+    @pytest.mark.anyio
+    async def test_max_count_respected(self):
+        import json
+
+        from jumpstarter_mcp.tools.commands import list_events
+
+        _, manager = create_server()
+        for i in range(10):
+            manager._append_event("info", f"event {i}", "conn-1")
+        result = json.loads(await list_events(manager, max_count=3))
+        assert len(result) == 3
+        remaining = json.loads(await list_events(manager, max_count=100))
+        assert len(remaining) == 7

@@ -57,5 +57,5 @@ Options:
 
 Commands:
   info           Get target information
-  start-console  Start BLE console
+  console        Start BLE console
 ```

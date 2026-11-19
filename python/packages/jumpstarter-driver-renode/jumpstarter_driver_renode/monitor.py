@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 
 from anyio import connect_tcp, fail_after, sleep
@@ -45,10 +46,8 @@ class RenodeMonitor:
                     return
                 except OSError:
                     if self._stream is not None:
-                        try:
+                        with contextlib.suppress(Exception):
                             await self._stream.aclose()
-                        except Exception:
-                            pass
                         self._stream = None
                     await sleep(0.5)
 
@@ -92,10 +91,8 @@ class RenodeMonitor:
     async def disconnect(self) -> None:
         """Close the monitor connection."""
         if self._stream is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await self._stream.aclose()
-            except Exception:
-                pass
             self._stream = None
             self._buffer = b""
 
@@ -109,11 +106,9 @@ class RenodeMonitor:
         self._stream = None
         self._buffer = b""
         if stream is not None:
-            try:
+            with contextlib.suppress(Exception):
                 raw_sock = stream.extra(SocketAttribute.raw_socket)
                 raw_sock.close()
-            except Exception:
-                pass
 
     async def _read_until_prompt(self) -> str:
         """Read from the stream until a monitor prompt line is detected.

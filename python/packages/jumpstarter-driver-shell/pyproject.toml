@@ -4,7 +4,7 @@ dynamic = ["version", "urls"]
 description = "Jumpstarter shell driver, for running controlled shell commands on the exporter."
 readme = "README.md"
 authors = [{ name = "Miguel Angel Ajo", email = "miguelangel@ajo.es" }]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = "Apache-2.0"
 dependencies = ["anyio>=4.10.0", "jumpstarter", "click>=8.1.8"]
 
@@ -16,10 +16,8 @@ log_cli = true
 log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_shell"]
 
-
 [dependency-groups]
-dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3"]
-
+dev = ["pytest-cov>=6.0.0", "pytest>=8.4"]
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"

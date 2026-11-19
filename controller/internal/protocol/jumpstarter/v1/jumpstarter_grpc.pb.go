@@ -33,6 +33,8 @@ const (
 	ControllerService_ReleaseLease_FullMethodName        = "/jumpstarter.v1.ControllerService/ReleaseLease"
 	ControllerService_ListLeases_FullMethodName          = "/jumpstarter.v1.ControllerService/ListLeases"
 	ControllerService_GetServiceEndpoints_FullMethodName = "/jumpstarter.v1.ControllerService/GetServiceEndpoints"
+	ControllerService_UpdateLeaseHooks_FullMethodName    = "/jumpstarter.v1.ControllerService/UpdateLeaseHooks"
+	ControllerService_RotateToken_FullMethodName         = "/jumpstarter.v1.ControllerService/RotateToken"
 )
 
 // ControllerServiceClient is the client API for ControllerService service.
@@ -70,6 +72,13 @@ type ControllerServiceClient interface {
 	// Returns an empty list when no optional services are deployed.
 	// Older controllers return UNIMPLEMENTED; callers must treat that as an empty list.
 	GetServiceEndpoints(ctx context.Context, in *GetServiceEndpointsRequest, opts ...grpc.CallOption) (*GetServiceEndpointsResponse, error)
+	// Record a lifecycle hook transition for the exporter's lease.
+	// The record survives exporter restarts. Exporters start a hook only after the
+	// controller has stored it as running. Returns FAILED_PRECONDITION for a
+	// transition the record does not allow (for example a stale lease).
+	UpdateLeaseHooks(ctx context.Context, in *UpdateLeaseHooksRequest, opts ...grpc.CallOption) (*LeaseHooks, error)
+	// Rotate the authentication token for the exporter.
+	RotateToken(ctx context.Context, in *RotateTokenRequest, opts ...grpc.CallOption) (*RotateTokenResponse, error)
 }
 
 type controllerServiceClient struct {
@@ -208,6 +217,26 @@ func (c *controllerServiceClient) GetServiceEndpoints(ctx context.Context, in *G
 	return out, nil
 }
 
+func (c *controllerServiceClient) UpdateLeaseHooks(ctx context.Context, in *UpdateLeaseHooksRequest, opts ...grpc.CallOption) (*LeaseHooks, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LeaseHooks)
+	err := c.cc.Invoke(ctx, ControllerService_UpdateLeaseHooks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *controllerServiceClient) RotateToken(ctx context.Context, in *RotateTokenRequest, opts ...grpc.CallOption) (*RotateTokenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RotateTokenResponse)
+	err := c.cc.Invoke(ctx, ControllerService_RotateToken_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ControllerServiceServer is the server API for ControllerService service.
 // All implementations must embed UnimplementedControllerServiceServer
 // for forward compatibility.
@@ -243,6 +272,13 @@ type ControllerServiceServer interface {
 	// Returns an empty list when no optional services are deployed.
 	// Older controllers return UNIMPLEMENTED; callers must treat that as an empty list.
 	GetServiceEndpoints(context.Context, *GetServiceEndpointsRequest) (*GetServiceEndpointsResponse, error)
+	// Record a lifecycle hook transition for the exporter's lease.
+	// The record survives exporter restarts. Exporters start a hook only after the
+	// controller has stored it as running. Returns FAILED_PRECONDITION for a
+	// transition the record does not allow (for example a stale lease).
+	UpdateLeaseHooks(context.Context, *UpdateLeaseHooksRequest) (*LeaseHooks, error)
+	// Rotate the authentication token for the exporter.
+	RotateToken(context.Context, *RotateTokenRequest) (*RotateTokenResponse, error)
 	mustEmbedUnimplementedControllerServiceServer()
 }
 
@@ -285,6 +321,12 @@ func (UnimplementedControllerServiceServer) ListLeases(context.Context, *ListLea
 }
 func (UnimplementedControllerServiceServer) GetServiceEndpoints(context.Context, *GetServiceEndpointsRequest) (*GetServiceEndpointsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetServiceEndpoints not implemented")
+}
+func (UnimplementedControllerServiceServer) UpdateLeaseHooks(context.Context, *UpdateLeaseHooksRequest) (*LeaseHooks, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateLeaseHooks not implemented")
+}
+func (UnimplementedControllerServiceServer) RotateToken(context.Context, *RotateTokenRequest) (*RotateTokenResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RotateToken not implemented")
 }
 func (UnimplementedControllerServiceServer) mustEmbedUnimplementedControllerServiceServer() {}
 func (UnimplementedControllerServiceServer) testEmbeddedByValue()                           {}
@@ -491,6 +533,42 @@ func _ControllerService_GetServiceEndpoints_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ControllerService_UpdateLeaseHooks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateLeaseHooksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControllerServiceServer).UpdateLeaseHooks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControllerService_UpdateLeaseHooks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControllerServiceServer).UpdateLeaseHooks(ctx, req.(*UpdateLeaseHooksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ControllerService_RotateToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RotateTokenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControllerServiceServer).RotateToken(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControllerService_RotateToken_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControllerServiceServer).RotateToken(ctx, req.(*RotateTokenRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ControllerService_ServiceDesc is the grpc.ServiceDesc for ControllerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -533,6 +611,14 @@ var ControllerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetServiceEndpoints",
 			Handler:    _ControllerService_GetServiceEndpoints_Handler,
+		},
+		{
+			MethodName: "UpdateLeaseHooks",
+			Handler:    _ControllerService_UpdateLeaseHooks_Handler,
+		},
+		{
+			MethodName: "RotateToken",
+			Handler:    _ControllerService_RotateToken_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

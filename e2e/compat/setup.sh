@@ -8,7 +8,7 @@
 # Environment variables:
 #   COMPAT_SCENARIO      - "old-controller" or "old-client" (required)
 #   COMPAT_CONTROLLER_TAG - Controller release tag for old-controller scenario (default: v0.8.1)
-#   COMPAT_CLIENT_VERSION - PyPI version for old-client scenario (default: 0.7.4)
+#   COMPAT_CLIENT_VERSION - PyPI version for old-client scenario (default: 0.9.0)
 
 set -euo pipefail
 
@@ -27,9 +27,9 @@ export JS_NAMESPACE="${JS_NAMESPACE:-jumpstarter-lab}"
 # Scenario configuration
 COMPAT_SCENARIO="${COMPAT_SCENARIO:-old-controller}"
 # renovate: datasource=github-releases depName=jumpstarter-dev/jumpstarter
-COMPAT_CONTROLLER_TAG="${COMPAT_CONTROLLER_TAG:-v0.8.1}"
+COMPAT_CONTROLLER_TAG="${COMPAT_CONTROLLER_TAG:-v0.9.0}"
 # renovate: datasource=pypi depName=jumpstarter
-COMPAT_CLIENT_VERSION="${COMPAT_CLIENT_VERSION:-0.7.4}"
+COMPAT_CLIENT_VERSION="${COMPAT_CLIENT_VERSION:-0.9.0}"
 
 # Color output
 RED='\033[0;31m'
@@ -216,7 +216,9 @@ install_old_client() {
     # Create a separate venv for old client
     uv venv "$OLD_JMP_DIR/.venv" --python "$(cat "$REPO_ROOT/.py-version")"
 
-    # Install old packages from PyPI
+    # Released versions are on PyPI, so pkg.jumpstarter.dev is not added as an
+    # extra index: uv would ask it about every dependency first, and any 5xx
+    # it returns (GitHub Pages outages do this) aborts the install.
     uv pip install --python "$OLD_JMP_DIR/.venv/bin/python" \
         "jumpstarter-cli==${COMPAT_CLIENT_VERSION}" \
         "jumpstarter==${COMPAT_CLIENT_VERSION}" \

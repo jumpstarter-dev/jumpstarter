@@ -1,4 +1,5 @@
 import sys
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from functools import cached_property
@@ -6,7 +7,11 @@ from functools import cached_property
 import pexpect
 from jumpstarter_driver_composite.client import CompositeClient
 
-from .common import ESC, DhcpInfo
+from .common import DEFAULT_PROMPT_TIMEOUT, ESC, DhcpInfo
+from jumpstarter.client.core import DriverMethodNotImplemented
+
+# reboot_to_console sends ESC and looks for the prompt this often
+PROMPT_POLL_INTERVAL = 0.1
 
 
 class UbootConsoleClient(CompositeClient):
@@ -18,12 +23,26 @@ class UbootConsoleClient(CompositeClient):
 
         return self.call("get_prompt")
 
+    @cached_property
+    def prompt_timeout(self) -> float:
+        """
+        Seconds to wait for the U-Boot prompt after power cycling the target
+        """
+
+        try:
+            return self.call("get_prompt_timeout")
+        except DriverMethodNotImplemented:
+            # exporters that predate the prompt_timeout setting
+            return DEFAULT_PROMPT_TIMEOUT
+
     @contextmanager
-    def reboot_to_console(self, *, debug: bool = False, retries: int = 100) -> Generator[None]:
+    def reboot_to_console(self, *, debug: bool = False, retries: int | None = None) -> Generator[None]:
         """
         Reboot to U-Boot console
 
-        Power cycle the target and wait for the U-Boot prompt
+        Power cycle the target and wait for the U-Boot prompt, for up to the
+        exporter's prompt_timeout. retries overrides that for this call, as a
+        number of 0.1 s attempts.
 
         Must be used as a context manager, other methods can only be
         used within the reboot_to_console context
@@ -34,25 +53,31 @@ class UbootConsoleClient(CompositeClient):
         >>> # uboot.set_env("foo", "baz") # invalid use
         """
 
+        timeout = self.prompt_timeout if retries is None else retries * PROMPT_POLL_INTERVAL
+
         self.logger.info("Power cycling target...")
         self.power.cycle()
 
-        self.logger.info("Waiting for U-Boot prompt...")
+        self.logger.info(f"Waiting up to {timeout:g}s for U-Boot prompt...")
 
         with self.serial.pexpect() as p:
             if debug:
                 p.logfile_read = sys.stdout.buffer
 
-            for _ in range(retries):
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
                 try:
                     p.send(ESC)
-                    p.expect_exact(self.prompt.lstrip("\n"), timeout=0.1)
+                    p.expect_exact(self.prompt.lstrip("\n"), timeout=PROMPT_POLL_INTERVAL)
                 except pexpect.TIMEOUT:
                     continue
 
                 break
             else:
-                raise RuntimeError("Failed to get U-Boot prompt")
+                raise RuntimeError(
+                    f"Failed to get U-Boot prompt within {timeout:g}s"
+                    " (a board that boots slower needs a higher prompt_timeout in the exporter config)"
+                )
 
             self.p = p
             try:
@@ -83,11 +108,11 @@ class UbootConsoleClient(CompositeClient):
         while tries > 0:
             tries-=1
             self.logger.info(f"Running command checked: {cmd}")
-            output = self.run_command("{}; echo $?".format(cmd), timeout=timeout, _internal_log=False)
+            output = self.run_command(f"{cmd}; echo $?", timeout=timeout, _internal_log=False)
             parsed = output.strip().decode().splitlines()
 
             if len(parsed) < 2:
-                raise RuntimeError("Insufficient lines returned from command execution, raw output: {}".format(output))
+                raise RuntimeError(f"Insufficient lines returned from command execution, raw output: {output}")
 
             try:
                 retval = int(parsed[-1])
@@ -103,7 +128,7 @@ class UbootConsoleClient(CompositeClient):
                 self.run_command("sleep 2", _internal_log=False)
 
         if check and retval != 0:
-            raise RuntimeError("Command failed with return value: {}, output: {}".format(retval, output))
+            raise RuntimeError(f"Command failed with return value: {retval}, output: {output}")
 
         return parsed[1:-1]
 
@@ -135,10 +160,10 @@ class UbootConsoleClient(CompositeClient):
 
         self.logger.debug(f"Getting U-Boot env var: {key}")
         try:
-            output = self.run_command_checked("printenv {}".format(key), timeout, check=False)
+            output = self.run_command_checked(f"printenv {key}", timeout, check=False)
             if len(output) != 1:
                 raise RuntimeError(
-                    "Invalid number of lines returned from printenv command, output: {}".format(output),
+                    f"Invalid number of lines returned from printenv command, output: {output}",
                 )
 
             if output[0].startswith("## Error") and output[0].endswith("not defined"):
@@ -147,7 +172,7 @@ class UbootConsoleClient(CompositeClient):
             parsed = output[0].split("=", 1)
             if len(parsed) != 2:
                 raise RuntimeError(
-                    "Failed to parse output of printenv command, output: {}".format(output[0]),
+                    f"Failed to parse output of printenv command, output: {output[0]}",
                 )
 
             return parsed[1]
@@ -160,9 +185,9 @@ class UbootConsoleClient(CompositeClient):
         """
 
         if value is not None:
-            cmd = "setenv {} '{}'".format(key, value)
+            cmd = f"setenv {key} '{value}'"
         else:
-            cmd = "setenv {}".format(key)
+            cmd = f"setenv {key}"
 
         try:
             self.run_command_checked(cmd, timeout=timeout)

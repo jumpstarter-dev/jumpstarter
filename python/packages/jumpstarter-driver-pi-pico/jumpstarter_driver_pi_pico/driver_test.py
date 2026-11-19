@@ -1,7 +1,7 @@
-import asyncio
 from dataclasses import dataclass, field
 from unittest.mock import MagicMock
 
+import anyio
 import pytest
 from jumpstarter_driver_pyserial.driver import PySerial
 
@@ -167,7 +167,7 @@ def test_drivers_pi_pico_dump_not_implemented(monkeypatch, tmp_path):
     )
 
     with pytest.raises(NotImplementedError, match="not supported"):
-        asyncio.run(driver.dump(None, None))
+        anyio.run(driver.dump, None, None)
 
 
 def test_drivers_pi_pico_enter_bootloader_via_gpio(monkeypatch, tmp_path):
@@ -183,7 +183,7 @@ def test_drivers_pi_pico_enter_bootloader_via_gpio(monkeypatch, tmp_path):
 
     def _fake_mounts():
         nonlocal call_count
-        call_count += 1  # ty: ignore[unresolved-reference]
+        call_count += 1
         if call_count <= 1:
             return []
         return [boot]
@@ -213,7 +213,7 @@ def test_drivers_pi_pico_gpio_preferred_over_serial(monkeypatch, tmp_path):
 
     def _fake_mounts():
         nonlocal call_count
-        call_count += 1  # ty: ignore[unresolved-reference]
+        call_count += 1
         if call_count <= 1:
             return []
         return [boot]
@@ -242,7 +242,7 @@ def test_drivers_pi_pico_flash_via_gpio(monkeypatch, tmp_path):
 
     def _fake_mounts():
         nonlocal call_count
-        call_count += 1  # ty: ignore[unresolved-reference]
+        call_count += 1
         if call_count <= 2:
             return []
         return [boot]
@@ -257,7 +257,7 @@ def test_drivers_pi_pico_flash_via_gpio(monkeypatch, tmp_path):
 
 
 def test_drivers_pi_pico_no_children_raises(monkeypatch):
-    monkeypatch.setattr("jumpstarter_driver_pi_pico.driver.find_all_bootloader_mounts", lambda: [])
+    monkeypatch.setattr("jumpstarter_driver_pi_pico.driver.find_all_bootloader_mounts", list)
     driver = PiPicoFlasher()
     with pytest.raises(NotImplementedError, match="GPIO children.*serial"):
         driver.enter_bootloader()

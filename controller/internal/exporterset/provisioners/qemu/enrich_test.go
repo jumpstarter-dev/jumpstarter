@@ -17,10 +17,13 @@ limitations under the License.
 package qemu
 
 import (
+	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/qemudriver"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
@@ -29,7 +32,7 @@ func TestEnrichExporterExport_injectsLauncherSocket(t *testing.T) {
 		{
 			Name: "qemu",
 			Type: qemuDriverType,
-			Config: mustJSON(map[string]interface{}{
+			Config: mustJSON(map[string]any{
 				"arch": "x86_64",
 				"smp":  2,
 				"mem":  "2G",
@@ -37,7 +40,7 @@ func TestEnrichExporterExport_injectsLauncherSocket(t *testing.T) {
 		},
 	}
 
-	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,19 +61,19 @@ func TestEnrichExporterExport_injectsDefaultPartitionsX86(t *testing.T) {
 		{
 			Name: "qemu",
 			Type: qemuDriverType,
-			Config: mustJSON(map[string]interface{}{
+			Config: mustJSON(map[string]any{
 				"arch": "x86_64",
 			}),
 		},
 	}
 
-	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	config := unmarshalConfig(t, findDriver(result, "qemu").Config)
-	partitions, ok := config["default_partitions"].(map[string]interface{})
+	partitions, ok := config["default_partitions"].(map[string]any)
 	if !ok {
 		t.Fatalf("default_partitions not a map: %T", config["default_partitions"])
 	}
@@ -87,19 +90,19 @@ func TestEnrichExporterExport_injectsDefaultPartitionsAarch64(t *testing.T) {
 		{
 			Name: "qemu",
 			Type: qemuDriverType,
-			Config: mustJSON(map[string]interface{}{
+			Config: mustJSON(map[string]any{
 				"arch": "aarch64",
 			}),
 		},
 	}
 
-	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	config := unmarshalConfig(t, findDriver(result, "qemu").Config)
-	partitions, ok := config["default_partitions"].(map[string]interface{})
+	partitions, ok := config["default_partitions"].(map[string]any)
 	if !ok {
 		t.Fatalf("default_partitions not a map: %T", config["default_partitions"])
 	}
@@ -112,7 +115,7 @@ func TestEnrichExporterExport_injectsDefaultPartitionsAarch64(t *testing.T) {
 }
 
 func TestEnrichExporterExport_respectsUserDefaultPartitions(t *testing.T) {
-	userPartitions := map[string]interface{}{
+	userPartitions := map[string]any{
 		"OVMF_CODE.fd": "/custom/path/code.fd",
 		"OVMF_VARS.fd": "/custom/path/vars.fd",
 	}
@@ -120,20 +123,20 @@ func TestEnrichExporterExport_respectsUserDefaultPartitions(t *testing.T) {
 		{
 			Name: "qemu",
 			Type: qemuDriverType,
-			Config: mustJSON(map[string]interface{}{
+			Config: mustJSON(map[string]any{
 				"arch":               "x86_64",
 				"default_partitions": userPartitions,
 			}),
 		},
 	}
 
-	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	config := unmarshalConfig(t, findDriver(result, "qemu").Config)
-	partitions, ok := config["default_partitions"].(map[string]interface{})
+	partitions, ok := config["default_partitions"].(map[string]any)
 	if !ok {
 		t.Fatalf("default_partitions not a map: %T", config["default_partitions"])
 	}
@@ -147,23 +150,23 @@ func TestEnrichExporterExport_injectsHostfwdSSH(t *testing.T) {
 		{
 			Name: "qemu",
 			Type: qemuDriverType,
-			Config: mustJSON(map[string]interface{}{
+			Config: mustJSON(map[string]any{
 				"arch": "x86_64",
 			}),
 		},
 	}
 
-	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	config := unmarshalConfig(t, findDriver(result, "qemu").Config)
-	hostfwd, ok := config["hostfwd"].(map[string]interface{})
+	hostfwd, ok := config["hostfwd"].(map[string]any)
 	if !ok {
 		t.Fatalf("hostfwd not a map: %T", config["hostfwd"])
 	}
-	ssh, ok := hostfwd["ssh"].(map[string]interface{})
+	ssh, ok := hostfwd["ssh"].(map[string]any)
 	if !ok {
 		t.Fatalf("hostfwd.ssh not a map: %T", hostfwd["ssh"])
 	}
@@ -183,13 +186,13 @@ func TestEnrichExporterExport_autoInjectsTCPDriver(t *testing.T) {
 		{
 			Name: "qemu",
 			Type: qemuDriverType,
-			Config: mustJSON(map[string]interface{}{
+			Config: mustJSON(map[string]any{
 				"arch": "x86_64",
 			}),
 		},
 	}
 
-	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,23 +206,191 @@ func TestEnrichExporterExport_autoInjectsTCPDriver(t *testing.T) {
 	}
 }
 
+func TestEnrichExporterExport_rejectsOwnedChildAsTopLevel(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "qemu",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+		{
+			Name: "power",
+			Type: "jumpstarter_driver_qemu.driver.QemuPower",
+		},
+	}
+
+	_, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
+	if err == nil {
+		t.Fatal("expected error for owned child type as top-level driver")
+	}
+	if !strings.Contains(err.Error(), "cannot be a top-level driver") {
+		t.Errorf("error = %q, want message about top-level driver", err)
+	}
+}
+
+func TestEnrichExporterExport_aliasesPresetRoots(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "vm",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+	}
+
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, alias := range qemudriver.PresetRootChildren {
+		got := findDriver(result, alias.Root)
+		if got == nil {
+			t.Fatalf("missing root alias %q", alias.Root)
+		}
+		want := "vm." + alias.Child
+		if got.Ref != want {
+			t.Errorf("%s.ref = %q, want %q", alias.Root, got.Ref, want)
+		}
+		if got.Type != "" {
+			t.Errorf("%s.type = %q, want empty", alias.Root, got.Type)
+		}
+	}
+}
+
+func TestEnrichExporterExport_keepsExistingPresetRoot(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "qemu",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+		{Name: "power", Ref: "custom.power"},
+	}
+
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	power := findDriver(result, "power")
+	if power == nil {
+		t.Fatal("power root missing")
+	}
+	if power.Ref != "custom.power" {
+		t.Errorf("power.ref = %q, want custom.power (user-provided)", power.Ref)
+	}
+
+	count := 0
+	for _, d := range result {
+		if d.Name == "power" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("power driver count = %d, want 1", count)
+	}
+
+	for _, alias := range qemudriver.PresetRootChildren {
+		if alias.Root == "power" {
+			continue
+		}
+		got := findDriver(result, alias.Root)
+		if got == nil {
+			t.Fatalf("missing auto-aliased %q", alias.Root)
+		}
+		if got.Ref != "qemu."+alias.Child {
+			t.Errorf("%s.ref = %q, want qemu.%s", alias.Root, got.Ref, alias.Child)
+		}
+	}
+}
+
+func TestEnrichExporterExport_skipsPresetRootsWhenMultipleQemu(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "qemu-a",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+		{
+			Name:   "qemu-b",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+	}
+
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, alias := range qemudriver.PresetRootChildren {
+		if got := findDriver(result, alias.Root); got != nil {
+			t.Fatalf("unexpected root alias %q when multiple QEMU drivers present: %+v", alias.Root, *got)
+		}
+	}
+}
+
+func TestEnrichExporterExport_skipsPresetRootsWhenDisabled(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "qemu",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+	}
+
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, map[string]any{
+		qemudriver.ExposeRootDriversParam: false,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, alias := range qemudriver.PresetRootChildren {
+		if got := findDriver(result, alias.Root); got != nil {
+			t.Fatalf("unexpected root alias %q when exposeRootDrivers=false: %+v", alias.Root, *got)
+		}
+	}
+}
+
+func TestEnrichExporterExport_skipsPresetRootsWhenQemuNameHasDot(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "vm.prod",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+	}
+
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, alias := range qemudriver.PresetRootChildren {
+		if got := findDriver(result, alias.Root); got != nil {
+			t.Fatalf("unexpected root alias %q for dotted QEMU name: %+v", alias.Root, *got)
+		}
+	}
+}
+
 func TestEnrichExporterExport_doesNotDuplicateExistingTCP(t *testing.T) {
 	drivers := []virtualtargetv1alpha1.DriverConfig{
 		{
 			Name: "qemu",
 			Type: qemuDriverType,
-			Config: mustJSON(map[string]interface{}{
+			Config: mustJSON(map[string]any{
 				"arch": "x86_64",
 			}),
 		},
 		{
 			Name:   "tcp",
 			Type:   tcpDriverType,
-			Config: mustJSON(map[string]interface{}{"host": "10.0.0.1", "port": 3333}),
+			Config: mustJSON(map[string]any{"host": "10.0.0.1", "port": 3333}),
 		},
 	}
 
-	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,20 +411,22 @@ func TestEnrichExporterExport_defaultsFromMergedParameters(t *testing.T) {
 		{
 			Name:   "qemu",
 			Type:   qemuDriverType,
-			Config: mustJSON(map[string]interface{}{}),
+			Config: mustJSON(map[string]any{}),
 		},
 	}
 
-	params := map[string]interface{}{
+	params := map[string]any{
 		"arch": "aarch64",
-		"resources": map[string]interface{}{
-			"cpu":     4,
-			"memory":  "4Gi",
-			"storage": "40Gi",
+		"resources": map[string]any{
+			"cpu":    4,
+			"memory": "4Gi",
+		},
+		"storage": map[string]any{
+			"size": "40Gi",
 		},
 	}
 
-	result, err := New("dev").EnrichExporterExport(drivers, params)
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, params, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,12 +475,12 @@ func findDriver(drivers []virtualtargetv1alpha1.DriverConfig, name string) *virt
 	return nil
 }
 
-func unmarshalConfig(t *testing.T, raw *apiextensionsv1.JSON) map[string]interface{} {
+func unmarshalConfig(t *testing.T, raw *apiextensionsv1.JSON) map[string]any {
 	t.Helper()
 	if raw == nil || raw.Raw == nil {
 		t.Fatal("config is nil")
 	}
-	var config map[string]interface{}
+	var config map[string]any
 	if err := json.Unmarshal(raw.Raw, &config); err != nil {
 		t.Fatalf("unmarshal config: %v", err)
 	}

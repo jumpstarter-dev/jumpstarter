@@ -19,6 +19,7 @@ package jumpstarter
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
@@ -29,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -39,12 +39,27 @@ import (
 
 const (
 	telemetryPort              = 9093
+	telemetryMetricsPort       = 8080
 	telemetryCertSuffix        = "-telemetry-tls"
 	telemetryServiceName       = "jumpstarter-telemetry"
 	telemetryComponentApp      = "jumpstarter-telemetry"
 	telemetrySASuffix          = "-telemetry"
 	grpcPortName               = "grpc"
+	metricsPortName            = "metrics"
 	telemetryCARequeueInterval = 30 * time.Second
+)
+
+// JEP-0013 default allowlists used when spec.telemetry.metrics omits a field.
+var (
+	defaultTelemetryDriverTypeEnum = []string{"power", "storage", "network", "serial", "console", "video", "composite"}
+	defaultTelemetryExemplarKeys   = []string{"client", "lease_id"}
+	defaultTelemetryScrapeTimeout  = 7 * time.Second
+	defaultTelemetryLokiQueueDepth = int32(10000)
+	lokiCAMountPath                = "/loki-ca"
+	lokiCAFilePath                 = "/loki-ca/ca.crt"
+	lokiCAVolumeName               = "loki-ca"
+	lokiSecretHashAnnotation       = "jumpstarter.dev/loki-secret-sha256"
+	lokiCAHashAnnotation           = "jumpstarter.dev/loki-ca-secret-sha256"
 )
 
 // reconcileTelemetryDeploymentStage reconciles only the telemetry Deployment (and cleanup).
@@ -160,7 +175,13 @@ func (r *JumpstarterReconciler) reconcileTelemetryDeployment(ctx context.Context
 		return err
 	}
 
-	desiredDeployment := createTelemetryDeployment(jumpstarter, tlsSecretHash)
+	lokiPod, err := r.telemetryLokiPodPlan(ctx, jumpstarter)
+	if err != nil {
+		log.Error(err, "Failed to read Loki secrets")
+		return err
+	}
+
+	desiredDeployment := createTelemetryDeployment(jumpstarter, tlsSecretHash, lokiPod)
 
 	existingDeployment := &appsv1.Deployment{}
 	existingDeployment.Name = desiredDeployment.Name
@@ -226,6 +247,9 @@ func (r *JumpstarterReconciler) reconcileTelemetryDeployment(ctx context.Context
 			"Telemetry deployment updated: name=%s namespace=%s",
 			existingDeployment.Name, existingDeployment.Namespace)
 	}
+	if lokiPod.disablePush && op != controllerutil.OperationResultNone {
+		r.emitEventf(jumpstarter, corev1.EventTypeWarning, "LokiCredentialsMissing", "%s", lokiPod.disableReason)
+	}
 
 	return nil
 }
@@ -249,6 +273,12 @@ func (r *JumpstarterReconciler) reconcileTelemetryService(ctx context.Context, j
 					Name:       grpcPortName,
 					Port:       int32(telemetryPort),
 					TargetPort: intstr.FromInt(telemetryPort),
+					Protocol:   corev1.ProtocolTCP,
+				},
+				{
+					Name:       metricsPortName,
+					Port:       int32(telemetryMetricsPort),
+					TargetPort: intstr.FromInt(telemetryMetricsPort),
 					Protocol:   corev1.ProtocolTCP,
 				},
 			},
@@ -293,24 +323,171 @@ func (r *JumpstarterReconciler) reconcileTelemetryService(ctx context.Context, j
 	return nil
 }
 
+// telemetryContainerArgs returns gRPC and HTTP flags for the telemetry binary.
+func telemetryContainerArgs(t *operatorv1alpha1.TelemetryConfig) []string {
+	timeout := defaultTelemetryScrapeTimeout
+	if t.Metrics.ScrapeTimeout != nil && t.Metrics.ScrapeTimeout.Duration > 0 {
+		timeout = t.Metrics.ScrapeTimeout.Duration
+	}
+	enum := t.Metrics.DriverTypeEnum
+	if len(enum) == 0 {
+		enum = defaultTelemetryDriverTypeEnum
+	}
+	keys := t.Metrics.ExemplarKeys
+	if len(keys) == 0 {
+		keys = defaultTelemetryExemplarKeys
+	}
+	args := []string{
+		fmt.Sprintf("-grpc-bind=:%d", telemetryPort),
+		fmt.Sprintf("-metrics-bind-address=:%d", telemetryMetricsPort),
+		fmt.Sprintf("-scrape-timeout=%s", timeout),
+		fmt.Sprintf("-driver-type-enum=%s", strings.Join(enum, ",")),
+		fmt.Sprintf("-exemplar-keys=%s", strings.Join(keys, ",")),
+	}
+	if t.Loki.URL != "" {
+		args = append(args, fmt.Sprintf("-loki-url=%s", t.Loki.URL))
+		depth := t.Backpressure.QueueDepth
+		if depth <= 0 {
+			depth = defaultTelemetryLokiQueueDepth
+		}
+		args = append(args, fmt.Sprintf("-loki-queue-depth=%d", depth))
+		if t.Loki.TLS.InsecureSkipVerify {
+			args = append(args, "-loki-insecure-skip-verify=true")
+		}
+		if t.Loki.TLS.CASecretRef != "" {
+			args = append(args, fmt.Sprintf("-loki-ca-file=%s", lokiCAFilePath))
+		}
+	}
+	return args
+}
+
+func lokiReferencedSecretKeys(js *operatorv1alpha1.Jumpstarter) []string {
+	if js.Spec.Telemetry == nil || !js.Spec.Telemetry.Enabled {
+		return nil
+	}
+	var keys []string
+	if s := js.Spec.Telemetry.Loki.SecretRef; s != "" {
+		keys = append(keys, js.Namespace+"/"+s)
+	}
+	if s := js.Spec.Telemetry.Loki.TLS.CASecretRef; s != "" {
+		keys = append(keys, js.Namespace+"/"+s)
+	}
+	return keys
+}
+
+func lokiSecretHasCredentials(secret *corev1.Secret) bool {
+	if secret == nil {
+		return false
+	}
+	for _, key := range []string{"token", "username", "password"} {
+		if len(secret.Data[key]) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *JumpstarterReconciler) getSecret(ctx context.Context, namespace, name string) (*corev1.Secret, error) {
+	if name == "" {
+		return nil, nil
+	}
+	var secret corev1.Secret
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &secret); err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get secret %s/%s: %w", namespace, name, err)
+	}
+	return &secret, nil
+}
+
+func (r *JumpstarterReconciler) telemetryLokiPodPlan(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (telemetryLokiPod, error) {
+	var plan telemetryLokiPod
+	if js.Spec.Telemetry == nil {
+		return plan, nil
+	}
+	t := js.Spec.Telemetry
+	if t.Loki.SecretRef != "" {
+		secret, err := r.getSecret(ctx, js.Namespace, t.Loki.SecretRef)
+		if err != nil {
+			return plan, err
+		}
+		if secret == nil {
+			if t.Loki.URL != "" {
+				plan.disablePush = true
+				plan.disableReason = fmt.Sprintf("Loki push disabled: secret %s/%s not found", js.Namespace, t.Loki.SecretRef)
+			}
+		} else {
+			plan.credentialHash = secretDataHash(secret)
+			if !lokiSecretHasCredentials(secret) && t.Loki.URL != "" {
+				plan.disablePush = true
+				plan.disableReason = fmt.Sprintf(
+					"Loki push disabled: secret %s/%s has no token, username, or password",
+					js.Namespace, t.Loki.SecretRef,
+				)
+			}
+		}
+	}
+	if t.Loki.TLS.CASecretRef != "" {
+		secret, err := r.getSecret(ctx, js.Namespace, t.Loki.TLS.CASecretRef)
+		if err != nil {
+			return plan, err
+		}
+		if secret != nil {
+			plan.caHash = secretDataHash(secret)
+		} else if t.Loki.URL != "" && !plan.disablePush {
+			plan.disablePush = true
+			plan.disableReason = fmt.Sprintf("Loki push disabled: secret %s/%s not found", js.Namespace, t.Loki.TLS.CASecretRef)
+		}
+	}
+	return plan, nil
+}
+
+func telemetryPodAnnotations(tlsSecretHash string, loki telemetryLokiPod) map[string]string {
+	annotations := map[string]string{}
+	if tlsSecretHash != "" {
+		annotations["jumpstarter.dev/tls-secret-sha256"] = tlsSecretHash
+	}
+	if loki.credentialHash != "" {
+		annotations[lokiSecretHashAnnotation] = loki.credentialHash
+	}
+	if loki.caHash != "" {
+		annotations[lokiCAHashAnnotation] = loki.caHash
+	}
+	if len(annotations) == 0 {
+		return nil
+	}
+	return annotations
+}
+
+// telemetryLokiPod carries pod-template inputs derived from Loki Secrets.
+// disablePush is set when a referenced Loki Secret is missing or the
+// credential Secret has no token, username, or password. A credential
+// reason is kept when the CA Secret is also missing. An empty secretRef
+// stays a valid unauthenticated endpoint.
+type telemetryLokiPod struct {
+	credentialHash string
+	caHash         string
+	disablePush    bool
+	disableReason  string
+}
+
 // createTelemetryDeployment builds the desired Deployment for the telemetry service.
-// tlsSecretHash is included as a pod annotation to trigger rolling restarts on cert renewal.
-func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSecretHash string) *appsv1.Deployment {
+// Secret hashes are pod annotations so a data change rolls the pod.
+func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSecretHash string, loki telemetryLokiPod) *appsv1.Deployment {
+	if loki.disablePush && jumpstarter.Spec.Telemetry != nil {
+		specCopy := *jumpstarter
+		telCopy := *jumpstarter.Spec.Telemetry
+		telCopy.Loki.URL = ""
+		specCopy.Spec.Telemetry = &telCopy
+		jumpstarter = &specCopy
+	}
 	t := jumpstarter.Spec.Telemetry
 	labels := telemetryLabels(jumpstarter)
 
-	replicas := int32(1)
-	if t.Replicas != nil {
-		replicas = *t.Replicas
-	}
+	replicas := telemetryReplicas(t)
 
-	// Build pod annotations for TLS hash (triggers rolling restart on cert renewal)
-	var podAnnotations map[string]string
-	if tlsSecretHash != "" {
-		podAnnotations = map[string]string{
-			"jumpstarter.dev/tls-secret-sha256": tlsSecretHash,
-		}
-	}
+	podAnnotations := telemetryPodAnnotations(tlsSecretHash, loki)
 
 	// Base environment variables - CONTROLLER_KEY is always required for token validation
 	envVars := []corev1.EnvVar{
@@ -325,6 +502,8 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSec
 				},
 			},
 		},
+		// Advertised endpoint for self-signed SAN generation (must match controller ConfigMap).
+		{Name: "GRPC_TELEMETRY_ENDPOINT", Value: telemetryEndpointFor(jumpstarter.Namespace)},
 	}
 
 	var volumeMounts []corev1.VolumeMount
@@ -355,6 +534,60 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSec
 		})
 	}
 
+	if t.Loki.URL != "" && t.Loki.SecretRef != "" {
+		optional := new(true)
+		envVars = append(envVars,
+			corev1.EnvVar{
+				Name: "LOKI_USERNAME",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: t.Loki.SecretRef},
+						Key:                  "username",
+						Optional:             optional,
+					},
+				},
+			},
+			corev1.EnvVar{
+				Name: "LOKI_PASSWORD",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: t.Loki.SecretRef},
+						Key:                  "password",
+						Optional:             optional,
+					},
+				},
+			},
+			corev1.EnvVar{
+				Name: "LOKI_TOKEN",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: t.Loki.SecretRef},
+						Key:                  "token",
+						Optional:             optional,
+					},
+				},
+			},
+		)
+	}
+
+	if t.Loki.URL != "" && t.Loki.TLS.CASecretRef != "" {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      lokiCAVolumeName,
+			MountPath: lokiCAMountPath,
+			ReadOnly:  true,
+		})
+		defaultMode := int32(420)
+		volumes = append(volumes, corev1.Volume{
+			Name: lokiCAVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  t.Loki.TLS.CASecretRef,
+					DefaultMode: &defaultMode,
+				},
+			},
+		})
+	}
+
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-telemetry", jumpstarter.Name),
@@ -363,8 +596,8 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSec
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas:                &replicas,
-			ProgressDeadlineSeconds: ptr.To(int32(600)),
-			RevisionHistoryLimit:    ptr.To(int32(10)),
+			ProgressDeadlineSeconds: new(int32(600)),
+			RevisionHistoryLimit:    new(int32(10)),
 			Strategy: appsv1.DeploymentStrategy{
 				Type: appsv1.RollingUpdateDeploymentStrategyType,
 				RollingUpdate: &appsv1.RollingUpdateDeployment{
@@ -383,29 +616,34 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSec
 				Spec: corev1.PodSpec{
 					RestartPolicy:                 corev1.RestartPolicyAlways,
 					DNSPolicy:                     corev1.DNSClusterFirst,
-					TerminationGracePeriodSeconds: ptr.To(int64(30)),
+					TerminationGracePeriodSeconds: new(int64(30)),
 					Containers: []corev1.Container{
 						{
 							Name:            "telemetry",
 							Image:           t.Image,
 							ImagePullPolicy: t.ImagePullPolicy,
 							Command:         []string{"/telemetry"},
-							Args: []string{
-								fmt.Sprintf("--grpc-bind=:%d", telemetryPort),
-							},
-							Env:          envVars,
-							VolumeMounts: volumeMounts,
+							Args:            telemetryContainerArgs(t),
+							Env:             envVars,
+							VolumeMounts:    volumeMounts,
 							Ports: []corev1.ContainerPort{
 								{
 									ContainerPort: int32(telemetryPort),
 									Name:          grpcPortName,
 									Protocol:      corev1.ProtocolTCP,
 								},
+								{
+									ContainerPort: int32(telemetryMetricsPort),
+									Name:          metricsPortName,
+									Protocol:      corev1.ProtocolTCP,
+								},
 							},
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
-									TCPSocket: &corev1.TCPSocketAction{
-										Port: intstr.FromInt(telemetryPort),
+									HTTPGet: &corev1.HTTPGetAction{
+										Path:   "/healthz",
+										Port:   intstr.FromInt(telemetryMetricsPort),
+										Scheme: corev1.URISchemeHTTP,
 									},
 								},
 								InitialDelaySeconds: 10,
@@ -416,8 +654,10 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSec
 							},
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
-									TCPSocket: &corev1.TCPSocketAction{
-										Port: intstr.FromInt(telemetryPort),
+									HTTPGet: &corev1.HTTPGetAction{
+										Path:   "/readyz",
+										Port:   intstr.FromInt(telemetryMetricsPort),
+										Scheme: corev1.URISchemeHTTP,
 									},
 								},
 								InitialDelaySeconds: 5,
@@ -430,20 +670,20 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSec
 							TerminationMessagePath:   "/dev/termination-log",
 							TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 							SecurityContext: &corev1.SecurityContext{
-								AllowPrivilegeEscalation: ptr.To(false),
+								AllowPrivilegeEscalation: new(false),
 								Capabilities: &corev1.Capabilities{
 									Drop: []corev1.Capability{"ALL"},
 								},
 							},
 						},
 					},
-					Volumes: volumes,
 					SecurityContext: &corev1.PodSecurityContext{
-						RunAsNonRoot: ptr.To(true),
+						RunAsNonRoot: new(true),
 						SeccompProfile: &corev1.SeccompProfile{
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
 					},
+					Volumes:            volumes,
 					ServiceAccountName: jumpstarter.Name + telemetrySASuffix,
 				},
 			},
@@ -498,14 +738,16 @@ func GetTelemetryCertSecretName(js *operatorv1alpha1.Jumpstarter) string {
 }
 
 // resolveTelemetryCA reads the CA certificate that exporters need to verify the
-// telemetry TLS connection. For self-signed CA mode, the cert is in the CA secret;
-// for external issuers, the user-provided caBundle is used.
+// telemetry TLS connection. For self-signed CA mode, the cert is in the CA secret.
+// For external issuers, the user-provided caBundle is preferred; when absent, ca.crt
+// from the issued telemetry TLS secret is used if present. An empty return with no
+// error means exporters should rely on the system trust store (public CA issuers).
 func (r *JumpstarterReconciler) resolveTelemetryCA(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) (string, error) {
 	if jumpstarter.Spec.CertManager.Server != nil && jumpstarter.Spec.CertManager.Server.IssuerRef != nil {
 		if len(jumpstarter.Spec.CertManager.Server.IssuerRef.CABundle) > 0 {
 			return string(jumpstarter.Spec.CertManager.Server.IssuerRef.CABundle), nil
 		}
-		return "", nil
+		return r.telemetryCAFromCertSecret(ctx, jumpstarter)
 	}
 
 	// Self-signed CA mode — read from the CA secret created by cert-manager
@@ -533,6 +775,27 @@ func (r *JumpstarterReconciler) telemetryCANeedsRequeue(ctx context.Context, jum
 	}
 	caCert, err := r.resolveTelemetryCA(ctx, jumpstarter)
 	return err != nil || caCert == ""
+}
+
+// telemetryCAFromCertSecret returns ca.crt from the issued telemetry TLS secret,
+// when cert-manager includes it. Missing secret or key is not an error: external
+// issuers backed by public CAs may not need an explicit bundle in the controller config.
+func (r *JumpstarterReconciler) telemetryCAFromCertSecret(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) (string, error) {
+	secret := &corev1.Secret{}
+	err := r.Get(ctx, client.ObjectKey{
+		Name:      GetTelemetryCertSecretName(jumpstarter),
+		Namespace: jumpstarter.Namespace,
+	}, secret)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("telemetry TLS secret not found: %w", err)
+	}
+	if ca, ok := secret.Data["ca.crt"]; ok && len(ca) > 0 {
+		return string(ca), nil
+	}
+	return "", nil
 }
 
 // telemetryEndpointFor returns the in-cluster gRPC endpoint for the telemetry service.

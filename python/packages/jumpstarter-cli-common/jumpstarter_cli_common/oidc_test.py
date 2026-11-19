@@ -59,8 +59,34 @@ def _make_async_cm(response):
     return cm
 
 
+@pytest.mark.anyio
+async def test_authorization_code_prompt_uses_stderr(monkeypatch, capsys):
+    config = Config(issuer="https://auth.example.com", client_id="test")
+    discovery = {"authorization_endpoint": "https://auth.example.com/auth", "token_endpoint": "https://auth.example.com/token"}
+    monkeypatch.setattr(config, "configuration", AsyncMock(return_value=discovery))
+    client = MagicMock()
+    client.create_authorization_url.return_value = ("https://auth.example.com/auth?state=test", "test")
+    client.fetch_token.return_value = {"access_token": "new-token"}
+    monkeypatch.setattr(config, "client", lambda **kwargs: client)
+    receiver = AsyncMock()
+    receiver.receive.return_value = "http://localhost:12345/callback?code=test"
+    monkeypatch.setattr("jumpstarter_cli_common.oidc.create_memory_object_stream", lambda: (MagicMock(), receiver))
+    monkeypatch.setattr("jumpstarter_cli_common.oidc.web.AppRunner", lambda *args, **kwargs: AsyncMock())
+    site = MagicMock(start=AsyncMock(), stop=AsyncMock())
+    site._server.sockets[0].getsockname.return_value = ("localhost", 12345)
+    monkeypatch.setattr("jumpstarter_cli_common.oidc.web.TCPSite", lambda *args: site)
+
+    result = await config.authorization_code_grant()
+
+    assert result == {"access_token": "new-token"}
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Please open the URL in browser:" in captured.err
+    assert "https://auth.example.com/auth?state=test" in captured.err
+
+
 class TestDeviceAuthorizationGrant:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_raises_when_no_device_endpoint_in_discovery(self) -> None:
         config = Config(issuer="https://auth.example.com", client_id="test")
         with patch.object(config, "configuration", new_callable=AsyncMock) as mock_config:
@@ -71,7 +97,7 @@ class TestDeviceAuthorizationGrant:
             with pytest.raises(click.ClickException, match="does not support Device Authorization Grant"):
                 await config.device_authorization_grant()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_error_message_mentions_device_authorization_endpoint(self) -> None:
         config = Config(issuer="https://auth.example.com", client_id="test")
         with patch.object(config, "configuration", new_callable=AsyncMock) as mock_config:
@@ -81,8 +107,9 @@ class TestDeviceAuthorizationGrant:
             with pytest.raises(click.ClickException, match="device_authorization_endpoint"):
                 await config.device_authorization_grant()
 
-    @pytest.mark.asyncio
-    async def test_successful_device_flow_with_verification_uri_complete(self) -> None:
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("complete_uri", [True, False])
+    async def test_successful_device_flow(self, capsys, complete_uri) -> None:
         config = Config(issuer="https://auth.example.com", client_id="test")
 
         discovery = {
@@ -98,6 +125,8 @@ class TestDeviceAuthorizationGrant:
             "interval": 0.01,  # Speed up test
             "expires_in": 300,
         }
+        if not complete_uri:
+            device_response_data.pop("verification_uri_complete")
 
         token_data = {
             "access_token": "test-access-token",
@@ -119,7 +148,7 @@ class TestDeviceAuthorizationGrant:
                 response.text = AsyncMock(return_value="")
             else:
                 # Token endpoint
-                poll_count += 1  # ty: ignore[unresolved-reference]
+                poll_count += 1
                 if poll_count == 1:
                     response.status = 400
                     response.json = AsyncMock(return_value={"error": "authorization_pending"})
@@ -143,8 +172,16 @@ class TestDeviceAuthorizationGrant:
         assert result["access_token"] == "test-access-token"
         assert result["refresh_token"] == "test-refresh-token"
         assert poll_count == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        verification_uri = device_response_data.get(
+            "verification_uri_complete", device_response_data["verification_uri"]
+        )
+        assert verification_uri in captured.err
+        assert "ABCD-EFGH" in captured.err
+        assert "Waiting for authentication..." in captured.err
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_handles_slow_down_response(self) -> None:
         config = Config(issuer="https://auth.example.com", client_id="test")
 
@@ -174,7 +211,7 @@ class TestDeviceAuthorizationGrant:
                 response.json = AsyncMock(return_value=device_response_data)
                 response.text = AsyncMock(return_value="")
             else:
-                poll_count += 1  # ty: ignore[unresolved-reference]
+                poll_count += 1
                 if poll_count == 1:
                     response.status = 400
                     response.json = AsyncMock(return_value={"error": "slow_down"})
@@ -197,7 +234,7 @@ class TestDeviceAuthorizationGrant:
 
         assert result["access_token"] == "test-access-token"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_raises_on_access_denied(self) -> None:
         config = Config(issuer="https://auth.example.com", client_id="test")
 
@@ -235,11 +272,11 @@ class TestDeviceAuthorizationGrant:
         with (
             patch.object(config, "configuration", new_callable=AsyncMock, return_value=discovery),
             patch("jumpstarter_cli_common.oidc.aiohttp.ClientSession", return_value=mock_session),
+            pytest.raises(click.ClickException, match="denied by the user"),
         ):
-            with pytest.raises(click.ClickException, match="denied by the user"):
-                await config.device_authorization_grant()
+            await config.device_authorization_grant()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_raises_on_expired_token(self) -> None:
         config = Config(issuer="https://auth.example.com", client_id="test")
 
@@ -277,9 +314,9 @@ class TestDeviceAuthorizationGrant:
         with (
             patch.object(config, "configuration", new_callable=AsyncMock, return_value=discovery),
             patch("jumpstarter_cli_common.oidc.aiohttp.ClientSession", return_value=mock_session),
+            pytest.raises(click.ClickException, match="expired"),
         ):
-            with pytest.raises(click.ClickException, match="expired"):
-                await config.device_authorization_grant()
+            await config.device_authorization_grant()
 
 
 # ---------------------------------------------------------------------------

@@ -1,3 +1,3 @@
 from .imagehash import ImageHash
 
-ImageHash = ImageHash
+__all__ = ["ImageHash"]

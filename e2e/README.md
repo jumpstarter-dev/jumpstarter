@@ -13,7 +13,14 @@ it; it can't generate the prerequisite/steps/pass-check text.
 ## Global prerequisites (`make e2e-run`, non-compat suite)
 
 Built by `make e2e-setup` (`e2e/setup-e2e.sh`): kind cluster, dex OIDC provider +
-TLS CA, controller/operator deployed via `make -C controller deploy`, namespace
+TLS CA, controller/operator deployed via `make -C controller deploy` with
+telemetry enabled (`OPERATOR_ENABLE_TELEMETRY=true`, which requires the locally
+built telemetry image), telemetry reachable from the host as
+`jumpstarter-telemetry.jumpstarter-lab.svc:9093` (NodePort 30015 from
+`e2e/manifests/telemetry-nodeport.yaml`, mapped to host port 9093 by
+`controller/hack/kind_cluster.yaml`, plus an `/etc/hosts` entry; a kind
+cluster created before that mapping existed must be recreated with
+`make -C controller clean`), namespace
 `jumpstarter-lab`, service accounts `test-client-sa`/`test-exporter-sa`,
 `/etc/jumpstarter/exporters` dir, endpoint/login-endpoint env written to
 `.e2e-setup-complete`, QEMU guest image prefetched. Tests run via `make e2e-run`
@@ -134,7 +141,24 @@ offering the `dut-network` driver (nftables NAT/masquerade + DHCP/DNS). CI insta
 | should return error for unknown MAC | `j dut-network get-ip ff:ff:ff:ff:ff:ff` | errors; "No lease found" |
 | should add and remove an address entry via CLI | `add-address 192.168.200.99 --mac 02:00:00:00:00:99` then `remove-address` | "Added" then "Removed" |
 | should add, list, and remove DNS entries via CLI | `add-dns e2e-test.lab.local 10.0.0.42`, `dns-entries`, `remove-dns`, `dns-entries` | entry appears then disappears |
-| should allow TCP connections from DUT to external via NAT | start Python TCP server in ext ns, connect from DUT ns via NAT | client receives "E2E_OK" |
+| should allow TCP connections from DUT to external via NAT | start Python TCP echo in ext ns, connect from DUT ns via NAT | client receives "E2E_OK" |
+| should allow TCP from DUT via VLAN PBR | create `jmp-vext.100` with `10.100.0.1/24` in ext ns; `add-address 192.168.200.50 --vlan-id 100 --public-ip 10.100.0.50 --public-gateway 10.100.0.1`; add DUT IP; TCP from `192.168.200.50` to `10.100.0.1` | client receives "E2E_OK" |
+| should allow TCP from DUT via untagged source-IP PBR | add `10.99.1.1/32` on ext-ns loopback (PBR-only destination); `add-address 192.168.200.51 --public-gateway 10.99.0.1`; add DUT IP; TCP from `192.168.200.51` to `10.99.1.1`; ping from main DUT IP to `10.99.1.1` | TCP succeeds (PBR routes via gateway); ping from non-PBR source fails (proves PBR is required) |
+| should not reach a VLAN-only peer without public_gateway | create `jmp-vext.101` with `10.101.0.1/24` in ext ns; `add-address 192.168.200.52 --vlan-id 101`; add DUT IP; ping VLAN-only `10.101.0.1` and untagged `10.99.0.1` | ping to `10.101.0.1` fails; ping to `10.99.0.1` succeeds (`Eventually`) |
+| should masquerade unregistered DUT alongside VLAN-registered DUT | register `192.168.200.50` with VLAN 100 + PBR; verify VLAN TCP echo works; add unregistered `192.168.200.60` on DUT bridge (no `add-address`); ping external `10.99.0.1` from unregistered IP | VLAN DUT gets "E2E_OK"; unregistered DUT ping succeeds via upstream masquerade |
+
+### Filter sub-lane (`exporter-dut-network-filter.yaml`)
+
+Same netns topology, separate exporter on port 19092 with an egress filter
+(`policy: drop`, one `accept` rule for TCP port 9997 to `10.99.0.1/32`).
+
+| Test Name | Steps | Pass Check |
+|---|---|---|
+| should show filter rules in nftables output | `j dut-network nat-rules` | output contains the egress catch-all drop rule (`iifname "jmp-vhost" oifname "jmp-vup" drop`) and `dport 9997` |
+| should allow TCP to the permitted port | TCP server on allowed port 9997, client connects from DUT ns | client receives "FILTER_OK" |
+| should block TCP to a non-allowed port | TCP server on blocked port 9998, client connects from DUT ns | connection fails (timeout/reset) |
+| should block ICMP ping when egress policy is drop | ping from DUT ns to ext IP | ping fails (`Consistently`) |
+| should resolve DNS entries despite egress drop policy | `add-dns e2e-filter.lab.local 10.0.0.42`, raw DNS query from DUT ns to gateway `192.168.200.1`, `remove-dns` | query resolves `10.0.0.42` (`Eventually`) — dnsmasq responder is before the FORWARD filter |
 
 ---
 
@@ -163,7 +187,7 @@ arch detected via `qemu-guest-arch.sh`; Alpine guest image ensured via
 | Test Name | Steps | Pass Check |
 |---|---|---|
 | brings an Exporter Online with a Ready Pod | wait for ExporterSet-created Exporter, wait Online/Registered/Available, wait Pod Running+Ready | Pod ready; `target-runtime` container has the expected `qemu-system-*` binary |
-| leases, flashes Alpine, and boots to a console login marker | (skipped if shared emptyDir `sizeLimit` is empty or `100Mi`, pending #924) run `qemu_flash_boot.py` under `jmp shell --duration 1h` | script output contains "OK: matched marker" |
+| leases, flashes Alpine, and boots to a console login marker | run `qemu_flash_boot.py` under `jmp shell --duration 1h` | script output contains "OK: matched marker" |
 | power cycles QEMU then rotates the Pod/Exporter and stays responsive | record old Pod name/UID; `j qemu power on/off` inside shell, verify qemu binary is the running process; wait old Pod+Exporter deleted, one new Pod/Exporter running w/ new UID; re-run `j qemu power on/off` | ExitAndReplace produced exactly one new, ready, differently-UID'd Pod/Exporter that still answers power commands |
 
 ---
@@ -179,6 +203,25 @@ in compat suites** (old controllers lack this logging; the Describe is not label
 |---|---|---|
 | controller logs client authentication failures with the peer address | corrupt token in client's local yaml config, `jmp get exporters --client test-client-authlog` | command errors; controller logs (since test start) eventually contain "client authentication failed" with a `"peer"` field; corrupted token value never appears in logs |
 | controller logs exporter authentication failures with the peer address | corrupt token in exporter's yaml config, start exporter once | controller logs eventually contain "exporter authentication failed" with `"peer"`; token value never appears in logs |
+
+---
+
+## Lane: `telemetry` (`telemetry_test.go`)
+
+Prereq: self-contained — creates its own dex OIDC client/exporter
+(`test-client-telemetry` / `test-exporter-telemetry`, label
+`example.com/board=telemetry`), logs both in with the password grant, applies the
+driver overlay `exporter.yaml`, runs the exporter in loop mode, and takes one
+lease for both specs with `jmp shell --client test-client-telemetry --selector
+example.com/board=telemetry j power on`. Needs the
+global telemetry setup. Telemetry runs without Loki, so it writes PushLogs entries
+to its stdout. **Not run in compat suites**: older controllers issue no
+telemetry token.
+
+| Test Name | Steps | Pass Check |
+|---|---|---|
+| reports metrics from an exporter logged in through dex | none (uses the setup lease) | telemetry `/metrics` (read through the API server pod proxy on port 8080) eventually has `jumpstarter_operation_duration_seconds_count{driver_type="power",exporter="test-exporter-telemetry",operation="on",result="success"}` |
+| receives logs from that exporter and from jmp shell | none (uses the setup lease) | telemetry pod logs since the lane started eventually hold a JSON entry with `component=exporter`, `exporter=test-exporter-telemetry` and one with `component=cli`, `client=test-client-telemetry` |
 
 ---
 

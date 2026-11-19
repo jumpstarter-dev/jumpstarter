@@ -12,11 +12,11 @@ from .types import (
 HOOK_WARNING_PREFIX = "[HOOK_WARNING] "
 
 __all__ = [
+    "HOOK_WARNING_PREFIX",
     "AsyncChannel",
     "ControllerStub",
     "ExporterStatus",
     "ExporterStub",
-    "HOOK_WARNING_PREFIX",
     "LogSource",
     "Metadata",
     "RouterStub",

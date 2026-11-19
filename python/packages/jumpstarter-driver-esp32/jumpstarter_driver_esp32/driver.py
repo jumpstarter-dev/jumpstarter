@@ -1,3 +1,4 @@
+import contextlib
 import gc
 import os
 import tempfile
@@ -49,18 +50,16 @@ class Esp32Flasher(FlasherInterface, Driver):
             e.__traceback__ = None
             self._force_release_port(port)
             raise
-        self.logger.debug("_connect_esp: connected to %s", esp.get_chip_description())  # type: ignore[attr-defined]
+        self.logger.debug("_connect_esp: connected to %s", esp.get_chip_description())  # ty: ignore[unresolved-attribute]
         return esp
 
     def _close_esp(self, esp):
         port_path = None
-        try:
+        with contextlib.suppress(Exception):
             if hasattr(esp, "_port") and esp._port:
                 port_path = getattr(esp._port, "portstr", None) or getattr(esp._port, "name", None)
                 esp._port.close()
                 esp._port = None
-        except Exception:
-            pass
         if port_path:
             self._force_release_port(port_path)
 
@@ -95,10 +94,9 @@ class Esp32Flasher(FlasherInterface, Driver):
     async def flash(self, source, target: str | None = None):
         address = int(target or "0", 0)
         with _temporary_filename() as filename:
-            async with await FileWriteStream.from_path(filename) as stream:
-                async with self.resource(source) as res:
-                    async for chunk in res:
-                        await stream.send(chunk)
+            async with await FileWriteStream.from_path(filename) as stream, self.resource(source) as res:
+                async for chunk in res:
+                    await stream.send(chunk)
 
             def _do_flash():
                 esp = self._connect_esp()
@@ -130,10 +128,9 @@ class Esp32Flasher(FlasherInterface, Driver):
 
             await to_thread.run_sync(_do_read)
 
-            async with await FileReadStream.from_path(filename) as stream:
-                async with self.resource(target) as res:
-                    async for chunk in stream:
-                        await res.send(chunk)
+            async with await FileReadStream.from_path(filename) as stream, self.resource(target) as res:
+                async for chunk in stream:
+                    await res.send(chunk)
 
     @export
     def get_chip_info(self) -> dict[str, str]:

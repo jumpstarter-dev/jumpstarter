@@ -1,10 +1,12 @@
+from typing import ClassVar
+
 import click
 
 
 class AliasedGroup(click.Group):
     """An aliased command group."""
 
-    common_aliases: dict[str, list[str]] = {
+    common_aliases: ClassVar[dict[str, list[str]]]= {
         "remove": ["rm"],
         "list": ["ls"],
         "create": ["c"],
@@ -49,4 +51,5 @@ class AliasedGroup(click.Group):
     def resolve_command(self, ctx, args):
         # always return the full command name
         _, cmd, args = super().resolve_command(ctx, args)
+        assert cmd is not None
         return cmd.name, cmd, args

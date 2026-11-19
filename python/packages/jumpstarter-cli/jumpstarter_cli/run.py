@@ -1,7 +1,9 @@
 import logging
+import multiprocessing.connection
 import os
 import signal
 import sys
+import threading
 import time
 
 import anyio
@@ -73,7 +75,7 @@ def _reap_zombie_processes(capture_child=None):
                 logger.debug(f"PARENT: Reaped zombie process {pid} with status {status}")
             except ChildProcessError:
                 break # No more children
-    except Exception as e:
+    except Exception as e:  # pragma: no cover  # noqa: BLE001
         logger.warning(f"PARENT: Error during zombie reaping: {e}")
 
 
@@ -84,6 +86,7 @@ def _handle_child(  # noqa: C901
     tls_cert=None,
     tls_key=None,
     passphrase=None,
+    token_rotated_callback=None,
 ):
     """Handle child process with graceful shutdown."""
     async def serve_with_graceful_shutdown():  # noqa: C901
@@ -96,7 +99,7 @@ def _handle_child(  # noqa: C901
 
             with open_signal_receiver(signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT) as signals:
                 async for sig in signals:
-                    if signal_handled:  # ty: ignore[unresolved-reference]
+                    if signal_handled:
                         continue  # Ignore duplicate signals
                     received_signal = sig
                     logger.info("CHILD: Received %d (%s)", received_signal, signal.Signals(received_signal).name)
@@ -143,16 +146,16 @@ def _handle_child(  # noqa: C901
                                 tls_credentials=tls_credentials,
                                 interceptors=interceptors,
                             )
-                        except* Exception as excgroup:
+                        except* Exception as excgroup:  # noqa: BLE001
                             _handle_exporter_exceptions(excgroup)
                         exporter_exit_code = exporter.exit_code
                 else:
                     # Create exporter and run it (controller mode)
                     exporter_exit_code = None
-                    async with config.create_exporter() as exporter:
+                    async with config.create_exporter(on_token_rotated=token_rotated_callback) as exporter:
                         try:
                             await exporter.serve()
-                        except* Exception as excgroup:
+                        except* Exception as excgroup:  # noqa: BLE001
                             _handle_exporter_exceptions(excgroup)
 
                         # Check if exporter set an exit code (e.g., from hook failure with on_failure='exit')
@@ -166,7 +169,7 @@ def _handle_child(  # noqa: C901
 
         # Return exit code in priority order:
         # 1. Signal number if received (for signal-based termination)
-        # 2. Exporter's exit code if set (for hook failure with on_failure='exit')
+        # 2. Exporter's exit code if set (hook or controller stream failure)
         # 3. 0 for immediate restart (normal exit without signal or explicit exit code)
         if received_signal:
             return 128 + received_signal
@@ -224,6 +227,30 @@ def _handle_parent(pid):
         return 128 + child_exit_signal
 
 
+def _handle_parent_with_token_updates(pid, config, token_reader):
+    stop_reader, stop_writer = multiprocessing.Pipe(duplex=False)
+
+    def receive_tokens():
+        # Tokens already in the pipe are read before the stop signal ends the loop,
+        # which also covers a writer inherited by a grandchild that outlives the child.
+        while token_reader in multiprocessing.connection.wait([token_reader, stop_reader]):
+            try:
+                config.token = token_reader.recv()
+            except EOFError:
+                return
+
+    # Drain while the child runs so repeated rotations cannot fill the pipe.
+    receiver = threading.Thread(target=receive_tokens)
+    receiver.start()
+    try:
+        return _handle_parent(pid)
+    finally:
+        stop_writer.close()
+        receiver.join()
+        stop_reader.close()
+        token_reader.close()
+
+
 def _serve_with_exc_handling(
     config,
     parsed_bind=None,
@@ -238,10 +265,12 @@ def _serve_with_exc_handling(
     rapid_failure_count = 0
     while True:
         child_start_time = time.monotonic()
+        token_reader, token_writer = multiprocessing.Pipe(duplex=False)
         pid = os.fork()
 
         if pid > 0:
-            if (exit_code := _handle_parent(pid)) is not None:
+            token_writer.close()
+            if (exit_code := _handle_parent_with_token_updates(pid, config, token_reader)) is not None:
                 return exit_code
 
             if config.exit_on_lease_end:
@@ -278,6 +307,7 @@ def _serve_with_exc_handling(
                     )
                 rapid_failure_count = 0
         else:
+            token_reader.close()
             os.setsid() # Become group leader so all spawned subprocesses are reached by parent's signals
             _handle_child(
                 config,
@@ -286,6 +316,7 @@ def _serve_with_exc_handling(
                 tls_cert,
                 tls_key,
                 passphrase,
+                token_rotated_callback=token_writer.send,
             )
             sys.exit(1) # should never happen
 
@@ -354,11 +385,13 @@ def run(
     if exit_on_lease_end:
         config.exit_on_lease_end = True
     parsed_bind = _parse_listener_bind(listener_bind) if listener_bind is not None else None
-    return _serve_with_exc_handling(
-        config,
-        parsed_bind,
-        tls_insecure,
-        tls_cert,
-        tls_key,
-        passphrase,
+    raise SystemExit(
+        _serve_with_exc_handling(
+            config,
+            parsed_bind,
+            tls_insecure,
+            tls_cert,
+            tls_key,
+            passphrase,
+        )
     )

@@ -1,0 +1,78 @@
+# Scenario: complete DUT bench: native supply, three relay contacts and UART.
+# Requires jumpstarter-driver-pyserial. No Buttons package or board driver required.
+# Use the wiring table and workflows in examples/README.md.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: copilot-relay-uart
+# For controller-managed operation, replace these connection settings.
+# Local use: jmp shell --exporter-config /path/to/this-file.yaml
+endpoint: "controller.example.com:8082"
+token: "<token>"
+export:
+  copilot:
+    type: jumpstarter_driver_copilot.driver.CoPilotGPIO
+    config:
+      # Serial printed by the udev path /dev/copilot/by-id/<serial>/gpiochip.
+      serial: YOUR_COPILOT_SERIAL
+      # GPIO0: native supply; GPIO1/2/3: relay control lines in THIS wiring.
+      managed_lines: [0, 1, 2, 3]
+      active_low: false
+      initial_active: false
+      hats:
+        - type: triple-relay
+          # Relay channels 1/2/3 -> GPIO1/2/3. Match the HAT jumpers.
+          relay_lines: [1, 2, 3]
+  power:
+    type: jumpstarter_driver_copilot.driver.CoPilotPower
+    children:
+      # Share the owner's GPIO request; do not open GPIO0 a second time.
+      controller:
+        ref: copilot
+  buttons:
+    # Existing upstream grouping driver, NOT jumpstarter-driver-buttons.
+    type: jumpstarter_driver_composite.driver.Composite
+    children:
+      power:
+        # Relay 1 wired across the DUT's momentary Power contact.
+        # j buttons power on/off controls this contact, not the supply GPIO0.
+        type: jumpstarter_driver_copilot.driver.CoPilotOutput
+        config:
+          line: 1
+        children:
+          controller:
+            ref: copilot
+      recovery:
+        # Relay 2 wired across the DUT's Recovery contact.
+        type: jumpstarter_driver_copilot.driver.CoPilotOutput
+        config:
+          line: 2
+        children:
+          controller:
+            ref: copilot
+      reset:
+        # Relay 3 wired across the DUT's Reset contact.
+        type: jumpstarter_driver_copilot.driver.CoPilotOutput
+        config:
+          line: 3
+        children:
+          controller:
+            ref: copilot
+  reset:
+    # Optional shortcut: j reset on/off references the SAME output as
+    # j buttons reset on/off. This does not acquire another GPIO request.
+    ref: buttons.reset
+  serial:
+    type: jumpstarter_driver_pyserial.driver.PySerial
+    config:
+      # The SAME unit as copilot.serial above. Connect UART TX/RX/GND to the DUT.
+      # Select the UART voltage on the hardware and use the DUT's baud rate.
+      url: /dev/copilot/by-id/YOUR_COPILOT_SERIAL/tty
+      baudrate: 115200
+      # Fail early if the expected CoPilot tty is absent.
+      check_present: true
+      # Avoid HUPCL-triggered modem-line transitions when closing on POSIX.
+      disable_hupcl: true
+      # Open on client attach. Start logging BEFORE powering the DUT on.
+      always_on: false

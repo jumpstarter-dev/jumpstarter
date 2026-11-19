@@ -6,6 +6,13 @@ from jumpstarter.driver import Driver, export
 
 
 class PowerInterface(metaclass=ABCMeta):
+    """Interface for power drivers.
+
+    Drivers may also export an optional ``status()`` returning the power state (for
+    example "on", "off" or "unknown"). It is not abstract, so drivers that can't
+    report their state don't need it; ``PowerClient.status()`` returns None for them.
+    """
+
     driver_type = "power"
 
     @classmethod
@@ -46,7 +53,9 @@ class MockPower(PowerInterface, Driver):
 
     >>> with serve(MockPower()) as power:
     ...     power.on()
+    ...     assert power.status() == "on"
     ...     power.off()
+    ...     assert power.status() == "off"
     ...
     ...     assert list(power.read()) == [
     ...         PowerReading(voltage=0.0, current=0.0),
@@ -54,13 +63,21 @@ class MockPower(PowerInterface, Driver):
     ...     ]
     """
 
+    _state: str = "off"
+
     @export
     async def on(self) -> None:
         self.logger.info("power on")
+        self._state = "on"
 
     @export
     async def off(self) -> None:
         self.logger.info("power off")
+        self._state = "off"
+
+    @export
+    async def status(self) -> str:
+        return self._state
 
     @export
     async def read(self) -> AsyncGenerator[PowerReading, None]:
@@ -74,7 +91,9 @@ class SyncMockPower(PowerInterface, Driver):
 
     >>> with serve(SyncMockPower()) as power:
     ...     power.on()
+    ...     assert power.status() == "on"
     ...     power.off()
+    ...     assert power.status() == "off"
     ...
     ...     assert list(power.read()) == [
     ...         PowerReading(voltage=0.0, current=0.0),
@@ -82,13 +101,21 @@ class SyncMockPower(PowerInterface, Driver):
     ...     ]
     """
 
+    _state: str = "off"
+
     @export
     def on(self) -> None:
         self.logger.info("power on")
+        self._state = "on"
 
     @export
     def off(self) -> None:
         self.logger.info("power off")
+        self._state = "off"
+
+    @export
+    def status(self) -> str:
+        return self._state
 
     @export
     def read(self) -> Generator[PowerReading, None]:

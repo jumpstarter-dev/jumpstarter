@@ -80,7 +80,7 @@ type exporterConfigTLS struct {
 type exporterConfigDriver struct {
 	Type     string                          `json:"type,omitempty"`
 	Ref      string                          `json:"ref,omitempty"`
-	Config   interface{}                     `json:"config,omitempty"`
+	Config   any                             `json:"config,omitempty"`
 	Children map[string]exporterConfigDriver `json:"children,omitempty"`
 }
 
@@ -90,9 +90,10 @@ type exporterConfigDriver struct {
 func (r *ExporterSetReconciler) buildExporterConfigSecret(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
+	vtc *virtualtargetv1alpha1.VirtualTargetClass,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 	caBundle string,
-	mergedParameters map[string]interface{},
+	mergedParameters map[string]any,
 ) (*corev1.Secret, error) {
 	token, err := r.readCredentialToken(ctx, exporter)
 	if err != nil {
@@ -102,7 +103,7 @@ func (r *ExporterSetReconciler) buildExporterConfigSecret(
 	caBase64 := base64.StdEncoding.EncodeToString([]byte(caBundle))
 
 	drivers := es.Spec.Template.Spec.Drivers
-	drivers, err = r.Provisioner.EnrichExporterExport(drivers, mergedParameters)
+	drivers, err = r.Provisioner.EnrichExporterExport(ctx, vtc, drivers, mergedParameters, exporter)
 	if err != nil {
 		return nil, fmt.Errorf("enrich drivers for %s: %w", exporter.Name, err)
 	}
@@ -169,7 +170,7 @@ func buildExportMap(drivers []virtualtargetv1alpha1.DriverConfig) (map[string]ex
 			continue
 		}
 
-		var config interface{}
+		var config any
 		if d.Config != nil && d.Config.Raw != nil {
 			if err := json.Unmarshal(d.Config.Raw, &config); err != nil {
 				return nil, fmt.Errorf("unmarshal config for driver %q: %w", name, err)

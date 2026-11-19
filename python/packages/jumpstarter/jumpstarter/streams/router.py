@@ -1,9 +1,13 @@
-import asyncio
 import contextlib
 import logging
+
+# grpc.aio signals a write or read on a finished call with asyncio's InvalidStateError.
+from asyncio import InvalidStateError  # noqa: TID251
 from dataclasses import dataclass, field
+from typing import Any
 
 import grpc
+import grpc.aio
 from anyio import (
     BrokenResourceError,
     EndOfStream,
@@ -16,32 +20,41 @@ logger = logging.getLogger(__name__)
 
 @dataclass(kw_only=True, slots=True)
 class RouterStream(ObjectStream[bytes]):
-    context: grpc.aio.StreamStreamCall | grpc._cython.cygrpc._ServicerContext
+    context: grpc.aio.StreamStreamCall | Any  # grpc._cython.cygrpc._ServicerContext
+    require_goaway: bool = False
+    """End cleanly only on a GOAWAY frame.
+
+    A peer that finishes sends GOAWAY (see send_eof). When the call is cancelled or
+    its transport is lost instead, grpc.aio's servicer read() returns a bare EOF;
+    with this set, that raises BrokenResourceError rather than EndOfStream.
+    """
     cls: type = field(init=False)
 
     def __post_init__(self):
         match self.context:
             case grpc.aio.StreamStreamCall():
                 self.cls = router_pb2.StreamRequest
-            case grpc._cython.cygrpc._ServicerContext():
+            case grpc._cython.cygrpc._ServicerContext():  # type: ignore[attr-defined]  # ty: ignore[possibly-missing-submodule]
                 self.cls = router_pb2.StreamResponse
             case _:
                 raise ValueError(f"RouterStream: invalid context type: {type(self.context)}")
 
-    async def send(self, payload: bytes) -> None:
+    async def send(self, item: bytes) -> None:
         try:
-            await self.context.write(self.cls(payload=payload))
-        except grpc.aio.AioRpcError as e:
+            await self.context.write(self.cls(payload=item))
+        except (grpc.aio.AioRpcError, InvalidStateError) as e:
             raise BrokenResourceError from e
 
     async def receive(self) -> bytes:
         try:
             frame = await self.context.read()
-        except grpc.aio.AioRpcError as e:
+        except (grpc.aio.AioRpcError, InvalidStateError) as e:
             raise BrokenResourceError from e
 
         # Reference: https://grpc.github.io/grpc/python/grpc_asyncio.html#grpc.aio.StreamStreamCall.read
         if frame == grpc.aio.EOF:
+            if self.require_goaway:
+                raise BrokenResourceError("stream ended without GOAWAY")
             raise EndOfStream
 
         match frame.frame_type:
@@ -57,13 +70,13 @@ class RouterStream(ObjectStream[bytes]):
         return b""
 
     async def send_eof(self):
-        with contextlib.suppress(grpc.aio.AioRpcError, asyncio.exceptions.InvalidStateError):
+        with contextlib.suppress(grpc.aio.AioRpcError, InvalidStateError):
             await self.context.write(self.cls(frame_type=router_pb2.FRAME_TYPE_GOAWAY))
             if isinstance(self.context, grpc.aio.StreamStreamCall):
                 await self.context.done_writing()
 
     async def aclose(self):
-        with contextlib.suppress(grpc.aio.AioRpcError, asyncio.exceptions.InvalidStateError):
+        with contextlib.suppress(grpc.aio.AioRpcError, InvalidStateError):
             await self.send_eof()
-            if isinstance(self.context, grpc._cython.cygrpc._ServicerContext):
+            if isinstance(self.context, grpc._cython.cygrpc._ServicerContext):  # type: ignore[attr-defined]  # ty: ignore[possibly-missing-submodule]
                 await self.context.abort(grpc.StatusCode.ABORTED, "RouterStream: aclose")

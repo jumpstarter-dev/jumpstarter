@@ -4,11 +4,14 @@ from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+import anyio
 import pytest
 from grpc import StatusCode
 from grpc.aio import AioRpcError
 
+from jumpstarter.client.core import AsyncDriverClient, DriverError
 from jumpstarter.common import ExporterStatus, Metadata
+from jumpstarter.common.exceptions import CONSOLE_IN_USE_MARKER
 
 pytestmark = pytest.mark.anyio
 
@@ -30,6 +33,44 @@ class MockAioRpcError(AioRpcError):
 def create_mock_rpc_error(code: StatusCode, details: str = "") -> MockAioRpcError:
     """Create a mock AioRpcError with the specified status code."""
     return MockAioRpcError(code, details)
+
+
+async def test_stream_async_hides_console_marker_from_python_callers() -> None:
+    stub = MagicMock()
+    context = MagicMock()
+    context.initial_metadata = AsyncMock(
+        side_effect=create_mock_rpc_error(
+            StatusCode.FAILED_PRECONDITION,
+            f"{CONSOLE_IN_USE_MARKER} Console in use by another client.",
+        )
+    )
+    stub.Stream.return_value = context
+    client = AsyncDriverClient(stub=stub)
+
+    with pytest.raises(DriverError, match="Console in use") as exc_info:
+        async with client.stream_async("connect"):
+            pass
+
+    assert CONSOLE_IN_USE_MARKER not in str(exc_info.value)
+
+
+async def test_stream_async_translates_console_in_use_abort_before_headers() -> None:
+    # Real grpc-aio behavior when the exporter aborts before sending headers:
+    # initial_metadata() resolves empty and the status sits on the finished call.
+    stub = MagicMock()
+    context = MagicMock()
+    context.initial_metadata = AsyncMock(return_value=())
+    context.done.return_value = True
+    context.code = AsyncMock(return_value=StatusCode.FAILED_PRECONDITION)
+    context.details = AsyncMock(return_value=f"{CONSOLE_IN_USE_MARKER} Console in use by another client.")
+    stub.Stream.return_value = context
+    client = AsyncDriverClient(stub=stub)
+
+    with pytest.raises(DriverError, match="Console in use") as exc_info:
+        async with client.stream_async("connect"):
+            pass
+
+    assert CONSOLE_IN_USE_MARKER not in str(exc_info.value)
 
 
 def create_status_response(
@@ -293,3 +334,33 @@ class TestAsyncDriverClientWaitForHookStatus:
 
         # Should return True (backward compatibility - assume hook complete)
         assert result is True
+
+
+class TestAsyncDriverClientWaitForLeaseReadyMonitored:
+    @pytest.mark.parametrize(
+        "error", [create_mock_rpc_error(StatusCode.UNIMPLEMENTED), NotImplementedError()], ids=["grpc", "stub"]
+    )
+    async def test_old_exporter_is_ready_before_and_after_discovery(self, error: Exception) -> None:
+        """An exporter without GetStatus counts as LEASE_READY for a wait that is
+        pending when the RPC fails, and for later waits once the client knows."""
+        reply = anyio.Event()
+
+        async def get_status(request, timeout=None):
+            await reply.wait()
+            raise error
+
+        stub = MagicMock()
+        stub.GetStatus = AsyncMock(side_effect=get_status)
+        client = AsyncDriverClient(stub=stub)
+
+        with anyio.fail_after(5):
+            async with client.status_monitor_async() as monitor, anyio.create_task_group() as tg:
+                tg.start_soon(client.wait_for_lease_ready_monitored, 2.0)
+                await anyio.wait_all_tasks_blocked()
+                assert monitor._active_waiters == 1
+                reply.set()
+
+            async with client.status_monitor_async():
+                await client.wait_for_lease_ready_monitored(timeout=2.0)
+
+        stub.GetStatus.assert_awaited_once()

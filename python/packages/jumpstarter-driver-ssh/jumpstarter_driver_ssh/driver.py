@@ -47,6 +47,6 @@ class SSHWrapper(Driver):
         if self.ssh_identity is None and self.ssh_identity_file:
             try:
                 self.ssh_identity = Path(self.ssh_identity_file).read_text()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 raise ConfigurationError(f"Failed to read ssh_identity_file '{self.ssh_identity_file}': {e}") from None
         return self.ssh_identity

@@ -1,24 +1,28 @@
 import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, Optional, Union
+from typing import Any
 
 from anyio import (
+    BrokenResourceError,
     create_memory_object_stream,
     sleep,
 )
-from anyio._backends._asyncio import StreamReaderWrapper, StreamWriterWrapper
+
+# pyserial-asyncio returns asyncio streams, and anyio adapts those only in its private backend.
+from anyio._backends._asyncio import StreamReaderWrapper, StreamWriterWrapper  # noqa: TID251
 from anyio.abc import ObjectSendStream, ObjectStream
 from anyio.streams.stapled import StapledObjectStream
-from serial import serial_for_url
+from serial import SerialException, serial_for_url
 from serial_asyncio import open_serial_connection
 
-from jumpstarter.driver import Driver, export, exportstream
+from jumpstarter.driver import Driver, export
+from jumpstarter.streams.fanout import FanOutStreamMixin
 
 try:
     import termios
 except ImportError:  # pragma: no cover - non-POSIX platforms
-    termios = None  # ty: ignore[invalid-assignment]
+    termios = None  # type: ignore[assignment]
 
 LOOP = "loop://"
 
@@ -26,8 +30,8 @@ LOOP = "loop://"
 @dataclass(kw_only=True)
 class ThrottledStream(ObjectStream):
     """Wrapper stream that adds CPS throttling to any ObjectStream."""
-    stream: Union[ObjectSendStream[bytes], ObjectStream[bytes]]
-    cps: Optional[float] = None
+    stream: ObjectSendStream[bytes] | ObjectStream[bytes]
+    cps: float | None = None
 
     async def send(self, item: bytes):
         if self.cps is not None and self.cps > 0:
@@ -40,6 +44,7 @@ class ThrottledStream(ObjectStream):
         if not item:
             return
 
+        assert self.cps is not None
         delay_per_char = 1.0 / self.cps
 
         # Send data character by character with delay
@@ -53,12 +58,12 @@ class ThrottledStream(ObjectStream):
 
     async def receive(self):
         if hasattr(self.stream, "receive"):
-            return await self.stream.receive()  # type: ignore[no-any-return]
+            return await self.stream.receive()  # ty: ignore[call-non-callable]
         raise RuntimeError("receive() called on send-only ThrottledStream")
 
     async def send_eof(self):
         if hasattr(self.stream, "send_eof"):
-            await self.stream.send_eof()
+            await self.stream.send_eof()  # ty: ignore[call-non-callable]
 
     async def aclose(self):
         await self.stream.aclose()
@@ -67,23 +72,26 @@ class ThrottledStream(ObjectStream):
 @dataclass(kw_only=True)
 class AsyncSerial(ObjectStream):
     reader: StreamReaderWrapper
-    writer: Union[StreamWriterWrapper, ThrottledStream]
-    cps: Optional[float] = None  # characters per second throttling
+    writer: StreamWriterWrapper | ThrottledStream
+    cps: float | None = None  # characters per second throttling
 
     def __post_init__(self):
         # Replace writer with throttled version if chars-per-second throttling is set
         if self.cps is not None and self.cps > 0:
-            self.writer = ThrottledStream(stream=self.writer, cps=self.cps)
+            self.writer = ThrottledStream(stream=self.writer, cps=self.cps)  # ty: ignore[invalid-argument-type]
 
     async def send(self, item: bytes):
-        await self.writer.send(item)
+        try:
+            await self.writer.send(item)
+        except (SerialException, ConnectionError) as exc:
+            raise BrokenResourceError from exc
 
     async def receive(self):
         return await self.reader.receive()
 
     async def send_eof(self):
         if hasattr(self.writer, "send_eof"):
-            await self.writer.send_eof()
+            await self.writer.send_eof()  # ty: ignore[call-non-callable]
 
     async def aclose(self):
         try:
@@ -93,15 +101,19 @@ class AsyncSerial(ObjectStream):
 
 
 @dataclass(kw_only=True)
-class PySerial(Driver):
+class PySerial(FanOutStreamMixin, Driver):
     driver_type = "serial"
 
     url: str
     baudrate: int = field(default=115200)
     check_present: bool = field(default=True)
-    cps: Optional[float] = field(default=None)  # characters per second throttling
+    cps: float | None = field(default=None)  # characters per second throttling
     disable_hupcl: bool = field(default=False)
+    always_on: bool = field(default=False)
     _transport: Any = field(default=None, init=False, repr=False)
+
+    def _get_fanout_always_on(self) -> bool:
+        return self.always_on
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -131,45 +143,8 @@ class PySerial(Driver):
         except (AttributeError, OSError, TypeError):
             self.logger.warning("Failed to disable HUPCL on %s", self.url)
 
-    @export
-    def close(self):
-        """Force-close any active serial connection by closing the underlying transport.
-
-        The asyncio stream reader/writer will naturally receive errors or EOF
-        when the fd is closed, causing the stream to tear down without needing
-        explicit signalling.
-
-        Safe to call when no stream is active (no-op).
-        """
-        transport = self._transport
-        if transport is None:
-            self.logger.debug("close() called but no active connection (no-op)")
-            return
-
-        self.logger.debug("close() closing transport for %s", self.url)
-        transport.close()
-
-    @export
-    def set_dtr(self, value: bool):
-        """Set the DTR control signal."""
-        s = serial_for_url(self.url, baudrate=self.baudrate)
-        try:
-            s.dtr = value
-        finally:
-            s.close()
-
-    @export
-    def set_rts(self, value: bool):
-        """Set the RTS control signal."""
-        s = serial_for_url(self.url, baudrate=self.baudrate)
-        try:
-            s.rts = value
-        finally:
-            s.close()
-
-    @exportstream
     @asynccontextmanager
-    async def connect(self):
+    async def _open_source(self):
         cps_info = f", cps: {self.cps}" if self.cps is not None else ""
         self.logger.info("Connecting to %s, baudrate: %d%s", self.url, self.baudrate, cps_info)
 
@@ -195,3 +170,56 @@ class PySerial(Driver):
         finally:
             self._transport = None
         self.logger.info("Disconnected from %s", self.url)
+
+    @export
+    def close(self):
+        """Boot every attached console client and release the write token.
+
+        Client-callable recovery hook: use it to reclaim a console wedged or
+        abandoned by another client. If this was the last client and
+        ``always_on`` is false, the reader stops and the serial port closes.
+        Closing a port can toggle DTR and reset some boards unless
+        ``disable_hupcl`` is set. Full teardown happens at session end via
+        shutdown().
+        """
+        # FanOutStreamMixin.close() kicks clients + releases the token, then
+        # chains to Driver.close() for any children.
+        super().close()
+
+    def shutdown(self):
+        """Session-end teardown: drop the serial link and stop the reader.
+
+        Runs on the exporter's event-loop thread from Session teardown. In a
+        session the reader has already closed the transport when the session
+        stopped serving; outside one, shutdown_sync() can only cancel the reader,
+        not await it, so close the transport explicitly first. pyserial-asyncio
+        still releases the handle on a later loop iteration (after flushing any
+        buffered writes), not before this returns.
+        """
+        transport = self._transport
+        if transport is None:
+            self.logger.debug("shutdown() called but no active connection")
+        else:
+            self.logger.debug("shutdown() closing transport for %s", self.url)
+            transport.close()
+        # FanOutStreamMixin.shutdown() tears down the reader, then Driver.shutdown()
+        # recurses to children.
+        super().shutdown()
+
+    @export
+    def set_dtr(self, value: bool):
+        """Set the DTR control signal."""
+        s = serial_for_url(self.url, baudrate=self.baudrate)
+        try:
+            s.dtr = value
+        finally:
+            s.close()
+
+    @export
+    def set_rts(self, value: bool):
+        """Set the RTS control signal."""
+        s = serial_for_url(self.url, baudrate=self.baudrate)
+        try:
+            s.rts = value
+        finally:
+            s.close()

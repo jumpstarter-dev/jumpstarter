@@ -41,7 +41,7 @@ func createOpenShiftIngressConfig(domain string) *unstructured.Unstructured {
 		Kind:    "Ingress",
 	})
 	ingress.SetName("cluster")
-	ingress.Object["spec"] = map[string]interface{}{
+	ingress.Object["spec"] = map[string]any{
 		"domain": domain,
 	}
 	return ingress
@@ -92,7 +92,7 @@ var _ = Describe("detectOpenShiftBaseDomain", func() {
 					Kind:    "Ingress",
 				})
 				ingress.SetName("cluster")
-				ingress.Object["spec"] = map[string]interface{}{}
+				ingress.Object["spec"] = map[string]any{}
 
 				Expect(k8sClient.Create(ctx, ingress)).To(Succeed())
 				DeferCleanup(func() { _ = k8sClient.Delete(ctx, ingress) })

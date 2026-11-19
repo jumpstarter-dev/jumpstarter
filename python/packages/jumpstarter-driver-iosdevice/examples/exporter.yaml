@@ -1,0 +1,13 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: ios-device
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: REPLACE-WITH-EXPORTER-TOKEN
+export:
+  ios:
+    type: jumpstarter_driver_iosdevice.driver.IosDevice
+    config:
+      usb_port: "1-4.2"
+      http_port: 8100

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -16,7 +15,7 @@ from tempfile import TemporaryDirectory
 from typing import Literal
 
 import yaml
-from anyio import fail_after, run_process, sleep
+from anyio import EndOfStream, current_time, fail_after, move_on_after, run_process, sleep
 from anyio.streams.file import FileReadStream, FileWriteStream
 from jumpstarter_driver_network.driver import TcpNetwork, UnixNetwork, VsockNetwork
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
@@ -26,6 +25,7 @@ from qemu.qmp import QMPClient
 from qemu.qmp.protocol import ConnectError, Runstate
 
 from jumpstarter.common.fls import get_fls_binary
+from jumpstarter.common.process import open_streaming_process
 from jumpstarter.driver import Driver, FlasherInterface, export
 from jumpstarter.streams.encoding import AutoDecompressIterator
 
@@ -43,15 +43,6 @@ def _vsock_available(socket_path: str = "/dev/vhost-vsock") -> bool:
 class QmpLogFilter(logging.Filter):
     def filter(self, record):
         return False
-
-
-async def _read_pipe(stream: asyncio.StreamReader, name: str, queue: asyncio.Queue):
-    while True:
-        line = await stream.readline()
-        if not line:
-            break
-        await queue.put((name, line.decode("utf-8", errors="replace")))
-    await queue.put((name, None))
 
 
 @dataclass(kw_only=True)
@@ -75,11 +66,13 @@ class QemuFlasher(FlasherInterface, Driver):
                 pass
             return
 
-        async with await FileWriteStream.from_path(self.parent.validate_partition(partition)) as stream:
-            async with self.resource(source) as res:
-                # Wrap with auto-decompression to handle .gz, .xz, .bz2, .zstd files
-                async for chunk in AutoDecompressIterator(source=res):
-                    await stream.send(chunk)
+        async with (
+            await FileWriteStream.from_path(self.parent.validate_partition(partition)) as stream,
+            self.resource(source) as res,
+        ):
+            # Wrap with auto-decompression to handle .gz, .xz, .bz2, .zstd files
+            async for chunk in AutoDecompressIterator(source=res):
+                await stream.send(chunk)
 
     @export
     async def flash_oci(
@@ -121,8 +114,8 @@ class QemuFlasher(FlasherInterface, Driver):
         fls_env = None
         if creds.is_authenticated:
             fls_env = os.environ.copy()
-            fls_env["FLS_REGISTRY_USERNAME"] = creds.username
-            fls_env["FLS_REGISTRY_PASSWORD"] = creds.plain_password
+            fls_env["FLS_REGISTRY_USERNAME"] = creds.username or ""
+            fls_env["FLS_REGISTRY_PASSWORD"] = creds.plain_password or ""
 
         self.logger.info(f"Running fls: {' '.join(fls_cmd)}")
 
@@ -136,70 +129,35 @@ class QemuFlasher(FlasherInterface, Driver):
         self, cmd: list[str], env: dict[str, str] | None
     ) -> AsyncGenerator[tuple[str, str, int | None], None]:
         """Run a subprocess and yield (stdout, stderr, returncode) tuples as output arrives."""
-        process = await asyncio.create_subprocess_exec(  # ty: ignore[missing-argument]
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,  # ty: ignore[unresolved-attribute]
-            stderr=asyncio.subprocess.PIPE,  # ty: ignore[unresolved-attribute]
-            env=env,
-        )
-
-        output_queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
-
-        tasks = [
-            asyncio.create_task(_read_pipe(process.stdout, "stdout", output_queue)),
-            asyncio.create_task(_read_pipe(process.stderr, "stderr", output_queue)),
-        ]
-
-        finished_streams = 0
-        start_time = asyncio.get_running_loop().time()
-
-        try:
-            while finished_streams < 2:
-                elapsed = asyncio.get_running_loop().time() - start_time
-                if elapsed >= self.parent.flash_timeout:
-                    process.kill()
-                    await process.wait()
+        deadline = current_time() + self.parent.flash_timeout
+        async with open_streaming_process(cmd, env=env, stop_grace=0) as process:
+            while True:
+                with move_on_after(deadline - current_time()) as timeout:
+                    try:
+                        line = await process.receive_line()
+                    except EndOfStream:
+                        break
+                if timeout.cancelled_caught:
+                    await process.stop()
                     raise RuntimeError(f"fls flash timed out after {self.parent.flash_timeout}s")
+                text = line.data.decode("utf-8", errors="replace")
+                yield (text, "", None) if line.source == "stdout" else ("", text, None)
+            returncode = await process.wait()
 
-                remaining = self.parent.flash_timeout - elapsed
-                try:
-                    name, text = await asyncio.wait_for(output_queue.get(), timeout=min(remaining, 30))
-                except asyncio.TimeoutError:
-                    continue
+        if returncode != 0:
+            self.logger.error(f"fls failed - return code: {returncode}")
+            raise RuntimeError(f"fls flash failed (return code {returncode})")
 
-                if text is None:
-                    finished_streams += 1
-                    continue
-
-                stdout_chunk = text if name == "stdout" else ""
-                stderr_chunk = text if name == "stderr" else ""
-                yield stdout_chunk, stderr_chunk, None
-
-            await process.wait()
-            returncode = process.returncode
-
-            if returncode != 0:
-                self.logger.error(f"fls failed - return code: {returncode}")
-                raise RuntimeError(f"fls flash failed (return code {returncode})")
-
-            self.logger.info("OCI flash completed successfully")
-            yield "", "", returncode
-        finally:
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-            if process.returncode is None:
-                process.kill()
-                await process.wait()
+        self.logger.info("OCI flash completed successfully")
+        yield "", "", returncode
 
     @export
     async def dump(self, target, partition: str | None = None):
-        async with await FileReadStream.from_path(
+        async with await FileReadStream.from_path(  # pragma: no cover
             self.parent.validate_partition(partition, use_default_partitions=True)
-        ) as stream:
-            async with self.resource(target) as res:
-                async for chunk in stream:
-                    await res.send(chunk)
+        ) as stream, self.resource(target) as res:
+            async for chunk in stream:
+                await res.send(chunk)
 
 
 @dataclass(kw_only=True)
@@ -211,6 +169,15 @@ class QemuPower(PowerInterface, Driver):
         if hasattr(self, "_process"):
             self.logger.warning("already powered on, ignoring request")
             return
+
+        # The mmio transport exists to boot AIB aboot images via u-boot, whose
+        # DTB (e.g. qemu-tcg.dtb) hardcodes a 4G memory layout. A smaller -m
+        # silently fails to boot, so fail loudly instead
+        if self.parent.virtio_transport == "mmio" and self.parent._parse_size(self.parent.mem) < 4 * 1024**3:
+            raise RuntimeError(
+                f"virtio_transport='mmio' boots AIB aboot images whose DTB hardcodes a 4G "
+                f"memory layout; mem={self.parent.mem} is too small — set mem to at least 4G."
+            )
 
         root = self.parent.validate_partition("root", use_default_partitions=True)
         bios = self.parent.validate_partition("bios", use_default_partitions=True)
@@ -247,9 +214,10 @@ class QemuPower(PowerInterface, Driver):
                 case "x86_64":
                     cpu = "qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt"
 
+        if cpu is not None:
+            cmdline += ["-cpu", cpu]
+
         cmdline += [
-            "-cpu",
-            cpu,
             "-qmp",
             f"unix:{self.parent._qmp},server=on,wait=off",
             "-smp",
@@ -268,30 +236,35 @@ class QemuPower(PowerInterface, Driver):
             ",".join(
                 ["user", "id=eth0"]
                 + [
-                    "hostfwd={}:{}:{}-:{}".format(v.protocol, v.hostaddr, v.hostport, v.guestport)
+                    f"hostfwd={v.protocol}:{v.hostaddr}:{v.hostport}-:{v.guestport}"
                     for k, v in self.parent.hostfwd.items()
                 ]
             ),
         ]
 
+        net_device = "virtio-net-device" if self.parent.virtio_transport == "mmio" else "virtio-net-pci"
+        blk_device = "virtio-blk-device" if self.parent.virtio_transport == "mmio" else "virtio-blk-pci"
+
         devices = [
-            "virtio-net-pci,netdev=eth0",
+            f"{net_device},netdev=eth0",
             "virtio-gpu-pci",
         ]
 
         if _vsock_available():
-            devices.append("vhost-vsock-pci,guest-cid={}".format(self.parent._cid))
+            devices.append(f"vhost-vsock-pci,guest-cid={self.parent._cid}")
 
         for device in devices:
             cmdline += ["-device", device]
 
-        if bios.exists():
+        if bios.exists() or self.parent._runtime_firmware_path(bios):
             cmdline += [
                 "-bios",
                 str(bios),
             ]
 
-        if ovmf_code.exists() and ovmf_vars.exists():
+        if (ovmf_code.exists() or self.parent._runtime_firmware_path(ovmf_code)) and (
+            ovmf_vars.exists() or self.parent._runtime_firmware_path(ovmf_vars)
+        ):
             cmdline += [
                 "-drive",
                 f"file={ovmf_code},if=pflash,format=raw,unit=0,readonly=on",
@@ -304,6 +277,7 @@ class QemuPower(PowerInterface, Driver):
                 self.parent._wrap_command(["qemu-img", "info", "--output=json", str(root)]),
                 stdout=PIPE,
                 stderr=PIPE,
+                check=False,
             )
             try:
                 proc.check_returncode()
@@ -343,6 +317,7 @@ class QemuPower(PowerInterface, Driver):
                         self.parent._wrap_command(["qemu-img", "resize", str(root), str(requested)]),
                         stdout=PIPE,
                         stderr=PIPE,
+                        check=False,
                     )
                     if proc.returncode != 0:
                         raise RuntimeError(f"Failed to resize disk: {proc.stderr.decode()}")
@@ -351,24 +326,31 @@ class QemuPower(PowerInterface, Driver):
                 "-blockdev",
                 f"driver={image_driver},node-name=rootfs,file.driver=file,file.filename={root}",
                 "-device",
-                "virtio-blk-pci,drive=rootfs,bootindex=1",
+                f"{blk_device},drive=rootfs,bootindex=1",
             ]
 
-        self._cidata = self.parent.cidata()
+        # aboot images (mmio transport) boot via u-boot, whose bootcmd probes a
+        # single virtio device (devnum=0). QEMU assigns virtio-mmio devices in
+        # reverse command-line order, so a cloud-init CIDATA disk (vvfat, no GPT)
+        # would take virtio 0 and shadow the real boot disk. Skip it, matching
+        # `air --aboot`, which attaches no cidata (aboot images carry their
+        # config baked in from the AIB manifest).
+        if self.parent.virtio_transport != "mmio":
+            self._cidata = self.parent.cidata()
 
-        cmdline += [
-            "-blockdev",
-            f"driver=vvfat,node-name=cidata,read-only=on,dir={self._cidata.name},label=CIDATA",
-            "-device",
-            "virtio-blk-pci,drive=cidata",
-        ]
+            cmdline += [
+                "-blockdev",
+                f"driver=vvfat,node-name=cidata,read-only=on,dir={self._cidata.name},label=CIDATA",
+                "-device",
+                f"{blk_device},drive=cidata",
+            ]
 
-        self._process = Popen(self.parent._wrap_command(cmdline), stdin=PIPE)
+        self._process = Popen(self.parent._wrap_command(cmdline), stdin=PIPE)  # noqa: ASYNC220
 
         qmp = QMPClient(self.parent.hostname)
 
         logging.getLogger(
-            "qemu.qmp.protocol.{}".format(self.parent.hostname),
+            f"qemu.qmp.protocol.{self.parent.hostname}",
         ).addFilter(QmpLogFilter())
 
         with fail_after(10):
@@ -380,7 +362,7 @@ class QemuPower(PowerInterface, Driver):
 
         if not self.parent.launcher_socket:
             chardevs = await qmp.execute("query-chardev")
-            pty = next(c for c in chardevs if c["label"] == "serial0")["filename"].lstrip("pty:")
+            pty = next(c for c in chardevs if c["label"] == "serial0")["filename"].lstrip("pty:")  # ty: ignore[not-iterable]
             Path(self.parent._pty).unlink(missing_ok=True)
             Path(self.parent._pty).symlink_to(pty)
 
@@ -436,6 +418,13 @@ class Qemu(Driver):
 
     default_partitions: dict[str, Path] = field(default_factory=dict)
 
+    # "pci" matches UEFI/OVMF boot (default). Boards booting a non-UEFI "bios"
+    # firmware (e.g. u-boot for an aboot-partition image, as produced by
+    # automotive-image-builder's abootqemu/abootqemukvm targets) generally can't
+    # enumerate PCI that early, so the disk and network devices need to be
+    # MMIO-attached ("mmio") for that firmware to see them at all.
+    virtio_transport: Literal["pci", "mmio"] = "pci"
+
     hostfwd: dict[str, Hostfwd] = field(default_factory=dict)
 
     # FLS configuration for OCI flashing
@@ -468,7 +457,10 @@ class Qemu(Driver):
         if self.launcher_socket:
             self.children["console"] = UnixNetwork(path=self._serial_socket)
         else:
-            self.children["console"] = PySerial(url=self._pty, check_present=False)
+            # The power child enables the console's Ctrl-] x3 power-cycle hotkey.
+            self.children["console"] = PySerial(
+                url=self._pty, check_present=False, children={"power": self.children["power"]}
+            )
 
         self.children["vnc"] = UnixNetwork(path=self._vnc)
 
@@ -482,11 +474,24 @@ class Qemu(Driver):
 
     @property
     def _work_dir(self) -> str:
+        """Directory for sockets and jumpstarter-exec in sidecar mode."""
         if self.launcher_socket:
             # Sidecar: QEMU only sees the shared volume. Derive from the
             # socket path so production (/shared/launcher.sock) and tests
             # (tmpdir/shared/launcher.sock) both place cidata correctly.
             return str(Path(self.launcher_socket).parent)
+        return self._tmp_dir.name
+
+    @property
+    def _disk_dir(self) -> str:
+        """Directory for flashable guest disk images (root, bios, …)."""
+        if self.launcher_socket:
+            work = Path(self._work_dir)
+            # Production sidecar: shared volume for sockets, separate mount for guest disk.
+            # Keep in sync with Go constants in exporterset/provisioners/qemu and disk packages.
+            if work == Path("/shared"):
+                return "/disk"
+            return str(work)
         return self._tmp_dir.name
 
     @property
@@ -518,6 +523,10 @@ class Qemu(Driver):
     def _cid(self) -> int:
         return randbits(32)
 
+    def _runtime_firmware_path(self, path: Path) -> bool:
+        """True when path is a default firmware path that lives in the runtime image."""
+        return self.launcher_socket is not None and path in self.default_partitions.values()
+
     def validate_partition(
         self,
         partition: str | None = None,
@@ -525,13 +534,13 @@ class Qemu(Driver):
     ) -> Path:
         match partition:
             case "root" | None:
-                path = Path(self._work_dir) / "root"
+                path = Path(self._disk_dir) / "root"
             case "OVMF_CODE.fd":
-                path = Path(self._work_dir) / "OVMF_CODE.fd"
+                path = Path(self._disk_dir) / "OVMF_CODE.fd"
             case "OVMF_VARS.fd":
-                path = Path(self._work_dir) / "OVMF_VARS.fd"
+                path = Path(self._disk_dir) / "OVMF_VARS.fd"
             case "bios":
-                path = Path(self._work_dir) / "bios"
+                path = Path(self._disk_dir) / "bios"
             case _:
                 raise ValueError(f"invalid partition name: {partition}")
 

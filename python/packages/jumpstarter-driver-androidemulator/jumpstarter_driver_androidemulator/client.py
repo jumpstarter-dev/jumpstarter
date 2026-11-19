@@ -1,3 +1,4 @@
+import contextlib
 import time
 from contextlib import contextmanager
 
@@ -42,14 +43,12 @@ class AndroidEmulatorClient(CompositeClient):
         """Poll until the emulator reports boot complete."""
         deadline = time.time() + timeout
         while time.time() < deadline:
-            try:
+            with contextlib.suppress(Exception):
                 devices = adb.device_list()
                 if devices:
                     result = devices[0].shell("getprop sys.boot_completed").strip()
                     if result == "1":
                         return
-            except Exception:
-                pass
             time.sleep(2)
         raise TimeoutError(f"Emulator did not boot within {timeout} seconds")
 

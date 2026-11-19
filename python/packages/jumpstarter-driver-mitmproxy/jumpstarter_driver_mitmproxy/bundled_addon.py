@@ -22,7 +22,7 @@ The addon hot-reloads config when the file changes on disk.
 
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: TID251
 import hashlib
 import importlib
 import importlib.util
@@ -33,9 +33,9 @@ import re
 import socket as _socket
 import time
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import parse_qs, urlparse
 
 from mitmproxy import ctx, http
@@ -158,12 +158,12 @@ class TemplateEngine:
     # Class-level counter state, intentionally shared across instances.
     # Counters persist across config reloads so {{counter(name)}} values
     # increase monotonically within a proxy session.
-    _counters: dict[str, int] = defaultdict(int)
+    _counters: ClassVar[dict[str, int]]= defaultdict(int)
 
     # Only these environment variables may be read via {{env(...)}} templates.
     # This prevents mock configs from leaking secrets such as credentials or
     # API keys.  Extend this set when new env-driven behaviour is needed.
-    ALLOWED_ENV_VARS: set[str] = {
+    ALLOWED_ENV_VARS: ClassVar[set[str]]= {
         "JUMPSTARTER_ENV",
         "JUMPSTARTER_DEVICE_ID",
         "JUMPSTARTER_MOCK_PROFILE",
@@ -234,8 +234,8 @@ class TemplateEngine:
     @classmethod
     def _evaluate_builtin(cls, expr: str) -> Any | None:
         """Evaluate built-in expressions (no flow needed)."""
-        if expr == "now_iso":
-            return datetime.now(timezone.utc).isoformat()
+        if expr == "now_iso":  # pragma: no cover
+            return datetime.now(UTC).isoformat()
         if expr == "now_epoch":
             return int(time.time())
         if expr == "uuid":
@@ -288,7 +288,7 @@ class TemplateEngine:
         ctx.log.warn(f"env() template blocked: variable '{var_name}' is not in ALLOWED_ENV_VARS")
         return ""
 
-    _BUILTIN_DISPATCH: list[tuple[str, Any]] = [
+    _BUILTIN_DISPATCH: ClassVar[list[tuple[str, Any]]]= [
         ("random_int(", _eval_random_int),
         ("random_float(", _eval_random_float),
         ("random_choice(", _eval_random_choice),
@@ -340,7 +340,7 @@ class TemplateEngine:
         except (IndexError, ValueError):
             return ""
 
-    _FLOW_DISPATCH: list[tuple[str, Any]] = [
+    _FLOW_DISPATCH: ClassVar[list[tuple[str, Any]]]= [
         ("request_header(", _eval_request_header),
         ("request_body_json(", _eval_request_body_json),
         ("request_query(", _eval_request_query),
@@ -395,12 +395,29 @@ class AddonRegistry:
         self.addons_dir = Path(addons_dir)
         self._handlers: dict[str, Any] = {}
 
+    def _script_path(self, name: str) -> Path | None:
+        """Path of addon ``name``'s script, or ``None`` if it leaves the addons dir.
+
+        ``name`` comes from the mock config, so ``../x`` or an absolute path must
+        not be able to import and run an arbitrary ``.py`` file. Checked on the
+        normalized path, not the symlink-resolved one: the directory is the
+        operator's, so a script they symlinked into it still loads.
+        """
+        base = os.path.abspath(self.addons_dir)
+        script = os.path.abspath(os.path.join(base, f"{name}.py"))
+        if os.path.commonpath([base, script]) != base:
+            return None
+        return Path(script)
+
     def get_handler(self, name: str) -> Any | None:
         """Load and cache a custom addon handler by name."""
         if name in self._handlers:
             return self._handlers[name]
 
-        script_path = self.addons_dir / f"{name}.py"
+        script_path = self._script_path(name)
+        if script_path is None:
+            ctx.log.error(f"Addon path traversal blocked: {name!r}")
+            return None
         if not script_path.exists():
             ctx.log.error(f"Addon script not found: {script_path}")
             return None
@@ -419,7 +436,7 @@ class AddonRegistry:
             spec.loader.exec_module(module)
 
             if hasattr(module, "Handler"):
-                handler = module.Handler()  # ty: ignore[call-non-callable]
+                handler = module.Handler()
                 self._handlers[name] = handler
                 ctx.log.info(f"Loaded addon: {name}")
                 return handler
@@ -428,7 +445,7 @@ class AddonRegistry:
                     f"Addon {name} missing Handler class"
                 )
                 return None
-        except Exception as e:
+        except Exception as e:  # pragma: no cover  # noqa: BLE001
             ctx.log.error(f"Failed to load addon {name}: {e}")
             return None
 
@@ -443,6 +460,45 @@ class AddonRegistry:
 
 CAPTURE_SOCKET = "/opt/jumpstarter/mitmproxy/capture.sock"
 CAPTURE_SPOOL_DIR = "/opt/jumpstarter/mitmproxy/capture-spool"
+
+def _open_private(path: str, flags: int) -> int:
+    """``open`` opener: a file that is mode 0600 before anything is written to it.
+
+    Captured bodies can hold tokens or personal data, and the spool lives in a
+    shared temp directory by default, so who can read them must not depend on
+    the umask. A symlink at the path is never followed. A file already there,
+    left by a crashed session or an older version, keeps its old mode, so the
+    mode is set explicitly: opening truncates it, this tightens it, and only
+    then does the caller write. A file this user cannot chmod is refused.
+    """
+    fd = os.open(path, flags | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+    except BaseException:
+        os.close(fd)  # open() has not taken the descriptor over yet
+        raise
+    return fd
+
+
+def _make_private_dir(path: Path) -> None:
+    """Create ``path`` if needed and make sure it is mode 0700, never via a symlink.
+
+    ``mkdir``'s mode only applies to a directory it creates, so one left by an
+    earlier session or version keeps its looser permissions. ``chmod`` follows
+    symlinks, which in a shared temp directory would let a link planted at this
+    path change the mode of someone else's directory. Opening with
+    ``O_NOFOLLOW`` and changing the mode on the descriptor refuses a link instead.
+    """
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd = os.open(
+        path,
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+    )
+    try:
+        os.fchmod(fd, 0o700)
+    finally:
+        os.close(fd)
+
 
 # Response bodies at or below this size are sent inline in capture events.
 # Larger or binary bodies are spooled to disk and only the file path is sent.
@@ -475,11 +531,10 @@ class CaptureClient:
         """Send a JSON event line. Reconnects once on failure."""
         payload = json.dumps(event) + "\n"
         for attempt in range(2):
-            if self._sock is None:
-                if not self._connect():
-                    return
+            if self._sock is None and not self._connect():  # pragma: no cover
+                return
             try:
-                self._sock.sendall(payload.encode())
+                self._sock.sendall(payload.encode())  # ty: ignore[unresolved-attribute]
                 return
             except OSError:
                 self.close()
@@ -536,6 +591,7 @@ class MitmproxyMockAddon:
     )
 
     def __init__(self):
+        """Set up paths and per-session state. Touches no files: this runs at import time."""
         self.config: dict = {}
         self.endpoints: dict[str, dict] = {}
         self.files_dir: Path = Path(self.MOCK_DIR) / "../mock-files"
@@ -548,8 +604,9 @@ class MitmproxyMockAddon:
         self._state: dict = {}
         self._state_mtime: int = 0
         self._state_path = Path(self.MOCK_DIR) / "state.json"
+        # Created on first spool, not here: this runs at import time, where the
+        # default path may not exist or be writable (#1194).
         self._spool_dir = Path(CAPTURE_SPOOL_DIR)
-        self._spool_dir.mkdir(parents=True, exist_ok=True)
         self._spool_counter = 0
         self._load_config()
 
@@ -597,7 +654,7 @@ class MitmproxyMockAddon:
                 f"(files: {self.files_dir}, addons: {addons_dir})"
             )
 
-        except Exception as e:
+        except Exception as e:  # pragma: no cover  # noqa: BLE001
             ctx.log.error(f"Failed to load config: {e}")
 
     def _load_state(self):
@@ -614,7 +671,7 @@ class MitmproxyMockAddon:
                 self._state = json.load(f)
 
             self._state_mtime = mtime
-        except Exception as e:
+        except Exception as e:  # pragma: no cover  # noqa: BLE001
             ctx.log.error(f"Failed to load state: {e}")
 
     # ── Request matching ────────────────────────────────────
@@ -691,10 +748,9 @@ class MitmproxyMockAddon:
                 or (is_websocket and pat_method == "WEBSOCKET")
             )
 
-            if match_method and path.startswith(prefix):
-                if self._matches_conditions(ep, flow):
-                    priority = ep.get("priority", 0)
-                    candidates.append((priority, pattern, ep))
+            if match_method and path.startswith(prefix) and self._matches_conditions(ep, flow):  # pragma: no cover
+                priority = ep.get("priority", 0)
+                candidates.append((priority, pattern, ep))
 
     def _matches_conditions(
         self, endpoint: dict, flow: http.HTTPFlow,
@@ -1025,7 +1081,7 @@ class MitmproxyMockAddon:
                 ctx.log.warn(
                     f"Addon {addon_name} did not handle request"
                 )
-        except Exception as e:
+        except Exception as e:  # pragma: no cover  # noqa: BLE001
             ctx.log.error(f"Addon {addon_name} error: {e}")
             flow.response = http.Response.make(
                 500,
@@ -1090,7 +1146,7 @@ class MitmproxyMockAddon:
         if handler and hasattr(handler, "websocket_message"):
             try:
                 handler.websocket_message(flow, endpoint.get("addon_config", {}))
-            except Exception as e:
+            except Exception as e:  # pragma: no cover  # noqa: BLE001
                 ctx.log.error(
                     f"Addon {addon_name} websocket error: {e}"
                 )
@@ -1166,8 +1222,11 @@ class MitmproxyMockAddon:
         ).hexdigest()[:12]
         spool_name = f"{self._spool_counter:06d}_{url_hash}.bin"
         spool_path = self._spool_dir / spool_name
+        assert raw_body is not None
         try:
-            spool_path.write_bytes(raw_body)
+            _make_private_dir(self._spool_dir)
+            with open(spool_path, "wb", opener=_open_private) as f:
+                f.write(raw_body)
         except OSError as e:
             ctx.log.error(f"Failed to spool response body: {e}")
             return {

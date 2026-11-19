@@ -1,6 +1,5 @@
 from contextlib import suppress
 from dataclasses import dataclass, field
-from typing import Tuple
 
 from anyio import BrokenResourceError, WouldBlock, create_memory_object_stream
 from anyio.abc import AnyByteStream, ObjectStream
@@ -24,14 +23,14 @@ class WebsocketServerStream(ObjectStream[bytes]):
     stream: AnyByteStream
 
     ws: WSConnection = field(init=False, default_factory=lambda: WSConnection(ConnectionType.SERVER))
-    queue: Tuple[MemoryObjectSendStream[bytes], MemoryObjectReceiveStream[bytes]] = field(
+    queue: tuple[MemoryObjectSendStream[bytes], MemoryObjectReceiveStream[bytes]] = field(
         init=False,
-        default_factory=lambda: create_memory_object_stream[bytes](32),  # ty: ignore[call-non-callable]
+        default_factory=lambda: create_memory_object_stream[bytes](32),
     )
 
-    async def send(self, data: bytes) -> None:
+    async def send(self, item: bytes) -> None:
         try:
-            self.ws.receive_data(data)
+            self.ws.receive_data(item)
         except RemoteProtocolError as e:
             raise BrokenResourceError from e
 
@@ -79,11 +78,12 @@ class WebsocketClientStream(ObjectStream[bytes]):
 
     conn: WSSClientConnection
 
-    async def send(self, data: bytes) -> None:
-        await self.conn.send(data)
+    async def send(self, item: bytes) -> None:
+        await self.conn.send(item)
 
     async def receive(self) -> bytes:
-        return await self.conn.recv()
+        result = await self.conn.recv()
+        return result if isinstance(result, bytes) else result.encode()
 
     async def send_eof(self):
         pass

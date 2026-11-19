@@ -1,4 +1,5 @@
 import shutil
+import signal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -45,14 +46,16 @@ def test_launch_shell_prints_motd(tmp_path, monkeypatch, capfd):
 
 
 def test_launch_shell_no_motd_for_command(tmp_path, monkeypatch, capfd):
-    monkeypatch.setenv("SHELL", shutil.which("true"))
+    true_cmd = shutil.which("true")
+    assert true_cmd is not None
+    monkeypatch.setenv("SHELL", true_cmd)
     exit_code = launch_shell(
         host=str(tmp_path / "test.sock"),
         context="remote",
         allow=["*"],
         unsafe=False,
         use_profiles=False,
-        command=(shutil.which("true"),),
+        command=(true_cmd,),
         motd="Welcome to my-exporter!",
     )
     assert exit_code == 0
@@ -134,6 +137,128 @@ def test_launch_shell_sets_lease_env(tmp_path, monkeypatch):
     assert "JMP_LEASE=lease-123" in output
     assert "board=rpi4" in output
     assert "location=lab-1" in output
+
+
+def _launch_shell_capturing_popen(tmp_path, monkeypatch, shell_name):
+    """Run launch_shell with a mocked Popen; return (exit_code, call_args)."""
+    monkeypatch.setenv("SHELL", str(tmp_path / shell_name))
+    with patch("jumpstarter.common.utils.Popen") as mock_popen:
+        mock_popen.return_value.wait.return_value = 0
+        exit_code = launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+        )
+    return exit_code, mock_popen.call_args
+
+
+def test_launch_shell_bash_prompt_uses_emoji_by_default(tmp_path, monkeypatch):
+    monkeypatch.delenv("NO_ICONS", raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fake.bash")
+    assert exit_code == 0
+    ps1 = call[1].get("env", {}).get("PS1", "")
+    assert "⚡" in ps1
+    assert "➤" in ps1
+
+
+def test_launch_shell_bash_prompt_uses_ascii_when_no_icons(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_ICONS", "1")
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fake.bash")
+    assert exit_code == 0
+    ps1 = call[1].get("env", {}).get("PS1", "")
+    assert "^" in ps1
+    assert "⚡" not in ps1
+    assert "➤" not in ps1
+
+
+def test_launch_shell_bash_prompt_uses_ascii_when_no_icons_empty(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_ICONS", "")
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fake.bash")
+    assert exit_code == 0
+    ps1 = call[1].get("env", {}).get("PS1", "")
+    assert "^" in ps1
+    assert "⚡" not in ps1
+
+
+def test_launch_shell_fish_prompt_uses_emoji_by_default(tmp_path, monkeypatch):
+    monkeypatch.delenv("NO_ICONS", raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fish")
+    assert exit_code == 0
+    cmd = call[0][0]
+    assert "--init-command" in cmd
+    init_cmd = cmd[cmd.index("--init-command") + 1]
+    assert 'printf "⚡"' in init_cmd
+    assert 'printf "➤ "' in init_cmd
+
+
+def test_launch_shell_fish_prompt_uses_ascii_when_no_icons(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_ICONS", "1")
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fish")
+    assert exit_code == 0
+    cmd = call[0][0]
+    assert "--init-command" in cmd
+    init_cmd = cmd[cmd.index("--init-command") + 1]
+    assert 'printf "^"' in init_cmd
+    assert 'printf "> "' in init_cmd
+    assert "⚡" not in init_cmd
+    assert "➤" not in init_cmd
+
+
+def test_launch_shell_zsh_prompt_uses_emoji_by_default(tmp_path, monkeypatch):
+    monkeypatch.delenv("NO_ICONS", raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "zsh")
+    assert exit_code == 0
+    ps1 = call[1].get("env", {}).get("PS1", "")
+    assert "⚡" in ps1
+    assert "➤" in ps1
+
+
+def test_launch_shell_zsh_prompt_uses_ascii_when_no_icons(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_ICONS", "1")
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "zsh")
+    assert exit_code == 0
+    ps1 = call[1].get("env", {}).get("PS1", "")
+    assert "^" in ps1
+    assert "⚡" not in ps1
+    assert "➤" not in ps1
+
+
+def test_launch_shell_bash_prompt_is_plain_when_no_color(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.delenv("NO_ICONS", raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fake.bash")
+    assert exit_code == 0
+    ps1 = call[1].get("env", {}).get("PS1", "")
+    assert "\\e[" not in ps1  # No ANSI escape sequences
+    assert "\\W" in ps1
+    assert "⚡" in ps1
+    assert "➤" in ps1
+
+
+def test_launch_shell_fish_prompt_is_plain_when_no_color(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.delenv("NO_ICONS", raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fish")
+    assert exit_code == 0
+    cmd = call[0][0]
+    assert "--init-command" in cmd
+    init_cmd = cmd[cmd.index("--init-command") + 1]
+    assert "set_color" not in init_cmd
+    assert 'printf "⚡"' in init_cmd
+    assert 'printf "➤ "' in init_cmd
+
+
+def test_launch_shell_zsh_prompt_is_plain_when_no_color(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.delenv("NO_ICONS", raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "zsh")
+    assert exit_code == 0
+    ps1 = call[1].get("env", {}).get("PS1", "")
+    assert "%F{" not in ps1  # No zsh color sequences
+    assert "⚡" in ps1
+    assert "➤" in ps1
 
 
 def test_exporter_metadata_from_env(monkeypatch):
@@ -351,6 +476,62 @@ def test_resolve_drivers_config_propagates_unexpected_errors(monkeypatch):
     monkeypatch.delenv("JMP_DRIVERS_ALLOW", raising=False)
     monkeypatch.delenv("JMP_DRIVERS_UNSAFE", raising=False)
 
-    with patch("jumpstarter.config.user.UserConfigV1Alpha1.load", side_effect=RuntimeError("unexpected")):
-        with pytest.raises(RuntimeError, match="unexpected"):
-            _resolve_drivers_config()
+    with (
+        patch("jumpstarter.config.user.UserConfigV1Alpha1.load", side_effect=RuntimeError("unexpected")),
+        pytest.raises(RuntimeError, match="unexpected"),
+    ):
+        _resolve_drivers_config()
+
+
+def test_launch_shell_logs_exit_status(tmp_path, caplog):
+    with caplog.at_level("DEBUG", logger="jumpstarter.common.utils"):
+        exit_code = launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+            command=("sh", "-c", "exit 42"),
+        )
+    assert exit_code == 42
+    assert "exited with 42" in caplog.text
+
+
+def test_launch_shell_ends_a_shell_started_after_access_was_lost(tmp_path):
+    """A shell that starts after the session lost access to its lease is ended at once.
+
+    The shared-access monitor signals a running shell; one that starts after
+    the monitor acted would otherwise run with nothing left to end it.
+    """
+    lease = SimpleNamespace(
+        exporter_name="my-exporter",
+        name="lease-123",
+        exporter_labels={},
+        lease_ending_callback=None,
+        lease_revoked=True,
+    )
+    exit_code = launch_shell(
+        host=str(tmp_path / "test.sock"),
+        context="remote",
+        allow=["*"],
+        unsafe=False,
+        use_profiles=False,
+        command=("sleep", "10"),
+        lease=lease,
+    )
+    assert exit_code == 128 + signal.SIGHUP
+
+
+@pytest.mark.parametrize(("signal_name", "signum", "expected"), [("KILL", 9, 137), ("TERM", 15, 143)])
+def test_launch_shell_signal_death(tmp_path, caplog, signal_name, signum, expected):
+    with caplog.at_level("DEBUG", logger="jumpstarter.common.utils"):
+        exit_code = launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+            command=("sh", "-c", f"kill -{signal_name} $$"),
+        )
+    assert exit_code == expected
+    assert f"killed by signal {signum}" in caplog.text

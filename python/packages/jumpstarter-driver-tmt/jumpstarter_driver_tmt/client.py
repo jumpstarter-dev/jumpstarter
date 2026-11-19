@@ -97,7 +97,7 @@ class TMTClient(CompositeClient):
         self.logger.debug(f"Running TMT command: {[tmt_cmd] + safe_args}")
         # execute the command on the local machine
         try:
-            result = subprocess.run([tmt_cmd] + args)
+            result = subprocess.run([tmt_cmd] + args, check=False)
             return result.returncode
         except FileNotFoundError:
             self.logger.error(

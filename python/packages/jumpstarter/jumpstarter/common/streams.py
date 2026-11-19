@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 from uuid import UUID
 
 import grpc
@@ -24,7 +24,7 @@ class DriverStreamRequest(BaseModel):
 
 
 StreamRequest = Annotated[
-    Union[ResourceStreamRequest, DriverStreamRequest],
+    ResourceStreamRequest | DriverStreamRequest,
     Field(discriminator="kind"),
 ]
 
@@ -43,6 +43,5 @@ async def connect_router_stream(endpoint, token, stream, tls_config, grpc_option
     async with aio_secure_channel(endpoint, credentials, grpc_options) as channel:
         router = router_pb2_grpc.RouterServiceStub(channel)
         context = router.Stream(metadata=())
-        async with RouterStream(context=context) as s:
-            async with forward_stream(s, stream):
-                yield
+        async with RouterStream(context=context) as s, forward_stream(s, stream):
+            yield

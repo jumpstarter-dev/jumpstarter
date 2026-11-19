@@ -8,6 +8,8 @@ Step-by-step instructions for each operation mode.
   over TCP, without a {term}`controller`
 - [Distributed Mode](distributed-mode.md): Configuring Jumpstarter for team
   environments with shared resources
+- [Off-Cluster QEMU](off-cluster-qemu.md): Running virtual targets on remote
+  lab hosts via SSH
 
 ```{toctree}
 :maxdepth: 1
@@ -15,4 +17,5 @@ Step-by-step instructions for each operation mode.
 local-mode.md
 direct-mode.md
 distributed-mode.md
+off-cluster-qemu.md
 ```

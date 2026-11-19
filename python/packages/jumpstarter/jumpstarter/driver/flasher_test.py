@@ -1,12 +1,12 @@
 import pytest
 
-from jumpstarter.driver.flasher import FlasherInterface
+from jumpstarter.driver.flasher import FlasherInterface, StreamingFlasherInterface
 
 
 class TestFlasherInterfaceABC:
     def test_cannot_instantiate_directly(self):
         with pytest.raises(TypeError, match="abstract method"):
-            FlasherInterface()
+            FlasherInterface()  # ty: ignore[call-non-callable]
 
     def test_subclass_without_flash_raises(self):
         class Incomplete(FlasherInterface):
@@ -14,7 +14,7 @@ class TestFlasherInterfaceABC:
                 pass
 
         with pytest.raises(TypeError, match="abstract method"):
-            Incomplete()
+            Incomplete()  # ty: ignore[call-non-callable]
 
     def test_subclass_without_dump_raises(self):
         class Incomplete(FlasherInterface):
@@ -22,7 +22,7 @@ class TestFlasherInterfaceABC:
                 pass
 
         with pytest.raises(TypeError, match="abstract method"):
-            Incomplete()
+            Incomplete()  # ty: ignore[call-non-callable]
 
     def test_complete_subclass_can_be_instantiated(self):
         class Complete(FlasherInterface):
@@ -37,3 +37,30 @@ class TestFlasherInterfaceABC:
 
     def test_client_returns_expected_path(self):
         assert FlasherInterface.client() == "jumpstarter.client.flasher.FlasherClient"
+
+
+class TestStreamingFlasherInterfaceABC:
+    def test_cannot_instantiate_directly(self):
+        with pytest.raises(TypeError, match="abstract method"):
+            StreamingFlasherInterface()  # ty: ignore[call-non-callable]
+
+    def test_subclass_without_flash_raises(self):
+        class Incomplete(StreamingFlasherInterface):
+            pass
+
+        with pytest.raises(TypeError, match="abstract method"):
+            Incomplete()  # ty: ignore[call-non-callable]
+
+    def test_complete_subclass_can_be_instantiated(self):
+        class Complete(StreamingFlasherInterface):
+            async def flash(self, source, manifest=None):
+                yield  # pragma: no cover
+
+        instance = Complete()
+        assert instance is not None
+
+    def test_client_returns_expected_path(self):
+        assert StreamingFlasherInterface.client() == "jumpstarter.client.flasher.StreamingFlasherClient"
+
+    def test_driver_type_is_storage(self):
+        assert StreamingFlasherInterface.driver_type == "storage"

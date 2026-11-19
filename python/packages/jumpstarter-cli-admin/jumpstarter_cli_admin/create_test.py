@@ -31,44 +31,44 @@ CLIENT_ENDPOINT = "grpc://example.com:443"
 CLIENT_TOKEN = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
 DRIVER_NAME = "jumpstarter.Testing"
 
-CLIENT_OBJECT = V1Alpha1Client(
-    api_version="jumpstarter.dev/v1alpha1",
-    kind="Client",
-    metadata=V1ObjectMeta(namespace="default", name=CLIENT_NAME, creation_timestamp="2024-01-01T21:00:00Z"),
-    status=V1Alpha1ClientStatus(
+CLIENT_OBJECT = V1Alpha1Client.model_validate({
+    "api_version": "jumpstarter.dev/v1alpha1",
+    "kind": "Client",
+    "metadata": V1ObjectMeta(namespace="default", name=CLIENT_NAME, creation_timestamp="2024-01-01T21:00:00Z"),
+    "status": V1Alpha1ClientStatus(
         endpoint=CLIENT_ENDPOINT, credential=V1ObjectReference(name=f"{CLIENT_NAME}-credential")
     ),
-)
+})
 
-CLIENT_JSON = """{{
+CLIENT_JSON = f"""{{
     "apiVersion": "jumpstarter.dev/v1alpha1",
     "kind": "Client",
     "metadata": {{
         "creationTimestamp": "2024-01-01T21:00:00Z",
-        "name": "{name}",
+        "name": "{CLIENT_NAME}",
         "namespace": "default"
     }},
     "status": {{
         "credential": {{
-            "name": "{name}-credential"
+            "name": "{CLIENT_NAME}-credential"
         }},
-        "endpoint": "{endpoint}"
+        "endpoint": "{CLIENT_ENDPOINT}"
     }}
 }}
-""".format(name=CLIENT_NAME, endpoint=CLIENT_ENDPOINT)
+"""
 
-CLIENT_YAML = """apiVersion: jumpstarter.dev/v1alpha1
+CLIENT_YAML = f"""apiVersion: jumpstarter.dev/v1alpha1
 kind: Client
 metadata:
   creationTimestamp: '2024-01-01T21:00:00Z'
-  name: {name}
+  name: {CLIENT_NAME}
   namespace: default
 status:
   credential:
-    name: {name}-credential
-  endpoint: {endpoint}
+    name: {CLIENT_NAME}-credential
+  endpoint: {CLIENT_ENDPOINT}
 
-""".format(name=CLIENT_NAME, endpoint=CLIENT_ENDPOINT)
+"""
 
 UNSAFE_CLIENT_CONFIG = ClientConfigV1Alpha1(
     alias=CLIENT_NAME,
@@ -212,50 +212,50 @@ EXPORTER_TOKEN = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJ
 # Default config path
 default_config_path = ExporterConfigV1Alpha1.BASE_PATH / (EXPORTER_NAME + ".yaml")
 # Create a test exporter config
-EXPORTER_OBJECT = V1Alpha1Exporter(
-    api_version="jumpstarter.dev/v1alpha1",
-    kind="Exporter",
-    metadata=V1ObjectMeta(namespace="default", name=EXPORTER_NAME, creation_timestamp="2024-01-01T21:00:00Z"),
-    status=V1Alpha1ExporterStatus(
-        endpoint=EXPORTER_ENDPOINT, credential=V1ObjectReference(name=f"{EXPORTER_NAME}-credential"), devices=[]
+EXPORTER_OBJECT = V1Alpha1Exporter.model_validate({
+    "api_version": "jumpstarter.dev/v1alpha1",
+    "kind": "Exporter",
+    "metadata": V1ObjectMeta(namespace="default", name=EXPORTER_NAME, creation_timestamp="2024-01-01T21:00:00Z"),
+    "status": V1Alpha1ExporterStatus(
+        endpoint=EXPORTER_ENDPOINT, credential=V1ObjectReference(name=f"{EXPORTER_NAME}-credential"), devices=[]  # type: ignore[call-arg]
     ),
-)
+})
 
-EXPORTER_JSON = """{{
+EXPORTER_JSON = f"""{{
     "apiVersion": "jumpstarter.dev/v1alpha1",
     "kind": "Exporter",
     "metadata": {{
         "creationTimestamp": "2024-01-01T21:00:00Z",
-        "name": "{name}",
+        "name": "{EXPORTER_NAME}",
         "namespace": "default"
     }},
     "status": {{
         "credential": {{
-            "name": "{name}-credential"
+            "name": "{EXPORTER_NAME}-credential"
         }},
         "devices": [],
-        "endpoint": "{endpoint}",
+        "endpoint": "{EXPORTER_ENDPOINT}",
         "exporterStatus": null,
         "statusMessage": null
     }}
 }}
-""".format(name=EXPORTER_NAME, endpoint=EXPORTER_ENDPOINT)
+"""
 
-EXPORTER_YAML = """apiVersion: jumpstarter.dev/v1alpha1
+EXPORTER_YAML = f"""apiVersion: jumpstarter.dev/v1alpha1
 kind: Exporter
 metadata:
   creationTimestamp: '2024-01-01T21:00:00Z'
-  name: {name}
+  name: {EXPORTER_NAME}
   namespace: default
 status:
   credential:
-    name: {name}-credential
+    name: {EXPORTER_NAME}-credential
   devices: []
-  endpoint: {endpoint}
+  endpoint: {EXPORTER_ENDPOINT}
   exporterStatus: null
   statusMessage: null
 
-""".format(name=EXPORTER_NAME, endpoint=EXPORTER_ENDPOINT)
+"""
 
 EXPORTER_CONFIG = ExporterConfigV1Alpha1(
     alias=EXPORTER_NAME,
@@ -399,7 +399,7 @@ class TestClusterCreation:
         mock_create.assert_called_once()
 
         # Verify the arguments passed to create_cluster_and_install
-        args, kwargs = mock_create.call_args
+        args, _kwargs = mock_create.call_args
         assert args[0] == "kind"  # cluster_type
         assert args[1] is False  # force_recreate_cluster
         assert args[2] == "test-cluster"  # cluster_name
@@ -423,7 +423,7 @@ class TestClusterCreation:
         mock_create.assert_called_once()
 
         # Verify the arguments passed to create_cluster_and_install
-        args, kwargs = mock_create.call_args
+        args, _kwargs = mock_create.call_args
         assert args[0] == "minikube"  # cluster_type
         assert args[1] is False  # force_recreate_cluster
         assert args[2] == "test-cluster"  # cluster_name

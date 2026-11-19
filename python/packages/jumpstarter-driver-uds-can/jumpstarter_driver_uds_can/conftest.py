@@ -1,3 +1,4 @@
+import contextlib
 import struct
 import threading
 
@@ -116,24 +117,18 @@ class MockUdsEcu:
         while self._running:
             data = self._stack.recv(block=True, timeout=0.1)
             if data is not None:
-                response = _build_uds_response(data)
+                response = _build_uds_response(bytes(data))
                 self._stack.send(response, send_timeout=2)
 
     def stop(self):
         self._running = False
         self._thread.join(timeout=2)
-        try:
+        with contextlib.suppress(Exception):
             self._stack.stop()
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             self._notifier.stop()
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             self._bus.shutdown()
-        except Exception:
-            pass
 
 
 @pytest.fixture

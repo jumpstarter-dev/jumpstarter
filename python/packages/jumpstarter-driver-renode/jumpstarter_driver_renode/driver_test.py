@@ -33,8 +33,8 @@ class TestRenodeMonitor:
 
         async def mock_connect_tcp(host, port):
             nonlocal call_count
-            call_count += 1  # ty: ignore[unresolved-reference]
-            if call_count < 3:  # ty: ignore[unresolved-reference]
+            call_count += 1
+            if call_count < 3:
                 raise OSError("Connection refused")
             stream = AsyncMock()
             stream.receive = AsyncMock(return_value=b"Renode v1.15\n(monitor) \n")
@@ -43,9 +43,8 @@ class TestRenodeMonitor:
         with patch(
             "jumpstarter_driver_renode.monitor.connect_tcp",
             side_effect=mock_connect_tcp,
-        ):
-            with patch("jumpstarter_driver_renode.monitor.sleep", new_callable=AsyncMock):
-                await monitor.connect("127.0.0.1", 12345)
+        ), patch("jumpstarter_driver_renode.monitor.sleep", new_callable=AsyncMock):
+            await monitor.connect("127.0.0.1", 12345)
 
         assert call_count == 3
         assert monitor._stream is not None
@@ -128,7 +127,7 @@ class TestRenodeMonitor:
 
         async def mock_connect_tcp(host, port):
             nonlocal call_count
-            call_count += 1  # ty: ignore[unresolved-reference]
+            call_count += 1
             stream = AsyncMock()
             streams.append(stream)
             if call_count < 2:
@@ -140,9 +139,8 @@ class TestRenodeMonitor:
         with patch(
             "jumpstarter_driver_renode.monitor.connect_tcp",
             side_effect=mock_connect_tcp,
-        ):
-            with patch("jumpstarter_driver_renode.monitor.sleep", new_callable=AsyncMock):
-                await monitor.connect("127.0.0.1", 12345)
+        ), patch("jumpstarter_driver_renode.monitor.sleep", new_callable=AsyncMock):
+            await monitor.connect("127.0.0.1", 12345)
 
         streams[0].aclose.assert_called_once()
 
@@ -213,9 +211,8 @@ class TestRenodeMonitor:
         with patch(
             "jumpstarter_driver_renode.monitor.connect_tcp",
             side_effect=always_fail,
-        ):
-            with pytest.raises(TimeoutError):
-                await monitor.connect("127.0.0.1", 12345, timeout=0.5)
+        ), pytest.raises(TimeoutError):
+            await monitor.connect("127.0.0.1", 12345, timeout=0.5)
 
     @pytest.mark.anyio
     async def test_read_until_prompt_connection_closed(self):
@@ -254,7 +251,13 @@ class TestRenodeMonitor:
 def _make_driver(**kwargs) -> Renode:
     defaults = {"platform": "platforms/boards/stm32f4_discovery-kit.repl"}
     defaults.update(kwargs)
-    return Renode(**defaults)  # ty: ignore[missing-argument]
+    return Renode(**defaults)  # ty: ignore[invalid-argument-type]
+
+
+def test_console_wires_power_child():
+    """The console gets the power child so its hotkey can power-cycle the simulated board."""
+    driver = _make_driver()
+    assert driver.children["console"].children["power"] is driver.children["power"]
 
 
 class TestRenodePower:
@@ -271,18 +274,16 @@ class TestRenodePower:
         with patch(
             "jumpstarter_driver_renode.driver._find_renode",
             return_value="/usr/bin/renode",
-        ):
+        ), patch(
+            "jumpstarter_driver_renode.driver._find_free_port",
+            return_value=54321,
+        ), patch("jumpstarter_driver_renode.driver.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock()
             with patch(
-                "jumpstarter_driver_renode.driver._find_free_port",
-                return_value=54321,
+                "jumpstarter_driver_renode.driver.RenodeMonitor",
+                return_value=mock_monitor,
             ):
-                with patch("jumpstarter_driver_renode.driver.Popen") as mock_popen:
-                    mock_popen.return_value = MagicMock()
-                    with patch(
-                        "jumpstarter_driver_renode.driver.RenodeMonitor",
-                        return_value=mock_monitor,
-                    ):
-                        await power.on()
+                await power.on()
 
         calls = [c.args[0] for c in mock_monitor.execute.call_args_list]
         assert calls[0] == 'mach create "machine-0"'
@@ -304,18 +305,16 @@ class TestRenodePower:
         with patch(
             "jumpstarter_driver_renode.driver._find_renode",
             return_value="/usr/bin/renode",
-        ):
+        ), patch(
+            "jumpstarter_driver_renode.driver._find_free_port",
+            return_value=54321,
+        ), patch("jumpstarter_driver_renode.driver.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock()
             with patch(
-                "jumpstarter_driver_renode.driver._find_free_port",
-                return_value=54321,
+                "jumpstarter_driver_renode.driver.RenodeMonitor",
+                return_value=mock_monitor,
             ):
-                with patch("jumpstarter_driver_renode.driver.Popen") as mock_popen:
-                    mock_popen.return_value = MagicMock()
-                    with patch(
-                        "jumpstarter_driver_renode.driver.RenodeMonitor",
-                        return_value=mock_monitor,
-                    ):
-                        await power.on()
+                await power.on()
 
         calls = [c.args[0] for c in mock_monitor.execute.call_args_list]
         connect_idx = next(i for i, c in enumerate(calls) if "connector Connect" in c)
@@ -333,18 +332,16 @@ class TestRenodePower:
         with patch(
             "jumpstarter_driver_renode.driver._find_renode",
             return_value="/usr/bin/renode",
-        ):
+        ), patch(
+            "jumpstarter_driver_renode.driver._find_free_port",
+            return_value=54321,
+        ), patch("jumpstarter_driver_renode.driver.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock()
             with patch(
-                "jumpstarter_driver_renode.driver._find_free_port",
-                return_value=54321,
+                "jumpstarter_driver_renode.driver.RenodeMonitor",
+                return_value=mock_monitor,
             ):
-                with patch("jumpstarter_driver_renode.driver.Popen") as mock_popen:
-                    mock_popen.return_value = MagicMock()
-                    with patch(
-                        "jumpstarter_driver_renode.driver.RenodeMonitor",
-                        return_value=mock_monitor,
-                    ):
-                        await power.on()
+                await power.on()
 
         calls = [c.args[0] for c in mock_monitor.execute.call_args_list]
         assert not any("LoadELF" in c for c in calls)
@@ -357,9 +354,11 @@ class TestRenodePower:
         power: RenodePower = driver.children["power"]  # ty: ignore[invalid-assignment]
         power._process = MagicMock()
 
-        with patch("jumpstarter_driver_renode.driver.Popen") as mock_popen:
-            with patch("jumpstarter_driver_renode.driver.RenodeMonitor") as mock_monitor_cls:
-                await power.on()
+        with (
+            patch("jumpstarter_driver_renode.driver.Popen") as mock_popen,
+            patch("jumpstarter_driver_renode.driver.RenodeMonitor") as mock_monitor_cls,
+        ):
+            await power.on()
 
         mock_popen.assert_not_called()
         mock_monitor_cls.assert_not_called()
@@ -474,21 +473,17 @@ class TestRenodePower:
         with patch(
             "jumpstarter_driver_renode.driver._find_renode",
             return_value="/usr/bin/renode",
-        ):
-            with patch(
-                "jumpstarter_driver_renode.driver._find_free_port",
-                return_value=54321,
-            ):
-                with patch(
-                    "jumpstarter_driver_renode.driver.Popen",
-                    return_value=mock_process,
-                ):
-                    with patch(
-                        "jumpstarter_driver_renode.driver.RenodeMonitor",
-                        return_value=mock_monitor,
-                    ):
-                        with pytest.raises(RenodeMonitorError):
-                            await power.on()
+        ), patch(
+            "jumpstarter_driver_renode.driver._find_free_port",
+            return_value=54321,
+        ), patch(
+            "jumpstarter_driver_renode.driver.Popen",
+            return_value=mock_process,
+        ), patch(
+            "jumpstarter_driver_renode.driver.RenodeMonitor",
+            return_value=mock_monitor,
+        ), pytest.raises(RenodeMonitorError):
+            await power.on()
 
         assert power._process is None
         assert power._monitor is None
@@ -703,9 +698,8 @@ class TestRenodeConfig:
         with patch(
             "jumpstarter_driver_renode.driver.shutil.which",
             return_value=None,
-        ):
-            with pytest.raises(FileNotFoundError, match="renode executable not found"):
-                _find_renode()
+        ), pytest.raises(FileNotFoundError, match="renode executable not found"):
+            _find_renode()
 
     def test_set_firmware(self):
         """set_firmware stores path and command on the driver."""
@@ -774,9 +768,8 @@ class TestRenodeClient:
 
         driver = _make_driver()
 
-        with serve(driver) as client:
-            with pytest.raises(DriverError, match="raw monitor access is disabled"):
-                client.monitor_cmd("help")
+        with serve(driver) as client, pytest.raises(DriverError, match="raw monitor access is disabled"):
+            client.monitor_cmd("help")
 
     def test_client_monitor_cmd_not_running(self):
         """monitor_cmd raises when Renode is not running (but monitor enabled)."""
@@ -784,9 +777,8 @@ class TestRenodeClient:
 
         driver = _make_driver(allow_raw_monitor=True)
 
-        with serve(driver) as client:
-            with pytest.raises(DriverError, match="not running"):
-                client.monitor_cmd("help")
+        with serve(driver) as client, pytest.raises(DriverError, match="not running"):
+            client.monitor_cmd("help")
 
     def test_client_cli_renders(self):
         """CLI group includes monitor command."""

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from anyio import Event
 
 from jumpstarter.common import ExporterStatus
+from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JUMPSTARTER_HOST
 
 if TYPE_CHECKING:
     from jumpstarter.exporter.session import Session
@@ -80,6 +81,18 @@ class LeaseContext:
     def clear_client(self):
         """Clear the client name when the lease is no longer held."""
         self.client_name = ""
+
+    def session_env(self) -> dict[str, str]:
+        """Environment variables that let a local process use `j` against this lease's session.
+
+        Uses the dedicated hook socket when there is one, falling back to the main socket.
+        """
+        return {
+            JUMPSTARTER_HOST: str(self.hook_socket_path or self.socket_path),
+            JMP_DRIVERS_ALLOW: "UNSAFE",  # Allow all drivers for local access
+            "LEASE_NAME": self.lease_name,
+            "CLIENT_NAME": self.client_name,
+        }
 
     def update_status(self, status: ExporterStatus, message: str = ""):
         """Update the current status in the lease context.

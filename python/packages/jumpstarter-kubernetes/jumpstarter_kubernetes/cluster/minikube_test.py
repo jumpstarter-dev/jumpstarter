@@ -37,7 +37,7 @@ class TestMinikubeInstalled:
 class TestMinikubeClusterExists:
     """Test Minikube cluster existence checking."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.minikube.run_command")
     async def test_minikube_cluster_exists_true(self, mock_run_command, mock_minikube_installed):
@@ -55,7 +55,7 @@ class TestMinikubeClusterExists:
         # Should call profile list first
         mock_run_command.assert_called_with(["minikube", "profile", "list", "-o", "json"])
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.minikube.run_command")
     async def test_minikube_cluster_exists_false(self, mock_run_command, mock_minikube_installed):
@@ -66,7 +66,7 @@ class TestMinikubeClusterExists:
 
         assert result is False
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     async def test_minikube_cluster_exists_minikube_not_installed(self, mock_minikube_installed):
         mock_minikube_installed.return_value = False
@@ -75,7 +75,7 @@ class TestMinikubeClusterExists:
 
         assert result is False
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.minikube.run_command")
     async def test_minikube_cluster_exists_runtime_error(self, mock_run_command, mock_minikube_installed):
@@ -87,7 +87,7 @@ class TestMinikubeClusterExists:
 
         assert result is False
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.minikube.run_command")
     async def test_minikube_cluster_exists_stopped_cluster(self, mock_run_command, mock_minikube_installed):
@@ -104,7 +104,7 @@ class TestMinikubeClusterExists:
 
         assert result is True
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.minikube.run_command")
     async def test_minikube_cluster_exists_custom_binary(self, mock_run_command, mock_minikube_installed):
@@ -128,7 +128,7 @@ class TestMinikubeClusterExists:
 class TestCreateMinikubeCluster:
     """Test Minikube cluster creation."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_cluster_exists")
     @patch("jumpstarter_kubernetes.cluster.minikube.run_command_with_output")
@@ -150,7 +150,7 @@ class TestCreateMinikubeCluster:
         assert "test-cluster" in args
         assert "--extra-config=apiserver.service-node-port-range=30000-32767" in args
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     async def test_create_minikube_cluster_not_installed(self, mock_minikube_installed):
         from jumpstarter_kubernetes.exceptions import ToolNotInstalledError
@@ -160,7 +160,7 @@ class TestCreateMinikubeCluster:
         with pytest.raises(ToolNotInstalledError):
             await create_minikube_cluster("minikube", "test-cluster")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_cluster_exists")
     async def test_create_minikube_cluster_already_exists(self, mock_cluster_exists, mock_minikube_installed):
@@ -171,7 +171,7 @@ class TestCreateMinikubeCluster:
         result = await create_minikube_cluster("minikube", "test-cluster")
         assert result is True
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_cluster_exists")
     @patch("jumpstarter_kubernetes.cluster.minikube.run_command_with_output")
@@ -188,7 +188,7 @@ class TestCreateMinikubeCluster:
         args = mock_run_command.call_args[0][0]
         assert "--memory=4096" in args
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_cluster_exists")
     @patch("jumpstarter_kubernetes.cluster.minikube.run_command_with_output")
@@ -204,7 +204,7 @@ class TestCreateMinikubeCluster:
         with pytest.raises(ClusterOperationError):
             await create_minikube_cluster("minikube", "test-cluster")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_cluster_exists")
     @patch("jumpstarter_kubernetes.cluster.minikube.run_command_with_output")
@@ -225,7 +225,7 @@ class TestCreateMinikubeCluster:
 class TestDeleteMinikubeCluster:
     """Test Minikube cluster deletion."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_cluster_exists")
     @patch("jumpstarter_kubernetes.cluster.minikube.run_command_with_output")
@@ -241,7 +241,7 @@ class TestDeleteMinikubeCluster:
         assert result is True
         mock_run_command.assert_called_once_with(["minikube", "delete", "-p", "test-cluster"])
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     async def test_delete_minikube_cluster_not_installed(self, mock_minikube_installed):
         from jumpstarter_kubernetes.exceptions import ToolNotInstalledError
@@ -251,7 +251,7 @@ class TestDeleteMinikubeCluster:
         with pytest.raises(ToolNotInstalledError):
             await delete_minikube_cluster("minikube", "test-cluster")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_cluster_exists")
     async def test_delete_minikube_cluster_already_deleted(self, mock_cluster_exists, mock_minikube_installed):
@@ -262,7 +262,7 @@ class TestDeleteMinikubeCluster:
 
         assert result is True  # Already deleted, consider successful
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_cluster_exists")
     @patch("jumpstarter_kubernetes.cluster.minikube.run_command_with_output")
@@ -278,7 +278,7 @@ class TestDeleteMinikubeCluster:
         with pytest.raises(ClusterOperationError):
             await delete_minikube_cluster("minikube", "test-cluster")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_cluster_exists")
     @patch("jumpstarter_kubernetes.cluster.minikube.run_command_with_output")

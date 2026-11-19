@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
@@ -51,14 +51,14 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			},
 			Controller: operatorv1alpha1.ControllerConfig{
 				Image:    "quay.io/jumpstarter/jumpstarter:latest",
-				Replicas: 1,
+				Replicas: new(int32(1)),
 				GRPC: operatorv1alpha1.GRPCConfig{
 					Endpoints: []operatorv1alpha1.Endpoint{{Address: "controller"}},
 				},
 			},
 			Routers: operatorv1alpha1.RoutersConfig{
 				Image:    "quay.io/jumpstarter/jumpstarter:latest",
-				Replicas: 1,
+				Replicas: new(int32(1)),
 				GRPC: operatorv1alpha1.GRPCConfig{
 					Endpoints: []operatorv1alpha1.Endpoint{{Address: "router"}},
 				},
@@ -103,6 +103,36 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		})
 	})
 
+	It("does not rewrite the telemetry Deployment on a repeated reconcile", func() {
+		spec := makeJumpstarterSpec()
+		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
+			Enabled: true,
+			Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+		}
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       spec,
+		})).To(Succeed())
+		recorder := record.NewFakeRecorder(100)
+		r := newReconciler()
+		r.Recorder = recorder
+		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: crName, Namespace: crNamespace}}
+
+		_, err := r.Reconcile(ctx, request)
+		Expect(err).NotTo(HaveOccurred())
+		for len(recorder.Events) > 0 {
+			<-recorder.Events
+		}
+
+		// Owns(Deployment) turns every rewrite into another reconcile, so a field
+		// the API server defaults differently from the desired spec loops forever.
+		_, err = r.Reconcile(ctx, request)
+		Expect(err).NotTo(HaveOccurred())
+		for len(recorder.Events) > 0 {
+			Expect(<-recorder.Events).NotTo(ContainSubstring("TelemetryDeploymentUpdated"))
+		}
+	})
+
 	It("creates Deployment and Service when telemetry is enabled", func() {
 		By("creating a Jumpstarter CR with telemetry enabled")
 		spec := makeJumpstarterSpec()
@@ -132,7 +162,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		Expect(container.Image).To(Equal("quay.io/jumpstarter-dev/jumpstarter-telemetry:latest"))
 		Expect(container.ImagePullPolicy).To(Equal(corev1.PullIfNotPresent))
 		Expect(container.Command).To(Equal([]string{"/telemetry"}))
-		Expect(container.Args).To(ContainElement(fmt.Sprintf("--grpc-bind=:%d", telemetryPort)))
+		Expect(container.Args).To(ContainElement(fmt.Sprintf("-grpc-bind=:%d", telemetryPort)))
 
 		By("verifying labels")
 		Expect(deployment.Labels).To(HaveKeyWithValue("component", "telemetry"))
@@ -149,20 +179,27 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		Expect(deployment.Spec.Template.Spec.SecurityContext.RunAsNonRoot).NotTo(BeNil())
 		Expect(*deployment.Spec.Template.Spec.SecurityContext.RunAsNonRoot).To(BeTrue())
 
-		By("verifying the Service exists")
+		By("verifying the Service exists with gRPC and metrics ports")
 		svc := &corev1.Service{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{
 			Name:      telemetryServiceName,
 			Namespace: crNamespace,
 		}, svc)).To(Succeed())
 		Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeClusterIP))
-		Expect(svc.Spec.Ports).To(HaveLen(1))
-		Expect(svc.Spec.Ports[0].Port).To(Equal(int32(telemetryPort)))
-		Expect(svc.Spec.Ports[0].Name).To(Equal("grpc"))
 		Expect(svc.Spec.Selector).To(HaveKeyWithValue("app", "jumpstarter-telemetry"))
+
+		grpcP := namedServicePort(svc.Spec.Ports, grpcPortName)
+		Expect(grpcP).NotTo(BeNil(), "expected Service port named grpc")
+		Expect(grpcP.Port).To(Equal(int32(telemetryPort)))
+		Expect(grpcP.TargetPort.IntValue()).To(Equal(telemetryPort))
+
+		metricsP := namedServicePort(svc.Spec.Ports, metricsPortName)
+		Expect(metricsP).NotTo(BeNil(), "expected Service port named metrics (JEP-0013 /metrics scrape)")
+		Expect(metricsP.Port).To(Equal(int32(telemetryMetricsPort)))
+		Expect(metricsP.TargetPort.IntValue()).To(Equal(telemetryMetricsPort))
 	})
 
-	It("includes liveness and readiness probes on the telemetry container", func() {
+	It("uses HTTP /healthz and /readyz on the metrics port (JEP-0013 DD-7)", func() {
 		By("creating a Jumpstarter CR with telemetry enabled")
 		spec := makeJumpstarterSpec()
 		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
@@ -184,15 +221,17 @@ var _ = Describe("Telemetry Lifecycle", func() {
 
 		container := deployment.Spec.Template.Spec.Containers[0]
 
-		By("verifying liveness probe uses TCP on the gRPC port")
+		By("verifying liveness probe is HTTP GET /healthz on the metrics port")
 		Expect(container.LivenessProbe).NotTo(BeNil())
-		Expect(container.LivenessProbe.TCPSocket).NotTo(BeNil())
-		Expect(container.LivenessProbe.TCPSocket.Port.IntValue()).To(Equal(telemetryPort))
+		Expect(container.LivenessProbe.HTTPGet).NotTo(BeNil())
+		Expect(container.LivenessProbe.HTTPGet.Path).To(Equal("/healthz"))
+		Expect(container.LivenessProbe.HTTPGet.Port.IntValue()).To(Equal(telemetryMetricsPort))
 
-		By("verifying readiness probe uses TCP on the gRPC port")
+		By("verifying readiness probe is HTTP GET /readyz on the metrics port")
 		Expect(container.ReadinessProbe).NotTo(BeNil())
-		Expect(container.ReadinessProbe.TCPSocket).NotTo(BeNil())
-		Expect(container.ReadinessProbe.TCPSocket.Port.IntValue()).To(Equal(telemetryPort))
+		Expect(container.ReadinessProbe.HTTPGet).NotTo(BeNil())
+		Expect(container.ReadinessProbe.HTTPGet.Path).To(Equal("/readyz"))
+		Expect(container.ReadinessProbe.HTTPGet.Port.IntValue()).To(Equal(telemetryMetricsPort))
 	})
 
 	It("respects the replicas field", func() {
@@ -201,7 +240,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
 			Enabled:  true,
 			Image:    "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
-			Replicas: ptr.To(int32(3)),
+			Replicas: new(int32(3)),
 		}
 		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
@@ -315,6 +354,44 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			"telemetry should not appear in ConfigMap after disabling")
 	})
 
+	It("includes telemetry CA from issued TLS secret when external issuer has no CABundle", func() {
+		By("creating a Jumpstarter CR with telemetry, cert-manager, and external issuer")
+		spec := makeJumpstarterSpec()
+		spec.CertManager = operatorv1alpha1.CertManagerConfig{
+			Enabled: true,
+			Server: &operatorv1alpha1.ServerCertConfig{
+				IssuerRef: &operatorv1alpha1.IssuerReference{
+					Name: "my-issuer",
+					Kind: "ClusterIssuer",
+				},
+			},
+		}
+		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
+			Enabled: true,
+			Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+		}
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       spec,
+		}
+
+		By("pre-creating the issued telemetry TLS secret with ca.crt")
+		Expect(k8sClient.Create(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      GetTelemetryCertSecretName(js),
+				Namespace: crNamespace,
+			},
+			Data: map[string][]byte{
+				"ca.crt": []byte(testPEM),
+			},
+		})).To(Succeed())
+
+		cfg, err := newReconciler().buildConfig(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Telemetry).NotTo(BeNil())
+		Expect(cfg.Telemetry.Certificate).To(ContainSubstring("BEGIN CERTIFICATE"))
+	})
+
 	It("propagates telemetry config into the controller ConfigMap", func() {
 		By("creating a Jumpstarter CR with telemetry and a custom minSeverity")
 		spec := makeJumpstarterSpec()
@@ -372,6 +449,27 @@ var _ = Describe("Telemetry Lifecycle", func() {
 
 		configData := getConfigData()
 		Expect(configData).NotTo(ContainSubstring("telemetry"))
+	})
+
+	It("does not embed telemetry endpoint in ConfigMap when enabled=true but replicas=0 (suspended)", func() {
+		By("creating a Jumpstarter CR with telemetry enabled but replicas=0")
+		spec := makeJumpstarterSpec()
+		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
+			Enabled:  true,
+			Image:    "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+			Replicas: new(int32(0)),
+		}
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       spec,
+		})).To(Succeed())
+
+		doReconcile()
+
+		By("verifying telemetry endpoint is absent from the controller ConfigMap")
+		configData := getConfigData()
+		Expect(configData).NotTo(ContainSubstring("telemetry"),
+			"suspended telemetry (replicas=0) should not embed an endpoint that has no ready pods")
 	})
 
 	It("sets TelemetryDeploymentReady status condition", func() {
@@ -434,17 +532,18 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			},
 		}
 
-		dep := createTelemetryDeployment(js, "fake-tls-hash")
+		dep := createTelemetryDeployment(js, "fake-tls-hash", telemetryLokiPod{})
 
 		container := dep.Spec.Template.Spec.Containers[0]
 
-		// Should have CONTROLLER_KEY + TLS env vars
-		Expect(container.Env).To(HaveLen(3))
+		// Should have CONTROLLER_KEY, GRPC_TELEMETRY_ENDPOINT, and TLS env vars
+		Expect(container.Env).To(HaveLen(4))
 		envNames := make(map[string]string)
 		for _, env := range container.Env {
 			envNames[env.Name] = env.Value
 		}
 		Expect(envNames).To(HaveKey("CONTROLLER_KEY"))
+		Expect(envNames).To(HaveKeyWithValue("GRPC_TELEMETRY_ENDPOINT", telemetryEndpointFor("default")))
 		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_CERT_PEM", "/tls/tls.crt"))
 		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_KEY_PEM", "/tls/tls.key"))
 
@@ -481,17 +580,18 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			},
 		}
 
-		dep := createTelemetryDeployment(js, "manual-tls-hash")
+		dep := createTelemetryDeployment(js, "manual-tls-hash", telemetryLokiPod{})
 
 		container := dep.Spec.Template.Spec.Containers[0]
 
-		// Should have CONTROLLER_KEY + TLS env vars
-		Expect(container.Env).To(HaveLen(3))
+		// Should have CONTROLLER_KEY, GRPC_TELEMETRY_ENDPOINT, and TLS env vars
+		Expect(container.Env).To(HaveLen(4))
 		envNames := make(map[string]string)
 		for _, env := range container.Env {
 			envNames[env.Name] = env.Value
 		}
 		Expect(envNames).To(HaveKey("CONTROLLER_KEY"))
+		Expect(envNames).To(HaveKeyWithValue("GRPC_TELEMETRY_ENDPOINT", telemetryEndpointFor("default")))
 		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_CERT_PEM", "/tls/tls.crt"))
 		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_KEY_PEM", "/tls/tls.key"))
 
@@ -524,13 +624,20 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		}
 
 		// Empty hash when no TLS is configured
-		dep := createTelemetryDeployment(js, "")
+		dep := createTelemetryDeployment(js, "", telemetryLokiPod{})
 
 		container := dep.Spec.Template.Spec.Containers[0]
 
-		// Only CONTROLLER_KEY should be set (no TLS env vars)
-		Expect(container.Env).To(HaveLen(1))
+		Expect(container.Env).To(HaveLen(2))
+		envNames := make(map[string]string)
+		for _, env := range container.Env {
+			if env.Value != "" {
+				envNames[env.Name] = env.Value
+			}
+		}
+		Expect(envNames).To(HaveKeyWithValue("GRPC_TELEMETRY_ENDPOINT", telemetryEndpointFor("default")))
 		Expect(container.Env[0].Name).To(Equal("CONTROLLER_KEY"))
+		Expect(envNames).NotTo(HaveKey("EXTERNAL_CERT_PEM"))
 
 		// No volume mounts or volumes
 		Expect(container.VolumeMounts).To(BeEmpty())
@@ -609,6 +716,85 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		}, deployment)).To(Succeed())
 		Expect(deployment.Spec.Template.Spec.Containers[0].Image).To(
 			Equal("quay.io/jumpstarter-dev/jumpstarter-telemetry:v2"))
+	})
+
+	It("suspends the telemetry deployment (replicas=0, enabled=true): Deployment stays at 0, Service kept, condition Suspended", func() {
+		By("creating a Jumpstarter CR with telemetry enabled and replicas=0")
+		spec := makeJumpstarterSpec()
+		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
+			Enabled:  true,
+			Image:    "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+			Replicas: new(int32(0)),
+		}
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       spec,
+		})).To(Succeed())
+
+		By("reconciling")
+		doReconcile()
+
+		By("verifying the Deployment exists with 0 replicas (not deleted)")
+		deployment := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      crName + "-telemetry",
+			Namespace: crNamespace,
+		}, deployment)).To(Succeed(), "Deployment should exist, not be deleted")
+		Expect(*deployment.Spec.Replicas).To(Equal(int32(0)))
+
+		By("verifying the Service is still present")
+		svc := &corev1.Service{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      telemetryServiceName,
+			Namespace: crNamespace,
+		}, svc)).To(Succeed(), "Service should be preserved when suspended")
+
+		By("verifying the TelemetryDeploymentReady condition reports Suspended (True)")
+		js := &operatorv1alpha1.Jumpstarter{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: crNamespace}, js)).To(Succeed())
+		cond := meta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypeTelemetryDeploymentReady)
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionTrue), "suspended state should be reported as True, not False")
+		Expect(cond.Message).To(ContainSubstring("suspended"))
+	})
+
+	It("resumes telemetry after suspension: Deployment scales back up when replicas > 0", func() {
+		By("creating a Jumpstarter CR with telemetry enabled and replicas=0")
+		spec := makeJumpstarterSpec()
+		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
+			Enabled:  true,
+			Image:    "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+			Replicas: new(int32(0)),
+		}
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       spec,
+		})).To(Succeed())
+
+		doReconcile()
+
+		By("verifying suspended state")
+		deployment := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      crName + "-telemetry",
+			Namespace: crNamespace,
+		}, deployment)).To(Succeed())
+		Expect(*deployment.Spec.Replicas).To(Equal(int32(0)))
+
+		By("resuming by setting replicas=2")
+		js := &operatorv1alpha1.Jumpstarter{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: crNamespace}, js)).To(Succeed())
+		js.Spec.Telemetry.Replicas = new(int32(2))
+		Expect(k8sClient.Update(ctx, js)).To(Succeed())
+
+		doReconcile()
+
+		By("verifying Deployment is scaled back up to 2")
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      crName + "-telemetry",
+			Namespace: crNamespace,
+		}, deployment)).To(Succeed())
+		Expect(*deployment.Spec.Replicas).To(Equal(int32(2)))
 	})
 })
 
@@ -811,7 +997,39 @@ var _ = Describe("resolveTelemetryCA", func() {
 		Expect(err.Error()).To(ContainSubstring("missing tls.crt"))
 	})
 
-	It("returns ('', nil) when an external IssuerRef has a nil CABundle", func() {
+	It("returns ca.crt from the telemetry TLS secret when an external IssuerRef has no CABundle", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-ca-from-secret", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{
+					Enabled: true,
+					Server: &operatorv1alpha1.ServerCertConfig{
+						IssuerRef: &operatorv1alpha1.IssuerReference{
+							Name: "my-issuer",
+							Kind: "ClusterIssuer",
+						},
+					},
+				},
+			},
+		}
+
+		Expect(k8sClient.Create(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      GetTelemetryCertSecretName(js),
+				Namespace: crNamespace,
+			},
+			Data: map[string][]byte{
+				"ca.crt": []byte(testPEM),
+			},
+		})).To(Succeed())
+
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		ca, err := r.resolveTelemetryCA(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ca).To(ContainSubstring("BEGIN CERTIFICATE"))
+	})
+
+	It("returns ('', nil) when an external IssuerRef has a nil CABundle and no telemetry TLS secret", func() {
 		js := &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-ca-no-bundle", Namespace: crNamespace},
 			Spec: operatorv1alpha1.JumpstarterSpec{
@@ -933,7 +1151,7 @@ var _ = Describe("buildConfig telemetry certificate", func() {
 		Expect(cfg.Telemetry.Certificate).To(Equal(externalCABundle))
 	})
 
-	It("does not include certificate when cert-manager is disabled", func() {
+	It("does not include certificate when cert-manager is disabled and no CertSecret is set", func() {
 		js := &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-cfg-no-tls", Namespace: crNamespace},
 			Spec: operatorv1alpha1.JumpstarterSpec{
@@ -947,6 +1165,98 @@ var _ = Describe("buildConfig telemetry certificate", func() {
 
 		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		cfg, err := r.buildConfig(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(cfg.Telemetry).NotTo(BeNil())
+		Expect(cfg.Telemetry.Enabled).To(BeTrue())
+		Expect(cfg.Telemetry.Certificate).To(BeEmpty())
+	})
+
+	It("includes ca.crt from manual CertSecret when cert-manager is disabled", func() {
+		By("creating a TLS secret with ca.crt")
+		Expect(k8sClient.Create(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-telemetry-tls", Namespace: crNamespace},
+			Data: map[string][]byte{
+				"tls.crt": []byte("fake-cert"),
+				"tls.key": []byte("fake-key"),
+				"ca.crt":  []byte(testPEM),
+			},
+		})).To(Succeed())
+
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cfg-manual-ca", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled: true,
+					Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+					GRPC: operatorv1alpha1.TelemetryGRPCConfig{
+						TLS: operatorv1alpha1.TLSConfig{CertSecret: "my-telemetry-tls"},
+					},
+				},
+			},
+		}
+
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		cfg, err := r.buildConfig(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(cfg.Telemetry).NotTo(BeNil())
+		Expect(cfg.Telemetry.Enabled).To(BeTrue())
+		Expect(cfg.Telemetry.Certificate).To(ContainSubstring("BEGIN CERTIFICATE"))
+	})
+
+	It("does not include certificate when manual CertSecret has no ca.crt (system-trusted cert)", func() {
+		By("creating a TLS secret without ca.crt")
+		Expect(k8sClient.Create(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-public-tls", Namespace: crNamespace},
+			Data: map[string][]byte{
+				"tls.crt": []byte("fake-cert"),
+				"tls.key": []byte("fake-key"),
+			},
+		})).To(Succeed())
+
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cfg-public-ca", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled: true,
+					Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+					GRPC: operatorv1alpha1.TelemetryGRPCConfig{
+						TLS: operatorv1alpha1.TLSConfig{CertSecret: "my-public-tls"},
+					},
+				},
+			},
+		}
+
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		cfg, err := r.buildConfig(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(cfg.Telemetry).NotTo(BeNil())
+		Expect(cfg.Telemetry.Enabled).To(BeTrue())
+		Expect(cfg.Telemetry.Certificate).To(BeEmpty())
+	})
+
+	It("does not fail when manual CertSecret does not exist (logs at V(1) instead)", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cfg-missing-manual", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled: true,
+					Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+					GRPC: operatorv1alpha1.TelemetryGRPCConfig{
+						TLS: operatorv1alpha1.TLSConfig{CertSecret: "nonexistent-secret"},
+					},
+				},
+			},
+		}
+
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		cfg, err := r.buildConfig(ctx, js)
+		// Should not fail — logs at V(1) and continues without certificate
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(cfg.Telemetry).NotTo(BeNil())
@@ -1066,3 +1376,39 @@ var _ = Describe("telemetryCANeedsRequeue", func() {
 		Expect(r.telemetryCANeedsRequeue(ctx, js)).To(BeFalse())
 	})
 })
+
+func hasEnv(c corev1.Container, name string) bool {
+	for _, e := range c.Env {
+		if e.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func envValue(c corev1.Container, name string) string {
+	for _, e := range c.Env {
+		if e.Name == name {
+			return e.Value
+		}
+	}
+	return ""
+}
+
+func namedContainerPort(ports []corev1.ContainerPort, name string) *corev1.ContainerPort {
+	for i := range ports {
+		if ports[i].Name == name {
+			return &ports[i]
+		}
+	}
+	return nil
+}
+
+func namedServicePort(ports []corev1.ServicePort, name string) *corev1.ServicePort {
+	for i := range ports {
+		if ports[i].Name == name {
+			return &ports[i]
+		}
+	}
+	return nil
+}

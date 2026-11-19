@@ -11,39 +11,39 @@ def server():
     return TftpServer(
         host="127.0.0.1",
         port=0,
-        operator=operator,  # ty: ignore[invalid-argument-type]
+        operator=operator,
     )
 
 
 @pytest.fixture
 def protocol(server):
-    proto = TftpServerProtocol(server)
+    proto = TftpServerProtocol(server, MagicMock(), MagicMock())
     proto.transport = MagicMock()
     return proto
 
 
 class TestResolveAndValidatePath:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_rejects_dot_dot_path(self, protocol):
         result = await protocol._resolve_and_validate_path("..", ("127.0.0.1", 12345))
         assert result is None
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_rejects_dot_dot_prefix(self, protocol):
         result = await protocol._resolve_and_validate_path("../etc/passwd", ("127.0.0.1", 12345))
         assert result is None
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_rejects_dot_dot_in_middle(self, protocol):
         result = await protocol._resolve_and_validate_path("subdir/../../../etc/passwd", ("127.0.0.1", 12345))
         assert result is None
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_rejects_dot_dot_at_end(self, protocol):
         result = await protocol._resolve_and_validate_path("subdir/..", ("127.0.0.1", 12345))
         assert result is None
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_allows_valid_filename(self, protocol, server):
         stat_result = MagicMock()
         stat_result.mode.is_file.return_value = True
@@ -52,7 +52,7 @@ class TestResolveAndValidatePath:
         result = await protocol._resolve_and_validate_path("boot.img", ("127.0.0.1", 12345))
         assert result == "boot.img"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_allows_filename_containing_dots(self, protocol, server):
         stat_result = MagicMock()
         stat_result.mode.is_file.return_value = True
@@ -61,12 +61,12 @@ class TestResolveAndValidatePath:
         result = await protocol._resolve_and_validate_path("file..name.txt", ("127.0.0.1", 12345))
         assert result == "file..name.txt"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_rejects_absolute_path(self, protocol):
         result = await protocol._resolve_and_validate_path("/etc/passwd", ("127.0.0.1", 12345))
         assert result is None
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_sends_access_violation_on_traversal(self, protocol):
         await protocol._resolve_and_validate_path("../secret", ("127.0.0.1", 12345))
         protocol.transport.sendto.assert_called_once()

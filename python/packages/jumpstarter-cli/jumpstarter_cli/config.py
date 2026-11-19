@@ -9,7 +9,6 @@ def config():
     """
     Manage local configurations
     """
-    pass
 
 
 config.add_command(config_client)

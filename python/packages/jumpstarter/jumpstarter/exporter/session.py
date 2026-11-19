@@ -1,14 +1,21 @@
 import logging
-from collections import deque
 from collections.abc import Generator
-from contextlib import asynccontextmanager, contextmanager, suppress
+from contextlib import AsyncExitStack, asynccontextmanager, contextmanager, suppress
 from dataclasses import dataclass, field
-from logging.handlers import QueueHandler
 from typing import TYPE_CHECKING, Self
 from uuid import UUID
 
 import grpc
-from anyio import ContextManagerMixin, Event, TypedAttributeLookupError, sleep
+from anyio import (
+    TASK_STATUS_IGNORED,
+    ContextManagerMixin,
+    Event,
+    TypedAttributeLookupError,
+    create_task_group,
+    sleep,
+    sleep_forever,
+)
+from anyio.abc import TaskStatus
 from anyio.from_thread import start_blocking_portal
 from jumpstarter_protocol import (
     jumpstarter_pb2,
@@ -16,12 +23,19 @@ from jumpstarter_protocol import (
     router_pb2_grpc,
 )
 
-from .logging import LogHandler
+from .logging import LogFanOut, LogHandler
+from .rpcs_in_flight import RpcsInFlight
 from jumpstarter.common import ExporterStatus, LogSource, Metadata, TemporarySocket
-from jumpstarter.common.streams import StreamRequestMetadata
+from jumpstarter.common.streams import ResourceStreamRequest, StreamRequestMetadata
+from jumpstarter.driver.context import session_env_var
 from jumpstarter.logging import set_log_context, unbind_log_context
 from jumpstarter.metrics import get_registry
 from jumpstarter.streams.common import forward_stream
+from jumpstarter.streams.fanout import (
+    ExclusiveSessionActive,
+    ReadOnlyStreamError,
+    WriteTokenRevokedError,
+)
 from jumpstarter.streams.metadata import MetadataStreamAttributes
 from jumpstarter.streams.router import RouterStream
 
@@ -37,6 +51,22 @@ _GRPC_SERVER_OPTIONS_TCP_KEEPALIVE: list[tuple[str, int]] = [
 ]
 
 
+async def _serve_driver(driver: "Driver", *, task_status: TaskStatus[None] = TASK_STATUS_IGNORED) -> None:
+    """Hold the driver's serving() open until cancelled, and log its background work failing.
+
+    Entering serving() stays outside the try, so a driver that cannot start
+    serving fails the session's start instead of being logged.
+    """
+    serving = AsyncExitStack()
+    await serving.enter_async_context(driver.serving())
+    task_status.started()
+    try:
+        async with serving:
+            await sleep_forever()
+    except Exception:
+        driver.logger.exception("Background work failed; the session goes on serving without it")
+
+
 @dataclass(kw_only=True)
 class Session(
     jumpstarter_pb2_grpc.ExporterServiceServicer,
@@ -50,13 +80,18 @@ class Session(
     motd: str | None = None
     lease_context: "LeaseContext | None" = field(init=False, default=None)
 
-    _logging_queue: deque = field(init=False)
-    _logging_handler: QueueHandler = field(init=False)
+    _log_fanout: LogFanOut = field(init=False)
+    _logging_handler: LogHandler = field(init=False)
     _current_status: ExporterStatus = field(init=False, default=ExporterStatus.AVAILABLE)
     _status_message: str = field(init=False, default="")
     _status_update_event: Event = field(init=False)
     _status_version: int = field(init=False, default=0)
     _previous_status: ExporterStatus | None = field(init=False, default=None)
+    _rpcs_in_flight: RpcsInFlight = field(init=False)
+
+    @property
+    def name(self) -> str:
+        return self.exporter_name
 
     @contextmanager
     def __contextmanager__(self) -> Generator[Self]:
@@ -77,15 +112,22 @@ class Session(
                 )
             unbind_log_context("exporter")
             try:
+                # shutdown() first: session-end teardown for drivers (e.g. the
+                # fan-out console) whose exported close() only kicks clients and
+                # must not tear down live resources. No-op for ordinary drivers.
+                self.root_device.shutdown()
+            except Exception:
+                logger.warning("Error during driver shutdown hook", exc_info=True)
+            try:
                 self.root_device.close()
-            except Exception as e:
+            except Exception:
                 # Get driver name from report for more descriptive logging
                 try:
                     report = self.root_device.report()
                     driver_name = report.labels.get("jumpstarter.dev/name", self.root_device.__class__.__name__)
-                except Exception:
+                except AttributeError:
                     driver_name = self.root_device.__class__.__name__
-                logger.error("Error closing driver %s: %s", driver_name, e, exc_info=True)
+                logger.exception("Error closing driver %s", driver_name)
             finally:
                 logging.getLogger().removeHandler(self._logging_handler)
 
@@ -93,30 +135,66 @@ class Session(
         super().__init__(*args, **kwargs)
 
         self.root_device = root_device
+        self.root_device.propagate_log_level()
         self.exporter_name = exporter_name
         self.motd = motd
         self.mapping = {u: i for (u, _, _, i) in self.root_device.enumerate()}
 
-        self._logging_queue = deque(maxlen=256)
-        self._logging_handler = LogHandler(self._logging_queue, LogSource.SYSTEM)
+        self._log_fanout = LogFanOut(maxlen=256)
+        self._logging_handler = LogHandler(self._log_fanout, LogSource.SYSTEM)
         self._status_update_event = Event()
+        self._rpcs_in_flight = RpcsInFlight()
 
         # Map all driver logs to DRIVER source
         self._logging_handler.add_child_handler("driver.", LogSource.DRIVER)
 
+    def _grpc_server(self, *, interceptors: list | None = None, options: list | None = None) -> grpc.aio.Server:
+        return grpc.aio.server(interceptors=[self._rpcs_in_flight, *(interceptors or [])], options=options)
+
+    async def _stop(self, server: grpc.aio.Server, grace: float | None) -> None:
+        await server.stop(grace=grace)
+        await self._rpcs_in_flight.finished()
+
+    @asynccontextmanager
+    async def _drivers_serving(self):
+        """Keep every driver's serving() context open while the session serves.
+
+        They are entered before and left after the gRPC server, so no client
+        reaches a driver whose background work (a console fan-out reader, for
+        example) has stopped, and that work has ended before the session's
+        driver shutdown runs. Each driver serves in a task of its own, so work
+        that fails ends only that driver's serving(), and every exit, an error
+        included, leaves them all cancelled.
+        """
+        failure = None
+        async with create_task_group() as drivers:
+            try:
+                for driver in self.mapping.values():
+                    await drivers.start(_serve_driver, driver)
+                yield
+            except Exception as error:  # noqa: BLE001 - re-raised below, once the drivers stopped
+                # Raised into the task group instead, the session's own error would reach
+                # its caller wrapped in an ExceptionGroup.
+                failure = error
+            finally:
+                drivers.cancel_scope.cancel()
+        if failure is not None:
+            raise failure
+
     @asynccontextmanager
     async def serve_port_async(self, port):
-        server = grpc.aio.server()
+        server = self._grpc_server()
         server.add_insecure_port(port)
 
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
-        await server.start()
-        try:
-            yield
-        finally:
-            await server.stop(grace=None)
+        async with self._drivers_serving():
+            await server.start()
+            try:
+                yield
+            finally:
+                await self._stop(server, grace=None)
 
     @asynccontextmanager
     async def serve_multi_port_async(self, *ports):
@@ -131,7 +209,7 @@ class Session(
         Yields:
             None - caller manages socket paths externally
         """
-        server = grpc.aio.server()
+        server = self._grpc_server()
         for port in ports:
             server.add_insecure_port(port)
             logger.debug("Session server listening on %s", port)
@@ -139,18 +217,19 @@ class Session(
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
-        await server.start()
-        logger.info("Session server started on %d ports", len(ports))
-        try:
-            yield
-        finally:
-            logger.info("Stopping session server...")
-            # Use a short grace period to allow pending RPCs to complete
-            # This helps prevent SSL corruption from abrupt connection termination
-            await server.stop(grace=1.0)
-            # Brief delay to ensure all connections are fully closed
-            await sleep(0.1)
-            logger.info("Session server stopped")
+        async with self._drivers_serving():
+            await server.start()
+            logger.info("Session server started on %d ports", len(ports))
+            try:
+                yield
+            finally:
+                logger.info("Stopping session server...")
+                # Use a short grace period to allow pending RPCs to complete
+                # This helps prevent SSL corruption from abrupt connection termination
+                await self._stop(server, grace=1.0)
+                # Brief delay to ensure all connections are fully closed
+                await sleep(0.1)
+                logger.info("Session server stopped")
 
     @asynccontextmanager
     async def _serve_grpc_server_async(self, server):
@@ -158,14 +237,15 @@ class Session(
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
-        await server.start()
-        try:
-            yield
-        finally:
-            logger.info("Stopping session server...")
-            await server.stop(grace=1.0)
-            await sleep(0.1)
-            logger.info("Session server stopped")
+        async with self._drivers_serving():
+            await server.start()
+            try:
+                yield
+            finally:
+                logger.info("Stopping session server...")
+                await self._stop(server, grace=1.0)
+                await sleep(0.1)
+                logger.info("Session server stopped")
 
     def _add_tcp_port(
         self,
@@ -204,7 +284,7 @@ class Session(
         Yields:
             int - the bound port (useful when port=0 to let the OS choose)
         """
-        server = grpc.aio.server(
+        server = self._grpc_server(
             interceptors=interceptors,
             options=list(_GRPC_SERVER_OPTIONS_TCP_KEEPALIVE),
         )
@@ -238,7 +318,7 @@ class Session(
         Yields:
             None - server runs until context exit
         """
-        server = grpc.aio.server(
+        server = self._grpc_server(
             interceptors=interceptors,
             options=list(_GRPC_SERVER_OPTIONS_TCP_KEEPALIVE),
         )
@@ -268,21 +348,19 @@ class Session(
         Yields:
             tuple[str, str]: (main_socket_path, hook_socket_path)
         """
-        with TemporarySocket() as main_path:
-            with TemporarySocket() as hook_path:
-                async with self.serve_multi_port_async(f"unix://{main_path}", f"unix://{hook_path}"):
-                    yield main_path, hook_path
+        with TemporarySocket() as main_path, TemporarySocket() as hook_path:
+            async with self.serve_multi_port_async(f"unix://{main_path}", f"unix://{hook_path}"):
+                yield main_path, hook_path
 
     @contextmanager
     def serve_unix(self):
-        with start_blocking_portal() as portal:
-            with portal.wrap_async_context_manager(self.serve_unix_async()) as path:
-                yield path
+        with start_blocking_portal() as portal, portal.wrap_async_context_manager(self.serve_unix_async()) as path:
+            yield path
 
     def __getitem__(self, key: UUID):
         return self.mapping[key]
 
-    def _check_status_for_driver_call(self, context):
+    async def _check_status_for_driver_call(self, context):
         """Check if the current status allows driver calls.
 
         Driver calls are allowed during:
@@ -303,7 +381,7 @@ class Session(
         }
 
         if self._current_status not in ALLOWED_STATUSES:
-            context.abort(
+            await context.abort(
                 grpc.StatusCode.FAILED_PRECONDITION,
                 f"Exporter not ready for driver calls (status: {self._current_status})",
             )
@@ -320,40 +398,65 @@ class Session(
             ],
         )
 
+    def _bind_session_env(self) -> None:
+        """Make the lease's session reachable from the driver call, see jumpstarter.driver.session_env().
+
+        grpc.aio runs each RPC in a task of its own, so the value goes away with the call.
+        """
+        if self.lease_context is not None and (self.lease_context.hook_socket_path or self.lease_context.socket_path):
+            session_env_var.set(self.lease_context.session_env())
+
     async def DriverCall(self, request, context):
+        """Serve a unary driver call, with the lease's session env bound for it."""
         logger.debug("DriverCall(uuid=%s, method=%s)", request.uuid, request.method)
-        self._check_status_for_driver_call(context)
+        await self._check_status_for_driver_call(context)
+        self._bind_session_env()
         return await self[UUID(request.uuid)].DriverCall(request, context)
 
     async def StreamingDriverCall(self, request, context):
+        """Serve a streaming driver call, with the lease's session env bound for it."""
         logger.debug("StreamingDriverCall(uuid=%s, method=%s)", request.uuid, request.method)
-        self._check_status_for_driver_call(context)
+        await self._check_status_for_driver_call(context)
+        self._bind_session_env()
         async for v in self[UUID(request.uuid)].StreamingDriverCall(request, context):
             yield v
 
-    async def Stream(self, _request_iterator, context):
-        request = StreamRequestMetadata(**dict(list(context.invocation_metadata()))).request
+    async def Stream(self, _request_iterator, context):  # ty: ignore[invalid-method-override]
+        request = StreamRequestMetadata(**dict(list(context.invocation_metadata()))).request  # type: ignore[call-arg]
         logger.debug("Streaming(%s)", request)
-        driver = self[request.uuid]
-        async with driver.Stream(request, context) as stream:
-            metadata = []
-            with suppress(TypedAttributeLookupError):
-                metadata.extend(stream.extra(MetadataStreamAttributes.metadata).items())
-            await context.send_initial_metadata(metadata)
+        try:
+            driver = self[request.uuid]
+            async with driver.Stream(request, context) as stream:
+                metadata = []
+                with suppress(TypedAttributeLookupError):
+                    metadata.extend(stream.extra(MetadataStreamAttributes.metadata).items())
+                await context.send_initial_metadata(metadata)
 
-            async with RouterStream(context=context) as remote:
-                async with forward_stream(remote, stream, metrics_driver_type=driver.driver_type):
+                # A resource upload is complete only when the client ends it with GOAWAY.
+                # A bare EOF means the transport was lost; the driver must not read the
+                # truncated upload as a clean end.
+                async with (
+                    RouterStream(
+                        context=context, require_goaway=isinstance(request, ResourceStreamRequest)
+                    ) as remote,
+                    forward_stream(remote, stream, metrics_driver_type=driver.driver_type),
+                ):
                     event = Event()
                     context.add_done_callback(lambda _: event.set())
                     await event.wait()
+        except (ExclusiveSessionActive, WriteTokenRevokedError, ReadOnlyStreamError) as e:
+            # Abort with the exception message so clients see a gRPC status
+            # instead of grpcio's "Unexpected <class ...>" UNKNOWN wrapper.
+            await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(e))
 
     async def LogStream(self, request, context):
-        while not context.done():
-            try:
-                yield self._logging_queue.popleft()
-            except IndexError:
-                # Short polling interval for real-time log streaming
-                await sleep(0.05)
+        with self._log_fanout.subscribe() as queue:
+            while not context.done():
+                try:
+                    yield queue.popleft()
+                except IndexError:
+                    # Short polling interval for real-time log streaming
+                    await sleep(0.05)
 
     def update_status(self, status: int | ExporterStatus, message: str = ""):
         """Update the current exporter status for the session and signal status change.

@@ -1,6 +1,5 @@
 """Endpoint configuration for cluster management."""
 
-from typing import Optional
 
 from ..exceptions import EndpointConfigurationError, ToolNotInstalledError
 from .common import GRPC_NODEPORT, KIND_GRPC_HOST_PORT, KIND_ROUTER_HOST_PORT, ROUTER_NODEPORT
@@ -8,7 +7,7 @@ from .minikube import minikube_installed
 from jumpstarter.common.ipaddr import get_ip_address, get_minikube_ip
 
 
-async def get_ip_generic(cluster_type: Optional[str], minikube: str, cluster_name: str) -> str:
+async def get_ip_generic(cluster_type: str | None, minikube: str, cluster_name: str) -> str:
     """Get IP address for the cluster."""
     if cluster_type == "minikube":
         if not minikube_installed(minikube):
@@ -26,13 +25,13 @@ async def get_ip_generic(cluster_type: Optional[str], minikube: str, cluster_nam
 
 
 async def configure_endpoints(
-    cluster_type: Optional[str],
+    cluster_type: str | None,
     minikube: str,
     cluster_name: str,
-    ip: Optional[str],
-    basedomain: Optional[str],
-    grpc_endpoint: Optional[str],
-    router_endpoint: Optional[str],
+    ip: str | None,
+    basedomain: str | None,
+    grpc_endpoint: str | None,
+    router_endpoint: str | None,
 ) -> tuple[str, str, str, str]:
     """Configure endpoints for Jumpstarter installation."""
     if ip is None:

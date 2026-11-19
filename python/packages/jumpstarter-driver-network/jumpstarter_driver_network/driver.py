@@ -1,7 +1,6 @@
 import ctypes
 import socket
 from abc import ABCMeta, abstractmethod
-from asyncio import get_running_loop
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from os import getenv, getuid
@@ -14,7 +13,7 @@ from anyio import (
     create_connected_udp_socket,
     create_memory_object_stream,
 )
-from anyio._backends._asyncio import SocketStream, StreamProtocol
+from anyio.abc import SocketStream
 from anyio.streams.stapled import StapledObjectStream
 
 from .streams.websocket import WebsocketClientStream
@@ -52,7 +51,7 @@ def _resolve_hostname(host: str) -> str:
         if addr_info:
             # Get the first resolved address (ip address)
             resolved_ip = addr_info[0][4][0]
-            return resolved_ip
+            return str(resolved_ip)
     except (OSError, socket.gaierror):
         # If resolution fails, return the original hostname
         pass
@@ -82,7 +81,7 @@ class NetworkInterface(metaclass=ABCMeta):
         return "jumpstarter_driver_network.client.NetworkClient"
 
     @abstractmethod
-    @asynccontextmanager
+    @asynccontextmanager  # ty: ignore[no-matching-overload]
     async def connect(self): ...
 
 
@@ -209,12 +208,8 @@ class VsockNetwork(NetworkInterface, Driver):
             if libc.connect(sock.fileno(), ctypes.byref(addr), ctypes.sizeof(addr)) < 0:
                 raise OSError(ctypes.get_errno(), "vsock connect() failed")
 
-            transport, protocol = await get_running_loop().create_connection(
-                StreamProtocol,
-                sock=sock,
-            )
-
-            yield SocketStream(transport, protocol)
+            async with await SocketStream.from_socket(sock) as stream:
+                yield stream
 
 
 @dataclass(kw_only=True)
@@ -222,7 +217,7 @@ class DbusNetwork(NetworkInterface, Driver):
     kind: Literal["system", "session"]
 
     scheme: str | None = field(init=False, default=None)
-    args: dict[str, str] = field(init=False, default_factory=dict)
+    args: dict[str, str | int] = field(init=False, default_factory=dict)
 
     KIND_LABEL: ClassVar[str] = "jumpstarter.dev/dbusnetwork/kind"
 
@@ -279,11 +274,13 @@ class DbusNetwork(NetworkInterface, Driver):
         match self.scheme:
             case "unix":
                 self.logger.debug("Connecting UDS path=%s", self.args["path"])
-                async with await connect_unix(path=self.args["path"]) as stream:
+                async with await connect_unix(path=str(self.args["path"])) as stream:
                     yield stream
             case "tcp":
                 self.logger.debug("Connecting TCP host=%s port=%d", self.args["host"], self.args["port"])
-                async with await connect_tcp(remote_host=self.args["host"], remote_port=self.args["port"]) as stream:
+                async with await connect_tcp(
+                    remote_host=str(self.args["host"]), remote_port=int(self.args["port"])
+                ) as stream:
                     yield stream
 
 
@@ -303,7 +300,7 @@ class EchoNetwork(NetworkInterface, Driver):
     @exportstream
     @asynccontextmanager
     async def connect(self):
-        tx, rx = create_memory_object_stream[bytes](32) # ty: ignore[call-non-callable]
+        tx, rx = create_memory_object_stream[bytes](32)
         self.logger.debug("Connecting Echo")
         async with StapledObjectStream(tx, rx) as stream:
             yield stream
@@ -325,9 +322,8 @@ class WebsocketNetwork(NetworkInterface, Driver):
         '''
         self.logger.info("Connecting to %s", self.url)
 
-        async with websockets.connect(self.url) as websocket:
-            async with WebsocketClientStream(conn=websocket) as stream:
-                yield stream
+        async with websockets.connect(self.url) as websocket, WebsocketClientStream(conn=websocket) as stream:
+            yield stream
 
         self.logger.info("Disconnected from %s", self.url)
 

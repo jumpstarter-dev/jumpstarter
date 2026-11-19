@@ -7,6 +7,10 @@ func (c *Client) InternalSubject() string {
 	return strings.Join([]string{"client", namespace, c.Name, uid}, ":")
 }
 
+func (c *Client) CredentialSecretName() string {
+	return c.Name + "-client"
+}
+
 func (c *Client) Usernames(prefix string) []string {
 	usernames := []string{prefix + c.InternalSubject()}
 

@@ -9,6 +9,10 @@ permissions:
   contents: read
   pull-requests: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   changes:
     if: github.repository_owner == 'jumpstarter-dev'
@@ -26,10 +30,13 @@ jobs:
         id: filter
         with:
           base: ${{ github.base_ref || github.event.merge_group.base_ref || 'main' }}
+          # Required for the '!...' exclusion patterns below to work; with the
+          # default 'some' quantifier a negated pattern matches every file it
+          # does NOT cover, so docs-only PRs would still trigger the tests.
+          predicate-quantifier: some-with-excludes
           filters: |
             python:
               - 'python/**'
-              - '!docs/**'
               - '!python/**/*.md'
               - '.github/workflows/python-tests.yaml'
             renode_driver:
@@ -37,14 +44,14 @@ jobs:
       - name: Compute test matrix
         id: matrix
         run: |
-          # PRs: test only Python 3.12 on Linux to save CI time.
+          # PRs: test only Python 3.14 on Linux to save CI time.
           # Merge queue and workflow_dispatch run the full matrix
           # (all Python versions on both Linux and macOS).
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo 'python-versions=["3.12"]' >> "$GITHUB_OUTPUT"
+            echo 'python-versions=["3.14"]' >> "$GITHUB_OUTPUT"
             echo 'runners=["ubuntu-24.04"]' >> "$GITHUB_OUTPUT"
           else
-            echo 'python-versions=["3.11", "3.12", "3.13"]' >> "$GITHUB_OUTPUT"
+            echo 'python-versions=["3.12", "3.13", "3.14"]' >> "$GITHUB_OUTPUT"
             echo 'runners=["ubuntu-24.04", "macos-15"]' >> "$GITHUB_OUTPUT"
           fi
 
@@ -55,13 +62,17 @@ jobs:
     env:
       # renovate: datasource=custom.fedora-cloud-qcow2 depName=fedora-cloud-base-generic
       FEDORA_CLOUD_VERSION: 43-1.6
+      # Extra headroom for uv lock resolution; constraint-dependencies in
+      # python/pyproject.toml now steer the resolver to cp314-wheel versions,
+      # but keep a generous timeout as a safety net.
+      UV_LOCK_TIMEOUT: 1800
     strategy:
       matrix:
         runs-on: ${{ fromJson(needs.changes.outputs.runners) }}
         # Floor: oldest Python in supported platforms (RHEL 9 appstream)
         # Ceiling: newest Python in latest Fedora
         # Review on each RHEL/Fedora release
-        # PRs run only 3.12 on Linux; merge queue runs all versions
+        # PRs run only 3.14 on Linux; merge queue runs all versions
         # on both Linux and macOS.
         python-version: ${{ fromJson(needs.changes.outputs.python-versions) }}
     steps:
@@ -78,7 +89,7 @@ jobs:
       - id: uv
         run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ steps.uv.outputs.version }}
           python-version: ${{ matrix.python-version }}
@@ -124,7 +135,7 @@ jobs:
         if: runner.os == 'Linux'
         env:
           # renovate: datasource=github-releases depName=renode/renode
-          RENODE_VERSION: v1.16.1
+          RENODE_VERSION: v1.17.0
         run: |
           RENODE_TAG="${RENODE_VERSION#v}"
           wget "https://github.com/renode/renode/releases/download/${RENODE_VERSION}/renode_${RENODE_TAG}_amd64.deb" -O /tmp/renode.deb
@@ -163,6 +174,11 @@ jobs:
               "https://iad.mirror.rackspace.com/fedora/releases/${FEDORA_RELEASE}/Cloud/${arch}/images/Fedora-Cloud-Base-Generic-${FEDORA_CLOUD_VERSION}.${arch}.qcow2"
           done
 
+      - name: Verify uv.lock is up-to-date
+        working-directory: python
+        run: |
+          uv lock --check
+
       - name: Run pytest
         working-directory: python
         env:
@@ -172,7 +188,7 @@ jobs:
 
       - name: Upload test logs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: test-logs-${{ matrix.runs-on }}-py${{ matrix.python-version }}
           path: ${{ runner.temp }}/test-logs/
@@ -195,10 +211,40 @@ jobs:
           fi
           uv run diff-cover $coverage_files --compare-branch=origin/${{ github.base_ref }} --fail-under=80 --exclude '*_pb2.py' '*_pb2_grpc.py' '**/conftest.py' '**/test_*.py' '**/*_test.py'
 
+  # Verify jumpstarter-all resolves under plain pip, the resolver end users get
+  # via install.sh. Runs on PRs too (unlike pytest-matrix, which only tests
+  # Python 3.14 on PRs).
+  pip-resolution:
+    needs: changes
+    if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-26.04
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Full history so hatch-vcs derives the same versions as elsewhere.
+          fetch-depth: 0
+      - id: uv
+        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ steps.uv.outputs.version }}
+          python-version: ${{ matrix.python-version }}
+      - name: Verify plain-pip dependency resolution
+        working-directory: python
+        run: |
+          make build
+          uv venv --python "${{ matrix.python-version }}" --seed .pip-resolve
+          # By path: dev versions are pre-releases, so a bare name would resolve to PyPI's release
+          ./.pip-resolve/bin/python -m pip install --dry-run --find-links dist dist/jumpstarter_all-*.whl
+
   # https://github.com/orgs/community/discussions/26822
   pytest:
     runs-on: ubuntu-latest
-    needs: [changes, pytest-matrix]
+    needs: [changes, pytest-matrix, pip-resolution]
     if: ${{ always() }}
     steps:
       - run: exit 1

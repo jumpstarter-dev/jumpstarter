@@ -1,0 +1,19 @@
+# Lets exporters and jmp running on the e2e host reach telemetry. The
+# controller advertises the in-cluster address
+# jumpstarter-telemetry.jumpstarter-lab.svc:9093; setup-e2e.sh points that name
+# at 127.0.0.1, and kind maps host port 9093 to this NodePort
+# (controller/hack/kind_cluster.yaml). The operator only creates a ClusterIP
+# Service for telemetry.
+apiVersion: v1
+kind: Service
+metadata:
+  name: jumpstarter-telemetry-e2e-np
+spec:
+  type: NodePort
+  selector:
+    app: jumpstarter-telemetry
+  ports:
+  - name: grpc
+    port: 9093
+    targetPort: 9093
+    nodePort: 30015

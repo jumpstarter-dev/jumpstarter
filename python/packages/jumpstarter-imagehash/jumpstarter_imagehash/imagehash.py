@@ -40,7 +40,7 @@ class ImageHash:
         :return: a snapshot image
         :rtype: PIL.Image
         """
-        return self.client.snapshot()
+        return self.client.snapshot()  # ty: ignore[unresolved-attribute]
 
     def hash_snapshot(self):
         """

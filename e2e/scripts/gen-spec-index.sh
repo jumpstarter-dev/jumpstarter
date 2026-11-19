@@ -25,6 +25,7 @@ KNOWN_LANES_JSON='[
   "exit-on-lease-end",
   "exporterset-qemu",
   "auth-logging",
+  "telemetry",
   "old-controller",
   "old-client",
   "compat"

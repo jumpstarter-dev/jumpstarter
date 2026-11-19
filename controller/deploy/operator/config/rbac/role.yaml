@@ -172,6 +172,17 @@ rules:
   - patch
   - update
 - apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - operator.jumpstarter.dev
   resources:
   - jumpstarters
@@ -243,10 +254,11 @@ rules:
   - virtualtarget.jumpstarter.dev
   resources:
   - exportersets
-  - virtualtargetclasses
   verbs:
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - virtualtarget.jumpstarter.dev
@@ -263,3 +275,11 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - virtualtarget.jumpstarter.dev
+  resources:
+  - virtualtargetclasses
+  verbs:
+  - get
+  - list
+  - watch

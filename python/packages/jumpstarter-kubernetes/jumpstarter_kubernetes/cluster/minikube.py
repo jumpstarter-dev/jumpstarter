@@ -5,7 +5,6 @@ import os
 import shlex
 import shutil
 from pathlib import Path
-from typing import List, Optional
 
 from ..callbacks import OutputCallback, SilentCallback
 from ..exceptions import (
@@ -23,7 +22,7 @@ def minikube_installed(minikube: str) -> bool:
     return shutil.which(minikube) is not None
 
 
-async def minikube_cluster_exists(minikube: str, cluster_name: str) -> bool:  # noqa: C901
+async def minikube_cluster_exists(minikube: str, cluster_name: str) -> bool:
     """Check if a Minikube cluster exists.
 
     Uses 'minikube profile list' to distinguish between stopped and non-existent clusters.
@@ -59,22 +58,17 @@ async def minikube_cluster_exists(minikube: str, cluster_name: str) -> bool:  # 
 
         # Check if the error indicates profile doesn't exist
         combined_output = (stdout + stderr).lower()
-        if "profile" in combined_output and "not found" in combined_output:
-            return False
-
         # Non-zero exit but not "not found" means cluster exists but may be stopped
-        return True
+        return not ("profile" in combined_output and "not found" in combined_output)
 
     except RuntimeError as e:
         # Check if the error message indicates profile not found
         error_msg = str(e).lower()
-        if "profile" in error_msg and "not found" in error_msg:
-            return False
         # Other errors may indicate the cluster exists but has issues
-        return True
+        return not ("profile" in error_msg and "not found" in error_msg)
 
 
-async def delete_minikube_cluster(minikube: str, cluster_name: str, callback: OutputCallback = None) -> bool:
+async def delete_minikube_cluster(minikube: str, cluster_name: str, callback: OutputCallback | None = None) -> bool:
     """Delete a Minikube cluster."""
     if callback is None:
         callback = SilentCallback()
@@ -100,9 +94,9 @@ async def delete_minikube_cluster(minikube: str, cluster_name: str, callback: Ou
 async def create_minikube_cluster(  # noqa: C901
     minikube: str,
     cluster_name: str,
-    extra_args: Optional[List[str]] = None,
+    extra_args: list[str] | None = None,
     force_recreate: bool = False,
-    callback: OutputCallback = None,
+    callback: OutputCallback | None = None,
 ) -> bool:
     """Create a Minikube cluster."""
     if extra_args is None:
@@ -157,7 +151,7 @@ async def create_minikube_cluster(  # noqa: C901
         )
 
 
-async def list_minikube_clusters(minikube: str) -> List[str]:
+async def list_minikube_clusters(minikube: str) -> list[str]:
     """List all Minikube clusters."""
     if not minikube_installed(minikube):
         return []
@@ -178,7 +172,7 @@ async def get_minikube_cluster_ip(minikube: str, cluster_name: str) -> str:
     return await get_minikube_ip(cluster_name, minikube)
 
 
-async def prepare_certificates(extra_certs: str, callback: OutputCallback = None) -> None:
+async def prepare_certificates(extra_certs: str, callback: OutputCallback | None = None) -> None:
     """Prepare custom certificates for Minikube."""
     if callback is None:
         callback = SilentCallback()
@@ -199,7 +193,7 @@ async def prepare_certificates(extra_certs: str, callback: OutputCallback = None
 
     # If ca.crt already exists, append to it
     if cert_dest.exists():
-        with open(extra_certs_path, "r") as src, open(cert_dest, "a") as dst:
+        with open(extra_certs_path, "r") as src, open(cert_dest, "a") as dst:  # noqa: ASYNC230
             dst.write("\n")
             dst.write(src.read())
     else:
@@ -213,8 +207,8 @@ async def create_minikube_cluster_with_options(
     cluster_name: str,
     minikube_extra_args: str,
     force_recreate_cluster: bool,
-    extra_certs: Optional[str] = None,
-    callback: OutputCallback = None,
+    extra_certs: str | None = None,
+    callback: OutputCallback | None = None,
 ) -> None:
     """Create a Minikube cluster with optional certificate preparation."""
     if callback is None:
@@ -248,7 +242,7 @@ async def create_minikube_cluster_with_options(
 
 
 async def delete_minikube_cluster_with_feedback(
-    minikube: str, cluster_name: str, callback: OutputCallback = None
+    minikube: str, cluster_name: str, callback: OutputCallback | None = None
 ) -> None:
     """Delete a Minikube cluster with user feedback."""
     if callback is None:

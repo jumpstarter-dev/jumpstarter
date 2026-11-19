@@ -1,4 +1,3 @@
-from typing import Optional
 
 import click
 from jumpstarter_cli_common.alias import AliasedGroup
@@ -48,9 +47,9 @@ def delete():
 @opt_nointeractive
 @blocking
 async def delete_client(
-    name: Optional[str],
-    kubeconfig: Optional[str],
-    context: Optional[str],
+    name: str | None,
+    kubeconfig: str | None,
+    context: str | None,
     namespace: str,
     delete: bool,
     output: NameOutputType,
@@ -58,6 +57,7 @@ async def delete_client(
 ):
     """Delete a client object in the Kubernetes cluster"""
     validate_name(name)
+    assert name is not None
     try:
         async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
             await api.delete_client(name)
@@ -100,9 +100,9 @@ async def delete_client(
 @opt_nointeractive
 @blocking
 async def delete_exporter(
-    name: Optional[str],
-    kubeconfig: Optional[str],
-    context: Optional[str],
+    name: str | None,
+    kubeconfig: str | None,
+    context: str | None,
     namespace: str,
     delete: bool,
     output: NameOutputType,
@@ -110,6 +110,7 @@ async def delete_exporter(
 ):
     """Delete an exporter object in the Kubernetes cluster"""
     validate_name(name)
+    assert name is not None
     try:
         async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
             await api.delete_exporter(name)
@@ -153,8 +154,8 @@ async def delete_exporter(
 @blocking
 async def delete_cluster(
     name: str,
-    kind: Optional[str],
-    minikube: Optional[str],
+    kind: str | None,
+    minikube: str | None,
     force: bool,
     output: NameOutputType,
 ):

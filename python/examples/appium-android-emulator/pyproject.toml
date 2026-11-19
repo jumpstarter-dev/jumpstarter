@@ -1,0 +1,20 @@
+[project]
+name = "jumpstarter-example-appium-android-emulator"
+version = "0.1.0"
+description = "Drive the Android Settings app through Appium on a local Jumpstarter exporter"
+authors = [{ name = "Kirk Brauer", email = "kbrauer@hatci.com" }]
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+dependencies = [
+  "pytest>=8.3.2",
+  "jumpstarter",
+  "jumpstarter-testing",
+  "jumpstarter-driver-androidemulator",
+  "jumpstarter-driver-appium",
+  "Appium-Python-Client>=5.0.0",
+]
+
+[tool.pytest.ini_options]
+log_cli = true
+log_cli_level = "INFO"

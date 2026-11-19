@@ -174,9 +174,8 @@ def test_doip_receive_diagnostic_timeout(mock_doip_cls):
     mock_doip_cls.return_value = mock_client
 
     driver = DoIP(ecu_ip="192.168.1.100", ecu_logical_address=0x00E0)
-    with serve(driver) as client:
-        with pytest.raises(DriverError, match="No response from ECU"):
-            client.receive_diagnostic(timeout=0.1)
+    with serve(driver) as client, pytest.raises(DriverError, match="No response from ECU"):
+        client.receive_diagnostic(timeout=0.1)
 
 
 @patch("jumpstarter_driver_doip.driver.DoIPClient")
@@ -186,9 +185,8 @@ def test_doip_entity_status_connection_error(mock_doip_cls):
     mock_doip_cls.return_value = mock_client
 
     driver = DoIP(ecu_ip="192.168.1.100", ecu_logical_address=0x00E0)
-    with serve(driver) as client:
-        with pytest.raises(DriverError, match="Lost connection"):
-            client.entity_status()
+    with serve(driver) as client, pytest.raises(DriverError, match="Lost connection"):
+        client.entity_status()
 
 
 @patch("jumpstarter_driver_doip.driver.DoIPClient")
@@ -198,9 +196,8 @@ def test_doip_reconnect_failure(mock_doip_cls):
     mock_doip_cls.return_value = mock_client
 
     driver = DoIP(ecu_ip="192.168.1.100", ecu_logical_address=0x00E0)
-    with serve(driver) as client:
-        with pytest.raises(DriverError, match="Cannot reconnect"):
-            client.reconnect(close_delay=0.1)
+    with serve(driver) as client, pytest.raises(DriverError, match="Cannot reconnect"):
+        client.reconnect(close_delay=0.1)
 
 
 # --- Config validation tests ---

@@ -4,7 +4,7 @@ from kubernetes_asyncio.client.models import V1Condition, V1ObjectMeta, V1Object
 from jumpstarter_kubernetes import V1Alpha1Lease, V1Alpha1LeaseSelector, V1Alpha1LeaseSpec, V1Alpha1LeaseStatus
 
 TEST_LEASE = V1Alpha1Lease(
-    api_version="jumpstarter.dev/v1alpha1",
+    apiVersion="jumpstarter.dev/v1alpha1",
     kind="Lease",
     metadata=V1ObjectMeta(
         creation_timestamp="2021-10-01T00:00:00Z",
@@ -17,16 +17,16 @@ TEST_LEASE = V1Alpha1Lease(
     spec=V1Alpha1LeaseSpec(
         client=V1ObjectReference(name="test-client"),
         duration="1h",
-        selector=V1Alpha1LeaseSelector(match_labels={"test": "label", "another": "something"}),
+        selector=V1Alpha1LeaseSelector(matchLabels={"test": "label", "another": "something"}),
     ),
     status=V1Alpha1LeaseStatus(
-        begin_time="2021-10-01T00:00:00Z",
+        beginTime="2021-10-01T00:00:00Z",
         conditions=[
             V1Condition(
                 last_transition_time="2021-10-01T00:00:00Z", status="True", type="Active", message="", reason=""
             )
         ],
-        end_time="2021-10-01T01:00:00Z",
+        endTime="2021-10-01T01:00:00Z",
         ended=False,
         exporter=V1ObjectReference(name="test-exporter"),
     ),

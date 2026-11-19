@@ -7,9 +7,10 @@ from kubernetes_asyncio.client.models import V1ConfigMap, V1ObjectMeta, V1Secret
 
 from jumpstarter_kubernetes import V1Alpha1Client, V1Alpha1ClientStatus
 from jumpstarter_kubernetes.clients import ClientsV1Alpha1Api
+from jumpstarter_kubernetes.exceptions import CredentialNotReadyError
 
 TEST_CLIENT = V1Alpha1Client(
-    api_version="jumpstarter.dev/v1alpha1",
+    apiVersion="jumpstarter.dev/v1alpha1",
     kind="Client",
     metadata=V1ObjectMeta(
         creation_timestamp="2021-10-01T00:00:00Z",
@@ -148,7 +149,7 @@ def test_client_rich_add_rows_without_status():
     """Test V1Alpha1Client.rich_add_rows without status"""
 
     client = V1Alpha1Client(
-        api_version="jumpstarter.dev/v1alpha1",
+        apiVersion="jumpstarter.dev/v1alpha1",
         kind="Client",
         metadata=V1ObjectMeta(name="test-client", namespace="default"),
         status=None,
@@ -239,7 +240,7 @@ def test_client_list_rich_add_names():
 # Tests for get_ca_bundle and get_client_config
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_ca_bundle_with_ca_cert():
     """Test get_ca_bundle returns base64-encoded CA certificate"""
     api = ClientsV1Alpha1Api(namespace="test-namespace")
@@ -258,7 +259,7 @@ async def test_get_ca_bundle_with_ca_cert():
     api.core_api.read_namespaced_config_map.assert_called_once_with("jumpstarter-service-ca-cert", "test-namespace")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_ca_bundle_empty_ca_cert():
     """Test get_ca_bundle returns empty string when ca.crt is empty"""
     api = ClientsV1Alpha1Api(namespace="test-namespace")
@@ -273,7 +274,7 @@ async def test_get_ca_bundle_empty_ca_cert():
     assert result == ""
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_ca_bundle_missing_ca_crt_key():
     """Test get_ca_bundle returns empty string when ca.crt key is missing"""
     api = ClientsV1Alpha1Api(namespace="test-namespace")
@@ -288,7 +289,7 @@ async def test_get_ca_bundle_missing_ca_crt_key():
     assert result == ""
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_ca_bundle_configmap_not_found():
     """Test get_ca_bundle returns empty string when ConfigMap doesn't exist"""
     api = ClientsV1Alpha1Api(namespace="test-namespace")
@@ -302,7 +303,7 @@ async def test_get_ca_bundle_configmap_not_found():
     assert result == ""
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_ca_bundle_other_api_error():
     """Test get_ca_bundle raises exception for non-404 errors"""
     api = ClientsV1Alpha1Api(namespace="test-namespace")
@@ -314,10 +315,10 @@ async def test_get_ca_bundle_other_api_error():
     with pytest.raises(ApiException) as exc_info:
         await api.get_ca_bundle()
 
-    assert exc_info.value.status == 403
+    assert exc_info.value.status == 403  # type: ignore[attr-defined]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_client_config_includes_ca_bundle():
     """Test get_client_config includes CA bundle from ConfigMap"""
     api = ClientsV1Alpha1Api(namespace="test-namespace")
@@ -362,7 +363,7 @@ async def test_get_client_config_includes_ca_bundle():
     assert config.token == token
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_client_config_without_ca_bundle():
     """Test get_client_config works when CA ConfigMap doesn't exist"""
     api = ClientsV1Alpha1Api(namespace="test-namespace")
@@ -424,3 +425,30 @@ def test_client_from_dict_keeps_labels():
     )
     assert client.metadata.labels == {"team": "platform"}
     assert '"team": "platform"' in client.dump_json()
+
+
+@pytest.mark.anyio
+async def test_get_client_config_without_credentials():
+    """A client whose credentials the controller has not issued yet is reported, not crashed on"""
+    api = ClientsV1Alpha1Api(namespace="test-namespace")
+    api.api = AsyncMock()
+    api.core_api = AsyncMock()
+    api.api.get_namespaced_custom_object = AsyncMock(
+        return_value={
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Client",
+            "metadata": {
+                "creationTimestamp": "2021-10-01T00:00:00Z",
+                "generation": 1,
+                "name": "fresh-client",
+                "namespace": "test-namespace",
+                "resourceVersion": "1",
+                "uid": "test-uid",
+            },
+        }
+    )
+
+    with pytest.raises(CredentialNotReadyError, match="fresh-client"):
+        await api.get_client_config("fresh-client", allow=[], unsafe=False)
+
+    api.core_api.read_namespaced_secret.assert_not_awaited()

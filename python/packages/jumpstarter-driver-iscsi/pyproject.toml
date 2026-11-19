@@ -3,8 +3,9 @@ name = "jumpstarter-driver-iscsi"
 dynamic = ["version", "urls"]
 description = "Exporter ISCSI service driver"
 readme = "README.md"
+license = "Apache-2.0"
 authors = [{ name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "anyio>=4.10.0",
     "jumpstarter",
@@ -30,8 +31,6 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 omit = ["*_test.py", "**/test_*.py"]
 
 [tool.pytest.ini_options]
-asyncio_mode = "strict"
-asyncio_default_fixture_loop_scope = "function"
 testpaths = ["jumpstarter_driver_iscsi"]
 
 [build-system]
@@ -41,6 +40,5 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "pytest-cov>=6.0.0",
-    "pytest>=8.3.3",
-    "pytest-asyncio>=0.24.0",
+    "pytest>=8.4",
 ]

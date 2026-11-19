@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Annotated, ClassVar, Literal, Optional, Self
+from typing import Annotated, ClassVar, Literal, Self
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
@@ -75,21 +75,21 @@ class UserConfigV1Alpha1(BaseModel):
         """Check if a user config exists, otherwise create an empty one."""
         if cls.exists() is False:
             os.makedirs(cls.BASE_CONFIG_PATH, exist_ok=True)
-            config = cls(config=UserConfigV1Alpha1Config(current_client=None))
+            config = cls(config=UserConfigV1Alpha1Config.model_validate({"current-client": None}))
             cls.save(config)
             return config
         # Always return the current user config if it exists
         return cls.load()
 
     @classmethod
-    def save(cls, config: Self, path: Optional[str] = None) -> Path:
+    def save(cls, config: Self, path: str | None = None) -> Path:
         """Save a user config as YAML."""
 
         with open(path or cls.USER_CONFIG_PATH, "w") as f:
             yaml.safe_dump(config.model_dump(mode="json", by_alias=True), f, sort_keys=False)
-        return path or cls.USER_CONFIG_PATH
+        return Path(path) if path is not None else cls.USER_CONFIG_PATH
 
-    def use_client(self, name: Optional[str]) -> Path | None:
+    def use_client(self, name: str | None) -> Path | None:
         """Updates the current client and saves the user config."""
         if name is not None:
             self.config.current_client = ClientConfigV1Alpha1.load(name)

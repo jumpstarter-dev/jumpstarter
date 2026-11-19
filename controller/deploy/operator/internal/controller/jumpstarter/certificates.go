@@ -19,7 +19,9 @@ package jumpstarter
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
+	"slices"
 	"time"
 
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
@@ -108,7 +110,7 @@ func (r *JumpstarterReconciler) reconcileCertificates(ctx context.Context, js *o
 	}
 
 	// Create router certificates (one per replica)
-	for i := int32(0); i < js.Spec.Routers.Replicas; i++ {
+	for i := int32(0); i < routerReplicas(&js.Spec.Routers); i++ {
 		if err := r.reconcileRouterCertificate(ctx, js, issuerRef, i); err != nil {
 			return fmt.Errorf("failed to reconcile router %d certificate: %w", i, err)
 		}
@@ -294,7 +296,7 @@ func (r *JumpstarterReconciler) reconcileServerCertificate(
 	adjustedRenewBefore := renewBefore
 	if renewBefore >= certDuration {
 		adjustedRenewBefore = certDuration / 2
-		logFields := []interface{}{
+		logFields := []any{
 			"component", component,
 			"configured", renewBefore,
 			"certDuration", certDuration,
@@ -309,9 +311,7 @@ func (r *JumpstarterReconciler) reconcileServerCertificate(
 		"app.kubernetes.io/managed-by": "jumpstarter-operator",
 		"component":                    component,
 	}
-	for k, v := range extraLabels {
-		labels[k] = v
-	}
+	maps.Copy(labels, extraLabels)
 
 	// Separate IP addresses from DNS names for cert-manager v1 compatibility
 	var dns []string
@@ -550,7 +550,7 @@ func (r *JumpstarterReconciler) reconcileCAConfigMap(ctx context.Context, js *op
 		if selfSignedEnabled {
 			caSecretName := js.Name + caCertificateSuffix
 			caSecret := &corev1.Secret{}
-			err := r.Client.Get(ctx, types.NamespacedName{
+			err := r.Get(ctx, types.NamespacedName{
 				Name:      caSecretName,
 				Namespace: js.Namespace,
 			}, caSecret)
@@ -652,10 +652,5 @@ func isExternalIssuer(js *operatorv1alpha1.Jumpstarter) bool {
 
 // contains checks if a string slice contains a specific string.
 func contains(slice []string, str string) bool {
-	for _, s := range slice {
-		if s == str {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, str)
 }

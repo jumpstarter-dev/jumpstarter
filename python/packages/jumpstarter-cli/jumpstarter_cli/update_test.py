@@ -15,12 +15,15 @@ def test_update_lease_with_to_client():
     config.update_lease.return_value = lease
 
     with patch("jumpstarter_cli.update.model_print") as model_print:
+        assert update_lease.callback is not None
         inspect.unwrap(update_lease.callback)(
             config=config,
             name="my-lease",
             duration=None,
             begin_time=None,
             to_client="other-client",
+            share_add=(),
+            share_remove=(),
             output="yaml",
         )
 
@@ -29,6 +32,8 @@ def test_update_lease_with_to_client():
         duration=None,
         begin_time=None,
         client="namespaces/test-ns/clients/other-client",
+        add_shared_with=None,
+        remove_shared_with=None,
     )
     model_print.assert_called_once_with(lease, "yaml")
 
@@ -40,12 +45,15 @@ def test_update_lease_with_duration_and_to_client():
     config.update_lease.return_value = lease
 
     with patch("jumpstarter_cli.update.model_print") as model_print:
+        assert update_lease.callback is not None
         inspect.unwrap(update_lease.callback)(
             config=config,
             name="my-lease",
             duration=timedelta(hours=2),
             begin_time=None,
             to_client="other-client",
+            share_add=(),
+            share_remove=(),
             output="yaml",
         )
 
@@ -54,6 +62,8 @@ def test_update_lease_with_duration_and_to_client():
         duration=timedelta(hours=2),
         begin_time=None,
         client="namespaces/test-ns/clients/other-client",
+        add_shared_with=None,
+        remove_shared_with=None,
     )
     model_print.assert_called_once_with(lease, "yaml")
 
@@ -64,12 +74,15 @@ def test_update_lease_without_to_client():
     config.update_lease.return_value = lease
 
     with patch("jumpstarter_cli.update.model_print") as model_print:
+        assert update_lease.callback is not None
         inspect.unwrap(update_lease.callback)(
             config=config,
             name="my-lease",
             duration=timedelta(hours=1),
             begin_time=None,
             to_client=None,
+            share_add=(),
+            share_remove=(),
             output="yaml",
         )
 
@@ -78,17 +91,22 @@ def test_update_lease_without_to_client():
         duration=timedelta(hours=1),
         begin_time=None,
         client=None,
+        add_shared_with=None,
+        remove_shared_with=None,
     )
     model_print.assert_called_once_with(lease, "yaml")
 
 
 def test_update_lease_requires_at_least_one_option():
     with pytest.raises(click.UsageError, match="At least one of"):
+        assert update_lease.callback is not None
         inspect.unwrap(update_lease.callback)(
             config=Mock(),
             name="my-lease",
             duration=None,
             begin_time=None,
             to_client=None,
+            share_add=(),
+            share_remove=(),
             output="yaml",
         )

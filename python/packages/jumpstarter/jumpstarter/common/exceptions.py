@@ -1,5 +1,26 @@
 import sys
 
+# Machine-readable marker prefixed to the wire message of an exclusive-console
+# rejection (ExclusiveSessionActive). It travels in the gRPC status details, so
+# the CLI can recognize the error by the FAILED_PRECONDITION code plus this
+# stable token instead of matching the human-readable wording (which may be
+# reworded or localized). The CLI strips it before display. Keep it stable.
+CONSOLE_IN_USE_MARKER = "[jumpstarter:console-in-use]"
+
+
+def _describe_cause(cause: BaseException) -> str:
+    """Text for a cause: a group as its leaf errors, an empty message as the type's name."""
+    if isinstance(cause, BaseExceptionGroup):
+        # a group's own message ("... (2 sub-exceptions)") names none of the failures
+        return "; ".join(_describe_group_member(exc) for exc in cause.exceptions)
+    return str(cause) or type(cause).__name__
+
+
+def _describe_group_member(exc: BaseException) -> str:
+    if isinstance(exc, BaseExceptionGroup):
+        return _describe_cause(exc)
+    return f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+
 
 class JumpstarterException(Exception):
     """Base class for jumpstarter-specific errors.
@@ -20,7 +41,7 @@ class JumpstarterException(Exception):
 
     def __str__(self):
         if self.__cause__:
-            return f"{self.message} (Caused by: {self.__cause__})"
+            return f"{self.message} (Caused by: {_describe_cause(self.__cause__)})"
         return f"{self.message}"
 
 
@@ -42,13 +63,15 @@ class JumpstarterException(Exception):
 class ConnectionError(JumpstarterException):
     """Raised when a connection to a jumpstarter server fails."""
 
-    pass
+
+
+class CertificateDiscoveryError(ConnectionError):
+    """TLS certificate discovery failed before a gRPC channel was created."""
 
 
 class ExporterOfflineError(ConnectionError):
     """Raised when the connection to the exporter is lost during a lease."""
 
-    pass
 
 
 class ExporterUnreachableError(JumpstarterException):
@@ -57,38 +80,32 @@ class ExporterUnreachableError(JumpstarterException):
     Signals that the lease should be released and re-acquired.
     """
 
-    pass
 
 
 class ConfigurationError(JumpstarterException):
     """Raised when a configuration error exists."""
 
-    pass
 
 
 class ArgumentError(JumpstarterException):
     """Raised when a cli argument is not valid."""
 
-    pass
 
 
 
 class FileNotFoundError(JumpstarterException, FileNotFoundError):
     """Raised when a file is not found."""
 
-    pass
 
 
 class ReauthenticationFailed(JumpstarterException):
     """Raised when a re-authentication fails."""
 
-    pass
 
 
 class EnvironmentVariableNotSetError(JumpstarterException):
     """Raised when a environment variable is not set."""
 
-    pass
 
 
 class MissingDriverError(JumpstarterException):

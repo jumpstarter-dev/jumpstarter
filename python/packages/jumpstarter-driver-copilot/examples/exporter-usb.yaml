@@ -1,0 +1,38 @@
+# Scenario: base-board supply with the triple-USB HAT.
+# The HAT jumpers select the GPIO enabling each USB channel. usb_lines lists
+# them in port order (port 1 first); match it to your jumpers and board revision.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: copilot-usb
+# For controller-managed operation, replace these connection settings.
+# Local use: jmp shell --exporter-config /path/to/this-file.yaml
+endpoint: "controller.example.com:8082"
+token: "<token>"
+export:
+  copilot:
+    type: jumpstarter_driver_copilot.driver.CoPilotGPIO
+    config:
+      # Serial printed by the udev path /dev/copilot/by-id/<serial>/gpiochip.
+      serial: YOUR_COPILOT_SERIAL
+      managed_lines: [0, 1, 2, 3]
+      active_low: false
+      initial_active: false
+      hats:
+        - type: usb-extension
+          ports: 3
+          # Port 1 -> GPIO1, port 2 -> GPIO2, port 3 -> GPIO3.
+          usb_lines: [1, 2, 3]
+  power:
+    type: jumpstarter_driver_copilot.driver.CoPilotPower
+    children:
+      # Share the owner's GPIO request; do not open GPIO0 a second time.
+      controller:
+        ref: copilot
+  # j usb PORT on|off|read|cycle
+  usb:
+    type: jumpstarter_driver_copilot.driver.CoPilotUSB
+    children:
+      controller:
+        ref: copilot

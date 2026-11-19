@@ -37,7 +37,7 @@ class ShellClient(DriverClient):
                 if stderr:
                     print(stderr, end='', file=sys.stderr, flush=True)
                 if code is not None:
-                    returncode = code
+                    returncode = int(code)
             return returncode
         return execute
 
@@ -46,7 +46,6 @@ class ShellClient(DriverClient):
         @driver_click_group(self)
         def base():
             """Shell command executor"""
-            pass
 
         # Get available methods from the driver
         if self._methods is None:

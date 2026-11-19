@@ -54,7 +54,11 @@ export:
 
 When the target ECU does not run SOME/IP-SD (e.g. Zephyr firmware with
 multicast TX disabled), set `remote_host` and optionally `remote_port`
-to send messages directly without Service Discovery:
+to send messages directly without Service Discovery.
+
+opensomeip 0.2 sends RPC and events to `remote_host` when it is set, and
+does not fall back to `127.0.0.1:30490`. Point `remote_host` at the peer's
+application endpoint (the address that peer binds).
 
 ```yaml
 export:
@@ -154,6 +158,47 @@ with env() as client:
 
     # Clean up
     someip.close_connection()
+```
+
+### Server / Provider (act as an ECU)
+
+The same driver can also *provide* SOME/IP services — offer them via Service
+Discovery, answer RPC requests with canned responses, and publish events. This
+turns a Jumpstarter exporter into a simulated ECU, useful for exercising a
+device-under-test that is a SOME/IP *client* of another ECU.
+
+RPC handlers run inside the exporter process, so responses are configured
+declaratively rather than via a per-request callback: set a canned response for
+a `(service_id, method_id)` and the server serves it. This maps naturally onto
+getter-style SOME/IP methods; update the response to change what a client reads.
+opensomeip 0.2 serves those methods on the application socket for every
+service this driver has offered or given a method response. A client reaches
+the simulated ECU by setting `remote_host` to this exporter's `host` and `port`.
+
+```python
+from jumpstarter.common.utils import env
+
+with env() as client:
+    someip = client.someip
+
+    # Offer a service instance (starts the server on first use)
+    someip.offer_service(0x1801, instance_id=0x0001, major_version=1)
+
+    # Answer an RPC method with a fixed payload (E_OK by default)
+    someip.set_method_response(0x1801, 0x0005, b"\x01\x02\x03\x04")
+    # ...or return an error return code
+    someip.set_method_response(0x1801, 0x0006, b"", return_code=0x01)
+
+    # Publish events to subscribers of an event group
+    someip.register_event(0x1801, 0x8001, eventgroup_id=1)
+    someip.publish_event(0x1801, 0x8001, b"\x2d\x00")
+    # Field events are cached and served to new subscribers
+    someip.set_field(0x1801, 0x8002, b"\x01")
+
+    # Introspect / tear down
+    print(someip.list_offered_services())
+    someip.stop_offer_service(0x1801, 0x0001)
+    someip.stop_server()
 ```
 
 ## API Reference

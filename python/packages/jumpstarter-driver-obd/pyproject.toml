@@ -7,7 +7,7 @@ license = "Apache-2.0"
 authors = [
     { name = "Marek Mahut", email = "marek@mahut.dev" }
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "jumpstarter",
     "obd>=0.7.1",
@@ -40,5 +40,5 @@ name = "pin_jumpstarter"
 [dependency-groups]
 dev = [
     "pytest-cov>=6.0.0",
-    "pytest>=8.3.3",
+    "pytest>=8.4",
 ]

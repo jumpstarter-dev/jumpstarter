@@ -6,8 +6,8 @@ def pytest_runtest_call(item):
     try:
         item.runtest()
     except FileNotFoundError:
-        pytest.skip("dutlink not available")  # ty: ignore[call-non-callable]
+        pytest.skip("dutlink not available")  # ty: ignore[too-many-positional-arguments]
     except usb.core.USBError:
-        pytest.skip("USB not available")  # ty: ignore[call-non-callable]
+        pytest.skip("USB not available")  # ty: ignore[too-many-positional-arguments]
     except usb.core.NoBackendError:
-        pytest.skip("No USB backend")  # ty: ignore[call-non-callable]
+        pytest.skip("No USB backend")  # ty: ignore[too-many-positional-arguments]

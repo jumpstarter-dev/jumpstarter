@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [{ name = "Miguel Angel Ajo", email = "miguelangel@ajo.es" }]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "anyio>=4.10.0",
     "pyusb>=1.2.1",
@@ -15,7 +15,6 @@ dependencies = [
 
 [project.entry-points."jumpstarter.drivers"]
 Ykush = "jumpstarter_driver_yepkit.driver:Ykush"
-
 
 [tool.hatch.version]
 source = "vcs"
@@ -30,14 +29,13 @@ addopts = "--cov --cov-report=html --cov-report=xml"
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_yepkit"]
-asyncio_mode = "auto"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3"]
+dev = ["pytest-cov>=6.0.0", "pytest>=8.4"]
 
 [tool.hatch.build.hooks.pin_jumpstarter]
 name = "pin_jumpstarter"

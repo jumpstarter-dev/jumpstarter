@@ -124,6 +124,13 @@ func TestVerifyExporterObjectToken_GetFailureIncludesExporterIdentity(t *testing
 	}
 }
 
+func TestVerifyOIDCTokenRejectsUnrecognizedTokenAsUnauthenticated(t *testing.T) {
+	_, err := VerifyOIDCToken(context.Background(), &stubAuthenticator{}, &stubAttributesGetter{})
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("expected Unauthenticated, got %v", err)
+	}
+}
+
 func TestVerifyExporterObjectToken_TokenFailureDoesNotIncludeIdentity(t *testing.T) {
 	authn := &stubAuthenticator{
 		err: fmt.Errorf("invalid token"),

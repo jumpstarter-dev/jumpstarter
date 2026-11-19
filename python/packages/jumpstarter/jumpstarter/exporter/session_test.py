@@ -1,15 +1,44 @@
 """Tests for session GetReport with descriptions and methods_description"""
 
 import logging
+import threading
+import time
+from contextlib import ExitStack, asynccontextmanager
+from dataclasses import dataclass, field
 
 import grpc
 import pytest
+from anyio import (
+    BrokenResourceError,
+    CancelScope,
+    Event,
+    connect_tcp,
+    create_memory_object_stream,
+    create_task_group,
+    fail_after,
+    move_on_after,
+    sleep,
+    sleep_forever,
+    to_thread,
+)
+from anyio.from_thread import BlockingPortal
+from anyio.streams.stapled import StapledObjectStream
 from google.protobuf import empty_pb2
+from jumpstarter_protocol import router_pb2_grpc
 
+from jumpstarter.client.client import client_from_path
+from jumpstarter.client.core import ExporterNotReady
+from jumpstarter.common import ExporterStatus, TemporaryTcpListener
+from jumpstarter.common.resources import ResourceMetadata
+from jumpstarter.common.streams import ResourceStreamRequest, StreamRequestMetadata
 from jumpstarter.common.utils import serve
-from jumpstarter.driver import Driver
+from jumpstarter.driver import Driver, export, session_env
 from jumpstarter.exporter.auth import PASSPHRASE_METADATA_KEY, PassphraseInterceptor
+from jumpstarter.exporter.lease_context import LeaseContext
 from jumpstarter.exporter.session import Session
+from jumpstarter.streams.common import forward_stream
+from jumpstarter.streams.fanout import FanOutStreamMixin
+from jumpstarter.streams.router import RouterStream
 
 
 class SimpleDriver(Driver):
@@ -28,6 +57,198 @@ class CompositeDriver_(Driver):
         return "jumpstarter.client.DriverClient"
 
 
+@dataclass(kw_only=True)
+class RecordingConsoleDriver(FanOutStreamMixin, Driver):
+    events: list[str] = field(default_factory=list)
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @asynccontextmanager
+    async def _open_source(self):
+        _tx, rx = create_memory_object_stream[bytes](32)
+        sink, _ = create_memory_object_stream[bytes](32)
+        self.events.append("opened")
+        try:
+            yield StapledObjectStream(sink, rx)
+        finally:
+            self.events.append("closed")
+
+    def shutdown(self):
+        self.events.append("shutdown")
+        super().shutdown()
+
+
+def test_session_closes_console_sources_before_driver_shutdown():
+    driver = RecordingConsoleDriver()
+
+    with serve(driver) as client, client.stream():
+        pass
+
+    assert driver.events == ["opened", "closed", "shutdown"]
+
+
+@dataclass(kw_only=True)
+class RecordingServingDriver(Driver):
+    events: list[str] = field(default_factory=list)
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @asynccontextmanager
+    async def serving(self):
+        self.events.append("serving")
+        try:
+            yield
+        finally:
+            self.events.append("stopped serving")
+
+    @export
+    def ping(self) -> str:
+        self.events.append("call")
+        return "pong"
+
+    def shutdown(self):
+        self.events.append("shutdown")
+        super().shutdown()
+
+
+def test_every_driver_serves_for_as_long_as_its_session_does():
+    child = RecordingServingDriver()
+    driver = RecordingServingDriver(children={"child": child})
+
+    with serve(driver) as client:
+        client.call("ping")
+        client.children["child"].call("ping")
+
+    assert driver.events == ["serving", "call", "stopped serving", "shutdown"]
+    assert child.events == ["serving", "call", "stopped serving", "shutdown"]
+
+
+@dataclass(kw_only=True)
+class BackgroundWorkDriver(Driver):
+    """Starts work in serving() that never ends on its own, and leaves it to the session."""
+
+    events: list[str] = field(default_factory=list)
+    started: Event = field(default_factory=Event)
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @asynccontextmanager
+    async def serving(self):
+        async with super().serving(), create_task_group() as work:
+            work.start_soon(self._work)
+            yield
+
+    async def _work(self):
+        self.started.set()
+        try:
+            await sleep_forever()
+        finally:
+            self.events.append("work cancelled")
+
+    def shutdown(self):
+        self.events.append("shutdown")
+        super().shutdown()
+
+
+@pytest.mark.anyio
+async def test_the_session_cancels_the_work_a_driver_left_running_before_shutdown():
+    driver = BackgroundWorkDriver()
+
+    with fail_after(5), Session(root_device=driver) as session:
+        async with session.serve_unix_async():
+            await driver.started.wait()
+
+    assert driver.events == ["work cancelled", "shutdown"]
+
+
+@pytest.mark.anyio
+async def test_the_callers_own_error_leaves_the_session_as_raised():
+    driver = BackgroundWorkDriver()
+
+    with fail_after(5), pytest.raises(ValueError, match="the caller failed"), Session(root_device=driver) as session:
+        async with session.serve_unix_async():
+            await driver.started.wait()
+            raise ValueError("the caller failed")
+
+    assert driver.events == ["work cancelled", "shutdown"]
+
+
+@dataclass(kw_only=True)
+class UnshieldedCleanupDriver(Driver):
+    """Awaits after the yield in serving() without a shield, as cleanup that forgot one does."""
+
+    events: list[str] = field(default_factory=list)
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @asynccontextmanager
+    async def serving(self):
+        try:
+            yield
+        finally:
+            try:
+                await sleep_forever()
+            finally:
+                self.events.append("cleanup cancelled")
+
+
+@pytest.mark.anyio
+async def test_leaving_on_an_error_still_runs_every_drivers_exit_cancelled():
+    driver = UnshieldedCleanupDriver()
+
+    with fail_after(5), pytest.raises(ValueError), Session(root_device=driver) as session:
+        async with session.serve_unix_async():
+            raise ValueError("the caller failed")
+
+    assert driver.events == ["cleanup cancelled"]
+
+
+@dataclass(kw_only=True)
+class FailingWorkDriver(Driver):
+    """Starts work in serving() that fails, and leaves its error to the session."""
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @asynccontextmanager
+    async def serving(self):
+        async with super().serving(), create_task_group() as work:
+            work.start_soon(self._work)
+            yield
+
+    async def _work(self):
+        raise RuntimeError("the work broke")
+
+    @export
+    def ping(self) -> str:
+        return "pong"
+
+
+def test_work_that_fails_is_logged_and_the_session_goes_on_serving(caplog):
+    caplog.set_level(logging.ERROR)
+    child = RecordingServingDriver()
+    driver = FailingWorkDriver(children={"child": child})
+
+    with serve(driver) as client:
+        deadline = time.monotonic() + 5
+        while "the work broke" not in caplog.text:
+            assert time.monotonic() < deadline, "the failed work was never logged"
+            time.sleep(0.01)
+        assert client.call("ping") == "pong"
+        assert client.children["child"].call("ping") == "pong"
+
+    assert child.events == ["serving", "call", "stopped serving", "shutdown"]
+
+
 def test_session_unbinds_exporter_log_context():
     """Session must clear the exporter correlation field on exit."""
     import structlog
@@ -38,8 +259,49 @@ def test_session_unbinds_exporter_log_context():
     driver = SimpleDriver()
     with Session(uuid=driver.uuid, root_device=driver, exporter_name="test-exporter") as session:
         assert session.exporter_name == "test-exporter"
+        assert session.name == "test-exporter"
         assert structlog.contextvars.get_contextvars().get("exporter") == "test-exporter"
+    # Driver names still come from the label, not the session property.
+    assert driver.name == "unknown"
     assert "exporter" not in structlog.contextvars.get_contextvars()
+
+
+def test_session_closes_driver_when_shutdown_hook_fails(caplog):
+    class FailingShutdownDriver(SimpleDriver):
+        closed = False
+
+        def shutdown(self):
+            raise RuntimeError("shutdown failed")
+
+        def close(self):
+            self.closed = True
+
+    driver = FailingShutdownDriver()
+    with caplog.at_level(logging.WARNING), Session(uuid=driver.uuid, root_device=driver, exporter_name="test-exporter"):
+        pass
+
+    assert driver.closed
+    assert "Error during driver shutdown hook" in caplog.text
+
+
+def test_driver_shutdown_continues_after_child_failure(caplog):
+    shut_down = []
+
+    class FailingShutdownDriver(SimpleDriver):
+        def shutdown(self):
+            raise RuntimeError("shutdown failed")
+
+    class RecordingDriver(SimpleDriver):
+        def shutdown(self):
+            shut_down.append(self)
+
+    later = RecordingDriver()
+    root = CompositeDriver_(children={"failing": FailingShutdownDriver(), "later": later})
+    with caplog.at_level(logging.WARNING):
+        root.shutdown()
+
+    assert shut_down == [later]
+    assert "Error during shutdown of child failing" in caplog.text
 
 
 def test_get_report_includes_descriptions():
@@ -68,7 +330,7 @@ def test_get_report_includes_descriptions():
         )
 
         # Call GetReport
-        import asyncio
+        import asyncio  # noqa: TID251
         response = asyncio.run(session.GetReport(empty_pb2.Empty(), None))
 
         # Build a map of uuid -> report for easy lookup
@@ -149,7 +411,7 @@ def test_empty_description_not_included():
             root_device=driver,
         )
 
-        import asyncio
+        import asyncio  # noqa: TID251
         response = asyncio.run(session.GetReport(empty_pb2.Empty(), None))
 
         # Empty string should not be included in the report
@@ -162,7 +424,7 @@ def test_empty_description_not_included():
 
 def test_get_report_includes_motd():
     """Test that GetReport includes the motd when set on the session"""
-    import asyncio
+    import asyncio  # noqa: TID251
 
     driver = SimpleDriver()
 
@@ -195,20 +457,22 @@ def test_client_fetches_motd_via_getreport():
 
     driver = SimpleDriver()
 
-    with start_blocking_portal() as portal:
-        with ExitStack() as stack:
-            with Session(
-                uuid=driver.uuid,
-                labels=driver.labels,
-                root_device=driver,
-                motd="Welcome to my-exporter!",
-            ) as session:
-                with portal.wrap_async_context_manager(session.serve_unix_async()) as path:
-                    with portal.wrap_async_context_manager(
-                        client_from_path(path, portal, stack, allow=[], unsafe=True)
-                    ) as client:
-                        report = portal.call(lambda: client.stub.GetReport(empty_pb2.Empty()))
-                        assert report.motd == "Welcome to my-exporter!"
+    with (
+        start_blocking_portal() as portal,
+        ExitStack() as stack,
+        Session(
+            uuid=driver.uuid,
+            labels=driver.labels,
+            root_device=driver,
+            motd="Welcome to my-exporter!",
+        ) as session,
+        portal.wrap_async_context_manager(session.serve_unix_async()) as path,
+        portal.wrap_async_context_manager(
+            client_from_path(path, portal, stack, allow=[], unsafe=True)
+        ) as client,
+    ):
+        report = portal.call(lambda: client.stub.GetReport(empty_pb2.Empty()))
+        assert report.motd == "Welcome to my-exporter!"
 
 
 def test_description_override_in_exporter_config():
@@ -308,7 +572,7 @@ def test_methods_description_included_in_getreport():
             root_device=driver,
         )
 
-        import asyncio
+        import asyncio  # noqa: TID251
         response = asyncio.run(session.GetReport(empty_pb2.Empty(), None))
 
         # Find the driver's report
@@ -382,22 +646,38 @@ def test_driverclickgroup_uses_methods_description_as_override():
         assert help_text == "Client default: Power off"
 
 
-def test_logging_queue_maxlen_256():
-    """Issue A2: Logging queue deque maxlen should be 256 (not 32).
+@pytest.mark.anyio
+async def test_log_stream_delivers_records_logged_before_it_opened(caplog):
+    """The first LogStream receives up to 256 records logged before it opened.
 
-    The deque was originally sized at 32, which caused log messages to be
-    dropped during hook execution. Verify the fix sets maxlen=256.
+    Hooks start logging before the client opens its LogStream; a 32-record
+    buffer once dropped the start of their output (issue A2).
     """
+    from jumpstarter_protocol import jumpstarter_pb2_grpc
+
+    log = logging.getLogger("jumpstarter.test.log_stream_backlog")
     driver = SimpleDriver()
+    session = Session(uuid=driver.uuid, labels=driver.labels, root_device=driver)
+    seen: list[str] = []
+    records = [f"early {i}" for i in range(256)]
 
-    with serve(driver) as _:
-        session = Session(
-            uuid=driver.uuid,
-            labels=driver.labels,
-            root_device=driver,
-        )
+    def early(messages: list[str]) -> list[str]:
+        return [message for message in messages if message.startswith("early")]
 
-        assert session._logging_queue.maxlen == 256
+    with session, caplog.at_level(logging.INFO, logger=log.name):
+        async with (
+            session.serve_tcp_async("127.0.0.1", 0) as port,
+            grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel,
+            create_task_group() as tg,
+        ):
+            for record in records:
+                log.info(record)
+            stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+            tg.start_soon(_read_log_messages, stub.LogStream(empty_pb2.Empty()), seen)
+            await _wait_until(lambda: len(early(seen)) >= len(records))
+            tg.cancel_scope.cancel()
+
+    assert early(seen) == records
 
 
 @pytest.mark.anyio
@@ -462,7 +742,7 @@ async def test_serve_tcp_passphrase_rejected():
                 stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
                 with pytest.raises(grpc.aio.AioRpcError) as exc_info:
                     await stub.GetReport(empty_pb2.Empty(), metadata=metadata)
-                assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
+                assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED  # type: ignore[attr-defined]
 
 
 @pytest.mark.anyio
@@ -476,12 +756,11 @@ async def test_serve_tcp_passphrase_missing():
     with session:
         async with session.serve_tcp_async(
             "127.0.0.1", 0, interceptors=[PassphraseInterceptor(passphrase)]
-        ) as bound_port:
-            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
-                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
-                with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-                    await stub.GetReport(empty_pb2.Empty())
-                assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
+        ) as bound_port, grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
+            stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+            with pytest.raises(grpc.aio.AioRpcError) as exc_info:
+                await stub.GetReport(empty_pb2.Empty())
+            assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED  # type: ignore[attr-defined]
 
 
 # ============================================================================
@@ -504,9 +783,11 @@ async def test_serve_tcp_passphrase_rejected_logs_warning(caplog):
             metadata = ((PASSPHRASE_METADATA_KEY, "wrong-passphrase"),)
             async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
                 stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
-                with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.auth"):
-                    with pytest.raises(grpc.aio.AioRpcError):
-                        await stub.GetReport(empty_pb2.Empty(), metadata=metadata)
+                with (
+                    caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.auth"),
+                    pytest.raises(grpc.aio.AioRpcError),
+                ):
+                    await stub.GetReport(empty_pb2.Empty(), metadata=metadata)
 
     # The interceptor should have emitted a WARNING log with the method name.
     auth_warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "authentication failed" in r.message]
@@ -534,12 +815,13 @@ async def test_serve_tcp_passphrase_missing_logs_warning(caplog):
     with session:
         async with session.serve_tcp_async(
             "127.0.0.1", 0, interceptors=[PassphraseInterceptor(passphrase)]
-        ) as bound_port:
-            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
-                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
-                with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.auth"):
-                    with pytest.raises(grpc.aio.AioRpcError):
-                        await stub.GetReport(empty_pb2.Empty())
+        ) as bound_port, grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
+            stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+            with (
+                caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.auth"),
+                pytest.raises(grpc.aio.AioRpcError),
+            ):
+                await stub.GetReport(empty_pb2.Empty())
 
     auth_warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "authentication failed" in r.message]
     assert len(auth_warnings) >= 1, f"expected auth failure warning log, got: {[r.message for r in caplog.records]}"
@@ -618,24 +900,26 @@ async def test_log_stream_returns_enriched_fields():
 
         session._logging_handler.emit(record)
 
-        async with session.serve_tcp_async("127.0.0.1", 0) as bound_port:
-            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
-                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+        async with (
+            session.serve_tcp_async("127.0.0.1", 0) as bound_port,
+            grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel,
+        ):
+            stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
 
-                log_stream = stub.LogStream(empty_pb2.Empty())
+            log_stream = stub.LogStream(empty_pb2.Empty())
 
-                msg = await log_stream.read()
+            msg = await log_stream.read()
 
-                assert msg.message == "Power on completed"
-                assert msg.severity == "INFO"
-                assert msg.driver_type == "power"
-                assert msg.operation == "power_on"
-                assert msg.HasField("timestamp")
-                assert msg.timestamp.seconds > 0
-                assert msg.structured_fields["result"] == "success"
-                assert msg.structured_fields["lease_id"] == "lease-123"
+            assert msg.message == "Power on completed"
+            assert msg.severity == "INFO"
+            assert msg.driver_type == "power"
+            assert msg.operation == "power_on"
+            assert msg.HasField("timestamp")
+            assert msg.timestamp.seconds > 0
+            assert msg.structured_fields["result"] == "success"
+            assert msg.structured_fields["lease_id"] == "lease-123"
 
-                log_stream.cancel()
+            log_stream.cancel()
 
 
 @pytest.mark.anyio
@@ -658,18 +942,358 @@ async def test_log_stream_without_enriched_fields():
         test_logger.setLevel(logging.INFO)
         test_logger.info("Simple message")
 
-        async with session.serve_tcp_async("127.0.0.1", 0) as bound_port:
-            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
-                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+        async with (
+            session.serve_tcp_async("127.0.0.1", 0) as bound_port,
+            grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel,
+        ):
+            stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
 
-                log_stream = stub.LogStream(empty_pb2.Empty())
-                msg = await log_stream.read()
+            log_stream = stub.LogStream(empty_pb2.Empty())
+            msg = await log_stream.read()
 
-                assert msg.message == "Simple message"
-                assert msg.severity == "INFO"
-                assert not msg.HasField("driver_type")
-                assert not msg.HasField("operation")
-                assert msg.HasField("timestamp")
-                assert len(msg.structured_fields) == 0
+            assert msg.message == "Simple message"
+            assert msg.severity == "INFO"
+            assert not msg.HasField("driver_type")
+            assert not msg.HasField("operation")
+            assert msg.HasField("timestamp")
+            assert len(msg.structured_fields) == 0
 
-                log_stream.cancel()
+            log_stream.cancel()
+
+
+async def _read_log_messages(call, into: list[str]) -> None:
+    """Append the message of every LogStream response to `into` until cancelled."""
+    async for response in call:
+        into.append(response.message)
+
+
+async def _wait_until(predicate, tick=None, timeout: float = 5.0) -> None:
+    """Poll until predicate() holds or the timeout passes, calling tick() before each poll."""
+    with move_on_after(timeout):
+        while not predicate():
+            if tick is not None:
+                tick()
+            await sleep(0.05)
+
+
+@pytest.mark.anyio
+async def test_log_stream_gives_every_reader_every_record(caplog):
+    """Every open LogStream receives every record, as each client sharing a lease opens its own.
+
+    A record logged before any reader connects goes to the first reader only,
+    and a reader keeps receiving after another one disconnects.
+    """
+    from jumpstarter_protocol import jumpstarter_pb2_grpc
+
+    log = logging.getLogger("jumpstarter.test.log_stream_readers")
+    driver = SimpleDriver()
+    session = Session(uuid=driver.uuid, labels=driver.labels, root_device=driver)
+    owner_seen: list[str] = []
+    joiner_seen: list[str] = []
+
+    def matching(seen: list[str], prefix: str) -> list[str]:
+        return [message for message in seen if message.startswith(prefix)]
+
+    with session, caplog.at_level(logging.INFO, logger=log.name):
+        async with (
+            session.serve_tcp_async("127.0.0.1", 0) as port,
+            grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel,
+            create_task_group() as tg,
+        ):
+            stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+
+            log.info("logged before any reader")
+            tg.start_soon(_read_log_messages, stub.LogStream(empty_pb2.Empty()), owner_seen)
+            await _wait_until(lambda: "logged before any reader" in owner_seen)
+
+            joiner_scope = CancelScope()
+
+            async def read_joiner():
+                with joiner_scope:
+                    await _read_log_messages(stub.LogStream(empty_pb2.Empty()), joiner_seen)
+
+            tg.start_soon(read_joiner)
+            # The joiner's stream is open once a record logged after it started reaches it
+            await _wait_until(lambda: matching(joiner_seen, "probe"), tick=lambda: log.info("probe"))
+
+            records = [f"record {i}" for i in range(20)]
+            for record in records:
+                log.info(record)
+            await _wait_until(
+                lambda: len(matching(owner_seen, "record")) >= 20 and len(matching(joiner_seen, "record")) >= 20
+            )
+            assert matching(owner_seen, "record") == records
+            assert matching(joiner_seen, "record") == records
+            assert "logged before any reader" not in joiner_seen
+
+            joiner_scope.cancel()
+            after = [f"after the joiner left {i}" for i in range(10)]
+            for record in after:
+                log.info(record)
+                await sleep(0.1)
+            await _wait_until(lambda: len(matching(owner_seen, "after")) >= 10)
+            assert matching(owner_seen, "after") == after
+
+            tg.cancel_scope.cancel()
+
+
+# ============================================================================
+# Driver call status gate
+# ============================================================================
+
+
+class GatedDriver(Driver):
+    """Driver with one unary and one streaming export, covering both gated RPCs."""
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @export
+    def ping(self) -> str:
+        return "pong"
+
+    @export
+    async def count(self):
+        yield 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "status, allowed",
+    [
+        (ExporterStatus.LEASE_READY, True),
+        # hooks run `j` commands against the session while these are set
+        (ExporterStatus.BEFORE_LEASE_HOOK, True),
+        (ExporterStatus.AFTER_LEASE_HOOK, True),
+        (ExporterStatus.AVAILABLE, False),
+        (ExporterStatus.BEFORE_LEASE_HOOK_FAILED, False),
+        (ExporterStatus.AFTER_LEASE_HOOK_FAILED, False),
+        (ExporterStatus.OFFLINE, False),
+        # the controller lets this through for exporters that predate status reporting; the exporter must not
+        (ExporterStatus.UNSPECIFIED, False),
+    ],
+)
+async def test_driver_calls_gated_on_exporter_status(status, allowed):
+    """Driver calls are refused with ExporterNotReady unless the exporter is ready or running a hook."""
+    driver = GatedDriver()
+    with Session(uuid=driver.uuid, labels=driver.labels, root_device=driver) as session:
+        session.update_status(status)
+        async with session.serve_unix_async() as path, BlockingPortal() as portal:
+            with ExitStack() as stack:
+                async with client_from_path(path, portal, stack, allow=[], unsafe=True) as client:
+                    if allowed:
+                        assert await client.call_async("ping") == "pong"
+                        assert [value async for value in client.streamingcall_async("count")] == [1]
+                    else:
+                        with pytest.raises(ExporterNotReady, match=f"status: {status.name}"):
+                            await client.call_async("ping")
+                        with pytest.raises(ExporterNotReady, match=f"status: {status.name}"):
+                            async for _ in client.streamingcall_async("count"):
+                                pass
+
+
+@dataclass(kw_only=True)
+class SlowToCancelDriver(Driver):
+    """Driver whose calls clean up for longer than the server stop that cancels them takes."""
+
+    entered: threading.Event = field(default_factory=threading.Event)
+    finished: threading.Event = field(default_factory=threading.Event)
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @asynccontextmanager
+    async def _slow_to_cancel(self):
+        self.entered.set()
+        try:
+            yield
+        finally:
+            with CancelScope(shield=True):
+                await sleep(0.2)
+            self.finished.set()
+
+    @export
+    async def slow(self) -> None:
+        async with self._slow_to_cancel():
+            await sleep_forever()
+
+    @export
+    async def slow_stream(self):
+        async with self._slow_to_cancel():
+            yield 1
+            await sleep_forever()
+
+
+async def _drain(responses):
+    async for _ in responses:
+        pass
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda client: client.call_async("slow"),
+        lambda client: _drain(client.streamingcall_async("slow_stream")),
+    ],
+    ids=["unary", "streaming"],
+)
+async def test_serving_ends_only_after_the_driver_calls_it_was_running(call):
+    driver = SlowToCancelDriver()
+    with Session(uuid=driver.uuid, labels=driver.labels, root_device=driver) as session:
+        session.update_status(ExporterStatus.LEASE_READY)
+        async with BlockingPortal() as portal:
+            with ExitStack() as stack:
+                async with (
+                    session.serve_unix_async() as path,
+                    client_from_path(path, portal, stack, allow=[], unsafe=True) as client,
+                    create_task_group() as calls,
+                ):
+                    calls.start_soon(call, client)
+                    await to_thread.run_sync(driver.entered.wait)
+                    calls.cancel_scope.cancel()
+
+                assert driver.finished.is_set()
+
+
+class SessionEnvDriver(Driver):
+    """Driver reporting the session env its calls see, from a unary and a streaming export."""
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @export
+    def env(self) -> dict[str, str]:
+        return session_env()
+
+    @export
+    async def env_stream(self):
+        yield session_env()
+
+
+@pytest.mark.anyio
+async def test_driver_calls_get_the_session_env_during_a_lease():
+    """Driver calls see the env hooks get, pointing at the hook socket, and only while they run."""
+    driver = SessionEnvDriver()
+    lease = LeaseContext(lease_name="test-lease", before_lease_hook=Event(), client_name="test-client")
+    with Session(uuid=driver.uuid, labels=driver.labels, root_device=driver) as session:
+        session.lease_context = lease
+        session.update_status(ExporterStatus.LEASE_READY)
+        async with session.serve_unix_with_hook_socket_async() as (main_path, hook_path), BlockingPortal() as portal:
+            lease.socket_path = main_path
+            lease.hook_socket_path = hook_path
+            expected = {
+                "JUMPSTARTER_HOST": str(hook_path),
+                "JMP_DRIVERS_ALLOW": "UNSAFE",
+                "LEASE_NAME": "test-lease",
+                "CLIENT_NAME": "test-client",
+            }
+            with ExitStack() as stack:
+                async with client_from_path(main_path, portal, stack, allow=[], unsafe=True) as client:
+                    assert await client.call_async("env") == expected
+                    assert [env async for env in client.streamingcall_async("env_stream")] == [expected]
+            assert session_env() == {}
+
+
+@pytest.mark.anyio
+async def test_driver_calls_get_no_session_env_outside_a_lease():
+    driver = SessionEnvDriver()
+    with Session(uuid=driver.uuid, labels=driver.labels, root_device=driver) as session:
+        session.update_status(ExporterStatus.LEASE_READY)
+        async with session.serve_unix_async() as path, BlockingPortal() as portal:
+            with ExitStack() as stack:
+                async with client_from_path(path, portal, stack, allow=[], unsafe=True) as client:
+                    assert await client.call_async("env") == {}
+                    assert [env async for env in client.streamingcall_async("env_stream")] == [{}]
+
+
+# ============================================================================
+# Resource uploads
+# ============================================================================
+
+
+@asynccontextmanager
+async def _resource_upload(session: Session, driver: Driver):
+    """Start a client resource upload to ``driver`` through a relay the test can sever.
+
+    The relay stands in for the exporter's router bridge, which closes its
+    connection to the session socket when the router transport fails. Yields the
+    client call, the handle the driver reads the upload from, and a function
+    that severs the relay. It uses TCP because anyio's Unix socket streams can
+    report a spurious InvalidStateError to the event loop when cancelled mid-read.
+    """
+    relays: list[CancelScope] = []
+
+    async def relay(client):
+        with CancelScope() as scope:
+            relays.append(scope)
+            async with await connect_tcp("127.0.0.1", session_port) as upstream, forward_stream(client, upstream):
+                await sleep_forever()
+
+    def sever():
+        for scope in relays:
+            scope.cancel()
+
+    async with (
+        session.serve_tcp_async("127.0.0.1", 0) as session_port,
+        TemporaryTcpListener(relay) as (relay_host, relay_port),
+        grpc.aio.insecure_channel(f"{relay_host}:{relay_port}") as channel,
+    ):
+        call = router_pb2_grpc.RouterServiceStub(channel).Stream(
+            metadata=StreamRequestMetadata.model_construct(request=ResourceStreamRequest(uuid=driver.uuid))
+            .model_dump(mode="json", round_trip=True)
+            .items()
+        )
+        try:
+            metadata = ResourceMetadata(**dict(list(await call.initial_metadata())))  # type: ignore[call-arg]
+            yield call, metadata.resource.model_dump(mode="json"), sever
+        finally:
+            # Finish the call on this test's event loop before it closes.
+            call.cancel()
+            with fail_after(5):
+                await call.code()
+
+
+@pytest.mark.anyio
+async def test_resource_upload_clean_eof_ends_driver_read():
+    driver = SimpleDriver()
+    with Session(root_device=driver) as session, fail_after(10):
+        async with _resource_upload(session, driver) as (call, handle, _sever):
+            upload = RouterStream(context=call)
+            await upload.send(b"whole ")
+            await upload.send(b"image")
+            await upload.send_eof()
+
+            async with driver.resource(handle) as resource:
+                received = [chunk async for chunk in resource]
+
+            assert b"".join(received) == b"whole image"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure", ["router_transport_lost", "client_call_cancelled"])
+async def test_resource_upload_transport_failure_fails_driver_read(failure):
+    """A truncated upload must fail the driver's read, not end it like a whole one."""
+    driver = SimpleDriver()
+    with Session(root_device=driver) as session, fail_after(10):
+        async with _resource_upload(session, driver) as (call, handle, sever):
+            upload = RouterStream(context=call)
+            await upload.send(b"partial")
+
+            async with driver.resource(handle) as resource:
+                received = [await resource.receive()]
+
+                match failure:
+                    case "router_transport_lost":
+                        sever()
+                    case "client_call_cancelled":
+                        call.cancel()
+
+                with pytest.raises(BrokenResourceError):
+                    async for chunk in resource:
+                        received.append(chunk)
+
+            assert received == [b"partial"]

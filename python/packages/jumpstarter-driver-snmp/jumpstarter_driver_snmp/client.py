@@ -21,7 +21,6 @@ class SNMPServerClient(PowerClient):
         @driver_click_group(self)
         def snmp():
             """SNMP power control commands"""
-            pass
 
         for cmd in super().cli().commands.values():
             snmp.add_command(cmd)

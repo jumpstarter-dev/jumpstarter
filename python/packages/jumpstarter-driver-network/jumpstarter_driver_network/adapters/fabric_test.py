@@ -44,8 +44,19 @@ def test_client_adapter_fabric():
     server_thread.daemon = True
     server_thread.start()
 
-    with serve(TcpNetwork(host=server.server_address[0], port=server.server_address[1])) as client:
-        with FabricAdapter(client=client, connect_kwargs={"password": "password"}) as conn:
-            conn.run("dummy command")
+    with (
+        serve(TcpNetwork(host=str(server.server_address[0]), port=server.server_address[1])) as client,
+        # Password only. An agent key that cannot sign closes the transport
+        # before password auth, which then reports "No existing session".
+        FabricAdapter(
+            client=client,
+            connect_kwargs={
+                "password": "password",
+                "allow_agent": False,
+                "look_for_keys": False,
+            },
+        ) as conn,
+    ):
+        conn.run("dummy command")
 
     server.shutdown()

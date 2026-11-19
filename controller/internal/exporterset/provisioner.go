@@ -46,7 +46,7 @@ type Provisioner interface {
 		ctx context.Context,
 		exporterSet *virtualtargetv1alpha1.ExporterSet,
 		vtc *virtualtargetv1alpha1.VirtualTargetClass,
-		mergedParameters map[string]interface{},
+		mergedParameters map[string]any,
 		images *virtualtargetv1alpha1.ImageOverrides,
 		exporter *jumpstarterdevv1alpha1.Exporter,
 	) (*corev1.Pod, error)
@@ -57,8 +57,11 @@ type Provisioner interface {
 	// default_partitions (firmware), hostfwd, and wrapper drivers.
 	// The returned slice replaces the original drivers list.
 	EnrichExporterExport(
+		ctx context.Context,
+		vtc *virtualtargetv1alpha1.VirtualTargetClass,
 		drivers []virtualtargetv1alpha1.DriverConfig,
-		mergedParameters map[string]interface{},
+		mergedParameters map[string]any,
+		exporter *jumpstarterdevv1alpha1.Exporter,
 	) ([]virtualtargetv1alpha1.DriverConfig, error)
 
 	// Cleanup is called when an exporter instance is being

@@ -3,7 +3,7 @@
 import json
 import re
 import shutil
-from typing import Literal, Optional
+from typing import Literal
 
 from ..exceptions import ToolNotInstalledError
 from .common import run_command
@@ -56,7 +56,7 @@ async def detect_kind_provider(cluster_name: str) -> tuple[str, str]:
     return runtime, f"{cluster_name}-control-plane"
 
 
-async def detect_existing_cluster_type(cluster_name: str) -> Optional[Literal["kind"] | Literal["minikube"]]:
+async def detect_existing_cluster_type(cluster_name: str) -> Literal["kind", "minikube"] | None:
     """Detect which type of cluster exists with the given name."""
     kind_exists = False
     minikube_exists = False
@@ -94,7 +94,7 @@ async def detect_existing_cluster_type(cluster_name: str) -> Optional[Literal["k
         return None
 
 
-def auto_detect_cluster_type() -> Literal["kind"] | Literal["minikube"]:
+def auto_detect_cluster_type() -> Literal["kind", "minikube"]:
     """Auto-detect available cluster type, preferring Kind over Minikube.
 
     Note: k3s is not auto-detected because it requires an explicit --k3s <ssh_host> argument.

@@ -31,12 +31,12 @@ class DemoBackendHandler(BaseHTTPRequestHandler):
     """Handles GET/POST for the four demo API endpoints."""
 
     # Suppress the default stderr log line per request
-    def log_message(self, format, *args):  # noqa: A002
+    def log_message(self, format, *args):
         pass
 
     # ── routes ────────────────────────────────────────────────
 
-    def do_GET(self):  # noqa: N802
+    def do_GET(self):
         if self.path == "/api/v1/status":
             self._send_json(200, {
                 "device_id": "DUT-REAL-001",
@@ -67,7 +67,7 @@ class DemoBackendHandler(BaseHTTPRequestHandler):
                 "source": "real-backend",
             })
 
-    def do_POST(self):  # noqa: N802
+    def do_POST(self):
         if self.path == "/api/v1/telemetry":
             # Read (and discard) the request body
             length = int(self.headers.get("Content-Length", 0))

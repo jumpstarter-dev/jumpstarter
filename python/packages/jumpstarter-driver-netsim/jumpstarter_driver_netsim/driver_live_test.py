@@ -124,7 +124,7 @@ class TestLiveCapturePatchBroken:
         assert isinstance(captures, dict), "unexpected captures format"
         cap_list = captures.get("captures", [])
         if not cap_list:
-            pytest.skip("no captures available")  # ty: ignore[call-non-callable]
+            pytest.skip("no captures available")  # ty: ignore[too-many-positional-arguments]
         cap_id = cap_list[0]["id"]
         resp = requests.patch(
             f"http://{live_drv.host}:{live_drv.port}/v1/captures/{cap_id}",
@@ -148,7 +148,7 @@ class TestLiveNumericIdRequired:
     def test_name_in_path_fails(self, live_drv):
         devices = live_drv._list_devices_raw()
         if not devices:
-            pytest.skip("no devices")  # ty: ignore[call-non-callable]
+            pytest.skip("no devices")  # ty: ignore[too-many-positional-arguments]
         name = devices[0]["name"]
         resp = requests.patch(
             f"http://{live_drv.host}:{live_drv.port}/v1/devices/{name}",
@@ -169,7 +169,7 @@ class TestLiveDeviceResolution:
     def test_resolve_by_name(self, live_drv):
         devices = live_drv._list_devices_raw()
         if not devices:
-            pytest.skip("no devices")  # ty: ignore[call-non-callable]
+            pytest.skip("no devices")  # ty: ignore[too-many-positional-arguments]
         name = devices[0]["name"]
         assert live_drv._resolve_device_id(name) == devices[0]["id"]
 
@@ -177,5 +177,5 @@ class TestLiveDeviceResolution:
         devices = live_drv._list_devices_raw()
         beacons = [d for d in devices if "beacon-1" in d.get("name", "")]
         if not beacons:
-            pytest.skip("no beacon-1")  # ty: ignore[call-non-callable]
+            pytest.skip("no beacon-1")  # ty: ignore[too-many-positional-arguments]
         assert live_drv._resolve_device_id("beacon-1") == beacons[0]["id"]

@@ -52,7 +52,7 @@ class PiPicoClient(FlasherClient):
             try:
                 click.echo("Entering BOOTSEL mode...")
                 self.enter_bootloader()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 click.echo("Could not enter BOOTSEL automatically. "
                            "Ensure the Pico is in BOOTSEL mode (hold BOOTSEL while plugging USB).\n"
                            f"  (reason: {exc})")

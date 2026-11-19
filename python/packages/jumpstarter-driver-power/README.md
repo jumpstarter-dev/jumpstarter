@@ -26,5 +26,9 @@ export:
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_power.client.PowerClient()
-    :members: on, off, read, cycle
+    :members: on, off, read, cycle, status
 ```
+
+`status` is optional for power drivers. It returns the state the driver reports
+(for example `on`, `off`, or `unknown`), or `None` when the driver cannot report
+its state. `j power status` exits with an error in that case.

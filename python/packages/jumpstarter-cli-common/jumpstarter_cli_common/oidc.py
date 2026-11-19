@@ -21,10 +21,9 @@ from anyio.to_thread import run_sync
 warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"authlib\.")
 
 from authlib.integrations.requests_client import OAuth2Session  # noqa: E402
-from joserfc.errors import JoseError  # noqa: E402
-from joserfc.jws import extract_compact  # noqa: E402
 from yarl import URL  # noqa: E402
 
+from jumpstarter.common.jwt import decode_jwt_payload as decode_jwt  # noqa: E402
 from jumpstarter.config.env import JMP_OIDC_CALLBACK_PORT, JMP_OIDC_DEVICE_FLOW  # noqa: E402
 
 
@@ -93,12 +92,11 @@ class Config:
     async def configuration(self):
         ssl_context: ssl.SSLContext | bool = False if self.insecure_tls else _get_ssl_context()
         connector = aiohttp.TCPConnector(ssl=ssl_context)
-        async with aiohttp.ClientSession(connector=connector) as session:
-            async with session.get(
-                URL(self.issuer).joinpath(".well-known", "openid-configuration"),
-                raise_for_status=True,
-            ) as response:
-                return await response.json()
+        async with aiohttp.ClientSession(connector=connector) as session, session.get(
+            URL(self.issuer).joinpath(".well-known", "openid-configuration"),
+            raise_for_status=True,
+        ) as response:
+            return await response.json()
 
     def _scopes(self) -> list[str]:
         if self.offline_access:
@@ -115,7 +113,7 @@ class Config:
 
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         else:
-            session.verify = os.environ.get("SSL_CERT_FILE") or certifi.where()
+            session.verify = os.environ.get("SSL_CERT_FILE") or certifi.where()  # ty: ignore[invalid-assignment]
         return session
 
     async def token_exchange_grant(self, token: str, **kwargs):
@@ -192,7 +190,8 @@ class Config:
             await runner.cleanup()
             raise click.ClickException(f"Failed to start callback server on port {port}: {e}") from None
 
-        redirect_uri = "http://localhost:%d/callback" % site._server.sockets[0].getsockname()[1]
+        assert site._server is not None
+        redirect_uri = f"http://localhost:{site._server.sockets[0].getsockname()[1]}/callback"  # ty: ignore[unresolved-attribute]
 
         client = self.client(redirect_uri=redirect_uri)
 
@@ -201,9 +200,9 @@ class Config:
         if prompt:
             auth_params["prompt"] = prompt
 
-        uri, state = client.create_authorization_url(config["authorization_endpoint"], **auth_params)
+        uri, _state = client.create_authorization_url(config["authorization_endpoint"], **auth_params)
 
-        print("Please open the URL in browser: ", uri)
+        click.echo(f"Please open the URL in browser: {uri}", err=True)
 
         authorization_response = await rx.receive()
 
@@ -271,16 +270,19 @@ class Config:
             # Step 2: Display verification URI to user
             verification_uri_complete = device_data.get("verification_uri_complete")
             if verification_uri_complete:
-                click.echo(f"To sign in, open the following URL in your browser:\n\n  {verification_uri_complete}\n")
+                click.echo(
+                    f"To sign in, open the following URL in your browser:\n\n  {verification_uri_complete}\n", err=True
+                )
             else:
                 verification_uri = device_data.get("verification_uri")
                 user_code = device_data.get("user_code")
                 click.echo(
                     f"To sign in, open the following URL in your browser:\n\n  {verification_uri}\n\n"
-                    f"Then enter the code: {user_code}\n"
+                    f"Then enter the code: {user_code}\n",
+                    err=True,
                 )
 
-            click.echo("Waiting for authentication...")
+            click.echo("Waiting for authentication...", err=True)
 
             # Step 3: Poll the token endpoint
             deadline = time.monotonic() + expires_in
@@ -324,13 +326,6 @@ class Config:
             raise click.ClickException(
                 "Device authorization timed out waiting for user approval. Please try again."
             )
-
-
-def decode_jwt(token: str):
-    try:
-        return json.loads(extract_compact(token.encode()).payload)
-    except (ValueError, KeyError, TypeError, JoseError) as e:
-        raise ValueError(f"Invalid JWT format: {e}") from e
 
 
 def decode_jwt_issuer(token: str):

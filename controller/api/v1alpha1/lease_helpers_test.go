@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -447,7 +448,7 @@ var _ = Describe("ValidateLeaseTags", func() {
 
 	It("should reject more than 10 tags", func() {
 		tags := make(map[string]string)
-		for i := 0; i < 11; i++ {
+		for i := range 11 {
 			tags[fmt.Sprintf("key%d", i)] = "value"
 		}
 		err := ValidateLeaseTags(tags, 10)
@@ -522,7 +523,7 @@ var _ = Describe("ValidateLeaseTags", func() {
 
 	It("should accept exactly 10 tags", func() {
 		tags := make(map[string]string)
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			tags[fmt.Sprintf("key%d", i)] = "value"
 		}
 		Expect(ValidateLeaseTags(tags, 10)).To(Succeed())
@@ -643,5 +644,388 @@ var _ = Describe("LeaseFromProtobuf context", func() {
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(lease.Spec.Context).To(BeNil())
+	})
+})
+
+var _ = Describe("IsAccessibleBy", func() {
+	var lease *Lease
+
+	BeforeEach(func() {
+		lease = &Lease{
+			Spec: LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "owner"},
+			},
+		}
+	})
+
+	It("should grant access to owner", func() {
+		Expect(lease.IsAccessibleBy("owner")).To(BeTrue())
+	})
+
+	It("should grant access to shared user in the effective Status.SharedWith set", func() {
+		lease.Status.SharedWith = []string{"alice", "bob"}
+		Expect(lease.IsAccessibleBy("alice")).To(BeTrue())
+		Expect(lease.IsAccessibleBy("bob")).To(BeTrue())
+	})
+
+	It("should deny access to unrelated client", func() {
+		lease.Status.SharedWith = []string{"alice"}
+		Expect(lease.IsAccessibleBy("mallory")).To(BeFalse())
+	})
+
+	It("should deny access when Status.SharedWith is empty", func() {
+		Expect(lease.IsAccessibleBy("alice")).To(BeFalse())
+	})
+
+	It("should not grant access from Spec.SharedWith before reconciliation", func() {
+		// Spec is the owner's desired intent; access follows the controller-derived
+		// Status.SharedWith, which is empty until the lease is reconciled.
+		lease.Spec.SharedWith = []string{"alice"}
+		Expect(lease.IsAccessibleBy("alice")).To(BeFalse())
+	})
+})
+
+var _ = Describe("IsOwnedBy", func() {
+	var lease *Lease
+
+	BeforeEach(func() {
+		lease = &Lease{
+			Spec: LeaseSpec{
+				ClientRef:  corev1.LocalObjectReference{Name: "owner"},
+				SharedWith: []string{"alice"},
+			},
+		}
+	})
+
+	It("should return true for owner", func() {
+		Expect(lease.IsOwnedBy("owner")).To(BeTrue())
+	})
+
+	It("should return false for shared user", func() {
+		Expect(lease.IsOwnedBy("alice")).To(BeFalse())
+	})
+
+	It("should return false for unrelated client", func() {
+		Expect(lease.IsOwnedBy("mallory")).To(BeFalse())
+	})
+})
+
+var _ = Describe("LeaseFromProtobuf SharedWith", func() {
+	It("should map shared_with from proto to spec", func() {
+		pbLease := &cpb.Lease{
+			Selector:   "board=rpi4",
+			Duration:   durationpb.New(time.Hour),
+			SharedWith: []string{"alice", "bob"},
+		}
+		key := types.NamespacedName{Name: "test-lease", Namespace: "default"}
+		clientRef := corev1.LocalObjectReference{Name: "test-client"}
+
+		lease, err := LeaseFromProtobuf(pbLease, key, clientRef)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(lease.Spec.SharedWith).To(ConsistOf("alice", "bob"))
+	})
+
+	It("should leave SharedWith nil when proto has no shared_with", func() {
+		pbLease := &cpb.Lease{
+			Selector: "board=rpi4",
+			Duration: durationpb.New(time.Hour),
+		}
+		key := types.NamespacedName{Name: "test-lease", Namespace: "default"}
+		clientRef := corev1.LocalObjectReference{Name: "test-client"}
+
+		lease, err := LeaseFromProtobuf(pbLease, key, clientRef)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(lease.Spec.SharedWith).To(BeNil())
+	})
+})
+
+var _ = Describe("Lease.ToProtobuf SharedWith", func() {
+	It("should include SharedWith in protobuf output", func() {
+		lease := &Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-lease",
+				Namespace: "default",
+			},
+			Spec: LeaseSpec{
+				ClientRef:  corev1.LocalObjectReference{Name: "owner"},
+				Duration:   &metav1.Duration{Duration: time.Hour},
+				Selector:   metav1.LabelSelector{MatchLabels: map[string]string{"board": "rpi4"}},
+				SharedWith: []string{"alice", "bob"},
+			},
+		}
+
+		pb := lease.ToProtobuf()
+
+		Expect(pb.SharedWith).To(ConsistOf("alice", "bob"))
+	})
+
+	It("should handle nil SharedWith", func() {
+		lease := &Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-lease",
+				Namespace: "default",
+			},
+			Spec: LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "owner"},
+				Duration:  &metav1.Duration{Duration: time.Hour},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"board": "rpi4"}},
+			},
+		}
+
+		pb := lease.ToProtobuf()
+
+		Expect(pb.SharedWith).To(BeEmpty())
+	})
+
+	It("should roundtrip SharedWith through proto", func() {
+		original := []string{"alice", "bob"}
+		pbLease := &cpb.Lease{
+			Selector:   "board=rpi4",
+			Duration:   durationpb.New(time.Hour),
+			SharedWith: original,
+		}
+		key := types.NamespacedName{Name: "test-lease", Namespace: "default"}
+		clientRef := corev1.LocalObjectReference{Name: "owner"}
+
+		lease, err := LeaseFromProtobuf(pbLease, key, clientRef)
+		Expect(err).NotTo(HaveOccurred())
+
+		roundtripped := lease.ToProtobuf()
+		Expect(roundtripped.SharedWith).To(ConsistOf("alice", "bob"))
+	})
+})
+
+var t0 = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+func at(d time.Duration) *metav1.Time { return &metav1.Time{Time: t0.Add(d)} }
+
+func dur(d time.Duration) *metav1.Duration { return &metav1.Duration{Duration: d} }
+
+var _ = DescribeTable("ReconcileLeaseTimeFields",
+	func(begin, end *metav1.Time, duration *metav1.Duration, wantBegin *metav1.Time, wantDuration time.Duration, wantErr string) {
+		err := ReconcileLeaseTimeFields(&begin, &end, &duration)
+		if wantErr != "" {
+			Expect(err).To(MatchError(ContainSubstring(wantErr)))
+			return
+		}
+		Expect(err).NotTo(HaveOccurred())
+		Expect(duration.Duration).To(Equal(wantDuration))
+		if wantBegin == nil {
+			Expect(begin).To(BeNil())
+		} else {
+			Expect(begin.Time).To(BeTemporally("==", wantBegin.Time))
+		}
+	},
+	Entry("duration only stays unscheduled", nil, nil, dur(time.Hour), nil, time.Hour, ""),
+	Entry("begin+end derives duration", at(0), at(time.Hour), nil, at(0), time.Hour, ""),
+	Entry("end+duration derives begin", nil, at(time.Hour), dur(30*time.Minute), at(30*time.Minute), 30*time.Minute, ""),
+	Entry("consistent triple accepted", at(0), at(time.Hour), dur(time.Hour), at(0), time.Hour, ""),
+	Entry("conflicting triple", at(0), at(time.Hour), dur(2*time.Hour), nil, time.Duration(0), "duration conflicts"),
+	Entry("end before begin", at(time.Hour), at(0), nil, nil, time.Duration(0), "duration must be positive"),
+	Entry("begin only", at(0), nil, nil, nil, time.Duration(0), "duration is required"),
+	Entry("negative duration", nil, nil, dur(-time.Second), nil, time.Duration(0), "duration must be positive"),
+)
+
+var _ = Describe("LeaseFromProtobuf time fields", func() {
+	key := types.NamespacedName{Name: "lease", Namespace: "default"}
+	clientRef := corev1.LocalObjectReference{Name: "client"}
+
+	It("should store the derived time fields in the spec", func() {
+		lease, err := LeaseFromProtobuf(&cpb.Lease{
+			Selector: "dut=a",
+			EndTime:  timestamppb.New(t0.Add(time.Hour)),
+			Duration: durationpb.New(30 * time.Minute),
+		}, key, clientRef)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(lease.Spec.BeginTime.Time).To(BeTemporally("==", t0.Add(30*time.Minute)))
+		Expect(lease.Spec.EndTime.Time).To(BeTemporally("==", t0.Add(time.Hour)))
+		Expect(lease.Spec.Duration.Duration).To(Equal(30 * time.Minute))
+	})
+
+	It("should reject invalid time fields", func() {
+		lease, err := LeaseFromProtobuf(&cpb.Lease{
+			Selector:  "dut=a",
+			BeginTime: timestamppb.New(t0),
+			EndTime:   timestamppb.New(t0.Add(time.Hour)),
+			Duration:  durationpb.New(2 * time.Hour),
+		}, key, clientRef)
+		Expect(err).To(MatchError(ContainSubstring("duration conflicts")))
+		Expect(lease).To(BeNil())
+	})
+})
+
+var _ = Describe("ClientAllowedByPolicy", func() {
+	var (
+		exporter *Exporter
+		client   *Client
+	)
+
+	BeforeEach(func() {
+		exporter = &Exporter{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-exporter",
+				Namespace: "default",
+				Labels:    map[string]string{"board": "rpi4", "env": "lab"},
+			},
+		}
+		client = &Client{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-client",
+				Namespace: "default",
+				Labels:    map[string]string{"team": "devops"},
+			},
+		}
+	})
+
+	It("should allow when client matches a policy's From selector", func() {
+		policies := []ExporterAccessPolicy{{
+			Spec: ExporterAccessPolicySpec{
+				ExporterSelector: metav1.LabelSelector{
+					MatchLabels: map[string]string{"board": "rpi4"},
+				},
+				Policies: []Policy{{
+					From: []From{{
+						ClientSelector: metav1.LabelSelector{
+							MatchLabels: map[string]string{"team": "devops"},
+						},
+					}},
+				}},
+			},
+		}}
+
+		allowed, err := ClientAllowedByPolicy(policies, exporter, client)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(allowed).To(BeTrue())
+	})
+
+	It("should deny when client labels don't match any From selector", func() {
+		policies := []ExporterAccessPolicy{{
+			Spec: ExporterAccessPolicySpec{
+				ExporterSelector: metav1.LabelSelector{
+					MatchLabels: map[string]string{"board": "rpi4"},
+				},
+				Policies: []Policy{{
+					From: []From{{
+						ClientSelector: metav1.LabelSelector{
+							MatchLabels: map[string]string{"team": "security"},
+						},
+					}},
+				}},
+			},
+		}}
+
+		allowed, err := ClientAllowedByPolicy(policies, exporter, client)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(allowed).To(BeFalse())
+	})
+
+	It("should deny when exporter labels don't match any policy", func() {
+		policies := []ExporterAccessPolicy{{
+			Spec: ExporterAccessPolicySpec{
+				ExporterSelector: metav1.LabelSelector{
+					MatchLabels: map[string]string{"board": "jetson"},
+				},
+				Policies: []Policy{{
+					From: []From{{
+						ClientSelector: metav1.LabelSelector{
+							MatchLabels: map[string]string{"team": "devops"},
+						},
+					}},
+				}},
+			},
+		}}
+
+		allowed, err := ClientAllowedByPolicy(policies, exporter, client)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(allowed).To(BeFalse())
+	})
+
+	It("should deny when no policies are supplied (callers short-circuit this case)", func() {
+		allowed, err := ClientAllowedByPolicy(nil, exporter, client)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(allowed).To(BeFalse())
+		allowed, err = ClientAllowedByPolicy([]ExporterAccessPolicy{}, exporter, client)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(allowed).To(BeFalse())
+	})
+
+	It("should error when a policy has a malformed exporter selector", func() {
+		policies := []ExporterAccessPolicy{{
+			Spec: ExporterAccessPolicySpec{
+				ExporterSelector: metav1.LabelSelector{
+					MatchExpressions: []metav1.LabelSelectorRequirement{{
+						Key:      "board",
+						Operator: "InvalidOperator",
+						Values:   []string{"rpi4"},
+					}},
+				},
+			},
+		}}
+
+		_, err := ClientAllowedByPolicy(policies, exporter, client)
+		Expect(err).To(HaveOccurred())
+	})
+
+	It("should error when a policy has a malformed client selector", func() {
+		policies := []ExporterAccessPolicy{{
+			Spec: ExporterAccessPolicySpec{
+				ExporterSelector: metav1.LabelSelector{
+					MatchLabels: map[string]string{"board": "rpi4"},
+				},
+				Policies: []Policy{{
+					From: []From{{
+						ClientSelector: metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{{
+								Key:      "team",
+								Operator: "InvalidOperator",
+								Values:   []string{"devops"},
+							}},
+						},
+					}},
+				}},
+			},
+		}}
+
+		_, err := ClientAllowedByPolicy(policies, exporter, client)
+		Expect(err).To(HaveOccurred())
+	})
+
+	It("should allow when any one of multiple policies matches", func() {
+		policies := []ExporterAccessPolicy{
+			{
+				Spec: ExporterAccessPolicySpec{
+					ExporterSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{"board": "jetson"},
+					},
+					Policies: []Policy{{
+						From: []From{{
+							ClientSelector: metav1.LabelSelector{
+								MatchLabels: map[string]string{"team": "devops"},
+							},
+						}},
+					}},
+				},
+			},
+			{
+				Spec: ExporterAccessPolicySpec{
+					ExporterSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{"board": "rpi4"},
+					},
+					Policies: []Policy{{
+						From: []From{{
+							ClientSelector: metav1.LabelSelector{
+								MatchLabels: map[string]string{"team": "devops"},
+							},
+						}},
+					}},
+				},
+			},
+		}
+
+		allowed, err := ClientAllowedByPolicy(policies, exporter, client)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(allowed).To(BeTrue())
 	})
 })

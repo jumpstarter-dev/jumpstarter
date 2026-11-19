@@ -191,7 +191,6 @@ class VideoClient(DriverClient):
         @driver_click_group(self)
         def video():
             """Video capture and streaming"""
-            pass
 
         @video.command()
         def state():

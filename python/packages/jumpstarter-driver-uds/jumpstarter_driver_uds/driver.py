@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from pydantic import validate_call
 from udsoncan.exceptions import NegativeResponseException
@@ -61,6 +62,8 @@ class UdsInterface:
     Concrete subclasses must initialise ``self._uds_client`` (a
     ``udsoncan.client.Client``) in their ``__post_init__``.
     """
+
+    _uds_client: Any
 
     @classmethod
     def client(cls) -> str:

@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from typing import Literal, Optional
+from typing import Literal
 
 from kubernetes_asyncio.client.models import V1Condition, V1ObjectMeta, V1ObjectReference
 from pydantic import Field
@@ -12,11 +12,11 @@ from .util import AbstractAsyncCustomObjectApi
 
 
 class V1Alpha1LeaseStatus(JsonBaseModel):
-    begin_time: Optional[str] = Field(alias="beginTime")
+    begin_time: str | None = Field(alias="beginTime")
     conditions: list[SerializeV1Condition]
-    end_time: Optional[str] = Field(alias="endTime")
+    end_time: str | None = Field(alias="endTime")
     ended: bool
-    exporter: Optional[SerializeV1ObjectReference]
+    exporter: SerializeV1ObjectReference | None
 
 
 class V1Alpha1LeaseSelector(JsonBaseModel):
@@ -25,7 +25,7 @@ class V1Alpha1LeaseSelector(JsonBaseModel):
 
 class V1Alpha1LeaseSpec(JsonBaseModel):
     client: SerializeV1ObjectReference
-    duration: Optional[str]
+    duration: str | None
     selector: V1Alpha1LeaseSelector
 
 
@@ -40,10 +40,10 @@ class V1Alpha1Lease(JsonBaseModel):
     def from_dict(data: dict):
         spec = data["spec"]
         if not isinstance(spec, Mapping):
-            raise TypeError(f"spec must be a dict, got {type(spec).__name__}: {repr(spec)}")
+            raise TypeError(f"spec must be a dict, got {type(spec).__name__}: {spec!r}")
         selector_data = spec.get("selector", {})
         return V1Alpha1Lease(
-            api_version=data["apiVersion"],
+            apiVersion=data["apiVersion"],
             kind=data["kind"],
             metadata=V1ObjectMeta(
                 creation_timestamp=data["metadata"]["creationTimestamp"],
@@ -55,8 +55,8 @@ class V1Alpha1Lease(JsonBaseModel):
                 uid=data["metadata"]["uid"],
             ),
             status=V1Alpha1LeaseStatus(
-                begin_time=data["status"]["beginTime"] if "beginTime" in data["status"] else None,
-                end_time=data["status"]["endTime"] if "endTime" in data["status"] else None,
+                beginTime=data["status"].get("beginTime", None),
+                endTime=data["status"].get("endTime", None),
                 ended=data["status"]["ended"],
                 exporter=V1ObjectReference(name=data["status"]["exporterRef"]["name"])
                 if "exporterRef" in data["status"]
@@ -75,8 +75,8 @@ class V1Alpha1Lease(JsonBaseModel):
             ),
             spec=V1Alpha1LeaseSpec(
                 client=V1ObjectReference(name=spec["clientRef"]["name"]) if "clientRef" in spec else None,
-                duration=spec["duration"] if "duration" in spec else None,
-                selector=V1Alpha1LeaseSelector(match_labels=selector_data.get("matchLabels", {})),
+                duration=spec.get("duration", None),
+                selector=V1Alpha1LeaseSelector(matchLabels=selector_data.get("matchLabels", {})),
             ),
         )
 
@@ -113,7 +113,7 @@ class V1Alpha1Lease(JsonBaseModel):
     def rich_add_rows(self, table):
         selectors = []
         for label in self.spec.selector.match_labels:
-            selectors.append(f"{label}:{str(self.spec.selector.match_labels[label])}")
+            selectors.append(f"{label}:{self.spec.selector.match_labels[label]!s}")
         table.add_row(
             self.metadata.name,
             self.spec.client.name if self.spec.client is not None else "",
@@ -132,7 +132,7 @@ class V1Alpha1Lease(JsonBaseModel):
 
 
 class V1Alpha1LeaseList(V1Alpha1List[V1Alpha1Lease]):
-    kind: Literal["LeaseList"] = Field(default="LeaseList")
+    kind: Literal["LeaseList"] = Field(default="LeaseList", frozen=True)
 
     @staticmethod
     def from_dict(data: dict):

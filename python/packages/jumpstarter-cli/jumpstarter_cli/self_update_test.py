@@ -63,4 +63,5 @@ def test_self_update(
         expected_cmd,
         input="#!/bin/sh",
         check=True,
+        text=True,
     )

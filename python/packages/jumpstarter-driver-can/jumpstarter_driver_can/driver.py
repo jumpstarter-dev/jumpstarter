@@ -1,5 +1,5 @@
+from collections.abc import Callable, Sequence
 from dataclasses import field
-from typing import Callable, Optional, Sequence, Tuple, Union
 from uuid import UUID, uuid4
 
 import can
@@ -54,7 +54,7 @@ class Can(Driver):
 
     @export
     @validate_call(validate_return=True)
-    def _recv_internal(self, timeout: Optional[float]) -> Tuple[Optional[CanMessage], bool]:
+    def _recv_internal(self, timeout: float | None) -> tuple[CanMessage | None, bool]:
         msg, filtered = self.bus._recv_internal(timeout)
         if msg:
             return CanMessage.construct(msg), filtered
@@ -72,14 +72,14 @@ class Can(Driver):
     @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
     def _send_periodic_internal(
         self,
-        msgs: Union[Sequence[CanMessage], CanMessage],
+        msgs: Sequence[CanMessage] | CanMessage,
         period: float,
-        duration: Optional[float] = None,
+        duration: float | None = None,
         autostart: bool = True,
-        modifier_callback: Optional[Callable[[can.Message], None]] = None,
+        modifier_callback: Callable[[can.Message], None] | None = None,
     ) -> UUID:
         assert modifier_callback is None
-        task = self.bus._send_periodic_internal(msgs, period, duration, autostart, modifier_callback)
+        task = self.bus._send_periodic_internal(msgs, period, duration, autostart, modifier_callback)  # ty: ignore[invalid-argument-type]
         uuid = uuid4()
         self.__tasks[uuid] = task
         return uuid
@@ -87,7 +87,7 @@ class Can(Driver):
     @export
     @validate_call(validate_return=True)
     def _start_task(self, uuid: UUID) -> None:
-        self.__tasks[uuid].start()
+        self.__tasks[uuid].start()  # ty: ignore[unresolved-attribute]
 
     @export
     @validate_call(validate_return=True)
@@ -126,7 +126,7 @@ class Can(Driver):
     # python-can bug
     # https://docs.pydantic.dev/2.8/errors/usage_errors/#typed-dict-version
     # @validate_call(validate_return=True)
-    def _apply_filters(self, filters: Optional[can.typechecking.CanFilters]) -> None:
+    def _apply_filters(self, filters: can.typechecking.CanFilters | None) -> None:
         self.bus._apply_filters(filters)
 
     @export
@@ -239,6 +239,7 @@ class IsoTpPython(Driver):
         """
         Enqueue an ISO-TP frame to send over the CAN network.
         """
+        assert msg.data is not None
         return self.stack.send(msg.data, target_address_type, send_timeout)
 
     @export
@@ -329,7 +330,7 @@ class IsoTpSocket(Driver):
             raise ValueError("socket already started")
         self.sock = isotp.socket()
         self.params.apply(self.sock)
-        self.sock.bind(self.channel, self.address)
+        self.sock.bind(self.channel, self.address)  # ty: ignore[unresolved-attribute]
 
     @export
     @validate_call(validate_return=True)
@@ -352,6 +353,7 @@ class IsoTpSocket(Driver):
         """
         if not self.sock:
             raise ValueError("socket not started")
+        assert msg.data is not None
         self.sock.send(msg.data)
 
     @export

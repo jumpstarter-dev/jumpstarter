@@ -19,6 +19,10 @@ env:
   # overlaps the two long containers (hooks, core) rather than competing for CPU.
   E2E_PROCS: "2"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   changes:
     if: github.repository_owner == 'jumpstarter-dev'
@@ -34,15 +38,20 @@ jobs:
         id: filter
         with:
           base: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
+          # Required for the '!...' exclusion patterns below to work; with the
+          # default 'some' quantifier a negated pattern matches every file it
+          # does NOT cover, so docs-only PRs would still trigger e2e.
+          predicate-quantifier: some-with-excludes
           filters: |
+            # Run e2e on any change except pure documentation/tooling:
+            # the suite exercises the whole stack, so a positive path list
+            # would keep missing new code directories (e.g. rust/).
             e2e:
-              - 'controller/**'
-              - 'e2e/**'
-              - 'python/**'
+              - '**'
               - '!docs/**'
-              - '!python/**/*.md'
-              - '.github/workflows/e2e.yaml'
-              - 'Makefile'
+              - '!**/*.md'
+              - '!**/*.mdc'
+              - '!.devcontainer/**'
       - name: Compute e2e architecture matrix
         id: matrix
         run: |
@@ -83,16 +92,18 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/controller-image.tar
-          key: controller-image-${{ matrix.arch }}-${{ hashFiles('.go-version', 'controller/Makefile', 'controller/Containerfile', 'controller/Containerfile.prebuilt', 'controller/go.mod', 'controller/go.sum', 'controller/cmd/**', 'controller/api/**', 'controller/internal/**') }}
+          # The tar also holds the telemetry image; the prefix changed when it was added.
+          key: controller-telemetry-image-${{ matrix.arch }}-${{ hashFiles('.go-version', 'controller/Makefile', 'controller/Containerfile', 'controller/Containerfile.prebuilt', 'controller/Containerfile.telemetry.prebuilt', 'controller/go.mod', 'controller/go.sum', 'controller/cmd/**', 'controller/api/**', 'controller/internal/**') }}
 
       - name: Build controller image
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           make -C controller docker-build-ci
-          docker save quay.io/jumpstarter-dev/jumpstarter-controller:latest -o /tmp/controller-image.tar
+          docker save quay.io/jumpstarter-dev/jumpstarter-controller:latest \
+            quay.io/jumpstarter-dev/jumpstarter-telemetry:latest -o /tmp/controller-image.tar
 
       - name: Upload controller image
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: controller-image-${{ matrix.arch }}
           path: /tmp/controller-image.tar
@@ -135,7 +146,7 @@ jobs:
           cp controller/deploy/operator/dist/install.yaml /tmp/operator-install.yaml
 
       - name: Upload operator artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: operator-image-${{ matrix.arch }}
           path: |
@@ -177,7 +188,7 @@ jobs:
           docker save quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest -o /tmp/exporterset-controller-image.tar
 
       - name: Upload exporterset-controller image
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: exporterset-controller-image-${{ matrix.arch }}
           path: /tmp/exporterset-controller-image.tar
@@ -199,7 +210,7 @@ jobs:
 
       - name: Cache exporter image
         id: cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/exporter-image.tar
           # Bust when exporter image inputs change: Containerfile, Python sources,
@@ -213,7 +224,7 @@ jobs:
           docker save quay.io/jumpstarter-dev/jumpstarter:latest -o /tmp/exporter-image.tar
 
       - name: Upload exporter image
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: exporter-image-${{ matrix.arch }}
           path: /tmp/exporter-image.tar
@@ -235,7 +246,7 @@ jobs:
 
       - name: Cache qemu-runtime image
         id: cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/qemu-runtime-image.tar
           # Bust when QEMU runtime inputs change.
@@ -248,7 +259,7 @@ jobs:
           docker save quay.io/jumpstarter-dev/virtual/qemu-runtime:latest -o /tmp/qemu-runtime-image.tar
 
       - name: Upload qemu-runtime image
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: qemu-runtime-image-${{ matrix.arch }}
           path: /tmp/qemu-runtime-image.tar
@@ -257,7 +268,7 @@ jobs:
   build-python-wheels:
     needs: changes
     if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - name: Checkout repository
@@ -268,7 +279,7 @@ jobs:
       - id: uv
         run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
@@ -283,10 +294,10 @@ jobs:
       - name: Build python wheels
         if: steps.cache.outputs.cache-hit != 'true'
         working-directory: python
-        run: uv build --all --out-dir dist
+        run: make build
 
       - name: Upload python wheels
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: python-wheels
           path: python/dist/
@@ -302,7 +313,7 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.changes.outputs.e2e-matrix) }}
     runs-on: ${{ matrix.os }}
-    # Includes ExporterSet QEMU coverage (TCG); flash/boot still skipped until #924.
+    # Includes ExporterSet QEMU coverage (TCG), including flash/boot.
     # Job > Ginkgo suite timeout (60m in e2e/lib/common.sh) for setup/log upload.
     timeout-minutes: 70
     steps:
@@ -312,7 +323,7 @@ jobs:
       - id: uv
         run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
@@ -377,7 +388,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request'
       && (needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
       - name: Checkout repository
@@ -386,7 +397,7 @@ jobs:
       - id: uv
         run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
@@ -411,7 +422,7 @@ jobs:
         env:
           CI: true
           # renovate: datasource=github-releases depName=jumpstarter-dev/jumpstarter
-          COMPAT_CONTROLLER_TAG: v0.8.1
+          COMPAT_CONTROLLER_TAG: v0.9.0
 
       - name: Run compat tests (old controller + new client/exporter)
         run: make e2e-compat-run COMPAT_TEST=old-controller
@@ -430,7 +441,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request'
       && (needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
       - name: Checkout repository
@@ -439,7 +450,7 @@ jobs:
       - id: uv
         run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
@@ -469,7 +480,7 @@ jobs:
         env:
           CI: true
           # renovate: datasource=pypi depName=jumpstarter
-          COMPAT_CLIENT_VERSION: "0.7.4"
+          COMPAT_CLIENT_VERSION: "0.9.0"
           SKIP_BUILD: "true"
           PREBUILT_WHEELS_DIR: /tmp/python-wheels
           OPERATOR_IMG: quay.io/jumpstarter-dev/jumpstarter-operator:latest

@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Optional
 
 import obd
 
@@ -29,12 +28,12 @@ class OBD(Driver):
 
     driver_type = "automotive"
 
-    port: Optional[str] = field(default=None)
+    port: str | None = field(default=None)
     baudrate: int = field(default=38400)
     # fast mode is quicker but flaky on cheap clone adapters, so it defaults off
     fast: bool = field(default=False)
 
-    _connection: Optional[obd.OBD] = field(init=False, default=None)
+    _connection: obd.OBD | None = field(init=False, default=None)
 
     @classmethod
     def client(cls) -> str:
@@ -54,7 +53,7 @@ class OBD(Driver):
         super().close()
 
     @export
-    def query(self, command_name: str) -> Optional[str]:
+    def query(self, command_name: str) -> str | None:
         """Query a PID by name (e.g. 'RPM', 'SPEED', 'COOLANT_TEMP').
 
         Returns None if the ECU doesn't answer. Destructive commands such as
@@ -68,6 +67,7 @@ class OBD(Driver):
         if not obd.commands.has_name(command_name):
             raise DriverInvalidArgument(f"Unknown OBD command: {command_name}")
         cmd = obd.commands[command_name]
+        assert self._connection is not None
         response = self._connection.query(cmd)
         if response.is_null():
             return None
@@ -81,6 +81,7 @@ class OBD(Driver):
         cycles to re-complete. Use only as a deliberate reset.
         """
         # obd.commands is populated dynamically; index it by name
+        assert self._connection is not None
         self._connection.query(obd.commands["CLEAR_DTC"], force=True)
 
     @staticmethod
@@ -105,14 +106,17 @@ class OBD(Driver):
     @export
     def status(self) -> OBDConnectionStatus:
         """Connection state."""
+        assert self._connection is not None
         return OBDConnectionStatus(str(self._connection.status()))
 
     @export
     def supported_commands(self) -> list[str]:
         """Sorted PID names the connected ECU advertises."""
+        assert self._connection is not None
         return sorted(cmd.name for cmd in self._connection.supported_commands)
 
     @export
     def is_connected(self) -> bool:
         """True when a vehicle ECU is on the bus, not just the adapter."""
+        assert self._connection is not None
         return self._connection.is_connected()

@@ -1,4 +1,3 @@
-from typing import Optional
 
 import click
 from jumpstarter_cli_common.alias import AliasedGroup
@@ -40,7 +39,7 @@ def get():
 @opt_output_all
 @blocking
 async def get_client(
-    name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, output: OutputType
+    name: str | None, kubeconfig: str | None, context: str | None, namespace: str, output: OutputType
 ):
     """Get the client objects in a Kubernetes cluster"""
     try:
@@ -66,9 +65,9 @@ async def get_client(
 @click.option("-d", "--devices", is_flag=True, help="Display the devices hosted by the exporter(s)")
 @blocking
 async def get_exporter(
-    name: Optional[str],
-    kubeconfig: Optional[str],
-    context: Optional[str],
+    name: str | None,
+    kubeconfig: str | None,
+    context: str | None,
     namespace: str,
     devices: bool,
     output: OutputType,
@@ -96,7 +95,7 @@ async def get_exporter(
 @opt_output_all
 @blocking
 async def get_lease(
-    name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, output: OutputType
+    name: str | None, kubeconfig: str | None, context: str | None, namespace: str, output: OutputType
 ):
     """Get the lease objects in a Kubernetes cluster"""
     try:
@@ -123,7 +122,7 @@ async def get_lease(
 @opt_output_all
 @blocking
 async def get_cluster(
-    name: Optional[str], type: str, kubectl: str, minikube: str, output: OutputType
+    name: str | None, type: str, kubectl: str, minikube: str, output: OutputType
 ):
     """Get information about a specific cluster or list all clusters"""
     try:

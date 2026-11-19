@@ -1,4 +1,5 @@
 PKG_TARGETS = $(subst packages/,,$(wildcard packages/*))
+PYTHON_VERSION = $(shell cut -d. -f1-2 ../.py-version | tr -d '[:space:]')
 
 # Help target
 .PHONY: help
@@ -39,7 +40,7 @@ pkg-test-%: packages/%
 	@mkdir -p $(LOGS_DIR)
 	@rm -f $(LOGS_DIR)/$*.failed
 	@bash -c 'set -o pipefail; \
-	PYTHONUNBUFFERED=1 uv run --isolated --directory $< pytest 2>&1 | tee $(LOGS_DIR)/$*.log; \
+	PYTHONUNBUFFERED=1 uv run --isolated --directory $< pytest --strict-markers --strict-config 2>&1 | tee $(LOGS_DIR)/$*.log; \
 	rc=$$?; \
 	if [ $$rc -ne 0 ] && [ $$rc -ne 5 ]; then \
 		touch $(LOGS_DIR)/$*.failed; \
@@ -47,11 +48,11 @@ pkg-test-%: packages/%
 	true'
 else
 pkg-test-%: packages/%
-	uv run --isolated --directory $< pytest || [ $$? -eq 5 ]
+	uv run --isolated --directory $< pytest --strict-markers --strict-config || [ $$? -eq 5 ]
 endif
 
 pkg-ty-%: packages/%
-	uv run --isolated --directory $< ty check .
+	uv run --isolated --directory $< --with ty ty check --python-version $(PYTHON_VERSION) .
 
 pkg-test-all: sync $(addprefix pkg-test-,$(PKG_TARGETS))
 
@@ -71,11 +72,18 @@ endif
 
 pkg-ty-all: $(addprefix pkg-ty-,$(PKG_TARGETS))
 
+# One uv process per package: `uv build --all` can deadlock on a cold cache
+# in a workspace this large (https://github.com/astral-sh/uv/issues/22348).
+BUILD_JOBS ?= $(shell getconf _NPROCESSORS_ONLN)
+
 build:
-	uv build --all --out-dir dist
+	printf '%s\n' packages/*/ | xargs -P $(BUILD_JOBS) -I{} uv build {} --out-dir dist
+
+# renovate: datasource=docker depName=docker.io/bufbuild/buf
+BUF_VERSION ?= 1.73.0
 
 protobuf-gen:
-	podman run --volume "$(shell cd .. && pwd):/workspace" --workdir /workspace/python docker.io/bufbuild/buf:latest generate
+	podman run --volume "$(shell cd .. && pwd):/workspace" --workdir /workspace/python docker.io/bufbuild/buf:$(BUF_VERSION) generate
 	# Fix Python imports: convert absolute imports to relative imports
 	# In jumpstarter/client/v1: from jumpstarter.v1 import -> from ...v1 import
 	find packages/jumpstarter-protocol/jumpstarter_protocol/jumpstarter/client/v1 -name "*_pb2*.py" -type f -exec sed -i.bak \
@@ -121,8 +129,4 @@ lint-fix:
 
 .PHONY: default help pkg-test-all pkg-ty-all build generate sync \
 	clean clean-venv clean-build clean-test test test-report ty \
-	lint lint-fix \
-	pkg-ty-jumpstarter \
-	pkg-ty-jumpstarter-cli-admin \
-	pkg-ty-jumpstarter-kubernetes \
-	pkg-ty-jumpstarter-protocol
+	lint lint-fix

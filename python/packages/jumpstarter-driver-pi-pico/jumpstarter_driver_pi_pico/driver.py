@@ -88,13 +88,13 @@ class PiPicoFlasher(FlasherInterface, Driver):
         hold = self.gpio_reset_hold_seconds
 
         self.logger.info("Entering BOOTSEL via GPIO reset (bootsel + run pins)")
-        bootsel.on()
+        bootsel.on()  # ty: ignore[unresolved-attribute]
         time.sleep(hold)
-        run.on()
+        run.on()  # ty: ignore[unresolved-attribute]
         time.sleep(hold)
-        run.off()
+        run.off()  # ty: ignore[unresolved-attribute]
         time.sleep(hold / 2)
-        bootsel.off()
+        bootsel.off()  # ty: ignore[unresolved-attribute]
 
     def _touch_serial_for_bootloader(self):
         serial = serial_for_url(self._serial.url, baudrate=self.bootloader_touch_baudrate)
@@ -181,10 +181,9 @@ class PiPicoFlasher(FlasherInterface, Driver):
         dest_path = mount / dest_name
 
         with _temporary_filename(suffix=".uf2") as tmp_path:
-            async with await FileWriteStream.from_path(tmp_path) as stream:
-                async with self.resource(source) as res:
-                    async for chunk in res:
-                        await stream.send(chunk)
+            async with await FileWriteStream.from_path(tmp_path) as stream, self.resource(source) as res:
+                async for chunk in res:
+                    await stream.send(chunk)
 
             self.logger.info("Copying UF2 to BOOTSEL volume %s", dest_path)
 

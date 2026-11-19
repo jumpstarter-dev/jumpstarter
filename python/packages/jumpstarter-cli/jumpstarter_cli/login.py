@@ -63,16 +63,15 @@ async def fetch_auth_config(
     _validate_login_endpoint_url(login_endpoint, allow_http=insecure_tls)
 
     url = f"{login_endpoint.rstrip('/')}/v1/auth/config"
-    ssl_context: ssl.SSLContext | bool = False if insecure_tls else True
+    ssl_context: ssl.SSLContext | bool = not insecure_tls
     timeout = aiohttp.ClientTimeout(total=_HTTP_TIMEOUT_SECONDS)
 
     try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, ssl=ssl_context) as response:
-                if response.status != 200:
-                    raise click.ClickException(f"Failed to fetch auth config from {url}: HTTP {response.status}")
-                payload = await response.json()
-                return _validate_auth_config_payload(payload, url)
+        async with aiohttp.ClientSession(timeout=timeout) as session, session.get(url, ssl=ssl_context) as response:
+            if response.status != 200:
+                raise click.ClickException(f"Failed to fetch auth config from {url}: HTTP {response.status}")
+            payload = await response.json()
+            return _validate_auth_config_payload(payload, url)
     except aiohttp.ClientConnectorCertificateError as e:
         raise click.ClickException(
             f"TLS certificate verification failed while connecting to {login_endpoint}. "
@@ -335,7 +334,6 @@ async def login(  # noqa: C901
         except Exception as e:
             if nointeractive:
                 raise click.ClickException(f"Failed to refresh access token: {e}") from e
-            pass
 
     if token is not None:
         kwargs = {"connector_id": connector_id} if connector_id is not None else {}
@@ -355,10 +353,8 @@ async def login(  # noqa: C901
         config.refresh_token = refresh_token
 
     save_config()
-    # Set the new client as the default if it's an alias-based client config.
-    # Path-based configs (--client-config <path>) aren't addressable by alias,
-    # so they can't be tracked as the user's "current client".
-    if config_kind == "client" and isinstance(config, ClientConfigV1Alpha1):
+    # The current client is stored by alias, so its config must be loadable by that alias.
+    if config_kind == "client" and isinstance(config, ClientConfigV1Alpha1) and config.is_alias_path():
         user_config = UserConfigV1Alpha1.load_or_create()
         user_config.use_client(config.alias)
         click.echo(f"Set '{config.alias}' as the default client.")
@@ -383,16 +379,16 @@ async def relogin_client(config: ClientConfigV1Alpha1):
             insecure_tls=config.tls.insecure,
         )
         if config.refresh_token:
-            try:
+            import contextlib
+
+            with contextlib.suppress(Exception):
                 tokens = await oidc.refresh_token_grant(config.refresh_token)
                 config.token = tokens["access_token"]
                 refresh_token = tokens.get("refresh_token")
                 if refresh_token is not None:
                     config.refresh_token = refresh_token
-                ClientConfigV1Alpha1.save(config)  # ty: ignore[invalid-argument-type]
+                ClientConfigV1Alpha1.save(config)
                 return
-            except Exception:
-                pass
 
         if should_use_device_flow(device_flow_flag=False):
             tokens = await oidc.device_authorization_grant()
@@ -402,6 +398,6 @@ async def relogin_client(config: ClientConfigV1Alpha1):
         refresh_token = tokens.get("refresh_token")
         if refresh_token is not None:
             config.refresh_token = refresh_token
-        ClientConfigV1Alpha1.save(config)  # ty: ignore[invalid-argument-type]
+        ClientConfigV1Alpha1.save(config)
     except Exception as e:
         raise ReauthenticationFailed(f"Failed to re-authenticate: {e}") from e

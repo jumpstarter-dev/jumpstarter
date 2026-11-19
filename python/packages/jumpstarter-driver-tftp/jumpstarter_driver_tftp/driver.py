@@ -1,9 +1,11 @@
-import asyncio
 import os
 import threading
+from concurrent.futures import Future
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from typing import Optional
 
+from anyio.from_thread import start_blocking_portal
 from jumpstarter_driver_opendal.driver import Opendal
 
 from jumpstarter_driver_tftp.server import TftpServer
@@ -15,13 +17,11 @@ from jumpstarter.driver import Driver, export
 class TftpError(Exception):
     """Base exception for TFTP server errors"""
 
-    pass
 
 
 class ServerNotRunning(TftpError):
     """Server is not running"""
 
-    pass
 
 
 @dataclass(kw_only=True)
@@ -34,6 +34,8 @@ class Tftp(Driver):
         root_dir (str): Root directory for the TFTP server. Defaults to "/var/lib/tftpboot"
         host (str): IP address to bind the server to. If empty, will use the default route interface
         port (int): Port number to listen on. Defaults to 69 (standard TFTP port)
+        advertised_host (str | None): IP address to advertise to clients via get_host()
+            without binding to it. Defaults to the bind host.
     """
 
     driver_type = "storage"
@@ -41,13 +43,12 @@ class Tftp(Driver):
     root_dir: str = "/var/lib/tftpboot"
     host: str = field(default="")
     port: int = 69
+    advertised_host: str | None = None
     remove_created_on_close: bool = True  # Clean up temporary boot files by default
     server: Optional["TftpServer"] = field(init=False, default=None)
-    server_thread: Optional[threading.Thread] = field(init=False, default=None)
-    _shutdown_event: threading.Event = field(init=False, default_factory=threading.Event)
-    _loop_ready: threading.Event = field(init=False, default_factory=threading.Event)
-    _loop: Optional[asyncio.AbstractEventLoop] = field(init=False, default=None)
-    _startup_error: Optional[BaseException] = field(init=False, default=None)
+    _running: ExitStack | None = field(init=False, default=None)
+    _serving: Future | None = field(init=False, default=None)
+    _lock: threading.Lock = field(init=False, default_factory=threading.Lock, repr=False)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -55,12 +56,12 @@ class Tftp(Driver):
 
         os.makedirs(self.root_dir, exist_ok=True)
 
-        self.children["storage"] = Opendal(
+        self.storage: Opendal = Opendal(
             scheme="fs",
             kwargs={"root": self.root_dir},
             remove_created_on_close=self.remove_created_on_close
         )
-        self.storage = self.children["storage"]
+        self.children["storage"] = self.storage
 
         if self.host == "":
             self.host = get_ip_address(logger=self.logger)
@@ -69,117 +70,87 @@ class Tftp(Driver):
     def client(cls) -> str:
         return "jumpstarter_driver_tftp.client.TftpServerClient"
 
-    def _start_server(self):
-        try:
-            asyncio.run(self._run_server_lifecycle())
-        except Exception as e:
-            self.logger.error(f"Error running TFTP server: {e}")
-        finally:
-            self.logger.info("TFTP server thread completed")
-
-    async def _run_server_lifecycle(self):
-        """Set up and run the TFTP server within a proper async context.
-
-        Uses asyncio.run() instead of the deprecated new_event_loop() +
-        set_event_loop() + run_until_complete() pattern, which emits
-        DeprecationWarning on Python 3.12/3.13 and breaks on 3.14
-        (get_event_loop() raises RuntimeError when no loop is running).
-        """
-        try:
-            self._loop = asyncio.get_running_loop()
-            self.server = TftpServer(
-                host=self.host,
-                port=self.port,
-                operator=self.children["storage"]._operator,
-                logger=self.logger,
-            )
-        except Exception as e:
-            self._startup_error = e
-            raise
-        finally:
-            # Always unblock start() so it can check _startup_error
-            # instead of waiting for the full timeout.
-            self._loop_ready.set()
-        try:
-            await self._run_server()
-        finally:
-            self._loop = None
-
-    async def _run_server(self):
-        try:
-            server_task = asyncio.create_task(self.server.start())
-            await asyncio.gather(server_task, self._wait_for_shutdown())
-        except asyncio.CancelledError:
-            self.logger.info("Server task cancelled")
-            raise
-
-    async def _wait_for_shutdown(self):
-        while not self._shutdown_event.is_set():
-            await asyncio.sleep(0.1)
-        self.logger.info("Shutdown event detected")
-        if self.server is not None:
-            await self.server.shutdown()
-
     @export
     def start(self):
         """Start the TFTP server.
 
         The server will start listening for incoming TFTP requests on the configured
         host and port. If the server is already running, a warning will be logged.
+        If it cannot listen on them, for example because the port is already in use,
+        a warning is logged and the server is not started.
 
         Raises:
-            TftpError: If the server fails to start or times out during initialization
+            TftpError: If the server cannot be set up
         """
-        if self.server_thread is not None and self.server_thread.is_alive():
+        with self._lock:
+            self._start()
+
+    def _start(self):
+        if self._serving is not None and not self._serving.done():
             self.logger.warning("TFTP server is already running")
             return
+        if self._running is not None:
+            self._stop()
 
-        self._shutdown_event.clear()
-        self._loop_ready.clear()
-        self._startup_error = None
-
-        self.server_thread = threading.Thread(target=self._start_server, daemon=True)
-        self.server_thread.start()
-
-        if not self._loop_ready.wait(timeout=5.0):
-            self.logger.error("Timeout waiting for event loop to be ready")
-            self.server_thread = None
-            raise TftpError("Failed to start TFTP server - event loop initialization timeout")
-
-        if self._startup_error is not None:
-            self.server_thread = None
-            raise TftpError(f"Failed to start TFTP server: {self._startup_error}") from self._startup_error
-
+        with ExitStack() as stack:
+            try:
+                server = TftpServer(
+                    host=self.host,
+                    port=self.port,
+                    operator=self.children["storage"]._operator,  # ty: ignore[unresolved-attribute]
+                    logger=self.logger,
+                )
+                portal = stack.enter_context(start_blocking_portal())
+                try:
+                    serving, _ = portal.start_task(server.start)
+                except OSError as e:
+                    # Not an error on purpose so a bind failure was only logged and flashing went on,
+                    # served by whatever held the port (often a system tftpd on the same root directory).
+                    self.logger.warning(
+                        f"TFTP server not started, cannot listen on {self.host}:{self.port}: {e}. "
+                        f"This should work as long as this is an existing TFTP server pointing to {self.root_dir}"
+                    )
+                    return
+            except Exception as e:
+                raise TftpError(f"Failed to start TFTP server: {e}") from e
+            serving.add_done_callback(self._report_failure)
+            stack.callback(portal.call, server.shutdown)
+            self._running = stack.pop_all()
+        self.server, self._serving = server, serving
         self.logger.info(f"TFTP server started on {self.host}:{self.port}")
+
+    def _report_failure(self, serving: Future) -> None:
+        if not serving.cancelled() and (error := serving.exception()) is not None:
+            self.logger.error(f"Error running TFTP server: {error}")
 
     @export
     def stop(self):
         """Stop the TFTP server.
 
-        Initiates a graceful shutdown of the server and waits for all active transfers
-        to complete. If the server is not running, a warning will be logged.
+        Ends the transfers in progress and returns once the port is released.
+        If the server is not running, a warning will be logged.
         """
-        if self.server_thread is None or not self.server_thread.is_alive():
+        with self._lock:
+            self._stop()
+
+    def _stop(self):
+        running, self._running = self._running, None
+        if running is None:
             self.logger.warning("stop called - TFTP server is not running")
             return
 
         self.logger.info("Initiating TFTP server shutdown")
-        self._shutdown_event.set()
-        self.server_thread.join(timeout=10)
-        if self.server_thread.is_alive():
-            self.logger.error("Failed to stop TFTP server thread within timeout")
-        else:
-            self.logger.info("TFTP server stopped successfully")
-            self.server_thread = None
+        running.close()
+        self.logger.info("TFTP server stopped successfully")
 
     @export
     def get_host(self) -> str:
-        """Get the host address the server is bound to.
+        """Get the host address clients should use to reach the server.
 
         Returns:
-            str: The IP address or hostname
+            str: The advertised IP address or hostname, or the bind host
         """
-        return self.host
+        return self.advertised_host or self.host
 
     @export
     def get_port(self) -> int:
@@ -191,6 +162,6 @@ class Tftp(Driver):
         return self.port
 
     def close(self):
-        if self.server_thread is not None:
+        if self._running is not None:
             self.stop()
         super().close()

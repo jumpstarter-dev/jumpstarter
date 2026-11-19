@@ -7,7 +7,7 @@ license = "Apache-2.0"
 authors = [
     { name = "Bella Khizgiyaev", email = "bkhizgiy@redhat.com" }
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "anyio>=4.10.0",
     "jumpstarter",
@@ -31,7 +31,6 @@ addopts = "--cov --cov-report=html --cov-report=xml"
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_ssh_mitm"]
-asyncio_mode = "auto"
 log_cli_format = "%(levelname)s %(name)s: %(message)s"
 log_cli_date_format = "%Y-%m-%d %H:%M:%S"
 
@@ -45,7 +44,6 @@ name = "pin_jumpstarter"
 [dependency-groups]
 dev = [
     "pytest-cov>=6.0.0",
-    "pytest>=8.3.3",
-    "trio>=0.28.0",
+    "pytest>=8.4",
 ]
 

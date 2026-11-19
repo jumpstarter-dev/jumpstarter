@@ -8,7 +8,7 @@ authors = [
     { name = "Benny Zlotnik", email = "bzlotnik@redhat.com" },
     { name = "Miguel Angel Ajo", email = "majopela@redhat.com" },
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "oras>=0.2.25",
     "anyio>=4.10.0",
@@ -19,6 +19,8 @@ dependencies = [
     "jumpstarter-driver-tftp",
     "jumpstarter-driver-power",
     "jumpstarter-driver-uboot",
+    "jumpstarter-driver-composite",
+    "requests>=2.32.0",
 ]
 
 [project.entry-points."jumpstarter.drivers"]
@@ -41,14 +43,13 @@ testpaths = ["jumpstarter_driver_flashers"]
 
 [tool.uv.sources]
 jumpstarter-driver-uboot = { workspace = true }
-#asyncio_mode = "auto"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3"]
+dev = ["pytest-cov>=6.0.0", "pytest>=8.4"]
 
 [tool.hatch.build.hooks.pin_jumpstarter]
 name = "pin_jumpstarter"

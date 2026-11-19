@@ -1,7 +1,8 @@
 import os
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -110,18 +111,17 @@ drivers:
   - jumpstarter.drivers.*
   - vendorpackage.*
 """
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        f.write(CLIENT_CONFIG)
-        f.close()
-        config = ClientConfigV1Alpha1.from_file(f.name)
-        assert config.alias == f.name.split("/")[-1]
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "my.client.yaml"
+        path.write_text(CLIENT_CONFIG)
+        config = ClientConfigV1Alpha1.from_file(path)
+        assert config.alias == "my.client"
         assert config.metadata.namespace == "default"
         assert config.metadata.name == "testclient"
         assert config.endpoint == "jumpstarter.my-lab.com:1443"
         assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
         assert config.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
         assert config.drivers.unsafe is False
-        os.unlink(f.name)
 
 
 @pytest.mark.parametrize("invalid_field", ["apiVersion", "kind"])
@@ -138,7 +138,7 @@ def test_client_config_from_file_invalid_field_raises(invalid_field):
     with tempfile.NamedTemporaryFile(mode="w") as f:
         yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
         with pytest.raises(ValueError):
-            _ = ClientConfigV1Alpha1.from_file(f.name)
+            _ = ClientConfigV1Alpha1.from_file(Path(f.name))
 
 
 @pytest.mark.parametrize("missing_field", ["token", "endpoint", "drivers"])
@@ -155,12 +155,12 @@ def test_client_config_from_file_missing_field_raises(missing_field):
     with tempfile.NamedTemporaryFile(mode="w") as f:
         yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
         with pytest.raises(ValidationError):
-            _ = ClientConfigV1Alpha1.from_file(f.name)
+            _ = ClientConfigV1Alpha1.from_file(Path(f.name))
 
 
 @pytest.mark.parametrize("invalid_field", ["allow"])
 def test_client_config_from_file_invalid_drivers_field_raises(invalid_field):
-    CLIENT_CONFIG = {
+    CLIENT_CONFIG: dict[str, Any] = {
         "apiVersion": "jumpstarter.dev/v1alpha1",
         "kind": "ClientConfig",
         "endpoint": "jumpstarter.my-lab.com:1443",
@@ -168,34 +168,26 @@ def test_client_config_from_file_invalid_drivers_field_raises(invalid_field):
         "drivers": {"allow": ["jumpstarter.drivers.*", "vendorpackage.*"]},
     }
 
-    CLIENT_CONFIG["drivers"][invalid_field] = "foo"
+    CLIENT_CONFIG["drivers"][invalid_field] = "foo"  # ty: ignore[invalid-assignment]
     with tempfile.NamedTemporaryFile(mode="w") as f:
         yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
         with pytest.raises(ValidationError):
-            _ = ClientConfigV1Alpha1.from_file(f.name)
+            _ = ClientConfigV1Alpha1.from_file(Path(f.name))
 
 
 def test_client_config_load():
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write("")
         f.close()
-        with patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as get_path_mock:
-            with patch.object(
-                ClientConfigV1Alpha1,
-                "from_file",
-                return_value=ClientConfigV1Alpha1(
-                    alias="another",
-                    metadata=ObjectMeta(namespace="default", name="another"),
-                    endpoint="abc",
-                    token="123",
-                    drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False),
-                ),
-            ) as from_file_mock:
-                value = ClientConfigV1Alpha1.load("another")
-                assert value.alias == "another"
-                get_path_mock.assert_called_once_with("another")
-                from_file_mock.assert_called_once_with(Path(f.name))
-                os.unlink(f.name)
+        with (
+            patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as get_path_mock,
+            patch.object( ClientConfigV1Alpha1, "from_file", return_value=ClientConfigV1Alpha1( alias="another", metadata=ObjectMeta(namespace="default", name="another"), endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False), ), ) as from_file_mock,  # noqa: E501
+        ):
+            value = ClientConfigV1Alpha1.load("another")
+            assert value.alias == "another"
+            get_path_mock.assert_called_once_with("another")
+            from_file_mock.assert_called_once_with(Path(f.name))
+            os.unlink(f.name)
 
 
 def test_client_config_load_not_found_raises():
@@ -232,14 +224,36 @@ shell:
         shell=ShellConfigV1Alpha1(use_profiles=False),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        with patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as _get_path_mock:
-            with patch.object(ClientConfigV1Alpha1, "ensure_exists"):
-                ClientConfigV1Alpha1.save(config)
-                with open(f.name) as loaded:
-                    value = loaded.read()
-                    assert value == CLIENT_CONFIG
+        with (
+            patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as _get_path_mock,
+            patch.object(ClientConfigV1Alpha1, "ensure_exists"),
+        ):
+            ClientConfigV1Alpha1.save(config)
+            with open(f.name) as loaded:
+                value = loaded.read()
+                assert value == CLIENT_CONFIG
         _get_path_mock.assert_called_once_with("testclient")
         os.unlink(f.name)
+
+
+@pytest.mark.parametrize("override_path", [False, True])
+def test_client_config_save_loaded_path(tmp_path, monkeypatch, override_path):
+    clients = tmp_path / "clients"
+    monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", clients)
+    source = tmp_path / "external" / "client.yaml"
+    config = ClientConfigV1Alpha1(metadata=ObjectMeta(namespace="test", name="test"), token="old-token")
+    ClientConfigV1Alpha1.save(config, source)
+    loaded = ClientConfigV1Alpha1.from_file(source)
+    loaded.token = "new-token"
+    destination = tmp_path / "copy" / "client.yaml" if override_path else source
+
+    saved = ClientConfigV1Alpha1.save(loaded, destination if override_path else None)
+
+    assert saved == destination
+    assert ClientConfigV1Alpha1.from_file(destination).token == "new-token"
+    assert not (clients / "client.yaml").exists()
+    if override_path:
+        assert ClientConfigV1Alpha1.from_file(source).token == "old-token"
 
 
 def test_client_config_save_explicit_path():
@@ -399,13 +413,15 @@ def test_client_config_list_not_found_returns_empty(monkeypatch: pytest.MonkeyPa
 
 
 def test_client_config_delete():
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        with patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as _get_path_mock:
-            f.write("")
-            f.close()
-            ClientConfigV1Alpha1.delete("testclient")
-            _get_path_mock.assert_called_once_with("testclient")
-            assert os.path.exists(f.name) is False
+    with (
+        tempfile.NamedTemporaryFile(mode="w", delete=False) as f,
+        patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as _get_path_mock,
+    ):
+        f.write("")
+        f.close()
+        ClientConfigV1Alpha1.delete("testclient")
+        _get_path_mock.assert_called_once_with("testclient")
+        assert os.path.exists(f.name) is False
 
 
 def test_client_config_delete_does_not_exist_raises():
@@ -417,7 +433,7 @@ def test_client_config_delete_does_not_exist_raises():
         _get_path_mock.assert_called_once_with("xyz")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_create_lease_passes_exporter_name():
     config = ClientConfigV1Alpha1(
         alias="testclient",
@@ -449,10 +465,11 @@ async def test_create_lease_passes_exporter_name():
         tags=None,
         allow_disabled=False,
         context=None,
+        shared_with=None,
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_lease_calls_get_lease():
     config = ClientConfigV1Alpha1(
         alias="testclient",
@@ -474,7 +491,7 @@ async def test_get_lease_calls_get_lease():
     mock_service.GetLease.assert_awaited_once_with(name="01a0153c-277c-7992-9476-8ff0f68ba6f8")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_leases_paginates():
     from jumpstarter.client.grpc import Lease, LeaseList
 
@@ -523,7 +540,7 @@ async def test_list_leases_paginates():
     assert calls[2].kwargs["page_token"] == "token2"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_leases_single_page():
     from jumpstarter.client.grpc import Lease, LeaseList
 
@@ -556,7 +573,7 @@ async def test_list_leases_single_page():
     mock_service.ListLeases.assert_awaited_once()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_exporters_paginates():
     from jumpstarter.client.grpc import Exporter, ExporterList
 
@@ -599,7 +616,7 @@ async def test_list_exporters_paginates():
     assert calls[1].kwargs["page_token"] == "tok1"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_exporters_with_leases_propagates_page_size():
     from jumpstarter.client.grpc import Exporter, ExporterList, Lease, LeaseList
 
@@ -647,7 +664,7 @@ def test_client_config_list_redacts_credentials_by_default():
         refresh_token="secret-refresh-token",
         drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*"], unsafe=False),
     )
-    configs = ClientConfigListV1Alpha1(current_config="testclient", items=[config])
+    configs = ClientConfigListV1Alpha1(currentConfig="testclient", items=[config])
 
     dumped = configs.model_dump(mode="json", by_alias=True)
     assert "token" not in dumped["items"][0]
@@ -662,7 +679,7 @@ def test_client_config_list_redacts_credentials_by_default():
     assert dumped["items"][0]["refresh_token"] == "secret-refresh-token"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_exporters_with_leases_preserves_exporter_fields():
     from jumpstarter.client.grpc import Exporter, ExporterList, Lease, LeaseList
     from jumpstarter.common.enums import ExporterStatus
@@ -694,7 +711,7 @@ async def test_list_exporters_with_leases_preserves_exporter_fields():
         duration=timedelta(hours=1),
         client="c",
         exporter="exporter-a",
-        effective_begin_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        effective_begin_time=datetime(2026, 1, 1, tzinfo=UTC),
         conditions=[condition],
     )
 

@@ -10,16 +10,9 @@ use jumpstarter_exec::protocol::{ClientMessage, ServerMessage};
 use jumpstarter_exec::server;
 use tempfile::TempDir;
 
-/// Find the compiled test binary in the target directory.
+/// The `jumpstarter-exec` binary Cargo built for this test run.
 fn binary_path() -> PathBuf {
-    let mut path = std::env::current_exe().unwrap();
-    // test binary lives in target/debug/deps/; the main binary is in target/debug/
-    path.pop();
-    if path.ends_with("deps") {
-        path.pop();
-    }
-    path.push("jumpstarter-exec");
-    path
+    PathBuf::from(env!("CARGO_BIN_EXE_jumpstarter-exec"))
 }
 
 /// Wait (up to 10s) for the server's listening socket to appear.

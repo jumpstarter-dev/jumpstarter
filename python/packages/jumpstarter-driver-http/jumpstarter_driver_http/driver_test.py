@@ -1,4 +1,5 @@
 import logging
+import socket
 
 import aiohttp
 import pytest
@@ -13,8 +14,13 @@ def anyio_backend():
 
 
 @pytest.fixture
-def http(tmp_path, unused_tcp_port):
-    with serve(HttpServer(root_dir=str(tmp_path), port=unused_tcp_port)) as client:
+def free_ipv4_tcp_port(free_tcp_port_factory):
+    return free_tcp_port_factory(socket.AF_INET)
+
+
+@pytest.fixture
+def http(tmp_path, free_ipv4_tcp_port):
+    with serve(HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)) as client:
         client.start()
         try:
             yield client
@@ -34,11 +40,10 @@ async def test_http_server(http, tmp_path):
     files = list(http.storage.list("/"))
     assert filename in files
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(uploaded_url) as response:
-            assert response.status == 200
-            retrieved_content = await response.read()
-            assert retrieved_content == test_content
+    async with aiohttp.ClientSession() as session, session.get(uploaded_url) as response:
+        assert response.status == 200
+        retrieved_content = await response.read()
+        assert retrieved_content == test_content
 
     http.storage.delete(filename)
 
@@ -52,6 +57,16 @@ def test_http_server_host_config(tmp_path):
     assert server.get_host() == custom_host
 
 
+def test_http_server_advertised_host(tmp_path):
+    server = HttpServer(root_dir=str(tmp_path), host="127.0.0.1", advertised_host="192.168.100.1")
+    assert server.get_host() == "192.168.100.1"
+    assert server.get_url().startswith("http://192.168.100.1:")
+    # without advertised_host, get_host/get_url return the bind host
+    server = HttpServer(root_dir=str(tmp_path), host="127.0.0.1")
+    assert server.get_host() == "127.0.0.1"
+    assert server.get_url().startswith("http://127.0.0.1:")
+
+
 def test_http_server_root_directory_creation(tmp_path):
     new_dir = tmp_path / "new_http_root"
     _ = HttpServer(root_dir=str(new_dir))
@@ -59,29 +74,28 @@ def test_http_server_root_directory_creation(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_opendal_tracking_on_http_server_close(tmp_path, unused_tcp_port, caplog):
+async def test_opendal_tracking_on_http_server_close(tmp_path, free_ipv4_tcp_port, caplog):
     """Test that OpenDAL driver tracks created files and reports them on close."""
     filename = "tracked_test.txt"
     test_content = b"test content for tracking"
 
     # Set up logging to capture debug messages
-    with caplog.at_level(logging.DEBUG):
-        with serve(HttpServer(root_dir=str(tmp_path), port=unused_tcp_port)) as client:
-            client.start()
+    with caplog.at_level(logging.DEBUG), serve(HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)) as client:
+        client.start()
 
-            # Write a file through the HTTP server (which uses OpenDAL internally)
-            (tmp_path / "src").write_bytes(test_content)
-            client.put_file(filename, tmp_path / "src")
+        # Write a file through the HTTP server (which uses OpenDAL internally)
+        (tmp_path / "src").write_bytes(test_content)
+        client.put_file(filename, tmp_path / "src")
 
-            # Verify the file was written
-            files = list(client.storage.list("/"))
-            assert filename in files
+        # Verify the file was written
+        files = list(client.storage.list("/"))
+        assert filename in files
 
-            # Get the tracking info before close
-            created_resources = client.storage.get_created_resources()
-            assert filename in created_resources
+        # Get the tracking info before close
+        created_resources = client.storage.get_created_resources()
+        assert filename in created_resources
 
-            client.stop()
+        client.stop()
         # When exiting the context manager, HttpServer.close() is called,
         # which calls super().close(), which calls OpenDAL.close()
 
@@ -90,9 +104,9 @@ async def test_opendal_tracking_on_http_server_close(tmp_path, unused_tcp_port, 
     # but we've verified the tracking works by checking get_created_resources() above
 
 
-def test_opendal_tracking_methods(tmp_path, unused_tcp_port):
+def test_opendal_tracking_methods(tmp_path, free_ipv4_tcp_port):
     """Test the OpenDAL tracking export methods directly."""
-    with serve(HttpServer(root_dir=str(tmp_path), port=unused_tcp_port)) as client:
+    with serve(HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)) as client:
         client.start()
 
         # Initially, no resources should be tracked
@@ -113,32 +127,30 @@ def test_opendal_tracking_methods(tmp_path, unused_tcp_port):
 
 
 @pytest.mark.anyio
-async def test_http_server_close_releases_port(tmp_path, unused_tcp_port):
+async def test_http_server_close_releases_port(tmp_path, free_ipv4_tcp_port):
     """Test that closing the HTTP server properly releases the port for reuse."""
     test_file = tmp_path / "test.txt"
     test_file.write_text("hello")
 
     # First server session
-    with serve(HttpServer(root_dir=str(tmp_path), port=unused_tcp_port)) as client:
+    with serve(HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)) as client:
         client.start()
         url = client.get_url()
-        assert str(unused_tcp_port) in url
+        assert str(free_ipv4_tcp_port) in url
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{url}/test.txt") as response:
-                assert response.status == 200
+        async with aiohttp.ClientSession() as session, session.get(f"{url}/test.txt") as response:
+            assert response.status == 200
 
         client.stop()
 
     # Second server session on the same port should not fail with "address already in use"
-    with serve(HttpServer(root_dir=str(tmp_path), port=unused_tcp_port)) as client:
+    with serve(HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)) as client:
         client.start()
         url = client.get_url()
-        assert str(unused_tcp_port) in url
+        assert str(free_ipv4_tcp_port) in url
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{url}/test.txt") as response:
-                assert response.status == 200
+        async with aiohttp.ClientSession() as session, session.get(f"{url}/test.txt") as response:
+            assert response.status == 200
 
         client.stop()
 
@@ -157,31 +169,30 @@ async def test_http_server_port_zero(tmp_path):
         url = client.get_url()
         assert str(port) in url
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{url}/test.txt") as response:
-                assert response.status == 200
+        async with aiohttp.ClientSession() as session, session.get(f"{url}/test.txt") as response:
+            assert response.status == 200
 
         client.stop()
 
 
 @pytest.mark.anyio
-async def test_driver_start_stop_direct(tmp_path, unused_tcp_port):
+async def test_driver_start_stop_direct(tmp_path, free_ipv4_tcp_port):
     """Directly exercise driver start/stop to ensure coverage of server lifecycle."""
-    server = HttpServer(root_dir=str(tmp_path), port=unused_tcp_port)
+    server = HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)
     # start the server
     await server.start()
     assert server.runner is not None
-    assert server._bound_port == unused_tcp_port
+    assert server._bound_port == free_ipv4_tcp_port
 
     # get_url / get_port / get_host should reflect the running server
-    assert str(unused_tcp_port) in server.get_url()
-    assert server.get_port() == unused_tcp_port
+    assert str(free_ipv4_tcp_port) in server.get_url()
+    assert server.get_port() == free_ipv4_tcp_port
 
     # Verify server is actually listening
     async with aiohttp.ClientSession() as session:
         test_file = tmp_path / "index.html"
         test_file.write_text("ok")
-        async with session.get(f"http://{server.host}:{unused_tcp_port}/index.html") as resp:
+        async with session.get(f"http://{server.host}:{free_ipv4_tcp_port}/index.html") as resp:
             assert resp.status == 200
 
     # stop resets runner and bound_port
@@ -191,9 +202,9 @@ async def test_driver_start_stop_direct(tmp_path, unused_tcp_port):
 
 
 @pytest.mark.anyio
-async def test_driver_start_cleans_stale_runner(tmp_path, unused_tcp_port):
+async def test_driver_start_cleans_stale_runner(tmp_path, free_ipv4_tcp_port):
     """Starting when a stale runner exists should clean it up and start fresh."""
-    server = HttpServer(root_dir=str(tmp_path), port=unused_tcp_port)
+    server = HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)
     await server.start()
     first_runner = server.runner
 
@@ -201,7 +212,7 @@ async def test_driver_start_cleans_stale_runner(tmp_path, unused_tcp_port):
     # This exercises the stale-runner cleanup path (lines 64-71).
     await server.start()
     assert server.runner is not first_runner
-    assert server._bound_port == unused_tcp_port
+    assert server._bound_port == free_ipv4_tcp_port
 
     await server.stop()
 
@@ -221,9 +232,9 @@ async def test_driver_port_zero_assigns_real_port(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_driver_close_with_running_loop(tmp_path, unused_tcp_port):
+async def test_driver_close_with_running_loop(tmp_path, free_ipv4_tcp_port):
     """close() from the event loop thread must release the port."""
-    server = HttpServer(root_dir=str(tmp_path), host="127.0.0.1", port=unused_tcp_port)
+    server = HttpServer(root_dir=str(tmp_path), host="127.0.0.1", port=free_ipv4_tcp_port)
     await server.start()
     assert server.runner is not None
 
@@ -232,18 +243,17 @@ async def test_driver_close_with_running_loop(tmp_path, unused_tcp_port):
     assert server.runner is None
     assert server._bound_port == 0
 
-    import socket
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        s.bind((server.host, unused_tcp_port))
+        s.bind((server.host, free_ipv4_tcp_port))
     finally:
         s.close()
 
 
 @pytest.mark.anyio
-async def test_async_cleanup_direct(tmp_path, unused_tcp_port):
+async def test_async_cleanup_direct(tmp_path, free_ipv4_tcp_port):
     """Directly test _async_cleanup for coverage."""
-    server = HttpServer(root_dir=str(tmp_path), port=unused_tcp_port)
+    server = HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)
     await server.start()
     assert server.runner is not None
 
@@ -254,11 +264,11 @@ async def test_async_cleanup_direct(tmp_path, unused_tcp_port):
 
 
 @pytest.mark.anyio
-async def test_async_cleanup_error_path(tmp_path, unused_tcp_port):
+async def test_async_cleanup_error_path(tmp_path, free_ipv4_tcp_port):
     """Test that _async_cleanup re-raises exceptions."""
     from unittest.mock import AsyncMock, MagicMock
 
-    server = HttpServer(root_dir=str(tmp_path), port=unused_tcp_port)
+    server = HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)
     await server.start()
 
     # Replace the runner with a mock so we can make cleanup() raise
@@ -272,15 +282,16 @@ async def test_async_cleanup_error_path(tmp_path, unused_tcp_port):
         await server._async_cleanup()
 
     # Clean up the real runner so the port is released
+    assert real_runner is not None
     await real_runner.cleanup()
 
 
 @pytest.mark.anyio
-async def test_close_cleanup_failure_logs_warning(tmp_path, unused_tcp_port, caplog):
+async def test_close_cleanup_failure_logs_warning(tmp_path, free_ipv4_tcp_port, caplog):
     """Test that close() logs a warning when cleanup fails."""
     from unittest.mock import AsyncMock, MagicMock
 
-    server = HttpServer(root_dir=str(tmp_path), port=unused_tcp_port)
+    server = HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)
     await server.start()
 
     # Replace the runner with a mock so we can make cleanup() raise
@@ -304,6 +315,7 @@ async def test_close_cleanup_failure_logs_warning(tmp_path, unused_tcp_port, cap
     assert server._bound_port == 0
 
     # Clean up the real runner so the port is released
+    assert real_runner is not None
     await real_runner.cleanup()
 
 

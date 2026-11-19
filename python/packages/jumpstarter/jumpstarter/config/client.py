@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: TID251
 import errno
 import os
 import tempfile
@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
-from typing import Annotated, ClassVar, Literal, Optional, Self
+from typing import Annotated, ClassVar, Literal, Self
 
 import grpc
 import yaml
@@ -155,11 +155,10 @@ class ClientConfigV1Alpha1(BaseSettings):
         lease_name: str | None = None,
         duration: timedelta = timedelta(minutes=30),
     ):
-        with start_blocking_portal() as portal:
-            with portal.wrap_async_context_manager(
-                self.lease_async(selector, exporter_name, lease_name, duration, portal)
-            ) as lease:
-                yield lease
+        with start_blocking_portal() as portal, portal.wrap_async_context_manager(
+            self.lease_async(selector, exporter_name, lease_name, duration, portal)
+        ) as lease:
+            yield lease
 
     @_blocking_compat
     @_handle_connection_error
@@ -168,7 +167,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         name: str,
         show_hidden_labels: bool = False,
     ):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
         return await svc.GetExporter(name=name, show_hidden_labels=show_hidden_labels)
 
     async def _collect_all_leases(self, svc, page_size=100, only_active=True, filter=None, tag_filter=None):
@@ -204,7 +203,7 @@ class ClientConfigV1Alpha1(BaseSettings):
     ):
         from jumpstarter.client.grpc import ExporterList
 
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
         all_exporters = []
         page_token = None
         while True:
@@ -230,11 +229,10 @@ class ClientConfigV1Alpha1(BaseSettings):
         leases_response = await self._collect_all_leases(svc, page_size=page_size)
         lease_map = {}
         for lease in leases_response.leases:
-            if lease.exporter and lease.effective_begin_time:
-                if lease.conditions:
-                    latest_condition = lease.conditions[-1]
-                    if latest_condition.type == "Ready" and latest_condition.status == "True":
-                        lease_map[lease.exporter] = lease
+            if lease.exporter and lease.effective_begin_time and lease.conditions:
+                latest_condition = lease.conditions[-1]
+                if latest_condition.type == "Ready" and latest_condition.status == "True":
+                    lease_map[lease.exporter] = lease
 
         result.include_leases = True
         result.exporters = [
@@ -255,8 +253,9 @@ class ClientConfigV1Alpha1(BaseSettings):
         tags: dict[str, str] | None = None,
         allow_disabled: bool = False,
         context: dict[str, str] | None = None,
+        shared_with: list[str] | None = None,  # ty: ignore[invalid-type-form]
     ):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
         return await svc.CreateLease(
             selector=selector,
             exporter_name=exporter_name,
@@ -266,6 +265,7 @@ class ClientConfigV1Alpha1(BaseSettings):
             tags=tags,
             allow_disabled=allow_disabled,
             context=context,
+            shared_with=shared_with,
         )
 
     @_blocking_compat
@@ -274,7 +274,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         self,
         name: str,
     ):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
         await svc.DeleteLease(
             name=name,
         )
@@ -285,7 +285,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         self,
         name: str,
     ):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
         return await svc.GetLease(
             name=name,
         )
@@ -299,7 +299,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         page_size: int = 100,
         tag_filter: str | None = None,
     ):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
         return await self._collect_all_leases(
             svc, page_size=page_size, only_active=only_active, filter=filter, tag_filter=tag_filter,
         )
@@ -312,14 +312,23 @@ class ClientConfigV1Alpha1(BaseSettings):
         duration: timedelta | None = None,
         begin_time: datetime | None = None,
         client: str | None = None,
+        add_shared_with: list[str] | None = None,  # ty: ignore[invalid-type-form]
+        remove_shared_with: list[str] | None = None,  # ty: ignore[invalid-type-form]
     ):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        return await svc.UpdateLease(name=name, duration=duration, begin_time=begin_time, client=client)
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
+        return await svc.UpdateLease(
+            name=name,
+            duration=duration,
+            begin_time=begin_time,
+            client=client,
+            add_shared_with=add_shared_with,
+            remove_shared_with=remove_shared_with,
+        )
 
     @_blocking_compat
     @_handle_connection_error
     async def rotate_token(self) -> str:
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
         return await svc.RotateToken()
 
     @asynccontextmanager
@@ -360,7 +369,7 @@ class ClientConfigV1Alpha1(BaseSettings):
             )
             async with Lease(
                 channel=await self.channel(),
-                namespace=self.metadata.namespace,
+                namespace=self.metadata.namespace or "",
                 name=lease_name,
                 selector=selector,
                 requested_exporter_name=exporter_name,
@@ -370,7 +379,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 unsafe=self.drivers.unsafe,
                 release=release_lease,
                 tls_config=self.tls,
-                grpc_options=self.grpcOptions,
+                grpc_options=self.grpcOptions or {},
                 client_name=self.metadata.name,
                 allow_disabled=allow_disabled,
                 acquisition_timeout=acquisition_timeout_seconds,
@@ -388,7 +397,7 @@ class ClientConfigV1Alpha1(BaseSettings):
     def from_file(cls, path: os.PathLike):
         with open(path) as f:
             v = cls.model_validate(yaml.safe_load(f))
-            v.alias = os.path.basename(path).split(".")[0]
+            v.alias = Path(path).stem
             v.path = Path(path)
             return v
 
@@ -413,6 +422,10 @@ class ClientConfigV1Alpha1(BaseSettings):
         """Get the regular path of a client config given an alias."""
         return cls.CLIENT_CONFIGS_PATH / f"{alias}.yaml"
 
+    def is_alias_path(self) -> bool:
+        """Whether this config's path resolves to its registered alias path."""
+        return self.path is not None and self.path.resolve() == self._get_path(self.alias).resolve()
+
     @classmethod
     def load(cls, alias: str) -> Self:
         """Load a client config by alias."""
@@ -422,8 +435,10 @@ class ClientConfigV1Alpha1(BaseSettings):
         return cls.from_file(path)
 
     @classmethod
-    def save(cls, config: Self, path: Optional[os.PathLike] = None) -> Path:
-        """Saves a client config as YAML."""
+    def save(cls, config: Self, path: str | os.PathLike | None = None) -> Path:
+        """Save to an explicit path, the loaded path, or the alias path."""
+        if path is None:
+            path = config.path
         # Ensure the clients dir exists
         if path is None:
             cls.ensure_exists()
@@ -489,7 +504,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         if cls.CLIENT_CONFIGS_PATH.exists() is False:
             # Return an empty list if the dir does not exist
             return ClientConfigListV1Alpha1(
-                current_config=None,
+                currentConfig=None,
                 items=[],
             )
 
@@ -507,7 +522,7 @@ class ClientConfigV1Alpha1(BaseSettings):
             current_config = current_client.alias if current_client is not None else None
 
         return ClientConfigListV1Alpha1(
-            current_config=current_config,
+            currentConfig=current_config,
             items=list(map(make_config, files)),
         )
 
@@ -523,7 +538,7 @@ class ClientConfigV1Alpha1(BaseSettings):
 
 class ClientConfigListV1Alpha1(BaseModel):
     api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
-    current_config: Optional[str] = Field(alias="currentConfig")
+    current_config: str | None = Field(alias="currentConfig")
     items: list[ClientConfigV1Alpha1]
     kind: Literal["ClientConfigList"] = Field(default="ClientConfigList")
 

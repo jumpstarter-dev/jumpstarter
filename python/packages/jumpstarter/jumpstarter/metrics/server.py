@@ -60,7 +60,7 @@ def start_metrics_server(
     class Handler(BaseHTTPRequestHandler):
         timeout = _METRICS_REQUEST_TIMEOUT_S
 
-        def do_GET(self):  # noqa: N802
+        def do_GET(self):
             if self.path.split("?", 1)[0] != "/metrics":
                 self.send_error(404)
                 return
@@ -71,7 +71,7 @@ def start_metrics_server(
             self.end_headers()
             self.wfile.write(body)
 
-        def log_message(self, format: str, *args) -> None:  # noqa: A002
+        def log_message(self, format: str, *args) -> None:
             return
 
     host, port = _parse_bind_addr(addr)

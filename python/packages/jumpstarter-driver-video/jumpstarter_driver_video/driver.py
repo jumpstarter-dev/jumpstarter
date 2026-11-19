@@ -75,7 +75,7 @@ class HttpVideo(VideoInterface, Driver):
                 part = await reader.next()
                 if part is None:
                     raise RuntimeError(f"no frame received from {self.url}")
-                return await part.read()  # type: ignore[union-attr]
+                return await part.read()  # ty: ignore[unresolved-attribute]
 
     @export
     async def snapshot(self) -> str:
@@ -93,13 +93,13 @@ class HttpVideo(VideoInterface, Driver):
         """
         try:
             data = await self._fetch_frame()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.debug("state: source unreachable: %s", e)
             return VideoState(online=False)
         try:
             with Image.open(io.BytesIO(data)) as img:
                 width, height = img.size
-        except Exception:
+        except Exception:  # pragma: no cover  # noqa: BLE001
             return VideoState(online=True)
         return VideoState(online=True, width=width, height=height)
 

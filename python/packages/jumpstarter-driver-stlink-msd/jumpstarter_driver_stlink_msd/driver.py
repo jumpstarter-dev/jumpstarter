@@ -100,10 +100,9 @@ class StlinkMsdFlasher(FlasherInterface, Driver):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = os.path.join(tmpdir, dest_name)
 
-            async with await FileWriteStream.from_path(tmp_path) as stream:
-                async with self.resource(source) as res:
-                    async for chunk in res:
-                        await stream.send(chunk)
+            async with await FileWriteStream.from_path(tmp_path) as stream, self.resource(source) as res:
+                async for chunk in res:
+                    await stream.send(chunk)
 
             dest_path = os.path.join(mount, dest_name)
             self.logger.info("Copying firmware to %s", dest_path)

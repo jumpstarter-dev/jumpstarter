@@ -5,6 +5,7 @@ IMG ?= quay.io/jumpstarter-dev/jumpstarter-controller:latest
 DOCKER_REPO = $(shell echo $(IMG) | cut -d: -f1)
 DOCKER_TAG  = $(shell echo $(IMG) | cut -d: -f2)
 EXPORTER_SET_CONTROLLER_IMG ?= quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest
+TELEMETRY_IMG ?= quay.io/jumpstarter-dev/jumpstarter-telemetry:latest
 QEMU_RUNTIME_IMG ?= quay.io/jumpstarter-dev/virtual/qemu-runtime:latest
 EXPORTER_IMG ?= quay.io/jumpstarter-dev/jumpstarter:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
@@ -30,11 +31,12 @@ endif
 
 GOARCH ?= $(shell go env GOARCH)
 
-# CONTAINER_TOOL defines the container tool to be used for building images.
-# Be aware that the target commands are only tested with Docker which is
-# scaffolded by default. However, you might want to replace it to use other
-# tools. (i.e. podman)
-CONTAINER_TOOL ?= podman
+# CONTAINER_TOOL builds the images: podman if it is installed, otherwise docker.
+# hack/deploy_with_operator.sh loads the images from the same tool.
+ifndef CONTAINER_TOOL
+CONTAINER_TOOL := $(if $(shell command -v podman 2>/dev/null),podman,docker)
+endif
+export CONTAINER_TOOL
 
 # Cluster type: kind (default) or k3s
 CLUSTER_TYPE ?= kind
@@ -75,9 +77,6 @@ manifests: controller-gen ## Generate WebhookConfiguration and CustomResourceDef
 	# breaks role_binding.yaml (which references manager-role).
 	$(CONTROLLER_GEN) 	crd webhook paths="./api/..." paths="./internal/..." \
 						output:crd:artifacts:config=deploy/operator/config/crd/bases/
-
-	# Regenerate operator install.yaml to include updated CRDs
-	$(MAKE) -C deploy/operator build-installer
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -123,6 +122,7 @@ build-operator-ci:
 build: manifests generate fmt vet ## Build manager binary.
 	go build -ldflags "$(LDFLAGS)" -o bin/manager cmd/main.go
 	go build -ldflags "$(LDFLAGS)" -o bin/router ./cmd/router
+	go build -ldflags "$(LDFLAGS)" -o bin/telemetry ./cmd/telemetry
 	go build -ldflags "$(LDFLAGS)" -o bin/exporter-set-controller cmd/exporter-set-controller/main.go
 
 .PHONY: run
@@ -132,6 +132,10 @@ run: manifests generate fmt vet ## Run a controller from your host.
 .PHONY: run-router
 run-router: manifests generate fmt vet ## Run a router from your host.
 	go run ./cmd/router
+
+.PHONY: run-telemetry
+run-telemetry: manifests generate fmt vet ## Run the telemetry service from your host.
+	go run ./cmd/telemetry
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -146,12 +150,20 @@ docker-build: ## Build docker image with the manager.
 
 .PHONY: docker-build-ci
 docker-build-ci: ## Build docker images from pre-compiled host binaries (fast CI path).
-	rm -rf bin/ci-stage && mkdir -p bin/ci-stage/controller bin/ci-stage/esc
+	rm -rf bin/ci-stage && mkdir -p bin/ci-stage/controller bin/ci-stage/esc bin/ci-stage/telemetry
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/controller/manager cmd/main.go
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/controller/router ./cmd/router
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/controller/telemetry ./cmd/telemetry
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/esc/exporter-set-controller cmd/exporter-set-controller/main.go
 	$(CONTAINER_TOOL) build --build-arg BIN=manager -t $(IMG) -f Containerfile.prebuilt bin/ci-stage/controller
 	$(CONTAINER_TOOL) build --build-arg BIN=exporter-set-controller -t $(EXPORTER_SET_CONTROLLER_IMG) -f Containerfile.prebuilt bin/ci-stage/esc
+	$(MAKE) docker-build-telemetry-ci
+
+.PHONY: docker-build-telemetry-ci
+docker-build-telemetry-ci: ## CI-optimized: host-compiled telemetry binary, no multi-stage build.
+	rm -rf bin/ci-stage/telemetry && mkdir -p bin/ci-stage/telemetry
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/telemetry/telemetry ./cmd/telemetry
+	$(CONTAINER_TOOL) build -t $(TELEMETRY_IMG) -f Containerfile.telemetry.prebuilt bin/ci-stage/telemetry
 
 .PHONY: docker-build-exporter-set-controller-ci
 docker-build-exporter-set-controller-ci: ## CI-optimized: host-compiled ESC binary, no multi-stage build.
@@ -201,31 +213,14 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 			-f Containerfile .
 	- $(CONTAINER_TOOL) buildx rm jumpstarter-controller-builder
 
-.PHONY: build-installer
-build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
-	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default > dist/install.yaml
-
 ##@ Deployment
-
-ifndef ignore-not-found
-  ignore-not-found = false
-endif
-
-.PHONY: install
-install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
-
-.PHONY: uninstall
-uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
 deploy: cluster grpcurl ## Deploy controller using the operator. Set SKIP_BUILD=1 to skip image builds. Set CLUSTER_TYPE=k3s for k3s.
 ifeq ($(SKIP_BUILD),)
 	$(MAKE) docker-build
 	$(MAKE) docker-build-exporter-set-controller
+	$(MAKE) docker-build-telemetry-ci
 	$(MAKE) build-operator
 endif
 	./hack/deploy_with_operator.sh
@@ -236,7 +231,7 @@ deploy-ci: cluster grpcurl $(if $(SKIP_BUILD),,docker-build-ci build-operator-ci
 
 
 .PHONY: deploy-operator
-deploy-operator: docker-build docker-build-exporter-set-controller build-operator cluster grpcurl ## Deploy only the operator (without Jumpstarter CR)
+deploy-operator: docker-build docker-build-exporter-set-controller docker-build-telemetry-ci build-operator cluster grpcurl ## Deploy only the operator (without Jumpstarter CR)
 	NETWORKING_MODE=ingress DEPLOY_JUMPSTARTER=false ./hack/deploy_with_operator.sh
 
 .PHONY: deploy-operator-ci
@@ -276,10 +271,6 @@ undeploy-exporterset-sample: ## Remove sample VirtualTargetClass and ExporterSet
 	$(KUBECTL) delete --ignore-not-found=true -f hack/sample-x86_64.yaml
 	$(KUBECTL) delete --ignore-not-found=true -f hack/sample-x86_64-kind.yaml
 
-.PHONY: undeploy
-undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
-
 ##@ Dependencies
 
 ## Location to install dependencies to
@@ -298,12 +289,12 @@ GRPCURL = $(LOCALBIN)/grpcurl
 
 ## Tool Versions
 # renovate: datasource=github-releases depName=kubernetes-sigs/kustomize extractVersion=^kustomize/(?<version>v\d+\.\d+\.\d+)$
-KUSTOMIZE_VERSION ?= v5.8.1
+KUSTOMIZE_VERSION ?= v5.8.2
 # renovate: datasource=github-releases depName=kubernetes-sigs/controller-tools extractVersion=^(?<version>v\d+\.\d+\.\d+)$
-CONTROLLER_TOOLS_VERSION ?= v0.21.0
+CONTROLLER_TOOLS_VERSION ?= v0.23.0
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 # renovate: datasource=github-releases depName=golangci/golangci-lint
-GOLANGCI_LINT_VERSION ?= v2.13.2
+GOLANGCI_LINT_VERSION ?= v2.15.0
 # renovate: datasource=github-releases depName=kubernetes-sigs/kind
 KIND_VERSION ?= v0.33.0
 # renovate: datasource=github-releases depName=fullstorydev/grpcurl
@@ -320,7 +311,7 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
 
 # renovate: datasource=docker depName=docker.io/bufbuild/buf
-BUF_VERSION ?= 1.71.0
+BUF_VERSION ?= 1.73.0
 
 .PHONY: protobuf-gen
 protobuf-gen:

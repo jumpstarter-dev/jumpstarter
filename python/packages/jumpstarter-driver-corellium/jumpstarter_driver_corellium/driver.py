@@ -6,7 +6,6 @@ import os
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from typing import Dict, Optional
 
 from jumpstarter_driver_network.driver import WebsocketNetwork
 from jumpstarter_driver_power.driver import PowerReading, VirtualPowerInterface
@@ -64,7 +63,8 @@ class Corellium(Driver):
         self._api = ApiClient(api_host, api_token)
 
         self.children["power"] = CorelliumPower(parent=self)
-        self.children["serial"] = CorelliumConsole(parent=self, url="")
+        # The power child enables the console's Ctrl-] x3 power-cycle hotkey.
+        self.children["serial"] = CorelliumConsole(parent=self, url="", children={"power": self.children["power"]})
 
     def get_env_var(self, name: str) -> str:
         """
@@ -101,16 +101,16 @@ class CorelliumPower(VirtualPowerInterface, Driver):
 
     parent: Corellium
 
-    def get_timeout_opts(self) -> Dict[str, int]:
+    def get_timeout_opts(self) -> dict[str, int]:
         """
         Return config/opts to be used when waiting for Corellium's API.
         """
         return {
-            "retries": int(os.environ.get("CORELLIUM_API_RETRIES", 12)),
-            "interval": os.environ.get("CORELLIUM_API_INTERVAL", 5),
+            "retries": int(os.environ.get("CORELLIUM_API_RETRIES", "12")),
+            "interval": int(os.environ.get("CORELLIUM_API_INTERVAL", "5")),
         }
 
-    def wait_instance(self, current: Instance, desired: Optional[Instance]):
+    def wait_instance(self, current: Instance, desired: Instance | None):
         """
         Wait for `current` instance to reach the same state as the `desired` instance.
 
@@ -233,7 +233,7 @@ class CorelliumConsole(WebsocketNetwork):
         if console_id is None:
             raise ValueError('Console ID not found for "{self.patent.console_name}"')
         console_url = self.parent.api.get_instance_console_url(instance, console_id)
-
+        assert console_url is not None
         return console_url
 
     @url.setter

@@ -5,7 +5,7 @@ description = "Exporter HTTP service driver"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [{ name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "anyio>=4.10.0",
     "jumpstarter",
@@ -27,8 +27,6 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 
 [tool.pytest.ini_options]
 addopts = "--cov=jumpstarter_driver_http --cov-report=html --cov-report=xml"
-asyncio_mode = "strict"
-asyncio_default_fixture_loop_scope = "function"
 testpaths = ["jumpstarter_driver_http"]
 
 [build-system]
@@ -38,9 +36,7 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "pytest-cov>=6.0.0",
-    "pytest>=8.3.3",
-    "pytest-asyncio>=0.0.0",
-    "pytest-asyncio>=0.24.0",
+    "pytest>=8.4",
 ]
 
 [tool.hatch.build.hooks.pin_jumpstarter]

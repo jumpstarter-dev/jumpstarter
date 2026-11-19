@@ -52,6 +52,7 @@ from jumpstarter.streams.common import create_memory_stream
 from jumpstarter.streams.encoding import Compression, compress_stream
 from jumpstarter.streams.metadata import MetadataStream
 from jumpstarter.streams.progress import ProgressStream
+from jumpstarter.streams.upload import create_upload_stream
 
 # Ordered most-specific first: ConnectionError is an OSError subclass.
 _DRIVER_CALL_ERRORS: tuple[tuple[type[BaseException], ErrorType, StatusCode], ...] = (
@@ -72,6 +73,16 @@ SUPPORTED_CONTENT_ENCODINGS = (
         Compression.ZSTD,
     }
 )
+
+
+class _DriverLoggerNameFilter(logging.Filter):
+    def __init__(self, display_name: str):
+        super().__init__()
+        self.display_name = display_name
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.name = self.display_name
+        return True
 
 
 @dataclass(kw_only=True)
@@ -103,23 +114,81 @@ class Driver(
     methods_description: dict[str, str] = field(default_factory=dict)
     """Map of method names to their help descriptions (configurable via server config)"""
 
-    log_level: str = "INFO"
+    log_level: str | None = None
     logger: logging.Logger = field(init=False)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
-            super().__post_init__()
+            super().__post_init__()  # ty: ignore[unresolved-attribute]
 
-        self.logger = get_logger(f"driver.{self.__class__.__name__}", LogSource.DRIVER)
-        self.logger.setLevel(self.log_level)
+        display_name = f"driver.{self.__class__.__name__}"
+        # ponytail: accept 16-bit collisions at 5-10 active same-class drivers
+        # (~0.015-0.069%); widen the suffix if stronger isolation is needed.
+        # The name filter below hides the suffix in emitted records.
+        self.logger = get_logger(f"{display_name}.{str(self.uuid)[-4:]}", LogSource.DRIVER)
+        self._logger_filter = _DriverLoggerNameFilter(display_name)
+        self.logger.addFilter(self._logger_filter)
+        self.logger.setLevel(self.log_level if self.log_level is not None else "INFO")
+
+    def propagate_log_level(self, inherited: str = "INFO") -> None:
+        """Set this driver's log level and recurse into all children.
+
+        If a driver has an explicit ``log_level``, that value wins; otherwise
+        it inherits the level from its parent.  Called once from
+        ``Session.__init__`` after the full driver tree is constructed.
+
+        Logger names do not mirror the driver tree, so ``NOTSET`` would not
+        inherit from the parent driver. INFO preserves the existing default
+        when no driver in the ancestry specifies a level.
+        """
+        level = self.log_level if self.log_level is not None else inherited
+        self.logger.setLevel(level)
+        for child in self.children.values():
+            child.propagate_log_level(level)
 
     def close(self):
         for child in self.children.values():
             child.close()
+        # Remove the per-instance name filter added in __post_init__ so it does
+        # not leak on the (global) logger when the driver is torn down.
+        # Python retains the logger itself for the process lifetime.
+        self.logger.removeFilter(self._logger_filter)
+
+    def shutdown(self):
+        """Session-end teardown hook, run by the exporter before close().
+
+        Defaults to a no-op that just recurses to children, so ordinary drivers
+        keep releasing their resources in close() as before. Drivers whose
+        exported close() has non-teardown semantics (e.g. a fan-out console
+        whose close() only kicks clients) override this to perform the real
+        teardown that must not be reachable from a remote client.
+
+        A failing child does not stop its siblings: their close() may no longer
+        release resources, so skipping shutdown() could leak e.g. a serial port.
+        """
+        for name, child in self.children.items():
+            try:
+                child.shutdown()
+            except Exception:
+                self.logger.warning("Error during shutdown of child %s", name, exc_info=True)
 
     def reset(self):
         for child in self.children.values():
             child.reset()
+
+    @asynccontextmanager
+    async def serving(self):
+        """Open for as long as the session serves this driver.
+
+        The session enters it for every driver, children included, before its
+        gRPC server starts, and leaves it after the server stopped and before
+        shutdown(). Background work started here, in a task group, is owned by
+        the session: leaving cancels it and waits for it to finish. Code after
+        the yield runs cancelled, so cleanup that awaits must shield itself.
+        Work that fails ends this context early: the session logs the error and
+        goes on serving the driver's RPCs and every other driver.
+        """
+        yield
 
     @classmethod
     @abstractmethod
@@ -246,7 +315,7 @@ class Driver(
             # Propagate context.abort() from lookup/handlers without recording
             # metrics (avoids client-controlled operation label cardinality).
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             await self._handle_driver_exception(e, op, started, context)
 
     async def StreamingDriverCall(self, request, context):
@@ -289,7 +358,7 @@ class Driver(
             # Propagate context.abort() from lookup/handlers without recording
             # metrics (avoids client-controlled operation label cardinality).
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             await self._handle_driver_exception(e, op, started, context)
 
     @asynccontextmanager
@@ -305,7 +374,7 @@ class Driver(
                     yield stream
 
             case ResourceStreamRequest():
-                remote, resource = create_memory_stream()
+                remote, resource = create_upload_stream()
 
                 resource_uuid = uuid4()
 
@@ -377,7 +446,7 @@ class Driver(
         """Redact query parameters from a URL to avoid leaking credentials in logs."""
         parsed = urlparse(url)
         if parsed.query:
-            return urlunparse(parsed._replace(query="[REDACTED]"))
+            return urlunparse(parsed._replace(query="[REDACTED]"))  # type: ignore[return-value]
         return url
 
     _SENSITIVE_HEADER_PREFIXES = ("authorization", "cookie", "proxy-authorization", "x-amz-", "x-ms-", "x-goog-")
@@ -409,7 +478,9 @@ class Driver(
                 timeout=timeout, allow_redirects=False,
             ) as resp:
                 if resp.status not in (301, 302, 303, 307, 308):
-                    async with AiohttpStreamReaderStream(reader=resp.content) as stream:
+                    async with AiohttpStreamReaderStream(
+                        reader=resp.content, content_length=resp.content_length,
+                    ) as stream:
                         yield ProgressStream(stream=stream, logging=True)
                         return
                 location = resp.headers.get("Location", "")
@@ -434,9 +505,8 @@ class Driver(
                     async with aiohttp.request(
                         method, self._make_url(url), headers=headers, raise_for_status=True,
                         data=remote, timeout=client_timeout,
-                    ) as _resp:
-                        async with stream:
-                            yield ProgressStream(stream=stream, logging=True)
+                    ) as _resp, stream:
+                        yield ProgressStream(stream=stream, logging=True)
                 case _:
                     # INVARIANT: method is always one of GET or PUT, see PresignedRequestResource
                     raise ValueError("unreachable")

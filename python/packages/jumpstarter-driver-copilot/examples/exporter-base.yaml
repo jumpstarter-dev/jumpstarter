@@ -1,0 +1,30 @@
+# Scenario: switch a DUT supply using a bare CoPilot, with no HAT.
+# Wire the DUT through the selected native supply path and set J1 to GPIO control.
+# Commands: j copilot info; j power on; j power state; j power off.
+# state is GPIO0 command readback, not a voltage measurement.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: copilot-base
+# For controller-managed operation, replace these connection settings.
+# Local use: jmp shell --exporter-config /path/to/this-file.yaml
+endpoint: "controller.example.com:8082"
+token: "<token>"
+export:
+  copilot:
+    type: jumpstarter_driver_copilot.driver.CoPilotGPIO
+    config:
+      # Serial printed by the udev path /dev/copilot/by-id/<serial>/gpiochip.
+      serial: YOUR_COPILOT_SERIAL
+      # Acquire only the native supply line; leave unused GPIOs available.
+      managed_lines: [0]
+      active_low: false
+      initial_active: false
+      hats: []
+  power:
+    type: jumpstarter_driver_copilot.driver.CoPilotPower
+    children:
+      # Share the owner's GPIO request; do not open GPIO0 a second time.
+      controller:
+        ref: copilot

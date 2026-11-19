@@ -14,9 +14,10 @@ import signal
 import subprocess
 import sys
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from types import FrameType
-from typing import Callable, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ def _get_preexec_fn() -> Callable[[], None] | None:
             if result != 0:
                 errno = ctypes.get_errno()
                 logger.warning("prctl(PR_SET_PDEATHSIG) failed with errno %d", errno)
-        except Exception as e:
+        except Exception as e:  # pragma: no cover  # noqa: BLE001
             logger.warning("Failed to set parent death signal: %s", e)
 
     return set_pdeathsig
@@ -102,15 +103,15 @@ class DemuxerManager:
         self._drivers: dict[str, DriverInfo] = {}
         self._pts_map: dict[str, str] = {}  # target -> pts_path
         self._ready_targets: set[str] = set()
-        self._process: Optional[subprocess.Popen] = None
-        self._monitor_thread: Optional[threading.Thread] = None
+        self._process: subprocess.Popen | None = None
+        self._monitor_thread: threading.Thread | None = None
         self._shutdown = threading.Event()
         self._cleanup_done = False
 
         # Process configuration (must be same for all drivers)
-        self._demuxer_path: Optional[str] = None
-        self._device: Optional[str] = None
-        self._chip: Optional[str] = None
+        self._demuxer_path: str | None = None
+        self._device: str | None = None
+        self._chip: str | None = None
         self._poll_interval: float = 1.0
 
         # Register atexit handler for cleanup on normal exit
@@ -182,11 +183,11 @@ class DemuxerManager:
                 logger.debug("Not installing signal handlers from non-main thread")
                 return
 
-            cls._original_sigterm_handler = signal.signal(signal.SIGTERM, make_handler(signal.SIGTERM))
-            cls._original_sigint_handler = signal.signal(signal.SIGINT, make_handler(signal.SIGINT))
+            cls._original_sigterm_handler = signal.signal(signal.SIGTERM, make_handler(signal.SIGTERM))  # ty: ignore[invalid-assignment]
+            cls._original_sigint_handler = signal.signal(signal.SIGINT, make_handler(signal.SIGINT))  # ty: ignore[invalid-assignment]
             cls._signal_handlers_installed = True
             logger.debug("Installed signal handlers for SIGTERM and SIGINT")
-        except Exception as e:
+        except Exception as e:  # pragma: no cover  # noqa: BLE001
             logger.warning("Failed to install signal handlers: %s", e)
 
     def _validate_config(self, demuxer_path: str, device: str, chip: str, target: str):
@@ -326,19 +327,21 @@ class DemuxerManager:
             except ProcessLookupError:
                 # Process already dead
                 logger.debug("Demuxer process already exited")
-            except Exception as e:
+            except Exception as e:  # pragma: no cover  # noqa: BLE001
                 logger.error("Error terminating demuxer process: %s", e)
             finally:
                 self._process = None
 
         # Wait for monitor thread to exit
         monitor_thread = self._monitor_thread
-        if monitor_thread is not None and monitor_thread.is_alive():
-            # Don't join if we're being called from the monitor thread itself
-            if threading.current_thread() is not monitor_thread:
-                monitor_thread.join(timeout=2.0)
-                if monitor_thread.is_alive():
-                    logger.warning("Monitor thread did not exit within timeout")
+        if (
+            monitor_thread is not None
+            and monitor_thread.is_alive()
+            and threading.current_thread() is not monitor_thread
+        ):
+            monitor_thread.join(timeout=2.0)
+            if monitor_thread.is_alive():
+                logger.warning("Monitor thread did not exit within timeout")
         self._monitor_thread = None
 
         logger.debug("Stopped demuxer monitor")
@@ -370,7 +373,7 @@ class DemuxerManager:
         while not self._shutdown.is_set():
             try:
                 self._run_demuxer_cycle()
-            except Exception as e:
+            except Exception as e:  # pragma: no cover  # noqa: BLE001
                 logger.error("Error in demuxer monitor loop: %s", e)
                 # Clear ready state on error
                 with self._lock:
@@ -410,6 +413,7 @@ class DemuxerManager:
     def _wait_for_device(self) -> str | None:
         """Wait for device to appear. Returns resolved device path or None if shutdown."""
         while not self._shutdown.is_set():
+            assert self._device is not None
             resolved_device = _resolve_device(self._device)
             if resolved_device:
                 logger.debug("Found device: %s", resolved_device)
@@ -425,6 +429,7 @@ class DemuxerManager:
         On Linux, uses prctl(PR_SET_PDEATHSIG) to ensure the subprocess
         receives SIGTERM when the parent dies (including kill -9).
         """
+        assert self._demuxer_path is not None and self._chip is not None
         cmd = [self._demuxer_path, "-m", self._chip, "-d", device]
         logger.debug("Starting demuxer: %s", " ".join(cmd))
 
@@ -438,7 +443,7 @@ class DemuxerManager:
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,  # Line buffered
-                preexec_fn=preexec_fn,
+                preexec_fn=preexec_fn,  # noqa: PLW1509
             )
             logger.debug("Demuxer process started with PID %d", self._process.pid)
             return True
@@ -465,6 +470,7 @@ class DemuxerManager:
     def _read_demuxer_stderr(self):
         """Read demuxer stderr and check for catastrophic errors."""
         try:
+            assert self._process is not None and self._process.stderr is not None
             for line in iter(self._process.stderr.readline, ""):
                 if self._shutdown.is_set():
                     break
@@ -484,12 +490,13 @@ class DemuxerManager:
                     # Force immediate process termination
                     os._exit(1)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Error reading demuxer stderr: %s", e)
 
     def _read_demuxer_output(self):
         """Read demuxer stdout and parse all pts paths."""
         try:
+            assert self._process is not None and self._process.stdout is not None
             for line in iter(self._process.stdout.readline, ""):
                 if self._shutdown.is_set():
                     break
@@ -510,7 +517,7 @@ class DemuxerManager:
                         self._pts_map[target] = pts_path
                         self._ready_targets.add(target)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Error reading demuxer output: %s", e)
 
         # Clear state when process ends

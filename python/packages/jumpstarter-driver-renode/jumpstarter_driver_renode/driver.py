@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import shutil
 import socket
@@ -75,10 +76,9 @@ class RenodeFlasher(FlasherInterface, Driver):
             raise ValueError(f"unsupported load_command {load_command!r}, allowed: {sorted(_ALLOWED_LOAD_COMMANDS)}")
 
         firmware_path = self.parent._tmp_dir.name + "/firmware"
-        async with await FileWriteStream.from_path(firmware_path) as stream:
-            async with self.resource(source) as res:
-                async for chunk in res:
-                    await stream.send(chunk)
+        async with await FileWriteStream.from_path(firmware_path) as stream, self.resource(source) as res:
+            async for chunk in res:
+                await stream.send(chunk)
 
         if load_command is not None:
             cmd = load_command
@@ -142,7 +142,7 @@ class RenodePower(PowerInterface, Driver):
         ]
 
         self.logger.info("starting Renode: %s", " ".join(cmdline))
-        self._process = Popen(cmdline, stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
+        self._process = Popen(cmdline, stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)  # noqa: ASYNC220
 
         self._monitor = RenodeMonitor()
         try:
@@ -157,6 +157,7 @@ class RenodePower(PowerInterface, Driver):
     async def _configure_simulation(self) -> None:
         """Set up the machine, platform, UART, and firmware in the monitor."""
         machine = self.parent.machine_name
+        assert self._monitor is not None
         self._monitor.add_expected_prompt(machine)
         await self._monitor.execute(f'mach create "{machine}"')
         await self._monitor.execute(f"machine LoadPlatformDescription @{self.parent.platform}")
@@ -180,10 +181,8 @@ class RenodePower(PowerInterface, Driver):
             return
 
         if self._monitor is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await self._monitor.execute("quit")
-            except Exception:
-                pass
             await self._monitor.disconnect()
             self._monitor = None
 
@@ -261,7 +260,10 @@ class Renode(Driver):
 
         self.children["power"] = RenodePower(parent=self)
         self.children["flasher"] = RenodeFlasher(parent=self)
-        self.children["console"] = PySerial(url=self._pty, check_present=False)
+        # The power child enables the console's Ctrl-] x3 power-cycle hotkey.
+        self.children["console"] = PySerial(
+            url=self._pty, check_present=False, children={"power": self.children["power"]}
+        )
 
     def set_firmware(self, path: str, load_command: str) -> None:
         """Set the firmware path and load command for the next power-on."""

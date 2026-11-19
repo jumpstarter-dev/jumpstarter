@@ -4,7 +4,6 @@ import os
 import shlex
 import shutil
 import tempfile
-from typing import List, Optional
 
 from ..callbacks import OutputCallback, SilentCallback
 from ..exceptions import (
@@ -50,7 +49,7 @@ async def delete_kind_cluster(kind: str, cluster_name: str) -> bool:
 
 
 async def create_kind_cluster(
-    kind: str, cluster_name: str, extra_args: Optional[List[str]] = None, force_recreate: bool = False
+    kind: str, cluster_name: str, extra_args: list[str] | None = None, force_recreate: bool = False
 ) -> bool:
     """Create a Kind cluster."""
     if extra_args is None:
@@ -125,7 +124,7 @@ nodes:
             pass
 
 
-async def list_kind_clusters(kind: str) -> List[str]:
+async def list_kind_clusters(kind: str) -> list[str]:
     """List all Kind clusters."""
     if not kind_installed(kind):
         return []
@@ -140,7 +139,7 @@ async def list_kind_clusters(kind: str) -> List[str]:
         return []
 
 
-async def inject_certificates(extra_certs: str, cluster_name: str, callback: OutputCallback = None) -> None:
+async def inject_certificates(extra_certs: str, cluster_name: str, callback: OutputCallback | None = None) -> None:
     """Inject custom certificates into a Kind cluster."""
     if callback is None:
         callback = SilentCallback()
@@ -183,8 +182,8 @@ async def create_kind_cluster_with_options(
     cluster_name: str,
     kind_extra_args: str,
     force_recreate_cluster: bool,
-    extra_certs: Optional[str] = None,
-    callback: OutputCallback = None,
+    extra_certs: str | None = None,
+    callback: OutputCallback | None = None,
 ) -> None:
     """Create a Kind cluster with optional certificate injection."""
     if callback is None:
@@ -217,7 +216,9 @@ async def create_kind_cluster_with_options(
         raise ClusterOperationError(action, cluster_name, "kind", e) from e
 
 
-async def delete_kind_cluster_with_feedback(kind: str, cluster_name: str, callback: OutputCallback = None) -> None:
+async def delete_kind_cluster_with_feedback(
+    kind: str, cluster_name: str, callback: OutputCallback | None = None
+) -> None:
     """Delete a Kind cluster with user feedback."""
     if callback is None:
         callback = SilentCallback()

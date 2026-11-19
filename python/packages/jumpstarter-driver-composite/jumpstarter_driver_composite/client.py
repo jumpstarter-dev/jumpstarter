@@ -34,7 +34,7 @@ class CompositeClient(DriverClient):
             raise AttributeError(name) from None
 
     def close(self):
-        for _, v in self.children.items():
+        for v in self.children.values():
             if hasattr(v, "close"):
                 v.close()
 
@@ -50,12 +50,11 @@ class CompositeClient(DriverClient):
         )
         def base():
             """Generic composite device"""
-            pass
 
         for k, v in self.children.items():
             if isinstance(v, StubDriverClient):
                 continue
             if hasattr(v, "cli"):
-                base.add_command(v.cli(), k)
+                base.add_command(v.cli(), k)  # ty: ignore[call-non-callable]
 
         return base

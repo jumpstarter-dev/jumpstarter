@@ -99,8 +99,8 @@ class Handler:
             )
 
             # To echo back to client with modification, use:
-            #   ctx.master.commands.call(  # noqa: ERA001
-            #       "inject.websocket", flow, True,  # noqa: ERA001
+            #   ctx.master.commands.call(
+            #       "inject.websocket", flow, True,
             #       b'{"type": "echo", "data": ...}',  # noqa: ERA001
             #   )  # noqa: ERA001
 

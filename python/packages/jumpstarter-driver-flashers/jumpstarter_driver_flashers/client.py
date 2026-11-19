@@ -37,7 +37,7 @@ from opendal import Metadata, Operator
 
 from jumpstarter_driver_flashers.bundle import FlasherBundleManifestV1Alpha1
 
-from jumpstarter.client.core import DriverMethodNotImplemented
+from jumpstarter.client.core import DriverError, DriverMethodNotImplemented
 from jumpstarter.client.decorators import driver_click_group
 from jumpstarter.common.exceptions import ArgumentError, ConfigurationError, JumpstarterException
 from jumpstarter.common.fls import get_fls_github_url
@@ -59,6 +59,11 @@ debug_console_option = click.option("--console-debug", is_flag=True, help="Enabl
 
 EXPECT_TIMEOUT_DEFAULT = 60
 EXPECT_TIMEOUT_SYNC = 1200
+
+# fls version downloaded from GitHub when neither the caller nor the exporter picks one
+# and the exporter cannot serve its own binary.
+# renovate: datasource=github-releases depName=jumpstarter-dev/fls
+DEFAULT_FLS_VERSION = "0.3.0"
 
 
 class _RedactingConsoleWriter:
@@ -121,7 +126,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 pass
             yield self.serial
 
-    def flash(  # noqa: C901
+    def flash(  # noqa: C901  # ty: ignore[invalid-method-override]
         self,
         path: PathBuf,
         *,
@@ -137,7 +142,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         bearer_token: str | None = None,
         retries: int = 3,
         method: str = "fls",
-        fls_version: str = "0.3.0",
+        fls_version: str | None = None,
         fls_binary_url: str | None = None,
         oci_username: str | None = None,
         oci_password: str | None = None,
@@ -149,6 +154,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         if headers:
             headers = self._validate_header_dict(headers)
+        path = str(path)
         oci_creds = self._resolve_oci_credentials(path, oci_username, oci_password)
         oci_username = oci_creds.username
         oci_password = oci_creds.plain_password
@@ -253,7 +259,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     if isinstance(categorized_error, FlashNonRetryableError):
                         # Non-retryable error, fail immediately
                         self.logger.error(f"Flash operation failed with non-retryable error: {categorized_error}")
-                        raise FlashError(f"Flash operation failed: {categorized_error}") from e
+                        raise FlashError("Flash operation failed") from e
                     else:
                         # Retryable error
                         if attempt < retries:
@@ -266,9 +272,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                             continue
                         else:
                             self.logger.error(f"Flash operation failed after {retries + 1} attempts")
-                            raise FlashError(
-                                f"Flash operation failed after {retries + 1} attempts. Last error: {categorized_error}"
-                            ) from e
+                            raise FlashError(f"Flash operation failed after {retries + 1} attempts") from e
 
         total_time = time.time() - start_time
         # total time in minutes:seconds
@@ -295,12 +299,12 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         # First pass: look for non-retryable errors (highest priority)
         non_retryable = self._find_exception_in_chain(exception, FlashNonRetryableError)
         if non_retryable is not None:
-            return non_retryable
+            return non_retryable  # ty: ignore[invalid-return-type]
 
         # Second pass: look for retryable errors
         retryable = self._find_exception_in_chain(exception, FlashRetryableError)
         if retryable is not None:
-            return retryable
+            return retryable  # ty: ignore[invalid-return-type]
 
         # CancelledError is a special case that should be treated as non-retryable
         if isinstance(exception, CancelledError):
@@ -448,7 +452,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         headers: dict[str, str] | None,
         bearer_token: str | None,
         method: str,
-        fls_version: str,
+        fls_version: str | None,
         fls_binary_url: str | None,
         oci_username: str | None,
         oci_password: str | None,
@@ -667,6 +671,57 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         console.sendline("chmod +x /sbin/fls")
         console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
 
+    def _install_fls(self, console, prompt: str, fls_version: str | None, fls_binary_url: str | None):
+        """Put an fls binary at /sbin/fls on the DUT.
+
+        Precedence, first match wins:
+          1. fls_binary_url: download from that URL.
+          2. fls_version given by the caller: download that version from GitHub.
+             fls_version="" instead requires the exporter's own binary, with no fallback.
+          3. The exporter's fls_version config: download that version from GitHub.
+          4. Otherwise the exporter serves the fls binary from its image; if it has none,
+             fall back to DEFAULT_FLS_VERSION from GitHub.
+        """
+        if fls_binary_url:
+            self.logger.info(f"Downloading FLS binary from custom URL: {fls_binary_url}")
+            self._download_fls_binary(console, prompt, fls_binary_url, f"Failed to download FLS from {fls_binary_url}")
+            return
+
+        exporter_required = fls_version == ""
+        if fls_version is None:
+            fls_version = self._exporter_fls_version()
+
+        if not fls_version:
+            if self._serve_fls_from_exporter(console, prompt, required=exporter_required):
+                return
+            fls_version = DEFAULT_FLS_VERSION
+
+        self.logger.info(f"Downloading FLS version {fls_version} from GitHub releases")
+        fls_url = get_fls_github_url(fls_version, arch="aarch64")
+        self._download_fls_binary(console, prompt, fls_url, f"Failed to download FLS from {fls_url}")
+
+    def _exporter_fls_version(self) -> str | None:
+        """The exporter's fls_version config; None means the exporter serves its own binary."""
+        try:
+            return self.call("get_fls_version")
+        except DriverMethodNotImplemented:
+            # exporter predates get_fls_version: keep the previous client-side default
+            return DEFAULT_FLS_VERSION
+
+    def _serve_fls_from_exporter(self, console, prompt: str, *, required: bool) -> bool:
+        """Have the DUT fetch fls from the exporter's HTTP server. Returns False if the exporter has none."""
+        try:
+            self.call("setup_fls_binary")
+        except DriverError as e:
+            if required:
+                raise FlashNonRetryableError(f"Exporter cannot serve fls: {e}") from e
+            self.logger.warning(f"Exporter cannot serve fls ({e}); downloading fls {DEFAULT_FLS_VERSION} from GitHub")
+            return False
+        self.logger.info("Serving FLS binary from exporter")
+        fls_url = self.http.get_url() + "/fls"
+        self._download_fls_binary(console, prompt, fls_url, "Failed to download FLS from exporter")
+        return True
+
     def _flash_with_fls(
         self,
         console,
@@ -677,7 +732,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         insecure_tls,
         stored_cacert,
         header_args: str,
-        fls_version: str,
+        fls_version: str | None,
         fls_binary_url: str | None,
         oci_username: str | None,
         oci_password: str | None,
@@ -693,7 +748,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             insecure_tls: Whether to use insecure TLS
             stored_cacert: Path to the stored CA certificate in the DUT flasher
             header_args: Header arguments for curl command
-            fls_version: Version of FLS to use
+            fls_version: FLS version to download from GitHub; None defers to the exporter (see _install_fls)
             fls_binary_url: Custom URL to download FLS binary from (overrides fls_version)
         """
 
@@ -701,18 +756,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         prompt = manifest.spec.login.prompt
         tls_args = self._cmdline_tls_args(insecure_tls, stored_cacert)
 
-        if fls_binary_url:
-            self.logger.info(f"Downloading FLS binary from custom URL: {fls_binary_url}")
-            self._download_fls_binary(console, prompt, fls_binary_url, f"Failed to download FLS from {fls_binary_url}")
-        elif fls_version != "":
-            self.logger.info(f"Downloading FLS version {fls_version} from GitHub releases")
-            fls_url = get_fls_github_url(fls_version, arch="aarch64")
-            self._download_fls_binary(console, prompt, fls_url, f"Failed to download FLS from {fls_url}")
-        else:
-            self.logger.info("Serving FLS binary from exporter container")
-            self.call("setup_fls_binary")
-            fls_url = self.http.get_url() + "/fls"
-            self._download_fls_binary(console, prompt, fls_url, "Failed to download FLS from exporter")
+        self._install_fls(console, prompt, fls_version, fls_binary_url)
 
         # Flash the image
         creds_file = None
@@ -1047,7 +1091,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             self.logger.info(f"Uploading image to storage: {filename}")
             to_storage.write_from_path(filename, src_path, src_operator)
 
-            metadata, metadata_json = self._create_metadata_and_json(
+            _metadata, metadata_json = self._create_metadata_and_json(
                 src_operator, src_path, file_hash, original_url, headers
             )
             metadata_file = filename + ".metadata"
@@ -1086,7 +1130,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     "etag": metadata.etag,
                 }
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             # TODO(bennyz): remove when opendal issue is sorted out
             # https://github.com/apache/opendal/discussions/6418
             # fallback to request if we're using a custom certificate
@@ -1106,7 +1150,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
                     metadata_dict.update(http_metadata)
                     self.logger.info("Successfully got HTTP metadata using requests fallback")
-                except Exception as http_e:
+                except Exception as http_e:  # noqa: BLE001
                     self.logger.error(f"Error getting HTTP metadata with requests fallback: {http_e}")
             else:
                 self.logger.error(f"Error getting metadata: {e}")
@@ -1134,7 +1178,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         else:
             raise ArgumentError(f"No block device found for address {address}, output was: {output}")
 
-    def dump(
+    def dump(  # ty: ignore[invalid-method-override]
         self,
         path: PathBuf,
         *,
@@ -1253,23 +1297,20 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     def use_dtb(self, path: PathBuf, operator: Operator | None = None):
         """Use DTB file"""
         if operator is None:
-            path, operator, operator_scheme = operator_for_path(path)
+            path, operator, _operator_scheme = operator_for_path(path)
 
-        ...
 
     def use_initram(self, path: PathBuf, operator: Operator | None = None):
         """Use initramfs file"""
         if operator is None:
-            path, operator, operator_scheme = operator_for_path(path)
+            path, operator, _operator_scheme = operator_for_path(path)
 
-        ...
 
     def use_kernel(self, path: PathBuf, operator: Operator | None = None):
         """Use kernel file"""
         if operator is None:
-            path, operator, operator_scheme = operator_for_path(path)
+            path, operator, _operator_scheme = operator_for_path(path)
 
-        ...
 
     @property
     def manifest(self):
@@ -1317,7 +1358,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     def _prepare_headers(self, headers: dict[str, str] | None, bearer_token: str | None) -> str:
         all_headers = headers.copy() if headers else {}
         if bearer_token:
-            if any(k.lower() == "authorization" for k in all_headers.keys()):
+            if any(k.lower() == "authorization" for k in all_headers):
                 self.logger.warning("Authorization header provided - ignoring bearer token")
             else:
                 all_headers["Authorization"] = f"Bearer {bearer_token}"
@@ -1348,7 +1389,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
     def _resolve_oci_credentials(
         self, path: PathBuf, username: str | None, password: str | None
-    ) -> "OciCredentials":
+    ) -> OciCredentials:
         from jumpstarter.common.oci import OciCredentials, resolve_oci_credentials
 
         if username is not None or password is not None or str(path).startswith("oci://"):
@@ -1486,7 +1527,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         @driver_click_group(self)
         def base():
             """Software-defined flasher interface"""
-            pass
 
         @base.command()
         @click.argument("file", required=False)
@@ -1537,9 +1577,10 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         @click.option(
             "--fls-version",
             type=str,
-            # renovate: datasource=github-releases depName=jumpstarter-dev/fls
-            default="0.3.0",
-            help="Download an specific fls version from the github releases",
+            default=None,
+            help="Download a specific fls version from the GitHub releases. Default: the exporter's "
+            "fls_version setting, else the fls binary shipped in the exporter image. "
+            "An empty string requires the exporter's binary",
         )
         @click.option(
             "--fls-binary-url",

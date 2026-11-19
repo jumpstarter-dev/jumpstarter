@@ -1,6 +1,7 @@
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any
 
 from anyio import TypedAttributeLookupError, TypedAttributeSet, typed_attribute
 from anyio.abc import AnyByteStream, ObjectStream
@@ -33,4 +34,4 @@ class MetadataStream(ObjectStream[bytes]):
         metadata = {}
         with suppress(TypedAttributeLookupError):
             metadata = self.stream.extra(MetadataStreamAttributes.metadata)
-        return self.stream.extra_attributes | {MetadataStreamAttributes.metadata: lambda: metadata | self.metadata}
+        return {**self.stream.extra_attributes, MetadataStreamAttributes.metadata: lambda: metadata | self.metadata}

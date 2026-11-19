@@ -1,4 +1,4 @@
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, Json
@@ -18,7 +18,7 @@ class PresignedRequestResource(BaseModel):
 
 
 Resource = Annotated[
-    Union[ClientStreamResource, PresignedRequestResource],
+    ClientStreamResource | PresignedRequestResource,
     Field(discriminator="kind"),
 ]
 

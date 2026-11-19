@@ -1,0 +1,24 @@
+# A local exporter for `jmp shell --exporter-config exporter.yaml`. The endpoint
+# and token are never used in local mode.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: appium-ios-simulator
+endpoint: grpc.jumpstarter.example.com:443
+token: "dummytoken"
+export:
+  simulator:
+    type: jumpstarter_driver_iossimulator.driver.IosSimulator
+    config:
+      # `xcrun simctl list devicetypes` and `xcrun simctl list runtimes` show
+      # what this Mac has.
+      device_type: com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro
+      runtime: com.apple.CoreSimulator.SimRuntime.iOS-27-0
+      appium:
+        # Appium and its XCUITest driver, as installed by
+        # `npm install -g appium` and `appium driver install xcuitest`.
+        executable: appium
+        home: ~/.appium
+        # The simulator WebDriverAgent, built as described in the README.
+        wda: ~/.appium/node_modules/appium-xcuitest-driver/node_modules/appium-webdriveragent/wda/Build/Products/Debug-iphonesimulator/WebDriverAgentRunner-Runner.app
