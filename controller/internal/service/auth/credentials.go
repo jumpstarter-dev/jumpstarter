@@ -12,16 +12,22 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// RotateCredential replaces the stored token after the caller authenticates its owner.
+// RotateCredential replaces the stored token for subject. The caller must
+// present subject's own controller-signed token: any other credential that
+// authenticated the owner, such as an OIDC token, would otherwise be exchanged
+// for an internal token that outlives it.
 func RotateCredential(
 	ctx context.Context,
 	kclient client.Client,
 	signer *oidc.Signer,
 	key client.ObjectKey,
-	subject string,
+	subject, credential string,
 ) (string, *timestamppb.Timestamp, error) {
 	if signer == nil {
 		return "", nil, status.Error(codes.FailedPrecondition, "token signer not configured")
+	}
+	if presented, err := signer.ParseSubject(credential); err != nil || presented != subject {
+		return "", nil, status.Error(codes.PermissionDenied, "only internal client tokens can be rotated")
 	}
 	token, err := signer.Token(subject)
 	if err != nil {

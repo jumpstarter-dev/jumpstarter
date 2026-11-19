@@ -56,10 +56,14 @@ func TestRotateCredential(t *testing.T) {
 				t.Fatal(err)
 			}
 			signer.SetTokenLifetime(time.Hour)
+			credential, err := signer.Token("exporter:default:test:uid")
+			if err != nil {
+				t.Fatal(err)
+			}
 			if tc.missingSigner {
 				signer = nil
 			}
-			token, expiry, err := RotateCredential(ctx, kclient, signer, key, "exporter:default:test:uid")
+			token, expiry, err := RotateCredential(ctx, kclient, signer, key, "exporter:default:test:uid", credential)
 			if status.Code(err) != tc.want {
 				t.Fatalf("code = %v, want %v: %v", status.Code(err), tc.want, err)
 			}
