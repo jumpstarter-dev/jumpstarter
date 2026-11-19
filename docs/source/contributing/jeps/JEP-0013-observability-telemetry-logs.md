@@ -1765,8 +1765,10 @@ all subsequent phases have E2E coverage from the start.
   branch: starter `PrometheusRule` alerts, `PrometheusRulesReady` and
   `DashboardsReady` conditions, a Perses overview dashboard with explicit
   datasource selectors, offline `promtool`/`percli` validation, and gated Kind
-  e2e coverage. `v1alpha1` compatibility and a Grafana sample remain
-  follow-ups: 2026-11-18
+  e2e coverage. Dashboards target `perses.dev/v1alpha2` only; legacy
+  perses-operator installs that serve `v1alpha1` only are detected and reported
+  as unsupported, because the CRD has no conversion webhook and upstream
+  reconciles `v1alpha2` only. A Grafana sample remains a follow-up: 2026-11-18
 
 ## References
 
