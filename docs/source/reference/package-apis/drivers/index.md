@@ -93,6 +93,7 @@ Drivers for flashing firmware and programming devices:
 - {doc}`ST-LINK MSD <stlink-msd>` (`jumpstarter-driver-stlink-msd`) - ST-LINK mass storage flasher for STM32
 - {doc}`U-Boot <uboot>` (`jumpstarter-driver-uboot`) - Universal Bootloader interface
 - {doc}`RideSX <ridesx>` (`jumpstarter-driver-ridesx`) - RideSX fastboot flashing, QDL platform updates, and power management for Qualcomm automotive SoCs
+- {doc}`Zephyr <zephyr>` (`jumpstarter-driver-zephyr`) - Flash Zephyr firmware on a remote board (server-side twister workflow)
 
 ### Emulation
 
@@ -183,4 +184,5 @@ video.md
 vnc.md
 xcp.md
 yepkit.md
+zephyr.md
 ```

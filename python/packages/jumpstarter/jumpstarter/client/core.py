@@ -58,11 +58,20 @@ class ExporterNotReady(DriverError):
     """
 
 
-def _console_in_use_error(code: StatusCode, details: str | None) -> DriverError | None:
-    """Map an exclusive-console rejection to a DriverError with the marker stripped."""
+class ConsoleInUse(DriverError):
+    """
+    Raised when a console's write token is held by another client
+
+    A DriverError, so existing handlers keep working; callers that can wait
+    for the console to be freed (e.g. a retrying pipe) catch it specifically.
+    """
+
+
+def _console_in_use_error(code: StatusCode, details: str | None) -> ConsoleInUse | None:
+    """Map an exclusive-console rejection to a ConsoleInUse with the marker stripped."""
     details = details or ""
     if code == StatusCode.FAILED_PRECONDITION and CONSOLE_IN_USE_MARKER in details:
-        return DriverError(details.split(CONSOLE_IN_USE_MARKER, 1)[1].strip())
+        return ConsoleInUse(details.split(CONSOLE_IN_USE_MARKER, 1)[1].strip())
     return None
 
 

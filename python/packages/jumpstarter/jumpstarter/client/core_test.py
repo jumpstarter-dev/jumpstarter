@@ -9,7 +9,7 @@ import pytest
 from grpc import StatusCode
 from grpc.aio import AioRpcError
 
-from jumpstarter.client.core import AsyncDriverClient, DriverError
+from jumpstarter.client.core import AsyncDriverClient, ConsoleInUse, DriverError
 from jumpstarter.common import ExporterStatus, Metadata
 from jumpstarter.common.exceptions import CONSOLE_IN_USE_MARKER
 
@@ -47,9 +47,12 @@ async def test_stream_async_hides_console_marker_from_python_callers() -> None:
     stub.Stream.return_value = context
     client = AsyncDriverClient(stub=stub)
 
-    with pytest.raises(DriverError, match="Console in use") as exc_info:
+    with pytest.raises(ConsoleInUse, match="Console in use") as exc_info:
         async with client.stream_async("connect"):
             pass
+
+    # Still a DriverError, so existing handlers are unaffected.
+    assert isinstance(exc_info.value, DriverError)
 
     assert CONSOLE_IN_USE_MARKER not in str(exc_info.value)
 
@@ -66,9 +69,12 @@ async def test_stream_async_translates_console_in_use_abort_before_headers() -> 
     stub.Stream.return_value = context
     client = AsyncDriverClient(stub=stub)
 
-    with pytest.raises(DriverError, match="Console in use") as exc_info:
+    with pytest.raises(ConsoleInUse, match="Console in use") as exc_info:
         async with client.stream_async("connect"):
             pass
+
+    # Still a DriverError, so existing handlers are unaffected.
+    assert isinstance(exc_info.value, DriverError)
 
     assert CONSOLE_IN_USE_MARKER not in str(exc_info.value)
 
