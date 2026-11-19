@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from html import escape
 from typing import Any
 
 from robot.api import logger as robot_logger
@@ -164,13 +165,18 @@ class Jumpstarter:
         self._owned: set[str] = set()
         self._sets = [cls() for cls in load_all()]
         self._names = self._collect_names()
-        declares = bool(self.config.wants_lease or self.config.exporter_config)
+        declares = self._declares = bool(self.config.wants_lease or self.config.exporter_config)
         if declares:
             setattr(self, context.SESSION_MARKER, self.config.name)
-            sessions.register_config(self.config.name, self.config)
+        self._declare()
+        # A bare import with JMP_LEASE attaches to that lease. It connects at
+        # start_suite rather than here: a generated client resource imports this
+        # library bare next to the Session that declares its own session, and
+        # that suite needs no second connection named ``default``.
+        self._attach_env_lease = (
+            not declares and not os.environ.get(JUMPSTARTER_HOST) and bool(os.environ.get(JMP_LEASE))
+        )
         if declares or os.environ.get(JUMPSTARTER_HOST):
-            sessions.register_factory(self.config.name, self.config.open)
-            self._owned.add(self.config.name)
             if self.auto_import and in_run():
                 # Connect now so a bad config fails at import. The drivers are
                 # imported at start_suite, once the suite's own Driver imports
@@ -190,6 +196,20 @@ class Jumpstarter:
                     "Jumpstarter: a dry run does not connect, so driver keywords are not imported; "
                     "import a generated client resource to check them"
                 )
+
+    def _declare(self) -> None:
+        """Register how this import's session opens, replacing another suite's declaration of the name."""
+        from_env = os.environ.get(JUMPSTARTER_HOST) or os.environ.get(JMP_LEASE)
+        if not (self._declares or from_env):
+            return
+        name = self.config.name
+        if self._declares:
+            sessions.register_config(name, self.config)
+            sessions.register_factory(name, self.config.open, self.config.declaration)
+        elif sessions.registered_config(name) is None:
+            # a bare import never replaces what a Session library declared for the name
+            sessions.register_factory(name, self.config.open)
+        self._owned.add(name)
 
     # ---- hybrid library API ----
 
@@ -355,7 +375,13 @@ class Jumpstarter:
 
     @keyword
     def stop_local_exporter(self, session: str | None = None) -> None:
-        """Stop a session's exporter and disconnect; it restarts if a later keyword needs it."""
+        """Stop a session's exporter and disconnect.
+
+        A session that declares its exporter config (this library's
+        ``exporter_config``, or a `Session` library) restarts when a later
+        keyword needs it; one opened by `Start Local Exporter` needs that
+        keyword again.
+        """
         context.close_session(self._name(session))
 
     @keyword
@@ -386,9 +412,13 @@ class Jumpstarter:
         with mapped_errors("Lease Should Be Active"):
             self._session(session).check_alive()
 
-    def _session(self, session: str | None) -> sessions.Session:
+    def _session(self, session: str | None, *, alive: bool = False) -> sessions.Session:
+        """The session a keyword uses; with ``alive``, failing as `on_lease_end` says once its lease ended."""
         with mapped_errors("Jumpstarter"):
-            return context.session(text(session))
+            found = context.session(text(session))
+            if alive:
+                found.check_alive()
+            return found
 
     # ---- generic driver access ----
 
@@ -403,7 +433,7 @@ class Jumpstarter:
         | Call Driver | dutlink.power | cycle | wait=5 |
         """
         with sessions.lock(), mapped_errors(f"{path}.{method}"):
-            node = self._session(session).resolve(path)
+            node = self._session(session, alive=True).resolve(path)
             function = getattr(node, method)
             call_args, call_kwargs = convert_call(function, args, kwargs)
             return context.to_robot(function(*call_args, **call_kwargs), stem=method)
@@ -412,7 +442,7 @@ class Jumpstarter:
     def get_driver(self, path: str, session: str | None = None) -> DriverClient:
         """Return the Python client of a driver, for ``Call Method`` and Python keywords."""
         with mapped_errors("Get Driver"):
-            return self._session(session).resolve(path)
+            return self._session(session, alive=True).resolve(path)
 
     @keyword
     def list_drivers(self, session: str | None = None) -> list[DotDict]:
@@ -423,9 +453,13 @@ class Jumpstarter:
                 client=node.labels.get("jumpstarter.dev/client", class_path(type(node))),
                 description=node.description,
             )
-            for path, node in walk_tree(self._session(session).client)
+            for path, node in walk_tree(self._session(session, alive=True).client)
         ]
-        rows = "".join(f"<tr><td>{d.path}</td><td>{d.client}</td><td>{d.description or ''}</td></tr>" for d in found)
+        # descriptions come from the exporter and are text, not markup
+        rows = "".join(
+            f"<tr><td>{escape(d.path)}</td><td>{escape(d.client)}</td><td>{escape(d.description or '')}</td></tr>"
+            for d in found
+        )
         robot_logger.info(f"<table><tr><th>path</th><th>client</th><th>description</th></tr>{rows}</table>", html=True)
         return found
 
@@ -471,7 +505,7 @@ class Jumpstarter:
         binds them to ``dut2.power`` and ``dut2.console``. Returns the paths
         bound.
         """
-        target = self._session(session)
+        target = self._session(session, alive=True)
         matched = []
         for instance in instances():
             if not instance.role or (instance.session_name or context.session_name()) != target.name:
@@ -503,12 +537,30 @@ class Jumpstarter:
         one suite (or into ``__init__.robot`` by `Acquire Lease`) are not
         visible in the next one until they are imported there too.
         """
+        self._declare()  # this instance serves later suites too; see Session.start_suite
         if not self.auto_import:
             return
         for name in sorted(self._owned):
-            if (opened := sessions.opened(name)) is not None:
+            opened = sessions.opened(name)
+            if opened is None and self._attaches_env_lease(name):
+                with mapped_errors("Jumpstarter"):
+                    try:
+                        opened = sessions.get(name)
+                    except sessions.NoSession as e:
+                        robot_logger.warn(f"Jumpstarter: {e}")
+            if opened is not None:
                 with mapped_errors("Jumpstarter"):
                     self._import_drivers(opened)
+
+    def _attaches_env_lease(self, name: str) -> bool:
+        """Whether to attach to ``JMP_LEASE`` now, for the driver keywords of a suite that declares no session."""
+        return (
+            self._attach_env_lease
+            and name == self.config.name
+            and in_run()
+            and sessions.registered_config(name) is None
+            and not context.suite_session_names()
+        )
 
     def end_test(self, data, result) -> None:
         context.end_test()

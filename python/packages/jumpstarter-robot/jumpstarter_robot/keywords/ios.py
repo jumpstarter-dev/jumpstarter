@@ -103,6 +103,7 @@ def open_ios_device(
 ) -> int:
     """Serve the transport of the iOS driver at ``path``; returns its index in the cache."""
     with sessions.lock(), mapped_errors("Open iOS Device"):
+        scope = context.check_scope(scope)  # before anything is opened
         target, node, path = ios_node(path, session)
         stack = ExitStack()
         try:

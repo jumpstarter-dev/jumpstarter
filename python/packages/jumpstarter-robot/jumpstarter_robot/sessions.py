@@ -66,6 +66,8 @@ class Session:
     owns_lease: bool = False
     release_grace: float = 0.0
     lease: Any = None
+    # what the declaration that opened this session asked for (see register_factory)
+    declared: Any = None
     _stack: ExitStack = field(default_factory=ExitStack)
     _closers: list[Callable[[], None]] = field(default_factory=list)
     _closed: bool = False
@@ -134,11 +136,15 @@ class Session:
                 _announce(f"Jumpstarter: reusing lease {reused} for session '{name}'")
                 # the controller compares the selector as text; the match is already exact
                 lease_name, selector = reused, None
+            # A named lease is attached to as it is. Given a selector as well, the
+            # client creates a new lease when the two differ as text, and then
+            # never releases it, because a name was given.
+            attach = named or reused is not None
             lease = stack.enter_context(
                 portal.wrap_async_context_manager(
                     client_config.lease_async(
-                        selector or None,
-                        exporter_name or None,
+                        None if attach else selector or None,
+                        None if attach else exporter_name or None,
                         lease_name or None,
                         duration,
                         portal,
@@ -306,7 +312,9 @@ def _selector_key(selector: str | None) -> tuple[dict[str, str], set[tuple[str, 
 def matching_lease(leases: Iterable[Any], client: str, selector: str | None, exporter_name: str | None) -> Any | None:
     """The active lease ``client`` may use for exactly ``selector`` and ``exporter_name``, if any.
 
-    A lease for a narrower or wider selector never matches. Of several, the
+    A lease for a narrower or wider selector never matches, and neither does
+    one that has not started (scheduled for later, or still waiting for an
+    exporter): attaching to it would wait instead of running. Of several, the
     most recently started wins, then the first by name.
     """
     wanted = _selector_key(selector)
@@ -314,6 +322,7 @@ def matching_lease(leases: Iterable[Any], client: str, selector: str | None, exp
         lease
         for lease in leases
         if lease.is_accessible_by(client)
+        and lease.effective_begin_time
         and not lease.effective_end_time
         and _selector_key(lease.selector) == wanted
         and (not exporter_name or lease.exporter_name == exporter_name)
@@ -328,8 +337,7 @@ def matching_lease(leases: Iterable[Any], client: str, selector: str | None, exp
 
 
 def _begin(lease: Any) -> float:
-    begin = lease.effective_begin_time
-    return begin.timestamp() if begin is not None else float("-inf")
+    return lease.effective_begin_time.timestamp()
 
 
 def _reusable_lease(portal: Any, client_config: Any, selector: str | None, exporter_name: str | None) -> str | None:
@@ -376,6 +384,7 @@ open_shell: Callable[..., Session] = Session.from_shell
 _lock = threading.RLock()
 _sessions: dict[str, Session] = {}
 _factories: dict[str, SessionFactory] = {}
+_declarations: dict[str, Any] = {}
 _default = DEFAULT_SESSION
 
 
@@ -384,10 +393,29 @@ def lock() -> threading.RLock:
     return _lock
 
 
-def register_factory(name: str, factory: SessionFactory) -> None:
-    """Record how to open session ``name`` the first time a keyword needs it."""
+def register_factory(name: str, factory: SessionFactory, declaration: Any = None) -> None:
+    """Record how to open session ``name`` the first time a keyword needs it.
+
+    ``declaration`` is what the factory connects to, in a form that compares
+    equal for the same target. Sessions outlive the suite that opened them, so
+    a later suite that declares the same name for another exporter would
+    otherwise keep driving the first one: a session opened from a different
+    declaration is closed here, and reopens from this one when next needed.
+    """
     with _lock:
         _factories[name] = factory
+        _declarations[name] = declaration
+        current = opened(name)
+        stale = (
+            current is not None
+            and current.kind != "shell"  # every declaration opens the shell inside `jmp shell`
+            and declaration is not None
+            and current.declared is not None
+            and current.declared != declaration
+        )
+    if stale:
+        _announce(f"Jumpstarter: session '{name}' is declared for another target; closing {current.exporter}")
+        close(name)
 
 
 def unregister_factory(name: str, factory: SessionFactory | None = None) -> None:
@@ -395,6 +423,7 @@ def unregister_factory(name: str, factory: SessionFactory | None = None) -> None
         # == rather than is: a bound method such as ``config.open`` is a new object on every access
         if factory is None or _factories.get(name) == factory:
             _factories.pop(name, None)
+            _declarations.pop(name, None)
 
 
 def install(session: Session) -> Session:
@@ -432,7 +461,9 @@ def get(name: str | None = None) -> Session:
                     f"no Jumpstarter session '{name}': run inside `jmp shell`, attach to a lease you created "
                     "(JMP_LEASE), call Acquire Lease, or serve an exporter config (Start Local Exporter)"
                 )
-        return install(factory())
+        session = factory()
+        session.declared = _declarations.get(name)
+        return install(session)
 
 
 def close(name: str | None = None) -> bool:
@@ -562,6 +593,7 @@ def reset() -> None:
     close_all()
     with _lock:
         _factories.clear()
+        _declarations.clear()
         _configs.clear()
         _switches.clear()
         _session_policies.clear()

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 from jumpstarter_driver_composite.driver import Composite
 from jumpstarter_driver_power.driver import MockPower
 from jumpstarter_driver_shell.driver import Shell
 from robot.api import FatalError
+from robot.api import logger as robot_logger
 
 from . import sessions
 from .conftest import write
@@ -225,6 +227,30 @@ class TestOutsideRobot:
             assert library.get_exporter_name() == "B"
             assert library.get_exporter_name("a") == "A"
 
+    def test_generic_keywords_check_the_lease(self, leases):
+        library = Jumpstarter(selector="board=rpi4")
+        library.call_driver("dut.power", "on")
+        library._session(None).lease.lease_ended = True
+        for call in (
+            lambda: library.call_driver("dut.power", "on"),
+            lambda: library.get_driver("dut.power"),
+            lambda: library.list_drivers(),
+            lambda: library.use_device("dut"),
+        ):
+            with pytest.raises(Exception, match="has ended"):
+                call()
+        assert library.get_lease_name() == "lease-1"  # reading what the session was still works
+
+    def test_list_drivers_escapes_descriptions(self, served, monkeypatch):
+        logged = []
+        monkeypatch.setattr(robot_logger, "info", lambda message, html=False: logged.append(message))
+        library = Jumpstarter()
+        with use_client(served):
+            monkeypatch.setattr(served.children["shell"], "description", "Relay <on|off> & more")
+            library.list_drivers()
+        assert "Relay &lt;on|off&gt; &amp; more" in logged[0]
+        assert "<on|off>" not in logged[0]
+
     def test_connect_to_shell_session_needs_a_shell(self):
         with pytest.raises(JumpstarterRobotError, match="JUMPSTARTER_HOST"):
             Jumpstarter().connect_to_shell_session()
@@ -390,6 +416,71 @@ class TestInRobot:
         run_robot(suite).assert_passed()
         assert leases.calls[0][1]["acquire"] is False
 
+    def test_bare_import_attaches_to_jmp_lease(self, tmp_path, leases, run_robot, monkeypatch):
+        monkeypatch.setenv("JMP_LEASE", "made-by-hand")
+        suite = write(
+            tmp_path,
+            "bare.robot",
+            """
+            *** Settings ***
+            Library    jumpstarter_robot.Jumpstarter
+
+            *** Test Cases ***
+            Attached
+                Dut Power On
+                ${name}=    Get Exporter Name
+                Should Be Equal    ${name}    exporter-default
+            """,
+        )
+        run_robot(suite).assert_passed()
+        assert [(name, kwargs["acquire"]) for name, kwargs in leases.calls] == [("default", False)]
+
+    def test_bare_import_leaves_jmp_lease_to_a_declared_session(self, tmp_path, leases, run_robot, monkeypatch):
+        monkeypatch.setenv("JMP_LEASE", "made-by-hand")
+        suite = write(
+            tmp_path,
+            "named.robot",
+            """
+            *** Settings ***
+            Library    jumpstarter_robot.Jumpstarter
+            Library    jumpstarter_robot.Session    lab    selector=board=rpi4
+
+            *** Test Cases ***
+            Attached
+                ${name}=    Get Exporter Name
+                Should Be Equal    ${name}    exporter-lab
+            """,
+        )
+        run_robot(suite).assert_passed()
+        assert [name for name, _ in leases.calls] == ["lab"]  # no second connection named default
+
+    def test_each_suite_gets_the_exporter_it_declares(self, tmp_path, served, run_robot):
+        opened = []
+
+        def local(name, config, config_dir=None):
+            opened.append(Path(config).name)
+            return sessions.Session.from_client(served, name, exporter=Path(config).stem)
+
+        for index, board in enumerate(("a", "b", "a"), start=1):
+            write(
+                tmp_path,
+                f"suites/{index:02}_{board}.robot",
+                f"""
+                *** Settings ***
+                Library    jumpstarter_robot.Jumpstarter    exporter_config=${{CURDIR}}/{board}.yaml
+                ...    auto_import=False
+
+                *** Test Cases ***
+                Suite {index} Drives {board}
+                    ${{name}}=    Get Exporter Name
+                    Should Be Equal    ${{name}}    {board}
+                """,
+            )
+        with use_session_factory(local=local):
+            run_robot(tmp_path / "suites").assert_passed()
+        # the third suite reuses the first one's library instance, and still gets its own exporter
+        assert opened == ["a.yaml", "b.yaml", "a.yaml"]
+
     def test_acquire_lease_serves_a_local_exporter_config(self, tmp_path, served, run_robot):
         opened = []
 
@@ -552,6 +643,27 @@ class TestInRobot:
             """.replace("POWER_CLIENT", POWER),
         )
         with use_client(served):
+            run_robot(suite).assert_passed()
+
+    def test_switch_session_returns_the_session_in_effect(self, tmp_path, served, run_robot):
+        suite = write(
+            tmp_path,
+            "restore.robot",
+            """
+            *** Settings ***
+            Library    jumpstarter_robot.Jumpstarter    auto_import=False
+            Library    jumpstarter_robot.Session    android    exporter_config=unused.yaml
+
+            *** Test Cases ***
+            Switch And Restore
+                ${previous}=    Switch Session    aux
+                Should Be Equal    ${previous}    android
+                Switch Session    ${previous}
+                ${name}=    Get Exporter Name
+                Should Be Equal    ${name}    android-exporter
+            """,
+        )
+        with use_client(served, "android", exporter="android-exporter"), use_client(served, "aux"):
             run_robot(suite).assert_passed()
 
     def test_switch_session_in_robot(self, tmp_path, served, run_robot):

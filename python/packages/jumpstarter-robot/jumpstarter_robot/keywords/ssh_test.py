@@ -560,6 +560,19 @@ def test_scope_end_closes_the_library_connection(served, monkeypatch):
     assert not ssh._opened
 
 
+def test_bad_scope_opens_nothing(served, monkeypatch):
+    library = FakeSSHLibrary()
+    entered = []
+    monkeypatch.setattr(ssh, "_enter_endpoint", lambda *args: entered.append(args))
+    with fake_library(monkeypatch, library):
+        with pytest.raises(Exception, match="scope must be one of"):
+            SshKeywords().open_ssh_connection("ssh", scope="tests")
+        with pytest.raises(Exception, match="scope must be one of"):
+            ssh.open_endpoint("ssh", None, scope="tests")
+    # no forward and no private key file to leave behind
+    assert entered == [] and library.calls == [] and not ssh._opened
+
+
 def test_close_without_connection_fails(served, monkeypatch):
     with fake_library(monkeypatch, FakeSSHLibrary()), pytest.raises(Failure, match="no SSH connection is open"):
         SshKeywords().close_ssh_connection()

@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14' and platform_python_implementation != 'PyPy' and sys_platform == 'linux'",
@@ -4369,7 +4369,7 @@ requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-appium", marker = "extra == 'appium'", editable = "packages/jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-appium", marker = "extra == 'mobile'", editable = "packages/jumpstarter-driver-appium" },
-    { name = "robotframework", specifier = ">=7.0" },
+    { name = "robotframework", specifier = ">=7.5" },
     { name = "robotframework-appiumlibrary", marker = "extra == 'appium'", specifier = ">=3.0,<4" },
     { name = "robotframework-appiumlibrary", marker = "extra == 'mobile'", specifier = ">=3.0,<4" },
     { name = "robotframework-sshlibrary", marker = "extra == 'ssh'", specifier = ">=3.8.0" },

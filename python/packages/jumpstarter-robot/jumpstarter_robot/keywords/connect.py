@@ -22,6 +22,7 @@ from robot.api.deco import keyword
 
 from .. import context, sessions
 from ..errors import mapped_errors
+from ..signatures import convert_call
 from jumpstarter.client import DriverClient
 from jumpstarter.client.base import StubDriverClient
 
@@ -129,12 +130,12 @@ def connect_to_device(path: str, alias: str | None = None, session: str | None =
             )
         family, child = found
         target = child_path(path, child)
-        if family == "ssh":
-            index = ssh.open_ssh_connection(target, alias=alias, session=session, **options)
-        elif family == "adb":
-            index = adb.open_adb_device(target, alias=alias, session=session, **options)
-        else:
-            index = ios.open_ios_device(target, alias=alias, session=session, **options)
+        opener = {"ssh": ssh.open_ssh_connection, "adb": adb.open_adb_device, "ios": ios.open_ios_device}[family]
+        # Free named arguments arrive as text: without the opener's own types
+        # ``wait_for_boot=False`` would be the true string "False".
+        named = {"path": target, "alias": alias, "session": session, **options}
+        call_args, call_kwargs = convert_call(opener, (), named)
+        index = opener(*call_args, **call_kwargs)
     return alias if alias else index
 
 

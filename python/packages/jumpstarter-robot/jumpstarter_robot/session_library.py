@@ -164,6 +164,18 @@ class SessionConfig:
             os.environ.get(JUMPSTARTER_HOST) or self.wants_lease or os.environ.get(JMP_LEASE) or self.exporter_config
         )
 
+    @property
+    def declaration(self) -> tuple:
+        """What this config connects to; two configs for the same target compare equal."""
+        return (
+            self.exporter_config,
+            self.selector,
+            self.exporter_name,
+            self.lease_name,
+            self.config,
+            str(self.config_dir) if self.config_dir else None,
+        )
+
     def describe(self) -> str:
         if os.environ.get(JUMPSTARTER_HOST):
             return "the jmp shell session"
@@ -309,8 +321,7 @@ class Session:
             sessions.set_lease_end_policy(str(on_lease_end).strip(), session=self.name)
         setattr(self, context.SESSION_MARKER, self.name)
         self._factory = self.config.open
-        sessions.register_factory(self.name, self._factory)
-        sessions.register_config(self.name, self.config)
+        self._declare()
         words = title(self.name)
         self._keywords = {
             f"Connect {words} Session": self._connect,
@@ -345,6 +356,16 @@ class Session:
 
     def _release(self) -> None:
         context.close_session(self.name)
+
+    def _declare(self) -> None:
+        sessions.register_factory(self.name, self._factory, self.config.declaration)
+        sessions.register_config(self.name, self.config)
+
+    def start_suite(self, data, result) -> None:
+        # Robot Framework reuses this instance for a later suite with the same
+        # import, without calling __init__: another suite may have declared the
+        # name for a different target in between.
+        self._declare()
 
     def end_test(self, data, result) -> None:
         context.end_test()

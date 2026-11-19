@@ -92,6 +92,22 @@ class TestRegistry:
         sessions.unregister_factory("lab", factory)
         assert "lab" not in sessions.names()
 
+    def test_another_declaration_closes_the_open_session(self, tree):
+        first, second = Counter(tree, "lab"), Counter(tree, "lab")
+        sessions.register_factory("lab", first, ("a.yaml",))
+        opened = sessions.get("lab")
+        sessions.register_factory("lab", first, ("a.yaml",))  # the same declaration again keeps it
+        assert sessions.opened("lab") is opened
+        sessions.register_factory("lab", second, ("b.yaml",))
+        assert opened._closed and sessions.opened("lab") is None
+        assert sessions.get("lab").declared == ("b.yaml",)
+        assert len(second.calls) == 1
+
+    def test_a_session_opened_by_a_keyword_survives_a_declaration(self, tree):
+        opened = sessions.install(Session.from_client(tree, "lab"))  # Acquire Lease, Start Local Exporter
+        sessions.register_factory("lab", Counter(tree, "lab"), ("a.yaml",))
+        assert sessions.opened("lab") is opened
+
     def test_install_conflict(self, tree):
         first = sessions.install(Session.from_client(tree, "x"))
         assert sessions.install(first) is first  # installing the same session again is fine
@@ -431,8 +447,11 @@ class TestFromExporterConfig:
             Session.from_exporter_config(config=str(tmp_path / "missing.yaml"))
 
 
-def listed(name, selector="", *, client="me", exporter_name=None, began=None, ended=False, shared=()):
-    """An active lease as the controller lists it."""
+STARTED = datetime(2026, 11, 3, 12, 0, tzinfo=UTC)
+
+
+def listed(name, selector="", *, client="me", exporter_name=None, began=STARTED, ended=False, shared=()):
+    """A lease as the controller lists it: active unless ``began`` is None or it ``ended``."""
     return Lease(
         namespace="default",
         name=name,
@@ -478,6 +497,11 @@ class TestMatchingLease:
 
     def test_ended_leases_are_skipped(self):
         assert self.match([listed("old", "a=b", ended=True)], "a=b") is None
+
+    def test_leases_that_have_not_started_are_skipped(self):
+        # scheduled for later, or still waiting for an exporter: attaching would wait, not run
+        assert self.match([listed("tonight", "a=b", began=None)], "a=b") is None
+        assert self.match([listed("tonight", "a=b", began=None), listed("now", "a=b")], "a=b") == "now"
 
     def test_exporter_name(self):
         leases = [listed("any", "a=b"), listed("pinned", "a=b", exporter_name="rpi4-01")]
@@ -545,6 +569,16 @@ class TestLeaseReuse:
         monkeypatch.setenv("JMP_LEASE", "from-env")
         Session.from_lease(selector="board=rpi4", release_grace=0).close()
         assert config.listings == 0
+
+    def test_named_lease_is_attached_to_without_the_selector(self, config, monkeypatch):
+        # with both, the client creates a new lease when the selectors differ as text, and never releases it
+        named = Session.from_lease(selector="board=rpi4", exporter_name="rpi4-01", lease_name="given", release_grace=0)
+        assert config.calls[0][:3] == (None, None, "given")
+        assert named.owns_lease is False
+        named.close()
+        monkeypatch.setenv("JMP_LEASE", "from-env")
+        Session.from_lease(selector="board=rpi4", acquire=False, release_grace=0).close()
+        assert config.calls[1][:3] == (None, None, None)  # the client reads JMP_LEASE itself
 
     def test_attach_only_uses_a_matching_lease(self, config):
         config.listed = [listed("mine", "board=rpi4")]

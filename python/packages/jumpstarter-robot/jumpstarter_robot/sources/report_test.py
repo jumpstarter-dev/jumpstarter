@@ -75,6 +75,13 @@ class TestFromReport:
         assert "jumpstarter_robot_missing_pkg.client.GoneClient" in (gone.reason or "")
         assert any(w.startswith("gone:") for w in tree.warnings)
 
+    def test_children_of_an_uninstalled_client_are_kept(self):
+        # Dutlink without its client package: its power child is a PowerClient all the same
+        with serve(Composite(children={"dutlink": Uninstalled(children={"power": MockPower()})})) as root:
+            tree = from_report(root)
+        assert get_node(tree, "dutlink").kind == "opaque"
+        assert get_node(tree, "dutlink.power").client == POWER
+
     def test_single_driver_root(self):
         with serve(MockPower()) as root:
             tree = from_report(root)

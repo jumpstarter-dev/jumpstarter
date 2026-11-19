@@ -58,6 +58,18 @@ def _in_test() -> bool:
     return context is not None and context.test is not None
 
 
+def check_scope(scope: str) -> str:
+    """``scope`` in its normal form, or a ValueError for one that does not exist.
+
+    Keywords call this before they open anything: `add_scoped` runs last, and
+    by then a mistyped scope would leave the connection open with no closer.
+    """
+    normal = str(scope).lower()
+    if normal not in SCOPES:
+        raise ValueError(f"scope must be one of {', '.join(SCOPES)}, not '{scope}'")
+    return normal
+
+
 def add_scoped(
     closer: Callable[[], None], scope: str = "suite", session: sessions.Session | None = None
 ) -> Callable[[], None]:
@@ -66,9 +78,7 @@ def add_scoped(
     A ``test`` scope requested outside a test (in a suite setup) becomes the
     suite scope, which is where such a resource naturally ends.
     """
-    scope = scope.lower()
-    if scope not in SCOPES:
-        raise ValueError(f"scope must be one of {', '.join(SCOPES)}, not '{scope}'")
+    scope = check_scope(scope)
     if scope == "test" and not _in_test():
         scope = "suite"
     run = _once(closer)
@@ -147,7 +157,7 @@ def to_robot(value: Any, *, max_items: int = 1000, stem: str = "image") -> Any:
 SESSION_MARKER = "_jumpstarter_session_name"
 
 
-def _suite_session_names() -> list[str]:
+def suite_session_names() -> list[str]:
     """Sessions declared by the libraries imported into the running suite."""
     from robot.running.context import EXECUTION_CONTEXTS
 
@@ -169,7 +179,7 @@ def session_name(explicit: str | None = None) -> str:
         return explicit
     if sessions.default_switched():
         return sessions.default_name()
-    declared = _suite_session_names()
+    declared = suite_session_names()
     if len(declared) == 1:
         return declared[0]
     return sessions.default_name()
@@ -177,7 +187,11 @@ def session_name(explicit: str | None = None) -> str:
 
 def switch_session(name: str) -> str:
     """`Switch Session`: make ``name`` the default until the running suite ends; returns the previous one."""
-    return sessions.set_default(name, suite=_current_suite_id())
+    # not the registry's default: with one session declared in the suite and no
+    # earlier switch, that session is the one in effect
+    previous = session_name()
+    sessions.set_default(name, suite=_current_suite_id())
+    return previous
 
 
 def session(explicit: str | None = None) -> sessions.Session:

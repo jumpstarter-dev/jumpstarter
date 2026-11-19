@@ -9,7 +9,7 @@ requires-python = ">=3.12"
 dependencies = [
   "jumpstarter",
   "click>=8.1.7.2",
-  "robotframework>=7.0",
+  "robotframework>=7.5",
   "tomlkit>=0.13.0",
 ]
 

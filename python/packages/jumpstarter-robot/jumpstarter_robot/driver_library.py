@@ -230,7 +230,7 @@ class Driver:
                 kind="property",
             )
         try:
-            arguments = argument_spec(member.function)
+            arguments = argument_spec(member.function, skip=0 if member.static else 1)
         except (TypeError, ValueError):
             return None
         overrides = type_overrides(member)
