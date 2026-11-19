@@ -72,6 +72,19 @@ class OpaqueDriver(Driver):
         return "example.client.OpaqueClient"
 
 
+@dataclass(kw_only=True)
+class UnderscoreDriver(Driver):
+    """A driver whose constructor takes leading-underscore fields."""
+
+    host: str
+    _token: str
+    _endpoint: Endpoint = field(default_factory=Endpoint)
+
+    @classmethod
+    def client(cls):
+        return "example.client.ConfigClient"
+
+
 def entry_point(name="Config", cls=ConfigDriver):
     """An entry point whose load can be observed or made to fail."""
     return SimpleNamespace(
@@ -127,6 +140,19 @@ def test_recursive_root_schema(installed):
     assert set(schema["required"]) == {"host", "port"}
     assert schema["properties"]["peer"]["anyOf"][0]["$ref"] == "#/$defs/RecursiveDriver"
     assert "RecursiveDriver" in schema["defs"]
+
+
+def test_leading_underscore_constructor_fields_are_kept(installed):
+    entry, _ = installed
+    entry.load.return_value = UnderscoreDriver
+    schema = schema_json()[0]["drivers"][0]
+    assert schema["error"] is None
+    assert schema["properties"]["_token"]["type"] == "string"
+    # Resolved on its own, the nested model is inlined; its refs still resolve.
+    assert schema["properties"]["_endpoint"]["properties"]["mode"]["$ref"] == "#/$defs/Mode"
+    assert "Mode" in schema["defs"]
+    assert set(schema["properties"]) == {"host", "_token", "_endpoint"}
+    assert set(schema["required"]) == {"host", "_token"}
 
 
 def test_unmodelable_field_degrades_only_itself(installed):

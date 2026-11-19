@@ -193,7 +193,8 @@ def _schema_for_entry_point(entry_point, base_fields: set[str]) -> DriverSchema:
         # Build the schema from config fields only: runtime-only fields
         # (init=False, or handles like TemporaryDirectory) are not user config
         # and pydantic cannot model many of them.
-        schema = TypeAdapter(_config_model(cls, fields)).json_schema()
+        public = [(field, annotation) for field, annotation in fields if not field.name.startswith("_")]
+        schema = TypeAdapter(_config_model(cls, public)).json_schema()
         entry.defs = schema.get("$defs", {})
         # Recursive models can put the root object in $defs as well.
         if schema.get("$ref", "").startswith("#/$defs/"):
@@ -205,6 +206,14 @@ def _schema_for_entry_point(entry_point, base_fields: set[str]) -> DriverSchema:
         return entry
     entry.properties = schema.get("properties", {})
     entry.required = schema.get("required", [])
+    # pydantic reserves leading-underscore names for private attributes, so
+    # those constructor fields cannot go through the model; add them one by one.
+    private = [(field, annotation) for field, annotation in fields if field.name.startswith("_")]
+    if private:
+        properties, required, defs = _per_field_schema(private)
+        entry.properties |= properties
+        entry.required += required
+        entry.defs |= defs
     return entry
 
 
