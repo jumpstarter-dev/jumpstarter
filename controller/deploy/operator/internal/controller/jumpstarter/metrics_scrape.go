@@ -418,6 +418,7 @@ func (r *JumpstarterReconciler) pruneServiceMonitors(ctx context.Context, js *op
 		return fmt.Errorf("list servicemonitors: %w", err)
 	}
 
+	var errs []error
 	for i := range monitors.Items {
 		monitor := &monitors.Items[i]
 		if _, ok := desired[monitor.GetName()]; ok {
@@ -431,15 +432,22 @@ func (r *JumpstarterReconciler) pruneServiceMonitors(ctx context.Context, js *op
 			Group: serviceMonitorGroup, Version: serviceMonitorVersion, Kind: serviceMonitorKind,
 		})
 		// Delete only the object that passed the ownership check: a
-		// replacement must not be removed under the same name.
-		if err := r.Delete(ctx, monitor, deletePreconditions(monitor)); err != nil &&
-			!apierrors.IsNotFound(err) && !apimeta.IsNoMatchError(err) && !apierrors.IsConflict(err) {
-			return fmt.Errorf("delete stale servicemonitor %s: %w", monitor.GetName(), err)
+		// replacement must not be removed under the same name. A conflict
+		// means the object changed after the check; it is returned for retry
+		// rather than swallowed, because ServiceMonitors are not watched and a
+		// dropped error would wait for the resync.
+		err := r.Delete(ctx, monitor, deletePreconditions(monitor))
+		switch {
+		case err == nil:
+			log.Info("Deleted stale ServiceMonitor", "name", monitor.GetName())
+		case apierrors.IsNotFound(err) || apimeta.IsNoMatchError(err):
+			// Already gone, or the API is absent: nothing left to prune.
+		default:
+			errs = append(errs, fmt.Errorf("delete stale servicemonitor %s: %w", monitor.GetName(), err))
 		}
-		log.Info("Deleted stale ServiceMonitor", "name", monitor.GetName())
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 // deletePreconditions pins a delete to the object that was fetched and
@@ -451,7 +459,9 @@ func deletePreconditions(obj client.Object) client.Preconditions {
 	return client.Preconditions{UID: &uid, ResourceVersion: &resourceVersion}
 }
 
-// deleteObjectIfExists deletes an object and ignores NotFound.
+// deleteObjectIfExists deletes an object and ignores NotFound. A conflict is
+// returned so the reconcile retries with a fresh read instead of leaving the
+// object behind until the resync.
 func (r *JumpstarterReconciler) deleteObjectIfExists(ctx context.Context, js *operatorv1alpha1.Jumpstarter, key types.NamespacedName, obj client.Object) error {
 	if err := r.Get(ctx, key, obj); err != nil {
 		if apierrors.IsNotFound(err) || apimeta.IsNoMatchError(err) {
@@ -462,8 +472,10 @@ func (r *JumpstarterReconciler) deleteObjectIfExists(ctx context.Context, js *op
 	if err := ensureControlledBy(js, obj); err != nil {
 		return fmt.Errorf("refusing to delete %w", err)
 	}
-	if err := r.Delete(ctx, obj, deletePreconditions(obj)); err != nil &&
-		!apierrors.IsNotFound(err) && !apimeta.IsNoMatchError(err) && !apierrors.IsConflict(err) {
+	if err := r.Delete(ctx, obj, deletePreconditions(obj)); err != nil {
+		if apierrors.IsNotFound(err) || apimeta.IsNoMatchError(err) {
+			return nil
+		}
 		return err
 	}
 	return nil
