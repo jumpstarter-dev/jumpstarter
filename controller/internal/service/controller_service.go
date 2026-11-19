@@ -687,7 +687,11 @@ func (s *ControllerService) UpdateLeaseHooks(
 		return nil, status.Errorf(codes.Internal, "unable to update lease hooks: %s", err)
 	}
 
-	logger.Info("Recorded lease hook state", "leaseHooks", exporter.Status.LeaseHooks)
+	// applyLeaseHookUpdate rejects a UID that does not match the assigned
+	// lease, so the request UID is validated by the time this record is written.
+	// The shipper queries `| json | lease_id="<uid>"`, so the record must carry
+	// the UID alongside the human-readable lease name.
+	logger.Info("Recorded lease hook state", "lease_id", req.GetLeaseUid(), "leaseHooks", exporter.Status.LeaseHooks)
 	return exporter.Status.LeaseHooks.ToProtobuf(), nil
 }
 
