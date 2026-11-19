@@ -11,7 +11,33 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  # The nested-BIN check pulls container images. Keep it separate so a registry
+  # or base-image failure still reports on its own without suppressing the
+  # controller, operator, and generated-file results.
+  prebuilt-nested-bin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+
+      - name: Cache controller bin directory
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: controller/bin/
+          key: ${{ runner.os }}-controller-bin-${{ hashFiles('controller/go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-controller-bin-
+
+      - name: Check prebuilt Containerfile nested BIN
+        working-directory: controller
+        run: make test-prebuilt-nested-bin
+
   tests:
     runs-on: ubuntu-latest
     steps:
@@ -27,10 +53,6 @@ jobs:
           key: ${{ runner.os }}-controller-bin-${{ hashFiles('controller/go.mod') }}
           restore-keys: |
             ${{ runner.os }}-controller-bin-
-
-      - name: Check prebuilt Containerfile nested BIN
-        working-directory: controller
-        run: make test-prebuilt-nested-bin
 
       - name: Run controller tests
         working-directory: controller
