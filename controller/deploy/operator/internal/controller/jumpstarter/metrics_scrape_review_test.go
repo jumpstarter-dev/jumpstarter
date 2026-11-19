@@ -274,3 +274,72 @@ func TestDeleteObjectIfExistsPinsDeleteToObservedObject(t *testing.T) {
 		t.Fatalf("resourceVersion precondition = %v, want %s", wrapped.preconditions.ResourceVersion, owned.ResourceVersion)
 	}
 }
+
+// deleteConflictClient fails every delete with a Conflict, emulating an object
+// that changed after the ownership check.
+type deleteConflictClient struct {
+	client.Client
+}
+
+func (c *deleteConflictClient) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
+	return apierrors.NewConflict(
+		schema.GroupResource{Group: "test", Resource: "objects"},
+		obj.GetName(),
+		errors.New("object changed after the ownership check"),
+	)
+}
+
+// A conflict must be returned for retry, not swallowed: ServiceMonitors are not
+// watched, so a dropped error would wait for the resync.
+func TestDeleteObjectIfExistsReturnsConflict(t *testing.T) {
+	s := newObservabilityScheme(t)
+	js := testJumpstarter()
+
+	owned := &corev1.Service{ObjectMeta: metav1.ObjectMeta{
+		Name:            metricsServiceName(js, "controller"),
+		Namespace:       js.Namespace,
+		UID:             types.UID("uid-1"),
+		ResourceVersion: "42",
+		OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(js, operatorv1alpha1.GroupVersion.WithKind("Jumpstarter"))},
+	}}
+
+	wrapped := &deleteConflictClient{Client: fake.NewClientBuilder().WithScheme(s).WithObjects(owned).Build()}
+	r := &JumpstarterReconciler{Client: wrapped, Scheme: s}
+
+	key := types.NamespacedName{Name: owned.Name, Namespace: owned.Namespace}
+	err := r.deleteObjectIfExists(context.Background(), js, key, &corev1.Service{})
+	if err == nil || !apierrors.IsConflict(err) {
+		t.Fatalf("deleteObjectIfExists() error = %v, want a conflict", err)
+	}
+
+	if err := wrapped.Get(context.Background(), key, &corev1.Service{}); err != nil {
+		t.Fatalf("the Service must survive a conflicting delete: %v", err)
+	}
+}
+
+func TestPruneServiceMonitorsReturnsConflict(t *testing.T) {
+	s := newObservabilityScheme(t)
+	js := testJumpstarter()
+
+	stale := serviceMonitorObject(metricsServiceName(js, "controller"), js.Namespace)
+	stale.SetOwnerReferences([]metav1.OwnerReference{
+		*metav1.NewControllerRef(js, operatorv1alpha1.GroupVersion.WithKind("Jumpstarter")),
+	})
+
+	wrapped := &deleteConflictClient{Client: fake.NewClientBuilder().WithScheme(s).WithObjects(stale).Build()}
+	r := &JumpstarterReconciler{Client: wrapped, Scheme: s}
+
+	err := r.pruneServiceMonitors(context.Background(), js, map[string]struct{}{})
+	if err == nil || !apierrors.IsConflict(err) {
+		t.Fatalf("pruneServiceMonitors() error = %v, want a conflict", err)
+	}
+
+	key := types.NamespacedName{Name: stale.GetName(), Namespace: stale.GetNamespace()}
+	remaining := serviceMonitorObject("", "")
+	remaining.SetGroupVersionKind(schema.GroupVersionKind{
+		Group: serviceMonitorGroup, Version: serviceMonitorVersion, Kind: serviceMonitorKind,
+	})
+	if err := wrapped.Get(context.Background(), key, remaining); err != nil {
+		t.Fatalf("the ServiceMonitor must survive a conflicting delete: %v", err)
+	}
+}
