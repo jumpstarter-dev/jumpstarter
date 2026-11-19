@@ -417,10 +417,12 @@ type TelemetryMetricsConfig struct {
 	ExemplarKeys []string `json:"exemplarKeys,omitempty"`
 
 	// Allowed driver_type label values. Unlisted types are remapped to "other".
-	// At most 16 entries (the default set plus site-specific categories), each
-	// at most 32 characters.
-	// +kubebuilder:default={"power","storage","network","serial","console","video","composite"}
-	// +kubebuilder:validation:MaxItems=16
+	// At most 24 entries (the default set plus site-specific categories), each
+	// at most 32 characters. Keep the default in sync with
+	// service.DefaultDriverTypeEnum and the operator's
+	// defaultTelemetryDriverTypeEnum.
+	// +kubebuilder:default={"power","storage","network","serial","console","video","composite","appium","automotive","bluetooth","debug","gpio","iosdevice","shell","testing"}
+	// +kubebuilder:validation:MaxItems=24
 	// +kubebuilder:validation:items:MaxLength=32
 	DriverTypeEnum []string `json:"driverTypeEnum,omitempty"`
 

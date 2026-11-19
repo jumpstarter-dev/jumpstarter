@@ -54,7 +54,12 @@ const (
 
 // JEP-0013 default allowlists used when spec.telemetry.metrics omits a field.
 var (
-	defaultTelemetryDriverTypeEnum = []string{"power", "storage", "network", "serial", "console", "video", "composite"}
+	// Keep in sync with service.DefaultDriverTypeEnum and the CRD kubebuilder
+	// default on DriverTypeEnum (three authorities; a workspace check asserts).
+	defaultTelemetryDriverTypeEnum = []string{
+		"power", "storage", "network", "serial", "console", "video", "composite",
+		"appium", "automotive", "bluetooth", "debug", "gpio", "iosdevice", "shell", "testing",
+	}
 	defaultTelemetryExemplarKeys   = []string{"client", "lease_id"}
 	defaultTelemetryScrapeTimeout  = 7 * time.Second
 	defaultTelemetryLokiQueueDepth = int32(10000)

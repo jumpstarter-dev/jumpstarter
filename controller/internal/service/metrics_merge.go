@@ -50,6 +50,7 @@ var hubMetricNames = []string{scrapeTimeoutsMetric, metricsParseErrorsMetric}
 // DefaultDriverTypeEnum is the JEP-0013 default allowlist for driver_type.
 var DefaultDriverTypeEnum = []string{
 	"power", "storage", "network", "serial", "console", "video", "composite",
+	"appium", "automotive", "bluetooth", "debug", "gpio", "iosdevice", "shell", "testing",
 }
 
 // DefaultExemplarKeys is the JEP-0013 default exemplar allowlist.
