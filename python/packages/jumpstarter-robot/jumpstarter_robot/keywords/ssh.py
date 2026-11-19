@@ -129,6 +129,7 @@ def _enter_endpoint(path: str, node: MatchedClient, stack: ExitStack) -> SshEndp
 def open_endpoint(path: str, session: str | None, scope: str = "suite") -> SshEndpoint:
     """Forward a local port to the SSH driver at ``path`` and write its identity, for ``scope``."""
     with sessions.lock():
+        scope = context.check_scope(scope)  # before anything is opened
         target, node = ssh_node(path, session)
         stack = ExitStack()
         try:
@@ -231,6 +232,9 @@ def open_ssh_connection(
     username = username or None
     library = sshlibrary()
     with sessions.lock(), mapped_errors("Open SSH Connection"):
+        # before anything is opened: the forward and the device's private key
+        # file would otherwise stay behind with nothing registered to close them
+        scope = context.check_scope(scope)
         target, node = ssh_node(path, session)
         stack = ExitStack()
         try:

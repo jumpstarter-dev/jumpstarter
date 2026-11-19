@@ -286,6 +286,16 @@ class TestProject:
         assert main(["generate", "--from", "describe.json"]) == EXIT_ERROR
         assert "name its client with --client" in capsys.readouterr().err
 
+    def test_output_and_session_need_one_client(self, project, workdir, capsys):
+        # every client's resource would land in the one file, and the last would win
+        assert main(["generate", "-o", "out.resource"]) == EXIT_ERROR
+        assert "--output apply to one client: name it with --client (local, rpi4)" in capsys.readouterr().err
+        assert main(["generate", "--session", "lab"]) == EXIT_ERROR
+        assert "--session apply to one client" in capsys.readouterr().err
+        assert not (workdir / "out.resource").exists()
+        assert main(["generate", "--client", "local", "-o", "out.resource"]) == EXIT_OK
+        assert (workdir / "out.resource").exists()
+
     def test_unknown_client(self, project, capsys):
         assert main(["generate", "--client", "nope"]) == EXIT_ERROR
         assert "unknown client 'nope'" in capsys.readouterr().err

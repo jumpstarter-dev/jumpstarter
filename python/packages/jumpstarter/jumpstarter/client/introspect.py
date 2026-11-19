@@ -138,6 +138,8 @@ class ClientMember:
     kind: MemberKind
     function: Any
     owner: type
+    # a staticmethod: ``function`` then has no ``self`` to leave out of its signature
+    static: bool = False
 
 
 def _is_client_base(klass: type) -> bool:
@@ -173,7 +175,12 @@ def _classify(raw: Any) -> tuple[MemberKind, Any] | None:
         return "generator", raw
     wrapped = getattr(raw, "__wrapped__", None)
     if wrapped is not None and (inspect.isgeneratorfunction(wrapped) or inspect.isasyncgenfunction(wrapped)):
-        return "contextmanager", raw
+        # Only contextlib turns a generator function into a context manager. Any
+        # other functools.wraps decorator (pydantic's validate_call on
+        # OpendalClient.list) still returns the generator itself.
+        if getattr(raw, "__globals__", {}).get("__name__") == "contextlib":
+            return "contextmanager", raw
+        return ("generator" if inspect.isgeneratorfunction(wrapped) else "async"), raw
     return "method", raw
 
 
@@ -202,7 +209,11 @@ def iter_client_members(cls: type) -> list[ClientMember]:
             if classified is None:
                 continue
             kind, function = classified
-            members.append(ClientMember(name=name, kind=kind, function=function, owner=klass))
+            members.append(
+                ClientMember(
+                    name=name, kind=kind, function=function, owner=klass, static=isinstance(raw, staticmethod)
+                )
+            )
     return members
 
 

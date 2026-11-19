@@ -37,7 +37,10 @@ def _live_node(node: Any, path: list[str], warnings: list[str]) -> DeviceNode:
 
     if isinstance(node, StubDriverClient):
         missing = node.labels.get(CLIENT_LABEL, "its client class")
-        return opaque_node(path, f"{missing} is not installed here; install its package and regenerate", warnings)
+        opaque = opaque_node(path, f"{missing} is not installed here; install its package and regenerate", warnings)
+        # its children may well have clients installed here, and are drivers like any other
+        opaque.children = [_live_node(child, [*path, name], warnings) for name, child in node.children.items()]
+        return opaque
     children = [_live_node(child, [*path, name], warnings) for name, child in node.children.items()]
     return driver_node(
         path,

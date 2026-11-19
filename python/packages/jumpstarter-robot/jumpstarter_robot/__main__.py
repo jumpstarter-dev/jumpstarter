@@ -237,6 +237,14 @@ def _check_single_exporter(args: argparse.Namespace, clients: Sequence[ClientSet
         raise UsageError(f"inside `jmp shell` there is one exporter: name its client with --client ({names})")
 
 
+def _check_single_target(args: argparse.Namespace, clients: Sequence[ClientSettings]) -> None:
+    """``--output`` and ``--session`` name one resource: several clients would overwrite each other's."""
+    given = [flag for flag, value in (("--output", args.output), ("--session", args.session)) if value]
+    if len(clients) > 1 and given:
+        names = ", ".join(settings.name for settings in clients)
+        raise UsageError(f"{' and '.join(given)} apply to one client: name it with --client ({names})")
+
+
 # ---- trees ----
 
 
@@ -521,6 +529,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
     code = EXIT_OK
     clients = select_clients(args, project)
     _check_single_exporter(args, clients)
+    _check_single_target(args, clients)
     for settings in clients:
         code = max(code, generate_one(settings, args, project))
     return code

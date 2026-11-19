@@ -7,7 +7,7 @@ import pytest
 from jumpstarter_driver_composite.driver import Composite
 from jumpstarter_driver_power.driver import MockPower
 from jumpstarter_driver_shell.driver import Shell
-from pydantic import BaseModel
+from pydantic import BaseModel, validate_call
 from robot.api import Failure
 from robot.libdoc import LibraryDocumentation
 from robot.utils import DotDict
@@ -55,6 +55,16 @@ class GadgetClient(DriverClient):
         yield self
 
     async def background(self) -> None: ...
+
+    @staticmethod
+    def render(status: str, *, verbose: bool = False) -> str:
+        """Format a status; a static method has no ``self`` to drop."""
+        return f"{status}!" if verbose else status
+
+    @validate_call
+    def scan(self, start: int = 0) -> Generator[int, None, None]:
+        """A generator behind a decorator is still a generator."""
+        yield from range(start, start + 3)
 
 
 class Gadget(JumpstarterDriver):
@@ -172,6 +182,17 @@ class TestKeywords:
         assert "Gadget Background" not in names  # async members are skipped
         assert "``opened``" in library.get_keyword_documentation("__intro__")
         assert library.get_keyword_documentation("__intro__").startswith("A client with every member shape.")
+
+    def test_static_method_keeps_its_first_argument(self, tree):
+        library = Driver("gadget", client=GADGET)
+        assert library.get_keyword_arguments("Gadget Render") == ["status", "*", ("verbose", False)]
+        assert run(library, "Gadget Render", "ok", verbose=True) == "ok!"
+
+    def test_decorated_generator_is_a_keyword(self, tree):
+        library = Driver("gadget", client=GADGET)
+        assert library.get_keyword_arguments("Gadget Scan") == [("start", 0), "*", ("max_items", 1000)]
+        assert run(library, "Gadget Scan", 5) == [5, 6, 7]
+        assert "``scan``" not in library.get_keyword_documentation("__intro__")  # not a context manager
 
     def test_max_items_setting(self):
         library = Driver("gadget", client=GADGET, max_items=5)

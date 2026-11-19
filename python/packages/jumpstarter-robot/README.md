@@ -358,7 +358,7 @@ each keyword's full documentation and examples (`libdoc ... Jumpstarter.html`).
 | `Lease Should Be Active` | `session=None` | Fail unless the session is connected and its lease has not ended. |
 | `Release Lease` | `session=None` | Disconnect a session, releasing its lease if it was acquired here. |
 | `Start Local Exporter` | `exporter_config, session=None` | Serve a local exporter config in this process and connect to it. |
-| `Stop Local Exporter` | `session=None` | Stop a session's exporter and disconnect; it restarts if a later keyword needs it. |
+| `Stop Local Exporter` | `session=None` | Stop a session's exporter and disconnect. A session that declares its exporter config restarts when a later keyword needs it; one opened by `Start Local Exporter` needs that keyword again. |
 | `Switch Session` | `session` | Make ``session`` the one keywords use when none is given; returns the previous one. |
 
 `Acquire Lease` starts from the session's declaration (the `Jumpstarter` or

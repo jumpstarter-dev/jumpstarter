@@ -125,6 +125,19 @@ def test_returns_the_alias_and_passes_options(tree, calls):
     assert calls == [("adb", "android", "emu", "other", {"timeout": "5 min"})]
 
 
+def test_options_are_converted_to_the_opener_types(tree, monkeypatch):
+    seen = {}
+
+    def open_adb_device(path: str, alias: str | None = None, wait_for_boot: bool = True, session: str | None = None):
+        seen.update(path=path, wait_for_boot=wait_for_boot)
+        return 2
+
+    monkeypatch.setattr(adb, "open_adb_device", open_adb_device)
+    # Robot Framework passes free named arguments as text
+    ConnectKeywords().connect_to_device("android", wait_for_boot="False")
+    assert seen == {"path": "android", "wait_for_boot": False}
+
+
 def test_not_a_device(tree, calls):
     with pytest.raises(Failure, match=r"driver 'power' is .*PowerClient, which is not an SSH, ADB or iOS driver"):
         ConnectKeywords().connect_to_device("power")

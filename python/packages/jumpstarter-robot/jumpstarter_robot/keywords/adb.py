@@ -190,6 +190,7 @@ def open_adb_device(
     """Open the Android device behind the ADB driver at ``path``; returns its index in the cache."""
     deadline = time.monotonic() + (_seconds(timeout, 180.0) or 0.0)
     with sessions.lock(), adb_errors("Open ADB Device"):
+        scope = context.check_scope(scope)  # before anything is opened
         target, node, kind, path = adb_node(path, session)
         stack = ExitStack()
         try:
@@ -499,6 +500,7 @@ class AdbKeywords:
         | ... | env:ANDROID_ADB_SERVER_ADDRESS=${env.ANDROID_ADB_SERVER_ADDRESS} |
         """
         with sessions.lock(), adb_errors("Get ADB Environment"):
+            scope = context.check_scope(scope)  # before anything is opened
             target, node, kind, path = adb_node(path, session)
             stack = ExitStack()
             try:

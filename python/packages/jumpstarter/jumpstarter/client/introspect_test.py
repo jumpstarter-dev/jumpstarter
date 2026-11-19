@@ -479,6 +479,58 @@ class TestIterClientMembers:
 
         return {m.name: m for m in iter_client_members(cls)}
 
+    def test_decorated_generators_are_not_context_managers(self):
+        import functools
+        from contextlib import contextmanager
+
+        from pydantic import validate_call
+
+        from jumpstarter.client import DriverClient
+
+        def logged(function):
+            @functools.wraps(function)
+            def wrapper(*args, **kwargs):
+                return function(*args, **kwargs)
+
+            return wrapper
+
+        class WrappedClient(DriverClient):
+            @validate_call
+            def scan(self, path: str):
+                yield path
+
+            @logged
+            def lines(self):
+                yield "line"
+
+            @logged
+            async def events(self):
+                yield "event"
+
+            @contextmanager
+            def session(self):
+                yield self
+
+        kinds = {name: member.kind for name, member in self._members(WrappedClient).items()}
+        assert kinds == {"scan": "generator", "lines": "generator", "events": "async", "session": "contextmanager"}
+
+    def test_static_methods_are_marked(self):
+        from jumpstarter.client import DriverClient
+
+        class StaticClient(DriverClient):
+            @staticmethod
+            def render(status: str) -> str:
+                return status
+
+            @classmethod
+            def build(cls) -> None: ...
+
+            def on(self) -> None: ...
+
+        members = self._members(StaticClient)
+        static = {name: member.static for name, member in members.items()}
+        assert static == {"render": True, "build": False, "on": False}
+
     def test_classifies_member_shapes(self):
         from contextlib import contextmanager
         from functools import cached_property
