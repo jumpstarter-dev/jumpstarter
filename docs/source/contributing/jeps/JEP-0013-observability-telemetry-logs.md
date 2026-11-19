@@ -1761,6 +1761,12 @@ all subsequent phases have E2E coverage from the start.
 - Operator E2E result on this branch: 64 passed, 0 failed, 1 skipped, with the
   gated shipper delivery and Prometheus target-health tests passing
   separately. The monorepo CLI E2E suite was not rerun: 2026-11-04
+- Phase 6 core implemented on the `jep-0013-phase6-dashboards-alerting`
+  branch: starter `PrometheusRule` alerts, `PrometheusRulesReady` and
+  `DashboardsReady` conditions, a Perses overview dashboard with explicit
+  datasource selectors, offline `promtool`/`percli` validation, and gated Kind
+  e2e coverage. `v1alpha1` compatibility and a Grafana sample remain
+  follow-ups: 2026-11-18
 
 ## References
 

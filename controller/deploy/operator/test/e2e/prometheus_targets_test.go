@@ -66,10 +66,27 @@ var prometheusGVK = schema.GroupVersionKind{
 	Group: "monitoring.coreos.com", Version: "v1", Kind: "Prometheus",
 }
 
+var prometheusRuleGVK = schema.GroupVersionKind{
+	Group: "monitoring.coreos.com", Version: "v1", Kind: "PrometheusRule",
+}
+
 type prometheusTargetsResponse struct {
 	Status string `json:"status"`
 	Data   struct {
 		ActiveTargets []prometheusTarget `json:"activeTargets"`
+	} `json:"data"`
+}
+
+type prometheusRulesResponse struct {
+	Status string `json:"status"`
+	Data   struct {
+		Groups []struct {
+			Name  string `json:"name"`
+			Rules []struct {
+				Name   string `json:"name"`
+				Health string `json:"health"`
+			} `json:"rules"`
+		} `json:"groups"`
 	} `json:"data"`
 }
 
@@ -85,6 +102,7 @@ type prometheusTarget struct {
 // Ensure the selector contract used by the test is the same default emitted by
 // the operator. Keep this label in sync with desiredServiceMonitors.
 const jumpstarterMetricsLabel = "jumpstarter.dev/metrics"
+const jumpstarterPrometheusRulesLabel = "jumpstarter.dev/prometheus-rules"
 
 var _ = Describe("Prometheus target health", Ordered, func() {
 	var (
@@ -121,6 +139,7 @@ var _ = Describe("Prometheus target health", Ordered, func() {
 			ObjectMeta: metav1.ObjectMeta{Name: "jumpstarter", Namespace: testNamespace},
 		}
 		js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+		js.Spec.Telemetry.Metrics.PrometheusRules = new(true)
 		Expect(k8sClient.Create(ctx, js)).To(Succeed())
 
 		By("waiting for controller and router metrics Services")
@@ -157,6 +176,32 @@ var _ = Describe("Prometheus target health", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(found).To(BeTrue())
 		Expect(spec).NotTo(HaveKey("additionalScrapeConfigs"))
+
+		By("waiting for PrometheusRulesReady=Created")
+		waitForCondition(testNamespace, "jumpstarter",
+			operatorv1alpha1.ConditionTypePrometheusRulesReady,
+			metav1.ConditionTrue, 2*time.Minute)
+
+		By("asserting the starter PrometheusRule exists and is selected by Prometheus")
+		rule := &unstructured.Unstructured{}
+		rule.SetGroupVersionKind(prometheusRuleGVK)
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: "jumpstarter-starter-alerts", Namespace: testNamespace,
+		}, rule)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			result, err := getPrometheusRules()
+			g.Expect(err).NotTo(HaveOccurred())
+			names := map[string]bool{}
+			for _, group := range result.Data.Groups {
+				for _, rule := range group.Rules {
+					names[rule.Name] = true
+				}
+			}
+			g.Expect(names).To(HaveKey("JumpstarterOperationFailureRate"))
+			g.Expect(names).To(HaveKey("JumpstarterExporterIdle"))
+			g.Expect(names).To(HaveKey("JumpstarterTelemetryDropped"))
+		}, prometheusTargetDiscoveryTimeout, 2*time.Second).Should(Succeed())
 	})
 })
 
@@ -320,6 +365,14 @@ func createPrometheusInstance(testNamespace string) {
 					"kubernetes.io/metadata.name": testNamespace,
 				},
 			},
+			"ruleSelector": map[string]any{
+				"matchLabels": map[string]any{jumpstarterPrometheusRulesLabel: "true"},
+			},
+			"ruleNamespaceSelector": map[string]any{
+				"matchLabels": map[string]any{
+					"kubernetes.io/metadata.name": testNamespace,
+				},
+			},
 			"podMonitorSelector": map[string]any{},
 			"probeSelector":      map[string]any{},
 			"resources": map[string]any{
@@ -407,6 +460,23 @@ func expectHealthyJumpstarterTargets(g Gomega, targets []prometheusTarget) {
 	}
 	g.Expect(seen).To(HaveKey("controller"))
 	g.Expect(seen).To(HaveKey("router"))
+}
+
+func getPrometheusRules() (prometheusRulesResponse, error) {
+	raw, err := clientset.CoreV1().Services(prometheusNamespace).ProxyGet(
+		"http", "prometheus-operated", "9090", "/api/v1/rules", nil,
+	).DoRaw(ctx)
+	if err != nil {
+		return prometheusRulesResponse{}, err
+	}
+	var result prometheusRulesResponse
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return result, err
+	}
+	if result.Status != "success" {
+		return result, fmt.Errorf("Prometheus rules status %q", result.Status)
+	}
+	return result, nil
 }
 
 func activeJumpstarterTargets(result prometheusTargetsResponse, namespace string) []prometheusTarget {

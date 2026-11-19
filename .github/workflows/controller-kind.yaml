@@ -59,3 +59,9 @@ jobs:
         env:
           PROMETHEUS_K8S_E2E: "1"
         run: go test ./test/e2e -run TestE2E -ginkgo.focus "Prometheus target health" -count=1 -timeout 15m -v
+
+      - name: Run Perses dashboard test
+        working-directory: controller/deploy/operator
+        env:
+          PERSES_K8S_E2E: "1"
+        run: go test ./test/e2e -run TestE2E -ginkgo.focus "Perses dashboard integration" -count=1 -timeout 10m -v
