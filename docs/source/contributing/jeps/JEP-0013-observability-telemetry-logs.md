@@ -1768,7 +1768,12 @@ all subsequent phases have E2E coverage from the start.
   e2e coverage. Dashboards target `perses.dev/v1alpha2` only; legacy
   perses-operator installs that serve `v1alpha1` only are detected and reported
   as unsupported, because the CRD has no conversion webhook and upstream
-  reconciles `v1alpha2` only. A Grafana sample remains a follow-up: 2026-11-18
+  reconciles `v1alpha2` only: 2026-11-18
+- Optional Grafana dashboard sample published with the docs
+  (`docs/source/_static/jumpstarter-grafana-dashboard.json`) and checked against
+  the generated Perses panels by `TestGrafanaSampleMatchesPersesDashboard`, so
+  panel titles and `jumpstarter_*` metric usage cannot drift; the operator never
+  manages Grafana resources: 2026-11-19
 
 ## References
 

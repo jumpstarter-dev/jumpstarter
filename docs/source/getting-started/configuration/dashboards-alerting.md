@@ -166,6 +166,32 @@ kubectl -n jumpstarter-lab get persesdashboards.perses.dev \
   -l jumpstarter.dev/dashboards=true
 ```
 
+## Optional Grafana dashboard
+
+Perses is the recommended experience (see DD-10 in the JEP), but Grafana works
+against the same endpoints. A Grafana equivalent of the overview dashboard is
+published with these docs:
+
+- [`jumpstarter-grafana-dashboard.json`](../../_static/jumpstarter-grafana-dashboard.json)
+
+Import it with **Dashboards → New → Import**, upload the JSON, then pick the
+Prometheus and Loki datasource variables. The dashboard expects the same metric
+names and the same `component="exporter"` Loki stream as the Perses dashboard.
+
+It is a convenience artifact, not part of the operator contract:
+
+- the operator never creates, updates, or deletes Grafana resources;
+- the file mirrors the Perses panels and is drift-checked in CI
+  (`TestGrafanaSampleMatchesPersesDashboard` compares panel titles, panel count,
+  and the referenced `jumpstarter_*` metrics), so a metric or panel change fails
+  the operator tests until both artifacts agree;
+- Grafana is AGPL v3; importing this file does not change Jumpstarter's
+  licensing.
+
+Use Grafana when you need exemplar overlays or an existing Grafana estate. Use
+the Perses dashboard when you want the operator-managed, Kubernetes-native
+resource.
+
 ## Versions and compatibility
 
 Perses Operator **v0.6** with `perses.dev/v1alpha2` is the supported and tested
@@ -197,8 +223,9 @@ Other notes:
 - The operator test suite uses Perses **0.53.1** (the operator sample image);
   the Perses documentation currently tracks **v0.55**.
 - Perses does not render Prometheus exemplars yet. Use the `lease_id` LogQL
-  panel for correlation, or point Grafana at the same Prometheus and Loki
-  datasources if exemplar overlays are required.
+  panel for correlation, or import the
+  [optional Grafana dashboard](#optional-grafana-dashboard) against the same
+  Prometheus and Loki datasources if exemplar overlays are required.
 - The operator does not deploy Perses or its datasources, and does not manage
   their credentials.
 

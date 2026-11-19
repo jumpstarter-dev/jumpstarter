@@ -1,0 +1,374 @@
+{
+  "__inputs": [],
+  "annotations": {
+    "list": []
+  },
+  "description": "Optional Grafana equivalent of the Perses overview dashboard the Jumpstarter operator creates. Point it at the same Prometheus and Loki datasources. Perses remains the recommended experience; this file mirrors the operator's panels and is checked against them in CI.",
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": ["jumpstarter"],
+      "targetBlank": true,
+      "title": "Jumpstarter JEP-0013",
+      "tooltip": "Observability and telemetry design",
+      "type": "link",
+      "url": "https://github.com/jumpstarter-dev/jumpstarter/blob/main/docs/source/contributing/jeps/JEP-0013-observability-telemetry-logs.md"
+    }
+  ],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+      "fieldConfig": {
+        "defaults": { "min": 0, "unit": "percentunit" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+          "editorMode": "code",
+          "expr": "sum by (exporter, operation) (\n  rate(jumpstarter_operations_total{result=\"failure\"}[5m])\n)\n/\nsum by (exporter, operation) (\n  rate(jumpstarter_operations_total[5m])\n)",
+          "legendFormat": "{{exporter}} / {{operation}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Operation failure rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+      "fieldConfig": {
+        "defaults": { "min": 0, "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95,\n  sum by (operation, le) (\n    rate(jumpstarter_operation_duration_seconds_bucket[5m])\n  )\n)",
+          "legendFormat": "{{operation}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Operation duration p95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+      "fieldConfig": {
+        "defaults": { "min": 0, "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+          "editorMode": "code",
+          "expr": "sum by (exporter, error_type) (\n  increase(jumpstarter_operation_errors_total[5m])\n)",
+          "legendFormat": "{{exporter}} / {{error_type}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Errors by type",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+      "fieldConfig": {
+        "defaults": { "min": 0, "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+          "editorMode": "code",
+          "expr": "sum by (exporter) (jumpstarter_active_sessions)",
+          "legendFormat": "{{exporter}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Active sessions",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+      "fieldConfig": {
+        "defaults": { "unit": "Bps" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 5,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+          "editorMode": "code",
+          "expr": "sum by (exporter, direction) (\n  rate(jumpstarter_stream_bytes_total[5m])\n)",
+          "legendFormat": "{{exporter}} / {{direction}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Stream throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+      "fieldConfig": {
+        "defaults": { "min": 0, "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 6,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+          "editorMode": "code",
+          "expr": "sum by (result) (\n  rate(jumpstarter_lease_acquisitions_total[5m])\n)",
+          "legendFormat": "{{result}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Lease acquisitions",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+      "fieldConfig": {
+        "defaults": { "min": 0, "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "id": 7,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+          "editorMode": "code",
+          "expr": "topk(5, sum by (exporter) (\n  rate(jumpstarter_operations_total[1h])\n))",
+          "legendFormat": "{{exporter}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Top exporters by operations",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+      "fieldConfig": {
+        "defaults": { "min": 0, "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "id": 8,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+          "editorMode": "code",
+          "expr": "increase(jumpstarter_telemetry_dropped_total[5m])",
+          "legendFormat": "{{exporter}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Telemetry drops",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+      "fieldConfig": {
+        "defaults": { "min": 0, "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "id": 9,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+          "editorMode": "code",
+          "expr": "topk(10, sum by (exporter) (\n  increase(jumpstarter_scrape_timeouts_total[30m])\n))",
+          "legendFormat": "{{exporter}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Scrape timeouts",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "${ds_loki}" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 40 },
+      "id": 10,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "${ds_loki}" },
+          "editorMode": "code",
+          "expr": "{component=\"exporter\"} | json | lease_id=\"$lease_id\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Lease logs",
+      "type": "logs"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["jumpstarter"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Prometheus",
+        "multi": false,
+        "name": "ds_prometheus",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Loki",
+        "multi": false,
+        "name": "ds_loki",
+        "options": [],
+        "query": "loki",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "allValue": ".*",
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+        "definition": "label_values(jumpstarter_operations_total, exporter)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Exporter",
+        "multi": true,
+        "name": "exporter",
+        "options": [],
+        "query": {
+          "query": "label_values(jumpstarter_operations_total, exporter)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
+        "definition": "label_values(jumpstarter_operations_total, driver_type)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Driver type",
+        "multi": true,
+        "name": "driver_type",
+        "options": [],
+        "query": {
+          "query": "label_values(jumpstarter_operations_total, driver_type)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": { "selected": false, "text": "", "value": "" },
+        "hide": 0,
+        "label": "Lease ID",
+        "name": "lease_id",
+        "options": [
+          {
+            "selected": true,
+            "text": "",
+            "value": ""
+          }
+        ],
+        "query": "",
+        "skipUrlSync": false,
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Jumpstarter Overview",
+  "uid": "jumpstarter-overview",
+  "version": 1,
+  "weekStart": ""
+}
