@@ -1,8 +1,9 @@
 """``AdbDeviceHmi`` through Jumpstarter's own client and router, against a fake device, a fake adb and a fake
-scrcpy-server: the interface's conformance suite, then what is the Android screen's own."""
+scrcpy-server: the interface's conformance suite, then what is the Android HMI's own."""
 
 from __future__ import annotations
 
+import contextlib
 import json
 import struct
 import time
@@ -16,7 +17,8 @@ from jumpstarter_driver_hmi.testing.conformance import media, wait_for
 
 from .client import AdbDeviceHmiClient
 from .driver import AdbDeviceHmi, validate_hmi_config
-from .fakes import CODEC, FakeAdb, FakeDevice, FakeScrcpyServer, build_hmi
+from .fakes import CODEC, HEVC_CODEC, FakeAdb, FakeDevice, FakeScrcpyServer, build_hmi
+from .input import KEYBOARD_CODES
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.common.utils import serve
 
@@ -60,10 +62,10 @@ def hmi_for(tmp_path):
 
 
 class _Conformance(HmiConformance):
-    """What every screen must do, run against a fake device. Subclasses say which kind of screen it is."""
+    """What every HMI must do, run against a fake device. Subclasses say which kind of HMI it is."""
 
     def options(self) -> dict:
-        """The screen's options for this kind of screen."""
+        """The HMI's options for this kind of HMI."""
         return {}
 
     def server(self):
@@ -92,11 +94,11 @@ class _Conformance(HmiConformance):
 
 
 class TestAdbDeviceHmi(_Conformance):
-    """The Android screen is a hmi: it passes the suite every implementation passes."""
+    """The Android HMI is an HMI: it passes the suite every implementation passes."""
 
 
 class TestAdbDeviceHmiViewOnly(_Conformance):
-    """So is the same screen with no control channel: the suite skips what a view-only screen does not take."""
+    """So is the same HMI with no control channel: the suite skips what a view-only HMI does not take."""
 
     def options(self):
         return {"control": False}
@@ -112,7 +114,7 @@ class TestAdbDeviceHmiCapped(_Conformance):
         return {"max_size": 960, "bit_rate": 2_000_000, "max_fps": 30, "stall_s": 0}
 
 
-# -- the screen of a device ----------------------------------------------------------------------------------------
+# -- the HMI of a device ----------------------------------------------------------------------------------------
 
 
 def test_the_client_is_a_hmi_client_with_the_android_extras(hmi_for):
@@ -145,7 +147,7 @@ def test_video_starts_the_server_and_serves_the_streams_frames(hmi_for):
 def test_the_device_is_the_parents_and_nothing_is_asked_of_it_until_the_stream_starts(hmi_for):
     driver, adb = hmi_for()
     assert driver._source is None and adb.calls == []
-    assert driver.status()["state"] == "stopped" and driver.hmi_info()["input"]["touch"] is True
+    assert driver.status()["state"] == "stopped" and driver.hmi_info()["input"]["pointer"]["kinds"] == ["touch"]
     assert adb.calls == [] and driver.device.adb_env_calls == 0
 
 
@@ -332,6 +334,7 @@ def test_the_server_gets_the_options_of_the_hmi(hmi_for):
         "video_encoder=c2.android.avc.encoder",
         "hmi_off_timeout=600",
         "cleanup=true",
+        "video_codec=h264",
     ):
         assert part in command
     assert "wm size -d 2" in [c[1] for c in adb.calls if c[0] == "wm_size"]
@@ -356,7 +359,10 @@ def test_the_server_gets_the_options_of_the_hmi(hmi_for):
         {"stay_awake": 1},
         {"show_touches": None},
         {"server_options": ["a=b"]},
-        {"server_options": {"video_codec": "h265"}},  # an option the screen owns
+        {"server_options": {"video_codec": "h265"}},  # an option the HMI owns
+        {"codec": "mjpeg"},  # one the interface has and scrcpy cannot make
+        {"codec": "vp9"},  # and one it does not have at all
+        {"codec": 264},
         {"server_options": {"hmi_off_timeout": "5 && reboot"}},
         {"server_path": 5},
         {"control": "no"},  # the interface's own options are checked too
@@ -372,6 +378,7 @@ def test_the_options_of_the_hmi_are_checked_by_name():
     validate_hmi_config(None)
     validate_hmi_config({})
     validate_hmi_config({"control": False, "video_encoder": "x", "max_size": 960, "hard_keys": ["HOME"]})
+    validate_hmi_config({"codec": "hevc"})
     for bad in (
         {"nope": 1},
         {"device": 1},
@@ -381,7 +388,7 @@ def test_the_options_of_the_hmi_are_checked_by_name():
         ["control"],
         {"control": 1, 2: 3},
     ):
-        with pytest.raises(ConfigurationError, match="screen accepts only"):
+        with pytest.raises(ConfigurationError, match="hmi accepts only"):
             validate_hmi_config(bad)
 
 
@@ -410,23 +417,109 @@ def test_hard_keys_can_be_replaced_by_the_exporter(hmi_for):
         ("HOME", "Home", ["short", "long"]),
         ("POWER", "Sleep", ["short"]),
     ]
-    assert "LOCK" in info["input"]["keys"]
+    assert "POWER" in info["input"]["keys"] and "LOCK" not in info["input"]["keys"]  # only what the exporter listed
 
 
 def test_hmi_info_says_what_a_phone_takes(hmi_for):
     driver, _ = hmi_for()
     with serve(driver) as client:
         info = client.hmi_info()
-    assert info["codecs"] == ["h264"] and info["input"]["max_fingers"] == 1 and info["input"]["text"] is True
+    assert info["interface"] == "hmi" and info["codecs"] == ["h264", "hevc"] and info["codec"] == "h264"
+    assert info["recording"] is True  # MJPEG is the codec that cannot be recorded, and this has none
+    assert info["input"]["pointer"] == {
+        "kinds": ["touch"],
+        "absolute": True,
+        "relative": False,
+        "buttons": False,
+        "wheel": False,
+        "max_contacts": 1,
+    }
+    assert info["input"]["keyboard"] == {"codes": list(KEYBOARD_CODES), "text": True, "layout": "us"}
+    assert info["input"]["clipboard"] is False
+    codes = set(info["input"]["keyboard"]["codes"])
+    assert {"KeyA", "Digit1", "F12", "ArrowUp", "ShiftLeft", "Numpad5", "Enter"} <= codes
+    assert not {"F13", "IntlBackslash", "Lang1", "MediaPlayPause"} & codes
     assert [k["key"] for k in info["input"]["hard_keys"]] == [
         "BACK",
         "HOME",
         "APP_SWITCH",
         "VOLUME_UP",
         "VOLUME_DOWN",
-        "POWER",
     ]
     assert info["quality"] == {"adjustable": True, "auto": True, "levels": ["minimal", "low", "medium", "high"]}
+
+
+# -- the codec -----------------------------------------------------------------------------------------------------
+
+
+def test_h264_is_the_default_codec_and_the_server_is_asked_for_it(hmi_for):
+    driver, adb = hmi_for()
+    with serve(driver) as client:
+        assert client.hmi_info()["codec"] == "h264"
+        client.start()
+        assert "video_codec=h264" in spawns(adb)[0] and "h265" not in spawns(adb)[0]
+        wait_for(lambda: client.status()["picture"]["codec"], what="the codec line")
+        assert client.status()["picture"]["codec"] == CODEC and client.hmi_info()["codec"] == "h264"
+
+
+def test_the_codec_option_reaches_the_server_and_the_codec_line_names_it(hmi_for):
+    driver, adb = hmi_for(codec="hevc", adb_server=lambda: FakeScrcpyServer(width=240, height=400))
+    with serve(driver) as client:
+        assert client.hmi_info()["codec"] == "hevc" and client.hmi_info()["codecs"] == ["h264", "hevc"]
+        client.start()
+        assert "video_codec=h265" in spawns(adb)[0] and "video_codec=h264" not in spawns(adb)[0]
+        wait_for(lambda: client.status()["picture"]["codec"], what="the codec line")
+        picture = client.status()["picture"]
+        assert picture["codec"] == HEVC_CODEC and picture["codec"].startswith("hev1.")
+        assert (picture["width"], picture["height"]) == (240, 400)
+        assert client.hmi_info()["codec"] == "hevc" and client.hmi_info()["recording"] is True
+        assert client.status()["device"]["encoder"]["name"] == "c2.example.hevc.encoder"  # the HEVC hardware encoder
+
+
+def test_a_codec_the_device_does_not_have_a_hardware_encoder_for_falls_to_the_servers_choice(hmi_for):
+    driver, adb = hmi_for(codec="hevc", adb_server=lambda: FakeScrcpyServer(width=240, height=400))
+    adb.encoder_listing = "    --video-codec=h264 --video-encoder=c2.example.avc.encoder  (hw) [vendor]\n"
+    with serve(driver) as client:
+        client.start()
+    assert "video_codec=h265" in spawns(adb)[0]
+    assert "video_encoder" not in spawns(adb)[0]  # and not the name of the H.264 encoder
+    assert driver.status()["device"]["encoder"]["chosen_by"] == "server default"
+
+
+def test_start_chooses_the_codec_of_a_stream_and_restarts_a_running_one_with_it(hmi_for):
+    driver, adb = hmi_for(adb_server=lambda: FakeScrcpyServer(width=240, height=400))
+    with serve(driver) as client:
+        client.start()
+        wait_for(lambda: client.status()["picture"]["codec"], what="the first codec line")
+        assert client.status()["picture"]["codec"] == CODEC
+        client.call("start", None, None, None, None, "hevc")
+        assert len(adb.servers) == 2 and "video_codec=h265" in spawns(adb)[1]
+        wait_for(lambda: client.status()["picture"]["codec"] == HEVC_CODEC, what="the codec line of the new codec")
+        assert client.hmi_info()["codec"] == "hevc"
+        client.set_quality("low")  # a change of quality restarts the capture: the codec chosen stays chosen
+        wait_for(lambda: len(adb.servers) == 3, what="the restart")
+        assert "video_codec=h265" in spawns(adb)[2] and "max_size=960" in spawns(adb)[2]
+        client.call("start", None, None, None, None, "hevc")  # already there: nothing is restarted
+        assert len(adb.servers) == 3
+        client.call("start", None, None, None, None, "h264")
+        assert len(adb.servers) == 4 and "video_codec=h264" in spawns(adb)[3]
+
+
+def test_a_codec_scrcpy_cannot_make_is_refused_at_start_and_the_stream_is_not_touched(hmi_for):
+    driver, adb = hmi_for()
+    with serve(driver) as client:
+        for codec in ("mjpeg", "av1"):
+            with pytest.raises(ValueError, match="produces h264, hevc"):
+                client.call("start", None, None, None, None, codec)
+        assert adb.calls == [] and client.status()["state"] == "stopped"
+
+
+def test_a_server_that_does_not_make_the_codec_asked_for_is_a_failed_start_that_says_so(hmi_for):
+    driver, adb = hmi_for(codec="hevc", adb_server=lambda: FakeScrcpyServer(codec="h264"))
+    with serve(driver) as client:
+        with pytest.raises(Exception, match=r"codec id 0x68323634 \(h264\), not the hevc"):
+            client.start()
+        assert client.status()["state"] == "error" and "forward_remove" in adb.names()
 
 
 # -- input ---------------------------------------------------------------------------------------------------------
@@ -493,13 +586,124 @@ def test_a_finger_still_down_when_the_input_ends_is_lifted_on_the_current_server
 
 
 def test_keys_held_when_the_input_ends_are_released(hmi_for):
-    driver, adb = hmi_for()
+    # a hard key takes short and long unless the exporter lists the presses it takes: this one is held
+    driver, adb = hmi_for(hard_keys=[{"key": "VOLUME_UP", "presses": ["short", "long", "down", "up"]}])
     with serve(driver) as client, client.video(timeout=10):
         with client.input() as hmi:
             hmi.key("VOLUME_UP", "down")
             wait_for(lambda: adb.server.key_events(), what="the key down")
         wait_for(lambda: len(adb.server.key_events()) == 2, what="the key to be released")
     assert adb.server.key_events() == [(0, 24, 0), (1, 24, 0)]
+
+
+def keyboard(code: str, kind: str) -> dict:
+    return {"keyboard": {"code": code, "type": kind}}
+
+
+def test_keyboard_keys_reach_the_device_as_key_codes_with_the_modifiers_that_are_down(hmi_for):
+    driver, adb = hmi_for()
+    with serve(driver) as client, client.video(timeout=10), client.input() as hmi:
+        for code, kind in (("ShiftLeft", "down"), ("KeyA", "down"), ("KeyA", "up"), ("ShiftLeft", "up")):
+            hmi.send(keyboard(code, kind))
+        hmi.send(keyboard("Enter", "down"))
+        hmi.send(keyboard("Enter", "up"))
+        wait_for(lambda: len(adb.server.key_messages()) == 6, what="the key messages")
+        assert hmi.poll_errors(0.3) == []
+    shift, num = 0x1 | 0x40, 0x200000  # SHIFT_ON | SHIFT_LEFT_ON, and Num Lock, which is on
+    assert adb.server.key_messages() == [
+        (0, 59, 0, shift | num),
+        (0, 29, 0, shift | num),
+        (1, 29, 0, shift | num),
+        (1, 59, 0, num),
+        (0, 66, 0, num),
+        (1, 66, 0, num),
+    ]
+
+
+def test_a_key_that_repeats_is_sent_once_and_the_device_repeats_it(hmi_for):
+    driver, adb = hmi_for()
+    with serve(driver) as client, client.video(timeout=10), client.input() as hmi:
+        hmi.send(keyboard("ArrowDown", "down"))
+        hmi.send(keyboard("ArrowDown", "down"))
+        hmi.send(keyboard("ArrowDown", "down"))
+        hmi.send(keyboard("ArrowDown", "up"))
+        hmi.send(keyboard("ArrowDown", "up"))  # a late up
+        hmi.tap(5, 5)
+        wait_for(lambda: len(adb.server.touches()) == 2, what="the tap, which came after")
+        assert hmi.poll_errors(0.3) == []
+    assert [(a, k) for a, k, _, _ in adb.server.key_messages()] == [(0, 20), (1, 20)]
+
+
+def test_what_scrcpy_has_no_input_for_is_refused_or_ignored_and_never_reaches_the_server(hmi_for):
+    driver, adb = hmi_for()
+    with serve(driver) as client, client.video(timeout=10), client.input() as hmi:
+        hmi.send(keyboard("F13", "down"))  # no Android key
+        hmi.send(keyboard("IntlBackslash", "down"))
+        hmi.send(keyboard("MediaPlayPause", "down"))
+        hmi.send({"pointer": {"type": "wheel", "kind": "touch", "x": 5, "y": 5, "dy": 120}})  # no wheel
+        hmi.send({"touch": {"type": "move", "dx": 4, "dy": 4}})  # relative motion
+        errors = []
+        while len(errors) < 5:
+            message = hmi.read_error(5)
+            assert message is not None
+            errors.append(message)
+        assert "F13" in errors[0] and "IntlBackslash" in errors[1] and "MediaPlayPause" in errors[2]
+        assert "no wheel" in errors[3] and "relative motion" in errors[4]
+        hmi.send({"pointer": {"type": "down", "kind": "mouse", "x": 5, "y": 5, "buttons": 1}})  # not declared: ignored
+        hmi.send({"pointer": {"type": "down", "kind": "pen", "x": 5, "y": 5}})
+        hmi.touch("down", 7, 7)
+        hmi.touch("down", 9, 9, id=1)  # a second finger while one is down: ignored
+        hmi.touch("move", 9, 9, id=1)
+        hmi.touch("up", 9, 9, id=1)
+        hmi.touch("up", 7, 7)
+        wait_for(lambda: len(adb.server.touches()) == 2, what="the touch, which came after")
+        assert hmi.poll_errors(0.3) == []
+    assert adb.server.touches() == [("touch", "down", 7, 7), ("touch", "up", 7, 7)]  # nothing of the rest got there
+    assert adb.server.key_messages() == []
+
+
+def test_the_one_finger_may_have_any_pointer_id(hmi_for):
+    driver, adb = hmi_for()
+    with serve(driver) as client, client.video(timeout=10), client.input() as hmi:
+        hmi.touch("down", 3, 4, id=11)  # a browser numbers its contacts as it likes
+        hmi.touch("move", 5, 6, id=11)
+        hmi.touch("up", 5, 6, id=11)
+        wait_for(lambda: len(adb.server.touches()) == 3, what="the touch")
+        assert hmi.poll_errors(0.3) == []
+    assert adb.server.touches() == [("touch", "down", 3, 4), ("touch", "move", 5, 6), ("touch", "up", 5, 6)]
+
+
+def test_keys_held_when_the_input_ends_are_released_last_pressed_first(hmi_for):
+    driver, adb = hmi_for()
+    with serve(driver) as client, client.video(timeout=10):
+        with client.input() as hmi:
+            hmi.send(keyboard("ControlLeft", "down"))
+            hmi.send(keyboard("KeyC", "down"))
+            wait_for(lambda: len(adb.server.key_messages()) == 2, what="the keys down")
+        wait_for(lambda: len(adb.server.key_messages()) == 4, what="the keys to be released")
+    ctrl, num = 0x1000 | 0x2000, 0x200000
+    messages = adb.server.key_messages()
+    assert messages[:2] == [(0, 113, 0, ctrl | num), (0, 31, 0, ctrl | num)]
+    assert sorted((action, keycode) for action, keycode, _, _ in messages[2:]) == [(1, 31), (1, 113)]  # both let go
+    assert messages[-1][3] == num  # and when the last one is, nothing is held
+
+
+def test_a_restart_drops_the_keys_held_the_new_capture_never_saw_them(hmi_for):
+    driver, adb = hmi_for()
+    with serve(driver) as client, client.video(timeout=10), client.input() as hmi:
+        hmi.send(keyboard("ShiftLeft", "down"))
+        wait_for(lambda: adb.server.key_messages(), what="the shift down")
+        client.set_quality("low")  # the capture restarts: a new server, a new control socket
+        wait_for(lambda: len(adb.servers) == 2 and client.status()["state"] == "running", what="the restart")
+        hmi.send(keyboard("KeyA", "down"))
+        hmi.send(keyboard("KeyA", "up"))
+        hmi.send(keyboard("ShiftLeft", "up"))  # the person lets go of a shift the new capture never saw: nothing to do
+        hmi.tap(5, 5)
+        wait_for(lambda: len(adb.servers[1].touches()) == 2, what="the tap, which came after")
+        assert hmi.poll_errors(0.3) == []
+    num = 0x200000
+    assert adb.servers[0].key_messages() == [(0, 59, 0, 0x1 | 0x40 | num)]  # never let go there: the server is gone
+    assert adb.servers[1].key_messages() == [(0, 29, 0, num), (1, 29, 0, num)]  # no shift: not carried over
 
 
 def test_the_input_of_an_open_stream_goes_on_when_the_capture_restarts(hmi_for):
@@ -520,9 +724,14 @@ def test_a_view_only_stream_takes_no_input_and_its_extras_say_so(hmi_for):
         with client.video(timeout=10) as video:
             assert video.header["width"] == 540 and "input" not in video.header
         assert "control=false" in spawns(adb)[0]
-        assert client.hmi_info()["input"]["touch"] is False
-        with pytest.raises(HmiStreamClosedError), client.input():
-            pass
+        info = client.hmi_info()
+        assert info["codecs"] == ["h264", "hevc"]  # the picture is the same, only the input is gone
+        assert info["input"]["pointer"]["kinds"] == [] and info["input"]["pointer"]["max_contacts"] == 0
+        assert info["input"]["keyboard"] == {"codes": [], "text": False, "layout": None}
+        assert info["input"]["keys"] == [] and info["input"]["hard_keys"] == []
+        # the stream is refused: by a client that reads hmi_info() when it opens it, or by the exporter, at once
+        with contextlib.suppress(HmiStreamClosedError), client.input() as stream:
+            assert stream.read_error(10) is None
         for call in (
             lambda: client.press_key("HOME"),
             lambda: client.rotate(),
@@ -607,7 +816,7 @@ def test_a_rotation_changes_the_picture_and_the_codec_line(hmi_for):
         assert client.hmi_info()["width"] == 1200
 
 
-def test_rotate_and_the_display_are_the_screens_own(hmi_for):
+def test_rotate_and_the_display_are_the_hmis_own(hmi_for):
     driver, adb = hmi_for(display_id=3)
     with serve(driver) as client:
         client.rotate(2)
@@ -788,16 +997,16 @@ def test_a_failed_restart_ends_the_viewers_and_the_next_start_works(hmi_for):
     assert len(adb.servers) == 3
 
 
-# -- a screen that has gone quiet ----------------------------------------------------------------------------------
+# -- a display that has gone quiet ----------------------------------------------------------------------------------
 
 
 def test_a_still_hmi_is_not_a_stall_but_a_server_that_is_gone_is(hmi_for):
-    driver, adb = hmi_for(stall_s=1.0, adb_server=lambda: FakeScrcpyServer(fps=30, frames=40))  # then a still screen
+    driver, adb = hmi_for(stall_s=1.0, adb_server=lambda: FakeScrcpyServer(fps=30, frames=40))  # then a still display
     with serve(driver) as client:
         with client.video(timeout=10) as video:
             media(video, 5)
             wait_for(lambda: "server_alive" in adb.names(), timeout=15, what="the probe of the server")
-            assert driver.status()["state"] == "running"  # it is there: the screen is only still, nothing is restarted
+            assert driver.status()["state"] == "running"  # it is there: the display is only still, nothing is restarted
             assert len(adb.servers) == 1 and adb.server.resets == 0
             adb.server_is_alive = False  # the server process on the device is gone and nothing told the exporter
             assert ends(video, timeout=20)

@@ -29,7 +29,7 @@ For the optional Python ADB API:
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ "jumpstarter-driver-adb[python-api]"
 ```
 
-For the device's [hmi](#screen):
+For the device's [HMI](#hmi):
 
 ```shell
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ "jumpstarter-driver-adb[hmi]"
@@ -108,7 +108,7 @@ development.
 | server_port | Which ADB server to use. By default, the adb server is automatically started and shared. | int | no | 15037 |
 | adopt_existing_server | Use an ADB server already listening on `server_port` rather than starting another. With `false` the driver owns the server *only if the port was free* — see below | bool | no | true |
 | appium | Run Appium on the exporter for this device; see [Appium](#appium) | dict | no | — |
-| screen | Stream this device's screen and take touch, keys and text for it; see [Screen](#screen). Needs the `hmi` extra | dict | no | — |
+| hmi | Stream this device's picture and take touch, keyboard, keys and text for it; see [HMI](#hmi). Needs the `hmi` extra | dict | no | — |
 
 Always prefer the specific `usb_port` over a device `serial`.
 A serial identifies *a specific device*; the port identifies *a USB port*, which stays consistent even if the DUT is swapped out.
@@ -464,13 +464,15 @@ with env() as root, root.phone.appium.serve() as target:
         driver.quit()
 ```
 
-## Screen
+## HMI
 
-With a `hmi` block, the exporter streams the device's picture and takes touch, hard keys and text for it, through
-[scrcpy](https://github.com/Genymobile/scrcpy)'s server. This is the Android implementation of the
-{doc}`HMI interface <hmi>`: **H.264** video from the device's own hardware encoder, shared by any number of
-viewers, with the interface's wire format, recording, quality adaptation and `j <device>.hmi view`. Nothing is
+With a `hmi` block, the exporter streams the device's picture and takes touch, keyboard, hard keys and text for it,
+through [scrcpy](https://github.com/Genymobile/scrcpy)'s server. This is the Android implementation of the
+{doc}`HMI interface <hmi>`: **H.264** (or **HEVC**) video from the device's own hardware encoder, shared by any number
+of viewers, with the interface's wire format, recording, quality adaptation and `j <device>.adb hmi view`. Nothing is
 installed on the device (the server runs as the `shell` user, no root, no APK), and clients need neither adb nor scrcpy.
+It declares the subset of the interface that scrcpy genuinely has (see [What the HMI takes](#what-the-hmi-takes)), and a
+UI shows only that.
 
 ```yaml
 export:
@@ -481,7 +483,7 @@ export:
       hmi: {}               # the defaults; see the options below
 ```
 
-The screen uses the device's own serial, ADB server and adb (`server_port`, `adb_path`, `connect_timeout`): there is
+The HMI uses the device's own serial, ADB server and adb (`server_port`, `adb_path`, `connect_timeout`): there is
 nothing to say twice. It needs the `hmi` extra, which a config with `hmi:` and no extra refuses with what to
 install:
 
@@ -494,7 +496,7 @@ A device without a `hmi` block never imports the HMI package.
 ### The scrcpy server
 
 `scrcpy-server` is the Java program scrcpy pushes to a device. It is Apache-2.0 and **not part of this package**: the
-screen pins one release (v4.1) by version and SHA-256, finds the file on the exporter, checks the hash and only then
+HMI pins one release (v4.1) by version and SHA-256, finds the file on the exporter, checks the hash and only then
 pushes it; a file with another hash is refused, whoever put it there. Nothing is downloaded at runtime.
 
 Fetch it once, when the exporter image is built:
@@ -512,7 +514,7 @@ different `server_sha256`, and the protocol module speaks only v4.1.
 
 ### Options
 
-The `hmi:` options are those of every screen (`control`, `hard_keys`, `max_size`, `bit_rate`, `max_fps`,
+The `hmi:` options are those of every HMI (`codec`, `control`, `hard_keys`, `max_size`, `bit_rate`, `max_fps`,
 `idle_stop_s`, `start_timeout_s`, `stop_deadline_s`, the viewer and adaptation limits... see {doc}`hmi`) and these:
 
 | Option | Description | Type | Default |
@@ -521,28 +523,47 @@ The `hmi:` options are those of every screen (`control`, `hard_keys`, `max_size`
 | server_sha256 | The SHA-256 the file must have | str | the pin for v4.1 |
 | idr_interval_s | Seconds between key pictures: a viewer that lost a picture waits for the next one | int | 2 |
 | display_id | Which display to mirror (a device may have several) | int | 0 |
-| video_encoder | A `MediaCodec` encoder by name, for a device whose default one is poor | str | unset |
-| encoder_policy | `hardware`: when no encoder is named, the device's hardware H.264 encoder is named (from the server's own list) so that a software one never encodes by accident; `default`: whatever the server chooses | str | `hardware` |
+| video_encoder | A `MediaCodec` encoder by name, for a device whose default one is poor; it must make the codec in use | str | unset |
+| encoder_policy | `hardware`: when no encoder is named, the device's hardware encoder of the codec in use is named (from the server's own list) so that a software one never encodes by accident; `default`: whatever the server chooses | str | `hardware` |
 | temporal_layers | Ask the encoder for this many temporal layers (0: none); with 2, half the pictures can be dropped by a congested viewer without breaking its picture | int | 0 |
 | power_on | Wake the device when the server starts | bool | true |
-| stay_awake | Keep the screen on while plugged in (restored when the server ends) | bool | false |
-| show_touches | Draw the touch points on the device's screen | bool | false |
+| stay_awake | Keep the display on while plugged in (restored when the server ends) | bool | false |
+| show_touches | Draw the touch points on the device's display | bool | false |
 | server_options | More `key: value` options for the server (values limited to what needs no shell quoting) | dict | unset |
 
 `hmi: {control: false}` makes the stream view-only: no control channel is opened, `input` is refused, and
-`hmi_info()` says the screen takes no input.
+`hmi_info()` says the HMI takes no input.
 
-### What the screen takes
+### What the HMI takes
 
-* **Touch**: one finger (id 0), in the pixels of the shown picture. scrcpy's own multi-touch is future work for the
-  interface.
-* **Keys**: the Android key names without `KEYCODE_` (and the usual aliases), compared without case and with `-` read as
-  `_`: `HOME`, `BACK`, `APP_SWITCH` (also `RECENTS`), `POWER`, `LOCK` (Android's `SLEEP`), `VOLUME_UP`, `VOLUME_DOWN`,
+* **Codecs**: `h264` (the default) and `hevc`; `hmi_info()` lists them. Choose HEVC with `hmi: {codec: hevc}` or, for one
+  lease, `start(codec="hevc")`; the server is asked for it (`video_codec=h265`) and the codec line says which one is in
+  use (`avc1.*` or `hev1.*`). A device with no HEVC encoder fails the start with the server's own message, and a
+  `video_encoder` you name must be one that makes the codec in use. There is no MJPEG (scrcpy has none): `codec: mjpeg`
+  is refused when the exporter starts. A change of codec restarts the capture; the viewers stay attached.
+* **Pointer**: touch, one finger, in the pixels of the shown picture (`max_contacts: 1`). No mouse, pen, buttons,
+  wheel or second finger: the exporter ignores what is not declared and refuses a wheel. scrcpy's own multi-touch is
+  future work for the interface.
+* **Keyboard**: the keys that have an Android key code, by W3C `KeyboardEvent.code` (the physical key, whatever the
+  layout): `KeyA`...`KeyZ`, `Digit0`...`Digit9`, `F1`...`F12`, the arrows, `Enter`, `Escape`, `Backspace`, `Delete`,
+  `Tab`, `Space`, `Home`, `End`, `PageUp`, `PageDown`, `Insert`, the punctuation of a US layout (`Minus`, `Equal`,
+  `BracketLeft`, `BracketRight`, `Backslash`, `Semicolon`, `Quote`, `Comma`, `Period`, `Slash`, `Backquote`), the
+  modifiers (`ShiftLeft`, `ShiftRight`, `ControlLeft`, `ControlRight`, `AltLeft`, `AltRight`, `MetaLeft`, `MetaRight`),
+  `CapsLock`, `NumLock`, `ScrollLock`, `PrintScreen`, `Pause` and the numpad (`Numpad0`...`Numpad9`, `NumpadAdd`,
+  `NumpadEnter`...); `hmi_info()` lists exactly these, and any other code (`F13`, `Lang1`, `IntlBackslash`...) is refused
+  with an error line. The exporter injects Android key events, which carry the modifiers that are down as their meta
+  state: it tracks them for you (a `ShiftLeft` down, then `KeyA`, types `A`), and `CapsLock` and `NumLock` turn their
+  lock over on every press (Num Lock starts on, as a desktop keyboard's does, so that the numpad types digits). Keys
+  still down when the input stream ends are released; a restart of the capture forgets them.
+* **Text**: typed into the focused field, as a US layout types it (`layout: us`).
+* **Keys** (hard keys): the Android key names without `KEYCODE_` (and the usual aliases), compared without case and with
+  `-` read as `_`: `HOME`, `BACK`, `APP_SWITCH` (also `RECENTS`), `VOLUME_UP`, `VOLUME_DOWN`,
   `MUTE` (`VOLUME_MUTE`), `ASSIST`, the letters, digits and more; `hmi_info()` lists them. A key is `short`, `long`
   (held, repeated and released on a timer: the caller never waits for it), `down` or `up`.
-* **Hard keys**: the buttons a UI draws are `BACK`, `HOME`, `APP_SWITCH`, `VOLUME_UP`, `VOLUME_DOWN` and `POWER`; the
-  `hard_keys` option replaces them.
-* **Text**: typed into the focused field.
+* **Hard keys**: the buttons a UI draws are `BACK`, `HOME`, `APP_SWITCH`, `VOLUME_UP` and `VOLUME_DOWN`; the `hard_keys`
+  option replaces them. `POWER`, `LOCK` (Android's `SLEEP`) and `SLEEP` are **opt-in**: pressing one can lock the user out
+  of a device whose only way in is its screen, so the HMI accepts them only when `hard_keys` lists them
+  (`hard_keys: [HOME, BACK, {key: POWER, label: Power, presses: [long]}]`).
 
 Quality follows the network between the client and the exporter and starts at the device's own size (`wm size`). A
 change of quality restarts the capture (the viewers stay attached and get the new codec line); scrcpy offers no cheaper
@@ -551,8 +572,8 @@ at most `join_wait_s`, for the encoder's own key picture.
 
 ### Android extras
 
-Beside the generic screen's calls, the screen exports what only an Android device has, as methods of the client
-(`client.hmi.press_key(...)`) and as commands of `j <device>.hmi`:
+Beside the generic HMI's calls, the HMI exports what only an Android device has, as methods of the client
+(`client.hmi.press_key(...)`) and as commands of `j <device>.adb hmi`:
 
 | Command | Description |
 | --- | --- |
@@ -691,7 +712,7 @@ For a networked device you want in *your* ADB server, prefer an `AdbDevice` with
 | `j <device>.adb serve` | Serve the device's adbd at a local address; holds until Ctrl+C |
 | `j <device>.adb info` | Show the device's transport, selector and whether it is present |
 | `j <device>.adb appium` | With `appium` configured: the device's Appium endpoint; see [Appium](#appium) |
-| `j <device>.adb hmi` | With `hmi` configured: the device's screen, its input and the Android extras; see [Screen](#screen) |
+| `j <device>.adb hmi` | With `hmi` configured: the device's picture, its input and the Android extras; see [HMI](#hmi) |
 
 Options for `connect` and `serve`:
 
