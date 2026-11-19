@@ -199,7 +199,11 @@ func ensurePrometheusOperator() {
 	if crdsURL == "" {
 		crdsURL = prometheusCRDsURL
 	}
-	if exec.Command("kubectl", "get", "crd", "prometheuses.monitoring.coreos.com").Run() != nil {
+	if exec.Command("kubectl", "get", "crd", "prometheuses.monitoring.coreos.com").Run() != nil ||
+		exec.Command("kubectl", "get", "crd", "servicemonitors.monitoring.coreos.com").Run() != nil {
+		// Apply the full CRD asset when any required CRD is missing: a partial
+		// earlier apply must be repaired, and the operator asset below filters
+		// CRDs out.
 		kubectlApplyStdin(fetchManifest(crdsURL, prometheusCRDsURL, prometheusCRDsSHA256))
 	}
 

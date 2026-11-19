@@ -20,11 +20,16 @@ fi
 tmp_root="$repo_dir/.opencode/tmp"
 mkdir -p "$tmp_root"
 context=$(mktemp -d "$tmp_root/prebuilt-nested-bin.XXXXXX")
-image="jumpstarter-prebuilt-nested-bin-test:$$"
-container="jumpstarter-prebuilt-nested-bin-check-$$"
+# Derive the tag and container name from the mktemp suffix: two invocations can
+# share a PID namespace and a container daemon, so $$ alone is not unique.
+unique=$(basename "$context")
+image="jumpstarter-prebuilt-nested-bin-test:$unique"
+container_id=""
 
 cleanup() {
-	"$CONTAINER_TOOL" rm -f "$container" >/dev/null 2>&1 || true
+	if [[ -n "$container_id" ]]; then
+		"$CONTAINER_TOOL" rm -f "$container_id" >/dev/null 2>&1 || true
+	fi
 	"$CONTAINER_TOOL" rmi -f "$image" >/dev/null 2>&1 || true
 	rm -rf "$context"
 }
@@ -46,8 +51,8 @@ chmod 0700 "$context/bin/manager"
 # Inspect the copied entrypoint mode rather than executing it. The host binary
 # used as a fixture may not be compatible with the UBI micro runtime, but the
 # image build's chmod behavior is what this check covers.
-"$CONTAINER_TOOL" create --name "$container" "$image" >/dev/null
-"$CONTAINER_TOOL" cp "$container:/entrypoint" "$context/entrypoint"
+container_id=$("$CONTAINER_TOOL" create "$image")
+"$CONTAINER_TOOL" cp "$container_id:/entrypoint" "$context/entrypoint"
 mode=$(stat -c '%a' "$context/entrypoint")
 if [[ "$mode" != "755" && "$mode" != "0755" ]]; then
 	echo "prebuilt Containerfile nested BIN check failed: /entrypoint mode is $mode, want 755" >&2

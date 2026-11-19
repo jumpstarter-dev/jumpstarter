@@ -59,7 +59,9 @@ var _ = Describe("Observability integration", Ordered, func() {
 			}, 2*time.Minute, 2*time.Second).Should(Succeed())
 		}
 
-		if utils.IsPrometheusCRDsInstalled() {
+		served, err := utils.IsServiceMonitorAPIServed()
+		Expect(err).NotTo(HaveOccurred(), "discover the monitoring.coreos.com/v1 ServiceMonitor API")
+		if served {
 			By("waiting for the controller and router ServiceMonitors")
 			for _, name := range []string{crName + "-metrics-controller", crName + "-metrics-router"} {
 				Eventually(func(g Gomega) {
@@ -71,7 +73,7 @@ var _ = Describe("Observability integration", Ordered, func() {
 				}, 2*time.Minute, 2*time.Second).Should(Succeed())
 			}
 		} else {
-			By("verifying safe degradation without the Prometheus Operator CRDs")
+			By("verifying safe degradation without the ServiceMonitor API")
 			waitForCondition(namespace, crName,
 				operatorv1alpha1.ConditionTypeServiceMonitorReady,
 				metav1.ConditionFalse, 2*time.Minute)
@@ -94,6 +96,20 @@ var _ = Describe("Observability integration", Ordered, func() {
 			}, svc)).To(Succeed())
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
+		served, err := utils.IsServiceMonitorAPIServed()
+		Expect(err).NotTo(HaveOccurred(), "discover the monitoring.coreos.com/v1 ServiceMonitor API")
+
+		if served {
+			By("waiting for the controller ServiceMonitor before deleting the Jumpstarter")
+			Eventually(func(g Gomega) {
+				sm := &unstructured.Unstructured{}
+				sm.SetGroupVersionKind(observabilityServiceMonitorGVK)
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+					Name: crName + "-metrics-controller", Namespace: namespace,
+				}, sm)).To(Succeed())
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+		}
+
 		Expect(k8sClient.Delete(ctx, js)).To(Succeed())
 
 		Eventually(func(g Gomega) {
@@ -104,7 +120,7 @@ var _ = Describe("Observability integration", Ordered, func() {
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "metrics Service should be garbage-collected: %v", err)
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
-		if utils.IsPrometheusCRDsInstalled() {
+		if served {
 			Eventually(func(g Gomega) {
 				sm := &unstructured.Unstructured{}
 				sm.SetGroupVersionKind(observabilityServiceMonitorGVK)
