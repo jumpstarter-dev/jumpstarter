@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import grpc
 import pytest
+from aiohttp import web
 from anyio import Event, create_memory_object_stream
 from anyio.abc import AnyByteStream
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
@@ -78,6 +79,41 @@ class MockController(jumpstarter_pb2_grpc.ControllerServiceServicer):
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+@dataclass
+class FakeProxy:
+    url: str
+    requests: list[tuple[str, str]] = field(default_factory=list)
+    headers: list[dict[str, str]] = field(default_factory=list)
+
+
+@pytest.fixture
+async def http_proxy(monkeypatch):
+    """Run a fake forward proxy and point the proxy environment variables at it.
+
+    The proxy records the (method, host) and the headers of every request it receives.
+    """
+    async def handler(request: web.Request) -> web.Response:
+        proxy.requests.append((request.method, request.host))
+        proxy.headers.append(dict(request.headers))
+        return web.json_response({"proxied": True})
+
+    app = web.Application()
+    app.router.add_route("*", "/{tail:.*}", handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    await web.TCPSite(runner, "127.0.0.1", 0).start()
+    proxy = FakeProxy(url=f"http://127.0.0.1:{runner.addresses[0][1]}")
+
+    for name in ("NO_PROXY", "no_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    for name in ("HTTP_PROXY", "http_proxy"):
+        monkeypatch.setenv(name, proxy.url)
+    try:
+        yield proxy
+    finally:
+        await runner.cleanup()
 
 
 def pytest_collection_finish():
