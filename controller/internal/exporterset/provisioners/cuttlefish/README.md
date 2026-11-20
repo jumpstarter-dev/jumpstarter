@@ -268,6 +268,39 @@ spec:
 Record both the resolved runtime image digest and the guest `fetcher_config.json`
 with validation results. A prewarmed PVC needs the same build provenance.
 
+## Flashing during a lease
+
+The pool's build is the image every Pod starts with; a lessee can replace
+partitions with `j cuttlefish storage flash -t boot:boot.img` and power on
+again. See the driver's README for the flashing semantics. The provisioner
+prepares each Pod for it:
+
+- the exporter mounts the image volume (`/home/vsoc-01/fetch`) read-write, the
+  Pod adds supplemental group 65532, and the permissions init container makes
+  that directory group-writable (`2775`) for it. The exporter keeps its image's
+  primary group. `cvd_user` keeps owning the directory, because `cvd load`
+  rewrites host tools there on every boot. Flashed images are left writable
+  for it too: `cvd load` pads vbmeta images in place;
+- the Cuttlefish driver receives `images_dir` and `images_volume_limit` (from
+  `storage.imageSize`), so a flash stops before the volume exceeds its size
+  limit. Kubelet enforces that limit by evicting the Pod, not by failing a
+  write. Templates cannot override either value;
+- `env_config`'s `disk.default_build` is pinned to the image volume, and
+  templates that load images from anywhere else (`boot.build`, `boot.kernel`,
+  `boot.bootloader`, `boot.android_efi_loader`, `disk.super`) are rejected:
+  the CVD would not boot what a lessee flashed.
+
+Flashed images live only in the Pod's image volume. `ExitAndReplace` deletes
+the Pod when the lease ends, so the next lessee starts from the pool's build
+again; this is one reason `InPlaceReuse` is rejected. Leave room in
+`storage.imageSize` for the largest partition a lessee will replace: the new
+image is written next to the old one before it replaces it.
+
+The health probe still fails a Pod whose own build does not boot. After a
+flash, a boot failure is the lessee's images: the driver removes the failed
+CVD and the probe keeps the Pod, so the lessee can flash again within the
+lease.
+
 ## Runtime backends
 
 `parameters.backend` selects how the exporter controls the runtime. `http`
