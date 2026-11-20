@@ -8,7 +8,7 @@
 | **Status** | Draft |
 | **Type** | Standards Track |
 | **Created** | 2026-11-19 |
-| **Requires** | None for the base runner; ExporterSet scenarios require that feature |
+| **Requires** | None |
 
 ## Abstract
 
@@ -17,7 +17,7 @@ performance tests against existing or disposable Jumpstarter clusters. It create
 and destroys clients, exporters, and leases, and runs mock exporters using real
 Jumpstarter connections without physical hardware. Configurable scenarios sweep
 load levels and produce measurements that help locate bottlenecks in the
-controller, ExporterSet controllers, and routers. The working name is
+controller and routers. The working name is
 `jumpstarter-overdrive`; `jumpstarter-tempest` is an alternative.
 
 ## Motivation
@@ -41,6 +41,25 @@ A **scenario** is a Python class with setup, load-step, and cleanup methods. A
 recording raw samples and a summary. Scenarios run sequentially by default so
 their loads do not interfere.
 
+### Implementation scope: Phase 1
+
+This JEP defines the standalone Python tool only. It requires **no changes to the
+controller, operator, CRDs, or provisioner framework**. The runner manages mock
+exporters directly through existing APIs; these are not controller-managed pools.
+
+Implement and review it in small increments:
+
+1. Runner, configuration, cleanup, and `lease-scheduling`, with raw timings and a
+   basic summary working end to end on a small cluster.
+2. Independent client/exporter churn and router-traffic scenarios, reusing those
+   helpers rather than building a second runner.
+3. Resource-metric collection and the readable reports described below.
+
+**Phase 2 is separate extension work:**
+[JEP-0020: Mock ExporterSet Performance Testing](JEP-0020-mock-exporterset-performance-testing.md)
+adds a mock provisioner and ExporterSet scenarios. It is not a prerequisite or an
+acceptance criterion for this JEP. No Phase 2 scaffolding is required in Phase 1.
+
 ### Initial scenarios
 
 | Scenario | Workload | Primary measurements |
@@ -48,7 +67,7 @@ their loads do not interfere.
 | `lease-scheduling` | Repeatedly acquire, briefly hold, release, and delete leases against a ready mock-exporter pool. | Assignment, lease-ready, and release latency, leases/s, errors. |
 | `client-churn` | Repeatedly create and delete clients, without creating exporters or leases. | Client creation/deletion latency, cycles/s, errors. |
 | `exporter-churn` | Repeatedly create exporters, connect mock runtimes, wait until available, then disconnect and delete them, without requesting leases. | Exporter creation/deletion latency, time to available, cycles/s, errors. |
-| `exporterset-scaling` | Drive lease demand against a run-owned mock ExporterSet. | Pool convergence, cold-start lease latency, scale-down time. |
+
 | `router-traffic` | Open leased sessions and exchange fixed-size echo payloads through routers. | Connection latency, round-trip latency, bytes/s, failures. |
 
 `lease-scheduling` also covers lease churn, reusing clients and exporters created
@@ -58,27 +77,7 @@ costs from lease scheduling.
 Mock exporters are real exporter runtimes with lightweight, hardware-free drivers
 and distinct credentials. They connect to the cluster's controller and routers as
 normal exporters; the tool does not fake online status or write lease assignments.
-ExporterSet tests let the ExporterSet controller manage exporters rather than
-creating its child resources directly.
 
-### Mock ExporterSet
-
-A **mock ExporterSet** is a normal `ExporterSet` referencing a `VirtualTargetClass`
-with a proposed test-only provisioner, `mock.jumpstarter.dev`; it is not a new CRD
-or a mock of the controller. The provisioner implements the existing provisioner
-interface and renders lightweight pods running mock exporters, with no VM,
-emulator, external service, or physical target.
-
-This exercises the real shared controller framework: reconciliation, scaling,
-exporter registration, readiness accounting, recycling, and cleanup. Unlike
-standalone mock exporters managed by the runner, these exporters are managed by
-the ExporterSet controller. Kubernetes pod startup and exporter connection costs
-remain part of the measurements, but real target provisioning costs do not.
-
-The mock provisioner must be explicitly enabled on the test cluster. The scenario
-creates run-owned `VirtualTargetClass` and `ExporterSet` resources, then generates
-lease demand and observes the pool; it does not bypass reconciliation or patch
-status. This backend is solely a testing fixture, not a production target type.
 
 ### Example configuration and CLI
 
@@ -118,16 +117,7 @@ scenarios:
     load:
       concurrent_exporters: {min: 5, max: 25, step: 5}
       duration: 60s
-  exporterset-scaling:
-    provisioner: mock.jumpstarter.dev
-    load:
-      clients: 50
-      concurrent_leases: {min: 10, max: 50, step: 10}
-      min_replicas: 0
-      max_replicas: 60
-      min_available_replicas: 0
-      hold: 1s
-      operation_timeout: 120s
+
   router-traffic:
     load:
       exporters: 60
@@ -183,15 +173,13 @@ flowchart TD
     Runner --> API[Kubernetes API: test resources]
     Runner --> Clients[Test clients]
     Runner --> Mocks[Mock exporter runtimes]
-    API --> Sets[ExporterSet controllers]
-    Sets --> MockProvisioner[Test-only mock provisioner]
-    MockProvisioner --> Pods[Mock exporter pods]
+
     Clients --> Controller[Controller and scheduler]
     Mocks --> Controller
-    Pods --> Controller
+
     Clients <--> Routers[Routers]
     Routers <--> Mocks
-    Routers <--> Pods
+
     Runner --> Results[Samples and summaries]
 ```
 
@@ -238,8 +226,7 @@ and clients as concurrent leases. Setup must confirm enough matching, online,
 available exporters and authorized clients for that step. Selectors include
 the run identity so unrelated exporters cannot satisfy requests. Warmup samples
 are excluded. Loss of capacity during measurement is reported as a capacity
-shortfall, not silently attributed to scheduler latency. ExporterSet tests instead
-measure cold starts deliberately and report them separately.
+shortfall, not silently attributed to scheduler latency.
 
 ### Measurements and bottleneck analysis
 
@@ -254,8 +241,8 @@ these boundaries separately:
 
 These are client-observed durations, including network and observation overhead,
 not pure scheduler execution times. Use watches where supported and record the
-observation method. ExporterSet pool convergence and router traffic have their own
-scenario-specific samples.
+observation method. Churn and router traffic have their own scenario-specific
+samples.
 
 Write JSON Lines samples and a JSON summary containing counts, p50/p95/p99,
 throughput, errors, and timeouts per scenario, step, and repetition. Failed and
@@ -266,8 +253,8 @@ include credentials in artifacts.
 
 ### Controller and router resource metrics
 
-During each run, collect resource metrics for the running controllers,
-ExporterSet controllers, and routers, including all replicas:
+During each run, collect resource metrics for the running controllers and routers,
+including all replicas:
 
 | Metric | Samples | Report summary per load step |
 | ------ | ------- | ---------------------------- |
@@ -292,8 +279,8 @@ restarts and counter resets without producing false spikes. Preserve warmup
 boundaries and report sampling gaps or unavailable metrics explicitly, never as
 zero usage. Monitoring access uses read-only credentials kept out of artifacts.
 
-Correlate these measurements with controller work queues/reconciliation,
-ExporterSet activity, and router connections using observability from
+Correlate these measurements with controller work queues/reconciliation and
+router connections using observability from
 [JEP-0013](JEP-0013-observability-telemetry-logs.md). On clusters without monitoring,
 workload-only runs remain supported, but reports clearly mark resource metrics as
 unavailable. Shared-component metrics include other cluster activity and cannot
@@ -331,7 +318,7 @@ component's replicas before computing mean/peak values:
 | Component | CPU mean/peak (cores) | Memory mean/peak (MiB) | Network RX/TX mean (KiB/s) |
 | --------- | --------------------- | ---------------------- | ------------------------ |
 | Controller | 0.30 / 0.52 | 180 / 205 | 85 / 62 |
-| ExporterSet controller | 0.02 / 0.04 | 70 / 74 | 3 / 2 |
+
 | Router | 0.08 / 0.14 | 95 / 102 | 40 / 39 |
 
 The full report also includes per-replica values, peak network rates, byte totals,
@@ -386,8 +373,7 @@ resources. Any retries are bounded and recorded rather than hiding failures.
   metric aggregation, counter resets, missing samples, and load-step alignment.
 - **Integration:** Small sweeps on a disposable cluster, covering all scenarios,
   unavailable exporters, deadlines, disconnects, and interrupted-run cleanup.
-  Verify mock ExporterSet scale-up, recycling, scale-down, and deletion through
-  the real controller framework. Check controller/router resource collection
+  Check controller/router resource collection
   with monitoring enabled and explicit missing-data reporting when unavailable.
 - **Hardware-in-the-loop:** Not required; all scenarios use simulated hardware.
 - **Manual:** Compare repeated baselines, then constrain controller or router
@@ -399,31 +385,28 @@ resources. Any retries are bounded and recorded rather than hiding failures.
       and repetitions, recording the resolved dimensions for every result.
 - [ ] Scheduling tests verify ready capacity before measuring lease latency.
 - [ ] Client and exporter churn run independently, without generating lease load.
-- [ ] ExporterSet scaling and router traffic can be measured independently.
-- [ ] A mock ExporterSet exercises the shared controller framework without real
-      target provisioning or direct status manipulation.
+- [ ] Router traffic can be measured independently of churn and scheduling tests.
 - [ ] Artifacts include raw samples, percentiles, throughput, failures, and run metadata,
       plus a readable report with workload and resource summaries.
-- [ ] With monitoring configured, reports include controller, ExporterSet controller,
-      and router CPU/memory/network time series and summaries aligned to load steps;
+- [ ] With monitoring configured, reports include controller and router
+      CPU/memory/network time series and summaries aligned to load steps;
       missing metrics are explicitly identified.
 - [ ] Normal and interrupted runs clean up; crash leftovers can be explicitly removed
       without touching unrelated resources.
-- [ ] The same configuration works against existing and disposable compatible clusters.
+- [ ] The same configuration works against existing and disposable compatible clusters,
+      without ExporterSet support or controller/operator changes.
 
 ## Backward Compatibility
 
-This is an opt-in tool; no protocol or existing CLI changes are required. The base
-scenarios do not require ExporterSet support or a monitoring stack. Feature
-availability is checked before running scenarios that need it. The mock
-ExporterSet scenario additionally requires the opt-in mock provisioner; it uses
-existing CRDs and the provisioner interface. No migration is required for existing
-deployments.
+This is an opt-in tool using existing APIs; no protocol, controller, operator, or
+existing CLI changes are required. None of its scenarios require ExporterSet
+support. A monitoring stack is optional. No migration is required for existing
+deployments, and the tool can ship independently of Phase 2.
 
 ## Consequences
 
 **Positive:** Repeatable capacity curves, comparable version-to-version results,
-and targeted workloads for investigating controller, ExporterSet, and router
+and targeted workloads for investigating controller and router
 bottlenecks without a hardware fleet.
 
 **Negative:** The tool and mock workloads need maintenance. Results depend on the
@@ -441,7 +424,7 @@ all real driver behavior. Load tests can disrupt other users on shared clusters.
 ## References
 
 - [JEP-0013: Metrics, Tracing, and Log Observability](JEP-0013-observability-telemetry-logs.md)
-- [JEP-0014: Virtual Scalable Exporters](JEP-0014-virtual-scalable-exporters.md)
+- [JEP-0020: Mock ExporterSet Performance Testing (Phase 2)](JEP-0020-mock-exporterset-performance-testing.md)
 
 ---
 

@@ -39,6 +39,7 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 | 0013 | [Metrics, Tracing, and Log Observability](JEP-0013-observability-telemetry-logs.md)                                    | Accepted    | @mangelajo (Miguel Angel Ajo Pelayo) |
 | 0014 | [Virtual Scalable Exporters](JEP-0014-virtual-scalable-exporters.md)                                                   | Approved    | @mangelajo (Miguel Angel Ajo Pelayo) |
 | 0019 | [Scale and Performance Testing](JEP-0019-scale-performance-testing.md)                                               | Draft       | @mangelajo (Miguel Angel Ajo Pelayo) |
+| 0020 | [Mock ExporterSet Performance Testing (Phase 2)](JEP-0020-mock-exporterset-performance-testing.md)                     | Draft       | @mangelajo (Miguel Angel Ajo Pelayo) |
 
 ### Informational JEPs
 
@@ -74,4 +75,5 @@ JEP-0011-protobuf-introspection-interface-generation.md
 JEP-0013-observability-telemetry-logs.md
 JEP-0014-virtual-scalable-exporters.md
 JEP-0019-scale-performance-testing.md
+JEP-0020-mock-exporterset-performance-testing.md
 ```
