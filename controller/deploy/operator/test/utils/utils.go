@@ -19,6 +19,7 @@ package utils
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -79,10 +80,41 @@ func UninstallPrometheusOperator() {
 	}
 }
 
+// IsServiceMonitorAPIServed reports whether monitoring.coreos.com/v1 serves the
+// ServiceMonitor kind, using API discovery rather than a CRD existence guess.
+// A discovery or transport failure is returned as an error so callers never
+// mistake it for an absent API: a missing group is a 404 from the discovery
+// endpoint.
+func IsServiceMonitorAPIServed() (bool, error) {
+	cmd := exec.Command("kubectl", "get", "--raw", "/apis/monitoring.coreos.com/v1")
+	output, err := Run(cmd)
+	if err != nil {
+		if strings.Contains(output, "NotFound") ||
+			strings.Contains(output, "could not find the requested resource") {
+			return false, nil
+		}
+		return false, err
+	}
+
+	var groupVersion struct {
+		Resources []struct {
+			Name string `json:"name"`
+		} `json:"resources"`
+	}
+	if err := json.Unmarshal([]byte(output), &groupVersion); err != nil {
+		return false, fmt.Errorf("decode monitoring.coreos.com/v1 discovery document: %w", err)
+	}
+	for _, resource := range groupVersion.Resources {
+		if resource.Name == "servicemonitors" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // IsPrometheusCRDsInstalled checks if any Prometheus CRDs are installed
 // by verifying the existence of key CRDs related to Prometheus.
-func IsPrometheusCRDsInstalled() bool {
-	// List of common Prometheus CRDs
+func IsPrometheusCRDsInstalled() bool { // List of common Prometheus CRDs
 	prometheusCRDs := []string{
 		"prometheuses.monitoring.coreos.com",
 		"prometheusrules.monitoring.coreos.com",

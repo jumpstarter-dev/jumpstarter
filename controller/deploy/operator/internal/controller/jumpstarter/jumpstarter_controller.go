@@ -35,6 +35,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -103,6 +104,7 @@ type JumpstarterReconciler struct {
 
 // Monitoring resources
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
 
 // cert-manager resources (for TLS certificate management)
 // +kubebuilder:rbac:groups=cert-manager.io,resources=issuers,verbs=get;list;watch;create;update;patch;delete
@@ -278,6 +280,15 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	// Reconcile observability integration: metrics Services and ServiceMonitors.
+	// These are optional integrations, so a failure must not abort the rest of the
+	// Jumpstarter reconcile (status, ConfigMaps, Secrets). The condition reports
+	// the failure and a short requeue retries it.
+	serviceMonitor, observabilityErr := r.reconcileObservability(ctx, &jumpstarter)
+	if observabilityErr != nil {
+		log.Error(observabilityErr, "Failed to reconcile observability integration")
+	}
+
 	// Reconcile ConfigMaps (after deployments and services)
 	if err := r.reconcileConfigMaps(ctx, &jumpstarter, desiredConfigMap); err != nil {
 		log.Error(err, "Failed to reconcile ConfigMaps")
@@ -290,19 +301,41 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// Update status
-	if err := r.updateStatus(ctx, &jumpstarter); err != nil {
+	// Update status before returning an observability error. This preserves the
+	// condition information while letting controller-runtime apply backoff and
+	// record the reconcile error metric.
+	if err := r.updateStatus(ctx, &jumpstarter, serviceMonitor); err != nil {
 		log.Error(err, "Failed to update status")
 		return ctrl.Result{}, err
 	}
+	if observabilityErr != nil {
+		return ctrl.Result{}, fmt.Errorf("observability: %w", observabilityErr)
+	}
 
-	// Requeue periodically to pick up changes. Use a shorter interval while the
-	// telemetry CA secret is not yet ready so the controller ConfigMap converges quickly.
+	requeueAfter := r.observabilityRequeueAfter(ctx, &jumpstarter, serviceMonitor)
+	return ctrl.Result{RequeueAfter: requeueAfter}, nil
+}
+
+// observabilityRequeueAfter keeps the normal periodic reconciliation interval
+// but shortens it while observability needs attention. A missing ServiceMonitor
+// CRD or a failed probe/apply uses a two-minute retry; a later-installed CRD is
+// also picked up immediately by the CRD watch.
+func (r *JumpstarterReconciler) observabilityRequeueAfter(
+	ctx context.Context,
+	js *operatorv1alpha1.Jumpstarter,
+	serviceMonitor serviceMonitorResult,
+) time.Duration {
 	requeueAfter := 30 * time.Minute
-	if r.telemetryCANeedsRequeue(ctx, &jumpstarter) {
+	if r.telemetryCANeedsRequeue(ctx, js) {
 		requeueAfter = telemetryCARequeueInterval
 	}
-	return ctrl.Result{RequeueAfter: requeueAfter}, nil
+	if requeueAfter > 2*time.Minute {
+		switch serviceMonitor.phase {
+		case serviceMonitorWaitingForCRD, serviceMonitorProbeFailed, serviceMonitorApplyFailed:
+			requeueAfter = 2 * time.Minute
+		}
+	}
+	return requeueAfter
 }
 
 // emitEventf emits a Kubernetes event on the Jumpstarter object.
@@ -777,6 +810,12 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 		"controller": jumpstarter.Name,
 	}
 
+	// Discovery labels for cluster log shippers. Applied to the pod template only:
+	// Deployment.spec.selector is immutable and must keep its existing key set.
+	podLabels := maps.Clone(labels)
+	podLabels[logScrapeLabel] = "true"
+	podLabels[logFormatLabel] = "json"
+
 	// Build GRPC endpoint from first controller endpoint
 	// Default to port 443 for TLS gRPC endpoints
 	grpcEndpoint := ""
@@ -918,7 +957,7 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
+					Labels:      podLabels,
 					Annotations: r.buildControllerPodAnnotations(jumpstarter, configMapHash, tlsSecretHash),
 				},
 				Spec: corev1.PodSpec{
@@ -1051,6 +1090,12 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 		"router-index": fmt.Sprintf("%d", replicaIndex),
 	}
 
+	// Discovery labels for cluster log shippers. Applied to the pod template only:
+	// Deployment.spec.selector is immutable and must keep its existing key set.
+	podLabels := maps.Clone(labels)
+	podLabels[logScrapeLabel] = "true"
+	podLabels[logFormatLabel] = "json"
+
 	// Build router endpoint for this specific replica
 	routerEndpoint := r.buildRouterEndpointForReplica(jumpstarter, replicaIndex)
 
@@ -1134,7 +1179,7 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
+					Labels:      podLabels,
 					Annotations: r.buildRouterPodAnnotations(jumpstarter, tlsSecretHash),
 				},
 				Spec: corev1.PodSpec{
@@ -1960,6 +2005,28 @@ func (r *JumpstarterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return requests
 	}
 
+	// mapServiceMonitorCRDToJumpstarters enqueues all Jumpstarter CRs when the
+	// optional ServiceMonitor CRD is installed or updated. This complements the
+	// bounded fallback requeue while the CRD is absent.
+	mapServiceMonitorCRDToJumpstarters := func(ctx context.Context, obj client.Object) []ctrl.Request {
+		crd, ok := obj.(*apiextensionsv1.CustomResourceDefinition)
+		if !ok || crd.Name != serviceMonitorCRDName {
+			return nil
+		}
+
+		var jumpstarterList operatorv1alpha1.JumpstarterList
+		if err := mgr.GetClient().List(ctx, &jumpstarterList); err != nil {
+			logf.FromContext(ctx).Error(err, "Failed to list Jumpstarters for ServiceMonitor CRD change")
+			return nil
+		}
+
+		requests := make([]ctrl.Request, len(jumpstarterList.Items))
+		for i, js := range jumpstarterList.Items {
+			requests[i] = ctrl.Request{NamespacedName: client.ObjectKeyFromObject(&js)}
+		}
+		return requests
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&operatorv1alpha1.Jumpstarter{}).
 		Named("jumpstarter").
@@ -1971,6 +2038,7 @@ func (r *JumpstarterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// Note: Secrets and ServiceAccounts are intentionally NOT owned to prevent deletion.
 		// We watch Secrets referenced as JWT CA certificates and TLS certs so that
 		// rotations trigger reconciliation and rolling restarts via hash annotations.
+		Watches(&apiextensionsv1.CustomResourceDefinition{}, handler.EnqueueRequestsFromMapFunc(mapServiceMonitorCRDToJumpstarters)).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(mapSecretToJumpstarters)).
 		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(mapConfigMapToJumpstarters)).
 		Complete(r)

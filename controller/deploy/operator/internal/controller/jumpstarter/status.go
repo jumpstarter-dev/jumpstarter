@@ -32,8 +32,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// updateStatus updates the status conditions of the Jumpstarter resource
-func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1alpha1.Jumpstarter) error {
+// updateStatus updates the status conditions of the Jumpstarter resource.
+func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1alpha1.Jumpstarter, serviceMonitor serviceMonitorResult) error {
 	log := logf.FromContext(ctx)
 
 	prevReady := meta.IsStatusConditionTrue(js.Status.Conditions, operatorv1alpha1.ConditionTypeReady)
@@ -167,6 +167,10 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 		}
 	}
 
+	// The Prometheus Operator integration is informational and deliberately
+	// excluded from allReady: its absence must not report Jumpstarter as degraded.
+	emitServiceMonitorCRDMissing := reconcileObservabilityStatus(js, serviceMonitor)
+
 	// Set overall Ready condition
 	readyMessage := "All components are ready"
 	if !allReady {
@@ -196,8 +200,42 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 			js.Name, js.Namespace)
 	}
 
+	// Emit transition events only after the status update succeeds.
+	if emitServiceMonitorCRDMissing {
+		r.emitEventf(js, corev1.EventTypeWarning, "ServiceMonitorCRDMissing",
+			"monitoring.coreos.com/v1 ServiceMonitor CRD is not installed; Prometheus autodiscovery is inactive")
+	}
+
 	log.V(1).Info("Status updated", "ready", allReady)
 	return nil
+}
+
+// reconcileObservabilityStatus sets the informational observability conditions
+// and reports which transition events should be emitted. Keeping it separate
+// from updateStatus keeps that function's complexity within the lint threshold.
+func reconcileObservabilityStatus(js *operatorv1alpha1.Jumpstarter, serviceMonitor serviceMonitorResult) bool {
+	smReady, smReason, smMessage := serviceMonitor.condition()
+	reasonChanged := setConditionAndReportReasonChange(
+		js,
+		operatorv1alpha1.ConditionTypeServiceMonitorReady,
+		smReady,
+		smReason,
+		smMessage,
+	)
+
+	return smReason == serviceMonitorReasonCRDNotFound && reasonChanged
+}
+
+// setConditionAndReportReasonChange updates a condition and reports whether its
+// reason changed. It snapshots the previous reason by value because
+// meta.SetStatusCondition mutates existing conditions in place.
+func setConditionAndReportReasonChange(js *operatorv1alpha1.Jumpstarter, conditionType string, ready bool, reason, message string) bool {
+	prevReason := ""
+	if previous := meta.FindStatusCondition(js.Status.Conditions, conditionType); previous != nil {
+		prevReason = previous.Reason
+	}
+	setCondition(js, conditionType, ready, reason, message)
+	return reason != prevReason
 }
 
 // checkCertManagerCRDs checks if cert-manager CRDs are installed in the cluster

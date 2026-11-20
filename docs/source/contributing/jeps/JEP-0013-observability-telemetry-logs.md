@@ -12,7 +12,7 @@ orphan: true
 | **Status**        | Accepted                                                              |
 | **Type**          | Standards Track                                                       |
 | **Created**       | 2026-04-23                                                            |
-| **Updated**       | 2026-05-04                                                            |
+| **Updated**       | 2026-11-04                                                            |
 | **Discussion**    | https://github.com/jumpstarter-dev/jumpstarter/pull/631               |
 | **Requires**      | -                                                                     |
 | **Supersedes**    | -                                                                     |
@@ -40,7 +40,7 @@ and compatibility rules.
 | 2     | Metrics endpoints                  | `/metrics` scrape endpoints on Controller and Router; exporter-local `prometheus_client` counters/histograms/gauges with `driver_type`; Prometheus exemplars for high-cardinality context. |
 | 3     | Telemetry service                  | Optional `jumpstarter-telemetry` Deployment managed by the operator; reverse-scrape of exporter metrics via `MetricsStream`; Loki push for edge-originated logs and events. |
 | 4     | Exporter drivers telemetry         | Provides a clean architecture to let drivers generate their own telemetry data. |
-| 5     | In-cluster log scraping            | Operator configures log shipper integration (Promtail, Grafana Alloy, Vector) for Controller/Router pod logs; `ServiceMonitor` CRDs for Prometheus autodiscovery. |
+| 5     | In-cluster log scraping            | Operator labels Controller/Router pods for log collection and emits structured JSON to stdout; documented Promtail, Grafana Alloy, and Vector examples deliver those logs; `ServiceMonitor` CRDs for Prometheus autodiscovery. |
 | 6     | Dashboards + alerting              | Perses CRD dashboards; starter alert rules; documentation and operator integration. |
 
 Each phase is independently useful and builds on the previous ones.
@@ -842,6 +842,12 @@ long-lived `MetricsStream` to one Telemetry replica.
   Alternative (3) adds operational complexity with no benefit given
   the reverse-scrape model.
 
+**Phase 5 implementation note:** The operator uses the equivalent
+per-endpoint `ServiceMonitor` path described in *Phase 5 implementation
+details*. A separate `PodMonitor` is not required because Prometheus Operator
+creates one target per ready Telemetry Service endpoint with `pod`/`instance`
+labels.
+
 ### DD-9: Idempotency vs. best-effort
 
 **Context:** With the reverse-scrape model, metrics idempotency is a
@@ -1438,6 +1444,35 @@ Telemetry service adds this CA to its TLS root pool when connecting to
 Loki. `insecureSkipVerify` disables certificate verification entirely
 and should only be used in development or testing environments.
 
+### Phase 5 implementation details
+
+The following items landed with the Phase 5 implementation. They are
+implementation details and additive extensions; they do not change the
+Phase 5 acceptance criteria, and they do not extend the operator's role
+beyond labeling workloads and publishing Prometheus autodiscovery resources
+(**DD-4**).
+
+- Controller and Router pods carry `jumpstarter.dev/log-scrape="true"` and
+  `jumpstarter.dev/log-format="json"` labels, and emit JSON logs to stdout.
+  The operator does not generate a shipper ConfigMap, deploy a shipper, or
+  own shipper credentials. Alloy, Vector, and Promtail examples, discovery
+  requirements, and validation commands live in the observability
+  documentation.
+- `spec.telemetry.metrics.serviceMonitorLabels` is an additive
+  implementation field that adds labels to generated `ServiceMonitor`
+  resources so they match a Prometheus `serviceMonitorSelector` (for
+  example `release: kube-prometheus-stack`).
+- For Controller and Router logs scraped by the shipper, `namespace` is
+  derived from Kubernetes pod metadata by the shipper rather than read
+  from the JSON body. This preserves the observable stream-label contract
+  (`component`, `exporter`, `namespace`) even when a JSON line does not
+  contain `namespace`.
+- Telemetry HA metrics use the existing `ServiceMonitor` path. Prometheus
+  Operator creates one target per ready Service endpoint with `pod` and
+  `instance` labels; with three Telemetry replicas this produced three
+  distinct targets. For DD-8's per-replica scrape and `sum` semantics this is
+  equivalent to a `PodMonitor`; no separate PodMonitor is required.
+
 ## Test Plan
 
 ### Unit Tests
@@ -1697,6 +1732,35 @@ all subsequent phases have E2E coverage from the start.
 
 - JEP-0011 proposed: 2026-04-23
 - JEP-0011 updated based on feedback: 2026-04-29
+- Phase 5 (in-cluster log scraping and Prometheus autodiscovery) implemented on
+  the `jep-0013-phase5-incluster-log-scraping` branch: 2026-10-27
+- Grafana Alloy example configuration validated with `alloy validate` and
+  `alloy fmt --test` against Grafana Alloy commit
+  `43c40e25565d1fc0062b06c282c130c577559597`: 2026-10-28
+- Grafana Alloy example pin moved to release `v1.21.3` (revision `f2108cd`): 2026-11-02
+- Vector example promoted to official Phase 5 support and validated against
+  Vector release `v0.61.0`: 2026-11-02
+- Promtail example documented using the final published Linux binary, Promtail
+  `v3.6.0`, including CRI parsing and node filtering: 2026-11-02
+- Removed operator-owned shipper ConfigMap/API and `LogShipperReady`; the
+  operator now publishes only pod discovery labels and JSON stdout, while
+  shipper examples and validation guidance live in the observability docs:
+  2026-11-17
+- Added Prometheus Operator `v0.94.2` target-health validation: E2E assertions
+  against the real `/api/v1/targets` endpoint for Controller and Router,
+  confirming autodiscovery without manual scrape configuration: 2026-11-04
+- Bounded target discovery at 120 seconds; once a target is discovered, scrape
+  freshness is bounded by two configured scrape intervals: 2026-11-04
+- Added Vector component fallback for non-JSON lines and JSON lines with a
+  missing, empty, null, or non-string `component`: use the valid JSON
+  `component`, then the pod `component` label, then `unknown`; the raw line is
+  forwarded unchanged: 2026-11-04
+- Routed Controller/Router klog output and Gin request/recovery logs through
+  the structured JSON logger, including release mode and structured recovery;
+  non-JSON third-party text is forwarded unchanged by the shipper: 2026-11-04
+- Operator E2E result on this branch: 64 passed, 0 failed, 1 skipped, with the
+  gated shipper delivery and Prometheus target-health tests passing
+  separately. The monorepo CLI E2E suite was not rerun: 2026-11-04
 
 ## References
 

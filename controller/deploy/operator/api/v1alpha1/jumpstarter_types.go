@@ -49,6 +49,11 @@ const (
 	// ConditionTypeTelemetryDeploymentReady indicates whether the telemetry deployment is available
 	ConditionTypeTelemetryDeploymentReady = "TelemetryDeploymentReady"
 
+	// ConditionTypeServiceMonitorReady indicates whether Prometheus ServiceMonitors
+	// are created. Reasons: Created, Disabled, CRDNotFound, Failed.
+	// Informational only: it does not affect the aggregate Ready condition.
+	ConditionTypeServiceMonitorReady = "ServiceMonitorReady"
+
 	// ConditionTypeReady indicates whether the overall Jumpstarter system is ready
 	ConditionTypeReady = "Ready"
 )
@@ -390,6 +395,19 @@ type TelemetryGRPCConfig struct {
 
 // TelemetryMetricsConfig configures telemetry /metrics reverse-scrape behavior.
 type TelemetryMetricsConfig struct {
+	// ServiceMonitor controls creation of Prometheus ServiceMonitor resources and
+	// the metrics Services they select. Requires the monitoring.coreos.com/v1
+	// ServiceMonitor CRD; when the CRD is absent the metrics Services are still
+	// created and ServiceMonitors are skipped.
+	// +kubebuilder:default=true
+	ServiceMonitor *bool `json:"serviceMonitor,omitempty"`
+
+	// Additional labels to add to generated ServiceMonitors. Use this to match
+	// the Prometheus Operator's serviceMonitorSelector (for example,
+	// release: kube-prometheus-stack).
+	// +kubebuilder:validation:MaxProperties=16
+	ServiceMonitorLabels map[string]string `json:"serviceMonitorLabels,omitempty"`
+
 	// Allowlist of keys to include in Prometheus exemplars. Unlisted keys are omitted.
 	// At most 16 keys. Each key is at most 32 characters, the same limit as
 	// Lease spec.context key names that may appear in this list.
