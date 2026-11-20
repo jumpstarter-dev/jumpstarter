@@ -386,6 +386,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			},
 		})).To(Succeed())
 
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{{Address: "telemetry.example.com:443"}}
 		cfg, err := newReconciler().buildConfig(ctx, js)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg.Telemetry).NotTo(BeNil())
@@ -414,7 +415,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		configData := getConfigData()
 		Expect(configData).To(ContainSubstring("telemetry"))
 		Expect(configData).To(ContainSubstring("enabled: true"))
-		Expect(configData).To(ContainSubstring(telemetryServiceName))
+		Expect(configData).To(ContainSubstring("telemetry.example.com:443"))
 		Expect(configData).To(ContainSubstring("warning"))
 	})
 
@@ -543,7 +544,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			envNames[env.Name] = env.Value
 		}
 		Expect(envNames).To(HaveKey("CONTROLLER_KEY"))
-		Expect(envNames).To(HaveKeyWithValue("GRPC_TELEMETRY_ENDPOINT", telemetryEndpointFor("default")))
+		Expect(envNames).To(HaveKeyWithValue("GRPC_TELEMETRY_ENDPOINT", telemetryEndpointFor(js)))
 		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_CERT_PEM", "/tls/tls.crt"))
 		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_KEY_PEM", "/tls/tls.key"))
 
@@ -591,7 +592,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			envNames[env.Name] = env.Value
 		}
 		Expect(envNames).To(HaveKey("CONTROLLER_KEY"))
-		Expect(envNames).To(HaveKeyWithValue("GRPC_TELEMETRY_ENDPOINT", telemetryEndpointFor("default")))
+		Expect(envNames).To(HaveKeyWithValue("GRPC_TELEMETRY_ENDPOINT", telemetryEndpointFor(js)))
 		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_CERT_PEM", "/tls/tls.crt"))
 		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_KEY_PEM", "/tls/tls.key"))
 
@@ -623,6 +624,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			},
 		}
 
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{{Address: "telemetry.example.com:443"}}
 		// Empty hash when no TLS is configured
 		dep := createTelemetryDeployment(js, "", telemetryLokiPod{})
 
@@ -635,7 +637,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 				envNames[env.Name] = env.Value
 			}
 		}
-		Expect(envNames).To(HaveKeyWithValue("GRPC_TELEMETRY_ENDPOINT", telemetryEndpointFor("default")))
+		Expect(envNames).To(HaveKeyWithValue("GRPC_TELEMETRY_ENDPOINT", telemetryEndpointFor(js)))
 		Expect(container.Env[0].Name).To(Equal("CONTROLLER_KEY"))
 		Expect(envNames).NotTo(HaveKey("EXTERNAL_CERT_PEM"))
 
@@ -799,9 +801,11 @@ var _ = Describe("Telemetry Lifecycle", func() {
 })
 
 var _ = Describe("telemetryEndpointFor", func() {
-	It("returns the correct in-cluster endpoint format", func() {
-		endpoint := telemetryEndpointFor("my-namespace")
-		Expect(endpoint).To(Equal(fmt.Sprintf("%s.my-namespace.svc:%d", telemetryServiceName, telemetryPort)))
+	It("does not invent an endpoint when none is configured", func() {
+		endpoint := telemetryEndpointFor(&operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "my-namespace"},
+		})
+		Expect(endpoint).To(BeEmpty())
 	})
 })
 
@@ -1111,6 +1115,7 @@ var _ = Describe("buildConfig telemetry certificate", func() {
 			},
 		}
 
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{{Address: "telemetry.example.com:443"}}
 		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		cfg, err := r.buildConfig(ctx, js)
 		Expect(err).NotTo(HaveOccurred())
@@ -1142,6 +1147,7 @@ var _ = Describe("buildConfig telemetry certificate", func() {
 			},
 		}
 
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{{Address: "telemetry.example.com:443"}}
 		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		cfg, err := r.buildConfig(ctx, js)
 		Expect(err).NotTo(HaveOccurred())
@@ -1163,6 +1169,7 @@ var _ = Describe("buildConfig telemetry certificate", func() {
 			},
 		}
 
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{{Address: "telemetry.example.com:443"}}
 		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		cfg, err := r.buildConfig(ctx, js)
 		Expect(err).NotTo(HaveOccurred())
@@ -1197,6 +1204,7 @@ var _ = Describe("buildConfig telemetry certificate", func() {
 			},
 		}
 
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{{Address: "telemetry.example.com:443"}}
 		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		cfg, err := r.buildConfig(ctx, js)
 		Expect(err).NotTo(HaveOccurred())
@@ -1230,6 +1238,7 @@ var _ = Describe("buildConfig telemetry certificate", func() {
 			},
 		}
 
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{{Address: "telemetry.example.com:443"}}
 		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		cfg, err := r.buildConfig(ctx, js)
 		Expect(err).NotTo(HaveOccurred())
@@ -1254,6 +1263,7 @@ var _ = Describe("buildConfig telemetry certificate", func() {
 			},
 		}
 
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{{Address: "telemetry.example.com:443"}}
 		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		cfg, err := r.buildConfig(ctx, js)
 		// Should not fail — logs at V(1) and continues without certificate
@@ -1276,6 +1286,7 @@ var _ = Describe("buildConfig telemetry certificate", func() {
 			},
 		}
 
+		js.Spec.Telemetry.GRPC.Endpoints = []operatorv1alpha1.Endpoint{{Address: "telemetry.example.com:443"}}
 		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		cfg, err := r.buildConfig(ctx, js)
 		// Should not fail - logs at default verbosity but continues
