@@ -297,12 +297,40 @@ benchmark results**. Each run writes a small artifact bundle:
 
 ```text
 results/overdrive-example/
-  config.yaml         # resolved configuration, without credentials
-  operations.jsonl    # individual operation timings and outcomes
-  resources.jsonl     # timestamped controller/router resource samples
-  summary.json        # run metadata and per-step/per-repetition summaries
-  report.md           # readable tables and links to time-series data
+  config.yaml                         # resolved configuration, without credentials
+  summary.json                        # run overview and links to detailed summaries
+  report.md                           # readable tables and links to time-series data
+  scenarios/
+    lease-scheduling/
+      step-001/
+        load.json                     # resolved size: 20 exporters, 10 clients, 10 leases
+        repetition-001/
+          summary.json                # timings, outcomes, and resource summaries
+          operations.jsonl            # individual operations for this repetition
+          resources/
+            controller/
+              <pod-uid>.jsonl          # timestamped samples for one controller pod
+            router/
+              <pod-uid>.jsonl          # timestamped samples for one router pod
+        repetition-002/
+          ...
+      step-002/
+        ...
+    client-churn/
+      ...
 ```
+
+Each scenario/load-step/repetition has its own files rather than appending all
+runs to a single stream. Step directories represent tested sizes; `load.json`
+records their full resolved dimensions without encoding every parameter in the
+path. Resource streams are split by component and pod UID, with namespace, pod
+name, and container identity included in samples. Replacement pods get separate
+files. Keep operation samples in one JSONL file per repetition, including resource
+IDs, rather than creating a file for every short-lived client or lease.
+
+The run-level summary indexes the detailed summaries; paths in each summary are
+relative to that summary's directory. Reports link directly to the corresponding
+samples. Phase 2 uses the same layout for its scenario and controller metrics.
 
 Example console/report excerpt for `lease-scheduling`, repetition 1 (steps 3 and 4
 omitted here). Latency percentiles describe successful lease-ready operations;
@@ -327,7 +355,8 @@ The full report also includes per-replica values, peak network rates, byte total
 and metric coverage. If collection is unavailable, show `N/A` with the reason
 rather than an empty or zero-valued resource table.
 
-Example entry from `summary.json` (other timings and resource summaries omitted):
+Example `scenarios/lease-scheduling/step-001/repetition-001/summary.json`
+(other timings and resource summaries omitted):
 
 ```json
 {
@@ -342,7 +371,8 @@ Example entry from `summary.json` (other timings and resource summaries omitted)
   "timeouts": 0,
   "completed_cycles_per_second": 8.4,
   "lease_ready_ms": {"p50": 55, "p95": 110, "p99": 160},
-  "resource_metrics": {"status": "complete", "samples_file": "resources.jsonl"}
+  "operations_file": "operations.jsonl",
+  "resource_metrics": {"status": "complete", "samples_directory": "resources/"}
 }
 ```
 
@@ -373,6 +403,7 @@ resources. Any retries are bounded and recorded rather than hiding failures.
   range lengths), capacity validation, filters, lifecycle cancellation, timing and
   aggregation, ownership checks, and partial-result handling. Cover resource
   metric aggregation, counter resets, missing samples, and load-step alignment.
+  Verify artifact separation across scenarios, steps, repetitions, and pod UIDs.
 - **Integration:** Small sweeps on a disposable cluster, covering all scenarios,
   unavailable exporters, deadlines, disconnects, and interrupted-run cleanup.
   Check controller/router resource collection
@@ -388,8 +419,8 @@ resources. Any retries are bounded and recorded rather than hiding failures.
 - [ ] Scheduling tests verify ready capacity before measuring lease latency.
 - [ ] Client and exporter churn run independently, without generating lease load.
 - [ ] Router traffic can be measured independently of churn and scheduling tests.
-- [ ] Artifacts include raw samples, percentiles, throughput, failures, and run metadata,
-      plus a readable report with workload and resource summaries.
+- [ ] Artifacts are organized by scenario, load step, and repetition, with per-pod
+      resource streams, raw operations, detailed summaries, and a linked run report.
 - [ ] With monitoring configured, reports include controller and router
       CPU/memory/network time series and summaries aligned to load steps;
       missing metrics are explicitly identified.
