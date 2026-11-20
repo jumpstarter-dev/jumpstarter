@@ -1727,3 +1727,77 @@ def test_disconnect_leaves_a_connection_we_did_not_make(mock_conn, _):
         device.disconnect()
 
     assert not [c for c in mock_run.call_args_list if c.args[0][1:2] == ["disconnect"]]
+
+
+# ================================================================== current_serial
+#
+# What a child driver that runs adb itself (Appium's udid, the HMI's scrcpy server) is
+# given: the serial now, and only if the shared server lists the device as ready.
+
+OTHER_SERIAL = "OTHER0000001"
+OTHER_PORT = "usb:1-1.1"
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_current_serial_is_the_ready_serial_on_the_bench_port_and_holds_the_server(mock_conn, _):
+    _, patcher = _fake(devices=[(OTHER_SERIAL, "device", OTHER_PORT), (SERIAL, "device", USB_PORT)])
+    with patcher:
+        device = AdbDevice(usb_port="1-4.2")
+        assert device.current_serial() == SERIAL
+        assert device._server is not None, "a user of the serial runs adb: it must hold the shared server"
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_current_serial_is_resolved_afresh_after_a_power_cycle(mock_conn, _):
+    fake, patcher = _fake()
+    with patcher:
+        device = AdbDevice(usb_port="1-4.2")
+        assert device.current_serial() == SERIAL
+        fake.devices = [("REENUMERATED99", "device", USB_PORT)]
+        assert device.current_serial() == "REENUMERATED99"
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+@pytest.mark.parametrize(
+    ("devices", "message"),
+    [
+        ([], "no device on USB port"),
+        ([(SERIAL, "offline", USB_PORT)], "'offline', not ready"),
+        ([(SERIAL, "unauthorized", USB_PORT)], "accept the debugging prompt"),
+    ],
+)
+def test_current_serial_says_why_the_device_on_a_bench_port_is_not_there_or_not_ready(mock_conn, _, devices, message):
+    _, patcher = _fake(devices=devices)
+    with patcher, pytest.raises(RuntimeError, match=message):
+        AdbDevice(usb_port="1-4.2").current_serial()
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+@pytest.mark.parametrize(
+    ("devices", "message"),
+    [
+        ([(OTHER_SERIAL, "device", OTHER_PORT)], "is not connected"),
+        ([(SERIAL, "offline", USB_PORT)], "is offline"),
+    ],
+)
+def test_current_serial_does_not_take_a_configured_serial_on_trust(mock_conn, _, devices, message):
+    """``info`` reports a configured serial present without asking adb; handing it to ``adb -s`` must not."""
+    _, patcher = _fake(devices=devices)
+    with patcher, pytest.raises(RuntimeError, match=f"The Android device {SERIAL} {message}"):
+        AdbDevice(serial=SERIAL).current_serial()
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_current_serial_of_a_tcp_device_is_the_address_adb_registers_it_under(mock_conn, _):
+    def run(argv, **kwargs):
+        if argv[1:2] == ["connect"]:
+            return MagicMock(stdout="connected to 10.0.0.5:6520\n", stderr="", returncode=0)
+        return _mock_adb_ok()
+
+    with patch("subprocess.run", side_effect=run):
+        assert AdbDevice(transport="tcp", address="10.0.0.5:6520").current_serial() == "10.0.0.5:6520"
