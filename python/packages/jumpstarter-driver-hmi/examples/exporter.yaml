@@ -1,0 +1,65 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: demo
+endpoint: grpc.jumpstarter.192.168.0.203.nip.io:8082
+token: "<token>"
+export:
+  # A touch screen of synthetic pictures: one finger, hard keys and typed text. Every codec is on offer; the stream
+  # starts in H.264 (`j hmi start --codec hevc` picks another for the lease).
+  hmi:
+    type: jumpstarter_driver_hmi.driver.MockHmi
+    config:
+      width: 480
+      height: 800
+
+  # The same, started in HEVC, with a real test pattern a browser can decode (240x400: `width` and `height` then do
+  # not count).
+  hmi-hevc:
+    type: jumpstarter_driver_hmi.driver.MockHmi
+    config:
+      codec: hevc
+      pattern: true
+
+  # A mouse and keyboard instead: an absolute mouse with buttons and a wheel, every key, typed text and no hard keys.
+  # `relative: true` adds relative motion to the mouse; `codecs` is what it offers, the first being the default.
+  hmi-desktop:
+    type: jumpstarter_driver_hmi.driver.MockHmi
+    config:
+      mode: mouse
+      relative: true
+      codecs: [h264, mjpeg]
+
+  # An in-vehicle style panel: a touch screen with two rotary knobs. `volume` can be pushed (its push button is the
+  # hard key VOLUME_PUSH, which the HMI takes without it being listed in `hard_keys`), `tune` cannot. A hard key takes
+  # `short` and `long` unless its entry says otherwise: here the push also takes `down` and `up` (press and release).
+  # `j hmi-panel rotate volume -2` turns the volume knob two detents counter-clockwise, `j hmi-panel push volume
+  # --press long` holds its button.
+  hmi-panel:
+    type: jumpstarter_driver_hmi.driver.MockHmi
+    config:
+      rotaries:
+        - id: volume
+          label: Volume
+          push: VOLUME_PUSH
+        - tune
+      hard_keys:
+        - HOME
+        - BACK
+        - key: VOLUME_PUSH
+          presses: [short, long, down, up]
+
+  # A source that only knows what a key picture costs once it has started (as one that picks its encoder at start
+  # does): the exporter asks again after every start, and goes by the answer.
+  hmi-late-encoder:
+    type: jumpstarter_driver_hmi.driver.MockHmi
+    config:
+      keyframe_cost: none
+      start_keyframe_cost: cheap
+
+  # A picture and nothing else: an HMI that declares no input is a valid, view-only one.
+  hmi-view-only:
+    type: jumpstarter_driver_hmi.driver.MockHmi
+    config:
+      control: false

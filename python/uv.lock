@@ -73,6 +73,7 @@ members = [
     "jumpstarter-driver-qemu",
     "jumpstarter-driver-renode",
     "jumpstarter-driver-ridesx",
+    "jumpstarter-driver-hmi",
     "jumpstarter-driver-sdwire",
     "jumpstarter-driver-shell",
     "jumpstarter-driver-sigrok",
@@ -1844,6 +1845,7 @@ dependencies = [
     { name = "jumpstarter-driver-qemu" },
     { name = "jumpstarter-driver-renode" },
     { name = "jumpstarter-driver-ridesx" },
+    { name = "jumpstarter-driver-hmi" },
     { name = "jumpstarter-driver-sdwire" },
     { name = "jumpstarter-driver-shell" },
     { name = "jumpstarter-driver-sigrok" },
@@ -1918,6 +1920,7 @@ requires-dist = [
     { name = "jumpstarter-driver-qemu", editable = "packages/jumpstarter-driver-qemu" },
     { name = "jumpstarter-driver-renode", editable = "packages/jumpstarter-driver-renode" },
     { name = "jumpstarter-driver-ridesx", editable = "packages/jumpstarter-driver-ridesx" },
+    { name = "jumpstarter-driver-hmi", editable = "packages/jumpstarter-driver-hmi" },
     { name = "jumpstarter-driver-sdwire", editable = "packages/jumpstarter-driver-sdwire" },
     { name = "jumpstarter-driver-shell", editable = "packages/jumpstarter-driver-shell" },
     { name = "jumpstarter-driver-sigrok", editable = "packages/jumpstarter-driver-sigrok" },
@@ -3363,6 +3366,36 @@ requires-dist = [
     { name = "pexpect", specifier = ">=4.9" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.4" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-hmi"
+source = { editable = "packages/jumpstarter-driver-hmi" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "anyio" },
+    { name = "click" },
+    { name = "jumpstarter" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiohttp", specifier = ">=3.10.5" },
+    { name = "anyio", specifier = ">=4.10.0" },
+    { name = "click", specifier = ">=8.1.7.2" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
 ]
 
 [package.metadata.requires-dev]
