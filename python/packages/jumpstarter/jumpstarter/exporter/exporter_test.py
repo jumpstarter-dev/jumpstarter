@@ -1852,6 +1852,44 @@ class TestExitOnLeaseEnd:
                 tg.cancel_scope.cancel()
 
 
+class TestStopWhenIdle:
+    async def test_stop_defers_when_lease_active(self):
+        """stop(wait_for_lease_exit=True) with an active lease defers the
+        stop until the lease exits, so the afterLease hook can complete."""
+        lease_ctx = make_lease_context()
+        exporter = make_exporter(lease_ctx)
+        exporter._started = True
+        exporter._tg = MagicMock()
+
+        exporter.stop(wait_for_lease_exit=True, should_unregister=True)
+
+        assert exporter._stop_requested is True
+        assert exporter._tg.cancel_scope.cancel.called is False
+
+    async def test_stop_immediate_when_idle(self):
+        """stop(wait_for_lease_exit=True) with no active lease (exporter
+        previously held one) stops immediately instead of deferring: the
+        deferred flag is only checked on the next status tick, and the
+        controller suppresses duplicate ticks, so it would sit unchecked
+        until a new lease arrived."""
+        exporter = _make_base_exporter(_started=True, _tg=MagicMock())
+
+        exporter.stop(wait_for_lease_exit=True, should_unregister=True)
+
+        assert exporter._stop_requested is False
+        exporter._tg.cancel_scope.cancel.assert_called_once()
+        assert exporter._unregister is True
+
+    async def test_stop_immediate_when_never_started(self):
+        """stop(wait_for_lease_exit=True) before any lease was ever
+        acquired stops immediately (pre-existing behavior)."""
+        exporter = _make_base_exporter(_started=False, _tg=MagicMock())
+
+        exporter.stop(wait_for_lease_exit=True, should_unregister=True)
+
+        assert exporter._stop_requested is False
+        exporter._tg.cancel_scope.cancel.assert_called_once()
+
 
 class TestShutdownRuntimeSidecar:
     def test_noop_without_socket_env(self, monkeypatch):
