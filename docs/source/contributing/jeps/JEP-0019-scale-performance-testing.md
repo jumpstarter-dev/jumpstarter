@@ -166,20 +166,24 @@ physical hardware would make large tests costly and less repeatable.
 
 ## Design Details
 
-```{mermaid}
-flowchart TD
-    Config[Configuration and filters] --> Runner[Python scenario runner]
-    Runner --> API[Kubernetes API: test resources]
-    Runner --> Clients[Test clients]
-    Runner --> Mocks[Mock exporter runtimes]
+```text
+Configuration and filters
+          |
+          v
+Python scenario runner
+  |
+  +--> Kubernetes API (test resources)
+  +--> Test clients
+  +--> Mock exporter runtimes
+  +--> Samples and summaries
 
-    Clients --> Controller[Controller and scheduler]
-    Mocks --> Controller
+Control connections:
+  Test clients -----------+
+                          +--> Controller and scheduler
+  Mock exporter runtimes -+
 
-    Clients <--> Routers[Routers]
-    Routers <--> Mocks
-
-    Runner --> Results[Samples and summaries]
+Routed traffic:
+  Test clients <--> Routers <--> Mock exporter runtimes
 ```
 
 ### Scenario lifecycle

@@ -77,16 +77,27 @@ Phase 2 exercises real reconciliation rather than bypassing the behavior under t
 
 ## Design Details
 
-```{mermaid}
-flowchart TD
-    Runner[Phase 1 runner with scaling scenario] --> Resources[Run-owned VirtualTargetClass and ExporterSet]
-    Resources --> Controller[Real ExporterSet controller framework]
-    Controller --> Provisioner[Test-only mock provisioner]
-    Provisioner --> Pods[Mock exporter pods]
-    Runner --> Clients[Lease demand]
-    Clients --> Scheduler[Controller and scheduler]
-    Pods --> Scheduler
-    Runner --> Reports[Existing metrics and reports]
+```text
+Phase 1 runner with scaling scenario
+  |
+  +--> Run-owned VirtualTargetClass and ExporterSet
+  |      |
+  |      v
+  |    Real ExporterSet controller framework
+  |      |
+  |      v
+  |    Test-only mock provisioner
+  |      |
+  |      v
+  |    Mock exporter pods
+  |
+  +--> Test clients (lease demand)
+  +--> Existing metrics and reports
+
+Control connections:
+  Test clients -------+
+                      +--> Controller and scheduler
+  Mock exporter pods -+
 ```
 
 For each load step and repetition:
