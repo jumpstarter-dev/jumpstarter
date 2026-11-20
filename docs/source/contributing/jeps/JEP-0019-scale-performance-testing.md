@@ -135,11 +135,6 @@ jumpstarter-overdrive run --config perf.yaml --exclude exporter-churn
 jumpstarter-overdrive cleanup --config perf.yaml --run-id <run-id>
 ```
 
-Without filters, all configured scenarios run. Include/exclude filters match
-scenario names; exclusions win, and unknown names or an empty selection are
-configuration errors. Unsupported selected scenarios fail preflight explicitly
-rather than silently disappearing from results.
-
 ## Design Decisions
 
 ### DD-1: Python scenarios, declarative run configuration
@@ -153,12 +148,12 @@ language; shell scripts invoking the CLI.
 behavior without designing another programming language. YAML keeps common runs
 reproducible without requiring code changes.
 
-### DD-2: Real protocol paths, simulated hardware
+### DD-2: Real protocol paths, mock hardware
 
 **Alternatives considered:** Real runtimes with mock drivers; direct CRD/status
 mutation; physical exporter fleets.
 
-**Decision:** Simulate hardware only, keeping authentication, exporter connections,
+**Decision:** Mock hardware only, keeping authentication, exporter connections,
 lease requests, and routed traffic real.
 
 **Rationale:** Bypassing those paths would hide the bottlenecks being measured;
@@ -174,7 +169,7 @@ Python scenario runner
   |
   +--> Kubernetes API (test resources)
   +--> Test clients
-  +--> Mock exporter runtimes
+  +--> Mock exporter runtimes in subprocesses (jmp run --exporter-config /tmp/run/mock-exporter-xxxxx.yaml)
   +--> Samples and summaries
 
 Control connections:
@@ -281,14 +276,6 @@ pod-level network metrics once per pod, not once per container, and handle
 restarts and counter resets without producing false spikes. Preserve warmup
 boundaries and report sampling gaps or unavailable metrics explicitly, never as
 zero usage. Monitoring access uses read-only credentials kept out of artifacts.
-
-Correlate these measurements with controller work queues/reconciliation and
-router connections using observability from
-[JEP-0013](JEP-0013-observability-telemetry-logs.md). On clusters without monitoring,
-workload-only runs remain supported, but reports clearly mark resource metrics as
-unavailable. Shared-component metrics include other cluster activity and cannot
-alone prove causation. Runner saturation must also be considered before
-interpreting a plateau as a cluster limit.
 
 ### Preliminary result examples
 
@@ -416,7 +403,6 @@ resources. Any retries are bounded and recorded rather than hiding failures.
 
 - [ ] A filtered run independently expands and executes each scenario's load ranges
       and repetitions, recording the resolved dimensions for every result.
-- [ ] Scheduling tests verify ready capacity before measuring lease latency.
 - [ ] Client and exporter churn run independently, without generating lease load.
 - [ ] Router traffic can be measured independently of churn and scheduling tests.
 - [ ] Artifacts are organized by scenario, load step, and repetition, with per-pod
@@ -431,10 +417,7 @@ resources. Any retries are bounded and recorded rather than hiding failures.
 
 ## Backward Compatibility
 
-This is an opt-in tool using existing APIs; no protocol, controller, operator, or
-existing CLI changes are required. None of its scenarios require ExporterSet
-support. A monitoring stack is optional. No migration is required for existing
-deployments, and the tool can ship independently of Phase 2.
+N/A
 
 ## Consequences
 
