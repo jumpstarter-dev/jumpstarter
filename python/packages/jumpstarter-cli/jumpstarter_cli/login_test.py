@@ -17,6 +17,7 @@ from jumpstarter_cli.login import (
     relogin_client,
 )
 
+from jumpstarter.common.http import ProxyFromEnvironmentRequest
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.common import ObjectMeta
 from jumpstarter.config.user import UserConfigV1Alpha1
@@ -71,6 +72,41 @@ def test_validate_login_endpoint_url_allows_http_with_explicit_opt_in() -> None:
 def test_validate_auth_config_payload_requires_grpc_endpoint() -> None:
     with pytest.raises(click.ClickException, match="missing required field 'grpcEndpoint'"):
         _validate_auth_config_payload({"namespace": "default"}, "https://login.example.com/v1/auth/config")
+
+
+def test_fetch_auth_config_honors_proxy_environment(monkeypatch) -> None:
+    session_kwargs = {}
+
+    class FakeResponse:
+        status = 200
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def json(self):
+            return {"grpcEndpoint": "grpc.example.com"}
+
+    class FakeClientSession:
+        def __init__(self, *args, **kwargs):
+            session_kwargs.update(kwargs)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def get(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr("jumpstarter_cli.login.aiohttp.ClientSession", FakeClientSession)
+
+    asyncio.run(fetch_auth_config("login.example.com"))
+
+    assert session_kwargs["request_class"] is ProxyFromEnvironmentRequest
 
 
 def test_fetch_auth_config_maps_timeout_to_click_exception(monkeypatch) -> None:

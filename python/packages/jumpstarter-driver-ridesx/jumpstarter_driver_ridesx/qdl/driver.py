@@ -31,6 +31,7 @@ from .schema import (
 from .soc_profiles import SoCType, get_soc_profile
 from jumpstarter.client.flasher import FlashPhase, FlashStatus
 from jumpstarter.common.exceptions import ConfigurationError
+from jumpstarter.common.http import client_session
 from jumpstarter.common.resources import PresignedRequestResource, Resource
 from jumpstarter.driver import Driver, export
 from jumpstarter.driver.flasher import StreamingFlasherInterface
@@ -222,7 +223,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         """Fetch ETag/Last-Modified/Content-Length via a HEAD request."""
         metadata: dict[str, str] = {}
         async with (
-            aiohttp.ClientSession() as session,
+            client_session() as session,
             session.head(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=15)) as resp,
         ):
             if resp.status == 200:

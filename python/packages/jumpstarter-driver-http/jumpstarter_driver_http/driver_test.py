@@ -1,10 +1,10 @@
 import logging
 import socket
 
-import aiohttp
 import pytest
 
 from .driver import HttpServer
+from jumpstarter.common.http import client_session
 from jumpstarter.common.utils import serve
 
 
@@ -40,7 +40,7 @@ async def test_http_server(http, tmp_path):
     files = list(http.storage.list("/"))
     assert filename in files
 
-    async with aiohttp.ClientSession() as session, session.get(uploaded_url) as response:
+    async with client_session(trust_env=False) as session, session.get(uploaded_url) as response:
         assert response.status == 200
         retrieved_content = await response.read()
         assert retrieved_content == test_content
@@ -138,7 +138,7 @@ async def test_http_server_close_releases_port(tmp_path, free_ipv4_tcp_port):
         url = client.get_url()
         assert str(free_ipv4_tcp_port) in url
 
-        async with aiohttp.ClientSession() as session, session.get(f"{url}/test.txt") as response:
+        async with client_session(trust_env=False) as session, session.get(f"{url}/test.txt") as response:
             assert response.status == 200
 
         client.stop()
@@ -149,7 +149,7 @@ async def test_http_server_close_releases_port(tmp_path, free_ipv4_tcp_port):
         url = client.get_url()
         assert str(free_ipv4_tcp_port) in url
 
-        async with aiohttp.ClientSession() as session, session.get(f"{url}/test.txt") as response:
+        async with client_session(trust_env=False) as session, session.get(f"{url}/test.txt") as response:
             assert response.status == 200
 
         client.stop()
@@ -169,7 +169,7 @@ async def test_http_server_port_zero(tmp_path):
         url = client.get_url()
         assert str(port) in url
 
-        async with aiohttp.ClientSession() as session, session.get(f"{url}/test.txt") as response:
+        async with client_session(trust_env=False) as session, session.get(f"{url}/test.txt") as response:
             assert response.status == 200
 
         client.stop()
@@ -189,7 +189,7 @@ async def test_driver_start_stop_direct(tmp_path, free_ipv4_tcp_port):
     assert server.get_port() == free_ipv4_tcp_port
 
     # Verify server is actually listening
-    async with aiohttp.ClientSession() as session:
+    async with client_session(trust_env=False) as session:
         test_file = tmp_path / "index.html"
         test_file.write_text("ok")
         async with session.get(f"http://{server.host}:{free_ipv4_tcp_port}/index.html") as resp:

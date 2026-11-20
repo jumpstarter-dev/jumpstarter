@@ -178,6 +178,9 @@ extend-select = ["I", "C", "E", "F", "W", "B", "ERA", "TID251"]
 "asyncio.get_event_loop".msg = "Use asyncio.get_running_loop() or anyio.from_thread."
 "asyncio.run_coroutine_threadsafe".msg = "Use anyio.from_thread.run()."
 "anyio._backends".msg = "Private anyio API that may change in any release; use the public anyio API."
+# aiohttp ignores the proxy environment unless trust_env=True; the helper turns it on.
+"aiohttp.ClientSession".msg = "Use jumpstarter.common.http.client_session() so the proxy environment is honored."
+"aiohttp.request".msg = "Use jumpstarter.common.http.client_session() so the proxy environment is honored."
 
 [tool.ruff.lint.isort]
 known-local-folder = ["packages", "examples", "jumpstarter"]

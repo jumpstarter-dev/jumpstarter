@@ -7,6 +7,8 @@ import pytest
 
 from jumpstarter_cli_common.oidc import Config, _get_ssl_context, should_use_device_flow
 
+from jumpstarter.common.http import ProxyFromEnvironmentRequest
+
 
 class TestConfigInsecureTls:
     def test_insecure_tls_defaults_to_false(self) -> None:
@@ -83,6 +85,23 @@ async def test_authorization_code_prompt_uses_stderr(monkeypatch, capsys):
     assert captured.out == ""
     assert "Please open the URL in browser:" in captured.err
     assert "https://auth.example.com/auth?state=test" in captured.err
+
+
+class TestConfiguration:
+    @pytest.mark.anyio
+    async def test_discovery_honors_proxy_environment(self) -> None:
+        response = MagicMock()
+        response.json = AsyncMock(return_value={"issuer": "https://idp.example.com"})
+        session = MagicMock()
+        session.get = MagicMock(return_value=_make_async_cm(response))
+        session.__aenter__ = AsyncMock(return_value=session)
+        session.__aexit__ = AsyncMock(return_value=False)
+
+        config = Config(issuer="https://idp.example.com", client_id="jumpstarter")
+        with patch("jumpstarter_cli_common.oidc.aiohttp.ClientSession", return_value=session) as session_class:
+            assert await config.configuration() == {"issuer": "https://idp.example.com"}
+
+        assert session_class.call_args.kwargs["request_class"] is ProxyFromEnvironmentRequest
 
 
 class TestDeviceAuthorizationGrant:
@@ -165,10 +184,11 @@ class TestDeviceAuthorizationGrant:
 
         with (
             patch.object(config, "configuration", new_callable=AsyncMock, return_value=discovery),
-            patch("jumpstarter_cli_common.oidc.aiohttp.ClientSession", return_value=mock_session),
+            patch("jumpstarter_cli_common.oidc.aiohttp.ClientSession", return_value=mock_session) as session_class,
         ):
             result = await config.device_authorization_grant()
 
+        assert session_class.call_args.kwargs["request_class"] is ProxyFromEnvironmentRequest
         assert result["access_token"] == "test-access-token"
         assert result["refresh_token"] == "test-refresh-token"
         assert poll_count == 2
