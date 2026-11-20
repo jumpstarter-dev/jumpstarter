@@ -62,12 +62,12 @@ acceptance criterion for this JEP. No Phase 2 scaffolding is required in Phase 1
 
 ### Initial scenarios
 
-| Scenario           | Workload                                                                                                                              | Primary measurements                                                     |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `lease-scheduling` | Repeatedly acquire, briefly hold, release, and delete leases against a ready mock-exporter pool.                                      | Assignment, lease-ready, and release latency, leases/s, errors.          |
-| `client-churn`     | Repeatedly create and delete clients, without creating exporters or leases.                                                           | Client creation/deletion latency, cycles/s, errors.                      |
-| `exporter-churn`   | Repeatedly create exporters, connect mock runtimes, wait until available, then disconnect and delete them, without requesting leases. | Exporter creation/deletion latency, time to available, cycles/s, errors. |
-| `router-traffic`   | Open leased sessions and exchange fixed-size echo payloads through routers.                                                           | Connection latency, round-trip latency, bytes/s, failures.               |
+| Scenario | Workload | Primary measurements |
+| --- | --- | --- |
+| `lease-scheduling` | Repeatedly acquire, briefly hold, release, and delete leases against a ready mock-exporter pool. | Assignment, lease-ready, and release latency, leases/s, errors. |
+| `client-churn` | Repeatedly create and delete clients, without creating exporters or leases. | Client creation/deletion latency, cycles/s, errors. |
+| `exporter-churn` | Repeatedly create exporters, connect mock runtimes, wait until available, then disconnect and delete them, without requesting leases. | Exporter creation/deletion latency, time to available, cycles/s, errors. |
+| `router-traffic` | Open leased sessions and exchange fixed-size echo payloads through routers. | Connection latency, round-trip latency, bytes/s, failures. |
 
 `lease-scheduling` also covers lease churn, reusing clients and exporters created
 during setup. Keeping client and exporter churn separate isolates their lifecycle
