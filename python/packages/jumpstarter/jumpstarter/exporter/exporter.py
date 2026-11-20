@@ -451,7 +451,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         """Signal the exporter to stop.
 
         Args:
-            wait_for_lease_exit (bool): If True, wait for the current lease to exit before stopping.
+            wait_for_lease_exit (bool): If True, wait for the current lease to
+            exit before stopping. If no lease is active, stops immediately.
             should_unregister (bool): If True, unregister from controller. Otherwise rely on heartbeat.
             exit_code (int | None): If set, the exporter will exit with this code.
         """
@@ -459,8 +460,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         if exit_code is not None:
             self._exit_code = exit_code
 
-        # Stop immediately if not started yet or if immediate stop is requested
-        if (not self._started or not wait_for_lease_exit) and self._tg is not None:
+        # Stop immediately if not started yet, if immediate stop is requested,
+        # or if no lease is active (an idle exporter has nothing to wait for).
+        if (not self._started or not wait_for_lease_exit or self._lease_context is None) and self._tg is not None:
             if should_unregister:
                 logger.info("Stopping exporter immediately, unregistering from controller")
             else:
