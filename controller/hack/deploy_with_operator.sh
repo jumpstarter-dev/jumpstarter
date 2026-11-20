@@ -5,10 +5,12 @@ SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 DEPLOY_JUMPSTARTER=${DEPLOY_JUMPSTARTER:-true}
 USE_CERTMANAGER=${USE_CERTMANAGER:-true}
 
-# Source common utilities
+# Source common utilities (sourced from the checkout at runtime).
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/utils"
 
-# Source common deployment variables
+# Source common deployment variables (sourced from the checkout at runtime).
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/deploy_vars"
 
 set_kubectl_context
@@ -199,6 +201,8 @@ if [ "${OPERATOR_USE_DEX:-}" = "true" ]; then
   echo -e "${GREEN}Configuring dex JWT authentication (CA from ${DEX_CA_FILE})...${NC}"
   # Read the CA certificate content
   DEX_CA_CONTENT=$(cat "${DEX_CA_FILE}")
+  # sed indents every line of a multi-line value; parameter expansion cannot.
+  # shellcheck disable=SC2001
   JWT_AUTH_CONFIG="
     jwt:
     - issuer:
