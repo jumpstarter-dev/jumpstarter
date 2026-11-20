@@ -10,11 +10,12 @@ from shutil import which
 from subprocess import Popen, TimeoutExpired
 from tempfile import TemporaryDirectory
 
-from aiohttp import ClientSession, UnixConnector
+from aiohttp import UnixConnector
 from anyio import connect_unix
 from jumpstarter_driver_video.driver import VideoInterface
 
 from .common import UStreamerState
+from jumpstarter.common.http import client_session
 from jumpstarter.driver import Driver, export, exportstream
 
 _IS_LINUX = sys.platform.startswith("linux")
@@ -93,7 +94,7 @@ class UStreamer(VideoInterface, Driver):
     @export
     async def state(self):  # pragma: no cover
         async with (
-            ClientSession(connector=UnixConnector(path=str(self.socketp))) as session,
+            client_session(connector=UnixConnector(path=str(self.socketp)), trust_env=False) as session,
             session.get("http://localhost/state") as r,
         ):
             json = await r.json()
@@ -103,7 +104,7 @@ class UStreamer(VideoInterface, Driver):
     @export
     async def snapshot(self):  # pragma: no cover
         async with (
-            ClientSession(connector=UnixConnector(path=str(self.socketp))) as session,
+            client_session(connector=UnixConnector(path=str(self.socketp)), trust_env=False) as session,
             session.get("http://localhost/snapshot") as r,
         ):
             data = await r.read()

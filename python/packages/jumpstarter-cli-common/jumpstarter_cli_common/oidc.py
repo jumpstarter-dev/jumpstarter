@@ -23,6 +23,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"authlib\
 from authlib.integrations.requests_client import OAuth2Session  # noqa: E402
 from yarl import URL  # noqa: E402
 
+from jumpstarter.common.http import client_session  # noqa: E402
 from jumpstarter.common.jwt import decode_jwt_payload as decode_jwt  # noqa: E402
 from jumpstarter.config.env import JMP_OIDC_CALLBACK_PORT, JMP_OIDC_DEVICE_FLOW  # noqa: E402
 
@@ -92,7 +93,7 @@ class Config:
     async def configuration(self):
         ssl_context: ssl.SSLContext | bool = False if self.insecure_tls else _get_ssl_context()
         connector = aiohttp.TCPConnector(ssl=ssl_context)
-        async with aiohttp.ClientSession(connector=connector) as session, session.get(
+        async with client_session(connector=connector) as session, session.get(
             URL(self.issuer).joinpath(".well-known", "openid-configuration"),
             raise_for_status=True,
         ) as response:
@@ -239,7 +240,7 @@ class Config:
         ssl_context: ssl.SSLContext | bool = False if self.insecure_tls else _get_ssl_context()
         connector = aiohttp.TCPConnector(ssl=ssl_context)
 
-        async with aiohttp.ClientSession(connector=connector) as session:
+        async with client_session(connector=connector) as session:
             # Step 1: Request device authorization
             async with session.post(
                 device_endpoint,

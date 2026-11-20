@@ -32,6 +32,7 @@ from .decorators import (
     MARKER_STREAMING_DRIVERCALL,
 )
 from jumpstarter.common import LogSource, Metadata
+from jumpstarter.common.http import client_session
 from jumpstarter.common.resources import ClientStreamResource, PresignedRequestResource, Resource, ResourceMetadata
 from jumpstarter.common.serde import decode_value, encode_value
 from jumpstarter.common.streams import (
@@ -472,24 +473,26 @@ class Driver(
         """GET with manual redirect following to preserve percent-encoding in URLs."""
         current_url = url
         current_headers = headers
-        for _ in range(max_redirects + 1):
-            async with aiohttp.request(
-                "GET", self._make_url(current_url), headers=current_headers, raise_for_status=True,
-                timeout=timeout, allow_redirects=False,
-            ) as resp:
-                if resp.status not in (301, 302, 303, 307, 308):
-                    async with AiohttpStreamReaderStream(
-                        reader=resp.content, content_length=resp.content_length,
-                    ) as stream:
-                        yield ProgressStream(stream=stream, logging=True)
-                        return
-                location = resp.headers.get("Location", "")
-                if not location:
-                    raise RuntimeError(
-                        f"Presigned HTTP GET redirect missing Location header for {self._redact_url(current_url)}"
-                    )
-                current_headers = self._strip_sensitive_headers(current_headers, current_url, location)
-                current_url = location
+        # One session follows the redirects; the dummy jar keeps hops from sharing cookies.
+        async with client_session(timeout=timeout, cookie_jar=aiohttp.DummyCookieJar()) as session:
+            for _ in range(max_redirects + 1):
+                async with session.get(
+                    self._make_url(current_url), headers=current_headers, raise_for_status=True,
+                    allow_redirects=False,
+                ) as resp:
+                    if resp.status not in (301, 302, 303, 307, 308):
+                        async with AiohttpStreamReaderStream(
+                            reader=resp.content, content_length=resp.content_length,
+                        ) as stream:
+                            yield ProgressStream(stream=stream, logging=True)
+                            return
+                    location = resp.headers.get("Location", "")
+                    if not location:
+                        raise RuntimeError(
+                            f"Presigned HTTP GET redirect missing Location header for {self._redact_url(current_url)}"
+                        )
+                    current_headers = self._strip_sensitive_headers(current_headers, current_url, location)
+                    current_url = location
         raise RuntimeError(f"Too many redirects ({max_redirects}) for {self._redact_url(url)}")
 
     @asynccontextmanager
@@ -502,10 +505,13 @@ class Driver(
                         yield stream
                 case "PUT":
                     remote, stream = create_memory_stream()
-                    async with aiohttp.request(
-                        method, self._make_url(url), headers=headers, raise_for_status=True,
-                        data=remote, timeout=client_timeout,
-                    ) as _resp, stream:
+                    async with (
+                        client_session(timeout=client_timeout) as session,
+                        session.put(
+                            self._make_url(url), headers=headers, raise_for_status=True, data=remote,
+                        ) as _resp,
+                        stream,
+                    ):
                         yield ProgressStream(stream=stream, logging=True)
                 case _:
                     # INVARIANT: method is always one of GET or PUT, see PresignedRequestResource

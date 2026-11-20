@@ -35,7 +35,9 @@ class ProxyFromEnvironmentRequest(aiohttp.ClientRequest):
         super().update_proxy(proxy, proxy_auth, proxy_headers)
 
 
-def client_session(*, trust_env: bool = True, **kwargs: Any) -> aiohttp.ClientSession:
+# This helper is the only code allowed to create aiohttp sessions directly, hence the
+# TID251 exemptions: ruff bans aiohttp.ClientSession everywhere else.
+def client_session(*, trust_env: bool = True, **kwargs: Any) -> aiohttp.ClientSession:  # noqa: TID251
     """Create an aiohttp client session that honors the proxy environment.
 
     aiohttp ignores http_proxy, https_proxy and no_proxy unless the session is created with
@@ -51,4 +53,4 @@ def client_session(*, trust_env: bool = True, **kwargs: Any) -> aiohttp.ClientSe
     """
     if trust_env:
         kwargs.setdefault("request_class", ProxyFromEnvironmentRequest)
-    return aiohttp.ClientSession(**kwargs)
+    return aiohttp.ClientSession(**kwargs)  # noqa: TID251

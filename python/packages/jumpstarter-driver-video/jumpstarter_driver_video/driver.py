@@ -5,11 +5,12 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-from aiohttp import ClientSession, MultipartReader
+from aiohttp import MultipartReader
 from anyio import connect_tcp
 from PIL import Image
 
 from .common import VideoState
+from jumpstarter.common.http import client_session
 from jumpstarter.driver import Driver, export, exportstream
 
 
@@ -63,7 +64,7 @@ class HttpVideo(VideoInterface, Driver):
             raise ValueError(f"missing host in stream url: {self.url}")
 
     async def _fetch_frame(self) -> bytes:
-        async with ClientSession() as session:
+        async with client_session() as session:
             if self.snapshot_url is not None:
                 async with session.get(self.snapshot_url) as resp:
                     resp.raise_for_status()

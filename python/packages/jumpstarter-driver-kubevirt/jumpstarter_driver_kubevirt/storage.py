@@ -26,6 +26,7 @@ from .vm import (
     active,
     operation,
 )
+from jumpstarter.common.http import client_session
 
 logger = logging.getLogger(__name__)
 
@@ -287,7 +288,7 @@ class Flash:
         # The caller bounds the upload with fail_after; aiohttp's own total timeout
         # only duplicates it, and defaults to 5 minutes, which is shorter than a flash.
         async with (
-            aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None)) as session,
+            client_session(timeout=aiohttp.ClientTimeout(total=None)) as session,
             session.post(
                 self.upload_proxy_url.rstrip("/") + "/v1beta1/upload-async",
                 headers={"Authorization": f"Bearer {token}", "Content-Type": "application/octet-stream"},
