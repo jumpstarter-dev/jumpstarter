@@ -82,7 +82,9 @@ require 'Alloy component example' 'loki.write'
 require 'Vector source example' 'kubernetes_logs'
 require 'Promtail discovery example' 'kubernetes_sd_configs'
 
-# Stream-label rules the shipper configuration must implement.
+# Stream-label rules the shipper configuration must implement. The backticks
+# are literal prose in the pattern, not command substitution.
+# shellcheck disable=SC2016
 require 'stream-label guidance' \
   'promote `component`, `exporter`, and `namespace` to Loki stream labels'
 

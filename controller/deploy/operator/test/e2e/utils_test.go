@@ -43,7 +43,10 @@ import (
 // applies the changed fields to whatever version is current. That is safe
 // because the operator never writes the spec, so the spec the patch lands on
 // is the one mutate saw.
-func updateJumpstarter(key types.NamespacedName, mutate func(*operatorv1alpha1.Jumpstarter)) *operatorv1alpha1.Jumpstarter {
+func updateJumpstarter(
+	key types.NamespacedName,
+	mutate func(*operatorv1alpha1.Jumpstarter),
+) *operatorv1alpha1.Jumpstarter {
 	GinkgoHelper()
 	jumpstarter := &operatorv1alpha1.Jumpstarter{}
 	Expect(k8sClient.Get(ctx, key, jumpstarter)).To(Succeed())
